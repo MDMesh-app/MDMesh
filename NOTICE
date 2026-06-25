@@ -18,9 +18,9 @@ Upstream attribution (retained per Apache-2.0 section 4d):
 -------------------------------------------------------------------------
 This product and its modifications:
 
-  (c) 2026 the project maintainers.
+  (c) 2026 the MDMesh contributors.
 
   New components (the Kotlin device agent under agent-android/, the protocol
   under proto/, the web admin under web/, and the agent v1 server endpoints)
   are original works. Files derived from the upstream retain their original
-  Apache-2.0 headers; modifications are tracked in the git history.
+  Apache-2.0 headers.

@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdm.local/proto/v1/agent-checkin-request.schema.json",
+  "title": "AgentCheckInRequest",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["protocolVersion", "deviceId", "capabilities"],
+  "properties": {
+    "protocolVersion": { "type": "string", "pattern": "^\\d+\\.\\d+$" },
+    "deviceId": { "type": "string" },
+    "capabilities": { "$ref": "capability-matrix.schema.json#/properties/capabilities" },
+    "results": {
+      "type": "array",
+      "description": "Acks for previously-delivered commands.",
+      "items": { "$ref": "command-result.schema.json" }
+    }
+  }
+}

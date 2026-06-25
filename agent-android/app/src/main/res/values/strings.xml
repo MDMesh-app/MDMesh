@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MDM Agent</string>
+    <string name="device_admin_description">Lets this organisation manage the device: apply policies, manage apps, and run remote support.</string>
+    <string name="checkin_notification_channel">Device management</string>
+    <string name="checkin_notification_title">Device management active</string>
+    <string name="checkin_notification_text">Keeping this device in sync with your organisation.</string>
+</resources>

@@ -1,0 +1,74 @@
+<!-- Localization completed -->
+<div ng-show='errorMessage' class='modal-header'>
+    <div ng-show='errorMessage' class='error'><span>{{errorMessage}}</span></div>
+</div>
+<div ng-show='successMessage' class='modal-header'>
+    <div ng-show='successMessage' class='success'><span>{{successMessage}}</span></div>
+</div>
+<div class='modal-body'>
+    <form class='form-horizontal'>
+
+        <div class='form-group'>
+            <label class='col-sm-4 control-label' localized>form.application.version</label>
+            <div class='col-sm-8'>
+                <input ng-model='application.version' type='text' class='form-control' ng-if="!fileSelected">
+                <input disabled type='text' class='form-control' id="applicationVersion2"
+                       ng-model='appdesc.version' ng-if="fileSelected"/>
+            </div>
+        </div>
+
+        <div class='form-group'>
+            <label class='col-sm-4 control-label' for="applicationArch" localized>form.application.arch</label>
+            <div class='col-sm-8'>
+                <select class="form-control" ng-model='application.arch' id="applicationArch">
+                    <option ng-value="''" ng-selected="application.arch === null || application.arch === ''"
+                            localized>form.application.arch.universal</option>
+                    <option ng-value="'armeabi'" ng-selected="application.arch === 'armeabi'"
+                            localized>form.application.arch.armeabi</option>
+                    <option ng-value="'arm64'" ng-selected="application.arch === 'arm64'"
+                            localized>form.application.arch.arm64</option>
+                </select>
+                <div class="field-hint warning-font" ng-show="appTypeWarning">{{appTypeWarning}}</div>
+                <div class="field-hint success-font" ng-show="appTypeSuccess">{{appTypeSuccess}}</div>
+            </div>
+        </div>
+
+        <div class='form-group'>
+            <label class='col-sm-4 control-label' localized>form.application.url</label>
+            <div class='col-sm-8'>
+                <input ng-model='application.url' type='text' class='form-control'
+                       ng-disabled="application.system">
+            </div>
+        </div>
+
+        <div class='form-group'>
+            <label class='col-sm-4 control-label' localized>form.application.file</label>
+            <div class='col-sm-8'>
+                <div class="btn btn-default full-width btn-upload" ng-if="!file.path"
+                     file-input-disabler input-disabled="{{application.system}}"
+                     upload-button
+                     url="rest/private/web-ui-files"
+                     on-upload="onStartedUpload(files)"
+                     on-progress="onUploadProgress(progress)"
+                     on-success="fileUploaded(response)"></div>
+                <span ng-if="file.path && !invalidFile">{{fileName}}</span>
+                <button class="btn btn-default" ng-if="file.path" ng-click="clearFile()" localized>button.cleanup</button>
+            </div>
+        </div>
+
+        <div class='form-group'>
+            <label for="autoUpdateBox" class='col-sm-4 control-label' localized>form.application.auto.update</label>
+            <div class='col-sm-2'>
+                <input localized-title="form.application.auto.update.title" ng-model='application.autoUpdate'
+                       type='checkbox' class='form-control' id="autoUpdateBox"/>
+            </div>
+        </div>
+
+        <div class='form-group'>
+            <div class='col-sm-offset-4 col-sm-8'>
+                <button type='submit' class='btn btn-default' ng-click='save()' ng-disabled="loading" localized>button.save</button>
+                <button type='button' class='btn btn-default' ng-click='closeModal()' ng-disabled="loading" localized >button.cancel</button>
+            </div>
+        </div>
+    </form>
+</div>

@@ -1,0 +1,73 @@
+# This is a sample file; copy this file to build.properties
+
+# database settings
+jdbc.url=jdbc:postgresql://localhost:5432/hmdm
+jdbc.driver=org.postgresql.Driver
+jdbc.username=hmdm
+jdbc.password=hmdm
+
+# A path to a base app directory to store internal data
+base.directory=D:/home/launcher
+
+# A path to a directory to store uploaded files
+files.directory=D:/home/launcher/files
+
+# A base URL for deployment of this build
+base.url=http://localhost:9090
+
+# A usage scenario:
+# shared: the application hosts data for multiple customers
+# private: the application hosts the data just for a single customer
+usage.scenario=private
+
+# If set to 1, the device configuration request must be signed by a shared secret (setup in hash.secret and in the Android app) 
+# 0 or empty value does not require request signature which is less secure
+secure.enrollment=0
+
+# A hash secret used for validating the device IDs provided by requests
+# from devices
+hash.secret=changeme-C3z9vi54
+
+# An ID of a record in userroles DB table representing an ORG_ADMIN role
+# Do not change this!
+role.orgadmin.id=2
+
+# A path to a root directory for storing plugin files
+plugins.files.directory=/home/launcher/plugins
+
+# A path to a file to be created by the application initializer to signal on initialization completion
+initialization.completion.signal.file=/home/launcher/initialized.txt
+
+# A command for calling the aapt
+aapt.command=aapt
+
+# An URL for the file with configuration for loggers
+log4j.config=file:///log4j-hmdm.xml
+
+# The parameters specific to Device Log plugin
+plugin.devicelog.persistence.config.class=com.hmdm.plugins.devicelog.persistence.postgres.DeviceLogPostgresPersistenceConfiguration
+
+# MQTT notification server local URI
+mqtt.server.uri=localhost:31000
+
+# MQTT authentication for more security (supported by Headwind MDM launcher v5.05 and above)
+mqtt.auth=true
+
+# Delaying MQTT messages in milliseconds to avoid congestion
+mqtt.message.delay=1000
+
+# Fast device search by last characters, here's the length
+device.fast.search.chars=5
+
+smtp.host=smtp.mailgun.org
+smtp.port=25
+smtp.ssl=0
+smtp.starttls=0
+smtp.username=myacct@example.com
+smtp.password=skcbh252235as
+smtp.from=noreply@example.com
+
+# JWT Config secret and token validity
+jwt.secretkey=20c68f0d9185b1d18cf6add1e8b491fd89529a44
+jwt.validity=86400
+jwt.validityrememberme=2592000

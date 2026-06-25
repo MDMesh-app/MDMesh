@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    AccessibilityService config for remote-control input injection.
+    canPerformGestures="true" is what enables dispatchGesture(...) — the API used
+    to replay remote taps/swipes. Kept minimal: no event types are observed
+    (flagRequestFilterKeyEvents/feedback are intentionally absent) because this
+    service injects, it does not snoop.
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:canPerformGestures="true"
+    android:canRetrieveWindowContent="false"
+    android:description="@string/input_injection_service_description"
+    android:notificationTimeout="100" />

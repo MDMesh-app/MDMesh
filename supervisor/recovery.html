@@ -1,0 +1,64 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MDMesh — Recovery</title><style>
+:root{color-scheme:dark}body{font:15px/1.5 system-ui,sans-serif;margin:0;background:#0E1117;color:#E8EEF4}
+.wrap{max-width:560px;margin:8vh auto;padding:0 20px}h1{font-size:22px;margin:0 0 4px}
+.sub{color:#8693A4;margin:0 0 24px}.card{background:#161922;border:1px solid #272c37;border-radius:12px;padding:18px 20px;margin-bottom:14px}
+.row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #21262f}.row:last-child{border:0}
+.k{color:#8693A4}.mono{font-family:ui-monospace,monospace}.ok{color:#3FD08A}.warn{color:#F4B942}.err{color:#F2545B}
+.note{color:#8693A4;font-size:13px}.btn{font:inherit;cursor:pointer;background:#21262f;color:#E8EEF4;border:1px solid #2f3644;border-radius:8px;padding:8px 14px}
+.btn:hover{background:#2a3140}.btn:disabled{opacity:.5;cursor:default}.btn-danger{border-color:#5b2a2e;background:#2a1416;color:#F2A0A4}
+.btn-danger:hover{background:#3a1a1d}.actions{display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap}
+input.tok{font:inherit;background:#0E1117;border:1px solid #2f3644;border-radius:8px;padding:8px 10px;color:#E8EEF4;flex:1;min-width:180px}
+.spin{display:inline-block;width:13px;height:13px;border-radius:50%;border:2px solid #2f3644;border-top-color:#4C8DFF;animation:s .8s linear infinite;vertical-align:-2px}
+@keyframes s{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.spin{animation:none}}</style></head>
+<body><div class="wrap">
+<h1>MDMesh — Recovery</h1><p class="sub">Served by the updater supervisor — stays up even if the main server is down.</p>
+<div class="card" id="status"><div class="row"><span class="k">Loading status…</span></div></div>
+<div class="card" id="applycard" style="display:none"><div class="k" style="margin-bottom:6px">Update in progress</div><div id="apply"></div></div>
+<div class="card">
+  <div class="k">Roll back</div>
+  <p class="note">Restore the most recent pre-update backup (previous images + database) and restart the server. Use this if an update left the console unreachable.</p>
+  <div class="actions">
+    <input class="tok" id="tok" type="password" placeholder="Recovery token (only if the server is down)" autocomplete="off">
+    <button class="btn btn-danger" id="rb">Roll back to previous version</button>
+  </div>
+  <p class="note" id="rbmsg" style="margin-top:8px"></p>
+  <p class="note">If you're signed into the console in this browser, the token isn't needed. Otherwise read it with
+    <span class="mono">docker compose exec supervisor cat /backups/recovery.token</span>.</p>
+</div>
+<p class="note">Logs: <span class="mono">docker compose logs server</span> · <span class="mono">docker compose logs supervisor</span>.</p>
+</div><script>
+var PH={authorizing:'Authorizing…',backup:'Backing up database…',pull:'Downloading new images…',recreate:'Restarting services…',healthcheck:'Verifying health…',done:'Update complete',rollback:'Rolling back…',rolled_back:'Rolled back — update failed',failed:'Update failed'};
+var TERMINAL=['done','rolled_back','failed'];
+function v(x){return x==null?'—':x}
+function render(s){
+  var badge=s.verified?'<span class="ok">verified</span>':'<span class="warn">unverified</span>';
+  document.getElementById('status').innerHTML=
+   '<div class="row"><span class="k">Current version</span><span class="mono">'+v(s.current)+'</span></div>'+
+   '<div class="row"><span class="k">Latest available</span><span class="mono">'+v(s.latest)+' '+(s.latest?badge:'')+'</span></div>'+
+   '<div class="row"><span class="k">Update available</span><span>'+(s.updateAvailable?'<span class="warn">yes</span>':'no')+'</span></div>'+
+   '<div class="row"><span class="k">Automatic updates</span><span>'+(s.auto?'<span class="warn">on</span>':'off')+'</span></div>'+
+   '<div class="row"><span class="k">Last checked</span><span>'+(s.checkedAt?new Date(s.checkedAt).toLocaleString():'—')+'</span></div>'+
+   (s.error?'<div class="row"><span class="k">Note</span><span class="err">'+s.error+'</span></div>':'');
+  var a=s.apply, card=document.getElementById('applycard');
+  if(a){
+    card.style.display='';
+    var done=TERMINAL.indexOf(a.phase)>=0, fail=a.phase==='failed'||a.phase==='rolled_back';
+    document.getElementById('apply').innerHTML=
+     '<div class="row"><span class="'+(fail?'err':(done?'ok':''))+'">'+(done?'':'<span class="spin"></span> ')+(PH[a.phase]||a.phase)+'</span>'+
+       '<span class="mono">'+(a.fromVersion||'?')+(a.toVersion?(' → '+a.toVersion):'')+'</span></div>'+
+     (a.error?'<div class="row"><span class="k">Detail</span><span class="warn">'+a.error+'</span></div>':'');
+  } else { card.style.display='none'; }
+}
+function tick(){fetch('/update/status').then(function(r){return r.json()}).then(render).catch(function(){document.getElementById('status').innerHTML='<div class="row"><span class="err">Status unavailable.</span></div>';});}
+tick();setInterval(tick,3000);
+document.getElementById('rb').onclick=function(){
+  if(!confirm('Roll back to the previous version? This restores the last database backup and restarts the server.'))return;
+  var btn=this, msg=document.getElementById('rbmsg'); btn.disabled=true; msg.textContent='Starting rollback…'; msg.className='note';
+  var h={'Accept':'application/json','X-MDMesh-Console':'1'}; var t=document.getElementById('tok').value.trim(); if(t)h['X-Recovery-Token']=t;
+  fetch('/update/rollback',{method:'POST',credentials:'include',headers:h}).then(function(r){
+    if(r.status===202){msg.textContent='Rollback started — watch the progress above.';tick();}
+    else{r.json().then(function(b){msg.innerHTML='<span class="err">'+(b.error||('HTTP '+r.status))+'</span>';});btn.disabled=false;}
+  }).catch(function(e){msg.innerHTML='<span class="err">'+e+'</span>';btn.disabled=false;});
+};
+</script></body></html>

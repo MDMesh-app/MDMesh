@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdm.local/proto/v1/capability-matrix.schema.json",
+  "title": "CapabilityMatrix",
+  "description": "Device -> server. Sent on enrollment and every check-in. Advertises what this agent can actually do so the server only issues supported commands.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["protocolVersion", "agent", "device", "capabilities"],
+  "properties": {
+    "protocolVersion": { "type": "string", "pattern": "^\\d+\\.\\d+$", "examples": ["1.0"] },
+    "agent": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["version", "package"],
+      "properties": {
+        "version": { "type": "string" },
+        "package": { "type": "string" }
+      }
+    },
+    "device": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "androidSdkInt", "isDeviceOwner"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Server-issued opaque device id. NEVER IMEI/IMSI/serial (restricted post-Android 10)."
+        },
+        "androidSdkInt": { "type": "integer", "minimum": 24 },
+        "androidRelease": { "type": "string" },
+        "manufacturer": { "type": "string" },
+        "model": { "type": "string" },
+        "isDeviceOwner": { "type": "boolean" }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Open registries (see registry.md). Unknown keys are allowed and ignored by older servers.",
+      "properties": {
+        "policy": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "e.g. wifi, bluetooth, gps, mobileData, usbStorage, camera, screenshots, kioskLockTask, passwordComplexity, systemUpdatePolicy, factoryResetProtection"
+        },
+        "appManagement": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "e.g. silentInstall, silentUninstall, splitApk, fdroidCatalog"
+        },
+        "remoteControl": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "tier": { "type": "string", "enum": ["none", "view", "control"] },
+            "screenCapture": { "type": "boolean" },
+            "inputInjection": { "type": "boolean" },
+            "transport": { "type": "array", "items": { "type": "string", "enum": ["webrtc", "websocket", "mjpeg"] } }
+          }
+        },
+        "oem": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "vendor": { "type": "string", "examples": ["samsung", "zebra", "generic"] },
+            "knox": { "type": "boolean" }
+          }
+        }
+      }
+    }
+  }
+}

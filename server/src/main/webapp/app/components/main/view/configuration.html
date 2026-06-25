@@ -1,0 +1,1191 @@
+<!-- Localization completed -->
+<div class='content-wrapper width-1000'>
+    <div ncy-breadcrumb></div>
+
+    <div ng-show='errorMessage'>
+        <div ng-show='errorMessage' class='error'><span>{{errorMessage}}</span></div>
+    </div>
+    <div ng-show='successMessage'>
+        <div class='success'><span>{{successMessage}}</span></div>
+    </div>
+    <div>
+        <form class='form-horizontal' name="configurationForm">
+
+            <div class='form-group'>
+                <div class='center'>
+                    <h3 ng-if="!isTypical"><span localized>form.configuration.title</span> &quot;{{configuration.name}}&quot;</h3>
+                    <h3 ng-if="isTypical"><span localized>form.configuration.title.typical</span> &quot;{{configuration.name}}&quot;</h3>
+                </div>
+            </div>
+
+            <tabset class='tabset'>
+
+                <!-- COMMON SETTINGS -->
+                <tab>
+
+                    <tab-heading localized>tab.configeditor.common.settings</tab-heading>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.common.name</label>
+                        <div class='col-sm-9'>
+                            <input ng-model='configuration.name' required name="n1"
+                                   type='text' class='form-control'
+                                   localized-placeholder='form.configuration.settings.common.name.placeholder'/>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.common.desc</label>
+                        <div class='col-sm-9'>
+                          <textarea ng-model='configuration.description' name="n2"
+                          class='form-control no-resize'
+                          localized-placeholder='form.configuration.settings.common.desc.placeholder'></textarea>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label'
+                               for="password-c"
+                               style='padding-top: 0px;' localized>form.configuration.settings.common.admin.pwd</label>
+                        <div class='col-sm-9'>
+                            <input ng-model='configuration.password' name="n3" id="password-c"
+                                   type="text" required
+                                   class='form-control'
+                                   style="width:90%; display:inline"
+                                   localized-placeholder='form.configuration.settings.common.admin.pwd.placeholder'>
+                            <button type='button' id="button-show-password" class='btn btn-default' localized-title="button.show.password"
+                                    ng-click='togglePassword()'>
+                                <span id="span-show-password" class='glyphicon glyphicon-eye-open'></span>
+                            </button>
+                        </div>
+                    </div>
+
+<!-- Commented as a deprecated option                    <div class='row'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.block.status.bar</label>
+                        <div class='col-sm-1'>
+                            <input ng-model='configuration.blockStatusBar' name="mdm32323" type='checkbox' class='form-control common-checkbox'/>
+                        </div>
+                    </div>
+                    <div class='form-group'>
+                        <div class='col-sm-3'>&nbsp;</div>
+                        <div class='col-sm-9 field-hint' localized>form.configuration.settings.block.status.bar.hint</div>
+                    </div> -->
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' for="requestUpdates-c"
+                               localized>form.configuration.settings.request.updates</label>
+                        <div class='col-sm-9'>
+                            <select class='form-control' id="requestUpdates-c" name="n8399" ng-change="requestUpdatesChanged()"
+                                    ng-model='configuration.requestUpdates' ng-disabled="configuration.disableLocation">
+                                <option ng-value="'DONOTTRACK'" ng-selected="configuration.requestUpdates === 'DONOTTRACK'"
+                                        localized>form.configuration.settings.request.updates.donottrack</option>
+                                <option ng-value="'GPS'" ng-selected="configuration.requestUpdates === 'GPS'"
+                                        localized>form.configuration.settings.request.updates.gps</option>
+                                <option ng-value="'WIFI'" ng-selected="configuration.requestUpdates === 'WIFI'"
+                                        localized>form.configuration.settings.request.updates.wifi</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Not used - use appPermissions to manage location grant state -->
+ <!--                   <div class='row'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.revoke.location.permission</label>
+                        <div class='col-sm-1'>
+                            <input ng-model='configuration.disableLocation' name="disableLocation" type='checkbox' class='form-control common-checkbox' ng-change="disableLocationChanged()"/>
+                        </div>
+                    </div>
+                    <div class='form-group'>
+                        <div class='col-sm-3'>&nbsp;</div>
+                        <div class='col-sm-9 field-hint' localized>form.configuration.settings.revoke.location.permission.hint</div>
+                    </div> -->
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' for="appPermissions-c"
+                               localized>form.configuration.settings.apps.permissions</label>
+                        <div class='col-sm-9'>
+                            <select class='form-control' id="appPermissions-c" name="appPermissions"
+                                    ng-model='configuration.appPermissions'>
+                                <option ng-value="'GRANTALL'" ng-selected="configuration.appPermissions === 'GRANTALL'"
+                                        localized>form.configuration.settings.apps.permissions.grant</option>
+                                <option ng-value="'ASKLOCATION'" ng-selected="configuration.appPermissions === 'ASKLOCATION'"
+                                        localized>form.configuration.settings.apps.permissions.ask.location</option>
+                                <option ng-value="'DENYLOCATION'" ng-selected="configuration.appPermissions === 'DENYLOCATION'"
+                                        localized>form.configuration.settings.apps.permissions.deny.location</option>
+                                <option ng-value="'ASKALL'" ng-selected="configuration.appPermissions === 'ASKALL'"
+                                        localized>form.configuration.settings.apps.permissions.ask.all</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' for="pushOptions-c"
+                               localized>form.configuration.settings.push.options</label>
+                        <div class='col-sm-9'>
+                            <select class='form-control' id="pushOptions-c" name="pushOptions"
+                                    ng-model='configuration.pushOptions' ng-change="pushOptionsChanged()">
+<!--                                <option ng-value="'mqttWorker'" ng-selected="configuration.pushOptions === 'mqttWorker'"
+                                        localized>form.configuration.settings.push.options.mqtt.worker</option> -->
+                                <option ng-value="'mqttAlarm'" ng-selected="configuration.pushOptions === 'mqttAlarm'"
+                                        localized>form.configuration.settings.push.options.mqtt.alarm</option>
+                                <option ng-value="'polling'" ng-selected="configuration.pushOptions === 'polling'"
+                                        localized>form.configuration.settings.push.options.polling</option>
+                            </select>
+                            <div class="field-hint">{{pushHint}}</div>
+                        </div>
+                    </div>
+
+                    <div class='form-group' ng-if="configuration.pushOptions == 'mqttAlarm'">
+                        <label class='col-sm-3 control-label' for="keepaliveTime-c"
+                               localized>form.configuration.settings.push.options.keepalive</label>
+                        <div class='col-sm-9'>
+                            <select class='form-control' id="keepaliveTime-c" name="n8400"
+                                    ng-model='configuration.keepaliveTime'>
+                                <option ng-value="60" ng-selected="configuration.keepaliveTime === 60" localized>form.configuration.settings.minute.1</option>
+                                <option ng-value="120" ng-selected="configuration.keepaliveTime === 120" localized>form.configuration.settings.minutes.2</option>
+                                <option ng-value="180" ng-selected="configuration.keepaliveTime === 180" localized>form.configuration.settings.minutes.3</option>
+                                <option ng-value="300" ng-selected="configuration.keepaliveTime === 300 || configuration.keepaliveTime === null" localized>form.configuration.settings.minutes.5</option>
+                                <option ng-value="600" ng-selected="configuration.keepaliveTime === 600" localized>form.configuration.settings.minutes.10</option>
+                                <option ng-value="900" ng-selected="configuration.keepaliveTime === 900" localized>form.configuration.settings.minutes.15</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.common.gps</label>
+                        <div class='col-sm-9 three-state'>
+                            <label><span localized>form.configuration.settings.common.gps.any</span>
+                                <input ng-model='configuration.gps'  name="c_gps" type='radio' class='form-control' ng-value="null"/></label>
+                            <label><span localized>form.configuration.settings.common.gps.off</span>
+                                <input ng-model='configuration.gps'  name="c_gps" type='radio' class='form-control' ng-value="false"/></label>
+                            <label><span localized>form.configuration.settings.common.gps.on</span>
+                                <input ng-model='configuration.gps'  name="c_gps" type='radio' class='form-control' ng-value="true"/></label>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.common.bluetooth</label>
+                        <div class='col-sm-9 three-state'>
+                            <label><span localized>form.configuration.settings.common.gps.any</span>
+                                <input ng-model='configuration.bluetooth'  name="c_bluetooth" type='radio' class='form-control' ng-value="null"/></label>
+                            <label><span localized>form.configuration.settings.common.gps.off</span>
+                                <input ng-model='configuration.bluetooth'  name="c_bluetooth" type='radio' class='form-control' ng-value="false"/></label>
+                            <label><span localized>form.configuration.settings.common.gps.on</span>
+                                <input ng-model='configuration.bluetooth'  name="c_bluetooth" type='radio' class='form-control' ng-value="true"/></label>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.common.wifi</label>
+                        <div class='col-sm-9 three-state'>
+                            <label><span localized>form.configuration.settings.common.gps.any</span>
+                                <input ng-model='configuration.wifi'  name="c_wifi" type='radio' class='form-control' ng-value="null" ng-change="checkNetworkState()"/></label>
+                            <label><span localized>form.configuration.settings.common.gps.off</span>
+                                <input ng-model='configuration.wifi'  name="c_wifi" type='radio' class='form-control' ng-value="false" ng-change="checkNetworkState()"/></label>
+                            <label><span localized>form.configuration.settings.common.gps.on</span>
+                                <input ng-model='configuration.wifi'  name="c_wifi" type='radio' class='form-control' ng-value="true" ng-change="checkNetworkState()"/></label>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.common.mobile.data</label>
+                        <div class='col-sm-9 three-state'>
+                            <label><span localized>form.configuration.settings.common.gps.any</span>
+                                <input ng-model='configuration.mobileData'  name="c_mobileData" type='radio' class='form-control' ng-value="null" ng-change="checkNetworkState()"/></label>
+                            <label><span localized>form.configuration.settings.common.gps.off</span>
+                                <input ng-model='configuration.mobileData'  name="c_mobileData" type='radio' class='form-control' ng-value="false" ng-change="checkNetworkState()"/></label>
+                            <label><span localized>form.configuration.settings.common.gps.on</span>
+                                <input ng-model='configuration.mobileData'  name="c_mobileData" type='radio' class='form-control' ng-value="true" ng-change="checkNetworkState()"/></label>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.common.usb.storage</label>
+                        <div class='col-sm-1'>
+                            <input ng-model='configuration.usbStorage' name="c_usbStorage" type='checkbox' class='form-control common-checkbox'/>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.common.brightness</label>
+                        <div class='col-sm-9 three-state'>
+                            <label><span localized>form.configuration.settings.common.brightness.none</span>
+                                <input ng-model='configuration.autoBrightness'  name="c_manageBrightness" type='radio' class='form-control' ng-value="null"/></label>
+                            <label><span localized>form.configuration.settings.common.brightness.manual</span>
+                                <input ng-model='configuration.autoBrightness'  name="c_manageBrightness" type='radio' class='form-control' ng-value="false"/></label>
+                            <label><span localized>form.configuration.settings.common.brightness.auto</span>
+                                <input ng-model='configuration.autoBrightness'  name="c_manageBrightness" type='radio' class='form-control' ng-value="true"/></label>
+                        </div>
+                    </div>
+
+                    <div class='form-group' ng-if="configuration.autoBrightness === false">
+                        <label class='col-sm-3 control-label' for="c_brightness" localized>form.configuration.settings.common.brightness.value</label>
+                        <div class='col-sm-8'>
+                            <input ng-model='configuration.brightness' id="c_brightness" name="c_brightness" type='range' class='form-control'
+                                   min="0" max="255" step="1"/>
+                        </div>
+                        <div class='col-sm-1'>
+                            <span class="form-control">{{configuration.brightness}}</span>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.common.timeout</label>
+                        <div class='col-sm-1'>
+                            <input ng-model='configuration.manageTimeout' name="c_manageTimeout" type='checkbox' class='form-control common-checkbox'/>
+                        </div>
+                    </div>
+
+                    <div class='form-group' ng-if="configuration.manageTimeout === true">
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.common.timeout.value</label>
+                        <div class='col-sm-9'>
+                        <input ng-model='configuration.timeout' required name="c_timeout"
+                               type='number' class='form-control'
+                               localized-placeholder='form.configuration.settings.common.timeout.value'/>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.common.volume.block</label>
+                        <div class='col-sm-1'>
+                            <input ng-model='configuration.lockVolume' name="c_lockVolume" type='checkbox' class='form-control common-checkbox'/>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.common.volume.manage</label>
+                        <div class='col-sm-1'>
+                            <input ng-model='configuration.manageVolume' name="c_manageVolume" type='checkbox' class='form-control common-checkbox'/>
+                        </div>
+                    </div>
+
+                    <div class='form-group' ng-if="configuration.manageVolume === true">
+                        <label class='col-sm-3 control-label' for="c_volume" localized>form.configuration.settings.common.volume.value</label>
+                        <div class='col-sm-8'>
+                            <input ng-model='configuration.volume' id="c_volume" name="c_brightness" type='range' class='form-control'
+                                   min="0" max="100" step="1"/>
+                        </div>
+                        <div class='col-sm-1'>
+                            <span class="form-control">{{configuration.volume}}</span>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' for="timeZoneMode-c"
+                               localized>form.configuration.settings.common.timezone.mode</label>
+                        <div class='col-sm-9'>
+                            <select class='form-control' id="timeZoneMode-c" name="timeZoneMode"
+                                    ng-model='configuration.timeZoneMode'>
+                                <option ng-value="'default'" ng-selected="configuration.timeZoneMode === 'default'"
+                                        localized>form.configuration.settings.common.timezone.mode.default</option>
+                                <option ng-value="'auto'" ng-selected="configuration.timeZoneMode === 'auto'"
+                                        localized>form.configuration.settings.common.timezone.mode.auto</option>
+                                <option ng-value="'manual'" ng-selected="configuration.timeZoneMode === 'manual'"
+                                        localized>form.configuration.settings.common.timezone.mode.manual</option>
+                            </select>
+                        </div>
+                    </div>
+
+
+                    <div class='form-group' ng-if="configuration.timeZoneMode === 'manual'">
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.common.timezone</label>
+                        <div class='col-sm-6'>
+                            <input ng-model='configuration.timeZone' name="timeZone-c"
+                                   type='text' class='form-control'
+                                   localized-placeholder='form.configuration.settings.common.timezone.placeholder'/>
+                        </div>
+                        <div class='col-sm-3'>
+                            <a href="https://en.wikipedia.org/wiki/List_of_tz_database_time_zones" target="_blank" localized>form.configuration.settings.common.timezone.link</a>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.system.update</label>
+                        <div class='col-sm-9 three-state'>
+                            <label><span localized>form.configuration.settings.system.update.default</span>
+                                <input ng-model='configuration.systemUpdateType'  name="c_sysupdate" type='radio' class='form-control' ng-value="0"/></label>
+                            <label><span localized>form.configuration.settings.system.update.immediate</span>
+                                <input ng-model='configuration.systemUpdateType'  name="c_sysupdate" type='radio' class='form-control' ng-value="1"/></label>
+                            <label><span localized>form.configuration.settings.system.update.scheduled</span>
+                                <input ng-model='configuration.systemUpdateType'  name="c_sysupdate" type='radio' class='form-control' ng-value="2"/></label>
+                            <label><span localized>form.configuration.settings.system.update.postponed</span>
+                                <input ng-model='configuration.systemUpdateType'  name="c_sysupdate" type='radio' class='form-control' ng-value="3"/></label>
+                        </div>
+                    </div>
+
+                    <div class='form-group' ng-if="configuration.systemUpdateType === 2">
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.system.update.time</label>
+                        <div class='col-sm-9 three-state'>
+                            <div class="col-sm-4">
+                                <timepicker ng-model='dates.systemUpdateFrom' show-meridian='false'></timepicker>
+                            </div>
+                            <div class="col-sm-4">
+                                <timepicker ng-model='dates.systemUpdateTo' show-meridian='false'></timepicker>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.system.schedule.app.update</label>
+                        <div class='col-sm-1'>
+                            <input ng-model='configuration.scheduleAppUpdate' name="scheduleAppUpdate" type='checkbox' class='form-control common-checkbox'/>
+                        </div>
+                    </div>
+
+                    <div class='form-group' ng-if="configuration.scheduleAppUpdate">
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.system.app.update.time</label>
+                        <div class='col-sm-9 three-state'>
+                            <div class="col-sm-4">
+                                <timepicker ng-model='dates.appUpdateFrom' show-meridian='false'></timepicker>
+                            </div>
+                            <div class="col-sm-4">
+                                <timepicker ng-model='dates.appUpdateTo' show-meridian='false'></timepicker>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' for="passwordMode-c"
+                               localized>form.configuration.settings.download.updates</label>
+                        <div class='col-sm-9'>
+                            <select class='form-control' id="downloadUpdates-c" name="downloadUpdates"
+                                    ng-model='configuration.downloadUpdates'>
+                                <option ng-value="'UNLIMITED'" ng-selected="configuration.downloadUpdates === 'UNLIMITED'"
+                                        localized>form.configuration.settings.download.updates.unlimited</option>
+                                <option ng-value="'LIMITED'" ng-selected="configuration.downloadUpdates === 'LIMITED'"
+                                        localized>form.configuration.settings.download.updates.limited</option>
+                                <option ng-value="'WIFI'" ng-selected="configuration.downloadUpdates === 'WIFI'"
+                                        localized>form.configuration.settings.download.updates.wifi</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' for="passwordMode-c"
+                               localized>form.configuration.settings.password.mode</label>
+                        <div class='col-sm-9'>
+                            <select class='form-control' id="passwordMode-c" name="passwordMode"
+                                    ng-model='configuration.passwordMode'>
+                                <option ng-value="'any'" ng-selected="configuration.passwordMode === null"
+                                        localized>form.configuration.settings.password.mode.any</option>
+                                <option ng-value="'present'" ng-selected="configuration.passwordMode === 'present'"
+                                        localized>form.configuration.settings.password.mode.present</option>
+                                <option ng-value="'easy'" ng-selected="configuration.passwordMode === 'easy'"
+                                        localized>form.configuration.settings.password.mode.easy</option>
+                                <option ng-value="'moderate'" ng-selected="configuration.passwordMode === 'moderate'"
+                                        localized>form.configuration.settings.password.mode.moderate</option>
+                                <option ng-value="'strong'" ng-selected="configuration.passwordMode === 'strong'"
+                                        localized>form.configuration.settings.password.mode.strong</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.show.wifi</label>
+                        <div class='col-sm-1'>
+                            <input ng-model='configuration.showWifi' name="runDefaultLauncher" type='checkbox' class='form-control common-checkbox'/>
+                        </div>
+                    </div>
+
+                    <div class='form-group' style="margin-bottom: 0px">
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.use.default.launcher</label>
+                        <div class='col-sm-1'>
+                            <input ng-model='configuration.runDefaultLauncher' name="runDefaultLauncher" type='checkbox' class='form-control common-checkbox'/>
+                        </div>
+                    </div>
+                    <div class='form-group'>
+                        <div class="col-sm-3">&nbsp;</div>
+                        <div class="col-sm-9 field-hint" localized>form.configuration.settings.use.default.launcher.hint</div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.disable.screenshots</label>
+                        <div class='col-sm-1'>
+                            <input ng-model='configuration.disableScreenshots' name="disableScreenshots" type='checkbox' class='form-control common-checkbox'/>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.common.autostart.foreground</label>
+                        <div class='col-sm-1'>
+                            <input ng-model='configuration.autostartForeground' name="autostartForeground" type='checkbox' class='form-control common-checkbox'/>
+                        </div>
+                    </div>
+
+                    <div class="config-bottom">&nbsp;</div>
+                    <div class='form-group'>
+                        <div class='config-save'>
+                            <button type='submit' class='btn btn-default {{saveButtonClass()}}' ng-click='save(false)' localized>button.save</button>
+                            <button type='submit' class='btn btn-default' ng-click='save(true)' localized>button.save.and.close</button>
+                            <button type='button' class='btn btn-default' ng-click='close()' localized>button.cancel</button>
+                        </div>
+                    </div>
+                </tab>
+
+                <!-- DESIGN SETTINGS -->
+                <tab>
+
+                    <tab-heading localized>tab.configeditor.design.settings</tab-heading>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' for="cc1" localized>form.configuration.settings.design.use.default</label>
+                        <div class='col-sm-1'>
+                            <input id="cc1" ng-model='configuration.useDefaultDesignSettings'  name="n4"
+                                   type='checkbox' class='form-control'/>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.design.color.background</label>
+                        <div class='col-sm-9'>
+                            <input ng-model='configuration.backgroundColor'  name="n5"
+                                   colorpicker ng-disabled="configuration.useDefaultDesignSettings"
+                                   type='text' class='form-control'
+                                   localized-placeholder='form.configuration.settings.design.color.background.placeholder'/>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.design.color.app.names</label>
+                        <div class='col-sm-9'>
+                            <input ng-model='configuration.textColor' name="n6"
+                                   colorpicker ng-disabled="configuration.useDefaultDesignSettings"
+                                   type='text' class='form-control'
+                                   localized-placeholder='form.configuration.settings.design.color.app.names.placeholder'/>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.design.background.image.url</label>
+                        <div class='col-sm-7'>
+                            <input ng-model='configuration.backgroundImageUrl' name="n7"
+                                   type='text' class='form-control' ng-disabled="configuration.useDefaultDesignSettings"
+                                   localized-placeholder='form.configuration.settings.design.background.image.url.placeholder'>
+                        </div>
+                        <div class="col-sm-2 text-right">
+                            <button type="button" class="btn btn-default" ng-click="uploadBackground()"
+                                    ng-disabled="configuration.useDefaultDesignSettings"
+                                    localized>form.configuration.settings.design.upload</button>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' for="iconSize-c"
+                               localized>form.configuration.settings.design.icon</label>
+                        <div class='col-sm-9'>
+                            <select class='form-control' id="iconSize-c" name="n8" ng-model='configuration.iconSize'
+                                    ng-disabled="configuration.useDefaultDesignSettings">
+                                <option ng-value="'SMALL'" ng-selected="configuration.iconSize === 'SMALL'"
+                                        localized>form.configuration.settings.design.icon.small</option>
+                                <option ng-value="'MEDIUM'" ng-selected="configuration.iconSize === 'MEDIUM'"
+                                        localized>form.configuration.settings.design.icon.medium</option>
+                                <option ng-value="'LARGE'" ng-selected="configuration.iconSize === 'LARGE'"
+                                        localized>form.configuration.settings.design.icon.large</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' for="desktopHeader-c"
+                               localized>form.configuration.settings.design.desktop.header</label>
+                        <div class='col-sm-9'>
+                            <select class='form-control' id="desktopHeader-c" name="n9"
+                                    ng-model='configuration.desktopHeader'
+                                    ng-disabled="configuration.useDefaultDesignSettings">
+                                <option ng-value="'NO_HEADER'" ng-selected="configuration.desktopHeader === 'NO_HEADER'"
+                                        localized>form.configuration.settings.design.desktop.header.no</option>
+                                <option ng-value="'DEVICE_ID'" ng-selected="configuration.desktopHeader === 'DEVICE_ID'"
+                                        localized>form.configuration.settings.design.desktop.header.deviceid</option>
+                                <option ng-value="'DESCRIPTION'" ng-selected="configuration.desktopHeader === 'DESCRIPTION'"
+                                        localized>form.configuration.settings.design.desktop.header.description</option>
+                                <option ng-value="'TEMPLATE'" ng-selected="configuration.desktopHeader === 'TEMPLATE'"
+                                        localized>form.configuration.settings.design.desktop.header.custom</option>
+                                <option ng-if="settings.customPropertyName1" ng-value="'CUSTOM1'" ng-selected="configuration.desktopHeader === 'CUSTOM1'">{{settings.customPropertyName1}}</option>
+                                <option ng-if="settings.customPropertyName2" ng-value="'CUSTOM2'" ng-selected="configuration.desktopHeader === 'CUSTOM2'">{{settings.customPropertyName2}}</option>
+                                <option ng-if="settings.customPropertyName3" ng-value="'CUSTOM3'" ng-selected="configuration.desktopHeader === 'CUSTOM3'">{{settings.customPropertyName3}}</option>
+                            </select>
+                            <div class='field-hint' ng-if="configuration.desktopHeader === 'DESCRIPTION' || configuration.desktopHeader === 'CUSTOM1' || configuration.desktopHeader === 'CUSTOM2' || configuration.desktopHeader === 'CUSTOM3'" localized>form.configuration.settings.design.desktop.header.hint</div>
+                        </div>
+                    </div>
+
+                    <div class='form-group' ng-if="configuration.desktopHeader === 'TEMPLATE'">
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.design.desktop.header.template</label>
+                        <div class='col-sm-9'>
+                            <input ng-model='configuration.desktopHeaderTemplate'
+                                   ng-disabled="configuration.useDefaultDesignSettings"
+                                   type='text' class='form-control'
+                                   placeholder='{{desktopHeaderTemplatePlaceholder}}'>
+                        </div>
+                    </div>
+
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' for="orientation-c"
+                               localized>form.configuration.settings.orientation</label>
+                        <div class='col-sm-9'>
+                            <select class='form-control' id="orientation-c" name="orientation"
+                                    ng-model='configuration.orientation'>
+                                <option ng-value="0" ng-selected="configuration.orientation === null || configuration.orientation === 0"
+                                        localized>form.configuration.settings.orientation.none</option>
+                                <option ng-value="1" ng-selected="configuration.orientation === 1"
+                                        localized>form.configuration.settings.orientation.portrait</option>
+                                <option ng-value="2" ng-selected="configuration.orientation === 2"
+                                        localized>form.configuration.settings.orientation.landscape</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' for="displaystatus-c" localized>form.configuration.settings.design.display.status</label>
+                        <div class='col-sm-1'>
+                            <input id="displaystatus-c" ng-model='configuration.displayStatus'  name="displayStatus"
+                                   type='checkbox' class='form-control'/>
+                        </div>
+                    </div>
+
+
+                    <div class="config-bottom">&nbsp;</div>
+                    <div class='form-group'>
+                        <div class='config-save'>
+                            <button type='submit' class='btn btn-default {{saveButtonClass()}}' ng-click='save(false)' localized>button.save</button>
+                            <button type='submit' class='btn btn-default' ng-click='save(true)' localized>button.save.and.close</button>
+                            <button type='button' class='btn btn-default' ng-click='close()' localized>button.cancel</button>
+                        </div>
+                    </div>
+                </tab>
+
+                <!-- APPLICATIONS -->
+                <tab>
+
+                    <tab-heading localized>tab.configeditor.applications</tab-heading>
+
+                    <div class='form-group'>
+                        <div class='col-sm-12'>
+                            <div class='panel panel-default'>
+
+                                <div class="text-center"
+                                     ng-if="(applications | filter : filterApps).length > paging.pageSize">
+                                    <pagination boundary-links='true' class='pagination-sm'
+                                                max-size='3'
+                                                ng-model='paging.currentPage'
+                                                total-items='(applications | filter : filterApps).length'
+                                                items-per-page='paging.pageSize'
+                                                previous-text='&lsaquo;' next-text='&rsaquo;' first-text='&laquo;'
+                                                last-text='&raquo;'></pagination>
+                                </div>
+
+                                <div class='panel-body'>
+                                    <div class="row padding-bottom">
+                                        <div class="col-sm-2" localized>form.configuration.apps.sort.label</div>
+                                        <div class="col-sm-2">
+                                            <input id='sort-by-pkg' type="radio" name="sortBy" class='file-checkbox' ng-value="'pkg'"
+                                                   ng-model="sort.by" ng-change="sortByChanged()"/>
+                                            <label for='sort-by-pkg' localized>form.configuration.apps.sort.bypkg</label>
+                                        </div>
+                                        <div class="col-sm-2">
+                                            <input id='sort-by-name' type="radio" name="sortBy" class='file-checkbox' ng-value="'name'"
+                                                   ng-model="sort.by" ng-change="sortByChanged()"/>
+                                            <label for='sort-by-name' localized>form.configuration.apps.sort.byname</label>
+                                        </div>
+                                        <div class="col-sm-3">
+                                            <input id='show-system-apps' type="checkbox" name="showSystem" class='file-checkbox'
+                                                   ng-model="showSystemApps" ng-click="systemAppsToggled()"/>
+                                            <label for='show-system-apps' localized>form.configuration.apps.show.systeam.apps</label>
+                                        </div>
+                                        <div class="col-sm-3 text-right">
+                                            <button class="btn btn-default" ng-click="addApp()" localized>button.add</button>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-sm-2" localized>form.configuration.apps.search.label</div>
+                                        <div class="col-sm-10">
+                                            <input type="text" class="form-control"
+                                                   localized-placeholder="search.placeholder.application"
+                                                   ng-model="paging.filterText"/>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <table class='table'>
+                                            <thead>
+                                            <tr>
+                                                <th localized>table.heading.application.name</th>
+                                                <th localized>table.heading.application.version</th>
+                                                <th localized>table.heading.application.actions</th>
+                                                <th localized>table.heading.application.label</th>
+                                                <th localized>table.heading.application.order</th>
+                                                <th>&nbsp;</th>
+                                            </tr>
+                                            </thead>
+                                            <tbody>
+                                            <tr class="app-desc" ng-repeat="application in filterData = (applications | orderBy: sort.by | filter : filterApps).slice(((paging.currentPage-1)*paging.pageSize), ((paging.currentPage)*paging.pageSize))">
+                                                <td class="app-desc">{{application.name}}<span ng-if="pkgInfoVisible(application)"><br>{{application.pkg}}</span></td>
+                                                <td ng-if="pkgInfoVisible(application)">
+                                                    <a ng-if="application.action == 1" class="action-link" ng-click="selectVersion(application)">
+                                                        {{application.version}}
+                                                    </a>
+                                                    <span class="glyphicon glyphicon-exclamation-sign" style="color:orange" ng-if="application.action == 1 && splitApkWarning(application)" title="{{splitApkWarning(application)}}"></span>
+
+                                                    <span ng-if="application.outdated && application.action == 1 && !upgrading"><br>
+                                                    <a class="version-management-link version-upgrade-link" ng-click="upgradeApp(application)" localized>button.upgrade</a></span>
+
+                                                    <span ng-if="application.action != 1">{{application.version}}</span>
+                                                </td>
+                                                <td ng-if="!pkgInfoVisible(application)"></td>
+                                                <td>
+                                                    <select ng-model="application.action" name="action{{application.id}}"
+                                                            ng-change="actionChanged(application)"
+                                                            class="form-control">
+                                                        <option ng-value="1" ng-selected="application.action == 1"
+                                                                ng-if="!isInstallOptionAvailable(application)"
+                                                                localized>form.configuration.apps.action.permit</option>
+                                                        <option ng-value="1" ng-selected="application.action == 1"
+                                                                ng-if="isInstallOptionAvailable(application)"
+                                                                localized>form.configuration.apps.action.install</option>
+                                                        <option ng-value="0" ng-selected="application.action == 0"
+                                                                ng-if="!isInstallOptionAvailable(application)"
+                                                                localized>form.configuration.apps.action.prohibit</option>
+                                                        <option ng-value="0" ng-selected="application.action == 0"
+                                                                ng-if="isInstallOptionAvailable(application)"
+                                                                localized>form.configuration.apps.action.not.install</option>
+                                                        <option ng-value="2" ng-selected="application.action == 2"
+                                                                ng-if="isRemoveOptionAvailable(application)"
+                                                                localized>form.configuration.apps.action.delete</option>
+                                                    </select>
+                                                </td>
+                                                <td>
+                                                    <select ng-model="application.showIcon" name="showLabel{{application.id}}"
+                                                            ng-options="value.id as value.label for value in showIconSelectOptions"
+                                                            ng-if="application.action == 1" class="form-control">
+                                                    </select>
+                                                </td>
+                                                <td>
+                                                    <input class="form-control" style="width: 80px" ng-if="application.action == 1 && application.showIcon == 1"
+                                                           ng-model="application.screenOrder" type="number">
+                                                </td>
+                                                <td>
+                                                    <button style="margin-top: 3px" ng-if="application.action == 1 && application.showIcon == 1"
+                                                            localized-title="form.configuration.apps.edit.details"
+                                                            type='button' class='btn btn-default' ng-click='editDetails(application)'>
+                                                        <span class='glyphicon glyphicon-option-horizontal'></span>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+
+                                <div class="text-center"
+                                     ng-if="(applications | filter : filterApps).length > paging.pageSize">
+                                    <pagination ng-if="sort.by === 'name'"
+                                                boundary-links='true' class='pagination-sm'
+                                                max-size='3'
+                                                ng-model='paging.currentPage'
+                                                total-items='(applications | filter : filterApps).length'
+                                                items-per-page='paging.pageSize'
+                                                previous-text='&lsaquo;' next-text='&rsaquo;' first-text='&laquo;'
+                                                last-text='&raquo;'></pagination>
+                                    <pagination ng-if="sort.by === 'pkg'"
+                                                boundary-links='true' class='pagination-sm'
+                                                max-size='3'
+                                                ng-model='paging.currentPage'
+                                                total-items='(applications | filter : filterApps).length'
+                                                items-per-page='paging.pageSize'
+                                                previous-text='&lsaquo;' next-text='&rsaquo;' first-text='&laquo;'
+                                                last-text='&raquo;'></pagination>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+
+                    <div class="configuration-hint" localized>form.configuration.apps.hint</div>
+
+
+                    <div class="config-bottom">&nbsp;</div>
+                    <div class='form-group'>
+                        <div class='config-save'>
+                            <button type='submit' class='btn btn-default {{saveButtonClass()}}' ng-click='save(false)' localized>button.save</button>
+                            <button type='submit' class='btn btn-default' ng-click='save(true)' localized>button.save.and.close</button>
+                            <button type='button' class='btn btn-default' ng-click='close()' localized>button.cancel</button>
+                        </div>
+                    </div>
+
+                </tab>
+
+                <!-- MDM SETTINGS -->
+                <tab>
+
+                    <tab-heading localized>tab.configeditor.mdm.settings</tab-heading>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.mdm.kiosk.mode</label>
+                        <div class='col-sm-1'>
+                            <input ng-model='configuration.kioskMode' name="mdm3" type='checkbox' class='form-control'/>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.mdm.app.main</label>
+                        <div class='col-sm-9'>
+                            <input type="text" maxlength="512" name="mdm1"
+                                   ng-model="mainApp"
+                                   autocomplete="off"
+                                   localized-placeholder="search.placeholder.application"
+                                   class="form-control"
+                                   typeahead="app as (app.name + (app.version && app.version !== '0' ? ' ' + app.version : '')) for app in getApps($viewValue)"
+                                   typeahead-loading="loadingApps"
+                                   typeahead-wait-ms="300"
+                                   typeahead-input-formatter="appLookupFormatter($model)"
+                                   typeahead-focus-first="false"
+                                   typeahead-on-select="onMainAppSelected($item)"
+                                   typeahead-no-results="noResults">
+                            <span>{{trackMainApp(mainApp.id > 0)}}</span>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.mdm.component.event.receiver</label>
+                        <div class='col-sm-9'>
+                            <input ng-model='configuration.eventReceivingComponent'
+                                   name="mdm2" type='text' class='form-control' maxlength="512"
+                                   localized-placeholder='form.configuration.settings.mdm.component.event.receiver.placeholder'/>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.mdm.app.content</label>
+                        <div class='col-sm-9'>
+                            <input type="text" maxlength="512" name="mdm4" ng-disabled="!configuration.kioskMode"
+                                   autocomplete="off"
+                                   ng-model="contentApp"
+                                   localized-placeholder="search.placeholder.application"
+                                   class="form-control"
+                                   typeahead="app as (app.name + (app.version && app.version !== '0' ? ' ' + app.version : '')) for app in getApps($viewValue)"
+                                   typeahead-loading="loadingApps"
+                                   typeahead-wait-ms="300"
+                                   typeahead-input-formatter="appLookupFormatter($model)"
+                                   typeahead-focus-first="false"
+                                   typeahead-on-select="onContentAppSelected($item)"
+                                   typeahead-no-results="noResults2">
+                            <span>{{trackContentApp(contentApp.id > 0)}}</span>
+                        </div>
+                    </div>
+
+
+                    <div ng-if="configuration.kioskMode">
+                        <div class='form-group'>
+                            <label class='col-sm-3 control-label' localized>form.configuration.settings.mdm.kiosk.home</label>
+                            <div class='col-sm-1'>
+                                <input ng-model='configuration.kioskHome' name="kioskHome" type='checkbox' class='form-control'/>
+                            </div>
+                        </div>
+                        <div class='form-group'>
+                            <label class='col-sm-3 control-label' localized>form.configuration.settings.mdm.kiosk.recents</label>
+                            <div class='col-sm-1'>
+                                <input ng-model='configuration.kioskRecents' name="kioskRecents" type='checkbox' class='form-control'/>
+                            </div>
+                        </div>
+                        <div class='form-group'>
+                            <label class='col-sm-3 control-label' localized>form.configuration.settings.mdm.kiosk.notifications</label>
+                            <div class='col-sm-1'>
+                                <input ng-model='configuration.kioskNotifications' name="kioskNotifications" type='checkbox' class='form-control'/>
+                            </div>
+                        </div>
+                        <div class='form-group'>
+                            <label class='col-sm-3 control-label' localized>form.configuration.settings.mdm.kiosk.system.info</label>
+                            <div class='col-sm-1'>
+                                <input ng-model='configuration.kioskSystemInfo' name="kioskSystemInfo" type='checkbox' class='form-control'/>
+                            </div>
+                        </div>
+                        <div class='form-group'>
+                            <label class='col-sm-3 control-label' localized>form.configuration.settings.mdm.kiosk.keyguard</label>
+                            <div class='col-sm-1'>
+                                <input ng-model='configuration.kioskKeyguard' name="kioskKeyguard" type='checkbox' class='form-control'/>
+                            </div>
+                        </div>
+                        <div class='form-group'>
+                            <label class='col-sm-3 control-label' localized>form.configuration.settings.mdm.kiosk.lock.buttons</label>
+                            <div class='col-sm-1'>
+                                <input ng-model='configuration.kioskLockButtons' name="kioskLockButtons" type='checkbox' class='form-control'/>
+                            </div>
+                        </div>
+                        <div class='form-group'>
+                            <label class='col-sm-3 control-label' localized>form.configuration.settings.mdm.kiosk.exit</label>
+                            <div class='col-sm-1'>
+                                <input ng-model='configuration.kioskExit' name="kioskExit" type='checkbox' class='form-control'/>
+                            </div>
+                        </div>
+                        <div class='form-group'>
+                            <label class='col-sm-3 control-label' localized>form.configuration.settings.mdm.kiosk.screen</label>
+                            <div class='col-sm-1'>
+                                <input ng-model='configuration.kioskScreenOn' name="kioskScreenOn" type='checkbox' class='form-control'/>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.mdm.component.wifi.ssid</label>
+                        <div class='col-sm-9'>
+                            <input ng-model='configuration.wifiSSID'
+                                   name="c_wifiSSID" type='text' class='form-control' maxlength="512"
+                                   localized-placeholder='form.configuration.settings.mdm.component.wifi.ssid.placeholder'/>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.mdm.component.wifi.password</label>
+                        <div class='col-sm-9'>
+                            <input ng-model='configuration.wifiPassword'
+                                   name="c_wifiPassword" type='text' class='form-control' maxlength="512"
+                                   localized-placeholder='form.configuration.settings.mdm.component.wifi.password.placeholder'/>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.mdm.component.wifi.security</label>
+                        <div class='col-sm-9'>
+                            <select class='form-control' id="wifiSecurityType" name="c_wifiSecurityType"
+                                    ng-model='configuration.wifiSecurityType'>
+                                <option ng-value="'WPA'" ng-selected="configuration.wifiSecurityType === 'WPA'">WPA</option>
+                                <option ng-value="'WEP'" ng-selected="configuration.wifiSecurityType === 'WEP'">WEP</option>
+                                <option ng-value="'EAP'" ng-selected="configuration.wifiSecurityType === 'EAP'">EAP</option>
+                                <option ng-value="'NONE'" ng-selected="configuration.wifiSecurityType === 'NONE'">NONE</option>
+                            </select>
+                            <p class="field-hint" localized>form.configuration.settings.mdm.component.wifi.notice</p>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.mdm.launcher</label>
+                        <div class='col-sm-9'>
+                            <input ng-model='configuration.launcherUrl'
+                                   name="c_launcherUrl" type='text' class='form-control'
+                                   localized-placeholder='form.configuration.settings.mdm.launcher.placeholder'/>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label'><span localized>form.configuration.settings.mdm.misc</span></label>
+                        <div class='col-sm-9'>
+                          <textarea ng-model='configuration.qrParameters' name="qrParameters-c"
+                                    class='form-control'
+                                    localized-placeholder='form.configuration.settings.mdm.misc.placeholder'></textarea>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label'><span localized>form.configuration.settings.mdm.extras</span></label>
+                        <div class='col-sm-9'>
+                          <textarea ng-model='configuration.adminExtras' name="adminExtras-c"
+                                    class='form-control'
+                                    localized-placeholder='form.configuration.settings.mdm.extras.placeholder'></textarea>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.mdm.mobile.enrollment</label>
+                        <div class='col-sm-1'>
+                            <input ng-model='configuration.mobileEnrollment' name="mobileEnrollment-c" type='checkbox' class='form-control'/>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.mdm.encrypt.device</label>
+                        <div class='col-sm-1'>
+                            <input ng-model='configuration.encryptDevice' name="encryptDevice-c" type='checkbox' class='form-control'/>
+                        </div>
+                    </div>
+
+                    <div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.mdm.permissive</label>
+                        <div class='col-sm-1'>
+                            <input ng-model='configuration.permissive' name="permissive-c" type='checkbox' class='form-control'
+                                   ng-disabled="configuration.kioskMode"
+                                   ng-attr-title="{{ configuration.kioskMode ? localizePermissiveLockedTitle : '' }}"/>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.mdm.lock.safe.settings</label>
+                        <div class='col-sm-1'>
+                            <input ng-model='configuration.lockSafeSettings'
+                                   ng-disabled="configuration.permissive"
+                                   name="lockSafeSettings-c" type='checkbox' class='form-control'/>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.mdm.allowed.classes</label>
+                        <div class='col-sm-9'>
+                          <textarea ng-model='configuration.allowedClasses' name="allowedClasses-c"
+                                    ng-disabled="configuration.permissive"
+                                    class='form-control'
+                                    localized-placeholder='form.configuration.settings.mdm.allowed.classes.placeholder'></textarea>
+                        </div>
+                    </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label'><span localized>form.configuration.settings.mdm.restrictions</span><br><a href="https://developer.android.com/reference/android/os/UserManager" target="_blank" localized>button.more</a></label>
+                        <div class='col-sm-9'>
+                          <textarea ng-model='configuration.restrictions' name="restrictions-c"
+                                    ng-disabled="configuration.permissive"
+                                    class='form-control'
+                                    localized-placeholder='form.configuration.settings.mdm.restrictions.placeholder'></textarea>
+                        </div>
+                    </div>
+
+                    <div class='form-group'>
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.mdm.component.server.url</label>
+                        <div class='col-sm-9'>
+                            <input ng-model='configuration.newServerUrl'
+                                   name="c_newServerUrl" type='text' class='form-control' maxlength="512"
+                                   localized-placeholder='form.configuration.settings.mdm.component.server.url.placeholder'/>
+                        </div>
+                    </div>
+
+                    <div class='form-group' ng-if="configuration.id">
+                        <label class='col-sm-3 control-label' localized>form.configuration.settings.mdm.qrcode.url</label>
+                        <div class='col-sm-9'>
+                            <span ng-if="mainApp.id > 0 && configuration.eventReceivingComponent">
+                                <a href="{{configuration.baseUrl}}/#/qr/{{configuration.qrCodeKey}}/" target="_blank">
+                                {{configuration.baseUrl}}/#/qr/{{configuration.qrCodeKey}}/</a></span>
+                            <span ng-if="!(mainApp.id > 0 && configuration.eventReceivingComponent)" localized>form.configuration.settings.mdm.hint</span>
+                        </div>
+                    </div>
+
+                    <div class="config-bottom">&nbsp;</div>
+                    <div class='form-group'>
+                        <div class='config-save'>
+                            <button type='submit' class='btn btn-default {{saveButtonClass()}}' ng-click='save(false)' localized>button.save</button>
+                            <button type='submit' class='btn btn-default' ng-click='save(true)' localized>button.save.and.close</button>
+                            <button type='button' class='btn btn-default' ng-click='close()' localized>button.cancel</button>
+                        </div>
+                    </div>
+                </tab>
+
+                <!-- APP SETTINGS -->
+                <tab>
+                    <tab-heading localized>tab.configeditor.app.settings</tab-heading>
+
+                    <div class="form-group">
+                        <div class="col-sm-12">
+                            <div class="panel panel-default">
+                                <div class="text-center" ng-if="applicationSettings.length > settingsPaging.pageSize">
+                                    <pagination
+                                                boundary-links='true' class='pagination-sm'
+                                                max-size='3'
+                                                ng-model='settingsPaging.currentPage'
+                                                total-items='applicationSettings.length'
+                                                items-per-page='settingsPaging.pageSize'
+                                                previous-text='&lsaquo;' next-text='&rsaquo;' first-text='&laquo;'
+                                                last-text='&raquo;'></pagination>
+                                </div>
+
+                                <div class="panel-body">
+                                    <div class="row">
+                                        <div class="col-sm-1" localized>form.configuration.apps.search.label</div>
+                                        <div class="col-sm-4">
+
+                                            <input type="text" maxlength="512" name="mdm1"
+                                                   ng-model="settingsPaging.appSettingsFilterApp"
+                                                   ng-change="appSettingsFilterChanged()"
+                                                   autocomplete="off"
+                                                   localized-placeholder="search.placeholder.application"
+                                                   class="form-control"
+                                                   typeahead="app as (app.pkg) for app in getAppSettingsApps($viewValue)"
+                                                   typeahead-loading="loadingApps"
+                                                   typeahead-wait-ms="300"
+                                                   typeahead-input-formatter="appSettingsAppLookupFormatter($model)"
+                                                   typeahead-focus-first="false"
+                                                   typeahead-on-select="onAppSettingsFilterAppSelected($item)"
+                                                   typeahead-no-results="noResults">
+                                        </div>
+                                        <div class="col-sm-5">
+                                            <input type="text" class="form-control"
+                                                   ng-change="appSettingsFilterChanged()"
+                                                   localized-placeholder="search.placeholder.application.setting"
+                                                   ng-model="settingsPaging.appSettingsFilterText"/>
+                                        </div>
+                                        <div class="col-sm-2 text-right">
+                                            <button type="button" class="btn btn-default"
+                                                    ng-click="addApplicationSetting()"
+                                                    localized>button.add</button>
+                                        </div>
+                                    </div>
+
+                                </div>
+
+                                <table class='table'>
+                                    <thead>
+                                    <tr>
+                                        <th localized>table.heading.application.setting.app.pkg</th>
+                                        <th localized>table.heading.application.setting.app.name</th>
+                                        <th localized>table.heading.application.setting.name</th>
+                                        <th localized>table.heading.application.setting.value</th>
+                                        <th localized>table.heading.application.setting.comment</th>
+                                        <th localized>table.heading.application.setting.lastUpdate</th>
+                                        <th localized class="actions-column-110"></th>
+                                    </tr>
+                                    </thead>
+                                    <tbody>
+                                    <tr ng-repeat="setting in applicationSettings | orderBy:'applicationPkg'">
+                                        <td>{{setting.applicationPkg}}</td>
+                                        <td>{{setting.applicationName}}</td>
+                                        <td>{{setting.name}}</td>
+                                        <td>{{setting.value}}</td>
+                                        <td>{{setting.comment}}</td>
+                                        <td>{{setting.lastUpdate | date: 'dd/MM/yyyy HH:mm:ss'}}</td>
+                                        <td>
+                                            <div>
+                                                <button class="btn btn-default" ng-click="editApplicationSetting(setting)">
+                                                    <span class="glyphicon glyphicon-pencil"></span>
+                                                </button>
+                                                <button class="btn btn-default" ng-click="removeApplicationSetting(setting)">
+                                                    <span class="glyphicon glyphicon-trash"></span>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    </tbody>
+                                </table>
+
+
+                                <div class="text-center" ng-if="applicationSettings.length > settingsPaging.pageSize">
+                                    <pagination
+                                            boundary-links='true' class='pagination-sm'
+                                            max-size='3'
+                                            ng-model='settingsPaging.currentPage'
+                                            total-items='applicationSettings.length'
+                                            items-per-page='settingsPaging.pageSize'
+                                            previous-text='&lsaquo;' next-text='&rsaquo;' first-text='&laquo;'
+                                            last-text='&raquo;'></pagination>
+                                </div>
+
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="config-bottom">&nbsp;</div>
+                    <div class='form-group'>
+                        <div class='config-save'>
+                            <button type='submit' class='btn btn-default {{saveButtonClass()}}' ng-click='save(false)' localized>button.save</button>
+                            <button type='submit' class='btn btn-default' ng-click='save(true)' localized>button.save.and.close</button>
+                            <button type='button' class='btn btn-default' ng-click='close()' localized>button.cancel</button>
+                        </div>
+                    </div>
+
+                </tab>
+
+                <!-- FILES -->
+                <tab>
+                    <tab-heading localized>tab.configeditor.files</tab-heading>
+
+                    <div class='form-group' style="padding-top: 5px">
+                        <label class='col-sm-4 control-label' localized>form.configuration.settings.files.default.path</label>
+                        <div class='col-sm-6' style="padding-right: 25px">
+                            <input ng-model='configuration.defaultFilePath' name="defaultFilePath"
+                                   type='text' class='form-control'
+                                   localized-placeholder='form.configuration.file.path.placeholder'>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <div class="col-sm-12">
+                            <div class="panel panel-default">
+                                <div class="text-center" ng-if="files.length > filesPaging.pageSize">
+                                    <pagination
+                                            boundary-links='true' class='pagination-sm'
+                                            max-size='3'
+                                            ng-model='filesPaging.currentPage'
+                                            total-items='files.length'
+                                            items-per-page='filesPaging.pageSize'
+                                            previous-text='&lsaquo;' next-text='&rsaquo;' first-text='&laquo;'
+                                            last-text='&raquo;'></pagination>
+                                </div>
+
+                                <div class="panel-body">
+                                    <div class="row">
+                                        <div class="col-sm-1" localized>form.configuration.files.search.label</div>
+                                        <div class="col-sm-9">
+                                            <input type="text" class="form-control"
+                                                   ng-change="filesFilterChanged()"
+                                                   localized-placeholder="search.placeholder.file"
+                                                   ng-model="filesPaging.filesFilterText"/>
+                                        </div>
+                                        <div class="col-sm-2 text-right">
+                                            <button type="button" class="btn btn-default" ng-click="editFile({})"
+                                                    localized>button.add</button>
+                                        </div>
+                                    </div>
+
+                                </div>
+
+                                <table class='table'>
+                                    <thead>
+                                    <tr>
+                                        <th localized>table.heading.file.url</th>
+                                        <th localized>table.heading.file.description</th>
+                                        <th localized>table.heading.file.devicepath</th>
+                                        <th localized>table.heading.file.variable</th>
+                                        <th localized>table.heading.file.remove</th>
+                                        <th localized class="actions-column-110"></th>
+                                    </tr>
+                                    </thead>
+                                    <tbody>
+                                    <tr ng-repeat="file in files | orderBy:'name' | limitTo:filesPaging.pageSize:(filesPaging.currentPage-1)*filesPaging.pageSize">
+                                        <td>{{file.url}}</td>
+                                        <td>{{file.description}}</td>
+                                        <td>{{file.path}}</td>
+                                        <td>{{file.replaceVariables ? '✓' : ''}}</td>
+                                        <td style="text-align: center; padding-top: 11px"><input type="checkbox" ng-model="file.remove"
+                                                                              localized-title="table.heading.file.remove.hint"></td>
+                                        <td class="text-right" style="padding-right: 16px">
+                                            <div>
+                                                <button class="btn btn-default" ng-click="editFile(file)">
+                                                    <span class="glyphicon glyphicon-pencil"></span>
+                                                </button>
+                                                <button class="btn btn-default" ng-click="removeFile(file)">
+                                                    <span class="glyphicon glyphicon-trash"></span>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    </tbody>
+                                </table>
+
+
+                                <div class="text-center" ng-if="files.length > filesPaging.pageSize">
+                                    <pagination
+                                            boundary-links='true' class='pagination-sm'
+                                            max-size='3'
+                                            ng-model='filesPaging.currentPage'
+                                            total-items='files.length'
+                                            items-per-page='filesPaging.pageSize'
+                                            previous-text='&lsaquo;' next-text='&rsaquo;' first-text='&laquo;'
+                                            last-text='&raquo;'></pagination>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="config-bottom">&nbsp;</div>
+
+                    <div class='form-group'>
+                        <div class='config-save'>
+                            <button type='submit' class='btn btn-default {{saveButtonClass()}}' ng-click='save(false)' localized>button.save</button>
+                            <button type='submit' class='btn btn-default' ng-click='save(true)' localized>button.save.and.close</button>
+                            <button type='button' class='btn btn-default' ng-click='close()' localized>button.cancel</button>
+                        </div>
+                    </div>
+
+                </tab>
+
+            </tabset>
+        </form>
+    </div>
+</div>

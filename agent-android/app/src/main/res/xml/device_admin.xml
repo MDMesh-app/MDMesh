@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Device-admin policy declaration for the custom DPC. As Device Owner the agent
+    gets the full DO API regardless, but these <uses-policies> are the admin
+    surface declared to the framework. Kept to what the scaffold exercises;
+    extended as policies land.
+-->
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android"
+    android:visible="false">
+    <uses-policies>
+        <wipe-data />
+        <reset-password />
+        <force-lock />
+        <disable-camera />
+        <disable-keyguard-features />
+        <limit-password />
+        <watch-login />
+        <set-global-proxy />
+        <expire-password />
+        <encrypted-storage />
+        <disable-account-management />
+    </uses-policies>
+</device-admin>

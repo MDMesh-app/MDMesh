@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdm.local/proto/v1/command-envelope.schema.json",
+  "title": "CommandEnvelope",
+  "description": "Server -> device. A single command. The server MUST NOT send a command whose requiresCapability is absent from the device's latest capability matrix.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["protocolVersion", "commandId", "type", "issuedAt"],
+  "properties": {
+    "protocolVersion": { "type": "string", "pattern": "^\\d+\\.\\d+$" },
+    "commandId": { "type": "string", "description": "UUID; idempotency key. Device must dedupe by this." },
+    "issuedAt": { "type": "string", "format": "date-time" },
+    "ttlSeconds": { "type": "integer", "minimum": 0, "description": "Drop if older than this when received. 0 = no expiry." },
+    "type": {
+      "type": "string",
+      "description": "Open registry (registry.md). Unknown types -> device replies status=unsupported.",
+      "examples": [
+        "policy.apply", "app.install", "app.uninstall", "app.launch",
+        "remote.startSession", "remote.stopSession",
+        "device.reboot", "device.lock", "config.sync"
+      ]
+    },
+    "requiresCapability": {
+      "type": "string",
+      "description": "Capability key the device must advertise. Server self-checks before sending."
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Type-specific. Schemas for each type live in payloads/ as the registry grows."
+    }
+  }
+}

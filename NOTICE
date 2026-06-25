@@ -1,0 +1,26 @@
+=========================================================================
+==  NOTICE file corresponding to the section 4 d of                    ==
+==  the Apache License, Version 2.0                                    ==
+=========================================================================
+
+This product is a derivative work based on Headwind MDM (Apache-2.0).
+
+-------------------------------------------------------------------------
+Upstream attribution (retained per Apache-2.0 section 4d):
+
+  Headwind MDM: Open Source Android Mobile Device Management Software
+  Project website: https://h-mdm.com
+  (c) 2021 Vsevolod A. Mayorov (https://h-mdm.com)
+
+  "Headwind" and "Headwind MDM" are names/marks of the upstream project and
+  are NOT used as the name of this product (Apache-2.0 section 6).
+
+-------------------------------------------------------------------------
+This product and its modifications:
+
+  (c) 2026 the project maintainers.
+
+  New components (the Kotlin device agent under agent-android/, the protocol
+  under proto/, the web admin under web/, and the agent v1 server endpoints)
+  are original works. Files derived from the upstream retain their original
+  Apache-2.0 headers; modifications are tracked in the git history.

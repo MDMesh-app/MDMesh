@@ -1,0 +1,225 @@
+<!-- Localization completed -->
+<div class="width-1000" ng-controller="SettingsTabController" ng-init="initCommonSettings()">
+    <div class="text-center">
+        <h4 localized>form.settings.common.visible.columns</h4>
+    </div>
+
+    <div>
+        <form class='form-horizontal'>
+            <div class='form-group'>
+                <div ng-show='errorMessage' class='error'><span>{{errorMessage}}</span></div>
+                <div ng-show='successMessage' class='success'><span>{{successMessage}}</span></div>
+            </div>
+
+            <div class="form-group">
+                <label class='col-sm-6 control-label' for="c1" localized>form.settings.common.role</label>
+                <div class='col-sm-6'>
+                    <select class='form-control' ng-disabled="loading"
+                            ng-model='formData.userRoleId'
+                            ng-change="userRoleChanged()"
+                            ng-options="role.id as role.name for role in userRoles">
+                    </select>
+                </div>
+            </div>
+
+            <div class='form-group'>
+                <label class='col-sm-6 control-label' for="c1" localized>form.settings.common.status</label>
+                <div class='col-sm-1'>
+                    <input id="c1" ng-model='userRoleSettings.columnDisplayedDeviceStatus' ng-disabled="loading"
+                           type='checkbox' class='form-control'/>
+                </div>
+            </div>
+
+            <div class='form-group'>
+                <label class='col-sm-6 control-label' for="c2" localized>form.settings.common.date</label>
+                <div class='col-sm-1'>
+                    <input id="c2" ng-model='userRoleSettings.columnDisplayedDeviceDate' ng-disabled="loading"
+                           type='checkbox' class='form-control'/>
+                </div>
+            </div>
+
+            <div class='form-group'>
+                <label class='col-sm-6 control-label' for="c3" localized>form.settings.common.device.number</label>
+                <div class='col-sm-1'>
+                    <input id="c3" ng-model='userRoleSettings.columnDisplayedDeviceNumber' ng-disabled="loading"
+                           type='checkbox' class='form-control'/>
+                </div>
+            </div>
+
+            <div class='form-group'>
+                <label class='col-sm-6 control-label' for="c8" localized>form.settings.common.imei</label>
+                <div class='col-sm-1'>
+                    <input id="c8" ng-model='userRoleSettings.columnDisplayedDeviceImei' ng-disabled="loading"
+                           type='checkbox' class='form-control'/>
+                </div>
+            </div>
+
+            <div class='form-group'>
+                <label class='col-sm-6 control-label' for="c9" localized>form.settings.common.phone.number</label>
+                <div class='col-sm-1'>
+                    <input id="c9" ng-model='userRoleSettings.columnDisplayedDevicePhone' ng-disabled="loading"
+                           type='checkbox' class='form-control'/>
+                </div>
+            </div>
+
+            <div class='form-group'>
+                <label class='col-sm-6 control-label' for="c4" localized>form.settings.common.phone.model</label>
+                <div class='col-sm-1'>
+                    <input id="c4" ng-model='userRoleSettings.columnDisplayedDeviceModel' ng-disabled="loading"
+                           type='checkbox' class='form-control'/>
+                </div>
+            </div>
+
+            <div class='form-group'>
+                <label class='col-sm-6 control-label' for="c5" localized>form.settings.common.status.permissions</label>
+                <div class='col-sm-1'>
+                    <input id="c5" ng-model='userRoleSettings.columnDisplayedDevicePermissionsStatus' ng-disabled="loading"
+                           type='checkbox' class='form-control'/>
+                </div>
+            </div>
+
+            <div class='form-group'>
+                <label class='col-sm-6 control-label' for="c6" localized>form.settings.common.status.installation</label>
+                <div class='col-sm-1'>
+                    <input id="c6" ng-model='userRoleSettings.columnDisplayedDeviceAppInstallStatus' ng-disabled="loading"
+                           type='checkbox' class='form-control'/>
+                </div>
+            </div>
+
+            <div class='form-group'>
+                <label class='col-sm-6 control-label' for="c6-1" localized>form.settings.common.status.files</label>
+                <div class='col-sm-1'>
+                    <input id="c6-1" ng-model='userRoleSettings.columnDisplayedDeviceFilesStatus' ng-disabled="loading"
+                           type='checkbox' class='form-control'/>
+                </div>
+            </div>
+
+            <div class='form-group'>
+                <label class='col-sm-6 control-label' for="c7" localized>form.settings.common.config</label>
+                <div class='col-sm-1'>
+                    <input id="c7" ng-model='userRoleSettings.columnDisplayedDeviceConfiguration' ng-disabled="loading"
+                           type='checkbox' class='form-control'/>
+                </div>
+            </div>
+
+            <div class='form-group'>
+                <label class='col-sm-6 control-label' for="c10" localized>form.settings.common.desc</label>
+                <div class='col-sm-1'>
+                    <input id="c10" ng-model='userRoleSettings.columnDisplayedDeviceDesc' ng-disabled="loading"
+                           type='checkbox' class='form-control'/>
+                </div>
+            </div>
+
+            <div class='form-group'>
+                <label class='col-sm-6 control-label' for="c11" localized>form.settings.common.group</label>
+                <div class='col-sm-1'>
+                    <input id="c11" ng-model='userRoleSettings.columnDisplayedDeviceGroup' ng-disabled="loading"
+                           type='checkbox' class='form-control'/>
+                </div>
+            </div>
+
+            <div class='form-group'>
+                <label class='col-sm-6 control-label' for="c112" localized>form.settings.common.launcher.version</label>
+                <div class='col-sm-1'>
+                    <input id="c112" ng-model='userRoleSettings.columnDisplayedLauncherVersion' ng-disabled="loading"
+                           type='checkbox' class='form-control'/>
+                </div>
+            </div>
+
+            <div class='form-group'>
+                <label class='col-sm-6 control-label' for="c113" localized>form.settings.common.battery.level</label>
+                <div class='col-sm-1'>
+                    <input id="c113" ng-model='userRoleSettings.columnDisplayedBatteryLevel' ng-disabled="loading"
+                           type='checkbox' class='form-control'/>
+                </div>
+            </div>
+
+            <div class='form-group'>
+                <label class='col-sm-6 control-label' for="c114" localized>form.settings.common.mdm.mode</label>
+                <div class='col-sm-1'>
+                    <input id="c114" ng-model='userRoleSettings.columnDisplayedMdmMode' ng-disabled="loading"
+                           type='checkbox' class='form-control'/>
+                </div>
+            </div>
+
+            <div class='form-group'>
+                <label class='col-sm-6 control-label' for="c121" localized>form.settings.common.kiosk.mode</label>
+                <div class='col-sm-1'>
+                    <input id="c121" ng-model='userRoleSettings.columnDisplayedKioskMode' ng-disabled="loading"
+                           type='checkbox' class='form-control'/>
+                </div>
+            </div>
+
+            <div class='form-group'>
+                <label class='col-sm-6 control-label' for="c121" localized>form.settings.common.default.launcher</label>
+                <div class='col-sm-1'>
+                    <input id="c124" ng-model='userRoleSettings.columnDisplayedDefaultLauncher' ng-disabled="loading"
+                           type='checkbox' class='form-control'/>
+                </div>
+            </div>
+
+            <div class='form-group'>
+                <label class='col-sm-6 control-label' for="c118" localized>form.settings.common.android.version</label>
+                <div class='col-sm-1'>
+                    <input id="c118" ng-model='userRoleSettings.columnDisplayedAndroidVersion' ng-disabled="loading"
+                           type='checkbox' class='form-control'/>
+                </div>
+            </div>
+
+            <div class='form-group'>
+                <label class='col-sm-6 control-label' for="c120" localized>form.settings.common.enrollment.date</label>
+                <div class='col-sm-1'>
+                    <input id="c120" ng-model='userRoleSettings.columnDisplayedEnrollmentDate' ng-disabled="loading"
+                           type='checkbox' class='form-control'/>
+                </div>
+            </div>
+
+            <div class='form-group'>
+                <label class='col-sm-6 control-label' for="c122" localized>form.settings.common.serial</label>
+                <div class='col-sm-1'>
+                    <input id="c122" ng-model='userRoleSettings.columnDisplayedSerial' ng-disabled="loading"
+                           type='checkbox' class='form-control'/>
+                </div>
+            </div>
+
+            <div class='form-group'>
+                <label class='col-sm-6 control-label' for="c123" localized>form.settings.common.publicip</label>
+                <div class='col-sm-1'>
+                    <input id="c123" ng-model='userRoleSettings.columnDisplayedPublicIp' ng-disabled="loading"
+                           type='checkbox' class='form-control'/>
+                </div>
+            </div>
+
+            <div class='form-group' ng-if="settings.customPropertyName1">
+                <label class='col-sm-6 control-label' for="c115">{{settings.customPropertyName1}}</label>
+                <div class='col-sm-1'>
+                    <input id="c115" ng-model='userRoleSettings.columnDisplayedCustom1' ng-disabled="loading"
+                           type='checkbox' class='form-control'/>
+                </div>
+            </div>
+
+            <div class='form-group' ng-if="settings.customPropertyName2">
+                <label class='col-sm-6 control-label' for="c116">{{settings.customPropertyName2}}</label>
+                <div class='col-sm-1'>
+                    <input id="c116" ng-model='userRoleSettings.columnDisplayedCustom2' ng-disabled="loading"
+                           type='checkbox' class='form-control'/>
+                </div>
+            </div>
+
+            <div class='form-group' ng-if="settings.customPropertyName3">
+                <label class='col-sm-6 control-label' for="c117">{{settings.customPropertyName3}}</label>
+                <div class='col-sm-1'>
+                    <input id="c117" ng-model='userRoleSettings.columnDisplayedCustom3' ng-disabled="loading"
+                           type='checkbox' class='form-control'/>
+                </div>
+            </div>
+
+            <div class='form-group'>
+                <div class='col-sm-offset-6 col-sm-9 padding-left'>
+                    <button type='submit' class='btn btn-default' ng-disabled="loading"
+                            ng-click='saveCommonSettings()' localized>button.save</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>

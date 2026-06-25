@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdm.local/proto/v1/agent-checkin-response.schema.json",
+  "title": "AgentCheckInResponse",
+  "description": "The `data` payload of the Response envelope for POST /checkin.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["protocolVersion", "commands"],
+  "properties": {
+    "protocolVersion": { "type": "string", "pattern": "^\\d+\\.\\d+$" },
+    "commands": {
+      "type": "array",
+      "description": "Capability-gated commands for this device.",
+      "items": { "$ref": "command-envelope.schema.json" }
+    }
+  }
+}

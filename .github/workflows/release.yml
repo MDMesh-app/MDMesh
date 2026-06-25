@@ -1,0 +1,117 @@
+name: release
+
+# Cut a release:  git tag v1.2.3 && git push --tags
+# Produces a tested, signed GitHub Release: the release APK, server+web images on GHCR, and a
+# minisign-signed manifest the fleet updater consumes. Requires repo secrets (see RELEASING.md):
+# MDM_RELEASE_STORE_B64, MDM_RELEASE_STORE_PASSWORD, MDM_RELEASE_KEY_ALIAS, MDM_RELEASE_KEY_PASSWORD,
+# MINISIGN_SECRET_KEY, MINISIGN_PASSWORD.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Validate the tag as strict semver FIRST — the tag name is attacker-influencable input, and
+      # this guarantees VERSION is [0-9.] only before it ever reaches a shell/gradle/docker arg.
+      - name: Derive + validate versions
+        id: ver
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          V="${REF_NAME#v}"
+          echo "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "Tag must be vMAJOR.MINOR.PATCH (got '$REF_NAME')"; exit 1; }
+          {
+            echo "version=$V"
+            echo "code=$(release/version.sh "$V")"
+            echo "proto=$(grep -oP 'PROTOCOL_VERSION[^\"]*\"\K[^\"]+' agent-android/proto/src/main/kotlin/com/lunacy/mdm/proto/ProtocolJson.kt)"
+          } >> "$GITHUB_OUTPUT"
+
+      # --- Build + sign the release APK (gated by unit tests + R8 lintVital) ---
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10"
+      - name: Decode release keystore
+        env:
+          STORE_B64: ${{ secrets.MDM_RELEASE_STORE_B64 }}
+        run: printf '%s' "$STORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+      - name: Test + assemble signed release
+        working-directory: agent-android
+        env:
+          MDM_RELEASE_STORE_FILE: ${{ runner.temp }}/release.jks
+          MDM_RELEASE_STORE_PASSWORD: ${{ secrets.MDM_RELEASE_STORE_PASSWORD }}
+          MDM_RELEASE_KEY_ALIAS: ${{ secrets.MDM_RELEASE_KEY_ALIAS }}
+          MDM_RELEASE_KEY_PASSWORD: ${{ secrets.MDM_RELEASE_KEY_PASSWORD }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          CODE: ${{ steps.ver.outputs.code }}
+        run: |
+          gradle --no-daemon :proto:test :core:test :app:assembleRelease \
+            -PmdmBaseUrl=https://mdm.example.com/ \
+            -PversionName="$VERSION" -PversionCode="$CODE"
+      - name: Stage APK + compute checksum
+        run: |
+          cp agent-android/app/build/outputs/apk/release/app-release.apk mdmesh-agent.apk
+          echo "CK=$(release/apk-checksum.sh mdmesh-agent.apk)" >> "$GITHUB_ENV"
+
+      # --- Build + push images to GHCR ---
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Server image
+        env:
+          OWNER: ${{ github.repository_owner }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          IMG="ghcr.io/${OWNER}/mdmesh-server:${VERSION}"
+          docker build -f docker/server.Dockerfile -t "$IMG" .
+          docker push "$IMG"
+          echo "SERVER_IMG=$IMG" >> "$GITHUB_ENV"
+      - name: Web image (bake release QR checksum/package)
+        env:
+          OWNER: ${{ github.repository_owner }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          IMG="ghcr.io/${OWNER}/mdmesh-web:${VERSION}"
+          docker build -f docker/web.Dockerfile \
+            --build-arg VITE_AGENT_PACKAGE=com.mdmesh.agent \
+            --build-arg VITE_AGENT_CHECKSUM="$CK" \
+            -t "$IMG" .
+          docker push "$IMG"
+          echo "WEB_IMG=$IMG" >> "$GITHUB_ENV"
+
+      # --- Manifest: build + sign ---
+      - name: Build + sign manifest
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+          MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          CODE: ${{ steps.ver.outputs.code }}
+          PROTO: ${{ steps.ver.outputs.proto }}
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y minisign
+          release/build-manifest.sh "$VERSION" stable \
+            "$SERVER_IMG" "$WEB_IMG" mdmesh-agent.apk "$CODE" "$CK" "$PROTO"
+          release/sign-manifest.sh manifest.json
+
+      # --- Publish ---
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            mdmesh-agent.apk
+            manifest.json
+            manifest.json.minisig

@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Context>
+    <!-- database settings -->
+    <Parameter name="JDBC.driver"   value="${jdbc.driver}"/>
+    <Parameter name="JDBC.url"      value="${jdbc.url}"/>
+    <Parameter name="JDBC.username" value="${jdbc.username}"/>
+    <Parameter name="JDBC.password" value="${jdbc.password}"/>
+
+    <!-- This directory is used to as a base directory to store app data -->
+    <Parameter name="base.directory" value="${base.directory}"/>
+
+    <!-- files directory -->
+    <Parameter name="files.directory" value="${files.directory}"/>
+    <Parameter name="plugins.files.directory" value="${plugins.files.directory}"/>
+
+    <!-- base url -->
+    <Parameter name="base.url" value="${base.url}"/>
+
+    <Parameter name="usage.scenario" value="${usage.scenario}"/>
+
+    <!-- If set to 1, the device configuration request must be signed by a shared secret (setup in hash.secret and in the Android app) 
+         0 or empty value does not require request signature which is less secure -->
+    <Parameter name="secure.enrollment" value="${secure.enrollment}"/>
+    <Parameter name="hash.secret" value="${hash.secret}"/>
+
+    <Parameter name="role.orgadmin.id" value="${role.orgadmin.id}"/>
+
+    <!-- A path to a file to be created by the application initializer to signal on initialization completion -->
+    <Parameter name="initialization.completion.signal.file" value="${initialization.completion.signal.file}"/>
+
+    <Parameter name="plugin.devicelog.persistence.config.class" value="${plugin.devicelog.persistence.config.class}"/>
+
+    <Parameter name="aapt.command" value="${aapt.command}"/>
+
+    <Parameter name="log4j.config" value="${log4j.config}"/>
+
+    <Parameter name="plugin.photo.enable.places" value="${plugin.photo.enable.places}"/>
+
+    <!-- If Headwind MDM uses an embedded MQTT broker, this parameter is a
+    local address to which the server binds to listen on port 31000
+    (MQTT for Push notifications), for example, demo.h-mdm.com:31000
+    If an external MQTT server is used, this is the address of this MQTT server
+    -->
+    <Parameter name="mqtt.server.uri" value="${mqtt.server.uri}"/>
+
+    <!-- Fast device search by last characters, here's the length -->
+    <Parameter name="device.fast.search.chars" value="${device.fast.search.chars}"/>
+
+    <!-- Set to 1 if an external MQTT server must be used (ActiveMQ Classic is recommended) -->
+    <Parameter name="mqtt.external" value="${mqtt.external}"/>
+
+    <!-- Optional tag for the MQTT client (required if multiple Tomcat nodes are running) -->
+    <Parameter name="mqtt.client.tag" value="${mqtt.client.tag}"/>
+
+    <!-- Optional tag for MQTT authentication for more security 
+         (supported by Headwind MDM launcher v5.05 and above) -->
+    <Parameter name="mqtt.auth" value="${mqtt.auth}"/>
+
+    <!-- Optional tag for delaying MQTT messages in milliseconds
+     to avoid congestion when all devices are updating configuration at the same time -->
+    <Parameter name="mqtt.message.delay" value="${mqtt.message.delay}"/>
+
+    <!-- Display X-Forwarded-For instead of source IP -->
+    <Parameter name="plugin.audit.display.forwarded.ip" value="${plugin.audit.display.forwarded.ip}"/>
+
+    <!-- Email parameters are necessary for password recovery -->
+    <Parameter name="smtp.host" value="${smtp.host}"/>
+    <Parameter name="smtp.port" value="${smtp.port}"/>
+    <Parameter name="smtp.ssl" value="${smtp.ssl}"/>
+    <Parameter name="smtp.starttls" value="${smtp.starttls}"/>
+    <Parameter name="smtp.username" value="${smtp.username}"/>
+    <Parameter name="smtp.password" value="${smtp.password}"/>
+    <Parameter name="smtp.from" value="${smtp.from}"/>
+
+    <Parameter name="sql.init.script.path" value="${sql.init.script.path}"/>
+
+    <!-- If you have any reverse proxies, specify them here (IP addresses,
+    comma-separated) for correct logging of IP addresses -->
+    <!-- <Parameter name="proxy.addresses" value="${proxy.addresses}"/> -->
+
+    <!-- Name of the HTTP header containing the device IP address.
+    Defaults to X-Real-IP -->
+    <!-- <Parameter name="proxy.ip.header" value="${proxy.ip.header}"/> -->
+
+    <!-- JWT parameters are allow you to customise secret and validity token -->
+    <!-- <Parameter name="jwt.secretkey" value="${jwt.secretkey}"/> -->
+    <!-- <Parameter name="jwt.validity" value="${jwt.validity}"/> -->
+    <!-- <Parameter name="jwt.validityrememberme" value="${jwt.validityrememberme}"/> -->
+</Context>

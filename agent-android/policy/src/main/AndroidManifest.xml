@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    :policy is the capability-abstraction layer. It holds no components and no
+    permissions of its own — DevicePolicyManager is exercised by the host app
+    (the Device Owner). This manifest is intentionally empty.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" />

@@ -1,0 +1,26 @@
+<!-- Localization completed -->
+<nav class='navbar navbar-default navbar-fixed-top header'>
+    <div class='nav navbar-nav navbar-left logo-text'><a ng-click='mainPanel()'>{{appName}}</a></div>
+    <ul class='nav navbar-nav navbar-right'>
+        <li ng-if="expiryWarning"><a id='headerExpiryWarning' class="expiry-warning" localized-change-tracking>account.expired.short</a></li>
+        <li class='hide-on-small-screen'>
+            <a id='headerDateTime'>{{dateTime}}</a>
+        </li>
+        <li class='dropdown margin-right' uib-dropdown>
+            <a class='dropdown-toggle' uib-dropdown-toggle role='button' aria-expanded='false'>
+<!--                <span class='hide-on-small-screen username-tip' localized-change-tracking>header.label.username</span> -->
+                <span class='username-label'>{{getUserName()}}</span>
+                <span class='caret username-caret'></span>
+            </a>
+            <ul class='dropdown-menu' uib-dropdown-menu role='menu'>
+                <li><a ng-style='color' ng-click="about()" localized-change-tracking>menu.about</a></li>
+                <li><a ui-sref='profile' ng-style='color' localized-change-tracking>menu.profile</a></li>
+                <li ng-if="updatesAllowed()"><a ui-sref='updates' ng-style='color' localized-change-tracking>menu.updates</a></li>
+                <li ng-if="authService.isSuperAdmin() && !isControlPanel"><a ng-click='controlPanel()' localized-change-tracking>menu.panel.master</a></li>
+                <li ng-if="authService.isSuperAdmin() && isControlPanel"><a ng-click='mainPanel()' localized-change-tracking>menu.panel.main</a></li>
+                <li><a ng-click='logout()' localized-change-tracking>menu.logout</a></li>
+            </ul>
+        </li>
+    </ul>
+
+</nav>

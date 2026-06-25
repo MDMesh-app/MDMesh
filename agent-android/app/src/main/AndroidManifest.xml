@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Base app manifest. PERMISSION MINIMIZATION (Play Protect):
+      * NO READ_SMS, NO QUERY_ALL_PACKAGES.
+      * NO accessibility (that lives ONLY in :remote and merges in for builds
+        that include it).
+      * Package visibility is scoped via <queries>, not a blanket query-all.
+    Identity is the server-issued device id; we never request phone-state / IMEI.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Minimal permission set. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Keep the wake channel reachable while parked (request battery-optimization exemption). -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!-- Telemetry census (maximized; DO auto-grants the dangerous ones at provisioning). -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Report location while parked/backgrounded (Android 10+); DO auto-grants it at provisioning. -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
+    <!--
+        Package visibility. A Device-Owner fleet agent legitimately manages arbitrary
+        packages (silent uninstall, version checks, run-after-install), which needs broad
+        visibility. NOTE (ADR 0005): QUERY_ALL_PACKAGES trips Play Protect heuristics — fine
+        for a sideloaded DO agent, but for a Play-distributed build, scope this to explicit
+        <queries> package entries (or rely on DO PackageManager APIs) instead.
+    -->
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
+    <application
+        android:name=".MdmApplication"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.MdmAgent"
+        tools:targetApi="35">
+
+        <!-- App-drawer status screen (real managed state). Not HOME — the kiosk launcher owns HOME. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:lockTaskMode="if_whitelisted">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Custom kiosk launcher. NOT a permanent HOME — the HOME claim lives on the alias below,
+             which is toggled on only while in kiosk, so the device uses its normal OEM launcher the
+             rest of the time. -->
+        <activity
+            android:name=".KioskLauncherActivity"
+            android:exported="true"
+            android:launchMode="singleInstance"
+            android:excludeFromRecents="true"
+            android:stateNotNeeded="true"
+            android:lockTaskMode="if_whitelisted" />
+
+        <!-- HOME claim, disabled by default. kiosk.enter enables it + pins it as the persistent
+             preferred HOME; kiosk.exit disables it so HOME falls back to the OEM launcher. -->
+        <activity-alias
+            android:name=".KioskHomeAlias"
+            android:targetActivity=".KioskLauncherActivity"
+            android:exported="true"
+            android:enabled="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- Provisioning: choose fully-managed device during DPC setup. -->
+        <activity
+            android:name=".provisioning.GetProvisioningModeActivity"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <intent-filter>
+                <action android:name="android.app.action.GET_PROVISIONING_MODE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- Provisioning: post-setup policy compliance gate. -->
+        <activity
+            android:name=".provisioning.AdminPolicyComplianceActivity"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <intent-filter>
+                <action android:name="android.app.action.ADMIN_POLICY_COMPLIANCE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- Device Owner / Device Admin receiver. -->
+        <receiver
+            android:name=".admin.AdminReceiver"
+            android:description="@string/device_admin_description"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+                <action android:name="android.app.action.PROFILE_PROVISIONING_COMPLETE" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Foreground service that owns the check-in lifecycle. -->
+        <service
+            android:name=".service.CheckInService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- PackageInstaller commit results land here (explicit, non-exported). -->
+        <receiver
+            android:name=".install.InstallResultReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.mdmesh.INSTALL_RESULT" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Restart the wake-to-sync service after boot or a self-update (so a parked device
+             re-establishes its channel without anyone opening the app). -->
+        <receiver
+            android:name=".service.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Doze-proof reconcile heartbeat target (triggered by an explicit AlarmManager PendingIntent). -->
+        <receiver
+            android:name=".service.KeepAliveReceiver"
+            android:exported="false" />
+
+        <!-- App install/uninstall telemetry events. -->
+        <receiver
+            android:name=".service.PackageEventReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_ADDED" />
+                <action android:name="android.intent.action.PACKAGE_REMOVED" />
+                <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
+
+        <!-- WorkManager is initialized on-demand via Hilt (MdmApplication is a
+             Configuration.Provider), so disable the default auto-initializer. -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
+
+    </application>
+
+</manifest>

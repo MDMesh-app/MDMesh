@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdm.local/proto/v1/command-result.schema.json",
+  "title": "CommandResult",
+  "description": "Device -> server. Ack/outcome for a command. status=unsupported is how an older agent tells a newer server it doesn't know a command type.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["protocolVersion", "commandId", "status", "completedAt"],
+  "properties": {
+    "protocolVersion": { "type": "string", "pattern": "^\\d+\\.\\d+$" },
+    "commandId": { "type": "string" },
+    "status": { "type": "string", "enum": ["accepted", "done", "failed", "unsupported", "expired"] },
+    "detail": { "type": "string", "description": "Human-readable diagnostic; required when status=failed." },
+    "completedAt": { "type": "string", "format": "date-time" }
+  }
+}

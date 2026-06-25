@@ -1,0 +1,8 @@
+{
+  "protocolVersion": "1.0",
+  "enrollToken": "tok",
+  "hardwareId": "abc123",
+  "capabilities": { "protocol": "1.0", "device": ["lock", "wipe"], "remoteTier": "none" },
+  "agent": { "version": "0.1.15", "pkg": "com.lunacy.mdm.agent" },
+  "device": { "id": "dev-1", "androidSdkInt": 34, "androidRelease": "14", "manufacturer": "samsung", "model": "SM-X218U", "isDeviceOwner": true }
+}

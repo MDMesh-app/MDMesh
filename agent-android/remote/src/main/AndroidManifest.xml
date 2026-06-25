@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    PERMISSION ISOLATION (Play Protect):
+    Accessibility-based input injection is the single most scrutinised capability
+    on the platform. It is declared HERE, in :remote, and NOWHERE in the base :app
+    manifest. Builds/flavors that do not include :remote ship without any
+    accessibility surface at all.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+
+        <!--
+            Input-injection service for remote-control "control" tier. Disabled by
+            default (android:enabled="false") and only enabled at runtime once a
+            remote-control session of mode=control is authorised.
+        -->
+        <service
+            android:name="com.mdmesh.remote.InputInjectionService"
+            android:enabled="false"
+            android:exported="false"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/input_injection_service" />
+        </service>
+
+    </application>
+
+</manifest>

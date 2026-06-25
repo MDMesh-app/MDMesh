@@ -1,0 +1,68 @@
+name: 🐞 Bug report
+description: Something isn't working the way it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug! Please search existing issues first, then fill in the details below.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of MDMesh is affected?
+      options:
+        - Server / REST API
+        - Admin console (web)
+        - Device agent (Android)
+        - Updater / recovery (supervisor)
+        - Deployment / setup
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+      placeholder: When I…, I expected…, but instead…
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to…
+        2. Click…
+        3. See…
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: MDMesh version / commit
+      description: Console version (Settings → Server & connection) or the git commit.
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: Deployment mode (Docker/native), host OS, and — for agent bugs — device model + Android version.
+      placeholder: Docker on Ubuntu 24.04 · Cloudflare Tunnel · Samsung Galaxy Tab A, Android 13
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Server (`docker compose logs server`), supervisor, browser console, or `adb logcat` — whatever fits.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this isn't a duplicate.
+          required: true
+        - label: I'm not reporting a security vulnerability here (those go via private disclosure, not a public issue).
+          required: true

@@ -1,0 +1,39 @@
+# Edge for MDMesh. Serves the SPA and reverse-proxies the API/files/wake-socket to the server.
+# SITE_ADDRESS is set by the setup wizard:
+#   own-domain  → "mdm.example.com" (Caddy auto-provisions + renews a Let's Encrypt cert)
+#   cloudflare  → ":80" (Cloudflare terminates TLS; cloudflared connects to this internally)
+{
+	email {$ACME_EMAIL}
+}
+
+{$SITE_ADDRESS} {
+	encode gzip
+
+	# API, uploaded files, and the agent wake WebSocket → the Tomcat server. reverse_proxy
+	# upgrades WebSockets automatically, so /agent/ws works without extra config.
+	@backend path /rest/* /files/* /agent/ws/*
+	handle @backend {
+		reverse_proxy server:8080
+	}
+
+	# Updater status + recovery page → the decoupled supervisor (always up, independent of the
+	# server), so "update available" + recovery stay reachable even mid-update.
+	handle /update/* {
+		reverse_proxy supervisor:9000
+	}
+	handle /recovery* {
+		reverse_proxy supervisor:9000
+	}
+
+	# Everything else is the single-page app.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+
+	# If the server (API) is down/erroring, fall back to the supervisor's recovery page.
+	handle_errors {
+		reverse_proxy supervisor:9000
+	}
+}

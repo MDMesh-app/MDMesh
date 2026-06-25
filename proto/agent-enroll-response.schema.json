@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdm.local/proto/v1/agent-enroll-response.schema.json",
+  "title": "AgentEnrollResponse",
+  "description": "The `data` payload of the Response envelope for POST /enroll.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["protocolVersion", "deviceId"],
+  "properties": {
+    "protocolVersion": { "type": "string", "pattern": "^\\d+\\.\\d+$" },
+    "deviceId": { "type": "string", "description": "Server-issued opaque device id. The agent stores this and uses it as identity forever." },
+    "configurationName": { "type": "string" }
+  }
+}

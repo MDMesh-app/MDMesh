@@ -1,0 +1,10 @@
+{
+  "name": "mdmesh-shots",
+  "private": true,
+  "type": "module",
+  "description": "Reproducible screenshot harness for MDMesh docs (renders the real SPA against mocked data).",
+  "dependencies": {
+    "playwright": "^1.48.0",
+    "sharp": "^0.33.5"
+  }
+}

@@ -1,0 +1,19 @@
+# Gradle
+.gradle/
+build/
+**/build/
+!gradle/wrapper/gradle-wrapper.properties
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+local.properties
+captures/
+
+# Keystores / secrets (never commit)
+*.jks
+*.keystore
+keystore.properties
+
+# OS
+.DS_Store

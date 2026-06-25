@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Questions & discussion
+    url: https://github.com/MDMesh-app/MDMesh/discussions
+    about: Usage questions, ideas, and general discussion — please use Discussions, not issues.
+  - name: 📖 Setup & deployment guide
+    url: https://github.com/MDMesh-app/MDMesh/blob/main/DEPLOY.md
+    about: Most install/configuration questions are answered in DEPLOY.md.
+  - name: 🔐 Security disclosure
+    url: https://github.com/MDMesh-app/MDMesh/security/advisories/new
+    about: Report security vulnerabilities privately — never in a public issue.

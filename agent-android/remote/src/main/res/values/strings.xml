@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="input_injection_service_description">Used only during an authorised remote-control session to replay taps and swipes from an administrator. No screen content is read.</string>
+</resources>

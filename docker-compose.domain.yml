@@ -1,0 +1,10 @@
+# Own-domain overlay: publish the edge on 80/443 so Caddy can serve traffic and auto-provision a
+# Let's Encrypt cert for SITE_ADDRESS. Use with:
+#   docker compose -f docker-compose.yml -f docker-compose.domain.yml up -d
+# (Not used in Cloudflare-tunnel mode, where nothing is published.)
+
+services:
+  caddy:
+    ports:
+      - "80:80"
+      - "443:443"

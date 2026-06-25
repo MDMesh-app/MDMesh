@@ -1,0 +1,10 @@
+{
+  "protocolVersion": "1.0",
+  "deviceId": "dev-1",
+  "hardwareId": "abc123",
+  "capabilities": { "protocol": "1.0", "policy": [], "device": ["lock", "wipe", "powerMode", "locationMode"], "remoteTier": "none" },
+  "state": { "battery": 80, "charging": false, "locked": false, "kioskActive": false, "androidRelease": "14", "agentVersion": "0.1.15", "powerMode": "adaptive" },
+  "telemetry": { "dynamic": { "batteryPct": 80, "location": { "lat": 1.0, "lon": 2.0, "capturedAt": 123 } } },
+  "events": [ { "type": "boot", "ts": 123, "detail": null } ],
+  "results": [ { "commandId": "5", "status": "done", "detail": "ok", "completedAt": "2026-01-01T00:00:00Z" } ]
+}

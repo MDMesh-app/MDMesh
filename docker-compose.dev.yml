@@ -1,0 +1,38 @@
+# Dev environment for the control plane (Postgres + Tomcat server).
+# A dev-friendly alternative to the Ubuntu-only hmdm_install.sh.
+# Usage and the post-start seeding step are documented in docs/DEV.md.
+
+services:
+  postgres:
+    image: postgres:14
+    environment:
+      POSTGRES_DB: hmdm
+      POSTGRES_USER: hmdm
+      POSTGRES_PASSWORD: hmdm
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # SQL seed scripts mounted read-only; run manually AFTER first startup
+      # (they UPDATE rows Liquibase creates at app boot — not an initdb script).
+      - ./install/sql:/sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hmdm -d hmdm"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  server:
+    build:
+      context: .
+      dockerfile: docker/server.Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    # 31000 is the embedded MQTT broker; expose if you want devices to reach it directly.
+    # - "31000:31000"
+
+volumes:
+  pgdata:

@@ -1,0 +1,11 @@
+{
+  "protocolVersion": "1.0",
+  "deviceId": "dev-1",
+  "hardwareId": "abc123",
+  "futureTopLevel": { "anything": true },
+  "capabilities": { "protocol": "1.0", "device": ["lock"], "futureCap": "x" },
+  "state": { "battery": 80, "androidRelease": "14", "futureMetric": 42 },
+  "telemetry": { "dynamic": { "batteryPct": 80 } },
+  "events": [ { "type": "boot", "ts": 123, "futureEventField": 1 } ],
+  "results": [ { "commandId": "5", "status": "done", "futureResultField": "y" } ]
+}

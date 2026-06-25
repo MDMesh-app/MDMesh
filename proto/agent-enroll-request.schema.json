@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdm.local/proto/v1/agent-enroll-request.schema.json",
+  "title": "AgentEnrollRequest",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["protocolVersion", "enrollToken", "agent", "device", "capabilities"],
+  "properties": {
+    "protocolVersion": { "type": "string", "pattern": "^\\d+\\.\\d+$" },
+    "enrollToken": { "type": "string", "description": "Single-use server-issued token from the QR provisioning bundle." },
+    "agent": { "$ref": "capability-matrix.schema.json#/properties/agent" },
+    "device": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Same as capability-matrix device, MINUS id (the server issues id on enroll).",
+      "required": ["androidSdkInt", "isDeviceOwner"],
+      "properties": {
+        "androidSdkInt": { "type": "integer", "minimum": 24 },
+        "androidRelease": { "type": "string" },
+        "manufacturer": { "type": "string" },
+        "model": { "type": "string" },
+        "isDeviceOwner": { "type": "boolean" }
+      }
+    },
+    "capabilities": { "$ref": "capability-matrix.schema.json#/properties/capabilities" }
+  }
+}

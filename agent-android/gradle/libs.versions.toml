@@ -3,6 +3,7 @@
 agp = "8.6.0"
 kotlin = "2.0.20"
 ksp = "2.0.20-1.0.25"
+desugarJdkLibs = "2.1.2"
 
 # AndroidX core
 coreKtx = "1.13.1"
@@ -30,6 +31,8 @@ androidxJunit = "1.2.1"
 coroutinesTest = "1.8.1"
 
 [libraries]
+# core-library desugaring (backports java.time etc. to minSdk 24)
+desugar-jdk-libs = { module = "com.android.tools:desugar_jdk_libs", version.ref = "desugarJdkLibs" }
 # AndroidX
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }

@@ -1,5 +1,6 @@
 package com.mdmesh.core.install
 
+import android.annotation.SuppressLint
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -119,6 +120,7 @@ class InstallManager @Inject constructor(
     }
 
     /** Silently uninstalls [packageName], awaiting the platform's result. */
+    @SuppressLint("MissingPermission") // Device Owner holds DELETE_PACKAGES (declared in the app)
     suspend fun uninstall(packageName: String): InstallOutcome {
         if (installedVersionCode(packageName) == null) {
             return InstallOutcome.Skipped("not installed: $packageName")
@@ -140,7 +142,9 @@ class InstallManager @Inject constructor(
             val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
                 setAppPackageName(packageName)
                 setSize(apk.length())
-                setInstallReason(PackageManager.INSTALL_REASON_POLICY)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    setInstallReason(PackageManager.INSTALL_REASON_POLICY) // API 26+ (advisory metadata)
+                }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
                 }

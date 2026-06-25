@@ -34,7 +34,11 @@ internal class ModernWifiPolicy(
     }.getOrElse { PolicyOutcome.Failed(it.message ?: "modern wifi setEnabled failed") }
 
     override fun setUserChangesBlocked(blocked: Boolean): PolicyOutcome = runCatching {
-        handle.dpm.setConfiguredNetworksLockdownState(handle.admin, blocked)
+        // setConfiguredNetworksLockdownState is API 30+. This strategy is only selected when
+        // isSupported() (SDK_INT >= R), but guard explicitly so lint sees it too.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            handle.dpm.setConfiguredNetworksLockdownState(handle.admin, blocked)
+        }
         PolicyOutcome.Applied
     }.getOrElse { PolicyOutcome.Failed(it.message ?: "modern wifi lockdown failed") }
 }

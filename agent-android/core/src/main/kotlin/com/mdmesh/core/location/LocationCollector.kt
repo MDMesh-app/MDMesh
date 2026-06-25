@@ -1,6 +1,7 @@
 package com.mdmesh.core.location
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
@@ -49,6 +50,7 @@ class LocationCollector @Inject constructor(
             PackageManager.PERMISSION_GRANTED
 
     /** Freshest last-known location across all enabled providers (cheap, no active GPS). */
+    @SuppressLint("MissingPermission") // gated by collect()'s hasPermission() check
     private fun lastKnown(lm: LocationManager): Location? = runCatching {
         lm.allProviders
             .mapNotNull { p -> runCatching { lm.getLastKnownLocation(p) }.getOrNull() }
@@ -56,6 +58,7 @@ class LocationCollector @Inject constructor(
     }.getOrNull()
 
     /** A single fresh fix with a short timeout (API 30+ only); null on timeout/failure. */
+    @SuppressLint("MissingPermission") // gated by collect()'s hasPermission() check
     private fun currentFix(lm: LocationManager): Location? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
         val provider = when {

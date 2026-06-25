@@ -1,5 +1,6 @@
 package com.mdmesh.core.telemetry
 
+import android.annotation.SuppressLint
 import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
@@ -74,6 +75,7 @@ class DynamicStateCollector @Inject constructor(
     )
 
     @Suppress("DEPRECATION")
+    @SuppressLint("MissingPermission") // ACCESS_NETWORK_STATE is declared in the app manifest
     private fun networkInfo(): Net {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
         val caps = cm.getNetworkCapabilities(cm.activeNetwork)

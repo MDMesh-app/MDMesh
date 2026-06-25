@@ -75,6 +75,8 @@ class LockTaskKioskController(
 
     override fun allowedPackages(): List<String> {
         if (!dpm.isDeviceOwnerApp(admin.packageName)) return emptyList()
+        // getLockTaskPackages() was added in API 26 (O); on 24/25 the method doesn't exist.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return emptyList()
         return try {
             dpm.getLockTaskPackages(admin).toList()
         } catch (t: Throwable) {

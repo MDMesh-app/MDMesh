@@ -87,7 +87,9 @@ Set these in `.env` (the wizard seeds them; add by hand for an existing deploy):
 - TLS everywhere (Cloudflare or Caddy/Let's Encrypt). DB + server ports are never published.
 - The agent talks HTTPS only. Set `SECURE_ENROLLMENT=1` (and the matching secret on the agent) to
   require signed enrollment.
-- Change the admin password after first login; configure SMTP in `.env` for password recovery.
+- The admin starts with a generated password and is **required to set its own on first login** (the
+  console routes the first sign-in to a "set your password" screen). Configure SMTP in `.env` to enable
+  email-based password recovery thereafter.
 - The supervisor mounts the Docker socket (to drive updates) and is trusted: it acts only on
   **minisign-verified** manifests and **authorized** callers (admin session, or the recovery token).
   Apply/rollback only ever recreate `server`/`caddy` — never `postgres` or the supervisor itself.

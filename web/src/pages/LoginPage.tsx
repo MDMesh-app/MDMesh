@@ -8,7 +8,8 @@ export function LoginPage() {
   const { signIn } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const from = (location.state as { from?: string } | null)?.from ?? '/dashboard';
+  const state = location.state as { from?: string; passwordChanged?: boolean } | null;
+  const from = state?.from ?? '/dashboard';
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -20,8 +21,9 @@ export function LoginPage() {
     setError(null);
     setBusy(true);
     try {
-      await signIn(username, password);
-      navigate(from, { replace: true });
+      const u = await signIn(username, password);
+      // First-login: the seeded admin must set its own password before reaching the console.
+      navigate(u.passwordReset ? '/set-password' : from, { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.httpStatus === 0) {
         setError('Cannot reach the server. Check that it is running.');
@@ -67,6 +69,9 @@ export function LoginPage() {
           />
         </label>
 
+        {state?.passwordChanged && !error && (
+          <div className="login-ok">Password updated — sign in with your new password.</div>
+        )}
         {error && <div className="login-err">{error}</div>}
 
         <button

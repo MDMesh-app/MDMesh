@@ -36,6 +36,7 @@ read -rp "Choose [1/2]: " MODE
 DB_PASSWORD=$(rand)
 HASH_SECRET=$(rand)
 ADMIN_PASSWORD=$(rand)
+RESET_TOKEN=$(openssl rand -hex 16)   # ≤40 chars (passwordresettoken column); forces a first-login change
 
 if [ "$MODE" = "1" ]; then
   read -rp "Public hostname devices will use (e.g. mdm.example.com): " HOST
@@ -106,9 +107,10 @@ say "Seeding settings + admin…"
 sed "s/_ADMIN_EMAIL_/admin@${HOST}/g" install/sql/hmdm_init.en.sql \
   | docker compose exec -T postgres psql -U hmdm -d hmdm >/dev/null 2>&1 || \
   warn "Seed step reported issues (often fine if already seeded)."
-# Set the admin password to the generated one and clear the reset flag.
+# Set the admin password to the generated one and FORCE a change on first login (the console routes
+# a flagged login to a "set your password" screen, which clears the flag via the reset token).
 docker compose exec -T postgres psql -U hmdm -d hmdm -c \
-  "UPDATE users SET password='$(pwhash "$ADMIN_PASSWORD")', passwordreset=false WHERE login='admin';" >/dev/null
+  "UPDATE users SET password='$(pwhash "$ADMIN_PASSWORD")', passwordreset=true, passwordresettoken='${RESET_TOKEN}' WHERE login='admin';" >/dev/null
 # Remove the auxiliary Headwind seed apps (not used by our agent). The launcher (com.hmdm.launcher)
 # is left in place — the default configurations reference it as their main app.
 docker compose exec -T postgres psql -U hmdm -d hmdm >/dev/null 2>&1 <<'SQL' || true
@@ -119,10 +121,16 @@ SQL
 
 echo
 say "== MDMesh is up =="
-echo "  Console:  ${BASE_URL}"
-echo "  Login:    admin"
-echo "  Password: ${ADMIN_PASSWORD}"
-warn "Save that password now — it is not stored anywhere in clear text. Change it after first login."
+echo "  Console:        ${BASE_URL}"
+echo "  REST API base:  ${BASE_URL}/rest"
+echo "  Recovery page:  ${BASE_URL}/recovery"
+echo "  Login:          admin"
+echo "  Password:       ${ADMIN_PASSWORD}   (temporary)"
+echo
+echo "  Access is via the URL above only — Postgres and the server publish no host ports;"
+echo "  the edge (Caddy) is the single entry point ($([ "$MODE" = "1" ] && echo "Cloudflare Tunnel" || echo "ports 80/443"))."
+echo
+warn "Sign in with the temporary password — you'll be required to set your own on first login."
 echo
 echo "Next: $EXTRA_NOTE"
 echo "Host the agent APK and enroll devices from the console's Enroll page (it builds the QR with ${BASE_URL})."

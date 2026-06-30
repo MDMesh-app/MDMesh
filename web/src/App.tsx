@@ -4,6 +4,7 @@ import { ProtectedRoute } from './auth/ProtectedRoute';
 import { ThemeProvider } from './ui/theme';
 import { ToastProvider } from './ui/toast';
 import { LoginPage } from './pages/LoginPage';
+import { SetPasswordPage } from './pages/SetPasswordPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { DevicesPage } from './pages/DevicesPage';
 import { DeviceDetailPage } from './pages/DeviceDetailPage';
@@ -20,6 +21,7 @@ export default function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/set-password" element={<SetPasswordPage />} />
             <Route element={<ProtectedRoute />}>
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/devices" element={<DevicesPage />} />

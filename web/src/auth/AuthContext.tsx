@@ -23,7 +23,7 @@ const STORAGE_KEY = 'hmdm.admin.user';
 interface AuthContextValue {
   user: AuthUser | null;
   isAuthenticated: boolean;
-  signIn: (username: string, password: string) => Promise<void>;
+  signIn: (username: string, password: string) => Promise<AuthUser>;
   signOut: () => Promise<void>;
 }
 
@@ -49,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       /* storage may be unavailable; non-fatal */
     }
+    return u;
   }, []);
 
   const signOut = useCallback(async () => {

@@ -14,7 +14,7 @@ rand() { openssl rand -hex 24; }
 pwhash() { local m; m=$(printf '%s' "$1" | md5sum | awk '{print toupper($1)}'); printf '%s' "${m}${SALT}" | sha1sum | awk '{print $1}'; }
 
 read -rp "Public base URL (e.g. https://mdm.example.com): " BASE_URL
-DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand)
+DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
 BASE_DIR=/opt/hmdm
 CATALINA=/opt/mdmesh-tc
 TOMCAT_VER=9.0.89
@@ -82,10 +82,12 @@ HOST=$(printf '%s' "$BASE_URL" | sed -E 's#https?://##; s#/.*##')
 PGPASSWORD="$DB_PASSWORD" sed "s/_ADMIN_EMAIL_/admin@${HOST}/g" install/sql/hmdm_init.en.sql \
   | PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U hmdm -d hmdm >/dev/null 2>&1 || echo "(seed warnings ok if already seeded)"
 PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U hmdm -d hmdm -c \
-  "UPDATE users SET password='$(pwhash "$ADMIN_PASSWORD")', passwordreset=false WHERE login='admin';" >/dev/null
+  "UPDATE users SET password='$(pwhash "$ADMIN_PASSWORD")', passwordreset=true, passwordresettoken='${RESET_TOKEN}' WHERE login='admin';" >/dev/null
 
 echo
 echo "== MDMesh installed (native) =="
-echo "  Tomcat:   $CATALINA (serving on :8080 — front it with your TLS reverse proxy at ${BASE_URL})"
-echo "  Login:    admin / ${ADMIN_PASSWORD}"
+echo "  Tomcat:        $CATALINA (serving on :8080 — front it with your TLS reverse proxy at ${BASE_URL})"
+echo "  Console:       ${BASE_URL}"
+echo "  REST API base: ${BASE_URL}/rest"
+echo "  Login:         admin / ${ADMIN_PASSWORD}   (temporary — you'll set your own on first login)"
 echo "  Note: install 'aapt' for full uploaded-APK parsing; set up a systemd unit to keep Tomcat running."

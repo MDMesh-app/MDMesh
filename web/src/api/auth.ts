@@ -70,3 +70,18 @@ export async function logout(): Promise<void> {
     // Best effort: invalidating the session client-side is enough for the UI.
   }
 }
+
+/**
+ * Complete a forced password reset (first-login flow). The server's
+ * `POST /public/passwordReset/reset` is public (no session needed) and clears the
+ * `passwordReset` flag. `newPassword` is MD5-hashed like login (the server re-hashes).
+ */
+export async function submitForcedPasswordReset(
+  passwordResetToken: string,
+  newPassword: string,
+): Promise<void> {
+  await apiClient.post('/public/passwordReset/reset', {
+    passwordResetToken,
+    newPassword: hashPassword(newPassword),
+  });
+}

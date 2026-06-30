@@ -23,7 +23,16 @@ if [ "${1:-}" = "--native" ]; then
 fi
 
 command -v docker >/dev/null || { err "Docker is required (or run ./setup.sh --native)."; exit 1; }
-docker compose version >/dev/null 2>&1 || { err "Docker Compose v2 is required."; exit 1; }
+if ! docker compose version >/dev/null 2>&1; then
+  if command -v docker-compose >/dev/null; then
+    err "Found legacy 'docker-compose' (v1). MDMesh needs the Docker Compose v2 plugin ('docker compose')."
+    err "Install the 'docker-compose-plugin' package, or run ./setup.sh --native."
+  else
+    err "Docker Compose v2 is required ('docker compose'). Install the 'docker-compose-plugin' package,"
+    err "or run ./setup.sh --native."
+  fi
+  exit 1
+fi
 command -v openssl >/dev/null || { err "openssl is required."; exit 1; }
 
 say "== MDMesh setup =="
@@ -31,7 +40,11 @@ echo
 echo "Hosting mode:"
 echo "  1) Cloudflare Tunnel   (no open ports; Cloudflare manages TLS — needs a domain in Cloudflare)"
 echo "  2) Your own domain     (open 80/443; Caddy auto-provisions a Let's Encrypt cert)"
-read -rp "Choose [1/2]: " MODE
+MODE=""
+while [ "$MODE" != "1" ] && [ "$MODE" != "2" ]; do
+  read -rp "Choose [1/2]: " MODE || { err "No selection (non-interactive run?). Aborting."; exit 1; }
+  case "$MODE" in 1|2) ;; *) warn "Please enter 1 or 2." ;; esac
+done
 
 DB_PASSWORD=$(rand)
 HASH_SECRET=$(rand)

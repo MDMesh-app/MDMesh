@@ -32,7 +32,7 @@ jobs:
           {
             echo "version=$V"
             echo "code=$(release/version.sh "$V")"
-            echo "proto=$(grep -oP 'PROTOCOL_VERSION[^\"]*\"\K[^\"]+' agent-android/proto/src/main/kotlin/com/lunacy/mdm/proto/ProtocolJson.kt)"
+            echo "proto=$(grep -oP 'PROTOCOL_VERSION[^\"]*\"\K[^\"]+' agent-android/proto/src/main/kotlin/com/mdmesh/proto/ProtocolJson.kt)"
           } >> "$GITHUB_OUTPUT"
 
       # --- Build + sign the release APK (gated by unit tests + R8 lintVital) ---

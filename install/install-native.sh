@@ -18,9 +18,9 @@ cat <<'WARN'
 
   This action will modify THIS host:
     • apt-get install openjdk-17-jdk, postgresql, maven, curl
-    • create or alter a PostgreSQL role and database "hmdm" (resets that role's password)
+    • create or alter a PostgreSQL role and database "mdmesh" (resets that role's password)
     • download and unpack Apache Tomcat 9 into /opt/mdmesh-tc (clears its webapps/)
-    • write config, logs and uploaded files under /opt/hmdm
+    • write config, logs and uploaded files under /opt/mdmesh
     • start Tomcat, run database migrations, and seed the admin account
 
   Intended for a dedicated server you control. This script does not undo these changes.
@@ -38,7 +38,7 @@ pwhash() { local m; m=$(printf '%s' "$1" | md5sum | awk '{print toupper($1)}'); 
 
 read -rp "Public base URL (e.g. https://mdm.example.com): " BASE_URL
 DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
-BASE_DIR=/opt/hmdm
+BASE_DIR=/opt/mdmesh
 CATALINA=/opt/mdmesh-tc
 TOMCAT_VER=9.0.89
 
@@ -81,14 +81,14 @@ echo "== Database =="
 # Idempotent + timeless: every run generates a fresh DB_PASSWORD, so ALWAYS set the role's password to
 # match — ALTER if the role already exists from a previous run, else CREATE. The old "create only if
 # missing" left a re-run's role on its previous password while ROOT.xml + seeding used the new one →
-# "password authentication failed for user hmdm".
-if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='hmdm'" | grep -q 1; then
-  sudo -u postgres psql -c "ALTER USER hmdm WITH PASSWORD '${DB_PASSWORD}';"
+# "password authentication failed for user mdmesh".
+if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='mdmesh'" | grep -q 1; then
+  sudo -u postgres psql -c "ALTER USER mdmesh WITH PASSWORD '${DB_PASSWORD}';"
 else
-  sudo -u postgres psql -c "CREATE USER hmdm WITH PASSWORD '${DB_PASSWORD}';"
+  sudo -u postgres psql -c "CREATE USER mdmesh WITH PASSWORD '${DB_PASSWORD}';"
 fi
-sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='hmdm'" | grep -q 1 || \
-  sudo -u postgres psql -c "CREATE DATABASE hmdm OWNER hmdm;"
+sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='mdmesh'" | grep -q 1 || \
+  sudo -u postgres psql -c "CREATE DATABASE mdmesh OWNER mdmesh;"
 
 echo "== Building the server WAR =="
 cp server/build.properties.example server/build.properties 2>/dev/null || true
@@ -102,15 +102,15 @@ fi
 rm -rf "$CATALINA"/webapps/*
 cp server/target/launcher.war "$CATALINA"/webapps/ROOT.war
 mkdir -p "$BASE_DIR/files" "$BASE_DIR/plugins" "$CATALINA/conf/Catalina/localhost"
-cp install/log4j_template.xml "$BASE_DIR/log4j-hmdm.xml"
+cp install/log4j_template.xml "$BASE_DIR/log4j-mdmesh.xml"
 cp -r install/emails "$BASE_DIR/" 2>/dev/null || true
 
 cat > "$CATALINA/conf/Catalina/localhost/ROOT.xml" <<XML
 <?xml version="1.0" encoding="UTF-8"?>
 <Context>
     <Parameter name="JDBC.driver"   value="org.postgresql.Driver"/>
-    <Parameter name="JDBC.url"      value="jdbc:postgresql://127.0.0.1:5432/hmdm"/>
-    <Parameter name="JDBC.username" value="hmdm"/>
+    <Parameter name="JDBC.url"      value="jdbc:postgresql://127.0.0.1:5432/mdmesh"/>
+    <Parameter name="JDBC.username" value="mdmesh"/>
     <Parameter name="JDBC.password" value="${DB_PASSWORD}"/>
     <Parameter name="base.directory"  value="${BASE_DIR}"/>
     <Parameter name="files.directory" value="${BASE_DIR}/files"/>
@@ -123,7 +123,7 @@ cat > "$CATALINA/conf/Catalina/localhost/ROOT.xml" <<XML
     <Parameter name="role.orgadmin.id" value="2"/>
     <Parameter name="swagger.base.path" value="/rest"/>
     <Parameter name="initialization.completion.signal.file" value="${BASE_DIR}/initialized.txt"/>
-    <Parameter name="log4j.config" value="file://${BASE_DIR}/log4j-hmdm.xml"/>
+    <Parameter name="log4j.config" value="file://${BASE_DIR}/log4j-mdmesh.xml"/>
     <Parameter name="aapt.command" value="aapt"/>
     <Parameter name="mqtt.server.uri" value=""/>
     <Parameter name="mqtt.auth" value="0"/>
@@ -143,8 +143,8 @@ for i in $(seq 1 60); do [ -f "$BASE_DIR/initialized.txt" ] && break; sleep 5; d
 echo "== Seeding settings + admin =="
 HOST=$(printf '%s' "$BASE_URL" | sed -E 's#https?://##; s#/.*##')
 PGPASSWORD="$DB_PASSWORD" sed "s/_ADMIN_EMAIL_/admin@${HOST}/g" install/sql/hmdm_init.en.sql \
-  | PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U hmdm -d hmdm >/dev/null 2>&1 || echo "(seed warnings ok if already seeded)"
-PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U hmdm -d hmdm -c \
+  | PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U mdmesh -d mdmesh >/dev/null 2>&1 || echo "(seed warnings ok if already seeded)"
+PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U mdmesh -d mdmesh -c \
   "UPDATE users SET password='$(pwhash "$ADMIN_PASSWORD")', passwordreset=true, passwordresettoken='${RESET_TOKEN}' WHERE login='admin';" >/dev/null
 
 echo

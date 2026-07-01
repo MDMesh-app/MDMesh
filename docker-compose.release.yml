@@ -12,13 +12,13 @@ services:
     image: postgres:14
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${DB_NAME:-hmdm}
-      POSTGRES_USER: ${DB_USER:-hmdm}
+      POSTGRES_DB: ${DB_NAME:-mdmesh}
+      POSTGRES_USER: ${DB_USER:-mdmesh}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-hmdm} -d ${DB_NAME:-hmdm}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-mdmesh} -d ${DB_NAME:-mdmesh}"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -32,8 +32,8 @@ services:
     environment:
       DB_HOST: postgres
       DB_PORT: "5432"
-      DB_NAME: ${DB_NAME:-hmdm}
-      DB_USER: ${DB_USER:-hmdm}
+      DB_NAME: ${DB_NAME:-mdmesh}
+      DB_USER: ${DB_USER:-mdmesh}
       DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
       BASE_URL: ${BASE_URL:?set BASE_URL in .env}
       HASH_SECRET: ${HASH_SECRET:?set HASH_SECRET in .env}
@@ -44,7 +44,7 @@ services:
       SMTP_USERNAME: ${SMTP_USERNAME:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
     volumes:
-      - hmdmdata:/opt/hmdm
+      - mdmeshdata:/opt/mdmesh
 
   caddy:
     image: ghcr.io/${IMAGE_OWNER:-mdmesh-app}/mdmesh-web:${WEB_VERSION:-latest}
@@ -73,8 +73,8 @@ services:
       COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-mdmesh}
       COMPOSE_FILE: ${COMPOSE_FILE:-docker-compose.yml}
       COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}
-      DB_USER: ${DB_USER:-hmdm}
-      DB_NAME: ${DB_NAME:-hmdm}
+      DB_USER: ${DB_USER:-mdmesh}
+      DB_NAME: ${DB_NAME:-mdmesh}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - .:/project
@@ -92,7 +92,7 @@ services:
 
 volumes:
   pgdata:
-  hmdmdata:
+  mdmeshdata:
   caddy_data:
   caddy_config:
   backups:

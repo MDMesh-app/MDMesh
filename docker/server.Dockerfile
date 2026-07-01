@@ -19,11 +19,11 @@ RUN mvn -q -B -DskipTests package
 FROM tomcat:9.0-jdk17-temurin
 RUN rm -rf /usr/local/tomcat/webapps/*
 COPY --from=build /src/server/target/launcher.war /usr/local/tomcat/webapps/ROOT.war
-# App base directory (data, plugins, logging config, email templates). /opt/hmdm should be a volume
+# App base directory (data, plugins, logging config, email templates). /opt/mdmesh should be a volume
 # so uploaded files + the hosted agent APK survive container recreation.
-RUN mkdir -p /opt/hmdm/files /opt/hmdm/plugins
-COPY install/log4j_template.xml /opt/hmdm/log4j-hmdm.xml
-COPY install/emails /opt/hmdm/emails
+RUN mkdir -p /opt/mdmesh/files /opt/mdmesh/plugins
+COPY install/log4j_template.xml /opt/mdmesh/log4j-mdmesh.xml
+COPY install/emails /opt/mdmesh/emails
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 # NOTE: full uploaded-APK metadata parsing uses `aapt`; install android build-tools aapt into the

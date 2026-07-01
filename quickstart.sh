@@ -67,8 +67,8 @@ mkdir -p install/sql
 curl -fsSL "${RAW}/install/sql/hmdm_init.en.sql" -o install/sql/hmdm_init.en.sql
 
 cat > .env <<EOF
-DB_NAME=hmdm
-DB_USER=hmdm
+DB_NAME=mdmesh
+DB_USER=mdmesh
 DB_PASSWORD=${DB_PASSWORD}
 BASE_URL=${BASE_URL}
 HASH_SECRET=${HASH_SECRET}
@@ -103,14 +103,14 @@ docker compose up -d
 
 say "Waiting for the server to finish first-boot (Liquibase)…"
 for i in $(seq 1 60); do
-  if docker compose exec -T server test -f /opt/hmdm/initialized.txt 2>/dev/null; then break; fi
+  if docker compose exec -T server test -f /opt/mdmesh/initialized.txt 2>/dev/null; then break; fi
   sleep 5
 done
 
 say "Seeding settings + admin…"
 sed "s/_ADMIN_EMAIL_/admin@${HOST}/g" install/sql/hmdm_init.en.sql \
-  | docker compose exec -T postgres psql -U hmdm -d hmdm >/dev/null 2>&1 || warn "Seed step reported issues (often fine if already seeded)."
-docker compose exec -T postgres psql -U hmdm -d hmdm -c \
+  | docker compose exec -T postgres psql -U mdmesh -d mdmesh >/dev/null 2>&1 || warn "Seed step reported issues (often fine if already seeded)."
+docker compose exec -T postgres psql -U mdmesh -d mdmesh -c \
   "UPDATE users SET password='$(pwhash "$ADMIN_PASSWORD")', passwordreset=true, passwordresettoken='${RESET_TOKEN}' WHERE login='admin';" >/dev/null
 
 echo

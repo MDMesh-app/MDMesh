@@ -74,8 +74,8 @@ else
 fi
 
 cat > .env <<EOF
-DB_NAME=hmdm
-DB_USER=hmdm
+DB_NAME=mdmesh
+DB_USER=mdmesh
 DB_PASSWORD=${DB_PASSWORD}
 BASE_URL=${BASE_URL}
 HASH_SECRET=${HASH_SECRET}
@@ -112,22 +112,22 @@ docker compose $COMPOSE_ARGS up -d --build
 
 say "Waiting for the server to finish first-boot (Liquibase)…"
 for i in $(seq 1 60); do
-  if docker compose exec -T server test -f /opt/hmdm/initialized.txt 2>/dev/null; then break; fi
+  if docker compose exec -T server test -f /opt/mdmesh/initialized.txt 2>/dev/null; then break; fi
   sleep 5
 done
 
 say "Seeding settings + admin…"
 # Settings/configs/system-apps (avoids first-use NPEs); harmless if already present.
 sed "s/_ADMIN_EMAIL_/admin@${HOST}/g" install/sql/hmdm_init.en.sql \
-  | docker compose exec -T postgres psql -U hmdm -d hmdm >/dev/null 2>&1 || \
+  | docker compose exec -T postgres psql -U mdmesh -d mdmesh >/dev/null 2>&1 || \
   warn "Seed step reported issues (often fine if already seeded)."
 # Set the admin password to the generated one and FORCE a change on first login (the console routes
 # a flagged login to a "set your password" screen, which clears the flag via the reset token).
-docker compose exec -T postgres psql -U hmdm -d hmdm -c \
+docker compose exec -T postgres psql -U mdmesh -d mdmesh -c \
   "UPDATE users SET password='$(pwhash "$ADMIN_PASSWORD")', passwordreset=true, passwordresettoken='${RESET_TOKEN}' WHERE login='admin';" >/dev/null
 # Remove the auxiliary Headwind seed apps (not used by our agent). The launcher (com.hmdm.launcher)
 # is left in place — the default configurations reference it as their main app.
-docker compose exec -T postgres psql -U hmdm -d hmdm >/dev/null 2>&1 <<'SQL' || true
+docker compose exec -T postgres psql -U mdmesh -d mdmesh >/dev/null 2>&1 <<'SQL' || true
 DELETE FROM configurationapplications WHERE applicationid IN (SELECT id FROM applications WHERE pkg IN ('com.hmdm.pager','com.hmdm.phoneproxy','com.hmdm.emuilauncherrestarter'));
 DELETE FROM applicationversions      WHERE applicationid IN (SELECT id FROM applications WHERE pkg IN ('com.hmdm.pager','com.hmdm.phoneproxy','com.hmdm.emuilauncherrestarter'));
 DELETE FROM applications             WHERE pkg IN ('com.hmdm.pager','com.hmdm.phoneproxy','com.hmdm.emuilauncherrestarter');

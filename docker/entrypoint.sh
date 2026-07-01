@@ -7,8 +7,8 @@ set -e
 
 : "${DB_HOST:=postgres}"
 : "${DB_PORT:=5432}"
-: "${DB_NAME:=hmdm}"
-: "${DB_USER:=hmdm}"
+: "${DB_NAME:=mdmesh}"
+: "${DB_USER:=mdmesh}"
 : "${BASE_URL:?BASE_URL is required}"
 : "${HASH_SECRET:?HASH_SECRET is required}"
 : "${DB_PASSWORD:?DB_PASSWORD is required}"
@@ -18,7 +18,7 @@ set -e
 : "${SMTP_FROM:=mdm@localhost}"
 
 CONF_DIR=/usr/local/tomcat/conf/Catalina/localhost
-mkdir -p "$CONF_DIR" /opt/hmdm/files /opt/hmdm/plugins
+mkdir -p "$CONF_DIR" /opt/mdmesh/files /opt/mdmesh/plugins
 
 cat > "$CONF_DIR/ROOT.xml" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -28,15 +28,15 @@ cat > "$CONF_DIR/ROOT.xml" <<EOF
     <Parameter name="JDBC.username" value="${DB_USER}"/>
     <Parameter name="JDBC.password" value="${DB_PASSWORD}"/>
 
-    <Parameter name="base.directory"  value="/opt/hmdm"/>
-    <Parameter name="files.directory" value="/opt/hmdm/files"/>
+    <Parameter name="base.directory"  value="/opt/mdmesh"/>
+    <Parameter name="files.directory" value="/opt/mdmesh/files"/>
     <Parameter name="base.url"        value="${BASE_URL}"/>
 
     <Parameter name="usage.scenario"    value="private"/>
     <Parameter name="secure.enrollment" value="${SECURE_ENROLLMENT}"/>
     <Parameter name="hash.secret"       value="${HASH_SECRET}"/>
 
-    <Parameter name="plugins.files.directory" value="/opt/hmdm/plugins"/>
+    <Parameter name="plugins.files.directory" value="/opt/mdmesh/plugins"/>
     <Parameter name="plugin.devicelog.persistence.config.class"
                value="com.hmdm.plugins.devicelog.persistence.postgres.DeviceLogPostgresPersistenceConfiguration"/>
     <Parameter name="role.orgadmin.id" value="2"/>
@@ -44,8 +44,8 @@ cat > "$CONF_DIR/ROOT.xml" <<EOF
     <Parameter name="swagger.host"      value=""/>
     <Parameter name="swagger.base.path" value="/rest"/>
 
-    <Parameter name="initialization.completion.signal.file" value="/opt/hmdm/initialized.txt"/>
-    <Parameter name="log4j.config" value="file:///opt/hmdm/log4j-hmdm.xml"/>
+    <Parameter name="initialization.completion.signal.file" value="/opt/mdmesh/initialized.txt"/>
+    <Parameter name="log4j.config" value="file:///opt/mdmesh/log4j-mdmesh.xml"/>
     <Parameter name="aapt.command" value="aapt"/>
 
     <!-- MQTT broker disabled: the agent wakes over the WebSocket, not MQTT. -->
@@ -62,8 +62,8 @@ cat > "$CONF_DIR/ROOT.xml" <<EOF
     <Parameter name="smtp.password" value="${SMTP_PASSWORD:-}"/>
     <Parameter name="smtp.from" value="${SMTP_FROM}"/>
 
-    <Parameter name="email.recovery.subj" value="/opt/hmdm/emails/_LANGUAGE_/recovery_subj.txt"/>
-    <Parameter name="email.recovery.body" value="/opt/hmdm/emails/_LANGUAGE_/recovery_body.txt"/>
+    <Parameter name="email.recovery.subj" value="/opt/mdmesh/emails/_LANGUAGE_/recovery_subj.txt"/>
+    <Parameter name="email.recovery.body" value="/opt/mdmesh/emails/_LANGUAGE_/recovery_body.txt"/>
 </Context>
 EOF
 

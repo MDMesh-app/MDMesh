@@ -7,8 +7,8 @@ set -uo pipefail
 PROJECT_DIR="${COMPOSE_PROJECT_DIR:-/project}"
 ENV_FILE="$PROJECT_DIR/.env"
 BACKUP_DIR="${BACKUP_DIR:-/backups}"
-DB_USER="${DB_USER:-hmdm}"
-DB_NAME="${DB_NAME:-hmdm}"
+DB_USER="${DB_USER:-mdmesh}"
+DB_NAME="${DB_NAME:-mdmesh}"
 HEALTH_URL="${HEALTH_URL:-http://server:8080/rest/public/name}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-180}"
 

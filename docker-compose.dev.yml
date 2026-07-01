@@ -6,9 +6,9 @@ services:
   postgres:
     image: postgres:14
     environment:
-      POSTGRES_DB: hmdm
-      POSTGRES_USER: hmdm
-      POSTGRES_PASSWORD: hmdm
+      POSTGRES_DB: mdmesh
+      POSTGRES_USER: mdmesh
+      POSTGRES_PASSWORD: mdmesh
     ports:
       - "5432:5432"
     volumes:
@@ -17,7 +17,7 @@ services:
       # (they UPDATE rows Liquibase creates at app boot — not an initdb script).
       - ./install/sql:/sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hmdm -d hmdm"]
+      test: ["CMD-SHELL", "pg_isready -U mdmesh -d mdmesh"]
       interval: 5s
       timeout: 5s
       retries: 20

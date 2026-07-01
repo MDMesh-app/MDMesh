@@ -6,9 +6,9 @@ import { useTheme } from '../ui/theme';
 import { listConfigurations, type ConfigurationSummary } from '../api/configurations';
 import { API_BASE } from '../api/client';
 import { fetchAuthOptions } from '../api/auth';
-import { getUpdateStatus, setAutoUpdate, type UpdateStatus } from '../api/updates';
+import { getUpdateStatus, setAutoUpdate, checkForUpdates, applyUpdate, type UpdateStatus } from '../api/updates';
 import { RolloutPanel } from '../components/RolloutPanel';
-import { orDash } from '../ui/format';
+import { orDash, fmtRelative } from '../ui/format';
 
 const APP_VERSION = '0.1.0';
 const DEFAULT_CONFIG_KEY = 'mdmesh-default-config';
@@ -24,6 +24,9 @@ export function SettingsPage() {
   const [upd, setUpd] = useState<UpdateStatus | null>(null);
   const [autoSaving, setAutoSaving] = useState(false);
   const [autoErr, setAutoErr] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [updMsg, setUpdMsg] = useState<string | null>(null);
   const [defaultConfig, setDefaultConfig] = useState<string>(() => {
     try {
       return localStorage.getItem(DEFAULT_CONFIG_KEY) ?? '';
@@ -50,6 +53,34 @@ export function SettingsPage() {
       cancelled = true;
     };
   }, []);
+
+  const checkNow = async () => {
+    setChecking(true);
+    setUpdMsg(null);
+    const x = await checkForUpdates();
+    setChecking(false);
+    if (x) setUpd(x);
+    else setUpdMsg('Could not check for updates.');
+  };
+
+  const applyNow = async () => {
+    if (
+      !window.confirm(
+        `Update to v${upd?.latest}?\n\nThe server restarts briefly. The database is backed up first `
+          + 'and the update rolls back automatically if it fails.',
+      )
+    )
+      return;
+    setApplying(true);
+    setUpdMsg(null);
+    const r = await applyUpdate();
+    setApplying(false);
+    if (!r.ok) setUpdMsg(r.error || 'Failed to start update.');
+    else setUpdMsg('Update started — watch the banner at the top for live progress.');
+  };
+
+  const scrollToRollout = () =>
+    document.getElementById('rollout-anchor')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   const toggleAuto = async (next: boolean) => {
     setAutoSaving(true);
@@ -154,6 +185,63 @@ export function SettingsPage() {
                 {upd.channel ? ` (${upd.channel})` : ''}
               </span>
             </div>
+            {upd.updateAvailable && upd.release?.notes && (
+              <div className="set-row">
+                <span className="k">
+                  What&rsquo;s new
+                  <small>Release notes for v{orDash(upd.latest)}.</small>
+                </span>
+                <span className="v">
+                  <div className="whatsnew">{upd.release.notes}</div>
+                  {upd.release.url && (
+                    <a className="whatsnew-link" href={upd.release.url} target="_blank" rel="noreferrer">
+                      Full release notes ↗
+                    </a>
+                  )}
+                </span>
+              </div>
+            )}
+            {upd.updateAvailable && (
+              <div className="set-row">
+                <span className="k">
+                  Apply this release
+                  <small>Server + console update now; agent APK rolls out to devices.</small>
+                </span>
+                <span className="v">
+                  <div className="upd-actions">
+                    <button
+                      className="btn btn-sm btn-primary"
+                      onClick={() => void applyNow()}
+                      disabled={applying || !upd.verified}
+                    >
+                      {applying ? 'Starting…' : 'Update server + console'}
+                    </button>
+                    <button className="btn btn-sm" onClick={scrollToRollout}>
+                      Roll out agent to devices ↓
+                    </button>
+                  </div>
+                  {!upd.verified && (
+                    <p className="au-note" style={{ color: 'var(--err)' }}>
+                      Release signature not verified — apply is disabled.
+                    </p>
+                  )}
+                </span>
+              </div>
+            )}
+            <div className="set-row">
+              <span className="k">
+                Check for updates
+                <small>
+                  {upd.checkedAt ? `Last checked ${fmtRelative(upd.checkedAt)}.` : 'Not checked yet.'}
+                </small>
+                {updMsg && <p className="au-note">{updMsg}</p>}
+              </span>
+              <span className="v">
+                <button className="btn btn-sm" onClick={() => void checkNow()} disabled={checking}>
+                  {checking ? 'Checking…' : 'Check now'}
+                </button>
+              </span>
+            </div>
             <div className="set-row auto-update-row">
               <span className="k">
                 Automatic updates
@@ -188,7 +276,9 @@ export function SettingsPage() {
         )}
 
         {/* Staged agent-APK rollout (renders itself only when there's an apk to roll out or an active rollout) */}
-        <RolloutPanel />
+        <div id="rollout-anchor">
+          <RolloutPanel />
+        </div>
 
         {/* Enrollment defaults */}
         <section className="panel">

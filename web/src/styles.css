@@ -2614,6 +2614,14 @@ a {
 .auto-update-row { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
 .auto-update-row .au-note { color:var(--muted); font-size:12px; margin:4px 0 0; max-width:46ch; }
 
+/* Release notes ("What's new") + apply actions (Settings › Updates) */
+.whatsnew { max-height:180px; overflow:auto; white-space:pre-wrap; word-break:break-word;
+  font-family:var(--mono, ui-monospace, monospace); font-size:12px; line-height:1.5;
+  color:var(--text); background:var(--panel-2); border:1px solid var(--line);
+  border-radius:8px; padding:8px 10px; max-width:52ch; }
+.whatsnew-link { display:inline-block; margin-top:6px; font-size:12px; }
+.upd-actions { display:flex; flex-wrap:wrap; gap:8px; }
+
 /* Staged agent-APK rollout */
 .rollout-cohort { padding:8px 0; }
 .rollout-cohort-head { display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px; }

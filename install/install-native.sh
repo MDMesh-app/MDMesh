@@ -23,6 +23,32 @@ echo "== Installing dependencies =="
 apt-get update -y
 apt-get install -y openjdk-17-jdk postgresql maven curl
 
+echo "== Selecting the Java 17 toolchain =="
+# HERMETIC BUILD: pin JDK 17 and never fall back to the host's default JDK. The server depends on
+# Lombok 1.18.20, whose annotation processor only runs on JDK <=17; on a newer default JDK (21/25/…)
+# it generates nothing and the build dies with hundreds of "cannot find symbol". Owning the toolchain
+# here keeps this installer building identically no matter what the host's default JDK is, now or years
+# from now — no version guessing. (The Docker path is already hermetic via the temurin-17 image.)
+select_jdk17() {
+  local c
+  for c in "${JAVA17_HOME:-}" \
+           /usr/lib/jvm/java-17-openjdk* /usr/lib/jvm/*temurin-17* /usr/lib/jvm/*zulu*17* \
+           /usr/lib/jvm/*corretto*17* /usr/lib/jvm/*-17-* /usr/lib/jvm/*17* /opt/*jdk-17* /opt/*jdk17*; do
+    [ -n "$c" ] && [ -x "$c/bin/javac" ] || continue
+    case "$("$c/bin/javac" -version 2>&1)" in *' 17.'*) printf '%s' "$c"; return 0 ;; esac
+  done
+  return 1
+}
+JAVA_HOME=$(select_jdk17) || {
+  echo "ERROR: no JDK 17 found. The server build REQUIRES JDK 17 (Lombok 1.18.20 breaks on JDK 21+)." >&2
+  echo "       Install it (Debian/Ubuntu: apt-get install -y openjdk-17-jdk) or set JAVA17_HOME to a" >&2
+  echo "       JDK 17 home, then re-run. Refusing to build on the host default JDK to avoid a silent fail." >&2
+  exit 1
+}
+export JAVA_HOME
+export PATH="$JAVA_HOME/bin:$PATH"
+echo "   JDK: $(javac -version 2>&1)  (JAVA_HOME=$JAVA_HOME)"
+
 echo "== Database =="
 sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='hmdm'" | grep -q 1 || \
   sudo -u postgres psql -c "CREATE USER hmdm WITH PASSWORD '${DB_PASSWORD}';"
@@ -31,7 +57,7 @@ sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname='hmdm'" | gre
 
 echo "== Building the server WAR =="
 cp server/build.properties.example server/build.properties 2>/dev/null || true
-mvn -q -B -DskipTests -pl server -am package
+mvn -q -B -DskipTests -pl server -am package  # uses the pinned JDK 17 selected above
 
 echo "== Tomcat 9 =="
 if [ ! -d "$CATALINA" ]; then
@@ -71,8 +97,7 @@ cat > "$CATALINA/conf/Catalina/localhost/ROOT.xml" <<XML
 XML
 
 echo "== Starting Tomcat (first boot runs Liquibase) =="
-JAVA_HOME=$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")
-export JAVA_HOME
+# Runs on the same pinned JDK 17 (JAVA_HOME exported above), matching the Docker tomcat:9.0-jdk17 image.
 export CATALINA_OPTS="--add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.text=ALL-UNNAMED --add-opens java.desktop/java.awt.font=ALL-UNNAMED"
 "$CATALINA/bin/catalina.sh" start
 for i in $(seq 1 60); do [ -f "$BASE_DIR/initialized.txt" ] && break; sleep 5; done

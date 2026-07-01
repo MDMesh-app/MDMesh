@@ -46,19 +46,40 @@ _show_log() { hr; tail -n 30 "$LOGFILE" 2>/dev/null | sed "s/^/    ${c_dim}/;s/$
 _fail()     { _spin_stop; printf '  %s✗ %s%s\n' "$c_red" "$1" "$c_reset"; printf '\n  %sIt failed — last lines of the log:%s\n' "$c_yel" "$c_reset"; _show_log; exit 1; }
 trap '_spin_stop; printf "\n  %s✗ install aborted (line %s)%s\n" "$c_red" "$LINENO" "$c_reset"; _show_log' ERR
 
-# run "Label" cmd...  — run a command with its noisy output hidden in the log (or streamed with -v),
-# a spinner while it works, and a ✓/✗ at the end. On failure, the log tail is shown automatically.
+# run "Label" cmd...  — run a command with a ✓/✗ summary. -v streams everything inline; on a TTY the
+# default shows the command's latest output line live next to a spinner (so you can watch progress) and
+# collapses to a single ✓ when it succeeds; on failure the log tail is shown automatically. Non-TTY runs
+# just print a start/✓ line. Full output always goes to $LOGFILE (tail -f it, or re-run with -v).
 run() {
   local label="$1"; shift
   printf '\n=== %s ===\n' "$label" >> "$LOGFILE"
   if [ "$VERBOSE" = 1 ]; then
     printf '  %s▸%s %s\n' "$c_cyn" "$c_reset" "$label"
     "$@" 2>&1 | tee -a "$LOGFILE"; [ "${PIPESTATUS[0]}" -eq 0 ] || _fail "$label"
-  else
-    _spin_start "$label"
-    "$@" >> "$LOGFILE" 2>&1 || _fail "$label"
-    _spin_stop
+    ok "$label"; return 0
   fi
+  if [ "$TTY" != 1 ]; then
+    printf '  %s·%s %s…\n' "$c_dim" "$c_reset" "$label"
+    "$@" >> "$LOGFILE" 2>&1 || _fail "$label"
+    ok "$label"; return 0
+  fi
+  # TTY: live single-line tail of the command's output, collapsing to ✓ on success.
+  local frames='⣾⣽⣻⢿⡿⣟⣯⣷' fi=0 cols width rc_file rc line clip
+  cols=$(tput cols 2>/dev/null || echo 100); [ "$cols" -ge 20 ] 2>/dev/null || cols=100
+  width=$(( cols - ${#label} - 8 )); [ "$width" -ge 12 ] || width=12
+  rc_file=$(mktemp)
+  printf '\r\033[K  %s%s%s %s…' "$c_cyn" "${frames:0:1}" "$c_reset" "$label"
+  # set +e is local to this pipe subshell: without it, set -e would kill the subshell at a failing
+  # command before `echo $?` records the code, and the run would abort raw instead of showing ✗ + log.
+  { set +e; "$@" 2>&1; echo $? > "$rc_file"; } | while IFS= read -r line; do
+    printf '%s\n' "$line" >> "$LOGFILE"
+    line=${line//$'\r'/}; clip=${line:0:$width}
+    fi=$(( (fi + 1) % 8 ))
+    printf '\r\033[K  %s%s%s %s %s%s%s' "$c_cyn" "${frames:$fi:1}" "$c_reset" "$label" "$c_dim" "$clip" "$c_reset"
+  done
+  rc=$(cat "$rc_file" 2>/dev/null || echo 1); rm -f "$rc_file"
+  printf '\r\033[K'
+  [ "$rc" -eq 0 ] || _fail "$label"
   ok "$label"
 }
 
@@ -194,11 +215,27 @@ CATALINA_LOG="$CATALINA/logs/catalina.out"
 schema_ready() {
   PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U mdmesh -d mdmesh -tAc "SELECT to_regclass('public.users')" 2>/dev/null | grep -q '^users$'
 }
-_spin_start "Running first-boot database migration (up to 5 min)"
-ready=0
-for _ in $(seq 1 60); do schema_ready && { ready=1; break; }; sleep 5; done
-_spin_stop
-if [ "$ready" != "1" ]; then
+# Wait up to ~5 min for Liquibase to build the schema. On a TTY, show the latest catalina.out line live
+# so you can watch migrations apply; poll the DB for the users table (authoritative, not a marker file).
+_migrate_wait() {
+  local frames='⣾⣽⣻⢿⡿⣟⣯⣷' fi=0 cols width last clip i
+  if [ "$TTY" != 1 ]; then
+    printf '  %s·%s Running first-boot database migration…\n' "$c_dim" "$c_reset"
+    for i in $(seq 1 150); do schema_ready && return 0; sleep 2; done
+    return 1
+  fi
+  cols=$(tput cols 2>/dev/null || echo 100); [ "$cols" -ge 20 ] 2>/dev/null || cols=100
+  width=$(( cols - 30 )); [ "$width" -ge 12 ] || width=12
+  for i in $(seq 1 150); do
+    schema_ready && { printf '\r\033[K'; return 0; }
+    last=$(tail -n 1 "$CATALINA_LOG" 2>/dev/null | tr -d '\r'); clip=${last:0:$width}
+    fi=$(( (fi + 1) % 8 ))
+    printf '\r\033[K  %s%s%s migrating database %s%s%s' "$c_cyn" "${frames:$fi:1}" "$c_reset" "$c_dim" "$clip" "$c_reset"
+    sleep 2
+  done
+  printf '\r\033[K'; return 1
+}
+if ! _migrate_wait; then
   printf '  %s✗ database schema was not built within 5 minutes (users table missing)%s\n' "$c_red" "$c_reset"
   printf '  %sLiquibase or server startup likely failed — last lines of %s:%s\n' "$c_yel" "$CATALINA_LOG" "$c_reset"
   hr; tail -n 30 "$CATALINA_LOG" 2>/dev/null | sed "s/^/    ${c_dim}/;s/$/${c_reset}/" || echo "    (no log at $CATALINA_LOG)"; hr

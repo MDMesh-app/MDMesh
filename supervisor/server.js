@@ -23,6 +23,8 @@ let currentVersion = process.env.CURRENT_VERSION || '0.0.0';
 let lastManifest = null;
 // Downloadable APK for the latest verified release {version,versionCode,sha256,url}; null if none.
 let lastApk = null;
+// Release notes / link / date for the picked release {notes,url,publishedAt}; null when no release.
+let lastRelease = null;
 // In-flight apply state surfaced via /update/status; null when no apply has run.
 let apply = null;
 
@@ -104,6 +106,7 @@ function setStatus(args) {
     apply,
     auto: autoUpdate,
     apk: lastApk ? { version: lastApk.version, versionCode: lastApk.versionCode, sha256: lastApk.sha256, available: apkReady() } : null,
+    release: lastRelease,
   };
   maybeAutoApply();
 }
@@ -119,10 +122,11 @@ function maybeAutoApply() {
 }
 
 async function poll() {
-  if (!REPO) { lastManifest = null; setStatus({ current: currentVersion, manifest: null, verified: false, checkedAt: Date.now(), error: 'GITHUB_REPO not set' }); return; }
+  if (!REPO) { lastManifest = null; lastRelease = null; setStatus({ current: currentVersion, manifest: null, verified: false, checkedAt: Date.now(), error: 'GITHUB_REPO not set' }); return; }
   try {
     const rel = pickRelease(await ghJson(`https://api.github.com/repos/${REPO}/releases?per_page=10`), CHANNEL);
-    if (!rel) { lastManifest = null; setStatus({ current: currentVersion, manifest: null, verified: false, checkedAt: Date.now(), error: 'no matching release' }); return; }
+    if (!rel) { lastManifest = null; lastRelease = null; setStatus({ current: currentVersion, manifest: null, verified: false, checkedAt: Date.now(), error: 'no matching release' }); return; }
+    lastRelease = { notes: rel.body || null, url: rel.html_url || null, publishedAt: rel.published_at || null };
     const m = rel.assets.find((a) => a.name === 'manifest.json');
     const s = rel.assets.find((a) => a.name === 'manifest.json.minisig');
     const manifest = (m && s) ? await verifyManifest(m.browser_download_url, s.browser_download_url) : null;

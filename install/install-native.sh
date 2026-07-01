@@ -214,6 +214,22 @@ step "Starting the server"
 export CATALINA_OPTS="--add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.text=ALL-UNNAMED --add-opens java.desktop/java.awt.font=ALL-UNNAMED"
 # Stop any instance left from a previous run so the freshly written ROOT.xml (new DB password) is loaded.
 "$CATALINA/bin/catalina.sh" stop 15 -force >/dev/null 2>&1 || true
+sleep 1  # let our just-stopped instance release the listen socket
+# Preflight: nothing else may hold :8080. We stopped our OWN Tomcat above, so any listener now is foreign
+# (commonly a leftover Headwind/hmdm Tomcat at /opt/hmdm-tc). If we don't catch it, our Tomcat loses the
+# bind, dies quietly, and the old server answers every request with a confusing 404 — fail clearly instead.
+port8080_holder() {
+  if command -v ss >/dev/null 2>&1; then ss -ltnp 2>/dev/null | awk '$4 ~ /:8080$/ {print; exit}'
+  elif command -v lsof >/dev/null 2>&1; then lsof -iTCP:8080 -sTCP:LISTEN -nP 2>/dev/null | awk 'NR==2{print; exit}'; fi
+}
+holder=$(port8080_holder)
+if [ -n "$holder" ]; then
+  printf '  %s✗ port 8080 is already in use%s by another server:\n' "$c_red" "$c_reset"
+  printf '    %s%s%s\n' "$c_dim" "$holder" "$c_reset"
+  printf '  Likely a leftover Tomcat from a previous install. Stop it, then re-run:\n'
+  printf '    %ssudo /opt/hmdm-tc/bin/catalina.sh stop 15 -force%s   (or kill the pid shown above)\n' "$c_dim" "$c_reset"
+  exit 1
+fi
 "$CATALINA/bin/catalina.sh" start >> "$LOGFILE" 2>&1
 ok "Tomcat started"
 

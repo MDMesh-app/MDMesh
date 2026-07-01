@@ -138,7 +138,25 @@ export CATALINA_OPTS="--add-opens java.base/java.lang=ALL-UNNAMED --add-opens ja
 # actually loaded — otherwise `start` no-ops against the already-running server and keeps stale config.
 "$CATALINA/bin/catalina.sh" stop 15 -force >/dev/null 2>&1 || true
 "$CATALINA/bin/catalina.sh" start
-for i in $(seq 1 60); do [ -f "$BASE_DIR/initialized.txt" ] && break; sleep 5; done
+# First boot runs Liquibase to build the schema, then writes initialized.txt. This can take a couple of
+# minutes on a fresh DB and emits nothing to our stdout — so show a heartbeat instead of looking hung,
+# and if it never finishes, fail with the Tomcat log rather than silently running the seed on an empty DB.
+CATALINA_LOG="$CATALINA/logs/catalina.out"
+printf '   waiting for first-boot database migration (up to 5 min)'
+ready=0
+for i in $(seq 1 60); do
+  [ -f "$BASE_DIR/initialized.txt" ] && { ready=1; break; }
+  printf '.'; sleep 5
+done
+printf '\n'
+if [ "$ready" != "1" ]; then
+  echo "ERROR: the server did not finish initializing within 5 minutes." >&2
+  echo "       ($BASE_DIR/initialized.txt was never created — Liquibase or startup likely failed.)" >&2
+  echo "       Last 40 lines of $CATALINA_LOG:" >&2
+  tail -n 40 "$CATALINA_LOG" 2>/dev/null >&2 || echo "       (no log at $CATALINA_LOG)" >&2
+  exit 1
+fi
+echo "   database initialized."
 
 echo "== Seeding settings + admin =="
 HOST=$(printf '%s' "$BASE_URL" | sed -E 's#https?://##; s#/.*##')

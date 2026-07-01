@@ -77,22 +77,33 @@ jobs:
           OWNER: ${{ github.repository_owner }}
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          IMG="ghcr.io/${OWNER}/mdmesh-server:${VERSION}"
-          docker build -f docker/server.Dockerfile -t "$IMG" .
-          docker push "$IMG"
-          echo "SERVER_IMG=$IMG" >> "$GITHUB_ENV"
+          O=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')   # GHCR repo names must be lowercase
+          IMG="ghcr.io/${O}/mdmesh-server"
+          docker build -f docker/server.Dockerfile -t "$IMG:$VERSION" -t "$IMG:latest" .
+          docker push "$IMG:$VERSION"; docker push "$IMG:latest"
+          echo "SERVER_IMG=$IMG:$VERSION" >> "$GITHUB_ENV"
       - name: Web image (bake release QR checksum/package)
         env:
           OWNER: ${{ github.repository_owner }}
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          IMG="ghcr.io/${OWNER}/mdmesh-web:${VERSION}"
+          O=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+          IMG="ghcr.io/${O}/mdmesh-web"
           docker build -f docker/web.Dockerfile \
             --build-arg VITE_AGENT_PACKAGE=com.mdmesh.agent \
             --build-arg VITE_AGENT_CHECKSUM="$CK" \
-            -t "$IMG" .
-          docker push "$IMG"
-          echo "WEB_IMG=$IMG" >> "$GITHUB_ENV"
+            -t "$IMG:$VERSION" -t "$IMG:latest" .
+          docker push "$IMG:$VERSION"; docker push "$IMG:latest"
+          echo "WEB_IMG=$IMG:$VERSION" >> "$GITHUB_ENV"
+      - name: Supervisor image
+        env:
+          OWNER: ${{ github.repository_owner }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          O=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+          IMG="ghcr.io/${O}/mdmesh-supervisor"
+          docker build -f docker/supervisor.Dockerfile -t "$IMG:$VERSION" -t "$IMG:latest" .
+          docker push "$IMG:$VERSION"; docker push "$IMG:latest"
 
       # --- Manifest: build + sign ---
       - name: Build + sign manifest

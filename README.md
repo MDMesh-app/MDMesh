@@ -156,7 +156,18 @@ One-click or unattended server updates with DB backup + auto-rollback, plus a re
 
 ## 🚀 Quick start
 
-**Requirements:** Docker + Docker Compose v2 and `openssl` (or use the native installer). A Linux host.
+**Requirements:** Docker + Docker Compose v2 + `openssl`/`curl`. A Linux host.
+
+### Option A — one line, no clone (published images)
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/quickstart.sh)
+```
+
+Pulls the released images from GHCR (no build), generates secrets, brings the stack up in `./mdmesh`,
+and prints the console URL + a temporary admin password. *(Requires at least one published release.)*
+
+### Option B — from source (clone + build)
 
 ```bash
 git clone https://github.com/MDMesh-app/MDMesh.git
@@ -164,13 +175,14 @@ cd MDMesh
 ./setup.sh           # interactive: Cloudflare Tunnel, or your own HTTPS domain
 ```
 
-`setup.sh` generates your secrets, brings up the stack, and prints the console URL + a generated admin
-password. Then:
+Either way, `setup.sh`/`quickstart.sh` is interactive (Cloudflare Tunnel or your own HTTPS domain),
+generates your secrets, and prints the console URL + a generated admin password. Then:
 
-1. Open the console, go to **Enroll**, and generate a QR code.
-2. **Factory-reset** an Android device and tap the welcome screen 6× to open the QR scanner (or use
+1. Open the console — you'll be prompted to **set your own password** on first login.
+2. Go to **Enroll** and generate a QR code.
+3. **Factory-reset** an Android device and tap the welcome screen 6× to open the QR scanner (or use
    `adb shell dpm set-device-owner` for a dev device).
-3. Scan the QR — the device enrolls as Device Owner and checks in.
+4. Scan the QR — the device enrolls as Device Owner and checks in.
 
 No Docker? Run `./setup.sh --native`. Full details, hosting modes, updates, and recovery are in the
 **[full setup guide → DEPLOY.md](DEPLOY.md)**.

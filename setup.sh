@@ -93,6 +93,7 @@ GITHUB_TOKEN=
 IMAGE_OWNER=${IMAGE_OWNER:-local}
 SERVER_VERSION=${CURRENT_VERSION:-0.0.0}
 WEB_VERSION=${CURRENT_VERSION:-0.0.0}
+SUPERVISOR_VERSION=${CURRENT_VERSION:-0.0.0}
 AUTO_UPDATE=0
 # Pin the compose identity so the supervisor drives the SAME stack the host launched.
 COMPOSE_PROJECT_NAME=mdmesh

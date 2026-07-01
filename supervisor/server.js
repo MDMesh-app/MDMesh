@@ -35,6 +35,8 @@ let autoUpdate = process.env.AUTO_UPDATE === '1' || process.env.AUTO_UPDATE === 
 try { const j = JSON.parse(fs.readFileSync(AUTO_FILE, 'utf8')); if (typeof j.auto === 'boolean') autoUpdate = j.auto; } catch { /* no saved pref yet */ }
 // Version whose auto-apply already failed — never auto-retry it (prevents a rollback crash-loop).
 let lastAutoFailed = null;
+// Wall-clock of the last completed poll() — used to rate-limit the on-demand /update/check route.
+let lastPollAt = 0;
 function saveAuto() {
   try { fs.mkdirSync(path.dirname(AUTO_FILE), { recursive: true }); fs.writeFileSync(AUTO_FILE, JSON.stringify({ auto: autoUpdate })); }
   catch (e) { console.log('[auto] persist failed:', String((e && e.message) || e)); }
@@ -122,6 +124,7 @@ function maybeAutoApply() {
 }
 
 async function poll() {
+  lastPollAt = Date.now(); // stamp up-front so /update/check throttling also covers an in-flight poll
   if (!REPO) { lastManifest = null; lastRelease = null; setStatus({ current: currentVersion, manifest: null, verified: false, checkedAt: Date.now(), error: 'GITHUB_REPO not set' }); return; }
   try {
     const rel = pickRelease(await ghJson(`https://api.github.com/repos/${REPO}/releases?per_page=10`), CHANNEL);
@@ -280,6 +283,14 @@ http.createServer(async (req, res) => {
       if (!ready || !p || !fs.existsSync(p)) { json(res, 502, { error: 'apk unavailable or checksum mismatch' }); return; }
       res.writeHead(200, { 'content-type': 'application/vnd.android.package-archive', 'content-length': fs.statSync(p).size });
       fs.createReadStream(p).pipe(res);
+      return;
+    }
+    if (req.method === 'POST' && req.url.startsWith('/update/check')) {
+      if (!csrfOk(req)) { json(res, 403, { error: 'missing console header' }); return; }
+      if (!(await authorizeApply(req))) { json(res, 401, { error: 'unauthorized' }); return; }
+      // Rate-limit so this can't be used to hammer the GitHub API; otherwise return the current state.
+      if (Date.now() - lastPollAt > 15000) await poll();
+      json(res, 200, state);
       return;
     }
     if (req.method === 'POST' && req.url.startsWith('/update/apply')) {

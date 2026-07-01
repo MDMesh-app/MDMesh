@@ -111,6 +111,11 @@ pwhash() { local m; m=$(printf '%s' "$1" | md5sum | awk '{print toupper($1)}'); 
 
 printf '\n'
 read -rp "  Public base URL (e.g. https://mdm.example.com): " BASE_URL
+# HTTP port Tomcat listens on. Override non-interactively with HTTP_PORT=9090; default 8080.
+HTTP_PORT="${HTTP_PORT:-}"
+if [ -z "$HTTP_PORT" ]; then read -rp "  HTTP port [8080]: " _p; HTTP_PORT="${_p:-8080}"; fi
+case "$HTTP_PORT" in ''|*[!0-9]*) echo "  Port must be a number."; exit 1 ;; esac
+{ [ "$HTTP_PORT" -ge 1 ] && [ "$HTTP_PORT" -le 65535 ]; } || { echo "  Port must be 1-65535."; exit 1; }
 DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
 BASE_DIR=/opt/mdmesh
 CATALINA=/opt/mdmesh-tc
@@ -183,6 +188,10 @@ if [ ! -x "$CATALINA/bin/catalina.sh" ]; then
 else
   info "Apache Tomcat already present at $CATALINA"
 fi
+# Point Tomcat's HTTP connector at the chosen port. Idempotent across re-runs: rewrite whatever numeric
+# port currently sits on the HTTP/1.1 connector (leaves the shutdown/AJP ports untouched).
+sed -i -E "s#(<Connector port=\")[0-9]+(\" protocol=\"HTTP/1.1\")#\1${HTTP_PORT}\2#" "$CATALINA/conf/server.xml"
+info "HTTP port set to ${HTTP_PORT}"
 rm -rf "$CATALINA"/webapps/*
 # Deploy the server as an EXPLODED webapp (not ROOT.war) and overlay the built SPA into it, so a single
 # Tomcat serves the console at / and the API at /rest on one origin. Exploding ourselves (no ROOT.war
@@ -226,19 +235,19 @@ export CATALINA_OPTS="--add-opens java.base/java.lang=ALL-UNNAMED --add-opens ja
 # Stop any instance left from a previous run so the freshly written ROOT.xml (new DB password) is loaded.
 "$CATALINA/bin/catalina.sh" stop 15 -force >/dev/null 2>&1 || true
 sleep 1  # let our just-stopped instance release the listen socket
-# Preflight: nothing else may hold :8080. We stopped our OWN Tomcat above, so any listener now is foreign
-# (commonly a leftover Headwind/hmdm Tomcat at /opt/hmdm-tc). If we don't catch it, our Tomcat loses the
-# bind, dies quietly, and the old server answers every request with a confusing 404 — fail clearly instead.
-port8080_holder() {
-  if command -v ss >/dev/null 2>&1; then ss -ltnp 2>/dev/null | awk '$4 ~ /:8080$/ {print; exit}'
-  elif command -v lsof >/dev/null 2>&1; then lsof -iTCP:8080 -sTCP:LISTEN -nP 2>/dev/null | awk 'NR==2{print; exit}'; fi
+# Preflight: nothing else may hold the chosen port. We stopped our OWN Tomcat above, so any listener now
+# is foreign (commonly a leftover Headwind/hmdm Tomcat). If we don't catch it, our Tomcat loses the bind,
+# dies quietly, and the old server answers every request with a confusing 404 — fail clearly instead.
+port_holder() {
+  if command -v ss >/dev/null 2>&1; then ss -ltnp 2>/dev/null | awk -v p=":$HTTP_PORT$" '$4 ~ p {print; exit}'
+  elif command -v lsof >/dev/null 2>&1; then lsof -iTCP:"$HTTP_PORT" -sTCP:LISTEN -nP 2>/dev/null | awk 'NR==2{print; exit}'; fi
 }
-holder=$(port8080_holder)
+holder=$(port_holder)
 if [ -n "$holder" ]; then
-  printf '  %s✗ port 8080 is already in use%s by another server:\n' "$c_red" "$c_reset"
+  printf '  %s✗ port %s is already in use%s by another server:\n' "$c_red" "$HTTP_PORT" "$c_reset"
   printf '    %s%s%s\n' "$c_dim" "$holder" "$c_reset"
-  printf '  Likely a leftover Tomcat from a previous install. Stop it, then re-run:\n'
-  printf '    %ssudo /opt/hmdm-tc/bin/catalina.sh stop 15 -force%s   (or kill the pid shown above)\n' "$c_dim" "$c_reset"
+  printf '  Likely a leftover Tomcat from a previous install. Stop it (or pick another port), then re-run:\n'
+  printf '    %ssudo fuser -k %s/tcp%s   (or kill the pid shown above)\n' "$c_dim" "$HTTP_PORT" "$c_reset"
   exit 1
 fi
 "$CATALINA/bin/catalina.sh" start >> "$LOGFILE" 2>&1
@@ -294,6 +303,7 @@ printf '  %sConsole%s        %s\n' "$c_dim" "$c_reset" "${BASE_URL}"
 printf '  %sREST API%s       %s/rest\n' "$c_dim" "$c_reset" "${BASE_URL}"
 printf '  %sLogin%s          %sadmin%s / %s%s%s   %s(temporary — set your own on first login)%s\n' \
   "$c_dim" "$c_reset" "$c_bold" "$c_reset" "$c_bold" "${ADMIN_PASSWORD}" "$c_reset" "$c_dim" "$c_reset"
-printf '  %sTomcat%s         %s (serving on :8080 — front it with your TLS reverse proxy)\n' "$c_dim" "$c_reset" "$CATALINA"
+printf '  %sTomcat%s         %s (serving on :%s — front it with your TLS reverse proxy)\n' "$c_dim" "$c_reset" "$CATALINA" "$HTTP_PORT"
+printf '  %sLocal URL%s      http://localhost:%s/\n' "$c_dim" "$c_reset" "$HTTP_PORT"
 printf '\n  %sNotes: install '\''aapt'\'' for full APK parsing; add a systemd unit to keep Tomcat running.%s\n' "$c_dim" "$c_reset"
 printf '  %sInstall log: %s%s\n\n' "$c_dim" "$LOGFILE" "$c_reset"

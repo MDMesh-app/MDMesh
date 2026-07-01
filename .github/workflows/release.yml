@@ -64,7 +64,9 @@ jobs:
       - name: Stage APK + compute checksum
         run: |
           cp agent-android/app/build/outputs/apk/release/app-release.apk mdmesh-agent.apk
-          echo "CK=$(release/apk-checksum.sh mdmesh-agent.apk)" >> "$GITHUB_ENV"
+          CK=$(release/apk-checksum.sh mdmesh-agent.apk)
+          [ -n "$CK" ] || { echo "APK signature checksum came out empty — aborting the release"; exit 1; }
+          echo "CK=$CK" >> "$GITHUB_ENV"
 
       # --- Build + push images to GHCR ---
       - uses: docker/login-action@v3

@@ -199,12 +199,20 @@ rm -rf "$CATALINA"/webapps/*
 mkdir -p "$CATALINA/webapps/ROOT"
 ( cd "$CATALINA/webapps/ROOT" && "$JAVA_HOME/bin/jar" -xf "$REPO/server/target/launcher.war" )
 cp -a "$REPO"/web/dist/. "$CATALINA/webapps/ROOT/"   # index.html + assets at / (server maps /rest,/files,/agent)
+# SPA fallback (verified on Tomcat 9.0.89): !-f serves real files (assets) as-is; the negative lookahead
+# leaves the API paths (/rest,/files,/agent) alone; everything else → index.html so client-side routes
+# survive a reload. Paired with the RewriteValve declared in ROOT.xml above.
+printf 'RewriteCond %%{REQUEST_URI} !-f\nRewriteRule ^/(?!rest|files|agent)(.*)$ /index.html\n' \
+  > "$CATALINA/webapps/ROOT/WEB-INF/rewrite.config"
 mkdir -p "$BASE_DIR/files" "$BASE_DIR/plugins" "$CATALINA/conf/Catalina/localhost"
 cp install/log4j_template.xml "$BASE_DIR/log4j-mdmesh.xml"
 cp -r install/emails "$BASE_DIR/" 2>/dev/null || true
 cat > "$CATALINA/conf/Catalina/localhost/ROOT.xml" <<XML
 <?xml version="1.0" encoding="UTF-8"?>
 <Context>
+    <!-- SPA fallback: serve index.html for client-side routes so a reload on /devices etc. works.
+         Rules live in webapps/ROOT/WEB-INF/rewrite.config (written below). -->
+    <Valve className="org.apache.catalina.valves.rewrite.RewriteValve"/>
     <Parameter name="JDBC.driver"   value="org.postgresql.Driver"/>
     <Parameter name="JDBC.url"      value="jdbc:postgresql://127.0.0.1:5432/mdmesh"/>
     <Parameter name="JDBC.username" value="mdmesh"/>

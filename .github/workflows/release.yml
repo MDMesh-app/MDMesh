@@ -94,6 +94,7 @@ jobs:
           docker build -f docker/web.Dockerfile \
             --build-arg VITE_AGENT_PACKAGE=com.mdmesh.agent \
             --build-arg VITE_AGENT_CHECKSUM="$CK" \
+            --build-arg VITE_APP_VERSION="$VERSION" \
             -t "$IMG:$VERSION" -t "$IMG:latest" .
           docker push "$IMG:$VERSION"; docker push "$IMG:latest"
           echo "WEB_IMG=$IMG:$VERSION" >> "$GITHUB_ENV"

@@ -20,7 +20,12 @@ CATALINA=/opt/mdmesh-tc
 TOMCAT_VER=9.0.89
 
 echo "== Installing dependencies =="
-apt-get update -y
+# Don't let an unrelated broken third-party APT source abort the install. A common case: a Docker repo
+# pinned to a codename Docker doesn't publish for (e.g. "resolute") returns "does not have a Release
+# file", which makes `apt-get update` exit non-zero. The native install only needs base Debian packages,
+# so tolerate source-refresh errors here — the `apt-get install` below still fails loudly if a required
+# package is genuinely unavailable.
+apt-get update -y || echo "   (some APT sources failed to refresh; continuing — only base Debian packages are required)"
 apt-get install -y openjdk-17-jdk postgresql maven curl
 
 echo "== Selecting the Java 17 toolchain =="

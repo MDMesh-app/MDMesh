@@ -111,6 +111,9 @@ XML
 echo "== Starting Tomcat (first boot runs Liquibase) =="
 # Runs on the same pinned JDK 17 (JAVA_HOME exported above), matching the Docker tomcat:9.0-jdk17 image.
 export CATALINA_OPTS="--add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.text=ALL-UNNAMED --add-opens java.desktop/java.awt.font=ALL-UNNAMED"
+# Stop any instance left over from a previous run so the freshly written ROOT.xml (new DB password) is
+# actually loaded — otherwise `start` no-ops against the already-running server and keeps stale config.
+"$CATALINA/bin/catalina.sh" stop 15 -force >/dev/null 2>&1 || true
 "$CATALINA/bin/catalina.sh" start
 for i in $(seq 1 60); do [ -f "$BASE_DIR/initialized.txt" ] && break; sleep 5; done
 

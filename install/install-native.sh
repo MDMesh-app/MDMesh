@@ -1,22 +1,72 @@
 #!/usr/bin/env bash
-# Lean native (non-Docker) installer for MDMesh — Debian/Ubuntu. The leaner path: it stands up
-# Postgres + Tomcat 9 + the server on the host and assumes you terminate TLS yourself (your own
-# reverse proxy / cert, or put Caddy in front). For the turnkey experience use ./setup.sh (Docker).
-# Best-effort + idempotent-ish; review before running on a production host.
+# Lean native (non-Docker) installer for MDMesh — Debian/Ubuntu. Stands up Postgres + Tomcat 9 + the
+# server on the host and assumes you terminate TLS yourself (your own reverse proxy / cert, or Caddy in
+# front). For the turnkey experience use ./setup.sh (Docker). Flags: -y/--yes (skip confirm), -v/--verbose
+# (stream all output instead of hiding it in the log). Best-effort + idempotent; review before prod use.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 [ "$(id -u)" = "0" ] || { echo "Run as root (sudo)."; exit 1; }
 command -v apt-get >/dev/null || { echo "This script targets Debian/Ubuntu."; exit 1; }
 
-# --- Confirmation gate: this installer makes real, host-wide changes. Skip with ASSUME_YES=1 or -y. ---
-ASSUME_YES="${ASSUME_YES:-0}"
-case "${1:-}" in -y|--yes) ASSUME_YES=1 ;; esac
-cat <<'WARN'
+ASSUME_YES="${ASSUME_YES:-0}"; VERBOSE="${VERBOSE:-0}"
+for a in "$@"; do case "$a" in -y|--yes) ASSUME_YES=1 ;; -v|--verbose) VERBOSE=1 ;; esac; done
 
-  ⚠  WARNING — MDMesh native installer
+# ------------------------------------------------------------------------------------------------------
+# Lightweight UI (zero deps): colored status lines, a spinner for long steps, and verbose command output
+# tucked into a logfile that is auto-expanded only when something fails. Run with -v to stream it inline.
+# Colour/spinner auto-disable when stdout isn't a TTY or NO_COLOR is set, so piped runs stay clean.
+# ------------------------------------------------------------------------------------------------------
+LOGFILE="${LOGFILE:-/var/log/mdmesh-install.log}"
+: > "$LOGFILE" 2>/dev/null || LOGFILE="/tmp/mdmesh-install.log"; : > "$LOGFILE" 2>/dev/null || true
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  c_reset=$'\033[0m'; c_dim=$'\033[2m'; c_grn=$'\033[32m'; c_red=$'\033[31m'
+  c_yel=$'\033[33m'; c_cyn=$'\033[36m'; c_bold=$'\033[1m'; TTY=1
+else
+  c_reset=; c_dim=; c_grn=; c_red=; c_yel=; c_cyn=; c_bold=; TTY=0
+fi
+hr()   { printf '  %s%s%s\n' "$c_dim" '────────────────────────────────────────────────' "$c_reset"; }
+step() { printf '\n%s▸%s %s%s%s\n' "$c_cyn" "$c_reset" "$c_bold" "$1" "$c_reset"; }
+ok()   { printf '  %s✓%s %s\n' "$c_grn" "$c_reset" "$1"; }
+info() { printf '  %s·%s %s%s%s\n' "$c_dim" "$c_reset" "$c_dim" "$1" "$c_reset"; }
 
-  This action will modify THIS host:
+_spin_pid=
+_spin_start() {
+  [ "$TTY" = 1 ] || { printf '  %s·%s %s…\n' "$c_dim" "$c_reset" "$1"; return; }
+  local label="$1" frames='⣾⣽⣻⢿⡿⣟⣯⣷' i=0
+  ( while :; do i=$(( (i+1) % ${#frames} )); printf '\r  %s%s%s %s… ' "$c_cyn" "${frames:$i:1}" "$c_reset" "$label"; sleep 0.1; done ) &
+  _spin_pid=$!
+}
+_spin_stop() {
+  [ -n "$_spin_pid" ] && { kill "$_spin_pid" 2>/dev/null || true; wait "$_spin_pid" 2>/dev/null || true; _spin_pid=; }
+  [ "$TTY" = 1 ] && printf '\r\033[K'
+  return 0
+}
+_show_log() { hr; tail -n 30 "$LOGFILE" 2>/dev/null | sed "s/^/    ${c_dim}/;s/$/${c_reset}/"; hr; printf '  full log: %s\n' "$LOGFILE"; }
+_fail()     { _spin_stop; printf '  %s✗ %s%s\n' "$c_red" "$1" "$c_reset"; printf '\n  %sIt failed — last lines of the log:%s\n' "$c_yel" "$c_reset"; _show_log; exit 1; }
+trap '_spin_stop; printf "\n  %s✗ install aborted (line %s)%s\n" "$c_red" "$LINENO" "$c_reset"; _show_log' ERR
+
+# run "Label" cmd...  — run a command with its noisy output hidden in the log (or streamed with -v),
+# a spinner while it works, and a ✓/✗ at the end. On failure, the log tail is shown automatically.
+run() {
+  local label="$1"; shift
+  printf '\n=== %s ===\n' "$label" >> "$LOGFILE"
+  if [ "$VERBOSE" = 1 ]; then
+    printf '  %s▸%s %s\n' "$c_cyn" "$c_reset" "$label"
+    "$@" 2>&1 | tee -a "$LOGFILE"; [ "${PIPESTATUS[0]}" -eq 0 ] || _fail "$label"
+  else
+    _spin_start "$label"
+    "$@" >> "$LOGFILE" 2>&1 || _fail "$label"
+    _spin_stop
+  fi
+  ok "$label"
+}
+
+# ------------------------------------------------------------------------------------------------------
+printf '\n  %sMDMesh · native install%s\n' "$c_bold" "$c_reset"
+cat <<WARN
+
+  ${c_yel}⚠  This will modify THIS host:${c_reset}
     • apt-get install openjdk-17-jdk, postgresql, maven, curl
     • create or alter a PostgreSQL role and database "mdmesh" (resets that role's password)
     • download and unpack Apache Tomcat 9 into /opt/mdmesh-tc (clears its webapps/)
@@ -24,39 +74,36 @@ cat <<'WARN'
     • start Tomcat, run database migrations, and seed the admin account
 
   Intended for a dedicated server you control. This script does not undo these changes.
+  ${c_dim}Details are hidden — re-run with -v to stream them, or: tail -f ${LOGFILE}${c_reset}
 
 WARN
 if [ "$ASSUME_YES" != "1" ]; then
-  printf 'Type "yes" to proceed: '
+  printf '  Type "yes" to proceed: '
   read -r _confirm
-  [ "$_confirm" = "yes" ] || { echo "Aborted — no changes made."; exit 1; }
+  [ "$_confirm" = "yes" ] || { echo "  Aborted — no changes made."; exit 1; }
 fi
 
 SALT='5YdSYHyg2U'
 rand() { openssl rand -hex 24; }
 pwhash() { local m; m=$(printf '%s' "$1" | md5sum | awk '{print toupper($1)}'); printf '%s' "${m}${SALT}" | sha1sum | awk '{print $1}'; }
 
-read -rp "Public base URL (e.g. https://mdm.example.com): " BASE_URL
+printf '\n'
+read -rp "  Public base URL (e.g. https://mdm.example.com): " BASE_URL
 DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
 BASE_DIR=/opt/mdmesh
 CATALINA=/opt/mdmesh-tc
 TOMCAT_VER=9.0.89
 
-echo "== Installing dependencies =="
-# Don't let an unrelated broken third-party APT source abort the install. A common case: a Docker repo
-# pinned to a codename Docker doesn't publish for (e.g. "resolute") returns "does not have a Release
-# file", which makes `apt-get update` exit non-zero. The native install only needs base Debian packages,
-# so tolerate source-refresh errors here — the `apt-get install` below still fails loudly if a required
-# package is genuinely unavailable.
-apt-get update -y || echo "   (some APT sources failed to refresh; continuing — only base Debian packages are required)"
-apt-get install -y openjdk-17-jdk postgresql maven curl
+step "Installing dependencies"
+# Tolerate an unrelated broken third-party APT source (e.g. a Docker repo on a codename Docker doesn't
+# publish for → "does not have a Release file") — the native install only needs base Debian packages.
+run "openjdk-17-jdk, postgresql, maven, curl" bash -c \
+  'apt-get update -y || echo "(some apt sources failed to refresh — continuing)"; DEBIAN_FRONTEND=noninteractive apt-get install -y openjdk-17-jdk postgresql maven curl'
 
-echo "== Selecting the Java 17 toolchain =="
-# HERMETIC BUILD: pin JDK 17 and never fall back to the host's default JDK. The server depends on
-# Lombok 1.18.20, whose annotation processor only runs on JDK <=17; on a newer default JDK (21/25/…)
-# it generates nothing and the build dies with hundreds of "cannot find symbol". Owning the toolchain
-# here keeps this installer building identically no matter what the host's default JDK is, now or years
-# from now — no version guessing. (The Docker path is already hermetic via the temurin-17 image.)
+step "Selecting the Java 17 toolchain"
+# HERMETIC BUILD: pin JDK 17 and never fall back to the host default JDK. The server uses Lombok 1.18.20,
+# whose annotation processor only runs on JDK <=17; on a newer default JDK (21/25/…) it generates nothing
+# and the build dies with hundreds of "cannot find symbol". This keeps the build identical on any host.
 select_jdk17() {
   local c
   for c in "${JAVA17_HOME:-}" \
@@ -68,35 +115,37 @@ select_jdk17() {
   return 1
 }
 JAVA_HOME=$(select_jdk17) || {
-  echo "ERROR: no JDK 17 found. The server build REQUIRES JDK 17 (Lombok 1.18.20 breaks on JDK 21+)." >&2
-  echo "       Install it (Debian/Ubuntu: apt-get install -y openjdk-17-jdk) or set JAVA17_HOME to a" >&2
-  echo "       JDK 17 home, then re-run. Refusing to build on the host default JDK to avoid a silent fail." >&2
+  _spin_stop
+  echo "  ${c_red}✗ no JDK 17 found${c_reset} — the server build REQUIRES JDK 17 (Lombok 1.18.20 breaks on JDK 21+)." >&2
+  echo "    Install it (apt-get install -y openjdk-17-jdk) or set JAVA17_HOME to a JDK 17 home, then re-run." >&2
   exit 1
 }
 export JAVA_HOME
 export PATH="$JAVA_HOME/bin:$PATH"
-echo "   JDK: $(javac -version 2>&1)  (JAVA_HOME=$JAVA_HOME)"
+ok "$(javac -version 2>&1) — $JAVA_HOME"
 
-echo "== Database =="
-# Idempotent + timeless: every run generates a fresh DB_PASSWORD, so ALWAYS set the role's password to
-# match — ALTER if the role already exists from a previous run, else CREATE. The old "create only if
-# missing" left a re-run's role on its previous password while ROOT.xml + seeding used the new one →
-# "password authentication failed for user mdmesh".
-if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='mdmesh'" | grep -q 1; then
-  sudo -u postgres psql -c "ALTER USER mdmesh WITH PASSWORD '${DB_PASSWORD}';"
-else
-  sudo -u postgres psql -c "CREATE USER mdmesh WITH PASSWORD '${DB_PASSWORD}';"
-fi
-sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='mdmesh'" | grep -q 1 || \
-  sudo -u postgres psql -c "CREATE DATABASE mdmesh OWNER mdmesh;"
+step "Database"
+# Idempotent: every run generates a fresh DB_PASSWORD, so ALWAYS set the role's password to match — ALTER
+# if the role already exists from a previous run, else CREATE — so ROOT.xml + seeding always authenticate.
+{
+  if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='mdmesh'" | grep -q 1; then
+    sudo -u postgres psql -c "ALTER USER mdmesh WITH PASSWORD '${DB_PASSWORD}';"
+  else
+    sudo -u postgres psql -c "CREATE USER mdmesh WITH PASSWORD '${DB_PASSWORD}';"
+  fi
+  sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='mdmesh'" | grep -q 1 || \
+    sudo -u postgres psql -c "CREATE DATABASE mdmesh OWNER mdmesh;"
+} >> "$LOGFILE" 2>&1
+ok "PostgreSQL role + database 'mdmesh' ready"
 
-echo "== Building the server WAR =="
-cp server/build.properties.example server/build.properties 2>/dev/null || true
-mvn -q -B -DskipTests -pl server -am package  # uses the pinned JDK 17 selected above
+step "Building the server"
+run "Maven package (JDK 17, ~1-2 min)" bash -c \
+  'cp server/build.properties.example server/build.properties 2>/dev/null || true; mvn -q -B -DskipTests -pl server -am package'
 
-echo "== Tomcat 9 =="
+step "Tomcat 9 + app deploy"
 if [ ! -d "$CATALINA" ]; then
-  curl -fsSL "https://archive.apache.org/dist/tomcat/tomcat-9/v${TOMCAT_VER}/bin/apache-tomcat-${TOMCAT_VER}.tar.gz" -o /tmp/tc.tgz
+  run "Downloading Apache Tomcat ${TOMCAT_VER}" \
+    curl -fsSL "https://archive.apache.org/dist/tomcat/tomcat-9/v${TOMCAT_VER}/bin/apache-tomcat-${TOMCAT_VER}.tar.gz" -o /tmp/tc.tgz
   mkdir -p "$CATALINA"; tar xzf /tmp/tc.tgz -C "$CATALINA" --strip-components=1
 fi
 rm -rf "$CATALINA"/webapps/*
@@ -104,7 +153,6 @@ cp server/target/launcher.war "$CATALINA"/webapps/ROOT.war
 mkdir -p "$BASE_DIR/files" "$BASE_DIR/plugins" "$CATALINA/conf/Catalina/localhost"
 cp install/log4j_template.xml "$BASE_DIR/log4j-mdmesh.xml"
 cp -r install/emails "$BASE_DIR/" 2>/dev/null || true
-
 cat > "$CATALINA/conf/Catalina/localhost/ROOT.xml" <<XML
 <?xml version="1.0" encoding="UTF-8"?>
 <Context>
@@ -130,51 +178,50 @@ cat > "$CATALINA/conf/Catalina/localhost/ROOT.xml" <<XML
     <Parameter name="device.fast.search.chars" value="5"/>
 </Context>
 XML
+ok "launcher.war deployed; ROOT.xml written"
 
-echo "== Starting Tomcat (first boot runs Liquibase) =="
+step "Starting the server"
 # Runs on the same pinned JDK 17 (JAVA_HOME exported above), matching the Docker tomcat:9.0-jdk17 image.
 export CATALINA_OPTS="--add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.text=ALL-UNNAMED --add-opens java.desktop/java.awt.font=ALL-UNNAMED"
-# Stop any instance left over from a previous run so the freshly written ROOT.xml (new DB password) is
-# actually loaded — otherwise `start` no-ops against the already-running server and keeps stale config.
+# Stop any instance left from a previous run so the freshly written ROOT.xml (new DB password) is loaded.
 "$CATALINA/bin/catalina.sh" stop 15 -force >/dev/null 2>&1 || true
-"$CATALINA/bin/catalina.sh" start
-# First boot runs Liquibase to build the schema, then writes initialized.txt. This can take a couple of
-# minutes on a fresh DB and emits nothing to our stdout — so show a heartbeat instead of looking hung,
-# and if it never finishes, fail with the Tomcat log rather than silently running the seed on an empty DB.
+"$CATALINA/bin/catalina.sh" start >> "$LOGFILE" 2>&1
+ok "Tomcat started"
+
+# Gate on the actual schema, not a marker file: the seed needs the `users` table, which Liquibase creates
+# on first boot. Polling for it means we never seed an empty DB and we surface the log if it never appears.
 CATALINA_LOG="$CATALINA/logs/catalina.out"
-# Gate on the actual schema, not a marker file: the seed needs the `users` table, which Liquibase
-# creates on first boot. Polling for it directly means we never seed an empty DB (the old initialized.txt
-# check could be stale from a prior run) and we fail with the server log if migrations never complete.
 schema_ready() {
-  PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U mdmesh -d mdmesh -tAc \
-    "SELECT to_regclass('public.users')" 2>/dev/null | grep -q '^users$'
+  PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U mdmesh -d mdmesh -tAc "SELECT to_regclass('public.users')" 2>/dev/null | grep -q '^users$'
 }
-printf '   waiting for first-boot database migration (up to 5 min)'
+_spin_start "Running first-boot database migration (up to 5 min)"
 ready=0
-for i in $(seq 1 60); do
-  if schema_ready; then ready=1; break; fi
-  printf '.'; sleep 5
-done
-printf '\n'
+for _ in $(seq 1 60); do schema_ready && { ready=1; break; }; sleep 5; done
+_spin_stop
 if [ "$ready" != "1" ]; then
-  echo "ERROR: the server did not build the database schema within 5 minutes (users table missing)." >&2
-  echo "       Liquibase or server startup likely failed. Last 40 lines of $CATALINA_LOG:" >&2
-  tail -n 40 "$CATALINA_LOG" 2>/dev/null >&2 || echo "       (no log at $CATALINA_LOG)" >&2
+  printf '  %s✗ database schema was not built within 5 minutes (users table missing)%s\n' "$c_red" "$c_reset"
+  printf '  %sLiquibase or server startup likely failed — last lines of %s:%s\n' "$c_yel" "$CATALINA_LOG" "$c_reset"
+  hr; tail -n 30 "$CATALINA_LOG" 2>/dev/null | sed "s/^/    ${c_dim}/;s/$/${c_reset}/" || echo "    (no log at $CATALINA_LOG)"; hr
   exit 1
 fi
-echo "   database schema ready."
+ok "database schema ready"
 
-echo "== Seeding settings + admin =="
+step "Seeding settings + admin account"
 HOST=$(printf '%s' "$BASE_URL" | sed -E 's#https?://##; s#/.*##')
-PGPASSWORD="$DB_PASSWORD" sed "s/_ADMIN_EMAIL_/admin@${HOST}/g" install/sql/hmdm_init.en.sql \
-  | PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U mdmesh -d mdmesh >/dev/null 2>&1 || echo "(seed warnings ok if already seeded)"
-PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U mdmesh -d mdmesh -c \
-  "UPDATE users SET password='$(pwhash "$ADMIN_PASSWORD")', passwordreset=true, passwordresettoken='${RESET_TOKEN}' WHERE login='admin';" >/dev/null
+{
+  PGPASSWORD="$DB_PASSWORD" sed "s/_ADMIN_EMAIL_/admin@${HOST}/g" install/sql/hmdm_init.en.sql \
+    | PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U mdmesh -d mdmesh || echo "(seed warnings ok if already seeded)"
+  PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U mdmesh -d mdmesh -c \
+    "UPDATE users SET password='$(pwhash "$ADMIN_PASSWORD")', passwordreset=true, passwordresettoken='${RESET_TOKEN}' WHERE login='admin';"
+} >> "$LOGFILE" 2>&1
+ok "admin account seeded"
 
-echo
-echo "== MDMesh installed (native) =="
-echo "  Tomcat:        $CATALINA (serving on :8080 — front it with your TLS reverse proxy at ${BASE_URL})"
-echo "  Console:       ${BASE_URL}"
-echo "  REST API base: ${BASE_URL}/rest"
-echo "  Login:         admin / ${ADMIN_PASSWORD}   (temporary — you'll set your own on first login)"
-echo "  Note: install 'aapt' for full uploaded-APK parsing; set up a systemd unit to keep Tomcat running."
+trap - ERR
+printf '\n  %s%s✓ MDMesh installed (native)%s\n\n' "$c_grn" "$c_bold" "$c_reset"
+printf '  %sConsole%s        %s\n' "$c_dim" "$c_reset" "${BASE_URL}"
+printf '  %sREST API%s       %s/rest\n' "$c_dim" "$c_reset" "${BASE_URL}"
+printf '  %sLogin%s          %sadmin%s / %s%s%s   %s(temporary — set your own on first login)%s\n' \
+  "$c_dim" "$c_reset" "$c_bold" "$c_reset" "$c_bold" "${ADMIN_PASSWORD}" "$c_reset" "$c_dim" "$c_reset"
+printf '  %sTomcat%s         %s (serving on :8080 — front it with your TLS reverse proxy)\n' "$c_dim" "$c_reset" "$CATALINA"
+printf '\n  %sNotes: install '\''aapt'\'' for full APK parsing; add a systemd unit to keep Tomcat running.%s\n' "$c_dim" "$c_reset"
+printf '  %sInstall log: %s%s\n\n' "$c_dim" "$LOGFILE" "$c_reset"

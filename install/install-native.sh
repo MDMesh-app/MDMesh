@@ -9,6 +9,29 @@ cd "$(dirname "$0")/.."
 [ "$(id -u)" = "0" ] || { echo "Run as root (sudo)."; exit 1; }
 command -v apt-get >/dev/null || { echo "This script targets Debian/Ubuntu."; exit 1; }
 
+# --- Confirmation gate: this installer makes real, host-wide changes. Skip with ASSUME_YES=1 or -y. ---
+ASSUME_YES="${ASSUME_YES:-0}"
+case "${1:-}" in -y|--yes) ASSUME_YES=1 ;; esac
+cat <<'WARN'
+
+  ⚠  WARNING — MDMesh native installer
+
+  This action will modify THIS host:
+    • apt-get install openjdk-17-jdk, postgresql, maven, curl
+    • create or alter a PostgreSQL role and database "hmdm" (resets that role's password)
+    • download and unpack Apache Tomcat 9 into /opt/mdmesh-tc (clears its webapps/)
+    • write config, logs and uploaded files under /opt/hmdm
+    • start Tomcat, run database migrations, and seed the admin account
+
+  Intended for a dedicated server you control. This script does not undo these changes.
+
+WARN
+if [ "$ASSUME_YES" != "1" ]; then
+  printf 'Type "yes" to proceed: '
+  read -r _confirm
+  [ "$_confirm" = "yes" ] || { echo "Aborted — no changes made."; exit 1; }
+fi
+
 SALT='5YdSYHyg2U'
 rand() { openssl rand -hex 24; }
 pwhash() { local m; m=$(printf '%s' "$1" | md5sum | awk '{print toupper($1)}'); printf '%s' "${m}${SALT}" | sha1sum | awk '{print $1}'; }

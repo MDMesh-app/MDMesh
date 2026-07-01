@@ -55,9 +55,16 @@ export PATH="$JAVA_HOME/bin:$PATH"
 echo "   JDK: $(javac -version 2>&1)  (JAVA_HOME=$JAVA_HOME)"
 
 echo "== Database =="
-sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='hmdm'" | grep -q 1 || \
+# Idempotent + timeless: every run generates a fresh DB_PASSWORD, so ALWAYS set the role's password to
+# match — ALTER if the role already exists from a previous run, else CREATE. The old "create only if
+# missing" left a re-run's role on its previous password while ROOT.xml + seeding used the new one →
+# "password authentication failed for user hmdm".
+if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='hmdm'" | grep -q 1; then
+  sudo -u postgres psql -c "ALTER USER hmdm WITH PASSWORD '${DB_PASSWORD}';"
+else
   sudo -u postgres psql -c "CREATE USER hmdm WITH PASSWORD '${DB_PASSWORD}';"
-sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname='hmdm'" | grep -q 1 || \
+fi
+sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='hmdm'" | grep -q 1 || \
   sudo -u postgres psql -c "CREATE DATABASE hmdm OWNER hmdm;"
 
 echo "== Building the server WAR =="

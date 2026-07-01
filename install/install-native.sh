@@ -164,10 +164,18 @@ run "Maven package (JDK 17, ~1-2 min)" bash -c \
   'cp server/build.properties.example server/build.properties 2>/dev/null || true; mvn -q -B -DskipTests -pl server -am package'
 
 step "Tomcat 9 + app deploy"
-if [ ! -d "$CATALINA" ]; then
+# Install Tomcat if it's missing OR a previous run left it partial/corrupt. Check for the actual launcher
+# script, not just the directory, so a broken /opt/mdmesh-tc self-heals instead of failing at startup.
+# archive.apache.org keeps every release permanently, so the pinned version URL never rots.
+if [ ! -x "$CATALINA/bin/catalina.sh" ]; then
   run "Downloading Apache Tomcat ${TOMCAT_VER}" \
-    curl -fsSL "https://archive.apache.org/dist/tomcat/tomcat-9/v${TOMCAT_VER}/bin/apache-tomcat-${TOMCAT_VER}.tar.gz" -o /tmp/tc.tgz
-  mkdir -p "$CATALINA"; tar xzf /tmp/tc.tgz -C "$CATALINA" --strip-components=1
+    curl -fsSL --retry 3 "https://archive.apache.org/dist/tomcat/tomcat-9/v${TOMCAT_VER}/bin/apache-tomcat-${TOMCAT_VER}.tar.gz" -o /tmp/tc.tgz
+  rm -rf "$CATALINA"; mkdir -p "$CATALINA"
+  tar xzf /tmp/tc.tgz -C "$CATALINA" --strip-components=1
+  [ -x "$CATALINA/bin/catalina.sh" ] || _fail "Tomcat extract (catalina.sh missing after unpack)"
+  ok "Apache Tomcat ${TOMCAT_VER} installed at $CATALINA"
+else
+  info "Apache Tomcat already present at $CATALINA"
 fi
 rm -rf "$CATALINA"/webapps/*
 cp server/target/launcher.war "$CATALINA"/webapps/ROOT.war

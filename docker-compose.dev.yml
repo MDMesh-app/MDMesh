@@ -1,5 +1,5 @@
 # Dev environment for the control plane (Postgres + Tomcat server).
-# A dev-friendly alternative to the Ubuntu-only hmdm_install.sh.
+# A lightweight dev stack; for a real host install use ./setup.sh (Docker) or ./setup.sh --native.
 # Usage and the post-start seeding step are documented in docs/DEV.md.
 
 services:

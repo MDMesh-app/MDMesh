@@ -25,6 +25,8 @@ export interface UpdateStatus {
   auto: boolean;
   /** The mirrored agent APK for the latest verified release (for device rollouts), or null. */
   apk: { version: string; versionCode: number; sha256: string; available: boolean } | null;
+  /** Release notes / link / date for the picked release, or null when there's no release. */
+  release: { notes: string | null; url: string | null; publishedAt: string | null } | null;
 }
 
 /** Phases that mean an apply has settled and the UI should stop spinning. */
@@ -38,6 +40,20 @@ export async function getUpdateStatus(): Promise<UpdateStatus | null> {
     return (await r.json()) as UpdateStatus;
   } catch {
     return null; // supervisor not reachable (e.g. dev without the stack) → no banner
+  }
+}
+
+/** Force an on-demand poll of GitHub and return the refreshed status (authz'd + rate-limited server-side). */
+export async function checkForUpdates(): Promise<UpdateStatus | null> {
+  try {
+    const r = await fetch('/update/check', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Accept: 'application/json', 'X-MDMesh-Console': '1' },
+    });
+    return r.ok ? ((await r.json()) as UpdateStatus) : null;
+  } catch {
+    return null;
   }
 }
 

@@ -5,6 +5,7 @@
 # (stream all output instead of hiding it in the log). Best-effort + idempotent; review before prod use.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+REPO="$PWD"   # repo root — used for absolute paths inside subshells (e.g. exploding the WAR)
 
 [ "$(id -u)" = "0" ] || { echo "Run as root (sudo)."; exit 1; }
 command -v apt-get >/dev/null || { echo "This script targets Debian/Ubuntu."; exit 1; }
@@ -88,7 +89,7 @@ printf '\n  %sMDMesh · native install%s\n' "$c_bold" "$c_reset"
 cat <<WARN
 
   ${c_yel}⚠  This will modify THIS host:${c_reset}
-    • apt-get install openjdk-17-jdk, postgresql, maven, curl
+    • apt-get install openjdk-17-jdk, postgresql, maven, nodejs, npm, curl
     • create or alter a PostgreSQL role and database "mdmesh" (resets that role's password)
     • download and unpack Apache Tomcat 9 into /opt/mdmesh-tc (clears its webapps/)
     • write config, logs and uploaded files under /opt/mdmesh
@@ -118,8 +119,8 @@ TOMCAT_VER=9.0.89
 step "Installing dependencies"
 # Tolerate an unrelated broken third-party APT source (e.g. a Docker repo on a codename Docker doesn't
 # publish for → "does not have a Release file") — the native install only needs base Debian packages.
-run "openjdk-17-jdk, postgresql, maven, curl" bash -c \
-  'apt-get update -y || echo "(some apt sources failed to refresh — continuing)"; DEBIAN_FRONTEND=noninteractive apt-get install -y openjdk-17-jdk postgresql maven curl'
+run "openjdk-17-jdk, postgresql, maven, nodejs, npm, curl" bash -c \
+  'apt-get update -y || echo "(some apt sources failed to refresh — continuing)"; DEBIAN_FRONTEND=noninteractive apt-get install -y openjdk-17-jdk postgresql maven nodejs npm curl'
 
 step "Selecting the Java 17 toolchain"
 # HERMETIC BUILD: pin JDK 17 and never fall back to the host default JDK. The server uses Lombok 1.18.20,
@@ -163,6 +164,11 @@ step "Building the server"
 run "Maven package (JDK 17, ~1-2 min)" bash -c \
   'cp server/build.properties.example server/build.properties 2>/dev/null || true; mvn -q -B -DskipTests -pl server -am package'
 
+step "Building the admin console"
+# The React console (web/) calls the API at the same origin (/rest), so once it's served from the same
+# Tomcat as the server there's no proxy to configure. Build it to web/dist here; deploy overlays it below.
+run "npm ci + vite build (web/)" bash -c 'cd web && npm ci --no-audit --no-fund && npm run build'
+
 step "Tomcat 9 + app deploy"
 # Install Tomcat if it's missing OR a previous run left it partial/corrupt. Check for the actual launcher
 # script, not just the directory, so a broken /opt/mdmesh-tc self-heals instead of failing at startup.
@@ -178,7 +184,12 @@ else
   info "Apache Tomcat already present at $CATALINA"
 fi
 rm -rf "$CATALINA"/webapps/*
-cp server/target/launcher.war "$CATALINA"/webapps/ROOT.war
+# Deploy the server as an EXPLODED webapp (not ROOT.war) and overlay the built SPA into it, so a single
+# Tomcat serves the console at / and the API at /rest on one origin. Exploding ourselves (no ROOT.war
+# left behind) means Tomcat won't re-expand on restart and wipe the overlaid SPA files.
+mkdir -p "$CATALINA/webapps/ROOT"
+( cd "$CATALINA/webapps/ROOT" && "$JAVA_HOME/bin/jar" -xf "$REPO/server/target/launcher.war" )
+cp -a "$REPO"/web/dist/. "$CATALINA/webapps/ROOT/"   # index.html + assets at / (server maps /rest,/files,/agent)
 mkdir -p "$BASE_DIR/files" "$BASE_DIR/plugins" "$CATALINA/conf/Catalina/localhost"
 cp install/log4j_template.xml "$BASE_DIR/log4j-mdmesh.xml"
 cp -r install/emails "$BASE_DIR/" 2>/dev/null || true
@@ -207,7 +218,7 @@ cat > "$CATALINA/conf/Catalina/localhost/ROOT.xml" <<XML
     <Parameter name="device.fast.search.chars" value="5"/>
 </Context>
 XML
-ok "launcher.war deployed; ROOT.xml written"
+ok "server + console deployed (console at /, API at /rest); ROOT.xml written"
 
 step "Starting the server"
 # Runs on the same pinned JDK 17 (JAVA_HOME exported above), matching the Docker tomcat:9.0-jdk17 image.

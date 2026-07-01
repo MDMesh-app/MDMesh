@@ -2610,6 +2610,13 @@ a {
 @keyframes ub-spin { to { transform:rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .update-banner .ub-spin { animation:none; } }
 
+/* "New console is live — reload" bar: shown when the open tab's baked version lags the live one */
+.reload-bar { position:sticky; top:0; z-index:20; display:flex; align-items:center;
+  justify-content:space-between; gap:12px; margin:0 0 16px; padding:10px 14px;
+  border:1px solid var(--accent); border-radius:10px; font-size:13px;
+  background:color-mix(in srgb, var(--accent) 10%, var(--panel-2)); }
+.reload-bar .reload-actions { display:flex; gap:8px; flex:0 0 auto; }
+
 /* Automatic-updates toggle (Settings) */
 .auto-update-row { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
 .auto-update-row .au-note { color:var(--muted); font-size:12px; margin:4px 0 0; max-width:46ch; }

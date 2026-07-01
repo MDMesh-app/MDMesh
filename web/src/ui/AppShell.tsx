@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { useTheme } from './theme';
 import { UpdateBanner } from '../components/UpdateBanner';
+import { ReloadPrompt } from '../components/ReloadPrompt';
 import {
   IconDashboard,
   IconDevices,
@@ -106,7 +107,7 @@ export function AppShell({
           </button>
           <span style={{ fontWeight: 600 }}>{title ?? 'MDMesh'}</span>
         </div>
-        <main className="content route-enter"><UpdateBanner />{children}</main>
+        <main className="content route-enter"><ReloadPrompt /><UpdateBanner />{children}</main>
       </div>
     </div>
   );

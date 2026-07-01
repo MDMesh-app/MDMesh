@@ -2,14 +2,29 @@
 
 <sub>[← README](README.md) · **Deploy** · [Structure](STRUCTURE.md) · [Contributing](CONTRIBUTING.md) · [Releasing](RELEASING.md)</sub>
 
-Two ways to run the control plane. Both generate secrets and a working admin login — no default
-passwords.
+Three ways to run it. All generate secrets and a working admin login — no default passwords, and the
+admin is forced to set its own password on first login.
 
-## Option A — Docker (recommended)
+## Option A — one line, no clone (published images)
+
+The fastest path: pull the released images from GHCR — no clone, no build. Needs only Docker + `curl`.
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/quickstart.sh)
+```
+
+It creates `./mdmesh`, downloads the pull-only compose (`docker-compose.release.yml`) + seed, generates
+secrets, `docker compose pull && up -d`, seeds, and prints the console URL + a temporary admin password.
+
+> **Requires a published release**, and the GHCR packages (`mdmesh-server`/`-web`/`-supervisor`) must be
+> **public** — or run `docker login ghcr.io` first. See [RELEASING.md](RELEASING.md).
+
+## Option B — from source (clone + build)
 
 Prereqs: Docker + Compose v2, and `openssl`.
 
 ```bash
+git clone https://github.com/MDMesh-app/MDMesh.git && cd MDMesh
 ./setup.sh
 ```
 
@@ -35,7 +50,7 @@ docker compose logs -f server
 docker compose down
 ```
 
-## Option B — Native (no Docker)
+## Option C — Native (no Docker)
 
 Debian/Ubuntu, as root. The leaner path: Postgres + Tomcat on the host; you terminate TLS yourself
 (your reverse proxy/cert, or Caddy in front).

@@ -9,9 +9,10 @@ git tag v1.2.3 && git push --tags
 ```
 
 `.github/workflows/release.yml` then: runs the agent unit tests + builds the **signed** release APK,
-builds & pushes the **server** and **web** images to GHCR, builds a **minisign-signed manifest**, and
-publishes a **GitHub Release** with `mdmesh-agent.apk`, `manifest.json`, and `manifest.json.minisig`.
-The fleet auto-updater (later phases) consumes that signed manifest.
+builds & pushes the **server**, **web**, and **supervisor** images to GHCR (each tagged both
+`:VERSION` and `:latest`), builds a **minisign-signed manifest**, and publishes a **GitHub Release**
+with `mdmesh-agent.apk`, `manifest.json`, and `manifest.json.minisig`. The fleet auto-updater consumes
+that signed manifest to apply/roll-out updates.
 
 Tags must be strict `vMAJOR.MINOR.PATCH`; the workflow rejects anything else. versionCode is derived
 `major*10000 + minor*100 + patch` (monotonic).
@@ -46,6 +47,14 @@ minisign -G -p release/minisign.pub -s mdmesh-release.key   # set a password
 - **Commit** the generated `release/minisign.pub` (replace the placeholder in the repo).
 - Secrets: `MINISIGN_SECRET_KEY` = the full contents of `mdmesh-release.key`; `MINISIGN_PASSWORD` =
   its password.
+- No `minisign` binary? Generate it in a container:
+  `docker run --rm -it -v "$PWD:/keys" -w /keys alpine sh -c 'apk add --no-cache minisign && minisign -G -p minisign.pub -s minisign.key'`
+
+### 3. Make the GHCR packages public (one-time, after the first release)
+Images pushed by Actions to an org are **private by default**. For the no-clone `docker compose pull`
+to work anonymously, set each package to public: **org → Packages → `mdmesh-server` / `mdmesh-web` /
+`mdmesh-supervisor` → Package settings → Change visibility → Public.** (Otherwise deployers must
+`docker login ghcr.io` with a PAT.)
 
 ## How a deployment trusts a release
 The updater fetches the GitHub Release, verifies `manifest.json` against the baked

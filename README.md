@@ -5,6 +5,7 @@
 **A modern, self-hosted Android MDM** — fleet control, kiosk, app delivery, and
 signed auto-updates, with a console that doesn't feel like 2012.
 
+[![Release](https://img.shields.io/github/v/release/MDMesh-app/MDMesh?sort=semver)](https://github.com/MDMesh-app/MDMesh/releases)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 ![Server](https://img.shields.io/badge/server-Java%20%C2%B7%20Jersey%20%C2%B7%20PostgreSQL-orange)
@@ -165,7 +166,8 @@ bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/quick
 ```
 
 Pulls the released images from GHCR (no build), generates secrets, brings the stack up in `./mdmesh`,
-and prints the console URL + a temporary admin password. *(Requires at least one published release.)*
+and prints the console URL + a temporary admin password. *(Needs a published release with **public**
+GHCR packages — or `docker login ghcr.io` first; see [RELEASING.md](RELEASING.md).)*
 
 ### Option B — from source (clone + build)
 

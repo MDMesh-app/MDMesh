@@ -165,6 +165,39 @@ step "Database"
 } >> "$LOGFILE" 2>&1
 ok "PostgreSQL role + database 'mdmesh' ready"
 
+# Data safety: the seed (hmdm_init.en.sql) is FRESH-DB-ONLY — it DELETEs configurations and re-inserts a
+# demo device. So decide now whether to seed. If the DB already holds data (an existing install), default
+# to KEEPING it: we only deploy new code + run Liquibase migrations (non-destructive). Replacing is opt-in
+# and drops the DB for a clean slate. Override non-interactively with REPLACE_DATA=yes|no.
+q() { PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U mdmesh -d mdmesh -tAc "$1" 2>/dev/null | tr -d '[:space:]'; }
+SEED=yes
+if [ "$(q "SELECT to_regclass('public.users')")" = "users" ] && [ "$(q "SELECT count(*) FROM users")" != "0" ]; then
+  uc=$(q "SELECT count(*) FROM users"); dc=$(q "SELECT count(*) FROM devices"); dc=${dc:-0}
+  REPLACE_DATA="${REPLACE_DATA:-}"
+  if [ -z "$REPLACE_DATA" ]; then
+    if [ "$ASSUME_YES" = 1 ]; then
+      REPLACE_DATA=no   # never destroy data unprompted
+    else
+      printf '\n  %sExisting MDMesh data found: %s device(s), %s user(s).%s\n' "$c_yel" "$dc" "$uc" "$c_reset"
+      printf '  Replace it with a clean database? Default KEEPS your data (just updates the app). [y/N]: '
+      read -r _r; case "$_r" in y|Y|yes|YES) REPLACE_DATA=yes ;; *) REPLACE_DATA=no ;; esac
+    fi
+  fi
+  if [ "$REPLACE_DATA" = yes ]; then
+    info "Replacing the database — dropping $dc device(s), $uc user(s)"
+    "$CATALINA/bin/catalina.sh" stop 15 -force >/dev/null 2>&1 || true   # release DB connections first
+    {
+      sudo -u postgres psql -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='mdmesh' AND pid<>pg_backend_pid();"
+      sudo -u postgres psql -c "DROP DATABASE mdmesh;"
+      sudo -u postgres psql -c "CREATE DATABASE mdmesh OWNER mdmesh;"
+    } >> "$LOGFILE" 2>&1
+    SEED=yes
+  else
+    SEED=no
+    ok "Keeping existing data — $dc device(s), $uc user(s) preserved (code + migrations only)"
+  fi
+fi
+
 step "Building the server"
 run "Maven package (JDK 17, ~1-2 min)" bash -c \
   'cp server/build.properties.example server/build.properties 2>/dev/null || true; mvn -q -B -DskipTests -pl server -am package'
@@ -295,22 +328,31 @@ if ! _migrate_wait; then
 fi
 ok "database schema ready"
 
-step "Seeding settings + admin account"
-HOST=$(printf '%s' "$BASE_URL" | sed -E 's#https?://##; s#/.*##')
-{
-  PGPASSWORD="$DB_PASSWORD" sed "s/_ADMIN_EMAIL_/admin@${HOST}/g" install/sql/hmdm_init.en.sql \
-    | PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U mdmesh -d mdmesh || echo "(seed warnings ok if already seeded)"
-  PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U mdmesh -d mdmesh -c \
-    "UPDATE users SET password='$(pwhash "$ADMIN_PASSWORD")', passwordreset=true, passwordresettoken='${RESET_TOKEN}' WHERE login='admin';"
-} >> "$LOGFILE" 2>&1
-ok "admin account seeded"
+if [ "$SEED" = yes ]; then
+  step "Seeding settings + admin account"
+  HOST=$(printf '%s' "$BASE_URL" | sed -E 's#https?://##; s#/.*##')
+  {
+    PGPASSWORD="$DB_PASSWORD" sed "s/_ADMIN_EMAIL_/admin@${HOST}/g" install/sql/hmdm_init.en.sql \
+      | PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U mdmesh -d mdmesh || echo "(seed warnings ok if already seeded)"
+    PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U mdmesh -d mdmesh -c \
+      "UPDATE users SET password='$(pwhash "$ADMIN_PASSWORD")', passwordreset=true, passwordresettoken='${RESET_TOKEN}' WHERE login='admin';"
+  } >> "$LOGFILE" 2>&1
+  ok "admin account seeded"
+else
+  step "Preserving existing data"
+  info "Skipped seeding — your configurations, devices and admin login are untouched"
+fi
 
 trap - ERR
 printf '\n  %s%s✓ MDMesh installed (native)%s\n\n' "$c_grn" "$c_bold" "$c_reset"
 printf '  %sConsole%s        %s\n' "$c_dim" "$c_reset" "${BASE_URL}"
 printf '  %sREST API%s       %s/rest\n' "$c_dim" "$c_reset" "${BASE_URL}"
-printf '  %sLogin%s          %sadmin%s / %s%s%s   %s(temporary — set your own on first login)%s\n' \
-  "$c_dim" "$c_reset" "$c_bold" "$c_reset" "$c_bold" "${ADMIN_PASSWORD}" "$c_reset" "$c_dim" "$c_reset"
+if [ "$SEED" = yes ]; then
+  printf '  %sLogin%s          %sadmin%s / %s%s%s   %s(temporary — set your own on first login)%s\n' \
+    "$c_dim" "$c_reset" "$c_bold" "$c_reset" "$c_bold" "${ADMIN_PASSWORD}" "$c_reset" "$c_dim" "$c_reset"
+else
+  printf '  %sLogin%s          %syour existing admin credentials (unchanged)%s\n' "$c_dim" "$c_reset" "$c_dim" "$c_reset"
+fi
 printf '  %sTomcat%s         %s (serving on :%s — front it with your TLS reverse proxy)\n' "$c_dim" "$c_reset" "$CATALINA" "$HTTP_PORT"
 printf '  %sLocal URL%s      http://localhost:%s/\n' "$c_dim" "$c_reset" "$HTTP_PORT"
 printf '\n  %sNotes: install '\''aapt'\'' for full APK parsing; add a systemd unit to keep Tomcat running.%s\n' "$c_dim" "$c_reset"

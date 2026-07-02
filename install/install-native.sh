@@ -178,9 +178,10 @@ if [ "$(q "SELECT to_regclass('public.users')")" = "users" ] && [ "$(q "SELECT c
     if [ "$ASSUME_YES" = 1 ]; then
       REPLACE_DATA=no   # never destroy data unprompted
     else
-      printf '\n  %sExisting MDMesh data found: %s device(s), %s user(s).%s\n' "$c_yel" "$dc" "$uc" "$c_reset"
-      printf '  Replace it with a clean database? Default KEEPS your data (just updates the app). [y/N]: '
-      read -r _r; case "$_r" in y|Y|yes|YES) REPLACE_DATA=yes ;; *) REPLACE_DATA=no ;; esac
+      printf '\n  %s%s⚠  Existing MDMesh data found: %s device(s), %s user(s).%s\n' "$c_red" "$c_bold" "$dc" "$uc" "$c_reset"
+      printf '  %sKeep your existing data? Answering "no" ERASES all of it.%s %s[Y/n]%s: ' "$c_red" "$c_reset" "$c_bold" "$c_reset"
+      # Default (Enter) keeps data. Only an explicit no/n erases it.
+      read -r _r; case "$_r" in n|N|no|NO) REPLACE_DATA=yes ;; *) REPLACE_DATA=no ;; esac
     fi
   fi
   if [ "$REPLACE_DATA" = yes ]; then

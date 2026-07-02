@@ -1525,6 +1525,20 @@ a {
   color: var(--faint);
   margin-top: 10px;
 }
+.wifi-block { margin-top: 14px; font-size: 13px; }
+.wifi-block > summary { cursor: pointer; user-select: none; padding: 6px 0; color: var(--text); }
+.wifi-fields { display: grid; gap: 10px; margin-top: 8px; }
+.wifi-fields label { display: grid; gap: 4px; font-size: 12px; color: var(--faint); }
+.wifi-fields input,
+.wifi-fields .sel {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+}
+.wifi-fields .note { margin: 2px 0 0; }
 .qr-steps {
   display: flex;
   flex-direction: column;

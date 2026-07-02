@@ -6,7 +6,7 @@ import { mintEnrollToken } from '../api/enroll';
 import { ApiError } from '../api/client';
 import { fmtDateTime } from '../ui/format';
 import { QrCanvas } from '../components/QrCanvas';
-import { buildProvisioningPayload, serverBaseUrl, agentApkUrl } from '../enroll/provisioning';
+import { buildProvisioningPayload, serverBaseUrl, agentApkUrl, type WifiSecurity } from '../enroll/provisioning';
 
 const STEPS = [
   { title: 'Start from a factory-reset device', sub: 'On the first "Hi there" welcome screen, don\'t sign in yet.' },
@@ -24,6 +24,9 @@ export function EnrollPage() {
   const [expiresAt, setExpiresAt] = useState<number | undefined>();
   const [busy, setBusy] = useState(false);
   const [tokError, setTokError] = useState<string | null>(null);
+  const [wifiSsid, setWifiSsid] = useState('');
+  const [wifiPass, setWifiPass] = useState('');
+  const [wifiSec, setWifiSec] = useState<WifiSecurity>('WPA');
 
   async function generate() {
     setBusy(true);
@@ -85,12 +88,48 @@ export function EnrollPage() {
               <div>
                 <div className="qr-frame">
                   {token ? (
-                    <QrCanvas text={buildProvisioningPayload(token)} size={320} />
+                    <QrCanvas
+                      text={buildProvisioningPayload(
+                        token,
+                        wifiSsid.trim() ? { ssid: wifiSsid, password: wifiPass, security: wifiSec } : undefined,
+                      )}
+                      size={320}
+                    />
                   ) : (
                     <div className="empty"><span className="spin" /> Preparing…</div>
                   )}
                 </div>
-                <div className="qr-cap">Single-use{expiresAt ? ` · expires ${fmtDateTime(expiresAt)}` : ''}</div>
+                <div className="qr-cap">
+                  Single-use{expiresAt ? ` · expires ${fmtDateTime(expiresAt)}` : ''}
+                  {wifiSsid.trim() ? ` · joins Wi-Fi “${wifiSsid.trim()}”` : ''}
+                </div>
+                <details className="wifi-block">
+                  <summary>Pre-connect Wi-Fi during setup (optional)</summary>
+                  <div className="wifi-fields">
+                    <label>
+                      Network name (SSID)
+                      <input value={wifiSsid} onChange={(e) => setWifiSsid(e.target.value)} placeholder="Office-WiFi" />
+                    </label>
+                    <label>
+                      Security
+                      <select className="sel" value={wifiSec} onChange={(e) => setWifiSec(e.target.value as WifiSecurity)}>
+                        <option value="WPA">WPA / WPA2</option>
+                        <option value="WEP">WEP</option>
+                        <option value="NONE">Open (no password)</option>
+                      </select>
+                    </label>
+                    {wifiSec !== 'NONE' && (
+                      <label>
+                        Password
+                        <input type="password" value={wifiPass} onChange={(e) => setWifiPass(e.target.value)} autoComplete="off" />
+                      </label>
+                    )}
+                    <p className="note">
+                      The device joins this network during provisioning (before it downloads the agent).
+                      Heads-up: the password is embedded in the QR — only show it to people you trust to enroll.
+                    </p>
+                  </div>
+                </details>
               </div>
               <ol className="qr-steps" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
                 {STEPS.map((s, i) => (

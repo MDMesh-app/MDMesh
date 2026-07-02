@@ -21,9 +21,18 @@ export function agentApkUrl(): string {
   return env.VITE_AGENT_APK_URL || `${serverBaseUrl()}/files/agent.apk`;
 }
 
-/** The provisioning JSON a fresh device scans (6-tap → QR scanner). */
-export function buildProvisioningPayload(token: string): string {
-  return JSON.stringify({
+export type WifiSecurity = 'WPA' | 'WEP' | 'NONE';
+/** Optional Wi-Fi to bake into the QR so the device joins it DURING provisioning (before it downloads
+ *  the agent). The password is embedded in the QR in plaintext — that's inherent to Android QR Wi-Fi. */
+export interface WifiConfig {
+  ssid: string;
+  password?: string;
+  security?: WifiSecurity;
+}
+
+/** The provisioning JSON a fresh device scans (6-tap → QR scanner). Pass `wifi` to pre-connect it. */
+export function buildProvisioningPayload(token: string, wifi?: WifiConfig): string {
+  const payload: Record<string, unknown> = {
     'android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME': ADMIN_COMPONENT,
     'android.app.extra.PROVISIONING_DEVICE_ADMIN_SIGNATURE_CHECKSUM': SIGNATURE_CHECKSUM,
     'android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION': agentApkUrl(),
@@ -33,5 +42,15 @@ export function buildProvisioningPayload(token: string): string {
     },
     'android.app.extra.PROVISIONING_SKIP_ENCRYPTION': true,
     'android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED': true,
-  });
+  };
+  const ssid = wifi?.ssid?.trim();
+  if (ssid) {
+    const security: WifiSecurity = wifi?.security ?? (wifi?.password ? 'WPA' : 'NONE');
+    payload['android.app.extra.PROVISIONING_WIFI_SSID'] = ssid;
+    payload['android.app.extra.PROVISIONING_WIFI_SECURITY_TYPE'] = security;
+    if (security !== 'NONE' && wifi?.password) {
+      payload['android.app.extra.PROVISIONING_WIFI_PASSWORD'] = wifi.password;
+    }
+  }
+  return JSON.stringify(payload);
 }

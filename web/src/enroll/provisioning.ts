@@ -18,7 +18,11 @@ export function serverBaseUrl(): string {
 }
 
 export function agentApkUrl(): string {
-  return env.VITE_AGENT_APK_URL || `${serverBaseUrl()}/files/agent.apk`;
+  // VITE_AGENT_APK_URL may be absolute (https://…) or origin-relative (/update/agent.apk → resolved
+  // against this deployment's origin). Release builds set it to the supervisor's verified APK mirror.
+  const u = env.VITE_AGENT_APK_URL;
+  if (u) return u.startsWith('/') ? `${serverBaseUrl()}${u}` : u;
+  return `${serverBaseUrl()}/files/agent.apk`;
 }
 
 export type WifiSecurity = 'WPA' | 'WEP' | 'NONE' | 'EAP';

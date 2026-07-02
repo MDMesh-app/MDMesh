@@ -7,6 +7,10 @@ import { ApiError } from '../api/client';
 import { fmtDateTime } from '../ui/format';
 import { QrCanvas } from '../components/QrCanvas';
 import { buildProvisioningPayload, serverBaseUrl, agentApkUrl, type WifiSecurity } from '../enroll/provisioning';
+import { getConfigurations, type Configuration } from '../api/configurations';
+
+const DEFAULT_CONFIG_KEY = 'mdmesh-default-config';
+const SECURITY_VALUES: WifiSecurity[] = ['WPA', 'WEP', 'NONE', 'EAP'];
 
 const STEPS = [
   { title: 'Start from a factory-reset device', sub: 'On the first "Hi there" welcome screen, don\'t sign in yet.' },
@@ -27,6 +31,23 @@ export function EnrollPage() {
   const [wifiSsid, setWifiSsid] = useState('');
   const [wifiPass, setWifiPass] = useState('');
   const [wifiSec, setWifiSec] = useState<WifiSecurity>('WPA');
+  const [configs, setConfigs] = useState<Configuration[]>([]);
+  const [cfgId, setCfgId] = useState<string>(() => {
+    try { return localStorage.getItem(DEFAULT_CONFIG_KEY) ?? ''; } catch { return ''; }
+  });
+
+  // Load configurations so the enroller can pull a config's saved provisioning Wi-Fi into the QR.
+  useEffect(() => { getConfigurations().then(setConfigs).catch(() => undefined); }, []);
+
+  // When a configuration is selected, fill the Wi-Fi fields from its saved values (still editable).
+  useEffect(() => {
+    const c = configs.find((x) => String(x.id) === cfgId);
+    if (!c) return;
+    setWifiSsid(typeof c.wifiSSID === 'string' ? c.wifiSSID : '');
+    setWifiPass(typeof c.wifiPassword === 'string' ? c.wifiPassword : '');
+    const sec = typeof c.wifiSecurityType === 'string' ? c.wifiSecurityType : '';
+    setWifiSec((SECURITY_VALUES as string[]).includes(sec) ? (sec as WifiSecurity) : 'WPA');
+  }, [cfgId, configs]);
 
   async function generate() {
     setBusy(true);
@@ -103,9 +124,20 @@ export function EnrollPage() {
                   Single-use{expiresAt ? ` · expires ${fmtDateTime(expiresAt)}` : ''}
                   {wifiSsid.trim() ? ` · joins Wi-Fi “${wifiSsid.trim()}”` : ''}
                 </div>
-                <details className="wifi-block">
+                <details className="wifi-block" open={!!wifiSsid.trim()}>
                   <summary>Pre-connect Wi-Fi during setup (optional)</summary>
                   <div className="wifi-fields">
+                    {configs.length > 0 && (
+                      <label>
+                        Load Wi-Fi from configuration
+                        <select className="sel" value={cfgId} onChange={(e) => setCfgId(e.target.value)}>
+                          <option value="">— none / enter manually —</option>
+                          {configs.map((c) => (
+                            <option key={String(c.id)} value={String(c.id)}>{c.name}</option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
                     <label>
                       Network name (SSID)
                       <input value={wifiSsid} onChange={(e) => setWifiSsid(e.target.value)} placeholder="Office-WiFi" />

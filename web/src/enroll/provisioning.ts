@@ -21,7 +21,7 @@ export function agentApkUrl(): string {
   return env.VITE_AGENT_APK_URL || `${serverBaseUrl()}/files/agent.apk`;
 }
 
-export type WifiSecurity = 'WPA' | 'WEP' | 'NONE';
+export type WifiSecurity = 'WPA' | 'WEP' | 'NONE' | 'EAP';
 /** Optional Wi-Fi to bake into the QR so the device joins it DURING provisioning (before it downloads
  *  the agent). The password is embedded in the QR in plaintext — that's inherent to Android QR Wi-Fi. */
 export interface WifiConfig {

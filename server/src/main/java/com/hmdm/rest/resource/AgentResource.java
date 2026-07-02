@@ -125,8 +125,11 @@ public class AgentResource {
         String deviceId = UUID.randomUUID().toString();
         Device device = unsecureDAO.createNewDeviceOnDemand(deviceId);
         if (device == null) {
-            logger.warn("Agent enroll: failed to create device for token {}", token.getId());
-            return Response.INTERNAL_ERROR();
+            // The only null path is the "create new devices" settings flag being off — name it,
+            // so the failure is diagnosable from the agent/proxy side (a generic internal error
+            // here cost a debugging session: valid token, reachable server, no device row).
+            logger.warn("Agent enroll: on-demand device creation is disabled by settings (token {})", token.getId());
+            return Response.ERROR("error.agent.enrollment.disabled");
         }
 
         // Mint a per-device secret; persist only its SHA-256 hash. The plaintext is

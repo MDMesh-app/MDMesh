@@ -376,6 +376,11 @@ if [ "$SEED" = yes ]; then
       | PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U mdmesh -d mdmesh || echo "(seed warnings ok if already seeded)"
     PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U mdmesh -d mdmesh -c \
       "UPDATE users SET password='$(pwhash "$ADMIN_PASSWORD")', passwordreset=true, passwordresettoken='${RESET_TOKEN}' WHERE login='admin';"
+    # QR/token enrollment creates the device row on demand — that needs the settings flag ON and a
+    # default configuration (devices.configurationid is NOT NULL; the init seed sets neither, and
+    # without them every /agent/v1/enroll fails). COALESCE keeps a previously chosen default config.
+    PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U mdmesh -d mdmesh -c \
+      "UPDATE settings SET createnewdevices=true, newdeviceconfigurationid=COALESCE(newdeviceconfigurationid, (SELECT MIN(id) FROM configurations));"
   } >> "$LOGFILE" 2>&1
   ok "admin account seeded"
 else

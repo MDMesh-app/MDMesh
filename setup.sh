@@ -125,6 +125,11 @@ sed "s/_ADMIN_EMAIL_/admin@${HOST}/g" install/sql/hmdm_init.en.sql \
 # a flagged login to a "set your password" screen, which clears the flag via the reset token).
 docker compose exec -T postgres psql -U mdmesh -d mdmesh -c \
   "UPDATE users SET password='$(pwhash "$ADMIN_PASSWORD")', passwordreset=true, passwordresettoken='${RESET_TOKEN}' WHERE login='admin';" >/dev/null
+# QR/token enrollment creates the device row on demand — that needs the settings flag ON and a
+# default configuration (devices.configurationid is NOT NULL; the init seed sets neither, and
+# without them every /agent/v1/enroll fails). COALESCE keeps a previously chosen default config.
+docker compose exec -T postgres psql -U mdmesh -d mdmesh -c \
+  "UPDATE settings SET createnewdevices=true, newdeviceconfigurationid=COALESCE(newdeviceconfigurationid, (SELECT MIN(id) FROM configurations));" >/dev/null
 # Remove the auxiliary Headwind seed apps (not used by our agent). The launcher (com.hmdm.launcher)
 # is left in place — the default configurations reference it as their main app.
 docker compose exec -T postgres psql -U mdmesh -d mdmesh >/dev/null 2>&1 <<'SQL' || true

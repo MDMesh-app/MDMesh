@@ -89,7 +89,7 @@ printf '\n  %sMDMesh · native install%s\n' "$c_bold" "$c_reset"
 cat <<WARN
 
   ${c_yel}⚠  This will modify THIS host:${c_reset}
-    • apt-get install openjdk-17-jdk, postgresql, maven, nodejs, npm, curl
+    • apt-get install openjdk-17-jdk, postgresql, maven, nodejs, npm, curl, python3
     • create or alter a PostgreSQL role and database "mdmesh" (resets that role's password)
     • download and unpack Apache Tomcat 9 into /opt/mdmesh-tc (clears its webapps/)
     • write config, logs and uploaded files under /opt/mdmesh
@@ -125,7 +125,7 @@ step "Installing dependencies"
 # Tolerate an unrelated broken third-party APT source (e.g. a Docker repo on a codename Docker doesn't
 # publish for → "does not have a Release file") — the native install only needs base Debian packages.
 run "openjdk-17-jdk, postgresql, maven, nodejs, npm, curl" bash -c \
-  'apt-get update -y || echo "(some apt sources failed to refresh — continuing)"; DEBIAN_FRONTEND=noninteractive apt-get install -y openjdk-17-jdk postgresql maven nodejs npm curl'
+  'apt-get update -y || echo "(some apt sources failed to refresh — continuing)"; DEBIAN_FRONTEND=noninteractive apt-get install -y openjdk-17-jdk postgresql maven nodejs npm curl python3'
 
 step "Selecting the Java 17 toolchain"
 # HERMETIC BUILD: pin JDK 17 and never fall back to the host default JDK. The server uses Lombok 1.18.20,
@@ -202,9 +202,46 @@ step "Building the server"
 run "Maven package (JDK 17, ~1-2 min)" bash -c \
   'cp server/build.properties.example server/build.properties 2>/dev/null || true; mvn -q -B -DskipTests -pl server -am package'
 
+step "Fetching the agent APK from GitHub Releases"
+# The agent APK is a release artifact, not a repo file. Pull the latest release's signed APK (+ manifest)
+# and host it at /files/agent.apk, and bake its signing checksum + package into the console build so the
+# provisioning QR matches the hosted APK. Anonymous once the repo is public; honours GITHUB_TOKEN if set.
+# Graceful: if there's no release yet (or it's still private/unreachable), the install continues with
+# debug defaults and you host an APK manually — enrollment just needs a matching APK at /files/agent.apk.
+GITHUB_REPO="${GITHUB_REPO:-$(git remote get-url origin 2>/dev/null | sed -E 's#(git@|https?://)[^/:]+[/:]##; s#\.git$##')}"
+AGENT_APK=""
+if [ -n "$GITHUB_REPO" ]; then
+  AUTH=(); [ -n "${GITHUB_TOKEN:-}" ] && AUTH=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+  jget() { python3 -c 'import sys,json;
+d=json.load(sys.stdin)
+def asset(n): return next((a["browser_download_url"] for a in d.get("assets",[]) if a["name"]==n),"")
+print({"apk":asset("mdmesh-agent.apk"),"manifest":asset("manifest.json")}.get(sys.argv[1],""))' "$1" 2>/dev/null; }
+  REL=$(curl -fsSL "${AUTH[@]}" "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>>"$LOGFILE" || true)
+  APK_URL=$(printf '%s' "$REL" | jget apk); MAN_URL=$(printf '%s' "$REL" | jget manifest)
+  if [ -n "$APK_URL" ] && [ -n "$MAN_URL" ]; then
+    MAN=$(curl -fsSL "${AUTH[@]}" "$MAN_URL" 2>>"$LOGFILE" || true)
+    AGENT_CK=$(printf '%s' "$MAN" | python3 -c 'import sys,json;print(json.load(sys.stdin)["components"]["apk"]["signatureChecksum"])' 2>/dev/null || true)
+    WANT_SHA=$(printf '%s' "$MAN" | python3 -c 'import sys,json;print(json.load(sys.stdin)["components"]["apk"]["sha256"])' 2>/dev/null || true)
+    TMP_APK=$(mktemp)
+    if curl -fsSL "${AUTH[@]}" "$APK_URL" -o "$TMP_APK" 2>>"$LOGFILE" && [ -n "$AGENT_CK" ] \
+       && [ "$(sha256sum "$TMP_APK" | awk '{print $1}')" = "$WANT_SHA" ]; then
+      AGENT_APK="$TMP_APK"
+      export VITE_AGENT_PACKAGE="com.mdmesh.agent" VITE_AGENT_CHECKSUM="$AGENT_CK" VITE_AGENT_APK_URL="/files/agent.apk"
+      ok "release agent APK fetched + sha256-verified (checksum ${AGENT_CK})"
+    else
+      info "Could not fetch/verify the release APK — continuing; host one at /files/agent.apk manually"
+    fi
+  else
+    info "No published release found for ${GITHUB_REPO} — console uses debug defaults; host /files/agent.apk manually"
+  fi
+else
+  info "No GitHub repo detected — skipping release fetch; host /files/agent.apk manually"
+fi
+
 step "Building the admin console"
 # The React console (web/) calls the API at the same origin (/rest), so once it's served from the same
 # Tomcat as the server there's no proxy to configure. Build it to web/dist here; deploy overlays it below.
+# VITE_AGENT_* (exported above from the release, if any) bake the QR's package/checksum/APK URL.
 run "npm ci + vite build (web/)" bash -c 'cd web && npm ci --no-audit --no-fund && npm run build'
 
 step "Tomcat 9 + app deploy"
@@ -240,6 +277,8 @@ printf 'RewriteCond %%{REQUEST_URI} !-f\nRewriteRule ^/(?!rest|files|agent)(.*)$
 mkdir -p "$BASE_DIR/files" "$BASE_DIR/plugins" "$CATALINA/conf/Catalina/localhost"
 cp install/log4j_template.xml "$BASE_DIR/log4j-mdmesh.xml"
 cp -r install/emails "$BASE_DIR/" 2>/dev/null || true
+# Host the release agent APK the QR points at (/files/agent.apk), if we fetched one above.
+[ -n "$AGENT_APK" ] && { cp "$AGENT_APK" "$BASE_DIR/files/agent.apk"; ok "agent APK hosted at /files/agent.apk"; }
 cat > "$CATALINA/conf/Catalina/localhost/ROOT.xml" <<XML
 <?xml version="1.0" encoding="UTF-8"?>
 <Context>

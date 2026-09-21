@@ -52,7 +52,8 @@ mdm_db_state() {
 mdm_seed() {
   local email=$1 seed_file=$2 admin_pw=$3 reset_token=$4 out hash st
   hash=$(mdm_pwhash "$admin_pw")
-  if ! out=$(sed "s/_ADMIN_EMAIL_/${email}/g" "$seed_file" | mdm_psql 2>&1); then
+  # --single-transaction: the seed is all-or-nothing, so a failure never leaves a half-seeded database.
+  if ! out=$(sed "s/_ADMIN_EMAIL_/${email}/g" "$seed_file" | mdm_psql --single-transaction 2>&1); then
     printf 'seed SQL failed:\n%s\n' "$(printf '%s\n' "$out" | tail -n 20)" >&2; return 1
   fi
   if ! out=$(mdm_psql -c "UPDATE users SET password='${hash}', passwordreset=true, passwordresettoken='${reset_token}' WHERE login='admin'" 2>&1); then

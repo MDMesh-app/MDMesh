@@ -128,6 +128,24 @@ DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(
 BASE_DIR=/opt/mdmesh
 CATALINA=/opt/mdmesh-tc
 TOMCAT_VER=9.0.89
+# Tomcat lifecycle helpers. CATALINA_PID lets `catalina.sh stop -force` actually kill a JVM that ignores
+# the shutdown command (the server keeps scheduler threads alive after context stop), and the pgrep
+# fallback covers instances started by older versions of this script without a PID file.
+export CATALINA_PID="$CATALINA/tomcat.pid"
+port_holder() {
+  if command -v ss >/dev/null 2>&1; then ss -ltnp 2>/dev/null | awk -v p=":$HTTP_PORT$" '$4 ~ p {print; exit}'
+  elif command -v lsof >/dev/null 2>&1; then lsof -iTCP:"$HTTP_PORT" -sTCP:LISTEN -nP 2>/dev/null | awk 'NR==2{print; exit}'; fi
+}
+stop_tomcat() {
+  [ -x "$CATALINA/bin/catalina.sh" ] || return 0
+  "$CATALINA/bin/catalina.sh" stop 30 -force >/dev/null 2>&1 || true
+  local p i
+  for p in $(pgrep -f "catalina.base=$CATALINA" || true); do kill "$p" 2>/dev/null || true; done
+  for i in $(seq 1 30); do pgrep -f "catalina.base=$CATALINA" >/dev/null || break; sleep 1; done
+  for p in $(pgrep -f "catalina.base=$CATALINA" || true); do kill -9 "$p" 2>/dev/null || true; done
+  for i in $(seq 1 15); do [ -z "$(port_holder)" ] && break; sleep 1; done
+  rm -f "$CATALINA_PID"
+}
 # Upgrades re-run this script. hash.secret signs enrollment/sync requests and download URLs, so rotating
 # it would silently break every already-enrolled device; reuse the value from the existing ROOT.xml.
 # (DB_PASSWORD is different: it is re-applied to the role via ALTER USER below, so a fresh one is fine.)
@@ -138,15 +156,6 @@ if [ -f "$_old_root" ]; then
 fi
 
 step "Installing dependencies"
-# Tolerate an unrelated broken third-party APT source (e.g. a Docker repo on a codename Docker doesn't
-# publish for → "does not have a Release file") — the native install only needs base Debian packages.
-run "openjdk-17-jdk, postgresql, maven, nodejs, npm, curl, python3, aapt" bash -c \
-  'apt-get update -y || echo "(some apt sources failed to refresh — continuing)"; DEBIAN_FRONTEND=noninteractive apt-get install -y openjdk-17-jdk postgresql maven nodejs npm curl python3 aapt'
-# minisign verifies release-manifest signatures for the updater supervisor. Best-effort: without it
-# the supervisor still runs but reports releases as unverified (and never mirrors an APK).
-DEBIAN_FRONTEND=noninteractive apt-get install -y minisign >> "$LOGFILE" 2>&1 || info "minisign unavailable — updater will report releases as unverified"
-
-step "Selecting the Java 17 toolchain"
 # HERMETIC BUILD: pin JDK 17 and never fall back to the host default JDK. The server uses Lombok 1.18.20,
 # whose annotation processor only runs on JDK <=17; on a newer default JDK (21/25/…) it generates nothing
 # and the build dies with hundreds of "cannot find symbol". This keeps the build identical on any host.
@@ -160,6 +169,31 @@ select_jdk17() {
   done
   return 1
 }
+# Install only what is missing. Asking apt for packages the host already provides another way (Node
+# from nodesource, a JDK under /opt, Postgres from PGDG) is how "held broken packages" conflicts happen
+# on otherwise healthy boxes — and openjdk-17-jdk is not packaged on every release (Debian 13 has 21/25).
+PKGS=()
+select_jdk17 >/dev/null || PKGS+=(openjdk-17-jdk)
+command -v psql    >/dev/null && command -v pg_ctlcluster >/dev/null || PKGS+=(postgresql)
+command -v mvn     >/dev/null || PKGS+=(maven)
+command -v node    >/dev/null || PKGS+=(nodejs)
+command -v npm     >/dev/null || PKGS+=(npm)
+command -v curl    >/dev/null || PKGS+=(curl)
+command -v python3 >/dev/null || PKGS+=(python3)
+command -v aapt    >/dev/null || PKGS+=(aapt)
+if [ ${#PKGS[@]} -eq 0 ]; then
+  ok "all build/runtime dependencies already present — nothing to install"
+else
+  # Tolerate an unrelated broken third-party APT source (e.g. a Docker repo on a codename Docker doesn't
+  # publish for → "does not have a Release file") — the native install only needs base Debian packages.
+  run "$(IFS=,; echo "${PKGS[*]}" | sed 's/,/, /g')" bash -c \
+    "apt-get update -y || echo '(some apt sources failed to refresh — continuing)'; DEBIAN_FRONTEND=noninteractive apt-get install -y ${PKGS[*]}"
+fi
+# minisign verifies release-manifest signatures for the updater supervisor. Best-effort: without it
+# the supervisor still runs but reports releases as unverified (and never mirrors an APK).
+DEBIAN_FRONTEND=noninteractive apt-get install -y minisign >> "$LOGFILE" 2>&1 || info "minisign unavailable — updater will report releases as unverified"
+
+step "Selecting the Java 17 toolchain"
 JAVA_HOME=$(select_jdk17) || {
   _spin_stop
   echo "  ${c_red}✗ no JDK 17 found${c_reset} — the server build REQUIRES JDK 17 (Lombok 1.18.20 breaks on JDK 21+)." >&2
@@ -195,6 +229,13 @@ q() { PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U mdmesh -d mdmesh -tAc "$1" 
 PSQL=(env PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U mdmesh -d mdmesh)
 SEED=yes
 DB_STATE=$(mdm_db_state)   # fresh | seeded | inconsistent | unavailable (no schema yet on a new box)
+# "unavailable" on a box that already HAS the schema means we could not read the settings table, not that
+# the install is new. Seeding would DELETE configurations, so stop instead of guessing (a brand-new box has
+# no users table yet and falls through to SEED=yes as before).
+if [ "$DB_STATE" = unavailable ] && [ "$(q "SELECT to_regclass('public.users')")" = "users" ]; then
+  printf '  %s✗ the schema exists but the settings table could not be read — not seeding over an existing install.%s\n' "$c_red" "$c_reset"
+  printf '  %sCheck Postgres connectivity / the settings table, then re-run.%s\n' "$c_yel" "$c_reset"; exit 1
+fi
 if [ "$DB_STATE" = inconsistent ]; then
   printf '  %s✗ the database has devices but no settings row — refusing to seed (it would delete configurations).%s\n' "$c_red" "$c_reset"
   printf '  %sRestore a backup or repair the settings table by hand, then re-run.%s\n' "$c_yel" "$c_reset"; exit 1
@@ -224,7 +265,7 @@ if [ "$DB_STATE" = seeded ]; then
   fi
   if [ "$REPLACE_DATA" = yes ]; then
     info "Replacing the database — dropping $dc device(s), $uc user(s)"
-    "$CATALINA/bin/catalina.sh" stop 15 -force >/dev/null 2>&1 || true   # release DB connections first
+    stop_tomcat   # release DB connections first
     {
       sudo -u postgres psql -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='mdmesh' AND pid<>pg_backend_pid();"
       sudo -u postgres psql -c "DROP DATABASE mdmesh;"
@@ -284,6 +325,9 @@ step "Building the admin console"
 run "npm ci + vite build (web/)" bash -c 'cd web && npm ci --no-audit --no-fund && npm run build'
 
 step "Tomcat 9 + app deploy"
+# Stop the previous instance first: dropping a new ROOT.war into a running Tomcat triggers a hot redeploy
+# against the old context parameters (and the DB password we just rotated).
+stop_tomcat
 # Install Tomcat if it's missing OR a previous run left it partial/corrupt. Check for the actual launcher
 # script, not just the directory, so a broken /opt/mdmesh-tc self-heals instead of failing at startup.
 # archive.apache.org keeps every release permanently, so the pinned version URL never rots.
@@ -435,16 +479,11 @@ fi
 step "Starting the server"
 # Runs on the same pinned JDK 17 (JAVA_HOME exported above), matching the Docker tomcat:9.0-jdk17 image.
 export CATALINA_OPTS="--add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.text=ALL-UNNAMED --add-opens java.desktop/java.awt.font=ALL-UNNAMED"
-# Stop any instance left from a previous run so the freshly written ROOT.xml (new DB password) is loaded.
-"$CATALINA/bin/catalina.sh" stop 15 -force >/dev/null 2>&1 || true
-sleep 1  # let our just-stopped instance release the listen socket
+# Idempotent: stop_tomcat already ran before deploy; make sure nothing of ours is left before the preflight.
+stop_tomcat
 # Preflight: nothing else may hold the chosen port. We stopped our OWN Tomcat above, so any listener now
 # is foreign (commonly a leftover Headwind/hmdm Tomcat). If we don't catch it, our Tomcat loses the bind,
 # dies quietly, and the old server answers every request with a confusing 404 — fail clearly instead.
-port_holder() {
-  if command -v ss >/dev/null 2>&1; then ss -ltnp 2>/dev/null | awk -v p=":$HTTP_PORT$" '$4 ~ p {print; exit}'
-  elif command -v lsof >/dev/null 2>&1; then lsof -iTCP:"$HTTP_PORT" -sTCP:LISTEN -nP 2>/dev/null | awk 'NR==2{print; exit}'; fi
-}
 holder=$(port_holder)
 if [ -n "$holder" ]; then
   printf '  %s✗ port %s is already in use%s by another server:\n' "$c_red" "$HTTP_PORT" "$c_reset"
@@ -453,17 +492,22 @@ if [ -n "$holder" ]; then
   printf '    %ssudo fuser -k %s/tcp%s   (or kill the pid shown above)\n' "$c_dim" "$HTTP_PORT" "$c_reset"
   exit 1
 fi
+rm -f "$BASE_DIR/initialized.txt"   # Initializer only writes the completion marker when it is absent
 "$CATALINA/bin/catalina.sh" start >> "$LOGFILE" 2>&1
 ok "Tomcat started"
 
-# Gate on the actual schema, not a marker file: the seed needs the `users` table, which Liquibase creates
-# on first boot. Polling for it means we never seed an empty DB and we surface the log if it never appears.
+# Readiness = the server's own completion signal. Initializer writes $BASE_DIR/initialized.txt only after
+# the Guice injector — every Liquibase module, plugins included — has finished, and only if the file is
+# absent, so we delete the previous run's marker before starting Tomcat and wait for a fresh one. Waiting
+# on the `users` table alone was a race: the main change log creates it early while plugin change logs
+# (e.g. the `plugins` table the seed updates) are still running. The users check stays as a sanity bound.
 CATALINA_LOG="$CATALINA/logs/catalina.out"
+INIT_MARKER="$BASE_DIR/initialized.txt"
 schema_ready() {
+  [ -f "$INIT_MARKER" ] || return 1
   PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U mdmesh -d mdmesh -tAc "SELECT to_regclass('public.users')" 2>/dev/null | grep -q '^users$'
 }
-# Wait up to ~5 min for Liquibase to build the schema. On a TTY, show the latest catalina.out line live
-# so you can watch migrations apply; poll the DB for the users table (authoritative, not a marker file).
+# Wait up to ~5 min for first boot (Liquibase) to complete. On a TTY, show the latest catalina.out line live.
 _migrate_wait() {
   local frames='⣾⣽⣻⢿⡿⣟⣯⣷' fi=0 cols width last clip i
   if [ "$TTY" != 1 ]; then
@@ -483,10 +527,15 @@ _migrate_wait() {
   printf '\r\033[K'; return 1
 }
 if ! _migrate_wait; then
-  printf '  %s✗ database schema was not built within 5 minutes (users table missing)%s\n' "$c_red" "$c_reset"
+  printf '  %s✗ the server did not finish initializing within 5 minutes%s\n' "$c_red" "$c_reset"
   printf '  %sLiquibase or server startup likely failed — last lines of %s:%s\n' "$c_yel" "$CATALINA_LOG" "$c_reset"
   hr; tail -n 30 "$CATALINA_LOG" 2>/dev/null | sed "s/^/    ${c_dim}/;s/$/${c_reset}/" || echo "    (no log at $CATALINA_LOG)"; hr
   exit 1
+fi
+# The marker carries "OK" or the initialization error text — refuse to seed on an errored boot.
+if ! grep -q '^OK' "$INIT_MARKER"; then
+  printf '  %s✗ the server reported an initialization error:%s\n' "$c_red" "$c_reset"
+  hr; head -c 2000 "$INIT_MARKER" | sed "s/^/    ${c_dim}/;s/$/${c_reset}/"; echo; hr; exit 1
 fi
 ok "database schema ready"
 

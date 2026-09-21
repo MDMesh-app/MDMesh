@@ -29,12 +29,17 @@ setenv() {
 }
 
 RESET=0
+NATIVE=0; NATIVE_ARGS=()
 for a in "$@"; do
   case "$a" in
-    --native) exec ./install/install-native.sh ;;
+    --native) NATIVE=1 ;;
     --reset)  RESET=1 ;;
+    *)        NATIVE_ARGS+=("$a") ;;   # forwarded to the native installer (-y, -v)
   esac
 done
+# Hand off to the native (non-Docker) installer, passing the remaining flags through so
+# `./setup.sh --native -y` really is unattended.
+if [ "$NATIVE" = 1 ]; then exec ./install/install-native.sh "${NATIVE_ARGS[@]}"; fi
 
 command -v docker >/dev/null || { err "Docker is required (or run ./setup.sh --native)."; exit 1; }
 if ! docker compose version >/dev/null 2>&1; then

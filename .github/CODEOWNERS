@@ -1,0 +1,5 @@
+# Default owner for everything. Refine per plane once there is more than one maintainer.
+*                       @init-lunacy
+# Contract-bearing paths: changes here must stay additive (ADR 0009).
+/proto/                 @init-lunacy
+/common/src/main/java/com/hmdm/rest/json/agent/   @init-lunacy

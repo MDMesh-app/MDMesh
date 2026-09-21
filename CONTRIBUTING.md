@@ -106,6 +106,14 @@ enforced by a golden contract test in CI — see [ADR-0009](docs/adr/0009-agent-
 Not sure where to start? Look for issues labelled **good first issue**, or open a discussion before a
 large change so we can agree on the approach.
 
+### What to expect after you open something
+- Issues and PRs get a first maintainer reply within a week. If it has been longer, a polite ping is welcome.
+- CI does not run automatically on a **first-time contributor's** PR (GitHub's default); a maintainer approves
+  it after a quick read. Nothing you need to do.
+- `main` is protected against force-pushes and deletion. Maintainers do land small fixes on `main` directly;
+  everything else goes through a PR.
+- Security issues: see [SECURITY.md](SECURITY.md) — please don't file them publicly.
+
 ---
 
 ## Regenerating the docs screenshots

@@ -112,6 +112,27 @@ jobs:
           IMG="ghcr.io/${O}/mdmesh-supervisor"
           docker build -f docker/supervisor.Dockerfile -t "$IMG:$VERSION" -t "$IMG:latest" .
           docker push "$IMG:$VERSION"; docker push "$IMG:latest"
+      - name: Verify images are publicly pullable (guards against private GHCR packages, #3)
+        env:
+          OWNER: ${{ github.repository_owner }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          O=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+          fail=0
+          for img in mdmesh-server mdmesh-web mdmesh-supervisor; do
+            # No credentials on purpose: this is exactly what the quickstart does on a fresh box.
+            tok=$(curl -fsS "https://ghcr.io/token?scope=repository:${O}/${img}:pull" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+            code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${tok}" \
+              -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json' \
+              "https://ghcr.io/v2/${O}/${img}/manifests/${VERSION}")
+            echo "${img}:${VERSION} anonymous manifest -> ${code}"
+            [ "$code" = "200" ] || fail=1
+          done
+          if [ "$fail" = 1 ]; then
+            echo "::error::At least one image is not anonymously pullable. Set the package visibility to Public" \
+                 "(org → Packages → <image> → Package settings → Danger Zone) and re-run this job."
+            exit 1
+          fi
 
       # --- Manifest: build + sign ---
       - name: Build + sign manifest

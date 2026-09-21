@@ -82,7 +82,7 @@ Set these in `.env` (the wizard seeds them; add by hand for an existing deploy):
 | `POLL_INTERVAL_HOURS` | How often to check (default `6`). |
 | `GITHUB_TOKEN` | Optional — raises the API rate limit / reads a private repo. |
 | `IMAGE_OWNER` | GHCR owner (lowercase) the versioned images live under. |
-| `SERVER_VERSION` / `WEB_VERSION` | Running image tags; bumped automatically on apply. |
+| `SERVER_VERSION` / `WEB_VERSION` | Running image tags **without the `v`** (`0.2.6`, not `v0.2.6`); bumped automatically on apply. |
 | `AUTO_UPDATE` | `1` to apply verified releases unattended (also toggleable in **Settings**). |
 
 - **One-click:** when a verified update is available, a banner appears in the console; an admin clicks

@@ -167,7 +167,8 @@ bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/quick
 
 Pulls the released images from GHCR (no build), generates secrets, brings the stack up in `./mdmesh`,
 and prints the console URL + a temporary admin password. *(Needs a published release with **public**
-GHCR packages — or `docker login ghcr.io` first; see [RELEASING.md](RELEASING.md).)*
+GHCR packages — or `docker login ghcr.io` first; see [RELEASING.md](RELEASING.md).)* Image tags carry **no `v`
+prefix**: release `v0.2.6` publishes `ghcr.io/mdmesh-app/mdmesh-server:0.2.6` (and `:latest`).
 
 ### Option B — from source (clone + build)
 

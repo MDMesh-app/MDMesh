@@ -10,6 +10,9 @@ set -euo pipefail
 umask 077
 cd "$(dirname "$0")/.."
 REPO="$PWD"   # repo root — used for absolute paths inside subshells (e.g. exploding the WAR)
+# Shared DB provisioning rules (seed gate, verified seed, post-seed repairs) — same file setup.sh uses.
+# shellcheck source=lib/db.sh
+. "$REPO/install/lib/db.sh"
 
 [ "$(id -u)" = "0" ] || { echo "Run as root (sudo)."; exit 1; }
 command -v apt-get >/dev/null || { echo "This script targets Debian/Ubuntu."; exit 1; }
@@ -112,9 +115,7 @@ if [ "$ASSUME_YES" != "1" ]; then
   [ "$_confirm" = "yes" ] || { echo "  Aborted — no changes made."; exit 1; }
 fi
 
-SALT='5YdSYHyg2U'
-rand() { openssl rand -hex 24; }
-pwhash() { local m; m=$(printf '%s' "$1" | md5sum | awk '{print toupper($1)}'); printf '%s' "${m}${SALT}" | sha1sum | awk '{print $1}'; }
+rand() { mdm_rand; }
 
 printf '\n'
 read -rp "  Public base URL (e.g. https://mdm.example.com): " BASE_URL
@@ -127,6 +128,14 @@ DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(
 BASE_DIR=/opt/mdmesh
 CATALINA=/opt/mdmesh-tc
 TOMCAT_VER=9.0.89
+# Upgrades re-run this script. hash.secret signs enrollment/sync requests and download URLs, so rotating
+# it would silently break every already-enrolled device; reuse the value from the existing ROOT.xml.
+# (DB_PASSWORD is different: it is re-applied to the role via ALTER USER below, so a fresh one is fine.)
+_old_root="$CATALINA/conf/Catalina/localhost/ROOT.xml"
+if [ -f "$_old_root" ]; then
+  _old_secret=$(sed -n 's/.*name="hash.secret"[[:space:]]*value="\([^"]*\)".*/\1/p' "$_old_root" | head -n 1)
+  if [ -n "$_old_secret" ]; then HASH_SECRET="$_old_secret"; info "Reusing hash.secret from the existing install (enrolled devices keep working)"; fi
+fi
 
 step "Installing dependencies"
 # Tolerate an unrelated broken third-party APT source (e.g. a Docker repo on a codename Docker doesn't
@@ -182,8 +191,15 @@ ok "PostgreSQL role + database 'mdmesh' ready"
 # to KEEPING it: we only deploy new code + run Liquibase migrations (non-destructive). Replacing is opt-in
 # and drops the DB for a clean slate. Override non-interactively with REPLACE_DATA=yes|no.
 q() { PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U mdmesh -d mdmesh -tAc "$1" 2>/dev/null | tr -d '[:space:]'; }
+# shellcheck disable=SC2034  # PSQL is consumed by install/lib/db.sh
+PSQL=(env PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U mdmesh -d mdmesh)
 SEED=yes
-if [ "$(q "SELECT to_regclass('public.users')")" = "users" ] && [ "$(q "SELECT count(*) FROM users")" != "0" ]; then
+DB_STATE=$(mdm_db_state)   # fresh | seeded | inconsistent | unavailable (no schema yet on a new box)
+if [ "$DB_STATE" = inconsistent ]; then
+  printf '  %s✗ the database has devices but no settings row — refusing to seed (it would delete configurations).%s\n' "$c_red" "$c_reset"
+  printf '  %sRestore a backup or repair the settings table by hand, then re-run.%s\n' "$c_yel" "$c_reset"; exit 1
+fi
+if [ "$DB_STATE" = seeded ]; then
   uc=$(q "SELECT count(*) FROM users"); dc=$(q "SELECT count(*) FROM devices"); dc=${dc:-0}
   REPLACE_DATA="${REPLACE_DATA:-}"
   if [ -z "$REPLACE_DATA" ]; then
@@ -403,6 +419,19 @@ else
   info "  (set -a; . ${BASE_DIR}/supervisor.env; node ${SUP_DIR}/server.js &)"
 fi
 
+if [ "$SEED" = no ]; then
+  step "Backing up the database before upgrading"
+  # Liquibase migrations run against live data on the next start; keep a restorable dump first.
+  BK_DIR="$BASE_DIR/backups"; mkdir -p "$BK_DIR"; chmod 700 "$BK_DIR"
+  BK="$BK_DIR/mdmesh-pre-upgrade-$(date +%Y%m%d-%H%M%S).dump"
+  # shellcheck disable=SC2024  # we ARE root here (checked at the top); sudo only switches to the postgres role
+  if sudo -u postgres pg_dump -Fc mdmesh > "$BK" 2>>"$LOGFILE"; then
+    chmod 600 "$BK"; ok "pg_dump written: $BK  (restore: pg_restore -c -d mdmesh $BK)"
+  else
+    printf '  %s✗ pg_dump failed — not upgrading without a backup. See %s%s\n' "$c_red" "$LOGFILE" "$c_reset"; exit 1
+  fi
+fi
+
 step "Starting the server"
 # Runs on the same pinned JDK 17 (JAVA_HOME exported above), matching the Docker tomcat:9.0-jdk17 image.
 export CATALINA_OPTS="--add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.text=ALL-UNNAMED --add-opens java.desktop/java.awt.font=ALL-UNNAMED"
@@ -464,13 +493,13 @@ ok "database schema ready"
 if [ "$SEED" = yes ]; then
   step "Seeding settings + admin account"
   HOST=$(printf '%s' "$BASE_URL" | sed -E 's#https?://##; s#/.*##')
-  {
-    PGPASSWORD="$DB_PASSWORD" sed "s/_ADMIN_EMAIL_/admin@${HOST}/g" install/sql/hmdm_init.en.sql \
-      | PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U mdmesh -d mdmesh || echo "(seed warnings ok if already seeded)"
-    PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U mdmesh -d mdmesh -c \
-      "UPDATE users SET password='$(pwhash "$ADMIN_PASSWORD")', passwordreset=true, passwordresettoken='${RESET_TOKEN}' WHERE login='admin';"
-  } >> "$LOGFILE" 2>&1
-  ok "admin account seeded"
+  # mdm_seed is strict and checks its own postcondition; a half-seed must never look like success.
+  if mdm_seed "admin@${HOST}" install/sql/hmdm_init.en.sql "$ADMIN_PASSWORD" "$RESET_TOKEN" 2>>"$LOGFILE"; then
+    ok "admin account seeded"
+  else
+    printf '  %s✗ seeding failed — the install is NOT usable yet. Details: %s%s\n' "$c_red" "$LOGFILE" "$c_reset"
+    tail -n 15 "$LOGFILE" | sed "s/^/    ${c_dim}/;s/$/${c_reset}/"; exit 1
+  fi
 else
   step "Preserving existing data"
   info "Skipped seeding — your configurations, devices and admin login are untouched"
@@ -480,8 +509,12 @@ fi
 # EVERY install/upgrade, deliberately OUTSIDE the seed gate so upgrades of older installs get them
 # too: the enrollment-settings fix (createnewdevices + a default configuration, without which every
 # /agent/v1/enroll fails) and the aux-Headwind-app scrub. Idempotent; no-op on an empty database.
-PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U mdmesh -d mdmesh -f install/sql/post_seed.sql >> "$LOGFILE" 2>&1
-ok "post-seed repairs applied (enrollment settings + aux-app scrub)"
+if mdm_post_seed install/sql/post_seed.sql 2>>"$LOGFILE"; then
+  ok "post-seed repairs applied (enrollment settings + aux-app scrub)"
+else
+  printf '  %s✗ post-seed repairs failed — device enrollment would not work. Details: %s%s\n' "$c_red" "$LOGFILE" "$c_reset"
+  tail -n 15 "$LOGFILE" | sed "s/^/    ${c_dim}/;s/$/${c_reset}/"; exit 1
+fi
 
 trap - ERR
 printf '\n  %s%s✓ MDMesh installed (native)%s\n\n' "$c_grn" "$c_bold" "$c_reset"

@@ -12,13 +12,11 @@ REPO="MDMesh-app/MDMesh"
 BRANCH="main"
 RAW="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
 IMAGE_OWNER_DEFAULT="mdmesh-app"
-SALT='5YdSYHyg2U'   # PasswordUtil.PASS_SALT — must match the server.
 
 say()  { printf '\033[1;36m%s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m%s\033[0m\n' "$*"; }
 err()  { printf '\033[1;31m%s\033[0m\n' "$*" >&2; }
 rand() { openssl rand -hex 24; }
-pwhash() { local m; m=$(printf '%s' "$1" | md5sum | awk '{print toupper($1)}'); printf '%s' "${m}${SALT}" | sha1sum | awk '{print $1}'; }
 
 command -v docker >/dev/null || { err "Docker is required."; exit 1; }
 docker compose version >/dev/null 2>&1 || { err "Docker Compose v2 is required ('docker compose')."; exit 1; }
@@ -65,6 +63,12 @@ curl -fsSL "${RAW}/docker-compose.release.yml" -o docker-compose.yml
 curl -fsSL "${RAW}/docker-compose.domain.yml"  -o docker-compose.domain.yml
 mkdir -p install/sql
 curl -fsSL "${RAW}/install/sql/hmdm_init.en.sql" -o install/sql/hmdm_init.en.sql
+curl -fsSL "${RAW}/install/sql/post_seed.sql"    -o install/sql/post_seed.sql
+mkdir -p install/lib
+curl -fsSL "${RAW}/install/lib/db.sh"             -o install/lib/db.sh
+# Shared seed rules with setup.sh / the native installer (seed gate, verified seed, post-seed repairs).
+# shellcheck source=install/lib/db.sh
+. ./install/lib/db.sh
 
 cat > .env <<EOF
 DB_NAME=mdmesh
@@ -102,16 +106,34 @@ say "Starting the stack…"
 docker compose up -d
 
 say "Waiting for the server to finish first-boot (Liquibase)…"
-for i in $(seq 1 60); do
-  if docker compose exec -T server test -f /opt/mdmesh/initialized.txt 2>/dev/null; then break; fi
+BOOTED=0
+for _ in $(seq 1 60); do
+  if docker compose exec -T server test -f /opt/mdmesh/initialized.txt 2>/dev/null; then BOOTED=1; break; fi
   sleep 5
 done
+if [ "$BOOTED" != 1 ]; then
+  err "Server did not finish first-boot within ~5 minutes. Last server logs:"
+  docker compose logs --tail 40 server 2>&1 || true
+  err "Fix the issue above and re-run the quick start from this directory ($(pwd))."; exit 1
+fi
 
+# Same rules as setup.sh (shared install/lib/db.sh): seed only a fresh database, verify the seed, then
+# the always-run repairs that switch on QR/token enrollment (this step used to be missing here).
+# shellcheck disable=SC2034  # PSQL is consumed by install/lib/db.sh
+PSQL=(docker compose exec -T postgres psql -U mdmesh -d mdmesh)
+STATE=$(mdm_db_state)
+case "$STATE" in
+  fresh)  ;;
+  seeded) err "This database is already seeded — the quick start is for new installs only. To upgrade, use ./setup.sh in a clone."; exit 1 ;;
+  *)      err "Could not confirm a fresh database (state: ${STATE}). Aborting before touching data."; exit 1 ;;
+esac
 say "Seeding settings + admin…"
-sed "s/_ADMIN_EMAIL_/admin@${HOST}/g" install/sql/hmdm_init.en.sql \
-  | docker compose exec -T postgres psql -U mdmesh -d mdmesh >/dev/null 2>&1 || warn "Seed step reported issues (often fine if already seeded)."
-docker compose exec -T postgres psql -U mdmesh -d mdmesh -c \
-  "UPDATE users SET password='$(pwhash "$ADMIN_PASSWORD")', passwordreset=true, passwordresettoken='${RESET_TOKEN}' WHERE login='admin';" >/dev/null
+if ! mdm_seed "admin@${HOST}" install/sql/hmdm_init.en.sql "$ADMIN_PASSWORD" "$RESET_TOKEN"; then
+  err "Seeding failed — the install is NOT usable yet. Fix the error above and re-run."; exit 1
+fi
+if ! mdm_post_seed install/sql/post_seed.sql; then
+  err "Post-seed repairs failed — device enrollment would not work. Fix the error above and re-run."; exit 1
+fi
 
 echo
 say "== MDMesh is up =="

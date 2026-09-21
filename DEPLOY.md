@@ -19,6 +19,12 @@ secrets, `docker compose pull && up -d`, seeds, and prints the console URL + a t
 > **Requires a published release**, and the GHCR packages (`mdmesh-server`/`-web`/`-supervisor`) must be
 > **public** — or run `docker login ghcr.io` first. See [RELEASING.md](RELEASING.md).
 
+> **Upgrading a from-source Docker install made with `./setup.sh` between v0.2.2 and v0.2.6?** A bug in the
+> seed gate meant those installs kept the stock `admin` / `admin` login and never enabled QR/token enrollment
+> defaults. After `git pull`, re-run `./setup.sh` (it applies the repairs idempotently) and **change the admin
+> password** from the console if you never did. Quick-start (`quickstart.sh`) installs got a random password
+> but also missed the enrollment defaults; re-running `./setup.sh` in a clone fixes that too. Fixed in v0.2.7.
+
 ## Option B — from source (clone + build)
 
 Prereqs: Docker + Compose v2, and `openssl`.

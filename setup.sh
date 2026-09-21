@@ -13,16 +13,14 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-SALT='5YdSYHyg2U'   # PasswordUtil.PASS_SALT — must match the server.
 say()  { printf '\033[1;36m%s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m%s\033[0m\n' "$*"; }
 err()  { printf '\033[1;31m%s\033[0m\n' "$*" >&2; }
-rand() { openssl rand -hex 24; }
-# users.password = SHA1( UPPER(MD5(raw)) + SALT ) — see PasswordUtil / CryptoUtil.
-pwhash() {
-  local md5; md5=$(printf '%s' "$1" | md5sum | awk '{print toupper($1)}')
-  printf '%s' "${md5}${SALT}" | sha1sum | awk '{print $1}'
-}
+# Shared DB provisioning (seed gate, seed, post-seed repairs, password hashing) — one copy for all
+# three installers. See install/lib/db.sh for the rules and why they are what they are.
+# shellcheck source=install/lib/db.sh
+. ./install/lib/db.sh
+rand() { mdm_rand; }
 # Update KEY in .env in place (or append it) — persists values discovered after .env was written
 # (GITHUB_REPO autodetection, the release QR build args) so compose substitution + the supervisor
 # container keep seeing them on later runs.
@@ -201,7 +199,7 @@ docker compose $COMPOSE_ARGS up -d --build
 
 say "Waiting for the server to finish first-boot (Liquibase)…"
 BOOTED=0
-for i in $(seq 1 60); do
+for _ in $(seq 1 60); do
   if docker compose exec -T server test -f /opt/mdmesh/initialized.txt 2>/dev/null; then BOOTED=1; break; fi
   sleep 5
 done
@@ -215,34 +213,42 @@ if [ "$BOOTED" != 1 ]; then
 fi
 
 # Data safety: hmdm_init.en.sql is FRESH-DB-ONLY — it DELETEs configurations and re-inserts demo
-# rows, so it must NEVER run against live data. Mirror the native installer's SEED logic: seed only
-# when the users table is empty (or absent — nothing to lose either way). Upgrades skip straight to
-# the always-run repairs below, and existing admin credentials stay untouched.
-USER_COUNT=$(docker compose exec -T postgres psql -U mdmesh -d mdmesh -tAc "SELECT count(*) FROM users;" 2>/dev/null | tr -d '[:space:]' || true)
-if [ -z "$USER_COUNT" ] || [ "$USER_COUNT" = "0" ]; then SEED=yes; else SEED=no; fi
+# rows, so it must NEVER run against live data. The gate is the settings row (only the seed creates
+# it); counting users does NOT work because Liquibase inserts the admin user on first boot.
+# shellcheck disable=SC2034  # PSQL is consumed by install/lib/db.sh
+PSQL=(docker compose exec -T postgres psql -U mdmesh -d mdmesh)
+case "$(mdm_db_state)" in
+  fresh)  SEED=yes ;;
+  seeded) SEED=no ;;
+  inconsistent)
+    err "The database has devices but no settings row. Refusing to seed (that would delete configurations)."
+    err "Restore from a backup or fix the settings table by hand, then re-run ./setup.sh."; exit 1 ;;
+  *)
+    err "Could not read the database state (is the postgres container healthy?). Last postgres logs:"
+    docker compose logs --tail 20 postgres 2>&1 || true; exit 1 ;;
+esac
 
 if [ "$SEED" = yes ]; then
   say "Seeding settings + admin…"
   ADMIN_PASSWORD=$(rand)
   RESET_TOKEN=$(openssl rand -hex 16)   # ≤40 chars (passwordresettoken column); forces a first-login change
-  # Settings/configs/system-apps (avoids first-use NPEs).
-  sed "s/_ADMIN_EMAIL_/admin@${HOST}/g" install/sql/hmdm_init.en.sql \
-    | docker compose exec -T postgres psql -U mdmesh -d mdmesh >/dev/null 2>&1 || \
-    warn "Seed step reported issues (often fine if already seeded)."
-  # Set the admin password to the generated one and FORCE a change on first login (the console routes
-  # a flagged login to a "set your password" screen, which clears the flag via the reset token).
-  docker compose exec -T postgres psql -U mdmesh -d mdmesh -c \
-    "UPDATE users SET password='$(pwhash "$ADMIN_PASSWORD")', passwordreset=true, passwordresettoken='${RESET_TOKEN}' WHERE login='admin';" >/dev/null
+  # Base settings/configs/system apps, then the generated admin password with a forced change on first
+  # login. mdm_seed verifies its own postcondition and fails loudly — a silent half-seed used to leave
+  # an install that LOOKED successful but could not enroll devices.
+  if ! mdm_seed "admin@${HOST}" install/sql/hmdm_init.en.sql "$ADMIN_PASSWORD" "$RESET_TOKEN"; then
+    err "Seeding failed — the install is NOT usable yet. Fix the error above and re-run ./setup.sh."; exit 1
+  fi
 else
-  say "Existing data found (${USER_COUNT} user(s)) — skipping the seed; logins and configurations untouched."
+  say "Existing data found — skipping the seed; logins and configurations untouched."
   say "  (To start from scratch instead: 'docker compose down -v' — destroys ALL data — then './setup.sh --reset'.)"
 fi
 
 # Idempotent repairs that must run on EVERY install/upgrade, fresh or not (shared with the native
 # installer): the enrollment settings fix (createnewdevices + a default configuration) and the
 # aux-Headwind-app scrub. See install/sql/post_seed.sql for the rationale on each statement.
-docker compose exec -T postgres psql -U mdmesh -d mdmesh >/dev/null 2>&1 < install/sql/post_seed.sql || \
-  warn "post_seed.sql reported issues — check the settings/applications tables."
+if ! mdm_post_seed install/sql/post_seed.sql; then
+  err "Post-seed repairs failed — device enrollment would not work. Fix the error above and re-run ./setup.sh."; exit 1
+fi
 
 echo
 say "== MDMesh is up =="

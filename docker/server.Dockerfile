@@ -21,7 +21,8 @@ RUN rm -rf /usr/local/tomcat/webapps/*
 COPY --from=build /src/server/target/launcher.war /usr/local/tomcat/webapps/ROOT.war
 # App base directory (data, plugins, logging config, email templates). /opt/mdmesh should be a volume
 # so uploaded files + the hosted agent APK survive container recreation.
-RUN mkdir -p /opt/mdmesh/files /opt/mdmesh/plugins
+RUN mkdir -p /opt/mdmesh/files /opt/mdmesh/plugins \
+ && groupadd -r mdmesh && useradd -r -g mdmesh -d /opt/mdmesh -s /usr/sbin/nologin mdmesh
 COPY install/log4j_template.xml /opt/mdmesh/log4j-mdmesh.xml
 COPY install/emails /opt/mdmesh/emails
 COPY docker/entrypoint.sh /entrypoint.sh

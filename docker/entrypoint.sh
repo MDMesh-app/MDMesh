@@ -67,4 +67,7 @@ cat > "$CONF_DIR/ROOT.xml" <<EOF
 </Context>
 EOF
 
-exec catalina.sh run
+# Volumes from older deployments are root-owned; make them writable for the unprivileged user, then drop
+# root for good. setpriv ships with util-linux on the Debian-based tomcat image (no gosu needed).
+chown -R mdmesh:mdmesh /opt/mdmesh /usr/local/tomcat/conf/Catalina /usr/local/tomcat/logs /usr/local/tomcat/work /usr/local/tomcat/temp /usr/local/tomcat/webapps
+exec setpriv --reuid=mdmesh --regid=mdmesh --init-groups catalina.sh run

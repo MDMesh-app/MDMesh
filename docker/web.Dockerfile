@@ -21,6 +21,16 @@ COPY web/ ./
 RUN npm run build
 
 FROM caddy:2-alpine
+# Run Caddy unprivileged. It still needs to bind :80/:443 in own-domain mode, so grant just that capability
+# to the binary; /data (certs) and /config are mounted volumes that older deployments created root-owned,
+# so a tiny root entrypoint fixes their ownership and then su-execs to "caddy".
+RUN apk add --no-cache libcap su-exec \
+ && addgroup -S caddy && adduser -S -G caddy -h /data caddy \
+ && setcap cap_net_bind_service=+ep /usr/bin/caddy
 COPY --from=web /web/dist /srv
 COPY docker/Caddyfile /etc/caddy/Caddyfile
+COPY docker/web-entrypoint.sh /web-entrypoint.sh
+RUN chmod +x /web-entrypoint.sh && chown -R caddy:caddy /srv /etc/caddy /data /config
 EXPOSE 80 443
+ENTRYPOINT ["/web-entrypoint.sh"]
+CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

@@ -2,6 +2,8 @@
 # Node 20 (zero npm deps) + the minisign binary for manifest verification; the release public key is
 # baked in so only properly-signed releases are ever trusted.
 FROM node:20-alpine
+# Deliberately root: the supervisor drives the host Docker daemon through /var/run/docker.sock (see
+# docker-compose.yml), which is host-root-equivalent regardless of the in-container uid.
 # minisign verifies the signed manifest; docker-cli + the compose plugin let the supervisor drive
 # `docker compose pull/up` against the host daemon (socket mounted in compose) to apply updates.
 # postgresql-client gives apply.sh pg_dump/psql for the pre-update backup + rollback restore.

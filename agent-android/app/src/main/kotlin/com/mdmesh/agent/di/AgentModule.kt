@@ -127,9 +127,9 @@ object AgentModule {
             // A lambda, not a value: this collector is a @Singleton and Device-Owner status only
             // flips to true partway through provisioning — see CapabilityCollector.collect().
             isDeviceOwner = { handle.dpm.isDeviceOwnerApp(context.packageName) },
-            capabilityRegistry = registry,
-            remoteTierDetector = remoteTierDetector,
-            oemAdapter = oemAdapter,
+            policyKeys = registry::supportedPolicyKeys,
+            remoteControl = remoteTierDetector::capability,
+            oem = oemAdapter::capability,
             // Silent install needs Device Owner — advertise app.silentInstall only when we have it, so
             // the server's capability gate won't queue an app.install we can't perform.
             deviceOwnerAppManagementKeys = AppManagement.DEVICE_OWNER_KEYS,

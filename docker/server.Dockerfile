@@ -16,7 +16,7 @@ COPY install ./install
 RUN cp server/build.properties.example server/build.properties || true
 RUN mvn -q -B -DskipTests package
 
-FROM tomcat:9.0-jdk17-temurin
+FROM tomcat:11.0-jdk17-temurin
 RUN rm -rf /usr/local/tomcat/webapps/*
 COPY --from=build /src/server/target/launcher.war /usr/local/tomcat/webapps/ROOT.war
 # App base directory (data, plugins, logging config, email templates). /opt/mdmesh should be a volume

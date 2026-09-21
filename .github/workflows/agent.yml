@@ -26,6 +26,10 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: android-actions/setup-android@v3
+        with:
+          # Default is "tools platform-tools"; Google removed the legacy "tools" package from the
+          # SDK repository (Sept 2026) so sdkmanager exits 1. AGP auto-provisions platforms/build-tools.
+          packages: platform-tools
       - uses: gradle/actions/setup-gradle@v4
         with:
           # Installs this Gradle and puts `gradle` on PATH, so we don't need a

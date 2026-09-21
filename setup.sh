@@ -235,6 +235,7 @@ if [ "$SEED" = yes ]; then
     "UPDATE users SET password='$(pwhash "$ADMIN_PASSWORD")', passwordreset=true, passwordresettoken='${RESET_TOKEN}' WHERE login='admin';" >/dev/null
 else
   say "Existing data found (${USER_COUNT} user(s)) — skipping the seed; logins and configurations untouched."
+  say "  (To start from scratch instead: 'docker compose down -v' — destroys ALL data — then './setup.sh --reset'.)"
 fi
 
 # Idempotent repairs that must run on EVERY install/upgrade, fresh or not (shared with the native

@@ -191,9 +191,19 @@ if [ "$(q "SELECT to_regclass('public.users')")" = "users" ] && [ "$(q "SELECT c
       REPLACE_DATA=no   # never destroy data unprompted
     else
       printf '\n  %s%s⚠  Existing MDMesh data found: %s device(s), %s user(s).%s\n' "$c_red" "$c_bold" "$dc" "$uc" "$c_reset"
-      printf '  %sKeep your existing data? Answering "no" ERASES all of it.%s %s[Y/n]%s: ' "$c_red" "$c_reset" "$c_bold" "$c_reset"
-      # Default (Enter) keeps data. Only an explicit no/n erases it.
-      read -r _r; case "$_r" in n|N|no|NO) REPLACE_DATA=yes ;; *) REPLACE_DATA=no ;; esac
+      printf '  What should the installer do with it?\n'
+      printf '    %s[K]eep%s  — deploy new code + run migrations; devices, users and configs untouched %s(default)%s\n' "$c_bold" "$c_reset" "$c_bold" "$c_reset"
+      printf '    %s[E]rase%s — drop the database and start from an empty seed. %sThis cannot be undone.%s\n' "$c_bold" "$c_reset" "$c_red" "$c_reset"
+      printf '  Choice %s[K/e]%s: ' "$c_bold" "$c_reset"
+      read -r _r
+      case "$_r" in
+        e|E|erase|ERASE)
+          # Destructive path needs a second, typed confirmation (same convention as `gh repo delete`).
+          printf '  %sType ERASE to confirm dropping %s device(s) and %s user(s):%s ' "$c_red" "$dc" "$uc" "$c_reset"
+          read -r _c
+          if [ "$_c" = "ERASE" ]; then REPLACE_DATA=yes; else info "Not confirmed — keeping existing data."; REPLACE_DATA=no; fi ;;
+        *) REPLACE_DATA=no ;;
+      esac
     fi
   fi
   if [ "$REPLACE_DATA" = yes ]; then

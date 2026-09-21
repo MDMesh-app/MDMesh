@@ -8,7 +8,7 @@ a Java runtime, so the **server and agent first build on a provisioned machine /
 | Plane | Needs |
 |-------|-------|
 | Control plane (server) | Docker + Docker Compose |
-| Admin frontend (web)   | Node 20+, npm |
+| Admin frontend (web)   | Node 22 (Vite 8 needs ≥ 20.19), npm |
 | Device agent           | JDK 17, Android SDK (cmdline-tools), an AOSP emulator or a factory-reset device |
 
 ## 1. Control plane (Postgres + Tomcat server)

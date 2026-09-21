@@ -65,6 +65,16 @@ Debian/Ubuntu, as root. The leaner path: Postgres + Tomcat on the host; you term
 sudo ./setup.sh --native      # → install/install-native.sh
 ```
 
+**Upgrading a native install** is the same command after `git pull`. The installer detects existing data and
+asks **Keep** (default, just press Enter) or **Erase** (requires typing `ERASE`). Keep redeploys the code, runs
+migrations, and leaves configurations, devices, users and the enrollment secret untouched; a `pg_dump` is written
+to `/opt/mdmesh/backups/` first. Unattended: `sudo ./setup.sh --native -y` never erases; set `REPLACE_DATA=yes` to
+opt into a wipe, `HTTP_PORT=9090` to pick the port. Only missing packages are installed, and a JDK 17 found via
+`JAVA17_HOME` or under `/opt` is used as-is (Debian 13 ships no `openjdk-17-jdk`).
+
+Note: on native installs Tomcat currently runs as root; the Docker images drop privileges. Front it with your own
+TLS proxy and keep the box dedicated.
+
 ## Enrolling devices
 
 One prebuilt agent APK works for **every** deployment — the server URL is delivered in the

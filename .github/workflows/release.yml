@@ -149,8 +149,15 @@ jobs:
           release/sign-manifest.sh manifest.json
 
       # --- Publish ---
+      - name: Release notes from the tag annotation
+        run: |
+          git fetch --tags --force --quiet
+          { git tag -l --format='%(contents)' "${GITHUB_REF_NAME}" | sed '/^-----BEGIN PGP SIGNATURE-----/,$d'; } > release-notes.md
+          [ -s release-notes.md ] || echo "See the commit history for this release." > release-notes.md
       - uses: softprops/action-gh-release@v2
         with:
+          body_path: release-notes.md
+          generate_release_notes: true
           files: |
             mdmesh-agent.apk
             manifest.json

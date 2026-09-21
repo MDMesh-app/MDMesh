@@ -54,7 +54,9 @@ minisign -G -p release/minisign.pub -s mdmesh-release.key   # set a password
 Images pushed by Actions to an org are **private by default**. For the no-clone `docker compose pull`
 to work anonymously, set each package to public: **org → Packages → `mdmesh-server` / `mdmesh-web` /
 `mdmesh-supervisor` → Package settings → Change visibility → Public.** (Otherwise deployers must
-`docker login ghcr.io` with a PAT.)
+`docker login ghcr.io` with a PAT.) The release workflow verifies this: after pushing, it fetches each image
+manifest **anonymously** and fails the release with instructions if any package is still private. Release notes
+come from the annotated tag message (`git tag -a vX.Y.Z -m "..."`) plus GitHub's generated list.
 
 ## How a deployment trusts a release
 The updater fetches the GitHub Release, verifies `manifest.json` against the baked

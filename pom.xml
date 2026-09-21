@@ -54,7 +54,7 @@
         <mybatis.version>3.5.19</mybatis.version>
         <mybatis.guice.version>3.10</mybatis.guice.version>
 
-        <postgresql.version>42.7.11</postgresql.version>
+        <postgresql.version>42.7.12</postgresql.version>
         <liquibase.version>4.31.1</liquibase.version>
 
         <junit.version>4.13.1</junit.version>
@@ -163,40 +163,40 @@
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
-            <version>2.18.8</version>
+            <version>2.18.9</version>
         </dependency>
         <!-- https://mvnrepository.com/artifact/com.fasterxml.jackson.core/jackson-annotations -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-annotations</artifactId>
-            <version>2.18.8</version>
+            <version>2.18.9</version>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-core</artifactId>
-            <version>2.18.8</version>
+            <version>2.18.9</version>
         </dependency>
         <!-- Keep every Jackson module on the same line as jackson-databind: Jersey 2.25 and swagger
              otherwise drag in 2.8/2.9-era jaxrs/jaxb/yaml jars that break against a 2.18 databind. -->
         <dependency>
             <groupId>com.fasterxml.jackson.jaxrs</groupId>
             <artifactId>jackson-jaxrs-json-provider</artifactId>
-            <version>2.18.8</version>
+            <version>2.18.9</version>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.jaxrs</groupId>
             <artifactId>jackson-jaxrs-base</artifactId>
-            <version>2.18.8</version>
+            <version>2.18.9</version>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.module</groupId>
             <artifactId>jackson-module-jaxb-annotations</artifactId>
-            <version>2.18.8</version>
+            <version>2.18.9</version>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.dataformat</groupId>
             <artifactId>jackson-dataformat-yaml</artifactId>
-            <version>2.18.8</version>
+            <version>2.18.9</version>
         </dependency>
 
 

@@ -27,6 +27,7 @@ import liquibase.database.Database;
 import liquibase.database.DatabaseFactory;
 import liquibase.database.jvm.JdbcConnection;
 import liquibase.exception.LiquibaseException;
+import liquibase.resource.ClassLoaderResourceAccessor;
 import liquibase.resource.ResourceAccessor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -110,7 +111,14 @@ public abstract class AbstractLiquibaseModule extends AbstractModule {
      *
      * @return a resource accessor for change log file.
      */
-    protected abstract ResourceAccessor getResourceAccessor();
+    /**
+     * <p>Resolves the change log from the web application class path. Every change log declares a
+     * <code>logicalFilePath</code>, so the stored <code>DATABASECHANGELOG.FILENAME</code> is independent of
+     * how the file was located.</p>
+     */
+    protected ResourceAccessor getResourceAccessor() {
+        return new ClassLoaderResourceAccessor(getClass().getClassLoader());
+    }
 
     /**
      * <p>Connects to target database using the parameters from the context.</p>

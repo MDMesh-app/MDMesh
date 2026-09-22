@@ -31,6 +31,8 @@ import com.mdmesh.core.location.LocationModeStore
 import com.mdmesh.core.power.PowerModeStore
 import com.mdmesh.core.command.handlers.KioskEnterHandler
 import com.mdmesh.core.command.handlers.KioskExitHandler
+import com.mdmesh.core.kiosk.AndroidKioskHomeSwitch
+import com.mdmesh.core.kiosk.KioskApplier
 import com.mdmesh.core.command.handlers.PolicyApplyHandler
 import com.mdmesh.core.device.AppInventoryCollector
 import com.mdmesh.core.device.HardwareIdCollector
@@ -245,20 +247,21 @@ object AgentModule {
         ComponentName(context.packageName, "com.mdmesh.agent.KioskHomeAlias")
 
     @Provides
-    @IntoSet
-    fun provideKioskEnterHandler(
+    @Singleton
+    fun provideKioskApplier(
         kiosk: KioskController,
         store: KioskStateStore,
         @ApplicationContext context: Context,
-    ): CommandHandler = KioskEnterHandler(kiosk, store, kioskHomeAlias(context), context)
+    ): KioskApplier {
+        val home = kioskHomeAlias(context)
+        return KioskApplier(kiosk, store, AndroidKioskHomeSwitch(context, home), home)
+    }
 
-    @Provides
-    @IntoSet
-    fun provideKioskExitHandler(
-        kiosk: KioskController,
-        store: KioskStateStore,
-        @ApplicationContext context: Context,
-    ): CommandHandler = KioskExitHandler(kiosk, store, kioskHomeAlias(context), context)
+    @Provides @IntoSet
+    fun provideKioskEnterHandler(applier: KioskApplier): CommandHandler = KioskEnterHandler(applier)
+
+    @Provides @IntoSet
+    fun provideKioskExitHandler(applier: KioskApplier): CommandHandler = KioskExitHandler(applier)
 
     @Provides
     @IntoSet

@@ -140,9 +140,9 @@ stop_tomcat() {
   [ -x "$CATALINA/bin/catalina.sh" ] || return 0
   "$CATALINA/bin/catalina.sh" stop 30 -force >/dev/null 2>&1 || true
   local p i
-  for p in $(pgrep -f "catalina.base=$CATALINA" || true); do kill "$p" 2>/dev/null || true; done
-  for i in $(seq 1 30); do pgrep -f "catalina.base=$CATALINA" >/dev/null || break; sleep 1; done
-  for p in $(pgrep -f "catalina.base=$CATALINA" || true); do kill -9 "$p" 2>/dev/null || true; done
+  for p in $(pgrep -f "^[^ ]*/java .*catalina.base=$CATALINA" || true); do kill "$p" 2>/dev/null || true; done
+  for i in $(seq 1 30); do pgrep -f "^[^ ]*/java .*catalina.base=$CATALINA" >/dev/null || break; sleep 1; done
+  for p in $(pgrep -f "^[^ ]*/java .*catalina.base=$CATALINA" || true); do kill -9 "$p" 2>/dev/null || true; done
   for i in $(seq 1 15); do [ -z "$(port_holder)" ] && break; sleep 1; done
   rm -f "$CATALINA_PID"
 }

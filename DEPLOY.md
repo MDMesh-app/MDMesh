@@ -75,6 +75,30 @@ opt into a wipe, `HTTP_PORT=9090` to pick the port. Only missing packages are in
 Note: on native installs Tomcat currently runs as root; the Docker images drop privileges. Front it with your own
 TLS proxy and keep the box dedicated.
 
+## Uninstalling
+
+**Docker (`setup.sh` or the quick start).** Everything lives in the compose project `mdmesh` plus the directory
+you ran it from (`./mdmesh` for the quick start). Take a dump first if you want one:
+
+```bash
+docker compose exec -T postgres pg_dump -U mdmesh -Fc mdmesh > mdmesh-final.dump
+docker compose down -v --remove-orphans     # stops containers and DELETES the volumes (database, uploads, certs, backups)
+rm -f .env                                  # secrets; the directory itself can go too for a quick-start install
+docker image rm $(docker image ls 'ghcr.io/mdmesh-app/mdmesh-*' -q) 2>/dev/null   # optional: free the images
+```
+
+`docker compose down` without `-v` keeps the data volumes, so a later `./setup.sh` picks up where you left off.
+
+**Native.** `sudo ./install/uninstall-native.sh` shows exactly what it will remove (Tomcat under `/opt/mdmesh-tc`,
+the app dir `/opt/mdmesh`, the `mdmesh-supervisor` unit, the install log, and the `mdmesh` database + role),
+writes a final `pg_dump` to `/root`, and only proceeds when you type `UNINSTALL`. `--keep-data` removes the code
+and services but leaves the database, `/opt/mdmesh/files` and `/opt/mdmesh/backups` in place; `-y` skips the
+prompt for scripted use. Packages installed by apt, your reverse proxy and the git checkout are never touched.
+
+Devices that are still enrolled keep polling the old server URL until they are factory-reset or re-provisioned;
+if you are migrating rather than retiring, keep `BASE_URL` reachable (or point DNS at the new host) so they
+follow.
+
 ## Enrolling devices
 
 One prebuilt agent APK works for **every** deployment — the server URL is delivered in the

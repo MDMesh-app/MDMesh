@@ -187,7 +187,7 @@ generates your secrets, and prints the console URL + a generated admin password.
    `adb shell dpm set-device-owner` for a dev device).
 4. Scan the QR — the device enrolls as Device Owner and checks in.
 
-No Docker? Run `./setup.sh --native`. Full details, hosting modes, updates, and recovery are in the
+No Docker? Run `./setup.sh --native`. Full details, hosting modes, updates, recovery, and uninstalling are in the
 **[full setup guide → DEPLOY.md](DEPLOY.md)**.
 
 ---

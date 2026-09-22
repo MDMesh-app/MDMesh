@@ -42,14 +42,29 @@ def evaluate(files, filters: dict, fail_closed: list) -> dict:
         matched[name] = any(r.fullmatch(f) for f in files for r in regs)
     return {"matched": matched, "all": False, "files": files}
 
+def _git(*args):
+    return subprocess.run(["git", *args], check=True, capture_output=True, text=True).stdout
+
 def changed_files(base: str, head: str):
+    """Return changed paths between base and head, or None to fail closed.
+
+    actions/checkout defaults to a depth-1 checkout of the PR merge commit, so
+    neither the base sha nor the PR head sha is a local object. Fetch both by
+    sha (GitHub allows reachable-sha fetches). If the head sha cannot be fetched,
+    diff base against the checked-out HEAD instead: on a pull_request event that
+    is the merge commit, whose diff from the base sha is exactly the PR's change.
+    """
     if not base or set(base) == {"0"}:
         return None
     try:
-        subprocess.run(["git", "fetch", "--no-tags", "--depth=1", "origin", base],
-                       check=True, capture_output=True)
-        out = subprocess.run(["git", "diff", "--name-only", base, head],
-                             check=True, capture_output=True, text=True).stdout
+        try:
+            _git("fetch", "--no-tags", "--depth=1", "origin", base, head)
+            target = head
+        except subprocess.CalledProcessError:
+            _git("fetch", "--no-tags", "--depth=1", "origin", base)
+            target = "HEAD"
+            print(f"::notice::head {head} not fetchable; diffing {base}..HEAD (merge commit)")
+        out = _git("diff", "--name-only", base, target)
     except subprocess.CalledProcessError as e:
         print(f"::warning::could not diff {base}..{head}: {e.stderr.strip()}; failing closed")
         return None
@@ -64,6 +79,7 @@ def main():
     with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
         fh.write(f"matched={json.dumps(result['matched'])}\n")
         fh.write(f"all={'true' if result['all'] else 'false'}\n")
+        fh.write(f"method={'fail-closed' if files is None else 'diff'}\n")
         fh.write("files<<EOF\n" + "\n".join(result["files"]) + "\nEOF\n")
 
 if __name__ == "__main__":

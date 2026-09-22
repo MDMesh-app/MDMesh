@@ -41,6 +41,9 @@ outputs:
   files:
     description: Newline-separated changed files.
     value: ${{ steps.eval.outputs.files }}
+  method:
+    description: '"diff" when the change set was computed, "fail-closed" when it could not be and every filter was forced true.'
+    value: ${{ steps.eval.outputs.method }}
 runs:
   using: composite
   steps:

@@ -20,6 +20,7 @@ import {
 } from '../data/configFields';
 import { AppPicker } from '../components/AppPicker';
 import { SyncBar } from '../components/SyncBar';
+import { KioskChangeConfirm, kioskAffectingChanges } from '../components/KioskChangeConfirm';
 
 // The seeded device-template defaults are locked: view-only, and used as bases
 // for new configs (start from scratch or from one of these).
@@ -89,6 +90,7 @@ export function ConfigurationsPage() {
           initial={editing}
           apps={apps}
           readOnly={readOnly}
+          deviceCount={editing.id != null ? (sync[editing.id]?.total ?? 0) : 0}
           onCancel={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -296,6 +298,7 @@ function ConfigEditor({
   initial,
   apps,
   readOnly,
+  deviceCount,
   onCancel,
   onSaved,
   onDuplicate,
@@ -303,6 +306,7 @@ function ConfigEditor({
   initial: Configuration;
   apps: Application[];
   readOnly: boolean;
+  deviceCount: number;
   onCancel: () => void;
   onSaved: () => void;
   onDuplicate: () => void;
@@ -312,6 +316,7 @@ function ConfigEditor({
   const [advanced, setAdvanced] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [confirmKeys, setConfirmKeys] = useState<string[] | null>(null);
   const isNew = initial.id == null;
 
   // The list endpoint doesn't carry a config's assigned apps, so for an existing
@@ -357,7 +362,13 @@ function ConfigEditor({
     set('applications', allowed.map((a) => (a.id === id ? { ...a, action } : a)));
   }
 
-  async function save() {
+  function requestSave() {
+    const keys = isNew ? [] : kioskAffectingChanges(initial, draft);
+    if (keys.length > 0 && deviceCount > 0) { setConfirmKeys(keys); return; }
+    void doSave();
+  }
+
+  async function doSave() {
     if (!String(draft.name ?? '').trim()) {
       toast.push('err', 'Name required', 'Give the configuration a name.');
       return;
@@ -405,11 +416,20 @@ function ConfigEditor({
         {readOnly ? (
           <button className="btn btn-primary" onClick={onDuplicate}>Duplicate to edit</button>
         ) : (
-          <button className="btn btn-primary" onClick={() => void save()} disabled={busy || !appsReady}>
+          <button className="btn btn-primary" onClick={requestSave} disabled={busy || !appsReady}>
             {busy ? 'Saving…' : !appsReady ? 'Loading…' : 'Save'}
           </button>
         )}
       </div>
+
+      {confirmKeys ? (
+        <KioskChangeConfirm
+          count={deviceCount}
+          keys={confirmKeys}
+          onCancel={() => setConfirmKeys(null)}
+          onConfirm={() => { setConfirmKeys(null); void doSave(); }}
+        />
+      ) : null}
 
       {readOnly && (
         <div className="banner cfg-default-note">

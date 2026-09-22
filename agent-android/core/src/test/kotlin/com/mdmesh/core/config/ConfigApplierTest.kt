@@ -40,7 +40,8 @@ class ConfigApplierTest {
         val store = InMemoryConfigStateStore(); var loc: String? = null
         val r = ConfigApplier(mapOf("wifi" to wifi, "bluetooth" to bt), kiosk(FakeController()), { loc = it }, store)
             .apply(ConfigApplyPayload(revision = "r1", policies = mapOf("wifi" to false), location = ConfigLocation("active")))
-        assertEquals(mapOf("policies.wifi" to ConfigOutcome.APPLIED, "kiosk" to ConfigOutcome.APPLIED, "location" to ConfigOutcome.APPLIED), r.outcomes)
+        assertEquals("no kiosk in the doc and none previously applied -> no kiosk key",
+            mapOf("policies.wifi" to ConfigOutcome.APPLIED, "location" to ConfigOutcome.APPLIED), r.outcomes)
         assertEquals(false, wifi.last); assertNull("bluetooth not in doc -> untouched", bt.last)
         assertEquals("active", loc)
         assertEquals("r1", store.revision())
@@ -66,12 +67,15 @@ class ConfigApplierTest {
     @Test fun `kiosk present enters, kiosk absent exits only when the previous config asserted kiosk`() = runTest {
         val c = FakeController(); val kstore = InMemoryKioskStateStore()
         val a = ConfigApplier(emptyMap(), kiosk(c, kstore), {}, InMemoryConfigStateStore())
-        a.apply(ConfigApplyPayload(revision = "k1", kiosk = KioskApplyPayload(mode = "single", pinPackage = "com.a")))
+        val r1 = a.apply(ConfigApplyPayload(revision = "k1", kiosk = KioskApplyPayload(mode = "single", pinPackage = "com.a")))
         assertEquals(1, c.enters); assertNotNull(kstore.load())
-        a.apply(ConfigApplyPayload(revision = "k2"))
+        assertEquals(ConfigOutcome.APPLIED, r1.outcomes["kiosk"])
+        val r2 = a.apply(ConfigApplyPayload(revision = "k2"))
         assertEquals("admin turned kiosk off -> exit", 1, c.exits)
-        a.apply(ConfigApplyPayload(revision = "k3"))
+        assertEquals("exit is reported", ConfigOutcome.APPLIED, r2.outcomes["kiosk"])
+        val r3 = a.apply(ConfigApplyPayload(revision = "k3"))
         assertEquals("already out of kiosk -> no second exit", 1, c.exits)
+        assertFalse("nothing ran -> kiosk key omitted", r3.outcomes.containsKey("kiosk"))
     }
 
     @Test fun `a manual kiosk survives a kiosk-off configuration (upgrade safety)`() = runTest {
@@ -80,7 +84,7 @@ class ConfigApplierTest {
         val a = ConfigApplier(emptyMap(), kiosk(c, kstore), {}, InMemoryConfigStateStore()) // no config ever applied
         val r = a.apply(ConfigApplyPayload(revision = "first"))
         assertEquals(0, c.exits); assertNotNull(kstore.load())
-        assertEquals(ConfigOutcome.APPLIED, r.outcomes["kiosk"])
+        assertFalse("nothing asserted or exited -> kiosk key omitted", r.outcomes.containsKey("kiosk"))
     }
 
     @Test fun `kiosk unsupported is reported as unsupported not failed`() = runTest {

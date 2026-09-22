@@ -68,7 +68,7 @@ data class AgentDeviceStateDto(
     val agentVersion: String? = null,
     /** Current connectivity power mode ("adaptive" | "alwaysOn"). */
     val powerMode: String? = null,
-    /** SHA256 of the last-applied ConfigApplyPayload, reported when appliedConfigRevision matches the server's desired revision. */
+    /** Revision of the last desired-state document the agent fully applied; null until the first successful config.apply. */
     val appliedConfigRevision: String? = null,
 )
 

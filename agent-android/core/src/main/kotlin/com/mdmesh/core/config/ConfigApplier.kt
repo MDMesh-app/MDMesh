@@ -8,6 +8,8 @@ import com.mdmesh.policy.TogglePolicy
 import com.mdmesh.proto.ConfigApplyPayload
 import com.mdmesh.proto.ConfigApplyResult
 import com.mdmesh.proto.ConfigOutcome
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Converges the device to a desired-state document. Each present section is applied through the code that
@@ -16,6 +18,9 @@ import com.mdmesh.proto.ConfigOutcome
  *
  * Idempotent: applying the same document twice is a no-op at the OS level. The document is persisted (and its
  * revision reported to the server) only when no section failed; `unsupported` is final and does not block.
+ *
+ * Serialized: a boot re-apply ([reapplyPersisted]) and a freshly delivered `config.apply` never interleave —
+ * otherwise an older persisted document could finish last and overwrite the newer one.
  */
 class ConfigApplier(
     private val toggles: Map<String, TogglePolicy>,
@@ -23,7 +28,11 @@ class ConfigApplier(
     private val setLocationMode: (String) -> Unit,
     private val store: ConfigStateStore,
 ) {
-    suspend fun apply(doc: ConfigApplyPayload): ConfigApplyResult {
+    private val mutex = Mutex()
+
+    suspend fun apply(doc: ConfigApplyPayload): ConfigApplyResult = mutex.withLock { applyLocked(doc) }
+
+    private suspend fun applyLocked(doc: ConfigApplyPayload): ConfigApplyResult {
         val outcomes = linkedMapOf<String, String>()
         for ((key, enabled) in doc.policies) {
             outcomes["policies.$key"] = when (val o = toggles[key]?.setEnabled(enabled)) {
@@ -32,7 +41,7 @@ class ConfigApplier(
                 is PolicyOutcome.Failed -> ConfigOutcome.failed(o.reason)
             }
         }
-        outcomes["kiosk"] = applyKiosk(doc)
+        applyKiosk(doc)?.let { outcomes["kiosk"] = it }
         doc.location?.let { loc ->
             outcomes["location"] = runCatching { setLocationMode(loc.mode); ConfigOutcome.APPLIED }
                 .getOrElse { ConfigOutcome.failed(it.message ?: "location mode") }
@@ -42,7 +51,8 @@ class ConfigApplier(
         return result
     }
 
-    private suspend fun applyKiosk(doc: ConfigApplyPayload): String {
+    /** @return the kiosk outcome, or null when nothing was asserted or exited (the key is then omitted). */
+    private suspend fun applyKiosk(doc: ConfigApplyPayload): String? {
         // Absent kiosk = "configuration does not assert kiosk". Exit only when the LAST APPLIED CONFIG asserted
         // it (the admin turned it off). Kiosk entered by an ad-hoc kiosk.enter is never lifted here — otherwise
         // the first apply after upgrading would drop every manually-kiosked device.
@@ -51,7 +61,7 @@ class ConfigApplier(
         val r = when {
             desiredKiosk != null -> kiosk.enter(desiredKiosk)
             previousConfigHadKiosk && kiosk.isPersisted() -> kiosk.exit()
-            else -> KioskResult.Ok
+            else -> return null
         }
         return when (r) {
             KioskResult.Ok -> ConfigOutcome.APPLIED
@@ -61,7 +71,7 @@ class ConfigApplier(
     }
 
     /** Re-run the last fully-applied document (after boot / self-update). Null when nothing is persisted. */
-    suspend fun reapplyPersisted(): ConfigApplyResult? = store.load()?.let { apply(it) }
+    suspend fun reapplyPersisted(): ConfigApplyResult? = mutex.withLock { store.load()?.let { applyLocked(it) } }
 
     companion object {
         fun succeeded(r: ConfigApplyResult): Boolean = r.outcomes.values.none(ConfigOutcome::isFailed)

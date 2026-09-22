@@ -127,6 +127,47 @@ chk "syncSummary counts this device in sync" "$(curl -s -b "$CJ" "$BASE/rest/pri
 # old agent (no configApply key) never gets the command
 chk "old agent not sent config.apply" "$(curl -s -X POST -H "Authorization: Bearer $SEC" -H 'Content-Type: application/json' -d "{\"deviceId\":\"$DID\",\"capabilities\":{\"policy\":[\"wifi\"]},\"state\":{\"battery\":1,\"charging\":false,\"locked\":false,\"kioskActive\":false,\"androidRelease\":\"14\",\"lastBootAt\":1,\"appliedConfigRevision\":\"stale\"}}" "$BASE/rest/public/agent/v1/checkin" | field "[c['type'] for c in d['data']['commands']].count('config.apply')")" "0"
 
+echo "== desired-state: kiosk (mainAppId is an application VERSION id) =="
+# Runs on a throwaway configuration so no real device on the shared configuration is ever
+# kiosked. The main app is picked from the device configuration's install apps; its
+# applications.id and applicationVersions.id differ, so matching by the wrong id fails here.
+KCFG_SRC=$(curl -s -b "$CJ" "$BASE/rest/private/configurations/$CFG_ID")
+KAPPS=$(curl -s -b "$CJ" "$BASE/rest/private/configurations/applications/$CFG_ID")
+KPICK=$(echo "$KAPPS" | field "' '.join(str(x) for x in next((a['id'],a['usedVersionId'],a['pkg']) for a in d['data'] if a.get('selected') and a.get('action')==1 and a.get('usedVersionId') and a.get('pkg') and a['id']!=a['usedVersionId']))")
+read -r KAPP_ID KVID KPKG <<<"$KPICK"
+chk "picked install app has a distinct version id" "$([ -n "$KVID" ] && [ "$KAPP_ID" != "$KVID" ] && echo yes)" "yes"
+KNAME="e2e-kiosk-$(date +%s)-$$"
+# Body = the source configuration minus identity, with ONE install app and kiosk off.
+kcfg_body(){ # $1 = id or "" ; $2 = kioskMode (true|false)
+  KCFG_SRC="$KCFG_SRC" KID="$1" KMODE="$2" KNAME="$KNAME" KAPP_ID="$KAPP_ID" KVID="$KVID" python3 -c '
+import json,os
+c=json.loads(os.environ["KCFG_SRC"])["data"]
+for k in ("id","qrCodeKey","selected"): c.pop(k,None)
+if os.environ["KID"]: c["id"]=int(os.environ["KID"])
+c["name"]=os.environ["KNAME"]; c["description"]="agent-v1-e2e kiosk scenario (temporary)"
+c["applications"]=[{"id":int(os.environ["KAPP_ID"]),"usedVersionId":int(os.environ["KVID"]),"action":1,"showIcon":True,"remove":False}]
+c["kioskMode"]=os.environ["KMODE"]=="true"; c["mainAppId"]=int(os.environ["KVID"])
+print(json.dumps(c))'; }
+KNEW=$(curl -s -b "$CJ" -X PUT -H 'Content-Type: application/json' -d "$(kcfg_body "" false)" "$BASE/rest/private/configurations")
+KCFG=$(echo "$KNEW" | field "d['data']['id']")
+chk "kiosk scenario configuration created" "$(echo "$KNEW" | field "d['status']")" "OK"
+KDEV=$(curl -s -b "$CJ" -X POST -H 'Content-Type: application/json' -d "{\"value\":\"$DID\",\"pageSize\":5,\"pageNum\":1}" "$BASE/rest/private/devices/search" | field "[x['id'] for x in d['data']['devices']['items'] if x['number']=='$DID'][0]")
+chk "device moved to kiosk scenario configuration" "$(curl -s -b "$CJ" -X PUT -H 'Content-Type: application/json' -d "{\"ids\":[$KDEV],\"configurationId\":$KCFG}" "$BASE/rest/private/devices" | field "d['status']")" "OK"
+chk "PUT configuration kioskMode=true + mainAppId=version id" \
+  "$(curl -s -b "$CJ" -X PUT -H 'Content-Type: application/json' -d "$(kcfg_body "$KCFG" true)" "$BASE/rest/private/configurations" | field "str(d['status'])+':'+str(d['data']['kioskMode'])+':'+str(d['data']['mainAppId'])")" "OK:True:$KVID"
+# Capable agent, stale revision (it last applied the shared configuration's revision).
+C_K=$(curl -s -X POST -H "Authorization: Bearer $SEC" -H 'Content-Type: application/json' \
+  -d "{\"deviceId\":\"$DID\",\"capabilities\":{\"policy\":[\"wifi\"],\"device\":[\"configApply\"]},\"state\":{\"battery\":77,\"charging\":true,\"locked\":false,\"kioskActive\":false,\"androidRelease\":\"14\",\"lastBootAt\":1000,\"appliedConfigRevision\":\"$CUR_REV\"}}" \
+  "$BASE/rest/public/agent/v1/checkin")
+KPAY="[c['payload'] for c in d['data']['commands'] if c['type']=='config.apply'][0]"
+chk "kiosk config.apply delivered" "$(echo "$C_K" | field "[c['type'] for c in d['data']['commands']].count('config.apply')")" "1"
+chk "kiosk.mode == single" "$(echo "$C_K" | field "$KPAY['kiosk']['mode']")" "single"
+chk "kiosk.pinPackage == main app pkg" "$(echo "$C_K" | field "$KPAY['kiosk']['pinPackage']")" "$KPKG"
+# Restore: kiosk off, device back on its configuration, drop the temporary configuration.
+chk "restore kioskMode=false" "$(curl -s -b "$CJ" -X PUT -H 'Content-Type: application/json' -d "$(kcfg_body "$KCFG" false)" "$BASE/rest/private/configurations" | field "str(d['status'])+':'+str(d['data']['kioskMode'])")" "OK:False"
+chk "device restored to its configuration" "$(curl -s -b "$CJ" -X PUT -H 'Content-Type: application/json' -d "{\"ids\":[$KDEV],\"configurationId\":$CFG_ID}" "$BASE/rest/private/devices" | field "d['status']")" "OK"
+chk "kiosk scenario configuration deleted" "$(curl -s -b "$CJ" -X DELETE "$BASE/rest/private/configurations/$KCFG" | field "d['status']")" "OK"
+
 echo "== command history =="
 chk "history has completedAt" \
   "$(curl -s -b "$CJ" "$BASE/rest/private/agent/v1/devices/$DID/commands?since=0" | field "any(c.get('completedAt') for c in d['data'])")" "True"

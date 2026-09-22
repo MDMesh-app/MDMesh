@@ -91,6 +91,7 @@ public class AgentResource {
     private AgentEnrollmentTokenDAO tokenDAO;
     private AgentCommandDAO commandDAO;
     private com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller;
+    private com.hmdm.rest.resource.support.ConfigReconciler configReconciler;
 
     /**
      * <p>A constructor required by Swagger.</p>
@@ -102,11 +103,13 @@ public class AgentResource {
     public AgentResource(UnsecureDAO unsecureDAO,
                          AgentEnrollmentTokenDAO tokenDAO,
                          AgentCommandDAO commandDAO,
-                         com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller) {
+                         com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller,
+                         com.hmdm.rest.resource.support.ConfigReconciler configReconciler) {
         this.unsecureDAO = unsecureDAO;
         this.tokenDAO = tokenDAO;
         this.commandDAO = commandDAO;
         this.configAppInstaller = configAppInstaller;
+        this.configReconciler = configReconciler;
     }
 
     // =================================================================================================================
@@ -235,6 +238,7 @@ public class AgentResource {
         }
 
         // Persist the latest device-state snapshot (powers the admin console).
+        String appliedRevision = request.getState() == null ? null : request.getState().getAppliedConfigRevision();
         if (request.getState() != null) {
             AgentDeviceState s = request.getState();
             DeviceState row = new DeviceState();
@@ -247,6 +251,8 @@ public class AgentResource {
             row.setLastBootAt(s.getLastBootAt());
             row.setAgentVersion(s.getAgentVersion());
             row.setPowerMode(s.getPowerMode());
+            row.setAppliedConfigRevision(s.getAppliedConfigRevision());
+            row.setAppliedConfigAt(null);
             // The server (not the device) knows the public IP — inject it into the census JSON.
             JsonNode tel = request.getTelemetry();
             if (tel != null && tel.isObject()) {
@@ -270,6 +276,12 @@ public class AgentResource {
             }
             // Append the reported location (dynamic.location) to the device's breadcrumb trail.
             recordLocation(deviceNumber, tel);
+        }
+        if (appliedRevision == null) {
+            // The check-in omitted it (older agent, or state block absent) — fall back to the last
+            // stored value so a missing field never masquerades as drift.
+            com.hmdm.persistence.domain.DeviceState stored = commandDAO.getState(deviceNumber);
+            appliedRevision = stored == null ? null : stored.getAppliedConfigRevision();
         }
 
         // Ingest buffered lifecycle events into the timeline — capped, so one check-in can't
@@ -326,9 +338,14 @@ public class AgentResource {
         // request carried (fall back to the stored copy only when the agent omitted it).
         Set<String> deviceTokens = AgentCapabilityTokens.flatten(
                 capsJson != null ? capsJson : commandDAO.getDeviceCapabilities(deviceNumber));
+        long now = System.currentTimeMillis();
+
+        // Desired-state reconciliation: queue config.apply when the device drifted from its configuration, so the
+        // command rides THIS response instead of waiting for the next cycle.
+        configReconciler.reconcile(device, deviceTokens, appliedRevision, now);
+
         List<AgentCommand> pending = commandDAO.listPending(deviceNumber);
         List<com.hmdm.rest.json.agent.AgentCommand> commands = new ArrayList<>();
-        long now = System.currentTimeMillis();
         for (AgentCommand stored : pending) {
             if (!AgentCapabilityTokens.isAllowed(stored.getRequiresCapability(), deviceTokens)) {
                 continue;

@@ -25,12 +25,13 @@ inputs:
       .github/**
       **/Dockerfile*
       **/docker-compose*
-      package.json
-      pyproject.toml
+      **/package.json
+      **/pyproject.toml
       turbo.json
       pnpm-workspace.yaml
-      tsconfig*.json
+      **/tsconfig*.json
       Makefile
+      justfile
 outputs:
   matched:
     description: JSON object mapping filter name to true/false.

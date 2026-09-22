@@ -27,7 +27,7 @@ package com.hmdm.rest.json.agent;
 public final class AgentProtocol {
 
     /** The protocol version advertised and required by the v1 endpoints. */
-    public static final String VERSION = "1.0";
+    public static final String VERSION = "1.1";
 
     private AgentProtocol() {
     }

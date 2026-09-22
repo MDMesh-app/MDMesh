@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdm.local/proto/v1/payloads/config-apply-result.schema.json",
+  "title": "ConfigApplyResult",
+  "description": "JSON-encoded into CommandResult.detail. Overall status is done when every outcome is applied|unsupported, failed otherwise.",
+  "type": "object",
+  "required": ["revision", "outcomes"],
+  "properties": {
+    "revision": { "type": "string" },
+    "outcomes": { "type": "object", "additionalProperties": { "type": "string", "pattern": "^(applied|unsupported|failed(: .*)?)$" },
+                  "description": "keys: policies.<key>, kiosk, location" }
+  }
+}

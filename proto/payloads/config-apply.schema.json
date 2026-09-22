@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mdm.local/proto/v1/payloads/config-apply.schema.json",
+  "title": "ConfigApplyPayload",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["revision", "configurationId"],
+  "properties": {
+    "revision": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "sha256 hex of the canonical JSON of this object without `revision`" },
+    "configurationId": { "type": "integer" },
+    "policies": {
+      "type": "object", "additionalProperties": { "type": "boolean" },
+      "properties": { "wifi": {"type":"boolean"}, "bluetooth": {"type":"boolean"}, "usbStorage": {"type":"boolean"}, "screenshots": {"type":"boolean"} },
+      "description": "Only keys the configuration manages are present. true = allowed/enabled."
+    },
+    "kiosk": {
+      "type": "object", "additionalProperties": true,
+      "description": "Present => ensure kiosk with this KioskApplyPayload; absent => ensure kiosk exited.",
+      "properties": {
+        "mode": { "enum": ["single", "launcher"] },
+        "allowedPackages": { "type": "array", "items": { "type": "string" } },
+        "pinPackage": { "type": "string" },
+        "features": { "type": "object", "properties": { "home": {"type":"boolean"}, "recents": {"type":"boolean"}, "notifications": {"type":"boolean"}, "systemInfo": {"type":"boolean"}, "keyguard": {"type":"boolean"}, "lockButtons": {"type":"boolean"} } },
+        "exitMode": { "enum": ["gesture", "visible", "remote"] },
+        "password": { "type": "string" },
+        "theme": { "type": "object", "properties": { "backgroundColor": {"type":"string"}, "textColor": {"type":"string"}, "iconSize": {"type":"string"} } }
+      }
+    },
+    "location": { "type": "object", "properties": { "mode": { "enum": ["passive", "active"] } } }
+  }
+}

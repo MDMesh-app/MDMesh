@@ -34,11 +34,17 @@ Advertised as an object (`tier`, `screenCapture`, `inputInjection`, `transport`)
 ### oem
 `vendor`, `knox` (parked tier).
 
+### device
+| key | meaning | notes |
+|-----|---------|-------|
+| `configApply` | accepts config.apply | |
+
 ## Command types
 
 | type | requiresCapability | payload (sketch) |
 |------|--------------------|------------------|
 | `config.sync` | — | none (triggers a full reconcile) |
+| `config.apply` | `device.configApply` | desired-state document, see `payloads/config-apply.schema.json`; result detail is `payloads/config-apply-result.schema.json` |
 | `policy.apply` | the specific policy key | `{ policy: "wifi", value: false }` |
 | `app.install` | `silentInstall` | `{ url, packageName, versionCode, sha256, runAfterInstall }` |
 | `app.uninstall` | `silentUninstall` | `{ packageName }` |

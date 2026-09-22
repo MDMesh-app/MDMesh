@@ -17,7 +17,7 @@ import kotlinx.serialization.json.Json
 object ProtocolJson {
 
     /** The semver-ish protocol version this agent speaks. See `proto/VERSIONING.md`. */
-    const val PROTOCOL_VERSION: String = "1.0"
+    const val PROTOCOL_VERSION: String = "1.1"
 
     val json: Json = Json {
         ignoreUnknownKeys = true

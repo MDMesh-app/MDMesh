@@ -23,3 +23,9 @@ forces a permanent version treadmill (each OS release removes/limits an API), th
 of real capabilities changes over time and across the fleet. Encoding capabilities in the
 protocol — rather than assuming a fixed feature set — means a 3-year-old agent on Android 9
 and a fresh agent on Android 16 talk to the same server without special-casing.
+
+## History
+
+| version | release | notes |
+|---------|---------|-------|
+| 1.1 | v0.3.0 | config.apply command + device.configApply capability (additive) |

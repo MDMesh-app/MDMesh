@@ -11,6 +11,7 @@ import {
   type ConfigApp,
 } from '../api/configurations';
 import { listApplications, type Application } from '../api/applications';
+import { getSyncSummary, type ConfigSyncSummary } from '../api/configSync';
 import {
   ENFORCED_FIELDS,
   LEGACY_FIELDS,
@@ -18,6 +19,7 @@ import {
   type FieldDef,
 } from '../data/configFields';
 import { AppPicker } from '../components/AppPicker';
+import { SyncBar } from '../components/SyncBar';
 
 // The seeded device-template defaults are locked: view-only, and used as bases
 // for new configs (start from scratch or from one of these).
@@ -64,6 +66,7 @@ export function ConfigurationsPage() {
   const [readOnly, setReadOnly] = useState(false);
   const [chooserOpen, setChooserOpen] = useState(false);
   const [copyOf, setCopyOf] = useState<Configuration | null>(null);
+  const [sync, setSync] = useState<Record<number, ConfigSyncSummary>>({});
 
   const load = () =>
     getConfigurations()
@@ -71,7 +74,8 @@ export function ConfigurationsPage() {
       .catch(() => {
         setConfigs([]);
         setError('Could not load configurations.');
-      });
+      })
+      .then(() => getSyncSummary().then((rows) => setSync(Object.fromEntries(rows.map((r) => [r.configurationId, r])))).catch(() => undefined));
 
   useEffect(() => {
     void load();
@@ -122,6 +126,7 @@ export function ConfigurationsPage() {
               c={c}
               locked={isLocked(c)}
               appName={appName(apps, c.mainAppId as number | undefined)}
+              sync={c.id != null ? sync[c.id] : undefined}
               onEdit={() => {
                 setReadOnly(isLocked(c));
                 setEditing(c);
@@ -181,6 +186,7 @@ function ConfigCard({
   c,
   locked,
   appName,
+  sync,
   onEdit,
   onCopy,
   onDelete,
@@ -188,6 +194,7 @@ function ConfigCard({
   c: Configuration;
   locked: boolean;
   appName: string;
+  sync?: ConfigSyncSummary;
   onEdit: () => void;
   onCopy: () => void;
   onDelete: () => void;
@@ -205,6 +212,7 @@ function ConfigCard({
         <span><span className="k">Main app</span><span className="v">{appName}</span></span>
         <span><span className="k">Apps</span><span className="v">{appCount}</span></span>
       </div>
+      <SyncBar s={sync} />
       <div className="cfg-actions">
         <button className="btn btn-sm btn-primary" onClick={onEdit}>{locked ? 'View' : 'Edit'}</button>
         <button className="btn btn-sm" onClick={onCopy}>{locked ? 'Use as template' : 'Copy'}</button>

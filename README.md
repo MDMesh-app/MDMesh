@@ -121,6 +121,14 @@ One-click or unattended server updates with DB backup + auto-rollback, plus a re
   watch it land, then **promote to the fleet** — mirrored from your own origin, integrity-checked.
 - **Backward compatibility** — versioned `/agent/v1` contract (additive-only, golden contract test in CI),
   so a newer server keeps serving older agents.
+- **Desired-state configuration** — saving a configuration makes its devices converge to it: the server
+  hashes the configuration into a revision and pushes one `config.apply` command whenever a device's
+  applied revision differs, at the next check-in. The device detail page shows sync state and per-field
+  outcomes; the configuration list shows how many of its devices are in sync. Only capability-advertising
+  agents receive it — older agents show "agent too old" instead of silently ignoring it. Enforced fields:
+  name, description, main app, kiosk mode + exit/home/recents/notifications/system-info/keyguard/lock-buttons,
+  admin password, background/text color, icon size, Wi-Fi, Bluetooth, USB storage, block screenshots, and
+  location reporting mode.
 
 </details>
 

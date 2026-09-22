@@ -33,6 +33,21 @@ existing capability-abstraction (`:policy`): user restrictions (`DISALLOW_*`), `
 Keep the SDK-guard discipline; drop reflection hacks. Each policy advertises a capability key and is
 applied via a `policy.apply` command or the enroll baseline.
 
+### Desired state (`config.apply`)
+Alongside the imperative `policy.apply`/`kiosk.enter` commands, the server reconciles each device to its
+configuration on every check-in: it builds a desired-state document from the `Configuration` row (policy
+toggles, kiosk shape, location mode), hashes it into a `revision`, and compares that with the revision the
+device last applied. A mismatch enqueues one `config.apply` command in the same check-in — no extra polling.
+The agent applies each present key through the existing strategies (wifi/bluetooth/usbStorage/screenshots
+toggles, kiosk via the same `KioskApplier` path as `kiosk.enter`, location capture mode) and reports a
+per-key outcome (`applied` / `unsupported` / `failed: reason`) in the command result; it persists the new
+revision only when nothing failed, and re-applies the last-persisted document after boot or a self-update
+so a reboot can't silently regress. The command is only sent to devices whose capability matrix advertises
+`configApply` — older agents are never sent it and show as unsupported in the console instead of hanging.
+Kiosk follows the configuration: kiosk-on drives entry, kiosk-off exits kiosk only on devices that entered
+it via a configuration (an ad-hoc console "Enter kiosk" is left alone). See
+`proto/payloads/config-apply.schema.json` for the wire shape.
+
 ## Status UI — BUILD-NEW (Views, minSdk 24 friendly)
 Replace the `TextView` stub `MainActivity` with a real MDMesh status screen: managed state, device id,
 applied policies, kiosk on/off, last check-in, install results. `ComponentActivity` (Hilt). Drive from

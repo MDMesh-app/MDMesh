@@ -25,6 +25,12 @@ secrets, `docker compose pull && up -d`, seeds, and prints the console URL + a t
 > password** from the console if you never did. Quick-start (`quickstart.sh`) installs got a random password
 > but also missed the enrollment defaults; re-running `./setup.sh` in a clone fixes that too. Fixed in v0.2.7.
 
+> **Upgrading to v0.3.0?** Desired-state configuration ships in this release: on its first check-in after the
+> upgrade, every device whose agent supports it applies its assigned configuration's managed policies, and
+> any device on a configuration with kiosk mode on enters kiosk. The upgrade itself never lifts kiosk on a
+> device — only turning kiosk off in that device's configuration does. Older agents are unaffected and show
+> "agent too old" in the console instead of receiving the new command.
+
 ## Option B — from source (clone + build)
 
 Prereqs: Docker + Compose v2, and `openssl`.

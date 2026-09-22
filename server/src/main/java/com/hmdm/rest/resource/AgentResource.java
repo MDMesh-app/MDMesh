@@ -42,6 +42,7 @@ import com.hmdm.rest.json.agent.AgentEnrollResponse;
 import com.hmdm.rest.json.agent.AgentProtocol;
 import com.hmdm.util.AgentCapabilityTokens;
 import com.hmdm.util.CryptoUtil;
+import com.hmdm.util.DesiredConfigBuilder;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import org.slf4j.Logger;
@@ -193,6 +194,18 @@ public class AgentResource {
         }
     }
 
+    /** A desired-state revision is a lowercase hex SHA-256 (the column is VARCHAR(64)). */
+    private static final java.util.regex.Pattern REVISION_PATTERN = java.util.regex.Pattern.compile("^[0-9a-f]{64}$");
+
+    /** @return the reported revision when well-formed, else null (an oversized value would break the upsert). */
+    static String validRevision(String deviceNumber, String reported) {
+        if (reported == null) return null;
+        if (REVISION_PATTERN.matcher(reported).matches()) return reported;
+        logger.debug("Device {} reported a malformed appliedConfigRevision ({} chars) — ignored",
+                deviceNumber, reported.length());
+        return null;
+    }
+
     // =================================================================================================================
     @ApiOperation(value = "Agent check-in", notes = "Refreshes capabilities, acks results, returns gated commands.")
     @POST
@@ -238,7 +251,8 @@ public class AgentResource {
         }
 
         // Persist the latest device-state snapshot (powers the admin console).
-        String appliedRevision = request.getState() == null ? null : request.getState().getAppliedConfigRevision();
+        String appliedRevision = validRevision(deviceNumber,
+                request.getState() == null ? null : request.getState().getAppliedConfigRevision());
         if (request.getState() != null) {
             AgentDeviceState s = request.getState();
             DeviceState row = new DeviceState();
@@ -251,7 +265,7 @@ public class AgentResource {
             row.setLastBootAt(s.getLastBootAt());
             row.setAgentVersion(s.getAgentVersion());
             row.setPowerMode(s.getPowerMode());
-            row.setAppliedConfigRevision(s.getAppliedConfigRevision());
+            row.setAppliedConfigRevision(appliedRevision);
             row.setAppliedConfigAt(null);
             // The server (not the device) knows the public IP — inject it into the census JSON.
             JsonNode tel = request.getTelemetry();
@@ -276,12 +290,6 @@ public class AgentResource {
             }
             // Append the reported location (dynamic.location) to the device's breadcrumb trail.
             recordLocation(deviceNumber, tel);
-        }
-        if (appliedRevision == null) {
-            // The check-in omitted it (older agent, or state block absent) — fall back to the last
-            // stored value so a missing field never masquerades as drift.
-            com.hmdm.persistence.domain.DeviceState stored = commandDAO.getState(deviceNumber);
-            appliedRevision = stored == null ? null : stored.getAppliedConfigRevision();
         }
 
         // Ingest buffered lifecycle events into the timeline — capped, so one check-in can't
@@ -339,6 +347,14 @@ public class AgentResource {
         Set<String> deviceTokens = AgentCapabilityTokens.flatten(
                 capsJson != null ? capsJson : commandDAO.getDeviceCapabilities(deviceNumber));
         long now = System.currentTimeMillis();
+
+        if (appliedRevision == null && AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, deviceTokens)) {
+            // The check-in omitted it (state block absent, or invalid value) — fall back to the last
+            // stored value so a missing field never masquerades as drift. Only capable agents pay
+            // for this read: the value is consumed solely by reconcile, which ignores the others.
+            com.hmdm.persistence.domain.DeviceState stored = commandDAO.getState(deviceNumber);
+            appliedRevision = stored == null ? null : stored.getAppliedConfigRevision();
+        }
 
         // Desired-state reconciliation: queue config.apply when the device drifted from its configuration, so the
         // command rides THIS response instead of waiting for the next cycle.

@@ -32,9 +32,13 @@ object DeviceAction {
     const val LOCATION_PASSIVE = "passive"
     const val LOCATION_ACTIVE = "active"
 
+    /** Desired-state document push (see ConfigApplyPayload). Advertised as device key [CONFIG_APPLY_KEY]. */
+    const val CONFIG_APPLY = "config.apply"
+    const val CONFIG_APPLY_KEY = "configApply"
+
     /** Keys (after the `device.` prefix) advertised in `capabilities.device`. */
     val ADVERTISED_KEYS: List<String> = listOf(
         "lock", "reboot", "lockscreenMessage", "alert", "ring", "ringStop",
-        "passcodeReset", "wipe", "powerMode", "locationMode",
+        "passcodeReset", "wipe", "powerMode", "locationMode", "configApply",
     )
 }

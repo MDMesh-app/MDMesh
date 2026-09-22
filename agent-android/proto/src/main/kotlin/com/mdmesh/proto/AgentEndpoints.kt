@@ -68,6 +68,8 @@ data class AgentDeviceStateDto(
     val agentVersion: String? = null,
     /** Current connectivity power mode ("adaptive" | "alwaysOn"). */
     val powerMode: String? = null,
+    /** SHA256 of the last-applied ConfigApplyPayload, reported when appliedConfigRevision matches the server's desired revision. */
+    val appliedConfigRevision: String? = null,
 )
 
 /** `data` payload of the checkin response: capability-gated commands to reconcile. */

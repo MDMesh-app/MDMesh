@@ -21,6 +21,8 @@
 
 package com.hmdm.guice.module;
 
+import com.hmdm.util.ExecutorRegistry;
+
 import com.google.inject.Inject;
 import com.hmdm.event.EventService;
 import com.hmdm.persistence.ConfigurationUpdatedEventListener;
@@ -43,7 +45,7 @@ public class EventListenerModule {
     private final DeviceMapper deviceMapper;
     private final DeviceStatusService deviceStatusService;
 
-    private final ExecutorService executorService = Executors.newFixedThreadPool(1);
+    private final ExecutorService executorService = ExecutorRegistry.register(Executors.newFixedThreadPool(1));
 
     private static final Logger logger = LoggerFactory.getLogger(EventListenerModule.class);
 

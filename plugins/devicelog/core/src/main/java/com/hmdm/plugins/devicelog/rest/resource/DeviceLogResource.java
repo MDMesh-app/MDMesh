@@ -21,6 +21,8 @@
 
 package com.hmdm.plugins.devicelog.rest.resource;
 
+import com.hmdm.util.ExecutorRegistry;
+
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import com.hmdm.persistence.UnsecureDAO;
@@ -79,7 +81,7 @@ public class DeviceLogResource {
     private static final Logger logger  = LoggerFactory.getLogger(DeviceLogResource.class);
 
     // An executor for the log recrods upload tasks
-    private final ExecutorService executor = Executors.newFixedThreadPool(5);
+    private final ExecutorService executor = ExecutorRegistry.register(Executors.newFixedThreadPool(5));
 
     /**
      * <p>An interface to device log records persistence layer.</p>

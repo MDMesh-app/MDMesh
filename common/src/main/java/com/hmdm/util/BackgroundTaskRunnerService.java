@@ -44,13 +44,13 @@ public class BackgroundTaskRunnerService {
     /**
      * <p>An executor for the tasks to be executed in background.</p>
      */
-    private final ThreadPoolExecutor executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(10);
+    private final ThreadPoolExecutor executor = ExecutorRegistry.register((ThreadPoolExecutor) Executors.newFixedThreadPool(10));
 
     /**
      * <p>An executor for the repeatable tasks to be executed in background.</p>
      */
     private final ScheduledThreadPoolExecutor scheduledExecutor
-            = (ScheduledThreadPoolExecutor) Executors.newScheduledThreadPool(2);
+            = ExecutorRegistry.register((ScheduledThreadPoolExecutor) Executors.newScheduledThreadPool(2));
 
     /**
      * <p>Constructs new <code>BackgroundTaskRunnerService</code> instance. This implementation does nothing.</p>

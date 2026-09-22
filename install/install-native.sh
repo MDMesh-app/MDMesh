@@ -8,6 +8,7 @@ set -euo pipefail
 # the DB password / hash secret, so create everything owner-only by default. Tomcat and the server
 # run as root here, so 0600/0700 artifacts stay readable by the things that need them.
 umask 077
+export PATH="/usr/sbin:/sbin:$PATH"   # useradd/userdel/pg tools live here; not every root shell has it
 cd "$(dirname "$0")/.."
 REPO="$PWD"   # repo root — used for absolute paths inside subshells (e.g. exploding the WAR)
 # Shared DB provisioning rules (seed gate, verified seed, post-seed repairs) — same file setup.sh uses.
@@ -118,7 +119,12 @@ fi
 rand() { mdm_rand; }
 
 printf '\n'
-read -rp "  Public base URL (e.g. https://mdm.example.com): " BASE_URL
+# Public base URL. Override non-interactively with BASE_URL=https://mdm.example.com (required with -y).
+BASE_URL="${BASE_URL:-}"
+if [ -z "$BASE_URL" ]; then
+  [ "$ASSUME_YES" = "1" ] && { echo "  BASE_URL must be set when running with -y (e.g. BASE_URL=https://mdm.example.com)."; exit 1; }
+  read -rp "  Public base URL (e.g. https://mdm.example.com): " BASE_URL
+fi
 # HTTP port Tomcat listens on. Override non-interactively with HTTP_PORT=9090; default 8080.
 HTTP_PORT="${HTTP_PORT:-}"
 if [ -z "$HTTP_PORT" ]; then read -rp "  HTTP port [8080]: " _p; HTTP_PORT="${_p:-8080}"; fi
@@ -132,11 +138,41 @@ TOMCAT_VER=9.0.89
 # the shutdown command (the server keeps scheduler threads alive after context stop), and the pgrep
 # fallback covers instances started by older versions of this script without a PID file.
 export CATALINA_PID="$CATALINA/tomcat.pid"
+SVC_USER=mdmesh            # unprivileged account Tomcat runs as (mirrors the Docker image)
+SVC_UNIT=mdmesh-server     # systemd unit that owns Tomcat
+have_systemd() { command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; }
 port_holder() {
   if command -v ss >/dev/null 2>&1; then ss -ltnp 2>/dev/null | awk -v p=":$HTTP_PORT$" '$4 ~ p {print; exit}'
   elif command -v lsof >/dev/null 2>&1; then lsof -iTCP:"$HTTP_PORT" -sTCP:LISTEN -nP 2>/dev/null | awk 'NR==2{print; exit}'; fi
 }
+# Classifies whatever listens on $HTTP_PORT: "free", "unit" (our own systemd unit), "legacy" (a Tomcat started
+# from $CATALINA by an older version of this script, before the unit existed) or "foreign" (anything else —
+# typically a leftover Headwind/hmdm Tomcat or another web server). Only the first three may be stopped by us.
+port_owner() {
+  local holder hpid
+  holder=$(port_holder); [ -n "$holder" ] || { echo free; return; }
+  hpid=$(printf '%s' "$holder" | grep -oE 'pid=[0-9]+' | head -n 1 | cut -d= -f2)
+  if have_systemd && [ -n "$hpid" ] && [ "$(systemctl show -p MainPID --value "$SVC_UNIT" 2>/dev/null)" = "$hpid" ]; then
+    echo unit
+  elif [ -n "$hpid" ] && tr '\0' ' ' < "/proc/${hpid}/cmdline" 2>/dev/null | grep -q "catalina.base=${CATALINA}"; then
+    echo legacy
+  else
+    echo foreign
+  fi
+}
+refuse_foreign_port() {
+  printf '  %s✗ port %s is already in use%s by another server:\n' "$c_red" "$HTTP_PORT" "$c_reset"
+  printf '    %s%s%s\n' "$c_dim" "$(port_holder)" "$c_reset"
+  printf '  Not an MDMesh Tomcat, so this installer will not stop it. Stop it yourself, or pick another port\n'
+  printf '  (HTTP_PORT=9090), then re-run.  %s(sudo fuser -k %s/tcp kills whatever holds the port)%s\n' "$c_dim" "$HTTP_PORT" "$c_reset"
+  exit 1
+}
 stop_tomcat() {
+  # Preferred: the systemd unit (cgroup-tracked, kills stragglers itself). The catalina.sh / pgrep paths
+  # below only matter for Tomcats started by older versions of this script, before the unit existed.
+  if have_systemd && systemctl list-unit-files 2>/dev/null | grep -q "^${SVC_UNIT}\.service"; then
+    systemctl stop "$SVC_UNIT" >/dev/null 2>&1 || true
+  fi
   [ -x "$CATALINA/bin/catalina.sh" ] || return 0
   "$CATALINA/bin/catalina.sh" stop 30 -force >/dev/null 2>&1 || true
   local p i
@@ -146,6 +182,10 @@ stop_tomcat() {
   for i in $(seq 1 15); do [ -z "$(port_holder)" ] && break; sleep 1; done
   rm -f "$CATALINA_PID"
 }
+# Fail fast on a port conflict, before packages are installed, the build runs or the running server is
+# stopped — losing the bind later would leave our Tomcat dead while the other server answers with 404s.
+[ "$(port_owner)" = foreign ] && refuse_foreign_port
+
 # Upgrades re-run this script. hash.secret signs enrollment/sync requests and download URLs, so rotating
 # it would silently break every already-enrolled device; reuse the value from the existing ROOT.xml.
 # (DB_PASSWORD is different: it is re-applied to the role via ALTER USER below, so a fresh one is fine.)
@@ -398,7 +438,14 @@ cat > "$CATALINA/conf/Catalina/localhost/ROOT.xml" <<XML
 XML
 # ROOT.xml carries the DB password + hash.secret; umask should already yield 0600, but be explicit.
 chmod 600 "$CATALINA/conf/Catalina/localhost/ROOT.xml"
-ok "server + console deployed (console at /, API at /rest); ROOT.xml written"
+# Tomcat runs unprivileged (like the Docker image). Create the service account and hand it the trees it
+# must write: the whole Tomcat base (logs/work/temp/conf/webapps) and the app dir (uploads, plugins, marker).
+if ! id -u "$SVC_USER" >/dev/null 2>&1; then
+  useradd --system --home-dir "$BASE_DIR" --shell /usr/sbin/nologin "$SVC_USER"
+  info "created service user $SVC_USER"
+fi
+chown -R "$SVC_USER:$SVC_USER" "$CATALINA" "$BASE_DIR"
+ok "server + console deployed (console at /, API at /rest); ROOT.xml written; owned by $SVC_USER"
 
 step "Updater supervisor (release polling + verified agent-APK mirror)"
 # The same supervisor the Docker stack runs, as a systemd unit on loopback :9000. It polls GitHub
@@ -479,35 +526,69 @@ fi
 step "Starting the server"
 # Runs on the same pinned JDK 17 (JAVA_HOME exported above), matching the Docker tomcat:9.0-jdk17 image.
 export CATALINA_OPTS="--add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.text=ALL-UNNAMED --add-opens java.desktop/java.awt.font=ALL-UNNAMED"
-# Idempotent: stop_tomcat already ran before deploy; make sure nothing of ours is left before the preflight.
-stop_tomcat
-# Preflight: nothing else may hold the chosen port. We stopped our OWN Tomcat above, so any listener now
-# is foreign (commonly a leftover Headwind/hmdm Tomcat). If we don't catch it, our Tomcat loses the bind,
-# dies quietly, and the old server answers every request with a confusing 404 — fail clearly instead.
-holder=$(port_holder)
-if [ -n "$holder" ]; then
-  printf '  %s✗ port %s is already in use%s by another server:\n' "$c_red" "$HTTP_PORT" "$c_reset"
-  printf '    %s%s%s\n' "$c_dim" "$holder" "$c_reset"
-  printf '  Likely a leftover Tomcat from a previous install. Stop it (or pick another port), then re-run:\n'
-  printf '    %ssudo fuser -k %s/tcp%s   (or kill the pid shown above)\n' "$c_dim" "$HTTP_PORT" "$c_reset"
-  exit 1
-fi
+# Port check (the preflight above already rejected foreign holders; this catches anything that bound since).
+case "$(port_owner)" in
+  unit)   info "port ${HTTP_PORT} is held by our own ${SVC_UNIT} unit — restarting it"; stop_tomcat ;;
+  legacy) info "port ${HTTP_PORT} is held by a Tomcat from a previous install run — stopping it"; stop_tomcat ;;
+esac
+[ "$(port_owner)" = free ] || refuse_foreign_port
 rm -f "$BASE_DIR/initialized.txt"   # Initializer only writes the completion marker when it is absent
-"$CATALINA/bin/catalina.sh" start >> "$LOGFILE" 2>&1
-ok "Tomcat started"
+if have_systemd; then
+  cat > "/etc/systemd/system/${SVC_UNIT}.service" <<UNIT
+[Unit]
+Description=MDMesh server (Tomcat 9)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${SVC_USER}
+Group=${SVC_USER}
+Environment=JAVA_HOME=${JAVA_HOME}
+Environment=CATALINA_HOME=${CATALINA}
+Environment=CATALINA_BASE=${CATALINA}
+Environment=CATALINA_PID=${CATALINA}/tomcat.pid
+Environment="CATALINA_OPTS=${CATALINA_OPTS}"
+ExecStart=${CATALINA}/bin/catalina.sh run
+SuccessExitStatus=143
+TimeoutStopSec=45
+KillMode=mixed
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=${CATALINA} ${BASE_DIR}
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  systemctl daemon-reload >> "$LOGFILE" 2>&1
+  systemctl enable "$SVC_UNIT" >> "$LOGFILE" 2>&1
+  systemctl restart "$SVC_UNIT" >> "$LOGFILE" 2>&1 || _fail "systemctl restart ${SVC_UNIT} (see: journalctl -u ${SVC_UNIT})"
+  ok "Tomcat started as $SVC_USER (systemd unit ${SVC_UNIT}; enabled at boot)"
+else
+  # No systemd (container/chroot): fall back to catalina.sh under the service user.
+  su -s /bin/sh "$SVC_USER" -c "JAVA_HOME='$JAVA_HOME' CATALINA_PID='$CATALINA_PID' CATALINA_OPTS='$CATALINA_OPTS' '$CATALINA/bin/catalina.sh' start" >> "$LOGFILE" 2>&1
+  ok "Tomcat started as $SVC_USER (no systemd — not supervised)"
+fi
 
 # Readiness = the server's own completion signal. Initializer writes $BASE_DIR/initialized.txt only after
 # the Guice injector — every Liquibase module, plugins included — has finished, and only if the file is
 # absent, so we delete the previous run's marker before starting Tomcat and wait for a fresh one. Waiting
 # on the `users` table alone was a race: the main change log creates it early while plugin change logs
 # (e.g. the `plugins` table the seed updates) are still running. The users check stays as a sanity bound.
-CATALINA_LOG="$CATALINA/logs/catalina.out"
+# Under the systemd unit Tomcat's stdout goes to the journal (there is no catalina.out); read the latest line
+# from whichever exists so the live status line below has something to show.
+last_log_line() {
+  if have_systemd && systemctl is-active --quiet "$SVC_UNIT" 2>/dev/null; then journalctl -u "$SVC_UNIT" -n 1 -o cat --no-pager 2>/dev/null
+  else tail -n 1 "$CATALINA/logs/catalina.out" 2>/dev/null; fi
+}
 INIT_MARKER="$BASE_DIR/initialized.txt"
 schema_ready() {
   [ -f "$INIT_MARKER" ] || return 1
   PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U mdmesh -d mdmesh -tAc "SELECT to_regclass('public.users')" 2>/dev/null | grep -q '^users$'
 }
-# Wait up to ~5 min for first boot (Liquibase) to complete. On a TTY, show the latest catalina.out line live.
+# Wait up to ~5 min for first boot (Liquibase) to complete. On a TTY, show the latest Tomcat log line live.
 _migrate_wait() {
   local frames='⣾⣽⣻⢿⡿⣟⣯⣷' fi=0 cols width last clip i
   if [ "$TTY" != 1 ]; then
@@ -519,7 +600,7 @@ _migrate_wait() {
   width=$(( cols - 30 )); [ "$width" -ge 12 ] || width=12
   for i in $(seq 1 150); do
     schema_ready && { printf '\r\033[K'; return 0; }
-    last=$(tail -n 1 "$CATALINA_LOG" 2>/dev/null | tr -d '\r'); clip=${last:0:$width}
+    last=$(last_log_line | tr -d '\r'); clip=${last:0:$width}
     fi=$(( (fi + 1) % 8 ))
     printf '\r\033[K  %s%s%s migrating database %s%s%s' "$c_cyn" "${frames:$fi:1}" "$c_reset" "$c_dim" "$clip" "$c_reset"
     sleep 2
@@ -528,8 +609,11 @@ _migrate_wait() {
 }
 if ! _migrate_wait; then
   printf '  %s✗ the server did not finish initializing within 5 minutes%s\n' "$c_red" "$c_reset"
-  printf '  %sLiquibase or server startup likely failed — last lines of %s:%s\n' "$c_yel" "$CATALINA_LOG" "$c_reset"
-  hr; tail -n 30 "$CATALINA_LOG" 2>/dev/null | sed "s/^/    ${c_dim}/;s/$/${c_reset}/" || echo "    (no log at $CATALINA_LOG)"; hr
+  printf '  %sLiquibase or server startup likely failed — last Tomcat log lines:%s\n' "$c_yel" "$c_reset"
+  hr
+  if have_systemd && systemctl list-unit-files 2>/dev/null | grep -q "^${SVC_UNIT}\.service"; then journalctl -u "$SVC_UNIT" -n 30 -o cat --no-pager 2>/dev/null
+  else tail -n 30 "$CATALINA/logs/catalina.out" 2>/dev/null; fi | sed "s/^/    ${c_dim}/;s/$/${c_reset}/"
+  printf '    %s(full logs: journalctl -u %s  /  %s/logs/)%s\n' "$c_dim" "$SVC_UNIT" "$CATALINA" "$c_reset"; hr
   exit 1
 fi
 # The marker carries "OK" or the initialization error text — refuse to seed on an errored boot.
@@ -579,5 +663,5 @@ printf '  %sTomcat%s         %s (serving on :%s — front it with your TLS rever
 printf '  %sLocal URL%s      http://localhost:%s/\n' "$c_dim" "$c_reset" "$HTTP_PORT"
 printf '  %sUpdater%s        Settings -> Updates in the console (supervisor on loopback :9000; recovery page: curl 127.0.0.1:9000)\n' "$c_dim" "$c_reset"
 printf '  %sWebSockets%s     your TLS proxy MUST forward WebSocket upgrades for /agent/ws (instant commands; otherwise ~10 min polling)\n' "$c_dim" "$c_reset"
-printf '\n  %sNotes: add a systemd unit to keep Tomcat running.%s\n' "$c_dim" "$c_reset"
+printf '\n  %sService: systemctl status %s   ·   logs: journalctl -u %s -f  /  %s/logs/%s\n' "$c_dim" "$SVC_UNIT" "$SVC_UNIT" "$CATALINA" "$c_reset"
 printf '  %sInstall log: %s%s\n\n' "$c_dim" "$LOGFILE" "$c_reset"

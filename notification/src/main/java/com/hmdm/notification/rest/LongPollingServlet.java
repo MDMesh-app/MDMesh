@@ -21,6 +21,8 @@
 
 package com.hmdm.notification.rest;
 
+import com.hmdm.util.ExecutorRegistry;
+
 import com.hmdm.notification.PushSenderPolling;
 import com.hmdm.notification.persistence.NotificationDAO;
 import com.hmdm.notification.persistence.domain.PushMessage;
@@ -77,7 +79,7 @@ public class LongPollingServlet extends HttpServlet {
     private static final String HEADER_SIGNATURE = "X-Request-Signature";
     public static final String BASE_PATH = "/rest/notification/polling/";
 
-    private final ExecutorService executorService = Executors.newFixedThreadPool(10);
+    private final ExecutorService executorService = ExecutorRegistry.register(Executors.newFixedThreadPool(10));
 
     /**
      * <p>A constructor required by Swagger.</p>

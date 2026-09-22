@@ -10,11 +10,14 @@
 # Leaves alone: apt packages (postgresql, maven, node, …), your reverse proxy/TLS, and the git checkout.
 set -euo pipefail
 umask 077
+export PATH="/usr/sbin:/sbin:$PATH"   # useradd/userdel/pg tools live here; not every root shell has it
 [ "$(id -u)" = "0" ] || { echo "Run as root (sudo)."; exit 1; }
 
 BASE_DIR=/opt/mdmesh
 CATALINA=/opt/mdmesh-tc
 UNIT=/etc/systemd/system/mdmesh-supervisor.service
+SERVER_UNIT=/etc/systemd/system/mdmesh-server.service
+SVC_USER=mdmesh
 INSTALL_LOG=/var/log/mdmesh-install.log
 KEEP_DATA=0; YES=0; BACKUP=1
 for a in "$@"; do
@@ -36,6 +39,8 @@ fi
 echo
 echo "  MDMesh native uninstall — this host will lose:"
 [ -d "$CATALINA" ] && echo "    • Tomcat + deployed server:   $CATALINA"
+[ -f "$SERVER_UNIT" ] && echo "    • server service:             mdmesh-server (systemd unit removed)"
+id -u "$SVC_USER" >/dev/null 2>&1 && [ "$KEEP_DATA" != 1 ] && echo "    • service user:               $SVC_USER"
 [ -f "$UNIT" ]     && echo "    • updater service:            mdmesh-supervisor (systemd unit removed)"
 if [ "$KEEP_DATA" = 1 ]; then
   [ -d "$BASE_DIR" ] && echo "    • app dir (KEEPING files/ and backups/): $BASE_DIR"
@@ -60,7 +65,13 @@ if [ "$BACKUP" = 1 ] && db_exists; then
   su -s /bin/sh postgres -c "pg_dump -Fc mdmesh" > "$DUMP" && chmod 600 "$DUMP" && echo "  ✓ final dump: $DUMP  (restore: pg_restore -c -d mdmesh $DUMP)"
 fi
 
-# 2. Stop Tomcat for good. The server keeps scheduler threads alive after a normal stop, so kill by pid too.
+# 2. Stop Tomcat for good: the systemd unit first (cgroup-tracked), then legacy fallbacks for Tomcats
+#    started by older versions of the installer without a unit.
+if [ -f "$SERVER_UNIT" ] || systemctl list-unit-files 2>/dev/null | grep -q '^mdmesh-server'; then
+  systemctl disable --now mdmesh-server >/dev/null 2>&1 || true
+  rm -f "$SERVER_UNIT"; systemctl daemon-reload 2>/dev/null || true
+  echo "  ✓ mdmesh-server service removed"
+fi
 if [ -x "$CATALINA/bin/catalina.sh" ]; then
   CATALINA_PID="$CATALINA/tomcat.pid" "$CATALINA/bin/catalina.sh" stop 20 -force >/dev/null 2>&1 || true
 fi
@@ -95,5 +106,9 @@ else
   echo "  ✓ removed $CATALINA and $BASE_DIR"
 fi
 rm -f "$INSTALL_LOG"
+# 6. Service account — only when its files are gone too (a kept files/ dir stays owned by it).
+if [ "$KEEP_DATA" != 1 ] && id -u "$SVC_USER" >/dev/null 2>&1; then
+  userdel "$SVC_USER" 2>/dev/null && echo "  ✓ service user $SVC_USER removed" || true
+fi
 echo
 echo "  MDMesh removed. Devices still enrolled will keep polling this server's URL until factory-reset or re-provisioned."

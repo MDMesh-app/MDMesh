@@ -72,8 +72,18 @@ to `/opt/mdmesh/backups/` first. Unattended: `sudo ./setup.sh --native -y` never
 opt into a wipe, `HTTP_PORT=9090` to pick the port. Only missing packages are installed, and a JDK 17 found via
 `JAVA17_HOME` or under `/opt` is used as-is (Debian 13 ships no `openjdk-17-jdk`).
 
-Note: on native installs Tomcat currently runs as root; the Docker images drop privileges. Front it with your own
-TLS proxy and keep the box dedicated.
+Tomcat runs as the unprivileged `mdmesh` system user under systemd (`mdmesh-server.service`, enabled at boot).
+Manage it like any other service:
+
+```bash
+systemctl status mdmesh-server        # health, PID, recent log lines
+systemctl restart mdmesh-server       # after editing conf/Catalina/localhost/ROOT.xml
+journalctl -u mdmesh-server -f        # follow Tomcat's stdout/stderr
+```
+
+The installer stops whatever it started before (the unit, or a pre-0.2.9 root Tomcat launched with `catalina.sh`) and
+refuses to continue if the chosen port is held by anything else, so it never kills a process it does not own. The JDK
+does not run as root, and the installer does not open ports 80/443; front it with your own TLS proxy.
 
 ## Uninstalling
 
@@ -90,7 +100,8 @@ docker image rm $(docker image ls 'ghcr.io/mdmesh-app/mdmesh-*' -q) 2>/dev/null 
 `docker compose down` without `-v` keeps the data volumes, so a later `./setup.sh` picks up where you left off.
 
 **Native.** `sudo ./install/uninstall-native.sh` shows exactly what it will remove (Tomcat under `/opt/mdmesh-tc`,
-the app dir `/opt/mdmesh`, the `mdmesh-supervisor` unit, the install log, and the `mdmesh` database + role),
+the app dir `/opt/mdmesh`, the `mdmesh-server` and `mdmesh-supervisor` units, the `mdmesh` system user, the install
+log, and the `mdmesh` database + role),
 writes a final `pg_dump` to `/root`, and only proceeds when you type `UNINSTALL`. `--keep-data` removes the code
 and services but leaves the database, `/opt/mdmesh/files` and `/opt/mdmesh/backups` in place; `-y` skips the
 prompt for scripted use. Packages installed by apt, your reverse proxy and the git checkout are never touched.

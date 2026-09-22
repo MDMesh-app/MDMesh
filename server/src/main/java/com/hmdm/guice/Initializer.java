@@ -181,4 +181,18 @@ public final class Initializer extends GuiceServletContextListener {
         final StartupTaskModule startupTaskModule = this.injector.getInstance(StartupTaskModule.class);
         startupTaskModule.init();
     }
+
+    /**
+     * <p>Tomcat is stopping or undeploying us. Let Guice tear down, then end every thread pool the
+     * server created — otherwise their non-daemon threads keep the JVM alive after the container has
+     * shut down and {@code catalina.sh stop} never completes.</p>
+     */
+    @Override
+    public void contextDestroyed(ServletContextEvent servletContextEvent) {
+        try {
+            super.contextDestroyed(servletContextEvent);
+        } finally {
+            com.hmdm.util.ExecutorRegistry.shutdownAll(10);
+        }
+    }
 }

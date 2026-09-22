@@ -21,6 +21,8 @@
 
 package com.hmdm.notification.guice.module;
 
+import com.hmdm.util.ExecutorRegistry;
+
 import com.google.inject.Inject;
 import com.hmdm.notification.persistence.NotificationDAO;
 import org.slf4j.Logger;
@@ -37,7 +39,7 @@ import java.util.concurrent.TimeUnit;
  */
 public class NotificationTaskModule {
 
-    private final ScheduledExecutorService messagePurgeService = Executors.newScheduledThreadPool(1);
+    private final ScheduledExecutorService messagePurgeService = ExecutorRegistry.register(Executors.newScheduledThreadPool(1));
 
     private final NotificationDAO notificationDAO;
 

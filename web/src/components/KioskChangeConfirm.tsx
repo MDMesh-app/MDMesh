@@ -6,7 +6,12 @@ function appsKey(c: Configuration): string {
   return apps.map((a) => `${a.id}:${a.action ?? 1}`).sort().join(',');
 }
 
-/** Keys whose change will re-enter/exit kiosk on the configuration's devices. Pure. */
+/**
+ * Keys whose change will re-enter/exit kiosk on the configuration's devices. Pure.
+ * `before` must be the loaded baseline INCLUDING its `applications` — never the
+ * list-endpoint row, which omits `applications` entirely and would make every
+ * save look like an apps change.
+ */
 export function kioskAffectingChanges(before: Configuration, after: Configuration): string[] {
   const changed: string[] = [];
   for (const k of KIOSK_AFFECTING_KEYS) {

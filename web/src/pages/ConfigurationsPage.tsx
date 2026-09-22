@@ -313,6 +313,11 @@ function ConfigEditor({
 }) {
   const toast = useToast();
   const [draft, setDraft] = useState<Configuration>(() => ({ ...initial }));
+  // The unmodified starting point for change detection (e.g. kioskAffectingChanges).
+  // Kept separate from `initial` because the list endpoint omits `applications` —
+  // once the real assigned apps load, both `draft` and `baseline` are updated so
+  // comparisons don't see a spurious apps diff on every save.
+  const [baseline, setBaseline] = useState<Configuration>(() => ({ ...initial }));
   const [advanced, setAdvanced] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -330,6 +335,7 @@ function ConfigEditor({
       .then((assigned) => {
         if (cancelled) return;
         setDraft((d) => ({ ...d, applications: assigned }));
+        setBaseline((b) => ({ ...b, applications: assigned }));
         setAppsReady(true);
       })
       .catch(() => !cancelled && setAppsReady(true));
@@ -363,12 +369,6 @@ function ConfigEditor({
   }
 
   function requestSave() {
-    const keys = isNew ? [] : kioskAffectingChanges(initial, draft);
-    if (keys.length > 0 && deviceCount > 0) { setConfirmKeys(keys); return; }
-    void doSave();
-  }
-
-  async function doSave() {
     if (!String(draft.name ?? '').trim()) {
       toast.push('err', 'Name required', 'Give the configuration a name.');
       return;
@@ -377,6 +377,12 @@ function ConfigEditor({
       toast.push('err', 'Still loading', 'The assigned apps are still loading — try again in a moment.');
       return;
     }
+    const keys = isNew ? [] : kioskAffectingChanges(baseline, draft);
+    if (keys.length > 0 && deviceCount > 0) { setConfirmKeys(keys); return; }
+    void doSave();
+  }
+
+  async function doSave() {
     setBusy(true);
     try {
       await saveConfiguration(draft);

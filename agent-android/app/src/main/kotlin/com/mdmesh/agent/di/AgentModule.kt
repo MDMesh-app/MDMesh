@@ -16,6 +16,7 @@ import com.mdmesh.core.command.handlers.AppIconsHandler
 import com.mdmesh.core.command.handlers.AppInstallHandler
 import com.mdmesh.core.command.handlers.AppScanHandler
 import com.mdmesh.core.command.handlers.AppUninstallHandler
+import com.mdmesh.core.command.handlers.ConfigApplyHandler
 import com.mdmesh.core.command.handlers.ConfigSyncHandler
 import com.mdmesh.core.command.handlers.DeviceAlertHandler
 import com.mdmesh.core.command.handlers.DeviceLockHandler
@@ -27,6 +28,7 @@ import com.mdmesh.core.command.handlers.DeviceLocationModeHandler
 import com.mdmesh.core.command.handlers.DevicePowerModeHandler
 import com.mdmesh.core.command.handlers.DeviceRingStopHandler
 import com.mdmesh.core.command.handlers.DeviceWipeHandler
+import com.mdmesh.core.config.ConfigApplier
 import com.mdmesh.core.location.LocationModeStore
 import com.mdmesh.core.power.PowerModeStore
 import com.mdmesh.core.command.handlers.KioskEnterHandler
@@ -40,8 +42,10 @@ import com.mdmesh.core.sync.HardwareIdSource
 import com.mdmesh.core.install.InstallManager
 import com.mdmesh.core.state.DeviceStateCollector
 import com.mdmesh.core.state.DeviceStateSource
+import com.mdmesh.core.store.ConfigStateStore
 import com.mdmesh.core.store.DataStoreKioskStateStore
 import com.mdmesh.core.store.KioskStateStore
+import com.mdmesh.core.store.SharedPrefsConfigStateStore
 import com.mdmesh.core.telemetry.EventLog
 import com.mdmesh.core.telemetry.EventSink
 import com.mdmesh.core.telemetry.DeviceInfoCollector
@@ -314,4 +318,24 @@ object AgentModule {
     @IntoSet
     fun provideLocationModeHandler(store: LocationModeStore): CommandHandler =
         DeviceLocationModeHandler(store)
+
+    // --- Desired-state configuration (config.apply) ---
+
+    @Provides
+    @Singleton
+    fun provideConfigStateStore(@ApplicationContext context: Context): ConfigStateStore =
+        SharedPrefsConfigStateStore(context)
+
+    @Provides
+    @Singleton
+    fun provideConfigApplier(
+        toggles: Map<String, @JvmSuppressWildcards TogglePolicy>,
+        kiosk: KioskApplier,
+        location: LocationModeStore,
+        store: ConfigStateStore,
+    ): ConfigApplier = ConfigApplier(toggles, kiosk, location::set, store)
+
+    @Provides
+    @IntoSet
+    fun provideConfigApplyHandler(applier: ConfigApplier): CommandHandler = ConfigApplyHandler(applier)
 }

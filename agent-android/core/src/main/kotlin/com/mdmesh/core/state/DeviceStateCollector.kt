@@ -8,6 +8,7 @@ import android.os.BatteryManager
 import android.os.Build
 import android.os.SystemClock
 import com.mdmesh.core.power.PowerModeStore
+import com.mdmesh.core.store.ConfigStateStore
 import com.mdmesh.proto.AgentDeviceStateDto
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -18,6 +19,7 @@ import javax.inject.Singleton
 class DeviceStateCollector @Inject constructor(
     @ApplicationContext private val context: Context,
     private val powerModeStore: PowerModeStore,
+    private val configStateStore: ConfigStateStore,
 ) : DeviceStateSource {
     override fun snapshot(): AgentDeviceStateDto {
         val batt = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
@@ -37,6 +39,7 @@ class DeviceStateCollector @Inject constructor(
             lastBootAt = System.currentTimeMillis() - SystemClock.elapsedRealtime(),
             agentVersion = installedVersionName(),
             powerMode = powerModeStore.get(),
+            appliedConfigRevision = configStateStore.revision(),
         )
     }
 

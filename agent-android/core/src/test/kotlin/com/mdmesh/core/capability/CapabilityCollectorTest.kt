@@ -1,5 +1,6 @@
 package com.mdmesh.core.capability
 
+import com.mdmesh.proto.DeviceAction
 import com.mdmesh.proto.OemCapability
 import com.mdmesh.proto.RemoteControlCapability
 import org.junit.Assert.assertEquals
@@ -13,7 +14,7 @@ import org.junit.Test
  */
 class CapabilityCollectorTest {
 
-    private fun collector(isDeviceOwner: () -> Boolean) = CapabilityCollector(
+    private fun collector(deviceActionKeys: List<String> = listOf("lock"), isDeviceOwner: () -> Boolean) = CapabilityCollector(
         agentVersion = "0.2.5",
         agentPackage = "com.mdmesh.agent",
         isDeviceOwner = isDeviceOwner,
@@ -21,7 +22,7 @@ class CapabilityCollectorTest {
         remoteControl = { RemoteControlCapability() },
         oem = { OemCapability() },
         deviceOwnerAppManagementKeys = listOf("silentInstall"),
-        deviceActionKeys = listOf("lock"),
+        deviceActionKeys = deviceActionKeys,
         buildInfo = BuildInfo(sdkInt = 33, release = "13", manufacturer = "Test", model = "Unit"),
     )
 
@@ -51,5 +52,11 @@ class CapabilityCollectorTest {
         assertEquals("Unit", m.device.model)
         assertEquals(listOf("wifi", "bluetooth"), m.capabilities.policy)
         assertEquals(listOf("lock"), m.capabilities.device)
+    }
+
+    @Test
+    fun `advertises configApply as a device action`() {
+        val m = collector(deviceActionKeys = DeviceAction.ADVERTISED_KEYS) { true }.collect("dev-3")
+        assertTrue(m.capabilities.device.contains(DeviceAction.CONFIG_APPLY_KEY))
     }
 }

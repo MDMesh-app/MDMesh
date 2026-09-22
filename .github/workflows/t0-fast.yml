@@ -1,0 +1,105 @@
+# T0 fast gate: every PR push and push to main, path-filtered, under 5 minutes.
+# One job per old workflow (server.yml, web.yml, agent.yml), run as a matrix entry gated
+# by changed-paths so an untouched subtree costs nothing. Steps within each entry
+# reproduce that old workflow's steps and commands exactly; project-specific comments
+# from the old workflows are copied along with the commands they explain.
+name: t0-fast
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  paths:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    outputs:
+      matched: ${{ steps.cp.outputs.matched }}
+      all: ${{ steps.cp.outputs.all }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - id: cp
+        uses: ./.github/actions/ci-kit/changed-paths
+        with:
+          filters: |
+            server: pom.xml, common/**, jwt/**, notification/**, plugins/**, server/**, swagger/**
+            web: web/**
+            agent: agent-android/**, proto/**
+
+  build:
+    name: ${{ matrix.name }}
+    needs: paths
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [server, web, agent]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      # --- server (from server.yml) ---
+      - if: matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6  # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - if: matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)
+        name: Provide build.properties
+        run: cp server/build.properties.example server/build.properties
+      - if: matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)
+        name: Contract + unit tests (DB-free)
+        # The :common tests (incl. AgentV1ContractTest — the backward-compat gate) need no database.
+        # Keep -DskipTests on the package step until a CI test DB exists for the DB-bound modules.
+        run: mvn -B -pl common test
+      - if: matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)
+        name: Build WAR
+        run: mvn -B -DskipTests package
+      - if: matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: launcher-war
+          path: server/target/launcher.war
+          if-no-files-found: error
+
+      # --- web (from web.yml) ---
+      - if: matrix.name == 'web' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).web)
+        uses: ./.github/actions/ci-kit/setup-npm
+        with:
+          working-directory: web
+      - if: matrix.name == 'web' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).web)
+        working-directory: web
+        run: npm run build
+
+      # --- agent (from agent.yml) ---
+      - if: matrix.name == 'agent' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).agent)
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407  # v3
+        with:
+          # Default is "tools platform-tools"; Google removed the legacy "tools" package from the
+          # SDK repository (Sept 2026) so sdkmanager exits 1. AGP auto-provisions platforms/build-tools.
+          packages: platform-tools
+      - if: matrix.name == 'agent' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).agent)
+        uses: ./.github/actions/ci-kit/setup-gradle
+        with:
+          java-version: "17"
+      - if: matrix.name == 'agent' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).agent)
+        name: Assemble + lint + unit tests
+        # The repo now carries a committed Gradle wrapper, and the kit's setup-gradle action is
+        # built around wrapper caches rather than installing a standalone `gradle` on PATH (the
+        # old workflow's approach, from when no wrapper was committed), so this uses ./gradlew.
+        working-directory: agent-android
+        run: ./gradlew --no-daemon assembleDebug lintDebug testDebugUnitTest
+
+  # NOTE: an emulator-based instrumentation matrix (the "version-treadmill guard" — boot the agent
+  # across API levels so SDK_INT-gated breakage surfaces in CI) is deferred until real instrumented
+  # (androidTest) tests exist, per agent.yml. Nothing to migrate.

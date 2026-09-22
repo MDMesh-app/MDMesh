@@ -1,0 +1,48 @@
+name: pull-image
+description: Pull a container image with retries, optional Docker Hub login, and a fallback image re-tagged to the requested name.
+inputs:
+  image:
+    description: Image reference to pull.
+    required: true
+  fallback-image:
+    description: Image to pull and re-tag as `image` if the primary pull fails.
+    default: ""
+  dockerhub-username:
+    description: Docker Hub username (optional).
+    default: ""
+  dockerhub-token:
+    description: Docker Hub token (optional).
+    default: ""
+  retries:
+    description: Attempts per image.
+    default: "3"
+runs:
+  using: composite
+  steps:
+    - if: inputs.dockerhub-username != '' && inputs.dockerhub-token != ''
+      uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f  # v4.6.0
+      with:
+        username: ${{ inputs.dockerhub-username }}
+        password: ${{ inputs.dockerhub-token }}
+    - shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        FALLBACK: ${{ inputs.fallback-image }}
+        RETRIES: ${{ inputs.retries }}
+      run: |
+        set -uo pipefail
+        pull() {
+          local ref="$1" n=0
+          while [ "$n" -lt "$RETRIES" ]; do
+            n=$((n+1))
+            if docker pull "$ref"; then return 0; fi
+            echo "pull $ref failed (attempt $n/$RETRIES)"; sleep $((n*5))
+          done
+          return 1
+        }
+        if pull "$IMAGE"; then exit 0; fi
+        if [ -n "$FALLBACK" ]; then
+          echo "::warning::primary image $IMAGE unavailable, using fallback $FALLBACK"
+          pull "$FALLBACK" && docker tag "$FALLBACK" "$IMAGE" && exit 0
+        fi
+        echo "::error::could not pull $IMAGE"; exit 1

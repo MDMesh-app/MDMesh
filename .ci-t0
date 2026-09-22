@@ -1,0 +1,4 @@
+# T0 commands run locally by the ci-kit pre-push hook. SKIP_T0=1 git push to bypass.
+mvn -B -pl common test
+npm run build --prefix web
+./agent-android/gradlew --no-daemon -p agent-android assembleDebug lintDebug testDebugUnitTest

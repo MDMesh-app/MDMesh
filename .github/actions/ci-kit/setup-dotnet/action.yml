@@ -1,0 +1,16 @@
+name: setup-dotnet
+description: .NET SDK with optional NuGet cache (requires packages.lock.json in the repo).
+inputs:
+  dotnet-version:
+    description: SDK version pattern.
+    default: "9.0.x"
+  cache:
+    description: Enable NuGet package cache; only works with packages.lock.json committed.
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68  # v6.0.0
+      with:
+        dotnet-version: ${{ inputs.dotnet-version }}
+        cache: ${{ inputs.cache }}

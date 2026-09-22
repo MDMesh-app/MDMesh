@@ -1,0 +1,1 @@
+{"configurationId":12,"kiosk":{"allowedPackages":["com.acme.pos"],"exitMode":"visible","features":{"home":true,"recents":false},"mode":"single","password":"s3cret","pinPackage":"com.acme.pos","theme":{"backgroundColor":"#000000","iconSize":"LARGE","textColor":"#ffffff"}},"location":{"mode":"active"},"policies":{"bluetooth":false,"screenshots":false,"wifi":true}}

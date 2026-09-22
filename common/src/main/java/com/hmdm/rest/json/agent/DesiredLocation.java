@@ -27,8 +27,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * Desired-state document carried by the {@code config.apply} command (proto/payloads/config-apply.schema.json).
- * Built by {@link com.hmdm.util.DesiredConfigBuilder}; never hand-assembled elsewhere.
+ * Location-reporting section of {@link DesiredConfig}: whether the device should actively track location.
  */
 @Getter
 @Setter

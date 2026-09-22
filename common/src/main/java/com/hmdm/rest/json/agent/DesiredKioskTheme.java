@@ -27,8 +27,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * Desired-state document carried by the {@code config.apply} command (proto/payloads/config-apply.schema.json).
- * Built by {@link com.hmdm.util.DesiredConfigBuilder}; never hand-assembled elsewhere.
+ * Visual theme for {@link DesiredKiosk}: background/text colors and launcher icon size.
  */
 @Getter
 @Setter

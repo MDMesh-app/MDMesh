@@ -28,8 +28,7 @@ import lombok.Setter;
 import java.util.List;
 
 /**
- * Desired-state document carried by the {@code config.apply} command (proto/payloads/config-apply.schema.json).
- * Built by {@link com.hmdm.util.DesiredConfigBuilder}; never hand-assembled elsewhere.
+ * Kiosk section of {@link DesiredConfig}: mirrors the agent's KioskApplyPayload.
  */
 @Getter
 @Setter

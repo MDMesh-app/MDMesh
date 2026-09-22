@@ -24,6 +24,11 @@ import java.util.TreeSet;
  * The ONLY place a {@link Configuration} row becomes a {@code config.apply} desired-state document.
  * Pure and deterministic: same inputs -&gt; same canonical JSON -&gt; same revision, on every server node,
  * so a device's reported {@code appliedConfigRevision} can be compared without storing anything.
+ *
+ * <p>Note: {@link Configuration#getMainAppId()} is an {@code applicationVersions.id}, NOT an
+ * {@code applications.id} (Liquibase remapped the column; {@code recheckConfigurationMainApplication}
+ * sets it from {@code configurationApplications.applicationVersionId}). The main app is therefore the
+ * configuration app whose {@link Application#getUsedVersionId()} equals it.</p>
  */
 public final class DesiredConfigBuilder {
     public static final String COMMAND_TYPE = "config.apply";
@@ -62,11 +67,15 @@ public final class DesiredConfigBuilder {
         if (v != null) p.put(key, v);
     }
 
+    /**
+     * Builds the kiosk block. The main (pinned) app is matched by application VERSION id:
+     * {@code cfg.mainAppId == app.usedVersionId}, never by {@code app.id}.
+     */
     private static DesiredKiosk kiosk(Configuration cfg, List<Application> apps) {
         String mainPkg = null;
         for (Application a : apps) {
             if (a == null || a.getPkg() == null || a.getPkg().trim().isEmpty() || a.getAction() != ACTION_INSTALL) continue;
-            if (cfg.getMainAppId() != null && cfg.getMainAppId().equals(a.getId())) mainPkg = a.getPkg().trim();
+            if (cfg.getMainAppId() != null && cfg.getMainAppId().equals(a.getUsedVersionId())) mainPkg = a.getPkg().trim();
         }
         // Dedupe by package name (not row id): another Application row can carry the same pkg as
         // the main app under a different id, and must not appear twice in allowedPackages or

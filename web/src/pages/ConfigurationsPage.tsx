@@ -13,7 +13,7 @@ import {
 import { listApplications, type Application } from '../api/applications';
 import { getSyncSummary, type ConfigSyncSummary } from '../api/configSync';
 import {
-  ENFORCED_FIELDS,
+  PRIMARY_FIELDS,
   LEGACY_FIELDS,
   GROUP_ORDER,
   type FieldDef,
@@ -90,7 +90,7 @@ export function ConfigurationsPage() {
           initial={editing}
           apps={apps}
           readOnly={readOnly}
-          deviceCount={editing.id != null ? (sync[editing.id]?.total ?? 0) : 0}
+          deviceCount={editing.id != null ? affectedDeviceCount(sync[editing.id]) : 0}
           onCancel={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -127,7 +127,7 @@ export function ConfigurationsPage() {
               key={c.id}
               c={c}
               locked={isLocked(c)}
-              appName={appName(apps, c.mainAppId as number | undefined)}
+              appName={appNameForVersionId(apps, c.mainAppId as number | undefined)}
               sync={c.id != null ? sync[c.id] : undefined}
               onEdit={() => {
                 setReadOnly(isLocked(c));
@@ -179,9 +179,28 @@ export function ConfigurationsPage() {
   }
 }
 
-function appName(apps: Application[], id?: number): string {
-  if (id == null) return '—';
-  return apps.find((a) => a.id === id)?.name ?? `#${id}`;
+/**
+ * Devices that will actually re-apply kiosk: agents too old for config.apply ("unsupported") won't.
+ * null = no sync summary for this configuration — the caller fails closed (dialog without a number).
+ */
+function affectedDeviceCount(row: ConfigSyncSummary | undefined): number | null {
+  return row ? Math.max(0, row.total - row.unsupported) : null;
+}
+
+// configurations.mainAppId is an applicationVersions.id (NOT an applications.id): the server
+// maps it back to the assigned app via configurationApplications.applicationVersionId.
+
+/** The version id the main-app picker writes for an app: its assigned version, else its latest. */
+function versionIdForApp(app: Application, assigned: ConfigApp[]): number | undefined {
+  return assigned.find((x) => x.id === app.id)?.usedVersionId ?? app.latestVersion;
+}
+
+/** Display name for a mainAppId (a version id); a dash when it can't be resolved. */
+function appNameForVersionId(apps: Application[], versionId?: number, assigned: ConfigApp[] = []): string {
+  if (versionId == null) return '—';
+  const a = assigned.find((x) => x.usedVersionId === versionId);
+  if (a) return a.name ?? a.pkg ?? '—';
+  return apps.find((x) => x.latestVersion === versionId)?.name ?? '—';
 }
 
 function ConfigCard({
@@ -306,7 +325,8 @@ function ConfigEditor({
   initial: Configuration;
   apps: Application[];
   readOnly: boolean;
-  deviceCount: number;
+  /** Devices that will re-apply kiosk; null when unknown (confirm without a number). */
+  deviceCount: number | null;
   onCancel: () => void;
   onSaved: () => void;
   onDuplicate: () => void;
@@ -327,10 +347,15 @@ function ConfigEditor({
   // The list endpoint doesn't carry a config's assigned apps, so for an existing
   // config we must fetch them here. Until they arrive, block save — otherwise a
   // PUT (which replaces the whole app set) would wipe the config's apps.
+  // A failed fetch does NOT unblock save (fail closed): with desired state, saving an
+  // empty app set would also wipe the kiosk allowlist on every device. Offer a retry.
   const [appsReady, setAppsReady] = useState(isNew);
+  const [appsError, setAppsError] = useState(false);
+  const [appsAttempt, setAppsAttempt] = useState(0);
   useEffect(() => {
     if (initial.id == null) return;
     let cancelled = false;
+    setAppsError(false);
     getConfigurationApps(initial.id)
       .then((assigned) => {
         if (cancelled) return;
@@ -338,11 +363,13 @@ function ConfigEditor({
         setBaseline((b) => ({ ...b, applications: assigned }));
         setAppsReady(true);
       })
-      .catch(() => !cancelled && setAppsReady(true));
+      .catch(() => {
+        if (!cancelled) setAppsError(true);
+      });
     return () => {
       cancelled = true;
     };
-  }, [initial.id]);
+  }, [initial.id, appsAttempt]);
 
   const set = (key: string, value: unknown) => setDraft((d) => ({ ...d, [key]: value }));
 
@@ -355,6 +382,8 @@ function ConfigEditor({
       name: app.name,
       pkg: app.pkg,
       version: app.version,
+      // Same version the server would default to; lets the main-app picker resolve it.
+      usedVersionId: app.latestVersion,
       action: 1,
       showIcon: true,
       remove: false,
@@ -378,7 +407,8 @@ function ConfigEditor({
       return;
     }
     const keys = isNew ? [] : kioskAffectingChanges(baseline, draft);
-    if (keys.length > 0 && deviceCount > 0) { setConfirmKeys(keys); return; }
+    // deviceCount null = unknown -> confirm anyway (fail closed); 0 = no device will re-apply.
+    if (keys.length > 0 && deviceCount !== 0) { setConfirmKeys(keys); return; }
     void doSave();
   }
 
@@ -398,7 +428,7 @@ function ConfigEditor({
 
   const enforcedByGroup = GROUP_ORDER.map((g) => ({
     group: g,
-    fields: ENFORCED_FIELDS.filter((f) => f.group === g),
+    fields: PRIMARY_FIELDS.filter((f) => f.group === g),
   })).filter((x) => x.fields.length > 0);
 
   const legacyByGroup = GROUP_ORDER.map((g) => ({
@@ -423,10 +453,19 @@ function ConfigEditor({
           <button className="btn btn-primary" onClick={onDuplicate}>Duplicate to edit</button>
         ) : (
           <button className="btn btn-primary" onClick={requestSave} disabled={busy || !appsReady}>
-            {busy ? 'Saving…' : !appsReady ? 'Loading…' : 'Save'}
+            {busy ? 'Saving…' : !appsReady && !appsError ? 'Loading…' : 'Save'}
           </button>
         )}
       </div>
+
+      {appsError && !appsReady ? (
+        <div className="banner banner-alert" role="alert" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span>Could not load this configuration’s assigned apps. Saving is disabled so the app list (and kiosk allowlist) is not wiped.</span>
+          <button className="btn btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setAppsAttempt((n) => n + 1)}>
+            Retry
+          </button>
+        </div>
+      ) : null}
 
       {confirmKeys ? (
         <KioskChangeConfirm
@@ -448,7 +487,7 @@ function ConfigEditor({
         <section className="panel cfg-panel" key={group}>
           <div className="cfg-sec-h">{group}</div>
           {fields.map((f) => (
-            <Field key={f.key} def={f} value={draft[f.key]} apps={apps} disabled={readOnly} onChange={(v) => set(f.key, v)} />
+            <Field key={f.key} def={f} value={draft[f.key]} apps={apps} assigned={allowed} disabled={readOnly} onChange={(v) => set(f.key, v)} />
           ))}
         </section>
       ))}
@@ -499,7 +538,7 @@ function ConfigEditor({
           <section className="panel cfg-panel" key={group}>
             <div className="cfg-sec-h">{group}</div>
             {fields.map((f) => (
-              <Field key={f.key} def={f} value={draft[f.key]} apps={apps} disabled={readOnly} onChange={(v) => set(f.key, v)} />
+              <Field key={f.key} def={f} value={draft[f.key]} apps={apps} assigned={allowed} disabled={readOnly} onChange={(v) => set(f.key, v)} />
             ))}
           </section>
         ))}
@@ -521,12 +560,14 @@ function Field({
   def,
   value,
   apps,
+  assigned,
   disabled,
   onChange,
 }: {
   def: FieldDef;
   value: unknown;
   apps: Application[];
+  assigned: ConfigApp[];
   disabled?: boolean;
   onChange: (v: unknown) => void;
 }) {
@@ -538,13 +579,13 @@ function Field({
         <span className="cfg-field-help">{def.help}</span>
       </div>
       <div className="cfg-field-ctl">
-        <FieldControl def={def} value={value} apps={apps} disabled={disabled} onChange={onChange} />
+        <FieldControl def={def} value={value} apps={apps} assigned={assigned} disabled={disabled} onChange={onChange} />
       </div>
     </div>
   );
 }
 
-function FieldControl({ def, value, apps, disabled, onChange }: { def: FieldDef; value: unknown; apps: Application[]; disabled?: boolean; onChange: (v: unknown) => void }) {
+function FieldControl({ def, value, apps, assigned, disabled, onChange }: { def: FieldDef; value: unknown; apps: Application[]; assigned: ConfigApp[]; disabled?: boolean; onChange: (v: unknown) => void }) {
   switch (def.type) {
     case 'switch':
       return (
@@ -575,15 +616,22 @@ function FieldControl({ def, value, apps, disabled, onChange }: { def: FieldDef;
         </select>
       );
     }
-    case 'app':
+    case 'app': {
+      // The stored value is an applicationVersions.id (see versionIdForApp).
+      const options = apps
+        .map((a) => ({ a, vid: versionIdForApp(a, assigned) }))
+        .filter((o): o is { a: Application; vid: number } => o.vid != null);
+      const known = value == null || options.some((o) => o.vid === value);
       return (
         <select className="sel" value={value == null ? '' : String(value)} disabled={disabled} onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}>
           <option value="">— none —</option>
-          {apps.map((a) => (
-            <option key={a.id} value={a.id}>{a.name} ({a.pkg})</option>
+          {!known && <option value={String(value)}>{appNameForVersionId(apps, value as number, assigned)} (version #{String(value)})</option>}
+          {options.map(({ a, vid }) => (
+            <option key={a.id} value={vid}>{a.name} ({a.pkg})</option>
           ))}
         </select>
       );
+    }
     case 'int':
       return (
         <input className="input" type="number" min={def.min} max={def.max} value={value == null ? '' : String(value)} disabled={disabled} onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))} />

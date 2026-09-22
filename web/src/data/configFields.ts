@@ -33,6 +33,8 @@ export interface FieldDef {
   focused?: boolean;
   /** Applied on devices by the MDMesh agent via config.apply. Unset = legacy Headwind field, not enforced. */
   enforced?: boolean;
+  /** Configuration metadata (name, description): always shown, never sent to devices, not "Enforced". */
+  metadata?: boolean;
   options?: FieldOption[];
   min?: number;
   max?: number;
@@ -45,8 +47,8 @@ export const GROUP_ORDER: FieldGroup[] = [
 
 export const CONFIG_FIELDS: FieldDef[] = [
   // ── Identity ──────────────────────────────────────────────────────────────
-  { key: 'name', label: 'Name', type: 'text', group: 'Identity', focused: true, enforced: true, help: 'Unique name for this configuration template.' },
-  { key: 'description', label: 'Description', type: 'textarea', group: 'Identity', focused: true, enforced: true, help: 'Optional notes about what this template is for.' },
+  { key: 'name', label: 'Name', type: 'text', group: 'Identity', focused: true, metadata: true, help: 'Unique name for this configuration template.' },
+  { key: 'description', label: 'Description', type: 'textarea', group: 'Identity', focused: true, metadata: true, help: 'Optional notes about what this template is for.' },
 
   // ── Apps ──────────────────────────────────────────────────────────────────
   { key: 'mainAppId', label: 'Main app', type: 'app', group: 'Apps', focused: true, enforced: true, help: 'Primary app launched on the device (the kiosk app in kiosk mode).' },
@@ -82,7 +84,7 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'mobileEnrollment', label: 'Enroll over mobile data', type: 'switch', group: 'Network', help: 'Prefer mobile data over Wi-Fi during provisioning.' },
 
   // ── Security ───────────────────────────────────────────────────────────-─
-  { key: 'password', label: 'Admin password', type: 'password', group: 'Security', enforced: true, help: 'Password to unlock MDM settings on the device (sent plain, hashed server-side).' },
+  { key: 'password', label: 'Admin password', type: 'password', group: 'Security', enforced: true, help: 'Kiosk exit password (stored as entered).' },
   { key: 'appPermissions', label: 'App permissions', type: 'enum', group: 'Security', help: 'How runtime permissions are handled for managed apps.', options: [
     { value: 'GRANTALL', label: 'Grant all automatically' }, { value: 'ASKLOCATION', label: 'Ask for location only' },
     { value: 'DENYLOCATION', label: 'Deny location' }, { value: 'ASKALL', label: 'Ask for everything' },
@@ -147,7 +149,9 @@ export const CONFIG_FIELDS: FieldDef[] = [
 ];
 
 export const ENFORCED_FIELDS = CONFIG_FIELDS.filter((f) => f.enforced);
-export const LEGACY_FIELDS = CONFIG_FIELDS.filter((f) => !f.enforced);
+/** Always-visible editor fields: metadata + enforced. */
+export const PRIMARY_FIELDS = CONFIG_FIELDS.filter((f) => f.enforced || f.metadata);
+export const LEGACY_FIELDS = CONFIG_FIELDS.filter((f) => !f.enforced && !f.metadata);
 export const ENFORCED_KEYS: ReadonlySet<string> = new Set(ENFORCED_FIELDS.map((f) => f.key));
 /** Changing any of these re-enters/exits kiosk on every device of the configuration. */
 export const KIOSK_AFFECTING_KEYS: ReadonlySet<string> = new Set([

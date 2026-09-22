@@ -7,6 +7,7 @@ import com.hmdm.persistence.domain.Application;
 import com.hmdm.persistence.domain.Configuration;
 import com.hmdm.persistence.domain.Device;
 import com.hmdm.rest.json.agent.DesiredConfig;
+import com.hmdm.util.AgentCapabilityTokens;
 import com.hmdm.util.ConfigReconcileDecision;
 import com.hmdm.util.DesiredConfigBuilder;
 import org.slf4j.Logger;
@@ -20,7 +21,8 @@ import java.util.Set;
 /**
  * Desired-state reconciliation for the command-driven agent. Called from every check-in: if the device's
  * reported applied revision differs from its configuration's current revision, queue ONE {@code config.apply}.
- * The document is rebuilt from the Configuration row each time (no stored revision to drift).
+ * The document is rebuilt from the Configuration row each time (no stored revision to drift), using the
+ * optimized app query (two plain selects per capable check-in — no temp table).
  */
 @Singleton
 public class ConfigReconciler {
@@ -40,7 +42,7 @@ public class ConfigReconciler {
         if (device == null || device.getConfigurationId() == null) return null;
         Configuration cfg = unsecureDAO.getConfigurationById(device.getConfigurationId());
         if (cfg == null) return null;
-        List<Application> apps = unsecureDAO.getPlainConfigurationApplications(device.getCustomerId(), cfg.getId());
+        List<Application> apps = unsecureDAO.getPlainConfigurationAppsOptimized(cfg.getId());
         return DesiredConfigBuilder.build(cfg, apps);
     }
 
@@ -52,6 +54,9 @@ public class ConfigReconciler {
     /** @return true when a config.apply was enqueued. Never throws. */
     public boolean reconcile(Device device, Set<String> deviceTokens, String appliedRevision, long now) {
         try {
+            // Cost short-circuit only: an old agent without the capability pays nothing (no config/app
+            // query at all). ConfigReconcileDecision.decide still re-checks this same gate below.
+            if (!AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, deviceTokens)) return false;
             DesiredConfig doc = currentDocument(device);
             if (doc == null) return false;
             String number = device.getNumber();

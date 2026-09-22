@@ -211,6 +211,11 @@ public class UnsecureDAO {
         return this.configurationMapper.getPlainConfigurationApplications(customerId, tblName, id);
     }
 
+    /** Cheap per-check-in variant: a single plain SELECT, no temp table (unlike {@link #getPlainConfigurationApplications}). */
+    public List<Application> getPlainConfigurationAppsOptimized(Integer configurationId) {
+        return this.configurationMapper.getPlainConfigurationAppsOptimized(configurationId);
+    }
+
     public Configuration getConfigurationById(Integer id) {
         return this.configurationMapper.getConfigurationById(id);
     }

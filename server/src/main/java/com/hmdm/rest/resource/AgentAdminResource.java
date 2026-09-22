@@ -27,10 +27,17 @@ import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.AgentEnrollmentToken;
 import com.hmdm.persistence.domain.Device;
+import com.hmdm.persistence.domain.DeviceState;
+import com.hmdm.persistence.domain.DeviceSyncRow;
 import com.hmdm.notification.AgentWakeHub;
 import com.hmdm.rest.json.AgentBulkCommandRequest;
 import com.hmdm.rest.json.Response;
+import com.hmdm.rest.json.agent.ConfigStatusView;
+import com.hmdm.rest.json.agent.ConfigSyncSummary;
+import com.hmdm.rest.resource.support.ConfigReconciler;
 import com.hmdm.security.SecurityContext;
+import com.hmdm.util.AgentCapabilityTokens;
+import com.hmdm.util.DesiredConfigBuilder;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import org.slf4j.Logger;
@@ -47,7 +54,10 @@ import javax.ws.rs.Produces;
 import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.MediaType;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -72,6 +82,7 @@ public class AgentAdminResource {
     private UnsecureDAO unsecureDAO;
     private AgentWakeHub wakeHub;
     private com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller;
+    private ConfigReconciler configReconciler;
 
     /**
      * <p>A constructor required by Swagger.</p>
@@ -84,12 +95,14 @@ public class AgentAdminResource {
                               AgentCommandDAO commandDAO,
                               UnsecureDAO unsecureDAO,
                               AgentWakeHub wakeHub,
-                              com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller) {
+                              com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller,
+                              ConfigReconciler configReconciler) {
         this.tokenDAO = tokenDAO;
         this.commandDAO = commandDAO;
         this.unsecureDAO = unsecureDAO;
         this.wakeHub = wakeHub;
         this.configAppInstaller = configAppInstaller;
+        this.configReconciler = configReconciler;
     }
 
     // =================================================================================================================
@@ -270,6 +283,64 @@ public class AgentAdminResource {
             return Response.PERMISSION_DENIED();
         }
         return Response.OK(commandDAO.getState(deviceId));
+    }
+
+    // =================================================================================================================
+    @ApiOperation(value = "Device configuration status", notes = "Desired-state revision vs the revision the agent last applied.")
+    @GET
+    @Path("/devices/{deviceId}/configStatus")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getConfigStatus(@PathParam("deviceId") String deviceId) {
+        Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
+        if (!customerId.isPresent()) return Response.PERMISSION_DENIED();
+        Device device = unsecureDAO.getDeviceByNumber(deviceId);
+        if (device == null) return Response.ERROR("error.agent.device.unknown");
+        if (device.getCustomerId() != customerId.get()) return Response.PERMISSION_DENIED();
+
+        ConfigStatusView v = new ConfigStatusView();
+        v.setConfigurationId(device.getConfigurationId());
+        v.setCurrentRevision(configReconciler.currentRevision(device));
+        DeviceState state = commandDAO.getState(deviceId);
+        if (state != null) { v.setAppliedRevision(state.getAppliedConfigRevision()); v.setAppliedAt(state.getAppliedConfigAt()); }
+        Set<String> tokens = AgentCapabilityTokens.flatten(commandDAO.getDeviceCapabilities(deviceId));
+        boolean supported = AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, tokens);
+        v.setSupported(supported);
+        v.setInSync(v.getCurrentRevision() != null && v.getCurrentRevision().equals(v.getAppliedRevision()));
+        v.setLastCommand(commandDAO.findLatestOfType(deviceId, DesiredConfigBuilder.COMMAND_TYPE));
+        return Response.OK(v);
+    }
+
+    // =================================================================================================================
+    @ApiOperation(value = "Configuration sync summary", notes = "Per configuration: how many devices applied its current revision.")
+    @GET
+    @Path("/configurations/syncSummary")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getSyncSummary() {
+        Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
+        if (!customerId.isPresent()) return Response.PERMISSION_DENIED();
+        Map<Integer, String> revisionByConfig = new HashMap<>();
+        Map<Integer, ConfigSyncSummary> out = new LinkedHashMap<>();
+        for (DeviceSyncRow row : commandDAO.listDevicesForSync(customerId.get())) {
+            Integer cfgId = row.getConfigurationId();
+            ConfigSyncSummary s = out.computeIfAbsent(cfgId, id -> { ConfigSyncSummary x = new ConfigSyncSummary(); x.setConfigurationId(id); return x; });
+            s.setTotal(s.getTotal() + 1);
+            String current = revisionByConfig.computeIfAbsent(cfgId, id -> {
+                Device probe = new Device(); probe.setConfigurationId(id); probe.setCustomerId(customerId.get());
+                return configReconciler.currentRevision(probe);
+            });
+            Set<String> tokens = AgentCapabilityTokens.flatten(row.getCapabilitiesJson());
+            boolean supported = AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, tokens);
+            if (!supported) {
+                s.setUnsupported(s.getUnsupported() + 1);
+            } else if (row.getAppliedConfigRevision() == null) {
+                s.setNeverSeen(s.getNeverSeen() + 1);
+            } else if (row.getAppliedConfigRevision().equals(current)) {
+                s.setInSync(s.getInSync() + 1);
+            } else {
+                s.setOutOfSync(s.getOutOfSync() + 1);
+            }
+        }
+        return Response.OK(new ArrayList<>(out.values()));
     }
 
     // =================================================================================================================

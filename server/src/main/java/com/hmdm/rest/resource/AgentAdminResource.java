@@ -306,7 +306,7 @@ public class AgentAdminResource {
         boolean supported = AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, tokens);
         v.setSupported(supported);
         v.setInSync(v.getCurrentRevision() != null && v.getCurrentRevision().equals(v.getAppliedRevision()));
-        v.setLastCommand(commandDAO.findLatestOfType(deviceId, DesiredConfigBuilder.COMMAND_TYPE));
+        v.setLastCommand(ConfigStatusView.LastCommand.from(commandDAO.findLatestOfType(deviceId, DesiredConfigBuilder.COMMAND_TYPE)));
         return Response.OK(v);
     }
 

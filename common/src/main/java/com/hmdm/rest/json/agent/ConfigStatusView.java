@@ -22,7 +22,6 @@
 package com.hmdm.rest.json.agent;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.hmdm.persistence.domain.AgentCommand;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -40,5 +39,28 @@ public class ConfigStatusView {
     private Long appliedAt;
     private boolean inSync;
     private boolean supported;
-    private AgentCommand lastCommand;
+    private LastCommand lastCommand;
+
+    /** Slim view of the latest config.apply — deliberately omits the payload (it embeds the kiosk password). */
+    @Getter
+    @Setter
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public static class LastCommand {
+        private Integer id;
+        private String status;
+        private String detail;
+        private Long createdAt;
+        private Long completedAt;
+
+        public static LastCommand from(com.hmdm.persistence.domain.AgentCommand c) {
+            if (c == null) return null;
+            LastCommand v = new LastCommand();
+            v.setId(c.getId());
+            v.setStatus(c.getStatus());
+            v.setDetail(c.getDetail());
+            v.setCreatedAt(c.getCreatedAt());
+            v.setCompletedAt(c.getCompletedAt());
+            return v;
+        }
+    }
 }

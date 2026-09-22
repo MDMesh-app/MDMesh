@@ -61,6 +61,13 @@ public class DesiredConfigBuilderTest {
     }
 
     @Test
+    public void duplicate_package_rows_for_the_main_app_are_deduplicated() {
+        DesiredConfig d = DesiredConfigBuilder.build(kioskConfig(), Arrays.asList(app(5, "com.acme.pos", 1), app(6, "com.acme.pos", 1)));
+        assertEquals(Collections.singletonList("com.acme.pos"), d.getKiosk().getAllowedPackages());
+        assertEquals("single", d.getKiosk().getMode());
+    }
+
+    @Test
     public void kiosk_absent_when_kioskMode_off() {
         Configuration c = kioskConfig(); c.setKioskMode(false);
         DesiredConfig d = DesiredConfigBuilder.build(c, Collections.emptyList());

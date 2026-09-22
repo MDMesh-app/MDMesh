@@ -16,7 +16,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 
 /**
  * The ONLY place a {@link Configuration} row becomes a {@code config.apply} desired-state document.
@@ -62,14 +64,21 @@ public final class DesiredConfigBuilder {
 
     private static DesiredKiosk kiosk(Configuration cfg, List<Application> apps) {
         String mainPkg = null;
-        List<String> allowed = new ArrayList<String>();
+        for (Application a : apps) {
+            if (a == null || a.getPkg() == null || a.getPkg().trim().isEmpty() || a.getAction() != ACTION_INSTALL) continue;
+            if (cfg.getMainAppId() != null && cfg.getMainAppId().equals(a.getId())) mainPkg = a.getPkg().trim();
+        }
+        // Dedupe by package name (not row id): another Application row can carry the same pkg as
+        // the main app under a different id, and must not appear twice in allowedPackages or
+        // spuriously flip mode from "single" to "launcher".
+        Set<String> distinctOthers = new TreeSet<String>();
         for (Application a : apps) {
             if (a == null || a.getPkg() == null || a.getPkg().trim().isEmpty() || a.getAction() != ACTION_INSTALL) continue;
             String pkg = a.getPkg().trim();
-            if (cfg.getMainAppId() != null && cfg.getMainAppId().equals(a.getId())) mainPkg = pkg;
-            else if (!allowed.contains(pkg)) allowed.add(pkg);
+            if (mainPkg != null && mainPkg.equals(pkg)) continue;
+            distinctOthers.add(pkg);
         }
-        Collections.sort(allowed);
+        List<String> allowed = new ArrayList<String>(distinctOthers);
         if (mainPkg != null) allowed.add(0, mainPkg);
 
         DesiredKiosk k = new DesiredKiosk();

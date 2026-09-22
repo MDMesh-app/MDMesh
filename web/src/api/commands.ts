@@ -245,6 +245,7 @@ export interface DeviceState {
   androidRelease: string; lastBootAt: number; updatedAt: number;
   agentVersion?: string | null;
   powerMode?: string | null;
+  appliedConfigRevision?: string | null;
 }
 
 export interface CommandHistoryItem {

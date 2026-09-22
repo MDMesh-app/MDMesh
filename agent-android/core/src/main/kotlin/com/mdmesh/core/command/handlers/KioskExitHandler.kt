@@ -9,7 +9,7 @@ import com.mdmesh.proto.CommandResult
 
 /**
  * `kiosk.exit` — release COSU lock-task (clear allowlist + persistent-HOME claim). On success the
- * persisted [KioskStateStore] payload is cleared so the agent does not re-enter kiosk on next boot,
+ * persisted kiosk payload is cleared (see KioskApplier) so the agent does not re-enter kiosk on next boot,
  * and the launcher is brought forward so it unpins and drops to its idle screen immediately.
  */
 class KioskExitHandler(private val applier: KioskApplier) : CommandHandler {

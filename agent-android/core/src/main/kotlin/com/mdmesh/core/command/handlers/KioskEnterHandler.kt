@@ -12,8 +12,8 @@ import com.mdmesh.proto.ProtocolJson
 /**
  * `kiosk.enter` — put the device into COSU lock-task. Payload: [KioskApplyPayload]
  * (`mode`, `allowedPackages`, `pinPackage`, `features`, `exitMode`, `password`, `theme`). The
- * agent's own package is always allowlisted; [homeComponent] is the agent's kiosk launcher,
- * registered as the persistent HOME. On success the payload is persisted so the launcher can
+ * agent's own package is always allowlisted; the applier claims the agent's kiosk launcher as
+ * the persistent HOME. On success the payload is persisted so the launcher can
  * render it and the agent can re-enter on boot.
  */
 class KioskEnterHandler(private val applier: KioskApplier) : CommandHandler {

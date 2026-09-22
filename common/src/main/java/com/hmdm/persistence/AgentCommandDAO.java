@@ -26,6 +26,7 @@ import com.google.inject.Singleton;
 import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.DeviceEvent;
 import com.hmdm.persistence.domain.DeviceState;
+import com.hmdm.persistence.domain.DeviceSyncRow;
 import com.hmdm.persistence.mapper.AgentCommandMapper;
 import com.hmdm.persistence.mapper.AgentDeviceMapper;
 import com.hmdm.persistence.mapper.DeviceEventMapper;
@@ -165,5 +166,25 @@ public class AgentCommandDAO {
     public java.util.List<com.hmdm.persistence.domain.DeviceLocation> listLocations(
             String deviceNumber, long since, int limit) {
         return deviceMapper.listLocations(deviceNumber, since, limit);
+    }
+
+    /** True if a pending or delivered command of {@code type} is already queued for the device. */
+    public boolean hasOpenOfType(String deviceNumber, String type) {
+        return mapper.countOpenOfType(deviceNumber, type) > 0;
+    }
+
+    /** The most recently created command of {@code type} for the device, or null if none exists. */
+    public AgentCommand findLatestOfType(String deviceNumber, String type) {
+        return mapper.findLatestOfType(deviceNumber, type);
+    }
+
+    /** Device numbers currently assigned to a configuration. */
+    public List<String> listDeviceNumbersByConfigurationId(int configurationId) {
+        return deviceMapper.listDeviceNumbersByConfigurationId(configurationId);
+    }
+
+    /** One row per device of the customer with its configuration + last applied revision. */
+    public List<DeviceSyncRow> listDevicesForSync(int customerId) {
+        return deviceMapper.listDevicesForSync(customerId);
     }
 }

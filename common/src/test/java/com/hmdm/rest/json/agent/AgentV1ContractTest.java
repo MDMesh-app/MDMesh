@@ -53,6 +53,7 @@ public class AgentV1ContractTest {
         AgentCheckInRequest r = load("checkin-future.json", AgentCheckInRequest.class);
         assertEquals("dev-1", r.getDeviceId());
         assertEquals("14", r.getState().getAndroidRelease());
+        assertEquals("0123abcd", r.getState().getAppliedConfigRevision());
     }
 
     /** Response fields the agent parses must keep their names. */

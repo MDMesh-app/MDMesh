@@ -2837,4 +2837,17 @@
         <rollback>ALTER TABLE applicationVersions DROP COLUMN parts;</rollback>
     </changeSet>
 
+    <changeSet id="26.09.22-deviceState-appliedConfig" author="lunacy" context="common">
+        <comment>device_state.appliedConfigRevision/appliedConfigAt — the desired-state revision the agent last
+            applied (config.apply), reported in the check-in state snapshot. NULL = never reported (old agent).</comment>
+        <sql>
+            ALTER TABLE device_state ADD COLUMN appliedConfigRevision VARCHAR(64) NULL;
+            ALTER TABLE device_state ADD COLUMN appliedConfigAt BIGINT NULL;
+        </sql>
+        <rollback>
+            ALTER TABLE device_state DROP COLUMN appliedConfigAt;
+            ALTER TABLE device_state DROP COLUMN appliedConfigRevision;
+        </rollback>
+    </changeSet>
+
 </databaseChangeLog>

@@ -86,4 +86,10 @@ public interface AgentCommandMapper {
             "ORDER BY id DESC LIMIT #{limit}"})
     List<AgentCommand> listHistory(@Param("deviceNumber") String deviceNumber,
                                    @Param("since") long since, @Param("limit") int limit);
+
+    @Select({"SELECT COUNT(*) FROM agentCommand WHERE deviceNumber = #{deviceNumber} AND type = #{type} AND status IN ('pending','delivered')"})
+    int countOpenOfType(@Param("deviceNumber") String deviceNumber, @Param("type") String type);
+
+    @Select({"SELECT * FROM agentCommand WHERE deviceNumber = #{deviceNumber} AND type = #{type} ORDER BY id DESC LIMIT 1"})
+    AgentCommand findLatestOfType(@Param("deviceNumber") String deviceNumber, @Param("type") String type);
 }

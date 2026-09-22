@@ -13,6 +13,7 @@ public class AgentDeviceState {
     private Long lastBootAt;
     private String agentVersion;
     private String powerMode;
+    private String appliedConfigRevision;
 
     public Integer getBattery() { return battery; }
     public void setBattery(Integer v) { this.battery = v; }
@@ -30,4 +31,6 @@ public class AgentDeviceState {
     public void setAgentVersion(String v) { this.agentVersion = v; }
     public String getPowerMode() { return powerMode; }
     public void setPowerMode(String v) { this.powerMode = v; }
+    public String getAppliedConfigRevision() { return appliedConfigRevision; }
+    public void setAppliedConfigRevision(String v) { this.appliedConfigRevision = v; }
 }

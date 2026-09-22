@@ -16,6 +16,8 @@ public class DeviceState implements Serializable {
     private String agentVersion;
     private String powerMode;
     private String telemetry;
+    private String appliedConfigRevision;
+    private Long appliedConfigAt;
 
     public String getDeviceNumber() { return deviceNumber; }
     public void setDeviceNumber(String v) { this.deviceNumber = v; }
@@ -39,4 +41,8 @@ public class DeviceState implements Serializable {
     public void setPowerMode(String v) { this.powerMode = v; }
     public String getTelemetry() { return telemetry; }
     public void setTelemetry(String v) { this.telemetry = v; }
+    public String getAppliedConfigRevision() { return appliedConfigRevision; }
+    public void setAppliedConfigRevision(String v) { this.appliedConfigRevision = v; }
+    public Long getAppliedConfigAt() { return appliedConfigAt; }
+    public void setAppliedConfigAt(Long v) { this.appliedConfigAt = v; }
 }

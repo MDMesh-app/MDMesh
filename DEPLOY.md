@@ -29,7 +29,9 @@ secrets, `docker compose pull && up -d`, seeds, and prints the console URL + a t
 > upgrade, every device whose agent supports it applies its assigned configuration's managed policies, and
 > any device on a configuration with kiosk mode on enters kiosk. The upgrade itself never lifts kiosk on a
 > device — only turning kiosk off in that device's configuration does. Older agents are unaffected and show
-> "agent too old" in the console instead of receiving the new command.
+> "agent too old" in the console instead of receiving the new command. Location capture mode also follows the
+> configuration after the upgrade (GPS → active, otherwise passive), so an ad-hoc `device.locationMode` override
+> is replaced.
 
 ## Option B — from source (clone + build)
 

@@ -125,10 +125,10 @@ One-click or unattended server updates with DB backup + auto-rollback, plus a re
   hashes the configuration into a revision and pushes one `config.apply` command whenever a device's
   applied revision differs, at the next check-in. The device detail page shows sync state and per-field
   outcomes; the configuration list shows how many of its devices are in sync. Only capability-advertising
-  agents receive it — older agents show "agent too old" instead of silently ignoring it. Enforced fields:
-  name, description, main app, kiosk mode + exit/home/recents/notifications/system-info/keyguard/lock-buttons,
-  admin password, background/text color, icon size, Wi-Fi, Bluetooth, USB storage, block screenshots, and
-  location reporting mode.
+  agents receive it — older agents show "agent too old" instead of silently ignoring it. Enforced fields
+  (18): main app, kiosk mode + exit/home/recents/notifications/system-info/keyguard/lock-buttons, kiosk exit
+  password, background/text color, icon size, Wi-Fi, Bluetooth, USB storage, block screenshots, and location
+  reporting mode. Name and description are configuration metadata and are not sent to devices.
 
 </details>
 

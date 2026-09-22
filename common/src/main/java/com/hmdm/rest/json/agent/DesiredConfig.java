@@ -40,7 +40,10 @@ public class DesiredConfig {
     private Integer configurationId;
     /** Only keys the configuration manages; true = allowed/enabled. */
     private Map<String, Boolean> policies;
-    /** Present = ensure kiosk with this payload; null = ensure kiosk exited. */
+    /**
+     * Present = ensure kiosk with this payload. Absent (null) = the configuration does not assert kiosk; the agent
+     * exits only if the previously applied configuration document had kiosk.
+     */
     private DesiredKiosk kiosk;
     private DesiredLocation location;
 }

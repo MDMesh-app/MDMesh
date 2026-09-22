@@ -43,10 +43,15 @@ toggles, kiosk via the same `KioskApplier` path as `kiosk.enter`, location captu
 per-key outcome (`applied` / `unsupported` / `failed: reason`) in the command result; it persists the new
 revision only when nothing failed, and re-applies the last-persisted document after boot or a self-update
 so a reboot can't silently regress. The command is only sent to devices whose capability matrix advertises
-`configApply` — older agents are never sent it and show as unsupported in the console instead of hanging.
+`configApply` — older agents are never sent it and show as "Agent too old" in the console instead of hanging.
 Kiosk follows the configuration: kiosk-on drives entry, kiosk-off exits kiosk only on devices that entered
-it via a configuration (an ad-hoc console "Enter kiosk" is left alone). See
-`proto/payloads/config-apply.schema.json` for the wire shape.
+it via a configuration (an ad-hoc console "Enter kiosk" is left alone). The 18 enforced configuration fields
+are: `mainAppId`, `kioskMode`, `kioskExit`, `kioskHome`, `kioskRecents`, `kioskNotifications`,
+`kioskSystemInfo`, `kioskKeyguard`, `kioskLockButtons`, `password` (kiosk exit password, stored as entered),
+`backgroundColor`, `textColor`, `iconSize`, `wifi`, `bluetooth`, `usbStorage`, `disableScreenshots` and
+`requestUpdates` (location capture mode); `name`/`description` are metadata only. See
+`proto/payloads/config-apply.schema.json` for the wire shape and `proto/payloads/config-apply-result.schema.json`
+for the per-key result. `config.apply` is protocol 1.1 — an additive change; 1.0 agents keep working unchanged.
 
 ## Status UI — BUILD-NEW (Views, minSdk 24 friendly)
 Replace the `TextView` stub `MainActivity` with a real MDMesh status screen: managed state, device id,

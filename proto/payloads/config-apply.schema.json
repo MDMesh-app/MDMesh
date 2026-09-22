@@ -15,7 +15,7 @@
     },
     "kiosk": {
       "type": "object", "additionalProperties": true,
-      "description": "Present => ensure kiosk with this KioskApplyPayload; absent => ensure kiosk exited.",
+      "description": "Present => ensure kiosk with this KioskApplyPayload. Absent = the configuration does not assert kiosk; the agent exits only if the previously applied configuration document had kiosk.",
       "properties": {
         "mode": { "enum": ["single", "launcher"] },
         "allowedPackages": { "type": "array", "items": { "type": "string" } },

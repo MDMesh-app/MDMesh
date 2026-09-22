@@ -31,6 +31,8 @@ export interface FieldDef {
   help: string;
   /** Shown in the always-visible core section. */
   focused?: boolean;
+  /** Applied on devices by the MDMesh agent via config.apply. Unset = legacy Headwind field, not enforced. */
+  enforced?: boolean;
   options?: FieldOption[];
   min?: number;
   max?: number;
@@ -43,33 +45,33 @@ export const GROUP_ORDER: FieldGroup[] = [
 
 export const CONFIG_FIELDS: FieldDef[] = [
   // ── Identity ──────────────────────────────────────────────────────────────
-  { key: 'name', label: 'Name', type: 'text', group: 'Identity', focused: true, help: 'Unique name for this configuration template.' },
-  { key: 'description', label: 'Description', type: 'textarea', group: 'Identity', focused: true, help: 'Optional notes about what this template is for.' },
+  { key: 'name', label: 'Name', type: 'text', group: 'Identity', focused: true, enforced: true, help: 'Unique name for this configuration template.' },
+  { key: 'description', label: 'Description', type: 'textarea', group: 'Identity', focused: true, enforced: true, help: 'Optional notes about what this template is for.' },
 
   // ── Apps ──────────────────────────────────────────────────────────────────
-  { key: 'mainAppId', label: 'Main app', type: 'app', group: 'Apps', focused: true, help: 'Primary app launched on the device (the kiosk app in kiosk mode).' },
+  { key: 'mainAppId', label: 'Main app', type: 'app', group: 'Apps', focused: true, enforced: true, help: 'Primary app launched on the device (the kiosk app in kiosk mode).' },
   { key: 'contentAppId', label: 'Content app', type: 'app', group: 'Apps', help: 'Optional app used for content delivery.' },
   { key: 'autostartForeground', label: 'Keep apps foreground', type: 'tri', group: 'Apps', help: 'Hold auto-started apps in the foreground.' },
 
   // ── Kiosk ───────────────────────────────────────────────────────────────-─
-  { key: 'kioskMode', label: 'Kiosk mode', type: 'switch', group: 'Kiosk', focused: true, help: 'Lock the device to the main app (single-app lockdown).' },
+  { key: 'kioskMode', label: 'Kiosk mode', type: 'switch', group: 'Kiosk', focused: true, enforced: true, help: 'Lock the device to the main app (single-app lockdown).' },
   { key: 'runDefaultLauncher', label: 'Allow stock launcher', type: 'tri', group: 'Kiosk', help: 'Permit the default Android launcher instead of the MDM home.' },
-  { key: 'kioskExit', label: 'Kiosk exit button', type: 'tri', group: 'Kiosk', help: 'Show a button to leave kiosk mode.' },
-  { key: 'kioskHome', label: 'Home button', type: 'tri', group: 'Kiosk', help: 'Allow the Home button while in kiosk.' },
-  { key: 'kioskRecents', label: 'Recents button', type: 'tri', group: 'Kiosk', help: 'Allow the Recent-apps button while in kiosk.' },
-  { key: 'kioskNotifications', label: 'Notifications', type: 'tri', group: 'Kiosk', help: 'Allow the notification shade while in kiosk.' },
-  { key: 'kioskSystemInfo', label: 'System info', type: 'tri', group: 'Kiosk', help: 'Show the status/system-info bar while in kiosk.' },
-  { key: 'kioskKeyguard', label: 'Lock screen', type: 'tri', group: 'Kiosk', help: 'Allow the keyguard / lock screen while in kiosk.' },
-  { key: 'kioskLockButtons', label: 'Lock hardware buttons', type: 'tri', group: 'Kiosk', help: 'Disable power/volume buttons while in kiosk.' },
+  { key: 'kioskExit', label: 'Kiosk exit button', type: 'tri', group: 'Kiosk', enforced: true, help: 'Show a button to leave kiosk mode.' },
+  { key: 'kioskHome', label: 'Home button', type: 'tri', group: 'Kiosk', enforced: true, help: 'Allow the Home button while in kiosk.' },
+  { key: 'kioskRecents', label: 'Recents button', type: 'tri', group: 'Kiosk', enforced: true, help: 'Allow the Recent-apps button while in kiosk.' },
+  { key: 'kioskNotifications', label: 'Notifications', type: 'tri', group: 'Kiosk', enforced: true, help: 'Allow the notification shade while in kiosk.' },
+  { key: 'kioskSystemInfo', label: 'System info', type: 'tri', group: 'Kiosk', enforced: true, help: 'Show the status/system-info bar while in kiosk.' },
+  { key: 'kioskKeyguard', label: 'Lock screen', type: 'tri', group: 'Kiosk', enforced: true, help: 'Allow the keyguard / lock screen while in kiosk.' },
+  { key: 'kioskLockButtons', label: 'Lock hardware buttons', type: 'tri', group: 'Kiosk', enforced: true, help: 'Disable power/volume buttons while in kiosk.' },
   { key: 'kioskScreenOn', label: 'Keep screen on', type: 'tri', group: 'Kiosk', help: 'Force the screen to stay awake while in kiosk.' },
   { key: 'showWifi', label: 'Show Wi-Fi on error', type: 'tri', group: 'Kiosk', help: 'Surface Wi-Fi settings if the device loses connectivity in kiosk.' },
 
   // ── Network ─────────────────────────────────────────────────────────────-─
-  { key: 'wifi', label: 'Wi-Fi', type: 'tri', group: 'Network', focused: true, help: 'Wi-Fi radio: unmanaged, force on, or force off.' },
+  { key: 'wifi', label: 'Wi-Fi', type: 'tri', group: 'Network', focused: true, enforced: true, help: 'Wi-Fi radio: unmanaged, force on, or force off.' },
   { key: 'mobileData', label: 'Mobile data', type: 'tri', group: 'Network', focused: true, help: 'Mobile data: unmanaged, on, or off.' },
-  { key: 'bluetooth', label: 'Bluetooth', type: 'tri', group: 'Network', focused: true, help: 'Bluetooth radio: unmanaged, on, or off.' },
+  { key: 'bluetooth', label: 'Bluetooth', type: 'tri', group: 'Network', focused: true, enforced: true, help: 'Bluetooth radio: unmanaged, on, or off.' },
   { key: 'gps', label: 'GPS / location', type: 'tri', group: 'Network', focused: true, help: 'Location radio: unmanaged, on, or off.' },
-  { key: 'requestUpdates', label: 'Location reporting', type: 'enum', group: 'Network', help: 'How the device reports its location back to the server.', options: [
+  { key: 'requestUpdates', label: 'Location reporting', type: 'enum', group: 'Network', enforced: true, help: 'Location capture: GPS = fresh fix each check-in (accurate), otherwise passive last-known.', options: [
     { value: 'DONOTTRACK', label: 'Do not track' }, { value: 'GPS', label: 'GPS' }, { value: 'WIFI', label: 'Network (Wi-Fi/cell)' },
   ] },
   { key: 'wifiSSID', label: 'Provision Wi-Fi SSID', type: 'text', group: 'Network', help: 'Wi-Fi network to auto-join during enrollment.' },
@@ -80,7 +82,7 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'mobileEnrollment', label: 'Enroll over mobile data', type: 'switch', group: 'Network', help: 'Prefer mobile data over Wi-Fi during provisioning.' },
 
   // ── Security ───────────────────────────────────────────────────────────-─
-  { key: 'password', label: 'Admin password', type: 'password', group: 'Security', help: 'Password to unlock MDM settings on the device (sent plain, hashed server-side).' },
+  { key: 'password', label: 'Admin password', type: 'password', group: 'Security', enforced: true, help: 'Password to unlock MDM settings on the device (sent plain, hashed server-side).' },
   { key: 'appPermissions', label: 'App permissions', type: 'enum', group: 'Security', help: 'How runtime permissions are handled for managed apps.', options: [
     { value: 'GRANTALL', label: 'Grant all automatically' }, { value: 'ASKLOCATION', label: 'Ask for location only' },
     { value: 'DENYLOCATION', label: 'Deny location' }, { value: 'ASKALL', label: 'Ask for everything' },
@@ -92,9 +94,9 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'passwordMode', label: 'Password policy', type: 'text', group: 'Security', help: 'Device passcode policy (advanced; JSON string).' },
 
   // ── Restrictions ─────────────────────────────────────────────────────────
-  { key: 'usbStorage', label: 'USB storage', type: 'tri', group: 'Restrictions', focused: true, help: 'Allow access to USB mass storage.' },
+  { key: 'usbStorage', label: 'USB storage', type: 'tri', group: 'Restrictions', focused: true, enforced: true, help: 'Allow access to USB mass storage.' },
   { key: 'blockStatusBar', label: 'Lock status bar', type: 'switch', group: 'Restrictions', help: 'Prevent pulling down the system status bar.' },
-  { key: 'disableScreenshots', label: 'Block screenshots', type: 'tri', group: 'Restrictions', help: 'Prevent screenshots and screen recording.' },
+  { key: 'disableScreenshots', label: 'Block screenshots', type: 'tri', group: 'Restrictions', enforced: true, help: 'Prevent screenshots and screen recording.' },
   { key: 'lockVolume', label: 'Lock volume', type: 'tri', group: 'Restrictions', help: 'Disable the volume buttons.' },
   { key: 'allowedClasses', label: 'Allowed app classes', type: 'text', group: 'Restrictions', help: 'Comma-separated list of permitted app component classes.' },
   { key: 'restrictions', label: 'Android restrictions', type: 'textarea', group: 'Restrictions', help: 'Comma-separated Android user restrictions to apply in MDM mode.' },
@@ -110,10 +112,10 @@ export const CONFIG_FIELDS: FieldDef[] = [
     { value: 0, label: 'No lock (auto)' }, { value: 1, label: 'Portrait' }, { value: 2, label: 'Landscape' },
   ] },
   { key: 'useDefaultDesignSettings', label: 'Default launcher design', type: 'switch', group: 'Display', help: 'Use the stock launcher look (ignore the custom colors below).' },
-  { key: 'backgroundColor', label: 'Background color', type: 'color', group: 'Display', help: 'Launcher background color.' },
-  { key: 'textColor', label: 'Text color', type: 'color', group: 'Display', help: 'Launcher text color.' },
+  { key: 'backgroundColor', label: 'Background color', type: 'color', group: 'Display', enforced: true, help: 'Launcher background color.' },
+  { key: 'textColor', label: 'Text color', type: 'color', group: 'Display', enforced: true, help: 'Launcher text color.' },
   { key: 'backgroundImageUrl', label: 'Background image URL', type: 'text', group: 'Display', help: 'URL of a custom launcher background image.' },
-  { key: 'iconSize', label: 'Icon size', type: 'enum', group: 'Display', help: 'App icon size on the launcher.', options: [
+  { key: 'iconSize', label: 'Icon size', type: 'enum', group: 'Display', enforced: true, help: 'App icon size on the launcher.', options: [
     { value: 'SMALL', label: 'Small' }, { value: 'MEDIUM', label: 'Medium' }, { value: 'LARGE', label: 'Large' },
   ] },
   { key: 'desktopHeader', label: 'Launcher header', type: 'enum', group: 'Display', help: 'What to show in the header above the launcher.', options: [
@@ -144,5 +146,11 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'adminExtras', label: 'QR admin extras', type: 'textarea', group: 'Advanced', help: 'Extra entries for the QR admin bundle.' },
 ];
 
-export const FOCUSED_FIELDS = CONFIG_FIELDS.filter((f) => f.focused);
-export const ADVANCED_FIELDS = CONFIG_FIELDS.filter((f) => !f.focused);
+export const ENFORCED_FIELDS = CONFIG_FIELDS.filter((f) => f.enforced);
+export const LEGACY_FIELDS = CONFIG_FIELDS.filter((f) => !f.enforced);
+export const ENFORCED_KEYS: ReadonlySet<string> = new Set(ENFORCED_FIELDS.map((f) => f.key));
+/** Changing any of these re-enters/exits kiosk on every device of the configuration. */
+export const KIOSK_AFFECTING_KEYS: ReadonlySet<string> = new Set([
+  'kioskMode', 'mainAppId', 'kioskExit', 'kioskHome', 'kioskRecents', 'kioskNotifications', 'kioskSystemInfo',
+  'kioskKeyguard', 'kioskLockButtons', 'password', 'backgroundColor', 'textColor', 'iconSize', 'applications',
+]);

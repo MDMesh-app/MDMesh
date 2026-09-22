@@ -12,8 +12,8 @@ import {
 } from '../api/configurations';
 import { listApplications, type Application } from '../api/applications';
 import {
-  FOCUSED_FIELDS,
-  ADVANCED_FIELDS,
+  ENFORCED_FIELDS,
+  LEGACY_FIELDS,
   GROUP_ORDER,
   type FieldDef,
 } from '../data/configFields';
@@ -371,9 +371,14 @@ function ConfigEditor({
     }
   }
 
-  const advByGroup = GROUP_ORDER.map((g) => ({
+  const enforcedByGroup = GROUP_ORDER.map((g) => ({
     group: g,
-    fields: ADVANCED_FIELDS.filter((f) => f.group === g),
+    fields: ENFORCED_FIELDS.filter((f) => f.group === g),
+  })).filter((x) => x.fields.length > 0);
+
+  const legacyByGroup = GROUP_ORDER.map((g) => ({
+    group: g,
+    fields: LEGACY_FIELDS.filter((f) => f.group === g),
   })).filter((x) => x.fields.length > 0);
 
   return (
@@ -405,11 +410,14 @@ function ConfigEditor({
         </div>
       )}
 
-      <section className="panel cfg-panel">
-        {FOCUSED_FIELDS.map((f) => (
-          <Field key={f.key} def={f} value={draft[f.key]} apps={apps} disabled={readOnly} onChange={(v) => set(f.key, v)} />
-        ))}
-      </section>
+      {enforcedByGroup.map(({ group, fields }) => (
+        <section className="panel cfg-panel" key={group}>
+          <div className="cfg-sec-h">{group}</div>
+          {fields.map((f) => (
+            <Field key={f.key} def={f} value={draft[f.key]} apps={apps} disabled={readOnly} onChange={(v) => set(f.key, v)} />
+          ))}
+        </section>
+      ))}
 
       <section className="panel cfg-panel">
         <div className="cfg-sec-h" style={{ display: 'flex', alignItems: 'center' }}>
@@ -446,11 +454,14 @@ function ConfigEditor({
       </section>
 
       <button className="cfg-adv-toggle" onClick={() => setAdvanced((v) => !v)}>
-        {advanced ? '▾' : '▸'} Advanced settings ({ADVANCED_FIELDS.length} options)
+        {advanced ? '▾' : '▸'} Legacy Headwind fields ({LEGACY_FIELDS.length}) — not applied by the MDMesh agent
       </button>
+      {advanced && (
+        <p className="cfg-legacy-note">These fields are stored with the configuration but the MDMesh agent does not enforce them yet. They are kept for the built-in launcher and for future ports.</p>
+      )}
 
       {advanced &&
-        advByGroup.map(({ group, fields }) => (
+        legacyByGroup.map(({ group, fields }) => (
           <section className="panel cfg-panel" key={group}>
             <div className="cfg-sec-h">{group}</div>
             {fields.map((f) => (
@@ -489,6 +500,7 @@ function Field({
     <div className="cfg-field">
       <div className="cfg-field-label">
         <label>{def.label}</label>
+        {def.enforced ? <span className="chip chip-enforced" title="Applied on devices by the MDMesh agent">Enforced</span> : null}
         <span className="cfg-field-help">{def.help}</span>
       </div>
       <div className="cfg-field-ctl">

@@ -9,7 +9,9 @@ import { ActionConsole } from '../components/ActionConsole';
 import { TelemetryCard } from '../components/TelemetryCard';
 import { EventTimeline } from '../components/EventTimeline';
 import { LocationPanel } from '../components/LocationPanel';
+import { ConfigStatusCard } from '../components/ConfigStatusCard';
 import { getTelemetry, type TelemetrySnapshot } from '../api/telemetry';
+import { getConfigStatus, type ConfigStatus } from '../api/configSync';
 import {
   getDeviceState, forceSync, queueCommand, syncConfigApps, type DeviceState,
 } from '../api/commands';
@@ -122,6 +124,7 @@ export function DeviceDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [tele, setTele] = useState<TelemetrySnapshot | null>(null);
   const [ds, setDs] = useState<DeviceState | null>(null);
+  const [cfgStatus, setCfgStatus] = useState<ConfigStatus | null>(null);
   const [tab, setTab] = useState<Tab>('control');
   const [busy, setBusy] = useState(false);
 
@@ -165,6 +168,7 @@ export function DeviceDetailPage() {
       await Promise.all([
         getTelemetry(device.number).then((v) => { if (on) setTele(v); }).catch(() => undefined),
         getDeviceState(device.number).then((v) => { if (on) setDs(v); }).catch(() => undefined),
+        getConfigStatus(device.number).then((v) => { if (on) setCfgStatus(v); }).catch(() => undefined),
       ]);
       if (!on) return;
       t = setTimeout(() => void poll(), 5000);
@@ -193,6 +197,7 @@ export function DeviceDetailPage() {
     try {
       await forceSync(device.number);
       void getDeviceState(device.number).then(setDs).catch(() => undefined);
+      void getConfigStatus(device.number).then(setCfgStatus).catch(() => undefined);
       toast.push('ok', 'Sync requested', '');
     } catch (e) {
       toast.push('err', 'Sync failed', e instanceof Error ? e.message : '');
@@ -363,6 +368,8 @@ export function DeviceDetailPage() {
               ))}
             </div>
           ))}
+
+          <ConfigStatusCard status={cfgStatus} />
         </aside>
 
         {/* RIGHT: work */}

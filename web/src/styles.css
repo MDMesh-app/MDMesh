@@ -1376,6 +1376,13 @@ a {
   background: var(--surface);
 }
 .chip-enforced { margin-left:6px; font-size:10px; padding:1px 6px; color:var(--ok); border-color:var(--ok); }
+.chip.tone-ok { color:var(--ok); border-color:var(--ok); }
+.chip.tone-warn { color:var(--warn); border-color:var(--warn); }
+.chip.tone-alert { color:var(--danger); border-color:var(--danger); }
+.cfg-outcomes { list-style:none; padding:0; margin:6px 0 0; font-size:12px; }
+.cfg-outcomes li { display:flex; justify-content:space-between; gap:8px; }
+.cfg-outcomes li.ok { color:var(--ok); }
+.cfg-outcomes li.alert { color:var(--danger); }
 .cfg-legacy-note { color:var(--muted); font-size:12px; margin:4px 0 10px; }
 .cfg-sync { display:flex; align-items:center; gap:8px; margin-top:6px; font-size:12px; }
 .cfg-sync .rollout-track { flex:1; }

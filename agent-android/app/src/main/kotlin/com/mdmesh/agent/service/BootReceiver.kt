@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.content.ContextCompat
 import com.mdmesh.core.sync.CheckInWorker
+import com.mdmesh.core.sync.ConfigReapplyWorker
 import com.mdmesh.core.telemetry.EventLog
 import com.mdmesh.proto.EventType
 
@@ -22,6 +23,8 @@ class BootReceiver : BroadcastReceiver() {
             Intent.ACTION_BOOT_COMPLETED,
             "android.intent.action.LOCKED_BOOT_COMPLETED",
             Intent.ACTION_MY_PACKAGE_REPLACED -> {
+                // Re-assert the persisted desired state first (works offline); the check-in below reconciles any drift.
+                runCatching { ConfigReapplyWorker.scheduleNow(context) }
                 // Enqueue a check-in via WorkManager FIRST: this reliably runs from the background
                 // (including right after a self-update), so connectivity resumes in seconds even
                 // when starting the foreground service from a background receiver is blocked on

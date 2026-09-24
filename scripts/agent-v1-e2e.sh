@@ -168,9 +168,12 @@ chk "restore kioskMode=false" "$(curl -s -b "$CJ" -X PUT -H 'Content-Type: appli
 chk "device restored to its configuration" "$(curl -s -b "$CJ" -X PUT -H 'Content-Type: application/json' -d "{\"ids\":[$KDEV],\"configurationId\":$CFG_ID}" "$BASE/rest/private/devices" | field "d['status']")" "OK"
 chk "kiosk scenario configuration deleted" "$(curl -s -b "$CJ" -X DELETE "$BASE/rest/private/configurations/$KCFG" | field "d['status']")" "OK"
 
-echo "== command history =="
-chk "history has completedAt" \
-  "$(curl -s -b "$CJ" "$BASE/rest/private/agent/v1/devices/$DID/commands?since=0" | field "any(c.get('completedAt') for c in d['data'])")" "True"
+echo "== command history (payload-free, 6.6) =="
+HIST=$(curl -s -b "$CJ" "$BASE/rest/private/agent/v1/devices/$DID/commands?since=0")
+chk "history has completedAt" "$(echo "$HIST" | field "any(c.get('completedAt') for c in d['data'])")" "True"
+chk "history rows carry no payload" "$(echo "$HIST" | field "sum(1 for c in d['data'] if 'payload' in c)")" "0"
+chk "history rows carry no deviceNumber" "$(echo "$HIST" | field "sum(1 for c in d['data'] if 'deviceNumber' in c)")" "0"
+chk "history keeps the config.apply result detail" "$(echo "$HIST" | field "[c.get('detail') or '' for c in d['data'] if str(c['id'])=='$DS_CMD'][0].startswith('{')")" "True"
 
 echo "== force sync =="
 chk "force sync OK" \

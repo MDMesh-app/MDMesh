@@ -32,6 +32,7 @@ import com.hmdm.persistence.domain.DeviceSyncRow;
 import com.hmdm.notification.AgentWakeHub;
 import com.hmdm.rest.json.AgentBulkCommandRequest;
 import com.hmdm.rest.json.Response;
+import com.hmdm.rest.json.agent.CommandHistoryView;
 import com.hmdm.rest.json.agent.ConfigStatusView;
 import com.hmdm.rest.json.agent.ConfigSyncSummary;
 import com.hmdm.rest.resource.support.ConfigReconciler;
@@ -395,7 +396,8 @@ public class AgentAdminResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Command history", notes = "Command lifecycle history for a device, newest first.")
+    @ApiOperation(value = "Command history", notes = "Command lifecycle history for a device, newest first. "
+            + "Payloads are never returned (they can embed secrets); app commands carry the package as 'subject'.")
     @GET
     @Path("/devices/{deviceId}/commands")
     @Produces(MediaType.APPLICATION_JSON)
@@ -413,7 +415,7 @@ public class AgentAdminResource {
             return Response.PERMISSION_DENIED();
         }
         long sinceMillis = since == null ? 0L : since;
-        return Response.OK(commandDAO.listHistory(deviceId, sinceMillis, 200));
+        return Response.OK(CommandHistoryView.fromAll(commandDAO.listHistory(deviceId, sinceMillis, 200)));
     }
 
     // =================================================================================================================

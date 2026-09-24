@@ -34,6 +34,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.util.Random;
 
 public class CryptoUtil {
@@ -180,9 +181,12 @@ public class CryptoUtil {
         return true;
     }
 
+    // SecureRandom: randomHexString also generates the default JWT signing key (TokenProvider).
+    private static final Random RANDOM = new SecureRandom();
+
     public static String randomHexString(int length) {
         StringBuilder sb = new StringBuilder();
-        Random random = new Random();
+        Random random = RANDOM;
 
         for (int i = 0; i < length; i++) {
             sb.append(hexArray[random.nextInt(16)]);

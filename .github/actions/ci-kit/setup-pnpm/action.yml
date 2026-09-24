@@ -1,0 +1,33 @@
+name: setup-pnpm
+description: pnpm via corepack/packageManager, Node from package.json engines, store cache keyed on pnpm-lock.yaml, frozen install.
+inputs:
+  node-version:
+    description: Node version. Empty means read package.json (engines/volta) via setup-node's node-version-file.
+    default: ""
+  pnpm-version:
+    description: pnpm version. Empty means read the packageManager field in package.json.
+    default: ""
+  install:
+    description: Run `pnpm install --frozen-lockfile`.
+    default: "true"
+  working-directory:
+    description: Directory containing package.json and pnpm-lock.yaml.
+    default: "."
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413  # v6.1.0
+      with:
+        version: ${{ inputs.pnpm-version }}
+        package_json_file: ${{ inputs.working-directory }}/package.json
+        run_install: false
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+      with:
+        node-version: ${{ inputs.node-version }}
+        node-version-file: ${{ inputs.node-version == '' && format('{0}/package.json', inputs.working-directory) || '' }}
+        cache: pnpm
+        cache-dependency-path: ${{ inputs.working-directory }}/pnpm-lock.yaml
+    - if: inputs.install == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: pnpm install --frozen-lockfile

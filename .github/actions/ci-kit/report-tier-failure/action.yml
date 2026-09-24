@@ -1,0 +1,30 @@
+name: report-tier-failure
+description: "Open or update a tracking issue when a scheduled or deep-tier job fails. Caller needs issues:write and GITHUB_TOKEN in env."
+inputs:
+  tier:
+    description: Tier label for the issue title.
+    default: "T2"
+  labels:
+    description: Comma-separated labels.
+    default: "ci-t2"
+  title:
+    description: "Issue title. Empty means CI <tier> failure - <workflow>/<job>."
+    default: ""
+  dry-run:
+    description: Print instead of creating an issue.
+    default: "false"
+outputs:
+  issue-url:
+    description: URL of the created or updated issue.
+    value: ${{ steps.report.outputs.issue-url }}
+runs:
+  using: composite
+  steps:
+    - id: report
+      shell: bash
+      env:
+        TIER: ${{ inputs.tier }}
+        LABELS: ${{ inputs.labels }}
+        TITLE: ${{ inputs.title }}
+        DRY_RUN: ${{ inputs.dry-run }}
+      run: ${{ github.action_path }}/report.sh

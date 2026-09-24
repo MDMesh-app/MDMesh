@@ -1,0 +1,58 @@
+name: changed-paths
+description: Evaluate named path filters against the changed files of a PR or push; fails closed on lockfiles and CI config.
+inputs:
+  filters:
+    description: |
+      One filter per line, "name: glob, glob". Example:
+        ts: apps/**, packages/**
+        py: services/**/*.py, pyproject.toml
+    required: true
+  base:
+    description: Base commit. Empty derives it from the event (PR base sha or push `before`).
+    default: ""
+  fail-closed:
+    description: Globs (one per line) that force every filter to true.
+    default: |
+      **/pnpm-lock.yaml
+      **/package-lock.json
+      **/yarn.lock
+      **/uv.lock
+      **/poetry.lock
+      **/go.sum
+      **/go.mod
+      **/gradle.lockfile
+      **/packages.lock.json
+      .github/**
+      **/Dockerfile*
+      **/docker-compose*
+      **/package.json
+      **/pyproject.toml
+      turbo.json
+      pnpm-workspace.yaml
+      **/tsconfig*.json
+      Makefile
+      justfile
+outputs:
+  matched:
+    description: JSON object mapping filter name to true/false.
+    value: ${{ steps.eval.outputs.matched }}
+  all:
+    description: '"true" when a fail-closed path changed or the base is unknown.'
+    value: ${{ steps.eval.outputs.all }}
+  files:
+    description: Newline-separated changed files.
+    value: ${{ steps.eval.outputs.files }}
+  method:
+    description: '"diff" when the change set was computed, "fail-closed" when it could not be and every filter was forced true.'
+    value: ${{ steps.eval.outputs.method }}
+runs:
+  using: composite
+  steps:
+    - id: eval
+      shell: bash
+      env:
+        FILTERS: ${{ inputs.filters }}
+        FAIL_CLOSED: ${{ inputs.fail-closed }}
+        BASE: ${{ inputs.base != '' && inputs.base || (github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before) }}
+        HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      run: python3 "${{ github.action_path }}/changed_paths.py"

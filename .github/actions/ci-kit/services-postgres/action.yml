@@ -1,0 +1,56 @@
+name: services-postgres
+description: Start Postgres (optionally pgvector) in Docker, wait for readiness, export DATABASE_URL.
+inputs:
+  image:
+    description: Image to run. Empty picks postgres:16 or pgvector/pgvector:pg16.
+    default: ""
+  pgvector:
+    description: Use the pgvector image by default.
+    default: "false"
+  db:
+    description: Database name.
+    default: "app"
+  user:
+    description: Database user.
+    default: "app"
+  password:
+    description: Database password.
+    default: "app"
+  port:
+    description: Host port to publish.
+    default: "5432"
+outputs:
+  container:
+    description: Name of the running container.
+    value: ci-postgres
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        PGVECTOR: ${{ inputs.pgvector }}
+        DB: ${{ inputs.db }}
+        USER_: ${{ inputs.user }}
+        PASSWORD: ${{ inputs.password }}
+        PORT: ${{ inputs.port }}
+      run: |
+        set -euo pipefail
+        if [ -z "$IMAGE" ]; then
+          if [ "$PGVECTOR" = "true" ]; then IMAGE=pgvector/pgvector:pg16; else IMAGE=postgres:16; fi
+        fi
+        docker rm -f ci-postgres >/dev/null 2>&1 || true
+        docker run -d --name ci-postgres \
+          -e POSTGRES_DB="$DB" -e POSTGRES_USER="$USER_" -e POSTGRES_PASSWORD="$PASSWORD" \
+          -p "$PORT:5432" "$IMAGE" >/dev/null
+        for i in $(seq 1 60); do
+          # -h 127.0.0.1 forces TCP: the entrypoint's temporary init server only listens
+          # on the unix socket, so a socket check reports ready too early.
+          if docker exec ci-postgres pg_isready -h 127.0.0.1 -p 5432 -U "$USER_" -d "$DB" >/dev/null 2>&1; then
+            echo "postgres ready after ${i}s"
+            echo "DATABASE_URL=postgresql://$USER_:$PASSWORD@localhost:$PORT/$DB" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          sleep 1
+        done
+        echo "postgres did not become ready in 60s"; docker logs ci-postgres; exit 1

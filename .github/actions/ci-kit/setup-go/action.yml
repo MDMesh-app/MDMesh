@@ -1,0 +1,36 @@
+name: setup-go
+description: Go from go.mod with module and build cache; optional govulncheck binary cached per ISO week.
+inputs:
+  go-version-file:
+    description: Path to go.mod (relative to working-directory).
+    default: "go.mod"
+  govulncheck:
+    description: Install govulncheck (cached weekly).
+    default: "false"
+  working-directory:
+    description: Module root.
+    default: "."
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
+      with:
+        go-version-file: ${{ inputs.working-directory }}/${{ inputs.go-version-file }}
+        cache: true
+        cache-dependency-path: ${{ inputs.working-directory }}/go.sum
+    - if: inputs.govulncheck == 'true'
+      id: week
+      shell: bash
+      run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+    - if: inputs.govulncheck == 'true'
+      id: cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+      with:
+        path: ~/go/bin/govulncheck
+        key: govulncheck-${{ runner.os }}-${{ steps.week.outputs.week }}
+    - if: inputs.govulncheck == 'true' && steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: go install golang.org/x/vuln/cmd/govulncheck@latest
+    - if: inputs.govulncheck == 'true'
+      shell: bash
+      run: echo "$HOME/go/bin" >> "$GITHUB_PATH"

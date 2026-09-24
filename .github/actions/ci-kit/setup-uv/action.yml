@@ -1,0 +1,28 @@
+name: setup-uv
+description: uv with cache keyed on uv.lock, Python from .python-version or pyproject, `uv sync --frozen`.
+inputs:
+  python-version:
+    description: Python version. Empty lets uv resolve from .python-version / requires-python.
+    default: ""
+  sync-args:
+    description: Arguments appended to `uv sync`.
+    default: "--frozen"
+  install:
+    description: Run `uv sync`.
+    default: "true"
+  working-directory:
+    description: Directory containing pyproject.toml and uv.lock.
+    default: "."
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+      with:
+        enable-cache: true
+        cache-dependency-glob: ${{ inputs.working-directory }}/uv.lock
+        python-version: ${{ inputs.python-version }}
+        working-directory: ${{ inputs.working-directory }}
+    - if: inputs.install == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: uv sync ${{ inputs.sync-args }}

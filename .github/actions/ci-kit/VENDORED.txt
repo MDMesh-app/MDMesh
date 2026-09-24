@@ -1,0 +1,1 @@
+Vendored from init-lunacy/ci-kit at 2bdc644b5408b9d4119c3f699ab31f3582e9de57 on 2026-09-22. Do not edit; re-run scripts/vendor.sh.

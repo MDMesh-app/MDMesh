@@ -13,4 +13,6 @@ COPY supervisor/ /app/
 COPY release/minisign.pub /app/minisign.pub
 RUN chmod +x /app/apply.sh /app/rollback.sh
 EXPOSE 9000
-CMD ["node", "server.js"]
+# Absolute on purpose (#27): compose files set working_dir /project, and a relative path would
+# resolve against it. The entrypoint must not depend on the container's working directory.
+CMD ["node", "/app/server.js"]

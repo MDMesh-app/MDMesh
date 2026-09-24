@@ -62,7 +62,6 @@ services:
   supervisor:
     image: ghcr.io/${IMAGE_OWNER:-mdmesh-app}/mdmesh-supervisor:${SUPERVISOR_VERSION:-latest}
     restart: unless-stopped
-    working_dir: /project
     environment:
       GITHUB_REPO: ${GITHUB_REPO:-}
       UPDATE_CHANNEL: ${UPDATE_CHANNEL:-stable}

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # apply.sh <target-version>
 #
-# Runs inside the supervisor container (working_dir /project, docker.sock mounted). Applies a VERIFIED
+# Runs inside the supervisor container (project mounted at /project, docker.sock mounted). Applies a VERIFIED
 # update to the `server` + `caddy` services with a pre-update DB backup and AUTOMATIC ROLLBACK on any
 # failure. Emits `PHASE <name>` / `ERR <msg>` / `OK <version>` lines on stdout — server.js parses these
 # to drive /update/status. It NEVER touches `supervisor` or `postgres` (no self-destruct, no data loss).

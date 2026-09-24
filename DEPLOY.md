@@ -33,6 +33,14 @@ secrets, `docker compose pull && up -d`, seeds, and prints the console URL + a t
 > configuration after the upgrade (GPS → active, otherwise passive), so an ad-hoc `device.locationMode` override
 > is replaced.
 
+> **Docker: supervisor restarting with `Cannot find module '/project/server.js'`?** Every Docker install from v0.1.0
+> through v0.3.0 hit this (#27), so Settings → Updates, the `/recovery` page and the Docker `/files/agent.apk` mirror
+> (the APK the enrollment QR points to) never worked. Fixed in v0.3.1 in the image itself — your existing compose file
+> works unchanged. Quick-start installs: `docker compose pull && docker compose up -d` (if `.env` pins
+> `SUPERVISOR_VERSION`, set it to `0.3.1` first). From-source installs: `git pull` and re-run `./setup.sh` (if you
+> removed `working_dir` by hand, `git checkout -- docker-compose.yml` first). The supervisor never updates itself, so
+> this manual pull is how it picks up fixes.
+
 ## Option B — from source (clone + build)
 
 Prereqs: Docker + Compose v2, and `openssl`.

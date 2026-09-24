@@ -35,6 +35,14 @@ jobs:
             echo "proto=$(grep -oP 'PROTOCOL_VERSION[^\"]*\"\K[^\"]+' agent-android/proto/src/main/kotlin/com/mdmesh/proto/ProtocolJson.kt)"
           } >> "$GITHUB_OUTPUT"
 
+      # Supervisor smoke BEFORE anything is built or pushed (#27): a supervisor that can't start under
+      # compose's working_dir must never reach GHCR — and a failure here moves no :latest tag.
+      - name: Supervisor image smoke (compose-shaped)
+        run: |
+          docker build -f docker/supervisor.Dockerfile -t mdmesh-supervisor:smoke .
+          docker run --rm -w /app mdmesh-supervisor:smoke node --test test.js
+          scripts/supervisor-smoke.sh mdmesh-supervisor:smoke
+
       # --- Build + sign the release APK (gated by unit tests + R8 lintVital) ---
       - uses: actions/setup-java@v4
         with:

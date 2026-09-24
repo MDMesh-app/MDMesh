@@ -34,6 +34,7 @@ jobs:
             server: pom.xml, common/**, jwt/**, notification/**, plugins/**, server/**, swagger/**
             web: web/**
             agent: agent-android/**, proto/**
+            supervisor: supervisor/**, docker/supervisor.Dockerfile, release/minisign.pub, scripts/supervisor-smoke.sh
 
   build:
     name: ${{ matrix.name }}
@@ -43,7 +44,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        name: [server, web, agent]
+        name: [server, web, agent, supervisor]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
@@ -99,6 +100,15 @@ jobs:
         # old workflow's approach, from when no wrapper was committed), so this uses ./gradlew.
         working-directory: agent-android
         run: ./gradlew --no-daemon assembleDebug lintDebug testDebugUnitTest
+
+      # --- supervisor (#27): build the image, run its unit tests on the shipped Node, then run it the
+      # way docker-compose runs it (working_dir /project + project mounted) and probe its routes. ---
+      - if: matrix.name == 'supervisor' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).supervisor)
+        name: Build image + unit tests + compose-shaped smoke
+        run: |
+          docker build -f docker/supervisor.Dockerfile -t mdmesh-supervisor:ci .
+          docker run --rm -w /app mdmesh-supervisor:ci node --test test.js
+          scripts/supervisor-smoke.sh mdmesh-supervisor:ci
 
   # NOTE: an emulator-based instrumentation matrix (the "version-treadmill guard" — boot the agent
   # across API levels so SDK_INT-gated breakage surfaces in CI) is deferred until real instrumented

@@ -30,33 +30,45 @@ import static org.junit.Assert.fail;
  * (48-bit state, recoverable from one output) anywhere in it is a vulnerability. A behavioural
  * unpredictability test cannot tell {@code Random} from {@code SecureRandom}, so the property is
  * enforced on the sources instead (security review deep-2 I2).
+ *
+ * <p>The scan is line-based: a construction split across lines (e.g. {@code new\n Random(}) is not
+ * seen, and a comment that mentions a weak generator is flagged. Both trade-offs are deliberate for a
+ * fast, dependency-free guard; review new randomness code regardless.
  */
 public class WeakRandomGuardTest {
 
-    /** Weak generators, by rule name. Fully-qualified uses are caught by the {@code java.util.Random} rule. */
+    /** Weak generators, by rule name. */
     private static final Map<String, Pattern> RULES = new LinkedHashMap<>();
     static {
-        RULES.put("new Random(", Pattern.compile("\\bnew\\s+Random\\s*\\("));
+        RULES.put("new Random(", Pattern.compile("\\bnew\\s+(?:java\\.util\\.)?Random\\s*\\("));
         RULES.put("java.util.Random", Pattern.compile("\\bjava\\.util\\.Random\\b"));
         RULES.put("Math.random", Pattern.compile("\\bMath\\s*\\.\\s*random\\s*\\("));
+        RULES.put("import static Math.random",
+                Pattern.compile("\\bimport\\s+static\\s+java\\.lang\\.Math\\.random\\b"));
+        // One-arg Collections.shuffle uses an internal java.util.Random; the two-arg form takes the caller's.
+        RULES.put("Collections.shuffle(list)",
+                Pattern.compile("\\bCollections\\s*\\.\\s*shuffle\\s*\\((?:[^(),]|\\([^()]*\\))*\\)"));
         RULES.put("ThreadLocalRandom", Pattern.compile("\\bThreadLocalRandom\\b"));
         RULES.put("SplittableRandom", Pattern.compile("\\bSplittableRandom\\b"));
         // commons-lang RandomStringUtils is backed by java.util.Random by default.
         RULES.put("RandomStringUtils", Pattern.compile("\\bRandomStringUtils\\b"));
+        // commons-lang RandomUtils: same default java.util.Random backing.
+        RULES.put("RandomUtils", Pattern.compile("\\bRandomUtils\\b"));
     }
 
     /**
-     * Explicit allow-list: "path relative to the repo root|rule" -> justification. Every entry needs one.
+     * Explicit allow-list: "path relative to the repo root|rule|exact trimmed source line" -> justification.
+     * An entry permits one exact line for one rule, never a whole rule for a file.
      * Only src/main/java trees are scanned, so test sources are excluded by construction, not listed here.
      */
     private static final Map<String, String> ALLOWED = new LinkedHashMap<>();
     static {
         // The field is declared as java.util.Random but holds a SecureRandom; PasswordUtilTest pins the
-        // runtime type, and any `new Random(` in this file is still caught by the rule above.
-        ALLOWED.put("common/src/main/java/com/hmdm/util/PasswordUtil.java|java.util.Random",
+        // runtime type. Only the import line is permitted: any construction in this file is still caught.
+        ALLOWED.put("common/src/main/java/com/hmdm/util/PasswordUtil.java|java.util.Random|import java.util.Random;",
                 "import for the declared type of a SecureRandom field");
         // Same pattern: RANDOM is a SecureRandom (pinned by PasswordUtilTest); it generates the default JWT key.
-        ALLOWED.put("common/src/main/java/com/hmdm/util/CryptoUtil.java|java.util.Random",
+        ALLOWED.put("common/src/main/java/com/hmdm/util/CryptoUtil.java|java.util.Random|import java.util.Random;",
                 "import for the declared type of a SecureRandom field");
     }
 
@@ -72,7 +84,15 @@ public class WeakRandomGuardTest {
         assertEquals(Collections.singletonList("new Random("), rulesHit("String t = token(new Random().nextInt(61));"));
         assertEquals(Collections.singletonList("new Random("), rulesHit("Random r = new Random (42);"));
         assertEquals(Collections.singletonList("java.util.Random"), rulesHit("import java.util.Random;"));
-        assertEquals(Collections.singletonList("java.util.Random"), rulesHit("x = new java.util.Random();"));
+        assertEquals(Arrays.asList("new Random(", "java.util.Random"), rulesHit("x = new java.util.Random();"));
+        assertEquals(Arrays.asList("new Random(", "java.util.Random"),
+                rulesHit("Random r = new  java.util.Random ( 7 );"));
+        assertEquals(Collections.singletonList("import static Math.random"),
+                rulesHit("import static java.lang.Math.random;"));
+        assertEquals(Collections.singletonList("Collections.shuffle(list)"), rulesHit("Collections.shuffle(chars);"));
+        assertEquals(Collections.singletonList("Collections.shuffle(list)"),
+                rulesHit("Collections.shuffle(Arrays.asList(a, b));"));
+        assertEquals(Collections.singletonList("RandomUtils"), rulesHit("int n = RandomUtils.nextInt(0, 10);"));
         assertEquals(Collections.singletonList("Math.random"), rulesHit("double d = Math.random();"));
         assertEquals(Collections.singletonList("ThreadLocalRandom"), rulesHit("ThreadLocalRandom.current().nextInt()"));
         assertEquals(Collections.singletonList("SplittableRandom"), rulesHit("new SplittableRandom().nextLong()"));
@@ -81,6 +101,8 @@ public class WeakRandomGuardTest {
         assertTrue(rulesHit("private static final Random random = new SecureRandom();").isEmpty());
         assertTrue(rulesHit("import java.security.SecureRandom;").isEmpty());
         assertTrue(rulesHit("UUID.randomUUID().toString()").isEmpty());
+        assertTrue(rulesHit("Collections.shuffle(chars, SECURE_RANDOM);").isEmpty());
+        assertTrue(rulesHit("import static java.lang.Math.max;").isEmpty());
     }
 
     @Test
@@ -103,7 +125,7 @@ public class WeakRandomGuardTest {
                 List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
                 for (int i = 0; i < lines.size(); i++) {
                     for (String rule : rulesHit(lines.get(i))) {
-                        String key = rel + "|" + rule;
+                        String key = rel + "|" + rule + "|" + lines.get(i).trim();
                         if (ALLOWED.containsKey(key)) {
                             allowUsed.add(key);
                         } else {

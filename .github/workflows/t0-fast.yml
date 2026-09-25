@@ -4,7 +4,9 @@
 # reproduce that old workflow's steps and commands exactly; project-specific comments
 # from the old workflows are copied along with the commands they explain. A fourth entry,
 # supervisor, builds the updater/recovery supervisor image and runs its unit tests plus
-# scripts/supervisor-smoke.sh against it (the compose-shaped start guard for #27).
+# scripts/supervisor-smoke.sh against it (the compose-shaped start guard for #27). A fifth, edge,
+# runs scripts/edge-check.sh: the Caddyfile in every hosting mode under the web image's own caddy, plus
+# `docker compose config` for every compose file/overlay/profile combination.
 name: t0-fast
 
 on:
@@ -37,6 +39,8 @@ jobs:
             web: web/**
             agent: agent-android/**, proto/**
             supervisor: supervisor/**, docker/supervisor.Dockerfile, release/minisign.pub, scripts/supervisor-smoke.sh
+            # Listed explicitly: the kit's fail-closed **/Dockerfile* does not match docker/web.Dockerfile.
+            edge: docker/Caddyfile, docker/web.Dockerfile, docker-compose*.yml, scripts/edge-check.sh
 
   build:
     name: ${{ matrix.name }}
@@ -46,7 +50,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        name: [server, web, agent, supervisor]
+        name: [server, web, agent, supervisor, edge]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
@@ -111,6 +115,12 @@ jobs:
           docker build -f docker/supervisor.Dockerfile -t mdmesh-supervisor:ci .
           docker run --rm -w /app mdmesh-supervisor:ci node --test test.js
           scripts/supervisor-smoke.sh mdmesh-supervisor:ci
+
+      # --- edge: the Cloudflare-mode Caddyfile break (empty ACME_EMAIL) shipped because nothing parsed it. Validates
+      # docker/Caddyfile in every hosting mode with the caddy image web.Dockerfile builds FROM, and every compose combo. ---
+      - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).edge)
+        name: Caddyfile modes + compose overlays
+        run: scripts/edge-check.sh
 
   # NOTE: an emulator-based instrumentation matrix (the "version-treadmill guard" — boot the agent
   # across API levels so SDK_INT-gated breakage surfaces in CI) is deferred until real instrumented

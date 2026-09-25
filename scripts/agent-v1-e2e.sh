@@ -179,5 +179,39 @@ echo "== force sync =="
 chk "force sync OK" \
   "$(curl -s -b "$CJ" -X POST "$BASE/rest/private/agent/v1/devices/$DID/sync" | field "d['status']")" "OK"
 
+echo "== permissions: read-only Observer (role 100) cannot mutate =="
+# A temporary Observer user of the same customer: agent/rollout mutations need edit_devices,
+# reads stay open to any user of the customer. The user is deleted at the end of this section.
+OJ="$(mktemp)"; trap 'rm -f "$CJ" "$OJ"' EXIT
+OLOGIN="e2e-obs-$(date +%s)-$RANDOM" # users.login is varchar(30)
+OPW=$(printf '%s' "$OLOGIN-pw" | md5sum | awk '{print toupper($1)}')
+chk "observer user created" "$(curl -s -b "$CJ" -X PUT -H 'Content-Type: application/json' \
+  -d "{\"login\":\"$OLOGIN\",\"name\":\"$OLOGIN\",\"email\":\"$OLOGIN@e2e.invalid\",\"userRole\":{\"id\":100},\"newPassword\":\"$OPW\",\"allDevicesAvailable\":true,\"allConfigAvailable\":true}" \
+  "$BASE/rest/private/users" | field "d['status']")" "OK"
+OID=$(curl -s -b "$CJ" "$BASE/rest/private/users/all?filter=$OLOGIN" | field "[u['id'] for u in d['data'] if u['login']=='$OLOGIN'][0]")
+chk "observer login OK" "$(curl -s -c "$OJ" -H 'Content-Type: application/json' \
+  -d "{\"login\":\"$OLOGIN\",\"password\":\"$OPW\"}" "$BASE/rest/public/auth/login" | field "d['status']")" "OK"
+DENIED="ERROR:error.permission.denied"
+ores(){ field "d['status']+':'+str(d.get('message'))"; } # "status:message" of a Response on stdin
+chk "observer: queue device.wipe denied" "$(curl -s -b "$OJ" -X POST -H 'Content-Type: application/json' \
+  -d '{"type":"device.wipe","payload":"{}"}' "$BASE/rest/private/agent/v1/devices/$DID/commands" | ores)" "$DENIED"
+chk "observer: bulk command denied" "$(curl -s -b "$OJ" -X POST -H 'Content-Type: application/json' \
+  -d "{\"deviceIds\":[$KDEV],\"command\":{\"type\":\"policy.apply\",\"payload\":\"{}\"}}" "$BASE/rest/private/agent/v1/bulk/commands" | ores)" "$DENIED"
+chk "observer: mint enrollment token denied" "$(curl -s -b "$OJ" -X POST -H 'Content-Type: application/json' \
+  -d '{}' "$BASE/rest/private/agent/v1/token" | ores)" "$DENIED"
+chk "observer: syncApps denied" "$(curl -s -b "$OJ" -X POST "$BASE/rest/private/agent/v1/devices/$DID/syncApps" | ores)" "$DENIED"
+chk "observer: force sync denied" "$(curl -s -b "$OJ" -X POST "$BASE/rest/private/agent/v1/devices/$DID/sync" | ores)" "$DENIED"
+ROUT=$(curl -s -b "$OJ" -X POST -H 'Content-Type: application/json' \
+  -d "{\"targetVersion\":\"9.9.9-e2e\",\"packageName\":\"com.mdmesh.agent\",\"apkVersionCode\":999999,\"apkSha256\":\"$(printf '0%.0s' $(seq 64))\",\"canaryDeviceNumbers\":[\"$DID\"]}" \
+  "$BASE/rest/private/agent/v1/rollout")
+chk "observer: rollout create denied" "$(echo "$ROUT" | ores)" "$DENIED"
+# Should the create ever get through (regression), do not leave an active rollout behind.
+RID=$(echo "$ROUT" | field "(d.get('data') or {}).get('id') or ''")
+[ -z "$RID" ] || curl -s -b "$CJ" -X POST "$BASE/rest/private/agent/v1/rollout/$RID/cancel" >/dev/null
+chk "observer: command history readable" "$(curl -s -b "$OJ" "$BASE/rest/private/agent/v1/devices/$DID/commands?since=0" | field "d['status']")" "OK"
+chk "observer: device state readable" "$(curl -s -b "$OJ" "$BASE/rest/private/agent/v1/devices/$DID/state" | field "str(d['status'])+':'+str(d['data']['battery'])")" "OK:77"
+chk "observer: active rollout readable" "$(curl -s -b "$OJ" "$BASE/rest/private/agent/v1/rollout/active" | field "d['status']")" "OK"
+chk "observer user deleted" "$(curl -s -b "$CJ" -X DELETE "$BASE/rest/private/users/other/$OID" | field "d['status']")" "OK"
+
 echo "===== RESULT: PASS=$PASS FAIL=$FAIL ====="
 [ "$FAIL" -eq 0 ]

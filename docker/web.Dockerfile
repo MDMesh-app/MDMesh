@@ -2,7 +2,7 @@
 # The SPA calls the API at the same origin (apiClient base "/rest"), so it's deployment-agnostic —
 # no server URL is baked into the web bundle.
 
-FROM node:22-alpine AS web
+FROM node:26-alpine AS web
 WORKDIR /web
 # Release CI passes the agent's package + signing checksum (+ optional APK URL) so the in-product
 # enrollment QR matches the signed release APK. Defaults (in provisioning.ts) cover the debug build.

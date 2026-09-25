@@ -1,7 +1,7 @@
 # Updater/recovery supervisor — decoupled from the server so it survives a broken update.
 # Node 20 (zero npm deps) + the minisign binary for manifest verification; the release public key is
 # baked in so only properly-signed releases are ever trusted.
-FROM node:20-alpine
+FROM node:26-alpine
 # Deliberately root: the supervisor drives the host Docker daemon through /var/run/docker.sock (see
 # docker-compose.yml), which is host-root-equivalent regardless of the in-container uid.
 # minisign verifies the signed manifest; docker-cli + the compose plugin let the supervisor drive

@@ -10,7 +10,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
-/** Stored-credential format and migration rules from docs/adr/0010-admin-password-storage.md. */
+/** SecureRandom provenance of token generators (ADR 0010 extends this file in a later release). */
 public class PasswordUtilTest {
 
     @Test

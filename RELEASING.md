@@ -24,13 +24,14 @@ for some or all of the three images. Don't re-run the whole job (it would rebuil
 and try to recreate the Release). Fix `:latest` by hand, logged in to GHCR with `write:packages`:
 
 ```bash
-V=1.2.3; O=<owner-lowercase>
+V=1.2.3                   # edit: the release version, no leading v
+O=owner-lowercase-here    # edit: the GitHub owner, lowercased
 for img in mdmesh-server mdmesh-web mdmesh-supervisor; do
   docker buildx imagetools create --prefer-index=false --tag "ghcr.io/$O/$img:latest" "ghcr.io/$O/$img:$V"
 done
 # verify: each pair must print the same digest
 for img in mdmesh-server mdmesh-web mdmesh-supervisor; do
-  for t in "$V" latest; do docker buildx imagetools inspect --format "$img:$t {{.Manifest.Digest}}" "ghcr.io/$O/$img:$t"; done
+  for t in "$V" latest; do docker buildx imagetools inspect --format "$img:$t {{.Manifest.Digest}}{{println}}" "ghcr.io/$O/$img:$t"; done
 done
 ```
 

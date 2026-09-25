@@ -155,6 +155,10 @@ if [ -z "${GITHUB_REPO:-}" ]; then
   if [ -n "$GITHUB_REPO" ]; then setenv GITHUB_REPO "$GITHUB_REPO"; fi
 fi
 
+# Source builds (IMAGE_OWNER=local) cannot be updated by pulling images — keep the supervisor's one-click apply off
+# (updates = git pull && ./setup.sh). A registry owner (IMAGE_OWNER=<ghcr owner>) keeps it on.
+if [ "$(sed -n 's/^IMAGE_OWNER=//p' .env)" = "local" ]; then setenv APPLY_SUPPORTED 0; else setenv APPLY_SUPPORTED 1; fi
+
 say "Checking GitHub Releases for the signed agent APK…"
 # Mirror of the native installer's release fetch: pull the latest release's manifest + APK, verify
 # the APK's sha256 against the manifest, and bake the agent package/signing checksum + the canonical

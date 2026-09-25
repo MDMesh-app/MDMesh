@@ -22,7 +22,7 @@ jobs:
       # daemon can't swap in another run's image between the smoke and the push that retags it.
       SUP_IMG: mdmesh-supervisor:smoke-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Validate the tag as strict semver FIRST — the tag name is attacker-influencable input, and
       # this guarantees VERSION is [0-9.] only before it ever reaches a shell/gradle/docker arg.
@@ -49,16 +49,16 @@ jobs:
           scripts/supervisor-smoke.sh "$SUP_IMG"
 
       # --- Build + sign the release APK (gated by unit tests + R8 lintVital) ---
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
         with:
           # Default is "tools platform-tools"; Google removed the legacy "tools" package from the
           # SDK repository (Sept 2026) so sdkmanager exits 1. AGP auto-provisions platforms/build-tools.
           packages: platform-tools
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: "8.10"
       - name: Decode release keystore
@@ -86,7 +86,7 @@ jobs:
           echo "CK=$CK" >> "$GITHUB_ENV"
 
       # --- Build + push images to GHCR (:VERSION only; :latest moves in the last step) ---
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -168,7 +168,7 @@ jobs:
           git fetch --tags --force --quiet
           { git tag -l --format='%(contents)' "${GITHUB_REF_NAME}" | sed '/^-----BEGIN PGP SIGNATURE-----/,$d'; } > release-notes.md
           [ -s release-notes.md ] || echo "See the commit history for this release." > release-notes.md
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           body_path: release-notes.md
           generate_release_notes: true

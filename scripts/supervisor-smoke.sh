@@ -51,8 +51,9 @@ check() { local what="$1"; shift; if "$@"; then pass "$what"; else fail "$what";
 # Capture bodies first (grep -q on a pipe can SIGPIPE curl under pipefail once a body outgrows the pipe buffer).
 body()         { in_c curl -fsS -m 5 "$@"; }
 status_json()  { grep -q '"applySupported":true' <<<"$(body http://127.0.0.1:9000/update/status)"; }
-# Every unmatched path serves the recovery page (it is Caddy's handle_errors fallback), so a title match alone can't
-# fail on routing; assert the server-side marker recoveryPage() stamps on it plus the Roll back card it gates.
+# server.js serves the recovery page for EVERY unmatched path (it is also Caddy's handle_errors fallback), so this
+# probe cannot test routing. It asserts the served CONTENT: the data-apply marker recoveryPage() stamps on the page,
+# plus the Roll back card that marker gates.
 recovery_page() { local b; b="$(body http://127.0.0.1:9000/recovery)"
   grep -q '<body data-apply="1">' <<<"$b" && grep -q 'id="rbcard"' <<<"$b"; }
 apk_route()    { [ "$(code http://127.0.0.1:9000/update/agent.apk)" = 404 ]; }

@@ -175,6 +175,8 @@ Set these in `.env` (the wizard seeds them; add by hand for an existing deploy):
   `docker compose exec supervisor cat /backups/recovery.token`. From-source Docker and native installs
   (`APPLY_SUPPORTED=0`) can't roll back one-click: their recovery page hides Roll back and shows the manual steps
   instead: `git pull && ./setup.sh` (Docker from source) or `git pull && sudo ./install/install-native.sh` (native).
+  Native installs don't proxy it: the supervisor listens on loopback only, so open it from the host with
+  `curl 127.0.0.1:9000/recovery` (not `https://<host>/recovery`).
 - **Source (build) deploys** can't auto-pull, so setup.sh hides one-click Update (`APPLY_SUPPORTED=0`); update with
   `git pull && ./setup.sh`. Re-running `./setup.sh` (rather than `docker compose up -d --build` alone) is what refreshes
   `CURRENT_VERSION` and `APPLY_SUPPORTED`; without a readable tag (no git, or tags not fetched) it keeps the old

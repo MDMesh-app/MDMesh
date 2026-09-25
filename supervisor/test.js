@@ -79,3 +79,19 @@ t.test('recoveryPage — marks the page with whether apply/rollback is supported
   a.match(html, /body:not\(\[data-apply="0"\]\) #manual\{display:none\}/);
   a.ok(html.includes('git pull &amp;&amp; ./setup.sh') && html.includes('git pull &amp;&amp; sudo ./install/install-native.sh'));
 });
+
+t.test('recovery.html escapes status strings before they reach innerHTML', () => {
+  const html = require('fs').readFileSync(require('path').join(__dirname, 'recovery.html'), 'utf8');
+  const m = html.match(/^function esc\(x\)\{.*\}$/m);
+  a.ok(m, 'recovery.html defines a one-line function esc(x){…}');
+  const esc = new Function(m[0] + '; return esc;')();
+  a.equal(esc('<img src=x onerror="a()">&\''), '&lt;img src=x onerror=&quot;a()&quot;&gt;&amp;&#39;');
+  a.equal(esc(null), '');
+  a.equal(esc(42), '42');
+  // Every server/network-derived string concatenated into markup goes through esc() (or v(), which wraps it).
+  a.match(html, /function v\(x\)\{return x==null\?'—':esc\(x\)\}/);
+  for (const raw of ["'+s.error+'", "'+a.error+'", '(PH[a.phase]||a.phase)', "(a.fromVersion||'?')", "' → '+a.toVersion",
+                     "'+(b.error||", "'+e+'"]) {
+    a.ok(!html.includes(raw), 'unescaped interpolation left in recovery.html: ' + raw);
+  }
+});

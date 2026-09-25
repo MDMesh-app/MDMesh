@@ -51,9 +51,10 @@ done
 read -rp "Pull releases from GitHub repo [${REPO}]: " GH_REPO;       GH_REPO="${GH_REPO:-$REPO}"
 read -rp "Image owner (GHCR, lowercase) [${IMAGE_OWNER_DEFAULT}]: " IMAGE_OWNER; IMAGE_OWNER="${IMAGE_OWNER:-$IMAGE_OWNER_DEFAULT}"
 
-# Pin the release being installed: images, CURRENT_VERSION and the supervisor all name the same version, so the
-# console doesn't report the running release as an update (it would with CURRENT_VERSION=0.0.0), a rollback has a
-# real tag to return to, and a `:latest` tag that moves mid-release can't hand us a mismatched set. If the release
+# Pin the release being installed: server + web images and CURRENT_VERSION name the same version, so the console
+# doesn't report the running release as an update (it would with CURRENT_VERSION=0.0.0), a rollback has a real tag to
+# return to, and a `:latest` tag that moves mid-release can't hand us a mismatched server/web pair. The supervisor
+# stays on `:latest`: apply never bumps it, so `docker compose pull` is how it gets its own fixes. If the release
 # can't be resolved, fall back to `:latest` + CURRENT_VERSION=0.0.0 (the old behaviour): the stack still comes up, the
 # console shows "Update available" until the first apply pins the versions.
 RELEASE=$(latest_release "$GH_REPO")
@@ -107,7 +108,7 @@ TUNNEL_TOKEN=${TUNNEL_TOKEN}
 IMAGE_OWNER=${IMAGE_OWNER}
 SERVER_VERSION=${IMAGE_TAG}
 WEB_VERSION=${IMAGE_TAG}
-SUPERVISOR_VERSION=${IMAGE_TAG}
+SUPERVISOR_VERSION=latest
 GITHUB_REPO=${GH_REPO}
 UPDATE_CHANNEL=stable
 POLL_INTERVAL_HOURS=6

@@ -16,11 +16,12 @@ bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/quick
 It creates `./mdmesh`, downloads the pull-only compose (`docker-compose.release.yml`) + seed, generates
 secrets, `docker compose pull && up -d`, seeds, and prints the console URL + a temporary admin password.
 
-It pins the latest published release: `SERVER_VERSION`, `WEB_VERSION`, `SUPERVISOR_VERSION` and `CURRENT_VERSION`
-in `.env` all name that version (e.g. `0.3.1`), so the console doesn't offer the release you just installed as an
-update. If the GitHub API can't be reached (or is rate-limited) it falls back to the `:latest` images with
-`CURRENT_VERSION=0.0.0`: the install works, but the console shows "Update available" until the first update, which
-pins the versions (or set all four to the running release by hand).
+It pins the latest published release: `SERVER_VERSION`, `WEB_VERSION` and `CURRENT_VERSION` in `.env` all name that
+version (e.g. `0.3.1`), so the console doesn't offer the release you just installed as an update. The supervisor
+tracks `SUPERVISOR_VERSION=latest`, so `docker compose pull` keeps delivering its fixes (updates never touch it); pin it
+only if you want to freeze it. If the GitHub API can't be reached (or is rate-limited) the quick start falls back to the
+`:latest` images with `CURRENT_VERSION=0.0.0`: the install works, but the console shows "Update available" until the
+first update, which pins the versions (or set `SERVER_VERSION`/`WEB_VERSION`/`CURRENT_VERSION` to the running release by hand).
 
 > **Requires a published release**, and the GHCR packages (`mdmesh-server`/`-web`/`-supervisor`) must be
 > **public** — or run `docker login ghcr.io` first. See [RELEASING.md](RELEASING.md).
@@ -157,7 +158,7 @@ Set these in `.env` (the wizard seeds them; add by hand for an existing deploy):
 | `IMAGE_OWNER` | GHCR owner (lowercase) the versioned images live under. |
 | `SERVER_VERSION` / `WEB_VERSION` | Running image tags **without the `v`** (`0.2.6`, not `v0.2.6`); bumped automatically on apply. |
 | `CURRENT_VERSION` | The running release, compared with GitHub's latest to decide "update available". Bumped on apply; `./setup.sh` rewrites it on every run from the checkout's latest tag (`git describe --tags`), like the native installer. |
-| `SUPERVISOR_VERSION` | The supervisor's image tag. Pinned by the quick start; apply never changes it (the supervisor never updates itself) — bump it and `docker compose pull supervisor && docker compose up -d supervisor` to pick up supervisor fixes. |
+| `SUPERVISOR_VERSION` | The supervisor's image tag. Apply never changes it (the supervisor never updates itself). The quick start tracks `latest`, so `docker compose pull && docker compose up -d` delivers supervisor fixes; pin it only if you want to freeze it (then bump it by hand to pick up fixes). |
 | `APPLY_SUPPORTED` | `1` shows one-click **Update**, `0` shows the manual steps instead. `./setup.sh` rewrites it on every run from `IMAGE_OWNER` (`local` → `0`); the source compose file defaults to `0`, the release compose to `1`. |
 | `AUTO_UPDATE` | `1` to apply verified releases unattended (also toggleable in **Settings**). |
 

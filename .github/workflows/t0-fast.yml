@@ -73,7 +73,7 @@ jobs:
         name: Build WAR
         run: mvn -B -DskipTests package
       - if: matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: launcher-war
           path: server/target/launcher.war
@@ -90,7 +90,7 @@ jobs:
 
       # --- agent (from agent.yml) ---
       - if: matrix.name == 'agent' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).agent)
-        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407  # v3
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd  # v4.0.4
         with:
           # Default is "tools platform-tools"; Google removed the legacy "tools" package from the
           # SDK repository (Sept 2026) so sdkmanager exits 1. AGP auto-provisions platforms/build-tools.

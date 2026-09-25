@@ -175,22 +175,36 @@ jobs:
 
       # --- Move :latest LAST, only once the release is pullable, signed and published ---
       # Quick-start installs (*_VERSION=latest, `docker compose pull`) follow :latest, so it must never point
-      # at an image whose release failed. Retag registry-side from the already-pushed :VERSION: with a single
-      # source, `imagetools create` re-pushes that exact manifest under the new tag (no rebuild, no local
-      # state), so :latest and :VERSION share one digest — asserted below.
+      # at an image whose release failed. Retag registry-side from the already-pushed :VERSION (no rebuild, no
+      # local state). --prefer-index=false is required: buildx defaults to wrapping a single image manifest in a
+      # NEW index, which would give :latest a different digest from :VERSION. With it, the source manifest is
+      # re-pushed as-is, so both tags share one digest — asserted below. Phased to keep a failure as early and
+      # as all-or-nothing as possible: resolve all three :VERSION first, then move all three, then verify all.
+      # A red job here leaves the Release published; recover by hand (RELEASING.md), don't re-run the job.
       - name: Move :latest to this release
         env:
           OWNER: ${{ github.repository_owner }}
           VERSION: ${{ steps.ver.outputs.version }}
         run: |
           O=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
-          for img in mdmesh-server mdmesh-web mdmesh-supervisor; do
-            IMG="ghcr.io/${O}/${img}"
-            docker buildx imagetools create --tag "$IMG:latest" "$IMG:$VERSION"
-            v=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$IMG:$VERSION")
-            l=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$IMG:latest")
-            echo "${img}: :${VERSION}=${v} :latest=${l}"
-            if [ -z "$v" ] || [ "$v" != "$l" ]; then
-              echo "::error::${img}:latest digest '${l}' != :${VERSION} digest '${v}'"; exit 1
+          IMGS="mdmesh-server mdmesh-web mdmesh-supervisor"
+          digest() { docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$1"; }
+          declare -A want
+          for img in $IMGS; do
+            d=$(digest "ghcr.io/${O}/${img}:${VERSION}") || d=""
+            [ -n "$d" ] || { echo "::error::cannot resolve ghcr.io/${O}/${img}:${VERSION}; no :latest was moved"; exit 1; }
+            want[$img]=$d
+          done
+          for img in $IMGS; do
+            docker buildx imagetools create --prefer-index=false \
+              --tag "ghcr.io/${O}/${img}:latest" "ghcr.io/${O}/${img}:${VERSION}"
+          done
+          bad=0
+          for img in $IMGS; do
+            got=$(digest "ghcr.io/${O}/${img}:latest") || got=""
+            echo "${img}: :${VERSION}=${want[$img]} :latest=${got}"
+            if [ "$got" != "${want[$img]}" ]; then
+              echo "::error::${img}:latest is '${got}', expected :${VERSION} digest '${want[$img]}'"; bad=1
             fi
           done
+          [ "$bad" = 0 ]

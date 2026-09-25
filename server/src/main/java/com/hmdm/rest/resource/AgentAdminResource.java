@@ -205,7 +205,8 @@ public class AgentAdminResource {
         wakeHub.wake(deviceId, "commands");
 
         logger.info("Agent command {} queued for device {}", command.getId(), deviceId);
-        return Response.OK(command);
+        // Payload-free view (same shape as the history): never echo a payload back to the console.
+        return Response.OK(CommandHistoryView.from(command));
     }
 
     /** Command types that must never be issued in bulk (destructive group). Lowercased — matched

@@ -16,6 +16,14 @@ bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/quick
 It creates `./mdmesh`, downloads the pull-only compose (`docker-compose.release.yml`) + seed, generates
 secrets, `docker compose pull && up -d`, seeds, and prints the console URL + a temporary admin password.
 
+It pins the latest published release: `SERVER_VERSION`, `WEB_VERSION` and `CURRENT_VERSION` in `.env` all name that
+version (e.g. `0.3.1`), so the console doesn't offer the release you just installed as an update, and the compose file +
+seed are downloaded from that release's tag (`v0.3.1`) so they match the images. The supervisor
+tracks `SUPERVISOR_VERSION=latest`, so `docker compose pull` keeps delivering its fixes (updates never touch it); pin it
+only if you want to freeze it. If the GitHub API can't be reached (or is rate-limited) the quick start falls back to the
+`:latest` images and the `main` compose + seed with `CURRENT_VERSION=0.0.0`: the install works, but the console shows "Update available" until the
+first update, which pins the versions (or set `SERVER_VERSION`/`WEB_VERSION`/`CURRENT_VERSION` to the running release by hand).
+
 > **Requires a published release**, and the GHCR packages (`mdmesh-server`/`-web`/`-supervisor`) must be
 > **public** — or run `docker login ghcr.io` first. See [RELEASING.md](RELEASING.md).
 
@@ -32,6 +40,17 @@ secrets, `docker compose pull && up -d`, seeds, and prints the console URL + a t
 > "agent too old" in the console instead of receiving the new command. Location capture mode also follows the
 > configuration after the upgrade (GPS → active, otherwise passive), so an ad-hoc `device.locationMode` override
 > is replaced.
+
+> **Docker: supervisor restarting with `Cannot find module '/project/server.js'`?** Every Docker install from v0.1.0
+> through v0.3.0 hit this (#27), so Settings → Updates, the `/recovery` page and the Docker `/files/agent.apk` mirror
+> (the APK the enrollment QR points to) never worked. Fixed in v0.3.1 in the image itself — your existing compose file
+> works unchanged. Quick-start installs: `docker compose pull && docker compose up -d` (if `.env` pins
+> `SUPERVISOR_VERSION`, set it to `0.3.1` first). From-source installs: `git pull` and re-run `./setup.sh` (if you
+> removed `working_dir` by hand, `git checkout -- docker-compose.yml` first). The supervisor never updates itself, so
+> this manual pull is how it picks up fixes. What you get back depends on the install: quick-start installs get the
+> update banner, one-click **Update** and the `/recovery` **Roll back** button; from-source Docker installs
+> (`APPLY_SUPPORTED=0`) get the update banner (its **Details** link leads to the manual steps in Settings) and a `/recovery` page that shows status and the manual update steps
+> instead of Roll back, since one-click apply and rollback aren't supported there.
 
 ## Option B — from source (clone + build)
 
@@ -142,16 +161,26 @@ Set these in `.env` (the wizard seeds them; add by hand for an existing deploy):
 | `GITHUB_TOKEN` | Optional — raises the API rate limit / reads a private repo. |
 | `IMAGE_OWNER` | GHCR owner (lowercase) the versioned images live under. |
 | `SERVER_VERSION` / `WEB_VERSION` | Running image tags **without the `v`** (`0.2.6`, not `v0.2.6`); bumped automatically on apply. |
+| `CURRENT_VERSION` | The running release, compared with GitHub's latest to decide "update available". Bumped on apply; `./setup.sh` rewrites it on every run from the checkout's latest tag (`git describe --tags`), like the native installer. |
+| `SUPERVISOR_VERSION` | The supervisor's image tag. Apply never changes it (the supervisor never updates itself). The quick start tracks `latest`, so `docker compose pull && docker compose up -d` delivers supervisor fixes; pin it only if you want to freeze it (then bump it by hand to pick up fixes). |
+| `APPLY_SUPPORTED` | `1` shows one-click **Update**, `0` shows the manual steps instead. `./setup.sh` rewrites it on every run from `IMAGE_OWNER` (`local` → `0`); the source compose file defaults to `0`, the release compose to `1`. |
 | `AUTO_UPDATE` | `1` to apply verified releases unattended (also toggleable in **Settings**). |
 
 - **One-click:** when a verified update is available, a banner appears in the console; an admin clicks
   **Update**, watches the live progress, and the stack rolls back on its own if anything fails.
 - **Unattended:** turn on **Automatic updates** in Settings (or `AUTO_UPDATE=1`) to apply each verified
   release without a prompt. A release that fails its rollback is never auto-retried.
-- **Recovery:** `https://<host>/recovery` shows live apply state and a **Roll back** button. While signed
-  in, no token is needed. If the server is down, paste the break-glass recovery token, read with:
-  `docker compose exec supervisor cat /backups/recovery.token`.
-- **Source (build) deploys** can't auto-pull — they run locally built images; redeploy from git to update.
+- **Recovery:** `https://<host>/recovery` shows live apply state and, on quick-start installs, a **Roll back**
+  button. While signed in, no token is needed. If the server is down, paste the break-glass recovery token, read with:
+  `docker compose exec supervisor cat /backups/recovery.token`. From-source Docker and native installs
+  (`APPLY_SUPPORTED=0`) can't roll back one-click: their recovery page hides Roll back and shows the manual steps
+  instead: `git pull && ./setup.sh` (Docker from source) or `git pull && sudo ./install/install-native.sh` (native).
+  Native installs don't proxy it: the supervisor listens on loopback only, so open it from the host with
+  `curl 127.0.0.1:9000/recovery` (not `https://<host>/recovery`).
+- **Source (build) deploys** can't auto-pull, so setup.sh hides one-click Update (`APPLY_SUPPORTED=0`); update with
+  `git pull && ./setup.sh`. Re-running `./setup.sh` (rather than `docker compose up -d --build` alone) is what refreshes
+  `CURRENT_VERSION` and `APPLY_SUPPORTED`; without a readable tag (no git, or tags not fetched) it keeps the old
+  `CURRENT_VERSION` and warns.
 - Older agents keep working across server updates (versioned `/agent/v1` contract; see
   `docs/adr/0009-agent-v1-contract-stability.md`).
 

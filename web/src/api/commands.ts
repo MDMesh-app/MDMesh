@@ -250,7 +250,9 @@ export interface DeviceState {
 
 export interface CommandHistoryItem {
   id: number | string; type: string; status: string;
-  detail?: string | null; createdAt?: number; completedAt?: number;
+  detail?: string | null; createdAt?: number; deliveredAt?: number; completedAt?: number;
+  /** Server-derived package name for app.install / app.uninstall; absent otherwise. Payloads are never returned. */
+  subject?: string | null;
 }
 
 export async function getDeviceState(deviceId: number | string): Promise<DeviceState | null> {

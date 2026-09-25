@@ -16,7 +16,15 @@
 # Usage: scripts/agent-v1-e2e.sh [BASE_URL]      (default http://localhost:8080)
 set -euo pipefail
 BASE="${1:-${BASE_URL:-http://localhost:8080}}"
-CJ="$(mktemp)"; trap 'rm -f "$CJ"' EXIT
+CJ="$(mktemp)"; OJ=""
+# Fixtures a later section creates register themselves here, so an abort (set -e) never leaves them behind.
+LIVE_RID=""; LIVE_OID=""
+cleanup(){
+  [ -z "$LIVE_RID" ] || curl -s -b "$CJ" -X POST "$BASE/rest/private/agent/v1/rollout/$LIVE_RID/cancel" >/dev/null || true
+  [ -z "$LIVE_OID" ] || curl -s -b "$CJ" -X DELETE "$BASE/rest/private/users/other/$LIVE_OID" >/dev/null || true
+  rm -f "$CJ" ${OJ:+"$OJ"}
+}
+trap cleanup EXIT
 PASS=0; FAIL=0
 chk(){ if [ "$2" = "$3" ]; then echo "  PASS: $1"; PASS=$((PASS+1)); else echo "  FAIL: $1 (got '$2' want '$3')"; FAIL=$((FAIL+1)); fi; }
 # Extract a field from a JSON response on stdin. First arg is python code operating on `d`.
@@ -39,9 +47,13 @@ chk "enroll OK" "$(echo "$ENR" | field "d['status']")" "OK"
 DID=$(echo "$ENR" | field "d['data']['deviceId']"); SEC=$(echo "$ENR" | field "d['data']['deviceSecret']")
 
 echo "== queue wifi command (requires policy.wifi) =="
-DCMD_Q=$(curl -s -b "$CJ" -X POST -H 'Content-Type: application/json' \
+QRES=$(curl -s -b "$CJ" -X POST -H 'Content-Type: application/json' \
   -d '{"type":"policy.apply","requiresCapability":"policy.wifi","payload":"{\"policy\":\"wifi\",\"value\":false}"}' \
-  "$BASE/rest/private/agent/v1/devices/$DID/commands" | field "d['data']['id']")
+  "$BASE/rest/private/agent/v1/devices/$DID/commands")
+# The admin API answers with the payload-free command view: an id, but never the payload, device or gate it was given.
+chk "queue response has an id, no payload/deviceNumber/requiresCapability" \
+  "$(echo "$QRES" | field "str(bool((d.get('data') or {}).get('id')))+':'+','.join(k for k in ('payload','deviceNumber','requiresCapability') if k in (d.get('data') or {}))")" \
+  "True:"
 
 echo "== authenticated check-in delivers the command =="
 C1=$(curl -s -X POST -H "Authorization: Bearer $SEC" -H 'Content-Type: application/json' \
@@ -168,13 +180,70 @@ chk "restore kioskMode=false" "$(curl -s -b "$CJ" -X PUT -H 'Content-Type: appli
 chk "device restored to its configuration" "$(curl -s -b "$CJ" -X PUT -H 'Content-Type: application/json' -d "{\"ids\":[$KDEV],\"configurationId\":$CFG_ID}" "$BASE/rest/private/devices" | field "d['status']")" "OK"
 chk "kiosk scenario configuration deleted" "$(curl -s -b "$CJ" -X DELETE "$BASE/rest/private/configurations/$KCFG" | field "d['status']")" "OK"
 
-echo "== command history =="
-chk "history has completedAt" \
-  "$(curl -s -b "$CJ" "$BASE/rest/private/agent/v1/devices/$DID/commands?since=0" | field "any(c.get('completedAt') for c in d['data'])")" "True"
+echo "== command history (payload-free, 6.6) =="
+HIST=$(curl -s -b "$CJ" "$BASE/rest/private/agent/v1/devices/$DID/commands?since=0")
+chk "history has completedAt" "$(echo "$HIST" | field "any(c.get('completedAt') for c in d['data'])")" "True"
+chk "history rows carry no payload" "$(echo "$HIST" | field "sum(1 for c in d['data'] if 'payload' in c)")" "0"
+chk "history rows carry no deviceNumber" "$(echo "$HIST" | field "sum(1 for c in d['data'] if 'deviceNumber' in c)")" "0"
+chk "history keeps the config.apply result detail" "$(echo "$HIST" | field "[c.get('detail') or '' for c in d['data'] if str(c['id'])=='$DS_CMD'][0].startswith('{')")" "True"
 
 echo "== force sync =="
 chk "force sync OK" \
   "$(curl -s -b "$CJ" -X POST "$BASE/rest/private/agent/v1/devices/$DID/sync" | field "d['status']")" "OK"
+
+echo "== permissions: read-only Observer (role 100) cannot mutate =="
+# A temporary Observer user of the same customer: agent/rollout mutations need edit_devices,
+# reads stay open to any user of the customer. The user is deleted at the end of this section.
+OJ="$(mktemp)"
+OLOGIN="e2e-obs-$(date +%s)-$RANDOM" # users.login is varchar(30)
+OPW=$(printf '%s' "$OLOGIN-pw" | md5sum | awk '{print toupper($1)}')
+chk "observer user created" "$(curl -s -b "$CJ" -X PUT -H 'Content-Type: application/json' \
+  -d "{\"login\":\"$OLOGIN\",\"name\":\"$OLOGIN\",\"email\":\"$OLOGIN@e2e.invalid\",\"userRole\":{\"id\":100},\"newPassword\":\"$OPW\",\"allDevicesAvailable\":true,\"allConfigAvailable\":true}" \
+  "$BASE/rest/private/users" | field "d['status']")" "OK"
+OID=$(curl -s -b "$CJ" "$BASE/rest/private/users/all?filter=$OLOGIN" | field "[u['id'] for u in d['data'] if u['login']=='$OLOGIN'][0]")
+LIVE_OID="$OID"
+chk "observer login OK" "$(curl -s -c "$OJ" -H 'Content-Type: application/json' \
+  -d "{\"login\":\"$OLOGIN\",\"password\":\"$OPW\"}" "$BASE/rest/public/auth/login" | field "d['status']")" "OK"
+DENIED="ERROR:error.permission.denied"
+ores(){ field "d['status']+':'+str(d.get('message'))"; } # "status:message" of a Response on stdin
+chk "observer: queue device.wipe denied" "$(curl -s -b "$OJ" -X POST -H 'Content-Type: application/json' \
+  -d '{"type":"device.wipe","payload":"{}"}' "$BASE/rest/private/agent/v1/devices/$DID/commands" | ores)" "$DENIED"
+chk "observer: bulk command denied" "$(curl -s -b "$OJ" -X POST -H 'Content-Type: application/json' \
+  -d "{\"deviceIds\":[$KDEV],\"command\":{\"type\":\"policy.apply\",\"payload\":\"{}\"}}" "$BASE/rest/private/agent/v1/bulk/commands" | ores)" "$DENIED"
+chk "observer: mint enrollment token denied" "$(curl -s -b "$OJ" -X POST -H 'Content-Type: application/json' \
+  -d '{}' "$BASE/rest/private/agent/v1/token" | ores)" "$DENIED"
+chk "observer: syncApps denied" "$(curl -s -b "$OJ" -X POST "$BASE/rest/private/agent/v1/devices/$DID/syncApps" | ores)" "$DENIED"
+chk "observer: force sync denied" "$(curl -s -b "$OJ" -X POST "$BASE/rest/private/agent/v1/devices/$DID/sync" | ores)" "$DENIED"
+ROUT=$(curl -s -b "$OJ" -X POST -H 'Content-Type: application/json' \
+  -d "{\"targetVersion\":\"9.9.9-e2e\",\"packageName\":\"com.mdmesh.agent\",\"apkVersionCode\":999999,\"apkSha256\":\"$(printf '0%.0s' $(seq 64))\",\"canaryDeviceNumbers\":[\"$DID\"]}" \
+  "$BASE/rest/private/agent/v1/rollout")
+chk "observer: rollout create denied" "$(echo "$ROUT" | ores)" "$DENIED"
+# Should the create ever get through (regression), do not leave an active rollout behind.
+RID=$(echo "$ROUT" | field "(d.get('data') or {}).get('id') or ''")
+[ -z "$RID" ] || curl -s -b "$CJ" -X POST "$BASE/rest/private/agent/v1/rollout/$RID/cancel" >/dev/null
+# A REAL rollout (admin-created) — the Observer may read it but neither promote nor cancel it. The canary is the
+# e2e device, which advertises no app.silentInstall, so nothing is queued. Skipped rather than touching a live
+# rollout if the server already has one (one active rollout per customer).
+if [ "$(curl -s -b "$CJ" "$BASE/rest/private/agent/v1/rollout/active" | field "d['data'] is None")" = True ]; then
+  AROUT=$(curl -s -b "$CJ" -X POST -H 'Content-Type: application/json' \
+    -d "{\"targetVersion\":\"9.9.8-e2e\",\"packageName\":\"com.mdmesh.agent\",\"apkVersionCode\":999998,\"apkSha256\":\"$(printf '0%.0s' $(seq 64))\",\"canaryDeviceNumbers\":[\"$DID\"]}" \
+    "$BASE/rest/private/agent/v1/rollout")
+  LIVE_RID=$(echo "$AROUT" | field "(d.get('data') or {}).get('id') or ''")
+  chk "admin: rollout created (canary)" "$(echo "$AROUT" | field "str(d['status'])+':'+str((d.get('data') or {}).get('stage'))")" "OK:canary"
+  chk "observer: rollout promote denied" "$(curl -s -b "$OJ" -X POST "$BASE/rest/private/agent/v1/rollout/$LIVE_RID/promote" | ores)" "$DENIED"
+  chk "observer: rollout cancel denied" "$(curl -s -b "$OJ" -X POST "$BASE/rest/private/agent/v1/rollout/$LIVE_RID/cancel" | ores)" "$DENIED"
+  chk "observer: rollout still active, still canary" "$(curl -s -b "$OJ" "$BASE/rest/private/agent/v1/rollout/active" | field "str((d.get('data') or {}).get('id'))+':'+str((d.get('data') or {}).get('stage'))")" "$LIVE_RID:canary"
+  chk "admin: rollout cancel OK" "$(curl -s -b "$CJ" -X POST "$BASE/rest/private/agent/v1/rollout/$LIVE_RID/cancel" | field "d['status']")" "OK"
+  LIVE_RID=""
+  chk "no active rollout left" "$(curl -s -b "$CJ" "$BASE/rest/private/agent/v1/rollout/active" | field "d['data'] is None")" "True"
+else
+  echo "  SKIP: observer promote/cancel on a real rollout (this server already has an active rollout)"
+fi
+chk "observer: command history readable" "$(curl -s -b "$OJ" "$BASE/rest/private/agent/v1/devices/$DID/commands?since=0" | field "d['status']")" "OK"
+chk "observer: device state readable" "$(curl -s -b "$OJ" "$BASE/rest/private/agent/v1/devices/$DID/state" | field "str(d['status'])+':'+str(d['data']['battery'])")" "OK:77"
+chk "observer: active rollout readable" "$(curl -s -b "$OJ" "$BASE/rest/private/agent/v1/rollout/active" | field "d['status']")" "OK"
+chk "observer user deleted" "$(curl -s -b "$CJ" -X DELETE "$BASE/rest/private/users/other/$OID" | field "d['status']")" "OK"
+LIVE_OID=""
 
 echo "===== RESULT: PASS=$PASS FAIL=$FAIL ====="
 [ "$FAIL" -eq 0 ]

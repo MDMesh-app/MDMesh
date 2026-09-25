@@ -86,7 +86,7 @@ export function UpdateBanner() {
           {busy ? 'Starting…' : 'Update…'}
         </button>
       ) : (
-        // Source-built (native) deployments can't self-apply — Settings › Updates has the steps.
+        // Source installs (Docker from source or native) can't self-apply — Settings › Updates has the steps.
         <a className="btn btn-sm" href="/settings">Details…</a>
       )}
     </div>

@@ -17,6 +17,10 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      # Per-run local tag for the smoked supervisor build (never pushed under this name): unique so a shared
+      # daemon can't swap in another run's image between the smoke and the push that retags it.
+      SUP_IMG: mdmesh-supervisor:smoke-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v4
 
@@ -34,6 +38,15 @@ jobs:
             echo "code=$(release/version.sh "$V")"
             echo "proto=$(grep -oP 'PROTOCOL_VERSION[^\"]*\"\K[^\"]+' agent-android/proto/src/main/kotlin/com/mdmesh/proto/ProtocolJson.kt)"
           } >> "$GITHUB_OUTPUT"
+
+      # Supervisor smoke BEFORE anything is built or pushed (#27): a supervisor that can't start the way
+      # compose runs it must never reach GHCR. The Supervisor image step below pushes this very $SUP_IMG
+      # build. (No step before the final "Move :latest" step touches :latest.)
+      - name: Supervisor image smoke (compose-shaped)
+        run: |
+          docker build -f docker/supervisor.Dockerfile -t "$SUP_IMG" .
+          docker run --rm -w /app "$SUP_IMG" node --test test.js
+          scripts/supervisor-smoke.sh "$SUP_IMG"
 
       # --- Build + sign the release APK (gated by unit tests + R8 lintVital) ---
       - uses: actions/setup-java@v4
@@ -72,7 +85,7 @@ jobs:
           [ -n "$CK" ] || { echo "APK signature checksum came out empty — aborting the release"; exit 1; }
           echo "CK=$CK" >> "$GITHUB_ENV"
 
-      # --- Build + push images to GHCR ---
+      # --- Build + push images to GHCR (:VERSION only; :latest moves in the last step) ---
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -85,8 +98,8 @@ jobs:
         run: |
           O=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')   # GHCR repo names must be lowercase
           IMG="ghcr.io/${O}/mdmesh-server"
-          docker build -f docker/server.Dockerfile -t "$IMG:$VERSION" -t "$IMG:latest" .
-          docker push "$IMG:$VERSION"; docker push "$IMG:latest"
+          docker build -f docker/server.Dockerfile -t "$IMG:$VERSION" .
+          docker push "$IMG:$VERSION"
           echo "SERVER_IMG=$IMG:$VERSION" >> "$GITHUB_ENV"
       - name: Web image (bake release QR checksum/package)
         env:
@@ -100,8 +113,8 @@ jobs:
             --build-arg VITE_AGENT_CHECKSUM="$CK" \
             --build-arg VITE_AGENT_APK_URL=/files/agent.apk \
             --build-arg VITE_APP_VERSION="$VERSION" \
-            -t "$IMG:$VERSION" -t "$IMG:latest" .
-          docker push "$IMG:$VERSION"; docker push "$IMG:latest"
+            -t "$IMG:$VERSION" .
+          docker push "$IMG:$VERSION"
           echo "WEB_IMG=$IMG:$VERSION" >> "$GITHUB_ENV"
       - name: Supervisor image
         env:
@@ -110,8 +123,9 @@ jobs:
         run: |
           O=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
           IMG="ghcr.io/${O}/mdmesh-supervisor"
-          docker build -f docker/supervisor.Dockerfile -t "$IMG:$VERSION" -t "$IMG:latest" .
-          docker push "$IMG:$VERSION"; docker push "$IMG:latest"
+          # Publish exactly the image the smoke step tested (no rebuild).
+          docker tag "$SUP_IMG" "$IMG:$VERSION"
+          docker push "$IMG:$VERSION"
       - name: Verify images are publicly pullable (guards against private GHCR packages, #3)
         env:
           OWNER: ${{ github.repository_owner }}
@@ -162,3 +176,39 @@ jobs:
             mdmesh-agent.apk
             manifest.json
             manifest.json.minisig
+
+      # --- Move :latest LAST, only once the release is pullable, signed and published ---
+      # Quick-start installs (*_VERSION=latest, `docker compose pull`) follow :latest, so it must never point
+      # at an image whose release failed. Retag registry-side from the already-pushed :VERSION (no rebuild, no
+      # local state). --prefer-index=false is required: buildx defaults to wrapping a single image manifest in a
+      # NEW index, which would give :latest a different digest from :VERSION. With it, the source manifest is
+      # re-pushed as-is, so both tags share one digest — asserted below. Phased to keep a failure as early and
+      # as all-or-nothing as possible: resolve all three :VERSION first, then move all three, then verify all.
+      # A red job here leaves the Release published; recover by hand (RELEASING.md), don't re-run the job.
+      - name: Move :latest to this release
+        env:
+          OWNER: ${{ github.repository_owner }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          O=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+          IMGS="mdmesh-server mdmesh-web mdmesh-supervisor"
+          digest() { docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$1"; }
+          declare -A want
+          for img in $IMGS; do
+            d=$(digest "ghcr.io/${O}/${img}:${VERSION}") || d=""
+            [ -n "$d" ] || { echo "::error::cannot resolve ghcr.io/${O}/${img}:${VERSION}; no :latest was moved"; exit 1; }
+            want[$img]=$d
+          done
+          for img in $IMGS; do
+            docker buildx imagetools create --prefer-index=false \
+              --tag "ghcr.io/${O}/${img}:latest" "ghcr.io/${O}/${img}:${VERSION}"
+          done
+          bad=0
+          for img in $IMGS; do
+            got=$(digest "ghcr.io/${O}/${img}:latest") || got=""
+            echo "${img}: :${VERSION}=${want[$img]} :latest=${got}"
+            if [ "$got" != "${want[$img]}" ]; then
+              echo "::error::${img}:latest is '${got}', expected :${VERSION} digest '${want[$img]}'"; bad=1
+            fi
+          done
+          [ "$bad" = 0 ]

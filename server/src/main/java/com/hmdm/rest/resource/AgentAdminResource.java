@@ -32,6 +32,7 @@ import com.hmdm.persistence.domain.DeviceSyncRow;
 import com.hmdm.notification.AgentWakeHub;
 import com.hmdm.rest.json.AgentBulkCommandRequest;
 import com.hmdm.rest.json.Response;
+import com.hmdm.rest.json.agent.CommandHistoryView;
 import com.hmdm.rest.json.agent.ConfigStatusView;
 import com.hmdm.rest.json.agent.ConfigSyncSummary;
 import com.hmdm.rest.resource.support.ConfigReconciler;
@@ -105,6 +106,20 @@ public class AgentAdminResource {
         this.configReconciler = configReconciler;
     }
 
+    /**
+     * <p>Every mutation here acts on devices (commands incl. wipe/passcode reset, wake-ups, enrollment
+     * tokens), so it needs {@code edit_devices}, exactly like {@link DeviceResource}. Reads stay open to
+     * any user of the customer.</p>
+     */
+    private static boolean canEditDevices(String action) {
+        if (SecurityContext.get().hasPermission("edit_devices")) {
+            return true;
+        }
+        logger.warn("Permission denied: {} requires edit_devices (user {})", action,
+                SecurityContext.get().getCurrentUser().map(u -> u.getLogin()).orElse("?"));
+        return false;
+    }
+
     // =================================================================================================================
     @ApiOperation(value = "Mint enrollment token", notes = "Creates a single-use enrollment token for the current customer. "
             + "An optional configurationId binds the enrolled device to that configuration.")
@@ -113,6 +128,9 @@ public class AgentAdminResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response mintToken(AgentEnrollmentToken body) {
+        if (!canEditDevices("mint enrollment token")) {
+            return Response.PERMISSION_DENIED();
+        }
         Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
         if (!customerId.isPresent()) {
             return Response.PERMISSION_DENIED();
@@ -151,6 +169,9 @@ public class AgentAdminResource {
     @Path("/devices/{deviceId}/syncApps")
     @Produces(MediaType.APPLICATION_JSON)
     public Response syncConfigApps(@PathParam("deviceId") String deviceId) {
+        if (!canEditDevices("sync configuration apps")) {
+            return Response.PERMISSION_DENIED();
+        }
         Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
         if (!customerId.isPresent()) {
             return Response.PERMISSION_DENIED();
@@ -174,6 +195,9 @@ public class AgentAdminResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response queueCommand(@PathParam("deviceId") String deviceId, AgentCommand body) {
+        if (!canEditDevices("queue agent command")) {
+            return Response.PERMISSION_DENIED();
+        }
         if (body == null || body.getType() == null || body.getType().trim().isEmpty()) {
             return Response.ERROR("error.agent.command.invalid");
         }
@@ -204,7 +228,8 @@ public class AgentAdminResource {
         wakeHub.wake(deviceId, "commands");
 
         logger.info("Agent command {} queued for device {}", command.getId(), deviceId);
-        return Response.OK(command);
+        // Payload-free view (same shape as the history): never echo a payload back to the console.
+        return Response.OK(CommandHistoryView.from(command));
     }
 
     /** Command types that must never be issued in bulk (destructive group). Lowercased — matched
@@ -220,6 +245,9 @@ public class AgentAdminResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response queueCommandBulk(AgentBulkCommandRequest req) {
+        if (!canEditDevices("queue bulk agent command")) {
+            return Response.PERMISSION_DENIED();
+        }
         if (req == null || req.getCommand() == null
                 || req.getCommand().getType() == null || req.getCommand().getType().trim().isEmpty()) {
             return Response.ERROR("error.agent.command.invalid");
@@ -395,7 +423,8 @@ public class AgentAdminResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Command history", notes = "Command lifecycle history for a device, newest first.")
+    @ApiOperation(value = "Command history", notes = "Command lifecycle history for a device, newest first. "
+            + "Payloads are never returned (they can embed secrets); app commands carry the package as 'subject'.")
     @GET
     @Path("/devices/{deviceId}/commands")
     @Produces(MediaType.APPLICATION_JSON)
@@ -413,7 +442,7 @@ public class AgentAdminResource {
             return Response.PERMISSION_DENIED();
         }
         long sinceMillis = since == null ? 0L : since;
-        return Response.OK(commandDAO.listHistory(deviceId, sinceMillis, 200));
+        return Response.OK(CommandHistoryView.fromAll(commandDAO.listHistory(deviceId, sinceMillis, 200)));
     }
 
     // =================================================================================================================
@@ -444,6 +473,9 @@ public class AgentAdminResource {
     @Path("/devices/{deviceId}/sync")
     @Produces(MediaType.APPLICATION_JSON)
     public Response forceSync(@PathParam("deviceId") String deviceId) {
+        if (!canEditDevices("force sync")) {
+            return Response.PERMISSION_DENIED();
+        }
         Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
         if (!customerId.isPresent()) {
             return Response.PERMISSION_DENIED();

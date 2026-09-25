@@ -87,8 +87,14 @@ function sha256Matches(buf, expectedSha) {
   return got.toLowerCase() === String(expectedSha).toLowerCase();
 }
 
+// Marks the recovery page with whether one-click apply/rollback works on this deployment, server-side, so the
+// page hides Roll back (and shows the manual update steps) from the first paint — no JS or status fetch needed.
+function recoveryPage(html, applySupported) {
+  return html.replace('<body>', '<body data-apply="' + (applySupported ? '1' : '0') + '">');
+}
+
 module.exports = {
   parseSemver, semverGt, pickRelease, shapeStatus,
   imageTags, nextPhase, isTerminal, APPLY_PHASES, APPLY_TERMINAL,
-  apkAsset, sha256Matches,
+  apkAsset, sha256Matches, recoveryPage,
 };

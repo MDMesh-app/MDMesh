@@ -65,6 +65,8 @@ Install on an emulator and promote to Device Owner for testing:
 ```bash
 cd supervisor
 node --test          # pure-logic unit tests (no deps)
+cd .. && docker build -f docker/supervisor.Dockerfile -t mdmesh-supervisor:dev . \
+  && scripts/supervisor-smoke.sh mdmesh-supervisor:dev   # boots the image the way compose runs it
 ```
 
 ### The whole stack, locally

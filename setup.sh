@@ -20,6 +20,8 @@ err()  { printf '\033[1;31m%s\033[0m\n' "$*" >&2; }
 # three installers. See install/lib/db.sh for the rules and why they are what they are.
 # shellcheck source=install/lib/db.sh
 . ./install/lib/db.sh
+# shellcheck source=install/lib/version.sh
+. ./install/lib/version.sh
 rand() { mdm_rand; }
 # Update KEY in .env in place (or append it) — persists values discovered after .env was written
 # (GITHUB_REPO autodetection, the release QR build args) so compose substitution + the supervisor
@@ -57,6 +59,11 @@ command -v openssl >/dev/null || { err "openssl is required."; exit 1; }
 say "== MDMesh setup =="
 echo
 
+# The checkout's latest release tag (install/lib/version.sh, same rule as the native installer); empty when there is no
+# git or no tag. Read up front so a fresh .env already records it (CURRENT_VERSION and the locally built image tags);
+# every run then refreshes CURRENT_VERSION from it below.
+REPO_VERSION=$(mdm_repo_version .)
+
 if [ -f .env ] && [ "$RESET" != 1 ]; then
   # RE-RUN: reuse the existing .env verbatim — never regenerate secrets over a live deployment.
   # The pgdata volume keeps the ORIGINAL DB password (Postgres only reads POSTGRES_PASSWORD on
@@ -90,6 +97,7 @@ else
 
   DB_PASSWORD=$(rand)
   HASH_SECRET=$(rand)
+  if [ -n "$REPO_VERSION" ]; then CURRENT_VERSION=$REPO_VERSION; fi   # else the heredoc's ${CURRENT_VERSION:-0.0.0}
 
   if [ "$MODE" = "1" ]; then
     read -rp "Public hostname devices will use (e.g. mdm.example.com): " HOST
@@ -154,6 +162,29 @@ if [ -z "${GITHUB_REPO:-}" ]; then
   GITHUB_REPO=$(git remote get-url origin 2>/dev/null | sed -E 's#(git@|https?://)[^/:]+[/:]##; s#\.git$##' || true)
   if [ -n "$GITHUB_REPO" ]; then setenv GITHUB_REPO "$GITHUB_REPO"; fi
 fi
+
+# Source builds (IMAGE_OWNER=local) cannot be updated by pulling images — keep the supervisor's one-click apply off
+# (updates = git pull && ./setup.sh). A registry owner (IMAGE_OWNER=<ghcr owner>) keeps it on. IMAGE_OWNER is the value
+# compose sees: the sourced .env on a re-run (quotes stripped, key missing → unset) or the caller's env on a fresh .env
+# (which the heredoc above wrote as ${IMAGE_OWNER:-local}) — same `:-local` default as docker-compose.yml.
+# Persist AND export: a re-run has already exported the OLD .env value (set -a above), and compose gives the shell
+# environment priority over .env, so `up` below would otherwise recreate the supervisor with the stale setting.
+if [ "${IMAGE_OWNER:-local}" = "local" ]; then APPLY_SUPPORTED=0; else APPLY_SUPPORTED=1; fi
+setenv APPLY_SUPPORTED "$APPLY_SUPPORTED"
+export APPLY_SUPPORTED
+
+# The running version, refreshed on EVERY run (this run rebuilds from the checkout): the checkout's latest release tag,
+# the same rule as the native installer (install/lib/version.sh). The supervisor compares it with GitHub's latest release,
+# so a stale or placeholder 0.0.0 shows a false "Update available". No tag to read (no git, no tags fetched) → keep the
+# .env value (0.0.0 on a fresh .env). Persisted + exported for the same reason as APPLY_SUPPORTED.
+if [ -n "$REPO_VERSION" ]; then
+  CURRENT_VERSION=$REPO_VERSION
+else
+  CURRENT_VERSION=${CURRENT_VERSION:-0.0.0}
+  warn "Could not read a release tag from this checkout (git missing, or tags not fetched) — keeping CURRENT_VERSION=${CURRENT_VERSION}."
+fi
+setenv CURRENT_VERSION "$CURRENT_VERSION"
+export CURRENT_VERSION
 
 say "Checking GitHub Releases for the signed agent APK…"
 # Mirror of the native installer's release fetch: pull the latest release's manifest + APK, verify

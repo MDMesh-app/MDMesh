@@ -86,6 +86,20 @@ public class RolloutResource {
         this.baseUrl = baseUrl;
     }
 
+    /**
+     * <p>Rollout mutations enqueue {@code app.install} commands on the customer's devices, so they need
+     * {@code edit_devices} like {@link AgentAdminResource#queueCommand}. Reads stay open to any user of
+     * the customer.</p>
+     */
+    private static boolean canEditDevices(String action) {
+        if (SecurityContext.get().hasPermission("edit_devices")) {
+            return true;
+        }
+        logger.warn("Permission denied: {} requires edit_devices (user {})", action,
+                SecurityContext.get().getCurrentUser().map(u -> u.getLogin()).orElse("?"));
+        return false;
+    }
+
     /** Request body for creating a rollout. */
     public static class CreateRolloutRequest {
         private String targetVersion;
@@ -114,6 +128,9 @@ public class RolloutResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response create(CreateRolloutRequest body) {
+        if (!canEditDevices("create rollout")) {
+            return Response.PERMISSION_DENIED();
+        }
         Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
         if (!customerId.isPresent()) {
             return Response.PERMISSION_DENIED();
@@ -181,6 +198,7 @@ public class RolloutResource {
     @Path("/{id}/promote")
     @Produces(MediaType.APPLICATION_JSON)
     public Response promote(@PathParam("id") int id) {
+        if (!canEditDevices("promote rollout")) return Response.PERMISSION_DENIED();
         Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
         if (!customerId.isPresent()) return Response.PERMISSION_DENIED();
         AgentRollout r = rolloutDAO.findById(id);
@@ -206,6 +224,7 @@ public class RolloutResource {
     @Path("/{id}/cancel")
     @Produces(MediaType.APPLICATION_JSON)
     public Response cancel(@PathParam("id") int id) {
+        if (!canEditDevices("cancel rollout")) return Response.PERMISSION_DENIED();
         Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
         if (!customerId.isPresent()) return Response.PERMISSION_DENIED();
         AgentRollout r = rolloutDAO.findById(id);

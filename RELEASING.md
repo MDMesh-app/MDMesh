@@ -9,10 +9,34 @@ git tag v1.2.3 && git push --tags
 ```
 
 `.github/workflows/release.yml` then: runs the agent unit tests + builds the **signed** release APK,
-builds & pushes the **server**, **web**, and **supervisor** images to GHCR (each tagged both
-`:VERSION` and `:latest`), builds a **minisign-signed manifest**, and publishes a **GitHub Release**
-with `mdmesh-agent.apk`, `manifest.json`, and `manifest.json.minisig`. The fleet auto-updater consumes
-that signed manifest to apply/roll-out updates.
+builds & pushes the **server**, **web**, and **supervisor** images to GHCR as `:VERSION`, builds a
+**minisign-signed manifest**, and publishes a **GitHub Release** with `mdmesh-agent.apk`, `manifest.json`,
+and `manifest.json.minisig`. The fleet auto-updater consumes that signed manifest to apply/roll-out updates.
+
+`:latest` moves **last**: only after the anonymous-pull check, the manifest signing and the GitHub Release
+have all succeeded does the final step retag each image's `:latest` to the release's `:VERSION` (same
+digest, registry-side, no rebuild), then verify all three digests. A failure anywhere earlier leaves
+`:latest` — and so every quick-start install — on the previous release.
+
+**If the job goes red after the GitHub Release step** (i.e. in "Move :latest to this release"): the
+Release and its `:VERSION` images are published and fine, but `:latest` may point at the previous release
+for some or all of the three images. Don't re-run the whole job (it would rebuild and re-push `:VERSION`
+and try to recreate the Release). Fix `:latest` by hand, logged in to GHCR with `write:packages`:
+
+```bash
+V=1.2.3                   # edit: the release version, no leading v
+O=owner-lowercase-here    # edit: the GitHub owner, lowercased
+for img in mdmesh-server mdmesh-web mdmesh-supervisor; do
+  docker buildx imagetools create --prefer-index=false --tag "ghcr.io/$O/$img:latest" "ghcr.io/$O/$img:$V"
+done
+# verify: each pair must print the same digest
+for img in mdmesh-server mdmesh-web mdmesh-supervisor; do
+  for t in "$V" latest; do docker buildx imagetools inspect --format "$img:$t {{.Manifest.Digest}}{{println}}" "ghcr.io/$O/$img:$t"; done
+done
+```
+
+`--prefer-index=false` matters: without it buildx wraps the image in a new index and `:latest` gets a
+different digest from `:VERSION`.
 
 Tags must be strict `vMAJOR.MINOR.PATCH`; the workflow rejects anything else. versionCode is derived
 `major*10000 + minor*100 + patch` (monotonic).

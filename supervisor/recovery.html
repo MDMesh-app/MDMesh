@@ -10,12 +10,13 @@
 .btn-danger:hover{background:#3a1a1d}.actions{display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap}
 input.tok{font:inherit;background:#0E1117;border:1px solid #2f3644;border-radius:8px;padding:8px 10px;color:#E8EEF4;flex:1;min-width:180px}
 .spin{display:inline-block;width:13px;height:13px;border-radius:50%;border:2px solid #2f3644;border-top-color:#4C8DFF;animation:s .8s linear infinite;vertical-align:-2px}
+body[data-apply="0"] #rbcard{display:none}body:not([data-apply="0"]) #manual{display:none}
 @keyframes s{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.spin{animation:none}}</style></head>
 <body><div class="wrap">
 <h1>MDMesh — Recovery</h1><p class="sub">Served by the updater supervisor — stays up even if the main server is down.</p>
 <div class="card" id="status"><div class="row"><span class="k">Loading status…</span></div></div>
 <div class="card" id="applycard" style="display:none"><div class="k" style="margin-bottom:6px">Update in progress</div><div id="apply"></div></div>
-<div class="card">
+<div class="card" id="rbcard">
   <div class="k">Roll back</div>
   <p class="note">Restore the most recent pre-update backup (previous images + database) and restart the server. Use this if an update left the console unreachable.</p>
   <div class="actions">
@@ -26,12 +27,22 @@ input.tok{font:inherit;background:#0E1117;border:1px solid #2f3644;border-radius
   <p class="note">If you're signed into the console in this browser, the token isn't needed. Otherwise read it with
     <span class="mono">docker compose exec supervisor cat /backups/recovery.token</span>.</p>
 </div>
-<p class="note">Logs: <span class="mono">docker compose logs server</span> · <span class="mono">docker compose logs supervisor</span>.</p>
+<div class="card" id="manual">
+  <div class="k">Update or repair manually</div>
+  <p class="note">One-click update and roll back aren't available on this install (built from source, or installed natively).
+    To update, or to repair a failed update, pull and re-run the installer for your install:</p>
+  <p class="note">Docker (from source): <span class="mono">git pull &amp;&amp; ./setup.sh</span><br>
+    Native: <span class="mono">git pull &amp;&amp; sudo ./install/install-native.sh</span></p>
+</div>
+<p class="note">Logs — Docker: <span class="mono">docker compose logs server</span> · <span class="mono">docker compose logs supervisor</span>.
+  Native: <span class="mono">journalctl -u mdmesh-server</span> · <span class="mono">journalctl -u mdmesh-supervisor</span>.</p>
 </div><script>
 var PH={authorizing:'Authorizing…',backup:'Backing up database…',pull:'Downloading new images…',recreate:'Restarting services…',healthcheck:'Verifying health…',done:'Update complete',rollback:'Rolling back…',rolled_back:'Rolled back — update failed',failed:'Update failed'};
 var TERMINAL=['done','rolled_back','failed'];
-function v(x){return x==null?'—':x}
+function esc(x){return x==null?'':String(x).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function v(x){return x==null?'—':esc(x)}
 function render(s){
+  if(typeof s.applySupported==='boolean')document.body.setAttribute('data-apply',s.applySupported?'1':'0');
   var badge=s.verified?'<span class="ok">verified</span>':'<span class="warn">unverified</span>';
   document.getElementById('status').innerHTML=
    '<div class="row"><span class="k">Current version</span><span class="mono">'+v(s.current)+'</span></div>'+
@@ -39,15 +50,15 @@ function render(s){
    '<div class="row"><span class="k">Update available</span><span>'+(s.updateAvailable?'<span class="warn">yes</span>':'no')+'</span></div>'+
    '<div class="row"><span class="k">Automatic updates</span><span>'+(s.auto?'<span class="warn">on</span>':'off')+'</span></div>'+
    '<div class="row"><span class="k">Last checked</span><span>'+(s.checkedAt?new Date(s.checkedAt).toLocaleString():'—')+'</span></div>'+
-   (s.error?'<div class="row"><span class="k">Note</span><span class="err">'+s.error+'</span></div>':'');
+   (s.error?'<div class="row"><span class="k">Note</span><span class="err">'+esc(s.error)+'</span></div>':'');
   var a=s.apply, card=document.getElementById('applycard');
   if(a){
     card.style.display='';
     var done=TERMINAL.indexOf(a.phase)>=0, fail=a.phase==='failed'||a.phase==='rolled_back';
     document.getElementById('apply').innerHTML=
-     '<div class="row"><span class="'+(fail?'err':(done?'ok':''))+'">'+(done?'':'<span class="spin"></span> ')+(PH[a.phase]||a.phase)+'</span>'+
-       '<span class="mono">'+(a.fromVersion||'?')+(a.toVersion?(' → '+a.toVersion):'')+'</span></div>'+
-     (a.error?'<div class="row"><span class="k">Detail</span><span class="warn">'+a.error+'</span></div>':'');
+     '<div class="row"><span class="'+(fail?'err':(done?'ok':''))+'">'+(done?'':'<span class="spin"></span> ')+(PH[a.phase]||esc(a.phase))+'</span>'+
+       '<span class="mono">'+(esc(a.fromVersion)||'?')+(a.toVersion?(' → '+esc(a.toVersion)):'')+'</span></div>'+
+     (a.error?'<div class="row"><span class="k">Detail</span><span class="warn">'+esc(a.error)+'</span></div>':'');
   } else { card.style.display='none'; }
 }
 function tick(){fetch('/update/status').then(function(r){return r.json()}).then(render).catch(function(){document.getElementById('status').innerHTML='<div class="row"><span class="err">Status unavailable.</span></div>';});}
@@ -58,7 +69,7 @@ document.getElementById('rb').onclick=function(){
   var h={'Accept':'application/json','X-MDMesh-Console':'1'}; var t=document.getElementById('tok').value.trim(); if(t)h['X-Recovery-Token']=t;
   fetch('/update/rollback',{method:'POST',credentials:'include',headers:h}).then(function(r){
     if(r.status===202){msg.textContent='Rollback started — watch the progress above.';tick();}
-    else{r.json().then(function(b){msg.innerHTML='<span class="err">'+(b.error||('HTTP '+r.status))+'</span>';});btn.disabled=false;}
-  }).catch(function(e){msg.innerHTML='<span class="err">'+e+'</span>';btn.disabled=false;});
+    else{r.json().then(function(b){msg.innerHTML='<span class="err">'+esc(b.error||('HTTP '+r.status))+'</span>';});btn.disabled=false;}
+  }).catch(function(e){msg.innerHTML='<span class="err">'+esc(e)+'</span>';btn.disabled=false;});
 };
 </script></body></html>

@@ -1,5 +1,6 @@
 package com.hmdm.util;
 
+import java.security.SecureRandom;
 import java.util.Random;
 
 public class PasswordUtil {
@@ -7,7 +8,8 @@ public class PasswordUtil {
     public static final int PASS_STRENGTH_ALPHADIGIT = 1;
     public static final int PASS_STRENGTH_SPECIAL = 2;
 
-    private static final Random random = new Random();
+    // SecureRandom: this generator feeds passwords, authTokens (session/JWT binding) and password-reset tokens.
+    private static final Random random = new SecureRandom();
 
     private static final String PASS_CHARS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-.,!#$%()=+;*/";
     private static int DIGIT_START = 0;

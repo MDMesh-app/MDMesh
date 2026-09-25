@@ -7,7 +7,7 @@ const os = require('os');
 const cp = require('child_process');
 const path = require('path');
 const crypto = require('crypto');
-const { pickRelease, shapeStatus, imageTags, isTerminal, apkAsset, sha256Matches } = require('./lib');
+const { pickRelease, shapeStatus, imageTags, isTerminal, apkAsset, sha256Matches, recoveryPage } = require('./lib');
 
 const PORT = +(process.env.SUPERVISOR_PORT || 9000);
 // Bind address. Docker keeps the default (all interfaces — the container has no published ports);
@@ -284,7 +284,7 @@ async function authorizeApply(req) {
   }
 }
 
-const RECOVERY = fs.readFileSync(path.join(__dirname, 'recovery.html'), 'utf8');
+const RECOVERY = recoveryPage(fs.readFileSync(path.join(__dirname, 'recovery.html'), 'utf8'), APPLY_SUPPORTED);
 const json = (res, code, obj) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
 function readJson(req) {
   return new Promise((resolve) => {

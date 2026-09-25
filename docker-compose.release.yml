@@ -62,7 +62,6 @@ services:
   supervisor:
     image: ghcr.io/${IMAGE_OWNER:-mdmesh-app}/mdmesh-supervisor:${SUPERVISOR_VERSION:-latest}
     restart: unless-stopped
-    working_dir: /project
     environment:
       GITHUB_REPO: ${GITHUB_REPO:-}
       UPDATE_CHANNEL: ${UPDATE_CHANNEL:-stable}
@@ -70,6 +69,8 @@ services:
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       CURRENT_VERSION: ${CURRENT_VERSION:-0.0.0}
       AUTO_UPDATE: ${AUTO_UPDATE:-0}
+      # Set 0 to hide one-click apply (the console then shows the manual upgrade steps).
+      APPLY_SUPPORTED: ${APPLY_SUPPORTED:-1}
       COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-mdmesh}
       COMPOSE_FILE: ${COMPOSE_FILE:-docker-compose.yml}
       COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}

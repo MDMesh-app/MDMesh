@@ -2,7 +2,11 @@
 # One job per old workflow (server.yml, web.yml, agent.yml), run as a matrix entry gated
 # by changed-paths so an untouched subtree costs nothing. Steps within each entry
 # reproduce that old workflow's steps and commands exactly; project-specific comments
-# from the old workflows are copied along with the commands they explain.
+# from the old workflows are copied along with the commands they explain. A fourth entry,
+# supervisor, builds the updater/recovery supervisor image and runs its unit tests plus
+# scripts/supervisor-smoke.sh against it (the compose-shaped start guard for #27). A fifth, edge,
+# runs scripts/edge-check.sh: the Caddyfile in every hosting mode under the web image's own caddy, plus
+# `docker compose config` for every compose file/overlay/profile combination.
 name: t0-fast
 
 on:
@@ -34,6 +38,9 @@ jobs:
             server: pom.xml, common/**, jwt/**, notification/**, plugins/**, server/**, swagger/**
             web: web/**
             agent: agent-android/**, proto/**
+            supervisor: supervisor/**, docker/supervisor.Dockerfile, release/minisign.pub, scripts/supervisor-smoke.sh
+            # Listed explicitly: the kit's fail-closed **/Dockerfile* does not match docker/web.Dockerfile.
+            edge: docker/Caddyfile, docker/web.Dockerfile, docker-compose*.yml, scripts/edge-check.sh
 
   build:
     name: ${{ matrix.name }}
@@ -43,7 +50,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        name: [server, web, agent]
+        name: [server, web, agent, supervisor, edge]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
@@ -99,6 +106,28 @@ jobs:
         # old workflow's approach, from when no wrapper was committed), so this uses ./gradlew.
         working-directory: agent-android
         run: ./gradlew --no-daemon assembleDebug lintDebug testDebugUnitTest
+
+      # --- supervisor (#27): build the image, run its unit tests on the shipped Node, then run it the
+      # way docker-compose runs it (working_dir /project + project mounted) and probe its routes. ---
+      - if: matrix.name == 'supervisor' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).supervisor)
+        name: Build image + unit tests + compose-shaped smoke
+        # Per-run tag: on a daemon shared by several runners (vars.CI_RUNNER) a fixed tag lets concurrent runs
+        # retag each other's image, so a run could smoke another PR's build.
+        env:
+          SUP_IMG: mdmesh-supervisor:ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          docker build -f docker/supervisor.Dockerfile -t "$SUP_IMG" .
+          docker run --rm -w /app "$SUP_IMG" node --test test.js
+          scripts/supervisor-smoke.sh "$SUP_IMG"
+      - if: always() && matrix.name == 'supervisor'
+        name: Remove the per-run supervisor image
+        run: docker rmi -f "mdmesh-supervisor:ci-${{ github.run_id }}-${{ github.run_attempt }}" >/dev/null 2>&1 || true
+
+      # --- edge: the Cloudflare-mode Caddyfile break (empty ACME_EMAIL) shipped because nothing parsed it. Validates
+      # docker/Caddyfile in every hosting mode with the caddy image web.Dockerfile builds FROM, and every compose combo. ---
+      - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).edge)
+        name: Caddyfile modes + compose overlays
+        run: scripts/edge-check.sh
 
   # NOTE: an emulator-based instrumentation matrix (the "version-treadmill guard" — boot the agent
   # across API levels so SDK_INT-gated breakage surfaces in CI) is deferred until real instrumented

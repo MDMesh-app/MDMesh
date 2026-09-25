@@ -5,8 +5,9 @@
 {
 	email "{$ACME_EMAIL}"
 	# Which direct peers may set X-Forwarded-For (so the server records a device's real public IP).
-	# Default: loopback only, i.e. nothing changes for the own-domain and Cloudflare modes. The
-	# bring-your-own-proxy overlays set private_ranges, because there the user's proxy is the peer.
+	# Default: loopback only — no Docker peer is loopback, so behaviour is effectively unchanged for the
+	# own-domain and Cloudflare modes. The bring-your-own-proxy overlays set private_ranges, because
+	# there the user's proxy is the peer.
 	servers {
 		trusted_proxies static {$TRUSTED_PROXIES:127.0.0.1/32 ::1/128}
 	}

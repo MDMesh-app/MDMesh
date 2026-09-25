@@ -2,7 +2,9 @@
 # One job per old workflow (server.yml, web.yml, agent.yml), run as a matrix entry gated
 # by changed-paths so an untouched subtree costs nothing. Steps within each entry
 # reproduce that old workflow's steps and commands exactly; project-specific comments
-# from the old workflows are copied along with the commands they explain.
+# from the old workflows are copied along with the commands they explain. A fourth entry,
+# supervisor, builds the updater/recovery supervisor image and runs its unit tests plus
+# scripts/supervisor-smoke.sh against it (the compose-shaped start guard for #27).
 name: t0-fast
 
 on:

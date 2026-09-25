@@ -3,7 +3,7 @@
 # same image serves any deployment. JDK 17 is required — dependencies (e.g. activemq-broker) ship
 # Java-11+ bytecode, so Java 8 fails to both compile and run.
 
-FROM maven:3.9-eclipse-temurin-17 AS build
+FROM maven:3-eclipse-temurin-26 AS build
 WORKDIR /src
 COPY pom.xml ./
 COPY common ./common

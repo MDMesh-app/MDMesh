@@ -36,8 +36,8 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # Supervisor smoke BEFORE anything is built or pushed (#27): a supervisor that can't start the way
-      # compose runs it must never reach GHCR — and a failure here moves no :latest tag. The Supervisor
-      # image step below pushes this very :smoke build.
+      # compose runs it must never reach GHCR. The Supervisor image step below pushes this very :smoke
+      # build. (No step before the final "Move :latest" step touches :latest.)
       - name: Supervisor image smoke (compose-shaped)
         run: |
           docker build -f docker/supervisor.Dockerfile -t mdmesh-supervisor:smoke .
@@ -81,7 +81,7 @@ jobs:
           [ -n "$CK" ] || { echo "APK signature checksum came out empty — aborting the release"; exit 1; }
           echo "CK=$CK" >> "$GITHUB_ENV"
 
-      # --- Build + push images to GHCR ---
+      # --- Build + push images to GHCR (:VERSION only; :latest moves in the last step) ---
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -94,8 +94,8 @@ jobs:
         run: |
           O=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')   # GHCR repo names must be lowercase
           IMG="ghcr.io/${O}/mdmesh-server"
-          docker build -f docker/server.Dockerfile -t "$IMG:$VERSION" -t "$IMG:latest" .
-          docker push "$IMG:$VERSION"; docker push "$IMG:latest"
+          docker build -f docker/server.Dockerfile -t "$IMG:$VERSION" .
+          docker push "$IMG:$VERSION"
           echo "SERVER_IMG=$IMG:$VERSION" >> "$GITHUB_ENV"
       - name: Web image (bake release QR checksum/package)
         env:
@@ -109,8 +109,8 @@ jobs:
             --build-arg VITE_AGENT_CHECKSUM="$CK" \
             --build-arg VITE_AGENT_APK_URL=/files/agent.apk \
             --build-arg VITE_APP_VERSION="$VERSION" \
-            -t "$IMG:$VERSION" -t "$IMG:latest" .
-          docker push "$IMG:$VERSION"; docker push "$IMG:latest"
+            -t "$IMG:$VERSION" .
+          docker push "$IMG:$VERSION"
           echo "WEB_IMG=$IMG:$VERSION" >> "$GITHUB_ENV"
       - name: Supervisor image
         env:
@@ -121,8 +121,7 @@ jobs:
           IMG="ghcr.io/${O}/mdmesh-supervisor"
           # Publish exactly the image the smoke step tested (no rebuild).
           docker tag mdmesh-supervisor:smoke "$IMG:$VERSION"
-          docker tag mdmesh-supervisor:smoke "$IMG:latest"
-          docker push "$IMG:$VERSION"; docker push "$IMG:latest"
+          docker push "$IMG:$VERSION"
       - name: Verify images are publicly pullable (guards against private GHCR packages, #3)
         env:
           OWNER: ${{ github.repository_owner }}
@@ -173,3 +172,25 @@ jobs:
             mdmesh-agent.apk
             manifest.json
             manifest.json.minisig
+
+      # --- Move :latest LAST, only once the release is pullable, signed and published ---
+      # Quick-start installs (*_VERSION=latest, `docker compose pull`) follow :latest, so it must never point
+      # at an image whose release failed. Retag registry-side from the already-pushed :VERSION: with a single
+      # source, `imagetools create` re-pushes that exact manifest under the new tag (no rebuild, no local
+      # state), so :latest and :VERSION share one digest — asserted below.
+      - name: Move :latest to this release
+        env:
+          OWNER: ${{ github.repository_owner }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          O=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
+          for img in mdmesh-server mdmesh-web mdmesh-supervisor; do
+            IMG="ghcr.io/${O}/${img}"
+            docker buildx imagetools create --tag "$IMG:latest" "$IMG:$VERSION"
+            v=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$IMG:$VERSION")
+            l=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$IMG:latest")
+            echo "${img}: :${VERSION}=${v} :latest=${l}"
+            if [ -z "$v" ] || [ "$v" != "$l" ]; then
+              echo "::error::${img}:latest digest '${l}' != :${VERSION} digest '${v}'"; exit 1
+            fi
+          done

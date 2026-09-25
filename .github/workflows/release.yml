@@ -35,8 +35,9 @@ jobs:
             echo "proto=$(grep -oP 'PROTOCOL_VERSION[^\"]*\"\K[^\"]+' agent-android/proto/src/main/kotlin/com/mdmesh/proto/ProtocolJson.kt)"
           } >> "$GITHUB_OUTPUT"
 
-      # Supervisor smoke BEFORE anything is built or pushed (#27): a supervisor that can't start under
-      # compose's working_dir must never reach GHCR — and a failure here moves no :latest tag.
+      # Supervisor smoke BEFORE anything is built or pushed (#27): a supervisor that can't start the way
+      # compose runs it must never reach GHCR — and a failure here moves no :latest tag. The Supervisor
+      # image step below pushes this very :smoke build.
       - name: Supervisor image smoke (compose-shaped)
         run: |
           docker build -f docker/supervisor.Dockerfile -t mdmesh-supervisor:smoke .
@@ -118,7 +119,9 @@ jobs:
         run: |
           O=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
           IMG="ghcr.io/${O}/mdmesh-supervisor"
-          docker build -f docker/supervisor.Dockerfile -t "$IMG:$VERSION" -t "$IMG:latest" .
+          # Publish exactly the image the smoke step tested (no rebuild).
+          docker tag mdmesh-supervisor:smoke "$IMG:$VERSION"
+          docker tag mdmesh-supervisor:smoke "$IMG:latest"
           docker push "$IMG:$VERSION"; docker push "$IMG:latest"
       - name: Verify images are publicly pullable (guards against private GHCR packages, #3)
         env:

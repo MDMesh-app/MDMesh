@@ -17,6 +17,10 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      # Per-run local tag for the smoked supervisor build (never pushed under this name): unique so a shared
+      # daemon can't swap in another run's image between the smoke and the push that retags it.
+      SUP_IMG: mdmesh-supervisor:smoke-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v4
 
@@ -36,13 +40,13 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # Supervisor smoke BEFORE anything is built or pushed (#27): a supervisor that can't start the way
-      # compose runs it must never reach GHCR. The Supervisor image step below pushes this very :smoke
+      # compose runs it must never reach GHCR. The Supervisor image step below pushes this very $SUP_IMG
       # build. (No step before the final "Move :latest" step touches :latest.)
       - name: Supervisor image smoke (compose-shaped)
         run: |
-          docker build -f docker/supervisor.Dockerfile -t mdmesh-supervisor:smoke .
-          docker run --rm -w /app mdmesh-supervisor:smoke node --test test.js
-          scripts/supervisor-smoke.sh mdmesh-supervisor:smoke
+          docker build -f docker/supervisor.Dockerfile -t "$SUP_IMG" .
+          docker run --rm -w /app "$SUP_IMG" node --test test.js
+          scripts/supervisor-smoke.sh "$SUP_IMG"
 
       # --- Build + sign the release APK (gated by unit tests + R8 lintVital) ---
       - uses: actions/setup-java@v4
@@ -120,7 +124,7 @@ jobs:
           O=$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')
           IMG="ghcr.io/${O}/mdmesh-supervisor"
           # Publish exactly the image the smoke step tested (no rebuild).
-          docker tag mdmesh-supervisor:smoke "$IMG:$VERSION"
+          docker tag "$SUP_IMG" "$IMG:$VERSION"
           docker push "$IMG:$VERSION"
       - name: Verify images are publicly pullable (guards against private GHCR packages, #3)
         env:

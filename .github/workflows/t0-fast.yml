@@ -111,10 +111,17 @@ jobs:
       # way docker-compose runs it (working_dir /project + project mounted) and probe its routes. ---
       - if: matrix.name == 'supervisor' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).supervisor)
         name: Build image + unit tests + compose-shaped smoke
+        # Per-run tag: on a daemon shared by several runners (vars.CI_RUNNER) a fixed tag lets concurrent runs
+        # retag each other's image, so a run could smoke another PR's build.
+        env:
+          SUP_IMG: mdmesh-supervisor:ci-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
-          docker build -f docker/supervisor.Dockerfile -t mdmesh-supervisor:ci .
-          docker run --rm -w /app mdmesh-supervisor:ci node --test test.js
-          scripts/supervisor-smoke.sh mdmesh-supervisor:ci
+          docker build -f docker/supervisor.Dockerfile -t "$SUP_IMG" .
+          docker run --rm -w /app "$SUP_IMG" node --test test.js
+          scripts/supervisor-smoke.sh "$SUP_IMG"
+      - if: always() && matrix.name == 'supervisor'
+        name: Remove the per-run supervisor image
+        run: docker rmi -f "mdmesh-supervisor:ci-${{ github.run_id }}-${{ github.run_attempt }}" >/dev/null 2>&1 || true
 
       # --- edge: the Cloudflare-mode Caddyfile break (empty ACME_EMAIL) shipped because nothing parsed it. Validates
       # docker/Caddyfile in every hosting mode with the caddy image web.Dockerfile builds FROM, and every compose combo. ---

@@ -6,13 +6,18 @@
 # entrypoint resolved against a compose `working_dir` crash-looped the supervisor on every Docker
 # deploy — and checks the routes Caddy proxies to it plus the tools apply.sh/rollback.sh need. A second
 # run with APPLY_SUPPORTED=0 (what setup.sh and the native installer set) checks one-click apply and rollback are
-# refused and that the recovery page stops offering Roll back.
+# refused and that the recovery page stops offering Roll back; that run also sets GITHUB_REPO with GitHub unreachable
+# (--network none, api.github.com pinned to a closed loopback port so it fails fast instead of waiting on DNS), so
+# the startup poll takes the fetch-error path, which must be reported in /update/status, not crash the process.
 # Needs only a Docker daemon (no host ports published; probes run inside the container).
+# The docker compose files themselves are parsed by scripts/edge-check.sh (`docker compose config -q`), not here.
 #
-# Usage: scripts/supervisor-smoke.sh <image>      e.g. scripts/supervisor-smoke.sh mdmesh-supervisor:ci
+# Usage: scripts/supervisor-smoke.sh <image>      e.g. scripts/supervisor-smoke.sh mdmesh-supervisor:ci-local
 set -euo pipefail
 IMG="${1:?usage: scripts/supervisor-smoke.sh <image>}"
-BASE_NAME="mdmesh-supervisor-smoke-$$"
+# Unique per run, even across CI jobs sharing one daemon ($$ alone can repeat across PID namespaces), so parallel
+# runs never probe or `docker rm -f` each other's containers. The label marks leftovers from a SIGKILLed run.
+BASE_NAME="mdmesh-supervisor-smoke-${GITHUB_RUN_ID:-local}-$$-$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')"
 NAME="$BASE_NAME"                    # the container the helpers below probe
 PROJ="$(mktemp -d)"
 cleanup() { docker rm -f "$BASE_NAME" "$BASE_NAME-noapply" >/dev/null 2>&1 || true; rm -rf "$PROJ"; }
@@ -33,11 +38,11 @@ code() { in_c curl -s -o /dev/null -w '%{http_code}' -m 5 "$@"; }
 # start <name> [extra docker-run args…]: run the image compose-shaped as <name> and wait for /healthz.
 start() {
   NAME="$1"; shift
-  docker run -d --name "$NAME" -w /project -v "$PROJ:/project" --tmpfs /backups \
+  docker run -d --name "$NAME" --label mdmesh.smoke=1 -w /project -v "$PROJ:/project" --tmpfs /backups \
     -e GITHUB_REPO= -e CURRENT_VERSION=0.0.0 -e COMPOSE_PROJECT_NAME=mdmesh "$@" "$IMG" >/dev/null
   local up=0
   for _ in $(seq 1 30); do
-    running || fail "container exited (code $(docker inspect -f '{{.State.ExitCode}}' "$NAME")) — entrypoint must not depend on the working dir"
+    running || fail "$NAME exited (code $(docker inspect -f '{{.State.ExitCode}}' "$NAME")) during startup — see logs (#27: the entrypoint must not depend on the working dir)"
     if in_c curl -fsS -m 2 http://127.0.0.1:9000/healthz >/dev/null 2>&1; then up=1; break; fi
     sleep 1
   done
@@ -69,13 +74,21 @@ check "apply.sh/rollback.sh executable, release pubkey baked" \
   in_c sh -c 'test -x /app/apply.sh && test -x /app/rollback.sh && test -s /app/minisign.pub'
 check "bash, minisign, pg_dump/psql, docker compose present" toolchain
 
-sleep 3
-check "still running after the first poll" running
-
 # Source and native installs set APPLY_SUPPORTED=0 — the console must be told, apply/rollback refused outright,
 # and the recovery page must hide Roll back (CSS keyed on the marker) and show the manual update steps instead.
+# Its startup poll gets a repo but no network: poll() must record the fetch error in /update/status and keep serving.
 docker rm -f "$NAME" >/dev/null
-start "$BASE_NAME-noapply" -e APPLY_SUPPORTED=0
+start "$BASE_NAME-noapply" -e APPLY_SUPPORTED=0 -e GITHUB_REPO=mdmesh-smoke/unreachable \
+  --network none --add-host api.github.com:127.0.0.1
+poll_error() { local s=""
+  for _ in $(seq 1 15); do
+    s="$(body http://127.0.0.1:9000/update/status)" || return 1
+    grep -q '"error":"not polled yet"' <<<"$s" || break
+    sleep 1
+  done
+  running && grep -q '"checkedAt":[0-9]' <<<"$s" && grep -q '"error":"[^"]' <<<"$s" \
+    && ! grep -qE '"error":"(not polled yet|GITHUB_REPO not set)"' <<<"$s"; }
+check "startup poll against an unreachable repo reports its fetch error in /update/status and keeps running" poll_error
 status_noapply() { grep -q '"applySupported":false' <<<"$(body http://127.0.0.1:9000/update/status)"; }
 apply_501()      { [ "$(code -X POST http://127.0.0.1:9000/update/apply)" = 501 ]; }
 rollback_501()   { [ "$(code -X POST -H 'X-MDMesh-Console: 1' http://127.0.0.1:9000/update/rollback)" = 501 ]; }

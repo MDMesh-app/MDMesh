@@ -47,7 +47,10 @@ first update, which pins the versions (or set `SERVER_VERSION`/`WEB_VERSION`/`CU
 > works unchanged. Quick-start installs: `docker compose pull && docker compose up -d` (if `.env` pins
 > `SUPERVISOR_VERSION`, set it to `0.3.1` first). From-source installs: `git pull` and re-run `./setup.sh` (if you
 > removed `working_dir` by hand, `git checkout -- docker-compose.yml` first). The supervisor never updates itself, so
-> this manual pull is how it picks up fixes.
+> this manual pull is how it picks up fixes. What you get back depends on the install: quick-start installs get the
+> update banner, one-click **Update** and the `/recovery` **Roll back** button; from-source Docker installs
+> (`APPLY_SUPPORTED=0`) get the update banner (its **Details** link leads to the manual steps in Settings) and a `/recovery` page that shows status and the manual update steps
+> instead of Roll back, since one-click apply and rollback aren't supported there.
 
 ## Option B — from source (clone + build)
 
@@ -167,9 +170,11 @@ Set these in `.env` (the wizard seeds them; add by hand for an existing deploy):
   **Update**, watches the live progress, and the stack rolls back on its own if anything fails.
 - **Unattended:** turn on **Automatic updates** in Settings (or `AUTO_UPDATE=1`) to apply each verified
   release without a prompt. A release that fails its rollback is never auto-retried.
-- **Recovery:** `https://<host>/recovery` shows live apply state and a **Roll back** button. While signed
-  in, no token is needed. If the server is down, paste the break-glass recovery token, read with:
-  `docker compose exec supervisor cat /backups/recovery.token`.
+- **Recovery:** `https://<host>/recovery` shows live apply state and, on quick-start installs, a **Roll back**
+  button. While signed in, no token is needed. If the server is down, paste the break-glass recovery token, read with:
+  `docker compose exec supervisor cat /backups/recovery.token`. From-source Docker and native installs
+  (`APPLY_SUPPORTED=0`) can't roll back one-click: their recovery page hides Roll back and shows the manual steps
+  instead: `git pull && ./setup.sh` (Docker from source) or `git pull && sudo ./install/install-native.sh` (native).
 - **Source (build) deploys** can't auto-pull, so setup.sh hides one-click Update (`APPLY_SUPPORTED=0`); update with
   `git pull && ./setup.sh`. Re-running `./setup.sh` (rather than `docker compose up -d --build` alone) is what refreshes
   `CURRENT_VERSION` and `APPLY_SUPPORTED`; without a readable tag (no git, or tags not fetched) it keeps the old

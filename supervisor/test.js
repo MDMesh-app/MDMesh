@@ -1,6 +1,6 @@
 const t = require('node:test');
 const a = require('node:assert');
-const { semverGt, pickRelease, shapeStatus, imageTags, nextPhase, isTerminal, apkAsset, sha256Matches } = require('./lib');
+const { semverGt, pickRelease, shapeStatus, imageTags, nextPhase, isTerminal, apkAsset, sha256Matches, recoveryPage } = require('./lib');
 
 t.test('semverGt', () => {
   a.equal(semverGt('1.2.4', '1.2.3'), true);
@@ -65,4 +65,17 @@ t.test('apply phase state machine', () => {
   a.equal(isTerminal('failed'), true);
   a.equal(isTerminal('pull'), false);
   a.equal(isTerminal('rollback'), false);
+});
+
+t.test('recoveryPage — marks the page with whether apply/rollback is supported', () => {
+  const html = require('fs').readFileSync(require('path').join(__dirname, 'recovery.html'), 'utf8');
+  a.equal(html.split('<body>').length, 2, 'recovery.html must have exactly one bare <body> tag to mark');
+  const off = recoveryPage(html, false), on = recoveryPage(html, true);
+  a.ok(off.includes('<body data-apply="0">'));
+  a.ok(on.includes('<body data-apply="1">'));
+  a.ok(!off.includes('<body>') && !on.includes('<body>'));
+  // The page itself hides the Roll back card and shows the manual steps under data-apply="0" (CSS, no JS needed).
+  a.match(html, /body\[data-apply="0"\] #rbcard\{display:none\}/);
+  a.match(html, /body:not\(\[data-apply="0"\]\) #manual\{display:none\}/);
+  a.ok(html.includes('git pull &amp;&amp; ./setup.sh') && html.includes('git pull &amp;&amp; sudo ./install/install-native.sh'));
 });

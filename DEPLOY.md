@@ -159,8 +159,8 @@ Set these in `.env` (the wizard seeds them; add by hand for an existing deploy):
 - **Recovery:** `https://<host>/recovery` shows live apply state and a **Roll back** button. While signed
   in, no token is needed. If the server is down, paste the break-glass recovery token, read with:
   `docker compose exec supervisor cat /backups/recovery.token`.
-- **Source (build) deploys** can't auto-pull — they run locally built images; redeploy from git to update. Source installs
-  therefore hide the one-click Update (setup.sh sets `APPLY_SUPPORTED=0`); update with `git pull && ./setup.sh`.
+- **Source (build) deploys** can't auto-pull, so setup.sh hides one-click Update (`APPLY_SUPPORTED=0`); update with
+  `git pull && ./setup.sh`.
 - Older agents keep working across server updates (versioned `/agent/v1` contract; see
   `docs/adr/0009-agent-v1-contract-stability.md`).
 

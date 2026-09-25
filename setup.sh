@@ -156,8 +156,10 @@ if [ -z "${GITHUB_REPO:-}" ]; then
 fi
 
 # Source builds (IMAGE_OWNER=local) cannot be updated by pulling images — keep the supervisor's one-click apply off
-# (updates = git pull && ./setup.sh). A registry owner (IMAGE_OWNER=<ghcr owner>) keeps it on.
-if [ "$(sed -n 's/^IMAGE_OWNER=//p' .env)" = "local" ]; then setenv APPLY_SUPPORTED 0; else setenv APPLY_SUPPORTED 1; fi
+# (updates = git pull && ./setup.sh). A registry owner (IMAGE_OWNER=<ghcr owner>) keeps it on. IMAGE_OWNER is the value
+# compose sees: the sourced .env on a re-run (quotes stripped, key missing → unset) or the caller's env on a fresh .env
+# (which the heredoc above wrote as ${IMAGE_OWNER:-local}) — same `:-local` default as docker-compose.yml.
+if [ "${IMAGE_OWNER:-local}" = "local" ]; then setenv APPLY_SUPPORTED 0; else setenv APPLY_SUPPORTED 1; fi
 
 say "Checking GitHub Releases for the signed agent APK…"
 # Mirror of the native installer's release fetch: pull the latest release's manifest + APK, verify

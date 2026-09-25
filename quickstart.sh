@@ -9,8 +9,7 @@
 set -euo pipefail
 
 REPO="MDMesh-app/MDMesh"
-BRANCH="main"
-RAW="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
+BRANCH="main"   # where the compose + seed come from only when the release can't be resolved (see below)
 IMAGE_OWNER_DEFAULT="mdmesh-app"
 
 say()  { printf '\033[1;36m%s\033[0m\n' "$*"; }
@@ -18,13 +17,14 @@ warn() { printf '\033[1;33m%s\033[0m\n' "$*"; }
 err()  { printf '\033[1;31m%s\033[0m\n' "$*" >&2; }
 rand() { openssl rand -hex 24; }
 # The latest published (non-prerelease, non-draft) release of owner/repo $1, without the "v" — the version this
-# install pins. Prints nothing when GitHub is unreachable, rate-limited, has no release, or the tag is not X.Y.Z[-pre].
+# install pins. Release tags are always vX.Y.Z[-pre] (release.yml triggers on v*), and the caller downloads from
+# the v<version> ref, so anything else counts as unresolved. Prints nothing when GitHub is unreachable,
+# rate-limited or has no release.
 latest_release() {
   local tag
   tag=$(curl -fsSL -m 20 "https://api.github.com/repos/$1/releases/latest" 2>/dev/null \
         | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/') || true
-  tag=${tag#v}
-  if [[ "$tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$ ]]; then printf '%s\n' "$tag"; fi
+  if [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$ ]]; then printf '%s\n' "${tag#v}"; fi
 }
 
 command -v docker >/dev/null || { err "Docker is required."; exit 1; }
@@ -56,15 +56,19 @@ read -rp "Image owner (GHCR, lowercase) [${IMAGE_OWNER_DEFAULT}]: " IMAGE_OWNER;
 # return to, and a `:latest` tag that moves mid-release can't hand us a mismatched server/web pair. The supervisor
 # stays on `:latest`: apply never bumps it, so `docker compose pull` is how it gets its own fixes. If the release
 # can't be resolved, fall back to `:latest` + CURRENT_VERSION=0.0.0 (the old behaviour): the stack still comes up, the
-# console shows "Update available" until the first apply pins the versions.
+# console shows "Update available" until the first apply pins the versions. The compose file + seed come from the same
+# release's tag in the repo it was resolved from, so they match the pinned images; `main` only in the fallback.
 RELEASE=$(latest_release "$GH_REPO")
 if [ -n "$RELEASE" ]; then
   IMAGE_TAG="$RELEASE"; CURRENT_VERSION="$RELEASE"
+  RAW="https://raw.githubusercontent.com/${GH_REPO}/v${RELEASE}"
   say "Installing release v${RELEASE} of ${GH_REPO}."
 else
   IMAGE_TAG="latest"; CURRENT_VERSION="0.0.0"
+  RAW="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
   warn "Could not resolve the latest release of ${GH_REPO} (GitHub API unreachable or rate-limited?) — using the :latest"
-  warn "images. The console will show \"Update available\" until the first update pins the version (see DEPLOY.md)."
+  warn "images and the ${BRANCH} compose. The console will show \"Update available\" until the first update pins the"
+  warn "version (see DEPLOY.md)."
 fi
 
 DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)

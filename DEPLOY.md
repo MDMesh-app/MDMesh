@@ -17,10 +17,11 @@ It creates `./mdmesh`, downloads the pull-only compose (`docker-compose.release.
 secrets, `docker compose pull && up -d`, seeds, and prints the console URL + a temporary admin password.
 
 It pins the latest published release: `SERVER_VERSION`, `WEB_VERSION` and `CURRENT_VERSION` in `.env` all name that
-version (e.g. `0.3.1`), so the console doesn't offer the release you just installed as an update. The supervisor
+version (e.g. `0.3.1`), so the console doesn't offer the release you just installed as an update, and the compose file +
+seed are downloaded from that release's tag (`v0.3.1`) so they match the images. The supervisor
 tracks `SUPERVISOR_VERSION=latest`, so `docker compose pull` keeps delivering its fixes (updates never touch it); pin it
 only if you want to freeze it. If the GitHub API can't be reached (or is rate-limited) the quick start falls back to the
-`:latest` images with `CURRENT_VERSION=0.0.0`: the install works, but the console shows "Update available" until the
+`:latest` images and the `main` compose + seed with `CURRENT_VERSION=0.0.0`: the install works, but the console shows "Update available" until the
 first update, which pins the versions (or set `SERVER_VERSION`/`WEB_VERSION`/`CURRENT_VERSION` to the running release by hand).
 
 > **Requires a published release**, and the GHCR packages (`mdmesh-server`/`-web`/`-supervisor`) must be

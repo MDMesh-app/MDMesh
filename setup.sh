@@ -59,6 +59,11 @@ command -v openssl >/dev/null || { err "openssl is required."; exit 1; }
 say "== MDMesh setup =="
 echo
 
+# The checkout's latest release tag (install/lib/version.sh, same rule as the native installer); empty when there is no
+# git or no tag. Read up front so a fresh .env already records it (CURRENT_VERSION and the locally built image tags);
+# every run then refreshes CURRENT_VERSION from it below.
+REPO_VERSION=$(mdm_repo_version .)
+
 if [ -f .env ] && [ "$RESET" != 1 ]; then
   # RE-RUN: reuse the existing .env verbatim — never regenerate secrets over a live deployment.
   # The pgdata volume keeps the ORIGINAL DB password (Postgres only reads POSTGRES_PASSWORD on
@@ -92,6 +97,7 @@ else
 
   DB_PASSWORD=$(rand)
   HASH_SECRET=$(rand)
+  if [ -n "$REPO_VERSION" ]; then CURRENT_VERSION=$REPO_VERSION; fi   # else the heredoc's ${CURRENT_VERSION:-0.0.0}
 
   if [ "$MODE" = "1" ]; then
     read -rp "Public hostname devices will use (e.g. mdm.example.com): " HOST
@@ -171,7 +177,6 @@ export APPLY_SUPPORTED
 # the same rule as the native installer (install/lib/version.sh). The supervisor compares it with GitHub's latest release,
 # so a stale or placeholder 0.0.0 shows a false "Update available". No tag to read (no git, no tags fetched) → keep the
 # .env value (0.0.0 on a fresh .env). Persisted + exported for the same reason as APPLY_SUPPORTED.
-REPO_VERSION=$(mdm_repo_version .)
 if [ -n "$REPO_VERSION" ]; then
   CURRENT_VERSION=$REPO_VERSION
 else

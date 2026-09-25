@@ -16,6 +16,12 @@ bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/quick
 It creates `./mdmesh`, downloads the pull-only compose (`docker-compose.release.yml`) + seed, generates
 secrets, `docker compose pull && up -d`, seeds, and prints the console URL + a temporary admin password.
 
+It pins the latest published release: `SERVER_VERSION`, `WEB_VERSION`, `SUPERVISOR_VERSION` and `CURRENT_VERSION`
+in `.env` all name that version (e.g. `0.3.1`), so the console doesn't offer the release you just installed as an
+update. If the GitHub API can't be reached (or is rate-limited) it falls back to the `:latest` images with
+`CURRENT_VERSION=0.0.0`: the install works, but the console shows "Update available" until the first update, which
+pins the versions (or set all four to the running release by hand).
+
 > **Requires a published release**, and the GHCR packages (`mdmesh-server`/`-web`/`-supervisor`) must be
 > **public** — or run `docker login ghcr.io` first. See [RELEASING.md](RELEASING.md).
 
@@ -150,6 +156,9 @@ Set these in `.env` (the wizard seeds them; add by hand for an existing deploy):
 | `GITHUB_TOKEN` | Optional — raises the API rate limit / reads a private repo. |
 | `IMAGE_OWNER` | GHCR owner (lowercase) the versioned images live under. |
 | `SERVER_VERSION` / `WEB_VERSION` | Running image tags **without the `v`** (`0.2.6`, not `v0.2.6`); bumped automatically on apply. |
+| `CURRENT_VERSION` | The running release, compared with GitHub's latest to decide "update available". Bumped on apply; `./setup.sh` rewrites it on every run from the checkout's latest tag (`git describe --tags`), like the native installer. |
+| `SUPERVISOR_VERSION` | The supervisor's image tag. Pinned by the quick start; apply never changes it (the supervisor never updates itself) — bump it and `docker compose pull supervisor && docker compose up -d supervisor` to pick up supervisor fixes. |
+| `APPLY_SUPPORTED` | `1` shows one-click **Update**, `0` shows the manual steps instead. `./setup.sh` rewrites it on every run from `IMAGE_OWNER` (`local` → `0`); the source compose file defaults to `0`, the release compose to `1`. |
 | `AUTO_UPDATE` | `1` to apply verified releases unattended (also toggleable in **Settings**). |
 
 - **One-click:** when a verified update is available, a banner appears in the console; an admin clicks
@@ -160,7 +169,9 @@ Set these in `.env` (the wizard seeds them; add by hand for an existing deploy):
   in, no token is needed. If the server is down, paste the break-glass recovery token, read with:
   `docker compose exec supervisor cat /backups/recovery.token`.
 - **Source (build) deploys** can't auto-pull, so setup.sh hides one-click Update (`APPLY_SUPPORTED=0`); update with
-  `git pull && ./setup.sh`.
+  `git pull && ./setup.sh`. Re-running `./setup.sh` (rather than `docker compose up -d --build` alone) is what refreshes
+  `CURRENT_VERSION` and `APPLY_SUPPORTED`; without a readable tag (no git, or tags not fetched) it keeps the old
+  `CURRENT_VERSION` and warns.
 - Older agents keep working across server updates (versioned `/agent/v1` contract; see
   `docs/adr/0009-agent-v1-contract-stability.md`).
 

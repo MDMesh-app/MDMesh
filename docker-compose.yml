@@ -96,7 +96,8 @@ services:
       AUTO_UPDATE: ${AUTO_UPDATE:-0}
       # 0 on source installs (IMAGE_OWNER=local): there is no registry image to pull, so the console shows the manual
       # upgrade steps instead of a one-click apply that could only back up, fail and roll back. Native sets 0 too.
-      APPLY_SUPPORTED: ${APPLY_SUPPORTED:-1}
+      # Defaults to 0 to match this file's IMAGE_OWNER default (local); setup.sh writes 1 for a registry owner.
+      APPLY_SUPPORTED: ${APPLY_SUPPORTED:-0}
       # Pin project + compose-file set so the supervisor drives the SAME stack the host launched
       # (default project name = dir basename would fork a duplicate; COMPOSE_FILE carries the domain
       # overlay so recreating caddy keeps its published ports).

@@ -69,8 +69,7 @@ services:
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       CURRENT_VERSION: ${CURRENT_VERSION:-0.0.0}
       AUTO_UPDATE: ${AUTO_UPDATE:-0}
-      # 0 on source installs (IMAGE_OWNER=local): there is no registry image to pull, so the console shows the manual
-      # upgrade steps instead of a one-click apply that could only back up, fail and roll back. Native sets 0 too.
+      # Set 0 to hide one-click apply (the console then shows the manual upgrade steps).
       APPLY_SUPPORTED: ${APPLY_SUPPORTED:-1}
       COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-mdmesh}
       COMPOSE_FILE: ${COMPOSE_FILE:-docker-compose.yml}

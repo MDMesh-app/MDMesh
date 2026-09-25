@@ -14,6 +14,8 @@ REPO="$PWD"   # repo root — used for absolute paths inside subshells (e.g. exp
 # Shared DB provisioning rules (seed gate, verified seed, post-seed repairs) — same file setup.sh uses.
 # shellcheck source=lib/db.sh
 . "$REPO/install/lib/db.sh"
+# shellcheck source=lib/version.sh
+. "$REPO/install/lib/version.sh"
 
 [ "$(id -u)" = "0" ] || { echo "Run as root (sudo)."; exit 1; }
 command -v apt-get >/dev/null || { echo "This script targets Debian/Ubuntu."; exit 1; }
@@ -458,8 +460,9 @@ mkdir -p "$SUP_DIR"
 cp "$REPO"/supervisor/server.js "$REPO"/supervisor/lib.js "$REPO"/supervisor/recovery.html "$SUP_DIR/"
 cp "$REPO"/release/minisign.pub "$SUP_DIR/minisign.pub"
 # The running version: the checkout's latest release tag (source installs track the repo). The
-# supervisor compares it against GitHub's latest to decide "update available".
-CURRENT_VERSION=$(git -C "$REPO" describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || true)
+# supervisor compares it against GitHub's latest to decide "update available". Same rule as setup.sh
+# (install/lib/version.sh).
+CURRENT_VERSION=$(mdm_repo_version "$REPO")
 cat > "$BASE_DIR/supervisor.env" <<ENV
 SUPERVISOR_PORT=9000
 SUPERVISOR_BIND=127.0.0.1

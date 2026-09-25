@@ -20,6 +20,8 @@ err()  { printf '\033[1;31m%s\033[0m\n' "$*" >&2; }
 # three installers. See install/lib/db.sh for the rules and why they are what they are.
 # shellcheck source=install/lib/db.sh
 . ./install/lib/db.sh
+# shellcheck source=install/lib/version.sh
+. ./install/lib/version.sh
 rand() { mdm_rand; }
 # Update KEY in .env in place (or append it) — persists values discovered after .env was written
 # (GITHUB_REPO autodetection, the release QR build args) so compose substitution + the supervisor
@@ -159,7 +161,25 @@ fi
 # (updates = git pull && ./setup.sh). A registry owner (IMAGE_OWNER=<ghcr owner>) keeps it on. IMAGE_OWNER is the value
 # compose sees: the sourced .env on a re-run (quotes stripped, key missing → unset) or the caller's env on a fresh .env
 # (which the heredoc above wrote as ${IMAGE_OWNER:-local}) — same `:-local` default as docker-compose.yml.
-if [ "${IMAGE_OWNER:-local}" = "local" ]; then setenv APPLY_SUPPORTED 0; else setenv APPLY_SUPPORTED 1; fi
+# Persist AND export: a re-run has already exported the OLD .env value (set -a above), and compose gives the shell
+# environment priority over .env, so `up` below would otherwise recreate the supervisor with the stale setting.
+if [ "${IMAGE_OWNER:-local}" = "local" ]; then APPLY_SUPPORTED=0; else APPLY_SUPPORTED=1; fi
+setenv APPLY_SUPPORTED "$APPLY_SUPPORTED"
+export APPLY_SUPPORTED
+
+# The running version, refreshed on EVERY run (this run rebuilds from the checkout): the checkout's latest release tag,
+# the same rule as the native installer (install/lib/version.sh). The supervisor compares it with GitHub's latest release,
+# so a stale or placeholder 0.0.0 shows a false "Update available". No tag to read (no git, no tags fetched) → keep the
+# .env value (0.0.0 on a fresh .env). Persisted + exported for the same reason as APPLY_SUPPORTED.
+REPO_VERSION=$(mdm_repo_version .)
+if [ -n "$REPO_VERSION" ]; then
+  CURRENT_VERSION=$REPO_VERSION
+else
+  CURRENT_VERSION=${CURRENT_VERSION:-0.0.0}
+  warn "Could not read a release tag from this checkout (git missing, or tags not fetched) — keeping CURRENT_VERSION=${CURRENT_VERSION}."
+fi
+setenv CURRENT_VERSION "$CURRENT_VERSION"
+export CURRENT_VERSION
 
 say "Checking GitHub Releases for the signed agent APK…"
 # Mirror of the native installer's release fetch: pull the latest release's manifest + APK, verify

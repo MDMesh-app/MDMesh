@@ -12,8 +12,10 @@
 # Usage: scripts/edge-check.sh [caddyfile]      (default: docker/Caddyfile)
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CADDYFILE="$(realpath "${1:-$ROOT/docker/Caddyfile}")"
+CADDYFILE="${1:-$ROOT/docker/Caddyfile}"
 [ -f "$CADDYFILE" ] || { echo "no such Caddyfile: $CADDYFILE" >&2; exit 2; }
+# Absolute path (it is bind-mounted, and we cd below); cd+pwd rather than realpath, which stock macOS lacks.
+CADDYFILE="$(cd "$(dirname "$CADDYFILE")" && pwd)/$(basename "$CADDYFILE")"
 cd "$ROOT"   # compose -f paths below are relative to the repo root
 
 CADDY_IMAGE="$(awk 'tolower($1) == "from" && $2 ~ /^caddy[:@]/ { print $2; exit }' "$ROOT/docker/web.Dockerfile")"

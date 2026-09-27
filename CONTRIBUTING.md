@@ -41,11 +41,11 @@ npx tsc --noEmit     # type-check
 ```
 
 ### Server (`common/`, `server/`)
-Requires **JDK 17** and Maven.
+Requires **JDK 21** and Maven. JDK 25 is also exercised in CI; the compiler targets Java 21.
 ```bash
 mvn -pl common test          # fast, DB-free unit + contract tests
 mvn -pl server -am compile   # type-check the server + its modules
-mvn -pl server -am package -DskipTests   # build the WAR (full build)
+mvn -B verify                # full reactor tests and WAR build
 ```
 The full server run needs PostgreSQL — easiest is the Docker stack below.
 

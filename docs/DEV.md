@@ -50,22 +50,6 @@ locations. Set `KEEP_WORKDIR=1` to retain it after a successful run. This is a d
 integration harness, not a replacement for the Docker/Compose test below, which remains required
 for deployment parity.
 
-### Rootless Docker in WSL
-
-When using the dedicated rootless Docker Engine in WSL, run Docker and Compose through the
-repository wrapper rather than the unqualified `docker` command:
-
-```bash
-scripts/docker-wsl-rootless.sh info
-scripts/docker-wsl-rootless.sh compose -f docker-compose.dev.yml up --build
-```
-
-The wrapper targets the user-scoped rootless socket and keeps its client configuration under
-`~/.local/state/mdmesh-docker`. It deliberately excludes Rancher Desktop's credential helpers
-from the Docker client's `PATH`; it does not change Rancher Desktop. Set `MDMESH_DOCKER_CONFIG`
-to select a different private Docker client-config directory. If WSL has restarted and the daemon
-is unavailable, start it with `systemctl --user start docker.service`.
-
 #### Enterprise TLS-inspection CA
 
 If the Maven build reports a Java `PKIX path building failed` error for a repository that WSL
@@ -186,8 +170,9 @@ For the disposable local harness, run the same contract suite automatically with
 MDMESH_AGENT_V1_E2E=1 scripts/local-tomcat-postgres-integration.sh
 ```
 
-CI runs that command on JDK 21 and 25 with Tomcat 10.1/PostgreSQL as the Jakarta
-device-contract gate.
+The current T0 workflow runs the full Maven reactor on JDK 21 and 25. Promotion of this
+disposable Tomcat 10.1/PostgreSQL contract suite into a maintainer-approved T1 integration
+workflow remains follow-up work; run it locally before a release candidate.
 The remaining step that needs a provisioned box is the **real on-device run**: build the agent,
 enroll an AOSP emulator as Device Owner via ADB, and watch a `policy.apply` apply on the device.
 

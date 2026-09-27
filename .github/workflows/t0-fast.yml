@@ -1,4 +1,4 @@
-# T0 fast gate: every PR push and push to main, path-filtered, under 5 minutes.
+# T0 fast gate: every PR push and push to main, path-filtered.
 # One job per old workflow (server.yml, web.yml, agent.yml), run as a matrix entry gated
 # by changed-paths so an untouched subtree costs nothing. Steps within each entry
 # reproduce that old workflow's steps and commands exactly; project-specific comments
@@ -50,32 +50,29 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        name: [server, web, agent, supervisor, edge]
+        name: [server-jdk21, server-jdk25, web, agent, supervisor, edge]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       # --- server (from server.yml) ---
-      - if: matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)
+      - if: startsWith(matrix.name, 'server-jdk') && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6  # v6.0.1
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: ${{ matrix.name == 'server-jdk25' && '25' || '21' }}
           cache: maven
-      - if: matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)
+      - if: startsWith(matrix.name, 'server-jdk') && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)
         name: Provide build.properties
         run: cp server/build.properties.example server/build.properties
-      - if: matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)
-        name: Contract + unit tests (DB-free)
-        # The :common tests (incl. AgentV1ContractTest — the backward-compat gate) need no database.
-        # Keep -DskipTests on the package step until a CI test DB exists for the DB-bound modules.
-        run: mvn -B -pl common test
-      - if: matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)
-        name: Build WAR
-        run: mvn -B -DskipTests package
-      - if: matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)
+      - if: startsWith(matrix.name, 'server-jdk') && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)
+        name: Full reactor tests and WAR build
+        # This includes the AgentV1ContractTest compatibility gate; database-backed deployment
+        # checks remain in the disposable Tomcat/PostgreSQL harness.
+        run: mvn -B -ntp verify
+      - if: startsWith(matrix.name, 'server-jdk') && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: launcher-war
+          name: launcher-war-${{ matrix.name }}
           path: server/target/launcher.war
           if-no-files-found: error
 

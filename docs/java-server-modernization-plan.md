@@ -1,6 +1,6 @@
 # Java Server Modernization Plan
 
-**Status**: Tasks 4–6 are implemented and verified through Tomcat 10.1 on JDK 21; fresh native-install and JDK 25 CI verification remain pending
+**Status**: Tasks 0–7 are implemented and verified through Tomcat 10.1 on JDK 21, including a staged upgrade from a deployed Tomcat 9 instance; JDK 25 CI verification remains pending.
 
 **Scope**: The Java control plane only: `common`, `jwt`, `notification`, `plugins`, `swagger/ui`, `server`, Java build tooling, server CI, Docker, and native deployment. The Kotlin Android Device Owner agent, its Android SDK/build, permissions, and policy behaviour are explicitly out of scope. Existing-agent compatibility is a release gate.
 
@@ -26,7 +26,7 @@ The server reads deployment settings from Tomcat `Context` XML and registers an 
 
 ## Test Floor And Rules
 
-The current CI runs only DB-free `common` tests on JDK 17 and packages the rest with tests skipped. The following floor must be established before production deployment changes begin.
+The historical baseline ran only DB-free `common` tests on JDK 17 and packaged the rest with tests skipped. This migration establishes the following floor for the modernized server.
 
 ### Required checks for every Java modernization pull request
 
@@ -111,12 +111,12 @@ Each task has its own branch/worktree, one coherent purpose, and independent ver
 
 **Done when**: A failure in legacy servlet/WebSocket wiring or the agent-v1 JSON contract is caught automatically before the Tomcat 10 migration begins.
 
-**Done**: `scripts/agent-v1-e2e.sh` now opens a real authenticated WebSocket before queueing a
+**Done locally**: `scripts/agent-v1-e2e.sh` now opens a real authenticated WebSocket before queueing a
 command and verifies the command wake signal. The existing JSON contract tests now parse and assert
-the response fields rather than relying on substring matches. The `agent-contract-integration` CI
-job runs the disposable deployed-WAR harness with this suite enabled. Local Docker verification
-passed all 18 HTTP/WebSocket checks; the GitHub Actions execution remains to be observed after the
-branch is pushed.
+the response fields rather than relying on substring matches. Local Docker verification passed all
+18 HTTP/WebSocket checks. The upstream v0.3.1 CI consolidation intentionally retains only a fast
+path-filtered T0 workflow, so promotion of the disposable deployed-WAR harness to a maintainer-approved
+T1 integration workflow remains follow-up work rather than reviving the deleted legacy workflow.
 
 ### 3. JDK 21/25 build-tool readiness
 
@@ -136,7 +136,7 @@ branch is pushed.
 
 **Done when**: The complete server reactor builds and all established tests pass on both JDKs, with JDK 21 documented as the minimum.
 
-**Done locally / CI pending**: Maven compiler target, encoding, build plugins, Lombok, the temporary Tomcat 9 JDK, and CI matrix now use the JDK 21 minimum. The standalone Swagger UI module has explicit current resource/Surefire plugins because it does not inherit the root build. The complete reactor and Docker agent-contract suite pass on JDK 21. The JDK 25 matrix is configured but remains unobserved until this branch is pushed; do not claim Task 3 fully complete until then.
+**Done locally / CI pending**: Maven compiler target, encoding, build plugins, Lombok, and the JDK matrix now use the JDK 21 minimum. The standalone Swagger UI module has explicit current resource/Surefire plugins because it does not inherit the root build. The complete reactor and Docker agent-contract suite pass on JDK 21. The fast upstream workflow runs the full reactor on JDK 21 and 25; deployed-WAR harness CI is deferred as described in Task 2. JDK 25 remains unobserved until this branch is pushed.
 
 ### 4. Jakarta dependency migration
 
@@ -187,7 +187,7 @@ branch is pushed.
 
 **Done when**: Fresh Docker and native deployments reach ready state on Tomcat 10.1, agent-v1 and WebSocket suites pass, and no deployment script downloads or invokes Tomcat 9.
 
-**Implemented and partially verified**: Docker, the disposable harness, native installer, deployment documentation, and CI harness now target Tomcat 10.1.60 on JDK 21. The native installer verifies the downloaded archive and replaces old Tomcat installations rather than attempting to reuse a Tomcat 9 directory. The JDK 21 Tomcat 10.1 harness and Docker Compose image pass the full agent-v1/WebSocket contract. Still required: fresh native install and upgrade smoke in a disposable Debian 13 or Ubuntu 24.04 container, plus the configured JDK 25 CI matrix.
+**Implemented and verified on JDK 21**: Docker, the disposable harness, native installer, deployment documentation, and CI harness now target Tomcat 10.1.60 on JDK 21. The native installer verifies the downloaded archive and replaces old Tomcat installations rather than attempting to reuse a Tomcat 9 directory. The JDK 21 Tomcat 10.1 harness and Docker Compose image pass the full agent-v1/WebSocket contract. A clean Debian 13 native deployment reached the web UI, and the staged-upgrade check in Task 7 exercised a deployed Tomcat 9 installation. JDK 25 CI remains to be observed after publication.
 
 ### 7. Release qualification and operational handoff
 
@@ -208,7 +208,7 @@ branch is pushed.
 
 **Done when**: A maintainer can reproduce the release candidate, upgrade a realistic Tomcat 9 installation using documented commands, and recover a failed rollout by restoring the complete pre-upgrade snapshot. The guide explicitly states that a clean new runtime is required and direct downgrades are unsupported.
 
-**Implemented, release qualification pending**: Native upgrades now take a quiesced, owner-only snapshot of PostgreSQL application state, uploads, the old Tomcat runtime, and deployment configuration before any database credential or runtime change. The installer preserves the public base URL by default and retains the prior runtime locally while staging Tomcat 10.1. The native recovery guide documents the required restore sequence. CI now publishes a WAR SHA-256 checksum, aggregate CycloneDX SBOM, Maven dependency tree, and pinned server-image inspection metadata. Still required: a disposable Tomcat 9-to-10 upgrade plus failed-rollout recovery exercise on both JDKs.
+**Implemented and JDK 21 upgrade-verified**: Native upgrades take a quiesced, owner-only snapshot of PostgreSQL application state, uploads, the old Tomcat runtime, and deployment configuration before any database credential or runtime change. The installer preserves the public base URL by default and retains the prior runtime locally while staging Tomcat 10.1. The native recovery guide documents the required restore sequence. A Debian 12 MDMesh 0.2.8 Tomcat 9/JDK 17 deployment upgraded in place to Temurin 21/Tomcat 10.1.60; both server and supervisor started, and a phone enrolled before the cutover accepted the ring start/stop actions afterwards. The fast CI workflow now tests the full Maven reactor on JDK 21 and 25. Still required: observe JDK 25 CI, exercise the documented snapshot-restore recovery path, and agree a T1 integration-workflow shape with the maintainer; direct in-place runtime/database downgrade remains unsupported.
 
 ## Follow-on Architecture Work
 

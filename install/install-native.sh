@@ -215,10 +215,44 @@ if [ "$NATIVE_UPGRADE" = 1 ]; then
   fi
 fi
 
+# A native upgrade must prove it can obtain a JDK 21 before it stops the working Tomcat 9 runtime.
+# Keep this small preflight separate from the later general dependency installation: an unavailable
+# Adoptium repository/package must leave the old service running and the host state recoverable.
+select_jdk21() {
+  local c
+  for c in "${JAVA21_HOME:-}" \
+           /usr/lib/jvm/java-21-openjdk* /usr/lib/jvm/*temurin-21* /usr/lib/jvm/*zulu*21* \
+           /usr/lib/jvm/*corretto*21* /usr/lib/jvm/*-21-* /usr/lib/jvm/*21* /opt/*jdk-21* /opt/*jdk21*; do
+    [ -n "$c" ] && [ -x "$c/bin/javac" ] || continue
+    case "$("$c/bin/javac" -version 2>&1)" in *' 21.'*) printf '%s' "$c"; return 0 ;; esac
+  done
+  return 1
+}
+ensure_jdk21() {
+  select_jdk21 >/dev/null && return 0
+  step "Preflight: installing Eclipse Temurin JDK 21"
+  run "Adoptium Temurin 21 JDK" bash -c '
+    set -euo pipefail
+    apt-get update -y
+    DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates gnupg curl
+    install -d -m 0755 /etc/apt/keyrings
+    curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public |
+      gpg --dearmor --yes -o /etc/apt/keyrings/adoptium.gpg
+    . /etc/os-release
+    printf "deb [signed-by=/etc/apt/keyrings/adoptium.gpg] https://packages.adoptium.net/artifactory/deb %s main\n" "$VERSION_CODENAME" \
+      > /etc/apt/sources.list.d/adoptium.list
+    apt-get update -y
+    DEBIAN_FRONTEND=noninteractive apt-get install -y temurin-21-jdk
+  '
+  select_jdk21 >/dev/null || { echo "Temurin JDK 21 installation did not provide a usable JDK." >&2; return 1; }
+  ok "Eclipse Temurin JDK 21 installed"
+}
+
 # A live upgrade must have a rollback point before its database role, runtime, or files can change.
 # The helper stops our service before copying mutable files; it archives the old runtime rather than
 # reusing its Tomcat 9 configuration in Tomcat 10.1.
 if [ "$NATIVE_UPGRADE" = 1 ]; then
+  ensure_jdk21
   step "Capturing pre-upgrade state"
   run "Native state snapshot (database, files, runtime, configuration)" \
     "$REPO/install/backup-native-state.sh" --stop-service

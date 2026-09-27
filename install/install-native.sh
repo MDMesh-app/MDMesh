@@ -321,8 +321,11 @@ if [ "$DB_STATE" = seeded ]; then
 fi
 
 step "Building the server"
+# The native dependency step deliberately installs the distribution Maven package. Use it here rather
+# than ./mvnw: a first-run Maven Wrapper bootstrap makes a second network download and can fail behind
+# a proxy/repository mirror even though the required Maven is already present on the dedicated host.
 run "Maven package (JDK 21, ~1-2 min)" bash -c \
-  'cp server/build.properties.example server/build.properties 2>/dev/null || true; ./mvnw -q -B -ntp -DskipTests -pl server -am package'
+  'cp server/build.properties.example server/build.properties 2>/dev/null || true; mvn -q -B -ntp -DskipTests -pl server -am package'
 
 step "Fetching the agent APK from GitHub Releases"
 # The agent APK is a release artifact, not a repo file. Pull the latest release's signed APK (+ manifest)

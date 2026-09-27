@@ -32,29 +32,28 @@ import com.hmdm.rest.json.Response;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.service.EmailService;
 import com.hmdm.util.PasswordUtil;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.ApiParam;
-import io.swagger.annotations.Authorization;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.HttpSession;
-import javax.ws.rs.*;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.MediaType;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.MediaType;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-@Api(tags = {"Password-Reset"})
+@Tag(name = "Password-Reset")
 @Singleton
 @Path("/public/passwordReset")
 public class PasswordResetResource {
@@ -85,15 +84,14 @@ public class PasswordResetResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Get settings by token",
-            notes = "Returns the user settings by password reset token.",
-            response = User.class
+    @Operation(
+            summary = "Get settings by token",
+            description = "Returns the user settings by password reset token."
     )
     @GET
     @Path("/settings/{token}")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response getSettings(@PathParam("token") @ApiParam("Password reset token") String token) {
+    public Response getSettings(@PathParam("token") @Parameter(description = "Password reset token") String token) {
         try {
             User user = unsecureDAO.findByPasswordResetToken(token);
             if (user == null) {
@@ -116,9 +114,9 @@ public class PasswordResetResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Reset password",
-            notes = "Resets the user password"
+    @Operation(
+            summary = "Reset password",
+            description = "Resets the user password"
     )
     @POST
     @Path("/reset")
@@ -145,9 +143,9 @@ public class PasswordResetResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Password recovery feature",
-            notes = "Checks if the password can be recovered."
+    @Operation(
+            summary = "Password recovery feature",
+            description = "Checks if the password can be recovered."
     )
     @GET
     @Deprecated
@@ -162,14 +160,14 @@ public class PasswordResetResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Request password recovery",
-            notes = "Checks if the password can be recovered."
+    @Operation(
+            summary = "Request password recovery",
+            description = "Checks if the password can be recovered."
     )
     @GET
     @Path("/recover/{username}")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response recover(@PathParam("username") @ApiParam("Login of the user who wants to recover the password") String username) {
+    public Response recover(@PathParam("username") @Parameter(description = "Login of the user who wants to recover the password") String username) {
         try {
             User user = unsecureDAO.findByLoginOrEmail(username);
             if (user == null) {

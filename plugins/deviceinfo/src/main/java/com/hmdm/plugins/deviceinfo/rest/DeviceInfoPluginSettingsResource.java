@@ -32,21 +32,20 @@ import com.hmdm.plugins.deviceinfo.persistence.domain.DeviceInfoPluginSettings;
 import com.hmdm.plugins.deviceinfo.rest.json.DeviceSettings;
 import com.hmdm.rest.json.Response;
 import com.hmdm.security.SecurityContext;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.Authorization;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.inject.Singleton;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.GET;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
 import java.util.List;
 import java.util.Optional;
 
@@ -60,7 +59,7 @@ import static com.hmdm.plugins.deviceinfo.DeviceInfoPluginConfigurationImpl.PLUG
  */
 @Singleton
 @Path("/plugins/deviceinfo/deviceinfo-plugin-settings")
-@Api(tags = {"Device Info plugin settings"})
+@Tag(name = "Device Info plugin settings")
 public class DeviceInfoPluginSettingsResource {
 
     private static final Logger logger = LoggerFactory.getLogger(DeviceInfoPluginSettingsResource.class);
@@ -112,11 +111,9 @@ public class DeviceInfoPluginSettingsResource {
      *
      * @return plugin settings for current customer account.
      */
-    @ApiOperation(
-            value = "Get settings",
-            notes = "Gets the plugin settings for current user. If there are none found in DB then returns default ones.",
-            response = DeviceInfoPluginSettings.class,
-            authorizations = {@Authorization("Bearer Token")}
+    @Operation(
+            summary = "Get settings",
+            description = "Gets the plugin settings for current user. If there are none found in DB then returns default ones."
     )
     @GET
     @Path("/private")
@@ -129,10 +126,9 @@ public class DeviceInfoPluginSettingsResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Save settings",
-            notes = "Save the Device Info plugin settings",
-            response = Settings.class
+    @Operation(
+            summary = "Save settings",
+            description = "Save the Device Info plugin settings"
     )
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
@@ -153,10 +149,9 @@ public class DeviceInfoPluginSettingsResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Get plugin settings by device",
-            notes = "Gets the plugin settings for usage by device ",
-            response = DeviceSettings.class
+    @Operation(
+            summary = "Get plugin settings by device",
+            description = "Gets the plugin settings for usage by device "
     )
     @GET
     @Consumes(MediaType.APPLICATION_JSON)

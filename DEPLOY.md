@@ -93,11 +93,13 @@ sudo ./setup.sh --native      # → install/install-native.sh
 ```
 
 **Upgrading a native install** is the same command after `git pull`. The installer detects existing data and
-asks **Keep** (default, just press Enter) or **Erase** (requires typing `ERASE`). Keep redeploys the code, runs
-migrations, and leaves configurations, devices, users and the enrollment secret untouched; a `pg_dump` is written
-to `/opt/mdmesh/backups/` first. Unattended: `sudo ./setup.sh --native -y` never erases; set `REPLACE_DATA=yes` to
-opt into a wipe, `HTTP_PORT=9090` to pick the port. Only missing packages are installed, and a JDK 17 found via
-`JAVA17_HOME` or under `/opt` is used as-is (Debian 13 ships no `openjdk-17-jdk`).
+asks **Keep** (default, just press Enter) or **Erase** (requires typing `ERASE`). Keep redeploys the code and runs
+migrations. Before it changes the runtime or database access, it stops the service and writes an owner-only
+snapshot of the database, uploaded files, old Tomcat runtime, and relevant configuration below
+`/opt/mdmesh/backups/`. It preserves the enrollment `hash.secret`; retain the same public URL so enrolled phones
+continue checking in. Unattended: `sudo ./setup.sh --native -y` never erases; set `REPLACE_DATA=yes` to opt into a
+wipe, `HTTP_PORT=9090` to pick the port. Only missing packages are installed, and JDK 21 is the minimum runtime.
+See [the native upgrade and recovery guide](docs/native-upgrade.md) before upgrading a pre-Jakarta/Tomcat 9 host.
 
 Tomcat runs as the unprivileged `mdmesh` system user under systemd (`mdmesh-server.service`, enabled at boot).
 Manage it like any other service:

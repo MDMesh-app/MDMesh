@@ -21,7 +21,7 @@
 
 package com.hmdm.guice.module;
 
-import javax.servlet.ServletContext;
+import jakarta.servlet.ServletContext;
 
 
 /**

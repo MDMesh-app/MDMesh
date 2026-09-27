@@ -19,10 +19,15 @@ BASE="${1:-${BASE_URL:-http://localhost:8080}}"
 CJ="$(mktemp)"; OJ=""
 # Fixtures a later section creates register themselves here, so an abort (set -e) never leaves them behind.
 LIVE_RID=""; LIVE_OID=""
-cleanup(){
+WAKE_OUTPUT=""
+WAKE_PID=""
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cleanup() {
+  [[ -n "${WAKE_PID:-}" ]] && kill "$WAKE_PID" 2>/dev/null || true
+  [[ -n "${WAKE_PID:-}" ]] && wait "$WAKE_PID" 2>/dev/null || true
   [ -z "$LIVE_RID" ] || curl -s -b "$CJ" -X POST "$BASE/rest/private/agent/v1/rollout/$LIVE_RID/cancel" >/dev/null || true
   [ -z "$LIVE_OID" ] || curl -s -b "$CJ" -X DELETE "$BASE/rest/private/users/other/$LIVE_OID" >/dev/null || true
-  rm -f "$CJ" ${OJ:+"$OJ"}
+  rm -f "$CJ" ${OJ:+"$OJ"} "${WAKE_OUTPUT:-}"
 }
 trap cleanup EXIT
 PASS=0; FAIL=0
@@ -46,6 +51,24 @@ ENR=$(curl -s -X POST -H 'Content-Type: application/json' -d "{\"enrollToken\":\
 chk "enroll OK" "$(echo "$ENR" | field "d['status']")" "OK"
 DID=$(echo "$ENR" | field "d['data']['deviceId']"); SEC=$(echo "$ENR" | field "d['data']['deviceSecret']")
 
+if [[ "${MDMESH_AGENT_WAKE_E2E:-1}" == "1" ]]; then
+  echo "== connect authenticated agent wake socket =="
+  WAKE_OUTPUT="$(mktemp)"
+  printf '%s\n' "$SEC" | python3 "$SCRIPT_DIR/agent-wake-e2e.py" "$BASE" "$DID" >"$WAKE_OUTPUT" 2>&1 &
+  WAKE_PID=$!
+  for _ in $(seq 1 100); do
+    if grep -qx 'READY' "$WAKE_OUTPUT"; then
+      break
+    fi
+    if ! kill -0 "$WAKE_PID" 2>/dev/null; then
+      cat "$WAKE_OUTPUT" >&2
+      exit 1
+    fi
+    sleep 0.1
+  done
+  grep -qx 'READY' "$WAKE_OUTPUT" || { echo "Wake socket did not become ready" >&2; exit 1; }
+fi
+
 echo "== queue wifi command (requires policy.wifi) =="
 QRES=$(curl -s -b "$CJ" -X POST -H 'Content-Type: application/json' \
   -d '{"type":"policy.apply","requiresCapability":"policy.wifi","payload":"{\"policy\":\"wifi\",\"value\":false}"}' \
@@ -54,6 +77,26 @@ QRES=$(curl -s -b "$CJ" -X POST -H 'Content-Type: application/json' \
 chk "queue response has an id, no payload/deviceNumber/requiresCapability" \
   "$(echo "$QRES" | field "str(bool((d.get('data') or {}).get('id')))+':'+','.join(k for k in ('payload','deviceNumber','requiresCapability') if k in (d.get('data') or {}))")" \
   "True:"
+
+if [[ "${MDMESH_AGENT_WAKE_E2E:-1}" == "1" ]]; then
+  echo "== queued command wakes connected agent =="
+  for _ in $(seq 1 200); do
+    if ! kill -0 "$WAKE_PID" 2>/dev/null; then
+      break
+    fi
+    sleep 0.1
+  done
+  if kill -0 "$WAKE_PID" 2>/dev/null; then
+    echo "Timed out waiting for agent wake signal" >&2
+    exit 1
+  fi
+  if ! wait "$WAKE_PID"; then
+    cat "$WAKE_OUTPUT" >&2
+    exit 1
+  fi
+  WAKE_PID=""
+  chk "wake signal delivered" "$(tail -n 1 "$WAKE_OUTPUT")" '{"wake":"commands"}'
+fi
 
 echo "== authenticated check-in delivers the command =="
 C1=$(curl -s -X POST -H "Authorization: Bearer $SEC" -H 'Content-Type: application/json' \

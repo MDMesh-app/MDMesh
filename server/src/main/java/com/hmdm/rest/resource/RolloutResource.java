@@ -32,21 +32,21 @@ import com.hmdm.persistence.domain.RolloutDeviceRow;
 import com.hmdm.rest.json.Response;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.util.RolloutProgress;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -63,7 +63,7 @@ import java.util.Set;
  */
 @Singleton
 @Path("/private/agent/v1/rollout")
-@Api(tags = {"Agent v1 rollout"})
+@Tag(name = "Agent v1 rollout")
 public class RolloutResource {
 
     private static final Logger logger = LoggerFactory.getLogger(RolloutResource.class);
@@ -123,7 +123,7 @@ public class RolloutResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Create rollout", notes = "Start a canary-stage agent-APK rollout to the selected devices.")
+    @Operation(summary = "Create rollout", description = "Start a canary-stage agent-APK rollout to the selected devices.")
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
@@ -193,7 +193,7 @@ public class RolloutResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Promote to fleet", notes = "Advance a canary rollout to the rest of the fleet.")
+    @Operation(summary = "Promote to fleet", description = "Advance a canary rollout to the rest of the fleet.")
     @POST
     @Path("/{id}/promote")
     @Produces(MediaType.APPLICATION_JSON)
@@ -219,7 +219,7 @@ public class RolloutResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Cancel/finish rollout", notes = "Stop offering the update (in-flight installs run their course).")
+    @Operation(summary = "Cancel/finish rollout", description = "Stop offering the update (in-flight installs run their course).")
     @POST
     @Path("/{id}/cancel")
     @Produces(MediaType.APPLICATION_JSON)
@@ -234,7 +234,7 @@ public class RolloutResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Active rollout", notes = "The current canary/fleet rollout for this customer + progress, or null.")
+    @Operation(summary = "Active rollout", description = "The current canary/fleet rollout for this customer + progress, or null.")
     @GET
     @Path("/active")
     @Produces(MediaType.APPLICATION_JSON)

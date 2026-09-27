@@ -42,17 +42,21 @@
 
     <!-- dependencies version -->
     <properties>
-        <java.version>1.8</java.version>
-        <javax.mail>1.5.0-b01</javax.mail>
-        <java.rest.webservice>2.0.1</java.rest.webservice>
+        <maven.compiler.release>21</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <jakarta.activation.version>2.1.3</jakarta.activation.version>
+        <jakarta.jaxb.version>4.0.5</jakarta.jaxb.version>
+        <jakarta.mail.version>2.0.3</jakarta.mail.version>
+        <jakarta.servlet.version>6.0.0</jakarta.servlet.version>
+        <jakarta.validation.version>3.0.2</jakarta.validation.version>
+        <jakarta.ws.rs.version>3.1.0</jakarta.ws.rs.version>
         <jackson.version>1.9.13</jackson.version>
 
-        <guice.version>4.2.2</guice.version>
-
-        <servlet-api.version>2.5</servlet-api.version>
+        <guice.version>7.0.0</guice.version>
 
         <mybatis.version>3.5.19</mybatis.version>
-        <mybatis.guice.version>3.10</mybatis.guice.version>
+        <mybatis.guice.version>4.1.1</mybatis.guice.version>
 
         <postgresql.version>42.7.12</postgresql.version>
         <liquibase.version>4.31.1</liquibase.version>
@@ -69,14 +73,22 @@
 
         <opensource.dist.dir>/Headwind/AndroidKioskWeb/opensource</opensource.dist.dir>
 
-        <glassfish-jersey.version>2.25.1</glassfish-jersey.version>
-        <guice-bridge.version>2.6.1</guice-bridge.version>
+        <!-- Jersey 3.1 implements Jakarta RESTful Web Services 3.1 / Jakarta EE 10. -->
+        <glassfish-jersey.version>3.1.11</glassfish-jersey.version>
+        <guice-bridge.version>3.1.1</guice-bridge.version>
+        <swagger.version>2.2.55</swagger.version>
         
-        <lombok.version>1.18.20</lombok.version>
+        <lombok.version>1.18.40</lombok.version>
+        <jacoco.version>0.8.15</jacoco.version>
+        <maven.clean.plugin.version>3.5.0</maven.clean.plugin.version>
+        <maven.compiler.plugin.version>3.15.0</maven.compiler.plugin.version>
+        <maven.resources.plugin.version>3.5.0</maven.resources.plugin.version>
+        <maven.surefire.plugin.version>3.5.5</maven.surefire.plugin.version>
+        <maven.war.plugin.version>3.5.1</maven.war.plugin.version>
     </properties>
 
     <dependencies>
-        <!-- Upgrading Jersey to 2.x -->
+        <!-- Jakarta REST implementation -->
         <!-- https://mvnrepository.com/artifact/org.glassfish.jersey.core/jersey-common -->
         <dependency>
             <groupId>org.glassfish.jersey.core</groupId>
@@ -107,6 +119,13 @@
             <artifactId>jersey-container-servlet</artifactId>
             <version>${glassfish-jersey.version}</version>
         </dependency>
+        <!-- Jersey 3 no longer supplies an injection provider implicitly. HK2 backs ResourceConfig
+             and coexists with the explicit Guice bridge used by this application. -->
+        <dependency>
+            <groupId>org.glassfish.jersey.inject</groupId>
+            <artifactId>jersey-hk2</artifactId>
+            <version>${glassfish-jersey.version}</version>
+        </dependency>
         <dependency>
             <groupId>org.glassfish.jersey.media</groupId>
             <artifactId>jersey-media-json-jackson</artifactId>
@@ -119,44 +138,34 @@
             <version>${guice-bridge.version}</version>
         </dependency>
 
-        <!-- Missing from JRE 11 -->
+        <!-- Jakarta XML Binding and Activation are not supplied by the JDK. -->
         <dependency>
-            <groupId>javax.xml.bind</groupId>
-            <artifactId>jaxb-api</artifactId>
-            <version>2.2.11</version>
-            <scope>runtime</scope>
+            <groupId>jakarta.xml.bind</groupId>
+            <artifactId>jakarta.xml.bind-api</artifactId>
+            <version>${jakarta.jaxb.version}</version>
         </dependency>
         <dependency>
-            <groupId>com.sun.xml.bind</groupId>
-            <artifactId>jaxb-core</artifactId>
-            <version>2.2.11</version>
-            <scope>runtime</scope>
+            <groupId>org.glassfish.jaxb</groupId>
+            <artifactId>jaxb-runtime</artifactId>
+            <version>${jakarta.jaxb.version}</version>
         </dependency>
         <dependency>
-            <groupId>com.sun.xml.bind</groupId>
-            <artifactId>jaxb-impl</artifactId>
-            <version>2.2.11</version>
-            <scope>runtime</scope>
+            <groupId>jakarta.activation</groupId>
+            <artifactId>jakarta.activation-api</artifactId>
+            <version>${jakarta.activation.version}</version>
         </dependency>
+        <!-- Jakarta REST API; Jersey provides its implementation. -->
         <dependency>
-            <groupId>javax.activation</groupId>
-            <artifactId>activation</artifactId>
-            <version>1.1.1</version>
-            <scope>runtime</scope>
-        </dependency>
-        <!-- Java REST WebService -->
-        <dependency>
-            <groupId>javax.ws.rs</groupId>
-            <artifactId>javax.ws.rs-api</artifactId>
-            <version>${java.rest.webservice}</version>
+            <groupId>jakarta.ws.rs</groupId>
+            <artifactId>jakarta.ws.rs-api</artifactId>
+            <version>${jakarta.ws.rs.version}</version>
         </dependency>
 
-        <!-- Swagger -->
-        <!-- https://mvnrepository.com/artifact/io.swagger/swagger-jersey2-jaxrs -->
+        <!-- Swagger Core Jakarta/Jersey integration. -->
         <dependency>
-            <groupId>io.swagger</groupId>
-            <artifactId>swagger-jersey2-jaxrs</artifactId>
-            <version>1.6.16</version>
+            <groupId>io.swagger.core.v3</groupId>
+            <artifactId>swagger-jaxrs2-jakarta</artifactId>
+            <version>${swagger.version}</version>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/com.fasterxml.jackson.core/jackson-databind -->
@@ -176,21 +185,21 @@
             <artifactId>jackson-core</artifactId>
             <version>2.18.9</version>
         </dependency>
-        <!-- Keep every Jackson module on the same line as jackson-databind: Jersey 2.25 and swagger
-             otherwise drag in 2.8/2.9-era jaxrs/jaxb/yaml jars that break against a 2.18 databind. -->
+        <!-- Keep every Jackson module on the same line as jackson-databind. -->
         <dependency>
-            <groupId>com.fasterxml.jackson.jaxrs</groupId>
-            <artifactId>jackson-jaxrs-json-provider</artifactId>
+            <groupId>com.fasterxml.jackson.jakarta.rs</groupId>
+            <artifactId>jackson-jakarta-rs-json-provider</artifactId>
             <version>2.18.9</version>
         </dependency>
         <dependency>
-            <groupId>com.fasterxml.jackson.jaxrs</groupId>
-            <artifactId>jackson-jaxrs-base</artifactId>
+            <groupId>com.fasterxml.jackson.jakarta.rs</groupId>
+            <artifactId>jackson-jakarta-rs-base</artifactId>
             <version>2.18.9</version>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.module</groupId>
-            <artifactId>jackson-module-jaxb-annotations</artifactId>
+            <!-- Uses Jakarta XML Binding annotations; the older jaxb module depends on javax.xml.bind. -->
+            <artifactId>jackson-module-jakarta-xmlbind-annotations</artifactId>
             <version>2.18.9</version>
         </dependency>
         <dependency>
@@ -221,12 +230,6 @@
             <version>${guice.version}</version>
         </dependency>
 
-        <dependency>
-            <groupId>com.google.inject.extensions</groupId>
-            <artifactId>guice-multibindings</artifactId>
-            <version>${guice.version}</version>
-        </dependency>
-
         <!-- Liquibase -->
         <dependency>
             <groupId>org.liquibase</groupId>
@@ -237,6 +240,11 @@
                 <exclusion>
                     <groupId>ch.qos.logback</groupId>
                     <artifactId>logback-classic</artifactId>
+                </exclusion>
+                <!-- Liquibase declares the obsolete JAXB 2 API, which conflicts with the Jakarta JAXB 4 line. -->
+                <exclusion>
+                    <groupId>javax.xml.bind</groupId>
+                    <artifactId>jaxb-api</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>
@@ -254,12 +262,24 @@
             <version>${mybatis.version}</version>
         </dependency>
 
-        <!-- Java servlet API -->
+        <!-- Jakarta Servlet API supplied by Tomcat 10.1 at runtime. -->
         <dependency>
-            <groupId>javax.servlet</groupId>
-            <artifactId>servlet-api</artifactId>
-            <version>${servlet-api.version}</version>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <version>${jakarta.servlet.version}</version>
             <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>jakarta.validation</groupId>
+            <artifactId>jakarta.validation-api</artifactId>
+            <version>${jakarta.validation.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>jakarta.jms</groupId>
+            <artifactId>jakarta.jms-api</artifactId>
+            <version>3.1.0</version>
         </dependency>
 
         <!-- JDBC -->
@@ -269,11 +289,11 @@
             <version>${postgresql.version}</version>
         </dependency>
 
-        <!-- Mail -->
+        <!-- Jakarta Mail implementation. -->
         <dependency>
-            <groupId>javax.mail</groupId>
-            <artifactId>mail</artifactId>
-            <version>${javax.mail}</version>
+            <groupId>org.eclipse.angus</groupId>
+            <artifactId>angus-mail</artifactId>
+            <version>${jakarta.mail.version}</version>
         </dependency>
 
         <!-- Logging -->
@@ -360,25 +380,60 @@
         </resources>
 
         <plugins>
+            <!-- Coverage is informational during the modernization baseline. A threshold will be
+                 considered only after the report establishes a stable, meaningful baseline. -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>${jacoco.version}</version>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-war-plugin</artifactId>
-                <version>3.3.1</version>
+                <version>${maven.war.plugin.version}</version>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.8.1</version>
+                <version>${maven.compiler.plugin.version}</version>
                 <configuration>
-                    <source>${java.version}</source>
-                    <target>${java.version}</target>
-                    <encoding>UTF-8</encoding>
+                    <release>${maven.compiler.release}</release>
                 </configuration>
             </plugin>
 
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>${maven.resources.plugin.version}</version>
+                <configuration>
+                    <encoding>${project.build.sourceEncoding}</encoding>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${maven.surefire.plugin.version}</version>
+            </plugin>
+
+            <plugin>
                 <artifactId>maven-clean-plugin</artifactId>
-                <version>2.6.1</version>
+                <version>${maven.clean.plugin.version}</version>
                 <configuration>
                     <filesets>
                         <fileset>

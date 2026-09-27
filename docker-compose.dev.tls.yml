@@ -1,0 +1,16 @@
+# Opt-in local override for a network whose TLS-inspection root is not trusted by
+# the stock Maven build image. Never put a certificate in this repository.
+#
+# Usage:
+#   MDMESH_BUILD_CA=/absolute/path/to/one-root-ca.pem \
+#     docker compose -f docker-compose.dev.yml -f docker-compose.dev.tls.yml up --build
+services:
+  server:
+    build:
+      secrets:
+        - source: mdmesh_build_ca
+          target: mdmesh_build_ca
+
+secrets:
+  mdmesh_build_ca:
+    file: ${MDMESH_BUILD_CA:?Set MDMESH_BUILD_CA to the absolute path of one trusted root CA PEM file}

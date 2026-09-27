@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Lean native (non-Docker) installer for MDMesh — Debian/Ubuntu. Stands up Postgres + Tomcat 9 + the
+# Lean native (non-Docker) installer for MDMesh — Debian/Ubuntu. Stands up Postgres + Tomcat 10.1 + the
 # server on the host and assumes you terminate TLS yourself (your own reverse proxy / cert, or Caddy in
 # front). For the turnkey experience use ./setup.sh (Docker). Flags: -y/--yes (skip confirm), -v/--verbose
 # (stream all output instead of hiding it in the log). Best-effort + idempotent; review before prod use.
@@ -102,9 +102,9 @@ printf '\n  %sMDMesh · native install%s\n' "$c_bold" "$c_reset"
 cat <<WARN
 
   ${c_yel}⚠  This will modify THIS host:${c_reset}
-    • apt-get install openjdk-17-jdk, postgresql, maven, nodejs, npm, curl, python3, aapt
+    • install Eclipse Temurin JDK 21 if no suitable JDK is already present; apt-get install postgresql, maven, curl, python3, aapt
     • create or alter a PostgreSQL role and database "mdmesh" (resets that role's password)
-    • download and unpack Apache Tomcat 9 into /opt/mdmesh-tc (clears its webapps/)
+    • download and unpack Apache Tomcat 10.1 into /opt/mdmesh-tc (clears its webapps/)
     • write config, logs and uploaded files under /opt/mdmesh
     • start Tomcat, run database migrations, and seed the admin account
 
@@ -135,7 +135,8 @@ case "$HTTP_PORT" in ''|*[!0-9]*) echo "  Port must be a number."; exit 1 ;; esa
 DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
 BASE_DIR=/opt/mdmesh
 CATALINA=/opt/mdmesh-tc
-TOMCAT_VER=9.0.89
+TOMCAT_VER=10.1.60
+TOMCAT_SHA512=aa06508300ca137a023b74b8600f2c1b3248412eb85d4fc5e2f337c6c4d3776f4491e272f79856ac541cfab0fc35537111ae4f3cfcd0bbe702c0a3610a61bd04
 # Tomcat lifecycle helpers. CATALINA_PID lets `catalina.sh stop -force` actually kill a JVM that ignores
 # the shutdown command (the server keeps scheduler threads alive after context stop), and the pgrep
 # fallback covers instances started by older versions of this script without a PID file.
@@ -184,38 +185,105 @@ stop_tomcat() {
   for i in $(seq 1 15); do [ -z "$(port_holder)" ] && break; sleep 1; done
   rm -f "$CATALINA_PID"
 }
-# Fail fast on a port conflict, before packages are installed, the build runs or the running server is
-# stopped — losing the bind later would leave our Tomcat dead while the other server answers with 404s.
-[ "$(port_owner)" = foreign ] && refuse_foreign_port
-
 # Upgrades re-run this script. hash.secret signs enrollment/sync requests and download URLs, so rotating
 # it would silently break every already-enrolled device; reuse the value from the existing ROOT.xml.
 # (DB_PASSWORD is different: it is re-applied to the role via ALTER USER below, so a fresh one is fine.)
 _old_root="$CATALINA/conf/Catalina/localhost/ROOT.xml"
-if [ -f "$_old_root" ]; then
-  _old_secret=$(sed -n 's/.*name="hash.secret"[[:space:]]*value="\([^"]*\)".*/\1/p' "$_old_root" | head -n 1)
-  if [ -n "$_old_secret" ]; then HASH_SECRET="$_old_secret"; info "Reusing hash.secret from the existing install (enrolled devices keep working)"; fi
+NATIVE_UPGRADE=0
+[ -f "$_old_root" ] && NATIVE_UPGRADE=1
+
+# A service at the requested port is normally rejected before any host state changes. An existing
+# native MDMesh context is the deliberate exception: the snapshot helper below stops that specific
+# Tomcat before copying state. This lets a Tomcat 9 instance enter the live migration path even if
+# an older service unit/process shape is not recognised by port_owner().
+_port_owner=$(port_owner)
+if [ "$_port_owner" = foreign ] && [ "$NATIVE_UPGRADE" != 1 ]; then
+  refuse_foreign_port
+elif [ "$_port_owner" = foreign ]; then
+  info "existing MDMesh context detected; the snapshot step will stop its Tomcat before upgrade"
 fi
 
-step "Installing dependencies"
-# HERMETIC BUILD: pin JDK 17 and never fall back to the host default JDK. The server uses Lombok 1.18.20,
-# whose annotation processor only runs on JDK <=17; on a newer default JDK (21/25/…) it generates nothing
-# and the build dies with hundreds of "cannot find symbol". This keeps the build identical on any host.
-select_jdk17() {
+if [ "$NATIVE_UPGRADE" = 1 ]; then
+  _old_secret=$(sed -n 's/.*name="hash.secret"[[:space:]]*value="\([^"]*\)".*/\1/p' "$_old_root" | head -n 1)
+  if [ -n "$_old_secret" ]; then HASH_SECRET="$_old_secret"; info "Reusing hash.secret from the existing install (enrolled devices keep working)"; fi
+  _old_base_url=$(sed -n 's/.*name="base.url"[[:space:]]*value="\([^"]*\)".*/\1/p' "$_old_root" | head -n 1)
+  if [ -n "$_old_base_url" ] && [ "$BASE_URL" != "$_old_base_url" ] && [ "${ALLOW_BASE_URL_CHANGE:-0}" != 1 ]; then
+    printf '  %s✗ BASE_URL differs from the existing install.%s\n' "$c_red" "$c_reset"
+    printf '    Existing: %s\n    Requested: %s\n' "$_old_base_url" "$BASE_URL"
+    printf '  Keep the enrolled-phone URL stable, or set ALLOW_BASE_URL_CHANGE=1 only after planning the proxy/device transition.\n'
+    exit 1
+  fi
+fi
+
+# A native upgrade must prove it can obtain a JDK 21 before it stops the working Tomcat 9 runtime.
+# Keep this small preflight separate from the later general dependency installation: an unavailable
+# Adoptium repository/package must leave the old service running and the host state recoverable.
+select_jdk21() {
   local c
-  for c in "${JAVA17_HOME:-}" \
-           /usr/lib/jvm/java-17-openjdk* /usr/lib/jvm/*temurin-17* /usr/lib/jvm/*zulu*17* \
-           /usr/lib/jvm/*corretto*17* /usr/lib/jvm/*-17-* /usr/lib/jvm/*17* /opt/*jdk-17* /opt/*jdk17*; do
+  for c in "${JAVA21_HOME:-}" \
+           /usr/lib/jvm/java-21-openjdk* /usr/lib/jvm/*temurin-21* /usr/lib/jvm/*zulu*21* \
+           /usr/lib/jvm/*corretto*21* /usr/lib/jvm/*-21-* /usr/lib/jvm/*21* /opt/*jdk-21* /opt/*jdk21*; do
     [ -n "$c" ] && [ -x "$c/bin/javac" ] || continue
-    case "$("$c/bin/javac" -version 2>&1)" in *' 17.'*) printf '%s' "$c"; return 0 ;; esac
+    case "$("$c/bin/javac" -version 2>&1)" in *' 21.'*) printf '%s' "$c"; return 0 ;; esac
   done
   return 1
 }
-# Install only what is missing. Asking apt for packages the host already provides another way (Node
-# from nodesource, a JDK under /opt, Postgres from PGDG) is how "held broken packages" conflicts happen
-# on otherwise healthy boxes — and openjdk-17-jdk is not packaged on every release (Debian 13 has 21/25).
+ensure_jdk21() {
+  select_jdk21 >/dev/null && return 0
+  step "Preflight: installing Eclipse Temurin JDK 21"
+  run "Adoptium Temurin 21 JDK" bash -c '
+    set -euo pipefail
+    # A prior incomplete Adoptium install can make `apt-get update` fail with NO_PUBKEY.
+    # Refresh its key *before* updating package indexes. v0.2.x already installs curl/gpg;
+    # if either bootstrap tool is absent, use the cached Debian package metadata as a fallback.
+    command -v curl >/dev/null || { apt-get install -y curl; }
+    command -v gpg >/dev/null || { apt-get install -y gnupg; }
+    install -d -m 0755 /etc/apt/keyrings
+    curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public |
+      gpg --dearmor --yes -o /etc/apt/keyrings/adoptium.gpg
+    # The installer-wide umask is 077 for deployment secrets, but the Apt `_apt` user must be able
+    # to read a repository signing key named by `signed-by=`.
+    chmod 0644 /etc/apt/keyrings/adoptium.gpg
+    gpg --show-keys --with-colons /etc/apt/keyrings/adoptium.gpg |
+      grep -q "^fpr:::::::::3B04D753C9050D9A5D343F39843C48A565F8F04B:"
+    . /etc/os-release
+    printf "deb [signed-by=/etc/apt/keyrings/adoptium.gpg] https://packages.adoptium.net/artifactory/deb %s main\n" "$VERSION_CODENAME" \
+      > /etc/apt/sources.list.d/adoptium.list
+    apt-get update -y
+    DEBIAN_FRONTEND=noninteractive apt-get install -y temurin-21-jdk
+  '
+  select_jdk21 >/dev/null || { echo "Temurin JDK 21 installation did not provide a usable JDK." >&2; return 1; }
+  ok "Eclipse Temurin JDK 21 installed"
+}
+
+# A live upgrade must have a rollback point before its database role, runtime, or files can change.
+# The helper stops our service before copying mutable files; it archives the old runtime rather than
+# reusing its Tomcat 9 configuration in Tomcat 10.1.
+if [ "$NATIVE_UPGRADE" = 1 ]; then
+  ensure_jdk21
+  step "Capturing pre-upgrade state"
+  run "Native state snapshot (database, files, runtime, configuration)" \
+    "$REPO/install/backup-native-state.sh" --stop-service
+  ok "previous native state preserved under ${BASE_DIR}/backups"
+fi
+
+step "Installing dependencies"
+# HERMETIC BUILD: pin JDK 21 and never fall back to an older host default JDK. The server now
+# compiles with --release 21, so both build and Tomcat runtime require this minimum.
+select_jdk21() {
+  local c
+  for c in "${JAVA21_HOME:-}" \
+           /usr/lib/jvm/java-21-openjdk* /usr/lib/jvm/*temurin-21* /usr/lib/jvm/*zulu*21* \
+           /usr/lib/jvm/*corretto*21* /usr/lib/jvm/*-21-* /usr/lib/jvm/*21* /opt/*jdk-21* /opt/*jdk21*; do
+    [ -n "$c" ] && [ -x "$c/bin/javac" ] || continue
+    case "$("$c/bin/javac" -version 2>&1)" in *' 21.'*) printf '%s' "$c"; return 0 ;; esac
+  done
+  return 1
+}
+# Install only generic dependencies here. JDK 21 is handled separately because Debian 12 does not
+# package it, while Debian 13 does; Adoptium supplies the supported fallback without requiring a
+# distribution upgrade or replacing an existing Java 17 installation.
 PKGS=()
-select_jdk17 >/dev/null || PKGS+=(openjdk-17-jdk)
 command -v psql    >/dev/null && command -v pg_ctlcluster >/dev/null || PKGS+=(postgresql)
 command -v mvn     >/dev/null || PKGS+=(maven)
 command -v node    >/dev/null || PKGS+=(nodejs)
@@ -223,6 +291,10 @@ command -v npm     >/dev/null || PKGS+=(npm)
 command -v curl    >/dev/null || PKGS+=(curl)
 command -v python3 >/dev/null || PKGS+=(python3)
 command -v aapt    >/dev/null || PKGS+=(aapt)
+if ! select_jdk21 >/dev/null; then
+  command -v gpg >/dev/null || PKGS+=(gnupg)
+  command -v update-ca-certificates >/dev/null || PKGS+=(ca-certificates)
+fi
 if [ ${#PKGS[@]} -eq 0 ]; then
   ok "all build/runtime dependencies already present — nothing to install"
 else
@@ -231,15 +303,32 @@ else
   run "$(IFS=,; echo "${PKGS[*]}" | sed 's/,/, /g')" bash -c \
     "apt-get update -y || echo '(some apt sources failed to refresh — continuing)'; DEBIAN_FRONTEND=noninteractive apt-get install -y ${PKGS[*]}"
 fi
+if ! select_jdk21 >/dev/null; then
+  step "Installing Eclipse Temurin JDK 21"
+  run "Adoptium Temurin 21 JDK" bash -c '
+    set -euo pipefail
+    install -d -m 0755 /etc/apt/keyrings
+    curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public |
+      gpg --dearmor --yes -o /etc/apt/keyrings/adoptium.gpg
+    chmod 0644 /etc/apt/keyrings/adoptium.gpg
+    . /etc/os-release
+    printf "deb [signed-by=/etc/apt/keyrings/adoptium.gpg] https://packages.adoptium.net/artifactory/deb %s main\n" "$VERSION_CODENAME" \
+      > /etc/apt/sources.list.d/adoptium.list
+    apt-get update -y
+    DEBIAN_FRONTEND=noninteractive apt-get install -y temurin-21-jdk
+  '
+  select_jdk21 >/dev/null || { echo "Temurin JDK 21 installation did not provide a usable JDK." >&2; exit 1; }
+  ok "Eclipse Temurin JDK 21 installed"
+fi
 # minisign verifies release-manifest signatures for the updater supervisor. Best-effort: without it
 # the supervisor still runs but reports releases as unverified (and never mirrors an APK).
 DEBIAN_FRONTEND=noninteractive apt-get install -y minisign >> "$LOGFILE" 2>&1 || info "minisign unavailable — updater will report releases as unverified"
 
-step "Selecting the Java 17 toolchain"
-JAVA_HOME=$(select_jdk17) || {
+step "Selecting the Java 21 toolchain"
+JAVA_HOME=$(select_jdk21) || {
   _spin_stop
-  echo "  ${c_red}✗ no JDK 17 found${c_reset} — the server build REQUIRES JDK 17 (Lombok 1.18.20 breaks on JDK 21+)." >&2
-  echo "    Install it (apt-get install -y openjdk-17-jdk) or set JAVA17_HOME to a JDK 17 home, then re-run." >&2
+  echo "  ${c_red}✗ no JDK 21 found${c_reset} — the server build and runtime REQUIRE JDK 21." >&2
+  echo "    Install it (apt-get install -y openjdk-21-jdk) or set JAVA21_HOME to a JDK 21 home, then re-run." >&2
   exit 1
 }
 export JAVA_HOME
@@ -321,8 +410,11 @@ if [ "$DB_STATE" = seeded ]; then
 fi
 
 step "Building the server"
-run "Maven package (JDK 17, ~1-2 min)" bash -c \
-  'cp server/build.properties.example server/build.properties 2>/dev/null || true; mvn -q -B -DskipTests -pl server -am package'
+# The native dependency step deliberately installs the distribution Maven package. Use it here rather
+# than ./mvnw: a first-run Maven Wrapper bootstrap makes a second network download and can fail behind
+# a proxy/repository mirror even though the required Maven is already present on the dedicated host.
+run "Maven package (JDK 21, ~1-2 min)" bash -c \
+  'cp server/build.properties.example server/build.properties 2>/dev/null || true; mvn -q -B -ntp -DskipTests -pl server -am package'
 
 step "Fetching the agent APK from GitHub Releases"
 # The agent APK is a release artifact, not a repo file. Pull the latest release's signed APK (+ manifest)
@@ -339,7 +431,10 @@ d=json.load(sys.stdin)
 def asset(n): return next((a["browser_download_url"] for a in d.get("assets",[]) if a["name"]==n),"")
 print({"apk":asset("mdmesh-agent.apk"),"manifest":asset("manifest.json")}.get(sys.argv[1],""))' "$1" 2>/dev/null; }
   REL=$(curl -fsSL "${AUTH[@]}" "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>>"$LOGFILE" || true)
-  APK_URL=$(printf '%s' "$REL" | jget apk); MAN_URL=$(printf '%s' "$REL" | jget manifest)
+  # A missing/private release or a proxy error leaves REL empty. Do not let the JSON parser's
+  # non-zero exit status escape through command substitution under `set -e`: the APK is optional.
+  APK_URL=$(printf '%s' "$REL" | jget apk || true)
+  MAN_URL=$(printf '%s' "$REL" | jget manifest || true)
   if [ -n "$APK_URL" ] && [ -n "$MAN_URL" ]; then
     MAN=$(curl -fsSL "${AUTH[@]}" "$MAN_URL" 2>>"$LOGFILE" || true)
     AGENT_CK=$(printf '%s' "$MAN" | python3 -c 'import sys,json;print(json.load(sys.stdin)["components"]["apk"]["signatureChecksum"])' 2>/dev/null || true)
@@ -351,10 +446,11 @@ print({"apk":asset("mdmesh-agent.apk"),"manifest":asset("manifest.json")}.get(sy
       export VITE_AGENT_PACKAGE="com.mdmesh.agent" VITE_AGENT_CHECKSUM="$AGENT_CK" VITE_AGENT_APK_URL="/files/agent.apk"
       ok "release agent APK fetched + sha256-verified (checksum ${AGENT_CK})"
     else
+      rm -f "$TMP_APK"
       info "Could not fetch/verify the release APK — continuing; host one at /files/agent.apk manually"
     fi
   else
-    info "No published release found for ${GITHUB_REPO} — console uses debug defaults; host /files/agent.apk manually"
+    info "Release APK unavailable for ${GITHUB_REPO} — continuing; host one at /files/agent.apk manually"
   fi
 else
   info "No GitHub repo detected — skipping release fetch; host /files/agent.apk manually"
@@ -366,18 +462,34 @@ step "Building the admin console"
 # VITE_AGENT_* (exported above from the release, if any) bake the QR's package/checksum/APK URL.
 run "npm ci + vite build (web/)" bash -c 'cd web && npm ci --no-audit --no-fund && npm run build'
 
-step "Tomcat 9 + app deploy"
+step "Tomcat 10.1 + app deploy"
 # Stop the previous instance first: dropping a new ROOT.war into a running Tomcat triggers a hot redeploy
 # against the old context parameters (and the DB password we just rotated).
 stop_tomcat
-# Install Tomcat if it's missing OR a previous run left it partial/corrupt. Check for the actual launcher
-# script, not just the directory, so a broken /opt/mdmesh-tc self-heals instead of failing at startup.
+# Install Tomcat if it is missing, incomplete, or on another release line. Check the installed
+# version rather than only catalina.sh so an existing Tomcat 9 native install is upgraded instead
+# of trying to execute this Jakarta EE 10 WAR on an incompatible container.
 # archive.apache.org keeps every release permanently, so the pinned version URL never rots.
-if [ ! -x "$CATALINA/bin/catalina.sh" ]; then
+installed_tomcat_ver=""
+if [ -r "$CATALINA/RELEASE-NOTES" ]; then
+  installed_tomcat_ver=$(sed -n 's/^Apache Tomcat Version \([0-9.]*\).*$/\1/p' "$CATALINA/RELEASE-NOTES" | head -n 1)
+fi
+if [ ! -x "$CATALINA/bin/catalina.sh" ] || [ "$installed_tomcat_ver" != "$TOMCAT_VER" ]; then
+  [ -n "$installed_tomcat_ver" ] && info "Replacing Apache Tomcat ${installed_tomcat_ver} with ${TOMCAT_VER}"
   run "Downloading Apache Tomcat ${TOMCAT_VER}" \
-    curl -fsSL --retry 3 "https://archive.apache.org/dist/tomcat/tomcat-9/v${TOMCAT_VER}/bin/apache-tomcat-${TOMCAT_VER}.tar.gz" -o /tmp/tc.tgz
-  rm -rf "$CATALINA"; mkdir -p "$CATALINA"
-  tar xzf /tmp/tc.tgz -C "$CATALINA" --strip-components=1
+    curl -fsSL --retry 3 "https://archive.apache.org/dist/tomcat/tomcat-10/v${TOMCAT_VER}/bin/apache-tomcat-${TOMCAT_VER}.tar.gz" -o /tmp/tc.tgz
+  run "Verifying Apache Tomcat ${TOMCAT_VER}" \
+    bash -c "echo '${TOMCAT_SHA512}  /tmp/tc.tgz' | sha512sum --check --status"
+  # Extract beside the old runtime first. The snapshot taken above is the portable recovery copy;
+  # retaining this directory locally as well makes a failed cutover easier to inspect or reverse.
+  _staged_catalina=$(mktemp -d "${CATALINA}.new.XXXXXX")
+  tar xzf /tmp/tc.tgz -C "$_staged_catalina" --strip-components=1
+  if [ -e "$CATALINA" ]; then
+    _previous_catalina="${CATALINA}.pre-upgrade-$(date -u +%Y%m%dT%H%M%SZ)"
+    mv "$CATALINA" "$_previous_catalina"
+    info "previous Tomcat retained at $_previous_catalina"
+  fi
+  mv "$_staged_catalina" "$CATALINA"
   [ -x "$CATALINA/bin/catalina.sh" ] || _fail "Tomcat extract (catalina.sh missing after unpack)"
   ok "Apache Tomcat ${TOMCAT_VER} installed at $CATALINA"
 else
@@ -394,7 +506,7 @@ rm -rf "$CATALINA"/webapps/*
 mkdir -p "$CATALINA/webapps/ROOT"
 ( cd "$CATALINA/webapps/ROOT" && "$JAVA_HOME/bin/jar" -xf "$REPO/server/target/launcher.war" )
 cp -a "$REPO"/web/dist/. "$CATALINA/webapps/ROOT/"   # index.html + assets at / (server maps /rest,/files,/agent)
-# SPA fallback (verified on Tomcat 9.0.89): !-f serves real files (assets) as-is; the negative lookahead
+# SPA fallback: !-f serves real files (assets) as-is; the negative lookahead
 # leaves the API paths (/rest,/files,/agent) alone; everything else → index.html so client-side routes
 # survive a reload. Paired with the RewriteValve declared in ROOT.xml above.
 printf 'RewriteCond %%{REQUEST_URI} !-f\nRewriteRule ^/(?!rest|files|agent|update)(.*)$ /index.html\n' \
@@ -513,21 +625,8 @@ else
   info "  (set -a; . ${BASE_DIR}/supervisor.env; node ${SUP_DIR}/server.js &)"
 fi
 
-if [ "$SEED" = no ]; then
-  step "Backing up the database before upgrading"
-  # Liquibase migrations run against live data on the next start; keep a restorable dump first.
-  BK_DIR="$BASE_DIR/backups"; mkdir -p "$BK_DIR"; chmod 700 "$BK_DIR"
-  BK="$BK_DIR/mdmesh-pre-upgrade-$(date +%Y%m%d-%H%M%S).dump"
-  # shellcheck disable=SC2024  # we ARE root here (checked at the top); sudo only switches to the postgres role
-  if sudo -u postgres pg_dump -Fc mdmesh > "$BK" 2>>"$LOGFILE"; then
-    chmod 600 "$BK"; ok "pg_dump written: $BK  (restore: pg_restore -c -d mdmesh $BK)"
-  else
-    printf '  %s✗ pg_dump failed — not upgrading without a backup. See %s%s\n' "$c_red" "$LOGFILE" "$c_reset"; exit 1
-  fi
-fi
-
 step "Starting the server"
-# Runs on the same pinned JDK 17 (JAVA_HOME exported above), matching the Docker tomcat:9.0-jdk17 image.
+# Runs on the same pinned JDK 21 (JAVA_HOME exported above), matching the Docker Tomcat 10.1 image.
 export CATALINA_OPTS="--add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.text=ALL-UNNAMED --add-opens java.desktop/java.awt.font=ALL-UNNAMED"
 # Port check (the preflight above already rejected foreign holders; this catches anything that bound since).
 case "$(port_owner)" in
@@ -539,7 +638,7 @@ rm -f "$BASE_DIR/initialized.txt"   # Initializer only writes the completion mar
 if have_systemd; then
   cat > "/etc/systemd/system/${SVC_UNIT}.service" <<UNIT
 [Unit]
-Description=MDMesh server (Tomcat 9)
+Description=MDMesh server (Tomcat 10.1)
 After=network-online.target postgresql.service
 Wants=network-online.target
 

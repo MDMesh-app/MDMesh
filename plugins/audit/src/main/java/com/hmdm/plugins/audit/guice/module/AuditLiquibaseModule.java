@@ -23,7 +23,7 @@ package com.hmdm.plugins.audit.guice.module;
 
 import com.hmdm.guice.module.AbstractLiquibaseModule;
 
-import javax.servlet.ServletContext;
+import jakarta.servlet.ServletContext;
 
 /**
  * <p>A module used for initializing and managing the state of the database tables related to <code>Audit</code>

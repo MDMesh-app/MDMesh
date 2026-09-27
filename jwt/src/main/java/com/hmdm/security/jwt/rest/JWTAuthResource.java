@@ -21,16 +21,15 @@
 
 package com.hmdm.security.jwt.rest;
 
-import javax.inject.Inject;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
 import com.hmdm.persistence.CustomerDAO;
 import com.hmdm.util.BackgroundTaskRunnerService;
 import com.hmdm.util.PasswordUtil;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.ApiResponse;
-import io.swagger.annotations.ApiResponses;
-import io.swagger.annotations.ResponseHeader;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.hmdm.persistence.UnsecureDAO;
@@ -38,12 +37,12 @@ import com.hmdm.persistence.domain.User;
 import com.hmdm.rest.json.UserCredentials;
 import com.hmdm.security.jwt.TokenProvider;
 
-import javax.ws.rs.Consumes;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 
 /**
  * <p>A resource for authenticating the requests bearing the JWT-token.</p>
@@ -52,7 +51,7 @@ import javax.ws.rs.core.Response;
  */
 @Singleton
 @Path( "/public/jwt" )
-@Api(tags = {"Authentication"})
+@Tag(name = "Authentication")
 public class JWTAuthResource {
 
     /**
@@ -94,18 +93,16 @@ public class JWTAuthResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Authenticate client",
-            notes = "Authenticates the client using provided credentials and responds with JWT token in case of " +
+    @Operation(
+            summary = "Authenticate client",
+            description = "Authenticates the client using provided credentials and responds with JWT token in case of " +
                     "success. The password field should contain the MD5 hash of the actual password. " +
                     "The returned JWT token must be included into 'Authorization' header for all " +
-                    "sub-sequent requests from the same client.",
-            response = JWTToken.class,
-            responseHeaders = {@ResponseHeader(name = AUTHORIZATION_HEADER)}
+                    "sub-sequent requests from the same client."
     )
     @ApiResponses({
-            @ApiResponse(code = 400, message = "Bad request"),
-            @ApiResponse(code = 401, message = "Unauthorized")
+            @ApiResponse(responseCode = "400", description = "Bad request"),
+            @ApiResponse(responseCode = "401", description = "Unauthorized")
     })
     @POST
     @Path( "/login" )

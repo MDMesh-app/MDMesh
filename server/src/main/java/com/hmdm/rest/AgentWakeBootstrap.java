@@ -1,8 +1,8 @@
 /*
  * Registers the agent wake WebSocket endpoint programmatically.
  *
- * The app's web.xml is a legacy Servlet 2.3 descriptor, so Tomcat does not auto-scan @ServerEndpoint
- * classes. The WebSocket SCI still initializes the JSR-356 ServerContainer for the context, so we
+ * The application registers the endpoint explicitly rather than relying on endpoint scanning.
+ * The WebSocket SCI initializes the JSR-356 ServerContainer for the context, so we
  * register the endpoint against it at context startup. Declared as a <listener> in web.xml.
  */
 package com.hmdm.rest;
@@ -10,9 +10,9 @@ package com.hmdm.rest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.servlet.ServletContextEvent;
-import javax.servlet.ServletContextListener;
-import javax.websocket.server.ServerContainer;
+import jakarta.servlet.ServletContextEvent;
+import jakarta.servlet.ServletContextListener;
+import jakarta.websocket.server.ServerContainer;
 
 public class AgentWakeBootstrap implements ServletContextListener {
 
@@ -20,7 +20,7 @@ public class AgentWakeBootstrap implements ServletContextListener {
 
     @Override
     public void contextInitialized(ServletContextEvent sce) {
-        Object attr = sce.getServletContext().getAttribute("javax.websocket.server.ServerContainer");
+        Object attr = sce.getServletContext().getAttribute("jakarta.websocket.server.ServerContainer");
         if (!(attr instanceof ServerContainer)) {
             log.error("Agent wake: no JSR-356 ServerContainer in context — wake channel disabled");
             return;

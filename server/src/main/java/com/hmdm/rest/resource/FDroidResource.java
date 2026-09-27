@@ -16,19 +16,18 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hmdm.rest.json.Response;
 import com.hmdm.security.SecurityContext;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.ApiParam;
-import io.swagger.annotations.Authorization;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Singleton;
-import javax.ws.rs.GET;
-import javax.ws.rs.Path;
-import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.MediaType;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.MediaType;
 import java.io.InputStream;
 import java.net.URL;
 import java.net.URLConnection;
@@ -39,7 +38,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-@Api(tags = {"F-Droid"}, authorizations = {@Authorization("Bearer Token")})
+@Tag(name = "F-Droid")
 @Singleton
 @Path("/private/fdroid")
 public class FDroidResource {
@@ -61,12 +60,12 @@ public class FDroidResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Search F-Droid", notes = "Searches the cached F-Droid catalogue.")
+    @Operation(summary = "Search F-Droid", description = "Searches the cached F-Droid catalogue.")
     @GET
     @Path("/search")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response search(@QueryParam("q") @ApiParam("Search query") String q,
-                           @QueryParam("limit") @ApiParam("Max results") Integer limit) {
+    public Response search(@QueryParam("q") @Parameter(description = "Search query") String q,
+                           @QueryParam("limit") @Parameter(description = "Max results") Integer limit) {
         if (!SecurityContext.get().getCurrentUser().isPresent()) {
             return Response.PERMISSION_DENIED();
         }

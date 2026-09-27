@@ -21,18 +21,17 @@
 
 package com.hmdm.rest.resource;
 
-import javax.inject.Inject;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
 
 import com.hmdm.persistence.CommonDAO;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.Customer;
 import com.hmdm.persistence.domain.Settings;
 import com.hmdm.util.PasswordUtil;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.ApiParam;
-import io.swagger.annotations.Authorization;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import com.hmdm.persistence.UserDAO;
 import com.hmdm.persistence.domain.User;
 import com.hmdm.persistence.domain.UserRole;
@@ -41,26 +40,26 @@ import com.hmdm.security.SecurityContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.HttpSession;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.GET;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.MediaType;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.MediaType;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-@Api(tags = {"User"}, authorizations = {@Authorization("Bearer Token")})
+@Tag(name = "User")
 @Singleton
 @Path("/private/users")
 public class UserResource {
@@ -89,17 +88,16 @@ public class UserResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Get user details",
-            notes = "Returns the details for the user account referenced by the specified ID.",
-            response = User.class
+    @Operation(
+            summary = "Get user details",
+            description = "Returns the details for the user account referenced by the specified ID."
     )
     @GET
     @Path("/{id}")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     // This method doesn't seem to be used by the front-end
-    public Response getUserDetails(@PathParam("id") @ApiParam("User ID") int id) {
+    public Response getUserDetails(@PathParam("id") @Parameter(description = "User ID") int id) {
         return SecurityContext.get().getCurrentUser().map(u -> {
             if (u.getId() != id && !SecurityContext.get().hasPermission("settings")) {
             logger.error("Unauthorized attempt to access user details by user " +
@@ -114,10 +112,9 @@ public class UserResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Get current user details",
-            notes = "Returns the details for the current user account",
-            response = User.class
+    @Operation(
+            summary = "Get current user details",
+            description = "Returns the details for the current user account"
     )
     @GET
     @Path("/current")
@@ -133,11 +130,9 @@ public class UserResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "List all users",
-            notes = "Gets the list of all existing user accounts",
-            response = User.class,
-            responseContainer = "List"
+    @Operation(
+            summary = "List all users",
+            description = "Gets the list of all existing user accounts"
     )
     @GET
     @Path("/all")
@@ -168,10 +163,9 @@ public class UserResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Update password",
-            notes = "Updates the password for current user",
-            response = User.class
+    @Operation(
+            summary = "Update password",
+            description = "Updates the password for current user"
     )
     @PUT
     @Path("/current")
@@ -191,9 +185,9 @@ public class UserResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Create or update user",
-            notes = "Creates a new user account (if id is not provided) or update existing one otherwise."
+    @Operation(
+            summary = "Create or update user",
+            description = "Creates a new user account (if id is not provided) or update existing one otherwise."
     )
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
@@ -267,15 +261,15 @@ public class UserResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Delete user",
-            notes = "Deletes a user account referenced by the specified ID"
+    @Operation(
+            summary = "Delete user",
+            description = "Deletes a user account referenced by the specified ID"
     )
     @DELETE
     @Path("/other/{id}")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response deleteUser(@PathParam("id") @ApiParam("User ID") int id) {
+    public Response deleteUser(@PathParam("id") @Parameter(description = "User ID") int id) {
         return SecurityContext.get().getCurrentUser().map(u -> {
             if (!u.getUserRole().isSuperAdmin() && !this.userDAO.isOrgAdmin(u)) {
                 logger.warn("Failed to delete user {}: must be org admin or superadmin", id);
@@ -293,9 +287,9 @@ public class UserResource {
 
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Update user's details",
-            notes = "Update user's name and email."
+    @Operation(
+            summary = "Update user's details",
+            description = "Update user's name and email."
     )
     @PUT
     @Path("/details")
@@ -330,11 +324,9 @@ public class UserResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "List user roles",
-            notes = "Gets the list of all available user roles",
-            response = UserRole.class,
-            responseContainer = "List"
+    @Operation(
+            summary = "List user roles",
+            description = "Gets the list of all available user roles"
     )
     @GET
     @Path("/roles")
@@ -350,7 +342,7 @@ public class UserResource {
         }
     }
 
-    @ApiOperation(value = "", hidden = true)
+    @Operation(summary = "", hidden = true)
     @GET
     @Path("/superadmin/all/{customerId}")
     @Consumes(MediaType.APPLICATION_JSON)
@@ -366,7 +358,7 @@ public class UserResource {
         }
     }
 
-    @ApiOperation(value = "", hidden = true)
+    @Operation(summary = "", hidden = true)
     @PUT
     @Path("/superadmin/password")
     @Consumes(MediaType.APPLICATION_JSON)

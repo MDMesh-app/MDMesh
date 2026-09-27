@@ -21,24 +21,23 @@
 
 package com.hmdm.rest.resource;
 
-import javax.inject.Inject;
-import javax.inject.Singleton;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
 
 import com.hmdm.persistence.CustomerDAO;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.UserRoleSettingsDAO;
 import com.hmdm.persistence.domain.UserRoleSettings;
 import com.hmdm.security.SecurityContext;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.Authorization;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
 import com.hmdm.persistence.CommonDAO;
 import com.hmdm.persistence.domain.Settings;
 import com.hmdm.rest.json.Response;
@@ -48,7 +47,7 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 import java.util.Optional;
 
-@Api(tags = {"Settings"}, authorizations = {@Authorization("Bearer Token")})
+@Tag(name = "Settings")
 @Singleton
 @Path("/private/settings")
 public class SettingsResource {
@@ -73,10 +72,9 @@ public class SettingsResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Get settings",
-            notes = "Gets the current settings",
-            response = Settings.class
+    @Operation(
+            summary = "Get settings",
+            description = "Gets the current settings"
     )
     @GET
     @Produces(MediaType.APPLICATION_JSON)
@@ -95,10 +93,9 @@ public class SettingsResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Get user role settings",
-            notes = "Gets the current settings for role of the current user",
-            response = UserRoleSettings.class
+    @Operation(
+            summary = "Get user role settings",
+            description = "Gets the current settings for role of the current user"
     )
     @GET
     @Path("/userRole/{roleId}")
@@ -120,10 +117,9 @@ public class SettingsResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Save default design",
-            notes = "Save the settings for Default Design for mobile application",
-            response = Settings.class
+    @Operation(
+            summary = "Save default design",
+            description = "Save the settings for Default Design for mobile application"
     )
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
@@ -145,10 +141,9 @@ public class SettingsResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Save user role common settings",
-            notes = "Save the settings for user roles",
-            response = Settings.class
+    @Operation(
+            summary = "Save user role common settings",
+            description = "Save the settings for user roles"
     )
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
@@ -170,10 +165,9 @@ public class SettingsResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Save language settings",
-            notes = "Save the language settings for MDM web application",
-            response = Settings.class
+    @Operation(
+            summary = "Save language settings",
+            description = "Save the language settings for MDM web application"
     )
     @POST
     @Consumes(MediaType.APPLICATION_JSON)
@@ -195,10 +189,9 @@ public class SettingsResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Save misc settings",
-            notes = "Save the misc settings for MDM web application",
-            response = Settings.class
+    @Operation(
+            summary = "Save misc settings",
+            description = "Save the misc settings for MDM web application"
     )
     @POST
     @Consumes(MediaType.APPLICATION_JSON)

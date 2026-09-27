@@ -1,8 +1,9 @@
 package com.hmdm.plugins.audit.rest.filter;
 
-import javax.servlet.ServletInputStream;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletRequestWrapper;
+import jakarta.servlet.ServletInputStream;
+import jakarta.servlet.ReadListener;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequestWrapper;
 import java.io.*;
 
 public class ServletRequestAuditWrapper extends HttpServletRequestWrapper {
@@ -47,6 +48,21 @@ public class ServletRequestAuditWrapper extends HttpServletRequestWrapper {
         ServletInputStream servletInputStream = new ServletInputStream() {
             public int read() throws IOException {
                 return byteArrayInputStream.read();
+            }
+
+            @Override
+            public boolean isFinished() {
+                return byteArrayInputStream.available() == 0;
+            }
+
+            @Override
+            public boolean isReady() {
+                return true;
+            }
+
+            @Override
+            public void setReadListener(ReadListener readListener) {
+                throw new IllegalStateException("Async reads are not supported by the buffered audit wrapper");
             }
         };
         return servletInputStream;

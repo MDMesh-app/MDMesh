@@ -38,6 +38,14 @@ print(s.getsockname()[1])
 s.close()
 PY
 )"
+shutdown_port="$(python3 - <<'PY'
+import socket
+s = socket.socket()
+s.bind(('127.0.0.1', 0))
+print(s.getsockname()[1])
+s.close()
+PY
+)"
 pg_data="$work_dir/postgres"
 pg_socket_dir="$work_dir/postgres-socket"
 app_dir="$work_dir/app"
@@ -106,6 +114,9 @@ cp -R "$repo_dir/install/emails" "$app_dir/emails"
 mkdir -p "$tomcat_dir/webapps/ROOT"
 (cd "$tomcat_dir/webapps/ROOT" && "$java_home/bin/jar" -xf "$war")
 sed -i "0,/port=\"8080\"/s//port=\"${http_port}\"/" "$tomcat_dir/conf/server.xml"
+# Stock Tomcat reserves 8005 for its shutdown listener. Give the disposable instance an isolated
+# listener too, otherwise it cannot coexist with a native MDMesh Tomcat on the same host.
+sed -i -E "s#(<Server port=\")[0-9]+(\" shutdown=)#\1${shutdown_port}\2#" "$tomcat_dir/conf/server.xml"
 
 cat > "$tomcat_dir/conf/Catalina/localhost/ROOT.xml" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>

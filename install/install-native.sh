@@ -241,6 +241,9 @@ ensure_jdk21() {
     install -d -m 0755 /etc/apt/keyrings
     curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public |
       gpg --dearmor --yes -o /etc/apt/keyrings/adoptium.gpg
+    # The installer-wide umask is 077 for deployment secrets, but the Apt `_apt` user must be able
+    # to read a repository signing key named by `signed-by=`.
+    chmod 0644 /etc/apt/keyrings/adoptium.gpg
     gpg --show-keys --with-colons /etc/apt/keyrings/adoptium.gpg |
       grep -q "^fpr:::::::::3B04D753C9050D9A5D343F39843C48A565F8F04B:"
     . /etc/os-release
@@ -307,6 +310,7 @@ if ! select_jdk21 >/dev/null; then
     install -d -m 0755 /etc/apt/keyrings
     curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public |
       gpg --dearmor --yes -o /etc/apt/keyrings/adoptium.gpg
+    chmod 0644 /etc/apt/keyrings/adoptium.gpg
     . /etc/os-release
     printf "deb [signed-by=/etc/apt/keyrings/adoptium.gpg] https://packages.adoptium.net/artifactory/deb %s main\n" "$VERSION_CODENAME" \
       > /etc/apt/sources.list.d/adoptium.list

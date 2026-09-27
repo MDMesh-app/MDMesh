@@ -43,6 +43,16 @@ if [ "$STOP_SERVICE" = 1 ]; then
   if command -v systemctl >/dev/null && systemctl list-unit-files 2>/dev/null | grep -q "^${SERVICE_UNIT}\.service"; then
     systemctl stop "$SERVICE_UNIT"
   fi
+  # Older native installs may have no unit (or use a differently shaped unit) but their Tomcat
+  # still belongs to this exact CATALINA directory. Stop only that local runtime; never touch a
+  # process selected merely by the requested HTTP port.
+  if pgrep -f "catalina.base=${CATALINA}" >/dev/null 2>&1 && [ -x "$CATALINA/bin/catalina.sh" ]; then
+    "$CATALINA/bin/catalina.sh" stop 30 -force >/dev/null 2>&1 || true
+    for _stop_wait in $(seq 1 30); do
+      pgrep -f "catalina.base=${CATALINA}" >/dev/null 2>&1 || break
+      sleep 1
+    done
+  fi
 fi
 
 if command -v systemctl >/dev/null && systemctl is-active --quiet "$SERVICE_UNIT" 2>/dev/null; then

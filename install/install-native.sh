@@ -185,17 +185,25 @@ stop_tomcat() {
   for i in $(seq 1 15); do [ -z "$(port_holder)" ] && break; sleep 1; done
   rm -f "$CATALINA_PID"
 }
-# Fail fast on a port conflict, before packages are installed, the build runs or the running server is
-# stopped — losing the bind later would leave our Tomcat dead while the other server answers with 404s.
-[ "$(port_owner)" = foreign ] && refuse_foreign_port
-
 # Upgrades re-run this script. hash.secret signs enrollment/sync requests and download URLs, so rotating
 # it would silently break every already-enrolled device; reuse the value from the existing ROOT.xml.
 # (DB_PASSWORD is different: it is re-applied to the role via ALTER USER below, so a fresh one is fine.)
 _old_root="$CATALINA/conf/Catalina/localhost/ROOT.xml"
 NATIVE_UPGRADE=0
-if [ -f "$_old_root" ]; then
-  NATIVE_UPGRADE=1
+[ -f "$_old_root" ] && NATIVE_UPGRADE=1
+
+# A service at the requested port is normally rejected before any host state changes. An existing
+# native MDMesh context is the deliberate exception: the snapshot helper below stops that specific
+# Tomcat before copying state. This lets a Tomcat 9 instance enter the live migration path even if
+# an older service unit/process shape is not recognised by port_owner().
+_port_owner=$(port_owner)
+if [ "$_port_owner" = foreign ] && [ "$NATIVE_UPGRADE" != 1 ]; then
+  refuse_foreign_port
+elif [ "$_port_owner" = foreign ]; then
+  info "existing MDMesh context detected; the snapshot step will stop its Tomcat before upgrade"
+fi
+
+if [ "$NATIVE_UPGRADE" = 1 ]; then
   _old_secret=$(sed -n 's/.*name="hash.secret"[[:space:]]*value="\([^"]*\)".*/\1/p' "$_old_root" | head -n 1)
   if [ -n "$_old_secret" ]; then HASH_SECRET="$_old_secret"; info "Reusing hash.secret from the existing install (enrolled devices keep working)"; fi
   _old_base_url=$(sed -n 's/.*name="base.url"[[:space:]]*value="\([^"]*\)".*/\1/p' "$_old_root" | head -n 1)

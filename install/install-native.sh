@@ -127,11 +127,34 @@ if [ -z "$BASE_URL" ]; then
   [ "$ASSUME_YES" = "1" ] && { echo "  BASE_URL must be set when running with -y (e.g. BASE_URL=https://mdm.example.com)."; exit 1; }
   read -rp "  Public base URL (e.g. https://mdm.example.com): " BASE_URL
 fi
+case "$BASE_URL" in http://*|https://*) ;; *) echo "  Public base URL must start with http:// or https://."; exit 1 ;; esac
+case "$BASE_URL" in *$'\n'*|*$'\r'*|*$'\t'*|*' '*) echo "  Public base URL must not contain whitespace."; exit 1 ;; esac
+# Values written into ROOT.xml must be escaped rather than trusted as XML-safe shell input.
+xml_escape() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g' -e "s/'/\&apos;/g"; }
+BASE_URL_XML=$(xml_escape "$BASE_URL")
 # HTTP port Tomcat listens on. Override non-interactively with HTTP_PORT=9090; default 8080.
 HTTP_PORT="${HTTP_PORT:-}"
 if [ -z "$HTTP_PORT" ]; then read -rp "  HTTP port [8080]: " _p; HTTP_PORT="${_p:-8080}"; fi
 case "$HTTP_PORT" in ''|*[!0-9]*) echo "  Port must be a number."; exit 1 ;; esac
 { [ "$HTTP_PORT" -ge 1 ] && [ "$HTTP_PORT" -le 65535 ]; } || { echo "  Port must be 1-65535."; exit 1; }
+
+# Optional native SMTP parity with the Docker entrypoint. Values are environment-driven to keep the
+# standard interactive path focused; ROOT.xml and the installer log remain root-readable only.
+SMTP_HOST="${SMTP_HOST:-}"
+SMTP_PORT="${SMTP_PORT:-25}"
+SMTP_SSL="${SMTP_SSL:-false}"
+SMTP_STARTTLS="${SMTP_STARTTLS:-false}"
+SMTP_USERNAME="${SMTP_USERNAME:-}"
+SMTP_PASSWORD="${SMTP_PASSWORD:-}"
+SMTP_FROM="${SMTP_FROM:-mdm@localhost}"
+case "$SMTP_PORT" in ''|*[!0-9]*) echo "  SMTP_PORT must be a number."; exit 1 ;; esac
+{ [ "$SMTP_PORT" -ge 1 ] && [ "$SMTP_PORT" -le 65535 ]; } || { echo "  SMTP_PORT must be 1-65535."; exit 1; }
+case "$SMTP_SSL" in true|false) ;; *) echo "  SMTP_SSL must be true or false."; exit 1 ;; esac
+case "$SMTP_STARTTLS" in true|false) ;; *) echo "  SMTP_STARTTLS must be true or false."; exit 1 ;; esac
+SMTP_HOST_XML=$(xml_escape "$SMTP_HOST")
+SMTP_USERNAME_XML=$(xml_escape "$SMTP_USERNAME")
+SMTP_PASSWORD_XML=$(xml_escape "$SMTP_PASSWORD")
+SMTP_FROM_XML=$(xml_escape "$SMTP_FROM")
 DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
 BASE_DIR=/opt/mdmesh
 CATALINA=/opt/mdmesh-tc
@@ -332,29 +355,39 @@ step "Fetching the agent APK from GitHub Releases"
 # debug defaults and you host an APK manually — enrollment just needs a matching APK at /files/agent.apk.
 GITHUB_REPO="${GITHUB_REPO:-$(git remote get-url origin 2>/dev/null | sed -E 's#(git@|https?://)[^/:]+[/:]##; s#\.git$##')}"
 AGENT_APK=""
+AGENT_FETCH_DIR=""
+cleanup_agent_fetch() { [ -n "$AGENT_FETCH_DIR" ] && rm -rf -- "$AGENT_FETCH_DIR"; }
+trap cleanup_agent_fetch EXIT
 if [ -n "$GITHUB_REPO" ]; then
   AUTH=(); [ -n "${GITHUB_TOKEN:-}" ] && AUTH=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
   jget() { python3 -c 'import sys,json;
 d=json.load(sys.stdin)
 def asset(n): return next((a["browser_download_url"] for a in d.get("assets",[]) if a["name"]==n),"")
-print({"apk":asset("mdmesh-agent.apk"),"manifest":asset("manifest.json")}.get(sys.argv[1],""))' "$1" 2>/dev/null; }
+print({"apk":asset("mdmesh-agent.apk"),"manifest":asset("manifest.json"),"signature":asset("manifest.json.minisig")}.get(sys.argv[1],""))' "$1" 2>/dev/null; }
   REL=$(curl -fsSL "${AUTH[@]}" "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>>"$LOGFILE" || true)
-  APK_URL=$(printf '%s' "$REL" | jget apk); MAN_URL=$(printf '%s' "$REL" | jget manifest)
-  if [ -n "$APK_URL" ] && [ -n "$MAN_URL" ]; then
-    MAN=$(curl -fsSL "${AUTH[@]}" "$MAN_URL" 2>>"$LOGFILE" || true)
-    AGENT_CK=$(printf '%s' "$MAN" | python3 -c 'import sys,json;print(json.load(sys.stdin)["components"]["apk"]["signatureChecksum"])' 2>/dev/null || true)
-    WANT_SHA=$(printf '%s' "$MAN" | python3 -c 'import sys,json;print(json.load(sys.stdin)["components"]["apk"]["sha256"])' 2>/dev/null || true)
-    TMP_APK=$(mktemp)
-    if curl -fsSL "${AUTH[@]}" "$APK_URL" -o "$TMP_APK" 2>>"$LOGFILE" && [ -n "$AGENT_CK" ] \
+  APK_URL=$(printf '%s' "$REL" | jget apk); MAN_URL=$(printf '%s' "$REL" | jget manifest); SIG_URL=$(printf '%s' "$REL" | jget signature)
+  if [ -n "$APK_URL" ] && [ -n "$MAN_URL" ] && [ -n "$SIG_URL" ] && command -v minisign >/dev/null 2>&1; then
+    AGENT_FETCH_DIR=$(mktemp -d)
+    TMP_MAN="$AGENT_FETCH_DIR/manifest.json"; TMP_SIG="$AGENT_FETCH_DIR/manifest.json.minisig"; TMP_APK="$AGENT_FETCH_DIR/agent.apk"
+    if curl -fsSL "${AUTH[@]}" "$MAN_URL" -o "$TMP_MAN" 2>>"$LOGFILE" \
+       && curl -fsSL "${AUTH[@]}" "$SIG_URL" -o "$TMP_SIG" 2>>"$LOGFILE" \
+       && minisign -V -p "$REPO/release/minisign.pub" -m "$TMP_MAN" >>"$LOGFILE" 2>&1; then
+      AGENT_CK=$(python3 -c 'import sys,json;print(json.load(open(sys.argv[1]))["components"]["apk"]["signatureChecksum"])' "$TMP_MAN" 2>/dev/null || true)
+      WANT_SHA=$(python3 -c 'import sys,json;print(json.load(open(sys.argv[1]))["components"]["apk"]["sha256"])' "$TMP_MAN" 2>/dev/null || true)
+    else
+      AGENT_CK=""; WANT_SHA=""
+      info "Could not verify the signed release manifest — host an agent APK manually"
+    fi
+    if [ -n "$AGENT_CK" ] && curl -fsSL "${AUTH[@]}" "$APK_URL" -o "$TMP_APK" 2>>"$LOGFILE" \
        && [ "$(sha256sum "$TMP_APK" | awk '{print $1}')" = "$WANT_SHA" ]; then
       AGENT_APK="$TMP_APK"
       export VITE_AGENT_PACKAGE="com.mdmesh.agent" VITE_AGENT_CHECKSUM="$AGENT_CK" VITE_AGENT_APK_URL="/files/agent.apk"
-      ok "release agent APK fetched + sha256-verified (checksum ${AGENT_CK})"
+      ok "release agent APK fetched + signed-manifest/sha256 verified (checksum ${AGENT_CK})"
     else
       info "Could not fetch/verify the release APK — continuing; host one at /files/agent.apk manually"
     fi
   else
-    info "No published release found for ${GITHUB_REPO} — console uses debug defaults; host /files/agent.apk manually"
+    info "No signed release found for ${GITHUB_REPO}, or minisign is unavailable — console uses debug defaults; host /files/agent.apk manually"
   fi
 else
   info "No GitHub repo detected — skipping release fetch; host /files/agent.apk manually"
@@ -404,6 +437,7 @@ cp install/log4j_template.xml "$BASE_DIR/log4j-mdmesh.xml"
 cp -r install/emails "$BASE_DIR/" 2>/dev/null || true
 # Host the release agent APK the QR points at (/files/agent.apk), if we fetched one above.
 [ -n "$AGENT_APK" ] && { cp "$AGENT_APK" "$BASE_DIR/files/agent.apk"; ok "agent APK hosted at /files/agent.apk"; }
+cleanup_agent_fetch; AGENT_FETCH_DIR=""
 cat > "$CATALINA/conf/Catalina/localhost/ROOT.xml" <<XML
 <?xml version="1.0" encoding="UTF-8"?>
 <Context>
@@ -416,7 +450,7 @@ cat > "$CATALINA/conf/Catalina/localhost/ROOT.xml" <<XML
     <Parameter name="JDBC.password" value="${DB_PASSWORD}"/>
     <Parameter name="base.directory"  value="${BASE_DIR}"/>
     <Parameter name="files.directory" value="${BASE_DIR}/files"/>
-    <Parameter name="base.url"        value="${BASE_URL}"/>
+    <Parameter name="base.url"        value="${BASE_URL_XML}"/>
     <Parameter name="usage.scenario"    value="private"/>
     <Parameter name="secure.enrollment" value="0"/>
     <Parameter name="hash.secret"       value="${HASH_SECRET}"/>
@@ -430,12 +464,18 @@ cat > "$CATALINA/conf/Catalina/localhost/ROOT.xml" <<XML
     <Parameter name="mqtt.server.uri" value=""/>
     <Parameter name="mqtt.auth" value="0"/>
     <Parameter name="device.fast.search.chars" value="5"/>
+    <Parameter name="smtp.host" value="${SMTP_HOST_XML}"/>
+    <Parameter name="smtp.port" value="${SMTP_PORT}"/>
+    <Parameter name="smtp.ssl" value="${SMTP_SSL}"/>
+    <Parameter name="smtp.starttls" value="${SMTP_STARTTLS}"/>
+    <Parameter name="smtp.username" value="${SMTP_USERNAME_XML}"/>
+    <Parameter name="smtp.password" value="${SMTP_PASSWORD_XML}"/>
+    <Parameter name="smtp.from" value="${SMTP_FROM_XML}"/>
+    <Parameter name="email.recovery.subj" value="${BASE_DIR}/emails/_LANGUAGE_/recovery_subj.txt"/>
+    <Parameter name="email.recovery.body" value="${BASE_DIR}/emails/_LANGUAGE_/recovery_body.txt"/>
     <!-- Loopback updater supervisor; /update/* is passed through by UpdateProxyServlet so the
          console's Updates + staged-rollout views are same-origin (no proxy config needed). -->
     <Parameter name="supervisor.base" value="http://127.0.0.1:9000"/>
-    <!-- TODO(parity): the Docker stack wires SMTP via env (smtp.host/port/ssl/starttls/username/
-         password/from — see docker/entrypoint.sh); this installer writes no smtp.* Parameters yet,
-         so password-reset emails stay disabled on native installs. Add them when SMTP is needed. -->
 </Context>
 XML
 # ROOT.xml carries the DB password + hash.secret; umask should already yield 0600, but be explicit.
@@ -459,6 +499,7 @@ SUP_DIR="$BASE_DIR/supervisor"
 mkdir -p "$SUP_DIR"
 cp "$REPO"/supervisor/server.js "$REPO"/supervisor/lib.js "$REPO"/supervisor/recovery.html "$SUP_DIR/"
 cp "$REPO"/release/minisign.pub "$SUP_DIR/minisign.pub"
+chown -R "$SVC_USER:$SVC_USER" "$SUP_DIR"
 # The running version: the checkout's latest release tag (source installs track the repo). The
 # supervisor compares it against GitHub's latest to decide "update available". Same rule as setup.sh
 # (install/lib/version.sh).
@@ -480,6 +521,7 @@ SERVER_BASE=http://127.0.0.1:${HTTP_PORT}
 APPLY_SUPPORTED=0
 ENV
 chmod 600 "$BASE_DIR/supervisor.env"
+chown "$SVC_USER:$SVC_USER" "$BASE_DIR/supervisor.env"
 if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
   cat > /etc/systemd/system/mdmesh-supervisor.service <<UNIT
 [Unit]
@@ -489,6 +531,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+User=${SVC_USER}
+Group=${SVC_USER}
 EnvironmentFile=${BASE_DIR}/supervisor.env
 ExecStart=$(command -v node) ${SUP_DIR}/server.js
 Restart=always
@@ -505,11 +549,13 @@ UNIT
   # rewrite supervisor.env — notably CURRENT_VERSION — and a stale process would keep reporting
   # the pre-upgrade version, leaving the console's "update available" banner stuck forever.
   systemctl enable mdmesh-supervisor >> "$LOGFILE" 2>&1
-  systemctl restart mdmesh-supervisor >> "$LOGFILE" 2>&1 \
-    && ok "supervisor running v${CURRENT_VERSION:-0.0.0} (systemd unit mdmesh-supervisor, loopback :9000)" \
-    || info "supervisor unit failed to start — check: journalctl -u mdmesh-supervisor"
+  if systemctl restart mdmesh-supervisor >> "$LOGFILE" 2>&1; then
+    ok "supervisor running v${CURRENT_VERSION:-0.0.0} (systemd unit mdmesh-supervisor, loopback :9000)"
+  else
+    printf '  %s⚠ supervisor did not start — agent mirroring and update status are unavailable; check: journalctl -u mdmesh-supervisor%s\n' "$c_yel" "$c_reset"
+  fi
 else
-  info "no systemd — start the supervisor manually:"
+  printf '  %s⚠ no systemd — agent mirroring and update status require starting the supervisor manually:%s\n' "$c_yel" "$c_reset"
   info "  (set -a; . ${BASE_DIR}/supervisor.env; node ${SUP_DIR}/server.js &)"
 fi
 

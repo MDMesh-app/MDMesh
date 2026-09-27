@@ -233,11 +233,16 @@ ensure_jdk21() {
   step "Preflight: installing Eclipse Temurin JDK 21"
   run "Adoptium Temurin 21 JDK" bash -c '
     set -euo pipefail
-    apt-get update -y
-    DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates gnupg curl
+    # A prior incomplete Adoptium install can make `apt-get update` fail with NO_PUBKEY.
+    # Refresh its key *before* updating package indexes. v0.2.x already installs curl/gpg;
+    # if either bootstrap tool is absent, use the cached Debian package metadata as a fallback.
+    command -v curl >/dev/null || { apt-get install -y curl; }
+    command -v gpg >/dev/null || { apt-get install -y gnupg; }
     install -d -m 0755 /etc/apt/keyrings
     curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public |
       gpg --dearmor --yes -o /etc/apt/keyrings/adoptium.gpg
+    gpg --show-keys --with-colons /etc/apt/keyrings/adoptium.gpg |
+      grep -q "^fpr:::::::::3B04D753C9050D9A5D343F39843C48A565F8F04B:"
     . /etc/os-release
     printf "deb [signed-by=/etc/apt/keyrings/adoptium.gpg] https://packages.adoptium.net/artifactory/deb %s main\n" "$VERSION_CODENAME" \
       > /etc/apt/sources.list.d/adoptium.list

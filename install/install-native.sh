@@ -102,7 +102,7 @@ printf '\n  %sMDMesh · native install%s\n' "$c_bold" "$c_reset"
 cat <<WARN
 
   ${c_yel}⚠  This will modify THIS host:${c_reset}
-    • apt-get install openjdk-21-jdk, postgresql, maven, nodejs, npm, curl, python3, aapt
+    • install Eclipse Temurin JDK 21 if no suitable JDK is already present; apt-get install postgresql, maven, curl, python3, aapt
     • create or alter a PostgreSQL role and database "mdmesh" (resets that role's password)
     • download and unpack Apache Tomcat 10.1 into /opt/mdmesh-tc (clears its webapps/)
     • write config, logs and uploaded files under /opt/mdmesh
@@ -238,11 +238,10 @@ select_jdk21() {
   done
   return 1
 }
-# Install only what is missing. Asking apt for packages the host already provides another way (Node
-# from nodesource, a JDK under /opt, Postgres from PGDG) is how "held broken packages" conflicts happen
-# on otherwise healthy boxes — and openjdk-21-jdk is the minimum supported Java line.
+# Install only generic dependencies here. JDK 21 is handled separately because Debian 12 does not
+# package it, while Debian 13 does; Adoptium supplies the supported fallback without requiring a
+# distribution upgrade or replacing an existing Java 17 installation.
 PKGS=()
-select_jdk21 >/dev/null || PKGS+=(openjdk-21-jdk)
 command -v psql    >/dev/null && command -v pg_ctlcluster >/dev/null || PKGS+=(postgresql)
 command -v mvn     >/dev/null || PKGS+=(maven)
 command -v node    >/dev/null || PKGS+=(nodejs)
@@ -250,6 +249,10 @@ command -v npm     >/dev/null || PKGS+=(npm)
 command -v curl    >/dev/null || PKGS+=(curl)
 command -v python3 >/dev/null || PKGS+=(python3)
 command -v aapt    >/dev/null || PKGS+=(aapt)
+if ! select_jdk21 >/dev/null; then
+  command -v gpg >/dev/null || PKGS+=(gnupg)
+  command -v update-ca-certificates >/dev/null || PKGS+=(ca-certificates)
+fi
 if [ ${#PKGS[@]} -eq 0 ]; then
   ok "all build/runtime dependencies already present — nothing to install"
 else
@@ -257,6 +260,22 @@ else
   # publish for → "does not have a Release file") — the native install only needs base Debian packages.
   run "$(IFS=,; echo "${PKGS[*]}" | sed 's/,/, /g')" bash -c \
     "apt-get update -y || echo '(some apt sources failed to refresh — continuing)'; DEBIAN_FRONTEND=noninteractive apt-get install -y ${PKGS[*]}"
+fi
+if ! select_jdk21 >/dev/null; then
+  step "Installing Eclipse Temurin JDK 21"
+  run "Adoptium Temurin 21 JDK" bash -c '
+    set -euo pipefail
+    install -d -m 0755 /etc/apt/keyrings
+    curl -fsSL https://packages.adoptium.net/artifactory/api/gpg/key/public |
+      gpg --dearmor --yes -o /etc/apt/keyrings/adoptium.gpg
+    . /etc/os-release
+    printf "deb [signed-by=/etc/apt/keyrings/adoptium.gpg] https://packages.adoptium.net/artifactory/deb %s main\n" "$VERSION_CODENAME" \
+      > /etc/apt/sources.list.d/adoptium.list
+    apt-get update -y
+    DEBIAN_FRONTEND=noninteractive apt-get install -y temurin-21-jdk
+  '
+  select_jdk21 >/dev/null || { echo "Temurin JDK 21 installation did not provide a usable JDK." >&2; exit 1; }
+  ok "Eclipse Temurin JDK 21 installed"
 fi
 # minisign verifies release-manifest signatures for the updater supervisor. Best-effort: without it
 # the supervisor still runs but reports releases as unverified (and never mirrors an APK).

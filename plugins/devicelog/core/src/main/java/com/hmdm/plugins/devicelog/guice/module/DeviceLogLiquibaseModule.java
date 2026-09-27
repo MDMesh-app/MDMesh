@@ -23,7 +23,7 @@ package com.hmdm.plugins.devicelog.guice.module;
 
 import com.hmdm.guice.module.AbstractLiquibaseModule;
 
-import javax.servlet.ServletContext;
+import jakarta.servlet.ServletContext;
 
 /**
  * <p>A module used for registering the <code>Device Log</code> plugin to plugin platform.</p>

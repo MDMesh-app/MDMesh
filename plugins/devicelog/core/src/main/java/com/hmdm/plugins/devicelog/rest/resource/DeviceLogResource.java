@@ -23,8 +23,8 @@ package com.hmdm.plugins.devicelog.rest.resource;
 
 import com.hmdm.util.ExecutorRegistry;
 
-import javax.inject.Inject;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.Device;
 import com.hmdm.plugin.service.PluginStatusCache;
@@ -39,23 +39,21 @@ import com.hmdm.rest.json.Response;
 import com.hmdm.security.SecurityContext;
 import org.glassfish.jersey.media.multipart.ContentDisposition;
 
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.Authorization;
-import io.swagger.annotations.ResponseHeader;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.StreamingOutput;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.StreamingOutput;
 import java.io.IOException;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
@@ -72,7 +70,7 @@ import static com.hmdm.plugins.devicelog.DeviceLogPluginConfigurationImpl.PLUGIN
  *
  * @author isv
  */
-@Api(tags = {"Plugin - Device Log"})
+@Tag(name = "Plugin - Device Log")
 @Singleton
 @Path("/plugins/devicelog/log")
 public class DeviceLogResource {
@@ -120,11 +118,9 @@ public class DeviceLogResource {
      * @param filter a filter to be used for filtering the records.
      * @return a response with list of device log records matching the specified filter.
      */
-    @ApiOperation(
-            value = "Search logs",
-            notes = "Gets the list of log records matching the specified filter",
-            response = PaginatedData.class,
-            authorizations = {@Authorization("Bearer Token")}
+    @Operation(
+            summary = "Search logs",
+            description = "Gets the list of log records matching the specified filter"
     )
     @POST
     @Path("/private/search")
@@ -146,20 +142,18 @@ public class DeviceLogResource {
         }
     }
 
-    @ApiOperation(
-            value = "Exports logs",
-            notes = "Export the list of log records matching the specified filter",
-            responseHeaders = {@ResponseHeader(name = "Content-Type")},
-            authorizations = {@Authorization("Bearer Token")}
+    @Operation(
+            summary = "Exports logs",
+            description = "Export the list of log records matching the specified filter"
     )
     @POST
     @Path("/private/search/export")
     @Produces(MediaType.APPLICATION_JSON)
-    public javax.ws.rs.core.Response exportLogs(DeviceLogFilter filter) {
+    public jakarta.ws.rs.core.Response exportLogs(DeviceLogFilter filter) {
         if (!SecurityContext.get().hasPermission("plugin_devicelog_access")) {
             logger.error("Unauthorized attempt to get device logs by user " +
                     SecurityContext.get().getCurrentUserName());
-            return javax.ws.rs.core.Response.serverError().status(403).build();
+            return jakarta.ws.rs.core.Response.serverError().status(403).build();
         }
 
         filter.setPageNum(1);
@@ -172,7 +166,7 @@ public class DeviceLogResource {
         AtomicBoolean stop = new AtomicBoolean(false);
 
 
-        return javax.ws.rs.core.Response.ok( (StreamingOutput) output -> {
+        return jakarta.ws.rs.core.Response.ok( (StreamingOutput) output -> {
             try {
                 List<DeviceLogRecord> records = this.deviceLogDAO.findAll(filter);
                 while (!stop.get() && !records.isEmpty()) {
@@ -217,10 +211,9 @@ public class DeviceLogResource {
                 .build();
     }
 
-    @ApiOperation(
-            value = "Upload logs",
-            notes = "Uploads the list of log records from device to server",
-            response = Response.class
+    @Operation(
+            summary = "Upload logs",
+            description = "Uploads the list of log records from device to server"
     )
     @POST
     @Path("/list/{deviceNumber}")
@@ -257,11 +250,9 @@ public class DeviceLogResource {
         }
     }
 
-    @ApiOperation(
-            value = "Get log rules",
-            notes = "Gets the list of log rules for device",
-            response = AppliedDeviceLogRule.class,
-            responseContainer = "List"
+    @Operation(
+            summary = "Get log rules",
+            description = "Gets the list of log rules for device"
     )
     @GET
     @Path("/rules/{deviceNumber}")

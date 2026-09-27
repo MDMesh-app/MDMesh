@@ -39,21 +39,21 @@ import com.hmdm.rest.resource.support.ConfigReconciler;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.util.AgentCapabilityTokens;
 import com.hmdm.util.DesiredConfigBuilder;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.inject.Singleton;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.MediaType;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.MediaType;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -70,7 +70,7 @@ import java.util.UUID;
  */
 @Singleton
 @Path("/private/agent/v1")
-@Api(tags = {"Agent v1 admin"})
+@Tag(name = "Agent v1 admin")
 public class AgentAdminResource {
 
     private static final Logger logger = LoggerFactory.getLogger(AgentAdminResource.class);
@@ -121,7 +121,7 @@ public class AgentAdminResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Mint enrollment token", notes = "Creates a single-use enrollment token for the current customer. "
+    @Operation(summary = "Mint enrollment token", description = "Creates a single-use enrollment token for the current customer. "
             + "An optional configurationId binds the enrolled device to that configuration.")
     @POST
     @Path("/token")
@@ -163,7 +163,7 @@ public class AgentAdminResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Sync configuration apps", notes = "Queues app.install commands for the device's "
+    @Operation(summary = "Sync configuration apps", description = "Queues app.install commands for the device's "
             + "configuration apps marked action=install. Use after enrolling an older device or editing a configuration.")
     @POST
     @Path("/devices/{deviceId}/syncApps")
@@ -189,7 +189,7 @@ public class AgentAdminResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Queue agent command", notes = "Queues an opaque command for a device.")
+    @Operation(summary = "Queue agent command", description = "Queues an opaque command for a device.")
     @POST
     @Path("/devices/{deviceId}/commands")
     @Consumes(MediaType.APPLICATION_JSON)
@@ -238,8 +238,8 @@ public class AgentAdminResource {
             Set.of("device.wipe", "device.passcodereset");
 
     // =================================================================================================================
-    @ApiOperation(value = "Queue agent command for many devices",
-            notes = "Fans one opaque command out to a list of device ids (destructive types rejected).")
+    @Operation(summary = "Queue agent command for many devices",
+            description = "Fans one opaque command out to a list of device ids (destructive types rejected).")
     @POST
     @Path("/bulk/commands")
     @Consumes(MediaType.APPLICATION_JSON)
@@ -294,7 +294,7 @@ public class AgentAdminResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Device state", notes = "Latest agent-reported device-state snapshot.")
+    @Operation(summary = "Device state", description = "Latest agent-reported device-state snapshot.")
     @GET
     @Path("/devices/{deviceId}/state")
     @Produces(MediaType.APPLICATION_JSON)
@@ -314,7 +314,7 @@ public class AgentAdminResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Device configuration status", notes = "Desired-state revision vs the revision the agent last applied.")
+    @Operation(summary = "Device configuration status", description = "Desired-state revision vs the revision the agent last applied.")
     @GET
     @Path("/devices/{deviceId}/configStatus")
     @Produces(MediaType.APPLICATION_JSON)
@@ -339,7 +339,7 @@ public class AgentAdminResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Configuration sync summary", notes = "Per configuration: how many devices applied its current revision.")
+    @Operation(summary = "Configuration sync summary", description = "Per configuration: how many devices applied its current revision.")
     @GET
     @Path("/configurations/syncSummary")
     @Produces(MediaType.APPLICATION_JSON)
@@ -372,7 +372,7 @@ public class AgentAdminResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Device telemetry", notes = "Latest full census snapshot (JSON) reported by the agent.")
+    @Operation(summary = "Device telemetry", description = "Latest full census snapshot (JSON) reported by the agent.")
     @GET
     @Path("/devices/{deviceId}/telemetry")
     @Produces(MediaType.APPLICATION_JSON)
@@ -399,7 +399,7 @@ public class AgentAdminResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Device events", notes = "Agent lifecycle event timeline, newest first.")
+    @Operation(summary = "Device events", description = "Agent lifecycle event timeline, newest first.")
     @GET
     @Path("/devices/{deviceId}/events")
     @Produces(MediaType.APPLICATION_JSON)
@@ -423,7 +423,7 @@ public class AgentAdminResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Command history", notes = "Command lifecycle history for a device, newest first. "
+    @Operation(summary = "Command history", description = "Command lifecycle history for a device, newest first. "
             + "Payloads are never returned (they can embed secrets); app commands carry the package as 'subject'.")
     @GET
     @Path("/devices/{deviceId}/commands")
@@ -446,7 +446,7 @@ public class AgentAdminResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Location history", notes = "Recent location breadcrumb trail for a device, newest first.")
+    @Operation(summary = "Location history", description = "Recent location breadcrumb trail for a device, newest first.")
     @GET
     @Path("/devices/{deviceId}/locations")
     @Produces(MediaType.APPLICATION_JSON)
@@ -468,7 +468,7 @@ public class AgentAdminResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Force sync", notes = "Wake the device now so it pulls pending commands + reports state.")
+    @Operation(summary = "Force sync", description = "Wake the device now so it pulls pending commands + reports state.")
     @POST
     @Path("/devices/{deviceId}/sync")
     @Produces(MediaType.APPLICATION_JSON)

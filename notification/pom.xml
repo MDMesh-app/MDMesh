@@ -71,11 +71,11 @@
             <version>1.2.2</version>
         </dependency>
 
-	<!-- https://mvnrepository.com/artifact/javax.servlet/javax.servlet-api -->
+	<!-- Provided by the Jakarta servlet container. -->
 	<dependency>
-	    <groupId>javax.servlet</groupId>
-	    <artifactId>javax.servlet-api</artifactId>
-	    <version>3.0.1</version>
+	    <groupId>jakarta.servlet</groupId>
+	    <artifactId>jakarta.servlet-api</artifactId>
+	    <version>${jakarta.servlet.version}</version>
 	    <scope>provided</scope>
 	</dependency>
 

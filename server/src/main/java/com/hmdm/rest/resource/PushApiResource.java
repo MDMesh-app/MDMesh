@@ -34,16 +34,15 @@ import com.hmdm.rest.json.PushRequest;
 import com.hmdm.rest.json.Response;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.security.SecurityException;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.Authorization;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.inject.Singleton;
-import javax.ws.rs.*;
-import javax.ws.rs.core.MediaType;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.MediaType;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -52,7 +51,7 @@ import java.util.List;
  *
  * @author isv
  */
-@Api(tags = {"Push API"})
+@Tag(name = "Push API")
 @Path("/private/push")
 @Singleton
 public class PushApiResource {
@@ -104,10 +103,9 @@ public class PushApiResource {
      * @return a response to client.
      */
     // =================================================================================================================
-    @ApiOperation(
-            value = "Send a Push message",
-            notes = "Sends a Push message to specified devices.",
-            authorizations = {@Authorization("Bearer Token")}
+    @Operation(
+            summary = "Send a Push message",
+            description = "Sends a Push message to specified devices."
     )
     @POST
     @Produces(MediaType.APPLICATION_JSON)

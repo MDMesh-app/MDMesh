@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Lean native (non-Docker) installer for MDMesh — Debian/Ubuntu. Stands up Postgres + Tomcat 9 + the
+# Lean native (non-Docker) installer for MDMesh — Debian/Ubuntu. Stands up Postgres + Tomcat 10.1 + the
 # server on the host and assumes you terminate TLS yourself (your own reverse proxy / cert, or Caddy in
 # front). For the turnkey experience use ./setup.sh (Docker). Flags: -y/--yes (skip confirm), -v/--verbose
 # (stream all output instead of hiding it in the log). Best-effort + idempotent; review before prod use.
@@ -102,9 +102,9 @@ printf '\n  %sMDMesh · native install%s\n' "$c_bold" "$c_reset"
 cat <<WARN
 
   ${c_yel}⚠  This will modify THIS host:${c_reset}
-    • apt-get install openjdk-17-jdk, postgresql, maven, nodejs, npm, curl, python3, aapt
+    • apt-get install openjdk-21-jdk, postgresql, maven, nodejs, npm, curl, python3, aapt
     • create or alter a PostgreSQL role and database "mdmesh" (resets that role's password)
-    • download and unpack Apache Tomcat 9 into /opt/mdmesh-tc (clears its webapps/)
+    • download and unpack Apache Tomcat 10.1 into /opt/mdmesh-tc (clears its webapps/)
     • write config, logs and uploaded files under /opt/mdmesh
     • start Tomcat, run database migrations, and seed the admin account
 
@@ -135,7 +135,8 @@ case "$HTTP_PORT" in ''|*[!0-9]*) echo "  Port must be a number."; exit 1 ;; esa
 DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
 BASE_DIR=/opt/mdmesh
 CATALINA=/opt/mdmesh-tc
-TOMCAT_VER=9.0.89
+TOMCAT_VER=10.1.60
+TOMCAT_SHA512=aa06508300ca137a023b74b8600f2c1b3248412eb85d4fc5e2f337c6c4d3776f4491e272f79856ac541cfab0fc35537111ae4f3cfcd0bbe702c0a3610a61bd04
 # Tomcat lifecycle helpers. CATALINA_PID lets `catalina.sh stop -force` actually kill a JVM that ignores
 # the shutdown command (the server keeps scheduler threads alive after context stop), and the pgrep
 # fallback covers instances started by older versions of this script without a PID file.
@@ -198,24 +199,23 @@ if [ -f "$_old_root" ]; then
 fi
 
 step "Installing dependencies"
-# HERMETIC BUILD: pin JDK 17 and never fall back to the host default JDK. The server uses Lombok 1.18.20,
-# whose annotation processor only runs on JDK <=17; on a newer default JDK (21/25/…) it generates nothing
-# and the build dies with hundreds of "cannot find symbol". This keeps the build identical on any host.
-select_jdk17() {
+# HERMETIC BUILD: pin JDK 21 and never fall back to an older host default JDK. The server now
+# compiles with --release 21, so both build and Tomcat runtime require this minimum.
+select_jdk21() {
   local c
-  for c in "${JAVA17_HOME:-}" \
-           /usr/lib/jvm/java-17-openjdk* /usr/lib/jvm/*temurin-17* /usr/lib/jvm/*zulu*17* \
-           /usr/lib/jvm/*corretto*17* /usr/lib/jvm/*-17-* /usr/lib/jvm/*17* /opt/*jdk-17* /opt/*jdk17*; do
+  for c in "${JAVA21_HOME:-}" \
+           /usr/lib/jvm/java-21-openjdk* /usr/lib/jvm/*temurin-21* /usr/lib/jvm/*zulu*21* \
+           /usr/lib/jvm/*corretto*21* /usr/lib/jvm/*-21-* /usr/lib/jvm/*21* /opt/*jdk-21* /opt/*jdk21*; do
     [ -n "$c" ] && [ -x "$c/bin/javac" ] || continue
-    case "$("$c/bin/javac" -version 2>&1)" in *' 17.'*) printf '%s' "$c"; return 0 ;; esac
+    case "$("$c/bin/javac" -version 2>&1)" in *' 21.'*) printf '%s' "$c"; return 0 ;; esac
   done
   return 1
 }
 # Install only what is missing. Asking apt for packages the host already provides another way (Node
 # from nodesource, a JDK under /opt, Postgres from PGDG) is how "held broken packages" conflicts happen
-# on otherwise healthy boxes — and openjdk-17-jdk is not packaged on every release (Debian 13 has 21/25).
+# on otherwise healthy boxes — and openjdk-21-jdk is the minimum supported Java line.
 PKGS=()
-select_jdk17 >/dev/null || PKGS+=(openjdk-17-jdk)
+select_jdk21 >/dev/null || PKGS+=(openjdk-21-jdk)
 command -v psql    >/dev/null && command -v pg_ctlcluster >/dev/null || PKGS+=(postgresql)
 command -v mvn     >/dev/null || PKGS+=(maven)
 command -v node    >/dev/null || PKGS+=(nodejs)
@@ -235,11 +235,11 @@ fi
 # the supervisor still runs but reports releases as unverified (and never mirrors an APK).
 DEBIAN_FRONTEND=noninteractive apt-get install -y minisign >> "$LOGFILE" 2>&1 || info "minisign unavailable — updater will report releases as unverified"
 
-step "Selecting the Java 17 toolchain"
-JAVA_HOME=$(select_jdk17) || {
+step "Selecting the Java 21 toolchain"
+JAVA_HOME=$(select_jdk21) || {
   _spin_stop
-  echo "  ${c_red}✗ no JDK 17 found${c_reset} — the server build REQUIRES JDK 17 (Lombok 1.18.20 breaks on JDK 21+)." >&2
-  echo "    Install it (apt-get install -y openjdk-17-jdk) or set JAVA17_HOME to a JDK 17 home, then re-run." >&2
+  echo "  ${c_red}✗ no JDK 21 found${c_reset} — the server build and runtime REQUIRE JDK 21." >&2
+  echo "    Install it (apt-get install -y openjdk-21-jdk) or set JAVA21_HOME to a JDK 21 home, then re-run." >&2
   exit 1
 }
 export JAVA_HOME
@@ -321,8 +321,8 @@ if [ "$DB_STATE" = seeded ]; then
 fi
 
 step "Building the server"
-run "Maven package (JDK 17, ~1-2 min)" bash -c \
-  'cp server/build.properties.example server/build.properties 2>/dev/null || true; mvn -q -B -DskipTests -pl server -am package'
+run "Maven package (JDK 21, ~1-2 min)" bash -c \
+  'cp server/build.properties.example server/build.properties 2>/dev/null || true; ./mvnw -q -B -ntp -DskipTests -pl server -am package'
 
 step "Fetching the agent APK from GitHub Releases"
 # The agent APK is a release artifact, not a repo file. Pull the latest release's signed APK (+ manifest)
@@ -366,16 +366,24 @@ step "Building the admin console"
 # VITE_AGENT_* (exported above from the release, if any) bake the QR's package/checksum/APK URL.
 run "npm ci + vite build (web/)" bash -c 'cd web && npm ci --no-audit --no-fund && npm run build'
 
-step "Tomcat 9 + app deploy"
+step "Tomcat 10.1 + app deploy"
 # Stop the previous instance first: dropping a new ROOT.war into a running Tomcat triggers a hot redeploy
 # against the old context parameters (and the DB password we just rotated).
 stop_tomcat
-# Install Tomcat if it's missing OR a previous run left it partial/corrupt. Check for the actual launcher
-# script, not just the directory, so a broken /opt/mdmesh-tc self-heals instead of failing at startup.
+# Install Tomcat if it is missing, incomplete, or on another release line. Check the installed
+# version rather than only catalina.sh so an existing Tomcat 9 native install is upgraded instead
+# of trying to execute this Jakarta EE 10 WAR on an incompatible container.
 # archive.apache.org keeps every release permanently, so the pinned version URL never rots.
-if [ ! -x "$CATALINA/bin/catalina.sh" ]; then
+installed_tomcat_ver=""
+if [ -r "$CATALINA/RELEASE-NOTES" ]; then
+  installed_tomcat_ver=$(sed -n 's/^Apache Tomcat Version \([0-9.]*\).*$/\1/p' "$CATALINA/RELEASE-NOTES" | head -n 1)
+fi
+if [ ! -x "$CATALINA/bin/catalina.sh" ] || [ "$installed_tomcat_ver" != "$TOMCAT_VER" ]; then
+  [ -n "$installed_tomcat_ver" ] && info "Replacing Apache Tomcat ${installed_tomcat_ver} with ${TOMCAT_VER}"
   run "Downloading Apache Tomcat ${TOMCAT_VER}" \
-    curl -fsSL --retry 3 "https://archive.apache.org/dist/tomcat/tomcat-9/v${TOMCAT_VER}/bin/apache-tomcat-${TOMCAT_VER}.tar.gz" -o /tmp/tc.tgz
+    curl -fsSL --retry 3 "https://archive.apache.org/dist/tomcat/tomcat-10/v${TOMCAT_VER}/bin/apache-tomcat-${TOMCAT_VER}.tar.gz" -o /tmp/tc.tgz
+  run "Verifying Apache Tomcat ${TOMCAT_VER}" \
+    bash -c "echo '${TOMCAT_SHA512}  /tmp/tc.tgz' | sha512sum --check --status"
   rm -rf "$CATALINA"; mkdir -p "$CATALINA"
   tar xzf /tmp/tc.tgz -C "$CATALINA" --strip-components=1
   [ -x "$CATALINA/bin/catalina.sh" ] || _fail "Tomcat extract (catalina.sh missing after unpack)"
@@ -394,7 +402,7 @@ rm -rf "$CATALINA"/webapps/*
 mkdir -p "$CATALINA/webapps/ROOT"
 ( cd "$CATALINA/webapps/ROOT" && "$JAVA_HOME/bin/jar" -xf "$REPO/server/target/launcher.war" )
 cp -a "$REPO"/web/dist/. "$CATALINA/webapps/ROOT/"   # index.html + assets at / (server maps /rest,/files,/agent)
-# SPA fallback (verified on Tomcat 9.0.89): !-f serves real files (assets) as-is; the negative lookahead
+# SPA fallback: !-f serves real files (assets) as-is; the negative lookahead
 # leaves the API paths (/rest,/files,/agent) alone; everything else → index.html so client-side routes
 # survive a reload. Paired with the RewriteValve declared in ROOT.xml above.
 printf 'RewriteCond %%{REQUEST_URI} !-f\nRewriteRule ^/(?!rest|files|agent|update)(.*)$ /index.html\n' \
@@ -527,7 +535,7 @@ if [ "$SEED" = no ]; then
 fi
 
 step "Starting the server"
-# Runs on the same pinned JDK 17 (JAVA_HOME exported above), matching the Docker tomcat:9.0-jdk17 image.
+# Runs on the same pinned JDK 21 (JAVA_HOME exported above), matching the Docker Tomcat 10.1 image.
 export CATALINA_OPTS="--add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.text=ALL-UNNAMED --add-opens java.desktop/java.awt.font=ALL-UNNAMED"
 # Port check (the preflight above already rejected foreign holders; this catches anything that bound since).
 case "$(port_owner)" in
@@ -539,7 +547,7 @@ rm -f "$BASE_DIR/initialized.txt"   # Initializer only writes the completion mar
 if have_systemd; then
   cat > "/etc/systemd/system/${SVC_UNIT}.service" <<UNIT
 [Unit]
-Description=MDMesh server (Tomcat 9)
+Description=MDMesh server (Tomcat 10.1)
 After=network-online.target postgresql.service
 Wants=network-online.target
 

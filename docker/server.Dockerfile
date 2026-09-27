@@ -1,9 +1,9 @@
-# Control-plane image: build the WAR (Maven, JDK 17), drop it into Tomcat 9.
+# syntax=docker/dockerfile:1.7
+# Control-plane image: build the WAR (Maven, JDK 21), drop it into Tomcat 10.1.
 # Runtime config (DB, base.url, secrets) is generated from environment by entrypoint.sh, so the
-# same image serves any deployment. JDK 17 is required — dependencies (e.g. activemq-broker) ship
-# Java-11+ bytecode, so Java 8 fails to both compile and run.
+# same image serves any deployment. The Java 21 release target requires JDK 21 to compile and run.
 
-FROM maven:3.9-eclipse-temurin-17 AS build
+FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /src
 COPY pom.xml ./
 COPY common ./common
@@ -14,9 +14,26 @@ COPY server ./server
 COPY swagger ./swagger
 COPY install ./install
 RUN cp server/build.properties.example server/build.properties || true
-RUN mvn -q -B -DskipTests package
+# Some enterprise networks TLS-inspect Maven repositories. An opt-in BuildKit secret can supply
+# one locally managed root CA to this build stage; it is never copied into the runtime image.
+# The trust entries are removed after Maven completes so they are not retained in the build layer.
+RUN --mount=type=secret,id=mdmesh_build_ca,required=false,target=/run/secrets/mdmesh-build-ca.crt \
+    --mount=type=cache,target=/root/.m2 \
+    if [ -s /run/secrets/mdmesh-build-ca.crt ]; then \
+        install -m 0644 /run/secrets/mdmesh-build-ca.crt /usr/local/share/ca-certificates/mdmesh-build-ca.crt && \
+        update-ca-certificates && \
+        keytool -importcert -noprompt -trustcacerts -cacerts -storepass changeit \
+            -alias mdmesh-build-ca -file /run/secrets/mdmesh-build-ca.crt; \
+    fi && \
+    mvn -B -DskipTests package && \
+    if [ -s /run/secrets/mdmesh-build-ca.crt ]; then \
+        keytool -delete -cacerts -storepass changeit -alias mdmesh-build-ca && \
+        rm -f /usr/local/share/ca-certificates/mdmesh-build-ca.crt && \
+        update-ca-certificates --fresh; \
+    fi
 
-FROM tomcat:9.0-jdk17-temurin
+# Pin the Tomcat patch line so a rebuild cannot silently change the servlet container.
+FROM tomcat:10.1.60-jdk21-temurin
 RUN rm -rf /usr/local/tomcat/webapps/*
 COPY --from=build /src/server/target/launcher.war /usr/local/tomcat/webapps/ROOT.war
 # App base directory (data, plugins, logging config, email templates). /opt/mdmesh should be a volume

@@ -39,25 +39,24 @@ import com.hmdm.rest.json.DeviceLookupItem;
 import com.hmdm.rest.json.PaginatedData;
 import com.hmdm.rest.json.Response;
 import com.hmdm.security.SecurityContext;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.Authorization;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
 import org.glassfish.jersey.media.multipart.ContentDisposition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.inject.Singleton;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.StreamingOutput;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.StreamingOutput;
 import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
@@ -72,7 +71,7 @@ import static com.hmdm.plugins.deviceinfo.DeviceInfoPluginConfigurationImpl.PLUG
  */
 @Singleton
 @Path("/plugins/deviceinfo/deviceinfo")
-@Api(tags = {"Device Info plugin"})
+@Tag(name = "Device Info plugin")
 public class DeviceInfoResource {
 
     private static final Logger logger = LoggerFactory.getLogger(DeviceInfoResource.class);
@@ -129,10 +128,9 @@ public class DeviceInfoResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Save device info",
-            notes = "Save the Device Info dynamic data",
-            response = Void.class
+    @Operation(
+            summary = "Save device info",
+            description = "Save the Device Info dynamic data"
     )
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
@@ -189,10 +187,9 @@ public class DeviceInfoResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Get device info",
-            notes = "Get the current detailed info for device",
-            response = DeviceInfo.class
+    @Operation(
+            summary = "Get device info",
+            description = "Get the current detailed info for device"
     )
     @GET
     @Consumes(MediaType.APPLICATION_JSON)
@@ -216,11 +213,9 @@ public class DeviceInfoResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Search devices",
-            notes = "Search ",
-            response = DeviceLookupItem.class,
-            responseContainer = "List"
+    @Operation(
+            summary = "Search devices",
+            description = "Search "
     )
     @GET
     @Consumes(MediaType.APPLICATION_JSON)
@@ -243,11 +238,9 @@ public class DeviceInfoResource {
      * @param filter a filter to be used for filtering the records.
      * @return a response with list of dynamic info records matching the specified filter.
      */
-    @ApiOperation(
-            value = "Search dynamic info",
-            notes = "Gets the list of dynamic info records matching the specified filter",
-            response = PaginatedData.class,
-            authorizations = {@Authorization("Bearer Token")}
+    @Operation(
+            summary = "Search dynamic info",
+            description = "Gets the list of dynamic info records matching the specified filter"
     )
     @POST
     @Path("/private/search/dynamic")
@@ -283,7 +276,7 @@ public class DeviceInfoResource {
     @POST
     @Path("/private/export")
     @Produces(MediaType.APPLICATION_OCTET_STREAM)
-    public javax.ws.rs.core.Response exportDevices(DynamicInfoExportFilter request) {
+    public jakarta.ws.rs.core.Response exportDevices(DynamicInfoExportFilter request) {
         logger.debug("Export device dynamic info request: {}", request);
         try {
             if (!SecurityContext.get().hasPermission("plugin_deviceinfo_access")) {
@@ -293,13 +286,13 @@ public class DeviceInfoResource {
                 } else {
                     logger.error("Forbidding access to Device Info for anonymous user");
                 }
-                return javax.ws.rs.core.Response.status(javax.ws.rs.core.Response.Status.FORBIDDEN).build();
+                return jakarta.ws.rs.core.Response.status(jakarta.ws.rs.core.Response.Status.FORBIDDEN).build();
             }
 
             Device dbDevice = this.deviceDAO.getDeviceByNumber(request.getDeviceNumber());
             if (dbDevice == null) {
                 logger.error("Device {} was not found", request.getDeviceNumber());
-                return javax.ws.rs.core.Response.serverError().build();
+                return jakarta.ws.rs.core.Response.serverError().build();
             }
 
             request.setDeviceId(dbDevice.getId());
@@ -309,7 +302,7 @@ public class DeviceInfoResource {
                     .fileName(fileName + ".csv")
                     .creationDate(new Date())
                     .build();
-            return javax.ws.rs.core.Response.ok( (StreamingOutput) output -> {
+            return jakarta.ws.rs.core.Response.ok( (StreamingOutput) output -> {
                 try {
                     this.deviceInfoExportService.exportDeviceDynamicInfo(request, output);
                     output.flush();
@@ -319,7 +312,7 @@ public class DeviceInfoResource {
             } ).header( "Content-Disposition", contentDisposition ).build();
         } catch (Exception e) {
             logger.error("Unexpected error while exporting the device dynamic info records to CSV file", e);
-            return javax.ws.rs.core.Response.serverError().build();
+            return jakarta.ws.rs.core.Response.serverError().build();
         }
     }
 

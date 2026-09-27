@@ -32,8 +32,8 @@ import com.hmdm.security.SecurityContext;
 import com.hmdm.security.SecurityException;
 import com.hmdm.util.CryptoUtil;
 import com.hmdm.util.FileUtil;
-import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.ApiParam;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
@@ -41,14 +41,14 @@ import org.glassfish.jersey.media.multipart.FormDataParam;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
 import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -95,16 +95,15 @@ public class ConfigurationFileResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Upload configuration file",
-            notes = "Uploads the configuration file to server. Returns a path to uploaded file",
-            response = FileUploadResult.class
+    @Operation(
+            summary = "Upload configuration file",
+            description = "Uploads the configuration file to server. Returns a path to uploaded file"
     )
     @POST
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     public Response uploadConfigurationFile(@FormDataParam("file") InputStream uploadedInputStream,
-                                            @ApiParam("A configuration file to upload") @FormDataParam("file")
+                                            @Parameter(description = "A configuration file to upload") @FormDataParam("file")
                                                     FormDataContentDisposition fileDetail) {
         try {
 

@@ -21,8 +21,8 @@
 
 package com.hmdm.plugins.devicelog.rest.resource;
 
-import javax.inject.Inject;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
 
 import com.hmdm.notification.PushService;
 import com.hmdm.persistence.ConfigurationDAO;
@@ -38,23 +38,22 @@ import com.hmdm.rest.json.LookupItem;
 import com.hmdm.rest.json.Response;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.security.SecurityException;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.ApiParam;
-import io.swagger.annotations.Authorization;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.ws.rs.Consumes;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
@@ -65,7 +64,7 @@ import java.util.stream.Collectors;
  *
  * @author isv
  */
-@Api(tags = {"Plugin - Device Log"})
+@Tag(name = "Plugin - Device Log")
 @Singleton
 @Path("/plugins/devicelog/devicelog-plugin-settings")
 public class DeviceLogPluginSettingsResource {
@@ -108,11 +107,9 @@ public class DeviceLogPluginSettingsResource {
      *
      * @return plugin settings for current customer account.
      */
-    @ApiOperation(
-            value = "Get settings",
-            notes = "Gets the plugin settings for current user. If there are none found in DB then returns default ones.",
-            response = DeviceLogPluginSettings.class,
-            authorizations = {@Authorization("Bearer Token")}
+    @Operation(
+            summary = "Get settings",
+            description = "Gets the plugin settings for current user. If there are none found in DB then returns default ones."
     )
     @GET
     @Path("/private")
@@ -144,10 +141,9 @@ public class DeviceLogPluginSettingsResource {
         }
     }
 
-    @ApiOperation(
-            value = "Create or update plugin settings",
-            notes = "Creates a new plugin settings record (if id is not provided) or updates existing one otherwise",
-            authorizations = {@Authorization("Bearer Token")}
+    @Operation(
+            summary = "Create or update plugin settings",
+            description = "Creates a new plugin settings record (if id is not provided) or updates existing one otherwise"
     )
     @PUT
     @Path("/private")
@@ -175,10 +171,9 @@ public class DeviceLogPluginSettingsResource {
             return Response.INTERNAL_ERROR();
         }
     }
-    @ApiOperation(
-            value = "Create or update plugin settings rule",
-            notes = "Creates a new plugin settings rule record (if id is not provided) or updates existing one otherwise",
-            authorizations = {@Authorization("Bearer Token")}
+    @Operation(
+            summary = "Create or update plugin settings rule",
+            description = "Creates a new plugin settings rule record (if id is not provided) or updates existing one otherwise"
     )
     @PUT
     @Path("/private/rule")
@@ -204,14 +199,14 @@ public class DeviceLogPluginSettingsResource {
         }
     }
     // =================================================================================================================
-    @ApiOperation(
-            value = "Delete rule",
-            notes = "Delete an existing plugin settings rule"
+    @Operation(
+            summary = "Delete rule",
+            description = "Delete an existing plugin settings rule"
     )
     @DELETE
     @Path("/private/rule/{id}")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response removeRule(@PathParam("id") @ApiParam("Rule ID") Integer id) {
+    public Response removeRule(@PathParam("id") @Parameter(description = "Rule ID") Integer id) {
         if (!SecurityContext.get().hasPermission("plugin_devicelog_access")) {
             log.error("Unauthorized attempt to save device log settings by user " +
                     SecurityContext.get().getCurrentUserName());

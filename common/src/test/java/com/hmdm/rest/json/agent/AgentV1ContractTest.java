@@ -1,6 +1,7 @@
 package com.hmdm.rest.json.agent;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.Test;
 
 import java.util.Collections;
@@ -63,16 +64,18 @@ public class AgentV1ContractTest {
                 "{\"commandId\":\"9\",\"type\":\"device.lock\"}", AgentCommand.class);
         AgentCheckInResponse resp = new AgentCheckInResponse(Collections.singletonList(cmd));
         String json = mapper.writeValueAsString(resp);
-        assertTrue(json.contains("\"commandId\""));
-        assertTrue(json.contains("\"type\""));
-        assertTrue(json.contains("device.lock"));
-        assertTrue(json.contains("\"commands\""));
+        JsonNode response = mapper.readTree(json);
+        assertTrue(response.has("commands"));
+        assertEquals(1, response.get("commands").size());
+        assertEquals("9", response.get("commands").get(0).get("commandId").asText());
+        assertEquals("device.lock", response.get("commands").get(0).get("type").asText());
     }
 
     @Test
     public void enroll_response_keeps_secret_fields() throws Exception {
         String json = mapper.writeValueAsString(new AgentEnrollResponse("dev-1", "Default", "s3cr3t"));
-        assertTrue(json.contains("\"deviceId\""));
-        assertTrue(json.contains("\"deviceSecret\""));
+        JsonNode response = mapper.readTree(json);
+        assertEquals("dev-1", response.get("deviceId").asText());
+        assertEquals("s3cr3t", response.get("deviceSecret").asText());
     }
 }

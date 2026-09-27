@@ -26,10 +26,9 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.hmdm.persistence.domain.Application;
 import com.hmdm.persistence.domain.ApplicationType;
-import io.swagger.annotations.ApiModel;
-import io.swagger.models.auth.In;
+import io.swagger.v3.oas.annotations.media.Schema;
 
-import javax.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotNull;
 
 /**
  * <p>A DTO carrying the data for a single application included into response to request from device for configuration
@@ -37,7 +36,7 @@ import javax.validation.constraints.NotNull;
  *
  * @author isv
  */
-@ApiModel(description = "A specification of a single application available for usage on mobile device")
+@Schema(description = "A specification of a single application available for usage on mobile device")
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class SyncApplication implements SyncApplicationInt {

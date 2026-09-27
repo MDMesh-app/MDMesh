@@ -43,19 +43,19 @@ import com.hmdm.rest.json.agent.AgentProtocol;
 import com.hmdm.util.AgentCapabilityTokens;
 import com.hmdm.util.CryptoUtil;
 import com.hmdm.util.DesiredConfigBuilder;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.inject.Singleton;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.HeaderParam;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.HeaderParam;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -71,7 +71,7 @@ import java.util.UUID;
  */
 @Singleton
 @Path("/public/agent/v1")
-@Api(tags = {"Agent v1"})
+@Tag(name = "Agent v1")
 public class AgentResource {
 
     private static final Logger logger = LoggerFactory.getLogger(AgentResource.class);
@@ -114,7 +114,7 @@ public class AgentResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Enroll an agent", notes = "Validates a single-use token and registers the device.")
+    @Operation(summary = "Enroll an agent", description = "Validates a single-use token and registers the device.")
     @POST
     @Path("/enroll")
     @Consumes(MediaType.APPLICATION_JSON)
@@ -207,13 +207,13 @@ public class AgentResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Agent check-in", notes = "Refreshes capabilities, acks results, returns gated commands.")
+    @Operation(summary = "Agent check-in", description = "Refreshes capabilities, acks results, returns gated commands.")
     @POST
     @Path("/checkin")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response checkin(@HeaderParam("Authorization") String authorization,
-                            @javax.ws.rs.core.Context javax.servlet.http.HttpServletRequest httpRequest,
+                            @jakarta.ws.rs.core.Context jakarta.servlet.http.HttpServletRequest httpRequest,
                             AgentCheckInRequest request) {
         if (request == null || request.getDeviceId() == null) {
             return Response.ERROR("error.agent.device.unknown");
@@ -476,7 +476,7 @@ public class AgentResource {
      * fronting proxy (Caddy/cloudflared on this host or LAN). A device reaching Tomcat directly
      * cannot forge the recorded publicIp.
      */
-    private static String clientIp(javax.servlet.http.HttpServletRequest request) {
+    private static String clientIp(jakarta.servlet.http.HttpServletRequest request) {
         if (request == null) {
             return null;
         }

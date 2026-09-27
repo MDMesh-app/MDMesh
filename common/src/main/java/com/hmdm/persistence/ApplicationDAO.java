@@ -37,7 +37,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 import com.google.inject.Singleton;
-import javax.inject.Named;
+import jakarta.inject.Named;
 import com.hmdm.persistence.domain.ApplicationVersion;
 import com.hmdm.persistence.domain.User;
 import com.hmdm.rest.json.APKFileDetails;
@@ -48,7 +48,6 @@ import com.hmdm.rest.json.LinkConfigurationsToAppVersionRequest;
 import com.hmdm.rest.json.LookupItem;
 import com.hmdm.util.*;
 import org.apache.commons.codec.digest.DigestUtils;
-import org.glassfish.jersey.jaxb.internal.XmlJaxbElementProvider;
 import org.mybatis.guice.transactional.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -59,7 +58,7 @@ import com.hmdm.persistence.mapper.ApplicationMapper;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.security.SecurityException;
 
-import javax.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotNull;
 
 @Singleton
 public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationConfigurationLink> {

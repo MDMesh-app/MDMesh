@@ -21,22 +21,22 @@
 
 package com.hmdm.rest.resource;
 
-import javax.inject.Inject;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
 
 import com.hmdm.notification.PushService;
 import com.hmdm.persistence.*;
@@ -46,14 +46,13 @@ import com.hmdm.rest.json.view.devicelist.DeviceListView;
 import com.hmdm.rest.json.view.devicelist.DeviceView;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.security.SecurityException;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.ApiParam;
-import io.swagger.annotations.Authorization;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-@Api(tags = {"Device"}, authorizations = {@Authorization("Bearer Token")})
+@Tag(name = "Device")
 @Singleton
 @Path("/private/devices")
 public class DeviceResource {
@@ -89,10 +88,9 @@ public class DeviceResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Search devices",
-            notes = "Search devices meeting the specified filter value",
-            response = DeviceListView.class
+    @Operation(
+            summary = "Search devices",
+            description = "Search devices meeting the specified filter value"
     )
     @POST
     @Path("/search")
@@ -155,15 +153,14 @@ public class DeviceResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Get the device info by number",
-            notes = "Get the device info by number",
-            response = DeviceListView.class
+    @Operation(
+            summary = "Get the device info by number",
+            description = "Get the device info by number"
     )
     @GET
     @Path("/number/{number}")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response getDevice(@PathParam("number") @ApiParam("Device number") String number) {
+    public Response getDevice(@PathParam("number") @Parameter(description = "Device number") String number) {
         try {
             Device device = this.deviceDAO.getDeviceByNumber(number);
             DeviceView deviceView = new DeviceView(device);
@@ -181,7 +178,7 @@ public class DeviceResource {
      * @param filter a filter to be used for filtering the records.
      * @return a response with list of devices matching the specified filter.
      */
-    @ApiOperation(value = "")
+    @Operation(summary = "")
     @POST
     @Path("/autocomplete")
     @Produces(MediaType.APPLICATION_JSON)
@@ -196,9 +193,9 @@ public class DeviceResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Create or update device",
-            notes = "Create a new device (if id is not provided) or update existing one otherwise."
+    @Operation(
+            summary = "Create or update device",
+            description = "Create a new device (if id is not provided) or update existing one otherwise."
     )
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
@@ -271,14 +268,14 @@ public class DeviceResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Delete device",
-            notes = "Delete an existing device"
+    @Operation(
+            summary = "Delete device",
+            description = "Delete an existing device"
     )
     @DELETE
     @Path("/{id}")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response removeDevice(@PathParam("id") @ApiParam("Device ID") Integer id) {
+    public Response removeDevice(@PathParam("id") @Parameter(description = "Device ID") Integer id) {
         final boolean canEditDevices = SecurityContext.get().hasPermission("edit_devices");
 
         if (!(canEditDevices)) {
@@ -292,9 +289,9 @@ public class DeviceResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Delete bulk devices",
-            notes = "Delete multiple devices at once"
+    @Operation(
+            summary = "Delete bulk devices",
+            description = "Delete multiple devices at once"
     )
     @POST
     @Path("/deleteBulk")
@@ -322,8 +319,8 @@ public class DeviceResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Set or clear device groups in bulk"
+    @Operation(
+            summary = "Set or clear device groups in bulk"
     )
     @POST
     @Path("/groupBulk")
@@ -362,14 +359,14 @@ public class DeviceResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Get device application settings",
-            notes = "Get application settings set at device level"
+    @Operation(
+            summary = "Get device application settings",
+            description = "Get application settings set at device level"
     )
     @GET
     @Path("/{id}/applicationSettings")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response getDeviceApplicationSettings(@PathParam("id") @ApiParam("Device ID") Integer id) {
+    public Response getDeviceApplicationSettings(@PathParam("id") @Parameter(description = "Device ID") Integer id) {
         try {
             final List<ApplicationSetting> deviceApplicationSettings = this.deviceDAO.getDeviceApplicationSettings(id);
             return Response.OK(deviceApplicationSettings);
@@ -380,14 +377,14 @@ public class DeviceResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Save device application settings",
-            notes = "Save application settings set at device level"
+    @Operation(
+            summary = "Save device application settings",
+            description = "Save application settings set at device level"
     )
     @POST
     @Path("/{id}/applicationSettings")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response saveDeviceApplicationSettings(@PathParam("id") @ApiParam("Device ID") Integer id,
+    public Response saveDeviceApplicationSettings(@PathParam("id") @Parameter(description = "Device ID") Integer id,
                                                   List<ApplicationSetting> applicationSettings) {
         try {
             this.deviceDAO.saveDeviceApplicationSettings(id, applicationSettings);
@@ -399,10 +396,9 @@ public class DeviceResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Notify device on update",
-            notes = "Sends a notification to device on application settings update",
-            response = Void.class
+    @Operation(
+            summary = "Notify device on update",
+            description = "Sends a notification to device on application settings update"
     )
     @POST
     @Path("/{id}/applicationSettings/notify")
@@ -418,14 +414,14 @@ public class DeviceResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(
-            value = "Save device description",
-            notes = "Updates existing device description"
+    @Operation(
+            summary = "Save device description",
+            description = "Updates existing device description"
     )
     @POST
     @Path("/{id}/description")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response saveDeviceDescription(@PathParam("id") @ApiParam("Device ID") Integer deviceId,
+    public Response saveDeviceDescription(@PathParam("id") @Parameter(description = "Device ID") Integer deviceId,
                                           String newDeviceDescription) {
         try {
             final boolean canEditDeviceDescription = SecurityContext.get().hasPermission("edit_device_desc");

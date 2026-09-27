@@ -193,9 +193,28 @@ stop_tomcat() {
 # it would silently break every already-enrolled device; reuse the value from the existing ROOT.xml.
 # (DB_PASSWORD is different: it is re-applied to the role via ALTER USER below, so a fresh one is fine.)
 _old_root="$CATALINA/conf/Catalina/localhost/ROOT.xml"
+NATIVE_UPGRADE=0
 if [ -f "$_old_root" ]; then
+  NATIVE_UPGRADE=1
   _old_secret=$(sed -n 's/.*name="hash.secret"[[:space:]]*value="\([^"]*\)".*/\1/p' "$_old_root" | head -n 1)
   if [ -n "$_old_secret" ]; then HASH_SECRET="$_old_secret"; info "Reusing hash.secret from the existing install (enrolled devices keep working)"; fi
+  _old_base_url=$(sed -n 's/.*name="base.url"[[:space:]]*value="\([^"]*\)".*/\1/p' "$_old_root" | head -n 1)
+  if [ -n "$_old_base_url" ] && [ "$BASE_URL" != "$_old_base_url" ] && [ "${ALLOW_BASE_URL_CHANGE:-0}" != 1 ]; then
+    printf '  %s✗ BASE_URL differs from the existing install.%s\n' "$c_red" "$c_reset"
+    printf '    Existing: %s\n    Requested: %s\n' "$_old_base_url" "$BASE_URL"
+    printf '  Keep the enrolled-phone URL stable, or set ALLOW_BASE_URL_CHANGE=1 only after planning the proxy/device transition.\n'
+    exit 1
+  fi
+fi
+
+# A live upgrade must have a rollback point before its database role, runtime, or files can change.
+# The helper stops our service before copying mutable files; it archives the old runtime rather than
+# reusing its Tomcat 9 configuration in Tomcat 10.1.
+if [ "$NATIVE_UPGRADE" = 1 ]; then
+  step "Capturing pre-upgrade state"
+  run "Native state snapshot (database, files, runtime, configuration)" \
+    "$REPO/install/backup-native-state.sh" --stop-service
+  ok "previous native state preserved under ${BASE_DIR}/backups"
 fi
 
 step "Installing dependencies"
@@ -391,8 +410,16 @@ if [ ! -x "$CATALINA/bin/catalina.sh" ] || [ "$installed_tomcat_ver" != "$TOMCAT
     curl -fsSL --retry 3 "https://archive.apache.org/dist/tomcat/tomcat-10/v${TOMCAT_VER}/bin/apache-tomcat-${TOMCAT_VER}.tar.gz" -o /tmp/tc.tgz
   run "Verifying Apache Tomcat ${TOMCAT_VER}" \
     bash -c "echo '${TOMCAT_SHA512}  /tmp/tc.tgz' | sha512sum --check --status"
-  rm -rf "$CATALINA"; mkdir -p "$CATALINA"
-  tar xzf /tmp/tc.tgz -C "$CATALINA" --strip-components=1
+  # Extract beside the old runtime first. The snapshot taken above is the portable recovery copy;
+  # retaining this directory locally as well makes a failed cutover easier to inspect or reverse.
+  _staged_catalina=$(mktemp -d "${CATALINA}.new.XXXXXX")
+  tar xzf /tmp/tc.tgz -C "$_staged_catalina" --strip-components=1
+  if [ -e "$CATALINA" ]; then
+    _previous_catalina="${CATALINA}.pre-upgrade-$(date -u +%Y%m%dT%H%M%SZ)"
+    mv "$CATALINA" "$_previous_catalina"
+    info "previous Tomcat retained at $_previous_catalina"
+  fi
+  mv "$_staged_catalina" "$CATALINA"
   [ -x "$CATALINA/bin/catalina.sh" ] || _fail "Tomcat extract (catalina.sh missing after unpack)"
   ok "Apache Tomcat ${TOMCAT_VER} installed at $CATALINA"
 else
@@ -526,19 +553,6 @@ UNIT
 else
   info "no systemd — start the supervisor manually:"
   info "  (set -a; . ${BASE_DIR}/supervisor.env; node ${SUP_DIR}/server.js &)"
-fi
-
-if [ "$SEED" = no ]; then
-  step "Backing up the database before upgrading"
-  # Liquibase migrations run against live data on the next start; keep a restorable dump first.
-  BK_DIR="$BASE_DIR/backups"; mkdir -p "$BK_DIR"; chmod 700 "$BK_DIR"
-  BK="$BK_DIR/mdmesh-pre-upgrade-$(date +%Y%m%d-%H%M%S).dump"
-  # shellcheck disable=SC2024  # we ARE root here (checked at the top); sudo only switches to the postgres role
-  if sudo -u postgres pg_dump -Fc mdmesh > "$BK" 2>>"$LOGFILE"; then
-    chmod 600 "$BK"; ok "pg_dump written: $BK  (restore: pg_restore -c -d mdmesh $BK)"
-  else
-    printf '  %s✗ pg_dump failed — not upgrading without a backup. See %s%s\n' "$c_red" "$LOGFILE" "$c_reset"; exit 1
-  fi
 fi
 
 step "Starting the server"

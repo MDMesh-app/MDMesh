@@ -191,17 +191,24 @@ branch is pushed.
 
 ### 7. Release qualification and operational handoff
 
-**Purpose**: Prove an upgrade is safe for an existing self-hosted instance.
+**Purpose**: Prove a staged, forward-only migration is safe for an existing self-hosted instance and that a failed rollout can be recovered without attempting an unsafe runtime or database downgrade.
 
 **Changes**:
 
-- Publish an administrator migration guide with backup, supported source versions, dry-run, rollback, and recovery instructions.
+- Publish an administrator migration guide that names supported source versions and requires a pre-change, restorable snapshot of PostgreSQL, uploaded-file storage, deployment configuration, and the prior WAR/runtime.
+- Define the migration as a staged runtime replacement: stop the old service, install JDK 21+ and a clean Tomcat 10.1 directory, recreate only the MDMesh context/configuration, then deploy the Jakarta WAR against the preserved database and file volume. Do not copy a Tomcat 9 `conf/` directory into Tomcat 10.1.
+- Prepare the new runtime beside the old one, but do not run two MDMesh application instances against the production database or file volume. For the cutover, stop the old service, preserve its public base URL/domain and proxy route, and then start the new service on the production port/path. A reverse proxy may instead switch a stable public route to a distinct, already-readied backend port; it must still ensure only one application instance is active against production state.
+- Preserve authentication material as part of the migration input. The database snapshot retains each enrolled agent's per-device secret hash, which continues to authenticate agent-v1 HTTP and WebSocket requests. Preserve the existing `hash.secret` from the Tomcat context because it signs legacy enrollment/synchronization and download requests. Preserve a configured `jwt.secretkey` if present (otherwise administrator browser sessions may be invalidated); changing it does not replace the per-device credentials. Treat TLS private keys and reverse-proxy configuration as separate edge-infrastructure state, but retain the same public URL so enrolled phones continue contacting the service.
+- Specify that Liquibase migrations run forward only. Direct rollback/downgrade (for example, deploying the old WAR or Tomcat 9 against a database used by the new release) is unsupported unless separately implemented and tested. Recovery means restoring the complete pre-upgrade snapshot and restarting the preserved JDK 17/Tomcat 9 runtime.
 - Add CI artifacts: WAR checksum/SBOM, test reports, dependency tree, and container image metadata.
-- Exercise upgrade and rollback against a sanitized representative database and uploaded-file volume; preserve Android agent binary and agent-v1 protocol unchanged.
+- Exercise a staged upgrade from each supported pre-migration version against a sanitized representative database and uploaded-file volume. Verify restart plus the full server API/agent/WebSocket contract; preserve Android agent binary and agent-v1 protocol unchanged.
+- Exercise failed-rollout recovery by restoring that snapshot into a separately retained old runtime. This is not a test of an in-place Tomcat or database downgrade.
 
-**Tests**: Fresh install, upgrade, restart, rollback, and full API/agent/WebSocket suite on both JDK 21 and 25.
+**Tests**: Fresh install; staged upgrade; post-upgrade restart; full API/agent/WebSocket suite on JDK 21 and 25; an existing-device check using a credential created before cutover; and failed-rollout recovery from the pre-upgrade snapshot. At least one supported source version must be a deployed Java EE/Tomcat 9 installation.
 
-**Done when**: A maintainer can reproduce the release candidate, upgrade a realistic test installation, and recover from a failed rollout with documented commands.
+**Done when**: A maintainer can reproduce the release candidate, upgrade a realistic Tomcat 9 installation using documented commands, and recover a failed rollout by restoring the complete pre-upgrade snapshot. The guide explicitly states that a clean new runtime is required and direct downgrades are unsupported.
+
+**Implemented, release qualification pending**: Native upgrades now take a quiesced, owner-only snapshot of PostgreSQL application state, uploads, the old Tomcat runtime, and deployment configuration before any database credential or runtime change. The installer preserves the public base URL by default and retains the prior runtime locally while staging Tomcat 10.1. The native recovery guide documents the required restore sequence. CI now publishes a WAR SHA-256 checksum, aggregate CycloneDX SBOM, Maven dependency tree, and pinned server-image inspection metadata. Still required: a disposable Tomcat 9-to-10 upgrade plus failed-rollout recovery exercise on both JDKs.
 
 ## Follow-on Architecture Work
 

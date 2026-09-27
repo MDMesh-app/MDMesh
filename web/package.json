@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "description": "MDMesh — admin console for the device fleet",
   "scripts": {
     "dev": "vite",

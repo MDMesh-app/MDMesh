@@ -20,6 +20,35 @@ REPO="$PWD"   # repo root — used for absolute paths inside subshells (e.g. exp
 [ "$(id -u)" = "0" ] || { echo "Run as root (sudo)."; exit 1; }
 command -v apt-get >/dev/null || { echo "This script targets Debian/Ubuntu."; exit 1; }
 
+# The `engines.node` constraint in web/package.json is the one source of truth for
+# the console's Node requirement. The installer supports a lower-bound constraint
+# such as ">=22", which is deliberately simple and appropriate for a dedicated
+# appliance host. Fail before confirmation if the project declaration is malformed.
+required_node_major() {
+  local engine
+  engine=$(sed -nE 's/^[[:space:]]*"node"[[:space:]]*:[[:space:]]*">=([0-9]+)"[[:space:]]*,?[[:space:]]*$/\1/p' \
+    "$REPO/web/package.json" | head -n 1)
+  [ -n "$engine" ] && printf '%s' "$engine"
+}
+NODE_REQUIRED_MAJOR="$(required_node_major)"
+[ -n "$NODE_REQUIRED_MAJOR" ] || {
+  echo "web/package.json must declare engines.node as a lower bound (for example, \">=22\")." >&2
+  exit 1
+}
+node_major() {
+  command -v node >/dev/null 2>&1 || return 1
+  node --version 2>/dev/null | sed -n 's/^v\([0-9][0-9]*\).*/\1/p'
+}
+node_satisfies_requirement() {
+  local major
+  major="$(node_major || true)"
+  [ -n "$major" ] && [ "$major" -ge "$NODE_REQUIRED_MAJOR" ] && command -v npm >/dev/null 2>&1
+}
+
+# This installer already requires root, including in root-only Proxmox containers.
+# Switch to PostgreSQL's service account without depending on sudo being installed.
+as_postgres() { runuser -u postgres -- "$@"; }
+
 ASSUME_YES="${ASSUME_YES:-0}"; VERBOSE="${VERBOSE:-0}"
 for a in "$@"; do case "$a" in -y|--yes) ASSUME_YES=1 ;; -v|--verbose) VERBOSE=1 ;; esac; done
 
@@ -102,7 +131,8 @@ printf '\n  %sMDMesh · native install%s\n' "$c_bold" "$c_reset"
 cat <<WARN
 
   ${c_yel}⚠  This will modify THIS host:${c_reset}
-    • apt-get install openjdk-17-jdk, postgresql, maven, nodejs, npm, curl, python3, aapt
+    • apt-get install openjdk-17-jdk, postgresql, maven, curl, python3, aapt
+    • install Node.js ${NODE_REQUIRED_MAJOR}+ from NodeSource when the current Node/npm does not satisfy web/package.json
     • create or alter a PostgreSQL role and database "mdmesh" (resets that role's password)
     • download and unpack Apache Tomcat 9 into /opt/mdmesh-tc (clears its webapps/)
     • write config, logs and uploaded files under /opt/mdmesh
@@ -121,6 +151,7 @@ fi
 rand() { mdm_rand; }
 
 printf '\n'
+BASE_DIR=/opt/mdmesh
 # Public base URL. Override non-interactively with BASE_URL=https://mdm.example.com (required with -y).
 BASE_URL="${BASE_URL:-}"
 if [ -z "$BASE_URL" ]; then
@@ -133,7 +164,6 @@ if [ -z "$HTTP_PORT" ]; then read -rp "  HTTP port [8080]: " _p; HTTP_PORT="${_p
 case "$HTTP_PORT" in ''|*[!0-9]*) echo "  Port must be a number."; exit 1 ;; esac
 { [ "$HTTP_PORT" -ge 1 ] && [ "$HTTP_PORT" -le 65535 ]; } || { echo "  Port must be 1-65535."; exit 1; }
 DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
-BASE_DIR=/opt/mdmesh
 CATALINA=/opt/mdmesh-tc
 TOMCAT_VER=9.0.89
 # Tomcat lifecycle helpers. CATALINA_PID lets `catalina.sh stop -force` actually kill a JVM that ignores
@@ -211,18 +241,21 @@ select_jdk17() {
   done
   return 1
 }
-# Install only what is missing. Asking apt for packages the host already provides another way (Node
-# from nodesource, a JDK under /opt, Postgres from PGDG) is how "held broken packages" conflicts happen
-# on otherwise healthy boxes — and openjdk-17-jdk is not packaged on every release (Debian 13 has 21/25).
+# Install only what is missing. Asking apt for packages the host already provides another way (a JDK under
+# /opt or Postgres from PGDG) is how "held broken packages" conflicts happen on otherwise healthy boxes —
+# and openjdk-17-jdk is not packaged on every release (Debian 13 has 21/25). Node is handled separately
+# below because Debian 12's repository is too old for the console's declared engine requirement.
 PKGS=()
 select_jdk17 >/dev/null || PKGS+=(openjdk-17-jdk)
 command -v psql    >/dev/null && command -v pg_ctlcluster >/dev/null || PKGS+=(postgresql)
 command -v mvn     >/dev/null || PKGS+=(maven)
-command -v node    >/dev/null || PKGS+=(nodejs)
-command -v npm     >/dev/null || PKGS+=(npm)
 command -v curl    >/dev/null || PKGS+=(curl)
 command -v python3 >/dev/null || PKGS+=(python3)
 command -v aapt    >/dev/null || PKGS+=(aapt)
+if ! node_satisfies_requirement; then
+  command -v gpg >/dev/null || PKGS+=(gnupg)
+  command -v update-ca-certificates >/dev/null || PKGS+=(ca-certificates)
+fi
 if [ ${#PKGS[@]} -eq 0 ]; then
   ok "all build/runtime dependencies already present — nothing to install"
 else
@@ -230,6 +263,33 @@ else
   # publish for → "does not have a Release file") — the native install only needs base Debian packages.
   run "$(IFS=,; echo "${PKGS[*]}" | sed 's/,/, /g')" bash -c \
     "apt-get update -y || echo '(some apt sources failed to refresh — continuing)'; DEBIAN_FRONTEND=noninteractive apt-get install -y ${PKGS[*]}"
+fi
+
+# NodeSource supplies maintained Node releases for Debian versions whose native nodejs package is
+# behind the web console's declared engine. Import its signing key into a dedicated keyring and use
+# an explicitly signed APT source; do not pipe a remote installer into a root shell.
+if node_satisfies_requirement; then
+  ok "Node.js $(node --version) + npm $(npm --version) satisfy web/package.json (>=${NODE_REQUIRED_MAJOR})"
+else
+  step "Installing Node.js ${NODE_REQUIRED_MAJOR}+"
+  run "NodeSource Node.js ${NODE_REQUIRED_MAJOR}" bash -c "
+    set -euo pipefail
+    install -d -m 0755 /etc/apt/keyrings
+    curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key |
+      gpg --dearmor --yes -o /etc/apt/keyrings/nodesource.gpg
+    # The installer-wide umask is 077, but Apt's _apt sandbox user must be able to
+    # read a keyring referenced by signed-by=.
+    chmod 0644 /etc/apt/keyrings/nodesource.gpg
+    printf '%s\\n' 'deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_${NODE_REQUIRED_MAJOR}.x nodistro main' \\
+      > /etc/apt/sources.list.d/nodesource.list
+    apt-get update -y
+    DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
+  "
+  node_satisfies_requirement || {
+    echo "  ${c_red}✗ Node.js installation did not satisfy web/package.json (>=${NODE_REQUIRED_MAJOR})${c_reset}" >&2
+    exit 1
+  }
+  ok "Node.js $(node --version) + npm $(npm --version) installed from NodeSource"
 fi
 # minisign verifies release-manifest signatures for the updater supervisor. Best-effort: without it
 # the supervisor still runs but reports releases as unverified (and never mirrors an APK).
@@ -252,13 +312,13 @@ step "Database"
 # NB: the password is inlined into the SQL text, so a psql error here could echo the whole statement
 # (password included) into $LOGFILE — acceptable because the log is chmod 600 / owner-only (above).
 {
-  if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='mdmesh'" | grep -q 1; then
-    sudo -u postgres psql -c "ALTER USER mdmesh WITH PASSWORD '${DB_PASSWORD}';"
+  if as_postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='mdmesh'" | grep -q 1; then
+    as_postgres psql -c "ALTER USER mdmesh WITH PASSWORD '${DB_PASSWORD}';"
   else
-    sudo -u postgres psql -c "CREATE USER mdmesh WITH PASSWORD '${DB_PASSWORD}';"
+    as_postgres psql -c "CREATE USER mdmesh WITH PASSWORD '${DB_PASSWORD}';"
   fi
-  sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='mdmesh'" | grep -q 1 || \
-    sudo -u postgres psql -c "CREATE DATABASE mdmesh OWNER mdmesh;"
+  as_postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='mdmesh'" | grep -q 1 || \
+    as_postgres psql -c "CREATE DATABASE mdmesh OWNER mdmesh;"
 } >> "$LOGFILE" 2>&1
 ok "PostgreSQL role + database 'mdmesh' ready"
 
@@ -309,9 +369,9 @@ if [ "$DB_STATE" = seeded ]; then
     info "Replacing the database — dropping $dc device(s), $uc user(s)"
     stop_tomcat   # release DB connections first
     {
-      sudo -u postgres psql -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='mdmesh' AND pid<>pg_backend_pid();"
-      sudo -u postgres psql -c "DROP DATABASE mdmesh;"
-      sudo -u postgres psql -c "CREATE DATABASE mdmesh OWNER mdmesh;"
+      as_postgres psql -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='mdmesh' AND pid<>pg_backend_pid();"
+      as_postgres psql -c "DROP DATABASE mdmesh;"
+      as_postgres psql -c "CREATE DATABASE mdmesh OWNER mdmesh;"
     } >> "$LOGFILE" 2>&1
     SEED=yes
   else
@@ -518,8 +578,7 @@ if [ "$SEED" = no ]; then
   # Liquibase migrations run against live data on the next start; keep a restorable dump first.
   BK_DIR="$BASE_DIR/backups"; mkdir -p "$BK_DIR"; chmod 700 "$BK_DIR"
   BK="$BK_DIR/mdmesh-pre-upgrade-$(date +%Y%m%d-%H%M%S).dump"
-  # shellcheck disable=SC2024  # we ARE root here (checked at the top); sudo only switches to the postgres role
-  if sudo -u postgres pg_dump -Fc mdmesh > "$BK" 2>>"$LOGFILE"; then
+  if as_postgres pg_dump -Fc mdmesh > "$BK" 2>>"$LOGFILE"; then
     chmod 600 "$BK"; ok "pg_dump written: $BK  (restore: pg_restore -c -d mdmesh $BK)"
   else
     printf '  %s✗ pg_dump failed — not upgrading without a backup. See %s%s\n' "$c_red" "$LOGFILE" "$c_reset"; exit 1

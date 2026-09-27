@@ -86,7 +86,9 @@ docker compose down
 ## Option C — Native (no Docker)
 
 Debian/Ubuntu, as root. The leaner path: Postgres + Tomcat on the host; you terminate TLS yourself
-(your reverse proxy/cert, or Caddy in front).
+(your reverse proxy/cert, or Caddy in front). The installer reads the console's Node requirement from
+`web/package.json`; if the installed Node/npm does not satisfy it, it installs the needed Node major
+from the signed NodeSource APT repository. This avoids Debian 12's obsolete stock Node 18 package.
 
 ```bash
 sudo ./setup.sh --native      # → install/install-native.sh

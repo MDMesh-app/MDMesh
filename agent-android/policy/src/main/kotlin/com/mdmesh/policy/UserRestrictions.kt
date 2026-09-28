@@ -20,6 +20,7 @@ object UserRestrictions {
     const val DISALLOW_BLUETOOTH = "no_bluetooth"
     const val DISALLOW_USB_FILE_TRANSFER = "no_usb_file_transfer"
     const val DISALLOW_MOUNT_PHYSICAL_MEDIA = "no_physical_media"
+    const val DISALLOW_FACTORY_RESET = "no_factory_reset"
 
     /**
      * The set of `DISALLOW_*` restriction keys backing a capability, or `null` if
@@ -28,6 +29,7 @@ object UserRestrictions {
     fun forKey(capabilityKey: String): Set<String>? = when (capabilityKey) {
         "bluetooth" -> setOf(DISALLOW_BLUETOOTH)
         "usbStorage" -> setOf(DISALLOW_USB_FILE_TRANSFER, DISALLOW_MOUNT_PHYSICAL_MEDIA)
+        "factoryReset" -> setOf(DISALLOW_FACTORY_RESET)
         else -> null
     }
 
@@ -38,6 +40,8 @@ object UserRestrictions {
      *  - `DISALLOW_BLUETOOTH` was added in API 26 (O).
      *  - The USB-storage restrictions exist from API 21, so the module floor
      *    (API 24) is sufficient.
+     *  - `DISALLOW_FACTORY_RESET` exists from API 21, so the module floor is
+     *    sufficient. It is only *enforced* on a Device/Profile Owner.
      *
      * Plain `Int` literals (not `Build.VERSION_CODES`) so this stays a pure JVM
      * function, unit-testable without the Android `Build` stub. Returns `null`
@@ -46,6 +50,7 @@ object UserRestrictions {
     fun minSdkForKey(capabilityKey: String): Int? = when (capabilityKey) {
         "bluetooth" -> 26
         "usbStorage" -> 21
+        "factoryReset" -> 21
         else -> null
     }
 }

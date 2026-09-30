@@ -29,3 +29,4 @@ and a fresh agent on Android 16 talk to the same server without special-casing.
 | version | release | notes |
 |---------|---------|-------|
 | 1.1 | v0.3.0 | config.apply command + device.configApply capability (additive) |
+| 1.2 | v0.4.0 | `config.apply` `policies` gains `camera` and `factoryReset` (additive — new keys in an open registry, already implemented and advertised by the agent) |

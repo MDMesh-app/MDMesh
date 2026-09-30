@@ -10,7 +10,7 @@
     "configurationId": { "type": "integer" },
     "policies": {
       "type": "object", "additionalProperties": { "type": "boolean" },
-      "properties": { "wifi": {"type":"boolean"}, "bluetooth": {"type":"boolean"}, "usbStorage": {"type":"boolean"}, "screenshots": {"type":"boolean"} },
+      "properties": { "wifi": {"type":"boolean"}, "bluetooth": {"type":"boolean"}, "usbStorage": {"type":"boolean"}, "screenshots": {"type":"boolean"}, "camera": {"type":"boolean"}, "factoryReset": {"type":"boolean"} },
       "description": "Only keys the configuration manages are present. true = allowed/enabled."
     },
     "kiosk": {

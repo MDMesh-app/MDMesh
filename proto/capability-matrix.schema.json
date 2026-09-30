@@ -41,7 +41,7 @@
         "policy": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "e.g. wifi, bluetooth, gps, mobileData, usbStorage, camera, screenshots, kioskLockTask, passwordComplexity, systemUpdatePolicy, factoryResetProtection"
+          "description": "e.g. wifi, bluetooth, gps, mobileData, usbStorage, camera, screenshots, factoryReset, kioskLockTask, passwordComplexity, systemUpdatePolicy, factoryResetProtection"
         },
         "appManagement": {
           "type": "array",

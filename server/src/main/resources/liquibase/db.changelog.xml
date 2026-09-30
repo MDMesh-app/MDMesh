@@ -2850,4 +2850,14 @@
         </rollback>
     </changeSet>
 
+    <changeSet id="26.09.30-configurations-factoryReset" author="lunacy" context="common">
+        <comment>Column,new: configurations#factoryReset — "block factory reset", the INVERSE of the
+            policies.factoryReset the agent receives. Nullable with no DEFAULT, like usbStorage and
+            disableScreenshots: NULL means unmanaged, the key is then omitted from config.apply and the
+            agent applies nothing. A DEFAULT would insert the key into every existing configuration's
+            revision and mass re-apply policies.factoryReset across the fleet on upgrade.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN factoryReset BOOLEAN;</sql>
+        <rollback>ALTER TABLE configurations DROP COLUMN factoryReset;</rollback>
+    </changeSet>
+
 </databaseChangeLog>

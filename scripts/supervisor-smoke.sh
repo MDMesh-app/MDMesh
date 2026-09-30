@@ -96,7 +96,7 @@ recovery_noapply() { local b; b="$(body http://127.0.0.1:9000/recovery)"
   grep -q '<body data-apply="0">' <<<"$b" \
     && grep -qF 'body[data-apply="0"] #rbcard{display:none}' <<<"$b" \
     && grep -qF 'git pull &amp;&amp; ./setup.sh' <<<"$b" \
-    && grep -qF 'git pull &amp;&amp; sudo ./install/install-native.sh' <<<"$b"; }
+    && grep -qF 'git pull &amp;&amp; sudo ./setup.sh --native' <<<"$b"; }
 check "APPLY_SUPPORTED=0: /update/status reports applySupported:false" status_noapply
 check "APPLY_SUPPORTED=0: /update/apply refused with 501" apply_501
 check "APPLY_SUPPORTED=0: /update/rollback refused with 501" rollback_501

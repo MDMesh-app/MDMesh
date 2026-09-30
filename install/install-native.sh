@@ -3,19 +3,31 @@
 # server on the host and assumes you terminate TLS yourself (your own reverse proxy / cert, or Caddy in
 # front). For the turnkey experience use ./setup.sh (Docker). Flags: -y/--yes (skip confirm), -v/--verbose
 # (stream all output instead of hiding it in the log). Best-effort + idempotent; review before prod use.
+# shellcheck source-path=SCRIPTDIR  # lets shellcheck -x follow lib/*.sh from any working directory
 set -euo pipefail
+# An exported CDPATH makes cd (here and in every child, e.g. `bash -c 'cd web && …'`) resolve a relative path against
+# CDPATH's directories, not the current one — silently building or reading from a same-named directory elsewhere. Unset
+# it for this script and its children.
+unset CDPATH
 # Secrets hygiene: files this script writes (the install log, ROOT.xml, temp downloads) can carry
 # the DB password / hash secret, so create everything owner-only by default. Tomcat and the server
 # run as root here, so 0600/0700 artifacts stay readable by the things that need them.
 umask 077
 export PATH="/usr/sbin:/sbin:$PATH"   # useradd/userdel/pg tools live here; not every root shell has it
-cd "$(dirname "$0")/.."
+# -P resolves symbolic links so REPO is the real checkout.
+cd -P -- "$(dirname -- "$0")/.."
 REPO="$PWD"   # repo root — used for absolute paths inside subshells (e.g. exploding the WAR)
 # Shared DB provisioning rules (seed gate, verified seed, post-seed repairs) — same file setup.sh uses.
 # shellcheck source=lib/db.sh
 . "$REPO/install/lib/db.sh"
 # shellcheck source=lib/version.sh
 . "$REPO/install/lib/version.sh"
+# shellcheck source=lib/url.sh
+. "$REPO/install/lib/url.sh"
+# as_svc_user / as_postgres / as_mdmesh_role: the service account, postgres (superuser-only statements, in the postgres
+# database), or the mdmesh role (anything reading the mdmesh database), isolated from root's environment and terminal.
+# shellcheck source=lib/runas.sh
+. "$REPO/install/lib/runas.sh"
 
 [ "$(id -u)" = "0" ] || { echo "Run as root (sudo)."; exit 1; }
 command -v apt-get >/dev/null || { echo "This script targets Debian/Ubuntu."; exit 1; }
@@ -128,6 +140,7 @@ if [ -z "$BASE_URL" ]; then
   [ "$ASSUME_YES" = "1" ] && { echo "  BASE_URL must be set when running with -y (e.g. BASE_URL=https://mdm.example.com)."; exit 1; }
   read -rp "  Public base URL (e.g. https://mdm.example.com): " BASE_URL
 fi
+mdm_check_base_url BASE_URL || exit 1   # install/lib/url.sh: http(s)://host[:port]; lower-cases the scheme
 # HTTP port Tomcat listens on. Override non-interactively with HTTP_PORT=9090; default 8080.
 HTTP_PORT="${HTTP_PORT:-}"
 if [ -z "$HTTP_PORT" ]; then read -rp "  HTTP port [8080]: " _p; HTTP_PORT="${_p:-8080}"; fi
@@ -267,23 +280,18 @@ refuse_svc_user_jobs() {
 # svc_cat FILE: FILE's contents, read as $SVC_USER. For files in the trees that account owns: root would follow a link
 # planted there and read any root-only file. Before the account exists (a fresh install, or an upgrade from a version
 # whose Tomcat ran as root) nothing unprivileged owns those trees, so root reads them.
+# It reads a REGULAR file only ([ -f ] rejects a FIFO, which cat would block on forever, and a symlink to a device such
+# as /dev/zero, which would read without end) and at most 64 KiB (these config files are far smaller). Fails (empty, rc 1)
+# when the path is missing or not a regular file, which callers already treat as "cannot read".
 svc_cat() {
   if id -u "$SVC_USER" >/dev/null 2>&1; then
-    as_svc_user cat -- "$1"
+    # shellcheck disable=SC2016  # $1 is the inner sh's positional (the path), not a variable to expand here
+    as_svc_user sh -c '[ -f "$1" ] && head -c 65536 -- "$1"' _ "$1"
   else
-    cat -- "$1"
+    [ -f "$1" ] && head -c 65536 -- "$1"
   fi
 }
-# as_svc_user CMD...: runs CMD as $SVC_USER. For Tomcat's own scripts: $CATALINA is that account's tree, so bin/catalina.sh
-# and the bin/setenv.sh it sources are code the account can rewrite, and root must never run them. setsid leaves CMD
-# without a controlling terminal (it could otherwise push keystrokes into root's shell with TIOCSTI), and env -i gives it
-# only Tomcat's settings (those the unit sets), not root's environment.
-as_svc_user() {
-  ( cd / && exec setsid -w setpriv --reuid="$SVC_USER" --regid="$SVC_USER" --init-groups --no-new-privs \
-      env -i PATH=/usr/local/bin:/usr/bin:/bin LANG="${LANG:-C.UTF-8}" JAVA_HOME="${JAVA_HOME:-}" \
-      CATALINA_HOME="$CATALINA" CATALINA_BASE="$CATALINA" CATALINA_PID="$CATALINA_PID" CATALINA_OPTS="${CATALINA_OPTS:-}" \
-      "$@" < /dev/null )
-}
+# as_svc_user (Tomcat's scripts as $SVC_USER), as_postgres and as_mdmesh_role (database clients) are in lib/runas.sh.
 port_holder() {
   if command -v ss >/dev/null 2>&1; then ss -ltnp 2>/dev/null | awk -v p=":$HTTP_PORT$" '$4 ~ p {print; exit}'
   elif command -v lsof >/dev/null 2>&1; then lsof -iTCP:"$HTTP_PORT" -sTCP:LISTEN -nP 2>/dev/null | awk 'NR==2{print; exit}'; fi
@@ -307,7 +315,7 @@ refuse_foreign_port() {
   printf '  %s✗ port %s is already in use%s by another server:\n' "$c_red" "$HTTP_PORT" "$c_reset"
   printf '    %s%s%s\n' "$c_dim" "$(port_holder)" "$c_reset"
   printf '  Not an MDMesh Tomcat, so this installer will not stop it. Stop it yourself, or pick another port\n'
-  printf '  (HTTP_PORT=9090), then re-run.  %s(sudo fuser -k %s/tcp kills whatever holds the port)%s\n' "$c_dim" "$HTTP_PORT" "$c_reset"
+  printf '  (HTTP_PORT=9090), then re-run.  %s(fuser -k %s/tcp kills whatever holds the port)%s\n' "$c_dim" "$HTTP_PORT" "$c_reset"
   exit 1
 }
 stop_tomcat() {
@@ -416,17 +424,17 @@ step "Database"
 # Idempotent: every run generates a fresh DB_PASSWORD, so ALWAYS set the role's password to match — ALTER
 # if the role already exists from a previous run, else CREATE — so ROOT.xml + seeding always authenticate.
 # The password reaches psql on stdin as a psql variable (:'pw' quotes it as an SQL literal), never on its command line,
-# which every local user can read (ps, /proc/<pid>/cmdline) and sudo logs. A psql error here can still echo the
+# which every local user can read (ps, /proc/<pid>/cmdline). A psql error here can still echo the
 # statement (password included) into $LOGFILE, which is owner-only (above).
 role_password_sql() { printf '%s\n' "\\set pw $(_mdm_psql_arg "$DB_PASSWORD")" "$1 USER mdmesh WITH PASSWORD :'pw';"; }
 {
-  if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='mdmesh'" | grep -q 1; then
-    role_password_sql ALTER | sudo -u postgres psql -v ON_ERROR_STOP=1
+  if as_postgres psql -X -tAc "SELECT 1 FROM pg_roles WHERE rolname='mdmesh'" | grep -q 1; then
+    role_password_sql ALTER | as_postgres psql -X -v ON_ERROR_STOP=1
   else
-    role_password_sql CREATE | sudo -u postgres psql -v ON_ERROR_STOP=1
+    role_password_sql CREATE | as_postgres psql -X -v ON_ERROR_STOP=1
   fi
-  sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='mdmesh'" | grep -q 1 || \
-    sudo -u postgres psql -c "CREATE DATABASE mdmesh OWNER mdmesh;"
+  as_postgres psql -X -tAc "SELECT 1 FROM pg_database WHERE datname='mdmesh'" | grep -q 1 || \
+    as_postgres psql -X -c "CREATE DATABASE mdmesh OWNER mdmesh;"
 } >> "$LOGFILE" 2>&1
 ok "PostgreSQL role + database 'mdmesh' ready"
 
@@ -453,7 +461,10 @@ if [ "$DB_STATE" = inconsistent ]; then
   printf '  %sRestore a backup or repair the settings table by hand, then re-run.%s\n' "$c_yel" "$c_reset"; exit 1
 fi
 if [ "$DB_STATE" = seeded ]; then
-  uc=$(q "SELECT count(*) FROM users"); dc=$(q "SELECT count(*) FROM devices"); dc=${dc:-0}
+  # count(*) is a bigint; keep only a plain integer (else "?") so nothing the mdmesh role owns can put control bytes
+  # into the prompt printed to the terminal.
+  n_or_q() { case "$1" in ''|*[!0-9]*) printf '?' ;; *) printf '%s' "$1" ;; esac; }
+  uc=$(n_or_q "$(q "SELECT count(*) FROM users")"); dc=$(n_or_q "$(q "SELECT count(*) FROM devices")")
   REPLACE_DATA="${REPLACE_DATA:-}"
   if [ -z "$REPLACE_DATA" ]; then
     if [ "$ASSUME_YES" = 1 ]; then
@@ -479,9 +490,9 @@ if [ "$DB_STATE" = seeded ]; then
     info "Replacing the database — dropping $dc device(s), $uc user(s)"
     stop_tomcat   # release DB connections first
     {
-      sudo -u postgres psql -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='mdmesh' AND pid<>pg_backend_pid();"
-      sudo -u postgres psql -c "DROP DATABASE mdmesh;"
-      sudo -u postgres psql -c "CREATE DATABASE mdmesh OWNER mdmesh;"
+      as_postgres psql -X -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='mdmesh' AND pid<>pg_backend_pid();"
+      as_postgres psql -X -c "DROP DATABASE mdmesh;"
+      as_postgres psql -X -c "CREATE DATABASE mdmesh OWNER mdmesh;"
     } >> "$LOGFILE" 2>&1
     SEED=yes
   else
@@ -500,8 +511,17 @@ step "Fetching the agent APK from GitHub Releases"
 # provisioning QR matches the hosted APK. Anonymous once the repo is public; honours GITHUB_TOKEN if set.
 # Graceful: if there's no release yet (or it's still private/unreachable), the install continues with
 # debug defaults and you host an APK manually — enrollment just needs a matching APK at /files/agent.apk.
+# The APK is trusted only through the release's signed manifest, as the supervisor does: manifest.json must verify with
+# minisign against release/minisign.pub before its checksum and sha256 are read, and the APK must match that sha256.
+# Anything less (no signature, a bad one, no minisign, a failed download, a mismatch) is refused, with its own message.
 GITHUB_REPO="${GITHUB_REPO:-$(git remote get-url origin 2>/dev/null | sed -E 's#(git@|https?://)[^/:]+[/:]##; s#\.git$##')}"
 AGENT_APK=""
+# The manifest, its signature and the APK are fetched into one private directory (mktemp -d). The deploy step removes it
+# once the APK is hosted; this EXIT trap removes it on every other way the run ends (_fail, an error under set -e, a
+# signal). It adds an EXIT trap only: the ERR trap above is unchanged and still reports an abort first.
+AGENT_FETCH_DIR=""
+agent_fetch_cleanup() { if [ -n "$AGENT_FETCH_DIR" ]; then rm -rf -- "$AGENT_FETCH_DIR"; AGENT_FETCH_DIR=""; fi; }
+trap agent_fetch_cleanup EXIT
 if [ -n "$GITHUB_REPO" ]; then
   # gh_curl ARGS...: curl, sending GITHUB_TOKEN (when set) as an Authorization header read from stdin (-H @-, curl 7.55+),
   # never on curl's command line, which every local user can read (ps, /proc/<pid>/cmdline).
@@ -509,27 +529,71 @@ if [ -n "$GITHUB_REPO" ]; then
     if [ -n "${GITHUB_TOKEN:-}" ]; then printf 'Authorization: Bearer %s\n' "$GITHUB_TOKEN" | curl -H @- "$@"
     else curl "$@"; fi
   }
+  # jget NAME: the download URL of release asset NAME in the release JSON on stdin; empty (and success) when there is
+  # none or the reply is not JSON (no release yet, an empty body, a rate-limit page): under set -euo pipefail a failing
+  # jget would end the install at the assignment instead of taking the "no published release" branch.
   jget() { python3 -c 'import sys,json;
 d=json.load(sys.stdin)
 def asset(n): return next((a["browser_download_url"] for a in d.get("assets",[]) if a["name"]==n),"")
-print({"apk":asset("mdmesh-agent.apk"),"manifest":asset("manifest.json")}.get(sys.argv[1],""))' "$1" 2>/dev/null; }
-  REL=$(gh_curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>>"$LOGFILE" || true)
-  APK_URL=$(printf '%s' "$REL" | jget apk); MAN_URL=$(printf '%s' "$REL" | jget manifest)
-  if [ -n "$APK_URL" ] && [ -n "$MAN_URL" ]; then
-    MAN=$(gh_curl -fsSL "$MAN_URL" 2>>"$LOGFILE" || true)
-    AGENT_CK=$(printf '%s' "$MAN" | python3 -c 'import sys,json;print(json.load(sys.stdin)["components"]["apk"]["signatureChecksum"])' 2>/dev/null || true)
-    WANT_SHA=$(printf '%s' "$MAN" | python3 -c 'import sys,json;print(json.load(sys.stdin)["components"]["apk"]["sha256"])' 2>/dev/null || true)
-    TMP_APK=$(mktemp)
-    if gh_curl -fsSL "$APK_URL" -o "$TMP_APK" 2>>"$LOGFILE" && [ -n "$AGENT_CK" ] \
-       && [ "$(sha256sum "$TMP_APK" | awk '{print $1}')" = "$WANT_SHA" ]; then
-      AGENT_APK="$TMP_APK"
-      export VITE_AGENT_PACKAGE="com.mdmesh.agent" VITE_AGENT_CHECKSUM="$AGENT_CK" VITE_AGENT_APK_URL="/files/agent.apk"
-      ok "release agent APK fetched + sha256-verified (checksum ${AGENT_CK})"
-    else
-      info "Could not fetch/verify the release APK — continuing; host one at /files/agent.apk manually"
+print({"apk":asset("mdmesh-agent.apk"),"manifest":asset("manifest.json"),
+       "signature":asset("manifest.json.minisig"),"tag":str(d.get("tag_name") or "")}.get(sys.argv[1],""))' "$1" 2>/dev/null || true; }
+  # manifest_apk FIELD FILE: components.apk.FIELD of the manifest FILE; empty when it has none.
+  manifest_apk() { python3 -c 'import sys,json;print(json.load(open(sys.argv[2]))["components"]["apk"][sys.argv[1]])' "$1" "$2" 2>/dev/null || true; }
+  # manifest_version FILE: the manifest's top-level "version" (release/build-manifest.sh: the tag without its "v").
+  manifest_version() { python3 -c 'import sys,json;v=json.load(open(sys.argv[1])).get("version");print(v if isinstance(v,str) else "")' "$1" 2>/dev/null || true; }
+  # fetch_agent_apk: sets AGENT_APK (and AGENT_CK) when the latest release's APK verifies as described above; otherwise
+  # says why in one line and leaves AGENT_APK empty. Always returns 0, so set -e still stops the run on anything else.
+  fetch_agent_apk() {
+    local rel apk_url man_url sig_url tag mver d want_sha soft=" — console uses debug defaults; host /files/agent.apk manually"
+    AGENT_CK=""
+    rel=$(gh_curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>>"$LOGFILE" || true)
+    apk_url=$(printf '%s' "$rel" | jget apk); man_url=$(printf '%s' "$rel" | jget manifest)
+    sig_url=$(printf '%s' "$rel" | jget signature)
+    if [ -z "$apk_url" ] || [ -z "$man_url" ]; then info "No published release found for ${GITHUB_REPO}${soft}"; return; fi
+    if [ -z "$sig_url" ]; then
+      info "The latest release of ${GITHUB_REPO} has no manifest signature (manifest.json.minisig), so its APK is not trusted${soft}"; return
     fi
+    if ! command -v minisign >/dev/null 2>&1; then
+      info "minisign is unavailable, so the release manifest cannot be verified and its APK is not trusted${soft}"; return
+    fi
+    if [ ! -r "$REPO/release/minisign.pub" ]; then
+      info "The release signing key release/minisign.pub is missing from this checkout, so the manifest cannot be verified${soft}"; return
+    fi
+    # The ERR trap does not fire inside a function (no set -E), so a failure here must be caught here, or the install
+    # would end without a word.
+    AGENT_FETCH_DIR=$(mktemp -d) || { AGENT_FETCH_DIR=""; info "Could not create a temporary directory for the release files${soft}"; return 0; }
+    d=$AGENT_FETCH_DIR
+    if ! gh_curl -fsSL "$man_url" -o "$d/manifest.json" 2>>"$LOGFILE" \
+       || ! gh_curl -fsSL "$sig_url" -o "$d/manifest.json.minisig" 2>>"$LOGFILE"; then
+      info "Could not download the release manifest or its signature (details in $LOGFILE)${soft}"; return
+    fi
+    if ! minisign -V -p "$REPO/release/minisign.pub" -m "$d/manifest.json" >> "$LOGFILE" 2>&1; then
+      info "The release manifest's signature is invalid (it does not verify with release/minisign.pub), so its APK is not trusted${soft}"; return
+    fi
+    # Bind the signed manifest to this release: an older release's manifest is signed too, and served in its place (a
+    # replay) it would verify. Its version must be the release tag without the "v".
+    tag=$(printf '%s' "$rel" | jget tag); mver=$(manifest_version "$d/manifest.json")
+    if [ -z "$mver" ] || [ "$mver" != "${tag#v}" ]; then
+      info "The signed manifest is for version ${mver:-(none)}, not for the latest release ${tag:-(untagged)}, so its APK is not trusted${soft}"; return
+    fi
+    AGENT_CK=$(manifest_apk signatureChecksum "$d/manifest.json"); want_sha=$(manifest_apk sha256 "$d/manifest.json")
+    if [ -z "$AGENT_CK" ] || [ -z "$want_sha" ]; then
+      AGENT_CK=""; info "The signed release manifest names no agent APK checksum or sha256${soft}"; return
+    fi
+    if ! gh_curl -fsSL "$apk_url" -o "$d/agent.apk" 2>>"$LOGFILE"; then
+      AGENT_CK=""; info "Could not download the release APK (details in $LOGFILE)${soft}"; return
+    fi
+    if [ "$(sha256sum "$d/agent.apk" | awk '{print $1}')" != "$want_sha" ]; then
+      AGENT_CK=""; info "The downloaded APK does not match the sha256 in the signed manifest, so it is not trusted${soft}"; return
+    fi
+    AGENT_APK="$d/agent.apk"
+  }
+  fetch_agent_apk
+  if [ -n "$AGENT_APK" ]; then
+    export VITE_AGENT_PACKAGE="com.mdmesh.agent" VITE_AGENT_CHECKSUM="$AGENT_CK" VITE_AGENT_APK_URL="/files/agent.apk"
+    ok "release agent APK fetched: manifest signature verified, sha256 matches (checksum ${AGENT_CK})"
   else
-    info "No published release found for ${GITHUB_REPO} — console uses debug defaults; host /files/agent.apk manually"
+    agent_fetch_cleanup
   fi
 else
   info "No GitHub repo detected — skipping release fetch; host /files/agent.apk manually"
@@ -607,6 +671,7 @@ while IFS= read -r -d '' _email; do
 done < <(find "$REPO/install/emails" -type f -print0)
 # Host the release agent APK the QR points at (/files/agent.apk), if we fetched one above.
 [ -n "$AGENT_APK" ] && { base_write files/agent.apk cat "$AGENT_APK"; ok "agent APK hosted at /files/agent.apk"; }
+agent_fetch_cleanup   # the fetched release files are no longer needed (the EXIT trap covers every other path)
 # ROOT.xml carries the DB password, hash.secret and jwt.secretkey: tc_write makes it mode 600.
 tc_write conf/Catalina/localhost/ROOT.xml cat <<XML
 <?xml version="1.0" encoding="UTF-8"?>
@@ -662,9 +727,11 @@ if [ "$SEED" = no ]; then
   # their own .mdmesh-tmp. names only (as in write_under).
   rm -f "$BK_DIR"/.mdmesh-pre-upgrade-*.dump.mdmesh-tmp.??????
   _bk_tmp=$(mktemp "$BK_DIR/.${BK##*/}.mdmesh-tmp.XXXXXX")
-  # shellcheck disable=SC2024  # we ARE root here (checked at the top); sudo only switches to the postgres role
-  if sudo -u postgres pg_dump -Fc mdmesh > "$_bk_tmp" 2>>"$LOGFILE" && mv -fT "$_bk_tmp" "$BK"; then
-    ok "pg_dump written: $BK  (restore: pg_restore -c -d mdmesh $BK)"
+  # Dumped as the mdmesh role, not as the postgres superuser (as_mdmesh_role in lib/runas.sh says why); root opens the
+  # output file (a root-owned mktemp file).
+  if as_mdmesh_role "$DB_PASSWORD" pg_dump -Fc > "$_bk_tmp" 2>>"$LOGFILE" && mv -fT "$_bk_tmp" "$BK"; then
+    ok "pg_dump written: $BK"
+    printf '    '; mdm_restore_hint "$BK"
   else
     rm -f "$_bk_tmp"
     printf '  %s✗ pg_dump failed — not upgrading without a backup. See %s%s\n' "$c_red" "$LOGFILE" "$c_reset"; exit 1

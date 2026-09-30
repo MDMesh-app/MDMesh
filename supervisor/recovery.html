@@ -32,7 +32,7 @@ body[data-apply="0"] #rbcard{display:none}body:not([data-apply="0"]) #manual{dis
   <p class="note">One-click update and roll back aren't available on this install (built from source, or installed natively).
     To update, or to repair a failed update, pull and re-run the installer for your install:</p>
   <p class="note">Docker (from source): <span class="mono">git pull &amp;&amp; ./setup.sh</span><br>
-    Native: <span class="mono">git pull &amp;&amp; sudo ./install/install-native.sh</span></p>
+    Native: <span class="mono">git pull &amp;&amp; sudo ./setup.sh --native</span></p>
 </div>
 <p class="note">Logs — Docker: <span class="mono">docker compose logs server</span> · <span class="mono">docker compose logs supervisor</span>.
   Native: <span class="mono">journalctl -u mdmesh-server</span> · <span class="mono">journalctl -u mdmesh-supervisor</span>.</p>

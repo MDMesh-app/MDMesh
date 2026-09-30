@@ -7,7 +7,8 @@
 # scripts/supervisor-smoke.sh against it (the compose-shaped start guard for #27). A fifth, edge,
 # runs scripts/edge-check.sh: the Caddyfile in every hosting mode under the web image's own caddy, its /healthz
 # routes against stub upstreams, plus `docker compose config` for every compose file/overlay/profile combination; then
-# it builds the web image (docker/web.Dockerfile), which nothing else builds before a release.
+# it builds the web image (docker/web.Dockerfile), which nothing else builds before a release. When the installers change,
+# the edge entry also checks that quickstart.sh's inline BASE_URL check is still install/lib/url.sh's, byte for byte.
 name: t0-fast
 
 on:
@@ -43,6 +44,8 @@ jobs:
             # Listed explicitly: the kit's fail-closed **/Dockerfile* does not match docker/web.Dockerfile. web/**,
             # web-entrypoint.sh and .dockerignore are the web image build's inputs.
             edge: docker/Caddyfile, docker/web.Dockerfile, docker/web-entrypoint.sh, web/**, .dockerignore, docker-compose*.yml, docker/dev.env, scripts/edge-check.sh
+            # The installer scripts. Only the edge entry's cheap quickstart.sh copy check runs on these, not its image work.
+            installers: quickstart.sh, setup.sh, install/**
 
   build:
     name: ${{ matrix.name }}
@@ -132,6 +135,20 @@ jobs:
       # --- edge: the Cloudflare-mode Caddyfile break (empty ACME_EMAIL) shipped because nothing parsed it. Validates
       # docker/Caddyfile in every hosting mode with the caddy image web.Dockerfile builds FROM, and every compose combo;
       # then checks /healthz and /healthz/supervisor report their upstream's health (503, never the SPA's 200). ---
+      # quickstart.sh carries a verbatim copy of install/lib/url.sh's functions (the region between the ">>> url.sh
+      # functions" and "<<< url.sh functions" markers): it runs from main but fetches install/lib from the release it
+      # installs, which may predate url.sh (see quickstart.sh). Fail when the copies differ.
+      - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).installers)
+        name: quickstart.sh's BASE_URL check matches install/lib/url.sh
+        run: |
+          fn() { sed -n '/^# >>> url.sh functions /,/^# <<< url.sh functions <<<$/p' "$1"; }
+          lib=$(fn install/lib/url.sh); qs=$(fn quickstart.sh)
+          if [ -z "$lib" ] || [ "$lib" != "$qs" ]; then
+            echo "::error file=quickstart.sh::the url.sh functions in quickstart.sh are not a verbatim copy of install/lib/url.sh's (or one is missing). Copy the region between the markers into quickstart.sh."
+            diff -u <(printf '%s\n' "$lib") <(printf '%s\n' "$qs") || true
+            exit 1
+          fi
+          echo "quickstart.sh's url.sh functions are identical to install/lib/url.sh's"
       - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).edge)
         name: Caddyfile modes + compose overlays
         run: scripts/edge-check.sh

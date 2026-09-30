@@ -13,7 +13,11 @@
 #        ./setup.sh --allow-downgrade  # registry IMAGE_OWNER only: build and run a checkout older than the running
 #                              # release, or one with no readable release tag (both refused by default)
 set -euo pipefail
-cd "$(dirname "$0")"
+# An exported CDPATH makes cd (here and in every child, e.g. `bash -c 'cd web && …'`) resolve a relative path against
+# CDPATH's directories, not the current one — silently building or reading from a same-named directory elsewhere. Unset
+# it for this script and its children.
+unset CDPATH
+cd -P -- "$(dirname -- "$0")"
 
 say()  { printf '\033[1;36m%s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m%s\033[0m\n' "$*"; }
@@ -24,12 +28,16 @@ err()  { printf '\033[1;31m%s\033[0m\n' "$*" >&2; }
 . ./install/lib/db.sh
 # shellcheck source=install/lib/version.sh
 . ./install/lib/version.sh
+# shellcheck source=install/lib/url.sh
+. ./install/lib/url.sh
 rand() { mdm_rand; }
 # Update KEY in .env in place (or append it) — persists values discovered after .env was written
 # (GITHUB_REPO autodetection, the release QR build args) so compose substitution + the supervisor
 # container keep seeing them on later runs.
+# The value is escaped for the sed replacement (\ # &), so any value is written as given.
 setenv() {
-  if grep -q "^$1=" .env 2>/dev/null; then sed -i "s#^$1=.*#$1=$2#" .env; else printf '%s=%s\n' "$1" "$2" >> .env; fi
+  local v=${2//\\/\\\\}; v=${v//#/\\#}; v=${v//&/\\&}
+  if grep -q "^$1=" .env 2>/dev/null; then sed -i "s#^$1=.*#$1=$v#" .env; else printf '%s=%s\n' "$1" "$2" >> .env; fi
 }
 
 RESET=0; ALLOW_DOWNGRADE=0
@@ -104,6 +112,9 @@ if [ -f .env ] && [ "$RESET" != 1 ]; then
   say "Existing .env found — reusing it (secrets + hosting mode kept; use --reset to start over)."
   set -a; . ./.env; set +a
   version_preflight "${CURRENT_VERSION:-${SERVER_VERSION:-}}"
+  _env_base_url=${BASE_URL:-}
+  mdm_check_base_url BASE_URL || { err "Fix BASE_URL in .env, then re-run."; exit 1; }
+  [ "$BASE_URL" = "$_env_base_url" ] || setenv BASE_URL "$BASE_URL"   # the scheme was lower-cased: keep .env canonical
   HOST=${BASE_URL#*://}; HOST=${HOST%%/*}
   if [ "${COMPOSE_PROFILES:-}" = "cloudflare" ]; then
     MODE=1
@@ -135,6 +146,7 @@ else
 
   if [ "$MODE" = "1" ]; then
     read -rp "Public hostname devices will use (e.g. mdm.example.com): " HOST
+    mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
     read -rp "Cloudflare Tunnel token (Zero Trust → Tunnels → your tunnel): " TUNNEL_TOKEN
     BASE_URL="https://${HOST}"
     SITE_ADDRESS=":80"
@@ -145,6 +157,7 @@ else
     EXTRA_NOTE="In Cloudflare, route the tunnel's public hostname ($HOST) to http://caddy:80."
   else
     read -rp "Your domain (DNS already pointing here, e.g. mdm.example.com): " HOST
+    mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
     read -rp "Email for Let's Encrypt: " ACME_EMAIL
     BASE_URL="https://${HOST}"
     SITE_ADDRESS="${HOST}"
@@ -154,6 +167,8 @@ else
     COMPOSE_PROFILES=""
     EXTRA_NOTE="Make sure ${HOST} resolves to this server and ports 80/443 are open."
   fi
+  # Checked before .env is written (install/lib/url.sh), so a mistyped hostname leaves nothing behind.
+  mdm_check_base_url BASE_URL || { err "Check the hostname you entered (the name only, e.g. mdm.example.com), then re-run."; exit 1; }
 
   cat > .env <<EOF
 DB_NAME=mdmesh
@@ -253,10 +268,18 @@ if [ -n "${GITHUB_REPO:-}" ] && command -v python3 >/dev/null && command -v curl
     if [ -n "${GITHUB_TOKEN:-}" ]; then printf 'Authorization: Bearer %s\n' "$GITHUB_TOKEN" | curl -H @- "$@"
     else curl "$@"; fi
   }
+  # jget NAME: the download URL of release asset NAME in the release JSON on stdin; empty (and success) when there is
+  # none or the reply is not JSON (no release yet, an empty body, a rate-limit page): under set -euo pipefail a failing
+  # jget would end setup.sh at the assignment instead of taking the "no published release" branch.
   jget() { python3 -c 'import sys,json;
 d=json.load(sys.stdin)
 def asset(n): return next((a["browser_download_url"] for a in d.get("assets",[]) if a["name"]==n),"")
-print({"apk":asset("mdmesh-agent.apk"),"manifest":asset("manifest.json")}.get(sys.argv[1],""))' "$1" 2>/dev/null; }
+print({"apk":asset("mdmesh-agent.apk"),"manifest":asset("manifest.json")}.get(sys.argv[1],""))' "$1" 2>/dev/null || true; }
+  # agent_ck_ok CK: CK looks like an APK signing-certificate checksum (unpadded base64url of a SHA-256: 43 characters of
+  # A-Z a-z 0-9 _ -). It is written to .env, which this script sources as root on every re-run, so nothing else from a
+  # download may go there.
+  # (The letters are spelled out: a range like A-Z follows the locale and matches non-ASCII letters under en_US.UTF-8.)
+  agent_ck_ok() { case "$1" in *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-]*) return 1 ;; esac; [ "${#1}" -eq 43 ]; }
   REL=$(gh_curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>/dev/null || true)
   APK_URL=$(printf '%s' "$REL" | jget apk); MAN_URL=$(printf '%s' "$REL" | jget manifest)
   if [ -n "$APK_URL" ] && [ -n "$MAN_URL" ]; then
@@ -264,7 +287,9 @@ print({"apk":asset("mdmesh-agent.apk"),"manifest":asset("manifest.json")}.get(sy
     AGENT_CK=$(printf '%s' "$MAN" | python3 -c 'import sys,json;print(json.load(sys.stdin)["components"]["apk"]["signatureChecksum"])' 2>/dev/null || true)
     WANT_SHA=$(printf '%s' "$MAN" | python3 -c 'import sys,json;print(json.load(sys.stdin)["components"]["apk"]["sha256"])' 2>/dev/null || true)
     TMP_APK=$(mktemp)
-    if gh_curl -fsSL "$APK_URL" -o "$TMP_APK" 2>/dev/null && [ -n "$AGENT_CK" ] \
+    if [ -n "$AGENT_CK" ] && ! agent_ck_ok "$AGENT_CK"; then
+      warn "The release manifest's APK signing checksum is malformed (not 43 base64url characters) — the console keeps its debug enrollment defaults."
+    elif gh_curl -fsSL "$APK_URL" -o "$TMP_APK" 2>/dev/null && [ -n "$AGENT_CK" ] \
        && [ "$(sha256sum "$TMP_APK" | awk '{print $1}')" = "$WANT_SHA" ]; then
       VITE_AGENT_PACKAGE="com.mdmesh.agent"; VITE_AGENT_CHECKSUM="$AGENT_CK"; VITE_AGENT_APK_URL="/files/agent.apk"
       say "Release APK verified (signing checksum ${AGENT_CK}) — the QR will point at /files/agent.apk."

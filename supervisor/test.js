@@ -235,7 +235,7 @@ t.test('recoveryPage — marks the page with whether apply/rollback is supported
   // The page itself hides the Roll back card and shows the manual steps under data-apply="0" (CSS, no JS needed).
   a.match(html, /body\[data-apply="0"\] #rbcard\{display:none\}/);
   a.match(html, /body:not\(\[data-apply="0"\]\) #manual\{display:none\}/);
-  a.ok(html.includes('git pull &amp;&amp; ./setup.sh') && html.includes('git pull &amp;&amp; sudo ./install/install-native.sh'));
+  a.ok(html.includes('git pull &amp;&amp; ./setup.sh') && html.includes('git pull &amp;&amp; sudo ./setup.sh --native'));
 });
 
 t.test('recovery.html escapes status strings before they reach innerHTML', () => {

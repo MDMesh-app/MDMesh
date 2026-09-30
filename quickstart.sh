@@ -7,6 +7,10 @@
 # It creates ./mdmesh, downloads the pull-only compose + seed, generates secrets, brings the stack
 # up, and prints the console URL + a temporary admin password (you set your own on first login).
 set -euo pipefail
+# An exported CDPATH makes cd (here and in every child, e.g. `bash -c 'cd web && …'`) resolve a relative path against
+# CDPATH's directories, not the current one — silently building or reading from a same-named directory elsewhere. Unset
+# it for this script and its children.
+unset CDPATH
 
 REPO="MDMesh-app/MDMesh"
 BRANCH="main"   # where the compose + seed come from only when the release can't be resolved (see below)
@@ -27,13 +31,107 @@ latest_release() {
   if [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$ ]]; then printf '%s\n' "${tag#v}"; fi
 }
 
+# The BASE_URL rule of install/lib/url.sh (see there for what it accepts and why it is an allowlist). A verbatim copy
+# of the functions between the markers, not a download: this script runs from main but fetches install/lib from the
+# release it installs, which may predate url.sh (see db.sh below). CI (t0-fast, edge entry) fails if the copies differ.
+# >>> url.sh functions (quickstart.sh keeps a verbatim copy) >>>
+# The character sets, spelled out: a range such as [A-Za-z0-9] follows the locale's collation, and under en_US.UTF-8
+# bash matches thousands of non-ASCII letters with it (https://ｅxample.com would pass).
+_MDM_ALNUM=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789
+_MDM_HEX=0123456789ABCDEFabcdef
+_MDM_DIGITS=0123456789
+# _mdm_hostport_problem HOSTPORT: prints why HOSTPORT is not host[:port] as described above; prints nothing when it is.
+_mdm_hostport_problem() {
+  local hp=$1 host='' port='' v6=''
+  case "$hp" in
+    \[*)
+      v6=${hp#\[}
+      case "$v6" in *\]*) ;; *) echo "\"$hp\" has no closing ]"; return ;; esac
+      port=${v6#*\]}; v6=${v6%%\]*}
+      case "$v6" in
+        ''|*[!${_MDM_HEX}:.]*|*:::*|*::*::*|*:*:*:*:*:*:*:*:*) echo "\"[$v6]\" is not an IPv6 address"; return ;;
+        *:*) ;;
+        *) echo "\"[$v6]\" is not an IPv6 address"; return ;;
+      esac
+      case "$port" in '') return ;; :*) port=${port#:}; [ -n "$port" ] || port=- ;; *) echo "\"$hp\": only :port may follow ]"; return ;; esac ;;
+    *)
+      host=${hp%%:*}
+      case "$hp" in *:*) port=${hp#*:}; [ -n "$port" ] || port=- ;; esac
+      case "$host" in
+        '') echo 'it has no host (expected e.g. mdm.example.com)'; return ;;
+        *[!${_MDM_ALNUM}.-]*|.*|*.|-*|*-|*..*) echo "\"$host\" is not a host name or IPv4 address"; return ;;
+      esac ;;
+  esac
+  case "$port" in
+    '') ;;                                                                     # no port
+    *[!${_MDM_DIGITS}]*) echo "\"$hp\" does not end in a port number after the colon"; return ;;
+    0*) echo "\"$hp\" has an invalid port (a port is 1-65535, with no leading zero)"; return ;;
+  esac
+  # Length first, so the numeric compare never sees a value too big for the shell's integer.
+  [ -z "$port" ] || { [ "${#port}" -le 5 ] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ]; } \
+    || echo "\"$hp\" has a port outside 1-65535"
+}
+
+# mdm_check_base_url VAR: checks the URL held in the variable named VAR. When it passes, VAR's scheme is rewritten in
+# lowercase (HTTPS://… becomes https://…; nothing else changes) and it succeeds. Otherwise it prints why to stderr,
+# leaves VAR alone and fails. It takes a variable name, not the value, so the caller's variable is normalised in place.
+mdm_check_base_url() {
+  local url=${!1-} rest='' bad='' why=''
+  case "$url" in
+    '')                             why='it is empty' ;;
+    *@*)                            why='it contains "@": a base URL takes no user name or password (user@host)' ;;
+    *\?*|*#*)                       why='it contains "?" or "#": a base URL takes no query or fragment' ;;
+    *%*)                            why='it contains "%": percent-escapes are not accepted in a base URL' ;;
+    *[!${_MDM_ALNUM}._:/+=,\[\]-]*)
+      bad=${url//[${_MDM_ALNUM}._:\/+=,\[\]-]/}; bad=${bad:0:1}
+      case "$bad" in \') bad="\"'\"" ;; [[:print:]]) bad="'$bad'" ;; *) bad=$(printf '%q' "$bad") ;; esac
+      why="it contains $bad, which is not allowed (only letters, digits and . _ : / + = , [ ] -)" ;;
+    [Hh][Tt][Tt][Pp]://*)           rest=${url#*://}; url="http://$rest" ;;
+    [Hh][Tt][Tt][Pp][Ss]://*)       rest=${url#*://}; url="https://$rest" ;;
+    *)                              why='it must start with http:// or https:// (e.g. https://mdm.example.com)' ;;
+  esac
+  case "$rest" in
+    [Hh][Tt][Tt][Pp]://*|[Hh][Tt][Tt][Pp][Ss]://*) why='it has the scheme twice (where a hostname is asked for, enter the name only)' ;;
+  esac
+  [ -n "$why" ] || why=$(_mdm_hostport_problem "${rest%%/*}")
+  if [ -z "$why" ]; then printf -v "$1" '%s' "$url"; return 0; fi
+  url=${!1-}
+  case "$url" in *[![:print:]]*) url=$(printf '%q' "$url") ;; esac   # shown as typed, unless that would garble the terminal
+  printf 'Invalid public base URL %s: %s.\n' "${url:-(empty)}" "$why" >&2
+  return 1
+}
+# mdm_check_host VAR: checks that the variable named VAR holds a bare host[:port] as described above, with no scheme,
+# path, user@, query or fragment: what the hostname prompts ask for (it becomes BASE_URL and Caddy's site address).
+# Otherwise it prints why to stderr and fails. The value is never changed.
+mdm_check_host() {
+  local h=${!1-} bad='' why=''
+  case "$h" in
+    '')                 why='it is empty' ;;
+    *://*)              why='enter the name only, without http:// or https://' ;;
+    */*|*\?*|*#*|*@*)   why='enter the name only: no /path, ?query, #fragment or user@' ;;
+    *[!${_MDM_ALNUM}.:\[\]-]*)
+      bad=${h//[${_MDM_ALNUM}.:\[\]-]/}; bad=${bad:0:1}
+      case "$bad" in \') bad="\"'\"" ;; [[:print:]]) bad="'$bad'" ;; *) bad=$(printf '%q' "$bad") ;; esac
+      why="it contains $bad, which is not allowed (only letters, digits, . and -, or an [IPv6] address, then an optional :port)" ;;
+  esac
+  [ -n "$why" ] || why=$(_mdm_hostport_problem "$h")
+  [ -z "$why" ] && return 0
+  case "$h" in *[![:print:]]*) h=$(printf '%q' "$h") ;; esac
+  printf 'Invalid hostname %s: %s.\n' "${h:-(empty)}" "$why" >&2
+  return 1
+}
+# <<< url.sh functions <<<
+
 command -v docker >/dev/null || { err "Docker is required."; exit 1; }
 docker compose version >/dev/null 2>&1 || { err "Docker Compose v2 is required ('docker compose')."; exit 1; }
 command -v curl    >/dev/null || { err "curl is required."; exit 1; }
 command -v openssl >/dev/null || { err "openssl is required."; exit 1; }
 
 DIR="${MDMESH_DIR:-mdmesh}"
-mkdir -p "$DIR" && cd "$DIR"
+# Two statements, not `mkdir && cd`: under set -e a failure before an && is not fatal, so a failed mkdir would fall
+# through and the rest would run in the wrong directory.
+mkdir -p -- "$DIR"
+cd -P -- "$DIR"
 [ -f .env ] && { err "An .env already exists in $(pwd) — refusing to overwrite. Remove it to re-run."; exit 1; }
 
 say "== MDMesh quick start (published images) =="
@@ -75,17 +173,20 @@ DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(
 
 if [ "$MODE" = "1" ]; then
   read -rp "Public hostname devices will use (e.g. mdm.example.com): " HOST
+  mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
   read -rp "Cloudflare Tunnel token (Zero Trust → Tunnels → your tunnel): " TUNNEL_TOKEN
   BASE_URL="https://${HOST}"; SITE_ADDRESS=":80"; ACME_EMAIL=""
   COMPOSE_FILE="docker-compose.yml"; COMPOSE_PROFILES="cloudflare"
   EXTRA_NOTE="In Cloudflare, route the tunnel's public hostname ($HOST) to http://caddy:80."
 else
   read -rp "Your domain (DNS already pointing here, e.g. mdm.example.com): " HOST
+  mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
   read -rp "Email for Let's Encrypt: " ACME_EMAIL
   BASE_URL="https://${HOST}"; SITE_ADDRESS="${HOST}"; TUNNEL_TOKEN=""
   COMPOSE_FILE="docker-compose.yml:docker-compose.domain.yml"; COMPOSE_PROFILES=""
   EXTRA_NOTE="Make sure ${HOST} resolves to this server and ports 80/443 are open."
 fi
+mdm_check_base_url BASE_URL || { err "Check the hostname you entered (the name only, e.g. mdm.example.com), then re-run."; exit 1; }
 
 say "Downloading the pull-only compose + seed…"
 curl -fsSL "${RAW}/docker-compose.release.yml" -o docker-compose.yml

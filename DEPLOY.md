@@ -69,6 +69,26 @@ The wizard asks how you want to expose it:
 - **Your own domain** — opens 80/443; Caddy auto-provisions a Let's Encrypt cert. Point the domain's
   DNS at the host first.
 
+The hostname you enter becomes `BASE_URL=https://<hostname>`, the public address that devices and the console use.
+It is checked as soon as it is entered or read: `setup.sh` checks it before writing `.env`, the quick start (Option A)
+before downloading anything (it has only created its `./mdmesh` directory), and the native installer (Option C) before
+it installs or changes anything on the host (it has only started its log file). The rule is an allowlist
+(`install/lib/url.sh`):
+
+- `http://` or `https://`, in any letter case (it is stored in lowercase);
+- then a host name or IPv4 address (letters, digits, `.` and `-`, not starting or ending with `.` or `-`, no `..`), or
+  a `[bracketed]` IPv6 address, optionally with `:port`;
+- then optionally a path made of letters, digits and `. _ : / + = , -`.
+
+Nothing else is accepted: no spaces, quotes, `$`, `\`, `;`, `~` or other shell characters, no `user@` part, no `?` query or
+`#` fragment, and no `%` escapes.
+
+The hostname prompts of `setup.sh` and the quick start take the host alone: a name or IPv4 address (letters, digits,
+`.` and `-`, not starting or ending with `.` or `-`), or a `[bracketed]` IPv6 address, optionally with `:port` (e.g.
+`mdm.example.com` or `mdm.example.com:8443`), and no `https://`, path, `user@`, `?` or `#`. In own-domain mode it is
+also the address Caddy serves and gets a certificate for. A re-run of `./setup.sh` checks the `BASE_URL` already in
+`.env` by the rule above, and rewrites an upper-case scheme there in lowercase.
+
 It writes `.env` (gitignored), builds the images, brings the stack up, seeds the database, and prints
 the console URL and the generated **admin** password (shown once — save it, then change it in the UI).
 
@@ -92,12 +112,33 @@ Debian/Ubuntu, as root. The leaner path: Postgres + Tomcat on the host; you term
 sudo ./setup.sh --native      # → install/install-native.sh
 ```
 
+`sudo` is only how you become root. The installer itself never calls it, so on a root-only host without sudo (a
+Proxmox LXC container, a minimal Debian image) run `./setup.sh --native` as root. It and the uninstaller reach Postgres
+without sudo, isolated from root's environment (a `PGHOST` and the like in your shell have no effect). Superuser access
+(the `postgres` account) is used only in the `postgres` database, and only for what needs it: creating, altering or
+dropping the role and database. Everything that touches the `mdmesh` database — the pre-upgrade and final `pg_dump`, the
+device/user counts — connects **as the `mdmesh` role** over `127.0.0.1`, with the role password read from `ROOT.xml`, so
+objects owned by that role never run with superuser rights.
+
+It asks for the public base URL, or takes it from `BASE_URL=https://mdm.example.com` (required with `-y`). The value
+must follow the same rule as in Option B.
+
 **Upgrading a native install** is the same command after `git pull`. The installer detects existing data and
 asks **Keep** (default, just press Enter) or **Erase** (requires typing `ERASE`). Keep redeploys the code, runs
 migrations, and leaves configurations, devices, users and the enrollment secret untouched; a `pg_dump` is written
 to `/opt/mdmesh/backups/` first. Unattended: `sudo ./setup.sh --native -y` never erases; set `REPLACE_DATA=yes` to
 opt into a wipe, `HTTP_PORT=9090` to pick the port. Only missing packages are installed, and a JDK 17 found via
 `JAVA17_HOME` or under `/opt` is used as-is (Debian 13 ships no `openjdk-17-jdk`).
+
+**The agent APK.** The installer fetches the latest release's agent APK, hosts it at `/files/agent.apk` and bakes its
+signing checksum into the console's enrollment QR. It trusts the APK only through the release's signed manifest, like
+the supervisor does: `manifest.json` must verify with `minisign` against the repo's `release/minisign.pub` before its
+checksum and SHA-256 are read, the manifest's version must be the release's own tag (so an older release's signed
+manifest cannot stand in for it), and the downloaded APK must match that SHA-256. If there is no release yet, the
+release has no `manifest.json.minisig`, `minisign` or the `release/minisign.pub` key is missing, the signature does not
+verify, the manifest belongs to another release, a download fails or the APK does not match, the install still
+completes. It prints which of these happened, and the console keeps its debug defaults: host an APK at
+`/files/agent.apk` yourself, or re-run the installer once a verified release exists.
 
 Tomcat runs as the unprivileged `mdmesh` system user under systemd (`mdmesh-server.service`, enabled at boot).
 Manage it like any other service:
@@ -132,6 +173,24 @@ the app dir `/opt/mdmesh`, the `mdmesh-server` and `mdmesh-supervisor` units and
 writes a final `pg_dump` to `/root`, and only proceeds when you type `UNINSTALL`. `--keep-data` removes the code
 and services but leaves the database, `/opt/mdmesh/files` and `/opt/mdmesh/backups` in place; `-y` skips the
 prompt for scripted use. Packages installed by apt, your reverse proxy and the git checkout are never touched.
+
+The final dump is taken as the `mdmesh` role, so it needs the role password from `ROOT.xml`. If `ROOT.xml` is gone or
+unreadable — including a pre-0.2.9 install whose Tomcat ran as root, which has no `mdmesh` service user — pass
+`--no-backup` to uninstall without a dump (take one yourself first if you want one).
+
+Restore that dump (or a pre-upgrade one from `/opt/mdmesh/backups/`) **as the `mdmesh` role, never as `postgres`**: a
+restore run by a superuser executes any function the dump's own objects define, so a tampered database could escalate
+through its own restore. With an install present (its `ROOT.xml` and `mdmesh` role), from the host as root:
+
+```bash
+PGPASSWORD="$(setpriv --reuid=mdmesh --regid=mdmesh --init-groups \
+  sed -n 's/.*name="JDBC.password" value="\([^"]*\)".*/\1/p' \
+  /opt/mdmesh-tc/conf/Catalina/localhost/ROOT.xml | head -n1)" \
+  pg_restore -h 127.0.0.1 -p 5432 -U mdmesh -d mdmesh -c --if-exists <dump-file>
+```
+
+It reads the role password from `ROOT.xml` as the service user (no password on any command line) and connects as
+`mdmesh` over TCP. The installer and uninstaller print this same command next to each dump they write.
 
 Devices that are still enrolled keep polling the old server URL until they are factory-reset or re-provisioned;
 if you are migrating rather than retiring, keep `BASE_URL` reachable (or point DNS at the new host) so they

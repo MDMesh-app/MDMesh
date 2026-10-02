@@ -16,6 +16,11 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import javax.inject.Singleton
 
+/**
+ * Provides the networking stack: OkHttp + Retrofit wired to the shared
+ * [ProtocolJson] instance via the kotlinx-serialization converter. Base URL comes
+ * from [BuildConfig.MDM_BASE_URL] so it varies per build type without code change.
+ */
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
@@ -33,13 +38,17 @@ object NetworkModule {
                 HttpLoggingInterceptor.Level.NONE
             }
         }
-
         return OkHttpClient.Builder()
+            // Resolve the real server (provisioned at enrollment) per-request, so the Retrofit base
+            // below is only a placeholder and one APK serves every deployment.
             .addInterceptor(BaseUrlInterceptor(serverConfig))
             .addInterceptor(logging)
             .build()
     }
 
+    // APK downloads only. Never add BaseUrlInterceptor here: it rewrites every request's host, so an
+    // APK hosted elsewhere (a vendor CDN, a presigned URL) would be fetched from our server instead.
+    // No logging interceptor either: at BODY level it would buffer whole APKs in memory.
     @Provides
     @Singleton
     @DownloadHttpClient
@@ -58,6 +67,5 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideMdmApi(retrofit: Retrofit): MdmApi =
-        retrofit.create(MdmApi::class.java)
+    fun provideMdmApi(retrofit: Retrofit): MdmApi = retrofit.create(MdmApi::class.java)
 }

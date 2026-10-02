@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { useNavigate, Navigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router';
 import { useAuth } from '../auth/AuthContext';
 import { submitForcedPasswordReset } from '../api/auth';
 import { Wordmark } from '../ui/Wordmark';

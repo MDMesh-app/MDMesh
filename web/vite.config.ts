@@ -12,6 +12,21 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    build: {
+      rolldownOptions: {
+        output: {
+          // Third-party code in its own chunks: the app chunk stays under Vite's 500 kB warning, and a console
+          // upgrade that only changes app code leaves the browser's cached vendor chunks valid.
+          codeSplitting: {
+            groups: [
+              { name: 'react', test: /node_modules[\\/](react|react-dom|react-router|scheduler|cookie|set-cookie-parser)[\\/]/, priority: 2 },
+              { name: 'leaflet', test: /node_modules[\\/]leaflet[\\/]/, priority: 2 },
+              { name: 'vendor', test: /node_modules[\\/]/, priority: 1 },
+            ],
+          },
+        },
+      },
+    },
     server: {
       host: true,
       port: 5173,

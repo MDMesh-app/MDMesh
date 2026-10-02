@@ -1,4 +1,4 @@
-import { Navigate, Outlet, useLocation } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router';
 import { useAuth } from './AuthContext';
 
 /** Guards nested routes, redirecting unauthenticated users to /login. */

@@ -99,7 +99,7 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'usbStorage', label: 'USB storage', type: 'tri', group: 'Restrictions', focused: true, enforced: true, help: 'Allow access to USB mass storage.' },
   { key: 'blockStatusBar', label: 'Lock status bar', type: 'switch', group: 'Restrictions', help: 'Prevent pulling down the system status bar.' },
   { key: 'disableScreenshots', label: 'Block screenshots', type: 'tri', group: 'Restrictions', enforced: true, help: 'Prevent screenshots and screen recording.' },
-  { key: 'factoryReset', label: 'Block factory reset', type: 'tri', group: 'Restrictions', focused: true, enforced: true, help: 'Prevent wiping or resetting the device from system settings (Auto leaves it unmanaged).' },
+  { key: 'disableFactoryReset', label: 'Block factory reset', type: 'tri', group: 'Restrictions', focused: true, enforced: true, help: 'Prevent wiping or resetting the device from system settings (Auto leaves it unmanaged).' },
   { key: 'lockVolume', label: 'Lock volume', type: 'tri', group: 'Restrictions', help: 'Disable the volume buttons.' },
   { key: 'allowedClasses', label: 'Allowed app classes', type: 'text', group: 'Restrictions', help: 'Comma-separated list of permitted app component classes.' },
   { key: 'restrictions', label: 'Android restrictions', type: 'textarea', group: 'Restrictions', help: 'Comma-separated Android user restrictions to apply in MDM mode.' },

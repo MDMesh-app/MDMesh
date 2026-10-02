@@ -60,7 +60,7 @@ public final class DesiredConfigBuilder {
         putIfManaged(p, "bluetooth", cfg.getBluetooth());
         putIfManaged(p, "usbStorage", cfg.getUsbStorage());
         putIfManaged(p, "screenshots", cfg.getDisableScreenshots() == null ? null : !cfg.getDisableScreenshots());
-        putIfManaged(p, "factoryReset", cfg.getFactoryReset() == null ? null : !cfg.getFactoryReset());
+        putIfManaged(p, "factoryReset", cfg.getDisableFactoryReset() == null ? null : !cfg.getDisableFactoryReset());
         return p;
     }
 

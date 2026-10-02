@@ -31,13 +31,13 @@ public class DesiredConfigBuilderTest {
 
     /**
      * Every policy key managed: the kiosk counterpart of {@link #kioskConfig()} for the flat policy block.
-     * factoryReset is a "block the wipe" flag, so the wire key is its INVERSE.
+     * disableFactoryReset is a "block the wipe" flag, so the wire key factoryReset is its INVERSE.
      */
     private static Configuration policiesConfig() {
         Configuration c = new Configuration();
         c.setId(7);
         c.setWifi(false); c.setBluetooth(true); c.setUsbStorage(true);
-        c.setDisableScreenshots(false); c.setFactoryReset(true);
+        c.setDisableScreenshots(false); c.setDisableFactoryReset(true);
         c.setRequestUpdates(RequestUpdatesType.DONOTTRACK);
         return c;
     }
@@ -122,36 +122,36 @@ public class DesiredConfigBuilderTest {
 
     @Test
     public void factory_reset_is_inverted_into_the_blocking_policy() {
-        // factoryReset=true in the configuration means "block the wipe", so the agent receives false.
+        // disableFactoryReset=true means "block the wipe", so the agent receives factoryReset=false.
         DesiredConfig blocked = DesiredConfigBuilder.build(policiesConfig(), Collections.emptyList());
-        assertEquals("factoryReset=true -> policies.factoryReset=false", Boolean.FALSE,
+        assertEquals("disableFactoryReset=true -> policies.factoryReset=false", Boolean.FALSE,
                 blocked.getPolicies().get("factoryReset"));
 
-        Configuration allowed = policiesConfig(); allowed.setFactoryReset(false);
-        assertEquals("factoryReset=false -> policies.factoryReset=true", Boolean.TRUE,
+        Configuration allowed = policiesConfig(); allowed.setDisableFactoryReset(false);
+        assertEquals("disableFactoryReset=false -> policies.factoryReset=true", Boolean.TRUE,
                 DesiredConfigBuilder.build(allowed, Collections.emptyList()).getPolicies().get("factoryReset"));
     }
 
     @Test
     public void null_factory_reset_is_unmanaged_and_the_key_is_omitted() {
-        Configuration unmanaged = policiesConfig(); unmanaged.setFactoryReset(null);
+        Configuration unmanaged = policiesConfig(); unmanaged.setDisableFactoryReset(null);
         DesiredConfig d = DesiredConfigBuilder.build(unmanaged, Collections.emptyList());
-        assertFalse("null factoryReset = not managed", d.getPolicies().containsKey("factoryReset"));
+        assertFalse("null disableFactoryReset = not managed", d.getPolicies().containsKey("factoryReset"));
     }
 
     @Test
     public void factory_reset_alone_changes_the_revision() {
         // The whole point of the persisted column: toggling it must re-apply, so it must move the revision.
         DesiredConfig blocked = DesiredConfigBuilder.build(policiesConfig(), Collections.emptyList());
-        Configuration allowed = policiesConfig(); allowed.setFactoryReset(false);
+        Configuration allowed = policiesConfig(); allowed.setDisableFactoryReset(false);
         assertNotEquals(blocked.getRevision(), DesiredConfigBuilder.build(allowed, Collections.emptyList()).getRevision());
 
-        Configuration unmanaged = policiesConfig(); unmanaged.setFactoryReset(null);
+        Configuration unmanaged = policiesConfig(); unmanaged.setDisableFactoryReset(null);
         assertNotEquals(blocked.getRevision(), DesiredConfigBuilder.build(unmanaged, Collections.emptyList()).getRevision());
     }
 
     /** GOLDEN for the flat policy block. Kept separate from the kiosk fixture so an unmanaged
-     *  factoryReset there still proves the key is omitted. Update deliberately. */
+     *  disableFactoryReset there still proves the key is omitted. Update deliberately. */
     @Test
     public void golden_canonical_json_and_revision_policies() {
         DesiredConfig d = DesiredConfigBuilder.build(policiesConfig(), Collections.emptyList());

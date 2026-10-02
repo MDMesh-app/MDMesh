@@ -117,7 +117,7 @@ public class Configuration implements CustomerData, Serializable {
     @ApiModelProperty("Flag indicating if screenshots are disabled on the device")
     private Boolean disableScreenshots;
     @ApiModelProperty("Flag indicating if factory reset is disabled on the device")
-    private Boolean factoryReset;
+    private Boolean disableFactoryReset;
     @ApiModelProperty("Flag indicating if auto-started apps should be kept in the foreground")
     private Boolean autostartForeground;
     @ApiModelProperty("Time zone settings: null for using default settings, auto for automatic time zone, or Olson time zone string")
@@ -869,12 +869,12 @@ public class Configuration implements CustomerData, Serializable {
     public void setDefaultFilePath(String defaultFilePath) {
         this.defaultFilePath = defaultFilePath;
     }
-    public Boolean getFactoryReset() {
-        return factoryReset;
+    public Boolean getDisableFactoryReset() {
+        return disableFactoryReset;
     }
 
-    public void setFactoryReset(Boolean factoryReset) {
-        this.factoryReset = factoryReset;
+    public void setDisableFactoryReset(Boolean disableFactoryReset) {
+        this.disableFactoryReset = disableFactoryReset;
     }
 
     public Configuration newCopy() {
@@ -959,7 +959,7 @@ public class Configuration implements CustomerData, Serializable {
         copy.setDisplayStatus(isDisplayStatus());
 
         copy.setDefaultFilePath(getDefaultFilePath());
-        copy.setFactoryReset(getFactoryReset());
+        copy.setDisableFactoryReset(getDisableFactoryReset());
 
         return copy;
     }

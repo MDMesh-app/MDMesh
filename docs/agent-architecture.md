@@ -49,7 +49,7 @@ it via a configuration (an ad-hoc console "Enter kiosk" is left alone). The 19 e
 are: `mainAppId`, `kioskMode`, `kioskExit`, `kioskHome`, `kioskRecents`, `kioskNotifications`,
 `kioskSystemInfo`, `kioskKeyguard`, `kioskLockButtons`, `password` (kiosk exit password, stored as entered),
 `backgroundColor`, `textColor`, `iconSize`, `wifi`, `bluetooth`, `usbStorage`, `disableScreenshots`,
-`factoryReset` and `requestUpdates` (location capture mode); `name`/`description` are metadata only. See
+`disableFactoryReset` and `requestUpdates` (location capture mode); `name`/`description` are metadata only. See
 `proto/payloads/config-apply.schema.json` for the wire shape and `proto/payloads/config-apply-result.schema.json`
 for the per-key result. `config.apply` is protocol 1.2 — an additive change; 1.0 and 1.1 agents keep working unchanged.
 

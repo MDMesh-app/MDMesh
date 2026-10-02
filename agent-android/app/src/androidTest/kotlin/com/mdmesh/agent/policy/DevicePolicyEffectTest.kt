@@ -84,7 +84,7 @@ class DevicePolicyEffectTest {
      * `isDeviceOwnerApp` report false and every factory return null.
      */
     @Test
-    fun deviceOwnerRegistratesTheDoGatedPoliciesInTheCapabilityRegistry() {
+    fun deviceOwnerRegistersTheDoGatedPoliciesInTheCapabilityRegistry() {
         val toggles = CapabilityRegistry(handle).togglePolicies()
 
         assertTrue(

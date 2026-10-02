@@ -184,12 +184,12 @@ class ServerInjectedPolicyTest {
     }
 
     /**
-     * Pins the polarity contract from SPEC.md through the full loop: `true` = the action is ALLOWED
-     * (restriction cleared), `false` = BLOCKED (restriction added). A silent inversion here is the
-     * kind of bug that only shows up on a device in Settings.
+     * The coordinator passes the commanded boolean through to the strategy unchanged and in order. What
+     * `true`/`false` then do on the device (true = allowed) is the strategy's job, which this fake does
+     * not check; `DevicePolicyEffectTest` covers that on a Device-Owner device.
      */
     @Test
-    fun `true allows the action and false blocks it`() = runTest {
+    fun `false then true reach the strategy unchanged and in order`() = runTest {
         val factoryReset = RecordingToggle("factoryReset")
         val harness = Harness(mapOf("factoryReset" to factoryReset))
 
@@ -220,7 +220,7 @@ class ServerInjectedPolicyTest {
     }
 
     /**
-     * The open-registry guarantee (proto/endpoints.md): an unknown policy key degrades to
+     * The open-registry rule (proto/README.md): an unknown policy key degrades to
      * `unsupported` instead of failing the cycle, and the rest of the batch still lands.
      */
     @Test

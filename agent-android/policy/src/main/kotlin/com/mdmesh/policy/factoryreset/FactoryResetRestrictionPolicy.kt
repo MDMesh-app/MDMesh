@@ -15,8 +15,8 @@ import com.mdmesh.policy.wifi.DpmHandle
  * [UserRestrictions] helper, so this file holds no policy knowledge itself.
  *
  * Known limits, by design of the platform API:
- *  - It blocks the *user's* path through Settings only. `adb recovery --wipe_data`,
- *    `fastboot -w` and unlocking the bootloader are out of any DPC's reach.
+ *  - It blocks the *user's* path through Settings only. A wipe from recovery mode
+ *    (`adb reboot recovery`), `fastboot -w` and unlocking the bootloader are out of any DPC's reach.
  *  - It does not affect an administrator-initiated wipe (`wipeDevice`/`wipeData` are not subject
  *    to user restrictions), so the console's `device.wipe` keeps working on a blocked device.
  */

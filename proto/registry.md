@@ -15,7 +15,7 @@ with the agent's capability advertisement and the server's command catalog.
 | `usbStorage` | block USB mass storage | 24 | |
 | `camera` | disable camera | 24 | |
 | `screenshots` | disable screenshots | 24 | |
-| `factoryReset` | block/restore the user-initiated factory reset | 24 | `UserManager.DISALLOW_FACTORY_RESET`; Device Owner only; does **not** cover recovery/adb wipe. Not to be confused with `factoryResetProtection` below. |
+| `factoryReset` | block/restore the user-initiated factory reset | 24 | `UserManager.DISALLOW_FACTORY_RESET`; Device Owner only; does **not** cover a wipe from recovery mode or fastboot. Not to be confused with `factoryResetProtection` below. |
 | `kioskLockTask` | COSU lock-task kiosk | 24 | setLockTaskPackages/Features |
 | `passwordComplexity` | password policy | 31 | setRequiredPasswordComplexity (setPasswordQuality deprecated @26) |
 | `systemUpdatePolicy` | OS update windows | 24 | |

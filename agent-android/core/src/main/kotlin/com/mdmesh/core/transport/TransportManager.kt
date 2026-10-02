@@ -2,6 +2,7 @@ package com.mdmesh.core.transport
 
 import android.util.Log
 import com.mdmesh.core.config.ServerConfigStore
+import com.mdmesh.core.di.ApiHttpClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -27,7 +28,7 @@ import java.util.concurrent.TimeUnit
  */
 @Singleton
 class TransportManager @Inject constructor(
-    okHttpClient: OkHttpClient,
+    @ApiHttpClient okHttpClient: OkHttpClient,
     private val serverConfig: ServerConfigStore,
 ) {
     // Keepalive ping kept just under typical proxy idle timeouts (~100s) to hold the socket open

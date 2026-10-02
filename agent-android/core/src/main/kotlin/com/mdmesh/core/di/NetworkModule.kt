@@ -16,11 +16,6 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import javax.inject.Singleton
 
-/**
- * Provides the networking stack: OkHttp + Retrofit wired to the shared
- * [ProtocolJson] instance via the kotlinx-serialization converter. Base URL comes
- * from [BuildConfig.MDM_BASE_URL] so it varies per build type without code change.
- */
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
@@ -29,7 +24,8 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideOkHttp(serverConfig: ServerConfigStore): OkHttpClient {
+    @ApiHttpClient
+    fun provideApiOkHttp(serverConfig: ServerConfigStore): OkHttpClient {
         val logging = HttpLoggingInterceptor().apply {
             level = if (BuildConfig.DEBUG) {
                 HttpLoggingInterceptor.Level.BODY
@@ -37,9 +33,8 @@ object NetworkModule {
                 HttpLoggingInterceptor.Level.NONE
             }
         }
+
         return OkHttpClient.Builder()
-            // Resolve the real server (provisioned at enrollment) per-request, so the Retrofit base
-            // below is only a placeholder and one APK serves every deployment.
             .addInterceptor(BaseUrlInterceptor(serverConfig))
             .addInterceptor(logging)
             .build()
@@ -47,7 +42,15 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideRetrofit(client: OkHttpClient): Retrofit = Retrofit.Builder()
+    @DownloadHttpClient
+    fun provideDownloadOkHttp(): OkHttpClient =
+        OkHttpClient.Builder().build()
+
+    @Provides
+    @Singleton
+    fun provideRetrofit(
+        @ApiHttpClient client: OkHttpClient
+    ): Retrofit = Retrofit.Builder()
         .baseUrl(BuildConfig.MDM_BASE_URL)
         .client(client)
         .addConverterFactory(ProtocolJson.json.asConverterFactory(jsonMediaType))
@@ -55,5 +58,6 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideMdmApi(retrofit: Retrofit): MdmApi = retrofit.create(MdmApi::class.java)
+    fun provideMdmApi(retrofit: Retrofit): MdmApi =
+        retrofit.create(MdmApi::class.java)
 }

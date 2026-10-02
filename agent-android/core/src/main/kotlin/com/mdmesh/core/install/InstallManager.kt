@@ -9,6 +9,7 @@ import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.os.Build
 import dagger.hilt.android.qualifiers.ApplicationContext
+import com.mdmesh.core.di.DownloadHttpClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -90,7 +91,7 @@ sealed interface InstallOutcome {
 class InstallManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val resultBus: InstallResultBus,
-    private val httpClient: OkHttpClient,
+    @DownloadHttpClient private val httpClient: OkHttpClient,
 ) {
 
     private val packageInstaller: PackageInstaller

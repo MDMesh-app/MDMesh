@@ -58,6 +58,13 @@ public class AgentWakeHub {
             try { previous.close(); } catch (Exception ignored) { }
         }
         log.debug("Agent wake socket registered for {}", deviceNumber);
+
+        // A wake may have been queued while the device was temporarily offline.
+        // On reconnect, immediately wake the agent when commands are still pending.
+        if (!commandDAO.listPending(deviceNumber).isEmpty()) {
+            log.debug("Pending commands found after wake socket registration for {}", deviceNumber);
+            wake(deviceNumber, "commands");
+        }
     }
 
     public void unregister(String deviceNumber, Session session) {

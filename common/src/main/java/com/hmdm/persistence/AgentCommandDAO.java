@@ -63,6 +63,11 @@ public class AgentCommandDAO {
         return mapper.listPending(deviceNumber);
     }
 
+    /** True if the device has any pending command: the same rows as {@link #listPending}, but only checks existence. */
+    public boolean hasPending(String deviceNumber) {
+        return mapper.hasPending(deviceNumber);
+    }
+
     /**
      * Record a result status + detail + the completion timestamp (epoch millis). Ownership-scoped:
      * the row is only touched when it belongs to {@code deviceNumber}, and a genuinely terminal

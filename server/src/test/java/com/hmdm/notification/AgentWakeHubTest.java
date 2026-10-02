@@ -91,22 +91,30 @@ public class AgentWakeHubTest {
                 });
     }
 
-    /** A DAO whose pending-commands read returns {@code pending}, or throws when {@code pending} is null. */
-    private static AgentCommandDAO dao(List<AgentCommand> pending) {
+    /**
+     * A DAO whose existence check answers {@code pending}, or throws when {@code pending} is null. The full
+     * {@code listPending} read (every row with its payload) must not be used for the check.
+     */
+    private static AgentCommandDAO dao(Boolean pending) {
         return new AgentCommandDAO(null, null, null, null) {
             @Override
-            public List<AgentCommand> listPending(String deviceNumber) {
+            public boolean hasPending(String deviceNumber) {
                 if (pending == null) {
                     throw new IllegalStateException("database unavailable");
                 }
                 return pending;
+            }
+
+            @Override
+            public List<AgentCommand> listPending(String deviceNumber) {
+                throw new AssertionError("register must use hasPending, not listPending");
             }
         };
     }
 
     @Test
     public void registerWithPendingCommandsSendsOneCommandsWake() {
-        AgentWakeHub hub = new AgentWakeHub(dao(Collections.singletonList(new AgentCommand())));
+        AgentWakeHub hub = new AgentWakeHub(dao(true));
 
         hub.register(DEVICE, session());
 
@@ -116,7 +124,7 @@ public class AgentWakeHubTest {
 
     @Test
     public void registerWithNothingPendingSendsNothing() {
-        AgentWakeHub hub = new AgentWakeHub(dao(Collections.emptyList()));
+        AgentWakeHub hub = new AgentWakeHub(dao(false));
 
         hub.register(DEVICE, session());
 

@@ -64,7 +64,7 @@ public class AgentWakeHub {
         // Best-effort: this runs inside AgentWakeEndpoint.onOpen, and an exception escaping it makes
         // Tomcat close the socket that just authenticated. The floor check-in still picks the commands up.
         try {
-            if (!commandDAO.listPending(deviceNumber).isEmpty()) {
+            if (commandDAO.hasPending(deviceNumber)) {
                 log.debug("Pending commands found after wake socket registration for {}", deviceNumber);
                 wake(deviceNumber, "commands");
             }

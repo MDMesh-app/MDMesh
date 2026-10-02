@@ -61,9 +61,16 @@ public class AgentWakeHub {
 
         // A wake may have been queued while the device was temporarily offline.
         // On reconnect, immediately wake the agent when commands are still pending.
-        if (!commandDAO.listPending(deviceNumber).isEmpty()) {
-            log.debug("Pending commands found after wake socket registration for {}", deviceNumber);
-            wake(deviceNumber, "commands");
+        // Best-effort: this runs inside AgentWakeEndpoint.onOpen, and an exception escaping it makes
+        // Tomcat close the socket that just authenticated. The floor check-in still picks the commands up.
+        try {
+            if (!commandDAO.listPending(deviceNumber).isEmpty()) {
+                log.debug("Pending commands found after wake socket registration for {}", deviceNumber);
+                wake(deviceNumber, "commands");
+            }
+        } catch (Exception e) {
+            log.warn("Pending-commands check on wake socket registration failed for {}: {}",
+                    deviceNumber, e.getMessage());
         }
     }
 

@@ -21,6 +21,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * connection reveals nothing; the device still authenticates its actual sync with its bearer secret.
  * Sessions are authenticated at connect via that same per-device secret (see {@link #validate}).</p>
  *
+ * <p>A wake sent while the device has no socket is dropped, so {@link #register} replays it: a socket that registers
+ * while the device has pending commands gets one {@code commands} wake at once, instead of the device waiting for its
+ * floor check-in.</p>
+ *
  * <p>Reached from the container-managed {@code AgentWakeEndpoint} via {@link #INSTANCE} (JSR-356
  * endpoints aren't Guice-instantiated); the hub is an eager singleton so {@code INSTANCE} is set at
  * boot, before any device can connect.</p>
@@ -61,6 +65,8 @@ public class AgentWakeHub {
 
         // A wake may have been queued while the device was temporarily offline.
         // On reconnect, immediately wake the agent when commands are still pending.
+        // Not capability-gated: a pending command the device can't run (check-in withholds it) wakes the device on
+        // every reconnect until the check-in's lazy expiry drops it (60 min). Bounded and accepted.
         // Best-effort: this runs inside AgentWakeEndpoint.onOpen, and an exception escaping it makes
         // Tomcat close the socket that just authenticated. The floor check-in still picks the commands up.
         try {
@@ -83,7 +89,10 @@ public class AgentWakeHub {
         return s != null && s.isOpen();
     }
 
-    /** Send a wake-only signal to the device if connected. No-op (floor reconciles) when offline. */
+    /**
+     * Send a wake-only signal to the device if connected. No-op when offline: the {@link #register} replay (or, failing
+     * that, the floor check-in) picks the commands up once the device is back.
+     */
     public void wake(String deviceNumber, String wakeKind) {
         Session s = sessions.get(deviceNumber);
         if (s == null || !s.isOpen()) {

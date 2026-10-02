@@ -51,7 +51,8 @@ are: `mainAppId`, `kioskMode`, `kioskExit`, `kioskHome`, `kioskRecents`, `kioskN
 `backgroundColor`, `textColor`, `iconSize`, `wifi`, `bluetooth`, `usbStorage`, `disableScreenshots`,
 `disableFactoryReset` and `requestUpdates` (location capture mode); `name`/`description` are metadata only. See
 `proto/payloads/config-apply.schema.json` for the wire shape and `proto/payloads/config-apply-result.schema.json`
-for the per-key result. `config.apply` is protocol 1.2 — an additive change; 1.0 and 1.1 agents keep working unchanged.
+for the per-key result. `config.apply` is protocol 1.1 — an additive change; 1.0 agents keep working unchanged.
+Protocol 1.2 adds the `factoryReset` policy key; agents that do not advertise it report it `unsupported`.
 
 ## Status UI — BUILD-NEW (Views, minSdk 24 friendly)
 Replace the `TextView` stub `MainActivity` with a real MDMesh status screen: managed state, device id,

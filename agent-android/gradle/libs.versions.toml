@@ -3,25 +3,25 @@
 agp = "8.6.0"
 kotlin = "2.0.20"
 ksp = "2.0.20-1.0.25"
-desugarJdkLibs = "2.1.2"
+desugarJdkLibs = "2.1.5"
 # Static analysis (root-level `detekt` task; baseline in config/detekt/)
 detekt = "1.23.8"
 
 # AndroidX core
 coreKtx = "1.13.1"
-appcompat = "1.7.0"
+appcompat = "1.8.0"
 lifecycle = "2.8.4"
 activity = "1.9.1"
 
 # Jetpack libraries
-room = "2.6.1"
+room = "2.8.5"
 datastore = "1.1.1"
-work = "2.9.1"
+work = "2.12.0"
 hilt = "2.52"
 hiltWork = "1.2.0"
 
 # Networking + serialization
-retrofit = "2.11.0"
+retrofit = "3.0.0"
 retrofitSerialization = "1.0.0"
 okhttp = "4.12.0"
 kotlinxSerialization = "1.7.1"
@@ -29,7 +29,7 @@ kotlinxCoroutines = "1.8.1"
 
 # Testing
 junit = "4.13.2"
-androidxJunit = "1.2.1"
+androidxJunit = "1.3.0"
 coroutinesTest = "1.8.1"
 
 [libraries]

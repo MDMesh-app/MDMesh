@@ -160,8 +160,10 @@ class DevicePolicyEffectTest {
 
     /** Snapshot of everything these tests touch, keyed so [restoreDeviceState] can invert it back. */
     private fun captureDeviceState(): Map<String, Boolean> = buildMap {
-        val restrictions = readRestrictions()
-        put(restrictionKey(UserRestrictions.DISALLOW_FACTORY_RESET), restrictionActive(UserRestrictions.DISALLOW_FACTORY_RESET))
+        put(
+            restrictionKey(UserRestrictions.DISALLOW_FACTORY_RESET),
+            restrictionActive(UserRestrictions.DISALLOW_FACTORY_RESET),
+        )
         put("cameraDisabled", dpm.getCameraDisabled(handle.admin))
         put("screenCaptureDisabled", dpm.getScreenCaptureDisabled(handle.admin))
     }

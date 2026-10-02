@@ -77,9 +77,9 @@ class ServerInjectedPolicyTest {
     }
 
     private object NoHome : KioskHomeSwitch {
-        override fun setClaimEnabled(enabled: Boolean) {}
-        override fun showLauncher() {}
-        override fun showOemHome() {}
+        override fun setClaimEnabled(enabled: Boolean) = Unit
+        override fun showLauncher() = Unit
+        override fun showOemHome() = Unit
     }
 
     /**

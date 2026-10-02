@@ -2850,7 +2850,7 @@
         </rollback>
     </changeSet>
 
-    <changeSet id="26.09.30-configurations-disableFactoryReset" author="lunacy" context="common">
+    <changeSet id="26.09.30-configurations-disableFactoryReset" author="Keidevk" context="common">
         <comment>Column,new: configurations#disableFactoryReset — "block factory reset", sent to the agent
             inverted as policies.factoryReset (true = allowed), like disableScreenshots -> screenshots.
             Nullable with no DEFAULT, like usbStorage and disableScreenshots: NULL means unmanaged, the key

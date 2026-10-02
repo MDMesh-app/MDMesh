@@ -45,11 +45,12 @@ revision only when nothing failed, and re-applies the last-persisted document af
 so a reboot can't silently regress. The command is only sent to devices whose capability matrix advertises
 `configApply` — older agents are never sent it and show as "Agent too old" in the console instead of hanging.
 Kiosk follows the configuration: kiosk-on drives entry, kiosk-off exits kiosk only on devices that entered
-it via a configuration (an ad-hoc console "Enter kiosk" is left alone). The 19 enforced configuration fields
+it via a configuration (an ad-hoc console "Enter kiosk" is left alone). The enforced configuration fields
 are: `mainAppId`, `kioskMode`, `kioskExit`, `kioskHome`, `kioskRecents`, `kioskNotifications`,
 `kioskSystemInfo`, `kioskKeyguard`, `kioskLockButtons`, `password` (kiosk exit password, stored as entered),
 `backgroundColor`, `textColor`, `iconSize`, `wifi`, `bluetooth`, `usbStorage`, `disableScreenshots`,
-`disableFactoryReset` and `requestUpdates` (location capture mode); `name`/`description` are metadata only. See
+`disableFactoryReset`, `blockUserAppInstall`, `blockUserAppUninstall`, `blockedAppStores`
+and `requestUpdates` (location capture mode); `name`/`description` are metadata only. See
 `proto/payloads/config-apply.schema.json` for the wire shape and `proto/payloads/config-apply-result.schema.json`
 for the per-key result. `config.apply` is protocol 1.1 — an additive change; 1.0 agents keep working unchanged.
 Protocol 1.2 adds the `factoryReset` policy key; agents that do not advertise it report it `unsupported`.
@@ -72,3 +73,8 @@ lean on DO + lock-task auto-launch + WorkManager.
   `kiosk.enter`/`kiosk.exit`/`device.reboot`/`device.lock`); `policy.apply` expanded; telemetry in check-in.
 - `:app` — status UI, manifest (install receiver, FGS types, `lockTaskMode`, queries), DI multibindings,
   baseline policy applied on enrollment.
+
+Protocol 1.3 adds `userAppInstall` / `userAppUninstall` policy capabilities and
+optional `blockedAppStores`. Android8+ Device Owner agents coordinate these
+policies with managed installs/removals and a durable restoration journal.
+See [User app restrictions](APP_RESTRICTIONS.md) for scope and acceptance checks.

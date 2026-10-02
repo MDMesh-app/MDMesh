@@ -1,5 +1,7 @@
 package com.mdmesh.policy
 
+import android.os.Build
+import com.mdmesh.proto.UserAppPolicy
 import com.mdmesh.policy.bluetooth.BluetoothPolicy
 import com.mdmesh.policy.bluetooth.BluetoothPolicyFactory
 import com.mdmesh.policy.camera.CameraPolicy
@@ -51,11 +53,16 @@ class CapabilityRegistry(
     }
 
     /**
-     * The set of policy keys with a working strategy on this device — derived from the
-     * registered strategies, so it can never drift from what can actually be applied.
+     * Toggle strategy keys plus the user-app policies coordinated asynchronously by :core AppRestrictions.
+     * The latter require Android 8+ Device Owner and are routed by config.apply / policy.apply handlers.
      * Each entry corresponds to a row in `proto/registry.md` § policy.
      */
-    fun supportedPolicyKeys(): List<String> = togglePolicies().keys.toList()
+    fun supportedPolicyKeys(): List<String> = togglePolicies().keys.toList() +
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            handle.dpm.isDeviceOwnerApp(handle.admin.packageName)
+        ) {
+            UserAppPolicy.KEYS.toList()
+        } else emptyList()
 
     /** Convenience: resolve the live [DeviceControl] facade for this device. */
     fun deviceControl(): DeviceControl? {

@@ -97,7 +97,7 @@ jobs:
           working-directory: web
       - if: matrix.name == 'web' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).web)
         working-directory: web
-        run: npm run build
+        run: npm run build && npm test
 
       # --- agent (from agent.yml) ---
       - if: matrix.name == 'agent' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).agent)

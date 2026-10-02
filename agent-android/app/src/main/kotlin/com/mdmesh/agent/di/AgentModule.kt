@@ -28,6 +28,9 @@ import com.mdmesh.core.command.handlers.DeviceLocationModeHandler
 import com.mdmesh.core.command.handlers.DevicePowerModeHandler
 import com.mdmesh.core.command.handlers.DeviceRingStopHandler
 import com.mdmesh.core.command.handlers.DeviceWipeHandler
+import com.mdmesh.core.config.AndroidAppRestrictionBackend
+import com.mdmesh.core.config.AppRestrictions
+import com.mdmesh.core.config.SharedPrefsAppRestrictionStore
 import com.mdmesh.core.config.ConfigApplier
 import com.mdmesh.core.location.LocationModeStore
 import com.mdmesh.core.power.PowerModeStore
@@ -189,7 +192,8 @@ object AgentModule {
     @IntoSet
     fun providePolicyApplyHandler(
         toggles: Map<String, @JvmSuppressWildcards TogglePolicy>,
-    ): CommandHandler = PolicyApplyHandler(toggles)
+        appRestrictions: AppRestrictions,
+    ): CommandHandler = PolicyApplyHandler(toggles, appRestrictions)
 
     @Provides
     @Singleton
@@ -319,6 +323,11 @@ object AgentModule {
     fun provideLocationModeHandler(store: LocationModeStore): CommandHandler =
         DeviceLocationModeHandler(store)
 
+    @Provides
+    @Singleton
+    fun provideAppRestrictions(@ApplicationContext context: Context, handle: DpmHandle): AppRestrictions =
+        AppRestrictions(AndroidAppRestrictionBackend(context, handle), SharedPrefsAppRestrictionStore(context))
+
     // --- Desired-state configuration (config.apply) ---
 
     @Provides
@@ -333,7 +342,8 @@ object AgentModule {
         kiosk: KioskApplier,
         location: LocationModeStore,
         store: ConfigStateStore,
-    ): ConfigApplier = ConfigApplier(toggles, kiosk, location::set, store)
+        appRestrictions: AppRestrictions,
+    ): ConfigApplier = ConfigApplier(toggles, kiosk, location::set, store, appRestrictions)
 
     @Provides
     @IntoSet

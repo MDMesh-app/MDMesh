@@ -8,8 +8,10 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.os.Build
+import com.mdmesh.core.config.AppRestrictions
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.mdmesh.core.di.DownloadHttpClient
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -92,6 +94,7 @@ class InstallManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val resultBus: InstallResultBus,
     @DownloadHttpClient private val httpClient: OkHttpClient,
+    private val appRestrictions: AppRestrictions,
 ) {
 
     private val packageInstaller: PackageInstaller
@@ -131,7 +134,11 @@ class InstallManager @Inject constructor(
             }
 
             // 3. Create + write EVERY part into ONE session + commit, awaiting the broadcast result.
-            val outcome = runCatching { commitInstall(req.packageName, fetched.map { it.file }) }
+            val outcome = runCatching {
+                appRestrictions.managedInstall(req.packageName) {
+                    withTimeout(INSTALL_TIMEOUT_MS) { commitInstall(req.packageName, fetched.map { it.file }) }
+                }
+            }
                 .getOrElse { return InstallOutcome.Failure(null, "install session error: ${it.message}") }
 
             // 4. Optionally launch the app on success.
@@ -157,8 +164,12 @@ class InstallManager @Inject constructor(
         // Reuse a stable session id derived from the package so the PendingIntent is unique.
         val sessionId = -(packageName.hashCode() and 0x7fff_ffff) - 1
         return try {
-            packageInstaller.uninstall(packageName, resultSender(sessionId).intentSender)
-            mapResult(resultBus.await(sessionId))
+            appRestrictions.managedRemoval(packageName) {
+                withTimeout(INSTALL_TIMEOUT_MS) {
+                    packageInstaller.uninstall(packageName, resultSender(sessionId).intentSender)
+                    mapResult(resultBus.await(sessionId))
+                }
+            }
         } catch (e: Exception) {
             InstallOutcome.Failure(null, "uninstall error: ${e.message}")
         }
@@ -284,6 +295,8 @@ class InstallManager @Inject constructor(
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
+
+    private companion object { const val INSTALL_TIMEOUT_MS = 5 * 60 * 1000L }
 
     private fun statusName(status: Int): String = when (status) {
         PackageInstaller.STATUS_FAILURE -> "FAILURE_UNKNOWN"

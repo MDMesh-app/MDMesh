@@ -30,3 +30,4 @@ and a fresh agent on Android 16 talk to the same server without special-casing.
 |---------|---------|-------|
 | 1.1 | v0.3.0 | config.apply command + device.configApply capability (additive) |
 | 1.2 | next | config.apply `factoryReset` policy key + `factoryReset` policy capability (additive) |
+| 1.3 | next | userAppInstall / userAppUninstall policy capabilities and optional blockedAppStores (additive) |

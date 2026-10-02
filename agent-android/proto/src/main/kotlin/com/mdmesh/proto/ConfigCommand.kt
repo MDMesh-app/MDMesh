@@ -19,6 +19,7 @@ data class ConfigApplyPayload(
     val policies: Map<String, Boolean> = emptyMap(),
     val kiosk: KioskApplyPayload? = null,
     val location: ConfigLocation? = null,
+    val blockedAppStores: List<String>? = null,
 )
 
 @Serializable

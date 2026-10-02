@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink } from 'react-router';
 import { useAuth } from '../auth/AuthContext';
 import { useTheme } from './theme';
 import { UpdateBanner } from '../components/UpdateBanner';

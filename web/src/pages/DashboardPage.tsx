@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { AppShell } from '../ui/AppShell';
 import { useDevices } from '../data/useDevices';
 import { statusMeta, isOnline as isOnlineByRecency } from '../ui/status';

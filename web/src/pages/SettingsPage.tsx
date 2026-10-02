@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router';
 import { AppShell } from '../ui/AppShell';
 import { useAuth } from '../auth/AuthContext';
 import { useTheme } from '../ui/theme';

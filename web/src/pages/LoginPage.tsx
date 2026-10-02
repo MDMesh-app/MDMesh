@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router';
 import { useAuth } from '../auth/AuthContext';
 import { ApiError } from '../api/client';
 import { Wordmark } from '../ui/Wordmark';
@@ -9,7 +9,8 @@ export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const state = location.state as { from?: string; passwordChanged?: boolean } | null;
-  const from = state?.from ?? '/dashboard';
+  // Only a same-origin path: React Router 7 throws on '//host', '/\host' and absolute URLs.
+  const from = typeof state?.from === 'string' && /^\/(?![/\\])/.test(state.from) ? state.from : '/dashboard';
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -20,19 +21,22 @@ export function LoginPage() {
     e.preventDefault();
     setError(null);
     setBusy(true);
+    let u;
     try {
-      const u = await signIn(username, password);
-      // First-login: the seeded admin must set its own password before reaching the console.
-      navigate(u.passwordReset ? '/set-password' : from, { replace: true });
+      u = await signIn(username, password);
     } catch (err) {
       if (err instanceof ApiError && err.httpStatus === 0) {
         setError('Cannot reach the server. Check that it is running.');
       } else {
         setError('Wrong login or password');
       }
+      return;
     } finally {
       setBusy(false);
     }
+    // Outside the try, so a navigation error is never reported as a wrong password.
+    // First-login: the seeded admin must set its own password before reaching the console.
+    navigate(u.passwordReset ? '/set-password' : from, { replace: true });
   }
 
   return (

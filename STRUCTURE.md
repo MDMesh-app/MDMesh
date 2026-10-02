@@ -23,7 +23,7 @@ cooperating planes plus shared protocol and docs.
 | Plane | Path | Tech | Status |
 |-------|------|------|--------|
 | 1. Control plane | `server/` + `common/ jwt/ notification/ plugins/` | JDK 17, Jersey/JAX-RS, Guice, MyBatis, PostgreSQL, Liquibase | Forked from Headwind + extended; REST-only (legacy AngularJS UI removed) |
-| 2. Admin frontend | `web/` | React 18, Vite, TypeScript | New, from scratch — the console |
+| 2. Admin frontend | `web/` | React 19, Vite, TypeScript | New, from scratch — the console |
 | 3. Device agent | `agent-android/` | Kotlin, coroutines, Hilt, Room, WorkManager, kotlinx.serialization | New, from scratch |
 | 4. Remote control | `agent-android/remote/` + server signaling | MediaProjection + AccessibilityService, WebRTC, coturn | Stubbed |
 

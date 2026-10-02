@@ -3,8 +3,6 @@
 build/
 **/build/
 !gradle/wrapper/gradle-wrapper.properties
-# Per-machine daemon JVM selection, written by `gradle updateDaemonJvm`
-gradle/gradle-daemon-jvm.properties
 
 # Android Studio / IntelliJ
 .idea/

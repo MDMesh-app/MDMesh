@@ -109,9 +109,6 @@ public class SyncResponse implements Serializable, SyncResponseInt {
     @ApiModelProperty("Flag indicating if screenshots are disabled on the device")
     private Boolean disableScreenshots;
 
-    @ApiModelProperty("Flag indicating if factory reset is disabled on the device")
-    private Boolean factoryReset;
-
     @ApiModelProperty("Flag indicating if autostarted apps should be kept in the foreground")
     private Boolean autostartForeground;
 
@@ -905,13 +902,5 @@ public class SyncResponse implements Serializable, SyncResponseInt {
 
     public void setDescription(String description) {
         this.description = description;
-    }
-
-    public Boolean getFactoryReset() {
-        return factoryReset;
-    }
-
-    public void setFactoryReset(Boolean factoryReset) {
-        this.factoryReset = factoryReset;
     }
 }

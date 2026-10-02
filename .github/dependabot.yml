@@ -35,10 +35,10 @@ updates:
       # Liquibase 5.x is FSL-1.1 (not Apache-2.0) - blocked by ADR-0008's license obligations.
       - dependency-name: "org.liquibase:*"
         versions: ["[5,)"]
-      # qrgen 3.x is JitPack-only and its batik/xml-apis-ext transitive resolves to an empty jar via
-      # JitPack, breaking the server compile. Revisit together with dropping the JitPack repository.
+      # qrgen 2.6+ and 3.x pull a batik/xml-apis-ext transitive that JitPack serves as an empty jar,
+      # breaking the server compile (#37's red run). Revisit together with dropping the JitPack repository.
       - dependency-name: "com.github.kenglxn.qrgen:*"
-        versions: ["[3,)"]
+        versions: ["[2.6,)"]
   - package-ecosystem: npm
     directory: "/web"
     schedule: { interval: weekly, day: monday }

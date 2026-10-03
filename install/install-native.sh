@@ -141,11 +141,7 @@ if [ -z "$BASE_URL" ]; then
   read -rp "  Public base URL (e.g. https://mdm.example.com): " BASE_URL
 fi
 mdm_check_base_url BASE_URL || exit 1   # install/lib/url.sh: http(s)://host[:port]; lower-cases the scheme
-# HTTP port Tomcat listens on. Override non-interactively with HTTP_PORT=9090; default 8080.
-HTTP_PORT="${HTTP_PORT:-}"
-if [ -z "$HTTP_PORT" ]; then read -rp "  HTTP port [8080]: " _p; HTTP_PORT="${_p:-8080}"; fi
-case "$HTTP_PORT" in ''|*[!0-9]*) echo "  Port must be a number."; exit 1 ;; esac
-{ [ "$HTTP_PORT" -ge 1 ] && [ "$HTTP_PORT" -le 65535 ]; } || { echo "  Port must be 1-65535."; exit 1; }
+# The HTTP port (HTTP_PORT) is settled below, once the existing install's server.xml can be read the safe way.
 DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
 JWT_SECRET=$(openssl rand -hex 64)   # jwt.secretkey: hex only (see the reuse rule below)
 BASE_DIR=/opt/mdmesh
@@ -337,9 +333,62 @@ stop_tomcat() {
   for i in $(seq 1 15); do [ -z "$(port_holder)" ] && break; sleep 1; done
   rm -f "$CATALINA_PID"
 }
+# readable_after_heal ROOT REL: ROOT/REL is a regular file and no component of the path is a symbolic link, so when
+# $SVC_USER cannot read it the cause is ownership or modes that heal_trees (below) repairs: a run interrupted between
+# root's first write into these trees and the chown -R that hands them over leaves root-owned, mode 600 files there
+# (server.xml, ROOT.xml). Root only stats the path here; it never opens it. A link anywhere on the path, or anything but a
+# regular file, is not "readable after the heal", and the caller stops as before.
+readable_after_heal() {
+  local p="$1" part
+  local -a parts
+  id -u "$SVC_USER" >/dev/null 2>&1 || return 1
+  [ -L "$p" ] && return 1
+  IFS=/ read -r -a parts <<< "$2"
+  for part in "${parts[@]}"; do p="$p/$part"; [ -L "$p" ] && return 1; done
+  [ -f "$p" ]
+}
+# heal_trees: hands $CATALINA and $BASE_DIR to $SVC_USER, exactly as the chown -R at the end of the deploy step does, but
+# before root's first write there. It repairs what a run interrupted in between (kill -9, a dropped session, a full disk)
+# left root-owned: without it every later run stopped at reading server.xml or ROOT.xml as $SVC_USER and the server stayed
+# down. It runs under the same conditions as that chown: no $SVC_USER process is left (stop_tomcat, stop_supervisor,
+# kill_svc_user, then refuse_svc_user_jobs stopped), chown -R follows no links, and it relies on fs.protected_hardlinks=1
+# (the default) like that chown. It hands over nothing the end of this run would not. Before the account exists (a fresh
+# install, or an install from before v0.2.9 whose Tomcat ran as root) there is nothing to hand over.
+heal_trees() {
+  local d
+  id -u "$SVC_USER" >/dev/null 2>&1 || return 0
+  for d in "$CATALINA" "$BASE_DIR"; do
+    if [ -d "$d" ] && [ ! -L "$d" ]; then
+      chown -R "$SVC_USER:$SVC_USER" "$d" || _fail "Could not hand $d back to $SVC_USER"
+    fi
+  done
+}
+
+# HTTP port Tomcat listens on. HTTP_PORT=9090 sets it. Otherwise a re-run keeps the port the install already serves on (the
+# HTTP/1.1 connector in its server.xml, read as $SVC_USER), and a fresh install takes 8080: -y takes that default, an
+# interactive run asks with it as the default. If that server.xml exists but $SVC_USER cannot read it yet (root-owned by
+# an interrupted run; see readable_after_heal), the port is read once heal_trees has run, and the early port check below
+# is skipped: our own server is down in that state anyway, and the check before Tomcat starts still runs.
+connector_port() { sed -nE 's#.*<Connector port="([0-9]+)" protocol="HTTP/1\.1".*#\1#p' | head -n 1; }
+check_port() {
+  case "$HTTP_PORT" in ''|*[!0-9]*) echo "  Port must be a number."; exit 1 ;; esac
+  { [ "$HTTP_PORT" -ge 1 ] && [ "$HTTP_PORT" -le 65535 ]; } || { echo "  Port must be 1-65535."; exit 1; }
+}
+_cur_port=""; _port_deferred=0
+if [ -e "$CATALINA/conf/server.xml" ] || [ -L "$CATALINA/conf/server.xml" ]; then
+  if _sx=$(svc_cat "$CATALINA/conf/server.xml" 2>>"$LOGFILE"); then _cur_port=$(printf '%s\n' "$_sx" | connector_port)
+  elif readable_after_heal "$CATALINA" conf/server.xml; then _port_deferred=1; fi
+fi
+_port_hint=${_cur_port:-8080}; [ "$_port_deferred" = 0 ] || _port_hint="keep the current port"
+HTTP_PORT="${HTTP_PORT:-}"
+if [ -z "$HTTP_PORT" ] && [ "$ASSUME_YES" != 1 ]; then read -rp "  HTTP port [${_port_hint}]: " HTTP_PORT; fi
+if [ -n "$HTTP_PORT" ]; then _port_deferred=0
+elif [ "$_port_deferred" = 0 ]; then HTTP_PORT=${_cur_port:-8080}; fi
+[ "$_port_deferred" = 1 ] || check_port
+
 # Fail fast on a port conflict, before packages are installed, the build runs or the running server is
 # stopped — losing the bind later would leave our Tomcat dead while the other server answers with 404s.
-[ "$(port_owner)" = foreign ] && refuse_foreign_port
+if [ "$_port_deferred" = 0 ] && [ "$(port_owner)" = foreign ]; then refuse_foreign_port; fi
 # Likewise refuse on scheduled jobs of the service account now, while the running install is untouched (it is checked
 # again after the stop below, which closes the gap; see refuse_svc_user_jobs).
 refuse_svc_user_jobs
@@ -348,14 +397,24 @@ refuse_svc_user_jobs
 # it would silently break every already-enrolled device; reuse the value from the existing ROOT.xml.
 # (DB_PASSWORD is different: it is re-applied to the role via ALTER USER below, so a fresh one is fine.)
 _old_root="$CATALINA/conf/Catalina/localhost/ROOT.xml"
-# It is read as $SVC_USER (svc_cat), whose tree $CATALINA is. If that account cannot read it (a link to a root-only file,
-# or a root-owned leftover), stop: carrying on would silently rotate the secrets enrolled devices depend on.
-_old_xml=
-if [ -f "$_old_root" ]; then
-  _old_xml=$(svc_cat "$_old_root" 2>>"$LOGFILE") || _fail "Could not read $_old_root as $SVC_USER. It holds hash.secret, which enrolled devices depend on: if it is a symbolic link, remove it; if root owns it, chown it to $SVC_USER. Then re-run."
+# It is read as $SVC_USER (svc_cat), whose tree $CATALINA is. If that account cannot read it because it is root-owned (a
+# run interrupted before it handed the tree over; see readable_after_heal), it is read again after heal_trees, before
+# ROOT.xml is rewritten. Otherwise (a link, anything but a regular file) stop: carrying on would silently rotate the
+# secrets enrolled devices depend on.
+_old_xml=; _old_root_deferred=0
+_old_root_unreadable="Could not read $_old_root as $SVC_USER. It holds hash.secret, which enrolled devices depend on: if it is a symbolic link, remove it; if root owns it, chown it to $SVC_USER. Then re-run."
+if [ -f "$_old_root" ] && ! _old_xml=$(svc_cat "$_old_root" 2>>"$LOGFILE"); then
+  if readable_after_heal "$CATALINA" conf/Catalina/localhost/ROOT.xml; then
+    _old_root_deferred=1
+    info "The existing ROOT.xml is root-owned (an earlier run was interrupted): it is read once this run has handed the tree back"
+  else
+    _fail "$_old_root_unreadable"
+  fi
 fi
 # Value of <Parameter name="$1" value="…"/> in the existing ROOT.xml; empty when there is none.
 old_root_param() { printf '%s\n' "$_old_xml" | sed -n "s/.*name=\"$1\"[[:space:]]*value=\"\([^\"]*\)\".*/\1/p" | head -n 1; }
+# adopt_old_secrets: keep hash.secret and jwt.secretkey from the existing ROOT.xml (_old_xml).
+adopt_old_secrets() {
 _old_secret=$(old_root_param hash.secret)
 if [ -n "$_old_secret" ]; then HASH_SECRET="$_old_secret"; info "Reusing hash.secret from the existing install (enrolled devices keep working)"; fi
 # jwt.secretkey signs REST API clients' JWTs (/rest/public/jwt/login), so it is kept the same way: those tokens then
@@ -369,6 +428,8 @@ jwt_key_ok() { case "$1" in ''|*[!0-9a-fA-F]*) return 1 ;; esac; [ "${#1}" -ge 1
 _old_jwt=$(old_root_param jwt.secretkey | tr -d '[:space:]')
 if jwt_key_ok "$_old_jwt"; then JWT_SECRET="$_old_jwt"; info "Reusing jwt.secretkey from the existing install (API clients stay signed in)"
 elif [ -n "$_old_jwt" ]; then info "Replacing the existing jwt.secretkey: it is not hex, a multiple of 4 and at least 128 characters (the JWT library would drop characters)"; fi
+}
+[ "$_old_root_deferred" = 1 ] || adopt_old_secrets
 
 step "Installing dependencies"
 # HERMETIC BUILD: pin JDK 17 and never fall back to the host default JDK. JDK 17 is the one supported server
@@ -614,6 +675,19 @@ stop_tomcat
 stop_supervisor
 kill_svc_user
 refuse_svc_user_jobs stopped
+heal_trees
+# What could not be read before the heal (root-owned leftovers of an interrupted run) is read now, the same way.
+if [ "$_old_root_deferred" = 1 ]; then
+  _old_xml=$(svc_cat "$_old_root" 2>>"$LOGFILE") || _fail "$_old_root_unreadable"
+  adopt_old_secrets
+fi
+if [ "$_port_deferred" = 1 ]; then
+  HTTP_PORT=$(svc_cat "$CATALINA/conf/server.xml" 2>>"$LOGFILE" | connector_port) || true
+  HTTP_PORT=${HTTP_PORT:-8080}
+  check_port
+  info "Keeping HTTP port ${HTTP_PORT} (read from server.xml after handing the tree back)"
+  if [ "$(port_owner)" = foreign ]; then refuse_foreign_port; fi
+fi
 # Install Tomcat if it's missing OR a previous run left it partial/corrupt. Check for the actual launcher
 # script, not just the directory, so a broken /opt/mdmesh-tc self-heals instead of failing at startup.
 # archive.apache.org keeps every release permanently, so the pinned version URL never rots.

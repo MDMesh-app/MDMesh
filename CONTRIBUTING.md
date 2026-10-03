@@ -91,7 +91,8 @@ production installer (it writes a `.env` for a real host); see **[DEPLOY.md](DEP
 5. **Open a PR** against `main` using the [PR template](.github/pull_request_template.md).
 
 ### CI
-Every PR and every push to `main` runs two tiers; each skips the parts your change can't affect.
+Every PR and every push to `main` runs two tiers (T0, T1); each skips the parts your change can't affect. T2 runs
+only when the installers change, and nightly.
 - **T0** (`.github/workflows/t0-fast.yml`): builds each plane you touched and runs its DB-free tests, plus the
   supervisor image smoke test and the edge (Caddy + compose) check. The agent step also runs detekt: new Kotlin
   must be clean; pre-existing findings are listed in `agent-android/config/detekt/baseline.xml`.
@@ -99,6 +100,10 @@ Every PR and every push to `main` runs two tiers; each skips the parts your chan
   runs the loop from [docs/DEV.md](docs/DEV.md) (the dev stack, `scripts/dev-seed.sh`, `scripts/agent-v1-e2e.sh`)
   on its own compose project, image tag and ephemeral ports. It runs when a change touches the server, `proto/`,
   `install/`, the server image, the dev stack or the suite. A red T1 on `main` opens a tracking issue.
+- **T2** (`.github/workflows/t2-native.yml`): the native installer on Debian 12, Debian 13 and Ubuntu 24.04: a fresh
+  install, an upgrade from the latest release, and that upgrade killed at each kill point and re-run, in throwaway
+  systemd containers (`tests/native/run.sh`; see "T2 native rig" in [docs/DEV.md](docs/DEV.md)). It runs on pull
+  requests that touch `install/`, `setup.sh`, `quickstart.sh` or the rig, nightly, and by hand.
 
 ### Commit messages
 Short, imperative, prefixed: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`. Explain the

@@ -29,7 +29,8 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideOkHttp(serverConfig: ServerConfigStore): OkHttpClient {
+    @ApiHttpClient
+    fun provideApiOkHttp(serverConfig: ServerConfigStore): OkHttpClient {
         val logging = HttpLoggingInterceptor().apply {
             level = if (BuildConfig.DEBUG) {
                 HttpLoggingInterceptor.Level.BODY
@@ -45,9 +46,20 @@ object NetworkModule {
             .build()
     }
 
+    // APK downloads only. Never add BaseUrlInterceptor here: it rewrites every request's host, so an
+    // APK hosted elsewhere (a vendor CDN, a presigned URL) would be fetched from our server instead.
+    // No logging interceptor either: at BODY level it would buffer whole APKs in memory.
     @Provides
     @Singleton
-    fun provideRetrofit(client: OkHttpClient): Retrofit = Retrofit.Builder()
+    @DownloadHttpClient
+    fun provideDownloadOkHttp(): OkHttpClient =
+        OkHttpClient.Builder().build()
+
+    @Provides
+    @Singleton
+    fun provideRetrofit(
+        @ApiHttpClient client: OkHttpClient
+    ): Retrofit = Retrofit.Builder()
         .baseUrl(BuildConfig.MDM_BASE_URL)
         .client(client)
         .addConverterFactory(ProtocolJson.json.asConverterFactory(jsonMediaType))

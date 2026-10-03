@@ -45,6 +45,10 @@ public interface AgentCommandMapper {
     @Select({"SELECT * FROM agentCommand WHERE deviceNumber = #{deviceNumber} AND status = 'pending' ORDER BY id"})
     List<AgentCommand> listPending(@Param("deviceNumber") String deviceNumber);
 
+    /** Whether {@link #listPending} would return any row, without reading the rows (one index probe). */
+    @Select({"SELECT EXISTS(SELECT 1 FROM agentCommand WHERE deviceNumber = #{deviceNumber} AND status = 'pending')"})
+    boolean hasPending(@Param("deviceNumber") String deviceNumber);
+
     @Select({"SELECT * FROM agentCommand WHERE deviceNumber = #{deviceNumber} AND id = #{id}"})
     AgentCommand findByDeviceAndId(@Param("deviceNumber") String deviceNumber, @Param("id") Integer id);
 

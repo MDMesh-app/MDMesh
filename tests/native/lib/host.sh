@@ -132,13 +132,15 @@ prepare_checkout() {   # prepare_checkout SHA
 }
 
 # run_install LABEL [KILL_POINT]: the documented install command in the guest; its output lands in $OUT/LABEL.out.
-# Returns the installer's exit code (0 after a kill: the kill point itself succeeded).
+# Returns the installer's exit code (0 after a kill: the kill point itself succeeded). With OMIT_PORT=1 the command
+# leaves HTTP_PORT out, as a re-run or upgrade may: the installer must keep the port the install is on.
 run_install() {
-  local label=$1 point=${2:-} rc=0 t0
+  local label=$1 point=${2:-} rc=0 t0 port=$T2_HTTP_PORT
+  [ "${OMIT_PORT:-0}" != 1 ] || port=""
   t0=$(date +%s)
-  log "install [$label]${point:+ (kill at $point)}: sudo BASE_URL=$T2_BASE_URL HTTP_PORT=$T2_HTTP_PORT ./setup.sh --native -y"
+  log "install [$label]${point:+ (kill at $point)}: sudo BASE_URL=$T2_BASE_URL ${port:+HTTP_PORT=$port }./setup.sh --native -y"
   # Bounded: a hung install must end in a failure with logs, not run into the CI job timeout.
-  timeout "${T2_STEP_TIMEOUT:-3600}" docker exec -e T2_BASE_URL="$T2_BASE_URL" -e T2_HTTP_PORT="$T2_HTTP_PORT" "$CTR" \
+  timeout "${T2_STEP_TIMEOUT:-3600}" docker exec -e T2_BASE_URL="$T2_BASE_URL" -e T2_HTTP_PORT="$port" "$CTR" \
     bash /t2/guest.sh install "/t2/out/$label.out" ${point:+"$point"} > "$OUT/$label.result" 2>&1 || rc=$?
   [ "$rc" -ne 124 ] || echo "T2 install timed out after ${T2_STEP_TIMEOUT:-3600}s" >> "$OUT/$label.result"
   docker cp "$CTR:/t2/out/$label.out" "$OUT/$label.out" > /dev/null 2>&1 || true
@@ -202,6 +204,7 @@ check_install() {
   wait_api 120 || true
   while IFS='=' read -r u res; do check "systemctl is-active $u" "$res" active; done < <(guest units)
   check "mdmesh-server unit installed" "$(guest units | grep -c '^mdmesh-server=')" 1
+  check "Tomcat on port $T2_HTTP_PORT (server.xml connector, listening)" "$(guest port)" "$T2_HTTP_PORT listening"
   check "Tomcat serves this checkout's build (server WAR + console)" "$(guest deployed)" match
   check "initialized.txt says OK" "$(guest initialized | head -n 1 | cut -c1-2)" OK
   check "GET /rest/public/name" "$(http_code /rest/public/name)" 200

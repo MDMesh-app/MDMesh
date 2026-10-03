@@ -5,9 +5,10 @@
 # Usage: tests/native/run.sh <distro> <scenario>
 #   distro:   debian-12 | debian-13 | ubuntu-24.04
 #   scenario: fresh    the code under test (T2_TO_REF) on a clean host
-#             upgrade  T2_FROM_REF (the last release) installed, then T2_TO_REF over it (`git pull` + the same command)
+#             upgrade  T2_FROM_REF (the last release) installed, then T2_TO_REF over it (`git pull` + the same command,
+#                      without HTTP_PORT: the upgrade must keep the port the install is on)
 #             killed   the same upgrade, SIGKILLed at each kill point (tests/native/lib/guest.sh), then re-run: it must
-#                      converge and pass every check
+#                      converge and pass every check (the re-run also leaves HTTP_PORT out)
 #
 # Environment (all optional):
 #   T2_FROM_REF   the release to upgrade from (default v0.3.1). Name it explicitly: this clone also carries upstream
@@ -115,7 +116,8 @@ case "$SCENARIO" in
     [ "$CHECK_FAILS" -eq 0 ] || die "the $T2_FROM_REF install failed its checks; not upgrading it"
     continuity_before
     guest checkout "$TO_SHA" | while IFS= read -r l; do log "$l"; done
-    rc=0; run_install upgrade || rc=$?
+    # Without HTTP_PORT: the install is on T2_HTTP_PORT (not 8080), and the upgrade must keep it (-y never prompts).
+    rc=0; OMIT_PORT=1 run_install upgrade || rc=$?
     check "the upgrade's installer exits 0" "$rc" 0
     continuity_after upgrade
     check_install upgrade "$TO_SHA"
@@ -153,11 +155,11 @@ case "$SCENARIO" in
       else
         guest state > "$OUT/kill-$point.state" 2>&1 || true
         note="killed at: $(sed -n 's/.*last installer line: *//p' "$OUT/kill-$point.result" | head -n 1)"
-        rc=0; run_install "rerun-$point" || rc=$?
+        rc=0; OMIT_PORT=1 run_install "rerun-$point" || rc=$?   # the re-run must also find the port itself
         if [ "$rc" -ne 0 ]; then
           note="$note; re-run FAILED (rc=$rc): $(grep -v '^[[:space:]]*$' "$OUT/rerun-$point.out" | grep -m1 '✗' | sed 's/^ *//')"
           collect "rerun-failed-$point"; COLLECTED=$CTR
-          rc=0; run_install "rerun2-$point" || rc=$?
+          rc=0; OMIT_PORT=1 run_install "rerun2-$point" || rc=$?
           note="$note; a second re-run $([ "$rc" -eq 0 ] && echo succeeded || echo "failed too (rc=$rc)")"
           verdict="NOT-CONVERGED"
           CHECK_FAILS=$((CHECK_FAILS + 1))

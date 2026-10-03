@@ -5,13 +5,15 @@
 #   clone <origin-url>             clone /t2/repo.bundle as t2user into ~t2user/MDMesh, origin set to <origin-url>
 #   checkout <sha>                 as t2user: the checkout's main branch moves to <sha> (what `git pull` leaves behind)
 #   install <out> [kill-point]     the documented command, as t2user: `sudo BASE_URL=… HTTP_PORT=… ./setup.sh --native -y`
-#                                  (T2_BASE_URL, T2_HTTP_PORT from the environment), output to <out>. With a kill point,
+#                                  (T2_BASE_URL, T2_HTTP_PORT from the environment; an empty T2_HTTP_PORT leaves
+#                                  HTTP_PORT out), output to <out>. With a kill point,
 #                                  SIGKILLs the installer's process group when the point is reached (see KILL POINTS).
 #   kill-points                    list the kill points, one per line
 #   admin-temp-password <out>      the temporary admin password a fresh install printed in <out>
 #   secrets                        a short fingerprint (sha256) of hash.secret / jwt.secretkey in ROOT.xml
 #   counts                         configurations / devices / users counts (psql as postgres)
 #   deployed                       "match" when Tomcat serves this checkout's build (server WAR + console)
+#   port                           server.xml's HTTP connector port, and whether it is listening ("9090 listening")
 #   initialized                    the server's initialized.txt
 #   units                          systemctl is-active of the MDMesh units that are installed
 #   state                          a diagnostic snapshot (units, ports, owners of the files a re-run must read)
@@ -84,7 +86,10 @@ installer_pgid() {
 
 cmd_install() {
   local out=$1 point=${2:-} spec="" marker cond delay late rc=0 pid pg i
-  : "${T2_BASE_URL:?}" "${T2_HTTP_PORT:?}"
+  : "${T2_BASE_URL:?}"
+  # T2_HTTP_PORT empty: the command without HTTP_PORT (a re-run must keep the port the install is on).
+  local port_arg=""
+  [ -z "${T2_HTTP_PORT:-}" ] || port_arg="HTTP_PORT='$T2_HTTP_PORT' "
   if [ -n "$point" ]; then
     for spec in "${KILL_POINTS[@]}"; do [ "${spec%%|*}" = "$point" ] && break; spec=""; done
     [ -n "$spec" ] || { echo "unknown kill point: $point (known: $(cmd_kill_points | tr '\n' ' '))" >&2; return 2; }
@@ -93,7 +98,7 @@ cmd_install() {
   : > "$out"
   # The user's shell: a login shell of the sudo user in the checkout, running the documented command. setsid gives the
   # run a session (and process group) of its own, as a terminal would.
-  setsid runuser -l t2user -c "cd MDMesh && exec sudo BASE_URL='$T2_BASE_URL' HTTP_PORT='$T2_HTTP_PORT' ./setup.sh --native -y" \
+  setsid runuser -l t2user -c "cd MDMesh && exec sudo BASE_URL='$T2_BASE_URL' ${port_arg}./setup.sh --native -y" \
     < /dev/null > "$out" 2>&1 &
   pid=$!
   if [ -z "$point" ]; then
@@ -183,6 +188,13 @@ cmd_deployed() {
   if [ -z "$bad" ]; then echo match; else echo "differs:$(printf '%s' "$bad" | cut -c1-300)"; fi
 }
 
+# The HTTP/1.1 connector port in server.xml, and whether something listens there: "<port> listening" when it does.
+cmd_port() {
+  local port
+  port=$(sed -nE 's#.*<Connector port="([0-9]+)" protocol="HTTP/1\.1".*#\1#p' "$CATALINA/conf/server.xml" 2>/dev/null | head -n 1)
+  if [ -n "$port" ] && ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE ":$port\$"; then echo "$port listening"; else echo "${port:-none} not-listening"; fi
+}
+
 cmd_initialized() { cat "$BASE_DIR/initialized.txt" 2>/dev/null || echo "(no $BASE_DIR/initialized.txt)"; }
 
 cmd_units() {
@@ -220,7 +232,7 @@ cmd_collect() {
 
 cmd=${1:?usage: guest.sh <subcommand> ...}; shift
 case "$cmd" in
-  clone|checkout|install|admin-temp-password|secrets|counts|deployed|initialized|units|state|collect) "cmd_${cmd//-/_}" "$@" ;;
+  clone|checkout|install|admin-temp-password|secrets|counts|deployed|port|initialized|units|state|collect) "cmd_${cmd//-/_}" "$@" ;;
   kill-points) cmd_kill_points ;;
   *) echo "unknown subcommand: $cmd" >&2; exit 2 ;;
 esac

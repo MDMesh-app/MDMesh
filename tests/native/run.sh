@@ -132,7 +132,7 @@ case "$SCENARIO" in
     continuity_before
     docker exec "$CTR" systemctl stop mdmesh-supervisor mdmesh-server postgresql
     IMAGES+=("$SNAPSHOT")
-    docker commit -q "$CTR" "$SNAPSHOT" > /dev/null
+    docker commit "$CTR" "$SNAPSHOT" > /dev/null
     remove_container "$CTR"
     log "snapshot $SNAPSHOT taken ($T2_FROM_REF installed, device enrolled)"
 
@@ -151,7 +151,7 @@ case "$SCENARIO" in
         verdict="RIG-ERROR"; note="kill step rc=$rc"
       else
         guest state > "$OUT/kill-$point.state" 2>&1 || true
-        note="killed after: $(grep -v '^[[:space:]]*$' "$OUT/kill-$point.out" | tail -n 1 | sed 's/^ *//')"
+        note="killed at: $(sed -n 's/.*last installer line: *//p' "$OUT/kill-$point.result" | head -n 1)"
         rc=0; run_install "rerun-$point" || rc=$?
         if [ "$rc" -ne 0 ]; then
           note="$note; re-run FAILED (rc=$rc): $(grep -v '^[[:space:]]*$' "$OUT/rerun-$point.out" | grep -m1 '✗' | sed 's/^ *//')"

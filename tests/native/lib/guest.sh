@@ -43,22 +43,33 @@ cmd_checkout() {
 # a hard reboot of the shell, kill -9), and unlike a closed terminal nothing gets a chance to clean up. The systemd units
 # the installer started are not in that group and keep their state, as they would on a real host.
 #
-# A marker that never appears fails the run loudly: the installer's wording changed, update the table.
-# Format: name|marker|condition (a function below, polled; empty = none)|delay seconds after both
+# A marker that never appears, or a kill that lands too late (the point's "too late" line is already in the output when
+# the kill is due), fails the run loudly as NOT-REACHED: the installer's wording or timing changed, update the table.
+# Format: name|marker|condition (a function below, polled; empty = none)|delay seconds after both|too-late line
 KILL_POINTS=(
-  "db-role|PostgreSQL role + database 'mdmesh' ready||0"          # role password rotated; old server still running on the old one
-  "mvn|· Maven package||20"                                        # mid Maven build (old server still running)
-  "npm|· npm ci + vite build||8"                                   # mid console build
-  "server-stopped|▸ Tomcat 9 + app deploy|server_stopped|0"   # server just stopped, nothing deployed yet
-  "mid-deploy|· HTTP port set to||0"                               # server.xml rewritten, webapps about to be replaced
-  "deployed|server + console deployed||0"                          # new code + ROOT.xml in place, no pre-upgrade dump yet
-  "backup|▸ Backing up the database before upgrading||0"           # during/just before the pre-upgrade pg_dump
-  "supervisor|▸ Updater supervisor||0"                             # supervisor files/unit being rewritten
-  "migrating|▸ Starting the server|server_booting|3"   # new server booting (Liquibase)
-  "post-seed|▸ Preserving existing data||0"                        # server up, post-seed repairs not yet applied
+  # role password rotated (ALTER ROLE) while the old server still runs on the old one; the kill lands as Maven starts
+  "db-role|PostgreSQL role + database 'mdmesh' ready||0|✓ Maven package"
+  # mid Maven build, old server still running
+  "mvn|· Maven package|maven_running|2|✓ Maven package"
+  # mid console build (npm ci / tsc / vite)
+  "npm|· npm ci + vite build|npm_running|1|✓ npm ci + vite build"
+  # while systemd stops the old server (the installer waits in `systemctl stop`)
+  "stopping-server|▸ Tomcat 9 + app deploy|server_deactivating|0|· HTTP port set to"
+  # server.xml rewritten, webapps about to be replaced
+  "mid-deploy|· HTTP port set to||0|server + console deployed"
+  # new code + ROOT.xml in place, no pre-upgrade dump yet
+  "deployed|server + console deployed||0|pg_dump written"
+  # during the pre-upgrade pg_dump
+  "backup|▸ Backing up the database before upgrading||0|pg_dump written"
+  # supervisor files and unit being rewritten
+  "supervisor|▸ Updater supervisor||0|▸ Starting the server"
+  # the new server booting (Liquibase migrations)
+  "migrating|▸ Starting the server|server_booting|3|✓ database schema ready"
 )
 
-server_stopped() { case "$(systemctl is-active mdmesh-server 2>/dev/null)" in inactive|failed) return 0 ;; esac; return 1; }
+maven_running() { pgrep -f 'org\.codehaus\.plexus\.classworlds' > /dev/null; }
+npm_running() { pgrep -f 'npm ci|tsc -b|vite build' > /dev/null; }
+server_deactivating() { [ "$(systemctl is-active mdmesh-server 2>/dev/null)" = deactivating ]; }
 server_booting() { systemctl is-active --quiet mdmesh-server && [ ! -e "$BASE_DIR/initialized.txt" ]; }
 
 cmd_kill_points() { local p; for p in "${KILL_POINTS[@]}"; do printf '%s\n' "${p%%|*}"; done; }
@@ -68,16 +79,16 @@ installer_pgid() {
   local p
   p=$(pgrep -o -f 'install/install-native\.sh' || true)
   [ -n "$p" ] || return 0
-  ps -o pgid= -p "$p" | tr -d ' '
+  ps -o pgid= -p "$p" | tr -d ' ' || true
 }
 
 cmd_install() {
-  local out=$1 point=${2:-} spec="" marker cond delay rc=0 pid pg i
+  local out=$1 point=${2:-} spec="" marker cond delay late rc=0 pid pg i
   : "${T2_BASE_URL:?}" "${T2_HTTP_PORT:?}"
   if [ -n "$point" ]; then
     for spec in "${KILL_POINTS[@]}"; do [ "${spec%%|*}" = "$point" ] && break; spec=""; done
     [ -n "$spec" ] || { echo "unknown kill point: $point (known: $(cmd_kill_points | tr '\n' ' '))" >&2; return 2; }
-    IFS='|' read -r _ marker cond delay <<< "$spec"
+    IFS='|' read -r _ marker cond delay late <<< "$spec"
   fi
   : > "$out"
   # The user's shell: a login shell of the sudo user in the checkout, running the documented command. setsid gives the
@@ -91,17 +102,22 @@ cmd_install() {
     return "$rc"
   fi
   # Wait for the marker (and the condition) while the installer is still running.
-  for i in $(seq 1 18000); do   # 60 minutes at 0.2 s
+  for i in $(seq 1 72000); do   # 60 minutes at 0.05 s
     if grep -qF -- "$marker" "$out" && { [ -z "$cond" ] || "$cond"; }; then break; fi
     if ! kill -0 "$pid" 2>/dev/null; then
       wait "$pid" || rc=$?
       echo "T2 kill point $point NOT REACHED: the installer exited (rc=$rc) before it (marker: $marker)"
       return 3
     fi
-    sleep 0.2
+    sleep 0.05
   done
-  [ "$i" -lt 18000 ] || { echo "T2 kill point $point: timed out waiting for it"; return 3; }
+  [ "$i" -lt 72000 ] || { echo "T2 kill point $point: timed out waiting for it"; return 3; }
   sleep "${delay:-0}"
+  if [ -n "$late" ] && grep -qF -- "$late" "$out"; then
+    echo "T2 kill point $point NOT REACHED: the kill was due after '$late' had already happened (timing changed?)"
+    wait "$pid" 2>/dev/null || true
+    return 3
+  fi
   pg=$(installer_pgid)
   if [ -z "$pg" ]; then
     wait "$pid" || rc=$?
@@ -110,13 +126,17 @@ cmd_install() {
   fi
   echo "T2 kill point $point: SIGKILL to process group $pg; last installer line: $(grep -v '^[[:space:]]*$' "$out" | tail -n 1)"
   kill -KILL -- "-$pg" 2>/dev/null || true
-  wait "$pid" 2>/dev/null || true
-  sleep 1
-  # Anything of the run that survived (another process group of the same session, e.g. if sudo had made one).
+  # The user's side of the session (runuser, sudo: sudo runs the installer in a process group of its own) notices and
+  # exits; never wait on it forever.
+  for i in $(seq 1 100); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
   local left
-  left=$(ps -eo pid=,pgid=,sid=,args= | awk -v s="$pid" -v g="$pg" '$2 == g || $3 == s' || true)
+  left=$(ps -eo pid=,pgid=,args= | awk -v g="$pg" '$2 == g' || true)
   if [ -n "$left" ]; then echo "T2 kill point $point: still running after the kill:"; printf '%s\n' "$left" | sed 's/^/    /'; fi
-  if pgrep -f 'install/install-native\.sh' >/dev/null; then echo "T2 kill point $point: an installer process survived"; fi
+  if kill -0 "$pid" 2>/dev/null; then
+    echo "T2 kill point $point: the session wrapper (runuser/sudo) did not exit; killing the session"
+    pkill -KILL -s "$pid" 2>/dev/null || true
+  fi
+  wait "$pid" 2>/dev/null || true
   echo "T2 install killed at $point"
   return 0
 }

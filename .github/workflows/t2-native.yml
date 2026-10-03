@@ -81,9 +81,9 @@ jobs:
     name: ${{ matrix.distro }} / ${{ matrix.scenario }}
     needs: plan
     runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
-    # fresh ~15 min and upgrade ~25 min on a hosted runner; killed runs one install, then an upgrade + re-run per kill
-    # point (ten of them).
-    timeout-minutes: ${{ matrix.scenario == 'killed' && 300 || 90 }}
+    # Locally (4 cores) fresh and upgrade take 3-5 min and killed about 20 (one install, then an upgrade + re-run per
+    # kill point); the bounds leave room for a slower runner and cold downloads.
+    timeout-minutes: ${{ matrix.scenario == 'killed' && 120 || 45 }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}

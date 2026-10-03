@@ -21,6 +21,7 @@
 #   T2_HTTP_PORT  the port given to the installer (default 9090); T2_BASE_URL its public URL (default http://mdm.t2.test:<port>)
 #   T2_ORIGIN_URL the clone's origin (default the real repo: the installer reads releases and the agent APK from it)
 #   T2_MEMORY     the container's memory limit (default 6g); T2_MIN_FREE_GB free space required to start (default 8)
+#   T2_STEP_TIMEOUT  seconds one installer run may take (default 3600)
 #
 # Needs: docker (cgroup v2 host), git, curl, python3, md5sum. Every container and image it creates is named
 # mdmesh-t2-<distro>-<scenario>-<random>[...] and removed on exit, whatever happens; nothing else is touched, and no

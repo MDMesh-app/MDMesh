@@ -137,7 +137,10 @@ run_install() {
   local label=$1 point=${2:-} rc=0 t0
   t0=$(date +%s)
   log "install [$label]${point:+ (kill at $point)}: sudo BASE_URL=$T2_BASE_URL HTTP_PORT=$T2_HTTP_PORT ./setup.sh --native -y"
-  guest install "/t2/out/$label.out" ${point:+"$point"} > "$OUT/$label.result" 2>&1 || rc=$?
+  # Bounded: a hung install must end in a failure with logs, not run into the CI job timeout.
+  timeout "${T2_STEP_TIMEOUT:-3600}" docker exec -e T2_BASE_URL="$T2_BASE_URL" -e T2_HTTP_PORT="$T2_HTTP_PORT" "$CTR" \
+    bash /t2/guest.sh install "/t2/out/$label.out" ${point:+"$point"} > "$OUT/$label.result" 2>&1 || rc=$?
+  [ "$rc" -ne 124 ] || echo "T2 install timed out after ${T2_STEP_TIMEOUT:-3600}s" >> "$OUT/$label.result"
   docker cp "$CTR:/t2/out/$label.out" "$OUT/$label.out" > /dev/null 2>&1 || true
   while IFS= read -r l; do log "  $l"; done < "$OUT/$label.result"
   log "install [$label] rc=$rc in $(( ($(date +%s) - t0) / 60 ))m$(( ($(date +%s) - t0) % 60 ))s"

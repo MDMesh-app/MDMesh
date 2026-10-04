@@ -121,13 +121,16 @@ device/user counts — connects **as the `mdmesh` role** over `127.0.0.1`, with 
 objects owned by that role never run with superuser rights.
 
 It asks for the public base URL, or takes it from `BASE_URL=https://mdm.example.com` (required with `-y`). The value
-must follow the same rule as in Option B.
+must follow the same rule as in Option B. The HTTP port is `HTTP_PORT=9090`, or else the port the install already
+serves on (a fresh install: 8080); `-y` takes that default without asking.
 
 **Upgrading a native install** is the same command after `git pull`. The installer detects existing data and
 asks **Keep** (default, just press Enter) or **Erase** (requires typing `ERASE`). Keep redeploys the code, runs
 migrations, and leaves configurations, devices, users and the enrollment secret untouched; a `pg_dump` is written
 to `/opt/mdmesh/backups/` first. Unattended: `sudo ./setup.sh --native -y` never erases; set `REPLACE_DATA=yes` to
-opt into a wipe, `HTTP_PORT=9090` to pick the port. Only missing packages are installed, and a JDK 17 found via
+opt into a wipe, `HTTP_PORT=9090` to move to another port (without it the upgrade keeps the current one). If an earlier
+run was interrupted (a dropped SSH session, `kill -9`), just run the same command again: it picks up where that run
+stopped. Only missing packages are installed, and a JDK 17 found via
 `JAVA17_HOME` or under `/opt` is used as-is (Debian 13 ships no `openjdk-17-jdk`).
 
 **The agent APK.** The installer fetches the latest release's agent APK, hosts it at `/files/agent.apk` and bakes its

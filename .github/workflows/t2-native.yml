@@ -1,0 +1,129 @@
+# T2 native gate: install and upgrade MDMesh NATIVELY (DEPLOY.md Option C, `sudo ./setup.sh --native -y`; no Docker
+# for MDMesh itself) inside throwaway systemd containers that look like a fresh VPS, on Debian 12, Debian 13 and
+# Ubuntu 24.04, with tests/native/run.sh (docs/DEV.md, "T2 native rig"):
+#   fresh    the change on a clean host
+#   upgrade  the latest GitHub release, then the change over it, with continuity checks (a device enrolled before the
+#            upgrade checks in after it with its original secret; hash.secret / jwt.secretkey and the data unchanged)
+#   killed   the same upgrade SIGKILLed at each kill point, then re-run: it must converge
+# Every install is followed by the same check step: units active, initialized.txt OK, /rest/public/name 200, and that
+# version's scripts/agent-v1-e2e.sh with FAIL=0.
+#
+# Runs on pull requests that touch the installers or the rig, nightly on main, and by hand (one distro / scenario /
+# from-ref). Slow by nature (a full JDK + Postgres + Maven + npm install per container), so it is its own tier and is
+# not part of T0/T1.
+name: t2-native
+
+on:
+  pull_request:
+    paths:
+      - install/**
+      - setup.sh
+      - quickstart.sh
+      - tests/native/**
+      - .github/workflows/t2-native.yml
+  schedule:
+    - cron: "23 2 * * *"
+  workflow_dispatch:
+    inputs:
+      distro:
+        description: Distro to run (all = the whole matrix)
+        type: choice
+        options: [all, debian-12, debian-13, ubuntu-24.04]
+        default: all
+      scenario:
+        description: Scenario to run (all = the whole matrix)
+        type: choice
+        options: [all, fresh, upgrade, killed]
+        default: all
+      from-ref:
+        description: Release to upgrade from (empty = the latest GitHub release). Never "the newest tag" — the history also carries upstream Headwind tags.
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  plan:
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      from-ref: ${{ steps.plan.outputs.from-ref }}
+    steps:
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          IN_DISTRO: ${{ inputs.distro || 'all' }}
+          IN_SCENARIO: ${{ inputs.scenario || 'all' }}
+          IN_FROM: ${{ inputs.from-ref }}
+        run: |
+          # The release to upgrade from: the input, else the latest GitHub release (not the newest git tag).
+          from=$IN_FROM
+          if [ -z "$from" ]; then from=$(gh release view --repo "$REPO" --json tagName --jq .tagName); fi
+          case "$from" in v[0-9]*) ;; *) echo "::error::could not resolve the release to upgrade from (got '$from')"; exit 1 ;; esac
+          echo "from-ref=$from" >> "$GITHUB_OUTPUT"
+          python3 - >> "$GITHUB_OUTPUT" <<'EOF'
+          import json, os
+          d, s = os.environ["IN_DISTRO"], os.environ["IN_SCENARIO"]
+          distros = ["debian-12", "debian-13", "ubuntu-24.04"] if d == "all" else [d]
+          scenarios = ["fresh", "upgrade", "killed"] if s == "all" else [s]
+          print("matrix=" + json.dumps({"include": [{"distro": x, "scenario": y} for x in distros for y in scenarios]}))
+          EOF
+          echo "upgrading from $from"
+
+  native:
+    name: ${{ matrix.distro }} / ${{ matrix.scenario }}
+    needs: plan
+    # Always a GitHub-hosted runner, never vars.CI_RUNNER: the rig runs --privileged containers, which must not land on
+    # a self-hosted machine from a pull request.
+    runs-on: ubuntu-24.04
+    # Locally (4 cores) fresh and upgrade take 3-5 min and killed about 20 (one install, then an upgrade + re-run per
+    # kill point); the bounds leave room for a slower runner and cold downloads.
+    timeout-minutes: ${{ matrix.scenario == 'killed' && 120 || 45 }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      T2_FROM_REF: ${{ needs.plan.outputs.from-ref }}
+      DISTRO: ${{ matrix.distro }}
+      SCENARIO: ${{ matrix.scenario }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # Full history and tags: the rig bundles the release and the change, and the installers read the version
+          # with `git describe`.
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Run the rig
+        env:
+          T2_OUT: ${{ runner.temp }}/t2-out
+        run: tests/native/run.sh "$DISTRO" "$SCENARIO"
+
+      - name: Summary
+        if: always()
+        env:
+          T2_OUT: ${{ runner.temp }}/t2-out
+        run: |
+          f=$(find "$T2_OUT" -name results.tsv 2>/dev/null | head -n 1) || true
+          {
+            echo "### T2 native: $DISTRO / $SCENARIO (from $T2_FROM_REF)"
+            echo
+            echo "| distro | scenario | kill point | verdict | detail |"
+            echo "|---|---|---|---|---|"
+            [ -z "$f" ] || sed 's/|/\\|/g; s/\t/ | /g; s/^/| /; s/$/ |/' "$f"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - if: failure() || cancelled()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: t2-native-${{ matrix.distro }}-${{ matrix.scenario }}
+          path: ${{ runner.temp }}/t2-out/
+          retention-days: 7
+          if-no-files-found: warn

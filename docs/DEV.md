@@ -134,3 +134,60 @@ logs as the `t1-e2e-logs` artifact.
 
 The remaining step that needs a provisioned box is the **real on-device run**: build the agent, enroll an AOSP
 emulator as Device Owner via ADB, and watch a `policy.apply` apply on the device.
+
+## T2 native rig (native install + upgrade)
+
+`tests/native/run.sh` installs and upgrades MDMesh **natively** (DEPLOY.md Option C, no Docker for MDMesh itself) in a
+throwaway container that looks like a fresh VPS: systemd as PID 1, a passwordless-sudo user, and only what a stock
+cloud image has plus `git`. It clones the repo there from a git bundle (origin set to the real repo, so the release and
+agent APK lookups are real) and runs the documented command exactly as a user would:
+`sudo BASE_URL=… HTTP_PORT=… ./setup.sh --native -y`; an upgrade moves the checkout to the new commit (what
+`git pull` does) and runs the same command again.
+
+```bash
+tests/native/run.sh debian-12 fresh       # distros: debian-12, debian-13, ubuntu-24.04
+tests/native/run.sh debian-12 upgrade     # scenarios: fresh, upgrade, killed
+T2_KILL_POINTS=mid-deploy,migrating tests/native/run.sh debian-12 killed
+```
+
+| Scenario | What it proves |
+|----------|----------------|
+| `fresh` | The change installs on a clean host with the documented command, and the admin's first sign-in works. |
+| `upgrade` | The last release (`T2_FROM_REF`, default `v0.3.1`) installed, then the change over it: the upgrade succeeds **and keeps what it must** — a device enrolled through `/agent/v1` before the upgrade checks in afterwards with its original secret, `hash.secret` and `jwt.secretkey` are unchanged, the configuration/device/user counts are unchanged and admin still signs in with its password. |
+| `killed` | The same upgrade, SIGKILLed (the installer's whole process group) at each kill point, then re-run once: it must converge and pass every check, continuity included. The kill points are named moments of the installer's run (`bash tests/native/lib/guest.sh kill-points`): right after the role password is rotated, mid Maven build, mid console build, while systemd stops the old server, mid deploy, after the deploy, mid pre-upgrade dump, while the supervisor is rewritten, and while the new server migrates the database. A kill that would land later than its point fails the run as `NOT-REACHED`, so a point never silently turns into another. |
+
+After every install or upgrade the same check step runs: `mdmesh-server` (and `mdmesh-supervisor`, when that version
+installs it) is active, the server's `/opt/mdmesh/initialized.txt` says `OK`, `/rest/public/name` answers 200, admin
+signs in, and **that version's own** `scripts/agent-v1-e2e.sh` passes (`FAIL=0`) against the container.
+
+Always name the release to upgrade from: this clone also carries upstream Headwind tags (`v5.x`), so "the newest tag"
+is not the last MDMesh release. CI passes the latest GitHub release.
+
+On a 4-core box `fresh` and `upgrade` take 3–5 minutes each and `killed` about 20 (one minute or two per kill point).
+A run needs a few GB of free space under the Docker root; it refuses to start below `T2_MIN_FREE_GB` (default 8). `T2_CACHE=1` shares the
+Maven and npm download caches between runs in the named volumes `mdmesh-t2-cache-m2` and `mdmesh-t2-cache-npm`
+(remove them with `docker volume rm` when you are done). Logs, the installer output of every run, the e2e logs and,
+on a failure, the guest's install log, journals and Tomcat logs land in `T2_OUT` (default `/tmp/mdmesh-t2/<run>/`), with
+a `results.tsv`. The other settings are in the header of `run.sh`.
+
+**Safety.** The container is privileged (systemd needs that on cgroup v2) but has its own network namespace and a
+private cgroup namespace, and no host path is mounted. The image masks every unit that would act on the host kernel
+(sysctl, modules, binfmt, pstore, clock, TRIM). Everything a run creates is named `mdmesh-t2-<distro>-<scenario>-<random>`
+and removed on exit (images by their exact tag); the base images it pulls (`debian:12`, …) stay.
+
+**Workarounds for undocumented prerequisites.** The image adds something beyond the stock baseline only when the
+documented install cannot work without it, each one a finding to fix in the installer or DEPLOY.md
+(`T2_STRICT=1` builds without them, to reproduce the failure):
+- Debian 12 and Ubuntu 24.04 ship Node 18, and the console build (Vite 8) needs Node ≥ 20.19: the installer's
+  `apt-get install nodejs npm` gets 18 and `npm run build` fails. The image adds Node 22 under `/usr/local`.
+- Debian 13 has no `openjdk-17-jdk`; DEPLOY.md says a JDK 17 under `/opt` is used but not how to get one. The image
+  adds Temurin 17 under `/opt/jdk-17`.
+
+CI runs the rig as tier T2 (`.github/workflows/t2-native.yml`): the 3 distros × 3 scenarios on pull requests that touch
+`install/`, `setup.sh`, `quickstart.sh` or the rig, nightly, and by hand (one distro, scenario or from-ref). A server
+change (a Liquibase changeset, a dependency) can break a native upgrade without touching the installer, so the whole
+matrix also runs by hand on `main` before every release (see [RELEASING.md](../RELEASING.md)).
+
+**Extending it** (e.g. for a JDK or Tomcat change): a new distro is a case in `distro_setup` (`tests/native/lib/host.sh`);
+a new kill point is a row in `KILL_POINTS` (`tests/native/lib/guest.sh`); a new scenario is a branch in `run.sh` built
+from the same steps (`start_container`, `prepare_checkout`, `run_install`, `check_install`, `continuity_before/after`).

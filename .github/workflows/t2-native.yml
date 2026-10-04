@@ -80,7 +80,9 @@ jobs:
   native:
     name: ${{ matrix.distro }} / ${{ matrix.scenario }}
     needs: plan
-    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-24.04' }}
+    # Always a GitHub-hosted runner, never vars.CI_RUNNER: the rig runs --privileged containers, which must not land on
+    # a self-hosted machine from a pull request.
+    runs-on: ubuntu-24.04
     # Locally (4 cores) fresh and upgrade take 3-5 min and killed about 20 (one install, then an upgrade + re-run per
     # kill point); the bounds leave room for a slower runner and cold downloads.
     timeout-minutes: ${{ matrix.scenario == 'killed' && 120 || 45 }}

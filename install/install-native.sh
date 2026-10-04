@@ -413,10 +413,6 @@ if [ -f "$_old_root" ] && ! _old_xml=$(svc_cat "$_old_root" 2>>"$LOGFILE"); then
 fi
 # Value of <Parameter name="$1" value="…"/> in the existing ROOT.xml; empty when there is none.
 old_root_param() { printf '%s\n' "$_old_xml" | sed -n "s/.*name=\"$1\"[[:space:]]*value=\"\([^\"]*\)\".*/\1/p" | head -n 1; }
-# adopt_old_secrets: keep hash.secret and jwt.secretkey from the existing ROOT.xml (_old_xml).
-adopt_old_secrets() {
-_old_secret=$(old_root_param hash.secret)
-if [ -n "$_old_secret" ]; then HASH_SECRET="$_old_secret"; info "Reusing hash.secret from the existing install (enrolled devices keep working)"; fi
 # jwt.secretkey signs REST API clients' JWTs (/rest/public/jwt/login), so it is kept the same way: those tokens then
 # survive restarts and upgrades, and an install from before it existed gets the key generated above. JJWT 0.9.1
 # base64-decodes the key and silently drops characters outside the base64 alphabet and a trailing partial 4-character
@@ -425,9 +421,13 @@ if [ -n "$_old_secret" ]; then HASH_SECRET="$_old_secret"; info "Reusing hash.se
 # a space, which the JWT library drops), so a hand edit that added some is not a reason to rotate it. docker/entrypoint.sh
 # applies the same rules to JWT_SECRET and its key file.
 jwt_key_ok() { case "$1" in ''|*[!0-9a-fA-F]*) return 1 ;; esac; [ "${#1}" -ge 128 ] && [ $(( ${#1} % 4 )) -eq 0 ]; }
-_old_jwt=$(old_root_param jwt.secretkey | tr -d '[:space:]')
-if jwt_key_ok "$_old_jwt"; then JWT_SECRET="$_old_jwt"; info "Reusing jwt.secretkey from the existing install (API clients stay signed in)"
-elif [ -n "$_old_jwt" ]; then info "Replacing the existing jwt.secretkey: it is not hex, a multiple of 4 and at least 128 characters (the JWT library would drop characters)"; fi
+# adopt_old_secrets: keep hash.secret and jwt.secretkey from the existing ROOT.xml (_old_xml).
+adopt_old_secrets() {
+  _old_secret=$(old_root_param hash.secret)
+  if [ -n "$_old_secret" ]; then HASH_SECRET="$_old_secret"; info "Reusing hash.secret from the existing install (enrolled devices keep working)"; fi
+  _old_jwt=$(old_root_param jwt.secretkey | tr -d '[:space:]')
+  if jwt_key_ok "$_old_jwt"; then JWT_SECRET="$_old_jwt"; info "Reusing jwt.secretkey from the existing install (API clients stay signed in)"
+  elif [ -n "$_old_jwt" ]; then info "Replacing the existing jwt.secretkey: it is not hex, a multiple of 4 and at least 128 characters (the JWT library would drop characters)"; fi
 }
 [ "$_old_root_deferred" = 1 ] || adopt_old_secrets
 

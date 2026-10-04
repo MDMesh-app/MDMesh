@@ -8,6 +8,14 @@ Cutting a release is one command — push a semver tag:
 git tag v1.2.3 && git push --tags
 ```
 
+Before tagging, run the native install/upgrade tier on `main` and wait for all nine jobs to pass (T2; see
+"T2 native rig" in [docs/DEV.md](docs/DEV.md)). Pull requests run it only when the installers change, so this is
+what catches a server change that breaks a native upgrade:
+
+```bash
+gh workflow run t2-native.yml --ref main
+```
+
 `.github/workflows/release.yml` then: runs the agent unit tests + builds the **signed** release APK,
 builds & pushes the **server**, **web**, and **supervisor** images to GHCR as `:VERSION`, builds a
 **minisign-signed manifest**, and publishes a **GitHub Release** with `mdmesh-agent.apk`, `manifest.json`,

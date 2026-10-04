@@ -184,7 +184,9 @@ documented install cannot work without it, each one a finding to fix in the inst
   adds Temurin 17 under `/opt/jdk-17`.
 
 CI runs the rig as tier T2 (`.github/workflows/t2-native.yml`): the 3 distros × 3 scenarios on pull requests that touch
-`install/`, `setup.sh`, `quickstart.sh` or the rig, nightly, and by hand (one distro, scenario or from-ref).
+`install/`, `setup.sh`, `quickstart.sh` or the rig, nightly, and by hand (one distro, scenario or from-ref). A server
+change (a Liquibase changeset, a dependency) can break a native upgrade without touching the installer, so the whole
+matrix also runs by hand on `main` before every release (see [RELEASING.md](../RELEASING.md)).
 
 **Extending it** (e.g. for a JDK or Tomcat change): a new distro is a case in `distro_setup` (`tests/native/lib/host.sh`);
 a new kill point is a row in `KILL_POINTS` (`tests/native/lib/guest.sh`); a new scenario is a branch in `run.sh` built

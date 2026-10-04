@@ -55,7 +55,7 @@ KILL_POINTS=(
   "mvn|· Maven package|maven_running|2|✓ Maven package"
   # mid console build (npm ci / tsc / vite)
   "npm|· npm ci + vite build|npm_running|1|✓ npm ci + vite build"
-  # while systemd stops the old server (the installer waits in `systemctl stop`)
+  # while systemd stops the old server (the installer waits in `systemctl stop`; hold_stop keeps it there)
   "stopping-server|▸ Tomcat 9 + app deploy|server_deactivating|0|· HTTP port set to"
   # server.xml rewritten, webapps about to be replaced
   "mid-deploy|· HTTP port set to||0|server + console deployed"
@@ -73,6 +73,30 @@ maven_running() { pgrep -f 'org\.codehaus\.plexus\.classworlds' > /dev/null; }
 npm_running() { pgrep -f 'npm ci|tsc -b|vite build' > /dev/null; }
 server_deactivating() { [ "$(systemctl is-active mdmesh-server 2>/dev/null)" = deactivating ]; }
 server_booting() { systemctl is-active --quiet mdmesh-server && [ ! -e "$BASE_DIR/initialized.txt" ]; }
+
+# hold_stop / release_stop: an idle Tomcat stops in milliseconds, too fast for the poll above to see the unit
+# deactivating (on CI it never did). For stopping-server a runtime drop-in (under /run, gone at the next boot) holds the
+# stop in ExecStopPost until release_stop, so the kill always lands while the installer waits in `systemctl stop`. The
+# hold gives up by itself after 120 s, so a lost rig cannot wedge the stop ($$ is a literal $ in a unit file). After
+# the kill systemd finishes the stop, as it would on a real host; the re-run then starts without the drop-in.
+HOLD_DIR=/run/systemd/system/mdmesh-server.service.d
+HOLD_FLAG=/run/t2-release-stop
+hold_stop() {
+  rm -f "$HOLD_FLAG"
+  mkdir -p "$HOLD_DIR"
+  printf '[Service]\nTimeoutStopSec=180\nExecStopPost=/bin/sh -c "i=0; while [ ! -e %s ] && [ $$i -lt 1200 ]; do sleep 0.1; i=$$((i+1)); done"\n' \
+    "$HOLD_FLAG" > "$HOLD_DIR/t2-hold.conf"
+  systemctl daemon-reload
+}
+release_stop() {
+  local i
+  [ -e "$HOLD_DIR/t2-hold.conf" ] || return 0
+  touch "$HOLD_FLAG"
+  for i in $(seq 1 300); do server_deactivating || break; sleep 0.1; done
+  rm -f "$HOLD_DIR/t2-hold.conf" "$HOLD_FLAG"
+  rmdir "$HOLD_DIR" 2>/dev/null || true
+  systemctl daemon-reload
+}
 
 cmd_kill_points() { local p; for p in "${KILL_POINTS[@]}"; do printf '%s\n' "${p%%|*}"; done; }
 
@@ -94,6 +118,7 @@ cmd_install() {
     for spec in "${KILL_POINTS[@]}"; do [ "${spec%%|*}" = "$point" ] && break; spec=""; done
     [ -n "$spec" ] || { echo "unknown kill point: $point (known: $(cmd_kill_points | tr '\n' ' '))" >&2; return 2; }
     IFS='|' read -r _ marker cond delay late <<< "$spec"
+    if [ "$point" = stopping-server ]; then hold_stop; trap release_stop EXIT; fi
   fi
   : > "$out"
   # The user's shell: a login shell of the sudo user in the checkout, running the documented command. setsid gives the

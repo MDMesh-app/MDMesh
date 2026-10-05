@@ -2,8 +2,8 @@ import type { Configuration } from '../api/configurations';
 import { KIOSK_AFFECTING_KEYS } from '../data/configFields';
 
 function appsKey(c: Configuration): string {
-  const apps = (c.applications ?? []) as { id: number; action?: number }[];
-  return apps.map((a) => `${a.id}:${a.action ?? 1}`).sort().join(',');
+  const apps = (c.applications ?? []) as { id: number; action?: number; showIcon?: boolean }[];
+  return apps.map((a) => `${a.id}:${a.action ?? 1}:${a.showIcon === false ? 0 : 1}`).sort().join(',');
 }
 
 /**

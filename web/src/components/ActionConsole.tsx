@@ -6,7 +6,7 @@ import {
 import { useToast } from '../ui/toast';
 import { KioskEnterModal } from './KioskEnterModal';
 
-type Device = { number: string };
+type Device = { number: string; configurationId?: number };
 
 const GROUPS: Array<{ id: 'safe' | 'disruptive' | 'destructive'; title: string }> = [
   { id: 'safe', title: 'Actions' },

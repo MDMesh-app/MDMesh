@@ -70,3 +70,6 @@ Thumbs.db
 *.orig
 *~
 *.swp
+
+# Maintainer-local Claude Code notes
+/CLAUDE.md

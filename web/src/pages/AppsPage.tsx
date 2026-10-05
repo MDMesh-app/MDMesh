@@ -208,7 +208,10 @@ function LibrarySource({ onDeploy }: { onDeploy: (app: Application) => void }) {
  * source; requiring a local file would incorrectly hide the latter.
  */
 export function isDeployableLibraryApp(app: Application): boolean {
-  return (app.type ?? 'app') !== 'web' && !app.system && Boolean(app.url || app.parts);
+  return (app.type ?? 'app') !== 'web'
+    && !app.system
+    && !app.pkg.startsWith('com.hmdm.')
+    && Boolean(app.url || app.parts);
 }
 
 // Split-APK bundle containers the /bundle endpoint unpacks into installable parts.

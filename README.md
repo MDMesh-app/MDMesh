@@ -91,7 +91,7 @@ Instant wake channel when charging, battery-aware otherwise; survives reboots + 
 <td width="33%" valign="top">
 
 **♻️ Signed auto-update**
-One-click or unattended server updates with DB backup + auto-rollback, plus a recovery page.
+One-click or unattended server updates with DB backup + auto-rollback on quick-start installs, plus a recovery page.
 
 </td>
 </tr>
@@ -114,8 +114,9 @@ One-click or unattended server updates with DB backup + auto-rollback, plus a re
 - **Deployment** — one `./setup.sh`: Docker Compose with bundled auto-HTTPS (Caddy) for your own domain, or
   a permanent Cloudflare Tunnel; a native (non-Docker) installer; generated secrets.
 - **CI/CD auto-update** — tag a release → CI builds & **signs** artifacts (Ed25519/minisign) + a manifest →
-  every deployment notices, **verifies**, and (on approval, or unattended) updates server/web with a
-  database backup and **automatic rollback** on failure; a decoupled recovery service stays up if an
+  every deployment notices and **verifies** it. Quick-start (registry-image) installs then update server/web
+  (on approval, or unattended) with a database backup and **automatic rollback** on failure; from-source Docker
+  and native installs show the update and the command to apply it. A decoupled recovery service stays up if an
   update breaks the main server.
 - **Staged device rollout** — push the newest **compatible** agent APK to a hand-picked **canary** set,
   watch it land, then **promote to the fleet** — mirrored from your own origin, integrity-checked.
@@ -160,7 +161,8 @@ One-click or unattended server updates with DB backup + auto-rollback, plus a re
 </div>
 
 > Screenshots show the real console rendered with representative sample data. Regenerate them with
-> `cd scripts/shots && npm i && node capture.mjs`.
+> `cd web && npm run build && cd ../scripts/shots && npm install && npx playwright install chromium && node capture.mjs`
+> (see [CONTRIBUTING.md](CONTRIBUTING.md#regenerating-the-docs-screenshots)).
 
 ---
 
@@ -177,7 +179,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/quick
 Pulls the released images from GHCR (no build), generates secrets, brings the stack up in `./mdmesh`,
 and prints the console URL + a temporary admin password. *(Needs a published release with **public**
 GHCR packages — or `docker login ghcr.io` first; see [RELEASING.md](RELEASING.md).)* Image tags carry **no `v`
-prefix**: release `v0.2.6` publishes `ghcr.io/mdmesh-app/mdmesh-server:0.2.6` (and `:latest`).
+prefix**: release `v0.3.1` publishes `ghcr.io/mdmesh-app/mdmesh-server:0.3.1` (and `:latest`).
 
 ### Option B — from source (clone + build)
 
@@ -196,7 +198,8 @@ generates your secrets, and prints the console URL + a generated admin password.
    `adb shell dpm set-device-owner` for a dev device).
 4. Scan the QR — the device enrolls as Device Owner and checks in.
 
-No Docker? Run `./setup.sh --native`. Full details, hosting modes, updates, recovery, and uninstalling are in the
+No Docker? Run `sudo ./setup.sh --native` on Debian 12/13 or Ubuntu 24.04; it needs Node ≥ 20.19 and a JDK 17
+first where the distro doesn't ship them (see [DEPLOY.md](DEPLOY.md#option-c--native-no-docker)). Full details, hosting modes, updates, recovery, and uninstalling are in the
 **[full setup guide → DEPLOY.md](DEPLOY.md)**.
 
 ---

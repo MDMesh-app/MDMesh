@@ -11,7 +11,8 @@ set -euo pipefail
 unset CDPATH
 # Secrets hygiene: files this script writes (the install log, ROOT.xml, temp downloads) can carry
 # the DB password / hash secret, so create everything owner-only by default. Tomcat and the server
-# run as root here, so 0600/0700 artifacts stay readable by the things that need them.
+# run as the mdmesh user; the deploy step chowns their trees to it, so 0600/0700 artifacts stay
+# readable by the things that need them.
 umask 077
 export PATH="/usr/sbin:/sbin:$PATH"   # useradd/userdel/pg tools live here; not every root shell has it
 # -P resolves symbolic links so REPO is the real checkout.

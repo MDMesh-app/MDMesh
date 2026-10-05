@@ -18,11 +18,11 @@ kotlinx.serialization + Retrofit.
 |--------|------|----------------|
 | `:proto` | Kotlin/JVM lib | `@Serializable` wire contract mirroring `../proto/` (`CapabilityMatrix`, `CommandEnvelope`, `CommandResult`, `ProtocolJson`). No Android deps. |
 | `:policy` | android-lib | **Capability-abstraction layer.** `DeviceControl`, `PolicyStrategy`, SDK-gated `WifiPolicy` (modern/legacy strategies + factory), `CapabilityRegistry`. All `DevicePolicyManager` calls stay behind interfaces. |
-| `:core` | android-lib | Sync/check-in: Retrofit `MdmApi`, `CapabilityCollector`, `CommandDispatcher` (+ handlers), `DeviceIdStore` (DataStore), `CheckInCoordinator`/`CheckInWorker`. Base URL via `BuildConfig`. |
-| `:kiosk` | android-lib | COSU skeleton: `KioskController` (+ stub), `CrashLoopGuard`. |
+| `:core` | android-lib | Sync/check-in: Retrofit `MdmApi`, `CapabilityCollector`, `CommandDispatcher` (+ handlers), `DeviceIdStore` (DataStore), `CheckInCoordinator`/`CheckInWorker`. Base URL from the enrollment QR (`com.mdmesh.SERVER_URL`, kept in `ServerConfigStore`); `BuildConfig.MDM_BASE_URL` is the fallback for ADB enrollment. |
+| `:kiosk` | android-lib | COSU lock-task: `KioskController`, its real impl `LockTaskKioskController` (+ `StubKioskController`), `CrashLoopGuard`. |
 | `:remote` | android-lib | Remote view/control skeleton: `RemoteControlSession`, `RemoteControlTierDetector`, and the **only** Accessibility surface (`InputInjectionService`). |
 | `:oem` | android-lib | `OemAdapter` + `GenericOemAdapter` (no-op) + `KnoxAdapter` (PARKED, no Knox dep). |
-| `:app` | android-app | Hilt `Application`, `AdminReceiver`, provisioning activities, `MainActivity` launcher/home stub, `CheckInService`, manifest with the minimal permission set. |
+| `:app` | android-app | Hilt `Application`, `AdminReceiver`, provisioning activities, `MainActivity`, `KioskLauncherActivity` (the kiosk HOME), `CheckInService`, manifest with the minimal permission set. |
 
 ### The capability-abstraction intent
 

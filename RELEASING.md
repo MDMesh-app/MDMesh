@@ -2,10 +2,10 @@
 
 <sub>[← README](README.md) · [Deploy](DEPLOY.md) · [Structure](STRUCTURE.md) · [Contributing](CONTRIBUTING.md) · **Releasing**</sub>
 
-Cutting a release is one command — push a semver tag:
+Cutting a release is one command — push an annotated semver tag (its message opens the release notes):
 
 ```bash
-git tag v1.2.3 && git push --tags
+git tag -a v1.2.3 -m "v1.2.3" && git push --tags
 ```
 
 Before tagging, run the native install/upgrade tier on `main` and wait for all nine jobs to pass (T2; see

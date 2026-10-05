@@ -7,7 +7,7 @@ admin is forced to set its own password on first login.
 
 ## Option A — one line, no clone (published images)
 
-The fastest path: pull the released images from GHCR — no clone, no build. Needs only Docker + `curl`.
+The fastest path: pull the released images from GHCR — no clone, no build. Needs Docker with Compose v2, `curl` and `openssl`.
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/quickstart.sh)
@@ -92,8 +92,10 @@ also the address Caddy serves and gets a certificate for. A re-run of `./setup.s
 It writes `.env` (gitignored), builds the images, brings the stack up, seeds the database, and prints
 the console URL and the generated **admin** password (shown once — save it, then change it in the UI).
 
-Stack: `postgres` + `server` (Tomcat) + `caddy` (serves the SPA, proxies `/rest`, `/files`,
-`/agent/ws`) + optional `cloudflared`. Postgres and the server publish **no** host ports.
+Stack: `postgres` + `server` (Tomcat) + `caddy` (serves the SPA, proxies `/rest`, `/files`, `/agent/ws` and
+`/healthz` to the server) + `supervisor` (updater and recovery page; Caddy proxies `/update`, `/recovery`,
+`/files/agent.apk` and `/healthz/supervisor` to it) + optional `cloudflared`. Postgres and the server publish **no**
+host ports.
 
 Manage it:
 ```bash
@@ -106,7 +108,16 @@ docker compose down
 ## Option C — Native (no Docker)
 
 Debian/Ubuntu, as root. The leaner path: Postgres + Tomcat on the host; you terminate TLS yourself
-(your reverse proxy/cert, or Caddy in front).
+(your reverse proxy/cert, or Caddy in front). Tested on Debian 12, Debian 13 and Ubuntu 24.04 (`tests/native`).
+
+Prereqs: `git`, plus two the installer can't get from apt on every release:
+
+- **Node ≥ 20.19**, installed system-wide (the console build needs it, and the supervisor runs on it as the `mdmesh`
+  user). Debian 12 and Ubuntu 24.04 ship Node 18, so install a newer Node first; the installer uses the `node` and
+  `npm` already on `PATH`.
+- **JDK 17.** Debian 13 ships none: install one first (e.g. Temurin 17 unpacked under `/opt`, which the installer
+  finds) or point `JAVA17_HOME` at it (`sudo JAVA17_HOME=/path/to/jdk-17 ./setup.sh --native`). Debian 12 and
+  Ubuntu 24.04 get `openjdk-17-jdk` from apt.
 
 ```bash
 sudo ./setup.sh --native      # → install/install-native.sh
@@ -222,7 +233,7 @@ Set these in `.env` (the wizard seeds them; add by hand for an existing deploy):
 | `POLL_INTERVAL_HOURS` | How often to check (default `6`). |
 | `GITHUB_TOKEN` | Optional for a public `GITHUB_REPO` (raises the API rate limit); **required** for a private one. With a token the supervisor downloads the manifest, its signature and the agent APK through the GitHub asset API, the only way a private repo serves them, and never sends the token to the download host GitHub redirects to. Use a read-only token: fine-grained with **Contents: read** on that repo, or a classic token with `repo` scope. If no update shows up, the supervisor log gives the reason on its `[verify]` line: `docker compose logs supervisor`, or `journalctl -u mdmesh-supervisor` on a native install. |
 | `IMAGE_OWNER` | GHCR owner (lowercase) the versioned images live under. |
-| `SERVER_VERSION` / `WEB_VERSION` | Running image tags **without the `v`** (`0.2.6`, not `v0.2.6`); bumped automatically on apply. `./setup.sh` builds every image from the checkout, so on every run it sets them to the checkout's version (whatever `IMAGE_OWNER` is): the images are named after the code they hold. |
+| `SERVER_VERSION` / `WEB_VERSION` | Running image tags **without the `v`** (`0.3.1`, not `v0.3.1`); bumped automatically on apply. `./setup.sh` builds every image from the checkout, so on every run it sets them to the checkout's version (whatever `IMAGE_OWNER` is): the images are named after the code they hold. |
 | `CURRENT_VERSION` | The running release, compared with GitHub's latest to decide "update available". Bumped on apply and set back on rollback; the supervisor reads it from this `.env` at start and after each apply or rollback, so a restart never re-offers a release that is already running. `./setup.sh` rewrites it on every run from the checkout's nearest release tag (`vX.Y.Z` or `vX.Y.Z-pre`; other tags are skipped), like the native installer, and with a registry `IMAGE_OWNER` refuses a checkout older than it, or one without a release tag (see below). |
 | `SUPERVISOR_VERSION` | The supervisor's image tag. Apply never changes it (the supervisor never updates itself). The quick start tracks `latest`, so `docker compose pull && docker compose up -d` delivers supervisor fixes; pin it only if you want to freeze it (then bump it by hand to pick up fixes). `./setup.sh` builds the supervisor from the checkout and sets it to the checkout's version on every run. |
 | `APPLY_SUPPORTED` | `1` shows one-click **Update**, `0` shows the manual steps instead. `./setup.sh` rewrites it on every run from `IMAGE_OWNER` (`local` or unset → `0`); the source compose file defaults to `0`, the release compose to `1`. |
@@ -355,11 +366,11 @@ which listens on loopback `:9000` only, on the host with `curl -fsS 127.0.0.1:90
   characters, so the Docker server refuses to start with any other `SERVER_JWT_SECRET` (and replaces a key file that
   holds one), and the native installer replaces such a `jwt.secretkey`.
 - TLS everywhere (Cloudflare or Caddy/Let's Encrypt). DB + server ports are never published.
-- The agent talks HTTPS only. Set `SECURE_ENROLLMENT=1` (and the matching secret on the agent) to
-  require signed enrollment.
+- The agent talks HTTPS only. `SECURE_ENROLLMENT` is a legacy Headwind launcher setting; leave it at `0` for
+  MDMesh agents.
 - The admin starts with a generated password and is **required to set its own on first login** (the
   console routes the first sign-in to a "set your password" screen). Configure SMTP in `.env` to enable
-  email-based password recovery thereafter.
+  email-based password recovery thereafter. Docker only for now: native installs don't write SMTP settings yet.
 - The supervisor mounts the Docker socket (to drive updates) and is trusted: it acts only on
   **minisign-verified** manifests and **authorized** callers (admin session, or the recovery token).
   Apply/rollback only ever recreate `server`/`caddy` — never `postgres` or the supervisor itself.

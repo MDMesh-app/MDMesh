@@ -30,8 +30,8 @@ indent_size = 4
 [agent-android/config/detekt/baseline.xml]
 indent_size = 2
 
-# Tomcat context files use 4.
-[{install/context_template.xml,server/conf/context.xml}]
+# The Tomcat context file uses 4.
+[server/conf/context.xml]
 indent_size = 4
 
 # ProGuard rules follow the Kotlin side; Python (the vendored CI kit) is PEP 8.
@@ -65,7 +65,7 @@ charset = unset
 end_of_line = unset
 
 # Vendored or inherited-from-upstream assets we do not restyle: leave whatever is there alone.
-[{plugins/**/webapp/**,server/src/main/webapp/**,letsencrypt-ssl.sh,iptables-tomcat.sh,init-plugin.sh,init-plugin.bat,**/*.sql,TROUBLESHOOTING.txt}]
+[{plugins/**/webapp/**,server/src/main/webapp/**,init-plugin.sh,init-plugin.bat,**/*.sql}]
 indent_style = unset
 indent_size = unset
 insert_final_newline = unset

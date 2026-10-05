@@ -35,10 +35,12 @@ differs from the one it just computed. See `payloads/config-apply.schema.json` f
 
 ## Transport
 
-Commands ride the existing push channels (MQTT topic = device id, or HTTP long-poll) with a
-sync/poll fallback — the agent reconciles on every check-in regardless of push. The matrix
-is posted on the sync/enrollment call. Nothing here assumes push is reliable; push is an
-optimization, the sync loop is the source of truth.
+Commands are delivered in the `/checkin` response (see `endpoints.md`). To get them there quickly,
+the agent holds a WebSocket wake channel, `/agent/ws/{deviceNumber}` (`AgentWakeEndpoint` on the
+server, `TransportManager` in the agent): when a command is queued the server sends a small wake
+signal and the agent checks in. The socket carries no commands. A periodic WorkManager check-in is
+the fallback when it is down. The matrix is posted on the enrollment and check-in calls. Nothing here
+assumes the wake channel is reliable; it is an optimization, the check-in loop is the source of truth.
 
 ## Capability tiers for remote control
 

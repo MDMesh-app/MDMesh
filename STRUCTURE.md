@@ -13,10 +13,17 @@ cooperating planes plus shared protocol and docs.
 ├── agent-android/                                     # PLANE 3 — Device agent (new, Kotlin Device-Owner app)
 │   └── (remote-control transport lives in :remote)    # PLANE 4 — Remote control (WebRTC + coturn, signaling over MQTT/long-poll)
 ├── proto/                                             # Shared protocol: capability matrix + command model (source of truth)
+├── supervisor/                                        # Updater + recovery page (Node): polls releases, verifies, applies/rolls back
+├── install/                                           # Native installer/uninstaller, shared shell libs (lib/), seed SQL, email templates
+├── release/                                           # Release tooling: manifest build/sign/verify, APK checksum, minisign.pub
+├── scripts/                                           # Dev + CI helpers: Agent v1 e2e, dev seed, edge check, supervisor smoke, shots/
+├── tests/native/                                      # T2 rig: native install/upgrade in throwaway systemd containers
 ├── docs/adr/                                          # Architecture Decision Records (one-way-door choices)
 ├── reference/hmdm-android/                            # gitignored study clone of upstream agent (Apache-2.0, NOT shipped)
 └── docker/  docker-compose*.yml                       # Docker stack; dev = docker-compose.dev.yml overlay + docker/dev.env (docs/DEV.md)
 ```
+
+`setup.sh` (Docker or `--native`) and `quickstart.sh` (published images) at the root are the install entry points.
 
 ## The four planes
 
@@ -46,5 +53,6 @@ own top-level directories.
 ## Build & verify
 
 See `docs/DEV.md` for the local dev loop. Server builds with Maven, web with npm/Vite, agent
-with Gradle + the Android SDK. CI (`.github/workflows/`) builds all three; the agent runs
-against an Android API-level matrix.
+with Gradle + the Android SDK. CI (`.github/workflows/`) runs in tiers: T0 builds and unit-tests the
+planes a change touches, T1 runs the Agent v1 end-to-end suite, T2 the native install/upgrade rig. See
+"CI" in [CONTRIBUTING.md](CONTRIBUTING.md#ci).

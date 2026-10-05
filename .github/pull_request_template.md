@@ -23,7 +23,7 @@ Closes #
 
 ## How it was tested
 
-<!-- Commands you ran + results. e.g. `mvn -pl common test`, `npx tsc --noEmit`,
+<!-- Commands you ran + results. e.g. `mvn -pl common test`, `npx tsc -b --noEmit`,
      `./gradlew :app:compileDebugKotlin`, `node --test`, manual steps. -->
 
 ## Checklist

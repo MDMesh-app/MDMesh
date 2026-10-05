@@ -175,7 +175,7 @@ large change so we can agree on the approach.
 The console screenshots in the README are produced from the real SPA against sample data:
 ```bash
 cd web && npm run build          # build the SPA first
-cd ../scripts/shots && npm install && node capture.mjs
+cd ../scripts/shots && npm install && npx playwright install chromium && node capture.mjs
 ```
 Output lands in `docs/screenshots/`. See `scripts/shots/` for the harness + fixtures.
 

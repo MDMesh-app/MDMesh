@@ -7,6 +7,9 @@ an interface here; feature code never touches DPM directly.
 
 - `DeviceControl` — the narrow surface feature code may use. Exposes policy areas
   (currently `wifi`).
+- Policies, one directory each: `wifi/`, `bluetooth/`, `camera/`, `usb/` (`usbStorage`),
+  `screenshots/`, `factoryreset/` (`factoryReset`). These are the keys `CapabilityRegistry` can
+  advertise.
 - `PolicyStrategy` — base for SDK-gated implementations. `isSupported()` carries the
   `Build.VERSION.SDK_INT` (+ Device-Owner) check, evaluated once at selection.
 - `TogglePolicy` — the sub-interface for every on/off policy (Wi-Fi, camera, Bluetooth,
@@ -20,7 +23,7 @@ an interface here; feature code never touches DPM directly.
 
 ## Worked example: Wi-Fi (`wifi/`)
 
-The one fully end-to-end policy in the scaffold, showing the whole pattern:
+The policy with more than one strategy, showing the whole pattern:
 
 ```
 WifiPolicy (interface)
@@ -29,7 +32,7 @@ WifiPolicy (interface)
  └─ WifiPolicyFactory  (picks the first isSupported() strategy)
 ```
 
-Adding a new policy (bluetooth, camera, kioskLockTask, ...) means: define its
+Adding a new policy (mobileData, gps, ...) means: define its
 interface, write its strategies, add a factory, and register the probe in
 `CapabilityRegistry`. Nothing in `:core`/`:app` needs to know the SDK details.
 

@@ -14,8 +14,9 @@ Both sides flatten a `CapabilityMatrix.capabilities` object into a flat `Set<Str
 
 | Source | Token form | Example |
 |--------|-----------|---------|
-| `policy[]` entry | `policy.<key>` | `policy.wifi`, `policy.camera`, `policy.kioskLockTask` |
+| `policy[]` entry | `policy.<key>` | `policy.wifi`, `policy.camera`, `policy.factoryReset` |
 | `appManagement[]` entry | `app.<key>` | `app.silentInstall` |
+| `device[]` entry | `device.<key>` | `device.lock`, `device.wipe`, `device.configApply` |
 | `remoteControl.tier` (if not `none`) | `remote.<tier>` | `remote.view`, `remote.control` |
 | `oem.knox` (if true) | `oem.knox` | `oem.knox` |
 

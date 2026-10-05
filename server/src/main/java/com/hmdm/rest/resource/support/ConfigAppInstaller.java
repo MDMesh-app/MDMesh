@@ -24,6 +24,7 @@ import org.slf4j.LoggerFactory;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Turns a device's configuration app list into queued {@code app.install} commands — the piece
@@ -55,6 +56,15 @@ public class ConfigAppInstaller {
      * this as best-effort (enrollment must not fail because an app list is dirty).
      */
     public int enqueueConfigApps(Device device) {
+        return enqueueConfigApps(device, null);
+    }
+
+    /**
+     * Queue only the selected configuration application versions. A null selection means every
+     * install-marked application (the enrollment/manual-sync behaviour); a non-null selection is
+     * used by configuration edits to enqueue only newly added or changed versions.
+     */
+    public int enqueueConfigApps(Device device, Set<Integer> versionIds) {
         if (device == null || device.getConfigurationId() == null) {
             return 0;
         }
@@ -65,6 +75,9 @@ public class ConfigAppInstaller {
             long now = System.currentTimeMillis();
             for (Application app : apps) {
                 if (app == null || app.getAction() != ACTION_INSTALL) {
+                    continue;
+                }
+                if (versionIds != null && !versionIds.contains(app.getUsedVersionId())) {
                     continue;
                 }
                 String url = firstUsableUrl(app);

@@ -42,6 +42,7 @@ import com.hmdm.persistence.domain.ConfigurationApplicationParameters;
 import com.hmdm.persistence.mapper.ConfigurationMapper;
 import com.hmdm.security.SecurityException;
 import com.hmdm.util.CryptoUtil;
+import com.hmdm.util.ConfigurationAppDelta;
 import org.mybatis.guice.transactional.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -123,6 +124,12 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
         updateRecord(
                 config,
                 configuration -> {
+                    // Capture the linked versions before replacement. The update endpoint sends
+                    // the full desired app list, so this delta avoids reinstalling every APK when
+                    // an unrelated configuration field changes.
+                    List<Application> previousApplications = this.getPlainConfigurationApplications(configuration.getId());
+                    java.util.Set<Integer> addedInstallVersionIds = ConfigurationAppDelta.addedInstallVersionIds(
+                            previousApplications, configuration.getApplications());
                     this.mapper.updateConfiguration(configuration);
                     this.mapper.removeConfigurationApplicationsById(configuration.getId());
                     if (configuration.getApplications().size() > 0) {
@@ -186,7 +193,8 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
                         });
                     } */
 
-                    this.eventService.fireEvent(new ConfigurationUpdatedEvent(configuration.getId()));
+                    this.eventService.fireEvent(new ConfigurationUpdatedEvent(
+                            configuration.getId(), addedInstallVersionIds));
                 },
                 SecurityException::onConfigurationAccessViolation
         );

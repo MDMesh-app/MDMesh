@@ -27,6 +27,8 @@ import com.google.inject.Inject;
 import com.hmdm.event.EventService;
 import com.hmdm.notification.AgentWakeHub;
 import com.hmdm.persistence.AgentCommandDAO;
+import com.hmdm.persistence.UnsecureDAO;
+import com.hmdm.rest.resource.support.ConfigAppInstaller;
 import com.hmdm.persistence.ConfigurationUpdatedEventListener;
 import com.hmdm.persistence.DeviceInfoUpdatedEventListener;
 import com.hmdm.persistence.mapper.DeviceMapper;
@@ -48,6 +50,8 @@ public class EventListenerModule {
     private final DeviceStatusService deviceStatusService;
     private final AgentCommandDAO agentCommandDAO;
     private final AgentWakeHub wakeHub;
+    private final UnsecureDAO unsecureDAO;
+    private final ConfigAppInstaller configAppInstaller;
 
     private final ExecutorService executorService = ExecutorRegistry.register(Executors.newFixedThreadPool(1));
 
@@ -58,18 +62,23 @@ public class EventListenerModule {
      * <p>Constructs new <code>EventListenerModule</code> instance. This implementation does nothing.</p>
      */
     @Inject
-    public EventListenerModule(EventService eventService, DeviceMapper deviceMapper, DeviceStatusService deviceStatusService, AgentCommandDAO agentCommandDAO, AgentWakeHub wakeHub) {
+    public EventListenerModule(EventService eventService, DeviceMapper deviceMapper, DeviceStatusService deviceStatusService,
+                               AgentCommandDAO agentCommandDAO, AgentWakeHub wakeHub, UnsecureDAO unsecureDAO,
+                               ConfigAppInstaller configAppInstaller) {
         this.eventService = eventService;
         this.deviceMapper = deviceMapper;
         this.deviceStatusService = deviceStatusService;
         this.agentCommandDAO = agentCommandDAO;
         this.wakeHub = wakeHub;
+        this.unsecureDAO = unsecureDAO;
+        this.configAppInstaller = configAppInstaller;
     }
 
     public void init() {
         this.eventService.addEventListener(new DeviceInfoUpdatedEventListener(deviceStatusService));
         this.eventService.addEventListener(new ConfigurationUpdatedEventListener(deviceMapper, deviceStatusService));
-        this.eventService.addEventListener(new com.hmdm.rest.resource.support.AgentConfigUpdatedListener(agentCommandDAO, wakeHub));
+        this.eventService.addEventListener(new com.hmdm.rest.resource.support.AgentConfigUpdatedListener(
+                agentCommandDAO, wakeHub, unsecureDAO, configAppInstaller));
 
         executorService.submit(() -> {
             List<Integer> deviceIds = this.deviceMapper.getAllDeviceIds();

@@ -502,7 +502,8 @@ function ConfigEditor({
           )}
         </div>
         <p className="note" style={{ margin: '0 0 12px' }}>
-          Apps this template installs on its devices. Set an app to “Remove” to uninstall it.
+          App installs are queued when configuration apps are synced. To uninstall an app, use
+          Device control → Uninstall app. Other choices here stop configuration installs.
         </p>
         {allowed.length === 0 && <div className="cfg-empty">No apps assigned.</div>}
         {allowed.map((a) => (
@@ -516,7 +517,7 @@ function ConfigEditor({
               onChange={(e) => setAppAction(a.id, Number(e.target.value))}
             >
               <option value={1}>Install</option>
-              <option value={2}>Remove</option>
+              <option value={2}>Do not install</option>
               <option value={0}>Hide icon</option>
             </select>
             {!readOnly && (

@@ -63,8 +63,7 @@ string, except `configApply`.
 
 ## Command types
 
-`requiresCapability` is what the console or server sets when it queues the command. The server does not
-check it against the type; the bulk endpoint rejects `device.wipe` and `device.passcodeReset`.
+`requiresCapability` is what the console or server sets when it queues the command.
 
 | type | requiresCapability | payload (sketch) |
 |------|--------------------|------------------|

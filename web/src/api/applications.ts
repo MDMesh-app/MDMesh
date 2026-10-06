@@ -81,6 +81,11 @@ export async function getVersions(appId: number): Promise<ApplicationVersion[]> 
   return apiClient.get<ApplicationVersion[]>(`/private/applications/${appId}/versions`);
 }
 
+/** Remove a Library record and its server-hosted APK files. This never sends an uninstall command. */
+export async function deleteApplication(appId: number): Promise<void> {
+  await apiClient.del(`/private/applications/${appId}`);
+}
+
 export async function getAppConfigLinks(appId: number): Promise<AppConfigLink[]> {
   return apiClient.get<AppConfigLink[]>(`/private/applications/configurations/${appId}`);
 }

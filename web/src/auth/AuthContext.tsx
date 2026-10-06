@@ -25,6 +25,7 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   signIn: (username: string, password: string) => Promise<AuthUser>;
   signOut: () => Promise<void>;
+  expireSession: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -52,8 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return u;
   }, []);
 
-  const signOut = useCallback(async () => {
-    await apiLogout();
+  const expireSession = useCallback(() => {
     setUser(null);
     try {
       localStorage.removeItem(STORAGE_KEY);
@@ -62,9 +62,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const signOut = useCallback(async () => {
+    await apiLogout();
+    expireSession();
+  }, [expireSession]);
+
   const value = useMemo<AuthContextValue>(
-    () => ({ user, isAuthenticated: user !== null, signIn, signOut }),
-    [user, signIn, signOut],
+    () => ({ user, isAuthenticated: user !== null, signIn, signOut, expireSession }),
+    [user, signIn, signOut, expireSession],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

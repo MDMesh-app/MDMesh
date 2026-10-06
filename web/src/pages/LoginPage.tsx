@@ -8,7 +8,7 @@ export function LoginPage() {
   const { signIn } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const state = location.state as { from?: string; passwordChanged?: boolean } | null;
+  const state = location.state as { from?: string; passwordChanged?: boolean; sessionExpired?: boolean } | null;
   // Only a same-origin path: React Router 7 throws on '//host', '/\host' and absolute URLs.
   const from = typeof state?.from === 'string' && /^\/(?![/\\])/.test(state.from) ? state.from : '/dashboard';
 
@@ -75,6 +75,9 @@ export function LoginPage() {
 
         {state?.passwordChanged && !error && (
           <div className="login-ok">Password updated — sign in with your new password.</div>
+        )}
+        {state?.sessionExpired && !error && (
+          <div className="login-ok">Your session expired. Sign in again to continue.</div>
         )}
         {error && <div className="login-err">{error}</div>}
 

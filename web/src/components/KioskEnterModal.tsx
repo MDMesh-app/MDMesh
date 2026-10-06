@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { scanApps, fetchIcons, getLatestScan, type AppInfo } from '../api/deviceApps';
 import { listApplications, appCategory, type Application } from '../api/applications';
 import { queueCommand } from '../api/commands';
@@ -86,6 +87,8 @@ export function KioskEnterModal({
   const [scanErr, setScanErr] = useState<string | null>(null);
   const [deviceIcons, setDeviceIcons] = useState<Record<string, string>>({});
   const [loadingIcons, setLoadingIcons] = useState(false);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
 
   // Cancels in-flight scan / icon polls when the modal closes (it unmounts on close).
   const abortRef = useRef<AbortController | null>(null);
@@ -93,6 +96,17 @@ export function KioskEnterModal({
     const ac = new AbortController();
     abortRef.current = ac;
     return () => ac.abort();
+  }, []);
+
+  useEffect(() => {
+    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    requestAnimationFrame(() => dialogRef.current?.focus());
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      openerRef.current?.focus();
+    };
   }, []);
 
   useEffect(() => {
@@ -207,10 +221,10 @@ export function KioskEnterModal({
     }
   }
 
-  return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true">
-      <div className="modal kiosk-modal">
-        <h3>Enter kiosk</h3>
+  return createPortal(
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="kiosk-enter-title">
+      <div className="modal kiosk-modal" ref={dialogRef} tabIndex={-1}>
+        <h3 id="kiosk-enter-title">Enter kiosk</h3>
         <p className="muted">Pick the apps to lock the device to — from your library, or by scanning the device.</p>
 
         <div className="kiosk-source">
@@ -306,6 +320,7 @@ export function KioskEnterModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

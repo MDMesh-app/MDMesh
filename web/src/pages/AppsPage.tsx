@@ -213,6 +213,7 @@ function CustomSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [pkg, setPkg] = useState('');
+  const [version, setVersion] = useState('');
   const [vc, setVc] = useState('');
   const [sha, setSha] = useState('');
   const [bundle, setBundle] = useState<BundleUploadResult | null>(null);
@@ -241,6 +242,7 @@ function CustomSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
       if (fd) {
         if (fd.name) setName(fd.name);
         if (fd.pkg) setPkg(fd.pkg);
+        if (fd.version) setVersion(fd.version);
         if (fd.versionCode) setVc(String(fd.versionCode));
       }
       try {
@@ -301,6 +303,7 @@ function CustomSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
       setSha('');
       if (b.name) setName(b.name);
       if (b.packageName) setPkg(b.packageName);
+      setVersion(b.version || String(b.versionCode));
       if (b.versionCode) setVc(String(b.versionCode));
       // Register in the Library so it shows in the config picker + is assignable to a configuration.
       // A single-part bundle (a universal.apk .apks) is an ordinary single-URL app; a multi-part bundle
@@ -377,6 +380,7 @@ function CustomSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
         name: name.trim() || pkg.trim(),
         pkg: pkg.trim(),
         url: isMultiPart ? undefined : url.trim(),
+        version: version.trim() || (vc ? String(vc) : undefined),
         versionCode: vc ? Number(vc) : undefined,
         type: 'app',
         parts: isMultiPart

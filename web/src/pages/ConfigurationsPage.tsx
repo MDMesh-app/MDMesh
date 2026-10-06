@@ -69,6 +69,10 @@ export function ConfigurationsPage() {
   const [copyOf, setCopyOf] = useState<Configuration | null>(null);
   const [sync, setSync] = useState<Record<number, ConfigSyncSummary>>({});
 
+  const refreshSync = () => getSyncSummary()
+    .then((rows) => setSync(Object.fromEntries(rows.map((r) => [r.configurationId, r]))))
+    .catch(() => undefined);
+
   const load = () =>
     getConfigurations()
       .then(setConfigs)
@@ -76,12 +80,23 @@ export function ConfigurationsPage() {
         setConfigs([]);
         setError('Could not load configurations.');
       })
-      .then(() => getSyncSummary().then((rows) => setSync(Object.fromEntries(rows.map((r) => [r.configurationId, r])))).catch(() => undefined));
+      .then(() => refreshSync());
 
   useEffect(() => {
     void load();
     listApplications().then((a) => setApps(a.filter((x) => (x.type ?? 'app') !== 'web'))).catch(() => undefined);
   }, []);
+
+  // A save returns before a device has applied its new desired state. Refresh only while a
+  // configuration is genuinely pending, then stop automatically once every supported device
+  // reports its matching revision. This avoids a permanently stale 0/1 badge without making
+  // the overview a constant polling page.
+  const hasPendingSync = Object.values(sync).some((s) => s.total > 0 && s.outOfSync > 0);
+  useEffect(() => {
+    if (editing || !hasPendingSync) return;
+    const timer = window.setInterval(() => { void refreshSync(); }, 10_000);
+    return () => window.clearInterval(timer);
+  }, [editing, hasPendingSync]);
 
   if (editing) {
     return (

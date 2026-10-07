@@ -586,6 +586,15 @@ function Field({
 }
 
 function FieldControl({ def, value, apps, assigned, disabled, onChange }: { def: FieldDef; value: unknown; apps: Application[]; assigned: ConfigApp[]; disabled?: boolean; onChange: (v: unknown) => void }) {
+  if (def.key === 'blockedAppStores') {
+    return (
+      <span>
+        <input className="input" type="text" value={value == null ? '' : String(value)}
+          placeholder="Default: Play Store, Galaxy Store" disabled={disabled} onChange={(e) => onChange(e.target.value)} />
+        <button className="btn" type="button" disabled={disabled || value == null} onClick={() => onChange(null)}>Use defaults</button>
+      </span>
+    );
+  }
   switch (def.type) {
     case 'switch':
       return (

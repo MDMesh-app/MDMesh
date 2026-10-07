@@ -28,6 +28,9 @@ Advertised only when the device has a working strategy for it (`CapabilityRegist
 | `systemUpdatePolicy` | OS update windows | 24 | Planned: not advertised yet. |
 | `factoryResetProtection` | FRP policy | 30 | setFactoryResetProtectionPolicy; does not *prevent* a wipe, it decides whether a wiped device demands a Google account. Not implemented. |
 
+| `userAppInstall` | allow/block user installation | 26 | Device Owner; config.apply / policy.apply, unknown sources + configured stores, MDM installs remain allowed |
+| `userAppUninstall` | allow/block user uninstallation | 26 | Device Owner; config.apply / policy.apply, per-package protection and targeted MDM removal |
+
 ### appManagement
 | key | meaning | notes |
 |-----|---------|-------|

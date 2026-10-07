@@ -33,6 +33,17 @@ class ConfigApplyHandlerTest {
     private fun cmd(payload: kotlinx.serialization.json.JsonObject?) = CommandEnvelope(commandId = "9", issuedAt = "2026-01-01T00:00:00Z", type = "config.apply", payload = payload)
     private val doc = buildJsonObject { put("revision", "r1"); put("configurationId", 1); putJsonObject("policies") { put("wifi", true) } }
 
+    @Test fun `old agent reports new user app policies unsupported`() = runTest {
+        val payload = buildJsonObject {
+            put("revision", "new-policy"); put("configurationId", 1)
+            putJsonObject("policies") { put("userAppInstall", false); put("userAppUninstall", false) }
+        }
+        val result = handler(PolicyOutcome.Applied).handle(cmd(payload))
+        val parsed = ProtocolJson.json.decodeFromString(ConfigApplyResult.serializer(), result.detail!!)
+        assertEquals("unsupported", parsed.outcomes["policies.userAppInstall"])
+        assertEquals("unsupported", parsed.outcomes["policies.userAppUninstall"])
+    }
+
     @Test fun `done with outcomes json in detail`() = runTest {
         val r = handler(PolicyOutcome.Applied).handle(cmd(doc))
         assertEquals(CommandStatus.DONE, r.status)

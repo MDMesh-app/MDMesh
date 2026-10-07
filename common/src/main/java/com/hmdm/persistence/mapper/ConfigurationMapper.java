@@ -94,6 +94,9 @@ public interface ConfigurationMapper {
             "orientation=#{orientation}, " +
             "runDefaultLauncher=#{runDefaultLauncher}, " +
             "disableScreenshots=#{disableScreenshots}, " +
+            "blockedAppStores=#{blockedAppStores}, " +
+            "blockUserAppInstall=#{blockUserAppInstall}, " +
+            "blockUserAppUninstall=#{blockUserAppUninstall}, " +
             "autostartForeground=#{autostartForeground}, " +
             "useDefaultDesignSettings=#{useDefaultDesignSettings}, " +
             "timeZone=#{timeZone}, " +

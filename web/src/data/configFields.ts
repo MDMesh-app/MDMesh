@@ -98,6 +98,9 @@ export const CONFIG_FIELDS: FieldDef[] = [
   // ── Restrictions ─────────────────────────────────────────────────────────
   { key: 'usbStorage', label: 'USB storage', type: 'tri', group: 'Restrictions', focused: true, enforced: true, help: 'Allow access to USB mass storage.' },
   { key: 'blockStatusBar', label: 'Lock status bar', type: 'switch', group: 'Restrictions', help: 'Prevent pulling down the system status bar.' },
+  { key: 'blockUserAppInstall', label: 'Block user app installation', type: 'tri', group: 'Restrictions', focused: true, enforced: true, help: 'Block APKs from unknown sources and hide the configured app stores. MDMesh can still install and update apps. Other trusted stores, secondary users and ADB need separate controls. Auto keeps the previous policy; use Off to unblock.' },
+  { key: 'blockUserAppUninstall', label: 'Block user app uninstallation', type: 'tri', group: 'Restrictions', focused: true, enforced: true, help: 'Protect installed apps from user removal. MDMesh temporarily releases only the package it removes. Auto keeps the previous policy; use Off to unblock.' },
+  { key: 'blockedAppStores', label: 'App stores to block', type: 'text', group: 'Restrictions', enforced: true, help: 'Comma-separated package names. Auto/default: com.android.vending,com.sec.android.app.samsungapps. An explicit empty value hides no stores. Never include Android system components or the MDMesh agent.' },
   { key: 'disableScreenshots', label: 'Block screenshots', type: 'tri', group: 'Restrictions', enforced: true, help: 'Prevent screenshots and screen recording.' },
   { key: 'disableFactoryReset', label: 'Block factory reset', type: 'tri', group: 'Restrictions', focused: true, enforced: true, help: 'Prevent a factory reset from Settings; Auto leaves an existing block on the device, Off releases it.' },
   { key: 'lockVolume', label: 'Lock volume', type: 'tri', group: 'Restrictions', help: 'Disable the volume buttons.' },

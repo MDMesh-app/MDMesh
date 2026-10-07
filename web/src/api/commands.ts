@@ -130,9 +130,36 @@ export interface CommandTemplateExt extends CommandTemplate {
   group?: 'safe' | 'disruptive' | 'destructive';
   /** Builds the request from gathered params (overrides static `request` when present). */
   build?: (values: Record<string, string>) => QueueCommandRequest;
+  /** Error displayed before a parameterized command can be queued. */
+  validate?: (values: Record<string, string>) => string | null;
+}
+
+function uninstallValidation(values: Record<string, string>): string | null {
+  const pkg = (values.packageName ?? '').trim();
+  if (!/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+$/.test(pkg)) {
+    return 'Enter a valid Android package name, for example com.example.app.';
+  }
+  if (pkg === 'com.mdmesh.agent' || pkg === 'com.mdmesh.agent.debug') {
+    return 'The MDMesh management agent cannot be removed with this action.';
+  }
+  return null;
 }
 
 export const ACTION_TEMPLATES: CommandTemplateExt[] = [
+  {
+    key: 'app-uninstall', label: 'Uninstall app', group: 'destructive', danger: true,
+    description: 'Remove an installed app and its local data. Remove its Install assignment from the configuration to prevent a later app sync from reinstalling it.',
+    confirm: 'simple',
+    params: [{ key: 'packageName', label: 'Package name', kind: 'text', required: true, placeholder: 'com.example.app' }],
+    // Current agents advertise only silentInstall for Device Owner app management.
+    request: { type: 'app.uninstall', requiresCapability: 'app.silentInstall' },
+    validate: uninstallValidation,
+    build: (v) => {
+      const error = uninstallValidation(v);
+      if (error) throw new Error(error);
+      return { type: 'app.uninstall', requiresCapability: 'app.silentInstall', payload: JSON.stringify({ packageName: v.packageName.trim() }) };
+    },
+  },
   {
     key: 'lockscreen-message', label: 'Set lock-screen message', group: 'safe',
     description: 'Show a custom message on the device lock screen (empty clears it).',

@@ -86,6 +86,7 @@ export function ActionConsole({ device }: { device: Device }) {
 
   const canSend =
     !active ? false
+    : active.validate?.(values) ? false
     : active.confirm === 'type-to-confirm' ? confirmText === 'WIPE'
     : active.params?.some((p) => p.required && !values[p.key]) ? false
     : true;
@@ -139,6 +140,7 @@ export function ActionConsole({ device }: { device: Device }) {
           <div className="modal">
             <h3>{active.label}</h3>
             <p className="muted">{active.description}</p>
+            {active.key === 'app-uninstall' && <p>Device: <strong>{device.number}</strong></p>}
             {active.params?.map((p) => (
               <label key={p.key} className="field">
                 <span>{p.label}</span>
@@ -156,6 +158,7 @@ export function ActionConsole({ device }: { device: Device }) {
                 <input value={confirmText} onChange={(e) => setConfirmText(e.target.value)} />
               </label>
             )}
+            {active.validate?.(values) && <p role="alert">{active.validate(values)}</p>}
             <div className="modal-actions">
               <button className="btn" disabled={busy} onClick={() => setActive(null)}>Cancel</button>
               <button

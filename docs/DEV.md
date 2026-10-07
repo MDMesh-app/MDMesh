@@ -191,3 +191,35 @@ matrix also runs by hand on `main` before every release (see [RELEASING.md](../R
 **Extending it** (e.g. for a JDK or Tomcat change): a new distro is a case in `distro_setup` (`tests/native/lib/host.sh`);
 a new kill point is a row in `KILL_POINTS` (`tests/native/lib/guest.sh`); a new scenario is a branch in `run.sh` built
 from the same steps (`start_container`, `prepare_checkout`, `run_install`, `check_install`, `continuity_before/after`).
+
+## Confirmed per-device app removal
+
+In a device's Control tab, **Uninstall app** accepts an Android package name and
+requires confirmation with the selected device number visible. Invalid package
+names and the standard MDMesh production/debug agent packages are rejected.
+The command is queued as `app.uninstall`; watch the command timeline for the
+agent result. A queued command is not proof that removal has finished.
+
+Remove the app's Install assignment from its configuration first if it should
+stay removed: a later configuration app sync can reinstall an assigned app.
+The configuration choice **Do not install** stops installs; it does not queue
+an uninstall. Automatic configuration-driven removal is outside this change.
+
+The command requires `app.silentInstall`, the existing Device Owner app-management
+capability advertised by current agents. Although the protocol registry lists
+`silentUninstall`, current `AppManagement.DEVICE_OWNER_KEYS` does not advertise
+it; requiring that unadvertised key would prevent these agents receiving removal.
+No agent or REST contract changes are needed for this console action.
+
+UI regression check (fixtures only; no real devices or server commands):
+
+```bash
+cd web && npm ci && npm run build
+cd ../scripts/shots && npm install && npx playwright install chromium
+node uninstall-check.mjs
+```
+
+Set `CHROMIUM_PATH` to use an installed browser; `SCREENSHOT_PATH` optionally
+captures the confirmation dialog. The check verifies invalid/self-agent inputs,
+cancel without dispatch, and the selected device, capability and trimmed package
+in the confirmed request. Screenshot: [confirmation](screenshots/app-uninstall.png).

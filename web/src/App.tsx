@@ -1,7 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router';
 import { AuthProvider } from './auth/AuthContext';
 import { ProtectedRoute } from './auth/ProtectedRoute';
-import { SessionExpiryRedirect } from './auth/SessionExpiryRedirect';
 import { ThemeProvider } from './ui/theme';
 import { ToastProvider } from './ui/toast';
 import { LoginPage } from './pages/LoginPage';
@@ -20,7 +19,6 @@ export default function App() {
       <ThemeProvider>
       <ToastProvider>
         <BrowserRouter>
-          <SessionExpiryRedirect />
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/set-password" element={<SetPasswordPage />} />

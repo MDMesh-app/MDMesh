@@ -534,10 +534,11 @@ public interface ApplicationMapper {
 
     @Select({"SELECT COUNT(*) AS cnt " +
             "FROM applications " +
-            "INNER JOIN customers ON customers.id = applications.customerId " +
-            "INNER JOIN applicationVersions ON applicationVersions.id = applications.latestVersion " +
-            "WHERE (applications.customerId = #{customerId})" +
-            "AND (applicationVersions.url=#{url}) "})
+            "INNER JOIN applicationVersions ON applicationVersions.applicationId = applications.id " +
+            "WHERE applications.customerId = #{customerId} " +
+            "AND (applicationVersions.url = #{url} " +
+            "     OR applicationVersions.urlArmeabi = #{url} " +
+            "     OR applicationVersions.urlArm64 = #{url})"})
     long countAllApplicationsByUrl(@Param("customerId") int customerId, @Param("url") String url);
 
     @Select({"SELECT applications.name || ' ' || applicationVersions.version AS name " +

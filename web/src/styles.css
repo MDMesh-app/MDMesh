@@ -1991,12 +1991,6 @@ a {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.cfg-app-ver {
-  color: var(--faint);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  white-space: nowrap;
-}
 .cfg-app-add {
   margin-top: 12px;
 }

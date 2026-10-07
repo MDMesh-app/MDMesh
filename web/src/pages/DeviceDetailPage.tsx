@@ -182,11 +182,9 @@ export function DeviceDetailPage() {
   // Location is persisted independently from the compact telemetry snapshot. Refresh it when a
   // real device-state update arrives, so the summary does not claim “no fix” merely because a
   // later check-in omitted its optional dynamic.location object.
+  useEffect(() => setLatestLocation(null), [device?.number]);
   useEffect(() => {
-    if (!device) {
-      setLatestLocation(null);
-      return;
-    }
+    if (!device) return;
     let active = true;
     listLocations(device.number)
       .then((fixes) => { if (active) setLatestLocation(fixes[0] ?? null); })

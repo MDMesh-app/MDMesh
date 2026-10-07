@@ -435,9 +435,10 @@ a {
   display: none;
 }
 
-/* route fade-in */
+/* Route fade-in. No fill-mode: a transform kept after the animation would make <main> the containing block for
+   position:fixed, pushing every modal backdrop inside it off-screen on long pages. */
 .route-enter {
-  animation: routeIn 0.2s ease both;
+  animation: routeIn 0.2s ease;
 }
 @keyframes routeIn {
   from {
@@ -2623,10 +2624,6 @@ a {
 
 /* --- Kiosk app picker modal --- */
 .modal.kiosk-modal { max-width: 640px; width: 92vw; }
-.modal.kiosk-change-modal {
-  max-height: calc(100dvh - 48px);
-  overflow-y: auto;
-}
 .kiosk-scan { display: flex; flex-direction: column; gap: 10px; padding: 12px 0; }
 .err-text { color: var(--danger); font-size: 13px; }
 .kiosk-mode { display: flex; gap: 18px; margin: 6px 0 10px; font-size: 13px; color: var(--text-2); }

@@ -1,5 +1,3 @@
-import { useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import type { Configuration } from '../api/configurations';
 import { KIOSK_AFFECTING_KEYS } from '../data/configFields';
 
@@ -26,33 +24,16 @@ export function kioskAffectingChanges(before: Configuration, after: Configuratio
 
 /** `count` null = the sync summary is unavailable: still confirm, without a number (fail closed). */
 export function KioskChangeConfirm({ count, keys, onCancel, onConfirm }: { count: number | null; keys: string[]; onCancel: () => void; onConfirm: () => void }) {
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-  const openerRef = useRef<HTMLElement | null>(null);
-
-  // The configuration editor can be taller than the viewport. Render directly beneath body so
-  // the confirmation is always viewport-relative instead of inheriting that page's scroll area.
-  useEffect(() => {
-    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    requestAnimationFrame(() => dialogRef.current?.focus());
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      openerRef.current?.focus();
-    };
-  }, []);
-
-  return createPortal(
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="kiosk-change-title" onClick={onCancel}>
-      <div className="modal kiosk-change-modal" ref={dialogRef} tabIndex={-1} onClick={(e) => e.stopPropagation()}>
-        <h3 id="kiosk-change-title">{count == null ? 'Change kiosk on its devices?' : `Change kiosk on ${count} device${count === 1 ? '' : 's'}?`}</h3>
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={onCancel}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>{count == null ? 'Change kiosk on its devices?' : `Change kiosk on ${count} device${count === 1 ? '' : 's'}?`}</h3>
         <p>This edit changes kiosk settings ({keys.join(', ')}). Every device assigned to this configuration will re-apply kiosk at its next check-in, usually within seconds. Turning kiosk off lifts it only on devices that entered kiosk through this configuration.</p>
         <div className="modal-actions">
           <button className="btn" onClick={onCancel}>Keep editing</button>
           <button className="btn btn-primary" onClick={onConfirm}>Save and apply</button>
         </div>
       </div>
-    </div>,
-    document.body,
+    </div>
   );
 }

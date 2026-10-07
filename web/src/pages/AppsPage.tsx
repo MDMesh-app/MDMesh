@@ -258,6 +258,7 @@ function CustomSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
   const [savedAppId, setSavedAppId] = useState<number | undefined>(undefined);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [savingToLibrary, setSavingToLibrary] = useState(false);
   const [dropped, setDropped] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -402,8 +403,9 @@ function CustomSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
     });
   }
 
-  // Explicit "Add to Library" — the drop-time save is automatic but silent; this gives a visible action
-  // (with real success/error feedback) and a retry, and captures the app id so it becomes config-assignable.
+  // Upload normally registers the app automatically. This is retained as a retry path for a
+  // failed automatic registration or a URL entered by hand; never create a second Library row
+  // after the upload has already supplied an id.
   async function saveToLibrary() {
     // A multi-part bundle has no single URL — its parts stand in for one.
     const isMultiPart = !!bundle && bundle.parts.length > 1;
@@ -411,6 +413,7 @@ function CustomSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
       toast.push('err', 'Missing fields', 'A package name and an APK URL (or a bundle) are required to add it to your Library.');
       return;
     }
+    setSavingToLibrary(true);
     try {
       const saved = await saveAndroidApplication({
         name: name.trim() || pkg.trim(),
@@ -432,6 +435,8 @@ function CustomSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
       } else {
         toast.push('err', 'Could not add to Library', e instanceof Error ? e.message : 'The server rejected the save.');
       }
+    } finally {
+      setSavingToLibrary(false);
     }
   }
 
@@ -556,9 +561,9 @@ function CustomSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
           <button
             className="btn"
             onClick={() => void saveToLibrary()}
-            disabled={!pkg.trim() || (!url.trim() && !(bundle && bundle.parts.length > 1))}
+            disabled={uploading || savingToLibrary || !!savedAppId || !pkg.trim() || (!url.trim() && !(bundle && bundle.parts.length > 1))}
           >
-            {savedAppId ? '✓ In Library' : 'Add to Library'}
+            {savedAppId ? '✓ In Library' : savingToLibrary ? 'Adding…' : 'Add to Library'}
           </button>
           <button className="btn btn-primary" onClick={submit}>
             Deploy…

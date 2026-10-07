@@ -409,6 +409,12 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
 
     private void removeVersionApk(Customer customer, Integer id, String url) {
         if (url != null && !url.trim().isEmpty()) {
+            // This call follows deletion of the row/version. Preserve a hosted file when another
+            // Library version still references it, including an older non-latest version.
+            if (this.mapper.countAllApplicationsByUrl(customer.getId(), url) > 0) {
+                log.info("Keeping APK-file {} related to deleted application version #{} because another Library version still references it", url, id);
+                return;
+            }
             final String apkFile = FileUtil.translateURLToLocalFilePath(customer, url, baseUrl);
             if (apkFile != null) {
                 final boolean deleted = FileUtil.deleteFile(customer, filesDirectory, apkFile);

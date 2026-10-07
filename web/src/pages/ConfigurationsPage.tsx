@@ -375,6 +375,8 @@ function ConfigEditor({
 
   const allowed: ConfigApp[] = (draft.applications as ConfigApp[] | undefined) ?? [];
   const allowedIds = useMemo(() => new Set(allowed.map((a) => a.id)), [allowed]);
+  // Only an installed app that is shown in kiosk can be the main app.
+  const mainAppChoices = apps.filter((a) => allowed.some((x) => x.id === a.id && (x.action ?? 1) === 1 && x.showIcon !== false));
 
   function addApps(chosen: Application[]) {
     const entries: ConfigApp[] = chosen.map((app) => ({
@@ -499,7 +501,7 @@ function ConfigEditor({
         <section className="panel cfg-panel" key={group}>
           <div className="cfg-sec-h">{group}</div>
           {fields.map((f) => (
-            <Field key={f.key} def={f} value={draft[f.key]} apps={apps} assigned={allowed} disabled={readOnly} onChange={(v) => set(f.key, v)} />
+            <Field key={f.key} def={f} value={draft[f.key]} apps={f.key === 'mainAppId' ? mainAppChoices : apps} assigned={allowed} disabled={readOnly} onChange={(v) => set(f.key, v)} />
           ))}
         </section>
       ))}
@@ -515,7 +517,7 @@ function ConfigEditor({
         </div>
         <p className="note" style={{ margin: '0 0 12px' }}>
           Apps this template installs on its devices. Set an app to “Remove” to uninstall it.
-          {draft.kioskMode === true ? ' “Show in kiosk” separately controls child-facing launcher access.' : ''}
+          {draft.kioskMode === true ? ' “Show in kiosk” controls whether an installed app appears in the kiosk launcher.' : ''}
         </p>
         {allowed.length === 0 && <div className="cfg-empty">No apps assigned.</div>}
         {allowed.map((a) => (
@@ -642,10 +644,7 @@ function FieldControl({ def, value, apps, assigned, disabled, onChange }: { def:
     }
     case 'app': {
       // The stored value is an applicationVersions.id (see versionIdForApp).
-      const selectableApps = def.key === 'mainAppId'
-        ? apps.filter((a) => assigned.some((x) => x.id === a.id && (x.action ?? 1) === 1 && x.showIcon !== false))
-        : apps;
-      const options = selectableApps
+      const options = apps
         .map((a) => ({ a, vid: versionIdForApp(a, assigned) }))
         .filter((o): o is { a: Application; vid: number } => o.vid != null);
       const known = value == null || options.some((o) => o.vid === value);

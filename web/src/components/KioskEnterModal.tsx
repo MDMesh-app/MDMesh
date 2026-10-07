@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { scanApps, fetchIcons, getLatestScan, type AppInfo } from '../api/deviceApps';
 import { listApplications, appCategory, type Application } from '../api/applications';
-import { getConfigurations, type Configuration } from '../api/configurations';
+import { getConfiguration, type Configuration } from '../api/configurations';
 import { queueCommand } from '../api/commands';
 import { useToast } from '../ui/toast';
 
@@ -39,7 +39,7 @@ export function buildKioskPayload(c: KioskChoice, theme?: KioskTheme): object {
         ...common };
 }
 
-function kioskTheme(configuration: Configuration | undefined): KioskTheme | undefined {
+export function kioskTheme(configuration: Configuration | undefined): KioskTheme | undefined {
   if (!configuration) return undefined;
   const value = (key: 'backgroundColor' | 'textColor' | 'iconSize') =>
     typeof configuration[key] === 'string' ? configuration[key] as string : undefined;
@@ -128,12 +128,9 @@ export function KioskEnterModal({
   useEffect(() => {
     if (device.configurationId == null) return;
     let cancelled = false;
-    getConfigurations()
-      .then((configs) => {
-        if (cancelled) return;
-        setTheme(kioskTheme(configs.find((c) => c.id === device.configurationId)));
-      })
-      .catch(() => !cancelled && setThemeError('Could not load the assigned configuration theme.'))
+    getConfiguration(device.configurationId)
+      .then((c) => { if (!cancelled) setTheme(kioskTheme(c)); })
+      .catch(() => !cancelled && setThemeError('Could not load the configuration theme; the kiosk will use the default look.'))
       .finally(() => !cancelled && setThemeLoading(false));
     return () => { cancelled = true; };
   }, [device.configurationId]);
@@ -232,7 +229,7 @@ export function KioskEnterModal({
     if (m === 'single' && selected.size > 1) setSelected(new Set());
   }
 
-  const canApply = !themeLoading && !themeError && selected.size > 0 && (mode === 'launcher' || selected.size === 1);
+  const canApply = !themeLoading && selected.size > 0 && (mode === 'launcher' || selected.size === 1);
 
   async function apply() {
     const pkgs = [...selected];
@@ -256,7 +253,7 @@ export function KioskEnterModal({
         <h3>Enter kiosk</h3>
         <p className="muted">Pick the apps to lock the device to — from your library, or by scanning the device.</p>
         {themeLoading && <p className="muted">Loading configured launcher appearance…</p>}
-        {themeError && <p className="banner banner-alert">{themeError}</p>}
+        {themeError && <p className="muted">{themeError}</p>}
 
         <div className="kiosk-source">
           <button className={`seg-btn ${source === 'library' ? 'on' : ''}`} onClick={() => setSource('library')}>Library</button>

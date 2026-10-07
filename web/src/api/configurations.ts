@@ -52,6 +52,11 @@ export async function getConfigurations(): Promise<Configuration[]> {
   return apiClient.get<Configuration[]>('/private/configurations/search');
 }
 
+/** One full configuration. */
+export async function getConfiguration(id: number): Promise<Configuration> {
+  return apiClient.get<Configuration>(`/private/configurations/${id}`);
+}
+
 // The app↔configuration matrix for one config. The server (GET
 // /configurations/applications/{id}) returns EVERY library app carrying a
 // `selected` flag plus its per-config columns (action, usedVersionId, showIcon…).

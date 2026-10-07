@@ -40,8 +40,13 @@ function specForApp(app: Application): AppInstallSpec | null {
 }
 
 export function BulkActionModal({
-  deviceIds, onClose, onDone,
-}: { deviceIds: number[]; onClose: () => void; onDone: () => void }) {
+  deviceIds, devices, onClose, onDone,
+}: {
+  deviceIds: number[];
+  devices: { id: number; configurationId?: number }[];
+  onClose: () => void;
+  onDone: () => void;
+}) {
   const toast = useToast();
   const n = deviceIds.length;
   const [active, setActive] = useState<CommandTemplateExt | null>(null);
@@ -116,6 +121,7 @@ export function BulkActionModal({
     return (
       <BulkKioskModal
         deviceIds={deviceIds}
+        devices={devices}
         onClose={() => setKioskOpen(false)}
         onDone={() => { onDone(); onClose(); }}
       />

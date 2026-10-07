@@ -357,6 +357,7 @@ export function DevicesPage() {
       {actionsOpen && (
         <BulkActionModal
           deviceIds={[...selected]}
+          devices={devices}
           onClose={() => setActionsOpen(false)}
           onDone={() => clearSel()}
         />

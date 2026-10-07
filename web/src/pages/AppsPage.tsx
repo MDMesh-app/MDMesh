@@ -3,6 +3,7 @@ import { AppShell } from '../ui/AppShell';
 import { useToast } from '../ui/toast';
 import {
   listApplications,
+  appCategory,
   getVersions,
   uploadApk,
   uploadBundle,
@@ -200,18 +201,9 @@ function LibrarySource({ onDeploy }: { onDeploy: (app: Application) => void }) {
   );
 }
 
-/**
- * The database also contains package metadata for pre-installed system apps. Those entries are
- * useful to policy/configuration code, but are not application artifacts an administrator can
- * deploy. Keep the Apps Library honest by showing only versions with a normal APK URL or the
- * parts of a split APK bundle. URLs may be server-hosted or an explicitly configured external
- * source; requiring a local file would incorrectly hide the latter.
- */
-export function isDeployableLibraryApp(app: Application): boolean {
-  return (app.type ?? 'app') !== 'web'
-    && !app.system
-    && !app.pkg.startsWith('com.hmdm.')
-    && Boolean(app.url || app.parts);
+/** Only uploaded apps with something to install (an APK URL or split-bundle parts) are deployable. */
+function isDeployableLibraryApp(app: Application): boolean {
+  return appCategory(app) === 'uploaded' && Boolean(app.url || app.parts);
 }
 
 // Split-APK bundle containers the /bundle endpoint unpacks into installable parts.

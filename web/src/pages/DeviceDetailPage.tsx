@@ -190,7 +190,7 @@ export function DeviceDetailPage() {
     let active = true;
     listLocations(device.number)
       .then((fixes) => { if (active) setLatestLocation(fixes[0] ?? null); })
-      .catch(() => { if (active) setLatestLocation(null); });
+      .catch(() => undefined);
     return () => { active = false; };
   }, [device?.number, ds?.updatedAt]);
 
@@ -321,14 +321,7 @@ export function DeviceDetailPage() {
         capturedAt: latestLocation.capturedAt,
       }
     : undefined;
-  const telemetryHasCoordinates = typeof telemetryLocation?.lat === 'number' && typeof telemetryLocation?.lon === 'number';
-  const storedCapturedAt = storedLocation?.capturedAt ?? 0;
-  const telemetryCapturedAt = telemetryLocation?.capturedAt ?? 0;
-  // A check-in snapshot is not intrinsically newer than the persisted history entry. Prefer it
-  // only when it contains a valid coordinate pair with a later device-captured timestamp.
-  const loc = telemetryHasCoordinates && telemetryCapturedAt > storedCapturedAt
-    ? telemetryLocation
-    : storedLocation ?? telemetryLocation;
+  const loc = storedLocation ?? telemetryLocation;
   const hasFix = !!loc && typeof loc.lat === 'number' && typeof loc.lon === 'number';
   const locationRows: Row[] = hasFix
     ? [
@@ -345,7 +338,7 @@ export function DeviceDetailPage() {
         { k: 'Source', v: orDash(loc!.provider) },
         { k: 'Fix age', v: loc!.capturedAt ? fmtRelative(loc!.capturedAt) : '—' },
       ]
-    : [{ k: 'Location', v: 'No stored fix reported yet' }];
+    : [{ k: 'Location', v: 'No fix reported yet' }];
 
   const groups: Array<{ title: string; rows: Row[] }> = [
     { title: 'Status', rows: statusRows },

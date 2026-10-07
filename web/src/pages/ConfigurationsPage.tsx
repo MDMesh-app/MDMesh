@@ -68,6 +68,7 @@ export function ConfigurationsPage() {
   const [chooserOpen, setChooserOpen] = useState(false);
   const [copyOf, setCopyOf] = useState<Configuration | null>(null);
   const [sync, setSync] = useState<Record<number, ConfigSyncSummary>>({});
+  const [watch, setWatch] = useState<{ id: number; until: number } | null>(null);
 
   const refreshSync = () => getSyncSummary()
     .then((rows) => setSync(Object.fromEntries(rows.map((r) => [r.configurationId, r]))))
@@ -87,16 +88,28 @@ export function ConfigurationsPage() {
     listApplications().then((a) => setApps(a.filter((x) => (x.type ?? 'app') !== 'web'))).catch(() => undefined);
   }, []);
 
-  // A save returns before a device has applied its new desired state. Refresh only while a
-  // configuration is genuinely pending, then stop automatically once every supported device
-  // reports its matching revision. This avoids a permanently stale 0/1 badge without making
-  // the overview a constant polling page.
-  const hasPendingSync = Object.values(sync).some((s) => s.total > 0 && s.outOfSync > 0);
+  // A save returns before devices have applied the new desired state, so poll the saved
+  // configuration's sync summary for a short window: stop once its devices catch up or after
+  // two minutes (powered-off devices stay out of sync), and pause while the editor is open.
   useEffect(() => {
-    if (editing || !hasPendingSync) return;
-    const timer = window.setInterval(() => { void refreshSync(); }, 10_000);
-    return () => window.clearInterval(timer);
-  }, [editing, hasPendingSync]);
+    if (!watch || editing) return;
+    let on = true;
+    let t: ReturnType<typeof setTimeout>;
+    // Self-scheduling poll: the next tick is armed only after the current one finishes.
+    const poll = async () => {
+      const rows = await getSyncSummary().catch(() => null);
+      if (!on) return;
+      if (rows) setSync(Object.fromEntries(rows.map((r) => [r.configurationId, r])));
+      const row = rows?.find((r) => r.configurationId === watch.id);
+      if ((rows && !row?.outOfSync) || Date.now() >= watch.until) {
+        setWatch(null);
+        return;
+      }
+      t = setTimeout(() => void poll(), 10_000);
+    };
+    t = setTimeout(() => void poll(), 10_000);
+    return () => { on = false; clearTimeout(t); };
+  }, [watch, editing]);
 
   if (editing) {
     return (
@@ -108,6 +121,7 @@ export function ConfigurationsPage() {
           deviceCount={editing.id != null ? affectedDeviceCount(sync[editing.id]) : 0}
           onCancel={() => setEditing(null)}
           onSaved={() => {
+            if (editing.id != null) setWatch({ id: editing.id, until: Date.now() + 120_000 });
             setEditing(null);
             void load();
           }}

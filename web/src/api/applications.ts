@@ -18,6 +18,8 @@ export interface Application {
   system?: boolean;
   latestVersion?: number;
   runAfterInstall?: boolean;
+  /** Owned by the master customer; only a super-admin can delete it. */
+  commonApplication?: boolean;
   /** Split-bundle parts as a raw JSON string `[{url,sha256,name}]` (server stores it as text);
    *  present only for multi-part bundles. Use JSON.parse to read, JSON.stringify to send. */
   parts?: string;
@@ -81,7 +83,7 @@ export async function getVersions(appId: number): Promise<ApplicationVersion[]> 
   return apiClient.get<ApplicationVersion[]>(`/private/applications/${appId}/versions`);
 }
 
-/** Remove a Library record and its server-hosted APK files. This never sends an uninstall command. */
+/** Remove a Library record and its server-hosted APK files (unless another entry shares them). This never sends an uninstall command. */
 export async function deleteApplication(appId: number): Promise<void> {
   await apiClient.del(`/private/applications/${appId}`);
 }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '../ui/AppShell';
 import { useToast } from '../ui/toast';
+import { useAuth } from '../auth/AuthContext';
 import {
   listApplications,
   deleteApplication,
@@ -140,6 +141,7 @@ function LibrarySource({ onDeploy }: { onDeploy: (app: Application) => void }) {
   const [q, setQ] = useState('');
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const toast = useToast();
+  const { user } = useAuth();
 
   useEffect(() => {
     let cancelled = false;
@@ -172,15 +174,16 @@ function LibrarySource({ onDeploy }: { onDeploy: (app: Application) => void }) {
         return;
       }
       if (!window.confirm(
-        `Remove "${app.name}" from the Library? This deletes its Library record and any APK files hosted by MDMesh. It does not uninstall the app from enrolled devices.`,
+        `Remove "${app.name}" from the Library? This deletes its Library record and the APK files MDMesh hosts for it, except files another Library entry still uses. It does not uninstall the app from enrolled devices.`,
       )) return;
 
       setDeletingId(app.id);
       await deleteApplication(app.id);
       setApps((current) => current?.filter((item) => item.id !== app.id) ?? current);
-      toast.push('ok', 'Removed from Library', `${app.name} was not uninstalled from any device.`);
+      toast.push('ok', 'Removed from Library', `${app.name} — devices keep the installed app.`);
     } catch (e) {
-      toast.push('err', 'Remove failed', e instanceof Error ? e.message : '');
+      const msg = e instanceof Error ? e.message : '';
+      toast.push('err', 'Remove failed', /config\.reference\.exists/.test(msg) ? 'A configuration still uses this app.' : msg);
     } finally {
       setDeletingId(null);
     }
@@ -223,13 +226,15 @@ function LibrarySource({ onDeploy }: { onDeploy: (app: Application) => void }) {
                 <button className="btn btn-sm btn-primary" onClick={() => onDeploy(a)}>
                   Deploy
                 </button>
-                <button
-                  className="btn btn-sm btn-danger"
-                  disabled={deletingId != null}
-                  onClick={() => void removeFromLibrary(a)}
-                >
-                  {deletingId === a.id ? 'Removing…' : 'Remove'}
-                </button>
+                {(!a.commonApplication || user?.superAdmin) && (
+                  <button
+                    className="btn btn-sm btn-danger"
+                    disabled={deletingId != null}
+                    onClick={() => void removeFromLibrary(a)}
+                  >
+                    {deletingId === a.id ? 'Removing…' : 'Remove'}
+                  </button>
+                )}
               </div>
             </div>
           ))}

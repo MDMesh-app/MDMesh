@@ -435,9 +435,10 @@ a {
   display: none;
 }
 
-/* route fade-in */
+/* Route fade-in. No fill-mode: a transform kept after the animation would make <main> the containing block for
+   position:fixed, pushing every modal backdrop inside it off-screen on long pages. */
 .route-enter {
-  animation: routeIn 0.2s ease both;
+  animation: routeIn 0.2s ease;
 }
 @keyframes routeIn {
   from {

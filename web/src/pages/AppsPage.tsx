@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '../ui/AppShell';
 import { useToast } from '../ui/toast';
+import { useAuth } from '../auth/AuthContext';
 import {
   listApplications,
   appCategory,
+  deleteApplication,
+  getAppConfigLinks,
   getVersions,
   uploadApk,
   uploadBundle,
@@ -137,6 +140,9 @@ function LibrarySource({ onDeploy }: { onDeploy: (app: Application) => void }) {
   const [apps, setApps] = useState<Application[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState('');
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const toast = useToast();
+  const { user } = useAuth();
 
   useEffect(() => {
     let cancelled = false;
@@ -154,6 +160,35 @@ function LibrarySource({ onDeploy }: { onDeploy: (app: Application) => void }) {
     if (!needle) return apps;
     return apps.filter((a) => `${a.name} ${a.pkg}`.toLowerCase().includes(needle));
   }, [apps, q]);
+
+  async function removeFromLibrary(app: Application) {
+    try {
+      const links = await getAppConfigLinks(app.id);
+      const activeLinks = links.filter((link) => link.id != null);
+      if (activeLinks.length > 0) {
+        const names = activeLinks.map((link) => link.configurationName || `Configuration ${link.configurationId}`);
+        toast.push(
+          'err',
+          'App is still in use',
+          `Remove it from ${names.join(', ')} before deleting the Library record. This does not uninstall the app from devices.`,
+        );
+        return;
+      }
+      if (!window.confirm(
+        `Remove "${app.name}" from the Library? This deletes its Library record and the APK files MDMesh hosts for it, except files another Library entry still uses. It does not uninstall the app from enrolled devices.`,
+      )) return;
+
+      setDeletingId(app.id);
+      await deleteApplication(app.id);
+      setApps((current) => current?.filter((item) => item.id !== app.id) ?? current);
+      toast.push('ok', 'Removed from Library', `${app.name} — devices keep the installed app.`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : '';
+      toast.push('err', 'Remove failed', /config\.reference\.exists/.test(msg) ? 'A configuration still uses this app.' : msg);
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   return (
     <>
@@ -192,6 +227,15 @@ function LibrarySource({ onDeploy }: { onDeploy: (app: Application) => void }) {
                 <button className="btn btn-sm btn-primary" onClick={() => onDeploy(a)}>
                   Deploy
                 </button>
+                {(!a.commonApplication || user?.superAdmin) && (
+                  <button
+                    className="btn btn-sm btn-danger"
+                    disabled={deletingId != null}
+                    onClick={() => void removeFromLibrary(a)}
+                  >
+                    {deletingId === a.id ? 'Removing…' : 'Remove'}
+                  </button>
+                )}
               </div>
             </div>
           ))}

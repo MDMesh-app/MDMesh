@@ -17,7 +17,7 @@ public class DesiredConfigBuilderTest {
 
     /** Application ids and version ids are deliberately distinct: mainAppId is an applicationVersions.id. */
     private static Application app(int id, int versionId, String pkg, int action) {
-        Application a = new Application(); a.setId(id); a.setUsedVersionId(versionId); a.setPkg(pkg); a.setAction(action); return a;
+        Application a = new Application(); a.setId(id); a.setUsedVersionId(versionId); a.setPkg(pkg); a.setAction(action); a.setShowIcon(true); return a;
     }
 
     private static Configuration kioskConfig() {
@@ -100,6 +100,17 @@ public class DesiredConfigBuilderTest {
         DesiredConfig d = DesiredConfigBuilder.build(c, Collections.emptyList());
         assertNull(d.getKiosk());
         assertFalse(DesiredConfigBuilder.canonicalJson(d).contains("kiosk"));
+    }
+
+    @Test
+    public void installedAppHiddenFromKioskIsNotAllowedOrPinned() {
+        Application hidden = app(5, 505, "com.acme.hidden", 1);
+        hidden.setShowIcon(false);
+        DesiredConfig d = DesiredConfigBuilder.build(kioskConfig(), Arrays.asList(
+                hidden, app(6, 606, "com.acme.visible", 1)));
+        assertNull(d.getKiosk().getPinPackage());
+        assertEquals(Collections.singletonList("com.acme.visible"), d.getKiosk().getAllowedPackages());
+        assertEquals("launcher", d.getKiosk().getMode());
     }
 
     @Test

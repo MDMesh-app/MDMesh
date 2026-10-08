@@ -404,6 +404,8 @@ function ConfigEditor({
 
   const allowed: ConfigApp[] = (draft.applications as ConfigApp[] | undefined) ?? [];
   const allowedIds = useMemo(() => new Set(allowed.map((a) => a.id)), [allowed]);
+  // Only an installed app that is shown in kiosk can be the main app.
+  const mainAppChoices = apps.filter((a) => allowed.some((x) => x.id === a.id && (x.action ?? 1) === 1 && x.showIcon !== false));
 
   function addApps(chosen: Application[]) {
     const entries: ConfigApp[] = chosen.map((app) => ({
@@ -424,6 +426,18 @@ function ConfigEditor({
   }
   function setAppAction(id: number, action: number) {
     set('applications', allowed.map((a) => (a.id === id ? { ...a, action } : a)));
+  }
+  function setAppKioskVisibility(id: number, showIcon: boolean) {
+    setDraft((d) => {
+      const assigned = (d.applications as ConfigApp[] | undefined) ?? [];
+      const changed = assigned.find((a) => a.id === id);
+      const applications = assigned.map((a) => (a.id === id ? { ...a, showIcon } : a));
+      // A hidden app cannot remain the kiosk's pinned main app. Clearing the stale
+      // selection makes the resulting launcher state explicit rather than silently
+      // granting it kiosk access again.
+      const mainAppId = !showIcon && changed?.usedVersionId === d.mainAppId ? null : d.mainAppId;
+      return { ...d, applications, mainAppId };
+    });
   }
 
   function requestSave() {
@@ -516,14 +530,14 @@ function ConfigEditor({
         <section className="panel cfg-panel" key={group}>
           <div className="cfg-sec-h">{group}</div>
           {fields.map((f) => (
-            <Field key={f.key} def={f} value={draft[f.key]} apps={apps} assigned={allowed} disabled={readOnly} onChange={(v) => set(f.key, v)} />
+            <Field key={f.key} def={f} value={draft[f.key]} apps={f.key === 'mainAppId' ? mainAppChoices : apps} assigned={allowed} disabled={readOnly} onChange={(v) => set(f.key, v)} />
           ))}
         </section>
       ))}
 
       <section className="panel cfg-panel">
         <div className="cfg-sec-h" style={{ display: 'flex', alignItems: 'center' }}>
-          <span>Allowed apps</span>
+          <span>Managed apps</span>
           {!readOnly && (
             <button className="btn btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setPickerOpen(true)}>
               Add apps
@@ -532,6 +546,7 @@ function ConfigEditor({
         </div>
         <p className="note" style={{ margin: '0 0 12px' }}>
           Apps this template installs on its devices. Set an app to “Remove” to uninstall it.
+          {draft.kioskMode === true ? ' “Show in kiosk” controls whether an installed app appears in the kiosk launcher.' : ''}
         </p>
         {allowed.length === 0 && <div className="cfg-empty">No apps assigned.</div>}
         {allowed.map((a) => (
@@ -547,8 +562,19 @@ function ConfigEditor({
             >
               <option value={1}>Install</option>
               <option value={2}>Remove</option>
-              <option value={0}>Hide icon</option>
+              <option value={0}>Do not install</option>
             </select>
+            {draft.kioskMode === true && (
+              <label className="cfg-app-kiosk" title="Allow this installed app to appear and launch in kiosk mode">
+                <input
+                  type="checkbox"
+                  checked={a.showIcon !== false}
+                  disabled={readOnly || (a.action ?? 1) !== 1}
+                  onChange={(e) => setAppKioskVisibility(a.id, e.target.checked)}
+                />
+                Show in kiosk
+              </label>
+            )}
             {!readOnly && (
               <button className="btn btn-sm btn-ghost" onClick={() => removeApp(a.id)} aria-label="Remove app">✕</button>
             )}

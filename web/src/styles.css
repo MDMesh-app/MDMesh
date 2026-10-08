@@ -1992,6 +1992,14 @@ a {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.cfg-app-kiosk {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
 .cfg-app-add {
   margin-top: 12px;
 }

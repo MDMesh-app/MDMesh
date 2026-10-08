@@ -75,7 +75,8 @@ public final class DesiredConfigBuilder {
     private static DesiredKiosk kiosk(Configuration cfg, List<Application> apps) {
         String mainPkg = null;
         for (Application a : apps) {
-            if (a == null || a.getPkg() == null || a.getPkg().trim().isEmpty() || a.getAction() != ACTION_INSTALL) continue;
+            if (a == null || a.getPkg() == null || a.getPkg().trim().isEmpty()
+                    || a.getAction() != ACTION_INSTALL || !a.getShowIcon()) continue;
             if (cfg.getMainAppId() != null && cfg.getMainAppId().equals(a.getUsedVersionId())) mainPkg = a.getPkg().trim();
         }
         // Dedupe by package name (not row id): another Application row can carry the same pkg as
@@ -83,7 +84,8 @@ public final class DesiredConfigBuilder {
         // spuriously flip mode from "single" to "launcher".
         Set<String> distinctOthers = new TreeSet<String>();
         for (Application a : apps) {
-            if (a == null || a.getPkg() == null || a.getPkg().trim().isEmpty() || a.getAction() != ACTION_INSTALL) continue;
+            if (a == null || a.getPkg() == null || a.getPkg().trim().isEmpty()
+                    || a.getAction() != ACTION_INSTALL || !a.getShowIcon()) continue;
             String pkg = a.getPkg().trim();
             if (mainPkg != null && mainPkg.equals(pkg)) continue;
             distinctOthers.add(pkg);

@@ -27,7 +27,6 @@ class ConfigApplier(
     private val kiosk: KioskApplier,
     private val setLocationMode: (String) -> Unit,
     private val store: ConfigStateStore,
-    private val appRestrictions: AppRestrictions? = null,
 ) {
     private val mutex = Mutex()
 
@@ -35,12 +34,7 @@ class ConfigApplier(
 
     private suspend fun applyLocked(doc: ConfigApplyPayload): ConfigApplyResult {
         val outcomes = linkedMapOf<String, String>()
-        val appOutcomes = appRestrictions?.apply(doc.policies, doc.blockedAppStores) ?: emptyMap()
         for ((key, enabled) in doc.policies) {
-            if (key in appOutcomes) {
-                outcomes["policies.$key"] = appOutcomes.getValue(key)
-                continue
-            }
             outcomes["policies.$key"] = when (val o = toggles[key]?.setEnabled(enabled)) {
                 null, PolicyOutcome.Unsupported -> ConfigOutcome.UNSUPPORTED
                 PolicyOutcome.Applied -> ConfigOutcome.APPLIED
@@ -77,10 +71,7 @@ class ConfigApplier(
     }
 
     /** Re-run the last fully-applied document (after boot / self-update). Null when nothing is persisted. */
-    suspend fun reapplyPersisted(): ConfigApplyResult? = mutex.withLock {
-        appRestrictions?.reconcile()
-        store.load()?.let { applyLocked(it) }
-    }
+    suspend fun reapplyPersisted(): ConfigApplyResult? = mutex.withLock { store.load()?.let { applyLocked(it) } }
 
     companion object {
         fun succeeded(r: ConfigApplyResult): Boolean = r.outcomes.values.none(ConfigOutcome::isFailed)

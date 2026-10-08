@@ -48,6 +48,29 @@ class ConfigApplierTest {
         assertTrue(ConfigApplier.succeeded(r))
     }
 
+    @Test fun `user app toggles use generic routing and Auto leaves them untouched`() = runTest {
+        val install = FakeToggle("userAppInstall", PolicyOutcome.Applied)
+        val uninstall = FakeToggle("userAppUninstall", PolicyOutcome.Applied)
+        val applier = ConfigApplier(mapOf(install.capabilityKey to install, uninstall.capabilityKey to uninstall),
+            kiosk(FakeController()), {}, InMemoryConfigStateStore())
+        applier.apply(ConfigApplyPayload(revision = "blocked", policies = mapOf("userAppInstall" to false)))
+        assertEquals(false, install.last); assertNull(uninstall.last)
+        applier.apply(ConfigApplyPayload(revision = "auto"))
+        assertEquals(false, install.last); assertNull(uninstall.last)
+        applier.apply(ConfigApplyPayload(revision = "allowed",
+            policies = mapOf("userAppInstall" to true, "userAppUninstall" to true)))
+        assertEquals(true, install.last); assertEquals(true, uninstall.last)
+    }
+
+    @Test fun `busy app policy prevents persisting a revision that has not converged`() = runTest {
+        val store = InMemoryConfigStateStore()
+        store.save(ConfigApplyPayload(revision = "previous", policies = mapOf("userAppInstall" to false)))
+        val policy = FakeToggle("userAppInstall", PolicyOutcome.Failed("managed operation in progress; retry"))
+        val r = ConfigApplier(mapOf(policy.capabilityKey to policy), kiosk(FakeController()), {}, store)
+            .apply(ConfigApplyPayload(revision = "new", policies = mapOf("userAppInstall" to true)))
+        assertFalse(ConfigApplier.succeeded(r)); assertEquals("previous", store.revision())
+    }
+
     @Test fun `unsupported policy still counts as success and persists`() = runTest {
         val store = InMemoryConfigStateStore()
         val r = ConfigApplier(emptyMap(), kiosk(FakeController()), {}, store)

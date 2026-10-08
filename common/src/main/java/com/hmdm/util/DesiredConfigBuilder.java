@@ -46,15 +46,6 @@ public final class DesiredConfigBuilder {
         DesiredConfig d = new DesiredConfig();
         d.setConfigurationId(cfg.getId());
         d.setPolicies(policies(cfg));
-        if (cfg.getBlockUserAppInstall() != null) {
-            String stores = cfg.getBlockedAppStores() == null
-                    ? "com.android.vending,com.sec.android.app.samsungapps" : cfg.getBlockedAppStores();
-            Set<String> packages = new TreeSet<String>();
-            for (String pkg : stores.split(",")) {
-                if (!pkg.trim().isEmpty()) packages.add(pkg.trim());
-            }
-            d.setBlockedAppStores(new ArrayList<String>(packages));
-        }
         d.setKiosk(cfg.isKioskMode() ? kiosk(cfg, apps == null ? Collections.<Application>emptyList() : apps) : null);
         DesiredLocation loc = new DesiredLocation();
         loc.setMode(cfg.getRequestUpdates() == RequestUpdatesType.GPS ? "active" : "passive");

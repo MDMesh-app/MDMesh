@@ -46,6 +46,4 @@ public class DesiredConfig {
      */
     private DesiredKiosk kiosk;
     private DesiredLocation location;
-    /** Only sent when userAppInstall is managed; empty explicitly means no hidden stores. */
-    private java.util.List<String> blockedAppStores;
 }

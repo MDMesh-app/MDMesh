@@ -29,9 +29,7 @@ export function parseOutcomes(detail: string | null | undefined): ConfigOutcomes
   if (!detail) return null;
   try {
     const v = JSON.parse(detail) as Partial<ConfigOutcomes>;
-    if (!v || typeof v !== 'object' || !v.outcomes || typeof v.outcomes !== 'object' || Array.isArray(v.outcomes)) return null;
-    if (!Object.values(v.outcomes).every((o) => typeof o === 'string')) return null;
-    return { revision: v.revision, outcomes: v.outcomes };
+    return v && typeof v === 'object' && v.outcomes && typeof v.outcomes === 'object' ? { revision: v.revision, outcomes: v.outcomes } : null;
   } catch { return null; }
 }
 
@@ -39,13 +37,6 @@ export function parseOutcomes(detail: string | null | undefined): ConfigOutcomes
 export function summarizeStatus(s: ConfigStatus | null): { tone: 'ok' | 'warn' | 'alert' | 'idle'; label: string } {
   if (!s || s.configurationId == null) return { tone: 'idle', label: 'No configuration' };
   if (!s.supported) return { tone: 'warn', label: 'Agent too old' };
-  const outcomes = parseOutcomes(s.lastCommand?.detail);
-  if (outcomes && outcomes.revision === s.currentRevision && Object.values(outcomes.outcomes).some((v) => v.startsWith('failed'))) {
-    return { tone: 'alert', label: 'Apply failed' };
-  }
-  if (outcomes && outcomes.revision === s.currentRevision && Object.values(outcomes.outcomes).includes('unsupported')) {
-    return { tone: 'warn', label: 'Partially supported' };
-  }
   if (s.inSync) return { tone: 'ok', label: 'In sync' };
   const st = s.lastCommand?.status;
   if (st === 'pending' || st === 'delivered') return { tone: 'warn', label: 'Applying…' };

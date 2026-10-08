@@ -27,10 +27,9 @@ class ConfigCommandTest {
     }
 
     @Test
-    fun `store list is optional and explicit empty list survives roundtrip`() {
+    fun `app policy keys survive roundtrip without changing the document shape`() {
         val old = ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), """{"revision":"r"}""")
-        assertNull(old.blockedAppStores)
-        val document = old.copy(policies = mapOf(UserAppPolicy.INSTALL to false), blockedAppStores = emptyList())
+        val document = old.copy(policies = mapOf("userAppInstall" to false, "userAppUninstall" to true))
         val encoded = ProtocolJson.json.encodeToString(ConfigApplyPayload.serializer(), document)
         assertEquals(document, ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), encoded))
     }

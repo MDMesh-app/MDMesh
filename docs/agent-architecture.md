@@ -49,7 +49,7 @@ it via a configuration (an ad-hoc console "Enter kiosk" is left alone). The enfo
 are: `mainAppId`, `kioskMode`, `kioskExit`, `kioskHome`, `kioskRecents`, `kioskNotifications`,
 `kioskSystemInfo`, `kioskKeyguard`, `kioskLockButtons`, `password` (kiosk exit password, stored as entered),
 `backgroundColor`, `textColor`, `iconSize`, `wifi`, `bluetooth`, `usbStorage`, `disableScreenshots`,
-`disableFactoryReset`, `blockUserAppInstall`, `blockUserAppUninstall`, `blockedAppStores`
+`disableFactoryReset`, `blockUserAppInstall`, `blockUserAppUninstall`
 and `requestUpdates` (location capture mode); `name`/`description` are metadata only. See
 `proto/payloads/config-apply.schema.json` for the wire shape and `proto/payloads/config-apply-result.schema.json`
 for the per-key result. `config.apply` is protocol 1.1 — an additive change; 1.0 agents keep working unchanged.
@@ -74,7 +74,8 @@ lean on DO + lock-task auto-launch + WorkManager.
 - `:app` — status UI, manifest (install receiver, FGS types, `lockTaskMode`, queries), DI multibindings,
   baseline policy applied on enrollment.
 
-Protocol 1.3 adds `userAppInstall` / `userAppUninstall` policy capabilities and
-optional `blockedAppStores`. Android8+ Device Owner agents coordinate these
-policies with managed installs/removals and a durable restoration journal.
-See [User app restrictions](APP_RESTRICTIONS.md) for scope and acceptance checks.
+Protocol 1.3 adds `userAppInstall` / `userAppUninstall` toggle policies for Device
+Owner agents. They use Android's install/uninstall user restrictions; managed
+operations lift only the relevant restriction and restore it when the operation
+finishes. These exceptions are process-local; reboot / self-update re-applies
+explicit policies from the persisted configuration.

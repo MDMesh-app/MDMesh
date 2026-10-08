@@ -4,7 +4,6 @@ import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import com.mdmesh.agent.service.WakeKeepAlive
-import com.mdmesh.core.sync.AppRestrictionWorker
 import com.mdmesh.core.sync.CheckInWorker
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
@@ -26,7 +25,6 @@ class MdmApplication : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
-        AppRestrictionWorker.scheduleNow(this) // recover interrupted targeted removals, even with Auto
         CheckInWorker.schedule(this)   // periodic reconcile (WorkManager floor)
         CheckInWorker.scheduleNow(this) // prompt check-in on every cold start (post-install/reboot)
         WakeKeepAlive.schedule(this)   // doze-proof reconcile heartbeat

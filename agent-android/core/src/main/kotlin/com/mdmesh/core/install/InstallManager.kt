@@ -8,10 +8,15 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.os.Build
-import com.mdmesh.core.config.AppRestrictions
+import com.mdmesh.policy.ManagedAppPolicy
+import com.mdmesh.policy.TogglePolicy
+import com.mdmesh.policy.apps.UserAppInstallPolicy
+import com.mdmesh.policy.apps.UserAppUninstallPolicy
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.mdmesh.core.di.DownloadHttpClient
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -94,8 +99,10 @@ class InstallManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val resultBus: InstallResultBus,
     @DownloadHttpClient private val httpClient: OkHttpClient,
-    private val appRestrictions: AppRestrictions,
+    private val toggles: Map<String, @JvmSuppressWildcards TogglePolicy>,
 ) {
+
+    private val operationMutex = Mutex()
 
     private val packageInstaller: PackageInstaller
         get() = context.packageManager.packageInstaller
@@ -123,7 +130,10 @@ class InstallManager @Inject constructor(
         try {
             for (part in parts) {
                 val file = runCatching { obtainPart(part) }
-                    .getOrElse { return InstallOutcome.Failure(null, "apk fetch failed: ${it.message}") }
+                    .getOrElse {
+                        if (it is CancellationException) throw it
+                        return InstallOutcome.Failure(null, "apk fetch failed: ${it.message}")
+                    }
                 fetched += FetchedApk(file, downloaded = part.url != null)
                 part.sha256?.let { expected ->
                     val actual = sha256Of(file)
@@ -135,11 +145,14 @@ class InstallManager @Inject constructor(
 
             // 3. Create + write EVERY part into ONE session + commit, awaiting the broadcast result.
             val outcome = runCatching {
-                appRestrictions.managedInstall(req.packageName) {
-                    withTimeout(INSTALL_TIMEOUT_MS) { commitInstall(req.packageName, fetched.map { it.file }) }
+                managedOperation(UserAppInstallPolicy.CAPABILITY_KEY) {
+                    commitInstall(req.packageName, fetched.map { it.file })
                 }
             }
-                .getOrElse { return InstallOutcome.Failure(null, "install session error: ${it.message}") }
+                .getOrElse {
+                    if (it is CancellationException) throw it
+                    return InstallOutcome.Failure(null, "install session error: ${it.message}")
+                }
 
             // 4. Optionally launch the app on success.
             if (outcome is InstallOutcome.Success && req.runAfterInstall) {
@@ -164,16 +177,23 @@ class InstallManager @Inject constructor(
         // Reuse a stable session id derived from the package so the PendingIntent is unique.
         val sessionId = -(packageName.hashCode() and 0x7fff_ffff) - 1
         return try {
-            appRestrictions.managedRemoval(packageName) {
-                withTimeout(INSTALL_TIMEOUT_MS) {
-                    packageInstaller.uninstall(packageName, resultSender(sessionId).intentSender)
-                    mapResult(resultBus.await(sessionId))
-                }
+            managedOperation(UserAppUninstallPolicy.CAPABILITY_KEY) {
+                packageInstaller.uninstall(packageName, resultSender(sessionId).intentSender)
+                mapResult(resultBus.await(sessionId))
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             InstallOutcome.Failure(null, "uninstall error: ${e.message}")
         }
     }
+
+    /** Serialize managed operations and lift only the policy used by this operation. */
+    private suspend fun managedOperation(key: String, operation: suspend () -> InstallOutcome): InstallOutcome =
+        operationMutex.withLock {
+            val policy = toggles[key] as? ManagedAppPolicy
+            if (policy == null) operation() else policy.withAllowed(operation)
+        }
 
     // --- internals -----------------------------------------------------------------
 
@@ -295,8 +315,6 @@ class InstallManager @Inject constructor(
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
-
-    private companion object { const val INSTALL_TIMEOUT_MS = 5 * 60 * 1000L }
 
     private fun statusName(status: Int): String = when (status) {
         PackageInstaller.STATUS_FAILURE -> "FAILURE_UNKNOWN"

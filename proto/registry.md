@@ -27,9 +27,8 @@ Advertised only when the device has a working strategy for it (`CapabilityRegist
 | `passwordComplexity` | password policy | 31 | Planned: not advertised yet. setRequiredPasswordComplexity (setPasswordQuality deprecated @26) |
 | `systemUpdatePolicy` | OS update windows | 24 | Planned: not advertised yet. |
 | `factoryResetProtection` | FRP policy | 30 | setFactoryResetProtectionPolicy; does not *prevent* a wipe, it decides whether a wiped device demands a Google account. Not implemented. |
-
-| `userAppInstall` | allow/block user installation | 26 | Device Owner; config.apply / policy.apply, unknown sources + configured stores, MDM installs remain allowed |
-| `userAppUninstall` | allow/block user uninstallation | 26 | Device Owner; config.apply / policy.apply, per-package protection and targeted MDM removal |
+| `userAppInstall` | allow/block user installation | 24 | Device Owner; DISALLOW_INSTALL_APPS, temporarily lifted for managed installs |
+| `userAppUninstall` | allow/block user uninstallation | 24 | Device Owner; DISALLOW_UNINSTALL_APPS, temporarily lifted for managed removals |
 
 ### appManagement
 | key | meaning | notes |

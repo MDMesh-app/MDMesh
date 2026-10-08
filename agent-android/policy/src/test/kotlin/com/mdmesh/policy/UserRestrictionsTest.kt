@@ -49,6 +49,14 @@ class UserRestrictionsTest {
     }
 
     @Test
+    fun `app restrictions map to global flags with Device Owner minimum SDK`() {
+        assertEquals(setOf("no_install_apps"), UserRestrictions.forKey("userAppInstall"))
+        assertEquals(setOf("no_uninstall_apps"), UserRestrictions.forKey("userAppUninstall"))
+        assertEquals(21, UserRestrictions.minSdkForKey("userAppInstall"))
+        assertEquals(21, UserRestrictions.minSdkForKey("userAppUninstall"))
+    }
+
+    @Test
     fun `keys not implemented via user restrictions return null`() {
         assertNull(UserRestrictions.forKey("camera"))
         assertNull(UserRestrictions.forKey("screenshots"))

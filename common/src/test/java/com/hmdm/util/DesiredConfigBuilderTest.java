@@ -83,32 +83,11 @@ public class DesiredConfigBuilderTest {
     }
 
     @Test
-    public void store_list_is_defaulted_canonical_and_only_sent_when_managed() {
-        Configuration c = kioskConfig();
-        assertNull(DesiredConfigBuilder.build(c, Collections.emptyList()).getBlockedAppStores());
-        c.setBlockUserAppInstall(true);
-        DesiredConfig defaults = DesiredConfigBuilder.build(c, Collections.emptyList());
-        assertEquals(Arrays.asList("com.android.vending", "com.sec.android.app.samsungapps"), defaults.getBlockedAppStores());
-        c.setBlockedAppStores(" com.acme.store,com.android.vending,com.acme.store ");
-        DesiredConfig custom = DesiredConfigBuilder.build(c, Collections.emptyList());
-        assertEquals(Arrays.asList("com.acme.store", "com.android.vending"), custom.getBlockedAppStores());
-        assertNotEquals(defaults.getRevision(), custom.getRevision());
-        c.setBlockedAppStores("com.android.vending,com.acme.store");
-        assertEquals(custom.getRevision(), DesiredConfigBuilder.build(c, Collections.emptyList()).getRevision());
-        c.setBlockedAppStores("");
-        assertTrue(DesiredConfigBuilder.build(c, Collections.emptyList()).getBlockedAppStores().isEmpty());
-        c.setBlockUserAppInstall(null);
-        assertNull(DesiredConfigBuilder.build(c, Collections.emptyList()).getBlockedAppStores());
-    }
-
-    @Test
     public void copied_configuration_preserves_app_restrictions() {
         Configuration c = kioskConfig();
         c.setBlockUserAppInstall(true);
         c.setBlockUserAppUninstall(false);
-        c.setBlockedAppStores("com.acme.store");
         Configuration copy = c.newCopy();
-        assertEquals("com.acme.store", copy.getBlockedAppStores());
         assertEquals(Boolean.TRUE, copy.getBlockUserAppInstall());
         assertEquals(Boolean.FALSE, copy.getBlockUserAppUninstall());
     }

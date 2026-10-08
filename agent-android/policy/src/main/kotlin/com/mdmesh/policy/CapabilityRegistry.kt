@@ -1,7 +1,9 @@
 package com.mdmesh.policy
 
-import android.os.Build
-import com.mdmesh.proto.UserAppPolicy
+import com.mdmesh.policy.apps.UserAppInstallPolicy
+import com.mdmesh.policy.apps.UserAppInstallPolicyFactory
+import com.mdmesh.policy.apps.UserAppUninstallPolicy
+import com.mdmesh.policy.apps.UserAppUninstallPolicyFactory
 import com.mdmesh.policy.bluetooth.BluetoothPolicy
 import com.mdmesh.policy.bluetooth.BluetoothPolicyFactory
 import com.mdmesh.policy.camera.CameraPolicy
@@ -47,22 +49,15 @@ class CapabilityRegistry(
         BluetoothPolicyFactory.create(handle)?.let { put(BluetoothPolicy.CAPABILITY_KEY, it) }
         UsbStoragePolicyFactory.create(handle)?.let { put(UsbStoragePolicy.CAPABILITY_KEY, it) }
         FactoryResetPolicyFactory.create(handle)?.let { put(FactoryResetPolicy.CAPABILITY_KEY, it) }
+        UserAppInstallPolicyFactory.create(handle)?.let { put(UserAppInstallPolicy.CAPABILITY_KEY, it) }
+        UserAppUninstallPolicyFactory.create(handle)?.let { put(UserAppUninstallPolicy.CAPABILITY_KEY, it) }
         // Each factory probe returns null on an unsupported device, so a key only
         // appears here when a usable strategy exists.
         // Absence == "not advertised" == "never commanded".
     }
 
-    /**
-     * Toggle strategy keys plus the user-app policies coordinated asynchronously by :core AppRestrictions.
-     * The latter require Android 8+ Device Owner and are routed by config.apply / policy.apply handlers.
-     * Each entry corresponds to a row in `proto/registry.md` § policy.
-     */
-    fun supportedPolicyKeys(): List<String> = togglePolicies().keys.toList() +
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
-            handle.dpm.isDeviceOwnerApp(handle.admin.packageName)
-        ) {
-            UserAppPolicy.KEYS.toList()
-        } else emptyList()
+    /** Each supported policy is advertised through the same factory-backed registry. */
+    fun supportedPolicyKeys(): List<String> = togglePolicies().keys.toList()
 
     /** Convenience: resolve the live [DeviceControl] facade for this device. */
     fun deviceControl(): DeviceControl? {

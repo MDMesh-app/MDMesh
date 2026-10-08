@@ -1,8 +1,5 @@
 package com.mdmesh.core.command.handlers
 
-import com.mdmesh.core.config.AppRestrictions
-import com.mdmesh.proto.ConfigOutcome
-import com.mdmesh.proto.UserAppPolicy
 import com.mdmesh.core.command.CommandHandler
 import com.mdmesh.core.command.CommandResults
 import com.mdmesh.policy.PolicyOutcome
@@ -24,7 +21,6 @@ import kotlinx.serialization.Serializable
  */
 class PolicyApplyHandler(
     private val toggles: Map<String, TogglePolicy>,
-    private val appRestrictions: AppRestrictions? = null,
 ) : CommandHandler {
 
     override val type: String = "policy.apply"
@@ -43,14 +39,6 @@ class PolicyApplyHandler(
             ProtocolJson.json.decodeFromJsonElement(Payload.serializer(), payload)
         }.getOrElse { return CommandResults.failed(command, "bad payload: ${it.message}") }
 
-        if (parsed.policy in UserAppPolicy.KEYS && appRestrictions != null) {
-            val outcome = appRestrictions.apply(mapOf(parsed.policy to parsed.enabled), null).getValue(parsed.policy)
-            return when (outcome) {
-                ConfigOutcome.APPLIED -> CommandResults.done(command)
-                ConfigOutcome.UNSUPPORTED -> CommandResults.unsupported(command)
-                else -> CommandResults.failed(command, outcome)
-            }
-        }
         val toggle = toggles[parsed.policy]
             ?: return CommandResults.unsupported(command, "policy not supported: ${parsed.policy}")
 

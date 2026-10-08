@@ -129,15 +129,12 @@ One-click or unattended server updates with DB backup + auto-rollback on quick-s
   agents receive it — older agents show "agent too old" instead of silently ignoring it. Enforced fields
   include: main app, kiosk mode + exit/home/recents/notifications/system-info/keyguard/lock-buttons, kiosk exit
   password, background/text color, icon size, Wi-Fi, Bluetooth, USB storage, block screenshots, block factory
-  reset, user app installation/removal restrictions, and location reporting mode. Name and description are configuration metadata and are not sent to
-  devices.
+  reset, user app installation/removal restrictions, and location reporting mode. Name and description
+  are configuration metadata and are not sent to devices.
 
 </details>
 
 ---
-
-For opt-in user app installation/removal restrictions and their scope, see
-[User app restrictions](docs/APP_RESTRICTIONS.md).
 
 ## 📸 The console
 

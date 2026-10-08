@@ -48,6 +48,16 @@ class PolicyApplyHandlerTest {
     }
 
     @Test
+    fun `user app policies route generically and surface busy failures`() = runTest {
+        val install = FakeToggle("userAppInstall", PolicyOutcome.Applied)
+        val uninstall = FakeToggle("userAppUninstall", PolicyOutcome.Failed("managed operation in progress; retry"))
+        val handler = PolicyApplyHandler(mapOf(install.capabilityKey to install, uninstall.capabilityKey to uninstall))
+        assertEquals(CommandStatus.DONE, handler.handle(command(payload("userAppInstall", false))).status)
+        assertEquals(false, install.lastEnabled)
+        assertEquals(CommandStatus.FAILED, handler.handle(command(payload("userAppUninstall", true))).status)
+    }
+
+    @Test
     fun `reports unsupported for a policy with no registered strategy`() = runTest {
         val result = PolicyApplyHandler(emptyMap()).handle(command(payload("camera", true)))
         assertEquals(CommandStatus.UNSUPPORTED, result.status)

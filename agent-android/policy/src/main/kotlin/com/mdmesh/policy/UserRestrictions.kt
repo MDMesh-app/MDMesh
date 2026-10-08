@@ -21,6 +21,8 @@ object UserRestrictions {
     const val DISALLOW_USB_FILE_TRANSFER = "no_usb_file_transfer"
     const val DISALLOW_MOUNT_PHYSICAL_MEDIA = "no_physical_media"
     const val DISALLOW_FACTORY_RESET = "no_factory_reset"
+    const val DISALLOW_INSTALL_APPS = "no_install_apps"
+    const val DISALLOW_UNINSTALL_APPS = "no_uninstall_apps"
 
     /**
      * The set of `DISALLOW_*` restriction keys backing a capability, or `null` if
@@ -30,6 +32,8 @@ object UserRestrictions {
         "bluetooth" -> setOf(DISALLOW_BLUETOOTH)
         "usbStorage" -> setOf(DISALLOW_USB_FILE_TRANSFER, DISALLOW_MOUNT_PHYSICAL_MEDIA)
         "factoryReset" -> setOf(DISALLOW_FACTORY_RESET)
+        "userAppInstall" -> setOf(DISALLOW_INSTALL_APPS)
+        "userAppUninstall" -> setOf(DISALLOW_UNINSTALL_APPS)
         else -> null
     }
 
@@ -51,6 +55,8 @@ object UserRestrictions {
         "bluetooth" -> 26
         "usbStorage" -> 21
         "factoryReset" -> 21
+        "userAppInstall" -> 21
+        "userAppUninstall" -> 21
         else -> null
     }
 }

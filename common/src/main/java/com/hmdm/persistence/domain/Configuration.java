@@ -119,14 +119,12 @@ public class Configuration implements CustomerData, Serializable {
     @ApiModelProperty("Flag indicating if factory reset is disabled on the device")
     private Boolean disableFactoryReset;
 
-    @ApiModelProperty("Block user app installations while allowing Device Owner installations")
+    @ApiModelProperty("Block app installations except during MDMesh-managed installations")
     private Boolean blockUserAppInstall;
 
     @ApiModelProperty("Block application uninstallation by the user")
     private Boolean blockUserAppUninstall;
 
-    @ApiModelProperty("Comma-separated app stores hidden when user installation is blocked; null uses Play and Galaxy Store")
-    private String blockedAppStores;
     @ApiModelProperty("Flag indicating if auto-started apps should be kept in the foreground")
     private Boolean autostartForeground;
     @ApiModelProperty("Time zone settings: null for using default settings, auto for automatic time zone, or Olson time zone string")
@@ -783,10 +781,6 @@ public class Configuration implements CustomerData, Serializable {
         this.runDefaultLauncher = runDefaultLauncher;
     }
 
-    public String getBlockedAppStores() { return blockedAppStores; }
-
-    public void setBlockedAppStores(String blockedAppStores) { this.blockedAppStores = blockedAppStores; }
-
     public Boolean getBlockUserAppInstall() {
         return blockUserAppInstall;
     }
@@ -969,7 +963,6 @@ public class Configuration implements CustomerData, Serializable {
         copy.setOrientation(getOrientation());
         copy.setRunDefaultLauncher(getRunDefaultLauncher());
         copy.setDisableScreenshots(getDisableScreenshots());
-        copy.setBlockedAppStores(getBlockedAppStores());
         copy.setBlockUserAppInstall(getBlockUserAppInstall());
         copy.setBlockUserAppUninstall(getBlockUserAppUninstall());
         copy.setAutostartForeground(getAutostartForeground());

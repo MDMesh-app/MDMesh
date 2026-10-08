@@ -2860,17 +2860,15 @@
         <rollback>ALTER TABLE configurations DROP COLUMN disableFactoryReset;</rollback>
     </changeSet>
 
-    <changeSet id="26.10.02-user-app-management-restrictions-v1" author="local" context="common">
+    <changeSet id="26.10.08-user-app-toggle-restrictions-v1" author="local" context="common">
         <comment>Nullable app restrictions: NULL leaves the device policy unmanaged.</comment>
         <sql>
-            ALTER TABLE configurations ADD COLUMN blockedAppStores TEXT NULL;
-            ALTER TABLE configurations ADD COLUMN blockUserAppInstall BOOLEAN NULL;
-            ALTER TABLE configurations ADD COLUMN blockUserAppUninstall BOOLEAN NULL;
+            ALTER TABLE configurations ADD COLUMN IF NOT EXISTS blockUserAppInstall BOOLEAN NULL;
+            ALTER TABLE configurations ADD COLUMN IF NOT EXISTS blockUserAppUninstall BOOLEAN NULL;
         </sql>
         <rollback>
             ALTER TABLE configurations DROP COLUMN blockUserAppUninstall;
             ALTER TABLE configurations DROP COLUMN blockUserAppInstall;
-            ALTER TABLE configurations DROP COLUMN blockedAppStores;
         </rollback>
     </changeSet>
 

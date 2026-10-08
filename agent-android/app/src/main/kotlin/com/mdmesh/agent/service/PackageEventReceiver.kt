@@ -3,16 +3,12 @@ package com.mdmesh.agent.service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import com.mdmesh.core.sync.AppRestrictionWorker
 import com.mdmesh.core.telemetry.EventLog
 import com.mdmesh.proto.EventType
 
 /** Records app install/uninstall events into the telemetry [EventLog]. */
 class PackageEventReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == Intent.ACTION_PACKAGE_ADDED || intent.action == Intent.ACTION_PACKAGE_REMOVED) {
-            AppRestrictionWorker.scheduleNow(context)
-        }
         val pkg = intent.data?.schemeSpecificPart
         // ACTION_PACKAGE_ADDED fires on update too; EXTRA_REPLACING distinguishes a fresh install.
         val replacing = intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)

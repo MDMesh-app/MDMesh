@@ -107,9 +107,10 @@ One-click or unattended server updates with DB backup + auto-rollback on quick-s
 - **Remote actions** — lock-screen message, alert, ring, lock, reboot, passcode reset, factory wipe,
   connectivity power mode, location mode — all capability-gated so old agents never get a command they
   can't run.
-- **Kiosk** — COSU lock-task, home-screen replacement, allowed-apps, themed app grid, crash-loop protection.
-- **App management** — upload/parse APKs, F-Droid catalog, silent Device-Owner install/upgrade, version &
-  downgrade gating.
+- **Kiosk** — COSU lock-task, home-screen replacement, allowed apps (per-app "Show in kiosk"), themed app grid,
+  crash-loop protection.
+- **App management** — upload/parse APKs, F-Droid catalog, silent Device-Owner install/upgrade from your server
+  or any HTTPS host, version & downgrade gating, and Library removal that leaves installed apps alone.
 - **Telemetry** — battery, storage, network, Android version, Device-Owner status, lifecycle event timeline.
 - **Deployment** — one `./setup.sh`: Docker Compose with bundled auto-HTTPS (Caddy) for your own domain, or
   a permanent Cloudflare Tunnel; a native (non-Docker) installer; generated secrets.
@@ -129,7 +130,8 @@ One-click or unattended server updates with DB backup + auto-rollback on quick-s
   agents receive it — older agents show "agent too old" instead of silently ignoring it. Enforced fields
   (19): main app, kiosk mode + exit/home/recents/notifications/system-info/keyguard/lock-buttons, kiosk exit
   password, background/text color, icon size, Wi-Fi, Bluetooth, USB storage, block screenshots, block factory
-  reset, and location reporting mode. Name and description are configuration metadata and are not sent to
+  reset, and location reporting mode. The kiosk allows the configuration's installed apps that have "Show in
+  kiosk" on. Name and description are configuration metadata and are not sent to
   devices.
 
 </details>
@@ -179,7 +181,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/quick
 Pulls the released images from GHCR (no build), generates secrets, brings the stack up in `./mdmesh`,
 and prints the console URL + a temporary admin password. *(Needs a published release with **public**
 GHCR packages — or `docker login ghcr.io` first; see [RELEASING.md](RELEASING.md).)* Image tags carry **no `v`
-prefix**: release `v0.3.1` publishes `ghcr.io/mdmesh-app/mdmesh-server:0.3.1` (and `:latest`).
+prefix**: release `v0.3.2` publishes `ghcr.io/mdmesh-app/mdmesh-server:0.3.2` (and `:latest`).
 
 ### Option B — from source (clone + build)
 

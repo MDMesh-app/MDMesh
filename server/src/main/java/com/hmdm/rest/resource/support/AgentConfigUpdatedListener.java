@@ -5,6 +5,8 @@ import com.hmdm.event.EventListener;
 import com.hmdm.event.EventType;
 import com.hmdm.notification.AgentWakeHub;
 import com.hmdm.persistence.AgentCommandDAO;
+import com.hmdm.persistence.UnsecureDAO;
+import com.hmdm.persistence.domain.Device;
 import com.hmdm.util.ExecutorRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,6 +23,8 @@ public class AgentConfigUpdatedListener implements EventListener<ConfigurationUp
     private static final Logger logger = LoggerFactory.getLogger(AgentConfigUpdatedListener.class);
     private final AgentCommandDAO commandDAO;
     private final AgentWakeHub wakeHub;
+    private final UnsecureDAO unsecureDAO;
+    private final ConfigAppInstaller configAppInstaller;
 
     /**
      * {@code ConfigurationDAO.updateConfiguration} fires the event INSIDE its {@code @Transactional} method and
@@ -37,9 +41,12 @@ public class AgentConfigUpdatedListener implements EventListener<ConfigurationUp
                 return t;
             }));
 
-    public AgentConfigUpdatedListener(AgentCommandDAO commandDAO, AgentWakeHub wakeHub) {
+    public AgentConfigUpdatedListener(AgentCommandDAO commandDAO, AgentWakeHub wakeHub,
+                                      UnsecureDAO unsecureDAO, ConfigAppInstaller configAppInstaller) {
         this.commandDAO = commandDAO;
         this.wakeHub = wakeHub;
+        this.unsecureDAO = unsecureDAO;
+        this.configAppInstaller = configAppInstaller;
     }
 
     @Override
@@ -55,6 +62,15 @@ public class AgentConfigUpdatedListener implements EventListener<ConfigurationUp
     private void wakeDevices(ConfigurationUpdatedEvent event) {
         try {
             for (String number : commandDAO.listDeviceNumbersByConfigurationId(event.getConfigurationId())) {
+                Device device = unsecureDAO.getDeviceByNumber(number);
+                // A device can be reassigned during the asynchronous post-commit delay. Never
+                // queue an old configuration's APK on its new assignment.
+                if (device != null && Integer.valueOf(event.getConfigurationId()).equals(device.getConfigurationId())
+                        && !event.getAddedInstallVersionIds().isEmpty()) {
+                    int queued = configAppInstaller.enqueueConfigApps(device, event.getAddedInstallVersionIds());
+                    logger.info("Configuration {} queued {} newly added app(s) for device {}",
+                            event.getConfigurationId(), queued, number);
+                }
                 wakeHub.wake(number, "commands");
             }
         } catch (Exception e) {

@@ -21,17 +21,18 @@
 
 package com.hmdm.event;
 
-import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.ToString;
 
 import java.io.Serializable;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /**
  * <p>An event fired when info for configuration was updated.</p>
  */
 @Data
-@AllArgsConstructor
 @ToString
 public class ConfigurationUpdatedEvent implements Event, Serializable {
 
@@ -39,6 +40,20 @@ public class ConfigurationUpdatedEvent implements Event, Serializable {
      * <p>An unique identifier of the configuration.</p>
      */
     private final int configurationId;
+
+    /** Install-marked application versions newly introduced by this edit. */
+    private final Set<Integer> addedInstallVersionIds;
+
+    public ConfigurationUpdatedEvent(int configurationId) {
+        this(configurationId, Collections.<Integer>emptySet());
+    }
+
+    public ConfigurationUpdatedEvent(int configurationId, Set<Integer> addedInstallVersionIds) {
+        this.configurationId = configurationId;
+        this.addedInstallVersionIds = addedInstallVersionIds == null || addedInstallVersionIds.isEmpty()
+                ? Collections.<Integer>emptySet()
+                : Collections.unmodifiableSet(new LinkedHashSet<>(addedInstallVersionIds));
+    }
 
     /**
      * <p>Gets the type of the event.</p>

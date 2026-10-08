@@ -17,8 +17,8 @@ It creates `./mdmesh`, downloads the pull-only compose (`docker-compose.release.
 secrets, `docker compose pull && up -d`, seeds, and prints the console URL + a temporary admin password.
 
 It pins the latest published release: `SERVER_VERSION`, `WEB_VERSION` and `CURRENT_VERSION` in `.env` all name that
-version (e.g. `0.3.1`), so the console doesn't offer the release you just installed as an update, and the compose file +
-seed are downloaded from that release's tag (`v0.3.1`) so they match the images. The supervisor
+version (e.g. `0.3.2`), so the console doesn't offer the release you just installed as an update, and the compose file +
+seed are downloaded from that release's tag (`v0.3.2`) so they match the images. The supervisor
 tracks `SUPERVISOR_VERSION=latest`, so `docker compose pull` keeps delivering its fixes (updates never touch it); pin it
 only if you want to freeze it. If the GitHub API can't be reached (or is rate-limited) the quick start falls back to the
 `:latest` images and the `main` compose + seed with `CURRENT_VERSION=0.0.0`: the install works, but the console shows "Update available" until the
@@ -208,7 +208,8 @@ It reads the role password from `ROOT.xml` as the service user (no password on a
 
 Devices that are still enrolled keep polling the old server URL until they are factory-reset or re-provisioned;
 if you are migrating rather than retiring, keep `BASE_URL` reachable (or point DNS at the new host) so they
-follow.
+follow. Library APKs keep the address they were uploaded under, and agents from v0.3.2 download from exactly that
+address: after a move to a new `BASE_URL`, re-upload them (or keep the old address serving the same files).
 
 ## Enrolling devices
 
@@ -233,7 +234,7 @@ Set these in `.env` (the wizard seeds them; add by hand for an existing deploy):
 | `POLL_INTERVAL_HOURS` | How often to check (default `6`). |
 | `GITHUB_TOKEN` | Optional for a public `GITHUB_REPO` (raises the API rate limit); **required** for a private one. With a token the supervisor downloads the manifest, its signature and the agent APK through the GitHub asset API, the only way a private repo serves them, and never sends the token to the download host GitHub redirects to. Use a read-only token: fine-grained with **Contents: read** on that repo, or a classic token with `repo` scope. If no update shows up, the supervisor log gives the reason on its `[verify]` line: `docker compose logs supervisor`, or `journalctl -u mdmesh-supervisor` on a native install. |
 | `IMAGE_OWNER` | GHCR owner (lowercase) the versioned images live under. |
-| `SERVER_VERSION` / `WEB_VERSION` | Running image tags **without the `v`** (`0.3.1`, not `v0.3.1`); bumped automatically on apply. `./setup.sh` builds every image from the checkout, so on every run it sets them to the checkout's version (whatever `IMAGE_OWNER` is): the images are named after the code they hold. |
+| `SERVER_VERSION` / `WEB_VERSION` | Running image tags **without the `v`** (`0.3.2`, not `v0.3.2`); bumped automatically on apply. `./setup.sh` builds every image from the checkout, so on every run it sets them to the checkout's version (whatever `IMAGE_OWNER` is): the images are named after the code they hold. |
 | `CURRENT_VERSION` | The running release, compared with GitHub's latest to decide "update available". Bumped on apply and set back on rollback; the supervisor reads it from this `.env` at start and after each apply or rollback, so a restart never re-offers a release that is already running. `./setup.sh` rewrites it on every run from the checkout's nearest release tag (`vX.Y.Z` or `vX.Y.Z-pre`; other tags are skipped), like the native installer, and with a registry `IMAGE_OWNER` refuses a checkout older than it, or one without a release tag (see below). |
 | `SUPERVISOR_VERSION` | The supervisor's image tag. Apply never changes it (the supervisor never updates itself). The quick start tracks `latest`, so `docker compose pull && docker compose up -d` delivers supervisor fixes; pin it only if you want to freeze it (then bump it by hand to pick up fixes). `./setup.sh` builds the supervisor from the checkout and sets it to the checkout's version on every run. |
 | `APPLY_SUPPORTED` | `1` shows one-click **Update**, `0` shows the manual steps instead. `./setup.sh` rewrites it on every run from `IMAGE_OWNER` (`local` or unset → `0`); the source compose file defaults to `0`, the release compose to `1`. |

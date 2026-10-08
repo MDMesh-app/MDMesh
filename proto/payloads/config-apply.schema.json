@@ -18,7 +18,7 @@
       "description": "Present => ensure kiosk with this KioskApplyPayload. Absent = the configuration does not assert kiosk; the agent exits only if the previously applied configuration document had kiosk.",
       "properties": {
         "mode": { "enum": ["single", "launcher"] },
-        "allowedPackages": { "type": "array", "items": { "type": "string" } },
+        "allowedPackages": { "type": "array", "items": { "type": "string" }, "description": "The configuration's apps set to Install with \"Show in kiosk\" on (showIcon); the main app is pinned only under the same rule." },
         "pinPackage": { "type": "string" },
         "features": { "type": "object", "properties": { "home": {"type":"boolean"}, "recents": {"type":"boolean"}, "notifications": {"type":"boolean"}, "systemInfo": {"type":"boolean"}, "keyguard": {"type":"boolean"}, "lockButtons": {"type":"boolean"} } },
         "exitMode": { "enum": ["gesture", "visible", "remote"] },

@@ -509,6 +509,7 @@ function ConfigEditor({
           <div className="cfg-app" key={a.id}>
             <span className="cfg-app-nm">{a.name ?? a.pkg ?? `#${a.id}`}</span>
             <span className="cfg-app-pkg mono">{a.pkg}</span>
+            <span className="app-ver">{a.version ? `v${a.version}` : '—'}</span>
             <select
               className="sel"
               value={a.action ?? 1}

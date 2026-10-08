@@ -213,6 +213,7 @@ function CustomSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [pkg, setPkg] = useState('');
+  const [version, setVersion] = useState('');
   const [vc, setVc] = useState('');
   const [sha, setSha] = useState('');
   const [bundle, setBundle] = useState<BundleUploadResult | null>(null);
@@ -239,6 +240,7 @@ function CustomSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
     try {
       const up = await uploadApk(file);
       const fd = up.fileDetails;
+      setVersion(fd?.version ?? ''); // per file — never carry the previous file's version over
       if (fd) {
         if (fd.name) setName(fd.name);
         if (fd.pkg) setPkg(fd.pkg);
@@ -302,12 +304,13 @@ function CustomSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
       setSha('');
       if (b.name) setName(b.name);
       if (b.packageName) setPkg(b.packageName);
+      const version = b.version || String(b.versionCode); // applicationVersions.version is NOT NULL
+      setVersion(version);
       if (b.versionCode) setVc(String(b.versionCode));
       // Register in the Library so it shows in the config picker + is assignable to a configuration.
       // A single-part bundle (a universal.apk .apks) is an ordinary single-URL app; a multi-part bundle
       // stores its parts as a JSON string on the version.
       try {
-        const version = b.version || String(b.versionCode); // applicationVersions.version is NOT NULL
         const saved = await saveAndroidApplication(
           b.parts.length === 1
             ? { name: b.name || b.packageName, pkg: b.packageName, url: b.parts[0].url, version, versionCode: b.versionCode, type: 'app' }
@@ -380,6 +383,7 @@ function CustomSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
         name: name.trim() || pkg.trim(),
         pkg: pkg.trim(),
         url: isMultiPart ? undefined : url.trim(),
+        version: version.trim() || undefined,
         versionCode: vc ? Number(vc) : undefined,
         type: 'app',
         parts: isMultiPart
@@ -495,7 +499,15 @@ function CustomSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
         ) : (
           <label className="field">
             <span className="label">APK URL *</span>
-            <input className="input" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…/app.apk" />
+            <input
+              className="input"
+              value={url}
+              onChange={(e) => {
+                setUrl(e.target.value);
+                setVersion(''); // a hand-typed URL isn't the analyzed file any more
+              }}
+              placeholder="https://…/app.apk"
+            />
           </label>
         )}
         <label className="field">

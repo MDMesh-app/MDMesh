@@ -3,6 +3,7 @@ import { AppShell } from '../ui/AppShell';
 import { useToast } from '../ui/toast';
 import {
   listApplications,
+  appCategory,
   getVersions,
   uploadApk,
   uploadBundle,
@@ -140,7 +141,7 @@ function LibrarySource({ onDeploy }: { onDeploy: (app: Application) => void }) {
   useEffect(() => {
     let cancelled = false;
     listApplications()
-      .then((list) => !cancelled && setApps(list.filter((a) => (a.type ?? 'app') !== 'web')))
+      .then((list) => !cancelled && setApps(list.filter(isDeployableLibraryApp)))
       .catch(() => !cancelled && (setApps([]), setError('Could not load the app library.')));
     return () => {
       cancelled = true;
@@ -198,6 +199,11 @@ function LibrarySource({ onDeploy }: { onDeploy: (app: Application) => void }) {
       )}
     </>
   );
+}
+
+/** Only uploaded apps with something to install (an APK URL or split-bundle parts) are deployable. */
+function isDeployableLibraryApp(app: Application): boolean {
+  return appCategory(app) === 'uploaded' && Boolean(app.url || app.parts);
 }
 
 // Split-APK bundle containers the /bundle endpoint unpacks into installable parts.

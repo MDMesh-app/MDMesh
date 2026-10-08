@@ -40,7 +40,7 @@ public interface ApplicationMapper {
 
     String SELECT_BASE =
             "SELECT applications.*, customers.name AS customerName, customers.master AS commonApplication, " +
-                    "applicationVersions.version, applicationVersions.versionCode, applicationVersions.url," +
+                    "applicationVersions.version, applicationVersions.versionCode, applicationVersions.url, applicationVersions.parts," +
                     "applicationVersions.split, applicationVersions.urlArmeabi, applicationVersions.urlArm64," +
                     "applications.latestVersion AS usedVersionId, " +
                     "(usageData.usageCount > 0) AS deletionProhibited " +
@@ -54,7 +54,7 @@ public interface ApplicationMapper {
 
     String SELECT_BY_VERSION_BASE =
             "SELECT applications.*, customers.name AS customerName, customers.master AS commonApplication, " +
-                    "applicationVersions.version, applicationVersions.versionCode, applicationVersions.url, " +
+                    "applicationVersions.version, applicationVersions.versionCode, applicationVersions.url, applicationVersions.parts, " +
                     "applicationVersions.split, applicationVersions.urlArmeabi, applicationVersions.urlArm64," +
                     "applications.latestVersion AS usedVersionId, " +
                     "(usageData.usageCount > 0) AS deletionProhibited " +

@@ -9,8 +9,17 @@
 -- without them every /agent/v1/enroll fails). COALESCE keeps a previously chosen default config.
 UPDATE settings SET createnewdevices=true, newdeviceconfigurationid=COALESCE(newdeviceconfigurationid, (SELECT MIN(id) FROM configurations));
 
--- Remove the auxiliary Headwind seed apps (not used by our agent). The launcher (com.hmdm.launcher)
--- is left in place — the default configurations reference it as their main app.
-DELETE FROM configurationapplications WHERE applicationid IN (SELECT id FROM applications WHERE pkg IN ('com.hmdm.pager','com.hmdm.phoneproxy','com.hmdm.emuilauncherrestarter'));
-DELETE FROM applicationversions      WHERE applicationid IN (SELECT id FROM applications WHERE pkg IN ('com.hmdm.pager','com.hmdm.phoneproxy','com.hmdm.emuilauncherrestarter'));
-DELETE FROM applications             WHERE pkg IN ('com.hmdm.pager','com.hmdm.phoneproxy','com.hmdm.emuilauncherrestarter');
+-- Remove the Headwind agent/launcher seed records. MDMesh's agent is com.mdmesh.agent and is
+-- supplied through the signed release/update path, not this legacy application library. The old
+-- launcher row pointed at a non-existent h-mdm.com artifact and must not be offered for install
+-- or kiosk selection. Clear the old version references before deleting, because mainAppId and
+-- contentAppId retain restrictive foreign keys on upgraded databases.
+UPDATE configurations SET mainappid = NULL
+WHERE mainappid IN (SELECT id FROM applicationversions WHERE applicationid IN
+    (SELECT id FROM applications WHERE pkg IN ('com.hmdm.launcher','com.hmdm.pager','com.hmdm.phoneproxy','com.hmdm.emuilauncherrestarter')));
+UPDATE configurations SET contentappid = NULL
+WHERE contentappid IN (SELECT id FROM applicationversions WHERE applicationid IN
+    (SELECT id FROM applications WHERE pkg IN ('com.hmdm.launcher','com.hmdm.pager','com.hmdm.phoneproxy','com.hmdm.emuilauncherrestarter')));
+DELETE FROM configurationapplications WHERE applicationid IN (SELECT id FROM applications WHERE pkg IN ('com.hmdm.launcher','com.hmdm.pager','com.hmdm.phoneproxy','com.hmdm.emuilauncherrestarter'));
+DELETE FROM applicationversions      WHERE applicationid IN (SELECT id FROM applications WHERE pkg IN ('com.hmdm.launcher','com.hmdm.pager','com.hmdm.phoneproxy','com.hmdm.emuilauncherrestarter'));
+DELETE FROM applications             WHERE pkg IN ('com.hmdm.launcher','com.hmdm.pager','com.hmdm.phoneproxy','com.hmdm.emuilauncherrestarter');

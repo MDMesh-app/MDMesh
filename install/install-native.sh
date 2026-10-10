@@ -519,7 +519,8 @@ apt_update() {
 FETCH_JDK17=0
 if ! select_jdk17 >/dev/null; then
   apt_update
-  if apt-cache policy openjdk-17-jdk 2>/dev/null | grep -q 'Candidate: [0-9]'; then PKGS+=(openjdk-17-jdk); else FETCH_JDK17=1; fi
+  # A case, not `| grep -q`: grep's early exit would SIGPIPE apt-cache and fail the pipeline under pipefail.
+  case "$(apt-cache policy openjdk-17-jdk 2>/dev/null)" in *'Candidate: '[0-9]*) PKGS+=(openjdk-17-jdk) ;; *) FETCH_JDK17=1 ;; esac
 fi
 if [ ${#PKGS[@]} -eq 0 ]; then
   ok "all packaged dependencies already present — nothing to install"

@@ -50,6 +50,8 @@ services:
       SMTP_FROM: ${SMTP_FROM:-mdm@localhost}
       SMTP_USERNAME: ${SMTP_USERNAME:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_SSL: ${SMTP_SSL:-false}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
       # Optional JVM flags, e.g. a temporary DEBUG log config (DEPLOY.md "Server logs"). Read from the prefixed .env key:
       # compose lets the shell override .env, and a generic JAVA_OPTS exported on a Java host must not reach the server.
       JAVA_OPTS: ${SERVER_JAVA_OPTS:-}

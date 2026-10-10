@@ -52,7 +52,8 @@ RUN useradd -m -s /bin/bash t2user \
  && printf 't2user ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/90-t2user \
  && chmod 440 /etc/sudoers.d/90-t2user
 
-# 3. WORKAROUNDS (empty build args = none). Every download is pinned and checked against its published SHA-256.
+# 3. WORKAROUNDS (empty build args = none), only for an upgrade from a release whose installer cannot fetch Node 24 /
+#    JDK 17 itself (v0.3.2 and older). Every download is pinned and checked against its published SHA-256.
 # T2_NODE_URL/T2_NODE_SHA256: a Node.js release tarball unpacked into /usr/local (system-wide, so the mdmesh service user
 #   can run it), for distros whose packaged Node is older than the web build (Vite) needs.
 # T2_JDK17_URL/T2_JDK17_SHA256: a JDK 17 tarball unpacked under /opt (the installer looks for /opt/*jdk-17*), for distros

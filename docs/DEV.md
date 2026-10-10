@@ -175,13 +175,12 @@ private cgroup namespace, and no host path is mounted. The image masks every uni
 (sysctl, modules, binfmt, pstore, clock, TRIM). Everything a run creates is named `mdmesh-t2-<distro>-<scenario>-<random>`
 and removed on exit (images by their exact tag); the base images it pulls (`debian:12`, …) stay.
 
-**Workarounds for undocumented prerequisites.** The image adds something beyond the stock baseline only when the
-documented install cannot work without it, each one a finding to fix in the installer or DEPLOY.md
-(`T2_STRICT=1` builds without them, to reproduce the failure):
-- Debian 12 and Ubuntu 24.04 ship Node 18, and the console build (Vite 8) needs Node ≥ 20.19: the installer's
-  `apt-get install nodejs npm` gets 18 and `npm run build` fails. The image adds Node 22 under `/usr/local`.
-- Debian 13 has no `openjdk-17-jdk`; DEPLOY.md says a JDK 17 under `/opt` is used but not how to get one. The image
-  adds Temurin 17 under `/opt/jdk-17`.
+**Stock baseline, and the old-release workarounds.** Fresh runs use the stock image: the installer itself downloads
+Node 24 where the distro ships 18 (Debian 12, Ubuntu 24.04) and Temurin 17 where it packages no JDK 17 (Debian 13),
+pinned and SHA-256 checked, into `/opt/mdmesh-runtime`. Installers up to v0.3.2 could not, so an upgrade from such a
+release builds its image with what that install needed: Node 22 under `/usr/local` (Debian 12, Ubuntu 24.04) or
+Temurin 17 under `/opt/jdk-17` (Debian 13). The upgrade then runs the new installer over that host, as a user who
+followed the old workaround would. `T2_STRICT=1` leaves them out, to reproduce the old failure.
 
 CI runs the rig as tier T2 (`.github/workflows/t2-native.yml`): the 3 distros × 3 scenarios on pull requests that touch
 `install/`, `setup.sh`, `quickstart.sh` or the rig, nightly, and by hand (one distro, scenario or from-ref). A server

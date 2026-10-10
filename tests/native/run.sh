@@ -11,14 +11,12 @@
 #                      converge and pass every check (the re-run also leaves HTTP_PORT out)
 #
 # Environment (all optional):
-#   T2_FROM_REF   the release to upgrade from (default v0.3.1). Name it explicitly: this clone also carries upstream
-#                 Headwind tags (v5.x), so "the newest tag" is not the last MDMesh release. CI passes the latest GitHub
-#                 release.
+#   T2_FROM_REF   the release to upgrade from (default v0.3.1). CI passes the latest GitHub release.
 #   T2_TO_REF     the code under test (default HEAD)
 #   T2_KILL_POINTS  comma-separated kill points for `killed` (default: all; `bash tests/native/lib/guest.sh kill-points`)
 #   T2_OUT        where logs and results go (default ${TMPDIR:-/tmp}/mdmesh-t2); each run writes <T2_OUT>/<container name>/
 #   T2_CACHE=1    share Maven/npm download caches between runs (named Docker volumes mdmesh-t2-cache-m2/-npm)
-#   T2_STRICT=1   build the image without the workarounds for undocumented prerequisites (see docs/DEV.md)
+#   T2_STRICT=1   build an upgrade's image without the workarounds its from-ref installer needs (see docs/DEV.md)
 #   T2_HTTP_PORT  the port given to the installer (default 9090); T2_BASE_URL its public URL (default http://mdm.t2.test:<port>)
 #   T2_ORIGIN_URL the clone's origin (default the real repo: the installer reads releases and the agent APK from it)
 #   T2_MEMORY     the container's memory limit (default 6g); T2_MIN_FREE_GB free space required to start (default 8)

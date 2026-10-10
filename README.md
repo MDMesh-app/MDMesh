@@ -200,8 +200,8 @@ generates your secrets, and prints the console URL + a generated admin password.
    `adb shell dpm set-device-owner` for a dev device).
 4. Scan the QR — the device enrolls as Device Owner and checks in.
 
-No Docker? Run `sudo ./setup.sh --native` on Debian 12/13 or Ubuntu 24.04; it needs Node ≥ 20.19 and a JDK 17
-first where the distro doesn't ship them (see [DEPLOY.md](DEPLOY.md#option-c--native-no-docker)). Full details, hosting modes, updates, recovery, and uninstalling are in the
+No Docker? Run `sudo ./setup.sh --native` on Debian 12/13 or Ubuntu 24.04; it brings Node 24 and a JDK 17 itself
+where the distro doesn't ship them (see [DEPLOY.md](DEPLOY.md#option-c--native-no-docker)). Full details, hosting modes, updates, recovery, and uninstalling are in the
 **[full setup guide → DEPLOY.md](DEPLOY.md)**.
 
 ---

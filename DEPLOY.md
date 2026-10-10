@@ -110,14 +110,15 @@ docker compose down
 Debian/Ubuntu, as root. The leaner path: Postgres + Tomcat on the host; you terminate TLS yourself
 (your reverse proxy/cert, or Caddy in front). Tested on Debian 12, Debian 13 and Ubuntu 24.04 (`tests/native`).
 
-Prereqs: `git`, plus two the installer can't get from apt on every release:
+Prereqs: `git`. The rest comes from apt, except two runtimes the distros don't all ship, which the installer
+downloads itself (pinned versions, checked against SHA-256s in the script) into `/opt/mdmesh-runtime`:
 
-- **Node ≥ 20.19**, installed system-wide (the console build needs it, and the supervisor runs on it as the `mdmesh`
-  user). Debian 12 and Ubuntu 24.04 ship Node 18, so install a newer Node first; the installer uses the `node` and
-  `npm` already on `PATH`.
-- **JDK 17.** Debian 13 ships none: install one first (e.g. Temurin 17 unpacked under `/opt`, which the installer
-  finds) or point `JAVA17_HOME` at it (`sudo JAVA17_HOME=/path/to/jdk-17 ./setup.sh --native`). Debian 12 and
-  Ubuntu 24.04 get `openjdk-17-jdk` from apt.
+- **Node 24.** A Node 24 already on `PATH` is used; anything else (Debian 12 and Ubuntu 24.04 ship 18) gets the
+  installer's own copy. Your system Node is left alone.
+- **JDK 17.** One found under `/usr/lib/jvm` or `/opt`, or at `JAVA17_HOME`, is used; else `openjdk-17-jdk` from apt
+  (Debian 12, Ubuntu 24.04); else, where the distro packages none (Debian 13), Temurin 17.
+
+Both are downloaded for x86_64 and arm64 hosts; on any other architecture, install them first.
 
 ```bash
 sudo ./setup.sh --native      # → install/install-native.sh
@@ -141,8 +142,12 @@ migrations, and leaves configurations, devices, users and the enrollment secret 
 to `/opt/mdmesh/backups/` first. Unattended: `sudo ./setup.sh --native -y` never erases; set `REPLACE_DATA=yes` to
 opt into a wipe, `HTTP_PORT=9090` to move to another port (without it the upgrade keeps the current one). If an earlier
 run was interrupted (a dropped SSH session, `kill -9`), just run the same command again: it picks up where that run
-stopped. Only missing packages are installed, and a JDK 17 found via
-`JAVA17_HOME` or under `/opt` is used as-is (Debian 13 ships no `openjdk-17-jdk`).
+stopped. Only missing packages are installed, and a Node 24 or JDK 17 already there is used as-is.
+
+**Email (password recovery)** uses the same variables as the Docker `.env`: `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM`,
+`SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_SSL`, `SMTP_STARTTLS`. Pass them to the installer, e.g.
+`sudo SMTP_HOST=smtp.example.com SMTP_PORT=587 SMTP_STARTTLS=true SMTP_USERNAME=mdm SMTP_PASSWORD='…' ./setup.sh --native`.
+They are written to `ROOT.xml`, and later runs keep them unless you pass the variable again (an empty value clears it).
 
 **The agent APK.** The installer fetches the latest release's agent APK, hosts it at `/files/agent.apk` and bakes its
 signing checksum into the console's enrollment QR. It trusts the APK only through the release's signed manifest, like
@@ -182,7 +187,7 @@ docker image rm $(docker image ls 'ghcr.io/mdmesh-app/mdmesh-*' -q) 2>/dev/null 
 `docker compose down` without `-v` keeps the data volumes, so a later `./setup.sh` picks up where you left off.
 
 **Native.** `sudo ./install/uninstall-native.sh` shows exactly what it will remove (Tomcat under `/opt/mdmesh-tc`,
-the app dir `/opt/mdmesh`, the `mdmesh-server` and `mdmesh-supervisor` units and the supervisor's settings in
+the app dir `/opt/mdmesh`, any Node or JDK it downloaded in `/opt/mdmesh-runtime`, the `mdmesh-server` and `mdmesh-supervisor` units and the supervisor's settings in
 `/etc/mdmesh`, the `mdmesh` system user, the install log, and the `mdmesh` database + role),
 writes a final `pg_dump` to `/root`, and only proceeds when you type `UNINSTALL`. `--keep-data` removes the code
 and services but leaves the database, `/opt/mdmesh/files` and `/opt/mdmesh/backups` in place; `-y` skips the
@@ -370,8 +375,9 @@ which listens on loopback `:9000` only, on the host with `curl -fsS 127.0.0.1:90
 - The agent talks HTTPS only. `SECURE_ENROLLMENT` is a legacy Headwind launcher setting; leave it at `0` for
   MDMesh agents.
 - The admin starts with a generated password and is **required to set its own on first login** (the
-  console routes the first sign-in to a "set your password" screen). Configure SMTP in `.env` to enable
-  email-based password recovery thereafter. Docker only for now: native installs don't write SMTP settings yet.
+  console routes the first sign-in to a "set your password" screen). Configure SMTP (in `.env`, or the installer's
+  environment on native installs) to enable email-based password recovery thereafter. `SMTP_SSL=true` is for port
+  465, `SMTP_STARTTLS=true` for 587.
 - The supervisor mounts the Docker socket (to drive updates) and is trusted: it acts only on
   **minisign-verified** manifests and **authorized** callers (admin session, or the recovery token).
   Apply/rollback only ever recreate `server`/`caddy` — never `postgres` or the supervisor itself.

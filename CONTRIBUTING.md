@@ -137,11 +137,10 @@ deps (`agent-toolchain`, `agent-libs`).
 - **Licenses:** a bump that changes a dependency's license (e.g. Liquibase 5 → FSL) is blocked until reviewed
   against [ADR-0008](docs/adr/0008-licensing-and-rebrand.md).
 - **One JDK, one Node line.** The server builds and runs on **JDK 17** (CI, Docker build + `tomcat:9.0-jdk17`
-  runtime, native installer). Node is the current **LTS** line — today **24**. The supervisor image
-  (`docker/supervisor.Dockerfile`) is on it; the web build image (`docker/web.Dockerfile`, 22) and `@types/node`
-  (20) are not yet, and `web/package.json` has no `engines` pin yet, so CI builds the web with the runner's
-  default Node. They move to 24 in one PR that also adds `engines`. After that, all of them move together once
-  the next even line has been LTS for a few months. Docker base images use floating tags, so rebuilds pick up
+  runtime, native installer). Node is the current **LTS** line — today **24**: `engines` in `web/package.json`
+  (CI reads it), `@types/node`, both Node images (`docker/web.Dockerfile`, `docker/supervisor.Dockerfile`) and the
+  native installer's pinned `NODE_VER`. They all move together, in one PR, once the next even line has been LTS
+  for a few months. Docker base images use floating tags, so rebuilds pick up
   patches; a tag change is a deliberate PR. The exception is the edge's `caddy` image (`docker/web.Dockerfile`),
   pinned to an exact release so how the Caddyfile parses changes only through a Dependabot PR that T0's `edge`
   check has validated.

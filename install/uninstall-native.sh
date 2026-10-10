@@ -5,9 +5,9 @@
 #   sudo ./install/uninstall-native.sh --keep-data  # remove code/services but keep the database + uploaded files
 #   sudo ./install/uninstall-native.sh -y           # unattended (still takes a final pg_dump unless --no-backup)
 #
-# Removes: Tomcat (/opt/mdmesh-tc), the app dir (/opt/mdmesh), the mdmesh-supervisor systemd unit and its settings
-# (/etc/mdmesh), the install log, and — unless --keep-data — the PostgreSQL database + role "mdmesh". A final dump is
-# written first.
+# Removes: Tomcat (/opt/mdmesh-tc), the app dir (/opt/mdmesh), any Node/JDK the installer downloaded (/opt/mdmesh-runtime),
+# the mdmesh-supervisor systemd unit and its settings (/etc/mdmesh), the install log, and — unless --keep-data — the
+# PostgreSQL database + role "mdmesh". A final dump is written first.
 # Leaves alone: apt packages (postgresql, maven, node, …), your reverse proxy/TLS, and the git checkout.
 # shellcheck source-path=SCRIPTDIR  # lets shellcheck -x follow lib/*.sh from any working directory
 set -euo pipefail
@@ -26,6 +26,7 @@ export PATH="/usr/sbin:/sbin:$PATH"   # useradd/userdel/pg tools live here; not 
 
 BASE_DIR=/opt/mdmesh
 CATALINA=/opt/mdmesh-tc
+RUNTIME_DIR=/opt/mdmesh-runtime   # Node / JDK 17 the installer downloaded, if any
 UNIT=/etc/systemd/system/mdmesh-supervisor.service
 SUP_ENV_DIR=/etc/mdmesh   # the supervisor's settings (install-native.sh)
 SERVER_UNIT=/etc/systemd/system/mdmesh-server.service
@@ -83,6 +84,7 @@ fi
 echo
 echo "  MDMesh native uninstall — this host will lose:"
 [ -d "$CATALINA" ] && echo "    • Tomcat + deployed server:   $CATALINA"
+[ -d "$RUNTIME_DIR" ] && echo "    • downloaded Node / JDK:      $RUNTIME_DIR"
 [ -f "$SERVER_UNIT" ] && echo "    • server service:             mdmesh-server (systemd unit removed)"
 id -u "$SVC_USER" >/dev/null 2>&1 && [ "$KEEP_DATA" != 1 ] && echo "    • service user:               $SVC_USER"
 [ -f "$UNIT" ]     && echo "    • updater service:            mdmesh-supervisor (systemd unit removed)"
@@ -163,7 +165,7 @@ if [ "$KEEP_DATA" != 1 ] && db_exists; then
 fi
 
 # 5. Files.
-rm -rf "$CATALINA"
+rm -rf "$CATALINA" "$RUNTIME_DIR"
 if [ "$KEEP_DATA" = 1 ]; then
   for d in emails plugins supervisor; do rm -rf "${BASE_DIR:?}/$d"; done
   rm -f "$BASE_DIR"/initialized.txt "$BASE_DIR"/log4j-mdmesh.xml "$BASE_DIR"/supervisor.env   # log4j-mdmesh.xml: written by v0.2.1–v0.3.x

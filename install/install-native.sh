@@ -115,7 +115,8 @@ printf '\n  %sMDMesh · native install%s\n' "$c_bold" "$c_reset"
 cat <<WARN
 
   ${c_yel}⚠  This will modify THIS host:${c_reset}
-    • apt-get install openjdk-17-jdk, postgresql, maven, nodejs, npm, curl, python3, aapt
+    • apt-get install postgresql, maven, curl, python3, aapt (and openjdk-17-jdk where the distro packages it)
+    • download Node.js 24 and/or a JDK 17 into /opt/mdmesh-runtime when this host has no suitable one
     • create or alter a PostgreSQL role and database "mdmesh" (resets that role's password)
     • download and unpack Apache Tomcat 9 into /opt/mdmesh-tc (clears its webapps/)
     • write config and uploaded files under /opt/mdmesh (the server logs to the systemd journal)
@@ -142,12 +143,26 @@ if [ -z "$BASE_URL" ]; then
   read -rp "  Public base URL (e.g. https://mdm.example.com): " BASE_URL
 fi
 mdm_check_base_url BASE_URL || exit 1   # install/lib/url.sh: http(s)://host[:port]; lower-cases the scheme
+case "${SMTP_PORT-25}" in ''|*[!0-9]*) echo "  SMTP_PORT must be a number."; exit 1 ;; esac
 # The HTTP port (HTTP_PORT) is settled below, once the existing install's server.xml can be read the safe way.
 DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
 JWT_SECRET=$(openssl rand -hex 64)   # jwt.secretkey: hex only (see the reuse rule below)
 BASE_DIR=/opt/mdmesh
 CATALINA=/opt/mdmesh-tc
 TOMCAT_VER=9.0.89
+# Runtimes the installer downloads when the distro's are missing or too old (Debian 12 / Ubuntu 24.04 ship Node 18; Debian
+# 13 packages no JDK 17). Pinned with their published SHA-256s, unpacked under $RUNTIME_DIR: root-owned and never handed
+# to $SVC_USER, since root runs them during the install. NODE_VER moves with web/package.json "engines".
+RUNTIME_DIR=/opt/mdmesh-runtime
+NODE_VER=24.21.0
+JDK17_VER=17.0.20.1+1
+case "$(uname -m)" in
+  x86_64)  NODE_ARCH=x64   NODE_SHA=6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff
+           JDK17_ARCH=x64     JDK17_SHA=3808d1d15e3ec6bd5b84057fb5d84c33d8a1536a258146bcea2e603fc726e08e ;;
+  aarch64) NODE_ARCH=arm64 NODE_SHA=724282c3b43aec998aa9527380465b45d229e021b58035f5f4f63095eabfe5d5
+           JDK17_ARCH=aarch64 JDK17_SHA=457b57af8f9c93ec39080bb8c764f559dc8c89a6da1a39d718a400b7890d3e41 ;;
+  *)       NODE_ARCH="" JDK17_ARCH="" ;;
+esac
 # Tomcat lifecycle helpers. CATALINA_PID lets `catalina.sh stop -force` actually kill a JVM that ignores
 # the shutdown command (the server keeps scheduler threads alive after context stop), and the pgrep
 # fallback covers instances started by older versions of this script without a PID file.
@@ -414,6 +429,16 @@ if [ -f "$_old_root" ] && ! _old_xml=$(svc_cat "$_old_root" 2>>"$LOGFILE"); then
 fi
 # Value of <Parameter name="$1" value="…"/> in the existing ROOT.xml; empty when there is none.
 old_root_param() { printf '%s\n' "$_old_xml" | sed -n "s/.*name=\"$1\"[[:space:]]*value=\"\([^\"]*\)\".*/\1/p" | head -n 1; }
+# xml_attr RAW: RAW escaped for an XML attribute value (an SMTP password with & or " must not break ROOT.xml).
+xml_attr() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g' -e "s/'/\&apos;/g"; }
+# root_param ENV_VAR PARAM DEFAULT: the XML-ready value for <Parameter name="PARAM">. The env var when it is set (even to
+# "", which is how a value is cleared), else the value in the existing ROOT.xml as it stands (already escaped), else
+# DEFAULT. Settings made on an earlier run therefore survive re-runs and upgrades.
+root_param() {
+  if [ -n "${!1+x}" ]; then xml_attr "${!1}"
+  elif grep -q "name=\"$2\"" <<< "$_old_xml"; then old_root_param "$2"
+  else xml_attr "$3"; fi
+}
 # jwt.secretkey signs REST API clients' JWTs (/rest/public/jwt/login), so it is kept the same way: those tokens then
 # survive restarts and upgrades, and an install from before it existed gets the key generated above. JJWT 0.9.1
 # base64-decodes the key and silently drops characters outside the base64 alphabet and a trailing partial 4-character
@@ -441,35 +466,84 @@ select_jdk17() {
   local c
   for c in "${JAVA17_HOME:-}" \
            /usr/lib/jvm/java-17-openjdk* /usr/lib/jvm/*temurin-17* /usr/lib/jvm/*zulu*17* \
-           /usr/lib/jvm/*corretto*17* /usr/lib/jvm/*-17-* /usr/lib/jvm/*17* /opt/*jdk-17* /opt/*jdk17*; do
+           /usr/lib/jvm/*corretto*17* /usr/lib/jvm/*-17-* /usr/lib/jvm/*17* /opt/*jdk-17* /opt/*jdk17* "$RUNTIME_DIR"/jdk-17*; do
     [ -n "$c" ] && [ -x "$c/bin/javac" ] || continue
     case "$("$c/bin/javac" -version 2>&1)" in *' 17.'*) printf '%s' "$c"; return 0 ;; esac
   done
   return 1
 }
+# The console is built (and the supervisor run) on one Node line, NODE_VER's major: a host Node on that line is used,
+# anything else (none, the distros' 18, a newer line) gets the pinned download. The host's own Node is never replaced.
+host_node_ok() {
+  command -v node >/dev/null && command -v npm >/dev/null || return 1
+  case "$(node -v 2>/dev/null)" in "v${NODE_VER%%.*}."*) return 0 ;; *) return 1 ;; esac
+}
+# fetch_runtime NAME URL SHA256: download URL, check it against the SHA-256 pinned above (never one fetched alongside it),
+# and unpack it as $RUNTIME_DIR/NAME. It is unpacked beside its final place and renamed into it, so NAME exists only once
+# the check passed, and a re-run reuses it.
+fetch_runtime() {
+  local name="$1" url="$2" sha="$3" t
+  [ -d "$RUNTIME_DIR/$name" ] && { info "$name already in $RUNTIME_DIR"; return 0; }
+  [ -n "$sha" ] || _fail "No pinned $name download for $(uname -m): install it yourself (see DEPLOY.md, Option C) and re-run."
+  [ ! -L "$RUNTIME_DIR" ] || _fail "Refusing to use $RUNTIME_DIR: it is a symbolic link. Remove it and re-run."
+  mkdir -p "$RUNTIME_DIR"; chmod 755 "$RUNTIME_DIR"
+  rm -rf "$RUNTIME_DIR"/.fetch.??????   # what a killed run left behind
+  t=$(mktemp -d "$RUNTIME_DIR/.fetch.XXXXXX")
+  run "Downloading $name" curl -fsSL --retry 3 "$url" -o "$t/rt.tar.gz"
+  if [ "$(sha256sum "$t/rt.tar.gz" | awk '{print $1}')" != "$sha" ]; then
+    rm -rf "$t"; _fail "The $name download does not match its pinned SHA-256"
+  fi
+  mkdir "$t/rt"
+  run "Unpacking $name" tar -xzf "$t/rt.tar.gz" -C "$t/rt" --strip-components=1 --no-same-owner
+  chmod -R a+rX,go-w "$t/rt"   # umask 077 above; $SVC_USER runs these too
+  mv -T "$t/rt" "$RUNTIME_DIR/$name"; rm -rf "$t"
+  ok "$name installed in $RUNTIME_DIR (SHA-256 verified)"
+}
 # Install only what is missing. Asking apt for packages the host already provides another way (Node
 # from nodesource, a JDK under /opt, Postgres from PGDG) is how "held broken packages" conflicts happen
-# on otherwise healthy boxes — and openjdk-17-jdk is not packaged on every release (Debian 13 has 21/25).
+# on otherwise healthy boxes. Node, and JDK 17 where the distro packages none (Debian 13), come from fetch_runtime.
 PKGS=()
-select_jdk17 >/dev/null || PKGS+=(openjdk-17-jdk)
 command -v psql    >/dev/null && command -v pg_ctlcluster >/dev/null || PKGS+=(postgresql)
 command -v mvn     >/dev/null || PKGS+=(maven)
-command -v node    >/dev/null || PKGS+=(nodejs)
-command -v npm     >/dev/null || PKGS+=(npm)
 command -v curl    >/dev/null || PKGS+=(curl)
 command -v python3 >/dev/null || PKGS+=(python3)
 command -v aapt    >/dev/null || PKGS+=(aapt)
-if [ ${#PKGS[@]} -eq 0 ]; then
-  ok "all build/runtime dependencies already present — nothing to install"
-else
+APT_UPDATED=0
+apt_update() {
+  [ "$APT_UPDATED" = 1 ] && return 0
   # Tolerate an unrelated broken third-party APT source (e.g. a Docker repo on a codename Docker doesn't
   # publish for → "does not have a Release file") — the native install only needs base Debian packages.
-  run "$(IFS=,; echo "${PKGS[*]}" | sed 's/,/, /g')" bash -c \
-    "apt-get update -y || echo '(some apt sources failed to refresh — continuing)'; DEBIAN_FRONTEND=noninteractive apt-get install -y ${PKGS[*]}"
+  run "Refreshing package lists" bash -c "apt-get update -y || echo '(some apt sources failed to refresh — continuing)'"
+  APT_UPDATED=1
+}
+FETCH_JDK17=0
+if ! select_jdk17 >/dev/null; then
+  apt_update
+  if apt-cache policy openjdk-17-jdk 2>/dev/null | grep -q 'Candidate: [0-9]'; then PKGS+=(openjdk-17-jdk); else FETCH_JDK17=1; fi
+fi
+if [ ${#PKGS[@]} -eq 0 ]; then
+  ok "all packaged dependencies already present — nothing to install"
+else
+  apt_update
+  run "$(IFS=,; echo "${PKGS[*]}" | sed 's/,/, /g')" bash -c "DEBIAN_FRONTEND=noninteractive apt-get install -y ${PKGS[*]}"
 fi
 # minisign verifies release-manifest signatures for the updater supervisor. Best-effort: without it
 # the supervisor still runs but reports releases as unverified (and never mirrors an APK).
 DEBIAN_FRONTEND=noninteractive apt-get install -y minisign >> "$LOGFILE" 2>&1 || info "minisign unavailable — updater will report releases as unverified"
+if host_node_ok; then
+  ok "Node $(node -v) from this host"
+else
+  NODE_NAME="node-v${NODE_VER}-linux-${NODE_ARCH}"
+  info "this host has no Node ${NODE_VER%%.*} ($(node -v 2>/dev/null || echo none)): using the pinned Node ${NODE_VER}"
+  fetch_runtime "$NODE_NAME" "https://nodejs.org/dist/v${NODE_VER}/${NODE_NAME}.tar.gz" "${NODE_ARCH:+$NODE_SHA}"
+  export PATH="$RUNTIME_DIR/$NODE_NAME/bin:$PATH"
+fi
+if [ "$FETCH_JDK17" = 1 ]; then
+  info "the distro packages no JDK 17: using the pinned Temurin ${JDK17_VER}"
+  fetch_runtime "jdk-${JDK17_VER}" \
+    "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-${JDK17_VER/+/%2B}/OpenJDK17U-jdk_${JDK17_ARCH}_linux_hotspot_${JDK17_VER/+/_}.tar.gz" \
+    "${JDK17_ARCH:+$JDK17_SHA}"
+fi
 
 step "Selecting the Java 17 toolchain"
 JAVA_HOME=$(select_jdk17) || {
@@ -747,6 +821,14 @@ done < <(find "$REPO/install/emails" -type f -print0)
 # Host the release agent APK the QR points at (/files/agent.apk), if we fetched one above.
 [ -n "$AGENT_APK" ] && { base_write files/agent.apk cat "$AGENT_APK"; ok "agent APK hosted at /files/agent.apk"; }
 agent_fetch_cleanup   # the fetched release files are no longer needed (the EXIT trap covers every other path)
+# SMTP (password-recovery email): the Docker .env's variables. Read here, after the deferred ROOT.xml read above.
+X_SMTP_HOST=$(root_param SMTP_HOST smtp.host "")
+X_SMTP_PORT=$(root_param SMTP_PORT smtp.port 25)
+X_SMTP_SSL=$(root_param SMTP_SSL smtp.ssl false)
+X_SMTP_STARTTLS=$(root_param SMTP_STARTTLS smtp.starttls false)
+X_SMTP_USERNAME=$(root_param SMTP_USERNAME smtp.username "")
+X_SMTP_PASSWORD=$(root_param SMTP_PASSWORD smtp.password "")
+X_SMTP_FROM=$(root_param SMTP_FROM smtp.from "mdm@localhost")
 # ROOT.xml carries the DB password, hash.secret and jwt.secretkey: tc_write makes it mode 600.
 tc_write conf/Catalina/localhost/ROOT.xml cat <<XML
 <?xml version="1.0" encoding="UTF-8"?>
@@ -777,9 +859,17 @@ tc_write conf/Catalina/localhost/ROOT.xml cat <<XML
     <!-- Loopback updater supervisor; /update/* is passed through by UpdateProxyServlet so the
          console's Updates + staged-rollout views are same-origin (no proxy config needed). -->
     <Parameter name="supervisor.base" value="http://127.0.0.1:9000"/>
-    <!-- TODO(parity): the Docker stack wires SMTP via env (smtp.host/port/ssl/starttls/username/
-         password/from — see docker/entrypoint.sh); this installer writes no smtp.* Parameters yet,
-         so password-reset emails stay disabled on native installs. Add them when SMTP is needed. -->
+    <!-- SMTP (password recovery): env SMTP_HOST/PORT/SSL/STARTTLS/USERNAME/PASSWORD/FROM, as in the Docker .env.
+         Re-runs keep these values unless the variable is set. An empty smtp.host turns email off. -->
+    <Parameter name="smtp.host" value="${X_SMTP_HOST}"/>
+    <Parameter name="smtp.port" value="${X_SMTP_PORT}"/>
+    <Parameter name="smtp.ssl" value="${X_SMTP_SSL}"/>
+    <Parameter name="smtp.starttls" value="${X_SMTP_STARTTLS}"/>
+    <Parameter name="smtp.username" value="${X_SMTP_USERNAME}"/>
+    <Parameter name="smtp.password" value="${X_SMTP_PASSWORD}"/>
+    <Parameter name="smtp.from" value="${X_SMTP_FROM}"/>
+    <Parameter name="email.recovery.subj" value="${BASE_DIR}/emails/_LANGUAGE_/recovery_subj.txt"/>
+    <Parameter name="email.recovery.body" value="${BASE_DIR}/emails/_LANGUAGE_/recovery_body.txt"/>
 </Context>
 XML
 # Tomcat runs unprivileged (like the Docker image). Create the service account and hand it the trees it
@@ -1015,6 +1105,13 @@ else
   printf '  %s✗ post-seed repairs failed — device enrollment would not work. Details: %s%s\n' "$c_red" "$LOGFILE" "$c_reset"
   tail -n 15 "$LOGFILE" | sed "s/^/    ${c_dim}/;s/$/${c_reset}/"; exit 1
 fi
+
+# Runtimes an earlier run fetched that this one no longer uses (an older pin, or the host now has its own).
+for _rt in "$RUNTIME_DIR"/node-v* "$RUNTIME_DIR"/jdk-*; do
+  [ -d "$_rt" ] || continue
+  case "$_rt" in "$JAVA_HOME"|"${NODE_BIN%/bin/node}") continue ;; esac
+  rm -rf "$_rt"; info "removed the unused runtime $_rt"
+done
 
 trap - ERR
 printf '\n  %s%s✓ MDMesh installed (native)%s\n\n' "$c_grn" "$c_bold" "$c_reset"

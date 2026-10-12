@@ -11,6 +11,7 @@
 package com.hmdm.rest.resource.support;
 
 import com.hmdm.rest.json.InstallIntegrity;
+import com.hmdm.util.HostedFiles;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -18,8 +19,6 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URI;
-import java.net.URL;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
@@ -35,25 +34,11 @@ public class ApkHashResolver implements InstallIntegrity.Sha256Source {
     static final String NOT_HOSTED = "it is not hosted by this server and no SHA-256 is known for it — set it on "
             + "the Library app (SHA-256…), enter it with the URL under Custom APK, or upload the APK";
 
-    private final File filesDirectory;
-    private final String[] localPrefixes;
+    private final HostedFiles hostedFiles;
 
     @Inject
     public ApkHashResolver(@Named("files.directory") String filesDirectory, @Named("base.url") String baseUrl) {
-        this.filesDirectory = new File(filesDirectory);
-        String base = baseUrl == null ? "" : baseUrl.trim();
-        while (base.endsWith("/")) {
-            base = base.substring(0, base.length() - 1);
-        }
-        String origin = base;
-        try {
-            URL u = new URL(base);
-            origin = u.getProtocol() + "://" + u.getHost() + (u.getPort() != -1 ? ":" + u.getPort() : "");
-        } catch (Exception ignored) {
-            // keep the base as given
-        }
-        // The files URL FilesResource builds, and the origin-only form QR provisioning has always accepted.
-        this.localPrefixes = new String[]{base + "/files/", origin + "/files/"};
+        this.hostedFiles = new HostedFiles(filesDirectory, baseUrl);
     }
 
     @Override
@@ -73,54 +58,7 @@ public class ApkHashResolver implements InstallIntegrity.Sha256Source {
 
     /** The hosted file a {@code <base.url>/files/...} URL names, or null (not ours, missing, or outside the dir). */
     File localFile(String url) {
-        for (String prefix : localPrefixes) {
-            if (!url.startsWith(prefix)) {
-                continue;
-            }
-            String rest = url.substring(prefix.length());
-            int cut = indexOfAny(rest, '?', '#');
-            if (cut >= 0) {
-                rest = rest.substring(0, cut);
-            }
-            for (String path : new String[]{rest, decode(rest)}) {
-                File f = contained(path);
-                if (f != null) {
-                    return f;
-                }
-            }
-        }
-        return null;
-    }
-
-    private File contained(String path) {
-        if (path == null || path.isEmpty()) {
-            return null;
-        }
-        try {
-            File root = filesDirectory.getCanonicalFile();
-            File f = new File(root, path).getCanonicalFile();
-            if (!f.toPath().startsWith(root.toPath()) || !f.isFile()) {
-                return null;
-            }
-            return f;
-        } catch (IOException e) {
-            return null;
-        }
-    }
-
-    /** Percent-decoded path ({@code %20} → space), or null when it isn't a valid URI path. */
-    private static String decode(String path) {
-        try {
-            return URI.create("http://h/" + path).getPath().substring(1);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private static int indexOfAny(String s, char a, char b) {
-        int i = s.indexOf(a);
-        int j = s.indexOf(b);
-        return i < 0 ? j : (j < 0 ? i : Math.min(i, j));
+        return hostedFiles.localFile(url);
     }
 
     private static String digest(InputStream in) throws IOException {

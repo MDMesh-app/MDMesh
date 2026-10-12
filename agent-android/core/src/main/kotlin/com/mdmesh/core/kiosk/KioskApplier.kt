@@ -12,14 +12,19 @@ import com.mdmesh.proto.KioskApplyPayload
  * The one implementation of "put this device in kiosk with payload P" / "leave kiosk", shared by the
  * `kiosk.enter` / `kiosk.exit` commands and by `config.apply`. Idempotent: entering with the same payload
  * re-asserts the allowlist and features; exiting when not in kiosk is harmless.
+ *
+ * Entering with the payload already persisted while lock task is active is a no-op: a re-sent `config.apply`
+ * (e.g. after an agent update) must not relaunch the kiosk launcher on a device already showing it.
  */
 class KioskApplier(
     private val kiosk: KioskController,
     private val store: KioskStateStore,
     private val home: KioskHomeSwitch,
     private val homeComponent: ComponentName,
+    private val isLockTaskActive: () -> Boolean = { false },
 ) {
     suspend fun enter(p: KioskApplyPayload): KioskResult {
+        if (store.load() == p && isLockTaskActive()) return KioskResult.Ok
         val features = lockTaskFeatures(
             KioskToggles(
                 home = p.features.home, recents = p.features.recents, notifications = p.features.notifications,

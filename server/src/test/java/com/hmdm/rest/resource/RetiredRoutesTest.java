@@ -54,6 +54,14 @@ public class RetiredRoutesTest {
     }
 
     @Test
+    public void legacyDeviceAppUploadIsGone() {
+        for (java.lang.reflect.Method m : PublicResource.class.getMethods()) {
+            Path p = m.getAnnotation(Path.class);
+            assertFalse(m.getName(), p != null && normalize(p.value()).equals("/applications/upload"));
+        }
+    }
+
+    @Test
     public void legacyVideoRoutesAreGone() {
         assertFalse(registeredRootPaths().contains("/videos"));
     }

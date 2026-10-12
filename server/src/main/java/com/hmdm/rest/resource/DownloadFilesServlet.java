@@ -29,6 +29,8 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URLDecoder;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import javax.servlet.ServletException;
 import javax.servlet.ServletOutputStream;
 import javax.servlet.http.HttpServlet;
@@ -106,8 +108,8 @@ public class DownloadFilesServlet extends HttpServlet {
             }
         }
 
-        File file = new File(String.format("%s/%s", this.filesDirectory, path));
-        if (file.exists()) {
+        File file = resolveRequestedFile(this.baseDirectory, req.getRequestURI());
+        if (file != null) {
 
             long modifiedSince = req.getDateHeader("If-Modified-Since");
             if (modifiedSince != -1 && modifiedSince > file.lastModified()) {
@@ -142,10 +144,47 @@ public class DownloadFilesServlet extends HttpServlet {
                 e.printStackTrace();
             }
         } else {
-            System.out.println("Not found: " + file.getAbsolutePath());
+            log.debug("Not found: {}", path);
             resp.sendError(404);
         }
 
+    }
+
+    /**
+     * <p>Maps a {@code /files/...} request URI to the file it names: decoded exactly once, and only when the
+     * result is an existing regular file whose real path (symlinks resolved) lies inside {@code baseDirectory}.</p>
+     *
+     * @return the file to serve, or null when there is nothing servable at that path.
+     */
+    static File resolveRequestedFile(File baseDirectory, String requestUri) {
+        if (requestUri == null) {
+            return null;
+        }
+        int index = requestUri.indexOf("/files/");
+        if (index < 0) {
+            return null;
+        }
+        try {
+            String relative = URLDecoder.decode(requestUri.substring(index + "/files/".length()), "UTF8");
+            while (relative.startsWith("/")) {
+                relative = relative.substring(1); // "/files//a" was served as "a" before; keep it relative
+            }
+            if (relative.isEmpty() || relative.indexOf('\0') >= 0) {
+                return null;
+            }
+            Path base = baseDirectory.toPath().toRealPath();
+            Path requested = base.resolve(relative).normalize();
+            if (!requested.startsWith(base) || !Files.exists(requested)) {
+                return null;
+            }
+            Path real = requested.toRealPath();
+            if (!real.startsWith(base) || real.equals(base) || !Files.isRegularFile(real)) {
+                return null;
+            }
+            return real.toFile();
+        } catch (IllegalArgumentException | IOException e) {
+            return null;
+        }
     }
 
     private void sendPartialContent(String rangeStr, File file, HttpServletResponse resp) {

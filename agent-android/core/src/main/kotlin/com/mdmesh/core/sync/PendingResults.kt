@@ -2,6 +2,7 @@ package com.mdmesh.core.sync
 
 import android.content.Context
 import com.mdmesh.proto.CommandResult
+import com.mdmesh.proto.CommandStatus
 import com.mdmesh.proto.ProtocolJson
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.serialization.builtins.ListSerializer
@@ -70,18 +71,37 @@ class PendingResults(private val backup: Backup = Backup.None) {
     fun add(results: List<CommandResult>) {
         load()
         if (results.isEmpty()) return
-        buffer.addAll(results)
+        buffer.addAll(results.map(::bounded))
         persist()
     }
 
-    /** Take and clear the current buffer for delivery. */
+    /**
+     * Take the next batch for delivery: from the front, at most [MAX_BATCH_RESULTS] results and [MAX_BATCH_CHARS] of
+     * serialized JSON, but always at least one. The rest waits for the next check-in, so a backlog (e.g. results that
+     * piled up offline) never turns into one request the server refuses and the agent resends forever.
+     */
     @Synchronized
     fun drain(): List<CommandResult> {
         load()
-        val snapshot = buffer.toList()
-        inFlight.addAll(snapshot)
-        buffer.clear()
-        return snapshot
+        val batch = mutableListOf<CommandResult>()
+        var chars = 0L
+        for (result in buffer) {
+            if (batch.size >= MAX_BATCH_RESULTS) break
+            val size = ProtocolJson.json.encodeToString(CommandResult.serializer(), result).length
+            if (batch.isNotEmpty() && chars + size > MAX_BATCH_CHARS) break
+            batch += result
+            chars += size
+        }
+        inFlight.addAll(batch)
+        buffer.subList(0, batch.size).clear()
+        return batch
+    }
+
+    /** Whether results are still waiting to be drained. */
+    @Synchronized
+    fun hasBacklog(): Boolean {
+        load()
+        return buffer.isNotEmpty()
     }
 
     /** Put drained results back (front) when delivery failed, so they retry next cycle. */
@@ -93,11 +113,16 @@ class PendingResults(private val backup: Backup = Backup.None) {
         persist()
     }
 
-    /** The check-in carrying the drained results succeeded: forget them. */
+    /**
+     * The check-in carrying the drained results succeeded: forget the first [accepted] of them (all when null) and put
+     * the ones the server did not take back in front, for the next check-in.
+     */
     @Synchronized
-    fun delivered() {
+    fun delivered(accepted: Int? = null) {
         if (inFlight.isEmpty()) return
+        val rest = if (accepted == null) emptyList() else inFlight.drop(accepted.coerceAtLeast(0))
         inFlight.clear()
+        buffer.addAll(0, rest)
         persist()
     }
 
@@ -106,8 +131,21 @@ class PendingResults(private val backup: Backup = Backup.None) {
         backup.write(if (all.isEmpty()) null else ProtocolJson.json.encodeToString(SERIALIZER, all))
     }
 
-    private companion object {
-        const val KEY = "results"
-        val SERIALIZER = ListSerializer(CommandResult.serializer())
+    companion object {
+        /** Results per check-in. The server takes up to 1000 and reports how many it took. */
+        const val MAX_BATCH_RESULTS = 100
+        /** Serialized results per check-in; the server refuses request bodies over 32 MiB. */
+        const val MAX_BATCH_CHARS = 4L * 1024 * 1024
+        /** A result detail longer than this (the server's own limit) is replaced by a short failure. */
+        const val MAX_DETAIL_CHARS = 2 * 1024 * 1024
+
+        private const val KEY = "results"
+        private val SERIALIZER = ListSerializer(CommandResult.serializer())
+
+        private fun bounded(result: CommandResult): CommandResult {
+            val length = result.detail?.length ?: return result
+            if (length <= MAX_DETAIL_CHARS) return result
+            return result.copy(status = CommandStatus.FAILED, detail = "result too large ($length chars)")
+        }
     }
 }

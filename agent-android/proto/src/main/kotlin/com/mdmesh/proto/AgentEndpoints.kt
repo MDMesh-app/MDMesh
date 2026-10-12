@@ -82,6 +82,11 @@ data class AgentCheckInResponse(
      * refuse one without. Absent from older servers (since protocol 1.3).
      */
     val installIntegrity: String? = null,
+    /**
+     * How many of the request's `results`, counted from the first, the server took; the agent keeps the rest for the
+     * next check-in. Null (older servers): all of them.
+     */
+    val resultsAccepted: Int? = null,
 ) {
     companion object {
         const val INSTALL_INTEGRITY_REQUIRED: String = "required"

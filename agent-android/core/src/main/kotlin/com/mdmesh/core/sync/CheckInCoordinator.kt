@@ -52,7 +52,10 @@ class CheckInCoordinator @Inject constructor(
 
     suspend fun runOnce(): Unit = mutex.withLock {
         try {
-            cycle()
+            // A result backlog bigger than one batch goes out in follow-up check-ins right away, as long as the
+            // server keeps taking results (bounded, so a server that takes none cannot spin us).
+            var rounds = 0
+            while (cycle() && ++rounds < MAX_BACKLOG_ROUNDS) Unit
             syncStatus.clear()
         } catch (t: Throwable) {
             if (t !is CancellationException) syncStatus.recordFailure(t)
@@ -60,7 +63,8 @@ class CheckInCoordinator @Inject constructor(
         }
     }
 
-    private suspend fun cycle() {
+    /** @return true when results that were waiting before this cycle are still due and the server took some. */
+    private suspend fun cycle(): Boolean {
         val deviceId = enrollment.ensureEnrolled()
         val authorization = "Bearer ${identity.secret().orEmpty()}"
         val matrix = capabilitySource.matrix(deviceId)
@@ -92,7 +96,10 @@ class CheckInCoordinator @Inject constructor(
             eventSink.restore(bufferedEvents)
             throw CheckInException(response.message ?: "check-in rejected")
         }
-        pending.delivered()
+        val accepted = data.resultsAccepted
+        pending.delivered(accepted)
+        val progressed = accepted == null || accepted > 0
+        val backlog = progressed && pending.hasBacklog()
         // Before this batch runs: its installs are judged by what this server guarantees.
         installIntegrity.update(data.installIntegrity)
 
@@ -104,6 +111,11 @@ class CheckInCoordinator @Inject constructor(
             // Record each command outcome as a timeline event (flushed next cycle).
             eventSink.record(EventType.COMMAND_RESULT, "${result.commandId}:${result.status}")
         }
+        return backlog
+    }
+
+    private companion object {
+        const val MAX_BACKLOG_ROUNDS = 20
     }
 }
 

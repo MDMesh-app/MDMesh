@@ -64,6 +64,52 @@ public class IconFileResource {
 
     private static final String DELIMITER = "1111111";
 
+    /** Icons are scaled to 144 px; nothing legitimate comes close to these. */
+    static final long MAX_ICON_BYTES = 1024 * 1024;
+    static final int MAX_ICON_DIMENSION = 1024;
+
+    /** The whole stream if it has at most {@code max} bytes, else null (reading at most max + 1 bytes). */
+    private static byte[] readAtMost(InputStream in, long max) throws java.io.IOException {
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        byte[] buf = new byte[8192];
+        int n;
+        while ((n = in.read(buf)) != -1) {
+            out.write(buf, 0, n);
+            if (out.size() > max) {
+                return null;
+            }
+        }
+        return out.toByteArray();
+    }
+
+    /** Decodes the image only after its header-declared size is checked; null if unreadable or too large. */
+    private static BufferedImage decodeBounded(byte[] bytes) throws java.io.IOException {
+        try (javax.imageio.stream.ImageInputStream iis =
+                     ImageIO.createImageInputStream(new java.io.ByteArrayInputStream(bytes))) {
+            if (iis == null) {
+                return null;
+            }
+            java.util.Iterator<javax.imageio.ImageReader> readers = ImageIO.getImageReaders(iis);
+            if (!readers.hasNext()) {
+                return null;
+            }
+            javax.imageio.ImageReader reader = readers.next();
+            try {
+                reader.setInput(iis, true, true);
+                int w = reader.getWidth(0);
+                int h = reader.getHeight(0);
+                if (w <= 0 || h <= 0 || w > MAX_ICON_DIMENSION || h > MAX_ICON_DIMENSION) {
+                    return null;
+                }
+                return reader.read(0);
+            } catch (javax.imageio.IIOException e) {
+                return null;
+            } finally {
+                reader.dispose();
+            }
+        }
+    }
+
     private UploadedFileDAO uploadedFileDAO;
     private CustomerDAO customerDAO;
     private String filesDirectory;
@@ -93,10 +139,23 @@ public class IconFileResource {
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     public Response uploadIconFile(@FormDataParam("file") InputStream uploadedInputStream,
                                    @ApiParam("An icon file to upload") @FormDataParam("file") FormDataContentDisposition fileDetail) throws Exception {
+        if (!SecurityContext.get().hasPermission("settings")) {
+            logger.error("Unauthorized attempt to upload an icon by user " + SecurityContext.get().getCurrentUserName());
+            return Response.PERMISSION_DENIED();
+        }
         try {
-            BufferedImage img = ImageIO.read(uploadedInputStream);
+            byte[] bytes = readAtMost(uploadedInputStream, MAX_ICON_BYTES);
+            if (bytes == null) {
+                logger.warn("Rejecting an icon upload larger than {} bytes", MAX_ICON_BYTES);
+                return Response.ERROR("error.icon.size.invalid");
+            }
+            BufferedImage img = decodeBounded(bytes);
+            if (img == null) {
+                logger.warn("Rejecting an icon upload that is not a readable image of at most {}px", MAX_ICON_DIMENSION);
+                return Response.ERROR("error.icon.dimension.invalid");
+            }
             if (img.getWidth() != img.getHeight()) {
-                logger.error("Rejecting the icon file {} upload due to unequal icon width and height", fileDetail.getFileName());
+                logger.error("Rejecting the icon file upload due to unequal icon width and height");
                 return Response.ERROR("error.icon.dimension.invalid");
             }
 

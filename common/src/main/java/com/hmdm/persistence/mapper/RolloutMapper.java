@@ -72,8 +72,10 @@ public interface RolloutMapper {
     @Select({"SELECT COUNT(*) > 0 FROM agentRolloutCanary WHERE rolloutId = #{rolloutId} AND deviceNumber = #{deviceNumber}"})
     boolean isCanary(@Param("rolloutId") int rolloutId, @Param("deviceNumber") String deviceNumber);
 
-    /** Queues {@code cmd} unless the same command is already pending or delivered to the device (one statement, so a
-     *  check-in re-queue and a create/promote loop cannot both add it). @return rows inserted, 0 or 1. */
+    /** Queues {@code cmd} unless the same command is already pending or delivered to the device. One statement closes
+     *  almost all of the window between a check-in re-queue and a create/promote loop; two transactions running at the
+     *  same instant can still both pass NOT EXISTS (READ COMMITTED), and the worst case is one duplicate install that
+     *  the agent's version check skips once the first has installed. @return rows inserted, 0 or 1. */
     @Insert({"INSERT INTO agentCommand (deviceNumber, type, payload, requiresCapability, status, createdAt) " +
             "SELECT #{deviceNumber}, #{type}, #{payload}, #{requiresCapability}, #{status}, #{createdAt} " +
             "WHERE NOT EXISTS (SELECT 1 FROM agentCommand WHERE deviceNumber = #{deviceNumber} AND type = #{type} " +

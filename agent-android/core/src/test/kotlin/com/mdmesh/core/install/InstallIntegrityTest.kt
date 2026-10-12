@@ -20,7 +20,8 @@ class InstallIntegrityTest {
 
     @Test
     fun `uppercase hex is accepted`() {
-        assertNull(InstallRequest(url = "http://lan/app.apk", packageName = "com.x", sha256 = "AB".repeat(32)).integrityProblem)
+        val upper = "AB".repeat(32)
+        assertNull(InstallRequest(url = "http://lan/app.apk", packageName = "com.x", sha256 = upper).integrityProblem)
     }
 
     @Test
@@ -62,6 +63,35 @@ class InstallIntegrityTest {
         val problem = req.integrityProblem
         assertNotNull(problem)
         assertTrue(problem!!, problem.contains("http://h/split_en.apk"))
+    }
+
+    @Test
+    fun `without the server's guarantee an unhashed install proceeds as before`() {
+        val policy = InstallIntegrityPolicy()
+        assertNull(policy.problem(InstallRequest(url = "http://lan/app.apk", packageName = "com.x")))
+        policy.update(null)
+        assertNull(policy.problem(InstallRequest(url = "http://lan/app.apk", packageName = "com.x")))
+        policy.update("something-else")
+        assertNull(policy.problem(InstallRequest(url = "http://lan/app.apk", packageName = "com.x")))
+    }
+
+    @Test
+    fun `with the server's guarantee an unhashed install is refused`() {
+        val policy = InstallIntegrityPolicy()
+        policy.update("required")
+        assertNotNull(policy.problem(InstallRequest(url = "http://lan/app.apk", packageName = "com.x")))
+        assertNull(policy.problem(InstallRequest(url = "http://lan/app.apk", packageName = "com.x", sha256 = hex)))
+    }
+
+    @Test
+    fun `the guarantee survives a restart and is dropped when the server stops sending it`() {
+        val store = InstallIntegrityPolicy.Store.Memory()
+        InstallIntegrityPolicy(store).update("required")
+        val restarted = InstallIntegrityPolicy(store)
+        assertNotNull(restarted.problem(InstallRequest(url = "http://lan/app.apk", packageName = "com.x")))
+        restarted.update(null)
+        val unhashed = InstallRequest(url = "http://lan/app.apk", packageName = "com.x")
+        assertNull(InstallIntegrityPolicy(store).problem(unhashed))
     }
 
     @Test

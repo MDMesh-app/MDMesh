@@ -2,6 +2,7 @@ package com.mdmesh.core.sync
 
 import com.mdmesh.core.capability.CapabilitySource
 import com.mdmesh.core.command.CommandDispatcher
+import com.mdmesh.core.install.InstallIntegrityPolicy
 import com.mdmesh.core.net.MdmApi
 import com.mdmesh.core.state.DeviceStateSource
 import com.mdmesh.core.store.DeviceIdentity
@@ -44,6 +45,7 @@ class CheckInCoordinator @Inject constructor(
     private val eventSink: EventSink,
     private val hardwareIdSource: HardwareIdSource = HardwareIdSource { null },
     private val syncStatus: SyncStatus = SyncStatus(),
+    private val installIntegrity: InstallIntegrityPolicy = InstallIntegrityPolicy(),
 ) {
 
     private val mutex = Mutex()
@@ -91,6 +93,8 @@ class CheckInCoordinator @Inject constructor(
             throw CheckInException(response.message ?: "check-in rejected")
         }
         pending.delivered()
+        // Before this batch runs: its installs are judged by what this server guarantees.
+        installIntegrity.update(data.installIntegrity)
 
         for (command in data.commands) {
             val result = dispatcher.dispatch(command)

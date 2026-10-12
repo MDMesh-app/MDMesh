@@ -15,8 +15,9 @@ import kotlinx.serialization.Serializable
  * `app.install` — silently install (or upgrade) an app as Device Owner. Payload:
  * `{ url, packageName, versionCode?, sha256, runAfterInstall?, parts? }`. A `parts` list
  * (`[{url, sha256}]`) installs a split-APK bundle (base + splits) in one session; without it
- * the single `url`/`localPath` is used. A missing hex `sha256` fails the command (see
- * [InstallRequest.integrityProblem]). Version gating, downgrade-blocking, and the install
+ * the single `url`/`localPath` is used. A missing hex `sha256` fails the command once the server has said it
+ * sends one with every install (see [com.mdmesh.core.install.InstallIntegrityPolicy]). Version gating,
+ * downgrade-blocking, and the install
  * itself are delegated to [InstallManager].
  */
 class AppInstallHandler(

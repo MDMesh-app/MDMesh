@@ -27,7 +27,7 @@ data class ApkPart(
     val url: String? = null,
     /** Absolute path to an already-present APK on the device. */
     val localPath: String? = null,
-    /** Hex SHA-256 of this part; required (see [InstallRequest.integrityProblem]) and verified after fetch. */
+    /** Hex SHA-256 of this part; verified after fetch, and required when [InstallIntegrityPolicy.required]. */
     val sha256: String? = null,
 )
 
@@ -41,7 +41,7 @@ data class InstallRequest(
     val packageName: String,
     /** Requested version code; `null`/`0` means "any" (see [VersionPolicy]). */
     val versionCode: Long? = null,
-    /** Hex SHA-256 of the APK; required for a single-APK install and verified after download. */
+    /** Hex SHA-256 of the APK; verified after download, and required when [InstallIntegrityPolicy.required]. */
     val sha256: String? = null,
     /** When true and the install succeeds, launch the app's main activity. */
     val runAfterInstall: Boolean = false,
@@ -112,6 +112,7 @@ class InstallManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val resultBus: InstallResultBus,
     @DownloadHttpClient private val httpClient: OkHttpClient,
+    private val integrity: InstallIntegrityPolicy,
 ) {
 
     private val packageInstaller: PackageInstaller
@@ -122,8 +123,8 @@ class InstallManager @Inject constructor(
      * install and awaits the platform's result. Returns the mapped [InstallOutcome].
      */
     suspend fun install(req: InstallRequest): InstallOutcome {
-        // 0. Integrity gate — refuse before any network or session work.
-        req.integrityProblem?.let { return InstallOutcome.Failure(status = null, reason = it) }
+        // 0. Integrity gate (when the server guarantees hashes) — refuse before any network or session work.
+        integrity.problem(req)?.let { return InstallOutcome.Failure(status = null, reason = it) }
 
         // 1. Version gate (pure) — skip / block before touching the network.
         when (val decision = VersionPolicy.shouldInstall(installedVersionCode(req.packageName), req.versionCode)) {
@@ -145,10 +146,11 @@ class InstallManager @Inject constructor(
                 val file = runCatching { obtainPart(part) }
                     .getOrElse { return InstallOutcome.Failure(null, "apk fetch failed: ${it.message}") }
                 fetched += FetchedApk(file, downloaded = part.url != null)
-                val expected = part.sha256!!.trim() // non-null: checked by the integrity gate
-                val actual = sha256Of(file)
-                if (!actual.equals(expected, ignoreCase = true)) {
-                    return InstallOutcome.Failure(null, "checksum mismatch: expected $expected got $actual")
+                part.sha256?.trim()?.let { expected ->
+                    val actual = sha256Of(file)
+                    if (!actual.equals(expected, ignoreCase = true)) {
+                        return InstallOutcome.Failure(null, "checksum mismatch: expected $expected got $actual")
+                    }
                 }
             }
 

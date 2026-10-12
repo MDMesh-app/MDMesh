@@ -3,6 +3,7 @@ package com.mdmesh.core.sync
 import com.mdmesh.core.command.CommandDispatcher
 import com.mdmesh.core.command.CommandHandler
 import com.mdmesh.core.command.CommandResults
+import com.mdmesh.core.install.InstallIntegrityPolicy
 import com.mdmesh.proto.AgentCheckInResponse
 import com.mdmesh.proto.CommandEnvelope
 import com.mdmesh.proto.CommandResult
@@ -46,6 +47,7 @@ class CheckInCoordinatorTest {
         pending: PendingResults,
         identityId: String = "dev-1",
         syncStatus: SyncStatus = SyncStatus(),
+        installIntegrity: InstallIntegrityPolicy = InstallIntegrityPolicy(),
     ): CheckInCoordinator {
         val identity = FakeIdentity(initialId = identityId, initialSecret = "sek-1")
         val eventSink = object : com.mdmesh.core.telemetry.EventSink {
@@ -65,6 +67,7 @@ class CheckInCoordinatorTest {
             telemetrySource = { null },
             eventSink = eventSink,
             syncStatus = syncStatus,
+            installIntegrity = installIntegrity,
         )
     }
 
@@ -92,6 +95,25 @@ class CheckInCoordinatorTest {
         assertEquals(1, buffered.size)
         assertEquals("c1", buffered.first().commandId)
         assertEquals(CommandStatus.DONE, buffered.first().status)
+    }
+
+    @Test
+    fun `follows the server's installIntegrity on every check-in`() = runTest {
+        val policy = InstallIntegrityPolicy()
+        val api = FakeMdmApi().apply {
+            checkInResponse = ResponseEnvelope(
+                status = "OK",
+                data = AgentCheckInResponse(installIntegrity = AgentCheckInResponse.INSTALL_INTEGRITY_REQUIRED),
+            )
+        }
+        val coordinator = coordinator(api, PendingResults(), installIntegrity = policy)
+        coordinator.runOnce()
+        assertTrue(policy.required)
+
+        // A server that doesn't send it (an older one, e.g. after a rollback) gets the old behaviour back.
+        api.checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse())
+        coordinator.runOnce()
+        assertTrue(!policy.required)
     }
 
     @Test

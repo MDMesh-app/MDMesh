@@ -27,9 +27,7 @@ import javax.inject.Named;
 
 import com.hmdm.persistence.CustomerDAO;
 import com.hmdm.persistence.domain.*;
-import com.hmdm.rest.json.InstallIntegrity;
 import com.hmdm.rest.json.Response;
-import com.hmdm.rest.resource.support.ApkHashResolver;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.util.StringUtil;
 import io.swagger.annotations.Api;
@@ -44,6 +42,7 @@ import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.hmdm.persistence.UnsecureDAO;
+import com.hmdm.util.CryptoUtil;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.ws.rs.GET;
@@ -58,6 +57,8 @@ import java.io.*;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLDecoder;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.List;
 
 /**
@@ -75,8 +76,8 @@ public class QRCodeResource {
     private UnsecureDAO unsecureDAO;
     private CustomerDAO customerDAO;
 
+    private String filesDirectory;
     private String baseUrlForQrCode;
-    private ApkHashResolver hashResolver;
 
     /**
      * <p>A constructor required by Swagger.</p>
@@ -90,11 +91,11 @@ public class QRCodeResource {
     @Inject
     public QRCodeResource(UnsecureDAO unsecureDAO,
                           CustomerDAO customerDAO,
-                          @Named("base.url") String baseUrl,
-                          ApkHashResolver hashResolver) throws MalformedURLException {
+                          @Named("files.directory") String filesDirectory,
+                          @Named("base.url") String baseUrl) throws MalformedURLException {
         this.unsecureDAO = unsecureDAO;
         this.customerDAO = customerDAO;
-        this.hashResolver = hashResolver;
+        this.filesDirectory = filesDirectory;
         final URL url = new URL(baseUrl);
         final int port = url.getPort();
         this.baseUrlForQrCode = url.getProtocol() + "://" + url.getHost() + (port != -1 ? ":" + port : "");
@@ -297,10 +298,41 @@ public class QRCodeResource {
         }
     }
 
-    /** Base64url SHA-256 of the APK (the QR checksum form), read from the files dir when hosted here. */
-    private String calculateApkHash(String apkUrl) throws IOException {
+    private String calculateApkHash(String apkUrl) throws NoSuchAlgorithmException, IOException {
         logger.info("Digesting the application file: {}", apkUrl);
-        String sha256 = InstallIntegrity.toApkHash(hashResolver.sha256Hex(apkUrl));
+
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] buffer= new byte[8192];
+        int count;
+
+        URL url = new URL(apkUrl);
+        if (apkUrl.startsWith(baseUrlForQrCode + "/files/")) {
+            // Local URL, use the file system
+            String urlPath = url.getPath();
+            int index = urlPath.indexOf("/files/", 0) + "/files/".length();
+            String path = urlPath.substring(index);
+            File file = new File(String.format("%s/%s", this.filesDirectory, path));
+            if (file.exists()) {
+                try (InputStream input = new FileInputStream(file)) {
+                    while ((count = input.read(buffer)) > 0) {
+                        digest.update(buffer, 0, count);
+                    }
+                }
+            } else {
+                throw new FileNotFoundException();
+            }
+        } else {
+            // Remote URL, use HTTP
+            try (BufferedInputStream bis = new BufferedInputStream(url.openStream())) {
+                while ((count = bis.read(buffer)) > 0) {
+                    digest.update(buffer, 0, count);
+                }
+            }
+        }
+
+        final byte[] hash = digest.digest();
+        String sha256 = CryptoUtil.getBase64String(hash);
+
         logger.info("Finished digesting the application file: {}. Hash: {}", apkUrl, sha256);
         return sha256;
     }

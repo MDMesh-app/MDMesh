@@ -12,7 +12,7 @@ import java.util.Locale;
  * of a split bundle, carries a lowercase hex {@code sha256}. The agent refuses an install without one, and the
  * digest travels over the authenticated check-in, so a plain-http (LAN) or third-party APK host can't swap the
  * file. A hash already in the payload is kept (normalized from the base64 form {@code applicationVersions.apkHash}
- * uses); a missing one is computed through a {@link Sha256Source}.
+ * uses); a missing one comes from a {@link Sha256Source} (the server hashes only APKs it hosts itself).
  */
 public final class InstallIntegrity {
 
@@ -82,10 +82,10 @@ public final class InstallIntegrity {
             try {
                 hex = normalizeHex(source.sha256Hex(url));
             } catch (Exception e) {
-                throw new IllegalArgumentException("could not compute the sha256 of " + url + ": " + e.getMessage());
+                throw new IllegalArgumentException("no sha256 for " + url + ": " + e.getMessage());
             }
             if (hex == null) {
-                throw new IllegalArgumentException("could not compute the sha256 of " + url);
+                throw new IllegalArgumentException("no sha256 for " + url);
             }
         }
         apk.put("sha256", hex);

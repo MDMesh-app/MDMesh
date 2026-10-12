@@ -11,6 +11,8 @@ export interface Application {
   versionCode?: number;
   url?: string;
   apkHash?: string;
+  /** Input only: hex SHA-256 of an APK at a URL not hosted by MDMesh (stored as the version's apkHash). */
+  sha256?: string;
   icon?: string;
   iconId?: number;
   /** "app" | "web" */

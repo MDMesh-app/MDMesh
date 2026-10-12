@@ -11,9 +11,6 @@
 package com.hmdm.rest.resource.support;
 
 import com.hmdm.rest.json.InstallIntegrity;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -21,27 +18,22 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
 /**
- * The hex SHA-256 of an APK named by URL. A file this server hosts ({@code <base.url>/files/...}) is read from the
- * files directory — the bytes uploaded here, with no network round trip (the public URL is often not reachable from
- * inside the container). Any other http(s) URL is downloaded once and hashed: the digest then pins those bytes, so a
- * later change at the source fails the agent's check instead of installing silently.
+ * The hex SHA-256 of an APK this server hosts ({@code <base.url>/files/...}), read from the files directory — the bytes
+ * uploaded here. The server never downloads a URL to hash it: an APK hosted elsewhere carries a SHA-256 known from its
+ * source (the F-Droid index, a rollout, or the admin entering it with the URL), and without one it is not installed.
  */
 @Singleton
 public class ApkHashResolver implements InstallIntegrity.Sha256Source {
 
-    private static final Logger logger = LoggerFactory.getLogger(ApkHashResolver.class);
-
-    static final int CONNECT_TIMEOUT_MS = 15_000;
-    static final int READ_TIMEOUT_MS = 60_000;
-    /** Upper bound on a downloaded APK (Play's own limit for a base APK is far below this). */
-    static final long MAX_DOWNLOAD_BYTES = 1024L * 1024 * 1024;
+    /** Why an APK hosted elsewhere has no hash; follows "no sha256 for URL: ". */
+    static final String NOT_HOSTED = "it is not hosted by this server, so its SHA-256 must be given — "
+            + "add it in the Library (or upload the APK)";
 
     private final File filesDirectory;
     private final String[] localPrefixes;
@@ -71,29 +63,11 @@ public class ApkHashResolver implements InstallIntegrity.Sha256Source {
         }
         String u = url.trim();
         File local = localFile(u);
-        if (local != null) {
-            try (InputStream in = new FileInputStream(local)) {
-                return digest(in, Long.MAX_VALUE);
-            }
+        if (local == null) {
+            throw new IOException(NOT_HOSTED);
         }
-        if (!(u.startsWith("https://") || u.startsWith("http://"))) {
-            throw new IOException("not an http(s) URL");
-        }
-        logger.info("Hashing the APK at {}", u);
-        HttpURLConnection conn = (HttpURLConnection) new URL(u).openConnection();
-        conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
-        conn.setReadTimeout(READ_TIMEOUT_MS);
-        conn.setInstanceFollowRedirects(true);
-        try {
-            int code = conn.getResponseCode();
-            if (code != HttpURLConnection.HTTP_OK) {
-                throw new IOException("HTTP " + code);
-            }
-            try (InputStream in = conn.getInputStream()) {
-                return digest(in, MAX_DOWNLOAD_BYTES);
-            }
-        } finally {
-            conn.disconnect();
+        try (InputStream in = new FileInputStream(local)) {
+            return digest(in);
         }
     }
 
@@ -149,7 +123,7 @@ public class ApkHashResolver implements InstallIntegrity.Sha256Source {
         return i < 0 ? j : (j < 0 ? i : Math.min(i, j));
     }
 
-    private static String digest(InputStream in, long limit) throws IOException {
+    private static String digest(InputStream in) throws IOException {
         MessageDigest md;
         try {
             md = MessageDigest.getInstance("SHA-256");
@@ -157,13 +131,8 @@ public class ApkHashResolver implements InstallIntegrity.Sha256Source {
             throw new IOException(e);
         }
         byte[] buf = new byte[64 * 1024];
-        long total = 0;
         int n;
         while ((n = in.read(buf)) > 0) {
-            total += n;
-            if (total > limit) {
-                throw new IOException("APK larger than " + limit + " bytes");
-            }
             md.update(buf, 0, n);
         }
         StringBuilder sb = new StringBuilder(64);

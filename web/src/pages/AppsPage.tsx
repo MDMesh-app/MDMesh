@@ -262,6 +262,8 @@ function isBundleName(n: string): boolean {
   return BUNDLE_EXTS.some((e) => lower.endsWith(e));
 }
 
+const SHA256_HEX = /^[0-9a-fA-F]{64}$/;
+
 function CustomSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
   const toast = useToast();
   const [query, setQuery] = useState('');
@@ -271,6 +273,9 @@ function CustomSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
   const [version, setVersion] = useState('');
   const [vc, setVc] = useState('');
   const [sha, setSha] = useState('');
+  // The URL of the file uploaded here: the server hashes it itself. Any other URL needs its SHA-256
+  // entered, since the agent only installs an APK whose hash it can verify.
+  const [hostedUrl, setHostedUrl] = useState('');
   const [bundle, setBundle] = useState<BundleUploadResult | null>(null);
   const [savedAppId, setSavedAppId] = useState<number | undefined>(undefined);
   const [dragging, setDragging] = useState(false);
@@ -281,6 +286,7 @@ function CustomSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
 
   async function onFile(file: File) {
     setSavedAppId(undefined); // fresh file → drop any prior Library id
+    setHostedUrl('');
     if (isBundleName(file.name)) {
       await onBundle(file);
       return;
@@ -305,6 +311,7 @@ function CustomSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
         const committed = await commitUpload(up.serverPath);
         if (committed.url) {
           setUrl(committed.url);
+          setHostedUrl(committed.url);
           // Auto-add to the Library so it shows up everywhere (incl. the kiosk app picker),
           // not just this one-off deploy. Non-fatal if it fails.
           if (fd?.pkg) {
@@ -396,6 +403,21 @@ function CustomSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
     }
   }
 
+  /** The external-URL SHA-256 rule; returns the hash to send (undefined for a hosted file), or null after a toast. */
+  function checkedSha(): string | undefined | null {
+    const s = sha.trim();
+    const external = url.trim() !== '' && url.trim() !== hostedUrl;
+    if (s && !SHA256_HEX.test(s)) {
+      toast.push('err', 'Invalid SHA-256', 'Enter the APK’s SHA-256 as 64 hex characters.');
+      return null;
+    }
+    if (external && !s) {
+      toast.push('err', 'SHA-256 required', 'This APK isn’t hosted by MDMesh: enter its SHA-256 so devices can verify it, or upload the file.');
+      return null;
+    }
+    return s ? s.toLowerCase() : undefined;
+  }
+
   function submit() {
     if (bundle) {
       onDeploy({
@@ -412,12 +434,14 @@ function CustomSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
       toast.push('err', 'Missing fields', 'APK URL and package name are required.');
       return;
     }
+    const checked = checkedSha();
+    if (checked === null) return;
     onDeploy({
       label: name.trim() || 'Custom APK',
       packageName: pkg.trim(),
       url: url.trim(),
       versionCode: vc ? Number(vc) : undefined,
-      sha256: sha.trim() || undefined,
+      sha256: checked,
       applicationId: savedAppId, // present once the APK is in the Library → enables "Add to a configuration"
     });
   }
@@ -432,12 +456,15 @@ function CustomSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
       toast.push('err', 'Missing fields', 'A package name and an APK URL (or a bundle) are required to add it to your Library.');
       return;
     }
+    const checked = isMultiPart ? undefined : checkedSha();
+    if (checked === null) return;
     setSavingToLibrary(true);
     try {
       const saved = await saveAndroidApplication({
         name: name.trim() || pkg.trim(),
         pkg: pkg.trim(),
         url: isMultiPart ? undefined : url.trim(),
+        sha256: checked,
         version: version.trim() || undefined,
         versionCode: vc ? Number(vc) : undefined,
         type: 'app',
@@ -581,8 +608,13 @@ function CustomSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
         </div>
         {!bundle && (
           <label className="field">
-            <span className="label">SHA-256 (base64)</span>
-            <input className="input mono" value={sha} onChange={(e) => setSha(e.target.value)} placeholder="optional — integrity check" />
+            <span className="label">SHA-256 (hex){url.trim() && url.trim() !== hostedUrl ? ' *' : ''}</span>
+            <input
+              className="input mono"
+              value={sha}
+              onChange={(e) => setSha(e.target.value)}
+              placeholder={url.trim() && url.trim() !== hostedUrl ? 'required — devices verify the APK against it' : 'computed for an uploaded file'}
+            />
           </label>
         )}
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -636,7 +668,7 @@ function FDroidSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
       url: a.apkUrl,
       versionCode: a.versionCode,
       // The hex sha256 from the F-Droid index pins the APK the admin picked; the agent refuses an
-      // install without one (the server hashes the download itself if the index has none).
+      // install without one (the server rejects an F-Droid entry whose index has none).
       sha256: a.sha256 || undefined,
     });
   }

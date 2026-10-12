@@ -82,13 +82,13 @@ public class ConfigAppInstallerTest {
         @Override public void wake(String deviceNumber, String wakeKind) { wakes++; }
     }
 
-    /** Hashes a URL to HEX, or fails for one containing "down"; records what it was asked. */
+    /** Like the real resolver, hashes only this server's files (to HEX) and refuses anything else; records calls. */
     private static final class FakeResolver extends ApkHashResolver {
         final List<String> asked = new ArrayList<>();
         FakeResolver() { super("/nonexistent", "http://mdm.lan:8080"); }
         @Override public String sha256Hex(String url) throws IOException {
             asked.add(url);
-            if (url.contains("down")) throw new IOException("connection refused");
+            if (!url.startsWith("http://mdm.lan:8080/files/")) throw new IOException(NOT_HOSTED);
             return HEX;
         }
     }
@@ -148,12 +148,25 @@ public class ConfigAppInstallerTest {
     }
 
     @Test
-    public void appWhoseHashCannotBeHadIsNotQueued() throws Exception {
-        configApp(12, "com.c", "https://down.example/c.apk", null);
-        configApp(13, "com.d", "https://f-droid.org/repo/d.apk", null);
+    public void externalAppWithAStoredHashIsQueued() throws Exception {
+        configApp(13, "com.d", "https://f-droid.org/repo/d.apk", APK_HASH);
         assertEquals(1, installer.enqueueConfigApps(device));
-        assertEquals("com.d", payload(0).get("packageName").asText());
+        assertEquals("pending", commands.inserted.get(0).getStatus());
         assertEquals(HEX, payload(0).get("sha256").asText());
+        assertTrue(resolver.asked.isEmpty());
+    }
+
+    @Test
+    public void externalAppWithoutAHashIsRecordedAsFailedNotSent() throws Exception {
+        configApp(12, "com.c", "http://apks.lan/c.apk", null);
+        assertEquals(0, installer.enqueueConfigApps(device));
+        assertEquals(1, commands.inserted.size());
+        AgentCommand c = commands.inserted.get(0);
+        assertEquals("failed", c.getStatus());
+        assertTrue(c.getDetail(), c.getDetail().contains("no sha256 for http://apks.lan/c.apk"));
+        assertTrue(c.getDetail(), c.getDetail().contains("add it in the Library"));
+        assertEquals(c.getCreatedAt(), c.getCompletedAt());
+        assertTrue(dao.savedHashes.isEmpty());
     }
 
     @Test

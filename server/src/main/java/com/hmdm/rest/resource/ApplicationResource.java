@@ -213,6 +213,10 @@ public class ApplicationResource {
                     SecurityContext.get().getCurrentUserName());
             return Response.PERMISSION_DENIED();
         }
+        if (application.getSha256() != null && !application.getSha256().trim().isEmpty()
+                && !application.getSha256().trim().matches("[0-9a-fA-F]{64}")) {
+            return Response.ERROR("The APK's SHA-256 must be 64 hex characters");
+        }
         try {
             if (application.getId() == null) {
                 final int appId = this.applicationDAO.insertApplication(application);
@@ -225,6 +229,10 @@ public class ApplicationResource {
                     if (version != null) {
                         version.setUrl(application.getUrl());
                         applicationDAO.updateApplicationVersion(version);
+                        String apkHash = com.hmdm.rest.json.InstallIntegrity.toApkHash(application.getSha256());
+                        if (apkHash != null) {
+                            applicationDAO.saveApkHash(version.getId(), apkHash);
+                        }
                         logger.info("Application " + application.getPkg() + " updated to version " + version.getVersion() +
                                 ", user " + SecurityContext.get().getCurrentUserName());
                     }

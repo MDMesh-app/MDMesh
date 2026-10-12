@@ -56,8 +56,8 @@ public class ConfigAppInstaller {
 
     /**
      * Queue an {@code app.install} for every action=install app of the device's configuration
-     * that has a real hosted APK URL and a known SHA-256 (an app whose hash can't be had is skipped and logged:
-     * the agent refuses an unhashed install). Returns the number queued. Never throws — callers treat
+     * that has a real hosted APK URL. An app whose SHA-256 is unknown (hosted elsewhere, none stored) is recorded as
+     * a failed command saying so instead of being sent. Returns the number queued. Never throws — callers treat
      * this as best-effort (enrollment must not fail because an app list is dirty).
      */
     public int enqueueConfigApps(Device device) {
@@ -80,19 +80,30 @@ public class ConfigAppInstaller {
                     continue;
                 }
                 String payload;
+                String problem = null;
                 try {
                     payload = installPayload(app, url);
                 } catch (IllegalArgumentException e) {
-                    logger.warn("Not queuing {} for device {}: {}", app.getPkg(), device.getNumber(), e.getMessage());
-                    continue;
+                    // Recorded as an already-failed command, never sent: the device's history shows why, and an
+                    // older agent (which ignored a missing sha256) never gets an unverifiable install.
+                    payload = InstallPayloadBuilder.build(app.getPkg().trim(), app.getVersionCode(), url, app.getParts());
+                    problem = e.getMessage();
+                    logger.warn("Not installing {} on device {}: {}", app.getPkg(), device.getNumber(), problem);
                 }
                 AgentCommand cmd = new AgentCommand();
                 cmd.setDeviceNumber(device.getNumber());
                 cmd.setType("app.install");
                 cmd.setPayload(payload);
                 cmd.setRequiresCapability(RolloutProgress.INSTALL_CAPABILITY);
-                cmd.setStatus("pending");
                 cmd.setCreatedAt(now);
+                if (problem != null) {
+                    cmd.setStatus("failed");
+                    cmd.setDetail(problem);
+                    cmd.setCompletedAt(now);
+                    commandDAO.insert(cmd);
+                    continue;
+                }
+                cmd.setStatus("pending");
                 commandDAO.insert(cmd);
                 queued++;
             }
@@ -107,8 +118,8 @@ public class ConfigAppInstaller {
 
     /**
      * The app's install payload with a SHA-256 on the APK (or every bundle part). The version's stored hash is
-     * reused; a version without one (a row from before hashes were required, or an external URL) is hashed once —
-     * from the files directory for an APK uploaded here, else by download — and the result saved on the version.
+     * reused; a version of an APK uploaded here without one (a row from before hashes were required) is hashed once
+     * from the files directory and the result saved on the version. Nothing is downloaded to be hashed.
      */
     private String installPayload(Application app, String url) {
         ApplicationVersion version = app.getUsedVersionId() == null ? null

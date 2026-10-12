@@ -16,7 +16,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.fail;
 
-/** Hosted APKs hash from disk (contained in the files dir); other URLs are downloaded once and hashed. */
+/** Hosted APKs hash from disk (contained in the files dir); nothing else is hashed, and nothing is fetched. */
 public class ApkHashResolverTest {
 
     /** sha256("abc") */
@@ -68,25 +68,28 @@ public class ApkHashResolverTest {
     }
 
     @Test
-    public void remoteUrlIsDownloadedAndHashed() throws Exception {
+    public void externalUrlIsNeverFetched() throws Exception {
+        final int[] hits = {0};
         http = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        http.createContext("/repo/x.apk", ex -> {
+        http.createContext("/", ex -> {
+            hits[0]++;
             byte[] body = "abc".getBytes(StandardCharsets.US_ASCII);
             ex.sendResponseHeaders(200, body.length);
             try (OutputStream os = ex.getResponseBody()) { os.write(body); }
         });
-        http.createContext("/gone.apk", ex -> { ex.sendResponseHeaders(404, -1); ex.close(); });
         http.start();
         String host = "http://127.0.0.1:" + http.getAddress().getPort();
 
         ApkHashResolver r = resolver("https://mdm.example.com");
-        assertEquals(ABC, r.sha256Hex(host + "/repo/x.apk"));
-        try {
-            r.sha256Hex(host + "/gone.apk");
-            fail("a 404 must not hash");
-        } catch (IOException expected) {
-            assertEquals("HTTP 404", expected.getMessage());
+        for (String url : new String[]{host + "/repo/x.apk", "https://mdm.example.com/files/cust1/missing.apk"}) {
+            try {
+                r.sha256Hex(url);
+                fail("an APK not hosted here must not be hashed: " + url);
+            } catch (IOException expected) {
+                assertEquals(ApkHashResolver.NOT_HOSTED, expected.getMessage());
+            }
         }
+        assertEquals(0, hits[0]);
     }
 
     @Test(expected = IOException.class)

@@ -45,6 +45,7 @@ services:
       # Optional; unset = the key the server keeps in its volume. Prefixed .env key for the reason given at JAVA_OPTS.
       JWT_SECRET: ${SERVER_JWT_SECRET:-}
       SECURE_ENROLLMENT: ${SECURE_ENROLLMENT:-0}
+      LEGACY_DEVICE_API: ${LEGACY_DEVICE_API:-0}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-25}
       SMTP_FROM: ${SMTP_FROM:-mdm@localhost}

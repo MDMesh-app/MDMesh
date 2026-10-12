@@ -108,6 +108,11 @@ public class JWTFilter implements Filter {
                 ((HttpServletResponse)servletResponse).sendError(403);
                 return;
             }
+            // Also covers the tokens issued before two-factor authentication was required
+            if (userDAO.isTwoFactorRequired(dbUser)) {
+                ((HttpServletResponse)servletResponse).sendError(403);
+                return;
+            }
 
             // Set-up the security context
             try {

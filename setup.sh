@@ -276,6 +276,39 @@ if [ -n "${GITHUB_REPO:-}" ] && command -v python3 >/dev/null && command -v curl
     { DEBIAN_FRONTEND=noninteractive apt-get install -y -qq minisign \
       || { apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq minisign; }; } >/dev/null 2>&1 || true
   fi
+  # Still no minisign on the host: verify with the one the supervisor image ships (docker/supervisor.Dockerfile), building
+  # that image now (the `up --build` below reuses it). The container gets no network and only the key and the release
+  # directory, read-only.
+  if ! command -v minisign >/dev/null 2>&1; then
+    SUPERVISOR_IMAGE="ghcr.io/${IMAGE_OWNER:-local}/mdmesh-supervisor:${SUPERVISOR_VERSION:-latest}"
+    say "minisign is not on this host — using the one in the supervisor image (${SUPERVISOR_IMAGE})…"
+    # mdm_container_minisign -V -p PUBKEY -m FILE: minisign inside the supervisor image (only this form is supported).
+    mdm_container_minisign() {
+      local pub="" msg=""
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          -V) shift ;;
+          -p) pub=${2:-}; shift 2 ;;
+          -m) msg=${2:-}; shift 2 ;;
+          *) return 2 ;;
+        esac
+      done
+      [ -n "$pub" ] && [ -n "$msg" ] && [ -r "$pub" ] && [ -r "$msg" ] || return 2
+      local pub_abs msg_dir
+      pub_abs="$(cd "$(dirname -- "$pub")" && pwd)/$(basename -- "$pub")"
+      msg_dir="$(cd "$(dirname -- "$msg")" && pwd)"
+      docker run --rm --network none --entrypoint minisign \
+        -v "${pub_abs}:/verify/minisign.pub:ro" -v "${msg_dir}:/verify/release:ro" \
+        "$SUPERVISOR_IMAGE" -V -p /verify/minisign.pub -m "/verify/release/$(basename -- "$msg")"
+    }
+    # shellcheck disable=SC2086
+    if { docker image inspect "$SUPERVISOR_IMAGE" >/dev/null 2>&1 || docker compose $COMPOSE_ARGS build supervisor >/dev/null 2>&1; } \
+       && docker run --rm --network none --entrypoint minisign "$SUPERVISOR_IMAGE" -v >/dev/null 2>&1; then
+      MDM_MINISIGN=mdm_container_minisign
+    else
+      warn "The supervisor image could not provide minisign either."
+    fi
+  fi
   REL_DIR=$(mktemp -d 2>/dev/null || true)
   if [ -z "$REL_DIR" ]; then
     warn "Could not create a temporary directory for the release files — the console keeps its debug enrollment defaults."
@@ -288,7 +321,7 @@ if [ -n "${GITHUB_REPO:-}" ] && command -v python3 >/dev/null && command -v curl
     fi
   else
     warn "${MDM_RELEASE_PROBLEM} — the console keeps its debug enrollment defaults."
-    command -v minisign >/dev/null 2>&1 || warn "Install minisign (e.g. apt-get install minisign) and re-run ./setup.sh to bake the release QR parameters."
+    command -v "${MDM_MINISIGN:-minisign}" >/dev/null 2>&1 || warn "Install minisign (e.g. apt-get install minisign) and re-run ./setup.sh to bake the release QR parameters."
   fi
   [ -z "$REL_DIR" ] || rm -rf -- "$REL_DIR"
 else

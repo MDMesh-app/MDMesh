@@ -29,9 +29,10 @@ _mdm_manifest_version() { python3 -c 'import sys,json;v=json.load(open(sys.argv[
 # Returns 0 with MDM_AGENT_CK (the APK's signing-certificate checksum from the signed manifest) and the APK at
 # DIR/agent.apk; otherwise returns 1 with MDM_RELEASE_PROBLEM set to a one-line reason and MDM_AGENT_CK empty.
 # The reasons are worded to be followed by the caller's own consequence (e.g. " — console uses debug defaults").
+# MDM_MINISIGN names the minisign command (default: minisign on PATH); setup.sh points it at the supervisor image's.
 # shellcheck disable=SC2034  # MDM_AGENT_CK / MDM_RELEASE_PROBLEM are results for the caller
 mdm_fetch_release_apk() {
-  local repo=$1 pubkey=$2 d=$3 log=$4 rel apk_url man_url sig_url tag mver want_sha details=""
+  local repo=$1 pubkey=$2 d=$3 log=$4 rel apk_url man_url sig_url tag mver want_sha details="" ms=${MDM_MINISIGN:-minisign}
   MDM_AGENT_CK=""; MDM_RELEASE_PROBLEM=""
   [ "$log" = /dev/null ] || details=" (details in $log)"
   rel=$(mdm_gh_curl -fsSL "https://api.github.com/repos/${repo}/releases/latest" 2>>"$log" || true)
@@ -41,7 +42,7 @@ mdm_fetch_release_apk() {
   if [ -z "$sig_url" ]; then
     MDM_RELEASE_PROBLEM="The latest release of ${repo} has no manifest signature (manifest.json.minisig), so its APK is not trusted"; return 1
   fi
-  if ! command -v minisign >/dev/null 2>&1; then
+  if ! command -v "$ms" >/dev/null 2>&1; then
     MDM_RELEASE_PROBLEM="minisign is unavailable, so the release manifest cannot be verified and its APK is not trusted"; return 1
   fi
   if [ ! -r "$pubkey" ]; then
@@ -51,7 +52,7 @@ mdm_fetch_release_apk() {
      || ! mdm_gh_curl -fsSL "$sig_url" -o "$d/manifest.json.minisig" 2>>"$log"; then
     MDM_RELEASE_PROBLEM="Could not download the release manifest or its signature${details}"; return 1
   fi
-  if ! minisign -V -p "$pubkey" -m "$d/manifest.json" >> "$log" 2>&1; then
+  if ! "$ms" -V -p "$pubkey" -m "$d/manifest.json" >> "$log" 2>&1; then
     MDM_RELEASE_PROBLEM="The release manifest's signature is invalid (it does not verify with release/minisign.pub), so its APK is not trusted"; return 1
   fi
   # Bind the signed manifest to this release: an older release's manifest is signed too, and served in its place (a

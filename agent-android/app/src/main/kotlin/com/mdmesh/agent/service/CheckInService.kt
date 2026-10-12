@@ -98,18 +98,24 @@ class CheckInService : LifecycleService() {
                 delay(REACHABILITY_GRACE_MS + 1_000L)
                 reevaluateSocket() // drop back to adaptive gating once the grace window lapses
             }
-            lifecycleScope.launch {
-                runCatching { coordinator.runOnce() } // initial sync
-                    .onFailure { Log.w(TAG, "initial check-in failed", it) }
-                // Read identity AFTER the initial sync: on a fresh device that runOnce just
-                // enrolled, so reading before it would leave blank credentials and no socket
-                // until the process restarts.
-                deviceId = identity.current()
-                secret = identity.secret()
-                reevaluateSocket()
-            }
+            lifecycleScope.launch { initialSync() }
+        } else if (deviceId.isNullOrBlank() || secret.isNullOrBlank()) {
+            // Started again before we have credentials: the first sync ran before the enroll token was saved (the
+            // provisioning receiver and activity both start us). Try again now rather than wait for the next cycle.
+            lifecycleScope.launch { initialSync() }
         }
         return START_STICKY
+    }
+
+    private suspend fun initialSync() {
+        runCatching { coordinator.runOnce() } // initial sync
+            .onFailure { Log.w(TAG, "initial check-in failed", it) }
+        // Read identity AFTER the initial sync: on a fresh device that runOnce just
+        // enrolled, so reading before it would leave blank credentials and no socket
+        // until the process restarts.
+        deviceId = identity.current()
+        secret = identity.secret()
+        reevaluateSocket()
     }
 
     /** Hold the socket when always-on, screen-on, or charging; otherwise drop it (heartbeat covers idle). */

@@ -53,8 +53,9 @@ class AdminReceiver : DeviceAdminReceiver() {
 
         val token = extrasToken(intent)
         if (token.isNullOrBlank()) {
+            // On Android 12+ the token reaches AdminPolicyComplianceActivity instead, which starts the service once
+            // it is saved; starting it here would only race that save.
             CheckInWorker.scheduleNow(context)
-            startCheckInService(context)
             return
         }
         // EnrollTokenStore.save is suspend; keep the receiver alive while it persists.

@@ -73,6 +73,18 @@ public class QRCodeResource {
 
     private static final Logger logger = LoggerFactory.getLogger(QRCodeResource.class);
 
+    static final int QR_DEFAULT_SIZE = 250;
+    static final int QR_MIN_SIZE = 64;
+    static final int QR_MAX_SIZE = 1024;
+
+    /** The requested image size (pixels per side), clamped to a fixed range; the default when absent. */
+    static int qrImageSize(Integer requested) {
+        if (requested == null) {
+            return QR_DEFAULT_SIZE;
+        }
+        return Math.max(QR_MIN_SIZE, Math.min(QR_MAX_SIZE, requested));
+    }
+
     private UnsecureDAO unsecureDAO;
     private CustomerDAO customerDAO;
 
@@ -268,10 +280,7 @@ public class QRCodeResource {
                         logger.info("The base for QR code generation:\n{}", s);
 
                         return javax.ws.rs.core.Response.ok( (StreamingOutput) output -> {
-                            int imageSize = 250;
-                            if (size != null) {
-                                imageSize = size;
-                            }
+                            int imageSize = qrImageSize(size);
                             try {
                                 QRCode.from(s).withCharset("UTF-8").to(ImageType.PNG).withSize(imageSize, imageSize).writeTo(output);
                                 output.flush();

@@ -93,6 +93,7 @@ public class AgentResource {
     private AgentCommandDAO commandDAO;
     private com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller;
     private com.hmdm.rest.resource.support.ConfigReconciler configReconciler;
+    private com.hmdm.rest.resource.support.RolloutRequeuer rolloutRequeuer;
 
     /**
      * <p>A constructor required by Swagger.</p>
@@ -105,12 +106,14 @@ public class AgentResource {
                          AgentEnrollmentTokenDAO tokenDAO,
                          AgentCommandDAO commandDAO,
                          com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller,
-                         com.hmdm.rest.resource.support.ConfigReconciler configReconciler) {
+                         com.hmdm.rest.resource.support.ConfigReconciler configReconciler,
+                         com.hmdm.rest.resource.support.RolloutRequeuer rolloutRequeuer) {
         this.unsecureDAO = unsecureDAO;
         this.tokenDAO = tokenDAO;
         this.commandDAO = commandDAO;
         this.configAppInstaller = configAppInstaller;
         this.configReconciler = configReconciler;
+        this.rolloutRequeuer = rolloutRequeuer;
     }
 
     // =================================================================================================================
@@ -359,6 +362,8 @@ public class AgentResource {
         // Desired-state reconciliation: queue config.apply when the device drifted from its configuration, so the
         // command rides THIS response instead of waiting for the next cycle.
         configReconciler.reconcile(device, deviceTokens, appliedRevision, now);
+        // A staged agent update whose command expired (its result was lost) or was never queued: queue it again here.
+        rolloutRequeuer.requeue(device, now);
 
         List<AgentCommand> pending = commandDAO.listPending(deviceNumber);
         List<com.hmdm.rest.json.agent.AgentCommand> commands = new ArrayList<>();

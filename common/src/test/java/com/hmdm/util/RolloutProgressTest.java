@@ -21,6 +21,7 @@
 
 package com.hmdm.util;
 
+import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.RolloutDeviceRow;
 import org.junit.Test;
 
@@ -31,6 +32,8 @@ import java.util.List;
 import java.util.Set;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 /** Unit tests for the pure rollout-progress classifier (no DB). */
 public class RolloutProgressTest {
@@ -88,5 +91,36 @@ public class RolloutProgressTest {
     public void emptyCohortIsZero() {
         RolloutProgress.Counts c = RolloutProgress.counts("1.2.0", Collections.emptyList(), null);
         assertEquals(0, c.getTotal());
+    }
+
+    private static AgentCommand install(String num, String payload) {
+        AgentCommand c = new AgentCommand();
+        c.setDeviceNumber(num);
+        c.setType("app.install");
+        c.setPayload(payload);
+        return c;
+    }
+
+    @Test
+    public void inFlightCountsOnlyTheRolloutPackage() {
+        // An unrelated install (an F-Droid app, a seeded app) must not mark a device as "installing" the update.
+        List<AgentCommand> inFlight = Arrays.asList(
+                install("a", "{\"url\":\"https://x/update/agent.apk?v=302\",\"packageName\":\"com.mdmesh.agent\"}"),
+                install("b", "{\"url\":\"https://f-droid.org/repo/org.fdroid.fdroid_1.apk\",\"packageName\":\"org.fdroid.fdroid\"}"),
+                install("c", "not json"),
+                install("d", null));
+        assertEquals(new HashSet<>(Collections.singletonList("a")),
+                RolloutProgress.inFlightFor("com.mdmesh.agent", inFlight));
+    }
+
+    @Test
+    public void requeuesOnlyWhenNothingIsInFlightOrItExpired() {
+        assertTrue(RolloutProgress.shouldRequeue(null));        // never queued (e.g. skipped at create)
+        assertTrue(RolloutProgress.shouldRequeue("expired"));   // the result was lost; the server gave up on it
+        assertFalse(RolloutProgress.shouldRequeue("pending"));
+        assertFalse(RolloutProgress.shouldRequeue("delivered"));
+        assertFalse(RolloutProgress.shouldRequeue("done"));     // installed; the new version reports on restart
+        assertFalse(RolloutProgress.shouldRequeue("failed"));   // retrying a failing install every check-in would loop
+        assertFalse(RolloutProgress.shouldRequeue("unsupported"));
     }
 }

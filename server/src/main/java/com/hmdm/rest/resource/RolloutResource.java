@@ -21,15 +21,12 @@
 
 package com.hmdm.rest.resource;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.hmdm.notification.AgentWakeHub;
-import com.hmdm.persistence.AgentCommandDAO;
 import com.hmdm.persistence.RolloutDAO;
-import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.AgentRollout;
 import com.hmdm.persistence.domain.RolloutDeviceRow;
 import com.hmdm.rest.json.Response;
+import com.hmdm.rest.resource.support.RolloutRequeuer;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.util.RolloutProgress;
 import io.swagger.annotations.Api;
@@ -67,10 +64,9 @@ import java.util.Set;
 public class RolloutResource {
 
     private static final Logger logger = LoggerFactory.getLogger(RolloutResource.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private RolloutDAO rolloutDAO;
-    private AgentCommandDAO commandDAO;
+    private RolloutRequeuer requeuer;
     private AgentWakeHub wakeHub;
     private String baseUrl;
 
@@ -78,10 +74,10 @@ public class RolloutResource {
     }
 
     @Inject
-    public RolloutResource(RolloutDAO rolloutDAO, AgentCommandDAO commandDAO, AgentWakeHub wakeHub,
+    public RolloutResource(RolloutDAO rolloutDAO, RolloutRequeuer requeuer, AgentWakeHub wakeHub,
                            @Named("base.url") String baseUrl) {
         this.rolloutDAO = rolloutDAO;
-        this.commandDAO = commandDAO;
+        this.requeuer = requeuer;
         this.wakeHub = wakeHub;
         this.baseUrl = baseUrl;
     }
@@ -185,7 +181,7 @@ public class RolloutResource {
         }
 
         // Enqueue to the eligible canary devices (skips already-updated / pending / ineligible).
-        Set<String> pending = new HashSet<>(rolloutDAO.listPendingInstallNumbers(cust));
+        Set<String> pending = rolloutDAO.listPendingInstallNumbers(cust, r.getPackageName());
         List<RolloutDeviceRow> canaryRows = filter(rows, canary, true);
         int queued = enqueueEligible(r, canaryRows, pending);
         logger.info("Rollout {} created for customer {} (canary {}, queued {})", r.getId(), cust, canary.size(), queued);
@@ -211,7 +207,7 @@ public class RolloutResource {
         int cust = customerId.get();
         List<RolloutDeviceRow> rows = rolloutDAO.listCustomerDevices(cust);
         Set<String> canary = new HashSet<>(rolloutDAO.listCanaryNumbers(r.getId()));
-        Set<String> pending = new HashSet<>(rolloutDAO.listPendingInstallNumbers(cust));
+        Set<String> pending = rolloutDAO.listPendingInstallNumbers(cust, r.getPackageName());
         List<RolloutDeviceRow> fleetRows = filter(rows, canary, false); // everyone NOT in canary
         int queued = enqueueEligible(r, fleetRows, pending);
         logger.info("Rollout {} promoted to fleet (queued {})", r.getId(), queued);
@@ -272,35 +268,14 @@ public class RolloutResource {
     }
 
     private void enqueueInstall(AgentRollout r, String deviceNumber) {
-        AgentCommand cmd = new AgentCommand();
-        cmd.setDeviceNumber(deviceNumber);
-        cmd.setType("app.install");
-        cmd.setPayload(installPayload(r));
-        cmd.setRequiresCapability(RolloutProgress.INSTALL_CAPABILITY);
-        cmd.setStatus("pending");
-        cmd.setCreatedAt(System.currentTimeMillis());
-        commandDAO.insert(cmd);
+        requeuer.enqueue(r, deviceNumber, System.currentTimeMillis());
         wakeHub.wake(deviceNumber, "commands");
-    }
-
-    private String installPayload(AgentRollout r) {
-        ObjectNode p = MAPPER.createObjectNode();
-        p.put("url", r.getApkUrl());
-        p.put("packageName", r.getPackageName());
-        if (r.getApkVersionCode() != null) p.put("versionCode", r.getApkVersionCode());
-        if (r.getApkSha256() != null) p.put("sha256", r.getApkSha256());
-        p.put("runAfterInstall", false);
-        try {
-            return MAPPER.writeValueAsString(p);
-        } catch (Exception e) {
-            return "{}"; // unreachable for a plain ObjectNode
-        }
     }
 
     private Map<String, Object> buildView(AgentRollout r) {
         int cust = r.getCustomerId();
         List<RolloutDeviceRow> rows = rolloutDAO.listCustomerDevices(cust);
-        Set<String> pending = new HashSet<>(rolloutDAO.listPendingInstallNumbers(cust));
+        Set<String> pending = rolloutDAO.listPendingInstallNumbers(cust, r.getPackageName());
         Set<String> canary = new HashSet<>(rolloutDAO.listCanaryNumbers(r.getId()));
         List<RolloutDeviceRow> canaryRows = filter(rows, canary, true);
         List<RolloutDeviceRow> fleetRows = filter(rows, canary, false);

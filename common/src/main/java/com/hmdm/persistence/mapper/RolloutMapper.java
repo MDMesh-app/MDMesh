@@ -21,6 +21,7 @@
 
 package com.hmdm.persistence.mapper;
 
+import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.AgentRollout;
 import com.hmdm.persistence.domain.RolloutDeviceRow;
 import org.apache.ibatis.annotations.Insert;
@@ -60,7 +61,18 @@ public interface RolloutMapper {
             "FROM devices d LEFT JOIN device_state s ON s.deviceNumber = d.number WHERE d.customerId = #{customerId}"})
     List<RolloutDeviceRow> listCustomerDevices(@Param("customerId") int customerId);
 
-    @Select({"SELECT DISTINCT c.deviceNumber FROM agentCommand c JOIN devices d ON d.number = c.deviceNumber " +
+    @Select({"SELECT c.* FROM agentCommand c JOIN devices d ON d.number = c.deviceNumber " +
             "WHERE d.customerId = #{customerId} AND c.type = 'app.install' AND c.status IN ('pending','delivered')"})
-    List<String> listPendingInstallNumbers(@Param("customerId") int customerId);
+    List<AgentCommand> listInFlightInstalls(@Param("customerId") int customerId);
+
+    @Select({"SELECT d.number AS deviceNumber, s.agentVersion AS agentVersion, d.agentCapabilities AS capabilitiesJson " +
+            "FROM devices d LEFT JOIN device_state s ON s.deviceNumber = d.number WHERE d.number = #{deviceNumber}"})
+    RolloutDeviceRow findDeviceRow(@Param("deviceNumber") String deviceNumber);
+
+    @Select({"SELECT COUNT(*) > 0 FROM agentRolloutCanary WHERE rolloutId = #{rolloutId} AND deviceNumber = #{deviceNumber}"})
+    boolean isCanary(@Param("rolloutId") int rolloutId, @Param("deviceNumber") String deviceNumber);
+
+    @Select({"SELECT * FROM agentCommand WHERE deviceNumber = #{deviceNumber} AND type = 'app.install' " +
+            "ORDER BY id DESC LIMIT 50"})
+    List<AgentCommand> listInstalls(@Param("deviceNumber") String deviceNumber);
 }

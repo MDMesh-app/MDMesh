@@ -23,11 +23,14 @@ package com.hmdm.persistence;
 
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
+import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.AgentRollout;
 import com.hmdm.persistence.domain.RolloutDeviceRow;
 import com.hmdm.persistence.mapper.RolloutMapper;
+import com.hmdm.util.RolloutProgress;
 
 import java.util.List;
+import java.util.Set;
 
 /** DAO for staged agent-APK rollouts. Thin wrapper over {@link RolloutMapper}. */
 @Singleton
@@ -68,8 +71,21 @@ public class RolloutDAO {
         return mapper.listCustomerDevices(customerId);
     }
 
-    /** Device numbers in this customer with an in-flight (pending/delivered) app.install. */
-    public List<String> listPendingInstallNumbers(int customerId) {
-        return mapper.listPendingInstallNumbers(customerId);
+    /** Device numbers in this customer with an in-flight (pending/delivered) app.install of {@code packageName}. */
+    public Set<String> listPendingInstallNumbers(int customerId, String packageName) {
+        return RolloutProgress.inFlightFor(packageName, mapper.listInFlightInstalls(customerId));
+    }
+
+    public RolloutDeviceRow findDeviceRow(String deviceNumber) {
+        return mapper.findDeviceRow(deviceNumber);
+    }
+
+    public boolean isCanary(int rolloutId, String deviceNumber) {
+        return mapper.isCanary(rolloutId, deviceNumber);
+    }
+
+    /** The device's latest app.install commands, newest first. */
+    public List<AgentCommand> listInstalls(String deviceNumber) {
+        return mapper.listInstalls(deviceNumber);
     }
 }

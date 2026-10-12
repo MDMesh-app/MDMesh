@@ -280,7 +280,7 @@ if [ -n "${GITHUB_REPO:-}" ] && command -v python3 >/dev/null && command -v curl
   # that image now (the `up --build` below reuses it). The container gets no network and only the key and the release
   # directory, read-only.
   if ! command -v minisign >/dev/null 2>&1; then
-    SUPERVISOR_IMAGE="ghcr.io/${IMAGE_OWNER:-local}/mdmesh-supervisor:${SUPERVISOR_VERSION:-latest}"
+    SUPERVISOR_IMAGE="ghcr.io/${IMAGE_OWNER:-local}/mdmesh-supervisor:${SUPERVISOR_VERSION:-${CURRENT_VERSION:-latest}}"
     say "minisign is not on this host — using the one in the supervisor image (${SUPERVISOR_IMAGE})…"
     # mdm_container_minisign -V -p PUBKEY -m FILE: minisign inside the supervisor image (only this form is supported).
     mdm_container_minisign() {
@@ -297,13 +297,13 @@ if [ -n "${GITHUB_REPO:-}" ] && command -v python3 >/dev/null && command -v curl
       local pub_abs msg_dir
       pub_abs="$(cd "$(dirname -- "$pub")" && pwd)/$(basename -- "$pub")"
       msg_dir="$(cd "$(dirname -- "$msg")" && pwd)"
-      docker run --rm --network none --entrypoint minisign \
+      docker run --rm --pull never --network none --entrypoint minisign \
         -v "${pub_abs}:/verify/minisign.pub:ro" -v "${msg_dir}:/verify/release:ro" \
         "$SUPERVISOR_IMAGE" -V -p /verify/minisign.pub -m "/verify/release/$(basename -- "$msg")"
     }
     # shellcheck disable=SC2086
     if { docker image inspect "$SUPERVISOR_IMAGE" >/dev/null 2>&1 || docker compose $COMPOSE_ARGS build supervisor >/dev/null 2>&1; } \
-       && docker run --rm --network none --entrypoint minisign "$SUPERVISOR_IMAGE" -v >/dev/null 2>&1; then
+       && docker run --rm --pull never --network none --entrypoint minisign "$SUPERVISOR_IMAGE" -v >/dev/null 2>&1; then
       MDM_MINISIGN=mdm_container_minisign
     else
       warn "The supervisor image could not provide minisign either."

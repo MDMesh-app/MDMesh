@@ -25,9 +25,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * The document is rebuilt from the Configuration row each time (no stored revision to drift), using the
  * optimized app query (two plain selects per capable check-in — no temp table).
  *
- * <p>It is also re-sent ONCE when the device's agent version changed since the configuration was last queued for
- * it: a self-updated agent may now support policy keys the old one reported {@code unsupported}. It re-applies
- * the persisted document on its own, but per-key results only refresh through a config.apply round-trip.</p>
+ * <p>It is also re-sent when the device's agent version differs from the one that last completed config.apply
+ * (recorded by {@code AgentResource} when the result comes back done): a self-updated agent may now support policy
+ * keys the old one reported {@code unsupported}. It re-applies the persisted document on its own, but per-key
+ * results only refresh through a config.apply round-trip. A lost or failed re-send is retried with the normal
+ * backoff instead of silently consuming the resync.</p>
  */
 @Singleton
 public class ConfigReconciler {
@@ -63,7 +65,7 @@ public class ConfigReconciler {
 
     /**
      * @param agentVersion       the version the device reports in this check-in (null when unknown)
-     * @param configAgentVersion the version stored when config.apply was last queued (null = no baseline yet)
+     * @param configAgentVersion the version that last completed config.apply (null = no baseline yet)
      * @return true when a config.apply was enqueued. Never throws.
      */
     public boolean reconcile(Device device, Set<String> deviceTokens, String appliedRevision,
@@ -98,9 +100,6 @@ public class ConfigReconciler {
             cmd.setStatus("pending");
             cmd.setCreatedAt(now);
             commandDAO.insert(cmd);
-            if (agentVersion != null && !agentVersion.equals(configAgentVersion)) {
-                commandDAO.updateConfigAgentVersion(number, agentVersion);
-            }
             logger.info("config.apply queued for {} (revision {} -> {}, agent {})", number, appliedRevision,
                     doc.getRevision(), agentChanged ? configAgentVersion + " -> " + agentVersion : agentVersion);
             return true;

@@ -16,6 +16,7 @@ import com.hmdm.rest.json.agent.AgentCommandResult;
 import com.hmdm.rest.json.agent.AgentDeviceState;
 import com.hmdm.rest.resource.support.ConfigReconciler;
 import com.hmdm.rest.resource.support.RolloutRequeuer;
+import com.hmdm.util.ConfigReconcileDecision;
 import com.hmdm.util.CryptoUtil;
 import com.hmdm.util.DesiredConfigBuilder;
 import org.junit.Before;
@@ -83,6 +84,13 @@ public class AgentCheckInConfigResyncTest {
         @Override public DeviceState getState(String n) { return state; }
         @Override public void updateConfigAgentVersion(String n, String version) {
             if (state != null) state.setConfigAgentVersion(version);
+        }
+        @Override public void recordConfigApplyDone(String n, Integer id) {
+            // SET configAgentVersion = agentVersion WHERE agentVersion IS NOT NULL AND <id is a config.apply>
+            if (state != null && state.getAgentVersion() != null
+                    && DesiredConfigBuilder.COMMAND_TYPE.equals(commands.get(id - 1).getType())) {
+                state.setConfigAgentVersion(state.getAgentVersion());
+            }
         }
 
         @Override public void insert(AgentCommand c) { c.setId(commands.size() + 1); commands.add(c); }
@@ -192,6 +200,50 @@ public class AgentCheckInConfigResyncTest {
         assertEquals(0, checkIn("0.3.3", revision).size());
         assertEquals(2, configApplies());
         assertEquals("done", commandDAO.commands.get(1).getStatus());
+    }
+
+    /** Converge on 0.3.2, update to 0.3.3, receive the re-send; returns that re-sent command. */
+    private AgentCommand updateAndReceiveResend() throws Exception {
+        checkIn("0.3.2", null);
+        checkIn("0.3.2", revision);
+        assertEquals(1, checkIn("0.3.3", revision).size());
+        return commandDAO.commands.get(commandDAO.commands.size() - 1);
+    }
+
+    private void moveBackBeyondBackoff(AgentCommand c) {
+        c.setCompletedAt(System.currentTimeMillis() - 2 * ConfigReconcileDecision.RETRY_BACKOFF_MS);
+    }
+
+    @Test
+    public void a_lost_resend_that_expires_does_not_consume_the_resync() throws Exception {
+        AgentCommand resent = updateAndReceiveResend();
+        outbox.clear(); // the response never reached the device; the server later expires the command
+        resent.setStatus("expired");
+        resent.setCompletedAt(System.currentTimeMillis());
+
+        assertEquals("expiry keeps the normal backoff", 0, checkIn("0.3.3", revision).size());
+        assertEquals("0.3.2", commandDAO.getState(NUMBER).getConfigAgentVersion());
+
+        moveBackBeyondBackoff(resent);
+        assertEquals("retried after the backoff", 1, checkIn("0.3.3", revision).size());
+        checkIn("0.3.3", revision); // acked done
+        assertEquals("0.3.3", commandDAO.getState(NUMBER).getConfigAgentVersion());
+        assertEquals(0, checkIn("0.3.3", revision).size());
+    }
+
+    @Test
+    public void a_failed_resend_is_retried_with_the_normal_backoff_not_every_check_in() throws Exception {
+        AgentCommand resent = updateAndReceiveResend();
+        outbox.get(0).setStatus("failed");
+
+        assertEquals(0, checkIn("0.3.3", revision).size()); // carries the failure
+        assertEquals(0, checkIn("0.3.3", revision).size());
+        assertEquals("failed", resent.getStatus());
+        assertEquals("a failure does not record the new version", "0.3.2",
+                commandDAO.getState(NUMBER).getConfigAgentVersion());
+
+        moveBackBeyondBackoff(resent);
+        assertEquals(1, checkIn("0.3.3", revision).size());
     }
 
     @Test

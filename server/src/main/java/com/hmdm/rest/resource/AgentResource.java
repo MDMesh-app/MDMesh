@@ -335,6 +335,10 @@ public class AgentResource {
                 // per-result pre-SELECT needed on the hot path.
                 commandDAO.markResultWithTime(deviceNumber, commandId, result.getStatus(),
                         result.getDetail(), System.currentTimeMillis());
+                if ("done".equals(result.getStatus())) {
+                    // A completed config.apply records which agent version applied it (config resync baseline).
+                    commandDAO.recordConfigApplyDone(deviceNumber, commandId);
+                }
             }
         }
 

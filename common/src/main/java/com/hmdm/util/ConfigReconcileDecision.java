@@ -23,11 +23,11 @@ public final class ConfigReconcileDecision {
     }
 
     /**
-     * @param agentChanged the device runs a different agent version than the one its configuration was last sent
-     *                     to ({@link #agentChanged}). A newer agent may support keys the old one reported
-     *                     {@code unsupported}, so the document is re-sent once even when the revision is in sync,
-     *                     and the same-revision backoff does not apply (the caller records the version on enqueue,
-     *                     which makes it fire once per version change).
+     * @param agentChanged the device runs a different agent version than the one that last completed config.apply
+     *                     ({@link #agentChanged}). A newer agent may support keys the old one reported
+     *                     {@code unsupported}, so the document is re-sent even when the revision is in sync, and the
+     *                     old agent's DONE does not hold it back. A failed/expired attempt keeps the normal backoff.
+     *                     The version is recorded when the re-sent command comes back done, so this ends there.
      */
     public static Action decide(Set<String> deviceTokens, String currentRevision, String appliedRevision,
                                 boolean hasOpenCommand, AgentCommand latest, long now, boolean agentChanged) {
@@ -35,8 +35,8 @@ public final class ConfigReconcileDecision {
         if (currentRevision == null) return Action.NONE;
         if (currentRevision.equals(appliedRevision) && !agentChanged) return Action.NONE;
         if (hasOpenCommand) return Action.NONE;
-        if (agentChanged) return Action.ENQUEUE;
-        if (latest != null && currentRevision.equals(revisionOf(latest))) {
+        if (latest != null && currentRevision.equals(revisionOf(latest))
+                && !(agentChanged && "done".equals(latest.getStatus()))) {
             Long done = latest.getCompletedAt();
             long ref = done != null ? done : (latest.getCreatedAt() == null ? 0L : latest.getCreatedAt());
             if (now - ref < RETRY_BACKOFF_MS) return Action.NONE;

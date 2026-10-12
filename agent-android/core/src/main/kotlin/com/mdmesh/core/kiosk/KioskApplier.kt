@@ -10,8 +10,8 @@ import com.mdmesh.proto.KioskApplyPayload
 
 /**
  * The one implementation of "put this device in kiosk with payload P" / "leave kiosk", shared by the
- * `kiosk.enter` / `kiosk.exit` commands and by `config.apply`. Idempotent: entering with the same payload
- * re-asserts the allowlist and features; exiting when not in kiosk is harmless.
+ * `kiosk.enter` / `kiosk.exit` commands and by `config.apply`. Idempotent: entering with the same payload while
+ * not locked re-asserts the allowlist and features; exiting when not in kiosk is harmless.
  *
  * Entering with the payload already persisted while lock task is active is a no-op: a re-sent `config.apply`
  * (e.g. after an agent update) must not relaunch the kiosk launcher on a device already showing it.

@@ -44,10 +44,15 @@ public class ConfigReconcileDecisionTest {
         AgentCommand other = cmd("r1", "done", NOW - 1000L);
         assertEquals(ENQUEUE, ConfigReconcileDecision.decide(CAPABLE, "r2", "r1", false, other, NOW));
     }
-    @Test public void agent_change_resends_an_in_sync_revision_and_skips_the_same_revision_backoff() {
+    @Test public void agent_change_resends_past_the_old_agents_done_but_not_past_a_failure() {
         AgentCommand justDone = cmd("r1", "done", NOW - 1000L);
         assertEquals(ENQUEUE, ConfigReconcileDecision.decide(CAPABLE, "r1", "r1", false, justDone, NOW, true));
         assertEquals(NONE, ConfigReconcileDecision.decide(CAPABLE, "r1", "r1", false, justDone, NOW, false));
+        AgentCommand justFailed = cmd("r1", "failed", NOW - 1000L);
+        assertEquals("a failed re-send keeps the normal backoff", NONE,
+                ConfigReconcileDecision.decide(CAPABLE, "r1", "r1", false, justFailed, NOW, true));
+        AgentCommand oldFailed = cmd("r1", "failed", NOW - 2 * ConfigReconcileDecision.RETRY_BACKOFF_MS);
+        assertEquals(ENQUEUE, ConfigReconcileDecision.decide(CAPABLE, "r1", "r1", false, oldFailed, NOW, true));
         assertEquals("never stacks on an open command", NONE,
                 ConfigReconcileDecision.decide(CAPABLE, "r1", "r1", true, null, NOW, true));
         assertEquals("still capability-gated", NONE,

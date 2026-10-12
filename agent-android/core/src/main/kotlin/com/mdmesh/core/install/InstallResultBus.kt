@@ -44,8 +44,23 @@ class InstallResultBus @Inject constructor() {
 
     /** Called by the result receiver for every committed session's outcome. */
     fun publish(sessionId: Int, status: Int, message: String?) {
-        if (synchronized(lock) { abandoned.remove(sessionId) }) return
-        slotFor(sessionId).complete(InstallResultEvent(sessionId, status, message))
+        val slot = synchronized(lock) {
+            if (abandoned.remove(sessionId)) return
+            pending.getOrPut(sessionId) { CompletableDeferred() }
+        }
+        slot.complete(InstallResultEvent(sessionId, status, message))
+    }
+
+    /**
+     * Call before handing [sessionId] to the platform. Forgets anything left for a reused id (uninstall derives it
+     * from the package): an abandoned mark, which would drop this operation's own fast result, and a slot a late
+     * result completed, which would hand that stale result to this wait.
+     */
+    fun expect(sessionId: Int) {
+        synchronized(lock) {
+            abandoned.remove(sessionId)
+            pending[sessionId] = CompletableDeferred()
+        }
     }
 
     /** Suspends until the result for [sessionId] is published, then returns it. */
@@ -54,7 +69,7 @@ class InstallResultBus @Inject constructor() {
         try {
             return slot.await()
         } finally {
-            synchronized(lock) { pending.remove(sessionId) }
+            synchronized(lock) { if (pending[sessionId] === slot) pending.remove(sessionId) }
         }
     }
 
@@ -64,9 +79,16 @@ class InstallResultBus @Inject constructor() {
      * install runs under the check-in mutex, so an endless wait would stop every later check-in.
      */
     suspend fun await(sessionId: Int, timeoutMs: Long): InstallResultEvent? {
-        synchronized(lock) { abandoned.remove(sessionId) }   // a new wait on a reused id
-        return withTimeoutOrNull(timeoutMs) { await(sessionId) }
-            ?: run { synchronized(lock) { abandoned.add(sessionId) }; null }
+        val slot = slotFor(sessionId)
+        withTimeoutOrNull(timeoutMs) { slot.await() }
+        // On a timeout, dropping the slot and marking the id happen under one lock, so a result published meanwhile
+        // either completed this slot (and is returned) or finds the mark and is dropped: it never completes a fresh
+        // slot for the next operation on this id.
+        val timedOut = synchronized(lock) {
+            if (pending[sessionId] === slot) pending.remove(sessionId)
+            (!slot.isCompleted).also { if (it) abandoned.add(sessionId) }
+        }
+        return if (timedOut) null else slot.await()
     }
 
     companion object {

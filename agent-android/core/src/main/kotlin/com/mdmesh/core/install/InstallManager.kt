@@ -157,6 +157,7 @@ class InstallManager @Inject constructor(
         // Reuse a stable session id derived from the package so the PendingIntent is unique.
         val sessionId = -(packageName.hashCode() and 0x7fff_ffff) - 1
         return try {
+            resultBus.expect(sessionId)
             packageInstaller.uninstall(packageName, resultSender(sessionId).intentSender)
             resultBus.await(sessionId, RESULT_TIMEOUT_MS)?.let(::mapResult)
                 ?: InstallOutcome.Failure(null, "uninstall result timed out")
@@ -197,6 +198,7 @@ class InstallManager @Inject constructor(
                         }
                     }
                 }
+                resultBus.expect(sessionId)
                 session.commit(resultSender(sessionId).intentSender)
             }
 

@@ -68,6 +68,12 @@ public interface ConfigurationFileMapper {
             "(#{configurationId}, #{fileId}, #{devicePath}, 0, #{remove})")
     void insertConfigurationFile(ConfigurationFile file);
 
+    @Insert("INSERT INTO configurationFiles(configurationId, fileId, devicePath, lastUpdate, remove) " +
+            "SELECT #{file.configurationId}, #{file.fileId}, #{file.devicePath}, 0, #{file.remove} " +
+            "WHERE EXISTS (SELECT 1 FROM configurations " +
+            "              WHERE configurations.id = #{file.configurationId} AND configurations.customerId = #{customerId})")
+    void insertConfigurationFileForCustomer(@Param("file") ConfigurationFile file, @Param("customerId") int customerId);
+
     // Used only in the migration task from old to new method of storing configuration files
     @Update("UPDATE configurationFiles SET configurationId=#{configurationId}, description=#{description}, devicePath=#{devicePath}, " +
             "externalUrl=#{externalUrl}, filePath=#{filePath}, checksum=#{checksum}, remove=#{remove}, lastUpdate=#{lastUpdate}, " +

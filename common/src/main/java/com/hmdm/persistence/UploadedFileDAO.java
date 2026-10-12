@@ -160,7 +160,8 @@ public class UploadedFileDAO extends AbstractDAO<UploadedFile> {
                 .collect(Collectors.toList());
         newUploadLinks.forEach(link -> {
             ConfigurationFile cf = new ConfigurationFile(link);
-            configurationFileMapper.insertConfigurationFile(cf);
+            // Inserted only into a configuration of the current customer
+            configurationFileMapper.insertConfigurationFileForCustomer(cf, customerId);
         });
     }
 

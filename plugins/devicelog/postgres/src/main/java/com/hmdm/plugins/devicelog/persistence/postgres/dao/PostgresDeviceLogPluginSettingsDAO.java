@@ -102,6 +102,7 @@ public class PostgresDeviceLogPluginSettingsDAO extends AbstractDAO<PostgresDevi
         PostgresDeviceLogPluginSettings postgresSettings = (PostgresDeviceLogPluginSettings) settings;
         updateRecord(
                 postgresSettings,
+                this.mapper::findPluginSettingsById,
                 this.mapper::updatePluginSettings,
                 s -> SecurityException.onCustomerDataAccessViolation(s.getId(), "pluginDeviceLogSettings")
         );

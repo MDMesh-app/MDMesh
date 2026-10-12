@@ -244,10 +244,11 @@ public class MessagingResource {
             notes = "Delete an existing message"
     )
     @DELETE
-    @Path("/{id}")
+    @Path("/private/{id}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response removeDevice(@PathParam("id") @ApiParam("Message ID") Integer id) {
-        final boolean canSendMessages = SecurityContext.get().hasPermission("plugin_messaging_delete");
+        final boolean canSendMessages = SecurityContext.get().getCurrentUser().isPresent()
+                && SecurityContext.get().hasPermission("plugin_messaging_delete");
 
         if (!(canSendMessages)) {
             logger.error("Unauthorized attempt to delete message",

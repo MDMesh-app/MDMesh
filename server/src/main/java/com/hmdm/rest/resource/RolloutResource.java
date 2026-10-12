@@ -140,6 +140,10 @@ public class RolloutResource {
         if (!canEditDevices("create rollout")) {
             return Response.PERMISSION_DENIED();
         }
+        // One active rollout per customer: a group-limited user must not hold it for the whole fleet
+        if (!canReachWholeFleet("create rollout")) {
+            return Response.PERMISSION_DENIED();
+        }
         Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
         if (!customerId.isPresent()) {
             return Response.PERMISSION_DENIED();

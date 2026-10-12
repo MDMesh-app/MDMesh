@@ -261,18 +261,21 @@ public class AgentDeviceAccessTest {
     }
 
     @Test
-    public void rolloutCanaryKeepsOnlyTheUsersDevices() {
+    public void creatingARolloutNeedsAccessToAllDevices() {
         RolloutResource.CreateRolloutRequest body = new RolloutResource.CreateRolloutRequest();
         body.setTargetVersion("2");
         body.setPackageName("com.example.agent");
         body.setApkVersionCode(2);
         body.setApkSha256(new String(new char[64]).replace('\0', 'a'));
-        body.setCanaryDeviceNumbers(Fakes.list(VISIBLE, HIDDEN));
+        body.setCanaryDeviceNumbers(Fakes.list(VISIBLE));
 
-        rollouts.create(body);
+        // A group-limited user would hold the customer's single active rollout
+        assertNotEquals(Response.ResponseStatus.OK, rollouts.create(body).getStatus());
+        assertEquals(Collections.emptyList(), sideEffects);
 
+        login(true);
+        assertEquals(Response.ResponseStatus.OK, rollouts.create(body).getStatus());
         assertTrue(sideEffects.toString(), sideEffects.contains("canary " + VISIBLE));
-        assertTrue(sideEffects.toString(), sideEffects.stream().noneMatch(s -> s.endsWith(HIDDEN)));
     }
 
     @Test
@@ -282,8 +285,9 @@ public class AgentDeviceAccessTest {
         body.setPackageName("com.example.agent");
         body.setApkVersionCode(2);
         body.setApkSha256(new String(new char[64]).replace('\0', 'a'));
-        body.setCanaryDeviceNumbers(Fakes.list(HIDDEN));
+        body.setCanaryDeviceNumbers(Fakes.list("NOT-A-DEVICE"));
 
+        login(true);
         assertNotEquals(Response.ResponseStatus.OK, rollouts.create(body).getStatus());
         assertEquals(Collections.emptyList(), sideEffects);
     }

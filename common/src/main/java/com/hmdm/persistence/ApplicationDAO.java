@@ -336,8 +336,7 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
         if (version == null) {
             return false;
         }
-        getSingleRecord(() -> this.mapper.findById(version.getApplicationId()),
-                SecurityException::onApplicationAccessViolation);
+        getEditableApplication(version.getApplicationId());
         this.mapper.saveApkFileHash(applicationVersionId, apkHash);
         return true;
     }

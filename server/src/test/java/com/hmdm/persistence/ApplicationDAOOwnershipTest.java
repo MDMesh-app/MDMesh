@@ -169,6 +169,39 @@ public class ApplicationDAOOwnershipTest {
         assertFalse("the owner is never rewritten by an update: " + sql, sql.contains("customerid=#{customerid},"));
     }
 
+    // ---- APK hashes --------------------------------------------------------------------------------------------
+
+    private static final String HASH = "apkHash";
+
+    @Test
+    public void apkHashOfOwnVersionIsSaved() {
+        assertTrue(dao.saveApkHash(OWN_VERSION, HASH));
+        assertEquals(1, fake.callsTo("saveApkFileHash").size());
+    }
+
+    @Test
+    public void apkHashOfAnotherCustomersVersionIsRejected() {
+        expectDenied(() -> dao.saveApkHash(OTHER_VERSION, HASH));
+        assertTrue(fake.callsTo("saveApkFileHash").isEmpty());
+    }
+
+    @Test
+    public void apkHashOfACommonVersionRequiresSuperAdmin() {
+        expectDenied(() -> dao.saveApkHash(COMMON_VERSION, HASH));
+        assertTrue(fake.callsTo("saveApkFileHash").isEmpty());
+
+        login(Fakes.superAdmin(1, MASTER));
+        assertTrue(dao.saveApkHash(COMMON_VERSION, HASH));
+        assertTrue(dao.saveApkHash(OTHER_VERSION, HASH));
+        assertEquals(2, fake.callsTo("saveApkFileHash").size());
+    }
+
+    @Test
+    public void apkHashOfAnUnknownVersionIsNotSaved() {
+        assertFalse(dao.saveApkHash(9999, HASH));
+        assertTrue(fake.callsTo("saveApkFileHash").isEmpty());
+    }
+
     // ---- versions ----------------------------------------------------------------------------------------------
 
     private static ApplicationVersion versionRequest(int id, int applicationId) {

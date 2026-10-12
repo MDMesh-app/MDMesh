@@ -36,12 +36,15 @@ class InstallResultBus @Inject constructor() {
 
     private val lock = Any()
     private val pending = mutableMapOf<Int, CompletableDeferred<InstallResultEvent>>()
+    /** Sessions whose wait timed out: their late result is dropped instead of waiting for the next use of the id. */
+    private val abandoned = mutableSetOf<Int>()
 
     private fun slotFor(sessionId: Int): CompletableDeferred<InstallResultEvent> =
         synchronized(lock) { pending.getOrPut(sessionId) { CompletableDeferred() } }
 
     /** Called by the result receiver for every committed session's outcome. */
     fun publish(sessionId: Int, status: Int, message: String?) {
+        if (synchronized(lock) { abandoned.remove(sessionId) }) return
         slotFor(sessionId).complete(InstallResultEvent(sessionId, status, message))
     }
 
@@ -60,8 +63,11 @@ class InstallResultBus @Inject constructor() {
      * delivers (the process died and restarted mid-commit, an OEM quirk) must not suspend the caller forever: an
      * install runs under the check-in mutex, so an endless wait would stop every later check-in.
      */
-    suspend fun await(sessionId: Int, timeoutMs: Long): InstallResultEvent? =
-        withTimeoutOrNull(timeoutMs) { await(sessionId) }
+    suspend fun await(sessionId: Int, timeoutMs: Long): InstallResultEvent? {
+        synchronized(lock) { abandoned.remove(sessionId) }   // a new wait on a reused id
+        return withTimeoutOrNull(timeoutMs) { await(sessionId) }
+            ?: run { synchronized(lock) { abandoned.add(sessionId) }; null }
+    }
 
     companion object {
         /**

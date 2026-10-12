@@ -67,6 +67,18 @@ class InstallResultBusTest {
     }
 
     @Test
+    fun `a late result for a timed-out session is not handed to the next wait on the same id`() = runTest {
+        // Uninstall derives its session id from the package, so the next uninstall of that package reuses it.
+        val bus = InstallResultBus()
+        assertNull(bus.await(sessionId = -3, timeoutMs = 1_000L))
+        bus.publish(sessionId = -3, status = STATUS_FAILURE, message = "late")
+
+        val next = async { bus.await(sessionId = -3, timeoutMs = 60_000L) }
+        bus.publish(sessionId = -3, status = STATUS_SUCCESS, message = "fresh")
+        assertEquals("fresh", next.await()?.message)
+    }
+
+    @Test
     fun `await with a timeout returns a result that arrives in time`() = runTest {
         val bus = InstallResultBus()
         val deferred = async { bus.await(sessionId = 5, timeoutMs = 60_000L) }

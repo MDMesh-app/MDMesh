@@ -15,6 +15,7 @@ import com.hmdm.rest.json.agent.AgentCheckInResponse;
 import com.hmdm.rest.json.agent.AgentCommandResult;
 import com.hmdm.rest.json.agent.AgentDeviceState;
 import com.hmdm.rest.resource.support.ConfigReconciler;
+import com.hmdm.rest.resource.support.InstallHashes;
 import com.hmdm.rest.resource.support.RolloutRequeuer;
 import com.hmdm.util.ConfigReconcileDecision;
 import com.hmdm.util.CryptoUtil;
@@ -150,7 +151,8 @@ public class AgentCheckInConfigResyncTest {
             @Override public boolean requeue(Device d, long now) { return false; }
         };
         resource = new AgentResource(unsecureDAO, null, commandDAO, null,
-                new ConfigReconciler(unsecureDAO, commandDAO), noRollout);
+                new ConfigReconciler(unsecureDAO, commandDAO), noRollout,
+                new InstallHashes(null, unsecureDAO));
     }
 
     /** One agent check-in; the agent acks every command it receives as done on the following check-in. */

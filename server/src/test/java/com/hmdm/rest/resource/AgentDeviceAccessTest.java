@@ -20,6 +20,7 @@ import com.hmdm.rest.json.Response;
 import com.hmdm.rest.json.agent.ConfigSyncSummary;
 import com.hmdm.rest.resource.support.ConfigAppInstaller;
 import com.hmdm.rest.resource.support.ConfigReconciler;
+import com.hmdm.rest.resource.support.InstallHashes;
 import com.hmdm.rest.resource.support.RolloutRequeuer;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.testsupport.Fakes;
@@ -112,7 +113,7 @@ public class AgentDeviceAccessTest {
         AgentWakeHub wakeHub = new AgentWakeHub(commandDAO) {
             @Override public void wake(String n, String kind) { sideEffects.add("wake " + n); }
         };
-        ConfigAppInstaller installer = new ConfigAppInstaller(unsecureDAO, commandDAO, wakeHub) {
+        ConfigAppInstaller installer = new ConfigAppInstaller(unsecureDAO, commandDAO, wakeHub, null) {
             @Override public int enqueueConfigApps(Device d) { sideEffects.add("syncApps " + d.getNumber()); return 1; }
         };
         ConfigReconciler reconciler = new ConfigReconciler(unsecureDAO, commandDAO) {
@@ -163,6 +164,7 @@ public class AgentDeviceAccessTest {
         deps.put(ConfigReconciler.class, reconciler);
         deps.put(RolloutDAO.class, rolloutDAO);
         deps.put(RolloutRequeuer.class, requeuer);
+        deps.put(InstallHashes.class, new InstallHashes(null, unsecureDAO));
         deps.put(String.class, "https://mdm.example.com");
         resource = construct(AgentAdminResource.class, deps);
         rollouts = construct(RolloutResource.class, deps);

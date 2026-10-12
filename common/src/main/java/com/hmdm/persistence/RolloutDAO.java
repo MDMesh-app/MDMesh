@@ -84,6 +84,11 @@ public class RolloutDAO {
         return mapper.isCanary(rolloutId, deviceNumber);
     }
 
+    /** Queues {@code cmd} unless the same command is already in flight for the device. @return true when queued. */
+    public boolean insertIfNotInFlight(AgentCommand cmd) {
+        return mapper.insertIfNotInFlight(cmd) > 0;
+    }
+
     /** The device's app.install commands created at or after {@code since}, newest first. */
     public List<AgentCommand> listInstallsSince(String deviceNumber, long since) {
         return mapper.listInstallsSince(deviceNumber, since);

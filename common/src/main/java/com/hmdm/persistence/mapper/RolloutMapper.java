@@ -72,6 +72,14 @@ public interface RolloutMapper {
     @Select({"SELECT COUNT(*) > 0 FROM agentRolloutCanary WHERE rolloutId = #{rolloutId} AND deviceNumber = #{deviceNumber}"})
     boolean isCanary(@Param("rolloutId") int rolloutId, @Param("deviceNumber") String deviceNumber);
 
+    /** Queues {@code cmd} unless the same command is already pending or delivered to the device (one statement, so a
+     *  check-in re-queue and a create/promote loop cannot both add it). @return rows inserted, 0 or 1. */
+    @Insert({"INSERT INTO agentCommand (deviceNumber, type, payload, requiresCapability, status, createdAt) " +
+            "SELECT #{deviceNumber}, #{type}, #{payload}, #{requiresCapability}, #{status}, #{createdAt} " +
+            "WHERE NOT EXISTS (SELECT 1 FROM agentCommand WHERE deviceNumber = #{deviceNumber} AND type = #{type} " +
+            "AND payload = #{payload} AND status IN ('pending','delivered'))"})
+    int insertIfNotInFlight(AgentCommand cmd);
+
     @Select({"SELECT * FROM agentCommand WHERE deviceNumber = #{deviceNumber} AND type = 'app.install' " +
             "AND createdAt >= #{since} ORDER BY id DESC"})
     List<AgentCommand> listInstallsSince(@Param("deviceNumber") String deviceNumber, @Param("since") long since);

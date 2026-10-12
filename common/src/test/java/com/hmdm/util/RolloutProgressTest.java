@@ -115,15 +115,17 @@ public class RolloutProgressTest {
 
     @Test
     public void requeuesWhenNothingIsInFlightOrItExpiredOrFailedAFewTimes() {
-        assertTrue(RolloutProgress.shouldRequeue(null, 0));        // never queued (e.g. skipped at create)
-        assertTrue(RolloutProgress.shouldRequeue("expired", 1));   // the result was lost; the server gave up on it
-        assertTrue(RolloutProgress.shouldRequeue("expired", 5));
-        assertTrue(RolloutProgress.shouldRequeue("failed", 1));    // a transient download error is retried
-        assertTrue(RolloutProgress.shouldRequeue("failed", 2));
-        assertFalse(RolloutProgress.shouldRequeue("failed", 3));   // but not on every check-in forever
-        assertFalse(RolloutProgress.shouldRequeue("pending", 1));
-        assertFalse(RolloutProgress.shouldRequeue("delivered", 1));
-        assertFalse(RolloutProgress.shouldRequeue("done", 1));     // installed; the new version reports on restart
-        assertFalse(RolloutProgress.shouldRequeue("unsupported", 1));
+        assertTrue(RolloutProgress.shouldRequeue(null, false, 0));        // never queued (e.g. skipped at create)
+        assertTrue(RolloutProgress.shouldRequeue("expired", true, 1));    // delivered, the result was lost
+        assertTrue(RolloutProgress.shouldRequeue("expired", false, 7));   // never reached the device: always re-sent
+        assertFalse(RolloutProgress.shouldRequeue("expired", true, 3));   // a device that installs but never reports
+                                                                          // the target version is not reinstalled forever
+        assertTrue(RolloutProgress.shouldRequeue("failed", true, 1));     // a transient download error is retried
+        assertTrue(RolloutProgress.shouldRequeue("failed", true, 2));
+        assertFalse(RolloutProgress.shouldRequeue("failed", true, 3));    // but not on every check-in forever
+        assertFalse(RolloutProgress.shouldRequeue("pending", false, 1));
+        assertFalse(RolloutProgress.shouldRequeue("delivered", true, 1));
+        assertFalse(RolloutProgress.shouldRequeue("done", true, 1));      // installed; the new version reports on restart
+        assertFalse(RolloutProgress.shouldRequeue("unsupported", true, 1));
     }
 }

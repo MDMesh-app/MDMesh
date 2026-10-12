@@ -1,6 +1,5 @@
 package com.hmdm.rest.resource.support;
 
-import com.hmdm.persistence.AgentCommandDAO;
 import com.hmdm.persistence.RolloutDAO;
 import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.AgentRollout;
@@ -42,25 +41,26 @@ public class RolloutRequeuerTest {
             calls.add("installs:" + deviceNumber + "@" + since);
             return installs;
         }
+        @Override public boolean insertIfNotInFlight(AgentCommand cmd) {
+            if (alreadyInFlight) return false;
+            inserted.add(cmd);
+            return true;
+        }
+        boolean alreadyInFlight;
+        final List<AgentCommand> inserted = new ArrayList<>();
     }
 
     private FakeRolloutDAO rolloutDAO;
-    private AgentCommandDAO commandDAO;
     private RolloutRequeuer requeuer;
     private AgentRollout rollout;
     private Device device;
-    private final List<AgentCommand> inserted = new ArrayList<>();
+    private List<AgentCommand> inserted;
 
     @Before
     public void setUp() {
         rolloutDAO = new FakeRolloutDAO();
-        commandDAO = new AgentCommandDAO(null, null, null, null) {
-            @Override
-            public void insert(AgentCommand cmd) {
-                inserted.add(cmd);
-            }
-        };
-        requeuer = new RolloutRequeuer(rolloutDAO, commandDAO);
+        requeuer = new RolloutRequeuer(rolloutDAO);
+        inserted = rolloutDAO.inserted;
 
         rollout = new AgentRollout();
         rollout.setId(7);
@@ -93,6 +93,12 @@ public class RolloutRequeuerTest {
         c.setPayload("{\"url\":\"https://x/a.apk\",\"packageName\":\"" + pkg + "\"}");
         c.setStatus(status);
         c.setCreatedAt(createdAt);
+        c.setDeliveredAt("pending".equals(status) ? null : createdAt + 1);
+        return c;
+    }
+
+    private static AgentCommand undelivered(AgentCommand c) {
+        c.setDeliveredAt(null);
         return c;
     }
 
@@ -180,5 +186,32 @@ public class RolloutRequeuerTest {
         assertFalse(requeuer.requeue(device, CREATED + 100));
         assertEquals(Collections.singletonList("active"), rolloutDAO.calls);
         assertEquals(Collections.emptyList(), inserted);
+    }
+
+    @Test
+    public void deliveredExpiriesCountTowardTheCap() {
+        // Installed each time, yet the device never reports the target version: stop after three.
+        installs(install(PKG, "expired", CREATED + 30), install(PKG, "expired", CREATED + 20),
+                install(PKG, "expired", CREATED + 10));
+        assertFalse(requeuer.requeue(device, CREATED + 100));
+        assertTrue(inserted.isEmpty());
+    }
+
+    @Test
+    public void undeliveredExpiriesAreNotCapped() {
+        // The device was offline each time: none of these was an attempt.
+        installs(undelivered(install(PKG, "expired", CREATED + 30)), undelivered(install(PKG, "expired", CREATED + 20)),
+                undelivered(install(PKG, "expired", CREATED + 10)), undelivered(install(PKG, "expired", CREATED + 5)));
+        assertTrue(requeuer.requeue(device, CREATED + 100));
+        assertEquals(1, inserted.size());
+    }
+
+    @Test
+    public void aCommandQueuedConcurrentlyIsNotDuplicated() {
+        // create/promote queued it between this check-in's read and its insert.
+        installs();
+        rolloutDAO.alreadyInFlight = true;
+        assertFalse(requeuer.requeue(device, CREATED + 100));
+        assertTrue(inserted.isEmpty());
     }
 }

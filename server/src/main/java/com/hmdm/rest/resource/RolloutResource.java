@@ -260,16 +260,17 @@ public class RolloutResource {
         for (RolloutDeviceRow row : rows) {
             boolean hasPending = pending.contains(row.getDeviceNumber());
             if (RolloutProgress.classify(r.getTargetVersion(), row, hasPending) == RolloutProgress.Status.OUTSTANDING) {
-                enqueueInstall(r, row.getDeviceNumber());
-                n++;
+                if (enqueueInstall(r, row.getDeviceNumber())) n++;
             }
         }
         return n;
     }
 
-    private void enqueueInstall(AgentRollout r, String deviceNumber) {
-        requeuer.enqueue(r, deviceNumber, System.currentTimeMillis());
+    /** @return false when the device already had it in flight (e.g. its check-in re-queued it a moment ago). */
+    private boolean enqueueInstall(AgentRollout r, String deviceNumber) {
+        if (!requeuer.enqueue(r, deviceNumber, System.currentTimeMillis())) return false;
         wakeHub.wake(deviceNumber, "commands");
+        return true;
     }
 
     private Map<String, Object> buildView(AgentRollout r) {

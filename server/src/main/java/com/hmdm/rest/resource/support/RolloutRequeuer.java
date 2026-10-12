@@ -2,7 +2,6 @@ package com.hmdm.rest.resource.support;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.hmdm.persistence.AgentCommandDAO;
 import com.hmdm.persistence.RolloutDAO;
 import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.AgentRollout;
@@ -16,8 +15,8 @@ import javax.inject.Singleton;
 
 /**
  * Queues a rollout's {@code app.install}, and from every check-in queues it again for a device the active rollout
- * still targets when its last one expired (the result was lost: the agent died mid-install, say), failed fewer than
- * {@link RolloutProgress#MAX_ATTEMPTS} times, or was never queued. Without this, such a device shows "queued" forever,
+ * still targets when none was queued, the last one expired before reaching it, or the last one failed or expired
+ * after reaching it (the result was lost: the agent died mid-install, say) within {@link RolloutProgress#MAX_ATTEMPTS}. Without this, such a device shows "queued" forever,
  * since the rollout only enqueues on create and promote, and v0.3.2-and-older agents can lose a result.
  */
 @Singleton
@@ -26,16 +25,15 @@ public class RolloutRequeuer {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final RolloutDAO rolloutDAO;
-    private final AgentCommandDAO commandDAO;
 
     @Inject
-    public RolloutRequeuer(RolloutDAO rolloutDAO, AgentCommandDAO commandDAO) {
+    public RolloutRequeuer(RolloutDAO rolloutDAO) {
         this.rolloutDAO = rolloutDAO;
-        this.commandDAO = commandDAO;
     }
 
-    /** Insert the rollout's app.install for one device (the caller wakes it when it is not checking in right now). */
-    public void enqueue(AgentRollout r, String deviceNumber, long now) {
+    /** Insert the rollout's app.install for one device unless it already has it in flight (the caller wakes it when
+     *  it is not checking in right now). @return true when queued. */
+    public boolean enqueue(AgentRollout r, String deviceNumber, long now) {
         AgentCommand cmd = new AgentCommand();
         cmd.setDeviceNumber(deviceNumber);
         cmd.setType("app.install");
@@ -43,7 +41,7 @@ public class RolloutRequeuer {
         cmd.setRequiresCapability(RolloutProgress.INSTALL_CAPABILITY);
         cmd.setStatus("pending");
         cmd.setCreatedAt(now);
-        commandDAO.insert(cmd);
+        return rolloutDAO.insertIfNotInFlight(cmd);
     }
 
     /** Called from check-in, after stale commands were expired. @return true when the update was queued. Never throws. */
@@ -58,17 +56,18 @@ public class RolloutRequeuer {
             if (RolloutProgress.classify(r.getTargetVersion(), rolloutDAO.findDeviceRow(number), false)
                     != RolloutProgress.Status.OUTSTANDING) return false;
             // This rollout's commands for the device (queued since it was created); the newest one decides.
-            String latest = null;
-            int attempts = 0;
+            AgentCommand latest = null;
+            int attempts = 0;   // commands that reached the device
             for (AgentCommand c : rolloutDAO.listInstallsSince(number, r.getCreatedAt() == null ? 0L : r.getCreatedAt())) {
                 if (!RolloutProgress.isFor(r.getPackageName(), c)) continue;
-                if (latest == null) latest = c.getStatus();   // newest first
-                attempts++;
+                if (latest == null) latest = c;   // newest first
+                if (c.getDeliveredAt() != null) attempts++;
             }
-            if (!RolloutProgress.shouldRequeue(latest, attempts)) return false;
-            enqueue(r, number, now);
+            if (!RolloutProgress.shouldRequeue(latest == null ? null : latest.getStatus(),
+                    latest != null && latest.getDeliveredAt() != null, attempts)) return false;
+            if (!enqueue(r, number, now)) return false;
             logger.info("Rollout {}: app.install queued again for {} (last: {}, attempts: {})", r.getId(), number,
-                    latest == null ? "none" : latest, attempts);
+                    latest == null ? "none" : latest.getStatus(), attempts);
             return true;
         } catch (Exception e) {
             logger.warn("rollout requeue skipped for {}", device == null ? "?" : device.getNumber(), e);

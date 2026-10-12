@@ -61,6 +61,7 @@ public class AgentCheckInLimitsTest {
             statuses.add(status);
         }
         @Override public void expireStale(String n, long a, long b) { }
+        @Override public void recordConfigApplyDone(String n, Integer id) { }
         @Override public void updateDeviceCapabilities(String n, String json) { storedCaps.add(json); }
         @Override public String getDeviceCapabilities(String n) {
             capabilityReads++;
@@ -72,7 +73,8 @@ public class AgentCheckInLimitsTest {
     private static final class NoopReconciler extends ConfigReconciler {
         Set<String> tokens;
         NoopReconciler() { super(null, null); }
-        @Override public boolean reconcile(Device d, Set<String> t, String rev, long now) { tokens = t; return false; }
+        @Override public boolean reconcile(Device d, Set<String> t, String rev, String agentVersion,
+                                           String configAgentVersion, long now) { tokens = t; return false; }
     }
 
     private static final class NoopRequeuer extends RolloutRequeuer {

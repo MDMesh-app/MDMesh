@@ -144,6 +144,8 @@ if [ -z "$BASE_URL" ]; then
 fi
 mdm_check_base_url BASE_URL || exit 1   # install/lib/url.sh: http(s)://host[:port]; lower-cases the scheme
 case "${SMTP_PORT-25}" in ''|*[!0-9]*) echo "  SMTP_PORT must be a number."; exit 1 ;; esac
+case "${SMTP_SSL-false}:${SMTP_STARTTLS-false}" in true:true|true:false|false:true|false:false) ;;
+  *) echo "  SMTP_SSL and SMTP_STARTTLS must be true or false."; exit 1 ;; esac
 # The HTTP port (HTTP_PORT) is settled below, once the existing install's server.xml can be read the safe way.
 DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
 JWT_SECRET=$(openssl rand -hex 64)   # jwt.secretkey: hex only (see the reuse rule below)
@@ -466,7 +468,7 @@ select_jdk17() {
   local c
   for c in "${JAVA17_HOME:-}" \
            /usr/lib/jvm/java-17-openjdk* /usr/lib/jvm/*temurin-17* /usr/lib/jvm/*zulu*17* \
-           /usr/lib/jvm/*corretto*17* /usr/lib/jvm/*-17-* /usr/lib/jvm/*17* /opt/*jdk-17* /opt/*jdk17* "$RUNTIME_DIR"/jdk-17*; do
+           /usr/lib/jvm/*corretto*17* /usr/lib/jvm/*-17-* /usr/lib/jvm/*17* /opt/*jdk-17* /opt/*jdk17* "$RUNTIME_DIR/jdk-$JDK17_VER"; do
     [ -n "$c" ] && [ -x "$c/bin/javac" ] || continue
     case "$("$c/bin/javac" -version 2>&1)" in *' 17.'*) printf '%s' "$c"; return 0 ;; esac
   done
@@ -474,29 +476,36 @@ select_jdk17() {
 }
 # The console is built (and the supervisor run) on one Node line, NODE_VER's major: a host Node on that line is used,
 # anything else (none, the distros' 18, a newer line) gets the pinned download. The host's own Node is never replaced.
+# The supervisor runs it as $SVC_USER, so a Node only root can run (nvm under /root) does not count either. On a fresh
+# host that account does not exist yet, and nobody stands in for it.
 host_node_ok() {
+  local u="$SVC_USER"
   command -v node >/dev/null && command -v npm >/dev/null || return 1
-  case "$(node -v 2>/dev/null)" in "v${NODE_VER%%.*}."*) return 0 ;; *) return 1 ;; esac
+  case "$(node -v 2>/dev/null)" in "v${NODE_VER%%.*}."*) ;; *) return 1 ;; esac
+  id -u "$u" >/dev/null 2>&1 || u=nobody
+  ( cd / && setpriv --reuid="$u" --regid="$(id -g "$u")" --init-groups "$(command -v node)" -e '' ) >/dev/null 2>&1
 }
 # fetch_runtime NAME URL SHA256: download URL, check it against the SHA-256 pinned above (never one fetched alongside it),
 # and unpack it as $RUNTIME_DIR/NAME. It is unpacked beside its final place and renamed into it, so NAME exists only once
 # the check passed, and a re-run reuses it.
 fetch_runtime() {
-  local name="$1" url="$2" sha="$3" t
+  local name="$1" url="$2" sha="$3" t got
   [ -d "$RUNTIME_DIR/$name" ] && { info "$name already in $RUNTIME_DIR"; return 0; }
-  [ -n "$sha" ] || _fail "No pinned $name download for $(uname -m): install it yourself (see DEPLOY.md, Option C) and re-run."
+  [ -n "$sha" ] || _fail "No pinned Node/JDK download for $(uname -m): install Node ${NODE_VER%%.*} / JDK 17 yourself and re-run."
   [ ! -L "$RUNTIME_DIR" ] || _fail "Refusing to use $RUNTIME_DIR: it is a symbolic link. Remove it and re-run."
-  mkdir -p "$RUNTIME_DIR"; chmod 755 "$RUNTIME_DIR"
-  rm -rf "$RUNTIME_DIR"/.fetch.??????   # what a killed run left behind
-  t=$(mktemp -d "$RUNTIME_DIR/.fetch.XXXXXX")
+  { mkdir -p "$RUNTIME_DIR" && chmod 755 "$RUNTIME_DIR" && rm -rf "$RUNTIME_DIR"/.fetch.??????; } \
+    || _fail "Could not prepare $RUNTIME_DIR"   # the rm: what a killed run left behind
+  t=$(mktemp -d "$RUNTIME_DIR/.fetch.XXXXXX") || _fail "Could not create a temporary directory in $RUNTIME_DIR"
   run "Downloading $name" curl -fsSL --retry 3 "$url" -o "$t/rt.tar.gz"
-  if [ "$(sha256sum "$t/rt.tar.gz" | awk '{print $1}')" != "$sha" ]; then
+  got=$(sha256sum "$t/rt.tar.gz" | awk '{print $1}') || _fail "Could not checksum the $name download"
+  if [ "$got" != "$sha" ]; then
     rm -rf "$t"; _fail "The $name download does not match its pinned SHA-256"
   fi
-  mkdir "$t/rt"
+  mkdir "$t/rt" || _fail "Could not create $t/rt"
   run "Unpacking $name" tar -xzf "$t/rt.tar.gz" -C "$t/rt" --strip-components=1 --no-same-owner
-  chmod -R a+rX,go-w "$t/rt"   # umask 077 above; $SVC_USER runs these too
-  mv -T "$t/rt" "$RUNTIME_DIR/$name"; rm -rf "$t"
+  chmod -R a+rX,go-w "$t/rt" || _fail "Could not set permissions on $name"   # umask 077 above; $SVC_USER runs these too
+  mv -T "$t/rt" "$RUNTIME_DIR/$name" || _fail "Could not move $name into $RUNTIME_DIR"
+  rm -rf "$t"
   ok "$name installed in $RUNTIME_DIR (SHA-256 verified)"
 }
 # Install only what is missing. Asking apt for packages the host already provides another way (Node
@@ -1113,6 +1122,7 @@ for _rt in "$RUNTIME_DIR"/node-v* "$RUNTIME_DIR"/jdk-*; do
   case "$_rt" in "$JAVA_HOME"|"${NODE_BIN%/bin/node}") continue ;; esac
   rm -rf "$_rt"; info "removed the unused runtime $_rt"
 done
+rm -rf "$RUNTIME_DIR"/.fetch.??????   # a failed download's leftovers
 
 trap - ERR
 printf '\n  %s%s✓ MDMesh installed (native)%s\n\n' "$c_grn" "$c_bold" "$c_reset"

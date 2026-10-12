@@ -169,4 +169,41 @@ public class DesiredConfigBuilderTest {
         assertEquals(resource("desired-config-policies.json"), DesiredConfigBuilder.canonicalJson(d));
         assertEquals(resource("desired-config-policies.sha256"), d.getRevision());
     }
+
+    @Test
+    public void safe_boot_is_inverted_into_the_blocking_policy() {
+        // disableSafeBoot=true means "block safe mode", so the agent receives safeBoot=false.
+        Configuration blocked = policiesConfig(); blocked.setDisableSafeBoot(true);
+        assertEquals("disableSafeBoot=true -> policies.safeBoot=false", Boolean.FALSE,
+                DesiredConfigBuilder.build(blocked, Collections.emptyList()).getPolicies().get("safeBoot"));
+
+        Configuration allowed = policiesConfig(); allowed.setDisableSafeBoot(false);
+        assertEquals("disableSafeBoot=false -> policies.safeBoot=true", Boolean.TRUE,
+                DesiredConfigBuilder.build(allowed, Collections.emptyList()).getPolicies().get("safeBoot"));
+    }
+
+    @Test
+    public void null_safe_boot_is_unmanaged_and_leaves_existing_revisions_untouched() {
+        // policiesConfig() never sets disableSafeBoot, so the golden policies fixture above already proves the key
+        // is omitted when unmanaged. Assert it directly too: an upgrade must not move any existing revision.
+        DesiredConfig d = DesiredConfigBuilder.build(policiesConfig(), Collections.emptyList());
+        assertFalse("null disableSafeBoot = not managed", d.getPolicies().containsKey("safeBoot"));
+        assertEquals(resource("desired-config-policies.sha256"), d.getRevision());
+    }
+
+    @Test
+    public void safe_boot_alone_changes_the_revision() {
+        // Toggling the field must re-apply, so it must move the revision.
+        Configuration blocked = policiesConfig(); blocked.setDisableSafeBoot(true);
+        Configuration allowed = policiesConfig(); allowed.setDisableSafeBoot(false);
+        String blockedRevision = DesiredConfigBuilder.build(blocked, Collections.emptyList()).getRevision();
+        assertNotEquals(blockedRevision, DesiredConfigBuilder.build(allowed, Collections.emptyList()).getRevision());
+        assertNotEquals(blockedRevision, DesiredConfigBuilder.build(policiesConfig(), Collections.emptyList()).getRevision());
+    }
+
+    @Test
+    public void safe_boot_survives_a_configuration_copy() {
+        Configuration c = policiesConfig(); c.setDisableSafeBoot(true);
+        assertEquals(Boolean.TRUE, c.newCopy().getDisableSafeBoot());
+    }
 }

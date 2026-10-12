@@ -8,12 +8,12 @@ an interface here; feature code never touches DPM directly.
 - `DeviceControl` — the narrow surface feature code may use. Exposes policy areas
   (currently `wifi`).
 - Policies, one directory each: `wifi/`, `bluetooth/`, `camera/`, `usb/` (`usbStorage`),
-  `screenshots/`, `factoryreset/` (`factoryReset`). These are the keys `CapabilityRegistry` can
+  `screenshots/`, `factoryreset/` (`factoryReset`), `safeboot/` (`safeBoot`). These are the keys `CapabilityRegistry` can
   advertise.
 - `PolicyStrategy` — base for SDK-gated implementations. `isSupported()` carries the
   `Build.VERSION.SDK_INT` (+ Device-Owner) check, evaluated once at selection.
 - `TogglePolicy` — the sub-interface for every on/off policy (Wi-Fi, camera, Bluetooth,
-  screenshots, USB storage, `factoryReset`, ...). `config.apply` and `policy.apply` route these
+  screenshots, USB storage, `factoryReset`, `safeBoot`, ...). `config.apply` and `policy.apply` route these
   generically by `capabilityKey`, so there is no per-policy `when` anywhere.
 - `CapabilityRegistry` — probes each policy's factory and reports the supported
   capability keys (from `../../proto/registry.md`). Its output feeds

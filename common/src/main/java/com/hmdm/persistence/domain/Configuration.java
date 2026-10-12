@@ -118,6 +118,8 @@ public class Configuration implements CustomerData, Serializable {
     private Boolean disableScreenshots;
     @ApiModelProperty("Flag indicating if factory reset is disabled on the device")
     private Boolean disableFactoryReset;
+    @ApiModelProperty("Flag indicating if booting into safe mode is disabled on the device")
+    private Boolean disableSafeBoot;
     @ApiModelProperty("Flag indicating if auto-started apps should be kept in the foreground")
     private Boolean autostartForeground;
     @ApiModelProperty("Time zone settings: null for using default settings, auto for automatic time zone, or Olson time zone string")
@@ -877,6 +879,14 @@ public class Configuration implements CustomerData, Serializable {
         this.disableFactoryReset = disableFactoryReset;
     }
 
+    public Boolean getDisableSafeBoot() {
+        return disableSafeBoot;
+    }
+
+    public void setDisableSafeBoot(Boolean disableSafeBoot) {
+        this.disableSafeBoot = disableSafeBoot;
+    }
+
     public Configuration newCopy() {
         Configuration copy = new Configuration();
 
@@ -960,6 +970,7 @@ public class Configuration implements CustomerData, Serializable {
 
         copy.setDefaultFilePath(getDefaultFilePath());
         copy.setDisableFactoryReset(getDisableFactoryReset());
+        copy.setDisableSafeBoot(getDisableSafeBoot());
 
         return copy;
     }

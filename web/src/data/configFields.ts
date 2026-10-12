@@ -100,6 +100,7 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'blockStatusBar', label: 'Lock status bar', type: 'switch', group: 'Restrictions', help: 'Prevent pulling down the system status bar.' },
   { key: 'disableScreenshots', label: 'Block screenshots', type: 'tri', group: 'Restrictions', enforced: true, help: 'Prevent screenshots and screen recording.' },
   { key: 'disableFactoryReset', label: 'Block factory reset', type: 'tri', group: 'Restrictions', focused: true, enforced: true, help: 'Prevent a factory reset from Settings; Auto leaves an existing block on the device, Off releases it.' },
+  { key: 'disableSafeBoot', label: 'Block safe mode', type: 'tri', group: 'Restrictions', focused: true, enforced: true, help: 'Prevent rebooting into safe mode, which starts the device without the agent and therefore without kiosk; Auto leaves an existing block on the device, Off releases it.' },
   { key: 'lockVolume', label: 'Lock volume', type: 'tri', group: 'Restrictions', help: 'Disable the volume buttons.' },
   { key: 'allowedClasses', label: 'Allowed app classes', type: 'text', group: 'Restrictions', help: 'Comma-separated list of permitted app component classes.' },
   { key: 'restrictions', label: 'Android restrictions', type: 'textarea', group: 'Restrictions', help: 'Comma-separated Android user restrictions to apply in MDM mode.' },

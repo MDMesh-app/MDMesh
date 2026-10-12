@@ -2860,4 +2860,14 @@
         <rollback>ALTER TABLE configurations DROP COLUMN disableFactoryReset;</rollback>
     </changeSet>
 
+    <changeSet id="26.10.12-configurations-disableSafeBoot" author="kmehmonov" context="common">
+        <comment>Column,new: configurations#disableSafeBoot — "block safe mode", sent to the agent inverted as
+            policies.safeBoot (true = allowed), exactly like disableFactoryReset -> factoryReset.
+            Nullable with no DEFAULT: NULL means unmanaged, the key is then omitted from config.apply and the
+            agent applies nothing. A DEFAULT would add the key to every existing configuration's revision and
+            mass re-apply policies across the fleet on upgrade.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN disableSafeBoot BOOLEAN;</sql>
+        <rollback>ALTER TABLE configurations DROP COLUMN disableSafeBoot;</rollback>
+    </changeSet>
+
 </databaseChangeLog>

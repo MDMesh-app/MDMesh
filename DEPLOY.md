@@ -152,10 +152,11 @@ password off the command line, where `ps` and your shell history would show it:
 read -rs SMTP_PASSWORD && export SMTP_PASSWORD     # type it; nothing is echoed
 sudo --preserve-env=SMTP_PASSWORD SMTP_HOST=smtp.example.com SMTP_PORT=587 SMTP_STARTTLS=true SMTP_USERNAME=mdm \
   ./setup.sh --native
+unset SMTP_PASSWORD
 ```
 
 They are written to `ROOT.xml`, and later runs keep them unless you pass the variable again. An empty value clears
-a setting (except `SMTP_PORT`, which must be a number; `SMTP_SSL` and `SMTP_STARTTLS` must be `true` or `false`).
+a setting (except `SMTP_PORT`, which must be a number; `SMTP_SSL` and `SMTP_STARTTLS` take `true`/`1` or `false`/`0`).
 
 **The agent APK.** The installer fetches the latest release's agent APK, hosts it at `/files/agent.apk` and bakes its
 signing checksum into the console's enrollment QR. It trusts the APK only through the release's signed manifest, like

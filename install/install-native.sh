@@ -144,8 +144,13 @@ if [ -z "$BASE_URL" ]; then
 fi
 mdm_check_base_url BASE_URL || exit 1   # install/lib/url.sh: http(s)://host[:port]; lower-cases the scheme
 case "${SMTP_PORT-25}" in ''|*[!0-9]*) echo "  SMTP_PORT must be a number."; exit 1 ;; esac
-case "${SMTP_SSL-false}:${SMTP_STARTTLS-false}" in true:true|true:false|false:true|false:false) ;;
-  *) echo "  SMTP_SSL and SMTP_STARTTLS must be true or false."; exit 1 ;; esac
+# SMTP_SSL / SMTP_STARTTLS: what the server and the Docker .env accept ("true" or "1", any case; else false), written
+# to ROOT.xml as true/false.
+for _v in SMTP_SSL SMTP_STARTTLS; do
+  [ -n "${!_v+x}" ] || continue
+  case "${!_v,,}" in true|1) printf -v "$_v" true ;; false|0) printf -v "$_v" false ;;
+    *) echo "  $_v must be true or false."; exit 1 ;; esac
+done
 # The HTTP port (HTTP_PORT) is settled below, once the existing install's server.xml can be read the safe way.
 DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
 JWT_SECRET=$(openssl rand -hex 64)   # jwt.secretkey: hex only (see the reuse rule below)
@@ -544,7 +549,7 @@ if host_node_ok; then
   ok "Node $(node -v) from this host"
 else
   NODE_NAME="node-v${NODE_VER}-linux-${NODE_ARCH}"
-  info "this host has no Node ${NODE_VER%%.*} ($(node -v 2>/dev/null || echo none)): using the pinned Node ${NODE_VER}"
+  info "no Node ${NODE_VER%%.*} on this host that $SVC_USER can run (found: $(node -v 2>/dev/null || echo none)): using the pinned Node ${NODE_VER}"
   fetch_runtime "$NODE_NAME" "https://nodejs.org/dist/v${NODE_VER}/${NODE_NAME}.tar.gz" "${NODE_ARCH:+$NODE_SHA}"
   export PATH="$RUNTIME_DIR/$NODE_NAME/bin:$PATH"
 fi

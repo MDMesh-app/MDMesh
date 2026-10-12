@@ -9,6 +9,7 @@ import com.mdmesh.proto.CommandResult
 import com.mdmesh.proto.CommandStatus
 import com.mdmesh.core.net.ResponseEnvelope
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
@@ -25,6 +26,19 @@ class CheckInCoordinatorTest {
         override val type: String = "test.cmd"
         override suspend fun handle(command: CommandEnvelope): CommandResult =
             CommandResults.done(command)
+    }
+
+    /** Never returns, like an agent self-update: the process is replaced mid-command. */
+    private class HangingHandler : CommandHandler {
+        override val type: String = "test.hang"
+        override suspend fun handle(command: CommandEnvelope): CommandResult = awaitCancellation()
+    }
+
+    /** Stands in for SharedPreferences: what a new process would read back. */
+    private class FakeBackup : PendingResults.Backup {
+        var raw: String? = null
+        override fun read(): String? = raw
+        override fun write(raw: String?) { this.raw = raw }
     }
 
     private fun coordinator(
@@ -45,7 +59,7 @@ class CheckInCoordinatorTest {
             enrollment = enrollment,
             identity = identity,
             capabilitySource = FakeCapabilitySource(),
-            dispatcher = CommandDispatcher(listOf(TestHandler())),
+            dispatcher = CommandDispatcher(listOf(TestHandler(), HangingHandler())),
             pending = pending,
             stateSource = { null },
             telemetrySource = { null },
@@ -137,5 +151,40 @@ class CheckInCoordinatorTest {
         api.checkInThrows = null
         coordinator.runOnce()
         assertNull(syncStatus.lastError.value)
+    }
+
+    @Test
+    fun `delivered acks leave the persisted buffer only after the check-in succeeds`() = runTest {
+        val backup = FakeBackup()
+        PendingResults(backup).add(listOf(CommandResult(commandId = "old", status = CommandStatus.DONE, completedAt = "t")))
+        val api = FakeMdmApi().apply { checkInThrows = IOException("network down") }
+
+        runCatching { coordinator(api, PendingResults(backup)).runOnce() }
+        assertEquals("kept after a failed check-in", listOf("old"), PendingResults(backup).drain().map { it.commandId })
+
+        api.checkInThrows = null
+        coordinator(api, PendingResults(backup)).runOnce()
+        assertEquals("old", api.checkInRequests.last().results.single().commandId)
+        assertTrue("gone once delivered", PendingResults(backup).drain().isEmpty())
+    }
+
+    @Test
+    fun `each result is persisted as soon as its command finishes`() = runTest {
+        val backup = FakeBackup()
+        val api = FakeMdmApi().apply {
+            checkInResponse = ResponseEnvelope(
+                status = "OK",
+                data = AgentCheckInResponse(
+                    commands = listOf(command("c1"), command("c2").copy(type = "test.hang")),
+                ),
+            )
+        }
+
+        val cycle = launch { coordinator(api, PendingResults(backup)).runOnce() }
+        testScheduler.advanceUntilIdle()
+
+        // c2 is still running (a self-update replaces the process here): c1's result must already be saved.
+        assertEquals(listOf("c1"), PendingResults(backup).drain().map { it.commandId })
+        cycle.cancel()
     }
 }

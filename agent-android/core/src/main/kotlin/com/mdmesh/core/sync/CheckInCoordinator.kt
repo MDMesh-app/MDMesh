@@ -92,10 +92,14 @@ class CheckInCoordinator @Inject constructor(
         }
         pending.delivered()
 
-        val results = data.commands.map { dispatcher.dispatch(it) }
-        pending.add(results)
-        // Record each command outcome as a timeline event (flushed next cycle).
-        results.forEach { eventSink.record(EventType.COMMAND_RESULT, "${it.commandId}:${it.status}") }
+        for (command in data.commands) {
+            val result = dispatcher.dispatch(command)
+            // Saved one by one: a later command can end the process (an agent self-update does), and the results
+            // before it must still reach the server.
+            pending.add(listOf(result))
+            // Record each command outcome as a timeline event (flushed next cycle).
+            eventSink.record(EventType.COMMAND_RESULT, "${result.commandId}:${result.status}")
+        }
     }
 }
 

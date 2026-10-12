@@ -90,6 +90,7 @@ class CheckInCoordinator @Inject constructor(
             eventSink.restore(bufferedEvents)
             throw CheckInException(response.message ?: "check-in rejected")
         }
+        pending.delivered()
 
         val results = data.commands.map { dispatcher.dispatch(it) }
         pending.add(results)

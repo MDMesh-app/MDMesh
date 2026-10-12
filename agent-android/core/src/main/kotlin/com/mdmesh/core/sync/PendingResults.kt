@@ -1,32 +1,70 @@
 package com.mdmesh.core.sync
 
+import android.content.Context
 import com.mdmesh.proto.CommandResult
+import com.mdmesh.proto.ProtocolJson
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.serialization.builtins.ListSerializer
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * In-memory buffer of command results awaiting delivery. Results are posted on the
- * *next* check-in (the request carries acks for the previous batch).
+ * Buffer of command results awaiting delivery. Results are posted on the *next* check-in (the request carries acks
+ * for the previous batch).
  *
- * Deliberately in-memory: if the process dies before acks are delivered, the server
- * simply never marks those commands done and re-sends them; handlers are idempotent
- * (the sync loop reconciles), so the outcome self-heals. Persisting acks is a possible
- * later optimisation, not a correctness requirement.
+ * Persisted, because the server never re-sends a delivered command: a result lost with the process (killed, OEM
+ * task killer, reboot) leaves that command "delivered" until it expires, and the console never learns how it ended.
+ * Drained results stay persisted until [delivered] confirms the check-in that carried them succeeded, so a process
+ * death mid-check-in re-sends them too (the server tolerates a repeated ack).
  */
 @Singleton
-class PendingResults @Inject constructor() {
+class PendingResults(private val backup: Backup = Backup.None) {
+
+    /** Where the buffer survives process death. Synchronous, like the rest of this class. */
+    interface Backup {
+        fun read(): String?
+        fun write(raw: String?)
+
+        object None : Backup {
+            override fun read(): String? = null
+            override fun write(raw: String?) = Unit
+        }
+    }
+
+    /** SharedPreferences, like [com.mdmesh.core.config.ServerConfigStore]: small, read once, written synchronously. */
+    private class PrefsBackup(context: Context) : Backup {
+        private val prefs = context.getSharedPreferences("mdm_pending_results", Context.MODE_PRIVATE)
+        override fun read(): String? = prefs.getString(KEY, null)
+        override fun write(raw: String?) {
+            prefs.edit().apply { if (raw == null) remove(KEY) else putString(KEY, raw) }.commit()
+        }
+    }
+
+    @Inject constructor(@ApplicationContext context: Context) : this(PrefsBackup(context))
 
     private val buffer = mutableListOf<CommandResult>()
+    /** Drained for the check-in in progress; kept persisted until [delivered] or [restore]. */
+    private val inFlight = mutableListOf<CommandResult>()
+
+    init {
+        // Whatever a dead process left (in flight or not) is due on the next check-in.
+        backup.read()?.let { raw ->
+            runCatching { ProtocolJson.json.decodeFromString(SERIALIZER, raw) }.getOrNull()?.let(buffer::addAll)
+        }
+    }
 
     @Synchronized
     fun add(results: List<CommandResult>) {
+        if (results.isEmpty()) return
         buffer.addAll(results)
+        persist()
     }
 
     /** Take and clear the current buffer for delivery. */
     @Synchronized
     fun drain(): List<CommandResult> {
         val snapshot = buffer.toList()
+        inFlight.addAll(snapshot)
         buffer.clear()
         return snapshot
     }
@@ -34,6 +72,26 @@ class PendingResults @Inject constructor() {
     /** Put drained results back (front) when delivery failed, so they retry next cycle. */
     @Synchronized
     fun restore(results: List<CommandResult>) {
+        inFlight.removeAll(results.toSet())
         buffer.addAll(0, results)
+        persist()
+    }
+
+    /** The check-in carrying the drained results succeeded: forget them. */
+    @Synchronized
+    fun delivered() {
+        if (inFlight.isEmpty()) return
+        inFlight.clear()
+        persist()
+    }
+
+    private fun persist() {
+        val all = inFlight + buffer
+        backup.write(if (all.isEmpty()) null else ProtocolJson.json.encodeToString(SERIALIZER, all))
+    }
+
+    private companion object {
+        const val KEY = "results"
+        val SERIALIZER = ListSerializer(CommandResult.serializer())
     }
 }

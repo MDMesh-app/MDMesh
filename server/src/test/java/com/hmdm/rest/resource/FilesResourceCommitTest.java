@@ -27,6 +27,7 @@ import java.util.List;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 /**
  * POST /private/web-ui-files/update may only commit a file the upload endpoint created in the temp directory, for a
@@ -53,10 +54,24 @@ public class FilesResourceCommitTest {
         @Override public UploadedFile getById(Integer id) { return existing; }
         @Override public UploadedFile insert(UploadedFile file) { written.add(file); return file; }
         @Override public void update(UploadedFile file) { written.add(file); }
+        final List<Integer> removed = new ArrayList<>();
+        @Override public void remove(int fileId) { removed.add(fileId); }
+        @Override public UploadedFile getByPath(Integer customerId, String filePath) { return null; }
+    }
+
+    private static final class UnusedConfigurationFileDAO extends com.hmdm.persistence.ConfigurationFileDAO {
+        UnusedConfigurationFileDAO() { super(null, null, null); }
+        @Override public boolean isFileUsed(Integer fileId) { return false; }
+    }
+
+    private static final class UnusedIconDAO extends com.hmdm.persistence.IconDAO {
+        UnusedIconDAO() { super(null); }
+        @Override public boolean isFileUsed(Integer fileId) { return false; }
     }
 
     private File filesDir;
     private File secret;
+    private Customer customer;
     private FakeUploadedFileDAO uploadedFileDAO;
     private FilesResource resource;
 
@@ -67,12 +82,13 @@ public class FilesResourceCommitTest {
         secret = tmp.newFile("secret.txt");
         Files.write(secret.toPath(), "top secret".getBytes(StandardCharsets.UTF_8));
 
-        Customer customer = new Customer();
+        customer = new Customer();
         customer.setId(1);
         customer.setFilesDir("acme");
         uploadedFileDAO = new FakeUploadedFileDAO();
         resource = new FilesResource(filesDir.getAbsolutePath(), "https://mdm.example.com",
-                new FakeCustomerDAO(customer), null, null, null, uploadedFileDAO, null, null, null, null);
+                new FakeCustomerDAO(customer), null, null, null, uploadedFileDAO, null,
+                new UnusedConfigurationFileDAO(), new UnusedIconDAO(), null);
 
         UserRole role = new UserRole();
         role.setSuperAdmin(true);
@@ -140,5 +156,68 @@ public class FilesResourceCommitTest {
         assertTrue("the current content must survive a rejected replace", current.exists());
         assertEquals("current", new String(Files.readAllBytes(current.toPath()), StandardCharsets.UTF_8));
         assertEquals(0, uploadedFileDAO.written.size());
+    }
+
+    @Test
+    public void createRejectsAnotherCustomersUpload() throws IOException {
+        Customer other = new Customer();
+        other.setId(2);
+        other.setFilesDir("other");
+        File theirs = com.hmdm.util.FileUtil.createUploadFile(other, "theirs.apk");
+        theirs.deleteOnExit();
+
+        Response r = resource.updateFile(commit(theirs.getAbsolutePath(), "stolen.apk"));
+
+        assertDenied(r);
+        assertTrue(theirs.exists());
+        assertFalse(new File(filesDir, "acme/stolen.apk").exists());
+    }
+
+    @Test
+    public void replaceIsRejectedBeforeDeletingWhenTheRecordedPathLeadsOut() throws IOException {
+        File outside = tmp.newFolder("outside");
+        File victim = new File(outside, "doc.txt");
+        Files.write(victim.toPath(), "victim".getBytes(StandardCharsets.UTF_8));
+        Files.createSymbolicLink(new File(filesDir, "acme/out").toPath(), outside.toPath());
+        UploadedFile existing = new UploadedFile();
+        existing.setId(7);
+        existing.setCustomerId(1);
+        existing.setFilePath("out/doc.txt");
+        uploadedFileDAO.existing = existing;
+        File upload = com.hmdm.util.FileUtil.createUploadFile(customer, "doc.txt");
+        upload.deleteOnExit();
+
+        UploadedFile req = commit(upload.getAbsolutePath(), "out/doc.txt");
+        req.setId(7);
+        try {
+            resource.updateFile(req);
+            fail("expected 400");
+        } catch (javax.ws.rs.WebApplicationException e) {
+            assertEquals(400, e.getResponse().getStatus());
+        }
+        assertTrue(victim.exists());
+        assertEquals(0, uploadedFileDAO.written.size());
+    }
+
+    @Test
+    public void removeDeletesTheRecordsFileNotTheRequestedPath() throws IOException {
+        File mine = new File(filesDir, "acme/mine.txt");
+        File other = new File(filesDir, "acme/other.txt");
+        Files.write(mine.toPath(), "x".getBytes(StandardCharsets.UTF_8));
+        Files.write(other.toPath(), "y".getBytes(StandardCharsets.UTF_8));
+        UploadedFile record = new UploadedFile();
+        record.setId(5);
+        record.setCustomerId(1);
+        record.setFilePath("mine.txt");
+        uploadedFileDAO.existing = record;
+
+        com.hmdm.rest.json.view.FileView req = new com.hmdm.rest.json.view.FileView();
+        req.setId(5);
+        req.setFilePath("other.txt");
+        Response r = resource.removeFile(req);
+
+        assertEquals(Response.ResponseStatus.OK, r.getStatus());
+        assertTrue("a file of another record must survive", other.exists());
+        assertFalse(mine.exists());
     }
 }

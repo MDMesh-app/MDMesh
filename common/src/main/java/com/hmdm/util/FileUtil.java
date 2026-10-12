@@ -55,10 +55,6 @@ public final class FileUtil {
                 .replace(")", "");
     }
 
-    public static File createTempFile(String fileName) throws IOException {
-        return File.createTempFile(fileName + TEMP_FILE_DELIMITER, TEMP_FILE_SUFFIX);
-    }
-
     public static void writeToFile(InputStream uploadedInputStream, String uploadedFileLocation) {
         try (FileOutputStream out = new FileOutputStream(new File(uploadedFileLocation))) {
             byte[] bytes = new byte[1024];
@@ -83,22 +79,39 @@ public final class FileUtil {
         return localFile.getName().split(TEMP_FILE_DELIMITER)[0];
     }
 
-    /** The directory {@link #createTempFile} creates uploads in. */
-    private static Path uploadDir() {
-        return Paths.get(System.getProperty("java.io.tmpdir"));
+    /** The base directory holding every customer's pending uploads. */
+    private static Path uploadBase() {
+        return Paths.get(System.getProperty("java.io.tmpdir"), "mdmesh-uploads");
+    }
+
+    /** The directory holding {@code customer}'s pending uploads, below {@code base}. */
+    static Path uploadDir(Customer customer, Path base) {
+        return base.resolve("c" + customer.getId());
     }
 
     /**
-     * <p>Whether {@code path} names a file the upload endpoint created with {@link #createTempFile}: a regular file
-     * (not a symlink) directly inside the temp directory, named like a temp upload. Only such files may be moved
-     * into the served files area; every other local path is refused.</p>
+     * <p>Creates an empty upload file owned by {@code customer}: only that customer can later commit it
+     * ({@link #moveFile}) into its served files.</p>
      */
-    public static boolean isUploadedTempFile(String path) {
-        return isUploadedTempFile(path, uploadDir());
+    public static File createUploadFile(Customer customer, String fileName) throws IOException {
+        File dir = uploadDir(customer, uploadBase()).toFile();
+        if (!dir.isDirectory() && !dir.mkdirs() && !dir.isDirectory()) {
+            throw new IOException("Cannot create the upload directory");
+        }
+        return File.createTempFile(fileName + TEMP_FILE_DELIMITER, TEMP_FILE_SUFFIX, dir);
     }
 
-    static boolean isUploadedTempFile(String path, Path uploadDir) {
-        return uploadedTempFile(path, uploadDir) != null;
+    /**
+     * <p>Whether {@code path} names a file {@link #createUploadFile} created for {@code customer}: a regular file
+     * (not a symlink) directly inside that customer's upload directory, named like an upload. Only such files may be
+     * moved into the customer's served files; every other local path is refused.</p>
+     */
+    public static boolean isUploadedTempFile(String path, Customer customer) {
+        return isUploadedTempFile(path, customer, uploadBase());
+    }
+
+    static boolean isUploadedTempFile(String path, Customer customer, Path uploadBase) {
+        return customer != null && uploadedTempFile(path, uploadDir(customer, uploadBase)) != null;
     }
 
     /** @return the real path of the upload, or null when {@code path} is not an upload in {@code uploadDir}. */
@@ -177,7 +190,7 @@ public final class FileUtil {
      * @param customer a customer account which the file belongs to.
      * @param filesDirectory a directory which holds all the files maintained by the application.
      * @param localPath an optional local path to move file to.
-     * @param tmpFilePath a path to a temporary file created by {@link #createTempFile}.
+     * @param tmpFilePath a path to a temporary file created by {@link #createUploadFile}.
      * @return a file referencing the moved file if operation was successful; <code>null</code> otherwise.
      * @throws FileExistsException if file already exists
      * @throws UnsafePathException if tmpFilePath is not an upload or the target leaves the customer's directory
@@ -219,25 +232,45 @@ public final class FileUtil {
      * @param customer a customer account which the file belongs to.
      * @param filesDirectory a directory which holds all the files maintained by the application.
      * @param localPath an optional local path (below the customer's directory) to move file to.
-     * @param tmpFilePath a path to a temporary file created by {@link #createTempFile}.
+     * @param tmpFilePath a path to a temporary file created by {@link #createUploadFile}.
      * @param newName the target file name (a single path component), or null to derive it from tmpFilePath.
      * @return a file referencing the moved file if operation was successful; <code>null</code> otherwise.
      * @throws FileExistsException if file already exists
      * @throws UnsafePathException if tmpFilePath is not an upload or the target leaves the customer's directory
      */
     public static File moveFile(Customer customer, String filesDirectory, String localPath, String tmpFilePath, String newName) {
-        return moveFile(customer, filesDirectory, localPath, tmpFilePath, newName, uploadDir());
+        return moveFile(customer, filesDirectory, localPath, tmpFilePath, newName, uploadBase());
     }
 
     static File moveFile(Customer customer, String filesDirectory, String localPath, String tmpFilePath,
-                         String newName, Path uploadDir) {
-        Path source = uploadedTempFile(tmpFilePath, uploadDir);
+                         String newName, Path uploadBase) {
+        Path source = customer == null ? null : uploadedTempFile(tmpFilePath, uploadDir(customer, uploadBase));
         if (source == null) {
-            throw new UnsafePathException("Not an uploaded file: " + tmpFilePath);
+            throw new UnsafePathException("Not an upload of this customer");
         }
-        String fileName = requireFileName(newName != null ? newName : getNameFromTmpPath(source.toString()));
-        File file = resolveFile(customer, filesDirectory, localPath, fileName);
+        String fileName = newName != null ? newName : getNameFromTmpPath(source.toString());
+        File file = checkTarget(customer, filesDirectory, localPath, fileName);
         return place(customer, filesDirectory, source.toFile(), file);
+    }
+
+    /**
+     * <p>The target {@link #moveFile} would write for {@code fileName}, after the same checks it applies (a single
+     * name component, inside the customer's directory, no symlinked directory leading out), without creating or
+     * changing anything. Lets callers validate before a destructive step.</p>
+     *
+     * @throws UnsafePathException if the target is not acceptable
+     */
+    public static File checkTarget(Customer customer, String filesDirectory, String localPath, String fileName) {
+        File file = resolveFile(customer, filesDirectory, localPath, requireFileName(fileName));
+        Path root = customerRoot(customer, filesDirectory);
+        Path existing = file.toPath().toAbsolutePath().normalize().getParent();
+        while (existing != null && !Files.exists(existing) && !existing.equals(root)) {
+            existing = existing.getParent();
+        }
+        if (existing != null && Files.exists(existing)) {
+            requireRealInside(root, existing, fileName);
+        }
+        return file;
     }
 
     /**
@@ -336,6 +369,11 @@ public final class FileUtil {
         final File fileToDelete;
         try {
             fileToDelete = resolveFile(customer, baseDirectory, null, path);
+            Path parent = fileToDelete.toPath().toAbsolutePath().getParent();
+            if (!Files.isDirectory(parent)) {
+                return false;
+            }
+            requireRealInside(customerRoot(customer, baseDirectory), parent, path);
         } catch (UnsafePathException e) {
             return false;
         }

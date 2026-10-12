@@ -30,7 +30,8 @@ public class FileUtilContainmentTest {
     @Rule
     public TemporaryFolder tmp = new TemporaryFolder();
 
-    private Path uploadDir;
+    private Path uploadDir;   // the base all per-customer upload directories live under
+    private Path cdir;        // this customer's upload directory
     private String filesDir;
     private Customer customer;
     private File secret;
@@ -42,13 +43,16 @@ public class FileUtilContainmentTest {
         new File(filesDir, "acme").mkdirs();
         new File(filesDir, "other").mkdirs();
         customer = new Customer();
+        customer.setId(1);
         customer.setFilesDir("acme");
+        cdir = FileUtil.uploadDir(customer, uploadDir);
+        cdir.toFile().mkdirs();
         secret = tmp.newFile("secret.txt");
         Files.write(secret.toPath(), "top secret".getBytes(StandardCharsets.UTF_8));
     }
 
     private File upload(String name) throws IOException {
-        File f = File.createTempFile(name + FileUtil.TEMP_FILE_DELIMITER, ".temp", uploadDir.toFile());
+        File f = File.createTempFile(name + FileUtil.TEMP_FILE_DELIMITER, ".temp", cdir.toFile());
         Files.write(f.toPath(), "payload".getBytes(StandardCharsets.UTF_8));
         return f;
     }
@@ -75,10 +79,10 @@ public class FileUtilContainmentTest {
 
     @Test
     public void movesAnUploadFromTheRealTempDirThroughThePublicOverload() throws IOException {
-        // The production path: the upload endpoint creates the file with FileUtil.createTempFile (java.io.tmpdir).
-        File src = FileUtil.createTempFile("real.apk");
+        // The production path: the upload endpoint creates the file with FileUtil.createUploadFile (java.io.tmpdir).
+        File src = FileUtil.createUploadFile(customer, "real.apk");
         Files.write(src.toPath(), "payload".getBytes(StandardCharsets.UTF_8));
-        assertTrue(FileUtil.isUploadedTempFile(src.getAbsolutePath()));
+        assertTrue(FileUtil.isUploadedTempFile(src.getAbsolutePath(), customer));
         File moved = FileUtil.moveFile(customer, filesDir, null, src.getAbsolutePath());
         assertEquals(new File(filesDir, "acme/real.apk").getCanonicalFile(), moved.getCanonicalFile());
     }
@@ -92,7 +96,7 @@ public class FileUtilContainmentTest {
 
     @Test
     public void rejectsTraversalOutOfTheUploadDir() {
-        String path = uploadDir + "/../secret.txt";
+        String path = cdir + "/../../secret.txt";
         assertRejected(() -> FileUtil.moveFile(customer, filesDir, null, path, "x.txt", uploadDir));
         assertTrue(secret.exists());
         assertFalse(new File(filesDir, "acme/x.txt").exists());
@@ -106,7 +110,7 @@ public class FileUtilContainmentTest {
 
     @Test
     public void rejectsASymlinkPlantedInTheUploadDir() throws IOException {
-        Path link = uploadDir.resolve("evil" + FileUtil.TEMP_FILE_DELIMITER + "1.temp");
+        Path link = cdir.resolve("evil" + FileUtil.TEMP_FILE_DELIMITER + "1.temp");
         Files.createSymbolicLink(link, secret.toPath());
         assertRejected(() -> FileUtil.moveFile(customer, filesDir, null, link.toString(), "x.txt", uploadDir));
         assertTrue(secret.exists());
@@ -115,7 +119,7 @@ public class FileUtilContainmentTest {
 
     @Test
     public void rejectsAFileInTheUploadDirThatTheServerDidNotCreate() throws IOException {
-        File foreign = uploadDir.resolve("tomcat-work.dat").toFile();
+        File foreign = cdir.resolve("tomcat-work.dat").toFile();
         Files.write(foreign.toPath(), "x".getBytes(StandardCharsets.UTF_8));
         assertRejected(() -> FileUtil.moveFile(customer, filesDir, null, foreign.getAbsolutePath(), "x.txt", uploadDir));
         assertTrue(foreign.exists());
@@ -123,7 +127,7 @@ public class FileUtilContainmentTest {
 
     @Test
     public void rejectsAFileInANestedDirectoryOfTheUploadDir() throws IOException {
-        File nested = uploadDir.resolve("nested").toFile();
+        File nested = cdir.resolve("nested").toFile();
         nested.mkdirs();
         File f = File.createTempFile("a" + FileUtil.TEMP_FILE_DELIMITER, ".temp", nested);
         assertRejected(() -> FileUtil.moveFile(customer, filesDir, null, f.getAbsolutePath(), "x.txt", uploadDir));
@@ -131,16 +135,44 @@ public class FileUtilContainmentTest {
 
     @Test
     public void rejectsNullAndEmptySources() {
-        assertFalse(FileUtil.isUploadedTempFile(null, uploadDir));
-        assertFalse(FileUtil.isUploadedTempFile("", uploadDir));
-        assertFalse(FileUtil.isUploadedTempFile(uploadDir.toString(), uploadDir));
+        assertFalse(FileUtil.isUploadedTempFile(null, customer, uploadDir));
+        assertFalse(FileUtil.isUploadedTempFile("", customer, uploadDir));
+        assertFalse(FileUtil.isUploadedTempFile(cdir.toString(), customer, uploadDir));
     }
 
     @Test
     public void recognisesGenuineUploads() throws IOException {
-        assertTrue(FileUtil.isUploadedTempFile(upload("a.apk").getAbsolutePath(), uploadDir));
-        assertFalse(FileUtil.isUploadedTempFile(secret.getAbsolutePath(), uploadDir));
-        assertFalse(FileUtil.isUploadedTempFile(uploadDir + "/../secret.txt", uploadDir));
+        assertTrue(FileUtil.isUploadedTempFile(upload("a.apk").getAbsolutePath(), customer, uploadDir));
+        assertFalse(FileUtil.isUploadedTempFile(secret.getAbsolutePath(), customer, uploadDir));
+        assertFalse(FileUtil.isUploadedTempFile(cdir + "/../../secret.txt", customer, uploadDir));
+    }
+
+    @Test
+    public void anUploadBelongsToTheCustomerThatMadeIt() throws IOException {
+        Customer other = new Customer();
+        other.setId(2);
+        other.setFilesDir("other");
+        File theirs = upload("theirs.apk"); // made by customer 1
+        assertFalse(FileUtil.isUploadedTempFile(theirs.getAbsolutePath(), other, uploadDir));
+        assertRejected(() -> FileUtil.moveFile(other, filesDir, null, theirs.getAbsolutePath(), null, uploadDir));
+        assertTrue(theirs.exists());
+        assertFalse(new File(filesDir, "other/theirs.apk").exists());
+    }
+
+    @Test
+    public void anUploadDirectlyInTheBaseIsNobodys() throws IOException {
+        File loose = File.createTempFile("x" + FileUtil.TEMP_FILE_DELIMITER, ".temp", uploadDir.toFile());
+        assertFalse(FileUtil.isUploadedTempFile(loose.getAbsolutePath(), customer, uploadDir));
+    }
+
+    @Test
+    public void deleteDoesNotFollowASymlinkedSubdirOut() throws IOException {
+        File outside = tmp.newFolder("outside");
+        File victim = new File(outside, "doc.txt");
+        Files.write(victim.toPath(), "x".getBytes(StandardCharsets.UTF_8));
+        Files.createSymbolicLink(new File(filesDir, "acme/out").toPath(), outside.toPath());
+        assertFalse(FileUtil.deleteFile(customer, filesDir, "out/doc.txt"));
+        assertTrue(victim.exists());
     }
 
     // ---- destination side -------------------------------------------------------------------------------------------

@@ -58,7 +58,12 @@ class PendingResultsTest {
     }
 
     private fun result(id: String, detail: String?) =
-        CommandResult(commandId = id, status = CommandStatus.DONE, detail = detail, completedAt = "2026-10-12T00:00:00Z")
+        CommandResult(
+            commandId = id,
+            status = CommandStatus.DONE,
+            detail = detail,
+            completedAt = "2026-10-12T00:00:00Z",
+        )
 
     @Test
     fun `drain hands out at most one batch by count`() {

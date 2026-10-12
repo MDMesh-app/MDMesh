@@ -86,9 +86,9 @@ class PendingResults(private val backup: Backup = Backup.None) {
         val batch = mutableListOf<CommandResult>()
         var chars = 0L
         for (result in buffer) {
-            if (batch.size >= MAX_BATCH_RESULTS) break
             val size = ProtocolJson.json.encodeToString(CommandResult.serializer(), result).length
-            if (batch.isNotEmpty() && chars + size > MAX_BATCH_CHARS) break
+            val full = batch.size >= MAX_BATCH_RESULTS || (batch.isNotEmpty() && chars + size > MAX_BATCH_CHARS)
+            if (full) break
             batch += result
             chars += size
         }
@@ -143,9 +143,12 @@ class PendingResults(private val backup: Backup = Backup.None) {
         private val SERIALIZER = ListSerializer(CommandResult.serializer())
 
         private fun bounded(result: CommandResult): CommandResult {
-            val length = result.detail?.length ?: return result
-            if (length <= MAX_DETAIL_CHARS) return result
-            return result.copy(status = CommandStatus.FAILED, detail = "result too large ($length chars)")
+            val length = result.detail?.length ?: 0
+            return if (length <= MAX_DETAIL_CHARS) {
+                result
+            } else {
+                result.copy(status = CommandStatus.FAILED, detail = "result too large ($length chars)")
+            }
         }
     }
 }

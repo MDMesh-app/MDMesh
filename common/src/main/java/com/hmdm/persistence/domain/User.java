@@ -22,6 +22,7 @@
 package com.hmdm.persistence.domain;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -58,12 +59,16 @@ public class User implements CustomerData, Serializable {
     @ApiModelProperty("Is password reset required")
     private boolean passwordReset = false;
     @ApiModelProperty("Authentication token")
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String authToken;
     @ApiModelProperty("Password reset token")
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String passwordResetToken;
     @ApiModelProperty("Third party authentication data")
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String authData;
     @ApiModelProperty("Two-factor authentication secret")
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String twoFactorSecret;
     @ApiModelProperty("Is two factor authentication accepted by the user")
     private boolean twoFactorAccepted;
@@ -126,6 +131,7 @@ public class User implements CustomerData, Serializable {
         this.name = name;
     }
 
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     public String getPassword() {
         return this.password;
     }

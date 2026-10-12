@@ -77,4 +77,9 @@ data class AgentDeviceStateDto(
 data class AgentCheckInResponse(
     val protocolVersion: String = ProtocolJson.PROTOCOL_VERSION,
     val commands: List<CommandEnvelope> = emptyList(),
+    /**
+     * How many of the request's `results`, counted from the first, the server took; the agent keeps the rest for the
+     * next check-in. Null (older servers): all of them.
+     */
+    val resultsAccepted: Int? = null,
 )

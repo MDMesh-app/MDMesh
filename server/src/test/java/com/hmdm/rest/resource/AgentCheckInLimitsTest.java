@@ -49,6 +49,7 @@ public class AgentCheckInLimitsTest {
 
     private static final class FakeCommandDAO extends AgentCommandDAO {
         final List<String> details = new ArrayList<>();
+        final List<String> statuses = new ArrayList<>();
         final List<String> storedCaps = new ArrayList<>();
         int capabilityReads;
         FakeCommandDAO() { super(null, null, null, null); }
@@ -56,6 +57,7 @@ public class AgentCheckInLimitsTest {
         @Override public void touchLastUpdate(String n) { }
         @Override public void markResultWithTime(String n, Integer id, String status, String detail, Long at) {
             details.add(detail);
+            statuses.add(status);
         }
         @Override public void expireStale(String n, long a, long b) { }
         @Override public void updateDeviceCapabilities(String n, String json) { storedCaps.add(json); }
@@ -102,8 +104,12 @@ public class AgentCheckInLimitsTest {
         return r;
     }
 
+    private static int accepted(Response r) {
+        return ((com.hmdm.rest.json.agent.AgentCheckInResponse) r.getData()).getResultsAccepted();
+    }
+
     @Test
-    public void capsTheNumberOfResultsWrittenPerCheckIn() {
+    public void capsTheResultsAppliedPerCheckInAndTellsTheAgentHowManyWereTaken() {
         List<AgentCommandResult> results = new ArrayList<>();
         for (int i = 0; i < 10_000; i++) {
             results.add(result(i, null));
@@ -111,8 +117,30 @@ public class AgentCheckInLimitsTest {
         AgentCheckInRequest req = new AgentCheckInRequest();
         req.setResults(results);
 
-        assertEquals(Response.ResponseStatus.OK, checkin(req).getStatus());
+        Response r = checkin(req);
+        assertEquals(Response.ResponseStatus.OK, r.getStatus());
         assertEquals(AgentResource.MAX_RESULTS_PER_CHECKIN, commands.details.size());
+        // The agent keeps (and resends) everything past this count instead of losing it.
+        assertEquals(AgentResource.MAX_RESULTS_PER_CHECKIN, accepted(r));
+    }
+
+    @Test
+    public void reportsEveryResultAcceptedWhenTheyFit() {
+        List<AgentCommandResult> results = new ArrayList<>();
+        results.add(null);
+        results.add(result(1, null));
+        results.add(result(2, "x"));
+        AgentCheckInRequest req = new AgentCheckInRequest();
+        req.setResults(results);
+
+        Response r = checkin(req);
+        assertEquals(3, accepted(r));
+        assertEquals(2, commands.details.size());
+    }
+
+    @Test
+    public void reportsZeroAcceptedWithoutResults() {
+        assertEquals(0, accepted(checkin(new AgentCheckInRequest())));
     }
 
     @Test
@@ -125,12 +153,12 @@ public class AgentCheckInLimitsTest {
         AgentCheckInRequest req = new AgentCheckInRequest();
         req.setResults(results);
 
-        checkin(req);
+        assertEquals(AgentResource.MAX_RESULTS_PER_CHECKIN, accepted(checkin(req)));
         assertEquals(0, commands.details.size());
     }
 
     @Test
-    public void truncatesOversizedResultDetail() {
+    public void storesAnOversizedResultAsAShortFailure() {
         StringBuilder big = new StringBuilder();
         while (big.length() <= AgentResource.MAX_RESULT_DETAIL_CHARS) {
             big.append("0123456789abcdef");
@@ -142,7 +170,10 @@ public class AgentCheckInLimitsTest {
         req.setResults(results);
 
         checkin(req);
-        assertEquals(AgentResource.MAX_RESULT_DETAIL_CHARS, commands.details.get(0).length());
+        assertEquals("failed", commands.statuses.get(0));
+        assertTrue(commands.details.get(0), commands.details.get(0).startsWith("result too large"));
+        assertTrue(commands.details.get(0).length() < 200);
+        assertEquals("done", commands.statuses.get(1));
         assertEquals("installed", commands.details.get(1));
     }
 

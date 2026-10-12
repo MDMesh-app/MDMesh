@@ -88,11 +88,13 @@ public class AgentResource {
     private static final int MAX_EVENTS_PER_CHECKIN = 100;
     private static final int MAX_EVENT_DETAIL_CHARS = 4000;
     private static final int MAX_TELEMETRY_CHARS = 256 * 1024;
-    // Each result is one UPDATE. The agent sends one or two results per delivered command (accepted, then the
-    // outcome), so even a backlog of hundreds of commands fits; anything beyond is ignored.
-    static final int MAX_RESULTS_PER_CHECKIN = 500;
+    // Each result is one UPDATE. Current agents send at most 100 per check-in; the rest of a backlog follows on the
+    // next ones. Past this count the server stops and reports how many it took (resultsAccepted), so the agent
+    // resends the remainder rather than losing it. Older agents that send everything at once never get near it.
+    static final int MAX_RESULTS_PER_CHECKIN = 1000;
     // Details are short diagnostics, except apps.scan / apps.icons, which return JSON: the console asks for icons in
-    // batches of 24 (96 px PNG, base64), well under 1 MiB even for incompressible icons.
+    // batches of 24 (96 px PNG, base64), well under 1 MiB even for incompressible icons. A larger detail is not
+    // stored (cut JSON would be useless); the command is marked failed with a short note instead.
     static final int MAX_RESULT_DETAIL_CHARS = 2 * 1024 * 1024;
 
     private UnsecureDAO unsecureDAO;
@@ -330,13 +332,15 @@ public class AgentResource {
         }
 
         // Ack results from previously-delivered commands.
+        int resultsAccepted = 0;
         if (request.getResults() != null) {
             List<AgentCommandResult> results = request.getResults();
             if (results.size() > MAX_RESULTS_PER_CHECKIN) {
-                logger.warn("Device {} sent {} results in one check-in — only the first {} are applied",
+                logger.info("Device {} sent {} results in one check-in — taking the first {}, the agent resends the rest",
                         deviceNumber, results.size(), MAX_RESULTS_PER_CHECKIN);
                 results = results.subList(0, MAX_RESULTS_PER_CHECKIN);
             }
+            resultsAccepted = results.size();
             for (AgentCommandResult result : results) {
                 if (result == null || result.getCommandId() == null || result.getStatus() == null) {
                     continue;
@@ -351,13 +355,15 @@ public class AgentResource {
                 }
                 // Ownership is enforced inside the UPDATE's WHERE (id + deviceNumber) — no
                 // per-result pre-SELECT needed on the hot path.
+                String status = result.getStatus();
                 String detail = result.getDetail();
                 if (detail != null && detail.length() > MAX_RESULT_DETAIL_CHARS) {
-                    logger.warn("Device {} result detail for command {} oversized ({} chars) — truncated",
+                    logger.warn("Device {} result detail for command {} oversized ({} chars) — stored as failed",
                             deviceNumber, commandId, detail.length());
-                    detail = detail.substring(0, MAX_RESULT_DETAIL_CHARS);
+                    status = "failed";
+                    detail = "result too large (" + detail.length() + " chars)";
                 }
-                commandDAO.markResultWithTime(deviceNumber, commandId, result.getStatus(),
+                commandDAO.markResultWithTime(deviceNumber, commandId, status,
                         detail, System.currentTimeMillis());
             }
         }
@@ -401,7 +407,9 @@ public class AgentResource {
             }
         }
 
-        return Response.OK(new AgentCheckInResponse(commands));
+        AgentCheckInResponse response = new AgentCheckInResponse(commands);
+        response.setResultsAccepted(resultsAccepted);
+        return Response.OK(response);
     }
 
     /**

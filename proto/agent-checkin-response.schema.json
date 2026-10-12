@@ -12,6 +12,11 @@
       "type": "array",
       "description": "Capability-gated commands for this device.",
       "items": { "$ref": "command-envelope.schema.json" }
+    },
+    "resultsAccepted": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "How many of the request's results, counted from the first, the server took. The agent keeps the rest and resends them on its next check-in. Absent from older servers: treat as all."
     }
   }
 }

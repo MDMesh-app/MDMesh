@@ -188,4 +188,44 @@ class CheckInCoordinatorTest {
         assertEquals(listOf("c1"), PendingResults(backup).drain().map { it.commandId })
         cycle.cancel()
     }
+
+    private fun ack(id: String) = CommandResult(commandId = id, status = CommandStatus.DONE, completedAt = "t")
+
+    @Test
+    fun `a result backlog goes out in bounded batches within one run`() = runTest {
+        val api = FakeMdmApi()
+        val pending = PendingResults().apply { add((1..250).map { ack("c$it") }) }
+
+        coordinator(api, pending).runOnce()
+
+        assertEquals(listOf(100, 100, 50), api.checkInRequests.map { it.results.size })
+        assertTrue(pending.drain().isEmpty())
+    }
+
+    @Test
+    fun `results the server did not accept are resent, not lost`() = runTest {
+        val api = FakeMdmApi().apply {
+            checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse(resultsAccepted = 1))
+        }
+        val pending = PendingResults().apply { add(listOf(ack("a"), ack("b"), ack("c"))) }
+
+        coordinator(api, pending).runOnce()
+
+        assertEquals(listOf(listOf("a", "b", "c"), listOf("b", "c"), listOf("c")),
+            api.checkInRequests.map { r -> r.results.map { it.commandId } })
+        assertTrue(pending.drain().isEmpty())
+    }
+
+    @Test
+    fun `stops resending when the server makes no progress`() = runTest {
+        val api = FakeMdmApi().apply {
+            checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse(resultsAccepted = 0))
+        }
+        val pending = PendingResults().apply { add(listOf(ack("a"))) }
+
+        coordinator(api, pending).runOnce()
+
+        assertEquals(1, api.checkInRequests.size)
+        assertEquals(listOf("a"), pending.drain().map { it.commandId })
+    }
 }

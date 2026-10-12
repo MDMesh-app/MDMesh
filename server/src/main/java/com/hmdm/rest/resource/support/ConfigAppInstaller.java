@@ -94,18 +94,28 @@ public class ConfigAppInstaller {
 
     /**
      * Only http(s) URLs are installable by the agent, and the upstream seed ships literal
-     * placeholder URLs (e.g. {@code .../_HMDM_APK_}) that must never reach a device.
+     * placeholder URLs (e.g. {@code .../_HMDM_APK_}) that must never reach a device. Neither may the seed's other
+     * h-mdm.com apps: a deployment updated from the console never ran post_seed.sql, which removes them.
      */
-    private static String firstUsableUrl(Application app) {
+    static String firstUsableUrl(Application app) {
         for (String candidate : new String[]{app.getUrl(), app.getUrlArm64(), app.getUrlArmeabi()}) {
             if (candidate == null) {
                 continue;
             }
             String u = candidate.trim();
-            if ((u.startsWith("https://") || u.startsWith("http://")) && !u.contains("_HMDM_")) {
+            if ((u.startsWith("https://") || u.startsWith("http://")) && !u.contains("_HMDM_") && !isHeadwindHost(u)) {
                 return u;
             }
         }
         return null;
+    }
+
+    private static boolean isHeadwindHost(String url) {
+        try {
+            String host = java.net.URI.create(url).getHost();
+            return host != null && (host.equalsIgnoreCase("h-mdm.com") || host.toLowerCase().endsWith(".h-mdm.com"));
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 }

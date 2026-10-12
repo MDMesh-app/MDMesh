@@ -246,7 +246,12 @@ function LibrarySource({ onDeploy }: { onDeploy: (app: Application) => void }) {
 }
 
 /** Only uploaded apps with something to install (an APK URL or split-bundle parts) are deployable. */
+// Headwind seed apps point at h-mdm.com files that no longer exist. post_seed.sql removes them, but a deployment
+// updated from the console never ran it.
+const HEADWIND_SEED_URL = /^https?:\/\/([^/]*\.)?h-mdm\.com\/|_HMDM_/i;
+
 function isDeployableLibraryApp(app: Application): boolean {
+  if (app.url && HEADWIND_SEED_URL.test(app.url)) return false;
   return appCategory(app) === 'uploaded' && Boolean(app.url || app.parts);
 }
 

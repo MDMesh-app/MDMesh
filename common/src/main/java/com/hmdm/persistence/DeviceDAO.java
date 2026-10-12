@@ -234,6 +234,32 @@ public class DeviceDAO extends AbstractDAO<Device> {
     }
 
     /**
+     * <p>Checks if the current user may see and manage the device: it belongs to the user's customer and, for a user
+     * limited to some device groups, to one of those groups. Same rule as the device list.</p>
+     *
+     * @param device a device, as found by any lookup (may be <code>null</code>).
+     * @return <code>true</code> if the device is accessible to the current user.
+     */
+    public boolean isAccessibleToUser(Device device) {
+        if (device == null || device.getId() == null) {
+            return false;
+        }
+        return SecurityContext.get().getCurrentUser()
+                .filter(u -> u.getCustomerId() == device.getCustomerId())
+                .map(u -> this.mapper.isDeviceAccessibleToUser(device.getId(), u.getId(), u.getCustomerId()))
+                .orElse(false);
+    }
+
+    /**
+     * <p>Gets the numbers of the devices accessible to the current user (see {@link #isAccessibleToUser(Device)}).</p>
+     */
+    public Set<String> getDeviceNumbersAccessibleToUser() {
+        return SecurityContext.get().getCurrentUser()
+                .map(u -> (Set<String>) new HashSet<>(this.mapper.getDeviceNumbersAccessibleToUser(u.getId(), u.getCustomerId())))
+                .orElse(Collections.emptySet());
+    }
+
+    /**
      * <p>Gets the applications installed on specified device.</p>
      *
      * @param deviceId an ID of a device.

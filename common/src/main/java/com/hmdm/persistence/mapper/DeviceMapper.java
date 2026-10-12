@@ -55,6 +55,28 @@ public interface DeviceMapper {
 
     void updateDevice(Device device);
 
+    /** The device-group rule of the device list: all devices of the customer, or those in the user's groups. */
+    String USER_DEVICE_ACCESS =
+            "(users.allDevicesAvailable = TRUE " +
+            " OR EXISTS (SELECT 1 FROM deviceGroups " +
+            "            INNER JOIN userDeviceGroupsAccess access ON access.groupId = deviceGroups.groupId " +
+            "            WHERE deviceGroups.deviceId = devices.id AND access.userId = users.id))";
+
+    @Select({"SELECT COUNT(*) > 0 FROM devices " +
+            "INNER JOIN users ON users.id = #{userId} " +
+            "WHERE devices.id = #{deviceId} AND devices.customerId = #{customerId} " +
+            "AND " + USER_DEVICE_ACCESS})
+    boolean isDeviceAccessibleToUser(@Param("deviceId") int deviceId,
+                                     @Param("userId") int userId,
+                                     @Param("customerId") int customerId);
+
+    @Select({"SELECT devices.number FROM devices " +
+            "INNER JOIN users ON users.id = #{userId} " +
+            "WHERE devices.customerId = #{customerId} " +
+            "AND " + USER_DEVICE_ACCESS})
+    List<String> getDeviceNumbersAccessibleToUser(@Param("userId") int userId,
+                                                  @Param("customerId") int customerId);
+
     Device getDeviceByNumber(@Param("number") String number);
 
     Device getDeviceByOldNumber(@Param("number") String number);

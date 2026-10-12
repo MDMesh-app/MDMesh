@@ -22,6 +22,7 @@
 package com.hmdm.rest.resource;
 
 import com.hmdm.notification.AgentWakeHub;
+import com.hmdm.persistence.DeviceDAO;
 import com.hmdm.persistence.RolloutDAO;
 import com.hmdm.persistence.domain.AgentRollout;
 import com.hmdm.persistence.domain.RolloutDeviceRow;
@@ -66,6 +67,7 @@ public class RolloutResource {
     private static final Logger logger = LoggerFactory.getLogger(RolloutResource.class);
 
     private RolloutDAO rolloutDAO;
+    private DeviceDAO deviceDAO;
     private RolloutRequeuer requeuer;
     private AgentWakeHub wakeHub;
     private String baseUrl;
@@ -74,9 +76,10 @@ public class RolloutResource {
     }
 
     @Inject
-    public RolloutResource(RolloutDAO rolloutDAO, RolloutRequeuer requeuer, AgentWakeHub wakeHub,
+    public RolloutResource(RolloutDAO rolloutDAO, DeviceDAO deviceDAO, RolloutRequeuer requeuer, AgentWakeHub wakeHub,
                            @Named("base.url") String baseUrl) {
         this.rolloutDAO = rolloutDAO;
+        this.deviceDAO = deviceDAO;
         this.requeuer = requeuer;
         this.wakeHub = wakeHub;
         this.baseUrl = baseUrl;
@@ -92,6 +95,16 @@ public class RolloutResource {
             return true;
         }
         logger.warn("Permission denied: {} requires edit_devices (user {})", action,
+                SecurityContext.get().getCurrentUser().map(u -> u.getLogin()).orElse("?"));
+        return false;
+    }
+
+    /** The fleet stage reaches every device of the customer, so it is only for users not limited to some device groups. */
+    private static boolean canReachWholeFleet(String action) {
+        if (SecurityContext.get().getCurrentUser().map(u -> u.isSuperAdmin() || u.isAllDevicesAvailable()).orElse(false)) {
+            return true;
+        }
+        logger.warn("Permission denied: {} requires access to all devices (user {})", action,
                 SecurityContext.get().getCurrentUser().map(u -> u.getLogin()).orElse("?"));
         return false;
     }
@@ -171,10 +184,11 @@ public class RolloutResource {
             return Response.ERROR("error.rollout.active");
         }
 
-        // Persist the canary set (only device numbers that actually belong to this customer).
+        // Persist the canary set (only device numbers of this customer that the user may access).
         List<RolloutDeviceRow> rows = rolloutDAO.listCustomerDevices(cust);
         Set<String> customerNumbers = new HashSet<>();
         for (RolloutDeviceRow row : rows) customerNumbers.add(row.getDeviceNumber());
+        customerNumbers.retainAll(deviceDAO.getDeviceNumbersAccessibleToUser());
         Set<String> canary = new HashSet<>();
         for (String n : body.getCanaryDeviceNumbers()) {
             if (customerNumbers.contains(n)) { rolloutDAO.insertCanary(r.getId(), n); canary.add(n); }
@@ -195,6 +209,7 @@ public class RolloutResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response promote(@PathParam("id") int id) {
         if (!canEditDevices("promote rollout")) return Response.PERMISSION_DENIED();
+        if (!canReachWholeFleet("promote rollout")) return Response.PERMISSION_DENIED();
         Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
         if (!customerId.isPresent()) return Response.PERMISSION_DENIED();
         AgentRollout r = rolloutDAO.findById(id);

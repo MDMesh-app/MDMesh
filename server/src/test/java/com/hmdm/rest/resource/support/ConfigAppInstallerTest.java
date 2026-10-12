@@ -130,21 +130,25 @@ public class ConfigAppInstallerTest {
     }
 
     @Test
-    public void storedHashIsSentAsHexWithoutRehashing() throws Exception {
-        configApp(10, "com.a", "http://mdm.lan:8080/files/a.apk", APK_HASH);
-        assertEquals(1, installer.enqueueConfigApps(device));
-        assertEquals(HEX, payload(0).get("sha256").asText());
-        assertTrue(resolver.asked.isEmpty());
-        assertTrue(dao.savedHashes.isEmpty());
-    }
-
-    @Test
-    public void legacyRowWithoutHashIsHashedOnceAndSaved() throws Exception {
-        configApp(11, "com.b", "http://mdm.lan:8080/files/b.apk", null);
+    public void hostedApkIsHashedLiveEvenWithAStoredHash() throws Exception {
+        // The stored hash is stale (the hosted file was replaced at the same URL): the file decides.
+        configApp(10, "com.a", "http://mdm.lan:8080/files/a.apk", InstallIntegrityStale.APK_HASH);
         assertEquals(1, installer.enqueueConfigApps(device));
         assertEquals(HEX, payload(0).get("sha256").asText());
         assertEquals(1, resolver.asked.size());
-        assertEquals(APK_HASH, dao.savedHashes.get(11));
+    }
+
+    @Test
+    public void legacyHostedRowWithoutHashIsHashedFromTheFile() throws Exception {
+        configApp(11, "com.b", "http://mdm.lan:8080/files/b.apk", null);
+        assertEquals(1, installer.enqueueConfigApps(device));
+        assertEquals(HEX, payload(0).get("sha256").asText());
+        assertTrue(dao.savedHashes.isEmpty());
+    }
+
+    /** A valid but wrong apkHash (sha256 of nothing). */
+    private static final class InstallIntegrityStale {
+        static final String APK_HASH = "47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU=";
     }
 
     @Test
@@ -153,7 +157,7 @@ public class ConfigAppInstallerTest {
         assertEquals(1, installer.enqueueConfigApps(device));
         assertEquals("pending", commands.inserted.get(0).getStatus());
         assertEquals(HEX, payload(0).get("sha256").asText());
-        assertTrue(resolver.asked.isEmpty());
+        assertEquals(1, resolver.asked.size()); // not hosted here, so the stored hash answers
     }
 
     @Test

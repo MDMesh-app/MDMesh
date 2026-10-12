@@ -30,11 +30,21 @@ public final class InstallIntegrity {
         String apkHash(String url) throws Exception;
     }
 
-    /** A source answering from {@code stored} (e.g. the Library's apkHash for that URL) before {@code fallback}. */
-    public static Sha256Source preferStored(StoredHashLookup stored, Sha256Source fallback) {
+    /**
+     * A source hashing a file this server hosts live (so a hosted APK replaced at the same URL never meets a stale
+     * stored hash) and answering for any other URL from {@code stored} (e.g. the Library's apkHash for it).
+     */
+    public static Sha256Source hostedThenStored(Sha256Source hosted, StoredHashLookup stored) {
         return url -> {
-            String hex = normalizeHex(stored.apkHash(url));
-            return hex != null ? hex : fallback.sha256Hex(url);
+            try {
+                return hosted.sha256Hex(url);
+            } catch (Exception notHosted) {
+                String hex = normalizeHex(stored.apkHash(url));
+                if (hex != null) {
+                    return hex;
+                }
+                throw notHosted;
+            }
         };
     }
 

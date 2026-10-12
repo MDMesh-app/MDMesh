@@ -410,7 +410,7 @@ public class ApplicationResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response setApplicationVersionSha256(@PathParam("id") @ApiParam("Application Version ID") Integer id,
                                                 java.util.Map<String, String> body) {
-        if (!SecurityContext.get().hasPermission("edit_applications")) {
+        if (!SecurityContext.get().hasPermission("edit_application_versions")) {
             logger.error("Unauthorized attempt to set an APK hash by user " + SecurityContext.get().getCurrentUserName());
             return Response.PERMISSION_DENIED();
         }

@@ -114,17 +114,24 @@ public class InstallIntegrityTest {
     }
 
     @Test
-    public void aHashStoredForTheUrlIsUsedBeforeTheFallback() throws Exception {
-        FakeSource fallback = new FakeSource();
-        InstallIntegrity.Sha256Source src = InstallIntegrity.preferStored(
-                url -> url.equals("https://apks.example/a.apk") ? B64URL : null, fallback);
-        String out = InstallIntegrity.ensureSha256("{\"url\":\"https://apks.example/a.apk\",\"packageName\":\"x\"}", src);
-        assertEquals(HEX, M.readTree(out).get("sha256").asText());
-        assertTrue(fallback.asked.isEmpty());
+    public void aHostedFileIsHashedLiveAndAStoredHashServesOtherUrls() throws Exception {
+        // FakeSource stands in for the hosted-file hasher: it answers HEX, and fails for a URL containing "down".
+        FakeSource hosted = new FakeSource();
+        String stale = "00".repeat(32);
+        InstallIntegrity.Sha256Source src = InstallIntegrity.hostedThenStored(hosted, url -> stale);
+        String out = InstallIntegrity.ensureSha256("{\"url\":\"http://lan/files/b.apk\",\"packageName\":\"x\"}", src);
+        assertEquals("a stored hash must not shadow the hosted file's live hash", HEX, M.readTree(out).get("sha256").asText());
 
-        out = InstallIntegrity.ensureSha256("{\"url\":\"http://lan/files/b.apk\",\"packageName\":\"x\"}", src);
+        src = InstallIntegrity.hostedThenStored(hosted, url -> url.equals("https://down.example/a.apk") ? B64URL : null);
+        out = InstallIntegrity.ensureSha256("{\"url\":\"https://down.example/a.apk\",\"packageName\":\"x\"}", src);
         assertEquals(HEX, M.readTree(out).get("sha256").asText());
-        assertEquals(1, fallback.asked.size());
+
+        try {
+            InstallIntegrity.ensureSha256("{\"url\":\"https://down.example/z.apk\",\"packageName\":\"x\"}", src);
+            fail("no hosted file and no stored hash");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains("connection refused"));
+        }
     }
 
     @Test

@@ -36,7 +36,7 @@ import com.hmdm.rest.json.Response;
 import com.hmdm.rest.json.agent.CommandHistoryView;
 import com.hmdm.rest.json.agent.ConfigStatusView;
 import com.hmdm.rest.json.agent.ConfigSyncSummary;
-import com.hmdm.rest.resource.support.ApkHashResolver;
+import com.hmdm.rest.resource.support.InstallHashes;
 import com.hmdm.rest.resource.support.ConfigReconciler;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.util.AgentCapabilityTokens;
@@ -87,7 +87,7 @@ public class AgentAdminResource {
     private AgentWakeHub wakeHub;
     private com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller;
     private ConfigReconciler configReconciler;
-    private ApkHashResolver hashResolver;
+    private InstallHashes installHashes;
 
     /**
      * <p>A constructor required by Swagger.</p>
@@ -102,14 +102,14 @@ public class AgentAdminResource {
                               AgentWakeHub wakeHub,
                               com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller,
                               ConfigReconciler configReconciler,
-                              ApkHashResolver hashResolver) {
+                              InstallHashes installHashes) {
         this.tokenDAO = tokenDAO;
         this.commandDAO = commandDAO;
         this.unsecureDAO = unsecureDAO;
         this.wakeHub = wakeHub;
         this.configAppInstaller = configAppInstaller;
         this.configReconciler = configReconciler;
-        this.hashResolver = hashResolver;
+        this.installHashes = installHashes;
     }
 
     /**
@@ -223,7 +223,7 @@ public class AgentAdminResource {
 
         final String payload;
         try {
-            payload = InstallIntegrity.forCommand(body.getType(), body.getPayload(), hashSource(customerId.get()));
+            payload = InstallIntegrity.forCommand(body.getType(), body.getPayload(), installHashes.forCustomer(customerId.get()));
         } catch (IllegalArgumentException e) {
             logger.warn("Agent command {} for device {} rejected: {}", body.getType(), deviceId, e.getMessage());
             return Response.ERROR("Cannot install: " + e.getMessage());
@@ -244,11 +244,6 @@ public class AgentAdminResource {
         logger.info("Agent command {} queued for device {}", command.getId(), deviceId);
         // Payload-free view (same shape as the history): never echo a payload back to the console.
         return Response.OK(CommandHistoryView.from(command));
-    }
-
-    /** A missing sha256 comes from the customer's Library (the version with that URL), else from a file hosted here. */
-    private InstallIntegrity.Sha256Source hashSource(int customerId) {
-        return InstallIntegrity.preferStored(url -> unsecureDAO.findApkHashByUrl(customerId, url), hashResolver);
     }
 
     /** Command types that must never be issued in bulk (destructive group). Lowercased — matched
@@ -287,7 +282,7 @@ public class AgentAdminResource {
         // Hashed once for the whole fan-out: every device verifies the same bytes.
         final String payload;
         try {
-            payload = InstallIntegrity.forCommand(type, req.getCommand().getPayload(), hashSource(customerId.get()));
+            payload = InstallIntegrity.forCommand(type, req.getCommand().getPayload(), installHashes.forCustomer(customerId.get()));
         } catch (IllegalArgumentException e) {
             logger.warn("Bulk command {} rejected: {}", type, e.getMessage());
             return Response.ERROR("Cannot install: " + e.getMessage());

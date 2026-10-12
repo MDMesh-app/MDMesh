@@ -194,9 +194,11 @@ function LibrarySource({ onDeploy }: { onDeploy: (app: Application) => void }) {
   // An APK MDMesh doesn't host installs only with a known SHA-256: set it on the app's latest single-APK version.
   async function editSha256(app: Application) {
     try {
-      const latest = [...(await getVersions(app.id))]
-        .filter((v) => v.url)
-        .sort((a, b) => (b.versionCode ?? 0) - (a.versionCode ?? 0))[0];
+      // The version the app installs: its latest version (the one configurations and Deploy use), else the one
+      // carrying the app's URL.
+      const versions = await getVersions(app.id);
+      const latest = versions.find((v) => v.id === app.latestVersion && v.url)
+        ?? versions.find((v) => v.url && v.url === app.url);
       if (!latest) {
         toast.push('err', 'No single APK', 'This app has no single-APK version to set a SHA-256 on.');
         return;

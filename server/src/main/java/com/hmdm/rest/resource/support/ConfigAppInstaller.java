@@ -117,27 +117,17 @@ public class ConfigAppInstaller {
     }
 
     /**
-     * The app's install payload with a SHA-256 on the APK (or every bundle part). The version's stored hash is
-     * reused; a version of an APK uploaded here without one (a row from before hashes were required) is hashed once
-     * from the files directory and the result saved on the version. Nothing is downloaded to be hashed.
+     * The app's install payload with a SHA-256 on the APK (or every bundle part): an APK uploaded here is hashed from
+     * the files directory; any other URL takes the version's stored hash. Nothing is downloaded to be hashed.
      */
     private String installPayload(Application app, String url) {
         ApplicationVersion version = app.getUsedVersionId() == null ? null
                 : unsecureDAO.findApplicationVersionById(app.getUsedVersionId());
         String versionUrl = version == null || version.getUrl() == null ? null : version.getUrl().trim();
-        String stored = version == null ? null : InstallIntegrity.normalizeHex(version.getApkHash());
+        String stored = version == null ? null : version.getApkHash();
         String raw = InstallPayloadBuilder.build(app.getPkg().trim(), app.getVersionCode(), url, app.getParts());
-        return InstallIntegrity.ensureSha256(raw, u -> {
-            boolean versionApk = u.equals(versionUrl);
-            if (versionApk && stored != null) {
-                return stored;
-            }
-            String hex = hashResolver.sha256Hex(u);
-            if (versionApk) {
-                unsecureDAO.saveApkFileHash(version.getId(), InstallIntegrity.toApkHash(hex));
-            }
-            return hex;
-        });
+        return InstallIntegrity.ensureSha256(raw,
+                InstallIntegrity.hostedThenStored(hashResolver, u -> u.equals(versionUrl) ? stored : null));
     }
 
     /**

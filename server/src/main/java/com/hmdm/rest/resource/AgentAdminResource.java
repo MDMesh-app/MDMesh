@@ -223,7 +223,7 @@ public class AgentAdminResource {
 
         final String payload;
         try {
-            payload = InstallIntegrity.forCommand(body.getType(), body.getPayload(), hashResolver);
+            payload = InstallIntegrity.forCommand(body.getType(), body.getPayload(), hashSource(customerId.get()));
         } catch (IllegalArgumentException e) {
             logger.warn("Agent command {} for device {} rejected: {}", body.getType(), deviceId, e.getMessage());
             return Response.ERROR("Cannot install: " + e.getMessage());
@@ -244,6 +244,11 @@ public class AgentAdminResource {
         logger.info("Agent command {} queued for device {}", command.getId(), deviceId);
         // Payload-free view (same shape as the history): never echo a payload back to the console.
         return Response.OK(CommandHistoryView.from(command));
+    }
+
+    /** A missing sha256 comes from the customer's Library (the version with that URL), else from a file hosted here. */
+    private InstallIntegrity.Sha256Source hashSource(int customerId) {
+        return InstallIntegrity.preferStored(url -> unsecureDAO.findApkHashByUrl(customerId, url), hashResolver);
     }
 
     /** Command types that must never be issued in bulk (destructive group). Lowercased — matched
@@ -282,7 +287,7 @@ public class AgentAdminResource {
         // Hashed once for the whole fan-out: every device verifies the same bytes.
         final String payload;
         try {
-            payload = InstallIntegrity.forCommand(type, req.getCommand().getPayload(), hashResolver);
+            payload = InstallIntegrity.forCommand(type, req.getCommand().getPayload(), hashSource(customerId.get()));
         } catch (IllegalArgumentException e) {
             logger.warn("Bulk command {} rejected: {}", type, e.getMessage());
             return Response.ERROR("Cannot install: " + e.getMessage());

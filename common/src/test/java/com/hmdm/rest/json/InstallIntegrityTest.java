@@ -114,6 +114,20 @@ public class InstallIntegrityTest {
     }
 
     @Test
+    public void aHashStoredForTheUrlIsUsedBeforeTheFallback() throws Exception {
+        FakeSource fallback = new FakeSource();
+        InstallIntegrity.Sha256Source src = InstallIntegrity.preferStored(
+                url -> url.equals("https://apks.example/a.apk") ? B64URL : null, fallback);
+        String out = InstallIntegrity.ensureSha256("{\"url\":\"https://apks.example/a.apk\",\"packageName\":\"x\"}", src);
+        assertEquals(HEX, M.readTree(out).get("sha256").asText());
+        assertTrue(fallback.asked.isEmpty());
+
+        out = InstallIntegrity.ensureSha256("{\"url\":\"http://lan/files/b.apk\",\"packageName\":\"x\"}", src);
+        assertEquals(HEX, M.readTree(out).get("sha256").asText());
+        assertEquals(1, fallback.asked.size());
+    }
+
+    @Test
     public void onlyAppInstallIsTouched() throws Exception {
         String p = "{\"policy\":\"wifi\",\"value\":false}";
         assertSame(p, InstallIntegrity.forCommand("policy.apply", p, new FakeSource()));

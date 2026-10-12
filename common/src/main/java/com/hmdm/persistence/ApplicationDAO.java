@@ -322,9 +322,20 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
      * @throws DuplicateApplicationException if another application record with same package ID and version already
      *         exists either for current or master customer account.
      */
-    /** Stores the SHA-256 (apkHash form, see {@code InstallIntegrity.toApkHash}) of a version's APK. */
-    public void saveApkHash(Integer applicationVersionId, String apkHash) {
+    /**
+     * Stores the SHA-256 (apkHash form, see {@code InstallIntegrity.toApkHash}) of a version's APK, for a version of an
+     * application the current user may change. @return false when there is no such version.
+     */
+    public boolean saveApkHash(Integer applicationVersionId, String apkHash) {
+        final ApplicationVersion version = applicationVersionId == null ? null
+                : this.mapper.findVersionById(applicationVersionId);
+        if (version == null) {
+            return false;
+        }
+        getSingleRecord(() -> this.mapper.findById(version.getApplicationId()),
+                SecurityException::onApplicationAccessViolation);
         this.mapper.saveApkFileHash(applicationVersionId, apkHash);
+        return true;
     }
 
     @Transactional

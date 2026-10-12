@@ -164,7 +164,7 @@ public class ConfigAppInstallerTest {
         AgentCommand c = commands.inserted.get(0);
         assertEquals("failed", c.getStatus());
         assertTrue(c.getDetail(), c.getDetail().contains("no sha256 for http://apks.lan/c.apk"));
-        assertTrue(c.getDetail(), c.getDetail().contains("add it in the Library"));
+        assertTrue(c.getDetail(), c.getDetail().contains("set it on the Library app"));
         assertEquals(c.getCreatedAt(), c.getCompletedAt());
         assertTrue(dao.savedHashes.isEmpty());
     }

@@ -85,6 +85,11 @@ export async function getVersions(appId: number): Promise<ApplicationVersion[]> 
   return apiClient.get<ApplicationVersion[]>(`/private/applications/${appId}/versions`);
 }
 
+/** Store the hex SHA-256 of a version's APK (needed before devices install an APK MDMesh doesn't host). */
+export async function setVersionSha256(versionId: number, sha256: string): Promise<void> {
+  await apiClient.put(`/private/applications/versions/${versionId}/sha256`, { sha256 });
+}
+
 /** Remove a Library record and its server-hosted APK files (unless another entry shares them). This never sends an uninstall command. */
 export async function deleteApplication(appId: number): Promise<void> {
   await apiClient.del(`/private/applications/${appId}`);

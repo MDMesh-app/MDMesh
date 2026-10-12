@@ -32,8 +32,8 @@ import java.security.NoSuchAlgorithmException;
 public class ApkHashResolver implements InstallIntegrity.Sha256Source {
 
     /** Why an APK hosted elsewhere has no hash; follows "no sha256 for URL: ". */
-    static final String NOT_HOSTED = "it is not hosted by this server, so its SHA-256 must be given — "
-            + "add it in the Library (or upload the APK)";
+    static final String NOT_HOSTED = "it is not hosted by this server and no SHA-256 is known for it — set it on "
+            + "the Library app (SHA-256…), enter it with the URL under Custom APK, or upload the APK";
 
     private final File filesDirectory;
     private final String[] localPrefixes;

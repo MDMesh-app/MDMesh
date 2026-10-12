@@ -24,6 +24,20 @@ public final class InstallIntegrity {
 
     public static final String INSTALL_TYPE = "app.install";
 
+    /** A stored hash (in any form {@link #normalizeHex} reads) for a URL, or null. */
+    @FunctionalInterface
+    public interface StoredHashLookup {
+        String apkHash(String url) throws Exception;
+    }
+
+    /** A source answering from {@code stored} (e.g. the Library's apkHash for that URL) before {@code fallback}. */
+    public static Sha256Source preferStored(StoredHashLookup stored, Sha256Source fallback) {
+        return url -> {
+            String hex = normalizeHex(stored.apkHash(url));
+            return hex != null ? hex : fallback.sha256Hex(url);
+        };
+    }
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private InstallIntegrity() {}

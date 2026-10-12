@@ -12,6 +12,7 @@ import {
   uploadBundle,
   commitUpload,
   saveAndroidApplication,
+  setVersionSha256,
   type Application,
   type BundleUploadResult,
 } from '../api/applications';
@@ -190,6 +191,33 @@ function LibrarySource({ onDeploy }: { onDeploy: (app: Application) => void }) {
     }
   }
 
+  // An APK MDMesh doesn't host installs only with a known SHA-256: set it on the app's latest single-APK version.
+  async function editSha256(app: Application) {
+    try {
+      const latest = [...(await getVersions(app.id))]
+        .filter((v) => v.url)
+        .sort((a, b) => (b.versionCode ?? 0) - (a.versionCode ?? 0))[0];
+      if (!latest) {
+        toast.push('err', 'No single APK', 'This app has no single-APK version to set a SHA-256 on.');
+        return;
+      }
+      const entered = window.prompt(
+        `SHA-256 of ${latest.url} (64 hex characters).${latest.apkHash ? ' A hash is already stored; a new one replaces it.' : ''}`,
+        '',
+      );
+      if (entered == null) return;
+      const s = entered.trim();
+      if (!SHA256_HEX.test(s)) {
+        toast.push('err', 'Invalid SHA-256', 'Enter the APK’s SHA-256 as 64 hex characters.');
+        return;
+      }
+      await setVersionSha256(latest.id, s.toLowerCase());
+      toast.push('ok', 'SHA-256 saved', `${app.name} can now be installed; devices verify the APK against it.`);
+    } catch (e) {
+      toast.push('err', 'Could not save the SHA-256', e instanceof Error ? e.message : '');
+    }
+  }
+
   return (
     <>
       <div className="dv-search" style={{ width: 260, marginBottom: 16 }}>
@@ -227,6 +255,11 @@ function LibrarySource({ onDeploy }: { onDeploy: (app: Application) => void }) {
                 <button className="btn btn-sm btn-primary" onClick={() => onDeploy(a)}>
                   Deploy
                 </button>
+                {a.url && !a.commonApplication && (
+                  <button className="btn btn-sm" title="Set the APK's SHA-256" onClick={() => void editSha256(a)}>
+                    SHA-256…
+                  </button>
+                )}
                 {(!a.commonApplication || user?.superAdmin) && (
                   <button
                     className="btn btn-sm btn-danger"
@@ -636,6 +669,7 @@ function CustomSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
 }
 
 function FDroidSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
+  const toast = useToast();
   const [q, setQ] = useState('');
   const [apps, setApps] = useState<FDroidApp[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -662,14 +696,17 @@ function FDroidSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
   }, [q]);
 
   function deploy(a: FDroidApp) {
+    if (!a.sha256) {
+      toast.push('err', 'No SHA-256 from F-Droid', 'The F-Droid index lists no SHA-256 for this APK, so devices could not verify it.');
+      return;
+    }
     onDeploy({
       label: a.name,
       packageName: a.packageName,
       url: a.apkUrl,
       versionCode: a.versionCode,
-      // The hex sha256 from the F-Droid index pins the APK the admin picked; the agent refuses an
-      // install without one (the server rejects an F-Droid entry whose index has none).
-      sha256: a.sha256 || undefined,
+      // The hex sha256 from the F-Droid index pins the APK the admin picked.
+      sha256: a.sha256,
     });
   }
 

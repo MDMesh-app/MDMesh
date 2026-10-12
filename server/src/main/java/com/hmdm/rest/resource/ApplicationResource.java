@@ -400,6 +400,41 @@ public class ApplicationResource {
 
     // =================================================================================================================
     @ApiOperation(
+            value = "Set the APK SHA-256 of an application version",
+            notes = "Stores the hex SHA-256 of the version's APK (an APK this server does not host needs one before "
+                    + "devices install it). Body: {\"sha256\": \"<64 hex>\"}."
+    )
+    @PUT
+    @Path("/versions/{id}/sha256")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response setApplicationVersionSha256(@PathParam("id") @ApiParam("Application Version ID") Integer id,
+                                                java.util.Map<String, String> body) {
+        if (!SecurityContext.get().hasPermission("edit_applications")) {
+            logger.error("Unauthorized attempt to set an APK hash by user " + SecurityContext.get().getCurrentUserName());
+            return Response.PERMISSION_DENIED();
+        }
+        String sha = body == null ? null : body.get("sha256");
+        if (sha == null || !sha.trim().matches("[0-9a-fA-F]{64}")) {
+            return Response.ERROR("The APK's SHA-256 must be 64 hex characters");
+        }
+        try {
+            if (!this.applicationDAO.saveApkHash(id, com.hmdm.rest.json.InstallIntegrity.toApkHash(sha))) {
+                return Response.ERROR("No such application version");
+            }
+            logger.info("APK SHA-256 of application version #{} set by user {}", id,
+                    SecurityContext.get().getCurrentUserName());
+            return Response.OK();
+        } catch (SecurityException e) {
+            return Response.PERMISSION_DENIED();
+        } catch (Exception e) {
+            logger.error("Failed to set the APK SHA-256 of application version #{}", id, e);
+            return Response.INTERNAL_ERROR();
+        }
+    }
+
+    // =================================================================================================================
+    @ApiOperation(
             value = "Delete application version",
             notes = "Delete an existing application version"
     )

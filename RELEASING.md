@@ -16,7 +16,8 @@ what catches a server change that breaks a native upgrade:
 gh workflow run t2-native.yml --ref main
 ```
 
-The tag must point at a commit on `main`: the workflow's `gate` job checks that first, and the `release` job (the
+The tag must point at a commit on `main` (its first-parent history) and be newer than every earlier release: the
+workflow's `gate` job checks that first, and the `release` job (the
 only one with the signing secrets) waits for a reviewer's approval in the `release` environment (setup step 4).
 
 `.github/workflows/release.yml` then: runs the agent unit tests + builds the **signed** release APK,
@@ -98,7 +99,9 @@ come from the annotated tag message (`git tag -a vX.Y.Z -m "..."`) plus GitHub's
 The release job runs in the `release` environment, so the repo settings decide who can publish:
 
 - **Settings → Environments → New environment `release`:**
-  - **Required reviewers:** at least one maintainer; tick **Prevent self-review**.
+  - **Required reviewers:** at least one maintainer; tick **Prevent self-review**. Before approving, the reviewer
+    opens the run and confirms the `gate` job ran and passed (tag on main's first-parent history, version newer than
+    every earlier release) and that the tag is the one they expect.
   - **Deployment branches and tags:** *Selected branches and tags* → add a **tag** rule `v*`.
   - **Environment secrets:** the six secrets above (`MDM_RELEASE_STORE_B64`, `MDM_RELEASE_STORE_PASSWORD`,
     `MDM_RELEASE_KEY_ALIAS`, `MDM_RELEASE_KEY_PASSWORD`, `MINISIGN_SECRET_KEY`, `MINISIGN_PASSWORD`). Then delete any

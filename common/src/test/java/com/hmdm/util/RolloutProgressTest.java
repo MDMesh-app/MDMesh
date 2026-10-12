@@ -114,13 +114,16 @@ public class RolloutProgressTest {
     }
 
     @Test
-    public void requeuesOnlyWhenNothingIsInFlightOrItExpired() {
-        assertTrue(RolloutProgress.shouldRequeue(null));        // never queued (e.g. skipped at create)
-        assertTrue(RolloutProgress.shouldRequeue("expired"));   // the result was lost; the server gave up on it
-        assertFalse(RolloutProgress.shouldRequeue("pending"));
-        assertFalse(RolloutProgress.shouldRequeue("delivered"));
-        assertFalse(RolloutProgress.shouldRequeue("done"));     // installed; the new version reports on restart
-        assertFalse(RolloutProgress.shouldRequeue("failed"));   // retrying a failing install every check-in would loop
-        assertFalse(RolloutProgress.shouldRequeue("unsupported"));
+    public void requeuesWhenNothingIsInFlightOrItExpiredOrFailedAFewTimes() {
+        assertTrue(RolloutProgress.shouldRequeue(null, 0));        // never queued (e.g. skipped at create)
+        assertTrue(RolloutProgress.shouldRequeue("expired", 1));   // the result was lost; the server gave up on it
+        assertTrue(RolloutProgress.shouldRequeue("expired", 5));
+        assertTrue(RolloutProgress.shouldRequeue("failed", 1));    // a transient download error is retried
+        assertTrue(RolloutProgress.shouldRequeue("failed", 2));
+        assertFalse(RolloutProgress.shouldRequeue("failed", 3));   // but not on every check-in forever
+        assertFalse(RolloutProgress.shouldRequeue("pending", 1));
+        assertFalse(RolloutProgress.shouldRequeue("delivered", 1));
+        assertFalse(RolloutProgress.shouldRequeue("done", 1));     // installed; the new version reports on restart
+        assertFalse(RolloutProgress.shouldRequeue("unsupported", 1));
     }
 }

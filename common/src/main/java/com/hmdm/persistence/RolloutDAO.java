@@ -84,8 +84,8 @@ public class RolloutDAO {
         return mapper.isCanary(rolloutId, deviceNumber);
     }
 
-    /** The device's latest app.install commands, newest first. */
-    public List<AgentCommand> listInstalls(String deviceNumber) {
-        return mapper.listInstalls(deviceNumber);
+    /** The device's app.install commands created at or after {@code since}, newest first. */
+    public List<AgentCommand> listInstallsSince(String deviceNumber, long since) {
+        return mapper.listInstallsSince(deviceNumber, since);
     }
 }

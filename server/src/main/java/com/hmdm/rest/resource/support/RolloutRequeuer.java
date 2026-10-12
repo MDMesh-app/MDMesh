@@ -16,8 +16,9 @@ import javax.inject.Singleton;
 
 /**
  * Queues a rollout's {@code app.install}, and from every check-in queues it again for a device the active rollout
- * still targets when its last one expired (the result was lost: the agent died mid-install, say) or none was ever
- * queued. Without this, such a device shows "queued" forever, since the rollout only enqueues on create and promote.
+ * still targets when its last one expired (the result was lost: the agent died mid-install, say), failed fewer than
+ * {@link RolloutProgress#MAX_ATTEMPTS} times, or was never queued. Without this, such a device shows "queued" forever,
+ * since the rollout only enqueues on create and promote, and v0.3.2-and-older agents can lose a result.
  */
 @Singleton
 public class RolloutRequeuer {
@@ -53,22 +54,21 @@ public class RolloutRequeuer {
             if (r == null) return false;
             String number = device.getNumber();
             if (!"fleet".equals(r.getStage()) && !rolloutDAO.isCanary(r.getId(), number)) return false;
-            // The newest command for this rollout decides; any in-flight install of the package (even one queued
-            // before the rollout) means the device is already installing it.
-            long since = r.getCreatedAt() == null ? 0L : r.getCreatedAt();
+            // Steady state stays cheap: an updated or ineligible device stops here, before its commands are read.
+            if (RolloutProgress.classify(r.getTargetVersion(), rolloutDAO.findDeviceRow(number), false)
+                    != RolloutProgress.Status.OUTSTANDING) return false;
+            // This rollout's commands for the device (queued since it was created); the newest one decides.
             String latest = null;
-            boolean inFlight = false;
-            for (AgentCommand c : rolloutDAO.listInstalls(number)) {   // newest first
+            int attempts = 0;
+            for (AgentCommand c : rolloutDAO.listInstallsSince(number, r.getCreatedAt() == null ? 0L : r.getCreatedAt())) {
                 if (!RolloutProgress.isFor(r.getPackageName(), c)) continue;
-                inFlight |= "pending".equals(c.getStatus()) || "delivered".equals(c.getStatus());
-                if (latest == null && c.getCreatedAt() != null && c.getCreatedAt() >= since) latest = c.getStatus();
+                if (latest == null) latest = c.getStatus();   // newest first
+                attempts++;
             }
-            if (RolloutProgress.classify(r.getTargetVersion(), rolloutDAO.findDeviceRow(number), inFlight)
-                    != RolloutProgress.Status.OUTSTANDING || !RolloutProgress.shouldRequeue(latest)) {
-                return false;
-            }
+            if (!RolloutProgress.shouldRequeue(latest, attempts)) return false;
             enqueue(r, number, now);
-            logger.info("Rollout {}: app.install queued again for {} (last: {})", r.getId(), number, latest == null ? "none" : latest);
+            logger.info("Rollout {}: app.install queued again for {} (last: {}, attempts: {})", r.getId(), number,
+                    latest == null ? "none" : latest, attempts);
             return true;
         } catch (Exception e) {
             logger.warn("rollout requeue skipped for {}", device == null ? "?" : device.getNumber(), e);

@@ -73,6 +73,6 @@ public interface RolloutMapper {
     boolean isCanary(@Param("rolloutId") int rolloutId, @Param("deviceNumber") String deviceNumber);
 
     @Select({"SELECT * FROM agentCommand WHERE deviceNumber = #{deviceNumber} AND type = 'app.install' " +
-            "ORDER BY id DESC LIMIT 50"})
-    List<AgentCommand> listInstalls(@Param("deviceNumber") String deviceNumber);
+            "AND createdAt >= #{since} ORDER BY id DESC"})
+    List<AgentCommand> listInstallsSince(@Param("deviceNumber") String deviceNumber, @Param("since") long since);
 }

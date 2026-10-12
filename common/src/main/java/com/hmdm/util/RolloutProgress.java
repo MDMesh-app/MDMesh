@@ -94,12 +94,18 @@ public final class RolloutProgress {
         }
     }
 
+    /** Install attempts per device per rollout after which a failed one is no longer retried. */
+    public static final int MAX_ATTEMPTS = 3;
+
     /** Whether an OUTSTANDING device gets the update queued again, given the status of its newest command for this
-     *  rollout (null = none). Only a never-queued or expired one is re-sent: an expired command's result was lost (the
-     *  agent died mid-install, say) and nothing else would ever retry it. A failed one is not, so a broken install does
-     *  not repeat on every check-in. */
-    public static boolean shouldRequeue(String latestStatus) {
-        return latestStatus == null || "expired".equals(latestStatus);
+     *  rollout (null = none) and how many it has had. A never-queued or expired one is re-sent: an expired command's
+     *  result was lost (the agent died mid-install, say) and nothing else would ever retry it. A failed one is retried
+     *  up to {@link #MAX_ATTEMPTS} in all (a download can fail once), not forever on every check-in. */
+    public static boolean shouldRequeue(String latestStatus, int attempts) {
+        if (latestStatus == null || "expired".equals(latestStatus)) {
+            return true;
+        }
+        return "failed".equals(latestStatus) && attempts < MAX_ATTEMPTS;
     }
 
     /** Tally a cohort. {@code pendingDeviceNumbers} = the set with an outstanding app.install. */

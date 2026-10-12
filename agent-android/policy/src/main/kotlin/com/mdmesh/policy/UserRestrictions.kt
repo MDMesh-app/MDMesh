@@ -23,6 +23,9 @@ object UserRestrictions {
     const val DISALLOW_FACTORY_RESET = "no_factory_reset"
     const val DISALLOW_SAFE_BOOT = "no_safe_boot"
 
+    /** API 23 (M): the level that added `DISALLOW_SAFE_BOOT`. */
+    private const val SAFE_BOOT_MIN_SDK = 23
+
     /**
      * The set of `DISALLOW_*` restriction keys backing a capability, or `null` if
      * the capability is not implemented via user restrictions.
@@ -55,7 +58,7 @@ object UserRestrictions {
         "bluetooth" -> 26
         "usbStorage" -> 21
         "factoryReset" -> 21
-        "safeBoot" -> 23
+        "safeBoot" -> SAFE_BOOT_MIN_SDK
         else -> null
     }
 }

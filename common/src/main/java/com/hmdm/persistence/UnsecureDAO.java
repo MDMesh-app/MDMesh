@@ -586,7 +586,7 @@ public class UnsecureDAO {
         newDevice.setCustomerId(customerId);
         newDevice.setConfigurationId(configurationId);
         Integer groupId = settings == null ? null : settings.getNewDeviceGroupId();
-        if (groupId != null) {
+        if (isCustomerGroup(groupId, customerId)) {
             List<LookupItem> groups = new LinkedList<>();
             groups.add(new LookupItem(groupId, ""));
             newDevice.setGroups(groups);
@@ -597,6 +597,19 @@ public class UnsecureDAO {
         logger.info("New device {} added (customer {}, configuration {})", deviceId, customerId, configurationId);
 
         return getDeviceByNumber(deviceId);
+    }
+
+    /** A default group from the settings is applied only when it belongs to the device's customer. */
+    private boolean isCustomerGroup(Integer groupId, int customerId) {
+        if (groupId == null) {
+            return false;
+        }
+        final Group group = this.deviceMapper.getGroupById(groupId);
+        if (group == null || group.getCustomerId() != customerId) {
+            logger.warn("Default group {} does not belong to customer {}, group ignored", groupId, customerId);
+            return false;
+        }
+        return true;
     }
 
     private boolean isCustomerConfiguration(Integer configurationId, int customerId) {
@@ -613,7 +626,7 @@ public class UnsecureDAO {
             newDevice.setCustomerId(settings.getCustomerId());
             newDevice.setConfigurationId(settings.getNewDeviceConfigurationId());
             Integer groupId = settings.getNewDeviceGroupId();
-            if (groupId != null) {
+            if (isCustomerGroup(groupId, settings.getCustomerId())) {
                 List<LookupItem> groups = new LinkedList<>();
                 groups.add(new LookupItem(groupId, ""));
                 newDevice.setGroups(groups);
@@ -712,7 +725,7 @@ public class UnsecureDAO {
             }
         } else if (settings != null) {
             Integer groupId = settings.getNewDeviceGroupId();
-            if (groupId != null) {
+            if (isCustomerGroup(groupId, customerId)) {
                 List<LookupItem> groups = new LinkedList<>();
                 groups.add(new LookupItem(groupId, ""));
                 newDevice.setGroups(groups);

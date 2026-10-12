@@ -168,6 +168,9 @@ public interface DeviceMapper {
     boolean isCustomerConfiguration(@Param("configurationId") int configurationId,
                                     @Param("customerId") int customerId);
 
+    @Select({"SELECT COUNT(*) > 0 FROM groups WHERE id = #{groupId} AND customerId = #{customerId}"})
+    boolean isCustomerGroup(@Param("groupId") int groupId, @Param("customerId") int customerId);
+
     @Update({"UPDATE devices SET description = #{description} WHERE id = #{deviceId}"})
     void updateDeviceDescription(@Param("deviceId") Integer deviceId,
                                  @Param("description") String newDeviceDesc);

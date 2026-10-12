@@ -84,6 +84,11 @@ public class CommonDAO extends AbstractDAO<Settings> {
                     && !this.deviceMapper.isCustomerConfiguration(s.getNewDeviceConfigurationId(), s.getCustomerId())) {
                 throw SecurityException.onConfigurationAccessViolation(s.getNewDeviceConfigurationId());
             }
+            // ... and into a group of this customer
+            if (s.getNewDeviceGroupId() != null
+                    && !this.deviceMapper.isCustomerGroup(s.getNewDeviceGroupId(), s.getCustomerId())) {
+                throw SecurityException.onCustomerDataAccessViolation(s.getNewDeviceGroupId(), "group");
+            }
             this.mapper.saveMiscSettings(s);
         });
     }

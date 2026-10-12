@@ -1,0 +1,228 @@
+package com.hmdm.rest.resource;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hmdm.persistence.AgentCommandDAO;
+import com.hmdm.persistence.UnsecureDAO;
+import com.hmdm.persistence.domain.AgentCommand;
+import com.hmdm.persistence.domain.Application;
+import com.hmdm.persistence.domain.Configuration;
+import com.hmdm.persistence.domain.Device;
+import com.hmdm.persistence.domain.DeviceState;
+import com.hmdm.rest.json.Response;
+import com.hmdm.rest.json.agent.AgentCapabilities;
+import com.hmdm.rest.json.agent.AgentCheckInRequest;
+import com.hmdm.rest.json.agent.AgentCheckInResponse;
+import com.hmdm.rest.json.agent.AgentCommandResult;
+import com.hmdm.rest.json.agent.AgentDeviceState;
+import com.hmdm.rest.resource.support.ConfigReconciler;
+import com.hmdm.rest.resource.support.RolloutRequeuer;
+import com.hmdm.util.CryptoUtil;
+import com.hmdm.util.DesiredConfigBuilder;
+import org.junit.Before;
+import org.junit.Test;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
+
+/**
+ * The real check-in path ({@link AgentResource#checkin} -> {@link ConfigReconciler}) over fake DAOs that keep the
+ * SQL semantics that matter here: the device_state upsert COALESCEs a missing applied revision and never touches
+ * configAgentVersion. Covers the agent-update resync: a new agent version gets config.apply exactly once, so the
+ * per-key results (e.g. an old agent's {@code policies.safeBoot = unsupported}) refresh.
+ */
+public class AgentCheckInConfigResyncTest {
+
+    private static final String NUMBER = "d1";
+    private static final String SECRET = "sek";
+    private static final String CAPS = "{\"device\":[\"configApply\"],\"policy\":[\"safeBoot\"]}";
+
+    private static final class FakeUnsecureDAO extends UnsecureDAO {
+        Device device;
+        Configuration configuration;
+
+        FakeUnsecureDAO() {
+            super(null, null, null, null, null, null, null, null, null, null, null, null, null, null, "/tmp", 0, "x");
+        }
+
+        @Override public Device getDeviceByNumber(String number) { return NUMBER.equals(number) ? device : null; }
+        @Override public Configuration getConfigurationById(Integer id) { return configuration; }
+        @Override public List<Application> getPlainConfigurationAppsOptimized(Integer configurationId) {
+            return Collections.emptyList();
+        }
+    }
+
+    /** In-memory agentCommand + device_state with the production upsert/claim semantics. */
+    private static final class FakeCommandDAO extends AgentCommandDAO {
+        final List<AgentCommand> commands = new ArrayList<>();
+        DeviceState state;
+        String caps;
+
+        FakeCommandDAO() { super(null, null, null, null); }
+
+        @Override public String getDeviceSecretHash(String n) { return CryptoUtil.getSHA256String(SECRET); }
+        @Override public void touchLastUpdate(String n) { }
+        @Override public void updateHardwareId(String n, String h) { }
+        @Override public void updateDeviceCapabilities(String n, String json) { caps = json; }
+        @Override public String getDeviceCapabilities(String n) { return caps; }
+        @Override public void updateAndroidVersion(String n, String v) { }
+        @Override public void insertEvent(String n, String type, Long ts, String detail) { }
+        @Override public void expireStale(String n, long pendingTtl, long deliveredTtl) { }
+
+        @Override public void upsertState(DeviceState row) {
+            if (state != null) {
+                // COALESCE(EXCLUDED.appliedConfigRevision, device_state.appliedConfigRevision); configAgentVersion kept.
+                if (row.getAppliedConfigRevision() == null) row.setAppliedConfigRevision(state.getAppliedConfigRevision());
+                row.setConfigAgentVersion(state.getConfigAgentVersion());
+            }
+            state = row;
+        }
+        @Override public DeviceState getState(String n) { return state; }
+        @Override public void updateConfigAgentVersion(String n, String version) {
+            if (state != null) state.setConfigAgentVersion(version);
+        }
+
+        @Override public void insert(AgentCommand c) { c.setId(commands.size() + 1); commands.add(c); }
+        @Override public List<AgentCommand> listPending(String n) {
+            List<AgentCommand> out = new ArrayList<>();
+            for (AgentCommand c : commands) if ("pending".equals(c.getStatus())) out.add(c);
+            return out;
+        }
+        @Override public boolean claimForDelivery(Integer id, Long at) {
+            AgentCommand c = commands.get(id - 1);
+            if (!"pending".equals(c.getStatus())) return false;
+            c.setStatus("delivered");
+            return true;
+        }
+        @Override public void markResultWithTime(String n, Integer id, String status, String detail, Long at) {
+            AgentCommand c = commands.get(id - 1);
+            c.setStatus(status);
+            c.setCompletedAt(at);
+        }
+        @Override public boolean hasOpenOfType(String n, String type) {
+            for (AgentCommand c : commands) {
+                if (type.equals(c.getType()) && ("pending".equals(c.getStatus()) || "delivered".equals(c.getStatus()))) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        @Override public AgentCommand findLatestOfType(String n, String type) {
+            AgentCommand latest = null;
+            for (AgentCommand c : commands) if (type.equals(c.getType())) latest = c;
+            return latest;
+        }
+    }
+
+    private FakeCommandDAO commandDAO;
+    private AgentResource resource;
+    private String revision;
+    /** Results the "agent" sends on its next check-in. */
+    private final List<AgentCommandResult> outbox = new ArrayList<>();
+
+    @Before
+    public void setUp() {
+        FakeUnsecureDAO unsecureDAO = new FakeUnsecureDAO();
+        Device device = new Device();
+        device.setNumber(NUMBER);
+        device.setCustomerId(1);
+        device.setConfigurationId(3);
+        unsecureDAO.device = device;
+        Configuration cfg = new Configuration();
+        cfg.setId(3);
+        cfg.setDisableSafeBoot(true);
+        unsecureDAO.configuration = cfg;
+        revision = DesiredConfigBuilder.build(cfg, Collections.<Application>emptyList()).getRevision();
+
+        commandDAO = new FakeCommandDAO();
+        RolloutRequeuer noRollout = new RolloutRequeuer(null) {
+            @Override public boolean requeue(Device d, long now) { return false; }
+        };
+        resource = new AgentResource(unsecureDAO, null, commandDAO, null,
+                new ConfigReconciler(unsecureDAO, commandDAO), noRollout);
+    }
+
+    /** One agent check-in; the agent acks every command it receives as done on the following check-in. */
+    private List<com.hmdm.rest.json.agent.AgentCommand> checkIn(String agentVersion, String appliedRevision) throws Exception {
+        AgentCheckInRequest req = new AgentCheckInRequest();
+        req.setDeviceId(NUMBER);
+        req.setCapabilities(new AgentCapabilities(new ObjectMapper().readTree(CAPS)));
+        AgentDeviceState s = new AgentDeviceState();
+        s.setAgentVersion(agentVersion);
+        s.setAppliedConfigRevision(appliedRevision);
+        req.setState(s);
+        req.setResults(new ArrayList<>(outbox));
+        outbox.clear();
+
+        Response r = resource.checkin("Bearer " + SECRET, null, req);
+        assertEquals(Response.ResponseStatus.OK, r.getStatus());
+        List<com.hmdm.rest.json.agent.AgentCommand> got = ((AgentCheckInResponse) r.getData()).getCommands();
+        for (com.hmdm.rest.json.agent.AgentCommand c : got) {
+            AgentCommandResult done = new AgentCommandResult();
+            done.setCommandId(c.getCommandId());
+            done.setStatus("done");
+            outbox.add(done);
+        }
+        return got;
+    }
+
+    private int configApplies() {
+        int n = 0;
+        for (AgentCommand c : commandDAO.commands) if (DesiredConfigBuilder.COMMAND_TYPE.equals(c.getType())) n++;
+        return n;
+    }
+
+    @Test
+    public void agent_version_change_resends_config_apply_exactly_once() throws Exception {
+        // Converge on the old agent (it reports safeBoot unsupported, which still counts as applied).
+        assertEquals(1, checkIn("0.3.2", null).size());
+        assertEquals(0, checkIn("0.3.2", revision).size());
+        assertEquals(0, checkIn("0.3.2", revision).size());
+
+        // Self-update: same revision on the device, new agent version -> one fresh config.apply.
+        List<com.hmdm.rest.json.agent.AgentCommand> resent = checkIn("0.3.3", revision);
+        assertEquals(1, resent.size());
+        assertEquals(DesiredConfigBuilder.COMMAND_TYPE, resent.get(0).getType());
+
+        // Acked, and from then on nothing more: once per version change, not per check-in.
+        assertEquals(0, checkIn("0.3.3", revision).size());
+        assertEquals(0, checkIn("0.3.3", revision).size());
+        assertEquals(2, configApplies());
+        assertEquals("done", commandDAO.commands.get(1).getStatus());
+    }
+
+    @Test
+    public void same_agent_version_in_sync_sends_nothing() throws Exception {
+        checkIn("0.3.3", null);
+        checkIn("0.3.3", revision);
+        for (int i = 0; i < 3; i++) assertEquals(0, checkIn("0.3.3", revision).size());
+        assertEquals(1, configApplies());
+    }
+
+    @Test
+    public void first_sighting_of_an_in_sync_device_only_records_a_baseline() throws Exception {
+        // E.g. right after the server upgrade added the column: no fleet-wide re-send.
+        commandDAO.state = new DeviceState();
+        commandDAO.state.setDeviceNumber(NUMBER);
+        commandDAO.state.setAppliedConfigRevision(revision);
+        assertNull(commandDAO.state.getConfigAgentVersion());
+
+        assertEquals(0, checkIn("0.3.2", revision).size());
+        assertEquals("0.3.2", commandDAO.getState(NUMBER).getConfigAgentVersion());
+        assertEquals(1, checkIn("0.3.3", revision).size());
+    }
+
+    @Test
+    public void a_check_in_without_state_never_triggers_a_resync() throws Exception {
+        checkIn("0.3.2", null);
+        checkIn("0.3.2", revision);
+        AgentCheckInRequest req = new AgentCheckInRequest();
+        req.setDeviceId(NUMBER);
+        req.setCapabilities(new AgentCapabilities(new ObjectMapper().readTree(CAPS)));
+        Response r = resource.checkin("Bearer " + SECRET, null, req);
+        assertEquals(0, ((AgentCheckInResponse) r.getData()).getCommands().size());
+    }
+}

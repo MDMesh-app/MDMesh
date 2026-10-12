@@ -351,17 +351,22 @@ public class AgentResource {
                 capsJson != null ? capsJson : commandDAO.getDeviceCapabilities(deviceNumber));
         long now = System.currentTimeMillis();
 
-        if (appliedRevision == null && AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, deviceTokens)) {
-            // The check-in omitted it (state block absent, or invalid value) — fall back to the last
-            // stored value so a missing field never masquerades as drift. Only capable agents pay
-            // for this read: the value is consumed solely by reconcile, which ignores the others.
+        String agentVersion = request.getState() == null ? null : request.getState().getAgentVersion();
+        String configAgentVersion = null;
+        if (AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, deviceTokens)) {
+            // Only capable agents pay for this read: its values are consumed solely by reconcile, which ignores
+            // the others. A check-in that omitted the revision (state block absent, or invalid value) falls back
+            // to the last stored value so a missing field never masquerades as drift.
             com.hmdm.persistence.domain.DeviceState stored = commandDAO.getState(deviceNumber);
-            appliedRevision = stored == null ? null : stored.getAppliedConfigRevision();
+            if (appliedRevision == null) {
+                appliedRevision = stored == null ? null : stored.getAppliedConfigRevision();
+            }
+            configAgentVersion = stored == null ? null : stored.getConfigAgentVersion();
         }
 
-        // Desired-state reconciliation: queue config.apply when the device drifted from its configuration, so the
-        // command rides THIS response instead of waiting for the next cycle.
-        configReconciler.reconcile(device, deviceTokens, appliedRevision, now);
+        // Desired-state reconciliation: queue config.apply when the device drifted from its configuration (or now
+        // runs a different agent version), so the command rides THIS response instead of waiting for the next cycle.
+        configReconciler.reconcile(device, deviceTokens, appliedRevision, agentVersion, configAgentVersion, now);
         // A staged agent update whose command expired (its result was lost) or was never queued: queue it again here.
         rolloutRequeuer.requeue(device, now);
 

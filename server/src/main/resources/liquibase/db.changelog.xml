@@ -2901,4 +2901,13 @@
         <rollback>ALTER TABLE configurations DROP COLUMN disableSafeBoot;</rollback>
     </changeSet>
 
+    <changeSet id="26.10.12-deviceState-configAgentVersion" author="lunacy" context="common">
+        <comment>Column,new: device_state#configAgentVersion — agent versionName when config.apply was last queued
+            for the device. When the device later reports a different version (agent self-update), config.apply
+            is re-sent once so per-key results refresh (a newer agent may support keys the old one reported
+            unsupported). NULL = no baseline yet: the first check-in records one and re-sends nothing.</comment>
+        <sql>ALTER TABLE device_state ADD COLUMN configAgentVersion VARCHAR(64);</sql>
+        <rollback>ALTER TABLE device_state DROP COLUMN configAgentVersion;</rollback>
+    </changeSet>
+
 </databaseChangeLog>

@@ -19,15 +19,34 @@ public final class ConfigReconcileDecision {
 
     public static Action decide(Set<String> deviceTokens, String currentRevision, String appliedRevision,
                                 boolean hasOpenCommand, AgentCommand latest, long now) {
+        return decide(deviceTokens, currentRevision, appliedRevision, hasOpenCommand, latest, now, false);
+    }
+
+    /**
+     * @param agentChanged the device runs a different agent version than the one its configuration was last sent
+     *                     to ({@link #agentChanged}). A newer agent may support keys the old one reported
+     *                     {@code unsupported}, so the document is re-sent once even when the revision is in sync,
+     *                     and the same-revision backoff does not apply (the caller records the version on enqueue,
+     *                     which makes it fire once per version change).
+     */
+    public static Action decide(Set<String> deviceTokens, String currentRevision, String appliedRevision,
+                                boolean hasOpenCommand, AgentCommand latest, long now, boolean agentChanged) {
         if (!AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, deviceTokens)) return Action.NONE;
-        if (currentRevision == null || currentRevision.equals(appliedRevision)) return Action.NONE;
+        if (currentRevision == null) return Action.NONE;
+        if (currentRevision.equals(appliedRevision) && !agentChanged) return Action.NONE;
         if (hasOpenCommand) return Action.NONE;
+        if (agentChanged) return Action.ENQUEUE;
         if (latest != null && currentRevision.equals(revisionOf(latest))) {
             Long done = latest.getCompletedAt();
             long ref = done != null ? done : (latest.getCreatedAt() == null ? 0L : latest.getCreatedAt());
             if (now - ref < RETRY_BACKOFF_MS) return Action.NONE;
         }
         return Action.ENQUEUE;
+    }
+
+    /** True when both versions are known and differ; an unknown baseline is recorded, never treated as a change. */
+    public static boolean agentChanged(String agentVersion, String configAgentVersion) {
+        return agentVersion != null && configAgentVersion != null && !agentVersion.equals(configAgentVersion);
     }
 
     public static String revisionOf(AgentCommand cmd) {

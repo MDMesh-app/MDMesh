@@ -108,6 +108,11 @@ public class AgentCommandDAO {
         return stateMapper.findByDeviceNumber(deviceNumber);
     }
 
+    /** Record the agent version the device's configuration was last sent to (see ConfigReconciler). */
+    public void updateConfigAgentVersion(String deviceNumber, String version) {
+        stateMapper.updateConfigAgentVersion(deviceNumber, version);
+    }
+
     /** Insert one agent lifecycle event. */
     public void insertEvent(String deviceNumber, String type, Long ts, String detail) {
         DeviceEvent e = new DeviceEvent();

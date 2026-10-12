@@ -55,9 +55,10 @@ metadata only. See `proto/payloads/config-apply.schema.json` for the wire shape 
 additive change; 1.0 agents keep working unchanged.
 Protocol 1.2 adds the `factoryReset` policy key; agents that do not advertise it report it `unsupported`.
 Protocol 1.3 adds the `safeBoot` policy key the same way; an agent updated afterwards picks it up from the
-persisted document on its post-update re-apply, without re-enrollment. After a self-update the agent reports
-no applied revision until the server re-sends `config.apply`, so per-key results (e.g. a stale `unsupported`)
-refresh within minutes rather than waiting out the one-hour same-revision retry backoff.
+persisted document on its post-update re-apply, without re-enrollment. When a device reports a different
+agent version than the one its configuration was last queued for, the server re-sends `config.apply` once
+(`device_state.configAgentVersion`), so per-key results such as a stale `unsupported` refresh. A re-sent
+document with an unchanged kiosk payload is a no-op on a device already in lock task (no launcher relaunch).
 
 ## Status UI — BUILD-NEW (Views, minSdk 24 friendly)
 Replace the `TextView` stub `MainActivity` with a real MDMesh status screen: managed state, device id,

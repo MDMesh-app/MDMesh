@@ -30,9 +30,9 @@ class ConfigApplier(
 ) {
     private val mutex = Mutex()
 
-    suspend fun apply(doc: ConfigApplyPayload): ConfigApplyResult = mutex.withLock { applyLocked(doc) }
+    suspend fun apply(doc: ConfigApplyPayload): ConfigApplyResult = mutex.withLock { applyLocked(doc, persist = true) }
 
-    private suspend fun applyLocked(doc: ConfigApplyPayload): ConfigApplyResult {
+    private suspend fun applyLocked(doc: ConfigApplyPayload, persist: Boolean): ConfigApplyResult {
         val outcomes = linkedMapOf<String, String>()
         for ((key, enabled) in doc.policies) {
             outcomes["policies.$key"] = when (val o = toggles[key]?.setEnabled(enabled)) {
@@ -47,7 +47,7 @@ class ConfigApplier(
                 .getOrElse { ConfigOutcome.failed(it.message ?: "location mode") }
         }
         val result = ConfigApplyResult(doc.revision, outcomes)
-        if (succeeded(result)) store.save(doc)
+        if (persist && succeeded(result)) store.save(doc)
         return result
     }
 
@@ -70,8 +70,13 @@ class ConfigApplier(
         }
     }
 
-    /** Re-run the last fully-applied document (after boot / self-update). Null when nothing is persisted. */
-    suspend fun reapplyPersisted(): ConfigApplyResult? = mutex.withLock { store.load()?.let { applyLocked(it) } }
+    /**
+     * Re-run the last fully-applied document (after boot / self-update). Null when nothing is persisted.
+     * Does not re-save it: the document is already stored, and re-saving would undo
+     * [ConfigStateStore.markUnreported] — only a server-delivered [apply] may report the revision again.
+     */
+    suspend fun reapplyPersisted(): ConfigApplyResult? =
+        mutex.withLock { store.load()?.let { applyLocked(it, persist = false) } }
 
     companion object {
         fun succeeded(r: ConfigApplyResult): Boolean = r.outcomes.values.none(ConfigOutcome::isFailed)

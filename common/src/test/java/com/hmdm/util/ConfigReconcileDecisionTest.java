@@ -44,6 +44,19 @@ public class ConfigReconcileDecisionTest {
         AgentCommand other = cmd("r1", "done", NOW - 1000L);
         assertEquals(ENQUEUE, ConfigReconcileDecision.decide(CAPABLE, "r2", "r1", false, other, NOW));
     }
+    @Test public void device_that_dropped_its_applied_revision_is_resynced_after_the_short_backoff() {
+        // Agent self-update: the last attempt for r2 was DONE (old agent, safeBoot "unsupported"), and the
+        // updated agent now reports no applied revision. Must not wait out the 1-hour retry backoff.
+        AgentCommand done = cmd("r2", "done", NOW - 5 * 60 * 1000L);
+        assertEquals(ENQUEUE, ConfigReconcileDecision.decide(CAPABLE, "r2", null, false, done, NOW));
+        AgentCommand justDone = cmd("r2", "done", NOW - 30 * 1000L);
+        assertEquals("short floor against a device that can never persist", NONE,
+                ConfigReconcileDecision.decide(CAPABLE, "r2", null, false, justDone, NOW));
+    }
+    @Test public void failed_attempt_keeps_the_long_backoff_even_without_an_applied_revision() {
+        AgentCommand failed = cmd("r2", "failed", NOW - 5 * 60 * 1000L);
+        assertEquals(NONE, ConfigReconcileDecision.decide(CAPABLE, "r2", null, false, failed, NOW));
+    }
     @Test public void revisionOf_is_null_safe() {
         assertNull(ConfigReconcileDecision.revisionOf(null));
         AgentCommand junk = new AgentCommand(); junk.setPayload("not json");

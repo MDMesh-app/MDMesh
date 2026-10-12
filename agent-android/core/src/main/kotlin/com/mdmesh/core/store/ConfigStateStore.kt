@@ -14,6 +14,13 @@ interface ConfigStateStore {
     fun load(): ConfigApplyPayload?
     fun revision(): String?
     fun clear()
+
+    /**
+     * Keep the document (still re-applied after boot) but stop reporting its revision until the next
+     * successful [save]. Used after a self-update: the new agent may now support keys the old one reported
+     * `unsupported`, and only a fresh server `config.apply` round-trip refreshes those per-key results.
+     */
+    fun markUnreported()
 }
 
 object ConfigStateCodec {
@@ -31,13 +38,16 @@ class SharedPrefsConfigStateStore(context: Context) : ConfigStateStore {
     override fun load(): ConfigApplyPayload? = ConfigStateCodec.decode(prefs.getString(KEY_DOC, null))
     override fun revision(): String? = prefs.getString(KEY_REV, null)
     override fun clear() { prefs.edit().remove(KEY_DOC).remove(KEY_REV).apply() }
+    override fun markUnreported() { prefs.edit().remove(KEY_REV).apply() }
     private companion object { const val KEY_DOC = "doc"; const val KEY_REV = "revision" }
 }
 
 class InMemoryConfigStateStore : ConfigStateStore {
     private var doc: ConfigApplyPayload? = null
-    override fun save(doc: ConfigApplyPayload) { this.doc = doc }
+    private var reported = true
+    override fun save(doc: ConfigApplyPayload) { this.doc = doc; reported = true }
     override fun load(): ConfigApplyPayload? = doc
-    override fun revision(): String? = doc?.revision
+    override fun revision(): String? = if (reported) doc?.revision else null
     override fun clear() { doc = null }
+    override fun markUnreported() { reported = false }
 }

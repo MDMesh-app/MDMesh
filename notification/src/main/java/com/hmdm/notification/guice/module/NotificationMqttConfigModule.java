@@ -36,18 +36,34 @@ public class NotificationMqttConfigModule extends AbstractModule {
         if (serverUri == null) {
             serverUri = "";
         }
+        String mqttExternal = context.getInitParameter("mqtt.external");
+        if (mqttExternal == null || "".equals(mqttExternal)) {
+            mqttExternal = "0";
+        }
+        boolean external = mqttExternal.equals("1") || mqttExternal.equalsIgnoreCase("true");
+        String mqttAuthTag = this.context.getInitParameter("mqtt.auth");
+        boolean mqttAuth = mqttAuthTag != null && (mqttAuthTag.equals("1") || mqttAuthTag.equalsIgnoreCase("true"));
+        String mqttAdminPassword = context.getInitParameter("mqtt.admin.password");
+        boolean passwordSet = mqttAdminPassword != null && !mqttAdminPassword.isEmpty();
+
         // Only the Headwind launcher speaks MQTT (the MDMesh agent wakes over its WebSocket), so the broker and the
         // MQTT push sender follow the legacy device API switch.
         if (!serverUri.isEmpty() && !LegacyDeviceApiFilter.isEnabled(context)) {
             log.info("MQTT not started: mqtt.server.uri is set but " + LegacyDeviceApiFilter.PARAMETER + " is off");
             serverUri = "";
         }
-        this.bindConstant().annotatedWith(Names.named("mqtt.server.uri")).to(serverUri);
-
-        String mqttExternal = context.getInitParameter("mqtt.external");
-        if (mqttExternal == null || "".equals(mqttExternal)) {
-            mqttExternal = "0";
+        // An external broker with authentication needs the password it was configured with: there is no default.
+        if (!serverUri.isEmpty() && external && mqttAuth && !passwordSet) {
+            log.error("MQTT not started: mqtt.external and mqtt.auth are on but mqtt.admin.password is not set");
+            serverUri = "";
         }
+        if (!passwordSet) {
+            // Only the embedded broker and the server's own MQTT client use the password here, and both read this
+            // binding, so a random one per start is enough.
+            mqttAdminPassword = randomPassword();
+        }
+
+        this.bindConstant().annotatedWith(Names.named("mqtt.server.uri")).to(serverUri);
         this.bindConstant().annotatedWith(Names.named("mqtt.external")).to(mqttExternal);
 
         String mqttClientTag = context.getInitParameter("mqtt.client.tag");
@@ -55,18 +71,7 @@ public class NotificationMqttConfigModule extends AbstractModule {
             mqttClientTag = "";
         }
         this.bindConstant().annotatedWith(Names.named("mqtt.client.tag")).to(mqttClientTag);
-
-        String mqttAuthTag = this.context.getInitParameter("mqtt.auth");
-        this.bindConstant().annotatedWith(Names.named("mqtt.auth")).to(
-                mqttAuthTag != null && (mqttAuthTag.equals("1") || mqttAuthTag.equalsIgnoreCase("true"))
-        );
-
-        String mqttAdminPassword = context.getInitParameter("mqtt.admin.password");
-        if (mqttAdminPassword == null || mqttAdminPassword.isEmpty()) {
-            // The embedded broker and the server's own MQTT client are the only users of this password and both read
-            // this binding, so a random one per start is enough; an external broker needs it set explicitly.
-            mqttAdminPassword = randomPassword();
-        }
+        this.bindConstant().annotatedWith(Names.named("mqtt.auth")).to(mqttAuth);
         this.bindConstant().annotatedWith(Names.named("mqtt.admin.password")).to(mqttAdminPassword);
 
         String mqttDelayTag = this.context.getInitParameter("mqtt.message.delay");

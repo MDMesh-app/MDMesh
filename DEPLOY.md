@@ -385,7 +385,8 @@ which listens on loopback `:9000` only, on the host with `curl -fsS 127.0.0.1:90
   MDMesh agents.
 - Legacy Headwind launcher endpoints are off by default (they answer 404, and the MQTT broker stays off); MDMesh
   agents don't use them. Set `LEGACY_DEVICE_API=1` (`.env`, or the installer's environment on native installs, which
-  writes `legacy.device.api` to `ROOT.xml`) only if you still run the Headwind launcher.
+  writes `legacy.device.api` to `ROOT.xml`) only if you still run the Headwind launcher. An external MQTT broker
+  (`mqtt.external=1` with `mqtt.auth=1`) also needs `mqtt.admin.password` set in `ROOT.xml`; without it MQTT stays off.
 - The admin starts with a generated password and is **required to set its own on first login** (the
   console routes the first sign-in to a "set your password" screen). Configure SMTP (in `.env`, or the installer's
   environment on native installs) to enable email-based password recovery thereafter. `SMTP_SSL=true` is for port

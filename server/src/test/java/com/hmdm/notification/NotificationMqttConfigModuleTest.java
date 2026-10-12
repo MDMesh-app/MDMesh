@@ -64,6 +64,31 @@ public class NotificationMqttConfigModuleTest {
         assertEquals("0.0.0.0:31000", serverUri(params));
     }
 
+    @Test
+    public void anExternalBrokerWithAuthButNoPasswordIsNotUsed() {
+        Map<String, String> params = new HashMap<>();
+        params.put("mqtt.server.uri", "broker.example:1883");
+        params.put(LegacyDeviceApiFilter.PARAMETER, "1");
+        params.put("mqtt.external", "1");
+        params.put("mqtt.auth", "1");
+        assertEquals("", serverUri(params));
+        params.put("mqtt.admin.password", "");
+        assertEquals("", serverUri(params));
+    }
+
+    @Test
+    public void anExternalBrokerWithItsPasswordOrWithoutAuthIsUsed() {
+        Map<String, String> params = new HashMap<>();
+        params.put("mqtt.server.uri", "broker.example:1883");
+        params.put(LegacyDeviceApiFilter.PARAMETER, "1");
+        params.put("mqtt.external", "true");
+        assertEquals("broker.example:1883", serverUri(params));
+        params.put("mqtt.auth", "1");
+        params.put("mqtt.admin.password", "configured-secret");
+        assertEquals("broker.example:1883", serverUri(params));
+        assertEquals("configured-secret", adminPassword(params));
+    }
+
     private static String adminPassword(Map<String, String> params) {
         return injector(params).getInstance(Key.get(String.class, Names.named("mqtt.admin.password")));
     }

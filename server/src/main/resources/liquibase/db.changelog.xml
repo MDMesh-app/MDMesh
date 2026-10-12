@@ -2891,4 +2891,14 @@
         <rollback/>
     </changeSet>
 
+    <changeSet id="26.10.12-configurations-disableSafeBoot" author="lunacy" context="common">
+        <comment>Column,new: configurations#disableSafeBoot — "disable Safe Mode", sent to the agent inverted
+            as policies.safeBoot (true = allowed), like disableFactoryReset -> factoryReset.
+            Nullable with no DEFAULT: NULL means unmanaged, the key is then omitted from config.apply and the
+            agent applies nothing. A DEFAULT would insert the key into every existing configuration's
+            revision and mass re-apply policies.safeBoot across the fleet on upgrade.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN disableSafeBoot BOOLEAN;</sql>
+        <rollback>ALTER TABLE configurations DROP COLUMN disableSafeBoot;</rollback>
+    </changeSet>
+
 </databaseChangeLog>

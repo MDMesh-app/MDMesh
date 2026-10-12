@@ -138,7 +138,8 @@ public interface ConfigurationMapper {
             "appUpdateTo=#{appUpdateTo}, " +
             "downloadUpdates=#{downloadUpdates}, " +
             "defaultFilePath=#{defaultFilePath}, " +
-            "disableFactoryReset=#{disableFactoryReset} " +
+            "disableFactoryReset=#{disableFactoryReset}, " +
+            "disableSafeBoot=#{disableSafeBoot} " +
             "WHERE id=#{id}"})
     void updateConfiguration(Configuration configuration);
 

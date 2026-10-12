@@ -38,6 +38,7 @@ import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
 
+import com.hmdm.notification.AgentWakeHub;
 import com.hmdm.notification.PushService;
 import com.hmdm.persistence.*;
 import com.hmdm.persistence.domain.*;
@@ -66,6 +67,7 @@ public class DeviceResource {
     private ConfigurationFileDAO configurationFileDAO;
     private CommonDAO commonDAO;
     private UnsecureDAO unsecureDAO;
+    private AgentWakeHub wakeHub;
 
     /**
      * <p>A constructor required by Swagger.</p>
@@ -79,13 +81,15 @@ public class DeviceResource {
                           PushService pushService,
                           ConfigurationFileDAO configurationFileDAO,
                           CommonDAO commonDAO,
-                          UnsecureDAO unsecureDAO) {
+                          UnsecureDAO unsecureDAO,
+                          AgentWakeHub wakeHub) {
         this.deviceDAO = deviceDAO;
         this.configurationDAO = configurationDAO;
         this.pushService = pushService;
         this.configurationFileDAO = configurationFileDAO;
         this.commonDAO = commonDAO;
         this.unsecureDAO = unsecureDAO;
+        this.wakeHub = wakeHub;
     }
 
     // =================================================================================================================
@@ -227,12 +231,18 @@ public class DeviceResource {
                 dbDevice = this.deviceDAO.getDeviceById(device.getId());
                 if (device.getId() != null) {
                     if (dbDevice != null) {
-                        boolean notify = (dbDevice.getConfigurationId() != null &&
-                                !dbDevice.getConfigurationId().equals(device.getConfigurationId())) ||
+                        boolean configChanged = dbDevice.getConfigurationId() != null &&
+                                !dbDevice.getConfigurationId().equals(device.getConfigurationId());
+                        boolean notify = configChanged ||
                                 (dbDevice.getOldNumber() == null && device.getOldNumber() != null);
                         this.deviceDAO.updateDevice(device);
                         if (notify) {
                             this.pushService.notifyDeviceOnSettingUpdate(device.getId());
+                        }
+                        if (configChanged) {
+                            // The MDMesh agent reconciles its new configuration on check-in: wake it so that happens
+                            // now, not at the periodic check-in. updateDevice has committed by now.
+                            this.wakeHub.wake(dbDevice.getNumber(), "commands");
                         }
                     }
                 } else if (device.getIds() != null) {
@@ -245,6 +255,9 @@ public class DeviceResource {
                         if (dbDevice != null) {
                             this.deviceDAO.updateDeviceConfiguration(id, device.getConfigurationId());
                             this.pushService.notifyDeviceOnSettingUpdate(dbDevice.getId());
+                            if (!java.util.Objects.equals(dbDevice.getConfigurationId(), device.getConfigurationId())) {
+                                this.wakeHub.wake(dbDevice.getNumber(), "commands");
+                            }
                         }
                     }
                 } else {

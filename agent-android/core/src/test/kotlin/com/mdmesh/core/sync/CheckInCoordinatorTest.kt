@@ -225,6 +225,30 @@ class CheckInCoordinatorTest {
     }
 
     @Test
+    fun `a single-check-in run leaves the backlog for the next check-in`() = runTest {
+        val api = FakeMdmApi()
+        val pending = PendingResults().apply { add((1..250).map { ack("c$it") }) }
+
+        coordinator(api, pending).runOnce(maxCheckIns = 1)
+
+        assertEquals(listOf(100), api.checkInRequests.map { it.results.size })
+        assertEquals(150, pending.drain().size)
+    }
+
+    @Test
+    fun `one run makes at most MAX_CHECK_INS_PER_RUN check-ins`() = runTest {
+        val api = FakeMdmApi().apply {
+            checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse(resultsAccepted = 1))
+        }
+        val pending = PendingResults().apply { add((1..30).map { ack("c$it") }) }
+
+        coordinator(api, pending).runOnce()
+
+        assertEquals(CheckInCoordinator.MAX_CHECK_INS_PER_RUN, api.checkInRequests.size)
+        assertEquals(30 - CheckInCoordinator.MAX_CHECK_INS_PER_RUN, pending.drain().size)
+    }
+
+    @Test
     fun `results the server did not accept are resent, not lost`() = runTest {
         val api = FakeMdmApi().apply {
             checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse(resultsAccepted = 1))

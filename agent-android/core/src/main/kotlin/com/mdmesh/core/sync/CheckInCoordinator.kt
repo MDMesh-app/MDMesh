@@ -50,12 +50,17 @@ class CheckInCoordinator @Inject constructor(
 
     private val mutex = Mutex()
 
-    suspend fun runOnce(): Unit = mutex.withLock {
+    /**
+     * Checks in, then checks in again right away while a result backlog bigger than one batch remains and the server
+     * keeps taking results: at most [maxCheckIns] check-ins in all (bounded, so a server that takes none cannot spin
+     * us). Callers with a short execution window (the doze heartbeat's `goAsync`) pass 1; the rest waits for the next
+     * check-in.
+     */
+    suspend fun runOnce(maxCheckIns: Int = MAX_CHECK_INS_PER_RUN): Unit = mutex.withLock {
+        require(maxCheckIns >= 1) { "maxCheckIns must be at least 1" }
         try {
-            // A result backlog bigger than one batch goes out in follow-up check-ins right away, as long as the
-            // server keeps taking results (bounded, so a server that takes none cannot spin us).
-            var rounds = 0
-            while (cycle() && ++rounds < MAX_BACKLOG_ROUNDS) Unit
+            var checkIns = 1
+            while (cycle() && checkIns < maxCheckIns) checkIns++
             syncStatus.clear()
         } catch (t: Throwable) {
             if (t !is CancellationException) syncStatus.recordFailure(t)
@@ -114,8 +119,9 @@ class CheckInCoordinator @Inject constructor(
         return backlog
     }
 
-    private companion object {
-        const val MAX_BACKLOG_ROUNDS = 20
+    companion object {
+        /** The first check-in plus up to 19 follow-ups for a result backlog. */
+        const val MAX_CHECK_INS_PER_RUN = 20
     }
 }
 

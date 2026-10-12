@@ -25,8 +25,6 @@ import com.hmdm.persistence.domain.Application;
 import com.hmdm.persistence.domain.Customer;
 
 import java.io.*;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
 
 /**
  * <p>An utility class for managing the files on local file system.</p>
@@ -188,34 +186,6 @@ public final class FileUtil {
         }
         url += fileName;
         return url;
-    }
-
-    public static String downloadTextFile(URL url) throws IOException {
-        BufferedInputStream bis = new BufferedInputStream(url.openStream());
-        StringBuffer stringBuffer = new StringBuffer();
-        byte[] buffer = new byte[1024];
-        int count=0;
-        while((count = bis.read(buffer,0,1024)) != -1) {
-            stringBuffer.append(new String(buffer, StandardCharsets.UTF_8));
-        }
-        bis.close();
-        return stringBuffer.toString();
-    }
-
-    public static void downloadFile(URL url, String directory, String name) throws IOException {
-        BufferedInputStream bis = new BufferedInputStream(url.openStream());
-        File file = new File(directory, name);
-        if (file.exists()) {
-            file.delete();
-        }
-        FileOutputStream fos = new FileOutputStream(file);
-        byte[] buffer = new byte[1024];
-        int count=0;
-        while((count = bis.read(buffer,0,1024)) != -1) {
-            fos.write(buffer, 0, count);
-        }
-        bis.close();
-        fos.close();
     }
 
     public static boolean isSafePath(String path) {

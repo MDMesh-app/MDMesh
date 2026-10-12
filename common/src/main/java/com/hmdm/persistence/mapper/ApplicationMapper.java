@@ -475,6 +475,7 @@ public interface ApplicationMapper {
             "SET showIcon = #{link.showIcon}, remove = #{link.remove}, action = #{link.action} " +
             "WHERE id = #{link.id} " +
             "AND applicationId = #{applicationId} " +
+            "AND configurationId = #{link.configurationId} " +
             "AND configurationId IN (SELECT id FROM configurations WHERE customerId = #{customerId})")
     void updateApplicationConfigurationLink(@Param("link") ApplicationConfigurationLink link,
                                             @Param("applicationId") int applicationId,
@@ -483,9 +484,11 @@ public interface ApplicationMapper {
     @Delete("DELETE FROM configurationApplications " +
             "WHERE id = #{id} " +
             "AND applicationId = #{applicationId} " +
+            "AND configurationId = #{configurationId} " +
             "AND configurationId IN (SELECT id FROM configurations WHERE customerId = #{customerId})")
     void deleteApplicationConfigurationLink(@Param("id") Integer linkId,
                                             @Param("applicationId") int applicationId,
+                                            @Param("configurationId") int configurationId,
                                             @Param("customerId") int customerId);
 
     @Select("SELECT id FROM configurations WHERE customerId = #{customerId}")

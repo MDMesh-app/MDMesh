@@ -530,7 +530,8 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
                 .filter(c -> c.getId() != null && c.getAction() == 0)
                 .collect(Collectors.toList());
         deletedLinks.forEach(link -> {
-            this.mapper.deleteApplicationConfigurationLink(link.getId(), applicationId, customerId);
+            // Keyed on the configuration that was checked above, not just on the link id
+            this.mapper.deleteApplicationConfigurationLink(link.getId(), applicationId, link.getConfigurationId(), customerId);
         });
 
         final List<ApplicationConfigurationLink> updatedLinks = request.getConfigurations()

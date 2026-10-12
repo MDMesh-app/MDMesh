@@ -221,7 +221,9 @@ public class ApplicationResource {
             } else {
                 this.applicationDAO.updateApplication(application);
                 if (application.getUrl() != null && application.getLatestVersion() != null && !application.isSplit()) {
-                    ApplicationVersion version = applicationDAO.findApplicationVersionById(application.getLatestVersion());
+                    // The stored latest version of this application, not a version id taken from the request
+                    final Integer latestVersionId = applicationDAO.findById(application.getId()).getLatestVersion();
+                    ApplicationVersion version = latestVersionId == null ? null : applicationDAO.findApplicationVersionById(latestVersionId);
                     if (version != null) {
                         version.setUrl(application.getUrl());
                         applicationDAO.updateApplicationVersion(version);
@@ -273,7 +275,9 @@ public class ApplicationResource {
                 // TODO : ISV : Handle the scenario for inserting new version for the same package here
                 this.applicationDAO.updateWebApplication(application);
                 if (application.getUrl() != null && application.getLatestVersion() != null) {
-                    ApplicationVersion version = applicationDAO.findApplicationVersionById(application.getLatestVersion());
+                    // The stored latest version of this application, not a version id taken from the request
+                    final Integer latestVersionId = applicationDAO.findById(application.getId()).getLatestVersion();
+                    ApplicationVersion version = latestVersionId == null ? null : applicationDAO.findApplicationVersionById(latestVersionId);
                     if (version != null) {
                         version.setUrl(application.getUrl());
                         applicationDAO.updateApplicationVersion(version);

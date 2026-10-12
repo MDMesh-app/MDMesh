@@ -54,7 +54,11 @@ public class ApplicationDAOOwnershipTest {
         VERSION_APP.put(OWN_VERSION, OWN_APP);
         VERSION_APP.put(OTHER_VERSION, OTHER_APP);
         VERSION_APP.put(COMMON_VERSION, COMMON_APP);
+        APP_CUSTOMER.put(101, CUSTOMER);
+        VERSION_APP.put(1010, 101);
     }
+
+    private static final int OWN_APP_2_VERSION = 1010;
 
     private static Application dbApp(int id) {
         if (!APP_CUSTOMER.containsKey(id)) return null;
@@ -313,6 +317,42 @@ public class ApplicationDAOOwnershipTest {
                 link(null, OWN_CONFIG, OWN_APP, 1)));
         assertFalse(fake.calls.toString(), touchesConfiguration(OWN_CONFIG_2));
         assertTrue(fake.callsTo("deleteApplicationConfigurationLink").isEmpty());
+    }
+
+    @Test
+    public void linkChangesAreBoundToTheConfigurationThatWasAuthorized() {
+        // Limited to configuration 5: a link id from configuration 6 must not be reachable by labelling it as 5.
+        login(Fakes.limitedToConfigurations(Fakes.user(6, CUSTOMER, "edit_applications"), OWN_CONFIG));
+        dao.updateApplicationConfigurations(appLinks(OWN_APP,
+                link(96, OWN_CONFIG, OWN_APP, 0),
+                link(95, OWN_CONFIG, OWN_APP, 1)));
+
+        List<Call> deletes = fake.callsTo("deleteApplicationConfigurationLink");
+        assertEquals(fake.calls.toString(), 1, deletes.size());
+        assertTrue("delete bound to the authorized configuration: " + Arrays.toString(deletes.get(0).args),
+                Arrays.asList(deletes.get(0).args).contains(OWN_CONFIG));
+        for (String m : new String[]{"deleteApplicationConfigurationLink", "updateApplicationConfigurationLink"}) {
+            String where = Fakes.whereOf(Fakes.sqlOf(ApplicationMapper.class, m)).replace(" ", "");
+            assertTrue(m + ": " + where, where.matches(".*configurationid=#\\{(link\\.)?configurationid\\}.*"));
+        }
+    }
+
+    @Test
+    public void androidAppSaveUpdatesOnlyTheStoredLatestVersionOfThatApplication() {
+        com.hmdm.rest.resource.ApplicationResource resource =
+                new com.hmdm.rest.resource.ApplicationResource(dao, null, null, "target");
+        Application body = request(OWN_APP, CUSTOMER);
+        body.setUrl("https://mdm.example.com/new.apk");
+        body.setLatestVersion(OWN_APP_2_VERSION);   // a version of another application
+
+        resource.updateApplication(body);
+
+        for (Call c : fake.callsTo("updateApplicationVersion")) {
+            ApplicationVersion v = (ApplicationVersion) c.args[0];
+            assertEquals("only the saved application's own latest version may change",
+                    Integer.valueOf(OWN_VERSION), v.getId());
+        }
+        assertEquals(fake.calls.toString(), 1, fake.callsTo("updateApplicationVersion").size());
     }
 
     // ---- application version <-> configuration links ------------------------------------------------------------

@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.content.ContextCompat
 import com.mdmesh.core.sync.CheckInWorker
-import com.mdmesh.core.store.SharedPrefsConfigStateStore
 import com.mdmesh.core.sync.ConfigReapplyWorker
 import com.mdmesh.core.telemetry.EventLog
 import com.mdmesh.proto.EventType
@@ -19,13 +18,6 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
             runCatching { EventLog(context).record(EventType.BOOT) }
-        }
-        if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) {
-            // The new agent may support policy keys the old one reported `unsupported` (e.g. safeBoot).
-            // The re-apply below enforces them, but the server only refreshes per-key results from a
-            // config.apply round-trip: stop reporting the applied revision so the next check-in asks for one.
-            // Done before any worker is scheduled, so no check-in can still report the old revision.
-            runCatching { SharedPrefsConfigStateStore(context).markUnreported() }
         }
         when (intent.action) {
             Intent.ACTION_BOOT_COMPLETED,

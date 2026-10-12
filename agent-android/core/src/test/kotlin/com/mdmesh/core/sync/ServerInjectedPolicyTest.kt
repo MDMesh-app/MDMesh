@@ -305,8 +305,7 @@ class ServerInjectedPolicyTest {
      * Protocol 1.3 is additive: an agent built before `safeBoot` existed reports the key `unsupported`
      * and still converges the rest of the document. After a normal agent update the persisted document
      * is re-applied (BootReceiver on MY_PACKAGE_REPLACED -> `reapplyPersisted`), and the new strategy
-     * picks the key up — no re-enrollment and no new revision needed. The revision stays unreported until
-     * the server re-sends `config.apply`, so the console's stale `unsupported` result is replaced.
+     * picks the key up — no re-enrollment and no new revision needed.
      */
     @Test
     fun `an older agent reports safeBoot unsupported and an updated agent applies it on re-apply`() = runTest {
@@ -327,34 +326,12 @@ class ServerInjectedPolicyTest {
         assertEquals(ConfigOutcome.APPLIED, result.outcomes["policies.camera"])
         assertEquals("unsupported does not block the revision", "dev-10", old.configStore.revision())
 
-        // Self-update: BootReceiver marks the revision unreported, then the re-apply worker runs.
-        old.configStore.markUnreported()
         val safeBoot = RecordingToggle("safeBoot")
         val updated = Harness(mapOf("safeBoot" to safeBoot, "camera" to camera), configStore = old.configStore)
         val reapplied = updated.applier.reapplyPersisted()
 
-        assertEquals("enforced offline, before any check-in", listOf(false), safeBoot.calls)
+        assertEquals(listOf(false), safeBoot.calls)
         assertEquals(ConfigOutcome.APPLIED, reapplied?.outcomes?.get("policies.safeBoot"))
-        assertNull("the re-apply must not report the revision again", updated.configStore.revision())
-
-        // First check-in after the update reports no applied revision, so the server re-sends config.apply...
-        updated.serverSays(
-            configCommand(
-                ConfigApplyPayload(revision = "dev-10", policies = mapOf("safeBoot" to false, "camera" to false))
-            )
-        )
-        updated.coordinator.runOnce()
-        assertNull(updated.api.checkInRequests[0].state?.appliedConfigRevision)
-
-        // ...whose result replaces the stale `unsupported`, and the revision is reported again.
-        val fresh = ProtocolJson.json.decodeFromString(
-            ConfigApplyResult.serializer(),
-            updated.pending.drain().single().detail!!,
-        )
-        assertEquals(ConfigOutcome.APPLIED, fresh.outcomes["policies.safeBoot"])
-        updated.serverSays()
-        updated.coordinator.runOnce()
-        assertEquals("dev-10", updated.api.checkInRequests[1].state?.appliedConfigRevision)
     }
 
     /**

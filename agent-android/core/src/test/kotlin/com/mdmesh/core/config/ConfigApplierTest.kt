@@ -101,20 +101,4 @@ class ConfigApplierTest {
         assertEquals("p1", r?.revision); assertEquals(true, wifi.last)
         assertNull(ConfigApplier(emptyMap(), kiosk(FakeController()), {}, InMemoryConfigStateStore()).reapplyPersisted())
     }
-
-    @Test fun `self-update re-apply enforces but keeps the revision unreported until a server apply`() = runTest {
-        val safeBoot = FakeToggle("safeBoot", PolicyOutcome.Applied); val store = InMemoryConfigStateStore()
-        val doc = ConfigApplyPayload(revision = "p2", policies = mapOf("safeBoot" to false))
-        store.save(doc)
-        store.markUnreported()
-        val applier = ConfigApplier(mapOf("safeBoot" to safeBoot), kiosk(FakeController()), {}, store)
-
-        applier.reapplyPersisted()
-        assertEquals(false, safeBoot.last)
-        assertNull("re-apply must not report the revision", store.revision())
-        assertEquals("the document itself is kept for the next boot", doc, store.load())
-
-        applier.apply(doc)
-        assertEquals("p2", store.revision())
-    }
 }

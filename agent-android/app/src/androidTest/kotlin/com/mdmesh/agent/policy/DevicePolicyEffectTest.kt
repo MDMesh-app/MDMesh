@@ -13,6 +13,8 @@ import com.mdmesh.policy.UserRestrictions
 import com.mdmesh.policy.camera.CameraPolicy
 import com.mdmesh.policy.factoryreset.FactoryResetPolicy
 import com.mdmesh.policy.factoryreset.FactoryResetPolicyFactory
+import com.mdmesh.policy.safeboot.SafeBootPolicy
+import com.mdmesh.policy.safeboot.SafeBootPolicyFactory
 import com.mdmesh.policy.screenshots.ScreenshotsPolicy
 import com.mdmesh.policy.wifi.DpmHandle
 import org.junit.After
@@ -45,7 +47,7 @@ import org.junit.runner.RunWith
  *
  * Non-destructive by construction: the original device state is captured in [setUp] and restored in
  * [tearDown], which runs even when a test fails, so a red run never leaves a phone with its camera
- * disabled or its factory reset blocked.
+ * disabled, its factory reset blocked or its Safe Mode blocked.
  */
 @RunWith(AndroidJUnit4::class)
 class DevicePolicyEffectTest {
@@ -92,6 +94,10 @@ class DevicePolicyEffectTest {
             FactoryResetPolicy.CAPABILITY_KEY in toggles,
         )
         assertTrue(
+            "a Device Owner must advertise safeBoot; the server gates on this token",
+            SafeBootPolicy.CAPABILITY_KEY in toggles,
+        )
+        assertTrue(
             "a Device Owner must advertise the other DO-gated toggles too",
             "camera" in toggles && "screenshots" in toggles,
         )
@@ -108,6 +114,20 @@ class DevicePolicyEffectTest {
             toggle = policy,
             describe = "factoryReset",
             isBlockedOnDevice = { restrictionActive(UserRestrictions.DISALLOW_FACTORY_RESET) },
+        )
+    }
+
+    @Test
+    fun safeBootFalseBlocksSafeModeAndTrueReleasesIt() {
+        val policy = requireNotNull(SafeBootPolicyFactory.create(handle)) {
+            "safeBoot resolved no strategy on a Device Owner — the probe chain is broken"
+        }
+
+        // Read back the real OS state, not the agent's own report of it.
+        assertTogglesDeviceState(
+            toggle = policy,
+            describe = "safeBoot",
+            isBlockedOnDevice = { restrictionActive(UserRestrictions.DISALLOW_SAFE_BOOT) },
         )
     }
 
@@ -164,6 +184,10 @@ class DevicePolicyEffectTest {
             restrictionKey(UserRestrictions.DISALLOW_FACTORY_RESET),
             restrictionActive(UserRestrictions.DISALLOW_FACTORY_RESET),
         )
+        put(
+            restrictionKey(UserRestrictions.DISALLOW_SAFE_BOOT),
+            restrictionActive(UserRestrictions.DISALLOW_SAFE_BOOT),
+        )
         put("cameraDisabled", dpm.getCameraDisabled(handle.admin))
         put("screenCaptureDisabled", dpm.getScreenCaptureDisabled(handle.admin))
     }
@@ -175,6 +199,8 @@ class DevicePolicyEffectTest {
             // The strategies speak "allowed", the DPM speaks "blocked": invert on the way back.
             toggles[FactoryResetPolicy.CAPABILITY_KEY]
                 ?.setEnabled(state.getValue(restrictionKey(UserRestrictions.DISALLOW_FACTORY_RESET)).not())
+            toggles[SafeBootPolicy.CAPABILITY_KEY]
+                ?.setEnabled(state.getValue(restrictionKey(UserRestrictions.DISALLOW_SAFE_BOOT)).not())
             toggles[CameraPolicy.CAPABILITY_KEY]?.setEnabled(state.getValue("cameraDisabled").not())
             toggles[ScreenshotsPolicy.CAPABILITY_KEY]?.setEnabled(state.getValue("screenCaptureDisabled").not())
         }

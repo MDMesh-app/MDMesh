@@ -15,6 +15,7 @@ import com.hmdm.rest.json.agent.AgentCheckInRequest;
 import com.hmdm.rest.json.agent.AgentCommandResult;
 import com.hmdm.rest.resource.support.ConfigAppInstaller;
 import com.hmdm.rest.resource.support.ConfigReconciler;
+import com.hmdm.rest.resource.support.InstallHashes;
 import com.hmdm.rest.resource.support.RolloutRequeuer;
 import com.hmdm.util.CryptoUtil;
 import org.junit.Before;
@@ -88,7 +89,8 @@ public class AgentCheckInLimitsTest {
         commands = new FakeCommandDAO();
         reconciler = new NoopReconciler();
         resource = new AgentResource(new FakeUnsecureDAO(), null, commands,
-                new ConfigAppInstaller(null, null, null), reconciler, new NoopRequeuer());
+                new ConfigAppInstaller(null, null, null, null), reconciler, new NoopRequeuer(),
+                new InstallHashes(null, null));
     }
 
     private Response checkin(AgentCheckInRequest req) {

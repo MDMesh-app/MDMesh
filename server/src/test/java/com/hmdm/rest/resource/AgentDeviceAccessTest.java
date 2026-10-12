@@ -3,7 +3,9 @@ package com.hmdm.rest.resource;
 import com.google.inject.Guice;
 import com.hmdm.notification.AgentWakeHub;
 import com.hmdm.persistence.AgentCommandDAO;
+import com.hmdm.persistence.AgentEnrollmentTokenDAO;
 import com.hmdm.persistence.DeviceDAO;
+import com.hmdm.persistence.domain.AgentEnrollmentToken;
 import com.hmdm.persistence.RolloutDAO;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentCommand;
@@ -79,6 +81,7 @@ public class AgentDeviceAccessTest {
         // What the group-aware SQL answers for the logged-in user.
         deviceMapper = new FakeMapper<>(DeviceMapper.class)
                 .answer("isDeviceAccessibleToUser", a -> allDevices || ((Integer) a[0]) == VISIBLE_ID)
+                .answer("isCustomerConfiguration", a -> ((Integer) a[0]) == OWN_CONFIG || ((Integer) a[0]) == OTHER_OWN_CONFIG)
                 .answer("getDeviceNumbersAccessibleToUser",
                         a -> allDevices ? Fakes.list(VISIBLE, HIDDEN) : Fakes.list(VISIBLE));
         DeviceDAO deviceDAO = new DeviceDAO(deviceMapper.mapper, null, Guice.createInjector(), null, 3);
@@ -89,7 +92,13 @@ public class AgentDeviceAccessTest {
             @Override public Device getDeviceById(Integer id) {
                 return devices.values().stream().filter(d -> d.getId().equals(id)).findFirst().orElse(null);
             }
-            @Override public Configuration getConfigurationById(Integer id) { return null; }
+            @Override public Configuration getConfigurationById(Integer id) {
+                if (id == null || (id != OWN_CONFIG && id != OTHER_OWN_CONFIG)) return null;
+                Configuration c = new Configuration();
+                c.setId(id);
+                c.setCustomerId(CUSTOMER);
+                return c;
+            }
         };
         AgentCommandDAO commandDAO = new AgentCommandDAO(null, null, null, null) {
             @Override public void insert(AgentCommand c) { sideEffects.add("insert " + c.getDeviceNumber()); }
@@ -157,6 +166,9 @@ public class AgentDeviceAccessTest {
 
         Map<Class<?>, Object> deps = new HashMap<>();
         deps.put(DeviceDAO.class, deviceDAO);
+        deps.put(AgentEnrollmentTokenDAO.class, new AgentEnrollmentTokenDAO(null) {
+            @Override public void insert(AgentEnrollmentToken t) { sideEffects.add("token " + t.getConfigurationId()); }
+        });
         deps.put(UnsecureDAO.class, unsecureDAO);
         deps.put(AgentCommandDAO.class, commandDAO);
         deps.put(AgentWakeHub.class, wakeHub);
@@ -186,12 +198,41 @@ public class AgentDeviceAccessTest {
         return type.cast(best.newInstance(args));
     }
 
+    private static final int OWN_CONFIG = 5, OTHER_OWN_CONFIG = 6;
+
+    private void login(User u) {
+        SecurityContext.release();
+        SecurityContext.init(u);
+    }
+
     private void login(boolean allDevicesAvailable) {
         allDevices = allDevicesAvailable;
         User u = Fakes.user(9, CUSTOMER, "edit_devices", "devices");
         u.setAllDevicesAvailable(allDevicesAvailable);
         SecurityContext.release();
         SecurityContext.init(u);
+    }
+
+    private Response mint(Integer configurationId) {
+        AgentEnrollmentToken body = new AgentEnrollmentToken();
+        body.setConfigurationId(configurationId);
+        return resource.mintToken(body);
+    }
+
+    @Test
+    public void aTokenCannotBindAConfigurationOutsideTheUsersList() {
+        login(Fakes.limitedToConfigurations(Fakes.user(9, CUSTOMER, "edit_devices", "devices"), OWN_CONFIG));
+        assertNotEquals(Response.ResponseStatus.OK, mint(OTHER_OWN_CONFIG).getStatus());
+        assertEquals(Collections.emptyList(), sideEffects);
+
+        assertEquals(Response.ResponseStatus.OK, mint(OWN_CONFIG).getStatus());
+        assertEquals(Response.ResponseStatus.OK, mint(null).getStatus());
+    }
+
+    @Test
+    public void aUserWithAllConfigurationsMayBindAnyOfTheCustomers() {
+        assertEquals(Response.ResponseStatus.OK, mint(OTHER_OWN_CONFIG).getStatus());
+        assertNotEquals(Response.ResponseStatus.OK, mint(99).getStatus());
     }
 
     @After

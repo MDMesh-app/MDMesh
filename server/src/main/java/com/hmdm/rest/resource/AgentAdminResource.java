@@ -157,6 +157,12 @@ public class AgentAdminResource {
             if (cfg == null || cfg.getCustomerId() != customerId.get()) {
                 return Response.ERROR("error.configuration.not.found");
             }
+            // A user limited to some configurations may bind only one of those.
+            if (!deviceDAO.isConfigurationUsableByUser(configurationId)) {
+                logger.warn("Enrollment token refused: configuration {} is not usable by user {}", configurationId,
+                        SecurityContext.get().getCurrentUser().map(u -> u.getLogin()).orElse("?"));
+                return Response.ERROR("error.configuration.not.found");
+            }
         }
 
         long now = System.currentTimeMillis();

@@ -153,8 +153,8 @@ public class DeviceDAO extends AbstractDAO<Device> {
     }
 
     public List<ApplicationSetting> getDeviceApplicationSettings(int deviceId) {
-        final Device dbDevice
-                = getSingleRecord(() -> this.mapper.getDeviceById(deviceId), SecurityException::onDeviceAccessViolation);
+        final Device dbDevice = requireAccessible(
+                getSingleRecord(() -> this.mapper.getDeviceById(deviceId), SecurityException::onDeviceAccessViolation));
         if (dbDevice != null) {
             final List<ApplicationSetting> deviceAppSettings
                     = this.applicationSettingDAO.getApplicationSettingsByDeviceId(dbDevice.getId());
@@ -167,7 +167,7 @@ public class DeviceDAO extends AbstractDAO<Device> {
     public void removeDeviceById(Integer id) {
         updateById(
                 id,
-                this.mapper::getDeviceById,
+                this::getAccessibleDeviceForUpdate,
                 device -> this.mapper.removeDevice(device.getId()),
                 SecurityException::onDeviceAccessViolation
         );
@@ -176,7 +176,7 @@ public class DeviceDAO extends AbstractDAO<Device> {
     public void updateDeviceConfiguration(Integer deviceId, Integer configurationId) {
         updateById(
                 deviceId,
-                this.mapper::getDeviceById,
+                this::getAccessibleDeviceForUpdate,
                 device -> this.mapper.updateDeviceConfiguration(device.getId(), configurationId),
                 SecurityException::onDeviceAccessViolation
         );
@@ -213,7 +213,7 @@ public class DeviceDAO extends AbstractDAO<Device> {
      */
     @Transactional
     public void updateDevice(Device device) {
-        updateById(device.getId(), this.mapper::getDeviceById, dbDevice -> {
+        updateById(device.getId(), this::getAccessibleDeviceForUpdate, dbDevice -> {
             device.setCustomerId(dbDevice.getCustomerId());
             device.updateFastSearch(fastSearchChars);
 
@@ -251,6 +251,27 @@ public class DeviceDAO extends AbstractDAO<Device> {
     }
 
     /**
+     * <p>Gets the device with the given number if the current user may access it (see
+     * {@link #isAccessibleToUser(Device)}); <code>null</code> when it does not exist or is not accessible.</p>
+     */
+    public Device getAccessibleDeviceByNumber(String number) {
+        final Device device = this.mapper.getDeviceByNumber(number);
+        return isAccessibleToUser(device) ? device : null;
+    }
+
+    /** The stored device for a change, if the current user may access it; a security exception otherwise. */
+    private Device getAccessibleDeviceForUpdate(Integer id) {
+        return requireAccessible(this.mapper.getDeviceById(id));
+    }
+
+    private Device requireAccessible(Device device) {
+        if (device != null && !isAccessibleToUser(device)) {
+            throw SecurityException.onDeviceAccessViolation(device);
+        }
+        return device;
+    }
+
+    /**
      * <p>Gets the numbers of the devices accessible to the current user (see {@link #isAccessibleToUser(Device)}).</p>
      */
     public Set<String> getDeviceNumbersAccessibleToUser() {
@@ -267,7 +288,7 @@ public class DeviceDAO extends AbstractDAO<Device> {
      */
     @Transactional
     public List<DeviceApplication> getDeviceInstalledApplications(int deviceId) {
-        final Device dbDevice = getDeviceById(deviceId);
+        final Device dbDevice = requireAccessible(getDeviceById(deviceId));
         if (dbDevice != null) {
             return this.mapper.getDeviceInstalledApplications(dbDevice.getId());
         } else {
@@ -291,7 +312,7 @@ public class DeviceDAO extends AbstractDAO<Device> {
 
     @Transactional
     public void saveDeviceApplicationSettings(Integer deviceId, List<ApplicationSetting> applicationSettings) {
-        final Device dbDevice = getDeviceById(deviceId);
+        final Device dbDevice = requireAccessible(getDeviceById(deviceId));
         if (dbDevice != null) {
             this.mapper.deleteDeviceApplicationSettings(dbDevice.getId());
             this.mapper.insertDeviceApplicationSettings(dbDevice.getId(), applicationSettings);
@@ -309,8 +330,8 @@ public class DeviceDAO extends AbstractDAO<Device> {
     public void updateDeviceDescription(Integer deviceId, String newDeviceDescription) {
         updateById(
                 deviceId,
-                this.mapper::getDeviceById,
-                device -> this.mapper.updateDeviceDescription(deviceId, newDeviceDescription),
+                this::getAccessibleDeviceForUpdate,
+                device -> this.mapper.updateDeviceDescription(device.getId(), newDeviceDescription),
                 SecurityException::onDeviceAccessViolation
         );
     }

@@ -169,7 +169,10 @@ public class DeviceResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response getDevice(@PathParam("number") @ApiParam("Device number") String number) {
         try {
-            Device device = this.deviceDAO.getDeviceByNumber(number);
+            Device device = this.deviceDAO.getAccessibleDeviceByNumber(number);
+            if (device == null) {
+                return Response.DEVICE_NOT_FOUND_ERROR();
+            }
             DeviceView deviceView = new DeviceView(device);
             return Response.OK(deviceView);
         } catch (Exception e) {

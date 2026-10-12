@@ -200,7 +200,7 @@ public class DeviceInfoResource {
     @Path("/private/{deviceNumber}")
     public Response getDeviceDetailedInfo(@PathParam("deviceNumber") String deviceNumber) {
         try {
-            Device dbDevice = this.deviceDAO.getDeviceByNumber(deviceNumber);
+            Device dbDevice = this.deviceDAO.getAccessibleDeviceByNumber(deviceNumber);
             if (dbDevice == null) {
                 logger.error("Device {} was not found", deviceNumber);
                 return Response.DEVICE_NOT_FOUND_ERROR();
@@ -256,7 +256,7 @@ public class DeviceInfoResource {
         try {
             final String deviceNumber = filter.getDeviceNumber();
 
-            Device dbDevice = this.deviceDAO.getDeviceByNumber(deviceNumber);
+            Device dbDevice = this.deviceDAO.getAccessibleDeviceByNumber(deviceNumber);
             if (dbDevice == null) {
                 logger.error("Device {} was not found", deviceNumber);
                 return Response.DEVICE_NOT_FOUND_ERROR();
@@ -296,7 +296,7 @@ public class DeviceInfoResource {
                 return javax.ws.rs.core.Response.status(javax.ws.rs.core.Response.Status.FORBIDDEN).build();
             }
 
-            Device dbDevice = this.deviceDAO.getDeviceByNumber(request.getDeviceNumber());
+            Device dbDevice = this.deviceDAO.getAccessibleDeviceByNumber(request.getDeviceNumber());
             if (dbDevice == null) {
                 logger.error("Device {} was not found", request.getDeviceNumber());
                 return javax.ws.rs.core.Response.serverError().build();

@@ -164,6 +164,18 @@ public class RolloutResource {
         // /update/agent.apk, proxied to the supervisor by Caddy).
         String apkUrl = baseUrl.replaceAll("/+$", "") + "/update/agent.apk?v=" + body.getApkVersionCode();
 
+        // The canary set: only device numbers of this customer that the user may access. Nothing is created
+        // when none is left.
+        List<RolloutDeviceRow> rows = rolloutDAO.listCustomerDevices(cust);
+        Set<String> customerNumbers = new HashSet<>();
+        for (RolloutDeviceRow row : rows) customerNumbers.add(row.getDeviceNumber());
+        customerNumbers.retainAll(deviceDAO.getDeviceNumbersAccessibleToUser());
+        Set<String> canary = new HashSet<>(body.getCanaryDeviceNumbers());
+        canary.retainAll(customerNumbers);
+        if (canary.isEmpty()) {
+            return Response.ERROR("error.rollout.canary.empty");
+        }
+
         long now = System.currentTimeMillis();
         AgentRollout r = new AgentRollout();
         r.setCustomerId(cust);
@@ -184,15 +196,8 @@ public class RolloutResource {
             return Response.ERROR("error.rollout.active");
         }
 
-        // Persist the canary set (only device numbers of this customer that the user may access).
-        List<RolloutDeviceRow> rows = rolloutDAO.listCustomerDevices(cust);
-        Set<String> customerNumbers = new HashSet<>();
-        for (RolloutDeviceRow row : rows) customerNumbers.add(row.getDeviceNumber());
-        customerNumbers.retainAll(deviceDAO.getDeviceNumbersAccessibleToUser());
-        Set<String> canary = new HashSet<>();
-        for (String n : body.getCanaryDeviceNumbers()) {
-            if (customerNumbers.contains(n)) { rolloutDAO.insertCanary(r.getId(), n); canary.add(n); }
-        }
+        // Persist the canary set
+        for (String n : canary) rolloutDAO.insertCanary(r.getId(), n);
 
         // Enqueue to the eligible canary devices (skips already-updated / pending / ineligible).
         Set<String> pending = rolloutDAO.listPendingInstallNumbers(cust, r.getPackageName());
@@ -236,6 +241,7 @@ public class RolloutResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response cancel(@PathParam("id") int id) {
         if (!canEditDevices("cancel rollout")) return Response.PERMISSION_DENIED();
+        if (!canReachWholeFleet("cancel rollout")) return Response.PERMISSION_DENIED();
         Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
         if (!customerId.isPresent()) return Response.PERMISSION_DENIED();
         AgentRollout r = rolloutDAO.findById(id);
@@ -290,7 +296,12 @@ public class RolloutResource {
 
     private Map<String, Object> buildView(AgentRollout r) {
         int cust = r.getCustomerId();
-        List<RolloutDeviceRow> rows = rolloutDAO.listCustomerDevices(cust);
+        // Progress counts only the devices the current user may access
+        Set<String> accessible = deviceDAO.getDeviceNumbersAccessibleToUser();
+        List<RolloutDeviceRow> rows = new ArrayList<>();
+        for (RolloutDeviceRow row : rolloutDAO.listCustomerDevices(cust)) {
+            if (accessible.contains(row.getDeviceNumber())) rows.add(row);
+        }
         Set<String> pending = rolloutDAO.listPendingInstallNumbers(cust, r.getPackageName());
         Set<String> canary = new HashSet<>(rolloutDAO.listCanaryNumbers(r.getId()));
         List<RolloutDeviceRow> canaryRows = filter(rows, canary, true);

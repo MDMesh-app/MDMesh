@@ -141,7 +141,7 @@ public class PushApiResource {
             }
             if (pushRequest.getDeviceNumbers() != null) {
                 for (String deviceNumber : pushRequest.getDeviceNumbers()) {
-                    Device device = deviceDAO.getDeviceByNumber(deviceNumber);
+                    Device device = deviceDAO.getAccessibleDeviceByNumber(deviceNumber);
                     if (device != null) {
                         PushMessage pushMessage = new PushMessage(pushRequest.getMessageType(),
                                 pushRequest.getPayload(), device.getId());

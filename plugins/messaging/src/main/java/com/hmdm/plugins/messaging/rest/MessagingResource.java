@@ -162,7 +162,7 @@ public class MessagingResource {
                 // Send by device number
                 if (sendRequest.getDeviceNumber() != null) {
                     Message message = new Message();
-                    Device device = deviceDAO.getDeviceByNumber(sendRequest.getDeviceNumber());
+                    Device device = deviceDAO.getAccessibleDeviceByNumber(sendRequest.getDeviceNumber());
                     if (device == null) {
                         String error = "Attempt to send message to wrong device number " + sendRequest.getDeviceNumber();
                         logger.error(error);

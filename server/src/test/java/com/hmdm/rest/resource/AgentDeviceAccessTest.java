@@ -56,6 +56,7 @@ public class AgentDeviceAccessTest {
     private final Map<String, Device> devices = new HashMap<>();
     private final List<String> sideEffects = new ArrayList<>();
     private boolean allDevices;
+    private boolean active;
     private FakeMapper<DeviceMapper> deviceMapper;
     private AgentAdminResource resource;
     private RolloutResource rollouts;
@@ -119,8 +120,13 @@ public class AgentDeviceAccessTest {
         };
 
         RolloutDAO rolloutDAO = new RolloutDAO(null) {
-            @Override public AgentRollout findActiveByCustomer(int c) { return null; }
-            @Override public void insertRollout(AgentRollout r) { r.setId(77); }
+            @Override public AgentRollout findActiveByCustomer(int c) {
+                if (!active) return null;
+                AgentRollout r = findById(77);
+                r.setStage("fleet");
+                return r;
+            }
+            @Override public void insertRollout(AgentRollout r) { r.setId(77); sideEffects.add("rollout created"); }
             @Override public void insertCanary(int id, String n) { sideEffects.add("canary " + n); }
             @Override public AgentRollout findById(int id) {
                 AgentRollout r = new AgentRollout();
@@ -267,6 +273,40 @@ public class AgentDeviceAccessTest {
 
         assertTrue(sideEffects.toString(), sideEffects.contains("canary " + VISIBLE));
         assertTrue(sideEffects.toString(), sideEffects.stream().noneMatch(s -> s.endsWith(HIDDEN)));
+    }
+
+    @Test
+    public void aRolloutWithNoAccessibleCanaryIsNotCreated() {
+        RolloutResource.CreateRolloutRequest body = new RolloutResource.CreateRolloutRequest();
+        body.setTargetVersion("2");
+        body.setPackageName("com.example.agent");
+        body.setApkVersionCode(2);
+        body.setApkSha256(new String(new char[64]).replace('\0', 'a'));
+        body.setCanaryDeviceNumbers(Fakes.list(HIDDEN));
+
+        assertNotEquals(Response.ResponseStatus.OK, rollouts.create(body).getStatus());
+        assertEquals(Collections.emptyList(), sideEffects);
+    }
+
+    @Test
+    public void cancellingTheFleetRolloutNeedsAccessToAllDevices() {
+        assertNotEquals(Response.ResponseStatus.OK, rollouts.cancel(77).getStatus());
+        assertEquals(Collections.emptyList(), sideEffects);
+
+        login(true);
+        assertEquals(Response.ResponseStatus.OK, rollouts.cancel(77).getStatus());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void activeRolloutProgressCountsOnlyTheUsersDevices() {
+        active = true;   // a fleet-stage rollout over both devices
+        Map<String, Object> progress = (Map<String, Object>) ((Map<String, Object>) rollouts.active().getData()).get("progress");
+        assertEquals(1, ((com.hmdm.util.RolloutProgress.Counts) progress.get("fleet")).getTotal());
+
+        login(true);
+        progress = (Map<String, Object>) ((Map<String, Object>) rollouts.active().getData()).get("progress");
+        assertEquals(2, ((com.hmdm.util.RolloutProgress.Counts) progress.get("fleet")).getTotal());
     }
 
     @Test

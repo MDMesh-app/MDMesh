@@ -173,7 +173,7 @@ public class PushResource {
                 // Send by device number
                 if (sendRequest.getDeviceNumber() != null) {
                     PluginPushMessage message = new PluginPushMessage();
-                    Device device = deviceDAO.getDeviceByNumber(sendRequest.getDeviceNumber());
+                    Device device = deviceDAO.getAccessibleDeviceByNumber(sendRequest.getDeviceNumber());
                     if (device == null) {
                         String error = "Attempt to send Push message to wrong device number " + sendRequest.getDeviceNumber();
                         logger.error(error);
@@ -355,7 +355,7 @@ public class PushResource {
         try {
             if (task.getScope().equals("device")) {
                 // Autocomplete returns device number
-                Device dbDevice = deviceDAO.getDeviceByNumber(task.getDeviceNumber());
+                Device dbDevice = deviceDAO.getAccessibleDeviceByNumber(task.getDeviceNumber());
                 if (dbDevice == null) {
                     logger.error("Invalid device number in the scheduled task! " + task.getDeviceNumber());
                     return Response.INTERNAL_ERROR();

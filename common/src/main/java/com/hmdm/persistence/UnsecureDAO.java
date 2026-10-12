@@ -235,6 +235,15 @@ public class UnsecureDAO {
         return this.settingsMapper.getSettings(customerId);
     }
 
+    /**
+     * <p>Checks if the customer of the specified user requires two-factor authentication. A sign-in which does not
+     * complete the second factor must not authenticate such a user.</p>
+     */
+    public boolean isTwoFactorRequired(User user) {
+        Settings settings = getSettings(user.getCustomerId());
+        return settings != null && settings.isTwoFactor();
+    }
+
     public Settings getSingleCustomerSettings() {
         return this.settingsMapper.getSettings(DEFAULT_CUSTOMER_ID);
     }

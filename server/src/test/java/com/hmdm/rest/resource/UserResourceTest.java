@@ -6,6 +6,7 @@ import com.hmdm.persistence.UserDAO;
 import com.hmdm.persistence.domain.Settings;
 import com.hmdm.persistence.domain.User;
 import com.hmdm.persistence.domain.UserRole;
+import com.hmdm.persistence.domain.UserRolePermission;
 import com.hmdm.persistence.mapper.UserMapper;
 import com.hmdm.rest.json.Response;
 import com.hmdm.security.SecurityContext;
@@ -296,7 +297,168 @@ public class UserResourceTest {
         assertTrue(writes.isEmpty());
     }
 
+    // ---- PUT /private/users on the caller's own account --------------------------------------------------------------
+
+    @Test
+    public void callerCannotEditOwnAccountThroughUserAdministration() {
+        signIn(orgAdmin);
+        User request = edit(orgAdmin, ORG_ADMIN);
+        request.setEmail("redirected@example.com");
+        request.setNewPassword(PASSWORD_MD5);
+
+        Response response = resource.updateUser(request);
+
+        assertDenied(response);
+        assertTrue(writes.isEmpty());
+    }
+
+    // ---- PUT /private/users/current ----------------------------------------------------------------------------------
+
+    @Test
+    public void ownPasswordChangeAppliesToCallerWhateverLoginIsSent() {
+        signIn(tenantUser);
+        User request = new User();
+        request.setId(tenantUser.getId());
+        request.setLogin(orgAdmin.getLogin());
+        request.setOldPassword(PASSWORD_MD5);
+        request.setNewPassword("0123456789ABCDEF0123456789ABCDEF");
+
+        Response response = resource.updatePassword(request);
+
+        assertEquals(Response.ResponseStatus.OK, response.getStatus());
+        assertEquals(java.util.Collections.singletonList("updatePassword"), writes);
+        assertEquals(tenantUser.getId(), written.get(0).getId());
+    }
+
+    // ---- DELETE /private/users/other/{id} ----------------------------------------------------------------------------
+
+    @Test
+    public void orgAdminCannotDeleteUserOfAnotherCustomer() {
+        signIn(orgAdmin);
+
+        assertDenied(resource.deleteUser(otherTenantUser.getId()));
+        assertTrue(writes.isEmpty());
+    }
+
+    @Test
+    public void orgAdminOfSuperAdminCustomerCannotDeleteSuperAdmin() {
+        signIn(masterOrgAdmin);
+
+        assertDenied(resource.deleteUser(superAdmin.getId()));
+        assertTrue(writes.isEmpty());
+    }
+
+    @Test
+    public void orgAdminCanDeleteOwnCustomerUser() {
+        signIn(orgAdmin);
+
+        Response response = resource.deleteUser(tenantUser.getId());
+
+        assertEquals(Response.ResponseStatus.OK, response.getStatus());
+        assertEquals(java.util.Collections.singletonList("deleteUser:" + tenantUser.getId()), writes);
+    }
+
+    // ---- GET /private/users/impersonate/{id} -------------------------------------------------------------------------
+
+    @Test
+    public void orgAdminOfSuperAdminCustomerCannotImpersonateSuperAdmin() throws Exception {
+        signIn(masterOrgAdmin);
+        List<Object> sessionWrites = new ArrayList<>();
+
+        Response response = resource.login(superAdmin.getId(), request(sessionWrites), null);
+
+        assertDenied(response);
+        assertTrue(sessionWrites.isEmpty());
+    }
+
+    @Test
+    public void orgAdminCanImpersonateOwnCustomerUserWithoutSeeingSecrets() throws Exception {
+        signIn(orgAdmin);
+        List<Object> sessionWrites = new ArrayList<>();
+
+        Response response = resource.login(tenantUser.getId(), request(sessionWrites), null);
+
+        assertEquals(Response.ResponseStatus.OK, response.getStatus());
+        assertEquals(1, sessionWrites.size());
+        assertNoSecrets(json(response.getData()));
+    }
+
+    // ---- secrets in responses ----------------------------------------------------------------------------------------
+
+    @Test
+    public void userDetailsDoNotExposeSecrets() throws Exception {
+        signIn(orgAdmin);
+
+        Response response = resource.getUserDetails(tenantUser.getId());
+
+        assertEquals(Response.ResponseStatus.OK, response.getStatus());
+        String json = json(response.getData());
+        assertTrue(json, json.contains("\"login\":\"operator\""));
+        assertNoSecrets(json);
+    }
+
+    @Test
+    public void userListDoesNotExposeSecrets() throws Exception {
+        signIn(orgAdmin);
+
+        Response response = resource.getUsers(null);
+
+        assertEquals(Response.ResponseStatus.OK, response.getStatus());
+        String json = json(response.getData());
+        assertTrue(json, json.contains("\"login\":\"operator\""));
+        assertNoSecrets(json);
+    }
+
+    @Test
+    public void adminCannotReadSuperAdminDetails() {
+        signIn(masterOrgAdmin);
+
+        assertDenied(resource.getUserDetails(superAdmin.getId()));
+    }
+
+    @Test
+    public void adminCannotReadDetailsOfAnotherCustomer() {
+        signIn(orgAdmin);
+
+        assertDenied(resource.getUserDetails(otherTenantUser.getId()));
+    }
+
+    @Test
+    public void passwordResetTokenIsStillAcceptedInRequests() throws Exception {
+        // POST /public/passwordReset/reset reads the token from a User body
+        User body = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readValue("{\"passwordResetToken\":\"abc\",\"newPassword\":\"x\"}", User.class);
+
+        assertEquals("abc", body.getPasswordResetToken());
+    }
+
     // ---- helpers -----------------------------------------------------------------------------------------------------
+
+    private static String json(Object value) throws Exception {
+        return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(value);
+    }
+
+    private static void assertNoSecrets(String json) {
+        for (String field : new String[]{"password", "authToken", "passwordResetToken", "twoFactorSecret", "authData"}) {
+            assertTrue(field + " in " + json, !json.contains("\"" + field + "\""));
+        }
+        assertTrue(json, !json.contains("reset-") && !json.contains("token-") && !json.contains("totp-"));
+    }
+
+    /** A request whose session records what is stored in it. */
+    private static javax.servlet.http.HttpServletRequest request(List<Object> sessionWrites) {
+        javax.servlet.http.HttpSession session = (javax.servlet.http.HttpSession) Proxy.newProxyInstance(
+                UserResourceTest.class.getClassLoader(), new Class<?>[]{javax.servlet.http.HttpSession.class},
+                (proxy, method, args) -> {
+                    if ("setAttribute".equals(method.getName())) {
+                        sessionWrites.add(args[1]);
+                    }
+                    return null;
+                });
+        return (javax.servlet.http.HttpServletRequest) Proxy.newProxyInstance(
+                UserResourceTest.class.getClassLoader(), new Class<?>[]{javax.servlet.http.HttpServletRequest.class},
+                (proxy, method, args) -> "getSession".equals(method.getName()) ? session : null);
+    }
 
     private static void assertDenied(Response response) {
         assertNotNull(response);
@@ -314,6 +476,13 @@ public class UserResourceTest {
         role.setId(id);
         role.setName("role" + id);
         role.setSuperAdmin(superAdmin);
+        List<UserRolePermission> permissions = new ArrayList<>();
+        if (id == 2) {                                  // the org admin role holds the "settings" permission
+            UserRolePermission settings = new UserRolePermission();
+            settings.setName("settings");
+            permissions.add(settings);
+        }
+        role.setPermissions(permissions);
         return role;
     }
 
@@ -327,6 +496,9 @@ public class UserResourceTest {
         user.setUserRole(role);
         user.setPassword(PasswordUtil.getHashFromMd5(PASSWORD_MD5));
         user.setAuthToken("token-" + id);
+        user.setPasswordResetToken("reset-" + id);
+        user.setTwoFactorSecret("totp-" + id);
+        user.setAuthData("authdata-" + id);
         users.put(id, user);
         return user;
     }
@@ -368,6 +540,9 @@ public class UserResourceTest {
         user.setCustomerId(source.getCustomerId());
         user.setUserRole(source.getUserRole());
         user.setAuthToken(source.getAuthToken());
+        user.setPasswordResetToken(source.getPasswordResetToken());
+        user.setTwoFactorSecret(source.getTwoFactorSecret());
+        user.setAuthData(source.getAuthData());
         user.setAllDevicesAvailable(source.isAllDevicesAvailable());
         user.setAllConfigAvailable(source.isAllConfigAvailable());
         user.setGroups(new ArrayList<>());
@@ -417,6 +592,15 @@ public class UserResourceTest {
                             User u = byEmail((String) args[0]);
                             return u == null ? null : copy(u, true);
                         }
+                        case "findAll":
+                        case "findAllByFilter": {
+                            int customerId = (Integer) args[0];
+                            return users.values().stream().filter(u -> u.getCustomerId() == customerId)
+                                    .map(u -> copy(u, false)).collect(Collectors.toList());
+                        }
+                        case "deleteUser":
+                            writes.add("deleteUser:" + ((User) args[0]).getId());
+                            return null;
                         case "findAllUserRoles": {
                             boolean includeSuperAdmin = (Boolean) args[0];
                             List<UserRole> roles = java.util.Arrays.asList(SUPER_ADMIN, ORG_ADMIN, USER);

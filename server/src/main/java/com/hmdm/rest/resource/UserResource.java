@@ -107,7 +107,16 @@ public class UserResource {
                 u.getLogin());
                 return Response.PERMISSION_DENIED();
             }
-            User userDetails = userDAO.getUserDetails(id);
+            User userDetails;
+            try {
+                userDetails = u.getId() == id ? userDAO.getUserDetails(id) : userDAO.getManagedUser(id);
+            } catch (SecurityException e) {
+                logger.warn("Failed to get details of user {}: not allowed for {}", id, u.getLogin());
+                return Response.PERMISSION_DENIED();
+            }
+            if (userDetails == null) {
+                return Response.ERROR("error.user.not.found");
+            }
             userDetails.setPassword(null);
             return Response.OK(userDetails);
         })
@@ -210,6 +219,11 @@ public class UserResource {
                     logger.warn("Failed to update user {}: role not allowed for {}", user.getLogin(), u.getLogin());
                     return Response.PERMISSION_DENIED();
                 }
+                if (user.getId() != null && user.getId().equals(u.getId())) {
+                    // The own account is changed through /details and /current, which check the current password
+                    logger.warn("Failed to update user {}: own account", u.getLogin());
+                    return Response.PERMISSION_DENIED();
+                }
                 if (user.getId() != null) {
                     // Update the persisted account, and only one the caller is allowed to administer
                     User target = this.userDAO.getManagedUser(user.getId());
@@ -298,8 +312,13 @@ public class UserResource {
                 return Response.PERMISSION_DENIED();
             }
             try {
+                // Throws unless the caller is allowed to administer the account
+                userDAO.getManagedUser(id);
                 userDAO.deleteUser(id);
                 return Response.OK();
+            } catch (SecurityException e) {
+                logger.warn("Failed to delete user {}: not allowed for {}", id, u.getLogin());
+                return Response.PERMISSION_DENIED();
             } catch (Exception e) {
                 logger.warn("Failed to delete user", e);
                 return Response.ERROR(e.getMessage());

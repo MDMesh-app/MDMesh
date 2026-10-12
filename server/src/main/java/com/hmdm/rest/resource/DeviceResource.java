@@ -251,8 +251,9 @@ public class DeviceResource {
                     }
                 } else if (device.getIds() != null) {
                     // This is a bulk request to update configurations for selected devices: all or nothing
-                    if (!this.deviceDAO.areAccessibleToUser(device.getIds())) {
-                        log.error("Bulk configuration change refused: not all devices are accessible to user {}",
+                    if (!this.deviceDAO.areAccessibleToUser(device.getIds())
+                            || !this.deviceDAO.isConfigurationUsableByUser(device.getConfigurationId())) {
+                        log.error("Bulk configuration change refused: devices or configuration not accessible to user {}",
                                 SecurityContext.get().getCurrentUserName());
                         return Response.PERMISSION_DENIED();
                     }
@@ -441,6 +442,12 @@ public class DeviceResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response notifyDevicesOnUpdate(@PathParam("id") Integer id) {
         try {
+            if (!SecurityContext.get().hasPermission("edit_devices")
+                    || !this.deviceDAO.areAccessibleToUser(java.util.Collections.singletonList(id))) {
+                log.error("Unauthorized attempt to notify device #{} by user {}", id,
+                        SecurityContext.get().getCurrentUserName());
+                return Response.PERMISSION_DENIED();
+            }
             this.pushService.notifyDeviceOnApplicationSettingUpdate(id);
             return Response.OK();
         } catch (Exception e) {

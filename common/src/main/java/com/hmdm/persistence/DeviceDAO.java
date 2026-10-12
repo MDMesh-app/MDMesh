@@ -177,7 +177,10 @@ public class DeviceDAO extends AbstractDAO<Device> {
         updateById(
                 deviceId,
                 this::getAccessibleDeviceForUpdate,
-                device -> this.mapper.updateDeviceConfiguration(device.getId(), configurationId),
+                device -> {
+                    requireUsableConfiguration(configurationId, device.getConfigurationId());
+                    this.mapper.updateDeviceConfiguration(device.getId(), configurationId);
+                },
                 SecurityException::onDeviceAccessViolation
         );
     }
@@ -193,6 +196,7 @@ public class DeviceDAO extends AbstractDAO<Device> {
     @Transactional
     public void insertDevice(Device device) {
         insertRecord(device, d -> {
+            requireUsableConfiguration(d.getConfigurationId(), null);
             d.updateFastSearch(fastSearchChars);
             this.mapper.insertDevice(d);
             if (d.getGroups() != null && !d.getGroups().isEmpty()) {
@@ -214,6 +218,7 @@ public class DeviceDAO extends AbstractDAO<Device> {
     @Transactional
     public void updateDevice(Device device) {
         updateById(device.getId(), this::getAccessibleDeviceForUpdate, dbDevice -> {
+            requireUsableConfiguration(device.getConfigurationId(), dbDevice.getConfigurationId());
             device.setCustomerId(dbDevice.getCustomerId());
             device.updateFastSearch(fastSearchChars);
 
@@ -246,7 +251,8 @@ public class DeviceDAO extends AbstractDAO<Device> {
         }
         return SecurityContext.get().getCurrentUser()
                 .filter(u -> u.getCustomerId() == device.getCustomerId())
-                .map(u -> this.mapper.isDeviceAccessibleToUser(device.getId(), u.getId(), u.getCustomerId()))
+                .map(u -> u.isSuperAdmin()
+                        || this.mapper.isDeviceAccessibleToUser(device.getId(), u.getId(), u.getCustomerId()))
                 .orElse(false);
     }
 
@@ -274,6 +280,31 @@ public class DeviceDAO extends AbstractDAO<Device> {
             }
         }
         return true;
+    }
+
+    /**
+     * <p>Checks if the current user may put devices into the configuration: it belongs to the user's customer and,
+     * for a user limited to some configurations, is one of those.</p>
+     */
+    public boolean isConfigurationUsableByUser(Integer configurationId) {
+        if (configurationId == null) {
+            return true;
+        }
+        return SecurityContext.get().getCurrentUser()
+                .map(u -> this.mapper.isCustomerConfiguration(configurationId, u.getCustomerId())
+                        && (u.isAllConfigAvailable() || u.getConfigurations() != null
+                            && u.getConfigurations().stream().anyMatch(c -> c.getId() == configurationId)))
+                .orElse(false);
+    }
+
+    /** A device may be moved only into a configuration usable by the current user; keeping its current one is fine. */
+    private void requireUsableConfiguration(Integer configurationId, Integer currentConfigurationId) {
+        if (configurationId == null || configurationId.equals(currentConfigurationId)) {
+            return;
+        }
+        if (!isConfigurationUsableByUser(configurationId)) {
+            throw SecurityException.onConfigurationAccessViolation(configurationId);
+        }
     }
 
     /** The stored device for a change, if the current user may access it; a security exception otherwise. */

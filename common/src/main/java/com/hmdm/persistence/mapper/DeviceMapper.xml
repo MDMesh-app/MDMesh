@@ -71,8 +71,12 @@
     <insert id="insertDevice" parameterType="Device" useGeneratedKeys="true" keyColumn="id" keyProperty="id">
         INSERT INTO devices(number, description, lastUpdate, configurationId,
             imei, phone, customerId, custom1, custom2, custom3, oldNumber, fastSearch)
-        VALUES (#{number}, #{description}, #{lastUpdate}, #{configurationId},
-            #{imei}, #{phone}, #{customerId}, #{custom1}, #{custom2}, #{custom3}, #{oldNumber}, #{fastSearch});
+        SELECT #{number}, #{description}, #{lastUpdate}, #{configurationId,jdbcType=INTEGER},
+            #{imei}, #{phone}, #{customerId}, #{custom1}, #{custom2}, #{custom3}, #{oldNumber}, #{fastSearch}
+        WHERE CAST(#{configurationId,jdbcType=INTEGER} AS INTEGER) IS NULL
+           OR EXISTS (SELECT 1 FROM configurations
+                      WHERE configurations.id = #{configurationId,jdbcType=INTEGER}
+                        AND configurations.customerId = #{customerId});
     </insert>
 
     <update id="updateDevice" parameterType="Device">
@@ -80,6 +84,10 @@
                            configurationId = #{configurationId}, imei = #{imei}, phone = #{phone},
                            custom1=#{custom1}, custom2=#{custom2}, custom3=#{custom3},
                            oldNumber=#{oldNumber}, fastSearch=#{fastSearch} WHERE id = #{id}
+          AND (CAST(#{configurationId,jdbcType=INTEGER} AS INTEGER) IS NULL
+               OR EXISTS (SELECT 1 FROM configurations
+                          WHERE configurations.id = #{configurationId,jdbcType=INTEGER}
+                            AND configurations.customerId = devices.customerId))
     </update>
 
     <sql id="allowedDevicesSelect">

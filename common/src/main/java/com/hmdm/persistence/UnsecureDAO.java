@@ -577,6 +577,10 @@ public class UnsecureDAO {
                 return null;
             }
         }
+        if (!isCustomerConfiguration(configurationId, customerId)) {
+            logger.warn("Configuration {} does not belong to customer {}, device not created", configurationId, customerId);
+            return null;
+        }
 
         Device newDevice = new Device();
         newDevice.setCustomerId(customerId);
@@ -593,6 +597,12 @@ public class UnsecureDAO {
         logger.info("New device {} added (customer {}, configuration {})", deviceId, customerId, configurationId);
 
         return getDeviceByNumber(deviceId);
+    }
+
+    private boolean isCustomerConfiguration(Integer configurationId, int customerId) {
+        final Configuration configuration = configurationId == null ? null
+                : this.configurationMapper.getConfigurationById(configurationId);
+        return configuration != null && configuration.getCustomerId() == customerId;
     }
 
     public Device createNewDeviceOnDemand(String deviceId) {
@@ -667,6 +677,11 @@ public class UnsecureDAO {
             }
         } else if (settings != null && settings.isCreateNewDevices()) {
             // Configuration not specified, we will add a device only if a legacy setting "Create new devices" is set
+            if (settings.getNewDeviceConfigurationId() != null
+                    && !isCustomerConfiguration(settings.getNewDeviceConfigurationId(), customerId)) {
+                logger.warn("Default configuration of customer {} does not belong to it, device not created", customerId);
+                return null;
+            }
             newDevice.setConfigurationId(settings.getNewDeviceConfigurationId());
         } else {
             logger.warn("Creating new devices disabled by settings, configuration ID not set");

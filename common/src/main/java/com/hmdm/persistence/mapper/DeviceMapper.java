@@ -158,9 +158,15 @@ public interface DeviceMapper {
     @Delete({"DELETE FROM devices WHERE id = #{id}"})
     void removeDevice(@Param("id") Integer id);
 
-    @Update({"UPDATE devices SET configurationId = #{configurationId} WHERE id = #{deviceId}"})
+    @Update({"UPDATE devices SET configurationId = #{configurationId} WHERE id = #{deviceId} " +
+            "AND EXISTS (SELECT 1 FROM configurations " +
+            "            WHERE configurations.id = #{configurationId} AND configurations.customerId = devices.customerId)"})
     void updateDeviceConfiguration(@Param("deviceId") Integer deviceId,
                                    @Param("configurationId") Integer configurationId);
+
+    @Select({"SELECT COUNT(*) > 0 FROM configurations WHERE id = #{configurationId} AND customerId = #{customerId}"})
+    boolean isCustomerConfiguration(@Param("configurationId") int configurationId,
+                                    @Param("customerId") int customerId);
 
     @Update({"UPDATE devices SET description = #{description} WHERE id = #{deviceId}"})
     void updateDeviceDescription(@Param("deviceId") Integer deviceId,

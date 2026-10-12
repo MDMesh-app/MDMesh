@@ -26,6 +26,7 @@ import static org.junit.Assert.fail;
 public class DeviceGroupAccessTest {
 
     private static final int VISIBLE = 1, HIDDEN = 2, OTHER_CUSTOMER_DEVICE = 3;
+    private static final int OWN_CONFIG = 5, OWN_CONFIG_2 = 6, OTHER_CONFIG = 7;
 
     private static Device otherCustomerDevice() {
         Device d = device(OTHER_CUSTOMER_DEVICE);
@@ -41,6 +42,7 @@ public class DeviceGroupAccessTest {
         d.setId(id);
         d.setNumber("DEV" + id);
         d.setCustomerId(1);
+        d.setConfigurationId(OWN_CONFIG);
         d.setGroups(new ArrayList<>());
         return d;
     }
@@ -51,7 +53,9 @@ public class DeviceGroupAccessTest {
                 .answer("getDeviceById", a -> a[0] == null || (Integer) a[0] == OTHER_CUSTOMER_DEVICE
                         ? (a[0] == null ? null : otherCustomerDevice()) : device((Integer) a[0]))
                 .answer("getDeviceByNumber", a -> a[0] == null ? null : device(Integer.parseInt(((String) a[0]).substring(3))))
-                .answer("isDeviceAccessibleToUser", a -> ((Integer) a[0]) == VISIBLE);
+                .answer("isDeviceAccessibleToUser", a -> ((Integer) a[0]) == VISIBLE)
+                .answer("isCustomerConfiguration", a -> ((Integer) a[1]) == 1
+                        && (((Integer) a[0]) == OWN_CONFIG || ((Integer) a[0]) == OWN_CONFIG_2));
         dao = new DeviceDAO(fake.mapper, null, Guice.createInjector(), null, 3);
         com.hmdm.persistence.domain.User u = Fakes.user(9, 1, "edit_devices", "devices", "edit_device_desc");
         u.setAllDevicesAvailable(false);
@@ -127,6 +131,71 @@ public class DeviceGroupAccessTest {
         bulkDelete.setIds(Fakes.list(VISIBLE));
         assertEquals(Response.ResponseStatus.OK, resource.removeBulkDevices(bulkDelete).getStatus());
         assertEquals(1, fake.callsTo("removeDevice").size());
+    }
+
+    private static void expectDenied(String name, Runnable op) {
+        try {
+            op.run();
+            fail(name + " must be rejected");
+        } catch (SecurityException expected) {
+            // ok
+        }
+    }
+
+    private static Device withConfiguration(int id, int configurationId) {
+        Device d = device(id);
+        d.setConfigurationId(configurationId);
+        return d;
+    }
+
+    @Test
+    public void aDeviceCannotBePointedAtAnotherCustomersConfiguration() {
+        expectDenied("configuration", () -> dao.updateDeviceConfiguration(VISIBLE, OTHER_CONFIG));
+        expectDenied("update", () -> dao.updateDevice(withConfiguration(VISIBLE, OTHER_CONFIG)));
+        Device created = withConfiguration(0, OTHER_CONFIG);
+        created.setId(null);
+        expectDenied("insert", () -> dao.insertDevice(created));
+        assertTrue(fake.calls.toString(), noDeviceWrites());
+        String where = Fakes.whereOf(Fakes.sqlOf(DeviceMapper.class, "updateDeviceConfiguration"));
+        assertTrue(where, where.contains("configurations.customerid"));
+    }
+
+    @Test
+    public void aUserLimitedToSomeConfigurationsCannotMoveADeviceIntoAnotherOne() {
+        com.hmdm.persistence.domain.User u = Fakes.limitedToConfigurations(Fakes.user(9, 1, "edit_devices"), OWN_CONFIG);
+        u.setAllDevicesAvailable(false);
+        SecurityContext.release();
+        SecurityContext.init(u);
+        expectDenied("configuration", () -> dao.updateDeviceConfiguration(VISIBLE, OWN_CONFIG_2));
+        assertTrue(fake.calls.toString(), noDeviceWrites());
+        dao.updateDeviceConfiguration(VISIBLE, OWN_CONFIG);
+        assertEquals(1, fake.callsTo("updateDeviceConfiguration").size());
+    }
+
+    @Test
+    public void bulkConfigurationChangeToAnotherCustomersConfigurationWritesNothing() {
+        DeviceResource resource = new DeviceResource(dao, null, null, null, null, null, null);
+        Device reassign = new Device();
+        reassign.setIds(Fakes.list(VISIBLE));
+        reassign.setConfigurationId(OTHER_CONFIG);
+        assertNotEquals(Response.ResponseStatus.OK, resource.updateDevice(reassign).getStatus());
+        assertTrue(fake.calls.toString(), noDeviceWrites());
+    }
+
+    @Test
+    public void notifyingAHiddenDeviceIsRefused() {
+        DeviceResource resource = new DeviceResource(dao, null, null, null, null, null, null);
+        assertEquals(Response.PERMISSION_DENIED().getMessage(), resource.notifyDevicesOnUpdate(HIDDEN).getMessage());
+    }
+
+    @Test
+    public void aSuperAdminIsNotLimitedByDeviceGroups() {
+        com.hmdm.persistence.domain.User admin = Fakes.superAdmin(1, 1);
+        admin.setAllDevicesAvailable(false);
+        SecurityContext.release();
+        SecurityContext.init(admin);
+        dao.updateDeviceDescription(HIDDEN, "x");
+        assertEquals(1, fake.callsTo("updateDeviceDescription").size());
     }
 
     @Test

@@ -54,7 +54,9 @@ first update, which pins the versions (or set `SERVER_VERSION`/`WEB_VERSION`/`CU
 
 ## Option B — from source (clone + build)
 
-Prereqs: Docker + Compose v2, and `openssl`.
+Prereqs: Docker + Compose v2, and `openssl`. Also `minisign` (`apt-get install minisign`), `python3` and `curl`: like the
+native installer, `setup.sh` bakes the release agent APK's signing checksum into the enrollment QR only after the release's
+`manifest.json` verifies against `release/minisign.pub`; without them the console keeps its debug enrollment defaults.
 
 ```bash
 git clone https://github.com/MDMesh-app/MDMesh.git && cd MDMesh

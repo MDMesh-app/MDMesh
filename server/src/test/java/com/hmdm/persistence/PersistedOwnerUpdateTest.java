@@ -58,6 +58,17 @@ public class PersistedOwnerUpdateTest {
     }
 
     @Test
+    public void anotherCustomersGroupDeviceCountIsNotDisclosed() {
+        try {
+            dao.countDevicesByGroupId(2);
+            fail("expected a SecurityException");
+        } catch (SecurityException expected) {
+            // ok
+        }
+        assertTrue(fake.calls.toString(), fake.callsTo("countDevicesByGroupId").isEmpty());
+    }
+
+    @Test
     public void ownGroupIsRenamedWhateverCustomerIdIsSent() {
         dao.updateGroup(group(1, 0));
         assertEquals(1, fake.callsTo("updateGroup").size());

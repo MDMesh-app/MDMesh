@@ -661,6 +661,23 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
         return this.mapper.findById(id);
     }
 
+    /**
+     * <p>Gets the application visible to the current user: one of the user's customer or a common one.</p>
+     *
+     * @throws SecurityException if the application belongs to another customer.
+     */
+    public Application getApplicationById(int id) {
+        final Application application = this.mapper.findById(id);
+        if (application == null) {
+            return null;
+        }
+        final User user = SecurityContext.get().getCurrentUser().orElseThrow(SecurityException::onAnonymousAccess);
+        if (!application.isCommonApplication() && application.getCustomerId() != user.getCustomerId()) {
+            throw SecurityException.onApplicationAccessViolation(application);
+        }
+        return application;
+    }
+
     public ApplicationVersion findApplicationVersionById(int id) {
         return this.mapper.findVersionById(id);
     }
@@ -881,13 +898,13 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
                 }
             }
 
-            final Application dbApplication = this.mapper.findById(dbApplicationVersion.getApplicationId());
+            final Application dbApplication = getEditableApplication(dbApplicationVersion.getApplicationId());
             boolean used = this.mapper.isApplicationVersionUsedInConfigurations(id);
             if (used) {
                 throw new ApplicationReferenceExistsException(id, "configurations");
             }
 
-            this.mapper.removeApplicationVersionById(id);
+            this.mapper.removeApplicationVersionById(id, dbApplication.getId());
 
             // Recalculate latest version for application if necessary
             if (dbApplication.getLatestVersion() != null && dbApplication.getLatestVersion().equals(id)) {

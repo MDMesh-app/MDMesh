@@ -80,6 +80,10 @@ public class GroupDAO extends AbstractDAO<Group> {
     }
 
     public Long countDevicesByGroupId(Integer id) {
+        // getGroupById throws for a group of another customer
+        if (getGroupById(id) == null) {
+            return 0L;
+        }
         return this.mapper.countDevicesByGroupId(id);
     }
 

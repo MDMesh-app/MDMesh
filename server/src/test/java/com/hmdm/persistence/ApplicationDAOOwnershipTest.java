@@ -320,6 +320,33 @@ public class ApplicationDAOOwnershipTest {
     }
 
     @Test
+    public void deletingAnotherCustomersVersionIsRejected() {
+        expectDenied(() -> dao.removeApplicationVersionById(OTHER_VERSION));
+        assertNoMutation();
+        assertTrue(fake.calls.toString(), fake.callsTo("recalculateLatestVersion").isEmpty());
+        String where = Fakes.whereOf(Fakes.sqlOf(ApplicationMapper.class, "removeApplicationVersionById"));
+        assertTrue(where, where.contains("applicationid"));
+    }
+
+    @Test
+    public void ownVersionCanBeDeleted() {
+        dao.removeApplicationVersionById(OWN_VERSION);
+        assertEquals(fake.calls.toString(), 1, fake.callsTo("removeApplicationVersionById").size());
+    }
+
+    @Test
+    public void applicationDetailsAreServedForOwnAndCommonApplicationsOnly() {
+        com.hmdm.rest.resource.ApplicationResource resource =
+                new com.hmdm.rest.resource.ApplicationResource(dao, null, null, "target");
+        login(Fakes.user(5, CUSTOMER, "applications"));
+        com.hmdm.rest.json.Response other = resource.getApplication(OTHER_APP);
+        assertTrue("another customer's application must not be returned",
+                other.getStatus() != com.hmdm.rest.json.Response.ResponseStatus.OK || other.getData() == null);
+        assertEquals(OWN_APP, ((Application) resource.getApplication(OWN_APP).getData()).getId().intValue());
+        assertEquals(COMMON_APP, ((Application) resource.getApplication(COMMON_APP).getData()).getId().intValue());
+    }
+
+    @Test
     public void linkChangesAreBoundToTheConfigurationThatWasAuthorized() {
         // Limited to configuration 5: a link id from configuration 6 must not be reachable by labelling it as 5.
         login(Fakes.limitedToConfigurations(Fakes.user(6, CUSTOMER, "edit_applications"), OWN_CONFIG));

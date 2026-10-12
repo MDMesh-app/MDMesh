@@ -347,8 +347,8 @@ public interface ApplicationMapper {
             "WHERE applicationVersions.id = #{id}"})
     ApplicationVersion findVersionById(@Param("id") int id);
 
-    @Delete({"DELETE FROM applicationVersions WHERE id=#{id}"})
-    void removeApplicationVersionById(@Param("id") Integer id);
+    @Delete({"DELETE FROM applicationVersions WHERE id=#{id} AND applicationId=#{applicationId}"})
+    void removeApplicationVersionById(@Param("id") Integer id, @Param("applicationId") Integer applicationId);
 
     @Update("UPDATE applications " +
             "SET latestVersion = (" +

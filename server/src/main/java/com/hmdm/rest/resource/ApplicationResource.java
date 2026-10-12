@@ -191,7 +191,10 @@ public class ApplicationResource {
             return Response.PERMISSION_DENIED();
         }
         try {
-            return Response.OK(this.applicationDAO.findById(id));
+            return Response.OK(this.applicationDAO.getApplicationById(id));
+        } catch (SecurityException e) {
+            logger.error("Prohibited to get application #{} by current user", id);
+            return Response.PERMISSION_DENIED();
         } catch (Exception e) {
             logger.error("Failed to retrieve the details for application #{}", id, e);
             return Response.INTERNAL_ERROR();

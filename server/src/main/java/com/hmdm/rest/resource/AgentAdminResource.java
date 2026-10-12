@@ -236,6 +236,9 @@ public class AgentAdminResource {
         final String payload;
         try {
             payload = InstallIntegrity.forCommand(body.getType(), body.getPayload(), installHashes.forCustomer(customerId.get()));
+        } catch (InstallIntegrity.LookupFailedException e) {
+            logger.error("Agent command {} for device {}: APK hash lookup failed", body.getType(), deviceId, e);
+            return Response.ERROR("Cannot install: the APK's SHA-256 could not be looked up; try again");
         } catch (IllegalArgumentException e) {
             logger.warn("Agent command {} for device {} rejected: {}", body.getType(), deviceId, e.getMessage());
             return Response.ERROR("Cannot install: " + e.getMessage());
@@ -295,6 +298,9 @@ public class AgentAdminResource {
         final String payload;
         try {
             payload = InstallIntegrity.forCommand(type, req.getCommand().getPayload(), installHashes.forCustomer(customerId.get()));
+        } catch (InstallIntegrity.LookupFailedException e) {
+            logger.error("Bulk command {}: APK hash lookup failed", type, e);
+            return Response.ERROR("Cannot install: the APK's SHA-256 could not be looked up; try again");
         } catch (IllegalArgumentException e) {
             logger.warn("Bulk command {} rejected: {}", type, e.getMessage());
             return Response.ERROR("Cannot install: " + e.getMessage());

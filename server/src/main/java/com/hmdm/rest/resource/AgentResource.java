@@ -414,9 +414,13 @@ public class AgentResource {
                 continue;
             }
             // An app.install queued before hashes were required has none: give it one now (this response tells the
-            // agent to refuse an install without), or end it with the reason instead of sending it.
+            // agent to refuse an install without), or end it with the reason when there is definitely none. A lookup
+            // that failed (the database, say) leaves it pending for the next check-in.
             try {
                 stored.setPayload(installHashes.forDelivery(stored, device.getCustomerId()));
+            } catch (com.hmdm.rest.json.InstallIntegrity.LookupFailedException e) {
+                logger.warn("Command {} for device {} held back: {}", stored.getId(), deviceNumber, e.toString());
+                continue;
             } catch (IllegalArgumentException e) {
                 commandDAO.markResultWithTime(deviceNumber, stored.getId(), "failed", e.getMessage(), now);
                 continue;

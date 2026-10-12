@@ -135,6 +135,21 @@ public class InstallIntegrityTest {
     }
 
     @Test
+    public void aFailedStoredLookupIsNotReportedAsNoHash() {
+        InstallIntegrity.Sha256Source src = InstallIntegrity.hostedThenStored(new FakeSource(), url -> {
+            throw new IllegalStateException("database unavailable");
+        });
+        try {
+            InstallIntegrity.ensureSha256("{\"url\":\"https://down.example/a.apk\",\"packageName\":\"x\"}", src);
+            fail("the lookup failed");
+        } catch (IllegalArgumentException e) {
+            fail("a lookup failure must not read as a definite \"no sha256\": " + e.getMessage());
+        } catch (RuntimeException e) {
+            assertTrue(e.getClass().getName(), e instanceof InstallIntegrity.LookupFailedException);
+        }
+    }
+
+    @Test
     public void onlyAppInstallIsTouched() throws Exception {
         String p = "{\"policy\":\"wifi\",\"value\":false}";
         assertSame(p, InstallIntegrity.forCommand("policy.apply", p, new FakeSource()));

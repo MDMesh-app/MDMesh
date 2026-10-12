@@ -39,13 +39,29 @@ public final class InstallIntegrity {
             try {
                 return hosted.sha256Hex(url);
             } catch (Exception notHosted) {
-                String hex = normalizeHex(stored.apkHash(url));
+                String storedHash;
+                try {
+                    storedHash = stored.apkHash(url);
+                } catch (Exception e) {
+                    throw new LookupFailedException("could not look up the stored sha256 for " + url, e);
+                }
+                String hex = normalizeHex(storedHash);
                 if (hex != null) {
                     return hex;
                 }
                 throw notHosted;
             }
         };
+    }
+
+    /**
+     * A hash lookup failed for a reason other than "there is none" (the database, say): nothing is known about the
+     * APK, so the caller retries later instead of ending the install.
+     */
+    public static final class LookupFailedException extends RuntimeException {
+        public LookupFailedException(String message, Throwable cause) {
+            super(message, cause);
+        }
     }
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -63,6 +79,7 @@ public final class InstallIntegrity {
     /**
      * @return the payload with a hex {@code sha256} on the APK (or on every part when {@code parts} is present).
      * @throws IllegalArgumentException with an operator-readable reason when a hash is malformed or can't be had.
+     * @throws LookupFailedException when looking a hash up failed (retry later).
      */
     public static String ensureSha256(String payload, Sha256Source source) {
         JsonNode root;
@@ -105,6 +122,8 @@ public final class InstallIntegrity {
             }
             try {
                 hex = normalizeHex(source.sha256Hex(url));
+            } catch (LookupFailedException e) {
+                throw e;
             } catch (Exception e) {
                 throw new IllegalArgumentException("no sha256 for " + url + ": " + e.getMessage());
             }

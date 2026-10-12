@@ -446,7 +446,7 @@ public class FilesResource {
                 request.getConfigurations().removeIf(c ->
                         user.getConfigurations()
                                 .stream()
-                                .filter(uc -> uc.getId() == c.getConfigurationId()).findFirst() == null);
+                                .noneMatch(uc -> uc.getId() == c.getConfigurationId()));
             }
             // Avoid access to objects of another customer
             request.getConfigurations().removeIf(c -> {

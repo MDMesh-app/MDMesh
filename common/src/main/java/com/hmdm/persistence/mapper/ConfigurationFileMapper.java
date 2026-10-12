@@ -101,6 +101,17 @@ public interface ConfigurationFileMapper {
                                                           @Param("id") Integer fileId);
 
 
+    // Used only in the migration task from old to new method of storing configuration files
     @Delete("DELETE FROM configurationFiles WHERE id = #{id}")
     void deleteConfigurationFile(@Param("id") Integer fileId);
+
+    @Delete("DELETE FROM configurationFiles " +
+            "WHERE id = #{id} " +
+            "AND fileId = #{fileId} " +
+            "AND configurationId = #{configurationId} " +
+            "AND configurationId IN (SELECT id FROM configurations WHERE customerId = #{customerId})")
+    void deleteConfigurationFileLink(@Param("id") Integer linkId,
+                                     @Param("fileId") int fileId,
+                                     @Param("configurationId") int configurationId,
+                                     @Param("customerId") int customerId);
 }

@@ -18,7 +18,8 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * <p>Answers 404 for the device routes of the Headwind launcher unless the {@code legacy.device.api} context parameter
+ * <p>Answers 404 for the device routes of the Headwind launcher (and the few other unauthenticated Headwind routes
+ * MDMesh has no use for: the AppList upload, usage stats and video upload) unless the {@code legacy.device.api} context parameter
  * is {@code 1} or {@code true}. The MDMesh agent speaks only {@code /rest/public/agent/v1/*} and the wake socket, and
  * the console reads device data through private routes, so none of these is needed by default.</p>
  *
@@ -41,7 +42,10 @@ public class LegacyDeviceApiFilter implements Filter {
             "/rest/plugins/deviceinfo/deviceinfo-plugin-settings/device",
             "/rest/plugins/devicelog/log/list",
             "/rest/plugins/devicelog/log/rules",
-            "/rest/plugins/messaging/public"
+            "/rest/plugins/messaging/public",
+            "/rest/public/applications/upload",
+            "/rest/public/stats",
+            "/rest/videos"
     ));
 
     private volatile boolean enabled;
@@ -95,6 +99,11 @@ public class LegacyDeviceApiFilter implements Filter {
             uri = uri.substring(contextPath.length());
         }
         return matches(canonical(percentDecode(stripPathParameters(uri))));
+    }
+
+    /** True when {@code path} (below the context path) is one of the legacy routes, however it is spelled. */
+    static boolean isLegacyPath(String path) {
+        return matches(canonical(percentDecode(stripPathParameters(path))));
     }
 
     private static boolean matches(String path) {

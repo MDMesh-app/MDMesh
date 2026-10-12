@@ -186,9 +186,7 @@ public class PublicResource {
 
             String expectedHash = CryptoUtil.getMD5String(deviceId + this.hashSecret);
             if (!expectedHash.equalsIgnoreCase(hash)) {
-                logger.error("Hash invalid for upload app request from device {}. Expected: {} but got {}",
-                        deviceId, expectedHash, hash.toUpperCase());
-                System.out.println("Hash invalid: " + expectedHash + " vs " + hash);
+                logger.error("Hash invalid for upload app request from device {}", deviceId);
                 return Response.ERROR("Invalid hash");
             }
 

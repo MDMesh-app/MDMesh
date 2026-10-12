@@ -2,9 +2,7 @@ package com.mdmesh.agent.provisioning
 
 import android.app.Activity
 import android.app.admin.DevicePolicyManager
-import android.content.Intent
 import android.os.Bundle
-import androidx.core.content.ContextCompat
 import android.os.PersistableBundle
 import com.mdmesh.agent.admin.AdminReceiver
 import com.mdmesh.agent.service.CheckInService
@@ -46,23 +44,18 @@ class AdminPolicyComplianceActivity : Activity() {
             CoroutineScope(Dispatchers.IO).launch {
                 EnrollTokenStore(ctx).save(token)
                 CheckInWorker.scheduleNow(ctx)
-                startCheckInService(ctx)
+                // Open the instant channel now that the token is saved (its first sync enrolls); otherwise it only
+                // started from the app's screens or a reboot, and commands waited for the periodic check-in.
+                CheckInService.start(ctx)
             }
         } else {
             CheckInWorker.scheduleNow(ctx)
-            startCheckInService(ctx)
+            CheckInService.start(ctx)
         }
 
         // TODO: enforce mandatory baseline policy here before returning RESULT_OK.
         setResult(RESULT_OK)
         finish()
-    }
-
-    /** Start the instant command channel now, after the token is saved (its first sync enrolls). Until now it only
-     *  started from the app's screens or a reboot, so commands waited for the periodic check-in. A Device Owner may
-     *  start a foreground service from the background; if an OEM refuses, the scheduled check-ins still run. */
-    private fun startCheckInService(ctx: android.content.Context) {
-        runCatching { ContextCompat.startForegroundService(ctx, Intent(ctx, CheckInService::class.java)) }
     }
 
     /** Benign Device-Owner baseline: auto-grant runtime permissions to managed apps so they

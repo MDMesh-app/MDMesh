@@ -91,31 +91,30 @@ class CheckInService : LifecycleService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
         startAsForeground()
-        if (!started) {
+        val first = !started
+        if (first) {
             started = true
             graceUntil = System.currentTimeMillis() + REACHABILITY_GRACE_MS
             lifecycleScope.launch {
                 delay(REACHABILITY_GRACE_MS + 1_000L)
                 reevaluateSocket() // drop back to adaptive gating once the grace window lapses
             }
-            lifecycleScope.launch { initialSync() }
-        } else if (deviceId.isNullOrBlank() || secret.isNullOrBlank()) {
-            // Started again before we have credentials: the first sync ran before the enroll token was saved (the
-            // provisioning receiver and activity both start us). Try again now rather than wait for the next cycle.
-            lifecycleScope.launch { initialSync() }
+        }
+        // Also when started again without credentials: the first sync can run before provisioning has saved the
+        // enroll token, and then it is retried now rather than at the next cycle.
+        if (first || deviceId.isNullOrBlank() || secret.isNullOrBlank()) {
+            lifecycleScope.launch {
+                runCatching { coordinator.runOnce() } // initial sync
+                    .onFailure { Log.w(TAG, "initial check-in failed", it) }
+                // Read identity AFTER the initial sync: on a fresh device that runOnce just
+                // enrolled, so reading before it would leave blank credentials and no socket
+                // until the process restarts.
+                deviceId = identity.current()
+                secret = identity.secret()
+                reevaluateSocket()
+            }
         }
         return START_STICKY
-    }
-
-    private suspend fun initialSync() {
-        runCatching { coordinator.runOnce() } // initial sync
-            .onFailure { Log.w(TAG, "initial check-in failed", it) }
-        // Read identity AFTER the initial sync: on a fresh device that runOnce just
-        // enrolled, so reading before it would leave blank credentials and no socket
-        // until the process restarts.
-        deviceId = identity.current()
-        secret = identity.secret()
-        reevaluateSocket()
     }
 
     /** Hold the socket when always-on, screen-on, or charging; otherwise drop it (heartbeat covers idle). */
@@ -223,6 +222,14 @@ class CheckInService : LifecycleService() {
     }
 
     companion object {
+        /**
+         * Start the instant command channel from outside the app's screens (provisioning). A Device Owner may start a
+         * foreground service from the background; if an OEM refuses anyway, the scheduled check-ins still run.
+         */
+        fun start(context: Context) {
+            runCatching { ContextCompat.startForegroundService(context, Intent(context, CheckInService::class.java)) }
+        }
+
         private const val TAG = "CheckInService"
         private const val CHANNEL_ID = "mdm_checkin"
         private const val NOTIFICATION_ID = 1001

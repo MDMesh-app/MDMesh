@@ -2912,4 +2912,13 @@
         <rollback>ALTER TABLE device_state DROP COLUMN configAgentVersion;</rollback>
     </changeSet>
 
+    <changeSet id="26.10.12-agentCommand-agentVersion" author="lunacy" context="common">
+        <comment>Column,new: agentCommand#agentVersion — for config.apply, the agent versionName it was queued for.
+            Its done result records this as device_state.configAgentVersion, not the version reporting the result,
+            so an agent that updated itself before its result arrived still gets its own config.apply.
+            NULL (older rows, other commands): the reporting version is recorded, as before.</comment>
+        <sql>ALTER TABLE agentCommand ADD COLUMN agentVersion VARCHAR(64);</sql>
+        <rollback>ALTER TABLE agentCommand DROP COLUMN agentVersion;</rollback>
+    </changeSet>
+
 </databaseChangeLog>

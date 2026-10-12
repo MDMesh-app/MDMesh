@@ -87,10 +87,13 @@ public class AgentCheckInConfigResyncTest {
             if (state != null) state.setConfigAgentVersion(version);
         }
         @Override public void recordConfigApplyDone(String n, Integer id) {
-            // SET configAgentVersion = agentVersion WHERE agentVersion IS NOT NULL AND <id is a config.apply>
-            if (state != null && state.getAgentVersion() != null
-                    && DesiredConfigBuilder.COMMAND_TYPE.equals(commands.get(id - 1).getType())) {
-                state.setConfigAgentVersion(state.getAgentVersion());
+            // SET configAgentVersion = COALESCE(<the command's agentVersion>, agentVersion)
+            // WHERE that IS NOT NULL AND <id is a config.apply>
+            AgentCommand c = commands.get(id - 1);
+            String version = c.getAgentVersion() != null ? c.getAgentVersion()
+                    : state == null ? null : state.getAgentVersion();
+            if (state != null && version != null && DesiredConfigBuilder.COMMAND_TYPE.equals(c.getType())) {
+                state.setConfigAgentVersion(version);
             }
         }
 
@@ -202,6 +205,18 @@ public class AgentCheckInConfigResyncTest {
         assertEquals(0, checkIn("0.3.3", revision).size());
         assertEquals(2, configApplies());
         assertEquals("done", commandDAO.commands.get(1).getStatus());
+    }
+
+    @Test
+    public void a_config_apply_acked_after_a_self_update_still_resyncs_the_new_agent() throws Exception {
+        // Queued for and delivered to 0.3.2; the agent updates itself before its result reaches the server, so the
+        // done arrives from 0.3.3. It records 0.3.2 (what applied it), and 0.3.3 gets its own config.apply.
+        assertEquals(1, checkIn("0.3.2", null).size());
+        assertEquals(1, checkIn("0.3.3", revision).size());
+        assertEquals(0, checkIn("0.3.3", revision).size());
+        assertEquals("0.3.3", commandDAO.getState(NUMBER).getConfigAgentVersion());
+        assertEquals(0, checkIn("0.3.3", revision).size());
+        assertEquals(2, configApplies());
     }
 
     /** Converge on 0.3.2, update to 0.3.3, receive the re-send; returns that re-sent command. */

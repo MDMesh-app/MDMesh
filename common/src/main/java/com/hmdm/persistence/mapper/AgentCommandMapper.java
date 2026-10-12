@@ -37,9 +37,9 @@ import java.util.List;
 public interface AgentCommandMapper {
 
     @Insert({"INSERT INTO agentCommand (deviceNumber, type, payload, requiresCapability, status, createdAt, deliveredAt, " +
-            "completedAt, detail) " +
+            "completedAt, detail, agentVersion) " +
             "VALUES (#{deviceNumber}, #{type}, #{payload}, #{requiresCapability}, #{status}, #{createdAt}, #{deliveredAt}, " +
-            "#{completedAt}, #{detail})"})
+            "#{completedAt}, #{detail}, #{agentVersion})"})
     @SelectKey(statement = "SELECT currval('agentcommand_id_seq')", keyColumn = "id", keyProperty = "id",
             before = false, resultType = int.class)
     void insert(AgentCommand command);

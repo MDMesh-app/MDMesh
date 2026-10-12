@@ -97,6 +97,8 @@ public class ConfigReconciler {
             cmd.setType(DesiredConfigBuilder.COMMAND_TYPE);
             cmd.setPayload(DesiredConfigBuilder.toPayloadJson(doc));
             cmd.setRequiresCapability(DesiredConfigBuilder.CAPABILITY);
+            // Recorded as the config baseline when this command comes back done (see recordConfigApplyDone).
+            cmd.setAgentVersion(agentVersion);
             cmd.setStatus("pending");
             cmd.setCreatedAt(now);
             commandDAO.insert(cmd);

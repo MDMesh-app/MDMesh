@@ -156,7 +156,8 @@ class CheckInCoordinatorTest {
     @Test
     fun `delivered acks leave the persisted buffer only after the check-in succeeds`() = runTest {
         val backup = FakeBackup()
-        PendingResults(backup).add(listOf(CommandResult(commandId = "old", status = CommandStatus.DONE, completedAt = "t")))
+        val old = CommandResult(commandId = "old", status = CommandStatus.DONE, completedAt = "t")
+        PendingResults(backup).add(listOf(old))
         val api = FakeMdmApi().apply { checkInThrows = IOException("network down") }
 
         runCatching { coordinator(api, PendingResults(backup)).runOnce() }

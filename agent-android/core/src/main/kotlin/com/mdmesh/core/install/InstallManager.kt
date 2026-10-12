@@ -201,7 +201,9 @@ class InstallManager @Inject constructor(
             }
 
             resultBus.await(sessionId, RESULT_TIMEOUT_MS)?.let(::mapResult) ?: run {
-                // Never heard back: give up on the session so it cannot complete behind a reported failure.
+                // Never heard back. Abandoning frees the session if the platform still holds it open; it cannot stop
+                // a commit already under way, so the app may yet install after this failure is reported (the device's
+                // app list and, for the agent itself, its reported version then show it).
                 runCatching { packageInstaller.abandonSession(sessionId) }
                 InstallOutcome.Failure(null, "install result timed out")
             }

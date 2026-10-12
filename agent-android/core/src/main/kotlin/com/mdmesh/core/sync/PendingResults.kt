@@ -5,6 +5,7 @@ import com.mdmesh.proto.CommandResult
 import com.mdmesh.proto.ProtocolJson
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.serialization.builtins.ListSerializer
+import java.util.concurrent.Executors
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -20,7 +21,7 @@ import javax.inject.Singleton
 @Singleton
 class PendingResults(private val backup: Backup = Backup.None) {
 
-    /** Where the buffer survives process death. Synchronous, like the rest of this class. */
+    /** Where the buffer survives process death. [write]s must be applied in order. */
     interface Backup {
         fun read(): String?
         fun write(raw: String?)
@@ -31,12 +32,18 @@ class PendingResults(private val backup: Backup = Backup.None) {
         }
     }
 
-    /** SharedPreferences, like [com.mdmesh.core.config.ServerConfigStore]: small, read once, written synchronously. */
-    private class PrefsBackup(context: Context) : Backup {
-        private val prefs = context.getSharedPreferences("mdm_pending_results", Context.MODE_PRIVATE)
+    /**
+     * SharedPreferences: one small value, read once. Callers run on the main thread (the check-in service's scope), so
+     * each write is committed to disk on one background thread, in order, rather than blocking the caller.
+     */
+    private class PrefsBackup(private val context: Context) : Backup {
+        private val prefs by lazy { context.getSharedPreferences("mdm_pending_results", Context.MODE_PRIVATE) }
+        private val writer = Executors.newSingleThreadExecutor { r ->
+            Thread(r, "pending-results").apply { isDaemon = true }
+        }
         override fun read(): String? = prefs.getString(KEY, null)
         override fun write(raw: String?) {
-            prefs.edit().apply { if (raw == null) remove(KEY) else putString(KEY, raw) }.commit()
+            writer.execute { prefs.edit().apply { if (raw == null) remove(KEY) else putString(KEY, raw) }.commit() }
         }
     }
 
@@ -46,15 +53,22 @@ class PendingResults(private val backup: Backup = Backup.None) {
     /** Drained for the check-in in progress; kept persisted until [delivered] or [restore]. */
     private val inFlight = mutableListOf<CommandResult>()
 
-    init {
-        // Whatever a dead process left (in flight or not) is due on the next check-in.
+    private var loaded = false
+
+    /** Whatever a dead process left (in flight or not) is due on the next check-in. Read on first use, not at
+     *  injection. */
+    private fun load() {
+        if (loaded) return
+        loaded = true
         backup.read()?.let { raw ->
-            runCatching { ProtocolJson.json.decodeFromString(SERIALIZER, raw) }.getOrNull()?.let(buffer::addAll)
+            runCatching { ProtocolJson.json.decodeFromString(SERIALIZER, raw) }.getOrNull()
+                ?.let { buffer.addAll(0, it) }
         }
     }
 
     @Synchronized
     fun add(results: List<CommandResult>) {
+        load()
         if (results.isEmpty()) return
         buffer.addAll(results)
         persist()
@@ -63,6 +77,7 @@ class PendingResults(private val backup: Backup = Backup.None) {
     /** Take and clear the current buffer for delivery. */
     @Synchronized
     fun drain(): List<CommandResult> {
+        load()
         val snapshot = buffer.toList()
         inFlight.addAll(snapshot)
         buffer.clear()
@@ -72,6 +87,7 @@ class PendingResults(private val backup: Backup = Backup.None) {
     /** Put drained results back (front) when delivery failed, so they retry next cycle. */
     @Synchronized
     fun restore(results: List<CommandResult>) {
+        load()
         inFlight.removeAll(results.toSet())
         buffer.addAll(0, results)
         persist()

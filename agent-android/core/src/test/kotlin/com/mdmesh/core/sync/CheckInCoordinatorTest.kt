@@ -232,7 +232,8 @@ class CheckInCoordinatorTest {
         coordinator(api, pending).runOnce(maxCheckIns = 1)
 
         assertEquals(listOf(100), api.checkInRequests.map { it.results.size })
-        assertEquals(150, pending.drain().size)
+        // drain() hands out one batch (100) at a time.
+        assertEquals(listOf(100, 50), listOf(pending.drain().size, pending.drain().size))
     }
 
     @Test

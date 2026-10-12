@@ -64,13 +64,13 @@ public interface UserMapper {
             "allDevicesAvailable=#{allDevicesAvailable}, allConfigAvailable=#{allConfigAvailable}, " +
             "passwordReset=#{passwordReset}, authData=#{authData}, twoFactorSecret=#{twoFactorSecret}, " +
             "twoFactorAccepted=#{twoFactorAccepted} " +
-            "WHERE id=#{id}"})
+            "WHERE id=#{id} AND customerId=#{customerId}"})
     void updateUserMainDetails(User user);
 
     @Update({"UPDATE users SET password=#{password}, passwordReset=#{passwordReset}, " +
             "authToken=#{authToken}, passwordResetToken=#{passwordResetToken}, " +
             "twoFactorSecret=#{twoFactorSecret}, twoFactorAccepted=#{twoFactorAccepted} " +
-            "WHERE id=#{id}"})
+            "WHERE id=#{id} AND customerId=#{customerId}"})
     void updatePassword(User user);
 
     @Update({"UPDATE users SET password=#{newPassword}, passwordReset=#{passwordReset}, " +

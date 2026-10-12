@@ -38,6 +38,7 @@ import com.hmdm.persistence.domain.User;
 import com.hmdm.persistence.domain.UserRole;
 import com.hmdm.rest.json.Response;
 import com.hmdm.security.SecurityContext;
+import com.hmdm.security.SecurityException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -184,7 +185,7 @@ public class UserResource {
                 return Response.PERMISSION_DENIED();
             }
 
-            User dbUser = userDAO.findByLoginOrEmail(user.getLogin());
+            User dbUser = userDAO.findByLoginOrEmail(u.getLogin());
             return updatePassword(dbUser, user);
 
         }).orElse(Response.PERMISSION_DENIED());
@@ -205,6 +206,18 @@ public class UserResource {
                 return Response.PERMISSION_DENIED();
             }
             try {
+                if (!this.userDAO.canGrantRole(user.getUserRole())) {
+                    logger.warn("Failed to update user {}: role not allowed for {}", user.getLogin(), u.getLogin());
+                    return Response.PERMISSION_DENIED();
+                }
+                if (user.getId() != null) {
+                    // Update the persisted account, and only one the caller is allowed to administer
+                    User target = this.userDAO.getManagedUser(user.getId());
+                    if (target == null) {
+                        return Response.ERROR("error.user.not.found");
+                    }
+                    user.setCustomerId(target.getCustomerId());
+                }
                 String userEmail = user.getEmail();
                 if (userEmail != null && !userEmail.equals("")) {
                     User dbUser = unsecureDAO.findByEmail(userEmail);
@@ -243,6 +256,9 @@ public class UserResource {
                 }
 
                 return Response.OK();
+            } catch (SecurityException e) {
+                logger.warn("Failed to update user {}: not allowed for {}", user.getId(), u.getLogin());
+                return Response.PERMISSION_DENIED();
             } catch (Exception e) {
                 logger.error("Failed to create user {}: ", user.getLogin(), e);
                 e.printStackTrace();
@@ -303,13 +319,31 @@ public class UserResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response updateUserDetails(User user) {
         return SecurityContext.get().getCurrentUser().map(u -> {
-            User dbUser = userDAO.getUserDetails(user.getId());
+            // Users edit their own details; other accounts are edited by their administrators only
+            boolean self = user.getId() == null || user.getId().equals(u.getId());
+            if (!self && !u.getUserRole().isSuperAdmin() && !this.userDAO.isOrgAdmin(u)) {
+                logger.warn("Failed to update details of user {}: not allowed for {}", user.getId(), u.getLogin());
+                return Response.PERMISSION_DENIED();
+            }
+            User dbUser;
+            try {
+                dbUser = self ? userDAO.getUserDetails(u.getId()) : userDAO.getManagedUser(user.getId());
+            } catch (SecurityException e) {
+                logger.warn("Failed to update details of user {}: not allowed for {}", user.getId(), u.getLogin());
+                return Response.PERMISSION_DENIED();
+            }
             if (dbUser == null) {
                 return Response.ERROR("error.user.not.found");
             }
             if (user.getEmail() == null || user.getEmail().trim().equals("")) {
                 dbUser.setEmail("");
             } else if (!user.getEmail().equalsIgnoreCase(dbUser.getEmail())) {
+                // Password recovery links go to this address: changing it takes the caller's current password
+                if (!isCurrentPassword(u, user.getOldPassword())) {
+                    logger.warn("Failed to update email of user {}: current password of {} not match",
+                            dbUser.getLogin(), u.getLogin());
+                    return Response.ERROR("error.password.wrong");
+                }
                 // Email must be unique
                 User user2 = unsecureDAO.findByEmail(user.getEmail());
                 if (user2 != null) {
@@ -404,6 +438,10 @@ public class UserResource {
                 logger.warn("Failed to impersonate as user {}: belongs to another customer {}", id, u.getCustomerId());
                 return Response.PERMISSION_DENIED();
             }
+            if (user.getUserRole().isSuperAdmin() && !u.getUserRole().isSuperAdmin()) {
+                logger.warn("Failed to impersonate as user {}: must be super admin", id);
+                return Response.PERMISSION_DENIED();
+            }
 
             HttpSession session = req.getSession( false );
             if ( session != null ) {
@@ -418,6 +456,15 @@ public class UserResource {
             return Response.OK( user );
 
         }).orElse(Response.PERMISSION_DENIED());
+    }
+
+    private boolean isCurrentPassword(User currentUser, String password) {
+        if (password == null || password.isEmpty()) {
+            return false;
+        }
+        User dbUser = userDAO.findByLoginOrEmail(currentUser.getLogin());
+        return dbUser != null && dbUser.getId().equals(currentUser.getId()) &&
+                PasswordUtil.passwordMatch(password, dbUser.getPassword());
     }
 
     private Response updatePassword(User dbUser, User user) {

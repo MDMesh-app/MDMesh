@@ -2,13 +2,19 @@ package com.hmdm.notification.guice.module;
 
 import com.google.inject.AbstractModule;
 import com.google.inject.name.Names;
+import com.hmdm.rest.filter.LegacyDeviceApiFilter;
 import org.apache.activemq.broker.BrokerService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.servlet.ServletContext;
+import java.security.SecureRandom;
+import java.util.Base64;
 
 public class NotificationMqttConfigModule extends AbstractModule {
+
+    private static final Logger log = LoggerFactory.getLogger(NotificationMqttConfigModule.class);
+    private static final SecureRandom RANDOM = new SecureRandom();
 
     /**
      * <p>A context for module execution.</p>
@@ -28,6 +34,12 @@ public class NotificationMqttConfigModule extends AbstractModule {
     protected void configure() {
         String serverUri = context.getInitParameter("mqtt.server.uri");
         if (serverUri == null) {
+            serverUri = "";
+        }
+        // Only the Headwind launcher speaks MQTT (the MDMesh agent wakes over its WebSocket), so the broker and the
+        // MQTT push sender follow the legacy device API switch.
+        if (!serverUri.isEmpty() && !LegacyDeviceApiFilter.isEnabled(context)) {
+            log.info("MQTT not started: mqtt.server.uri is set but " + LegacyDeviceApiFilter.PARAMETER + " is off");
             serverUri = "";
         }
         this.bindConstant().annotatedWith(Names.named("mqtt.server.uri")).to(serverUri);
@@ -50,8 +62,10 @@ public class NotificationMqttConfigModule extends AbstractModule {
         );
 
         String mqttAdminPassword = context.getInitParameter("mqtt.admin.password");
-        if (mqttAdminPassword == null) {
-            mqttAdminPassword = "dd3V5YDkrX";
+        if (mqttAdminPassword == null || mqttAdminPassword.isEmpty()) {
+            // The embedded broker and the server's own MQTT client are the only users of this password and both read
+            // this binding, so a random one per start is enough; an external broker needs it set explicitly.
+            mqttAdminPassword = randomPassword();
         }
         this.bindConstant().annotatedWith(Names.named("mqtt.admin.password")).to(mqttAdminPassword);
 
@@ -77,5 +91,11 @@ public class NotificationMqttConfigModule extends AbstractModule {
         }
         this.bindConstant().annotatedWith(Names.named("polling.timeout")).to(pollTimeout);
 
+    }
+
+    private static String randomPassword() {
+        byte[] bytes = new byte[32];
+        RANDOM.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 }

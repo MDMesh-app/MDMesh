@@ -94,6 +94,7 @@ public class AgentResource {
     private com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller;
     private com.hmdm.rest.resource.support.ConfigReconciler configReconciler;
     private com.hmdm.rest.resource.support.RolloutRequeuer rolloutRequeuer;
+    private com.hmdm.rest.resource.support.InstallHashes installHashes;
 
     /**
      * <p>A constructor required by Swagger.</p>
@@ -107,13 +108,15 @@ public class AgentResource {
                          AgentCommandDAO commandDAO,
                          com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller,
                          com.hmdm.rest.resource.support.ConfigReconciler configReconciler,
-                         com.hmdm.rest.resource.support.RolloutRequeuer rolloutRequeuer) {
+                         com.hmdm.rest.resource.support.RolloutRequeuer rolloutRequeuer,
+                         com.hmdm.rest.resource.support.InstallHashes installHashes) {
         this.unsecureDAO = unsecureDAO;
         this.tokenDAO = tokenDAO;
         this.commandDAO = commandDAO;
         this.configAppInstaller = configAppInstaller;
         this.configReconciler = configReconciler;
         this.rolloutRequeuer = rolloutRequeuer;
+        this.installHashes = installHashes;
     }
 
     // =================================================================================================================
@@ -378,6 +381,14 @@ public class AgentResource {
         List<com.hmdm.rest.json.agent.AgentCommand> commands = new ArrayList<>();
         for (AgentCommand stored : pending) {
             if (!AgentCapabilityTokens.isAllowed(stored.getRequiresCapability(), deviceTokens)) {
+                continue;
+            }
+            // An app.install queued before hashes were required has none: give it one now (this response tells the
+            // agent to refuse an install without), or end it with the reason instead of sending it.
+            try {
+                stored.setPayload(installHashes.forDelivery(stored, device.getCustomerId()));
+            } catch (IllegalArgumentException e) {
+                commandDAO.markResultWithTime(deviceNumber, stored.getId(), "failed", e.getMessage(), now);
                 continue;
             }
             // Atomically claim it so a concurrent check-in can't deliver the same command twice.

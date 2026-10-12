@@ -42,6 +42,14 @@ public class AgentCheckInResponse {
 
     private List<AgentCommand> commands;
 
+    /**
+     * Every {@code app.install} this server queues carries the APK's SHA-256 ({@code InstallIntegrity}), so the agent
+     * may refuse one without. Additive (protocol 1.3): older agents ignore it.
+     */
+    private String installIntegrity = INSTALL_INTEGRITY_REQUIRED;
+
+    public static final String INSTALL_INTEGRITY_REQUIRED = "required";
+
     public AgentCheckInResponse() {
     }
 

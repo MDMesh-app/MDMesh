@@ -378,6 +378,11 @@ public class UnsecureDAO {
         this.applicationMapper.saveApkFileHash(appVersionId, hashValue);
     }
 
+    /** The stored apkHash of a Library version (the customer's own, or a common app's) whose URL is {@code url}. */
+    public String findApkHashByUrl(int customerId, String url) {
+        return this.applicationMapper.findApkHashByUrl(customerId, url);
+    }
+
     /**
      * To use in impersonated background services only
      */

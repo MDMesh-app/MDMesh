@@ -5,17 +5,60 @@ name: release
 # minisign-signed manifest the fleet updater consumes. Requires repo secrets (see RELEASING.md):
 # MDM_RELEASE_STORE_B64, MDM_RELEASE_STORE_PASSWORD, MDM_RELEASE_KEY_ALIAS, MDM_RELEASE_KEY_PASSWORD,
 # MINISIGN_SECRET_KEY, MINISIGN_PASSWORD.
+#
+# Who may release: the `gate` job (no secrets, read-only token) refuses a tag whose commit is not on main, and the
+# `release` job, which alone holds the signing secrets and write tokens, runs in the `release` environment: it waits
+# for a required reviewer, and the secrets live there as environment secrets, so a workflow edited on an unmerged
+# commit can't reach them without that approval. Repo settings this relies on are listed in RELEASING.md.
 
 on:
   push:
     tags: ["v*"]
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 jobs:
+  gate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0   # every branch with full history (origin/main included), for the ancestry check
+          persist-credentials: false
+      - name: Tagged commit is on main
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          commit=$(git rev-parse 'HEAD^{commit}')
+          git rev-parse --verify --quiet refs/remotes/origin/main >/dev/null \
+            || { echo "::error::origin/main was not fetched; cannot check where ${REF_NAME} points"; exit 1; }
+          # First-parent: a commit main itself pointed at (a merge result or a direct commit), not one from inside a
+          # merged branch.
+          if ! git rev-list --first-parent origin/main | grep -qx "$commit"; then
+            echo "::error::Tag ${REF_NAME} points at ${commit}, which is not on main's first-parent history. Releases are cut from main only."
+            exit 1
+          fi
+          echo "${REF_NAME} -> ${commit} is on main"
+      - name: Version is newer than every earlier release
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          echo "$REF_NAME" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::Tag must be vMAJOR.MINOR.PATCH (got '$REF_NAME')"; exit 1; }
+          latest=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -vx "$REF_NAME" | sort -V | tail -n 1 || true)
+          if [ -n "$latest" ] && [ "$(printf '%s\n%s\n' "$latest" "$REF_NAME" | sort -V | tail -n 1)" != "$REF_NAME" ]; then
+            echo "::error::${REF_NAME} is not newer than the latest release tag ${latest}."
+            exit 1
+          fi
+          echo "${REF_NAME} is newer than ${latest:-(no earlier release)}"
+
   release:
+    needs: gate
+    # Required reviewers + the signing secrets live on this environment (RELEASING.md).
+    environment: release
+    permissions:
+      contents: write
+      packages: write
     # Pinned, not ubuntu-latest: a tag push must not silently change OS (ubuntu-latest moves to 26.04 on
     # 2026-10-19). T0 stays on ubuntu-latest and is the canary; bump this after T0 is green on the new image.
     runs-on: ubuntu-24.04

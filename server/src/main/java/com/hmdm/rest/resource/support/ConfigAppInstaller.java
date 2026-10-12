@@ -11,11 +11,13 @@
 package com.hmdm.rest.resource.support;
 
 import com.hmdm.notification.AgentWakeHub;
+import com.hmdm.rest.json.InstallIntegrity;
 import com.hmdm.rest.json.InstallPayloadBuilder;
 import com.hmdm.persistence.AgentCommandDAO;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.Application;
+import com.hmdm.persistence.domain.ApplicationVersion;
 import com.hmdm.persistence.domain.Device;
 import com.hmdm.util.RolloutProgress;
 import org.slf4j.Logger;
@@ -41,17 +43,21 @@ public class ConfigAppInstaller {
     private final UnsecureDAO unsecureDAO;
     private final AgentCommandDAO commandDAO;
     private final AgentWakeHub wakeHub;
+    private final ApkHashResolver hashResolver;
 
     @Inject
-    public ConfigAppInstaller(UnsecureDAO unsecureDAO, AgentCommandDAO commandDAO, AgentWakeHub wakeHub) {
+    public ConfigAppInstaller(UnsecureDAO unsecureDAO, AgentCommandDAO commandDAO, AgentWakeHub wakeHub,
+                              ApkHashResolver hashResolver) {
         this.unsecureDAO = unsecureDAO;
         this.commandDAO = commandDAO;
         this.wakeHub = wakeHub;
+        this.hashResolver = hashResolver;
     }
 
     /**
      * Queue an {@code app.install} for every action=install app of the device's configuration
-     * that has a real hosted APK URL. Returns the number queued. Never throws — callers treat
+     * that has a real hosted APK URL. An app whose SHA-256 is unknown (hosted elsewhere, none stored) is recorded as
+     * a failed command saying so instead of being sent. Returns the number queued. Never throws — callers treat
      * this as best-effort (enrollment must not fail because an app list is dirty).
      */
     public int enqueueConfigApps(Device device) {
@@ -73,13 +79,31 @@ public class ConfigAppInstaller {
                     // Catalog placeholder / web app / seed leftover — nothing downloadable.
                     continue;
                 }
+                String payload;
+                String problem = null;
+                try {
+                    payload = installPayload(app, url);
+                } catch (IllegalArgumentException e) {
+                    // Recorded as an already-failed command, never sent: the device's history shows why, and an
+                    // older agent (which ignored a missing sha256) never gets an unverifiable install.
+                    payload = InstallPayloadBuilder.build(app.getPkg().trim(), app.getVersionCode(), url, app.getParts());
+                    problem = e.getMessage();
+                    logger.warn("Not installing {} on device {}: {}", app.getPkg(), device.getNumber(), problem);
+                }
                 AgentCommand cmd = new AgentCommand();
                 cmd.setDeviceNumber(device.getNumber());
                 cmd.setType("app.install");
-                cmd.setPayload(InstallPayloadBuilder.build(app.getPkg().trim(), app.getVersionCode(), url, app.getParts()));
+                cmd.setPayload(payload);
                 cmd.setRequiresCapability(RolloutProgress.INSTALL_CAPABILITY);
-                cmd.setStatus("pending");
                 cmd.setCreatedAt(now);
+                if (problem != null) {
+                    cmd.setStatus("failed");
+                    cmd.setDetail(problem);
+                    cmd.setCompletedAt(now);
+                    commandDAO.insert(cmd);
+                    continue;
+                }
+                cmd.setStatus("pending");
                 commandDAO.insert(cmd);
                 queued++;
             }
@@ -90,6 +114,20 @@ public class ConfigAppInstaller {
             logger.warn("Failed to queue configuration apps for device {}", device.getNumber(), e);
         }
         return queued;
+    }
+
+    /**
+     * The app's install payload with a SHA-256 on the APK (or every bundle part): an APK uploaded here is hashed from
+     * the files directory; any other URL takes the version's stored hash. Nothing is downloaded to be hashed.
+     */
+    private String installPayload(Application app, String url) {
+        ApplicationVersion version = app.getUsedVersionId() == null ? null
+                : unsecureDAO.findApplicationVersionById(app.getUsedVersionId());
+        String versionUrl = version == null || version.getUrl() == null ? null : version.getUrl().trim();
+        String stored = version == null ? null : version.getApkHash();
+        String raw = InstallPayloadBuilder.build(app.getPkg().trim(), app.getVersionCode(), url, app.getParts());
+        return InstallIntegrity.ensureSha256(raw,
+                InstallIntegrity.hostedThenStored(hashResolver, u -> u.equals(versionUrl) ? stored : null));
     }
 
     /**

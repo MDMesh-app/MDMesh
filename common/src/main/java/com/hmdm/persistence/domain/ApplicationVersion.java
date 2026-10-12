@@ -107,6 +107,7 @@ public class ApplicationVersion implements Serializable {
             this.urlArm64 = application.getUrl();
         }
         this.parts = application.getParts();
+        this.apkHash = com.hmdm.rest.json.InstallIntegrity.toApkHash(application.getSha256());
     }
 
     public Integer getId() {

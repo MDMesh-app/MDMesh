@@ -67,6 +67,10 @@ Response `data` (`agent-checkin-response.schema.json`):
 { "protocolVersion": "1.0", "commands": [ { "protocolVersion":"1.0","commandId":"...","type":"policy.apply","issuedAt":"...","requiresCapability":"policy.wifi","payload":{"policy":"wifi","value":false} } ] }
 ```
 
+`installIntegrity: "required"` (protocol 1.3) says every `app.install` this server queues carries the APK's
+`sha256`; the agent keeps the last value and, while it is set, refuses an `app.install` without one. An older server
+omits it and the agent installs as before.
+
 `results` acks let the server mark queued commands `done`/`failed`/`unsupported`. `capabilities`
 is re-posted every check-in (cheap, keeps the token set fresh as the OS/agent changes).
 

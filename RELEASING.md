@@ -16,6 +16,10 @@ what catches a server change that breaks a native upgrade:
 gh workflow run t2-native.yml --ref main
 ```
 
+The tag must point at a commit on `main` (its first-parent history) and be newer than every earlier release: the
+workflow's `gate` job checks that first, and the `release` job (the
+only one with the signing secrets) waits for a reviewer's approval in the `release` environment (setup step 4).
+
 `.github/workflows/release.yml` then: runs the agent unit tests + builds the **signed** release APK,
 builds & pushes the **server**, **web**, and **supervisor** images to GHCR as `:VERSION`, builds a
 **minisign-signed manifest**, and publishes a **GitHub Release** with `mdmesh-agent.apk`, `manifest.json`,
@@ -52,7 +56,8 @@ Tags must be strict `vMAJOR.MINOR.PATCH`; the workflow rejects anything else. ve
 ## One-time setup (you own the keys — do this offline)
 
 These two key sets are **custody-critical**. Generate them on a secure machine, store backups in a
-password manager / HSM, and add them as repo secrets (Settings → Secrets and variables → Actions).
+password manager / HSM, and add them as **environment secrets of the `release` environment** (Settings →
+Environments → `release` → Environment secrets; see step 4), not as repository secrets.
 
 ### 1. APK release keystore — NEVER ROTATE
 Android ties the **Device-Owner** relationship to the APK's signing certificate. If the signing key
@@ -89,6 +94,22 @@ to work anonymously, set each package to public: **org → Packages → `mdmesh-
 `docker login ghcr.io` with a PAT.) The release workflow verifies this: after pushing, it fetches each image
 manifest **anonymously** and fails the release with instructions if any package is still private. Release notes
 come from the annotated tag message (`git tag -a vX.Y.Z -m "..."`) plus GitHub's generated list.
+
+### 4. Release environment and tag protection
+The release job runs in the `release` environment, so the repo settings decide who can publish:
+
+- **Settings → Environments → New environment `release`:**
+  - **Required reviewers:** at least one maintainer; tick **Prevent self-review**. Before approving, the reviewer
+    opens the run and confirms the `gate` job ran and passed (tag on main's first-parent history, version newer than
+    every earlier release) and that the tag is the one they expect.
+  - **Deployment branches and tags:** *Selected branches and tags* → add a **tag** rule `v*`.
+  - **Environment secrets:** the six secrets above (`MDM_RELEASE_STORE_B64`, `MDM_RELEASE_STORE_PASSWORD`,
+    `MDM_RELEASE_KEY_ALIAS`, `MDM_RELEASE_KEY_PASSWORD`, `MINISIGN_SECRET_KEY`, `MINISIGN_PASSWORD`). Then delete any
+    repository-level copies (Settings → Secrets and variables → Actions → Repository secrets).
+- **Settings → Rules → Rulesets → New tag ruleset** (enforcement *Active*), target tags matching `v*`: restrict
+  **creations**, **updates** and **deletions**, with a bypass list of the release maintainers only.
+- **Settings → Rules → Rulesets** (or branch protection) for `main`: require pull requests and the CI checks, and
+  block force pushes, so "on `main`" means reviewed.
 
 ## How a deployment trusts a release
 The updater fetches the GitHub Release, verifies `manifest.json` against the baked

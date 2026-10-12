@@ -529,6 +529,14 @@ public interface ApplicationMapper {
     @Update("UPDATE applicationVersions SET apkHash = #{hash} WHERE id = #{id}")
     int saveApkFileHash(@Param("id") Integer appVersionId, @Param("hash") String hashValue);
 
+    @Select("SELECT applicationVersions.apkHash FROM applicationVersions " +
+            "INNER JOIN applications ON applications.id = applicationVersions.applicationId " +
+            "INNER JOIN customers ON customers.id = applications.customerId " +
+            "WHERE TRIM(applicationVersions.url) = TRIM(#{url}) AND applicationVersions.apkHash IS NOT NULL " +
+            "AND (applications.customerId = #{customerId} OR customers.master) " +
+            "ORDER BY (applications.customerId = #{customerId}) DESC, applicationVersions.id DESC LIMIT 1")
+    String findApkHashByUrl(@Param("customerId") int customerId, @Param("url") String url);
+
     @Select("SELECT COALESCE( " +
             "(SELECT id FROM applicationVersions " +
             "WHERE applicationId = #{appId} " +

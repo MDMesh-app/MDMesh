@@ -77,4 +77,13 @@ data class AgentDeviceStateDto(
 data class AgentCheckInResponse(
     val protocolVersion: String = ProtocolJson.PROTOCOL_VERSION,
     val commands: List<CommandEnvelope> = emptyList(),
-)
+    /**
+     * [INSTALL_INTEGRITY_REQUIRED] when the server puts a SHA-256 on every `app.install` it queues, so the agent can
+     * refuse one without. Absent from older servers (since protocol 1.3).
+     */
+    val installIntegrity: String? = null,
+) {
+    companion object {
+        const val INSTALL_INTEGRITY_REQUIRED: String = "required"
+    }
+}

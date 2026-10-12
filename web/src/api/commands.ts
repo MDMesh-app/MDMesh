@@ -283,6 +283,7 @@ export interface AppInstallSpec {
   url: string;
   packageName: string;
   versionCode?: number;
+  /** The APK's SHA-256 (required for a URL not hosted by MDMesh; the server hashes its own files). The agent refuses an install without one. */
   sha256?: string;
   runAfterInstall?: boolean;
   /** Split-APK bundle: when present the agent installs all parts in one session

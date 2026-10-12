@@ -85,6 +85,9 @@ public class Application implements CustomerData, Serializable {
     private ApplicationType type;
     @ApiModelProperty("Split-bundle parts as JSON [{url,sha256,name}] — null for a normal single-APK app")
     private String parts;
+    @ApiModelProperty("Hex SHA-256 of the APK at url, given when it is not hosted by this server; stored as the "
+            + "version's apkHash. Input only")
+    private String sha256;
     @ApiModelProperty("An ID of an icon to represent the application")
     private Integer iconId;
     @ApiModelProperty("An file name with the icon to represent the application")
@@ -411,6 +414,14 @@ public class Application implements CustomerData, Serializable {
 
     public void setParts(String parts) {
         this.parts = parts;
+    }
+
+    public String getSha256() {
+        return sha256;
+    }
+
+    public void setSha256(String sha256) {
+        this.sha256 = sha256;
     }
 
     public Integer getIconId() {

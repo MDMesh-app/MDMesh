@@ -269,6 +269,13 @@ if [ -n "${GITHUB_REPO:-}" ] && command -v python3 >/dev/null && command -v curl
   # download may go there.
   # (The letters are spelled out: a range like A-Z follows the locale and matches non-ASCII letters under en_US.UTF-8.)
   agent_ck_ok() { case "$1" in *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-]*) return 1 ;; esac; [ "${#1}" -eq 43 ]; }
+  # minisign does the verifying. As root on a Debian/Ubuntu host, install it quietly like the native installer does;
+  # otherwise the warning below says how.
+  if ! command -v minisign >/dev/null 2>&1 && [ "$(id -u)" = 0 ] && command -v apt-get >/dev/null 2>&1; then
+    say "Installing minisign (verifies the release manifest)…"
+    { DEBIAN_FRONTEND=noninteractive apt-get install -y -qq minisign \
+      || { apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq minisign; }; } >/dev/null 2>&1 || true
+  fi
   REL_DIR=$(mktemp -d 2>/dev/null || true)
   if [ -z "$REL_DIR" ]; then
     warn "Could not create a temporary directory for the release files — the console keeps its debug enrollment defaults."

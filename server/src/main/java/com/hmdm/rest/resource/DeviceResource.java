@@ -231,10 +231,11 @@ public class DeviceResource {
                 dbDevice = this.deviceDAO.getDeviceById(device.getId());
                 if (device.getId() != null) {
                     if (dbDevice != null) {
-                        boolean configChanged = dbDevice.getConfigurationId() != null &&
-                                !dbDevice.getConfigurationId().equals(device.getConfigurationId());
-                        boolean notify = configChanged ||
+                        boolean notify = (dbDevice.getConfigurationId() != null &&
+                                !dbDevice.getConfigurationId().equals(device.getConfigurationId())) ||
                                 (dbDevice.getOldNumber() == null && device.getOldNumber() != null);
+                        boolean configChanged = device.getConfigurationId() != null &&
+                                !device.getConfigurationId().equals(dbDevice.getConfigurationId());
                         this.deviceDAO.updateDevice(device);
                         if (notify) {
                             this.pushService.notifyDeviceOnSettingUpdate(device.getId());

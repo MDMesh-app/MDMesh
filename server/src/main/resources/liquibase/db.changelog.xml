@@ -2860,4 +2860,35 @@
         <rollback>ALTER TABLE configurations DROP COLUMN disableFactoryReset;</rollback>
     </changeSet>
 
+    <changeSet id="26.10.12-remove-headwind-seed-apps" author="lunacy" context="common">
+        <comment>Remove the Headwind launcher/pager/phoneproxy/restarter seed apps, as install/sql/post_seed.sql does.
+            post_seed.sql runs only from the installers, so a deployment updated from the console kept them, and
+            their h-mdm.com downloads reached devices. Only rows that are still the seed's are touched: an app
+            under one of these packages with any version hosted elsewhere is kept. A no-op on a fresh database (the
+            seed is loaded after the first start) and after post_seed.sql. Never blocks startup: a reference this
+            does not clear leaves the apps in place (the server's URL filter still keeps them off devices).</comment>
+        <sql splitStatements="false">
+            DO $$
+            BEGIN
+                CREATE TEMP TABLE hmdm_seed_apps ON COMMIT DROP AS
+                SELECT a.id FROM applications a
+                WHERE a.pkg IN ('com.hmdm.launcher', 'com.hmdm.pager', 'com.hmdm.phoneproxy', 'com.hmdm.emuilauncherrestarter')
+                  AND NOT EXISTS (
+                      SELECT 1 FROM applicationVersions v, unnest(ARRAY[v.url, v.urlArmeabi, v.urlArm64]) AS u(url)
+                      WHERE v.applicationId = a.id AND COALESCE(u.url, '') &lt;&gt; ''
+                        AND u.url !~* '^https?://([^/]*\.)?h-mdm\.com/' AND strpos(u.url, '_HMDM_') = 0);
+                UPDATE configurations SET mainAppId = NULL WHERE mainAppId IN
+                    (SELECT id FROM applicationVersions WHERE applicationId IN (SELECT id FROM hmdm_seed_apps));
+                UPDATE configurations SET contentAppId = NULL WHERE contentAppId IN
+                    (SELECT id FROM applicationVersions WHERE applicationId IN (SELECT id FROM hmdm_seed_apps));
+                DELETE FROM configurationApplications WHERE applicationId IN (SELECT id FROM hmdm_seed_apps);
+                DELETE FROM applicationVersions WHERE applicationId IN (SELECT id FROM hmdm_seed_apps);
+                DELETE FROM applications WHERE id IN (SELECT id FROM hmdm_seed_apps);
+            EXCEPTION WHEN foreign_key_violation THEN
+                RAISE NOTICE 'Headwind seed apps left in place: %', SQLERRM;
+            END $$;
+        </sql>
+        <rollback/>
+    </changeSet>
+
 </databaseChangeLog>

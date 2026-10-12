@@ -2,6 +2,7 @@ package com.mdmesh.core.install
 
 import android.content.pm.PackageInstaller
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -53,6 +54,14 @@ class InstallResultBus @Inject constructor() {
             synchronized(lock) { pending.remove(sessionId) }
         }
     }
+
+    /**
+     * Like [await], but returns null when no result arrives within [timeoutMs]. A broadcast the platform never
+     * delivers (the process died and restarted mid-commit, an OEM quirk) must not suspend the caller forever: an
+     * install runs under the check-in mutex, so an endless wait would stop every later check-in.
+     */
+    suspend fun await(sessionId: Int, timeoutMs: Long): InstallResultEvent? =
+        withTimeoutOrNull(timeoutMs) { await(sessionId) }
 
     companion object {
         /**

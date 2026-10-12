@@ -158,7 +158,8 @@ class InstallManager @Inject constructor(
         val sessionId = -(packageName.hashCode() and 0x7fff_ffff) - 1
         return try {
             packageInstaller.uninstall(packageName, resultSender(sessionId).intentSender)
-            mapResult(resultBus.await(sessionId))
+            resultBus.await(sessionId, RESULT_TIMEOUT_MS)?.let(::mapResult)
+                ?: InstallOutcome.Failure(null, "uninstall result timed out")
         } catch (e: Exception) {
             InstallOutcome.Failure(null, "uninstall error: ${e.message}")
         }
@@ -199,7 +200,11 @@ class InstallManager @Inject constructor(
                 session.commit(resultSender(sessionId).intentSender)
             }
 
-            mapResult(resultBus.await(sessionId))
+            resultBus.await(sessionId, RESULT_TIMEOUT_MS)?.let(::mapResult) ?: run {
+                // Never heard back: give up on the session so it cannot complete behind a reported failure.
+                runCatching { packageInstaller.abandonSession(sessionId) }
+                InstallOutcome.Failure(null, "install result timed out")
+            }
         }
 
     /**
@@ -294,5 +299,10 @@ class InstallManager @Inject constructor(
         PackageInstaller.STATUS_FAILURE_STORAGE -> "FAILURE_STORAGE"
         PackageInstaller.STATUS_FAILURE_INCOMPATIBLE -> "FAILURE_INCOMPATIBLE"
         else -> "STATUS_$status"
+    }
+
+    private companion object {
+        /** How long a committed session may take to report back before the install counts as failed. */
+        const val RESULT_TIMEOUT_MS = 10 * 60_000L
     }
 }

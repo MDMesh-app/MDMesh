@@ -3,6 +3,7 @@ package com.mdmesh.core.install
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
@@ -54,5 +55,22 @@ class InstallResultBusTest {
         val event = bus.await(sessionId = 7)
         assertEquals(7, event.sessionId)
         assertEquals(STATUS_SUCCESS, event.status)
+    }
+
+    @Test
+    fun `await gives up after the timeout when no result ever arrives`() = runTest {
+        val bus = InstallResultBus()
+        // A lost broadcast must not suspend forever: the caller holds the check-in mutex while it waits.
+        assertNull(bus.await(sessionId = 9, timeoutMs = 10 * 60_000L))
+        // A late result for the abandoned session must not throw.
+        bus.publish(sessionId = 9, status = STATUS_FAILURE, message = "late")
+    }
+
+    @Test
+    fun `await with a timeout returns a result that arrives in time`() = runTest {
+        val bus = InstallResultBus()
+        val deferred = async { bus.await(sessionId = 5, timeoutMs = 60_000L) }
+        bus.publish(sessionId = 5, status = STATUS_SUCCESS, message = null)
+        assertEquals(STATUS_SUCCESS, deferred.await()?.status)
     }
 }

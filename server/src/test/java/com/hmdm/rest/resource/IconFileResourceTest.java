@@ -145,6 +145,18 @@ public class IconFileResourceTest {
     }
 
     @Test
+    public void refusesATruncatedImageAsInvalid() throws Exception {
+        byte[] whole = png(64, 64);
+        for (int length : new int[]{12, 20, 30, whole.length - 12}) {
+            Response r = upload(java.util.Arrays.copyOf(whole, length));
+            assertEquals("cut at " + length, "error.icon.dimension.invalid", r.getMessage());
+        }
+        Response headerOnly = upload(pngClaiming(64, 64));
+        assertEquals("error.icon.dimension.invalid", headerOnly.getMessage());
+        assertEquals(0, files.inserted.size());
+    }
+
+    @Test
     public void refusesAnOversizedUpload() throws Exception {
         byte[] big = new byte[(int) IconFileResource.MAX_ICON_BYTES + 1];
         byte[] header = png(64, 64);

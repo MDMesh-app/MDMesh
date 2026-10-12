@@ -82,8 +82,11 @@ public class IconFileResource {
         return out.toByteArray();
     }
 
-    /** Decodes the image only after its header-declared size is checked; null if unreadable or too large. */
-    private static BufferedImage decodeBounded(byte[] bytes) throws java.io.IOException {
+    /**
+     * Decodes the image only after its header-declared size is checked; null if unreadable (any read error, a
+     * truncated header included) or too large.
+     */
+    private static BufferedImage decodeBounded(byte[] bytes) {
         try (javax.imageio.stream.ImageInputStream iis =
                      ImageIO.createImageInputStream(new java.io.ByteArrayInputStream(bytes))) {
             if (iis == null) {
@@ -102,11 +105,11 @@ public class IconFileResource {
                     return null;
                 }
                 return reader.read(0);
-            } catch (javax.imageio.IIOException e) {
-                return null;
             } finally {
                 reader.dispose();
             }
+        } catch (java.io.IOException e) {
+            return null;
         }
     }
 

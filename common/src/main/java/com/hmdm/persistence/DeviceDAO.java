@@ -259,6 +259,23 @@ public class DeviceDAO extends AbstractDAO<Device> {
         return isAccessibleToUser(device) ? device : null;
     }
 
+    /**
+     * <p>Checks that every existing device among the given IDs is accessible to the current user, so that a bulk
+     * action can be refused as a whole before anything is changed. Unknown IDs are ignored.</p>
+     */
+    public boolean areAccessibleToUser(Collection<Integer> deviceIds) {
+        if (deviceIds == null) {
+            return true;
+        }
+        for (Integer id : deviceIds) {
+            final Device device = id == null ? null : this.mapper.getDeviceById(id);
+            if (device != null && !isAccessibleToUser(device)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /** The stored device for a change, if the current user may access it; a security exception otherwise. */
     private Device getAccessibleDeviceForUpdate(Integer id) {
         return requireAccessible(this.mapper.getDeviceById(id));

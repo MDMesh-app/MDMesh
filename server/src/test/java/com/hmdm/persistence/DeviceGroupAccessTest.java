@@ -25,7 +25,13 @@ import static org.junit.Assert.fail;
 /** A user limited to some device groups cannot read or change a device outside them through the device DAO. */
 public class DeviceGroupAccessTest {
 
-    private static final int VISIBLE = 1, HIDDEN = 2;
+    private static final int VISIBLE = 1, HIDDEN = 2, OTHER_CUSTOMER_DEVICE = 3;
+
+    private static Device otherCustomerDevice() {
+        Device d = device(OTHER_CUSTOMER_DEVICE);
+        d.setCustomerId(2);
+        return d;
+    }
 
     private FakeMapper<DeviceMapper> fake;
     private DeviceDAO dao;
@@ -42,8 +48,9 @@ public class DeviceGroupAccessTest {
     @Before
     public void setUp() {
         fake = new FakeMapper<>(DeviceMapper.class)
-                .answer("getDeviceById", a -> device((Integer) a[0]))
-                .answer("getDeviceByNumber", a -> device(Integer.parseInt(((String) a[0]).substring(3))))
+                .answer("getDeviceById", a -> a[0] == null || (Integer) a[0] == OTHER_CUSTOMER_DEVICE
+                        ? (a[0] == null ? null : otherCustomerDevice()) : device((Integer) a[0]))
+                .answer("getDeviceByNumber", a -> a[0] == null ? null : device(Integer.parseInt(((String) a[0]).substring(3))))
                 .answer("isDeviceAccessibleToUser", a -> ((Integer) a[0]) == VISIBLE);
         dao = new DeviceDAO(fake.mapper, null, Guice.createInjector(), null, 3);
         com.hmdm.persistence.domain.User u = Fakes.user(9, 1, "edit_devices", "devices", "edit_device_desc");
@@ -83,6 +90,42 @@ public class DeviceGroupAccessTest {
         dao.updateDeviceDescription(VISIBLE, "x");
         dao.removeDeviceById(VISIBLE);
         assertEquals(1, fake.callsTo("updateDeviceDescription").size());
+        assertEquals(1, fake.callsTo("removeDevice").size());
+    }
+
+    private boolean noDeviceWrites() {
+        return fake.callsStartingWith("remove", "update", "delete", "insert").isEmpty();
+    }
+
+    @Test
+    public void bulkActionsAreRefusedAsAWholeWhenAnyDeviceIsOutOfReach() {
+        DeviceResource resource = new DeviceResource(dao, null, null, null, null, null, null);
+        for (int outOfReach : new int[]{HIDDEN, OTHER_CUSTOMER_DEVICE}) {
+            Device bulkDelete = new Device();
+            bulkDelete.setIds(Fakes.list(VISIBLE, outOfReach));
+            assertNotEquals(Response.ResponseStatus.OK, resource.removeBulkDevices(bulkDelete).getStatus());
+
+            com.hmdm.rest.json.DeviceGroupBulkRequest regroup = new com.hmdm.rest.json.DeviceGroupBulkRequest();
+            regroup.setIds(Fakes.list(VISIBLE, outOfReach));
+            regroup.setAction("set");
+            regroup.setGroups(new ArrayList<>());
+            assertNotEquals(Response.ResponseStatus.OK, resource.updateDeviceGroupBulk(regroup).getStatus());
+
+            Device reassign = new Device();
+            reassign.setIds(Fakes.list(VISIBLE, outOfReach));
+            reassign.setConfigurationId(5);
+            assertNotEquals(Response.ResponseStatus.OK, resource.updateDevice(reassign).getStatus());
+
+            assertTrue("nothing may be written: " + fake.calls, noDeviceWrites());
+        }
+    }
+
+    @Test
+    public void bulkDeleteOfReachableDevicesStillWorks() {
+        DeviceResource resource = new DeviceResource(dao, null, null, null, null, null, null);
+        Device bulkDelete = new Device();
+        bulkDelete.setIds(Fakes.list(VISIBLE));
+        assertEquals(Response.ResponseStatus.OK, resource.removeBulkDevices(bulkDelete).getStatus());
         assertEquals(1, fake.callsTo("removeDevice").size());
     }
 

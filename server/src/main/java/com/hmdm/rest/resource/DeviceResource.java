@@ -250,7 +250,12 @@ public class DeviceResource {
                         }
                     }
                 } else if (device.getIds() != null) {
-                    // This is a bulk request to update configurations for selected devices
+                    // This is a bulk request to update configurations for selected devices: all or nothing
+                    if (!this.deviceDAO.areAccessibleToUser(device.getIds())) {
+                        log.error("Bulk configuration change refused: not all devices are accessible to user {}",
+                                SecurityContext.get().getCurrentUserName());
+                        return Response.PERMISSION_DENIED();
+                    }
                     Iterator it = device.getIds().iterator();
 
                     while (it.hasNext()) {
@@ -327,7 +332,12 @@ public class DeviceResource {
         }
 
         if (device.getIds() != null) {
-            // Device IDs are transferred in the "ids" parameter
+            // Device IDs are transferred in the "ids" parameter; all of them are deleted or none
+            if (!this.deviceDAO.areAccessibleToUser(device.getIds())) {
+                log.error("Bulk delete refused: not all devices are accessible to user {}",
+                        SecurityContext.get().getCurrentUserName());
+                return Response.PERMISSION_DENIED();
+            }
             Iterator it = device.getIds().iterator();
 
             while (it.hasNext()) {
@@ -356,7 +366,12 @@ public class DeviceResource {
         }
 
         if (request.getIds() != null) {
-            // Device IDs are transferred in the "ids" parameter
+            // Device IDs are transferred in the "ids" parameter; all of them are regrouped or none
+            if (!this.deviceDAO.areAccessibleToUser(request.getIds())) {
+                log.error("Bulk regroup refused: not all devices are accessible to user {}",
+                        SecurityContext.get().getCurrentUserName());
+                return Response.PERMISSION_DENIED();
+            }
             Iterator it = request.getIds().iterator();
 
             while (it.hasNext()) {

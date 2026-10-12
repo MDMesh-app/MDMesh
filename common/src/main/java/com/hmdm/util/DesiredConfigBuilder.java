@@ -61,6 +61,7 @@ public final class DesiredConfigBuilder {
         putIfManaged(p, "usbStorage", cfg.getUsbStorage());
         putIfManaged(p, "screenshots", cfg.getDisableScreenshots() == null ? null : !cfg.getDisableScreenshots());
         putIfManaged(p, "factoryReset", cfg.getDisableFactoryReset() == null ? null : !cfg.getDisableFactoryReset());
+        putIfManaged(p, "safeBoot", cfg.getDisableSafeBoot() == null ? null : !cfg.getDisableSafeBoot());
         return p;
     }
 

@@ -31,13 +31,14 @@ public class DesiredConfigBuilderTest {
 
     /**
      * Every policy key managed: the kiosk counterpart of {@link #kioskConfig()} for the flat policy block.
-     * disableFactoryReset is a "block the wipe" flag, so the wire key factoryReset is its INVERSE.
+     * disableFactoryReset is a "block the wipe" flag, so the wire key factoryReset is its INVERSE;
+     * disableSafeBoot likewise inverts into safeBoot.
      */
     private static Configuration policiesConfig() {
         Configuration c = new Configuration();
         c.setId(7);
         c.setWifi(false); c.setBluetooth(true); c.setUsbStorage(true);
-        c.setDisableScreenshots(false); c.setDisableFactoryReset(true);
+        c.setDisableScreenshots(false); c.setDisableFactoryReset(true); c.setDisableSafeBoot(true);
         c.setRequestUpdates(RequestUpdatesType.DONOTTRACK);
         return c;
     }
@@ -158,6 +159,38 @@ public class DesiredConfigBuilderTest {
         assertNotEquals(blocked.getRevision(), DesiredConfigBuilder.build(allowed, Collections.emptyList()).getRevision());
 
         Configuration unmanaged = policiesConfig(); unmanaged.setDisableFactoryReset(null);
+        assertNotEquals(blocked.getRevision(), DesiredConfigBuilder.build(unmanaged, Collections.emptyList()).getRevision());
+    }
+
+    @Test
+    public void safe_boot_is_inverted_into_the_blocking_policy() {
+        // disableSafeBoot=true means "block Safe Mode", so the agent receives safeBoot=false.
+        DesiredConfig blocked = DesiredConfigBuilder.build(policiesConfig(), Collections.emptyList());
+        assertEquals("disableSafeBoot=true -> policies.safeBoot=false", Boolean.FALSE,
+                blocked.getPolicies().get("safeBoot"));
+
+        Configuration allowed = policiesConfig(); allowed.setDisableSafeBoot(false);
+        assertEquals("disableSafeBoot=false -> policies.safeBoot=true", Boolean.TRUE,
+                DesiredConfigBuilder.build(allowed, Collections.emptyList()).getPolicies().get("safeBoot"));
+    }
+
+    @Test
+    public void null_safe_boot_is_unmanaged_and_the_key_is_omitted() {
+        Configuration unmanaged = policiesConfig(); unmanaged.setDisableSafeBoot(null);
+        DesiredConfig d = DesiredConfigBuilder.build(unmanaged, Collections.emptyList());
+        assertFalse("null disableSafeBoot = not managed", d.getPolicies().containsKey("safeBoot"));
+        // Existing configurations upgrade with a NULL column: their revision must not move.
+        assertEquals(resource("desired-config-kiosk.sha256"),
+                DesiredConfigBuilder.build(kioskConfig(), Arrays.asList(app(5, 505, "com.acme.pos", 1))).getRevision());
+    }
+
+    @Test
+    public void safe_boot_alone_changes_the_revision() {
+        DesiredConfig blocked = DesiredConfigBuilder.build(policiesConfig(), Collections.emptyList());
+        Configuration allowed = policiesConfig(); allowed.setDisableSafeBoot(false);
+        assertNotEquals(blocked.getRevision(), DesiredConfigBuilder.build(allowed, Collections.emptyList()).getRevision());
+
+        Configuration unmanaged = policiesConfig(); unmanaged.setDisableSafeBoot(null);
         assertNotEquals(blocked.getRevision(), DesiredConfigBuilder.build(unmanaged, Collections.emptyList()).getRevision());
     }
 

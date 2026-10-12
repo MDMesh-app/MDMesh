@@ -18,6 +18,8 @@ public class DeviceState implements Serializable {
     private String telemetry;
     private String appliedConfigRevision;
     private Long appliedConfigAt;
+    /** Agent versionName that last completed config.apply (or first seen); a change triggers a one-time resync. */
+    private String configAgentVersion;
 
     public String getDeviceNumber() { return deviceNumber; }
     public void setDeviceNumber(String v) { this.deviceNumber = v; }
@@ -45,4 +47,6 @@ public class DeviceState implements Serializable {
     public void setAppliedConfigRevision(String v) { this.appliedConfigRevision = v; }
     public Long getAppliedConfigAt() { return appliedConfigAt; }
     public void setAppliedConfigAt(Long v) { this.appliedConfigAt = v; }
+    public String getConfigAgentVersion() { return configAgentVersion; }
+    public void setConfigAgentVersion(String v) { this.configAgentVersion = v; }
 }

@@ -86,10 +86,13 @@ class ServerInjectedPolicyTest {
      * The real production graph, minus the network and the DPM leaf. Mirrors `AgentModule`:
      * `togglePolicies()` -> `PolicyApplyHandler` + `ConfigApplyHandler` -> `CommandDispatcher`.
      */
-    private class Harness(toggles: Map<String, TogglePolicy>) {
+    private class Harness(
+        toggles: Map<String, TogglePolicy>,
+        // Survives an agent update in production (on-disk store), so a test can hand it to a newer agent.
+        val configStore: InMemoryConfigStateStore = InMemoryConfigStateStore(),
+    ) {
         val api = FakeMdmApi()
         val pending = PendingResults()
-        val configStore = InMemoryConfigStateStore()
 
         private val kiosk = KioskApplier(
             kiosk = SilentKioskController(),
@@ -98,7 +101,7 @@ class ServerInjectedPolicyTest {
             homeComponent = ComponentName("com.mdmesh.agent", "com.mdmesh.agent.KioskHomeAlias"),
         )
 
-        private val applier = ConfigApplier(toggles, kiosk, setLocationMode = {}, store = configStore)
+        val applier = ConfigApplier(toggles, kiosk, setLocationMode = {}, store = configStore)
 
         private val identity = FakeIdentity(initialId = "srv-1", initialSecret = "sek-1")
 
@@ -277,6 +280,58 @@ class ServerInjectedPolicyTest {
         harness.serverSays()
         harness.coordinator.runOnce()
         assertEquals("dev-7", harness.api.checkInRequests[1].state?.appliedConfigRevision)
+    }
+
+    @Test
+    fun `config apply safeBoot false reaches the safe boot strategy`() = runTest {
+        val safeBoot = RecordingToggle("safeBoot")
+        val harness = Harness(mapOf("safeBoot" to safeBoot))
+        harness.serverSays(
+            configCommand(ConfigApplyPayload(revision = "dev-9", policies = mapOf("safeBoot" to false)))
+        )
+
+        harness.coordinator.runOnce()
+
+        assertEquals("false = Safe Mode blocked", listOf(false), safeBoot.calls)
+        val result = ProtocolJson.json.decodeFromString(
+            ConfigApplyResult.serializer(),
+            harness.pending.drain().single().detail!!,
+        )
+        assertEquals(ConfigOutcome.APPLIED, result.outcomes["policies.safeBoot"])
+        assertEquals("dev-9", harness.configStore.revision())
+    }
+
+    /**
+     * Protocol 1.3 is additive: an agent built before `safeBoot` existed reports the key `unsupported`
+     * and still converges the rest of the document. After a normal agent update the persisted document
+     * is re-applied (BootReceiver on MY_PACKAGE_REPLACED -> `reapplyPersisted`), and the new strategy
+     * picks the key up — no re-enrollment and no new revision needed.
+     */
+    @Test
+    fun `an older agent reports safeBoot unsupported and an updated agent applies it on re-apply`() = runTest {
+        val camera = RecordingToggle("camera")
+        val old = Harness(mapOf("camera" to camera))
+        old.serverSays(
+            configCommand(
+                ConfigApplyPayload(revision = "dev-10", policies = mapOf("safeBoot" to false, "camera" to false))
+            )
+        )
+
+        old.coordinator.runOnce()
+
+        val ack = old.pending.drain().single()
+        assertEquals(CommandStatus.DONE, ack.status)
+        val result = ProtocolJson.json.decodeFromString(ConfigApplyResult.serializer(), ack.detail!!)
+        assertEquals(ConfigOutcome.UNSUPPORTED, result.outcomes["policies.safeBoot"])
+        assertEquals(ConfigOutcome.APPLIED, result.outcomes["policies.camera"])
+        assertEquals("unsupported does not block the revision", "dev-10", old.configStore.revision())
+
+        val safeBoot = RecordingToggle("safeBoot")
+        val updated = Harness(mapOf("safeBoot" to safeBoot, "camera" to camera), configStore = old.configStore)
+        val reapplied = updated.applier.reapplyPersisted()
+
+        assertEquals(listOf(false), safeBoot.calls)
+        assertEquals(ConfigOutcome.APPLIED, reapplied?.outcomes?.get("policies.safeBoot"))
     }
 
     /**

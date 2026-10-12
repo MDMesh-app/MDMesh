@@ -258,7 +258,7 @@ object AgentModule {
         @ApplicationContext context: Context,
     ): KioskApplier {
         val home = kioskHomeAlias(context)
-        return KioskApplier(kiosk, store, AndroidKioskHomeSwitch(context, home), home)
+        return KioskApplier(kiosk, store, AndroidKioskHomeSwitch(context, home), home) { kiosk.isLocked(context) }
     }
 
     @Provides @IntoSet

@@ -27,7 +27,7 @@ data class ApkPart(
     val url: String? = null,
     /** Absolute path to an already-present APK on the device. */
     val localPath: String? = null,
-    /** Optional lowercase hex SHA-256 of this part; verified after fetch if present. */
+    /** Hex SHA-256 of this part; required (see [InstallRequest.integrityProblem]) and verified after fetch. */
     val sha256: String? = null,
 )
 
@@ -41,7 +41,7 @@ data class InstallRequest(
     val packageName: String,
     /** Requested version code; `null`/`0` means "any" (see [VersionPolicy]). */
     val versionCode: Long? = null,
-    /** Optional lowercase hex SHA-256 of the APK; verified after download if present. */
+    /** Hex SHA-256 of the APK; required for a single-APK install and verified after download. */
     val sha256: String? = null,
     /** When true and the install succeeds, launch the app's main activity. */
     val runAfterInstall: Boolean = false,
@@ -55,6 +55,26 @@ data class InstallRequest(
     /** Normalized part list: the explicit [parts], or the single [url]/[localPath] as one part. */
     val apkParts: List<ApkPart>
         get() = if (parts.isNotEmpty()) parts else listOf(ApkPart(url, localPath, sha256))
+
+    /**
+     * Why this request must not be installed, or null when every part names its bytes with a well-formed
+     * hex SHA-256. A silent Device-Owner install never commits an APK it can't verify: the digest arrives
+     * over the authenticated check-in, so it also covers plain-http APK hosts on a LAN.
+     */
+    val integrityProblem: String?
+        get() = apkParts.withIndex().firstNotNullOfOrNull { (i, part) ->
+            val sha = part.sha256?.trim().orEmpty()
+            val where = part.url ?: part.localPath ?: "part $i"
+            when {
+                sha.isEmpty() -> "refused: no sha256 for $where (the server must send the APK's SHA-256)"
+                !SHA256_HEX.matches(sha) -> "refused: malformed sha256 for $where (expected 64 hex characters)"
+                else -> null
+            }
+        }
+
+    private companion object {
+        val SHA256_HEX = Regex("^[0-9a-fA-F]{64}$")
+    }
 }
 
 /** Result of an install/uninstall attempt. */
@@ -102,6 +122,9 @@ class InstallManager @Inject constructor(
      * install and awaits the platform's result. Returns the mapped [InstallOutcome].
      */
     suspend fun install(req: InstallRequest): InstallOutcome {
+        // 0. Integrity gate — refuse before any network or session work.
+        req.integrityProblem?.let { return InstallOutcome.Failure(status = null, reason = it) }
+
         // 1. Version gate (pure) — skip / block before touching the network.
         when (val decision = VersionPolicy.shouldInstall(installedVersionCode(req.packageName), req.versionCode)) {
             VersionPolicy.Decision.Install -> Unit
@@ -114,7 +137,7 @@ class InstallManager @Inject constructor(
         }
 
         // 2. Obtain every part (single APK, or base + splits of a bundle), verifying each
-        // part's optional checksum. All parts install together in one session (step 3).
+        // part's checksum. All parts install together in one session (step 3).
         val parts = req.apkParts
         val fetched = ArrayList<FetchedApk>(parts.size)
         try {
@@ -122,11 +145,10 @@ class InstallManager @Inject constructor(
                 val file = runCatching { obtainPart(part) }
                     .getOrElse { return InstallOutcome.Failure(null, "apk fetch failed: ${it.message}") }
                 fetched += FetchedApk(file, downloaded = part.url != null)
-                part.sha256?.let { expected ->
-                    val actual = sha256Of(file)
-                    if (!actual.equals(expected, ignoreCase = true)) {
-                        return InstallOutcome.Failure(null, "checksum mismatch: expected $expected got $actual")
-                    }
+                val expected = part.sha256!!.trim() // non-null: checked by the integrity gate
+                val actual = sha256Of(file)
+                if (!actual.equals(expected, ignoreCase = true)) {
+                    return InstallOutcome.Failure(null, "checksum mismatch: expected $expected got $actual")
                 }
             }
 

@@ -30,10 +30,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import com.google.inject.Singleton;
@@ -291,7 +294,8 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
      */
     @Transactional
     public void updateApplication(Application application) {
-        updateRecord(application, this.mapper::updateApplication, SecurityException::onApplicationAccessViolation);
+        updateRecord(application, this.mapper::findById, this.mapper::updateApplication,
+                SecurityException::onApplicationAccessViolation);
     }
 
     /**
@@ -305,11 +309,11 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
     public void updateWebApplication(Application application) {
         final Optional<Integer> currentCustomerId = SecurityContext.get().getCurrentCustomerId();
         if (currentCustomerId.isPresent()) {
-            final Application dbDevice = this.mapper.findById(application.getId());
-            application.setPkg(dbDevice.getPkg());
-            application.setVersion("0");
-
-            updateRecord(application, this.mapper::updateApplication, SecurityException::onApplicationAccessViolation);
+            updateRecord(application, this.mapper::findById, record -> {
+                record.setPkg(this.mapper.findById(record.getId()).getPkg());
+                record.setVersion("0");
+                this.mapper.updateApplication(record);
+            }, SecurityException::onApplicationAccessViolation);
         } else {
             throw SecurityException.onAnonymousAccess();
         }
@@ -324,14 +328,17 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
      */
     @Transactional
     public void updateApplicationVersion(ApplicationVersion applicationVersion) {
-        final Application application = getSingleRecord(
-                () -> this.mapper.findById(applicationVersion.getApplicationId()),
-                SecurityException::onApplicationAccessViolation
-        );
-        
+        // The version decides which application is affected, not the applicationId sent with it
+        final ApplicationVersion dbApplicationVersion = applicationVersion.getId() == null ? null
+                : this.mapper.findVersionById(applicationVersion.getId());
+        if (dbApplicationVersion == null) {
+            throw SecurityException.onApplicationVersionAccessViolation(applicationVersion.getId());
+        }
+        applicationVersion.setApplicationId(dbApplicationVersion.getApplicationId());
+        final Application application = getEditableApplication(dbApplicationVersion.getApplicationId());
+
         guardDuplicateAppVersion(application, applicationVersion);
 
-        final ApplicationVersion dbApplicationVersion = this.mapper.findVersionById(applicationVersion.getId());
         String existingUrl = dbApplicationVersion.getUrl();
         if (existingUrl != null && existingUrl.trim().isEmpty()) {
             existingUrl = null;
@@ -449,8 +456,61 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
         }
     }
 
+    /**
+     * <p>Gets the persisted application the current user may modify: one of the user's customer (any customer for a
+     * super-admin).</p>
+     *
+     * @throws SecurityException if the application does not exist or belongs to another customer.
+     */
+    private Application getEditableApplication(Integer id) {
+        final Application application = id == null ? null : this.mapper.findById(id);
+        if (application == null) {
+            throw SecurityException.onApplicationAccessViolation(id);
+        }
+        SecurityContext.get().getCurrentUser()
+                .filter(u -> u.isSuperAdmin() || u.getCustomerId() == application.getCustomerId())
+                .orElseThrow(() -> SecurityException.onApplicationAccessViolation(application));
+        return application;
+    }
+
+    /**
+     * <p>Gets the persisted application the user may link to configurations: an own application or a common one.</p>
+     *
+     * @throws SecurityException if the application does not exist or belongs to another customer.
+     */
+    private Application getLinkableApplication(User user, Integer id) {
+        final Application application = id == null ? null : this.mapper.findById(id);
+        if (application == null) {
+            throw SecurityException.onApplicationAccessViolation(id);
+        }
+        if (!application.isCommon() && application.getCustomerId() != user.getCustomerId()) {
+            throw SecurityException.onApplicationAccessViolation(application);
+        }
+        return application;
+    }
+
+    /**
+     * <p>Drops the links to configurations the user may not edit: configurations of other customers and, for a user
+     * limited to some configurations, the other ones.</p>
+     */
+    private <L> void retainEditableConfigurations(User user, List<L> links, Function<L, Integer> configurationId) {
+        final Set<Integer> editable = new HashSet<>(this.mapper.getCustomerConfigurationIds(user.getCustomerId()));
+        if (!user.isAllConfigAvailable()) {
+            final List<LookupItem> userConfigurations = user.getConfigurations() == null
+                    ? new ArrayList<>() : user.getConfigurations();
+            editable.retainAll(userConfigurations.stream().map(LookupItem::getId).collect(Collectors.toSet()));
+        }
+        links.removeIf(link -> !editable.contains(configurationId.apply(link)));
+    }
+
     @Transactional
     public void updateApplicationConfigurations(LinkConfigurationsToAppRequest request) {
+        final User user = SecurityContext.get().getCurrentUser().orElseThrow(SecurityException::onAnonymousAccess);
+        final int customerId = user.getCustomerId();
+        // Links change for the persisted application only, and within the caller's configurations only
+        final int applicationId = getLinkableApplication(user, request.getApplicationId()).getId();
+        retainEditableConfigurations(user, request.getConfigurations(), ApplicationConfigurationLink::getConfigurationId);
+
         final List<ApplicationConfigurationLink> activeLinks = request.getConfigurations()
                 .stream()
                 .filter(c -> c.getAction() == 1)
@@ -458,10 +518,10 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
         if (!activeLinks.isEmpty()) {
             activeLinks.forEach(link -> {
                 final int deletedCount = this.mapper.deleteApplicationConfigurationLinksForSamePkg(
-                        link.getApplicationId(), link.getConfigurationId()
+                        applicationId, link.getConfigurationId(), customerId
                 );
                 log.debug("Deleted {} links to applications with same package as for application #{} for configuration #{}",
-                        deletedCount, link.getApplicationId(), link.getConfigurationId());
+                        deletedCount, applicationId, link.getConfigurationId());
             });
         }
 
@@ -470,27 +530,24 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
                 .filter(c -> c.getId() != null && c.getAction() == 0)
                 .collect(Collectors.toList());
         deletedLinks.forEach(link -> {
-            this.mapper.deleteApplicationConfigurationLink(link.getId());
+            this.mapper.deleteApplicationConfigurationLink(link.getId(), applicationId, customerId);
         });
 
         final List<ApplicationConfigurationLink> updatedLinks = request.getConfigurations()
                 .stream()
                 .filter(c -> c.getId() != null && c.getAction() > 0)
                 .collect(Collectors.toList());
-        updatedLinks.forEach(this.mapper::updateApplicationConfigurationLink);
+        updatedLinks.forEach(link -> this.mapper.updateApplicationConfigurationLink(link, applicationId, customerId));
 
         final List<ApplicationConfigurationLink> newLinks = request.getConfigurations()
                 .stream()
                 .filter(c -> c.getId() == null && c.getAction() > 0)
                 .collect(Collectors.toList());
-        this.insertApplicationConfigurations(request.getApplicationId(), newLinks);
+        this.insertApplicationConfigurations(applicationId, newLinks);
 
-        SecurityContext.get().getCurrentUser().ifPresent(user -> {
-            this.mapper.recheckConfigurationMainApplications(user.getCustomerId());
-            this.mapper.recheckConfigurationContentApplications(user.getCustomerId());
-            this.mapper.recheckConfigurationKioskModes(user.getCustomerId());
-        });
-
+        this.mapper.recheckConfigurationMainApplications(customerId);
+        this.mapper.recheckConfigurationContentApplications(customerId);
+        this.mapper.recheckConfigurationKioskModes(customerId);
     }
 
     @Transactional
@@ -500,9 +557,11 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
 
         // If this version is set for installation, then other versions of same app must be set for de-installation
         final List<ApplicationVersionConfigurationLink> configurations = request.getConfigurations();
+        retainEditableConfigurations(user, configurations, ApplicationVersionConfigurationLink::getConfigurationId);
         configurations.forEach(link -> {
             if (link.getAction() == 1) {
-                final int uninstalledCount = this.mapper.uninstallOtherVersions(applicationVersionId, link.getConfigurationId());
+                final int uninstalledCount = this.mapper.uninstallOtherVersions(
+                        applicationVersionId, link.getConfigurationId(), user.getCustomerId());
                 log.debug("Uninstalled {} application versions of application #{} ({}) for configuration #{} ({})",
                         uninstalledCount, link.getApplicationId(), link.getApplicationName(),
                         link.getConfigurationId(), link.getConfigurationName());
@@ -942,6 +1001,7 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
                 );
             }
         }
+        getEditableApplication(existingApplication.getId());
 
         // Check the version package id against application's package id - they must be the same
         if (appPkg.get() != null) {

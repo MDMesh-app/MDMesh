@@ -499,15 +499,16 @@ public class ApplicationResource {
             if (!user.isAllConfigAvailable()) {
                 // Remove all configurations unavailable to user
                 request.getConfigurations().removeIf(c ->
-                        user.getConfigurations().stream().filter(uc -> uc.getId() == c.getConfigurationId()).findFirst() == null);
+                        user.getConfigurations().stream().noneMatch(uc -> uc.getId() == c.getConfigurationId()));
             }
-            // Avoid access to objects of another customer
+            // Avoid access to objects of another customer (common applications may be linked by any customer).
+            // The DAO enforces the same rules against the persisted rows; this only drops foreign links early.
             request.getConfigurations().removeIf(c -> {
-                // findById will raise a SecurityException if attempting to access an object of another customer
-                // So actually this code is a bit redundant, but it guards access to own objects anyway
+                // getConfigurationById will raise a SecurityException if attempting to access an object of another customer
                 Application application = applicationDAO.findById(c.getApplicationId());
                 Configuration configuration = configurationDAO.getConfigurationById(c.getConfigurationId());
-                return application.getCustomerId() != user.getCustomerId() ||
+                return application == null ||
+                       (!application.isCommon() && application.getCustomerId() != user.getCustomerId()) ||
                        configuration.getCustomerId() != user.getCustomerId();
             });
             logger.info("Application configurations updated by user " + SecurityContext.get().getCurrentUserName());
@@ -546,7 +547,7 @@ public class ApplicationResource {
             if (!user.isAllConfigAvailable()) {
                 // Remove all configurations unavailable to user
                 request.getConfigurations().removeIf(c ->
-                        user.getConfigurations().stream().filter(uc -> uc.getId() == c.getConfigurationId()).findFirst() == null);
+                        user.getConfigurations().stream().noneMatch(uc -> uc.getId() == c.getConfigurationId()));
             }
             logger.info("Application version configurations updated by user " +
                     SecurityContext.get().getCurrentUserName());

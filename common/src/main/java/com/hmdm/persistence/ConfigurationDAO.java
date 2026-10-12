@@ -122,6 +122,7 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
     public void updateConfiguration(Configuration config) {
         updateRecord(
                 config,
+                this.mapper::getConfigurationById,
                 configuration -> {
                     this.mapper.updateConfiguration(configuration);
                     this.mapper.removeConfigurationApplicationsById(configuration.getId());

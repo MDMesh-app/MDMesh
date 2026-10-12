@@ -67,7 +67,7 @@ public class GroupDAO extends AbstractDAO<Group> {
     }
 
     public void updateGroup(Group group) {
-        updateRecord(group, this.mapper::updateGroup, SecurityException::onGroupAccessViolation);
+        updateRecord(group, this.mapper::getGroupById, this.mapper::updateGroup, SecurityException::onGroupAccessViolation);
     }
 
     public void removeGroupById(Integer id) {

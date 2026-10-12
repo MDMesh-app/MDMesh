@@ -283,6 +283,7 @@ export interface AppInstallSpec {
   url: string;
   packageName: string;
   versionCode?: number;
+  /** The APK's SHA-256. When absent the server computes it before queuing: the agent refuses an install without one. */
   sha256?: string;
   runAfterInstall?: boolean;
   /** Split-APK bundle: when present the agent installs all parts in one session

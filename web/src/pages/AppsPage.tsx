@@ -635,9 +635,9 @@ function FDroidSource({ onDeploy }: { onDeploy: (s: DeploySubject) => void }) {
       packageName: a.packageName,
       url: a.apkUrl,
       versionCode: a.versionCode,
-      // F-Droid publishes a HEX sha256; the agent's expected format isn't confirmed
-      // (the server stores base64), so omit it for now — HTTPS covers transit integrity.
-      sha256: undefined,
+      // The hex sha256 from the F-Droid index pins the APK the admin picked; the agent refuses an
+      // install without one (the server hashes the download itself if the index has none).
+      sha256: a.sha256 || undefined,
     });
   }
 

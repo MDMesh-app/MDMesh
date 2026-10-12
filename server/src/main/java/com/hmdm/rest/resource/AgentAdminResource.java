@@ -31,10 +31,12 @@ import com.hmdm.persistence.domain.DeviceState;
 import com.hmdm.persistence.domain.DeviceSyncRow;
 import com.hmdm.notification.AgentWakeHub;
 import com.hmdm.rest.json.AgentBulkCommandRequest;
+import com.hmdm.rest.json.InstallIntegrity;
 import com.hmdm.rest.json.Response;
 import com.hmdm.rest.json.agent.CommandHistoryView;
 import com.hmdm.rest.json.agent.ConfigStatusView;
 import com.hmdm.rest.json.agent.ConfigSyncSummary;
+import com.hmdm.rest.resource.support.ApkHashResolver;
 import com.hmdm.rest.resource.support.ConfigReconciler;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.util.AgentCapabilityTokens;
@@ -66,7 +68,8 @@ import java.util.UUID;
 /**
  * <p>Authenticated admin resource for the from-scratch Android agent v1 protocol: mints enrollment
  * tokens and queues opaque commands. As with {@link AgentResource}, command {@code type}/{@code
- * payload} are never interpreted by the server.</p>
+ * payload} are not interpreted by the server, with one exception: an {@code app.install} is given the
+ * APK's SHA-256 before it is queued (see {@link InstallIntegrity}).</p>
  */
 @Singleton
 @Path("/private/agent/v1")
@@ -84,6 +87,7 @@ public class AgentAdminResource {
     private AgentWakeHub wakeHub;
     private com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller;
     private ConfigReconciler configReconciler;
+    private ApkHashResolver hashResolver;
 
     /**
      * <p>A constructor required by Swagger.</p>
@@ -97,13 +101,15 @@ public class AgentAdminResource {
                               UnsecureDAO unsecureDAO,
                               AgentWakeHub wakeHub,
                               com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller,
-                              ConfigReconciler configReconciler) {
+                              ConfigReconciler configReconciler,
+                              ApkHashResolver hashResolver) {
         this.tokenDAO = tokenDAO;
         this.commandDAO = commandDAO;
         this.unsecureDAO = unsecureDAO;
         this.wakeHub = wakeHub;
         this.configAppInstaller = configAppInstaller;
         this.configReconciler = configReconciler;
+        this.hashResolver = hashResolver;
     }
 
     /**
@@ -215,10 +221,18 @@ public class AgentAdminResource {
             return Response.PERMISSION_DENIED();
         }
 
+        final String payload;
+        try {
+            payload = InstallIntegrity.forCommand(body.getType(), body.getPayload(), hashResolver);
+        } catch (IllegalArgumentException e) {
+            logger.warn("Agent command {} for device {} rejected: {}", body.getType(), deviceId, e.getMessage());
+            return Response.ERROR("Cannot install: " + e.getMessage());
+        }
+
         AgentCommand command = new AgentCommand();
         command.setDeviceNumber(deviceId);
         command.setType(body.getType());
-        command.setPayload(body.getPayload());
+        command.setPayload(payload);
         command.setRequiresCapability(body.getRequiresCapability());
         command.setStatus("pending");
         command.setCreatedAt(System.currentTimeMillis());
@@ -265,6 +279,15 @@ public class AgentAdminResource {
             return Response.PERMISSION_DENIED();
         }
 
+        // Hashed once for the whole fan-out: every device verifies the same bytes.
+        final String payload;
+        try {
+            payload = InstallIntegrity.forCommand(type, req.getCommand().getPayload(), hashResolver);
+        } catch (IllegalArgumentException e) {
+            logger.warn("Bulk command {} rejected: {}", type, e.getMessage());
+            return Response.ERROR("Cannot install: " + e.getMessage());
+        }
+
         int queued = 0;
         List<Integer> skipped = new ArrayList<>();
         for (Integer id : req.getDeviceIds()) {
@@ -277,7 +300,7 @@ public class AgentAdminResource {
             AgentCommand command = new AgentCommand();
             command.setDeviceNumber(device.getNumber());
             command.setType(type);
-            command.setPayload(req.getCommand().getPayload());
+            command.setPayload(payload);
             command.setRequiresCapability(req.getCommand().getRequiresCapability());
             command.setStatus("pending");
             command.setCreatedAt(System.currentTimeMillis());

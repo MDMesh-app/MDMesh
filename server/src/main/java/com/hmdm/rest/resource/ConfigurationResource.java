@@ -211,12 +211,6 @@ public class ConfigurationResource {
 
                 return Response.OK(configuration);
             }
-        } catch (IllegalArgumentException e) {
-            if (ConfigurationDAO.INVALID_FILE_URL.equals(e.getMessage())) {
-                return Response.ERROR(e.getMessage());
-            }
-            log.error("Unexpected error when saving the configuration", e);
-            return Response.INTERNAL_ERROR();
         } catch (Exception e) {
             log.error("Unexpected error when saving the configuration", e);
             e.printStackTrace();

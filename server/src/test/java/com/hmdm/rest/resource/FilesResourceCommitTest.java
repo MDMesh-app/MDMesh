@@ -117,6 +117,35 @@ public class FilesResourceCommitTest {
         assertEquals("error.permission.denied", r.getMessage());
     }
 
+    private static UploadedFile external(Integer id, String url) {
+        UploadedFile f = new UploadedFile();
+        f.setId(id);
+        f.setExternal(true);
+        f.setExternalUrl(url);
+        f.setFilePath("");
+        return f;
+    }
+
+    @Test
+    public void anExternalFileNeedsAnHttpUrl() {
+        for (String url : new String[]{"file:///etc/passwd", "ftp://host/a.png", "jar:file:/x.jar!/a"}) {
+            Response r = resource.updateFile(external(null, url));
+            assertEquals(url, FilesResource.EXTERNAL_URL_NOT_HTTP, r.getMessage());
+        }
+        assertEquals(0, uploadedFileDAO.written.size());
+        assertEquals(Response.ResponseStatus.OK, resource.updateFile(external(null, "https://cdn.example.com/a.png")).getStatus());
+    }
+
+    @Test
+    public void anOlderExternalFileKeepsItsUrlButCannotGetANonHttpOne() {
+        uploadedFileDAO.existing = external(5, "ftp://legacy/a.png");
+        assertEquals("unchanged legacy URL", Response.ResponseStatus.OK,
+                resource.updateFile(external(5, "ftp://legacy/a.png")).getStatus());
+        assertEquals(FilesResource.EXTERNAL_URL_NOT_HTTP, resource.updateFile(external(5, "file:///etc/passwd")).getMessage());
+        assertEquals(Response.ResponseStatus.OK,
+                resource.updateFile(external(5, "https://cdn.example.com/a.png")).getStatus());
+    }
+
     @Test
     public void createRejectsTraversalThroughTheTempDir() {
         String tmpdir = System.getProperty("java.io.tmpdir");

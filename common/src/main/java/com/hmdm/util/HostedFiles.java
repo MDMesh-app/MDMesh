@@ -42,6 +42,15 @@ public class HostedFiles {
         this.localPrefixes = new String[]{base + "/files/", origin + "/files/"};
     }
 
+    /** True for an {@code http://} or {@code https://} URL (any case); the only kind a new external file may have. */
+    public static boolean isHttpUrl(String url) {
+        if (url == null) {
+            return false;
+        }
+        String u = url.trim().toLowerCase(java.util.Locale.ROOT);
+        return (u.startsWith("http://") && u.length() > 7) || (u.startsWith("https://") && u.length() > 8);
+    }
+
     /** The hosted file a {@code <base.url>/files/...} URL names, or null (not ours, missing, or outside the dir). */
     public File localFile(String url) {
         if (url == null) {
@@ -78,7 +87,7 @@ public class HostedFiles {
                 return null;
             }
             return f;
-        } catch (IOException e) {
+        } catch (IOException | RuntimeException e) {
             return null;
         }
     }

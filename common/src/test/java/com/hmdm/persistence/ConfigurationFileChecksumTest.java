@@ -79,19 +79,22 @@ public class ConfigurationFileChecksumTest {
     }
 
     @Test
-    public void onlyHttpUrlsAreAccepted() {
+    public void oddOrNonHttpUrlsGetAnEmptyChecksumWithoutAnError() {
         for (String url : new String[]{"file://" + outside.getAbsolutePath(), "jar:file:/x.jar!/a", "ftp://h/x",
-                "gopher://h/x", outside.getAbsolutePath()}) {
-            try {
-                ConfigurationDAO.requireHttpUrl(url);
-                fail("accepted " + url);
-            } catch (IllegalArgumentException expected) {
-                // ok
-            }
+                "gopher://h/x", outside.getAbsolutePath(), "http://legacy host/a b|c.png",
+                BASE + "/files/acme/a\u0000b", BASE + "/files/%zz", "::::"}) {
+            assertEquals(url, "", ConfigurationDAO.externalFileChecksum(url, hosted));
         }
-        ConfigurationDAO.requireHttpUrl("http://cdn.example.com/a.png");
-        ConfigurationDAO.requireHttpUrl("HTTPS://cdn.example.com/a.png");
-        ConfigurationDAO.requireHttpUrl("");
-        ConfigurationDAO.requireHttpUrl(null);
+    }
+
+    @Test
+    public void onlyHttpUrlsAreHttpUrls() {
+        for (String url : new String[]{"file:///etc/passwd", "ftp://h/x", "jar:file:/x.jar!/a", "http://", "", null,
+                "/files/a"}) {
+            assertEquals(String.valueOf(url), false, HostedFiles.isHttpUrl(url));
+        }
+        for (String url : new String[]{"http://cdn.example.com/a.png", "HTTPS://cdn.example.com/a b.png"}) {
+            assertEquals(url, true, HostedFiles.isHttpUrl(url));
+        }
     }
 }

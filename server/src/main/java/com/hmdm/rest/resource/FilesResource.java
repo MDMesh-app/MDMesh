@@ -279,10 +279,17 @@ public class FilesResource {
         }).orElse(Response.PERMISSION_DENIED());
     }
 
+    /** Shown when an external file's URL is not http(s). */
+    static final String EXTERNAL_URL_NOT_HTTP = "An external file's URL must start with http:// or https://";
+
     private Response createExternalFileInternal(UploadedFile uploadedFile) {
         if (uploadedFile.getExternalUrl() == null || uploadedFile.getExternalUrl().trim().equals("")) {
             logger.warn("While creating external file: empty URL");
             return Response.ERROR();
+        }
+        if (!com.hmdm.util.HostedFiles.isHttpUrl(uploadedFile.getExternalUrl())) {
+            logger.warn("Refused to create an external file with a non-http(s) URL");
+            return Response.ERROR(EXTERNAL_URL_NOT_HTTP);
         }
         return SecurityContext.get().getCurrentUser().map(u -> {
             if (uploadedFile.getFilePath() == null) {
@@ -301,6 +308,16 @@ public class FilesResource {
     private Response updateFileInternal(UploadedFile uploadedFile) {
         return SecurityContext.get().getCurrentUser().map(u -> {
             Customer customer = customerDAO.findById(u.getCustomerId());
+            if (uploadedFile.isExternal()) {
+                // A changed URL must be http(s); an older file keeps whatever URL it already has.
+                UploadedFile dbFile = uploadedFileDAO.getById(uploadedFile.getId());
+                String url = uploadedFile.getExternalUrl();
+                boolean changed = dbFile == null || url == null || !url.equals(dbFile.getExternalUrl());
+                if (changed && !com.hmdm.util.HostedFiles.isHttpUrl(url)) {
+                    logger.warn("Refused to set a non-http(s) URL on external file {}", uploadedFile.getId());
+                    return Response.ERROR(EXTERNAL_URL_NOT_HTTP);
+                }
+            }
             if (!uploadedFile.isExternal()) {
                 UploadedFile dbFile = uploadedFileDAO.getById(uploadedFile.getId());
                 if (!StringUtil.isEmpty(uploadedFile.getTmpPath())) {

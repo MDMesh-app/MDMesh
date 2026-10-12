@@ -27,8 +27,6 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.List;
@@ -106,7 +104,6 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
     }
 
     public void insertConfiguration(Configuration config) {
-        requireHttpFileUrls(config);
         insertRecord(config, configuration -> {
             this.mapper.insertConfiguration(configuration);
             if (configuration.getApplications().size() > 0) {
@@ -129,7 +126,6 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
 
     @Transactional
     public void updateConfiguration(Configuration config) {
-        requireHttpFileUrls(config);
         updateRecord(
                 config,
                 this.mapper::getConfigurationById,
@@ -282,10 +278,16 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
     /**
      * The checksum stored with a configuration file's external URL (the Headwind launcher compares it with the file it
      * downloads): the MD5 of the file when this server hosts it ({@code <base.url>/files/...}), read from disk; empty for
-     * any other URL. The server never fetches a URL to hash it.
+     * any other URL, however it is spelled (never an error: saving a configuration must not depend on its file URLs).
+     * The server never fetches a URL to hash it; the Files page only accepts http(s) URLs for new or changed files.
      */
     static String externalFileChecksum(String url, HostedFiles hosted) {
-        File local = url == null || hosted == null ? null : hosted.localFile(url);
+        File local;
+        try {
+            local = url == null || hosted == null ? null : hosted.localFile(url);
+        } catch (RuntimeException e) {
+            local = null;
+        }
         if (local == null) {
             return "";
         }
@@ -294,32 +296,6 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
         } catch (NoSuchAlgorithmException | IOException e) {
             log.error("Failed to calculate checksum for hosted file: {}", url, e);
             return "";
-        }
-    }
-
-    /** Shown to the admin when a configuration file's external URL is not http(s). */
-    public static final String INVALID_FILE_URL =
-            "A configuration file's external URL must start with http:// or https://";
-
-    /** @throws IllegalArgumentException unless {@code url} is blank or an http(s) URL. */
-    static void requireHttpUrl(String url) {
-        if (url == null || url.trim().isEmpty()) {
-            return;
-        }
-        String scheme;
-        try {
-            scheme = new URI(url.trim()).getScheme();
-        } catch (URISyntaxException e) {
-            throw new IllegalArgumentException(INVALID_FILE_URL);
-        }
-        if (scheme == null || !(scheme.equalsIgnoreCase("http") || scheme.equalsIgnoreCase("https"))) {
-            throw new IllegalArgumentException(INVALID_FILE_URL);
-        }
-    }
-
-    private static void requireHttpFileUrls(Configuration config) {
-        if (config != null && config.getFiles() != null) {
-            config.getFiles().forEach(f -> requireHttpUrl(f.getExternalUrl()));
         }
     }
 

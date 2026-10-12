@@ -8,6 +8,8 @@ import android.content.Intent
 import android.os.Build
 import android.os.PersistableBundle
 import android.os.UserManager
+import androidx.core.content.ContextCompat
+import com.mdmesh.agent.service.CheckInService
 import com.mdmesh.core.config.ServerConfigStore
 import com.mdmesh.core.store.EnrollTokenStore
 import com.mdmesh.core.sync.CheckInWorker
@@ -52,6 +54,7 @@ class AdminReceiver : DeviceAdminReceiver() {
         val token = extrasToken(intent)
         if (token.isNullOrBlank()) {
             CheckInWorker.scheduleNow(context)
+            startCheckInService(context)
             return
         }
         // EnrollTokenStore.save is suspend; keep the receiver alive while it persists.
@@ -61,9 +64,15 @@ class AdminReceiver : DeviceAdminReceiver() {
                 EnrollTokenStore(context.applicationContext).save(token)
             } finally {
                 CheckInWorker.scheduleNow(context)
+                startCheckInService(context)
                 pending.finish()
             }
         }
+    }
+
+    /** Start the instant command channel right after provisioning (see AdminPolicyComplianceActivity). */
+    private fun startCheckInService(context: Context) {
+        runCatching { ContextCompat.startForegroundService(context, Intent(context, CheckInService::class.java)) }
     }
 
     /** Entering kiosk: block other apps/services from drawing toasts/dialogs over the kiosk. */

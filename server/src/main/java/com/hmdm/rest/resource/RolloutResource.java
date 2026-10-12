@@ -22,6 +22,7 @@
 package com.hmdm.rest.resource;
 
 import com.hmdm.notification.AgentWakeHub;
+import com.hmdm.persistence.DeviceDAO;
 import com.hmdm.persistence.RolloutDAO;
 import com.hmdm.persistence.domain.AgentRollout;
 import com.hmdm.persistence.domain.RolloutDeviceRow;
@@ -66,6 +67,7 @@ public class RolloutResource {
     private static final Logger logger = LoggerFactory.getLogger(RolloutResource.class);
 
     private RolloutDAO rolloutDAO;
+    private DeviceDAO deviceDAO;
     private RolloutRequeuer requeuer;
     private AgentWakeHub wakeHub;
     private String baseUrl;
@@ -74,9 +76,10 @@ public class RolloutResource {
     }
 
     @Inject
-    public RolloutResource(RolloutDAO rolloutDAO, RolloutRequeuer requeuer, AgentWakeHub wakeHub,
+    public RolloutResource(RolloutDAO rolloutDAO, DeviceDAO deviceDAO, RolloutRequeuer requeuer, AgentWakeHub wakeHub,
                            @Named("base.url") String baseUrl) {
         this.rolloutDAO = rolloutDAO;
+        this.deviceDAO = deviceDAO;
         this.requeuer = requeuer;
         this.wakeHub = wakeHub;
         this.baseUrl = baseUrl;
@@ -92,6 +95,16 @@ public class RolloutResource {
             return true;
         }
         logger.warn("Permission denied: {} requires edit_devices (user {})", action,
+                SecurityContext.get().getCurrentUser().map(u -> u.getLogin()).orElse("?"));
+        return false;
+    }
+
+    /** The fleet stage reaches every device of the customer, so it is only for users not limited to some device groups. */
+    private static boolean canReachWholeFleet(String action) {
+        if (SecurityContext.get().getCurrentUser().map(u -> u.isSuperAdmin() || u.isAllDevicesAvailable()).orElse(false)) {
+            return true;
+        }
+        logger.warn("Permission denied: {} requires access to all devices (user {})", action,
                 SecurityContext.get().getCurrentUser().map(u -> u.getLogin()).orElse("?"));
         return false;
     }
@@ -127,6 +140,10 @@ public class RolloutResource {
         if (!canEditDevices("create rollout")) {
             return Response.PERMISSION_DENIED();
         }
+        // One active rollout per customer: a group-limited user must not hold it for the whole fleet
+        if (!canReachWholeFleet("create rollout")) {
+            return Response.PERMISSION_DENIED();
+        }
         Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
         if (!customerId.isPresent()) {
             return Response.PERMISSION_DENIED();
@@ -151,6 +168,18 @@ public class RolloutResource {
         // /update/agent.apk, proxied to the supervisor by Caddy).
         String apkUrl = baseUrl.replaceAll("/+$", "") + "/update/agent.apk?v=" + body.getApkVersionCode();
 
+        // The canary set: only device numbers of this customer that the user may access. Nothing is created
+        // when none is left.
+        List<RolloutDeviceRow> rows = rolloutDAO.listCustomerDevices(cust);
+        Set<String> customerNumbers = new HashSet<>();
+        for (RolloutDeviceRow row : rows) customerNumbers.add(row.getDeviceNumber());
+        customerNumbers.retainAll(deviceDAO.getDeviceNumbersAccessibleToUser());
+        Set<String> canary = new HashSet<>(body.getCanaryDeviceNumbers());
+        canary.retainAll(customerNumbers);
+        if (canary.isEmpty()) {
+            return Response.ERROR("error.rollout.canary.empty");
+        }
+
         long now = System.currentTimeMillis();
         AgentRollout r = new AgentRollout();
         r.setCustomerId(cust);
@@ -171,14 +200,8 @@ public class RolloutResource {
             return Response.ERROR("error.rollout.active");
         }
 
-        // Persist the canary set (only device numbers that actually belong to this customer).
-        List<RolloutDeviceRow> rows = rolloutDAO.listCustomerDevices(cust);
-        Set<String> customerNumbers = new HashSet<>();
-        for (RolloutDeviceRow row : rows) customerNumbers.add(row.getDeviceNumber());
-        Set<String> canary = new HashSet<>();
-        for (String n : body.getCanaryDeviceNumbers()) {
-            if (customerNumbers.contains(n)) { rolloutDAO.insertCanary(r.getId(), n); canary.add(n); }
-        }
+        // Persist the canary set
+        for (String n : canary) rolloutDAO.insertCanary(r.getId(), n);
 
         // Enqueue to the eligible canary devices (skips already-updated / pending / ineligible).
         Set<String> pending = rolloutDAO.listPendingInstallNumbers(cust, r.getPackageName());
@@ -195,6 +218,7 @@ public class RolloutResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response promote(@PathParam("id") int id) {
         if (!canEditDevices("promote rollout")) return Response.PERMISSION_DENIED();
+        if (!canReachWholeFleet("promote rollout")) return Response.PERMISSION_DENIED();
         Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
         if (!customerId.isPresent()) return Response.PERMISSION_DENIED();
         AgentRollout r = rolloutDAO.findById(id);
@@ -221,6 +245,7 @@ public class RolloutResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response cancel(@PathParam("id") int id) {
         if (!canEditDevices("cancel rollout")) return Response.PERMISSION_DENIED();
+        if (!canReachWholeFleet("cancel rollout")) return Response.PERMISSION_DENIED();
         Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
         if (!customerId.isPresent()) return Response.PERMISSION_DENIED();
         AgentRollout r = rolloutDAO.findById(id);
@@ -275,7 +300,12 @@ public class RolloutResource {
 
     private Map<String, Object> buildView(AgentRollout r) {
         int cust = r.getCustomerId();
-        List<RolloutDeviceRow> rows = rolloutDAO.listCustomerDevices(cust);
+        // Progress counts only the devices the current user may access
+        Set<String> accessible = deviceDAO.getDeviceNumbersAccessibleToUser();
+        List<RolloutDeviceRow> rows = new ArrayList<>();
+        for (RolloutDeviceRow row : rolloutDAO.listCustomerDevices(cust)) {
+            if (accessible.contains(row.getDeviceNumber())) rows.add(row);
+        }
         Set<String> pending = rolloutDAO.listPendingInstallNumbers(cust, r.getPackageName());
         Set<String> canary = new HashSet<>(rolloutDAO.listCanaryNumbers(r.getId()));
         List<RolloutDeviceRow> canaryRows = filter(rows, canary, true);

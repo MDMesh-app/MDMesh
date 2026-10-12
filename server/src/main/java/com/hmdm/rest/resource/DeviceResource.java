@@ -169,7 +169,10 @@ public class DeviceResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response getDevice(@PathParam("number") @ApiParam("Device number") String number) {
         try {
-            Device device = this.deviceDAO.getDeviceByNumber(number);
+            Device device = this.deviceDAO.getAccessibleDeviceByNumber(number);
+            if (device == null) {
+                return Response.DEVICE_NOT_FOUND_ERROR();
+            }
             DeviceView deviceView = new DeviceView(device);
             return Response.OK(deviceView);
         } catch (Exception e) {
@@ -247,7 +250,13 @@ public class DeviceResource {
                         }
                     }
                 } else if (device.getIds() != null) {
-                    // This is a bulk request to update configurations for selected devices
+                    // This is a bulk request to update configurations for selected devices: all or nothing
+                    if (!this.deviceDAO.areAccessibleToUser(device.getIds())
+                            || !this.deviceDAO.isConfigurationUsableByUser(device.getConfigurationId())) {
+                        log.error("Bulk configuration change refused: devices or configuration not accessible to user {}",
+                                SecurityContext.get().getCurrentUserName());
+                        return Response.PERMISSION_DENIED();
+                    }
                     Iterator it = device.getIds().iterator();
 
                     while (it.hasNext()) {
@@ -324,7 +333,12 @@ public class DeviceResource {
         }
 
         if (device.getIds() != null) {
-            // Device IDs are transferred in the "ids" parameter
+            // Device IDs are transferred in the "ids" parameter; all of them are deleted or none
+            if (!this.deviceDAO.areAccessibleToUser(device.getIds())) {
+                log.error("Bulk delete refused: not all devices are accessible to user {}",
+                        SecurityContext.get().getCurrentUserName());
+                return Response.PERMISSION_DENIED();
+            }
             Iterator it = device.getIds().iterator();
 
             while (it.hasNext()) {
@@ -353,7 +367,12 @@ public class DeviceResource {
         }
 
         if (request.getIds() != null) {
-            // Device IDs are transferred in the "ids" parameter
+            // Device IDs are transferred in the "ids" parameter; all of them are regrouped or none
+            if (!this.deviceDAO.areAccessibleToUser(request.getIds())) {
+                log.error("Bulk regroup refused: not all devices are accessible to user {}",
+                        SecurityContext.get().getCurrentUserName());
+                return Response.PERMISSION_DENIED();
+            }
             Iterator it = request.getIds().iterator();
 
             while (it.hasNext()) {
@@ -423,6 +442,12 @@ public class DeviceResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response notifyDevicesOnUpdate(@PathParam("id") Integer id) {
         try {
+            if (!SecurityContext.get().hasPermission("edit_devices")
+                    || !this.deviceDAO.areAccessibleToUser(java.util.Collections.singletonList(id))) {
+                log.error("Unauthorized attempt to notify device #{} by user {}", id,
+                        SecurityContext.get().getCurrentUserName());
+                return Response.PERMISSION_DENIED();
+            }
             this.pushService.notifyDeviceOnApplicationSettingUpdate(id);
             return Response.OK();
         } catch (Exception e) {

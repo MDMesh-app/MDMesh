@@ -96,7 +96,7 @@ public class UploadedFileDAO extends AbstractDAO<UploadedFile> {
     }
 
     public void update(UploadedFile file) {
-        updateRecord(file, this.fileMapper::update, SecurityException::onUploadedFileAccessViolation);
+        updateRecord(file, this.fileMapper::findById, this.fileMapper::update, SecurityException::onUploadedFileAccessViolation);
     }
 
     public UploadedFile getById(Integer id) {
@@ -134,26 +134,35 @@ public class UploadedFileDAO extends AbstractDAO<UploadedFile> {
 
     @Transactional
     public void updateFileConfigurations(List<FileConfigurationLink> linkList) {
+        final int customerId = SecurityContext.get().getCurrentUser()
+                .orElseThrow(SecurityException::onAnonymousAccess)
+                .getCustomerId();
+        // Every link must refer to a file of the current customer (getById throws for a file of another customer)
+        for (FileConfigurationLink link : linkList) {
+            if (getById(link.getFileId()) == null) {
+                throw SecurityException.onCustomerDataAccessViolation(link.getFileId(), "uploadedFile");
+            }
+        }
 
         final List<FileConfigurationLink> noUploadLinks = linkList
                 .stream()
                 .filter(c -> c.getId() != null && !c.isUpload())
                 .collect(Collectors.toList());
         noUploadLinks.forEach(link -> {
-            configurationFileMapper.deleteConfigurationFile(link.getId());
+            // The link is removed only if it really joins this file to a configuration of the current customer
+            configurationFileMapper.deleteConfigurationFileLink(
+                    link.getId(), link.getFileId(), link.getConfigurationId(), customerId);
         });
 
         final List<FileConfigurationLink> newUploadLinks = linkList
                 .stream()
                 .filter(c -> c.getId() == null && c.isUpload())
                 .collect(Collectors.toList());
-        if (newUploadLinks.size() > 0) {
-            UploadedFile file = getById(newUploadLinks.get(0).getFileId());
-            newUploadLinks.forEach(link -> {
-                ConfigurationFile cf = new ConfigurationFile(link);
-                configurationFileMapper.insertConfigurationFile(cf);
-            });
-        }
+        newUploadLinks.forEach(link -> {
+            ConfigurationFile cf = new ConfigurationFile(link);
+            // Inserted only into a configuration of the current customer
+            configurationFileMapper.insertConfigurationFileForCustomer(cf, customerId);
+        });
     }
 
 }

@@ -191,7 +191,10 @@ public class ApplicationResource {
             return Response.PERMISSION_DENIED();
         }
         try {
-            return Response.OK(this.applicationDAO.findById(id));
+            return Response.OK(this.applicationDAO.getApplicationById(id));
+        } catch (SecurityException e) {
+            logger.error("Prohibited to get application #{} by current user", id);
+            return Response.PERMISSION_DENIED();
         } catch (Exception e) {
             logger.error("Failed to retrieve the details for application #{}", id, e);
             return Response.INTERNAL_ERROR();
@@ -221,7 +224,9 @@ public class ApplicationResource {
             } else {
                 this.applicationDAO.updateApplication(application);
                 if (application.getUrl() != null && application.getLatestVersion() != null && !application.isSplit()) {
-                    ApplicationVersion version = applicationDAO.findApplicationVersionById(application.getLatestVersion());
+                    // The stored latest version of this application, not a version id taken from the request
+                    final Integer latestVersionId = applicationDAO.findById(application.getId()).getLatestVersion();
+                    ApplicationVersion version = latestVersionId == null ? null : applicationDAO.findApplicationVersionById(latestVersionId);
                     if (version != null) {
                         version.setUrl(application.getUrl());
                         applicationDAO.updateApplicationVersion(version);
@@ -273,7 +278,9 @@ public class ApplicationResource {
                 // TODO : ISV : Handle the scenario for inserting new version for the same package here
                 this.applicationDAO.updateWebApplication(application);
                 if (application.getUrl() != null && application.getLatestVersion() != null) {
-                    ApplicationVersion version = applicationDAO.findApplicationVersionById(application.getLatestVersion());
+                    // The stored latest version of this application, not a version id taken from the request
+                    final Integer latestVersionId = applicationDAO.findById(application.getId()).getLatestVersion();
+                    ApplicationVersion version = latestVersionId == null ? null : applicationDAO.findApplicationVersionById(latestVersionId);
                     if (version != null) {
                         version.setUrl(application.getUrl());
                         applicationDAO.updateApplicationVersion(version);
@@ -499,15 +506,16 @@ public class ApplicationResource {
             if (!user.isAllConfigAvailable()) {
                 // Remove all configurations unavailable to user
                 request.getConfigurations().removeIf(c ->
-                        user.getConfigurations().stream().filter(uc -> uc.getId() == c.getConfigurationId()).findFirst() == null);
+                        user.getConfigurations().stream().noneMatch(uc -> uc.getId() == c.getConfigurationId()));
             }
-            // Avoid access to objects of another customer
+            // Avoid access to objects of another customer (common applications may be linked by any customer).
+            // The DAO enforces the same rules against the persisted rows; this only drops foreign links early.
             request.getConfigurations().removeIf(c -> {
-                // findById will raise a SecurityException if attempting to access an object of another customer
-                // So actually this code is a bit redundant, but it guards access to own objects anyway
+                // getConfigurationById will raise a SecurityException if attempting to access an object of another customer
                 Application application = applicationDAO.findById(c.getApplicationId());
                 Configuration configuration = configurationDAO.getConfigurationById(c.getConfigurationId());
-                return application.getCustomerId() != user.getCustomerId() ||
+                return application == null ||
+                       (!application.isCommon() && application.getCustomerId() != user.getCustomerId()) ||
                        configuration.getCustomerId() != user.getCustomerId();
             });
             logger.info("Application configurations updated by user " + SecurityContext.get().getCurrentUserName());
@@ -546,7 +554,7 @@ public class ApplicationResource {
             if (!user.isAllConfigAvailable()) {
                 // Remove all configurations unavailable to user
                 request.getConfigurations().removeIf(c ->
-                        user.getConfigurations().stream().filter(uc -> uc.getId() == c.getConfigurationId()).findFirst() == null);
+                        user.getConfigurations().stream().noneMatch(uc -> uc.getId() == c.getConfigurationId()));
             }
             logger.info("Application version configurations updated by user " +
                     SecurityContext.get().getCurrentUserName());

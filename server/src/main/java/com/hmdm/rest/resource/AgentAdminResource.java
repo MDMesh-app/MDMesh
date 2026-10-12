@@ -23,6 +23,7 @@ package com.hmdm.rest.resource;
 
 import com.hmdm.persistence.AgentCommandDAO;
 import com.hmdm.persistence.AgentEnrollmentTokenDAO;
+import com.hmdm.persistence.DeviceDAO;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.AgentEnrollmentToken;
@@ -81,6 +82,7 @@ public class AgentAdminResource {
     private AgentEnrollmentTokenDAO tokenDAO;
     private AgentCommandDAO commandDAO;
     private UnsecureDAO unsecureDAO;
+    private DeviceDAO deviceDAO;
     private AgentWakeHub wakeHub;
     private com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller;
     private ConfigReconciler configReconciler;
@@ -95,12 +97,14 @@ public class AgentAdminResource {
     public AgentAdminResource(AgentEnrollmentTokenDAO tokenDAO,
                               AgentCommandDAO commandDAO,
                               UnsecureDAO unsecureDAO,
+                              DeviceDAO deviceDAO,
                               AgentWakeHub wakeHub,
                               com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller,
                               ConfigReconciler configReconciler) {
         this.tokenDAO = tokenDAO;
         this.commandDAO = commandDAO;
         this.unsecureDAO = unsecureDAO;
+        this.deviceDAO = deviceDAO;
         this.wakeHub = wakeHub;
         this.configAppInstaller = configAppInstaller;
         this.configReconciler = configReconciler;
@@ -109,7 +113,9 @@ public class AgentAdminResource {
     /**
      * <p>Every mutation here acts on devices (commands incl. wipe/passcode reset, wake-ups, enrollment
      * tokens), so it needs {@code edit_devices}, exactly like {@link DeviceResource}. Reads stay open to
-     * any user of the customer.</p>
+     * any user of the customer. Every device-level route, read or write, is limited to the devices the user
+     * may access ({@link DeviceDAO#isAccessibleToUser}: same customer and, for a user limited to some device
+     * groups, one of those groups).</p>
      */
     private static boolean canEditDevices(String action) {
         if (SecurityContext.get().hasPermission("edit_devices")) {
@@ -180,7 +186,7 @@ public class AgentAdminResource {
         if (device == null) {
             return Response.DEVICE_NOT_FOUND_ERROR();
         }
-        if (device.getCustomerId() != customerId.get()) {
+        if (!deviceDAO.isAccessibleToUser(device)) {
             return Response.PERMISSION_DENIED();
         }
         int queued = configAppInstaller.enqueueConfigApps(device);
@@ -211,7 +217,7 @@ public class AgentAdminResource {
         if (device == null) {
             return Response.ERROR("error.agent.device.unknown");
         }
-        if (device.getCustomerId() != customerId.get()) {
+        if (!deviceDAO.isAccessibleToUser(device)) {
             return Response.PERMISSION_DENIED();
         }
 
@@ -270,7 +276,7 @@ public class AgentAdminResource {
         for (Integer id : req.getDeviceIds()) {
             if (id == null) { continue; }
             Device device = unsecureDAO.getDeviceById(id);
-            if (device == null || device.getCustomerId() != customerId.get()) {
+            if (device == null || !deviceDAO.isAccessibleToUser(device)) {
                 skipped.add(id);
                 continue;
             }
@@ -307,7 +313,7 @@ public class AgentAdminResource {
         if (device == null) {
             return Response.ERROR("error.agent.device.unknown");
         }
-        if (device.getCustomerId() != customerId.get()) {
+        if (!deviceDAO.isAccessibleToUser(device)) {
             return Response.PERMISSION_DENIED();
         }
         return Response.OK(commandDAO.getState(deviceId));
@@ -323,7 +329,7 @@ public class AgentAdminResource {
         if (!customerId.isPresent()) return Response.PERMISSION_DENIED();
         Device device = unsecureDAO.getDeviceByNumber(deviceId);
         if (device == null) return Response.ERROR("error.agent.device.unknown");
-        if (device.getCustomerId() != customerId.get()) return Response.PERMISSION_DENIED();
+        if (!deviceDAO.isAccessibleToUser(device)) return Response.PERMISSION_DENIED();
 
         ConfigStatusView v = new ConfigStatusView();
         v.setConfigurationId(device.getConfigurationId());
@@ -348,7 +354,9 @@ public class AgentAdminResource {
         if (!customerId.isPresent()) return Response.PERMISSION_DENIED();
         Map<Integer, String> revisionByConfig = new HashMap<>();
         Map<Integer, ConfigSyncSummary> out = new LinkedHashMap<>();
+        Set<String> accessible = deviceDAO.getDeviceNumbersAccessibleToUser();
         for (DeviceSyncRow row : commandDAO.listDevicesForSync(customerId.get())) {
+            if (!accessible.contains(row.getDeviceNumber())) continue;
             Integer cfgId = row.getConfigurationId();
             ConfigSyncSummary s = out.computeIfAbsent(cfgId, id -> { ConfigSyncSummary x = new ConfigSyncSummary(); x.setConfigurationId(id); return x; });
             s.setTotal(s.getTotal() + 1);
@@ -385,7 +393,7 @@ public class AgentAdminResource {
         if (device == null) {
             return Response.ERROR("error.agent.device.unknown");
         }
-        if (device.getCustomerId() != customerId.get()) {
+        if (!deviceDAO.isAccessibleToUser(device)) {
             return Response.PERMISSION_DENIED();
         }
         com.hmdm.persistence.domain.DeviceState s = commandDAO.getState(deviceId);
@@ -414,7 +422,7 @@ public class AgentAdminResource {
         if (device == null) {
             return Response.ERROR("error.agent.device.unknown");
         }
-        if (device.getCustomerId() != customerId.get()) {
+        if (!deviceDAO.isAccessibleToUser(device)) {
             return Response.PERMISSION_DENIED();
         }
         long sinceMillis = since == null ? 0L : since;
@@ -438,7 +446,7 @@ public class AgentAdminResource {
         if (device == null) {
             return Response.ERROR("error.agent.device.unknown");
         }
-        if (device.getCustomerId() != customerId.get()) {
+        if (!deviceDAO.isAccessibleToUser(device)) {
             return Response.PERMISSION_DENIED();
         }
         long sinceMillis = since == null ? 0L : since;
@@ -460,7 +468,7 @@ public class AgentAdminResource {
         if (device == null) {
             return Response.ERROR("error.agent.device.unknown");
         }
-        if (device.getCustomerId() != customerId.get()) {
+        if (!deviceDAO.isAccessibleToUser(device)) {
             return Response.PERMISSION_DENIED();
         }
         long sinceMillis = since == null ? 0L : since;
@@ -484,7 +492,7 @@ public class AgentAdminResource {
         if (device == null) {
             return Response.ERROR("error.agent.device.unknown");
         }
-        if (device.getCustomerId() != customerId.get()) {
+        if (!deviceDAO.isAccessibleToUser(device)) {
             return Response.PERMISSION_DENIED();
         }
         wakeHub.wake(deviceId, "commands");

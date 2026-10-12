@@ -57,7 +57,11 @@ public interface PostgresDeviceLogMapper {
             keyColumn = "id", keyProperty = "id", before = false, resultType = int.class )
     void insertPluginSettings(PostgresDeviceLogPluginSettings postgresDeviceLogPluginSettings);
 
-    @Update("UPDATE plugin_devicelog_settings SET logsPreservePeriod = #{logsPreservePeriod} WHERE id = #{id}")
+    @Select("SELECT id, customerId, logsPreservePeriod FROM plugin_devicelog_settings WHERE id = #{id}")
+    PostgresDeviceLogPluginSettings findPluginSettingsById(@Param("id") Integer id);
+
+    @Update("UPDATE plugin_devicelog_settings SET logsPreservePeriod = #{logsPreservePeriod} " +
+            "WHERE id = #{id} AND customerId = #{customerId}")
     void updatePluginSettings(PostgresDeviceLogPluginSettings postgresDeviceLogPluginSettings);
 
 

@@ -42,7 +42,7 @@ angular.module('plugin-messaging', ['ngResource', 'ui.bootstrap', 'ui.router', '
             purgeOldMessages: {url: 'rest/plugins/messaging/private/purge/:days', method: 'GET'},
             getMessages: {url: 'rest/plugins/messaging/private/search', method: 'POST'},
             sendMessage: {url: 'rest/plugins/messaging/private/send', method: 'POST'},
-            deleteMessage: {url: 'rest/plugins/messaging/:id', method: 'DELETE'},
+            deleteMessage: {url: 'rest/plugins/messaging/private/:id', method: 'DELETE'},
             lookupDevices: {url: 'rest/private/devices/autocomplete', method: 'POST'},
         });
     })

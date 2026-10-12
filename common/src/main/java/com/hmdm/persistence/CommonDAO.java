@@ -78,7 +78,19 @@ public class CommonDAO extends AbstractDAO<Settings> {
     }
 
     public void saveMiscSettings(Settings settings) {
-        insertRecord(settings, this.mapper::saveMiscSettings);
+        insertRecord(settings, s -> {
+            // New devices may only be placed into a configuration of this customer
+            if (s.getNewDeviceConfigurationId() != null
+                    && !this.deviceMapper.isCustomerConfiguration(s.getNewDeviceConfigurationId(), s.getCustomerId())) {
+                throw SecurityException.onConfigurationAccessViolation(s.getNewDeviceConfigurationId());
+            }
+            // ... and into a group of this customer
+            if (s.getNewDeviceGroupId() != null
+                    && !this.deviceMapper.isCustomerGroup(s.getNewDeviceGroupId(), s.getCustomerId())) {
+                throw SecurityException.onCustomerDataAccessViolation(s.getNewDeviceGroupId(), "group");
+            }
+            this.mapper.saveMiscSettings(s);
+        });
     }
 
     public void setTwoFactor(Settings settings) {

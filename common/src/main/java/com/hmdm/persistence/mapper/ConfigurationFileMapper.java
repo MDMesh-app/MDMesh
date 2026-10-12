@@ -68,6 +68,12 @@ public interface ConfigurationFileMapper {
             "(#{configurationId}, #{fileId}, #{devicePath}, 0, #{remove})")
     void insertConfigurationFile(ConfigurationFile file);
 
+    @Insert("INSERT INTO configurationFiles(configurationId, fileId, devicePath, lastUpdate, remove) " +
+            "SELECT #{file.configurationId}, #{file.fileId}, #{file.devicePath}, 0, #{file.remove} " +
+            "WHERE EXISTS (SELECT 1 FROM configurations " +
+            "              WHERE configurations.id = #{file.configurationId} AND configurations.customerId = #{customerId})")
+    void insertConfigurationFileForCustomer(@Param("file") ConfigurationFile file, @Param("customerId") int customerId);
+
     // Used only in the migration task from old to new method of storing configuration files
     @Update("UPDATE configurationFiles SET configurationId=#{configurationId}, description=#{description}, devicePath=#{devicePath}, " +
             "externalUrl=#{externalUrl}, filePath=#{filePath}, checksum=#{checksum}, remove=#{remove}, lastUpdate=#{lastUpdate}, " +
@@ -101,6 +107,17 @@ public interface ConfigurationFileMapper {
                                                           @Param("id") Integer fileId);
 
 
+    // Used only in the migration task from old to new method of storing configuration files
     @Delete("DELETE FROM configurationFiles WHERE id = #{id}")
     void deleteConfigurationFile(@Param("id") Integer fileId);
+
+    @Delete("DELETE FROM configurationFiles " +
+            "WHERE id = #{id} " +
+            "AND fileId = #{fileId} " +
+            "AND configurationId = #{configurationId} " +
+            "AND configurationId IN (SELECT id FROM configurations WHERE customerId = #{customerId})")
+    void deleteConfigurationFileLink(@Param("id") Integer linkId,
+                                     @Param("fileId") int fileId,
+                                     @Param("configurationId") int configurationId,
+                                     @Param("customerId") int customerId);
 }

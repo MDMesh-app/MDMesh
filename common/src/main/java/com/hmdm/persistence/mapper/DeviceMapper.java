@@ -55,6 +55,28 @@ public interface DeviceMapper {
 
     void updateDevice(Device device);
 
+    /** The device-group rule of the device list: all devices of the customer, or those in the user's groups. */
+    String USER_DEVICE_ACCESS =
+            "(users.allDevicesAvailable = TRUE " +
+            " OR EXISTS (SELECT 1 FROM deviceGroups " +
+            "            INNER JOIN userDeviceGroupsAccess access ON access.groupId = deviceGroups.groupId " +
+            "            WHERE deviceGroups.deviceId = devices.id AND access.userId = users.id))";
+
+    @Select({"SELECT COUNT(*) > 0 FROM devices " +
+            "INNER JOIN users ON users.id = #{userId} " +
+            "WHERE devices.id = #{deviceId} AND devices.customerId = #{customerId} " +
+            "AND " + USER_DEVICE_ACCESS})
+    boolean isDeviceAccessibleToUser(@Param("deviceId") int deviceId,
+                                     @Param("userId") int userId,
+                                     @Param("customerId") int customerId);
+
+    @Select({"SELECT devices.number FROM devices " +
+            "INNER JOIN users ON users.id = #{userId} " +
+            "WHERE devices.customerId = #{customerId} " +
+            "AND " + USER_DEVICE_ACCESS})
+    List<String> getDeviceNumbersAccessibleToUser(@Param("userId") int userId,
+                                                  @Param("customerId") int customerId);
+
     Device getDeviceByNumber(@Param("number") String number);
 
     Device getDeviceByOldNumber(@Param("number") String number);
@@ -136,9 +158,18 @@ public interface DeviceMapper {
     @Delete({"DELETE FROM devices WHERE id = #{id}"})
     void removeDevice(@Param("id") Integer id);
 
-    @Update({"UPDATE devices SET configurationId = #{configurationId} WHERE id = #{deviceId}"})
+    @Update({"UPDATE devices SET configurationId = #{configurationId} WHERE id = #{deviceId} " +
+            "AND EXISTS (SELECT 1 FROM configurations " +
+            "            WHERE configurations.id = #{configurationId} AND configurations.customerId = devices.customerId)"})
     void updateDeviceConfiguration(@Param("deviceId") Integer deviceId,
                                    @Param("configurationId") Integer configurationId);
+
+    @Select({"SELECT COUNT(*) > 0 FROM configurations WHERE id = #{configurationId} AND customerId = #{customerId}"})
+    boolean isCustomerConfiguration(@Param("configurationId") int configurationId,
+                                    @Param("customerId") int customerId);
+
+    @Select({"SELECT COUNT(*) > 0 FROM groups WHERE id = #{groupId} AND customerId = #{customerId}"})
+    boolean isCustomerGroup(@Param("groupId") int groupId, @Param("customerId") int customerId);
 
     @Update({"UPDATE devices SET description = #{description} WHERE id = #{deviceId}"})
     void updateDeviceDescription(@Param("deviceId") Integer deviceId,

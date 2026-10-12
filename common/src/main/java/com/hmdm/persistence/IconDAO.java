@@ -62,7 +62,7 @@ public class IconDAO extends AbstractDAO<Icon> {
     }
 
     public Icon updateIcon(Icon icon) {
-        updateRecord(icon, this.iconMapper::updateIcon, SecurityException::onIconAccessViolation);
+        updateRecord(icon, this.iconMapper::getById, this.iconMapper::updateIcon, SecurityException::onIconAccessViolation);
         return icon;
     }
 

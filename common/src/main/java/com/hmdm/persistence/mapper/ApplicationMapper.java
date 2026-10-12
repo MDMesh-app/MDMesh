@@ -143,15 +143,15 @@ public interface ApplicationMapper {
     int insertApplicationVersion(ApplicationVersion version);
 
     @Update({"UPDATE applications SET name=#{name}, pkg=#{pkg}, " +
-            "showIcon=#{showIcon}, useKiosk=#{useKiosk}, system=#{system}, customerId=#{customerId}, " +
+            "showIcon=#{showIcon}, useKiosk=#{useKiosk}, system=#{system}, " +
             "runAfterInstall = #{runAfterInstall}, runAtBoot = #{runAtBoot}, " +
             "type = #{type}, iconText = #{iconText}, iconId = #{iconId}, intent = #{intent} " +
-            "WHERE id=#{id}"})
+            "WHERE id=#{id} AND customerId=#{customerId}"})
     void updateApplication(Application application);
 
     @Update({"UPDATE applicationVersions SET version = #{version}, versionCode=#{versionCode}, url = #{url}, apkHash = #{apkHash}, " +
             "split = #{split}, urlArmeabi = #{urlArmeabi}, urlArm64 = #{urlArm64} " +
-            "WHERE id=#{id}"})
+            "WHERE id=#{id} AND applicationId=#{applicationId}"})
     void updateApplicationVersion(ApplicationVersion applicationVersion);
 
     @Delete({"DELETE FROM applications WHERE id=#{id}"})
@@ -347,8 +347,8 @@ public interface ApplicationMapper {
             "WHERE applicationVersions.id = #{id}"})
     ApplicationVersion findVersionById(@Param("id") int id);
 
-    @Delete({"DELETE FROM applicationVersions WHERE id=#{id}"})
-    void removeApplicationVersionById(@Param("id") Integer id);
+    @Delete({"DELETE FROM applicationVersions WHERE id=#{id} AND applicationId=#{applicationId}"})
+    void removeApplicationVersionById(@Param("id") Integer id, @Param("applicationId") Integer applicationId);
 
     @Update("UPDATE applications " +
             "SET latestVersion = (" +
@@ -471,20 +471,39 @@ public interface ApplicationMapper {
             "LIMIT 1")
     Integer getPrecedingVersion(@Param("id") Integer applicationId);
 
-    @Update("UPDATE configurationApplications SET showIcon = #{showIcon}, remove = #{remove}, action = #{action} WHERE id = #{id}")
-    void updateApplicationConfigurationLink(ApplicationConfigurationLink link);
+    @Update("UPDATE configurationApplications " +
+            "SET showIcon = #{link.showIcon}, remove = #{link.remove}, action = #{link.action} " +
+            "WHERE id = #{link.id} " +
+            "AND applicationId = #{applicationId} " +
+            "AND configurationId = #{link.configurationId} " +
+            "AND configurationId IN (SELECT id FROM configurations WHERE customerId = #{customerId})")
+    void updateApplicationConfigurationLink(@Param("link") ApplicationConfigurationLink link,
+                                            @Param("applicationId") int applicationId,
+                                            @Param("customerId") int customerId);
 
-    @Delete("DELETE FROM configurationApplications WHERE id = #{id}")
-    void deleteApplicationConfigurationLink(@Param("id") Integer linkId);
+    @Delete("DELETE FROM configurationApplications " +
+            "WHERE id = #{id} " +
+            "AND applicationId = #{applicationId} " +
+            "AND configurationId = #{configurationId} " +
+            "AND configurationId IN (SELECT id FROM configurations WHERE customerId = #{customerId})")
+    void deleteApplicationConfigurationLink(@Param("id") Integer linkId,
+                                            @Param("applicationId") int applicationId,
+                                            @Param("configurationId") int configurationId,
+                                            @Param("customerId") int customerId);
+
+    @Select("SELECT id FROM configurations WHERE customerId = #{customerId}")
+    List<Integer> getCustomerConfigurationIds(@Param("customerId") int customerId);
 
     @Delete("DELETE FROM configurationApplications " +
             "WHERE configurationId = #{configurationId} " +
+            "AND configurationId IN (SELECT id FROM configurations WHERE customerId = #{customerId}) " +
             "AND action <> 2 " +
             "AND applicationId = (SELECT applicationVersions.applicationId " +
             "                     FROM applicationVersions " +
             "                     WHERE applicationVersions.id = #{versionId})")
     int uninstallOtherVersions(@Param("versionId") int applicationVersionId,
-                               @Param("configurationId") int configurationId);
+                               @Param("configurationId") int configurationId,
+                               @Param("customerId") int customerId);
 
     /**
      * <p>Resolves the application IDs for the specified application package IDs for specified customer account.</p>
@@ -520,6 +539,7 @@ public interface ApplicationMapper {
 
     @Delete("DELETE FROM configurationApplications " +
             "WHERE configurationId = #{configurationId} " +
+            "AND configurationId IN (SELECT id FROM configurations WHERE customerId = #{customerId}) " +
             "AND applicationId IN ( " +
             "            SELECT id FROM applications " +
             "            WHERE pkg = (" +
@@ -529,7 +549,8 @@ public interface ApplicationMapper {
             "            ) AND id != #{applicationId} " +
             ")")
     int deleteApplicationConfigurationLinksForSamePkg(@Param("applicationId") int applicationId,
-                                                      @Param("configurationId") int configurationId);
+                                                      @Param("configurationId") int configurationId,
+                                                      @Param("customerId") int customerId);
 
 
     @Select({"SELECT COUNT(*) AS cnt " +

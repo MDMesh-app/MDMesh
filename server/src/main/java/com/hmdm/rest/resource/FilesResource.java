@@ -69,6 +69,7 @@ import org.slf4j.LoggerFactory;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.util.FileExistsException;
 import com.hmdm.util.FileUtil;
+import com.hmdm.util.UnsafePathException;
 
 @Api(tags = {"Files"}, authorizations = {@Authorization("Bearer Token")})
 @Singleton
@@ -232,9 +233,8 @@ public class FilesResource {
         if (uploadedFile.getFilePath() == null) {
             uploadedFile.setFilePath("");
         }
-        String tmpdir = System.getProperty("java.io.tmpdir");
         if (!FileUtil.isSafePath(uploadedFile.getFilePath()) ||
-            !uploadedFile.getTmpPath().startsWith(tmpdir)) {
+            !FileUtil.isUploadedTempFile(uploadedFile.getTmpPath())) {
             logger.error("Attempt to create a file with unsafe path: " + uploadedFile.getFilePath() +
                     " tmp path: " + uploadedFile.getTmpPath());
             return Response.PERMISSION_DENIED();
@@ -272,6 +272,9 @@ public class FilesResource {
             } catch (FileExistsException e) {
                 logger.warn("File {} already exists", uploadedFile.getFilePath());
                 return Response.FILE_EXISTS();
+            } catch (UnsafePathException e) {
+                logger.error("Attempt to create a file with unsafe path: {}", e.getMessage());
+                return Response.PERMISSION_DENIED();
             } catch (IOException e) {
                 logger.warn("While creating file {}: {}", uploadedFile.getFilePath(), e.getMessage());
                 e.printStackTrace();
@@ -305,6 +308,10 @@ public class FilesResource {
             if (!uploadedFile.isExternal()) {
                 UploadedFile dbFile = uploadedFileDAO.getById(uploadedFile.getId());
                 if (!StringUtil.isEmpty(uploadedFile.getTmpPath())) {
+                    if (!FileUtil.isUploadedTempFile(uploadedFile.getTmpPath())) {
+                        logger.error("Attempt to replace a file from an unsafe path: " + uploadedFile.getTmpPath());
+                        return Response.PERMISSION_DENIED();
+                    }
                     // Renew the file content - remove the old file and overwrite with the new content
                     FileUtil.deleteFile(customer, filesDirectory, dbFile.getFilePath());
                     File movedFile = FileUtil.moveFile(customer, filesDirectory, dbFile.getSubdir(),
@@ -325,9 +332,14 @@ public class FilesResource {
                         logger.error("Attempt to move a file to unsafe path: " + uploadedFile.getFilePath());
                         return Response.PERMISSION_DENIED();
                     }
-                    String srcPath = String.format("%s/%s/%s", filesDirectory, customer.getFilesDir(), dbFile.getFilePath());
-                    File movedFile = FileUtil.moveFile(customer, filesDirectory, "",
-                            srcPath, uploadedFile.getFilePath());
+                    File movedFile;
+                    try {
+                        movedFile = FileUtil.renameFile(customer, filesDirectory,
+                                dbFile.getFilePath(), uploadedFile.getFilePath());
+                    } catch (UnsafePathException e) {
+                        logger.error("Attempt to move a file to unsafe path: " + uploadedFile.getFilePath());
+                        return Response.PERMISSION_DENIED();
+                    }
                     if (movedFile == null) {
                         logger.error("Failed to move a file to path: " + uploadedFile.getFilePath());
                         return Response.ERROR("error.file.save");

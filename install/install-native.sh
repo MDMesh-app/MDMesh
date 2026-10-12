@@ -836,6 +836,8 @@ done < <(find "$REPO/install/emails" -type f -print0)
 # Host the release agent APK the QR points at (/files/agent.apk), if we fetched one above.
 [ -n "$AGENT_APK" ] && { base_write files/agent.apk cat "$AGENT_APK"; ok "agent APK hosted at /files/agent.apk"; }
 agent_fetch_cleanup   # the fetched release files are no longer needed (the EXIT trap covers every other path)
+# Headwind launcher device routes (and the MQTT broker): off unless 1, kept across re-runs like the settings below.
+X_LEGACY_DEVICE_API=$(root_param LEGACY_DEVICE_API legacy.device.api 0)
 # SMTP (password-recovery email): the Docker .env's variables. Read here, after the deferred ROOT.xml read above.
 X_SMTP_HOST=$(root_param SMTP_HOST smtp.host "")
 X_SMTP_PORT=$(root_param SMTP_PORT smtp.port 25)
@@ -860,6 +862,7 @@ tc_write conf/Catalina/localhost/ROOT.xml cat <<XML
     <Parameter name="base.url"        value="${BASE_URL}"/>
     <Parameter name="usage.scenario"    value="private"/>
     <Parameter name="secure.enrollment" value="0"/>
+    <Parameter name="legacy.device.api" value="${X_LEGACY_DEVICE_API}"/>
     <Parameter name="hash.secret"       value="${HASH_SECRET}"/>
     <Parameter name="jwt.secretkey"     value="${JWT_SECRET}"/>
     <Parameter name="plugins.files.directory" value="${BASE_DIR}/plugins"/>

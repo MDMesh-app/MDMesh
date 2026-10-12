@@ -21,6 +21,8 @@
     <!-- If set to 1, the device configuration request must be signed by a shared secret (setup in hash.secret and in the Android app) 
          0 or empty value does not require request signature which is less secure -->
     <Parameter name="secure.enrollment" value="${secure.enrollment}"/>
+    <!-- Headwind launcher device routes (and the MQTT broker): off unless 1 -->
+    <Parameter name="legacy.device.api" value="${legacy.device.api}"/>
     <Parameter name="hash.secret" value="${hash.secret}"/>
 
     <Parameter name="role.orgadmin.id" value="${role.orgadmin.id}"/>

@@ -19,6 +19,7 @@ rm -f /opt/mdmesh/initialized.txt
 : "${HASH_SECRET:?HASH_SECRET is required}"
 : "${DB_PASSWORD:?DB_PASSWORD is required}"
 : "${SECURE_ENROLLMENT:=0}"
+: "${LEGACY_DEVICE_API:=0}"
 : "${SMTP_HOST:=}"
 : "${SMTP_PORT:=25}"
 : "${SMTP_FROM:=mdm@localhost}"
@@ -105,6 +106,8 @@ cat > "$_root_xml_tmp" <<EOF
 
     <Parameter name="usage.scenario"    value="private"/>
     <Parameter name="secure.enrollment" value="${SECURE_ENROLLMENT}"/>
+    <!-- Headwind launcher device routes (and the MQTT broker): off unless 1. The MDMesh agent never uses them. -->
+    <Parameter name="legacy.device.api" value="$(xml_attr "${LEGACY_DEVICE_API}")"/>
     <Parameter name="hash.secret"       value="${HASH_SECRET}"/>
     <Parameter name="jwt.secretkey"     value="${JWT_SECRET}"/>
 

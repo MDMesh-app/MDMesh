@@ -24,6 +24,10 @@ usage.scenario=private
 # 0 or empty value does not require request signature which is less secure
 secure.enrollment=0
 
+# 1 turns on the Headwind launcher device routes (/rest/public/sync/*, notifications, plugin device uploads) and the
+# MQTT broker. The MDMesh agent never uses them; 0 or empty answers them with 404.
+legacy.device.api=0
+
 # A hash secret used for validating the device IDs provided by requests
 # from devices
 hash.secret=changeme-C3z9vi54

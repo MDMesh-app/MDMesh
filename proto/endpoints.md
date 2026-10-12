@@ -74,6 +74,10 @@ omits it and the agent installs as before.
 `results` acks let the server mark queued commands `done`/`failed`/`unsupported`. `capabilities`
 is re-posted every check-in (cheap, keeps the token set fresh as the OS/agent changes).
 
+`resultsAccepted` (protocol 1.3) is how many of the request's `results`, counted from the first, the server took (it
+takes at most 1000 per check-in). The agent drops those and keeps the rest for its next check-in. Absent (an older
+server) means all of them were taken.
+
 ## Auth posture (v1)
 
 - `/enroll` is gated by the single-use `enrollToken` (minted by an authenticated admin via a

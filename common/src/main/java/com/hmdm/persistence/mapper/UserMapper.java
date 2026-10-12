@@ -62,9 +62,10 @@ public interface UserMapper {
     @Update({"UPDATE users " +
             "SET name = #{name}, login=#{login}, email=#{email}, userRoleId=#{userRole.id}, " +
             "allDevicesAvailable=#{allDevicesAvailable}, allConfigAvailable=#{allConfigAvailable}, " +
-            "passwordReset=#{passwordReset}, authData=#{authData}, twoFactorSecret=#{twoFactorSecret}, " +
-            "twoFactorAccepted=#{twoFactorAccepted} " +
+            "passwordReset=#{passwordReset} " +
             "WHERE id=#{id} AND customerId=#{customerId}"})
+    // authData, twoFactorSecret and twoFactorAccepted are never taken from a details update (the client never sees
+    // them); only the password flows (updatePassword) change them.
     void updateUserMainDetails(User user);
 
     @Update({"UPDATE users SET password=#{password}, passwordReset=#{passwordReset}, " +

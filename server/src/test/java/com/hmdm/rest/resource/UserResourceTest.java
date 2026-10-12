@@ -82,6 +82,18 @@ public class UserResourceTest {
         SecurityContext.release();
     }
 
+    // ---- account secrets ----------------------------------------------------------------------------------------------
+
+    @Test
+    public void aDetailsUpdateNeverWritesAccountSecretsFromTheRequest() {
+        // GET hides them, so a GET -> PUT round trip would otherwise clear (or let the client set) them.
+        String sql = com.hmdm.testsupport.Fakes.sqlOf(UserMapper.class, "updateUserMainDetails").toLowerCase();
+        for (String column : new String[]{"twofactorsecret", "twofactoraccepted", "authdata", "authtoken",
+                "passwordresettoken", "password="}) {
+            assertTrue(column + " must not be written by updateUserMainDetails: " + sql, !sql.contains(column));
+        }
+    }
+
     // ---- PUT /private/users: role grants ----------------------------------------------------------------------------
 
     @Test

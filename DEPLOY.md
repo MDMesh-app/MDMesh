@@ -47,6 +47,20 @@ first update, which pins the versions (or set `SERVER_VERSION`/`WEB_VERSION`/`CU
 > this server hosts is hashed automatically; for a Library app that points at an external URL, add its SHA-256 with
 > the **SHA-256…** button (or upload the APK instead), or installs of it fail with a message saying so.
 
+> **Upgrading to v0.3.4?** No action is needed for MDMesh agents or the console. What changes:
+> - The Headwind launcher's provisioning QR routes (`/rest/public/qr/*`) also answer 404 unless `LEGACY_DEVICE_API=1`.
+>   The console draws the agent's enrollment QR itself and doesn't use them. The three configurations the installer
+>   creates get a new QR key on the first start.
+> - New installs give each of those configurations its own random 8-digit kiosk exit PIN (shown in the console's
+>   configuration editor). Existing configurations keep their PIN; one still set to `12345678`, the default of older
+>   installs and of configurations copied from them, is flagged in the console: set a PIN of your own there.
+> - The read-only Observer role no longer has the push and messaging send permissions or the device-description
+>   edit permission. Other roles keep theirs.
+> - `SECURE_ENROLLMENT=1` is honoured as before: `/files/*` downloads need the Headwind launcher's request
+>   signature, which the MDMesh agent doesn't send, so it also blocks the agent's APK and app downloads. With
+>   `LEGACY_DEVICE_API` off the server now logs a warning about this at startup. Set it to `0` unless you need
+>   launcher-signed downloads.
+
 > **Docker: supervisor restarting with `Cannot find module '/project/server.js'`?** Every Docker install from v0.1.0
 > through v0.3.0 hit this (#27), so Settings → Updates, the `/recovery` page and the Docker `/files/agent.apk` mirror
 > (the APK the enrollment QR points to) never worked. Fixed in v0.3.1 in the image itself — your existing compose file
@@ -392,13 +406,16 @@ which listens on loopback `:9000` only, on the host with `curl -fsS 127.0.0.1:90
   holds one), and the native installer replaces such a `jwt.secretkey`.
 - TLS everywhere (Cloudflare or Caddy/Let's Encrypt). DB + server ports are never published.
 - The agent talks HTTPS only. `SECURE_ENROLLMENT` is a legacy Headwind launcher setting; leave it at `0` for
-  MDMesh agents.
+  MDMesh agents. When it is `1`, `/files/*` requires the launcher's request signature, which also blocks the agent's
+  APK and app downloads (the server logs a warning at startup when `LEGACY_DEVICE_API` is off).
 - Legacy Headwind launcher endpoints are off by default (they answer 404); MDMesh agents don't use them. Set
   `LEGACY_DEVICE_API=1` (`.env`, or the installer's environment on native installs, which writes `legacy.device.api`
   to `ROOT.xml`) only if you still run the Headwind launcher. MQTT push stays off on both kinds of install (agents
   are woken over a WebSocket).
 - The admin starts with a generated password and is **required to set its own on first login** (the
-  console routes the first sign-in to a "set your password" screen). Configure SMTP (in `.env`, or the installer's
+  console routes the first sign-in to a "set your password" screen). The installers set that password; a database
+  the server created on its own, without an installer run, has an admin account that no password signs in to until
+  an installer (or `scripts/dev-seed.sh` for development) sets one. Configure SMTP (in `.env`, or the installer's
   environment on native installs) to enable email-based password recovery thereafter. `SMTP_SSL=true` is for port
   465, `SMTP_STARTTLS=true` for 587.
 - The supervisor mounts the Docker socket (to drive updates) and is trusted: it acts only on

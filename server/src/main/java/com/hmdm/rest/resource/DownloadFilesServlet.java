@@ -41,7 +41,7 @@ import com.hmdm.rest.filter.PublicIPFilter;
 import com.hmdm.rest.json.Response;
 import com.hmdm.util.CryptoUtil;
 import com.hmdm.util.HostedFiles;
-import org.apache.poi.util.IOUtils;
+import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -135,7 +135,7 @@ public class DownloadFilesServlet extends HttpServlet {
                     resp.setContentType(CONTENT_TYPE_APK);
                 }
 
-                IOUtils.copy(input, outputStream);
+                IOUtils.copyLarge(input, outputStream);
                 outputStream.flush();
             } catch (Exception e) {
                 e.printStackTrace();
@@ -198,7 +198,7 @@ public class DownloadFilesServlet extends HttpServlet {
 
             input.skip(start);
 
-            IOUtils.copy(input, outputStream, contentLength);
+            IOUtils.copyLarge(input, outputStream, 0, contentLength);
             outputStream.flush();
 
         } catch (Exception e) {

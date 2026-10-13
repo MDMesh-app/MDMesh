@@ -2912,4 +2912,50 @@
         <rollback>ALTER TABLE agentCommand DROP COLUMN agentVersion;</rollback>
     </changeSet>
 
+    <changeSet id="26.10.13-configurations-new-qrCodeKeys" author="lunacy" context="common">
+        <comment>Give the three configurations the old installer seed created a new random qrCodeKey, replacing the
+            fixed values that seed shipped with. Only rows still holding one of those values change; the key is not
+            part of the agent's desired-state revision, so devices see no change. gen_random_uuid() (PostgreSQL 13+)
+            supplies the randomness where it exists, md5(random()) otherwise. A no-op on a fresh database (the seed
+            is loaded after the first start and no longer carries fixed keys).</comment>
+        <sql splitStatements="false">
+            DO $$
+            BEGIN
+                IF current_setting('server_version_num')::int &gt;= 130000 THEN
+                    EXECUTE $q$UPDATE configurations SET qrCodeKey = replace(gen_random_uuid()::text, '-', '')
+                        WHERE qrCodeKey IN ('6fb9c8dc81483173a0c0e9f8b2e46be1', '8e6ca072ddb926a1af61578dfa9fc334',
+                                            '350e0fb7fc3f4b7fe61cac75fd43818f')$q$;
+                ELSE
+                    EXECUTE $q$UPDATE configurations SET qrCodeKey = md5(random()::text || clock_timestamp()::text)
+                        WHERE qrCodeKey IN ('6fb9c8dc81483173a0c0e9f8b2e46be1', '8e6ca072ddb926a1af61578dfa9fc334',
+                                            '350e0fb7fc3f4b7fe61cac75fd43818f')$q$;
+                END IF;
+            END $$;
+        </sql>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="26.10.13-users-admin-email" author="lunacy" context="common">
+        <comment>The first changeset inserts the admin user with an upstream developer's address; the installers
+            replace it, a database set up some other way kept it. Clear it, so no account mail (password recovery)
+            can go to that address. The admin's email can be set again through the users API.</comment>
+        <sql>UPDATE users SET email = NULL WHERE lower(email) = 'fast.daemon@gmail.com';</sql>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="26.10.13-observer-edit-device-desc" author="lunacy" context="common">
+        <comment>The read-only Observer role (id 100) does not edit device descriptions: take back the edit_device_desc
+            grant changeset 04.10.19-10:14 gave every role. Super-Admin, Admin and User keep it; roles added later
+            are not touched.</comment>
+        <sql>
+            DELETE FROM userRolePermissions WHERE roleId = 100
+                AND permissionId IN (SELECT id FROM permissions WHERE name = 'edit_device_desc');
+        </sql>
+        <rollback>
+            INSERT INTO userRolePermissions (roleId, permissionId)
+                SELECT 100, id FROM permissions WHERE name = 'edit_device_desc'
+                AND EXISTS (SELECT 1 FROM userRoles WHERE id = 100);
+        </rollback>
+    </changeSet>
+
 </databaseChangeLog>

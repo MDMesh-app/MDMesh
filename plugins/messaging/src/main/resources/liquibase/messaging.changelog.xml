@@ -97,4 +97,19 @@
         </rollback>
     </changeSet>
 
+    <changeSet id="plugin-messaging-13.10.2026-observer" author="lunacy" context="common">
+        <comment>The read-only Observer role (id 100) does not send messages: take back the plugin_messaging_send
+            grant an earlier changeset gave every role. Super-Admin, Admin and User keep it; roles added later are not
+            touched.</comment>
+        <sql>
+            DELETE FROM userRolePermissions WHERE roleId = 100
+                AND permissionId IN (SELECT id FROM permissions WHERE name = 'plugin_messaging_send');
+        </sql>
+        <rollback>
+            INSERT INTO userRolePermissions (roleId, permissionId)
+                SELECT 100, id FROM permissions WHERE name = 'plugin_messaging_send'
+                AND EXISTS (SELECT 1 FROM userRoles WHERE id = 100);
+        </rollback>
+    </changeSet>
+
 </databaseChangeLog>

@@ -128,17 +128,17 @@ public class SecurityContext {
         return getCurrentUser().map(u -> u.getUserRole().isSuperAdmin()).orElse(false);
     }
 
+    /** True when the current user may reach every device of the customer (super-admin, or not limited to groups). */
+    public boolean canReachAllDevices() {
+        return getCurrentUser().map(u -> u.isSuperAdmin() || u.isAllDevicesAvailable()).orElse(false);
+    }
+
     /**
      * <p>Checks if current user is granted specified permission.</p>
      *
      * @param permission a permission to check for granting.
      * @return <code>true</code> if current user is granted a specified permission; <code>false</code> otherwise.
      */
-    /** True when the current user may reach every device of the customer (super-admin, or not limited to groups). */
-    public boolean canReachAllDevices() {
-        return getCurrentUser().map(u -> u.isSuperAdmin() || u.isAllDevicesAvailable()).orElse(false);
-    }
-
     public boolean hasPermission(String permission) {
         return isSuperAdmin() ||
                 getCurrentUser()

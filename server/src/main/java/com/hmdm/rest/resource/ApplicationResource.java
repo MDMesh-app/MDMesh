@@ -218,7 +218,7 @@ public class ApplicationResource {
             return Response.PERMISSION_DENIED();
         }
         if (application.getSha256() != null && !application.getSha256().trim().isEmpty()
-                && InstallIntegrity.normalizeHex(application.getSha256()) == null) {
+                && InstallIntegrity.hexOnly(application.getSha256()) == null) {
             return Response.ERROR("The APK's SHA-256 must be 64 hex characters");
         }
         try {
@@ -423,7 +423,7 @@ public class ApplicationResource {
             return Response.PERMISSION_DENIED();
         }
         String sha = body == null ? null : body.get("sha256");
-        if (InstallIntegrity.normalizeHex(sha) == null) {
+        if (InstallIntegrity.hexOnly(sha) == null) {
             return Response.ERROR("The APK's SHA-256 must be 64 hex characters");
         }
         try {

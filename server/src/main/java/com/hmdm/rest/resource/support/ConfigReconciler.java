@@ -25,8 +25,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * The document is rebuilt from the Configuration row each time (no stored revision to drift), using the
  * optimized app query (two plain selects per capable check-in — no temp table).
  *
- * <p>It is also re-sent once when the device runs a different agent version than the one the last completed
- * config.apply was queued for: a newer agent may support policy keys the old one reported {@code unsupported}.</p>
+ * <p>It is also re-sent when the device runs a different agent version than the one the last completed
+ * config.apply was queued for (a newer agent may support policy keys the old one reported {@code unsupported}),
+ * and keeps being re-sent until one queued for the new version comes back done (a failed or expired attempt
+ * keeps the normal backoff).</p>
  */
 @Singleton
 public class ConfigReconciler {

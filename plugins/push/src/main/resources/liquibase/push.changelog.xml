@@ -113,4 +113,19 @@
         </rollback>
     </changeSet>
 
+    <changeSet id="plugin-push-13.10.2026-observer" author="lunacy" context="common">
+        <comment>The read-only Observer role (id 100) does not send push messages: take back the plugin_push_send grant
+            the first changeset gave every role. Super-Admin, Admin and User keep it; roles added later are not
+            touched.</comment>
+        <sql>
+            DELETE FROM userRolePermissions WHERE roleId = 100
+                AND permissionId IN (SELECT id FROM permissions WHERE name = 'plugin_push_send');
+        </sql>
+        <rollback>
+            INSERT INTO userRolePermissions (roleId, permissionId)
+                SELECT 100, id FROM permissions WHERE name = 'plugin_push_send'
+                AND EXISTS (SELECT 1 FROM userRoles WHERE id = 100);
+        </rollback>
+    </changeSet>
+
 </databaseChangeLog>

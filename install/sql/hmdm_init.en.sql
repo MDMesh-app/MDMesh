@@ -231,11 +231,29 @@ ALTER TABLE applications ADD CONSTRAINT applications_latestversion_fkey FOREIGN 
     
 DELETE FROM configurations;
 INSERT INTO configurations (id, name, description, type, password, backgroundcolor, textcolor, backgroundimageurl, iconsize, desktopheader, usedefaultdesignsettings, customerid, gps, bluetooth, wifi, mobiledata, mainappid, eventreceivingcomponent, kioskmode, qrcodekey, contentappid,autoupdate, blockstatusbar, systemupdatetype, systemupdatefrom, systemupdateto, pushoptions, keepalivetime, rundefaultlauncher, permissive, kioskexit) VALUES 
-(1, 'Managed Launcher', 'Displays a set of application icons predefined by the administrator. To show or hide applications, use the Applications tab.', 0, '12345678', '', '', NULL, 'SMALL', 'NO_HEADER', true, 1, NULL, NULL, NULL, NULL, 10045, 'com.hmdm.launcher.AdminReceiver', false, '6fb9c8dc81483173a0c0e9f8b2e46be1', NULL, false, false, 0, NULL, NULL, 'mqttAlarm', 300, NULL, NULL, true),
-(2, 'MIUI (Xiaomi Redmi)', 'Optimized for MIUI-running devices', 0, '12345678', '', '', NULL, 'SMALL', 'NO_HEADER', true, 1, NULL, NULL, NULL, NULL, 10045, 'com.hmdm.launcher.AdminReceiver', false, '8e6ca072ddb926a1af61578dfa9fc334', NULL, false, false, 0, NULL, NULL, 'mqttAlarm', 300, NULL, NULL, true),
-(3, 'Background (Agent) Mode', 'Headwind MDM is running in the background, it is used to install apps and track the device status. User can do everything (permissive mode).', 0, '12345678', '', '', NULL, 'SMALL', 'NO_HEADER', true, 1, NULL, NULL, NULL, NULL, 10045, 'com.hmdm.launcher.AdminReceiver', false, '350e0fb7fc3f4b7fe61cac75fd43818f', NULL, false, false, 0, NULL, NULL, 'mqttAlarm', 300, true, true, true);
+(1, 'Managed Launcher', 'Displays a set of application icons predefined by the administrator. To show or hide applications, use the Applications tab.', 0, NULL, '', '', NULL, 'SMALL', 'NO_HEADER', true, 1, NULL, NULL, NULL, NULL, 10045, 'com.hmdm.launcher.AdminReceiver', false, md5(random()::text || clock_timestamp()::text), NULL, false, false, 0, NULL, NULL, 'mqttAlarm', 300, NULL, NULL, true),
+(2, 'MIUI (Xiaomi Redmi)', 'Optimized for MIUI-running devices', 0, NULL, '', '', NULL, 'SMALL', 'NO_HEADER', true, 1, NULL, NULL, NULL, NULL, 10045, 'com.hmdm.launcher.AdminReceiver', false, md5(random()::text || clock_timestamp()::text), NULL, false, false, 0, NULL, NULL, 'mqttAlarm', 300, NULL, NULL, true),
+(3, 'Background (Agent) Mode', 'Headwind MDM is running in the background, it is used to install apps and track the device status. User can do everything (permissive mode).', 0, NULL, '', '', NULL, 'SMALL', 'NO_HEADER', true, 1, NULL, NULL, NULL, NULL, 10045, 'com.hmdm.launcher.AdminReceiver', false, md5(random()::text || clock_timestamp()::text), NULL, false, false, 0, NULL, NULL, 'mqttAlarm', 300, true, true, true);
 
 SELECT pg_catalog.setval('public.configurations_id_seq', 3, true);
+
+-- A kiosk exit PIN (8 digits) and a QR key of this install's own for each configuration above, never a value
+-- shared with other installs. gen_random_uuid() (PostgreSQL 13+) supplies the randomness where it exists.
+-- The PIN and the QR key are two separate random draws and must never derive from each other: the QR key is not
+-- a secret on a par with the PIN (it travels in QR payloads), so knowing it must say nothing about the PIN.
+DO $$
+DECLARE
+    strong boolean := current_setting('server_version_num')::int >= 130000;
+    qr_key text := CASE WHEN strong THEN $h$replace(gen_random_uuid()::text, '-', '')$h$
+                        ELSE $h$md5(random()::text || clock_timestamp()::text)$h$ END;
+    pin_hex text := CASE WHEN strong THEN $h$replace(gen_random_uuid()::text, '-', '')$h$
+                         ELSE $h$md5(random()::text || clock_timestamp()::text)$h$ END;
+BEGIN
+    EXECUTE format($q$UPDATE configurations SET
+        qrcodekey = %s,
+        password = lpad(((('x' || substr(%s, 1, 12))::bit(48)::bigint) %% 100000000)::text, 8, '0')
+        WHERE id IN (1, 2, 3)$q$, qr_key, pin_hex);
+END $$;
 
 INSERT INTO configurationapplications (id, configurationid, applicationid, remove, showicon, applicationversionid) VALUES 
     (2, 1, 8, false, true, 10007),

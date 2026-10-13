@@ -36,13 +36,15 @@ public class LegacyDeviceApiFilterTest {
             "/rest/plugins/devicelog/log/list/dev-1",
             "/rest/plugins/devicelog/log/rules/dev-1",
             "/rest/plugins/messaging/public/status/1/2",
+            "/rest/public/qr/abc",
+            "/rest/public/qr/json/abc",
+            "/rest/public/qr",
     };
 
     private static final String[] KEPT = {
             "/rest/public/agent/v1/enroll",
             "/rest/public/agent/v1/checkin",
-            "/rest/public/qr/abc",
-            "/rest/public/qr/json/abc",
+            "/rest/public/qrcode",
             "/rest/public/name",
             "/rest/public/auth/login",
             "/rest/public/synchronize",

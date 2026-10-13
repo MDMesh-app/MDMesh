@@ -41,7 +41,6 @@ public class PublicRouteInventoryTest {
     private static final List<String> KEPT_PUBLIC = Arrays.asList(
             "/rest/public/agent/v1",            // MDMesh agent: enroll + check-in (token / per-device secret)
             "/agent/ws/{deviceNumber}",         // MDMesh agent wake socket (per-device secret)
-            "/rest/public/qr",                  // provisioning QR
             "/files",                           // APK and file downloads referenced by the QR / configs
             "/rest/public/auth",                // console sign-in
             "/rest/public/jwt",                 // API client sign-in
@@ -84,6 +83,7 @@ public class PublicRouteInventoryTest {
         assertTrue("the scan found the REST resources (" + classes + ")", classes > 30);
         assertTrue("the scan saw the agent API", routes.contains("/rest/public/agent/v1/checkin"));
         assertTrue("the scan saw the legacy sync API", routes.contains("/rest/public/sync/info"));
+        assertTrue("the scan saw the legacy launcher QR", routes.contains("/rest/public/qr/json/{id}"));
 
         TreeSet<String> uncovered = new TreeSet<>();
         for (String raw : routes) {

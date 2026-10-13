@@ -47,7 +47,7 @@ public class Configuration implements CustomerData, Serializable {
     private String name;
     @ApiModelProperty("A description of configuration")
     private String description;
-    @ApiModelProperty("A password for administrator of configuration (MD5 hash)")
+    @ApiModelProperty("The kiosk exit PIN the device asks for before leaving kiosk mode (stored as entered)")
     private String password;
     @ApiModelProperty(hidden = true)
     private int type;
@@ -268,6 +268,18 @@ public class Configuration implements CustomerData, Serializable {
 
     public void setPassword(String password) {
         this.password = password;
+    }
+
+    /** The kiosk exit PIN older installs seeded into every configuration (and copies of them inherited). */
+    public static final String DEFAULT_KIOSK_PIN = "12345678";
+
+    /**
+     * True while the kiosk exit PIN ({@link #getPassword()}) is still {@link #DEFAULT_KIOSK_PIN}, so the console can
+     * ask for a new one. Derived and read-only: a value sent back on save is ignored.
+     */
+    @ApiModelProperty(value = "Whether the kiosk exit PIN is still the old default 12345678", readOnly = true)
+    public boolean isDefaultKioskPin() {
+        return DEFAULT_KIOSK_PIN.equals(this.password);
     }
 
     public boolean isSelected() {

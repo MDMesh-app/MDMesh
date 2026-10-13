@@ -45,6 +45,20 @@ public class InstallIntegrityTest {
     }
 
     @Test
+    public void adminEnteredHashesMustBeExactly64Hex() {
+        assertEquals(HEX, InstallIntegrity.hexOnly(HEX.toUpperCase()));
+        assertEquals(HEX, InstallIntegrity.hexOnly(" " + HEX + " "));
+        // 43 hex characters also read as unpadded base64 of 32 bytes: a truncated hex hash must not become another hash.
+        String truncated = HEX.substring(0, 43);
+        assertEquals(64, InstallIntegrity.normalizeHex(truncated).length());
+        assertNull(InstallIntegrity.hexOnly(truncated));
+        assertNull(InstallIntegrity.hexOnly(B64URL));
+        assertNull(InstallIntegrity.hexOnly(HEX + "0"));
+        assertNull(InstallIntegrity.hexOnly(null));
+        assertNull(InstallIntegrity.hexOnly(""));
+    }
+
+    @Test
     public void apkHashFormRoundTrips() throws Exception {
         byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
                 .digest("abc".getBytes(java.nio.charset.StandardCharsets.US_ASCII));

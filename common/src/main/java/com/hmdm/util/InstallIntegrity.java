@@ -169,6 +169,19 @@ public final class InstallIntegrity {
         return CryptoUtil.getLowerHexString(bytes);
     }
 
+    /**
+     * A SHA-256 typed by an admin, as lowercase hex: exactly 64 hex characters (surrounding blanks ignored), else
+     * null. Unlike {@link #normalizeHex} this takes no base64, because a truncated hex string (43 characters) also
+     * decodes as base64 of 32 bytes and would be stored as a different digest.
+     */
+    public static String hexOnly(String value) {
+        if (value == null) {
+            return null;
+        }
+        String v = value.trim();
+        return v.matches("[0-9a-fA-F]{64}") ? v.toLowerCase(Locale.ROOT) : null;
+    }
+
     /** {@code applicationVersions.apkHash} form (base64url, as QR provisioning computes it) of a hex SHA-256. */
     public static String toApkHash(String hex) {
         String h = normalizeHex(hex);

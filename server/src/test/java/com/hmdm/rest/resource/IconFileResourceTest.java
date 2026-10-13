@@ -149,10 +149,10 @@ public class IconFileResourceTest {
         byte[] whole = png(64, 64);
         for (int length : new int[]{12, 20, 30}) {
             Response r = upload(java.util.Arrays.copyOf(whole, length));
-            assertEquals("cut at " + length, "error.icon.dimension.invalid", r.getMessage());
+            assertEquals("cut at " + length, "error.icon.format.invalid", r.getMessage());
         }
         Response headerOnly = upload(pngClaiming(64, 64));
-        assertEquals("error.icon.dimension.invalid", headerOnly.getMessage());
+        assertEquals("error.icon.format.invalid", headerOnly.getMessage());
         assertEquals(0, files.inserted.size());
     }
 

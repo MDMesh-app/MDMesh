@@ -38,6 +38,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
@@ -47,8 +49,12 @@ import javax.ws.rs.Path;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
+import java.util.Iterator;
 import java.util.UUID;
 
 /**
@@ -69,8 +75,8 @@ public class IconFileResource {
     static final int MAX_ICON_DIMENSION = 1024;
 
     /** The whole stream if it has at most {@code max} bytes, else null (reading at most max + 1 bytes). */
-    private static byte[] readAtMost(InputStream in, long max) throws java.io.IOException {
-        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+    private static byte[] readAtMost(InputStream in, long max) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
         byte[] buf = new byte[8192];
         int n;
         while ((n = in.read(buf)) != -1) {
@@ -82,33 +88,36 @@ public class IconFileResource {
         return out.toByteArray();
     }
 
+    /** The header declares a size beyond {@link #MAX_ICON_DIMENSION}. */
+    private static final class TooLargeImageException extends Exception {
+    }
+
     /**
-     * Decodes the image only after its header-declared size is checked; null if unreadable (any read error, a
-     * truncated header included) or too large.
+     * Decodes the image only after its header-declared size is checked; null if it is not a readable image (any read
+     * error, a truncated header included).
      */
-    private static BufferedImage decodeBounded(byte[] bytes) {
-        try (javax.imageio.stream.ImageInputStream iis =
-                     ImageIO.createImageInputStream(new java.io.ByteArrayInputStream(bytes))) {
+    private static BufferedImage decodeBounded(byte[] bytes) throws TooLargeImageException {
+        try (ImageInputStream iis = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
             if (iis == null) {
                 return null;
             }
-            java.util.Iterator<javax.imageio.ImageReader> readers = ImageIO.getImageReaders(iis);
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(iis);
             if (!readers.hasNext()) {
                 return null;
             }
-            javax.imageio.ImageReader reader = readers.next();
+            ImageReader reader = readers.next();
             try {
                 reader.setInput(iis, true, true);
                 int w = reader.getWidth(0);
                 int h = reader.getHeight(0);
                 if (w <= 0 || h <= 0 || w > MAX_ICON_DIMENSION || h > MAX_ICON_DIMENSION) {
-                    return null;
+                    throw new TooLargeImageException();
                 }
                 return reader.read(0);
             } finally {
                 reader.dispose();
             }
-        } catch (java.io.IOException e) {
+        } catch (IOException e) {
             return null;
         }
     }
@@ -152,10 +161,16 @@ public class IconFileResource {
                 logger.warn("Rejecting an icon upload larger than {} bytes", MAX_ICON_BYTES);
                 return Response.ERROR("error.icon.size.invalid");
             }
-            BufferedImage img = decodeBounded(bytes);
-            if (img == null) {
-                logger.warn("Rejecting an icon upload that is not a readable image of at most {}px", MAX_ICON_DIMENSION);
+            final BufferedImage img;
+            try {
+                img = decodeBounded(bytes);
+            } catch (TooLargeImageException e) {
+                logger.warn("Rejecting an icon upload larger than {}px", MAX_ICON_DIMENSION);
                 return Response.ERROR("error.icon.dimension.invalid");
+            }
+            if (img == null) {
+                logger.warn("Rejecting an icon upload that is not a readable image");
+                return Response.ERROR("error.icon.format.invalid");
             }
             if (img.getWidth() != img.getHeight()) {
                 logger.error("Rejecting the icon file upload due to unequal icon width and height");

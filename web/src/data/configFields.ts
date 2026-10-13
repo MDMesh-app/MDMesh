@@ -91,7 +91,7 @@ export const CONFIG_FIELDS: FieldDef[] = [
   ] },
   { key: 'encryptDevice', label: 'Require encryption', type: 'switch', group: 'Security', help: 'Require full-device encryption.' },
   { key: 'permissive', label: 'Permissive mode', type: 'tri', group: 'Security', help: 'Relax policy enforcement (permissive mode).' },
-  { key: 'lockSafeSettings', label: 'Lock quick settings (Headwind launcher)', type: 'tri', group: 'Security', help: 'Headwind launcher only: stops users opening the settings screens it otherwise allows (Wi-Fi, location, Bluetooth). Not about Safe Mode; see Disable Safe Mode.' },
+  { key: 'lockSafeSettings', label: 'Lock safe settings (legacy)', type: 'tri', group: 'Security', help: 'Old Headwind launcher setting; the MDMesh agent ignores it. To block Safe Mode, use Disable Safe Mode.' },
   { key: 'disableLocation', label: 'Block location permission', type: 'tri', group: 'Security', help: 'Prevent apps from being granted location permission.' },
   { key: 'passwordMode', label: 'Password policy', type: 'text', group: 'Security', help: 'Device passcode policy (advanced; JSON string).' },
 

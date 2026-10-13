@@ -18,7 +18,10 @@ public class DeviceState implements Serializable {
     private String telemetry;
     private String appliedConfigRevision;
     private Long appliedConfigAt;
-    /** Agent versionName that last completed config.apply (or first seen); a change triggers a one-time resync. */
+    /**
+     * Agent versionName a completed config.apply was queued for (or the first one seen). While the device reports a
+     * different version, config.apply is re-sent until one comes back done.
+     */
     private String configAgentVersion;
 
     public String getDeviceNumber() { return deviceNumber; }

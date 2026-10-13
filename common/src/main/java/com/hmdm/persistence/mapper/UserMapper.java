@@ -59,13 +59,15 @@ public interface UserMapper {
     @SelectKey( statement = "SELECT currval('users_id_seq')", keyColumn = "id", keyProperty = "id", before = false, resultType = int.class )
     void insert(User user);
 
+    /**
+     * Never writes authData, twoFactorSecret or twoFactorAccepted: the client never sees them, and only the password
+     * flows ({@link #updatePassword}) change them.
+     */
     @Update({"UPDATE users " +
             "SET name = #{name}, login=#{login}, email=#{email}, userRoleId=#{userRole.id}, " +
             "allDevicesAvailable=#{allDevicesAvailable}, allConfigAvailable=#{allConfigAvailable}, " +
             "passwordReset=#{passwordReset} " +
             "WHERE id=#{id} AND customerId=#{customerId}"})
-    // authData, twoFactorSecret and twoFactorAccepted are never taken from a details update (the client never sees
-    // them); only the password flows (updatePassword) change them.
     void updateUserMainDetails(User user);
 
     @Update({"UPDATE users SET password=#{password}, passwordReset=#{passwordReset}, " +

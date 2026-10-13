@@ -28,8 +28,9 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * <p>Answers 404 for the device routes of the Headwind launcher (and the unauthenticated Headwind usage-stats route,
- * which MDMesh has no use for) unless the {@code legacy.device.api} context parameter
+ * <p>Answers 404 for the device routes of the Headwind launcher (and the unauthenticated Headwind usage-stats and
+ * launcher provisioning QR routes, which MDMesh has no use for: the console draws the agent's QR itself) unless the
+ * {@code legacy.device.api} context parameter
  * is {@code 1} or {@code true}. The MDMesh agent speaks only {@code /rest/public/agent/v1/*} and the wake socket, and
  * the console reads device data through private routes, so none of these is needed by default.</p>
  *
@@ -53,7 +54,8 @@ public class LegacyDeviceApiFilter implements Filter {
             "/rest/plugins/devicelog/log/list",
             "/rest/plugins/devicelog/log/rules",
             "/rest/plugins/messaging/public",
-            "/rest/public/stats"
+            "/rest/public/stats",
+            "/rest/public/qr"
     ));
 
     private volatile boolean enabled;

@@ -26,6 +26,8 @@ import com.google.inject.name.Names;
 import com.hmdm.auth.HmdmAuthInterface;
 import com.hmdm.auth.LocalAuth;
 import com.hmdm.persistence.domain.Application;
+import com.hmdm.rest.filter.LegacyDeviceApiFilter;
+import org.slf4j.LoggerFactory;
 
 import javax.servlet.ServletContext;
 
@@ -104,15 +106,28 @@ public class ConfigureModule extends AbstractModule {
         this.context = context;
     }
 
+    /**
+     * The effective {@code secure.enrollment}: it makes {@code /files/*} demand the Headwind launcher's request
+     * signature, which the MDMesh agent never sends (agent and app downloads would fail), so it applies only while the
+     * legacy device API is on, and is ignored with a log line otherwise.
+     */
+    static boolean secureEnrollment(ServletContext context) {
+        String value = context.getInitParameter("secure.enrollment");
+        boolean requested = value != null && (value.trim().equals("1") || value.trim().equalsIgnoreCase("true"));
+        if (requested && !LegacyDeviceApiFilter.isEnabled(context)) {
+            LoggerFactory.getLogger(ConfigureModule.class).warn("secure.enrollment is ignored: it applies to the "
+                    + "Headwind launcher only and needs " + LegacyDeviceApiFilter.PARAMETER + "=1");
+            return false;
+        }
+        return requested;
+    }
+
     protected void configure() {
         this.bindConstant().annotatedWith(Names.named(filesDirectoryParameter)).to(this.context.getInitParameter(filesDirectoryParameter));
         this.bindConstant().annotatedWith(Names.named(baseUrlParameter)).to(this.context.getInitParameter(baseUrlParameter));
         this.bindConstant().annotatedWith(Names.named(pluginFilesDirectoryParameter)).to(this.context.getInitParameter(pluginFilesDirectoryParameter));
         this.bindConstant().annotatedWith(Names.named(usageScenarioParameter)).to(this.context.getInitParameter(usageScenarioParameter));
-        String secureEnrollment = this.context.getInitParameter(secureEnrollmentParameter);
-        this.bindConstant().annotatedWith(Names.named(secureEnrollmentParameter)).to(
-                secureEnrollment != null && (secureEnrollment.equals("1") || secureEnrollment.equalsIgnoreCase("true"))
-        );
+        this.bindConstant().annotatedWith(Names.named(secureEnrollmentParameter)).to(secureEnrollment(this.context));
         this.bindConstant().annotatedWith(Names.named(hashSecretParameter)).to(this.context.getInitParameter(hashSecretParameter));
         String hsts = this.context.getInitParameter(hstsParameter);
         this.bindConstant().annotatedWith(Names.named(hstsParameter)).to(

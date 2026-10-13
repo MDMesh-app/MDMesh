@@ -63,6 +63,9 @@ public class NotificationMqttConfigModule extends AbstractModule {
             mqttAdminPassword = randomPassword();
         }
 
+        // PushService queues launcher push messages only while the legacy device API is on.
+        this.bindConstant().annotatedWith(Names.named(LegacyDeviceApiFilter.PARAMETER))
+                .to(LegacyDeviceApiFilter.isEnabled(context));
         this.bindConstant().annotatedWith(Names.named("mqtt.server.uri")).to(serverUri);
         this.bindConstant().annotatedWith(Names.named("mqtt.external")).to(mqttExternal);
 

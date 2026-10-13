@@ -18,7 +18,8 @@ import kotlinx.coroutines.sync.withLock
  * adds no new device behavior — only orchestration and reporting.
  *
  * Idempotent: applying the same document twice is a no-op at the OS level. The document is persisted (and its
- * revision reported to the server) only when no section failed; `unsupported` is final and does not block.
+ * revision reported to the server) only when no section failed; `unsupported` is final and `deferred` (1.4) is
+ * deliberate, so neither blocks.
  *
  * Serialized: a boot re-apply ([reapplyPersisted]) and a freshly delivered `config.apply` never interleave —
  * otherwise an older persisted document could finish last and overwrite the newer one.

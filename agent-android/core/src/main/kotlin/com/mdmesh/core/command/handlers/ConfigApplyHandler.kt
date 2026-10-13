@@ -12,8 +12,9 @@ import com.mdmesh.proto.ProtocolJson
 
 /**
  * `config.apply` — desired-state push. Decodes the document, delegates to [ConfigApplier], and reports the
- * per-key outcomes as JSON in `detail`. `done` = every key applied/unsupported (revision now persisted and
- * reported in check-ins); `failed` = at least one key failed (server retries after a backoff).
+ * per-key outcomes as JSON in `detail`. `done` = every key applied, unsupported or deferred (protocol 1.4: not
+ * applied now on purpose, with the reason; revision now persisted and reported in check-ins); `failed` = at least
+ * one key failed (server retries after a backoff).
  */
 class ConfigApplyHandler(private val applier: ConfigApplier) : CommandHandler {
     override val type: String = DeviceAction.CONFIG_APPLY

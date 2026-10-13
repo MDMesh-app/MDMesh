@@ -54,18 +54,20 @@ first update, which pins the versions (or set `SERVER_VERSION`/`WEB_VERSION`/`CU
 >   older agents still send. To keep location, set the configuration's **Location reporting** to **Last known
 >   (passive)** (called *Network* before v0.3.4) or **GPS (fresh fix)**.
 > - New configuration settings, both off until you set them (existing configurations are unchanged): **Wi-Fi radio**
->   turns Wi-Fi on or off. Off waits while Wi-Fi is the device's only network, so it stays reachable, and the console
->   shows it as deferred. If a device can't reach the server for about 30 minutes after Wi-Fi was turned off (SIM
->   removed, server only reachable on the Wi-Fi network), the agent turns Wi-Fi back on and keeps it on until the
->   configuration is changed; the console shows the Off as deferred. A server outage that long (keep upgrades short)
->   or a user cutting the device off (airplane mode, pulling the SIM) does the same. Any change to the configuration
->   applies Off again. The existing Wi-Fi setting, now labelled **Wi-Fi settings**, still only locks the Wi-Fi
->   settings. **Lock volume buttons (kiosk)** blocks volume changes in kiosk; Android mutes the device while it is locked, so **Ring device** is silent on it. **Lock hardware
->   buttons** blocks only the power menu. Both new settings need agent 0.3.4; older agents report Wi-Fi radio as
->   unsupported and ignore the volume lock.
+>   turns Wi-Fi on or off. Off is skipped (shown as deferred) while Wi-Fi is the device's only network, so it stays
+>   reachable, and is tried again at the next configuration change, reboot or agent update. Phones that switch mobile
+>   data off while on Wi-Fi can't apply it. If a device can't reach the server for about 30 minutes after Wi-Fi was
+>   turned off (SIM removed, server only reachable on the Wi-Fi network), the agent turns Wi-Fi back on and keeps it on
+>   until the configuration is changed; the console shows the Off as deferred. A server outage that long (keep upgrades
+>   short) or a user cutting the device off (airplane mode, pulling the SIM) does the same. Any change to the
+>   configuration applies Off again. The existing Wi-Fi setting, now labelled **Wi-Fi settings**, still only locks the
+>   Wi-Fi settings. **Lock volume buttons (kiosk)** blocks volume changes in kiosk; Android mutes the device while it is
+>   locked, so **Ring device** is silent on it. **Lock hardware buttons** blocks only the power menu. Both new settings
+>   need agent 0.3.4; older agents report Wi-Fi radio as unsupported and ignore the volume lock.
 > - The Headwind launcher's provisioning QR routes (`/rest/public/qr/*`) also answer 404 unless `LEGACY_DEVICE_API=1`.
 >   The console draws the agent's enrollment QR itself and doesn't use them. The three configurations the installer
->   creates get a new QR key on the first start.
+>   creates get a new QR key on the first start, so with `LEGACY_DEVICE_API=1` the Headwind provisioning QR codes
+>   printed for them earlier stop working.
 > - New installs give each of those configurations its own random 8-digit kiosk exit PIN (shown in the console's
 >   configuration editor). Existing configurations keep their PIN; one still set to `12345678`, the default of older
 >   installs and of configurations copied from them, is flagged in the console: set a PIN of your own there, since

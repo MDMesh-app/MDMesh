@@ -55,8 +55,9 @@ first update, which pins the versions (or set `SERVER_VERSION`/`WEB_VERSION`/`CU
 >   (passive)** (called *Network* before v0.3.4) or **GPS (fresh fix)**.
 > - New configuration settings, both off until you set them (existing configurations are unchanged): **Wi-Fi radio**
 >   turns Wi-Fi on or off. Off waits while Wi-Fi is the device's only network, so it stays reachable, and the console
->   shows it as deferred. If a device loses its other network later (SIM removed, cable unplugged), it turns Wi-Fi back
->   on after 10 minutes offline, and Off waits again until another network is back. The existing Wi-Fi setting, now
+>   shows it as deferred. If a device can't reach the server for about 10 to 20 minutes after Wi-Fi was turned off (SIM
+>   removed, server only reachable on the Wi-Fi network), the agent turns Wi-Fi back on and keeps it on until the
+>   configuration is changed; the console shows the Off as deferred. The existing Wi-Fi setting, now
 >   labelled **Wi-Fi settings**, still only locks the Wi-Fi settings. **Lock volume buttons (kiosk)** blocks volume
 >   changes in kiosk; Android mutes the device while it is locked, so **Ring device** is silent on it. **Lock hardware
 >   buttons** blocks only the power menu. Both new settings need agent 0.3.4; older agents report Wi-Fi radio as

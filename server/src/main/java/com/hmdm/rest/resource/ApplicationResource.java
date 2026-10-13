@@ -50,6 +50,7 @@ import io.swagger.annotations.Authorization;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.hmdm.util.FileExistsException;
+import com.hmdm.util.InstallIntegrity;
 
 import java.io.File;
 import java.util.HashMap;
@@ -234,7 +235,7 @@ public class ApplicationResource {
                     if (version != null) {
                         version.setUrl(application.getUrl());
                         applicationDAO.updateApplicationVersion(version);
-                        String apkHash = com.hmdm.rest.json.InstallIntegrity.toApkHash(application.getSha256());
+                        String apkHash = InstallIntegrity.toApkHash(application.getSha256());
                         if (apkHash != null) {
                             applicationDAO.saveApkHash(version.getId(), apkHash);
                         }
@@ -416,7 +417,7 @@ public class ApplicationResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response setApplicationVersionSha256(@PathParam("id") @ApiParam("Application Version ID") Integer id,
-                                                java.util.Map<String, String> body) {
+                                                Map<String, String> body) {
         if (!SecurityContext.get().hasPermission("edit_application_versions")) {
             logger.error("Unauthorized attempt to set an APK hash by user " + SecurityContext.get().getCurrentUserName());
             return Response.PERMISSION_DENIED();
@@ -426,7 +427,7 @@ public class ApplicationResource {
             return Response.ERROR("The APK's SHA-256 must be 64 hex characters");
         }
         try {
-            if (!this.applicationDAO.saveApkHash(id, com.hmdm.rest.json.InstallIntegrity.toApkHash(sha))) {
+            if (!this.applicationDAO.saveApkHash(id, InstallIntegrity.toApkHash(sha))) {
                 return Response.ERROR("No such application version");
             }
             logger.info("APK SHA-256 of application version #{} set by user {}", id,

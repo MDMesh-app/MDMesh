@@ -10,9 +10,9 @@
 
 package com.hmdm.rest.resource.support;
 
-import com.hmdm.rest.json.InstallIntegrity;
 import com.hmdm.util.CryptoUtil;
 import com.hmdm.util.HostedFiles;
+import com.hmdm.util.InstallIntegrity;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;

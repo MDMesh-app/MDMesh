@@ -11,7 +11,6 @@
 package com.hmdm.rest.resource.support;
 
 import com.hmdm.notification.AgentWakeHub;
-import com.hmdm.rest.json.InstallIntegrity;
 import com.hmdm.rest.json.InstallPayloadBuilder;
 import com.hmdm.persistence.AgentCommandDAO;
 import com.hmdm.persistence.UnsecureDAO;
@@ -20,6 +19,7 @@ import com.hmdm.persistence.domain.Application;
 import com.hmdm.persistence.domain.ApplicationVersion;
 import com.hmdm.persistence.domain.Device;
 import com.hmdm.util.RolloutProgress;
+import com.hmdm.util.InstallIntegrity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

@@ -43,6 +43,7 @@ import com.hmdm.rest.json.agent.AgentProtocol;
 import com.hmdm.util.AgentCapabilityTokens;
 import com.hmdm.util.CryptoUtil;
 import com.hmdm.util.DesiredConfigBuilder;
+import com.hmdm.util.InstallIntegrity;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import org.slf4j.Logger;
@@ -418,7 +419,7 @@ public class AgentResource {
             // that failed (the database, say) leaves it pending for the next check-in.
             try {
                 stored.setPayload(installHashes.forDelivery(stored, device.getCustomerId()));
-            } catch (com.hmdm.rest.json.InstallIntegrity.LookupFailedException e) {
+            } catch (InstallIntegrity.LookupFailedException e) {
                 logger.warn("Command {} for device {} held back: {}", stored.getId(), deviceNumber, e.toString());
                 continue;
             } catch (IllegalArgumentException e) {

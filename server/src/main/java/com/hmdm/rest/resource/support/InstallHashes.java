@@ -12,7 +12,7 @@ package com.hmdm.rest.resource.support;
 
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentCommand;
-import com.hmdm.rest.json.InstallIntegrity;
+import com.hmdm.util.InstallIntegrity;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;

@@ -9,7 +9,7 @@ import com.mdmesh.proto.DeviceAction
 import com.mdmesh.proto.ProtocolJson
 import kotlinx.serialization.Serializable
 
-/** `device.locationMode` — switch location capture between battery-saving "passive" and "active". */
+/** `device.locationMode` — switch location capture between "passive" (battery-saving), "active" and "off". */
 class DeviceLocationModeHandler(
     private val store: LocationModeStore,
 ) : CommandHandler {

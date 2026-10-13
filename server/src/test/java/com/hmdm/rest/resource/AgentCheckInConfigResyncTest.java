@@ -97,6 +97,9 @@ public class AgentCheckInConfigResyncTest {
             }
         }
 
+        final List<com.hmdm.persistence.domain.DeviceLocation> locations = new ArrayList<>();
+        @Override public void recordLocation(com.hmdm.persistence.domain.DeviceLocation l) { locations.add(l); }
+
         @Override public void insert(AgentCommand c) { c.setId(commands.size() + 1); commands.add(c); }
         @Override public List<AgentCommand> listPending(String n) {
             List<AgentCommand> out = new ArrayList<>();
@@ -130,6 +133,7 @@ public class AgentCheckInConfigResyncTest {
     }
 
     private FakeCommandDAO commandDAO;
+    private FakeUnsecureDAO unsecureDAO;
     private AgentResource resource;
     private String revision;
     /** Results the "agent" sends on its next check-in. */
@@ -137,7 +141,7 @@ public class AgentCheckInConfigResyncTest {
 
     @Before
     public void setUp() {
-        FakeUnsecureDAO unsecureDAO = new FakeUnsecureDAO();
+        unsecureDAO = new FakeUnsecureDAO();
         Device device = new Device();
         device.setNumber(NUMBER);
         device.setCustomerId(1);
@@ -293,5 +297,44 @@ public class AgentCheckInConfigResyncTest {
         req.setCapabilities(new AgentCapabilities(new ObjectMapper().readTree(CAPS)));
         Response r = resource.checkin("Bearer " + SECRET, null, req);
         assertEquals(0, ((AgentCheckInResponse) r.getData()).getCommands().size());
+    }
+
+    /** A check-in from an agent that (whatever its mode) still reports a location fix in its telemetry. */
+    private void checkInWithLocation(String caps) throws Exception {
+        AgentCheckInRequest req = new AgentCheckInRequest();
+        req.setDeviceId(NUMBER);
+        req.setCapabilities(new AgentCapabilities(new ObjectMapper().readTree(caps)));
+        AgentDeviceState s = new AgentDeviceState();
+        s.setAgentVersion("0.3.3");
+        req.setState(s);
+        req.setTelemetry(new ObjectMapper().readTree(
+                "{\"dynamic\":{\"batteryPct\":50,\"location\":{\"lat\":52.1,\"lon\":4.3,\"capturedAt\":1}}}"));
+        assertEquals(Response.ResponseStatus.OK, resource.checkin("Bearer " + SECRET, null, req).getStatus());
+    }
+
+    @Test
+    public void do_not_track_configuration_never_stores_a_location_even_from_an_old_agent() throws Exception {
+        // 0.3.1-0.3.3 agents read "off" as passive and keep sending last-known fixes: the server drops them.
+        unsecureDAO.configuration.setRequestUpdates(com.hmdm.persistence.domain.RequestUpdatesType.DONOTTRACK);
+        checkInWithLocation(CAPS);
+        assertEquals(0, commandDAO.locations.size());
+        String telemetry = commandDAO.getState(NUMBER).getTelemetry();
+        assertEquals("the rest of the telemetry is kept", true, telemetry.contains("\"batteryPct\":50"));
+        assertEquals("no location in the stored telemetry", false, telemetry.contains("\"location\""));
+    }
+
+    @Test
+    public void tracked_configurations_still_store_the_location() throws Exception {
+        unsecureDAO.configuration.setRequestUpdates(com.hmdm.persistence.domain.RequestUpdatesType.WIFI);
+        checkInWithLocation(CAPS);
+        assertEquals(1, commandDAO.locations.size());
+        assertEquals(true, commandDAO.getState(NUMBER).getTelemetry().contains("\"location\""));
+    }
+
+    @Test
+    public void a_device_without_a_configuration_keeps_its_location() throws Exception {
+        unsecureDAO.configuration = null;
+        checkInWithLocation(CAPS);
+        assertEquals(1, commandDAO.locations.size());
     }
 }

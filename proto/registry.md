@@ -61,6 +61,7 @@ string, except `configApply`.
 | `powerMode` | `device.powerMode` | `device.powerMode` |
 | `locationMode` | `device.locationMode` | `device.locationMode` |
 | `configApply` | `device.configApply` | `config.apply` |
+| `locationOff` | `device.locationOff` | `device.locationMode` with `mode: "off"` (1.4: the agent honours `off`; older agents read it as passive) |
 
 ## Command types
 
@@ -86,7 +87,7 @@ string, except `configApply`.
 | `device.passcodeReset` | `device.passcodeReset` | `{ newPassword }` (empty clears it) |
 | `device.wipe` | `device.wipe` | none |
 | `device.powerMode` | `device.powerMode` | `{ mode: "adaptive" \| "alwaysOn" }` |
-| `device.locationMode` | `device.locationMode` | `{ mode: "passive" \| "active" }` |
+| `device.locationMode` | `device.locationMode` (`device.locationOff` for `off`) | `{ mode: "passive" \| "active" \| "off" }`; `off` (1.4) reads no location at all |
 | `app.launch` | — | `{ packageName, activity? }`. Planned: no agent handler yet (a device replies `unsupported`). |
 | `remote.startSession` | `remote.view` or `remote.control` | `{ sessionId, signaling: {...}, mode: "view"\|"control" }`. Planned: no agent handler yet. |
 | `remote.stopSession` | — | `{ sessionId }`. Planned: no agent handler yet. |

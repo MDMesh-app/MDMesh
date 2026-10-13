@@ -9,6 +9,7 @@ import android.location.LocationManager
 import android.os.Build
 import android.os.CancellationSignal
 import androidx.core.content.ContextCompat
+import com.mdmesh.proto.DeviceAction
 import com.mdmesh.proto.LocationDto
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.util.concurrent.CountDownLatch
@@ -20,18 +21,23 @@ import javax.inject.Singleton
 /**
  * Reads the device location for telemetry. Passive mode (default) returns the OS's freshest
  * last-known fix across providers — near-zero battery, no active GPS. Active mode requests one fresh
- * fix per call (API 30+) with a short timeout, falling back to last-known. Never throws; returns
- * null without a location permission, with location services off, or when no fix is available.
+ * fix per call (API 30+) with a short timeout, falling back to last-known. Off mode ("Do not track")
+ * returns null without touching [LocationManager] at all. Never throws; returns null without a
+ * location permission, with location services off, or when no fix is available.
  */
 @Singleton
 class LocationCollector @Inject constructor(
     @ApplicationContext private val context: Context,
     private val modeStore: LocationModeStore,
 ) {
+    /** What one collection reads, per location mode. */
+    enum class Plan { NONE, LAST_KNOWN, FRESH_FIX }
+
     fun collect(): LocationDto? {
-        if (!hasPermission()) return null
+        val plan = plan(modeStore.get())
+        if (plan == Plan.NONE || !hasPermission()) return null
         val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
-        val loc = if (modeStore.isActive()) (currentFix(lm) ?: lastKnown(lm)) else lastKnown(lm)
+        val loc = if (plan == Plan.FRESH_FIX) (currentFix(lm) ?: lastKnown(lm)) else lastKnown(lm)
         return loc?.let {
             LocationDto(
                 lat = it.latitude,
@@ -82,5 +88,13 @@ class LocationCollector @Inject constructor(
         }.getOrNull()
     }
 
-    private companion object { const val FIX_TIMEOUT_SEC = 5L }
+    companion object {
+        private const val FIX_TIMEOUT_SEC = 5L
+
+        fun plan(mode: String): Plan = when (LocationModeStore.normalize(mode)) {
+            DeviceAction.LOCATION_OFF -> Plan.NONE
+            DeviceAction.LOCATION_ACTIVE -> Plan.FRESH_FIX
+            else -> Plan.LAST_KNOWN
+        }
+    }
 }

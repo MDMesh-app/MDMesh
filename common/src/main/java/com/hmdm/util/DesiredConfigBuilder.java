@@ -48,10 +48,26 @@ public final class DesiredConfigBuilder {
         d.setPolicies(policies(cfg));
         d.setKiosk(cfg.isKioskMode() ? kiosk(cfg, apps == null ? Collections.<Application>emptyList() : apps) : null);
         DesiredLocation loc = new DesiredLocation();
-        loc.setMode(cfg.getRequestUpdates() == RequestUpdatesType.GPS ? "active" : "passive");
+        loc.setMode(locationMode(cfg.getRequestUpdates()));
         d.setLocation(loc);
         d.setRevision(revision(d));
         return d;
+    }
+
+    /**
+     * GPS = a fresh fix each check-in; WIFI ("Network") = the OS's last-known fix; DONOTTRACK (the column default,
+     * also used for null) = read nothing. {@code off} is protocol 1.4: an older agent treats it as passive, which is
+     * why {@link #isDoNotTrack} also makes the server drop any location such a device still reports.
+     */
+    static String locationMode(RequestUpdatesType t) {
+        if (t == RequestUpdatesType.GPS) return "active";
+        if (t == RequestUpdatesType.WIFI) return "passive";
+        return "off";
+    }
+
+    /** True when the configuration says "Do not track": the server then stores no location for its devices. */
+    public static boolean isDoNotTrack(Configuration cfg) {
+        return cfg != null && "off".equals(locationMode(cfg.getRequestUpdates()));
     }
 
     private static Map<String, Boolean> policies(Configuration cfg) {

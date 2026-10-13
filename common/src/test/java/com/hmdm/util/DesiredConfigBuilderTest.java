@@ -194,6 +194,21 @@ public class DesiredConfigBuilderTest {
         assertNotEquals(blocked.getRevision(), DesiredConfigBuilder.build(unmanaged, Collections.emptyList()).getRevision());
     }
 
+    @Test
+    public void location_do_not_track_is_off_network_is_passive_gps_is_active() {
+        Configuration c = policiesConfig();
+        c.setRequestUpdates(RequestUpdatesType.DONOTTRACK);
+        assertEquals("Do not track must read no location at all", "off",
+                DesiredConfigBuilder.build(c, Collections.emptyList()).getLocation().getMode());
+        c.setRequestUpdates(RequestUpdatesType.WIFI);
+        assertEquals("passive", DesiredConfigBuilder.build(c, Collections.emptyList()).getLocation().getMode());
+        c.setRequestUpdates(RequestUpdatesType.GPS);
+        assertEquals("active", DesiredConfigBuilder.build(c, Collections.emptyList()).getLocation().getMode());
+        c.setRequestUpdates(null);
+        assertEquals("the column's own default is DONOTTRACK", "off",
+                DesiredConfigBuilder.build(c, Collections.emptyList()).getLocation().getMode());
+    }
+
     /** GOLDEN for the flat policy block. Kept separate from the kiosk fixture so an unmanaged
      *  disableFactoryReset there still proves the key is omitted. Update deliberately. */
     @Test

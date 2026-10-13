@@ -293,6 +293,7 @@ public class AgentResource {
             if (tel != null && tel.isObject()) {
                 ((com.fasterxml.jackson.databind.node.ObjectNode) tel).put("publicIp", clientIp(httpRequest));
             }
+            dropLocationWhenNotTracked(device, tel);
             // An authenticated device can still be hostile/buggy: cap the stored blob so a single
             // client can't bloat device_state via the 5s foreground poll.
             String telJson = tel == null ? null : tel.toString();
@@ -496,6 +497,30 @@ public class AgentResource {
             return null;
         }
         return AgentCapabilityTokens.boundedJson(capabilities.getTree());
+    }
+
+    /**
+     * "Do not track" is enforced here too, not only by the agent: agents before protocol 1.4 read the config's
+     * {@code location.mode = off} as passive and keep reporting last-known fixes, and any agent reports one before
+     * its first config.apply lands. So when the device's configuration says Do not track, the fix is removed from the
+     * telemetry before it is stored (and so never reaches the breadcrumb trail). Looked up only when a fix is present.
+     */
+    private void dropLocationWhenNotTracked(Device device, JsonNode tel) {
+        if (tel == null || !tel.path("dynamic").isObject() || !tel.path("dynamic").has("location")
+                || device.getConfigurationId() == null) {
+            return;
+        }
+        try {
+            Configuration cfg = unsecureDAO.getConfigurationById(device.getConfigurationId());
+            if (DesiredConfigBuilder.isDoNotTrack(cfg)) {
+                ((com.fasterxml.jackson.databind.node.ObjectNode) tel.path("dynamic")).remove("location");
+            }
+        } catch (Exception e) {
+            // Fail closed: when the configuration can't be read, don't store a location this check-in.
+            ((com.fasterxml.jackson.databind.node.ObjectNode) tel.path("dynamic")).remove("location");
+            logger.warn("Location dropped for {}: configuration {} unreadable: {}", device.getNumber(),
+                    device.getConfigurationId(), e.getMessage());
+        }
     }
 
     /** Pull dynamic.location out of the telemetry JSON and append it to the device's trail. */

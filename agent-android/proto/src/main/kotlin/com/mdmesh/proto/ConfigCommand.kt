@@ -10,7 +10,7 @@ import kotlinx.serialization.Serializable
  * @property policies only the keys the configuration manages (true = allowed/enabled).
  * @property kiosk present = ensure kiosk with this payload; absent = the configuration does not assert kiosk
  *   (exit only if the previously applied configuration did — see ConfigApplier).
- * @property location capture cadence, see [DeviceAction.LOCATION_MODE].
+ * @property location capture cadence (`passive`, `active`, or `off` since 1.4), see [DeviceAction.LOCATION_MODE].
  */
 @Serializable
 data class ConfigApplyPayload(

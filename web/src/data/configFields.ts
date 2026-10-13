@@ -73,7 +73,7 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'mobileData', label: 'Mobile data', type: 'tri', group: 'Network', focused: true, help: 'Mobile data: unmanaged, on, or off.' },
   { key: 'bluetooth', label: 'Bluetooth', type: 'tri', group: 'Network', focused: true, enforced: true, help: 'Bluetooth radio: unmanaged, on, or off.' },
   { key: 'gps', label: 'GPS / location', type: 'tri', group: 'Network', focused: true, help: 'Location radio: unmanaged, on, or off.' },
-  { key: 'requestUpdates', label: 'Location reporting', type: 'enum', group: 'Network', enforced: true, help: 'Location capture: GPS = fresh fix each check-in (accurate), otherwise passive last-known.', options: [
+  { key: 'requestUpdates', label: 'Location reporting', type: 'enum', group: 'Network', enforced: true, help: 'Location capture: GPS = fresh fix each check-in (accurate); Network = last-known fix (low battery); Do not track = no location is read or stored.', options: [
     { value: 'DONOTTRACK', label: 'Do not track' }, { value: 'GPS', label: 'GPS' }, { value: 'WIFI', label: 'Network (Wi-Fi/cell)' },
   ] },
   { key: 'wifiSSID', label: 'Provision Wi-Fi SSID', type: 'text', group: 'Network', help: 'Wi-Fi network to auto-join during enrollment.' },

@@ -62,7 +62,7 @@ document with an unchanged kiosk payload is a no-op on a device already in lock 
 Protocol 1.4 (v0.3.4): `requestUpdates = DONOTTRACK` ("Do not track", the column default) is sent as location mode
 `off`, and the agent then reads no location at all; older agents treat `off` as passive, so the server also removes
 the location from check-ins of devices on a Do-not-track configuration. `wifi` still only locks the Wi-Fi settings;
-the new `wifiRadio` key switches the radio (refused while Wi-Fi is the device's only network). `kioskLockButtons`
+the new `wifiRadio` key switches the radio (deferred, without blocking the rest, while Wi-Fi is the device's only network). `kioskLockButtons`
 blocks the power menu only; the new `kioskLockVolume` blocks volume in kiosk via `DISALLOW_ADJUST_VOLUME`, which
 Android pairs with muting, so it is a separate opt-in. New columns are NULL on upgrade, so revisions only move for
 configurations that use them, and for Do-not-track configurations (whose devices get one config.apply).

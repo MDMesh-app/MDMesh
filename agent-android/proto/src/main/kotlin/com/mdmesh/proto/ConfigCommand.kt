@@ -36,5 +36,8 @@ object ConfigOutcome {
     const val APPLIED = "applied"
     const val UNSUPPORTED = "unsupported"
     fun failed(reason: String): String = "failed: $reason"
+
+    /** 1.4: deliberately not applied now (e.g. Wi-Fi off while Wi-Fi is the only network); does not block. */
+    fun deferred(reason: String): String = "deferred: $reason"
     fun isFailed(outcome: String): Boolean = outcome.startsWith("failed")
 }

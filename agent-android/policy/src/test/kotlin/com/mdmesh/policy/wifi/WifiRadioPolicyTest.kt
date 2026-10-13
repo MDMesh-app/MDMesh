@@ -3,6 +3,7 @@ package com.mdmesh.policy.wifi
 import com.mdmesh.policy.PolicyOutcome
 import com.mdmesh.policy.UserRestrictions
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -45,7 +46,7 @@ class WifiRadioPolicyTest {
     @Test fun `off is refused while Wi-Fi is the only network, so the device stays reachable`() {
         val radio = FakeRadio(on = true, otherNetwork = false); val r = FakeRestrictions()
         val o = policy(radio, r, 34).setEnabled(false)
-        assertTrue(o is PolicyOutcome.Failed)
+        assertTrue("deferred, not failed: the rest of the configuration must still apply", o is PolicyOutcome.Deferred)
         assertEquals(true, radio.on)
         assertTrue("radio untouched", radio.calls.isEmpty())
         assertTrue("nothing locked either", r.active.isEmpty())
@@ -81,5 +82,20 @@ class WifiRadioPolicyTest {
     @Test fun `capability key is wifiRadio, distinct from the wifi settings lock`() {
         assertEquals("wifiRadio", policy(FakeRadio(on = true), FakeRestrictions(), 33).capabilityKey)
         assertEquals("no_change_wifi_state", UserRestrictions.DISALLOW_CHANGE_WIFI_STATE)
+    }
+
+    @Test fun `release lifts the toggle lock without touching the radio`() {
+        val radio = FakeRadio(on = false)
+        val r = FakeRestrictions().apply { active += UserRestrictions.DISALLOW_CHANGE_WIFI_STATE }
+        assertEquals(PolicyOutcome.Applied, policy(radio, r, 33).release())
+        assertTrue(r.active.isEmpty())
+        assertTrue(radio.calls.isEmpty())
+    }
+
+    @Test fun `a VPN is not another network (it usually runs over the Wi-Fi being turned off)`() {
+        assertTrue(WifiRadioPolicy.isOtherInternet(internet = true, validated = true, wifi = false, vpn = false))
+        assertFalse(WifiRadioPolicy.isOtherInternet(internet = true, validated = true, wifi = false, vpn = true))
+        assertFalse(WifiRadioPolicy.isOtherInternet(internet = true, validated = true, wifi = true, vpn = false))
+        assertFalse(WifiRadioPolicy.isOtherInternet(internet = true, validated = false, wifi = false, vpn = false))
     }
 }

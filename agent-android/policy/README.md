@@ -34,7 +34,8 @@ WifiPolicy (interface)
 
 `wifi` only locks or allows the Wi-Fi *settings*. Switching the radio is the separate `wifiRadio` toggle
 (`WifiRadioPolicy`, protocol 1.4): `WifiManager.setWifiEnabled` (Device Owners are exempt from the API 29
-restriction), refused while Wi-Fi is the only validated network, plus `DISALLOW_CHANGE_WIFI_STATE` on API 33+.
+restriction), deferred while Wi-Fi is the only validated non-VPN network, plus `DISALLOW_CHANGE_WIFI_STATE` on API 33+
+(lifted again when the configuration stops managing the key).
 Keeping them apart means a configuration stored with `wifi = false` never starts turning Wi-Fi off on upgrade.
 
 Adding a new policy (mobileData, gps, ...) means: define its

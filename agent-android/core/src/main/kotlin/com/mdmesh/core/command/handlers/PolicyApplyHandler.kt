@@ -46,6 +46,7 @@ class PolicyApplyHandler(
             PolicyOutcome.Applied -> CommandResults.done(command)
             PolicyOutcome.Unsupported -> CommandResults.unsupported(command)
             is PolicyOutcome.Failed -> CommandResults.failed(command, outcome.reason)
+            is PolicyOutcome.Deferred -> CommandResults.failed(command, outcome.reason)
         }
     }
 }

@@ -7,6 +7,7 @@ import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
 import android.os.Build
 import com.mdmesh.policy.PolicyOutcome
+import com.mdmesh.policy.ReleasablePolicy
 import com.mdmesh.policy.TogglePolicy
 import com.mdmesh.policy.UserRestrictions
 
@@ -27,11 +28,13 @@ interface WifiRadio {
  * meaning, so upgrading never turns a device's Wi-Fi off. Polarity follows [TogglePolicy] (`true` = on).
  *
  *  - **Off**: `WifiManager.setWifiEnabled(false)`. Deprecated in API 29 and a no-op for ordinary apps targeting 29+,
- *    but Device Owners are exempt (WifiManager javadoc, "Deprecation Exemptions"). Refused with a failure while
- *    Wi-Fi is the device's only network, because the device would otherwise drop off the server for good.
+ *    but Device Owners are exempt (WifiManager javadoc, "Deprecation Exemptions"). [PolicyOutcome.Deferred] while
+ *    Wi-Fi is the device's only network (a VPN does not count), because the device would otherwise drop off the
+ *    server for good; deferred does not block the rest of the configuration and is retried on the next re-apply.
  *    On API 33+ `DISALLOW_CHANGE_WIFI_STATE` then stops the user (and airplane mode) turning it back on; below 33 the
  *    user can re-enable it from quick settings until the next re-apply.
  *  - **On**: lifts that restriction and turns the radio on (the user may change it afterwards).
+ *  - **Not managed** after Off ([release]): lifts the restriction and leaves the radio as it is.
  *
  * [restrict] is `(restrictionKey, add)`; [sdkInt] is passed in so the logic runs as a plain JVM test.
  */
@@ -40,7 +43,7 @@ class WifiRadioPolicy(
     private val restrict: (String, Boolean) -> Unit,
     private val sdkInt: Int,
     private val isDeviceOwner: () -> Boolean,
-) : TogglePolicy {
+) : TogglePolicy, ReleasablePolicy {
 
     override val capabilityKey: String = CAPABILITY_KEY
 
@@ -49,6 +52,11 @@ class WifiRadioPolicy(
     override fun setEnabled(enabled: Boolean): PolicyOutcome = runCatching {
         if (enabled) turnOn() else turnOff()
     }.getOrElse { PolicyOutcome.Failed(it.message ?: "wifi radio failed") }
+
+    override fun release(): PolicyOutcome = runCatching {
+        if (sdkInt >= TOGGLE_LOCK_SDK) restrict(UserRestrictions.DISALLOW_CHANGE_WIFI_STATE, false)
+        PolicyOutcome.Applied
+    }.getOrElse { PolicyOutcome.Failed(it.message ?: "wifi radio release failed") }
 
     private fun turnOn(): PolicyOutcome {
         if (sdkInt >= TOGGLE_LOCK_SDK) restrict(UserRestrictions.DISALLOW_CHANGE_WIFI_STATE, false)
@@ -59,11 +67,11 @@ class WifiRadioPolicy(
     private fun turnOff(): PolicyOutcome {
         val refusal = when {
             !radio.isEnabled() -> null
-            !radio.hasNonWifiInternet() -> ONLY_NETWORK
-            !radio.setEnabled(false) -> "platform refused to turn Wi-Fi off"
+            !radio.hasNonWifiInternet() -> PolicyOutcome.Deferred(ONLY_NETWORK)
+            !radio.setEnabled(false) -> PolicyOutcome.Failed("platform refused to turn Wi-Fi off")
             else -> null
         }
-        if (refusal != null) return PolicyOutcome.Failed(refusal)
+        if (refusal != null) return refusal
         if (sdkInt >= TOGGLE_LOCK_SDK) restrict(UserRestrictions.DISALLOW_CHANGE_WIFI_STATE, true)
         return PolicyOutcome.Applied
     }
@@ -76,6 +84,10 @@ class WifiRadioPolicy(
 
         private const val ONLY_NETWORK =
             "Wi-Fi left on: it is the device's only network, turning it off would disconnect it"
+
+        /** A network that keeps the device reachable without Wi-Fi: validated internet, not Wi-Fi, not a VPN. */
+        fun isOtherInternet(internet: Boolean, validated: Boolean, wifi: Boolean, vpn: Boolean): Boolean =
+            internet && validated && !wifi && !vpn
     }
 }
 
@@ -94,9 +106,13 @@ class AndroidWifiRadio(context: Context) : WifiRadio {
     @SuppressLint("MissingPermission") // ACCESS_NETWORK_STATE is declared in the app manifest
     override fun hasNonWifiInternet(): Boolean = connectivity.allNetworks.any { n ->
         val caps = connectivity.getNetworkCapabilities(n) ?: return@any false
-        caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&
-            !caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+        WifiRadioPolicy.isOtherInternet(
+            internet = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET),
+            validated = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED),
+            wifi = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI),
+            vpn = caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) ||
+                !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN),
+        )
     }
 }
 

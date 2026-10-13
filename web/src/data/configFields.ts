@@ -64,18 +64,18 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'kioskNotifications', label: 'Notifications', type: 'tri', group: 'Kiosk', enforced: true, help: 'Allow the notification shade while in kiosk.' },
   { key: 'kioskSystemInfo', label: 'System info', type: 'tri', group: 'Kiosk', enforced: true, help: 'Show the status/system-info bar while in kiosk.' },
   { key: 'kioskKeyguard', label: 'Lock screen', type: 'tri', group: 'Kiosk', enforced: true, help: 'Allow the keyguard / lock screen while in kiosk.' },
-  { key: 'kioskLockButtons', label: 'Lock hardware buttons', type: 'tri', group: 'Kiosk', enforced: true, help: 'Block the power menu while in kiosk. Volume is a separate setting.' },
+  { key: 'kioskLockButtons', label: 'Lock hardware buttons', type: 'tri', group: 'Kiosk', enforced: true, help: 'Disable power/volume buttons while in kiosk.' },
   { key: 'kioskLockVolume', label: 'Lock volume in kiosk', type: 'tri', group: 'Kiosk', enforced: true, help: 'Block volume changes while in kiosk. Android mutes the device while volume is locked; released when kiosk ends.' },
   { key: 'kioskScreenOn', label: 'Keep screen on', type: 'tri', group: 'Kiosk', help: 'Force the screen to stay awake while in kiosk.' },
   { key: 'showWifi', label: 'Show Wi-Fi on error', type: 'tri', group: 'Kiosk', help: 'Surface Wi-Fi settings if the device loses connectivity in kiosk.' },
 
   // ── Network ─────────────────────────────────────────────────────────────-─
-  { key: 'wifi', label: 'Wi-Fi', type: 'tri', group: 'Network', focused: true, enforced: true, help: 'Wi-Fi settings: Off locks them (users cannot change networks); it does not turn the radio off. Auto leaves an existing lock on the device.' },
-  { key: 'wifiRadio', label: 'Wi-Fi radio', type: 'tri', group: 'Network', enforced: true, help: 'On turns Wi-Fi on. Off turns it off (Android 13+ also stops users turning it back on); a device whose only network is Wi-Fi refuses Off so it stays reachable. Auto leaves the radio alone.' },
+  { key: 'wifi', label: 'Wi-Fi', type: 'tri', group: 'Network', focused: true, enforced: true, help: 'Wi-Fi radio: unmanaged, force on, or force off.' },
+  { key: 'wifiRadio', label: 'Wi-Fi radio', type: 'tri', group: 'Network', enforced: true, help: 'On turns Wi-Fi on. Off turns it off (Android 13+ also stops users turning it back on); a device whose only network is Wi-Fi keeps it on and reports why, so it stays reachable. Auto leaves the radio alone and lifts the lock an earlier Off set.' },
   { key: 'mobileData', label: 'Mobile data', type: 'tri', group: 'Network', focused: true, help: 'Mobile data: unmanaged, on, or off.' },
   { key: 'bluetooth', label: 'Bluetooth', type: 'tri', group: 'Network', focused: true, enforced: true, help: 'Bluetooth radio: unmanaged, on, or off.' },
   { key: 'gps', label: 'GPS / location', type: 'tri', group: 'Network', focused: true, help: 'Location radio: unmanaged, on, or off.' },
-  { key: 'requestUpdates', label: 'Location reporting', type: 'enum', group: 'Network', enforced: true, help: 'Location capture: GPS = fresh fix each check-in (accurate); Network = last-known fix (low battery); Do not track = no location is read or stored.', options: [
+  { key: 'requestUpdates', label: 'Location reporting', type: 'enum', group: 'Network', enforced: true, help: 'Location capture: GPS = fresh fix each check-in (accurate), otherwise passive last-known.', options: [
     { value: 'DONOTTRACK', label: 'Do not track' }, { value: 'GPS', label: 'GPS' }, { value: 'WIFI', label: 'Network (Wi-Fi/cell)' },
   ] },
   { key: 'wifiSSID', label: 'Provision Wi-Fi SSID', type: 'text', group: 'Network', help: 'Wi-Fi network to auto-join during enrollment.' },

@@ -189,6 +189,18 @@ class CheckInCoordinatorTest {
     }
 
     @Test
+    fun `a rejected check-in is not recorded as reaching the server`() = runTest {
+        val last = InMemoryLastCheckIn()
+        val api = FakeMdmApi().apply { checkInResponse = ResponseEnvelope(status = "ERROR", message = "nope") }
+        val coordinator = coordinator(api, PendingResults(), syncStatus = SyncStatus(last))
+        runCatching { coordinator.runOnce() }
+        assertNull("ERROR envelope", last.okAtMs)
+        api.checkInResponse = ResponseEnvelope(status = "OK", data = null)
+        runCatching { coordinator.runOnce() }
+        assertNull("OK without data", last.okAtMs)
+    }
+
+    @Test
     fun `the check-in counts as reaching the server before its commands run`() = runTest {
         // A long command (an app.install download) must not look like a missed check-in.
         val api = FakeMdmApi().apply {

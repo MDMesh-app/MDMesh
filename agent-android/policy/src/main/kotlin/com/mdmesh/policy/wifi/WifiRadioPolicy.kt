@@ -135,7 +135,8 @@ class WifiRadioPolicy(
         val on = radio.setEnabled(true) || radio.isEnabled()
         if (on) {
             state.heldOn = true
-            state.offSinceMs = null
+            // Not cleared: the next heartbeat that sees Wi-Fi on clears it; if the radio never came up, this retries.
+            state.offSinceMs = now
         }
         return on
     }

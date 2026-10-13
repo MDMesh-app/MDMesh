@@ -49,7 +49,7 @@ class SharedPrefsConfigStateStore(context: Context) : ConfigStateStore {
     override fun load(): ConfigApplyPayload? = ConfigStateCodec.decode(prefs.getString(KEY_DOC, null))
     override fun revision(): String? = prefs.getString(KEY_REV, null)
     override fun clear() { prefs.edit().remove(KEY_DOC).remove(KEY_REV).apply() }
-    override fun markStale() { prefs.edit().putString(KEY_REV, ConfigStateStore.STALE_REVISION).apply() }
+    override fun markStale() { prefs.edit().putString(KEY_REV, ConfigStateStore.STALE_REVISION).commit() }
     override var deliveredRevision: String?
         get() = prefs.getString(KEY_DELIVERED, null)
         set(v) { prefs.edit().putString(KEY_DELIVERED, v).apply() }

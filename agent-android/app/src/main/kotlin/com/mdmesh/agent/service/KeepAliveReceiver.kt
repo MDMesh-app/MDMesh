@@ -40,7 +40,7 @@ class KeepAliveReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                runCatching { configApplier.selfHealWifiRadio(syncStatus.lastSuccessAtMs) }
+                runCatching { configApplier.selfHealWifiRadio { syncStatus.lastSuccessAtMs } }
                     .onFailure { Log.w(TAG, "wifi radio self-heal check failed", it) }
                 coordinator.runOnce()
             } catch (e: Exception) {

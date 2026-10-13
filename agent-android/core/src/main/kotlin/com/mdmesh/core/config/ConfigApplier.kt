@@ -109,10 +109,13 @@ class ConfigApplier(
      * Heartbeat: undo a `wifiRadio` Off after which the device could not reach the server ([WifiRadioPolicy.selfHeal]).
      * When Wi-Fi was turned back on, the store reports a stale revision, so the server re-sends config.apply, whose
      * result then shows the Off as deferred. Serialized with [apply] and [reapplyPersisted].
+     *
+     * @param lastCheckInOkMs when a check-in last reached the server (wall clock), null when never.
      */
-    suspend fun selfHealWifiRadio(lastCheckInOkMs: Long?): Boolean = mutex.withLock {
+    suspend fun selfHealWifiRadio(lastCheckInOkMs: () -> Long?): Boolean = mutex.withLock {
         val radio = wifiRadio() ?: return@withLock false
-        if (!radio.selfHeal(lastCheckInOkMs)) return@withLock false
+        // Read under the lock, not before waiting for it.
+        if (!radio.selfHeal(lastCheckInOkMs())) return@withLock false
         store.markStale()
         true
     }

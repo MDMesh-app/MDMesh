@@ -156,9 +156,9 @@ class ConfigApplierTest {
         assertEquals(false, radio.on); assertEquals("h1", store.revision())
 
         now = WifiRadioPolicy.HEAL_AFTER_MS - 1
-        assertFalse(a.selfHealWifiRadio(lastCheckInOkMs = null))
+        assertFalse(a.selfHealWifiRadio { null })
         now = WifiRadioPolicy.HEAL_AFTER_MS
-        assertTrue(a.selfHealWifiRadio(lastCheckInOkMs = null))
+        assertTrue(a.selfHealWifiRadio { null })
         assertEquals("Wi-Fi back on", true, radio.on)
         assertEquals("never matches, so the server re-sends config.apply", ConfigStateStore.STALE_REVISION,
             store.revision())
@@ -196,7 +196,7 @@ class ConfigApplierTest {
         assertEquals(false, radio.on); assertEquals("A", store.load()?.revision)
 
         now = WifiRadioPolicy.HEAL_AFTER_MS
-        assertTrue(a.selfHealWifiRadio(lastCheckInOkMs = null))
+        assertTrue(a.selfHealWifiRadio { null })
         val resent = a.apply(b)
         assertTrue(resent.outcomes["policies.wifiRadio"]!!.startsWith("deferred: no connection to the server"))
         assertEquals(true, radio.on)
@@ -211,7 +211,7 @@ class ConfigApplierTest {
     @Test fun `no Wi-Fi radio policy, nothing to heal`() = runTest {
         val store = InMemoryConfigStateStore()
         store.save(ConfigApplyPayload(revision = "n1"))
-        assertFalse(ConfigApplier(emptyMap(), kiosk(FakeController()), {}, store).selfHealWifiRadio(null))
+        assertFalse(ConfigApplier(emptyMap(), kiosk(FakeController()), {}, store).selfHealWifiRadio { null })
         assertEquals("n1", store.revision())
     }
 }

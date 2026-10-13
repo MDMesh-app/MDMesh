@@ -119,7 +119,23 @@ class WifiRadioPolicyTest {
         assertEquals(true, radio.on)
         assertTrue("toggle lock lifted", r.active.isEmpty())
         assertTrue(state.heldOn)
+        assertEquals("still armed until Wi-Fi is seen on", now, state.offSinceMs)
         assertFalse("nothing more to heal", p.selfHeal(100 * min))
+        assertEquals(null, state.offSinceMs)
+    }
+
+    @Test fun `an accepted enable that never brings Wi-Fi up is retried after another wait`() {
+        val radio = FakeRadio(on = true, otherNetwork = true)
+        val p = healing(radio, FakeRestrictions(), InMemoryWifiRadioOffState())
+        p.setEnabled(false)
+        now = heal
+        assertTrue(p.selfHeal(null))
+        radio.on = false // the platform accepted, but the radio never came up
+        now = 2 * heal - min
+        assertFalse(p.selfHeal(null))
+        now = 2 * heal
+        assertTrue(p.selfHeal(null))
+        assertEquals(listOf(false, true, true), radio.calls)
     }
 
     @Test fun `a device that checks in on every heartbeat never heals, even when heartbeats run late`() {

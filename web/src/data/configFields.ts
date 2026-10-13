@@ -70,9 +70,9 @@ export const DEFAULT_SEGMENTS: TriSegment[] = [
 
 // Behaviour that depends on the agent version (agent 0.3.4 / protocol 1.4).
 const WIFI_HELP = 'Block locks the Wi-Fi settings so users cannot change networks. It does not turn Wi-Fi off: that is Wi-Fi radio. Allow lifts the lock.';
-const WIFI_RADIO_HELP = 'Needs agent 0.3.4 or later. On turns Wi-Fi on. Off turns it off and, on Android 13 and later, stops users turning it back on. Off is deferred while Wi-Fi is the only network, so the device stays reachable and reports why. Not managed lifts the lock and leaves the radio as it is.';
+const WIFI_RADIO_HELP = 'Needs agent 0.3.4 or later. On turns Wi-Fi on. Off turns it off and, on Android 13 and later, stops users turning it back on. Off waits while Wi-Fi is the only network, so the device stays reachable, and shows as deferred. If the device loses its other network later (SIM removed, cable unplugged), it turns Wi-Fi back on after 10 minutes offline and Off waits again until another network is back. Not managed lifts the lock and leaves the radio as it is.';
 const LOCK_BUTTONS_HELP = 'Block the power menu in kiosk. Volume buttons are a separate setting, Lock volume buttons (kiosk).';
-const LOCK_VOLUME_HELP = 'Applies in kiosk mode, with agent 0.3.4 or later: blocks volume changes. Android mutes the device while volume is locked; the lock is lifted when kiosk ends.';
+const LOCK_VOLUME_HELP = 'Applies in kiosk mode, with agent 0.3.4 or later: blocks volume changes. Android mutes the device while volume is locked, so Ring device is silent on it; the lock is lifted when kiosk ends.';
 const LOCATION_HELP = 'Do not track collects no location with agent 0.3.4 or later, and the server drops any location an older agent still reports. Last known (passive) reports the location the device already has at each check-in; GPS (fresh fix) asks for a new fix each time (more accurate, more battery).';
 
 export const GROUP_ORDER: FieldGroup[] = [

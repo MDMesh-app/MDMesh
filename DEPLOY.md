@@ -49,16 +49,18 @@ first update, which pins the versions (or set `SERVER_VERSION`/`WEB_VERSION`/`CU
 
 > **Upgrading to v0.3.4?** Update the agents (Settings → Updates) and check two things: location reporting and
 > kiosk PINs. What changes:
-> - **Do not track** now collects no location. It is the default of the configurations the installer creates, so
->   devices on them stop reporting location: agent 0.3.4 reads none, and the server drops what older agents still
->   send. To keep location, set the configuration's **Location reporting** to **Last known (passive)** (called
->   *Network* before v0.3.4) or **GPS (fresh fix)**.
+> - **Do not track** now collects no location. It is the default of the configurations the installer creates and of
+>   new configurations, so devices on them stop reporting location: agent 0.3.4 reads none, and the server drops what
+>   older agents still send. To keep location, set the configuration's **Location reporting** to **Last known
+>   (passive)** (called *Network* before v0.3.4) or **GPS (fresh fix)**.
 > - New configuration settings, both off until you set them (existing configurations are unchanged): **Wi-Fi radio**
->   turns Wi-Fi on or off (Off waits while Wi-Fi is the device's only network, so it stays reachable); the existing
->   Wi-Fi setting, now labelled **Wi-Fi settings**, still only locks the Wi-Fi settings. **Lock volume buttons
->   (kiosk)** blocks volume changes in kiosk (Android mutes the device while it is locked); **Lock hardware buttons**
->   blocks only the power menu. Both new settings need agent 0.3.4; older agents report Wi-Fi radio as unsupported and
->   ignore the volume lock.
+>   turns Wi-Fi on or off. Off waits while Wi-Fi is the device's only network, so it stays reachable, and the console
+>   shows it as deferred. If a device loses its other network later (SIM removed, cable unplugged), it turns Wi-Fi back
+>   on after 10 minutes offline, and Off waits again until another network is back. The existing Wi-Fi setting, now
+>   labelled **Wi-Fi settings**, still only locks the Wi-Fi settings. **Lock volume buttons (kiosk)** blocks volume
+>   changes in kiosk; Android mutes the device while it is locked, so **Ring device** is silent on it. **Lock hardware
+>   buttons** blocks only the power menu. Both new settings need agent 0.3.4; older agents report Wi-Fi radio as
+>   unsupported and ignore the volume lock.
 > - The Headwind launcher's provisioning QR routes (`/rest/public/qr/*`) also answer 404 unless `LEGACY_DEVICE_API=1`.
 >   The console draws the agent's enrollment QR itself and doesn't use them. The three configurations the installer
 >   creates get a new QR key on the first start.

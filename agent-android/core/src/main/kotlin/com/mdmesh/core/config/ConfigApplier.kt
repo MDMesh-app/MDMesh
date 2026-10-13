@@ -33,12 +33,16 @@ class ConfigApplier(
 ) {
     private val mutex = Mutex()
 
-    suspend fun apply(doc: ConfigApplyPayload): ConfigApplyResult = mutex.withLock { applyLocked(doc) }
+    suspend fun apply(doc: ConfigApplyPayload): ConfigApplyResult = mutex.withLock {
+        // A changed configuration ends a Wi-Fi radio self-heal hold; a re-send of the same one does not (nor does the
+        // boot re-apply, which does not come through here).
+        if (doc.revision != store.deliveredRevision) wifiRadio()?.endHold()
+        store.deliveredRevision = doc.revision
+        applyLocked(doc)
+    }
 
     /** @param persist false for the boot re-apply: the document is already stored (or stale until re-sent). */
     private suspend fun applyLocked(doc: ConfigApplyPayload, persist: Boolean = true): ConfigApplyResult {
-        // A changed configuration ends a Wi-Fi radio self-heal hold; a re-send or boot re-apply of it does not.
-        if (doc.revision != store.load()?.revision) wifiRadio()?.endHold()
         val outcomes = linkedMapOf<String, String>()
         for ((key, enabled) in doc.policies) {
             outcomes["policies.$key"] = toOutcome(toggles[key]?.setEnabled(enabled))

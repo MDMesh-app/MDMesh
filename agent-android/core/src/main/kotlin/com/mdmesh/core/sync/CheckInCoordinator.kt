@@ -54,7 +54,6 @@ class CheckInCoordinator @Inject constructor(
     suspend fun runOnce(): Unit = mutex.withLock {
         try {
             cycle()
-            syncStatus.recordSuccess()
         } catch (t: Throwable) {
             if (t !is CancellationException) syncStatus.recordFailure(t)
             throw t
@@ -93,6 +92,8 @@ class CheckInCoordinator @Inject constructor(
             eventSink.restore(bufferedEvents)
             throw CheckInException(response.message ?: "check-in rejected")
         }
+        // The server answered: recorded now, not after the commands (an app.install can download for minutes).
+        syncStatus.recordSuccess()
         pending.delivered(data.resultsAccepted)
         // Before this batch runs: its installs are judged by what this server guarantees.
         installIntegrity.update(data.installIntegrity)

@@ -103,29 +103,48 @@ class WifiRadioPolicyTest {
         assertTrue((o as PolicyOutcome.Deferred).reason.startsWith("no other network"))
     }
 
+    private val heal = WifiRadioPolicy.HEAL_AFTER_MS
+
     @Test fun `Wi-Fi comes back on when the server is unreachable, even with validated cellular`() {
         // The server is only reachable over the Wi-Fi LAN: cellular is up, but no check-in gets through.
         val radio = FakeRadio(on = true, otherNetwork = true); val r = FakeRestrictions()
         val state = InMemoryWifiRadioOffState(); val p = healing(radio, r, state)
         now = 100 * min
         assertEquals(PolicyOutcome.Applied, p.setEnabled(false))
-        now += 9 * min
+        now += heal - min
         assertFalse(p.selfHeal(lastCheckInOkMs = 100 * min))
         assertEquals(false, radio.on)
         now += min
-        assertTrue("10 minutes without reaching the server: Wi-Fi back on", p.selfHeal(100 * min))
+        assertTrue("long enough without reaching the server: Wi-Fi back on", p.selfHeal(100 * min))
         assertEquals(true, radio.on)
         assertTrue("toggle lock lifted", r.active.isEmpty())
         assertTrue(state.heldOn)
         assertFalse("nothing more to heal", p.selfHeal(100 * min))
     }
 
-    @Test fun `no heal within 10 minutes of turning off, even when the last check-in is older`() {
+    @Test fun `a device that checks in on every heartbeat never heals, even when heartbeats run late`() {
+        // The heartbeat is a 10-minute alarm that fires late on an idle device (setAndAllowWhileIdle): the heal
+        // must wait for several missed heartbeats, not one late one.
+        val heartbeatMs = 10 * min
+        assertTrue(heal >= 3 * heartbeatMs)
         val radio = FakeRadio(on = true, otherNetwork = true)
         val p = healing(radio, FakeRestrictions(), InMemoryWifiRadioOffState())
-        now = 60 * min
         p.setEnabled(false)
-        now += 9 * min
+        var lastOk = now
+        for (gap in listOf(10L, 17L, 12L, 17L, 16L, 10L, 17L, 17L)) {
+            now += gap * min
+            assertFalse("heartbeat ${gap}m after a good check-in", p.selfHeal(lastOk))
+            lastOk = now // this heartbeat's check-in reaches the server
+        }
+        assertEquals(false, radio.on)
+    }
+
+    @Test fun `no heal soon after turning off, even when the last check-in is older`() {
+        val radio = FakeRadio(on = true, otherNetwork = true)
+        val p = healing(radio, FakeRestrictions(), InMemoryWifiRadioOffState())
+        now = 600 * min
+        p.setEnabled(false)
+        now += heal - min
         assertFalse(p.selfHeal(lastCheckInOkMs = 0))
         assertFalse(p.selfHeal(lastCheckInOkMs = null))
         assertEquals(false, radio.on)
@@ -135,10 +154,11 @@ class WifiRadioPolicyTest {
         val radio = FakeRadio(on = true, otherNetwork = true)
         val p = healing(radio, FakeRestrictions(), InMemoryWifiRadioOffState())
         p.setEnabled(false)
-        now = 30 * min
-        assertFalse("reached the server 5 minutes ago", p.selfHeal(lastCheckInOkMs = 25 * min))
-        now = 35 * min
-        assertTrue(p.selfHeal(lastCheckInOkMs = 25 * min))
+        val ok = heal + 5 * min
+        now = ok + heal - min
+        assertFalse(p.selfHeal(lastCheckInOkMs = ok))
+        now = ok + heal
+        assertTrue(p.selfHeal(lastCheckInOkMs = ok))
     }
 
     @Test fun `a refused enable keeps the state and the next heartbeat retries`() {
@@ -146,12 +166,12 @@ class WifiRadioPolicyTest {
         val state = InMemoryWifiRadioOffState(); val p = healing(radio, r, state)
         p.setEnabled(false)
         radio.platformAccepts = false
-        now = 20 * min
+        now = heal
         assertFalse(p.selfHeal(null))
         assertTrue("lock lifted anyway, so the user can turn it on", r.active.isEmpty())
         assertEquals(0L, state.offSinceMs); assertFalse(state.heldOn)
         radio.platformAccepts = true
-        now = 30 * min
+        now = heal + 10 * min
         assertTrue(p.selfHeal(null))
         assertEquals(true, radio.on)
     }
@@ -159,7 +179,7 @@ class WifiRadioPolicyTest {
     @Test fun `held on after a heal, Off is deferred until the configuration changes`() {
         val radio = FakeRadio(on = true, otherNetwork = true); val r = FakeRestrictions()
         val state = InMemoryWifiRadioOffState(); val p = healing(radio, r, state)
-        p.setEnabled(false); now = 10 * min; assertTrue(p.selfHeal(null))
+        p.setEnabled(false); now = heal; assertTrue(p.selfHeal(null))
         // A re-send or a boot re-apply (a new instance over the persisted state) must not strand it again.
         val again = healing(radio, r, state).setEnabled(false)
         assertTrue(again is PolicyOutcome.Deferred && again.reason.startsWith("no connection to the server"))
@@ -179,10 +199,10 @@ class WifiRadioPolicyTest {
     @Test fun `the off time survives a reboot and a boot re-apply does not restart it`() {
         val radio = FakeRadio(on = true, otherNetwork = true); val state = InMemoryWifiRadioOffState()
         healing(radio, FakeRestrictions(), state).setEnabled(false)
-        now = 8 * min
+        now = heal - 2 * min
         val afterBoot = healing(radio, FakeRestrictions(), state)
         assertEquals(PolicyOutcome.Applied, afterBoot.setEnabled(false))
-        now = 10 * min
+        now = heal
         assertTrue(afterBoot.selfHeal(null))
     }
 
@@ -207,11 +227,11 @@ class WifiRadioPolicyTest {
     @Test fun `no self-heal when the policy did not turn Wi-Fi off`() {
         val radio = FakeRadio(on = false, otherNetwork = false); val state = InMemoryWifiRadioOffState()
         val p = healing(radio, FakeRestrictions(), state)
-        now = 60 * min
+        now = 10 * heal
         assertFalse(p.selfHeal(null))
         assertEquals(false, radio.on)
         p.setEnabled(true); radio.on = false
-        now = 120 * min
+        now = 20 * heal
         assertFalse("On clears it", p.selfHeal(null))
     }
 
@@ -223,7 +243,7 @@ class WifiRadioPolicyTest {
         now = 5 * min // e.g. the clock reset after the battery ran flat
         assertFalse(p.selfHeal(lastCheckInOkMs = 999 * min))
         assertEquals(5 * min, state.offSinceMs)
-        now = 15 * min
+        now = 5 * min + heal
         assertTrue("a check-in from before the jump is ignored", p.selfHeal(lastCheckInOkMs = 999 * min))
     }
 
@@ -233,8 +253,22 @@ class WifiRadioPolicyTest {
         p.setEnabled(false)
         assertEquals(PolicyOutcome.Applied, p.release())
         assertTrue(r.active.isEmpty()); assertEquals(false, radio.on)
-        now = 10 * min
+        now = heal
         assertTrue(p.selfHeal(null)); assertEquals(true, radio.on)
+    }
+
+    @Test fun `Wi-Fi seen on disarms the heal, so a later user-driven off is left alone`() {
+        val radio = FakeRadio(on = true, otherNetwork = true); val state = InMemoryWifiRadioOffState()
+        val p = healing(radio, FakeRestrictions(), state)
+        p.setEnabled(false); p.release()
+        radio.on = true // the user turns Wi-Fi on (the key is not managed any more)
+        now = 10 * min
+        assertFalse(p.selfHeal(null))
+        assertEquals(null, state.offSinceMs)
+        radio.on = false // ... and off again, and the device then stops checking in
+        now = 10 * heal
+        assertFalse(p.selfHeal(null))
+        assertEquals(false, radio.on)
     }
 
     @Test fun `Not managed with Wi-Fi on clears the off state`() {

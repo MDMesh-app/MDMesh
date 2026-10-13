@@ -189,6 +189,22 @@ class CheckInCoordinatorTest {
     }
 
     @Test
+    fun `the check-in counts as reaching the server before its commands run`() = runTest {
+        // A long command (an app.install download) must not look like a missed check-in.
+        val api = FakeMdmApi().apply {
+            checkInResponse = ResponseEnvelope(
+                status = "OK",
+                data = AgentCheckInResponse(commands = listOf(command("c1").copy(type = "test.hang"))),
+            )
+        }
+        val last = InMemoryLastCheckIn()
+        val cycle = launch { coordinator(api, PendingResults(), syncStatus = SyncStatus(last)).runOnce() }
+        testScheduler.advanceUntilIdle()
+        assertNotNull("recorded while the command is still running", last.okAtMs)
+        cycle.cancel()
+    }
+
+    @Test
     fun `delivered acks leave the persisted buffer only after the check-in succeeds`() = runTest {
         val backup = FakeBackup()
         val old = CommandResult(commandId = "old", status = CommandStatus.DONE, completedAt = "t")

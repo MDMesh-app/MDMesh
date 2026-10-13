@@ -182,6 +182,32 @@ class ConfigApplierTest {
         assertEquals(false, radio.on)
     }
 
+    @Test fun `a document with a failed section keeps the hold on its re-send (no off-heal loop)`() = runTest {
+        // Stored A; the admin publishes B = Off plus a kiosk that fails. B is never saved, so the hold must belong to
+        // B itself, or every re-send of B would end it and turn Wi-Fi off again.
+        val radio = StrandableRadio(); val state = InMemoryWifiRadioOffState(); val store = InMemoryConfigStateStore()
+        var now = 0L
+        val policy = WifiRadioPolicy(radio, { _, _ -> }, 33, state, { now }) { true }
+        val failingKiosk = kiosk(FakeController(KioskResult.Failed("no app")))
+        val a = ConfigApplier(mapOf("wifiRadio" to policy), failingKiosk, {}, store)
+        a.apply(ConfigApplyPayload(revision = "A"))
+        val b = ConfigApplyPayload(revision = "B", policies = mapOf("wifiRadio" to false), kiosk = KioskApplyPayload())
+        assertFalse(ConfigApplier.succeeded(a.apply(b)))
+        assertEquals(false, radio.on); assertEquals("A", store.load()?.revision)
+
+        now = WifiRadioPolicy.HEAL_AFTER_MS
+        assertTrue(a.selfHealWifiRadio(lastCheckInOkMs = null))
+        val resent = a.apply(b)
+        assertTrue(resent.outcomes["policies.wifiRadio"]!!.startsWith("deferred: no connection to the server"))
+        assertEquals(true, radio.on)
+        a.reapplyPersisted() // boot: replays A, which does not end the hold either
+        assertTrue(a.apply(b).outcomes["policies.wifiRadio"]!!.startsWith("deferred"))
+        assertEquals(true, radio.on)
+
+        a.apply(b.copy(revision = "C"))
+        assertEquals("a changed configuration applies Off again", false, radio.on)
+    }
+
     @Test fun `no Wi-Fi radio policy, nothing to heal`() = runTest {
         val store = InMemoryConfigStateStore()
         store.save(ConfigApplyPayload(revision = "n1"))

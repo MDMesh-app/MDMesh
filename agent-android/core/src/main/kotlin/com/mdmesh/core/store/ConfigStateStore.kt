@@ -22,6 +22,12 @@ interface ConfigStateStore {
      */
     fun markStale()
 
+    /**
+     * Revision of the last document the server delivered, applied in full or not (one with a failed section is never
+     * saved). A Wi-Fi radio self-heal hold belongs to it: only a different revision ends the hold.
+     */
+    var deliveredRevision: String?
+
     companion object {
         /** Well-formed (64 hex) but never a real revision, so it never matches the configuration. */
         val STALE_REVISION = "0".repeat(64)
@@ -44,7 +50,12 @@ class SharedPrefsConfigStateStore(context: Context) : ConfigStateStore {
     override fun revision(): String? = prefs.getString(KEY_REV, null)
     override fun clear() { prefs.edit().remove(KEY_DOC).remove(KEY_REV).apply() }
     override fun markStale() { prefs.edit().putString(KEY_REV, ConfigStateStore.STALE_REVISION).apply() }
-    private companion object { const val KEY_DOC = "doc"; const val KEY_REV = "revision" }
+    override var deliveredRevision: String?
+        get() = prefs.getString(KEY_DELIVERED, null)
+        set(v) { prefs.edit().putString(KEY_DELIVERED, v).apply() }
+    private companion object {
+        const val KEY_DOC = "doc"; const val KEY_REV = "revision"; const val KEY_DELIVERED = "deliveredRevision"
+    }
 }
 
 class InMemoryConfigStateStore : ConfigStateStore {
@@ -55,4 +66,5 @@ class InMemoryConfigStateStore : ConfigStateStore {
     override fun revision(): String? = rev
     override fun clear() { doc = null; rev = null }
     override fun markStale() { rev = ConfigStateStore.STALE_REVISION }
+    override var deliveredRevision: String? = null
 }

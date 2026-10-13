@@ -117,13 +117,19 @@ class WifiRadioPolicy(
         .getOrDefault(false)
 
     private fun selfHealUnguarded(lastCheckInOkMs: Long?): Boolean {
-        val offSince = state.offSinceMs
         val now = clock()
-        // The clock went back: restart from now rather than wait for the old time to come round again.
-        if (offSince != null && now < offSince) state.offSinceMs = now
+        val offSince = state.offSinceMs?.let { since ->
+            when {
+                // Wi-Fi is on again (the user below Android 13, or after Not managed): nothing to heal any more.
+                radio.isEnabled() -> null.also { state.offSinceMs = null }
+                // The clock went back: restart from now rather than wait for the old time to come round again.
+                now < since -> now.also { state.offSinceMs = it }
+                else -> since
+            }
+        }
         // A check-in "in the future" is from before the clock went back: ignore it.
         val reachedServer = lastCheckInOkMs?.takeIf { it <= now } ?: 0L
-        val due = offSince != null && !radio.isEnabled() && now - maxOf(offSince, reachedServer) >= HEAL_AFTER_MS
+        val due = offSince != null && now - maxOf(offSince, reachedServer) >= HEAL_AFTER_MS
         if (!due) return false
         unlock()
         val on = radio.setEnabled(true) || radio.isEnabled()
@@ -175,8 +181,11 @@ class WifiRadioPolicy(
         /** `UserManager.DISALLOW_CHANGE_WIFI_STATE` was added in API 33. */
         const val TOGGLE_LOCK_SDK = 33
 
-        /** How long Wi-Fi may stay off by policy without a check-in before [selfHeal] turns it back on. */
-        const val HEAL_AFTER_MS: Long = 10L * 60L * 1000L
+        /**
+         * How long Wi-Fi may stay off by policy without a check-in before [selfHeal] turns it back on: about three
+         * heartbeats (10 minutes each, and they fire late on an idle device), so one late heartbeat never heals.
+         */
+        const val HEAL_AFTER_MS: Long = 30L * 60L * 1000L
 
         private const val ONLY_NETWORK = "no other network: Wi-Fi left on, it is the device's only connection"
         private const val HELD_ON = "no connection to the server without Wi-Fi: Wi-Fi turned back on"

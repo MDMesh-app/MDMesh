@@ -23,8 +23,8 @@ import javax.inject.Inject
  * background-FGS-start restriction.
  *
  * It fires with or without a network, so it is also where a `wifiRadio` Off after which the device could not reach
- * the server is undone ([ConfigApplier.selfHealWifiRadio]): before the check-in, so a healed device can try to reach
- * the server at once.
+ * the server is undone ([ConfigApplier.selfHealWifiRadio]). Wi-Fi still has to connect after that, so a healed
+ * device usually reaches the server on a later check-in, not this one.
  */
 @AndroidEntryPoint
 class KeepAliveReceiver : BroadcastReceiver() {

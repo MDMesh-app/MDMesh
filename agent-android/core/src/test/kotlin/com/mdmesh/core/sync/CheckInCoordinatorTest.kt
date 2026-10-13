@@ -177,6 +177,18 @@ class CheckInCoordinatorTest {
     }
 
     @Test
+    fun `remembers when a check-in last reached the server`() = runTest {
+        val api = FakeMdmApi().apply { checkInThrows = IOException("network down") }
+        val last = InMemoryLastCheckIn()
+        val coordinator = coordinator(api, PendingResults(), syncStatus = SyncStatus(last))
+        runCatching { coordinator.runOnce() }
+        assertNull("a failed check-in is not recorded", last.okAtMs)
+        api.checkInThrows = null
+        coordinator.runOnce()
+        assertNotNull(last.okAtMs)
+    }
+
+    @Test
     fun `delivered acks leave the persisted buffer only after the check-in succeeds`() = runTest {
         val backup = FakeBackup()
         val old = CommandResult(commandId = "old", status = CommandStatus.DONE, completedAt = "t")

@@ -3,6 +3,7 @@ package com.mdmesh.core.config
 import android.content.ComponentName
 import com.mdmesh.core.kiosk.KioskApplier
 import com.mdmesh.core.kiosk.KioskHomeSwitch
+import com.mdmesh.core.store.ConfigStateStore
 import com.mdmesh.core.store.InMemoryConfigStateStore
 import com.mdmesh.core.store.InMemoryKioskStateStore
 import com.mdmesh.kiosk.KioskController
@@ -144,37 +145,47 @@ class ConfigApplierTest {
         override fun hasNonWifiInternet() = other
     }
 
-    @Test fun `wifiRadio self-heal keeps the revision stale until the server re-sends, across a boot`() = runTest {
+    @Test fun `wifiRadio self-heal reports a stale revision until the server re-sends, across a boot`() = runTest {
+        // Cellular stays up, but the server is only reachable over Wi-Fi: no check-in gets through.
         val radio = StrandableRadio(); val state = InMemoryWifiRadioOffState(); val store = InMemoryConfigStateStore()
-        val policy = WifiRadioPolicy(radio, { _, _ -> }, 33, state) { true }
+        var now = 0L
+        val policy = WifiRadioPolicy(radio, { _, _ -> }, 33, state, { now }) { true }
         val a = ConfigApplier(mapOf("wifiRadio" to policy), kiosk(FakeController()), {}, store)
         val doc = ConfigApplyPayload(revision = "h1", policies = mapOf("wifiRadio" to false))
         a.apply(doc)
         assertEquals(false, radio.on); assertEquals("h1", store.revision())
 
-        radio.other = false
-        assertFalse(a.selfHealWifiRadio(0))
-        assertTrue(a.selfHealWifiRadio(WifiRadioPolicy.HEAL_AFTER_MS))
+        now = WifiRadioPolicy.HEAL_AFTER_MS - 1
+        assertFalse(a.selfHealWifiRadio(lastCheckInOkMs = null))
+        now = WifiRadioPolicy.HEAL_AFTER_MS
+        assertTrue(a.selfHealWifiRadio(lastCheckInOkMs = null))
         assertEquals("Wi-Fi back on", true, radio.on)
-        assertNull("revision dropped, so the next check-in gets config.apply re-sent", store.revision())
+        assertEquals("never matches, so the server re-sends config.apply", ConfigStateStore.STALE_REVISION,
+            store.revision())
         assertEquals("the document is kept for the boot re-apply", doc, store.load())
 
         // Boot: the re-apply must neither strand the device again nor claim the revision as applied.
         val boot = a.reapplyPersisted()!!
-        assertTrue(boot.outcomes["policies.wifiRadio"]!!.startsWith("deferred: no other network"))
+        assertTrue(boot.outcomes["policies.wifiRadio"]!!.startsWith("deferred: no connection to the server"))
         assertEquals(true, radio.on)
-        assertNull(store.revision())
+        assertEquals(ConfigStateStore.STALE_REVISION, store.revision())
 
-        // The server's re-send reports the deferral and is persisted as usual.
+        // The server's re-send of the same configuration reports the deferral and is persisted as usual.
         val resent = a.apply(doc)
-        assertTrue(resent.outcomes["policies.wifiRadio"]!!.startsWith("deferred: no other network"))
+        assertTrue(resent.outcomes["policies.wifiRadio"]!!.startsWith("deferred: no connection to the server"))
+        assertEquals(true, radio.on)
         assertEquals("h1", store.revision())
+
+        // The admin changes the configuration: the hold ends and Off applies again.
+        val changed = a.apply(doc.copy(revision = "h2"))
+        assertEquals(ConfigOutcome.APPLIED, changed.outcomes["policies.wifiRadio"])
+        assertEquals(false, radio.on)
     }
 
     @Test fun `no Wi-Fi radio policy, nothing to heal`() = runTest {
         val store = InMemoryConfigStateStore()
         store.save(ConfigApplyPayload(revision = "n1"))
-        assertFalse(ConfigApplier(emptyMap(), kiosk(FakeController()), {}, store).selfHealWifiRadio(0))
+        assertFalse(ConfigApplier(emptyMap(), kiosk(FakeController()), {}, store).selfHealWifiRadio(null))
         assertEquals("n1", store.revision())
     }
 }

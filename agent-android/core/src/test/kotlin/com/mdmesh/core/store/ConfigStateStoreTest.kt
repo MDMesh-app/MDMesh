@@ -13,6 +13,9 @@ class ConfigStateStoreTest {
         s.save(ConfigApplyPayload(revision = "r1", configurationId = 3, policies = mapOf("wifi" to true)))
         assertEquals("r1", s.revision())
         assertEquals(mapOf("wifi" to true), s.load()?.policies)
+        s.markStale()
+        assertEquals("well-formed for the server, never a real revision", 64, s.revision()?.length)
+        assertEquals(mapOf("wifi" to true), s.load()?.policies)
         s.clear()
         assertNull(s.revision())
     }

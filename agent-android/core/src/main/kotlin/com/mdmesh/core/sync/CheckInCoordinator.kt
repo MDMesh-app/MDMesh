@@ -54,7 +54,7 @@ class CheckInCoordinator @Inject constructor(
     suspend fun runOnce(): Unit = mutex.withLock {
         try {
             cycle()
-            syncStatus.clear()
+            syncStatus.recordSuccess()
         } catch (t: Throwable) {
             if (t !is CancellationException) syncStatus.recordFailure(t)
             throw t

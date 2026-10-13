@@ -16,10 +16,16 @@ interface ConfigStateStore {
     fun clear()
 
     /**
-     * Keep the document (for the boot re-apply) but drop its revision, so the next check-in reports none and the
-     * server re-sends config.apply (used after the device undid part of it on its own, e.g. a Wi-Fi radio self-heal).
+     * Keep the document (for the boot re-apply) but report [STALE_REVISION], so the server sees drift and re-sends
+     * config.apply (used after the device undid part of it on its own, e.g. a Wi-Fi radio self-heal). A missing
+     * revision would not do: the server keeps the last one it stored.
      */
     fun markStale()
+
+    companion object {
+        /** Well-formed (64 hex) but never a real revision, so it never matches the configuration. */
+        val STALE_REVISION = "0".repeat(64)
+    }
 }
 
 object ConfigStateCodec {
@@ -37,7 +43,7 @@ class SharedPrefsConfigStateStore(context: Context) : ConfigStateStore {
     override fun load(): ConfigApplyPayload? = ConfigStateCodec.decode(prefs.getString(KEY_DOC, null))
     override fun revision(): String? = prefs.getString(KEY_REV, null)
     override fun clear() { prefs.edit().remove(KEY_DOC).remove(KEY_REV).apply() }
-    override fun markStale() { prefs.edit().remove(KEY_REV).apply() }
+    override fun markStale() { prefs.edit().putString(KEY_REV, ConfigStateStore.STALE_REVISION).apply() }
     private companion object { const val KEY_DOC = "doc"; const val KEY_REV = "revision" }
 }
 
@@ -48,5 +54,5 @@ class InMemoryConfigStateStore : ConfigStateStore {
     override fun load(): ConfigApplyPayload? = doc
     override fun revision(): String? = rev
     override fun clear() { doc = null; rev = null }
-    override fun markStale() { rev = null }
+    override fun markStale() { rev = ConfigStateStore.STALE_REVISION }
 }

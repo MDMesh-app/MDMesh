@@ -268,6 +268,30 @@ public class AgentCheckInConfigResyncTest {
     }
 
     @Test
+    public void a_never_matching_revision_gets_config_apply_resent_after_the_backoff() throws Exception {
+        // The agent undid part of the configuration on its own (Wi-Fi radio self-heal) and reports a well-formed
+        // revision that matches no configuration, so the server re-sends and the result shows what happened.
+        checkIn("0.3.4", null);
+        checkIn("0.3.4", revision);
+        AgentCommand applied = commandDAO.commands.get(0);
+        String stale = new String(new char[64]).replace('\0', '0');
+
+        moveBackBeyondBackoff(applied);
+        assertEquals("a missing revision would not do: the stored one is kept", 0, checkIn("0.3.4", null).size());
+
+        applied.setCompletedAt(System.currentTimeMillis());
+        assertEquals("within the backoff of the last done apply", 0, checkIn("0.3.4", stale).size());
+        assertEquals(stale, commandDAO.getState(NUMBER).getAppliedConfigRevision());
+
+        moveBackBeyondBackoff(applied);
+        List<com.hmdm.rest.json.agent.AgentCommand> resent = checkIn("0.3.4", stale);
+        assertEquals(1, resent.size());
+        assertEquals(DesiredConfigBuilder.COMMAND_TYPE, resent.get(0).getType());
+        assertEquals(0, checkIn("0.3.4", revision).size());
+        assertEquals(2, configApplies());
+    }
+
+    @Test
     public void same_agent_version_in_sync_sends_nothing() throws Exception {
         checkIn("0.3.3", null);
         checkIn("0.3.3", revision);

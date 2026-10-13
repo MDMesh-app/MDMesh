@@ -35,8 +35,10 @@ class ConfigApplier(
 
     suspend fun apply(doc: ConfigApplyPayload): ConfigApplyResult = mutex.withLock { applyLocked(doc) }
 
-    /** @param persist false for a boot re-apply of a stale document: the server's re-send is what persists it. */
+    /** @param persist false for the boot re-apply: the document is already stored (or stale until re-sent). */
     private suspend fun applyLocked(doc: ConfigApplyPayload, persist: Boolean = true): ConfigApplyResult {
+        // A changed configuration ends a Wi-Fi radio self-heal hold; a re-send or boot re-apply of it does not.
+        if (doc.revision != store.load()?.revision) wifiRadio()?.endHold()
         val outcomes = linkedMapOf<String, String>()
         for ((key, enabled) in doc.policies) {
             outcomes["policies.$key"] = toOutcome(toggles[key]?.setEnabled(enabled))
@@ -91,23 +93,27 @@ class ConfigApplier(
         }
     }
 
-    /** Re-run the last fully-applied document (after boot / self-update). Null when nothing is persisted. */
+    /**
+     * Re-run the last fully-applied document (after boot / self-update). Null when nothing is persisted. Not saved
+     * again: a stale document ([selfHealWifiRadio]) stays stale until the server re-sends it.
+     */
     suspend fun reapplyPersisted(): ConfigApplyResult? = mutex.withLock {
-        // A stale document (revision dropped by [selfHealWifiRadio]) stays stale until the server re-sends it.
-        store.load()?.let { applyLocked(it, persist = store.revision() != null) }
+        store.load()?.let { applyLocked(it, persist = false) }
     }
 
     /**
-     * Heartbeat: undo a `wifiRadio` Off that left the device with no network ([WifiRadioPolicy.selfHeal]). When Wi-Fi
-     * was turned back on, the applied revision is dropped so the next check-in has the server re-send config.apply,
-     * whose result then shows the Off as deferred. Serialized with [apply] and [reapplyPersisted].
+     * Heartbeat: undo a `wifiRadio` Off after which the device could not reach the server ([WifiRadioPolicy.selfHeal]).
+     * When Wi-Fi was turned back on, the store reports a stale revision, so the server re-sends config.apply, whose
+     * result then shows the Off as deferred. Serialized with [apply] and [reapplyPersisted].
      */
-    suspend fun selfHealWifiRadio(nowMs: Long): Boolean = mutex.withLock {
-        val radio = toggles[WifiRadioPolicy.CAPABILITY_KEY] as? WifiRadioPolicy ?: return@withLock false
-        if (!radio.selfHeal(nowMs)) return@withLock false
+    suspend fun selfHealWifiRadio(lastCheckInOkMs: Long?): Boolean = mutex.withLock {
+        val radio = wifiRadio() ?: return@withLock false
+        if (!radio.selfHeal(lastCheckInOkMs)) return@withLock false
         store.markStale()
         true
     }
+
+    private fun wifiRadio(): WifiRadioPolicy? = toggles[WifiRadioPolicy.CAPABILITY_KEY] as? WifiRadioPolicy
 
     companion object {
         fun succeeded(r: ConfigApplyResult): Boolean = r.outcomes.values.none(ConfigOutcome::isFailed)

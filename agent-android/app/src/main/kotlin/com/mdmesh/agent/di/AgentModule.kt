@@ -39,6 +39,8 @@ import com.mdmesh.core.command.handlers.PolicyApplyHandler
 import com.mdmesh.core.device.AppInventoryCollector
 import com.mdmesh.core.device.HardwareIdCollector
 import com.mdmesh.core.sync.HardwareIdSource
+import com.mdmesh.core.sync.LastCheckIn
+import com.mdmesh.core.sync.SharedPrefsLastCheckIn
 import com.mdmesh.core.install.InstallManager
 import com.mdmesh.core.state.DeviceStateCollector
 import com.mdmesh.core.state.DeviceStateSource
@@ -327,6 +329,10 @@ object AgentModule {
     @Singleton
     fun provideConfigStateStore(@ApplicationContext context: Context): ConfigStateStore =
         SharedPrefsConfigStateStore(context)
+
+    @Provides
+    @Singleton
+    fun provideLastCheckIn(@ApplicationContext context: Context): LastCheckIn = SharedPrefsLastCheckIn(context)
 
     @Provides
     @Singleton

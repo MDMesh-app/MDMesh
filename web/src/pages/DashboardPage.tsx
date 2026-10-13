@@ -114,6 +114,9 @@ export function DashboardPage() {
   const { devices, total, configurations, loading, error } = useDevices();
   const [activity, setActivity] = useState<ActivityItem[] | null>(null);
   const [issues, setIssues] = useState<Record<number, ConfigIssue>>({});
+  // How complete the configuration check is: 'complete' only when the summary loaded and every
+  // suspect device was probed successfully; 'partial' when the probe was capped or some probes failed.
+  const [syncCheck, setSyncCheck] = useState<'pending' | 'failed' | 'partial' | 'complete'>('pending');
 
   // Tick every 30s so the online/attention/offline split decays as devices go quiet.
   const [now, setNow] = useState(() => Date.now());
@@ -154,24 +157,33 @@ export function DashboardPage() {
   useEffect(() => {
     if (loading) return;
     let cancelled = false;
+    setSyncCheck('pending');
     void (async () => {
       const summary = await getSyncSummary().catch(() => null);
-      if (cancelled || !summary) return;
+      if (cancelled) return;
+      if (!summary) {
+        setSyncCheck('failed');
+        return;
+      }
       const suspect = new Set(
         summary.filter((s) => s.outOfSync > 0 || s.unsupported > 0 || s.neverSeen > 0).map((s) => s.configurationId),
       );
-      const probe = devices
-        .filter((d) => d.configurationId != null && suspect.has(d.configurationId) && isOnlineByRecency(d.lastUpdate))
-        .slice(0, ATTENTION_PROBE_CAP);
+      const suspects = devices.filter(
+        (d) => d.configurationId != null && suspect.has(d.configurationId) && isOnlineByRecency(d.lastUpdate),
+      );
+      const probe = suspects.slice(0, ATTENTION_PROBE_CAP);
       const results = await Promise.allSettled(
         probe.map((d) => getConfigStatus(d.number).then((s) => ({ id: d.id, v: summarizeStatus(s) }))),
       );
       if (cancelled) return;
       const next: Record<number, ConfigIssue> = {};
+      let failed = 0;
       for (const r of results) {
-        if (r.status === 'fulfilled' && isConfigIssue(r.value.v)) next[r.value.id] = r.value.v;
+        if (r.status !== 'fulfilled') failed++;
+        else if (isConfigIssue(r.value.v)) next[r.value.id] = r.value.v;
       }
       setIssues(next);
+      setSyncCheck(suspects.length > probe.length || failed > 0 ? 'partial' : 'complete');
     })();
     return () => {
       cancelled = true;
@@ -239,7 +251,8 @@ export function DashboardPage() {
             </span>
             <span>
               <i style={{ background: 'var(--warn)' }} />
-              {counts.attention} need attention
+              {counts.attention}
+              {syncCheck === 'partial' ? '+' : ''} need attention
             </span>
             <span>
               <i style={{ background: 'var(--offline)' }} />
@@ -321,8 +334,14 @@ export function DashboardPage() {
                 </div>
               ) : attention.length === 0 ? (
                 <div className="empty">
-                  <span className="label">All clear</span>
-                  Every device is online and in sync.
+                  <span className="label">{syncCheck === 'complete' ? 'All clear' : 'All online'}</span>
+                  {syncCheck === 'complete'
+                    ? 'Every device is online and in sync.'
+                    : syncCheck === 'pending'
+                      ? 'Every device is online. Checking configuration sync…'
+                      : syncCheck === 'failed'
+                        ? 'Every device is online. Configuration sync could not be checked.'
+                        : 'Every device is online. Configuration sync was only partly checked.'}
                 </div>
               ) : (
                 attention.map((d) => {

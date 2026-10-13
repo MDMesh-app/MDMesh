@@ -1,7 +1,10 @@
-import { parseOutcomes, summarizeStatus, type ConfigStatus } from '../api/configSync';
+import { DEVICE_RESET_REVISION, parseOutcomes, summarizeStatus, type ConfigStatus } from '../api/configSync';
 import { fmtRelative, DASH } from '../ui/format';
 
-const short = (r?: string | null): string => (r ? r.slice(0, 8) : DASH);
+const short = (r?: string | null): string => {
+  if (r === DEVICE_RESET_REVISION) return 'Reset by device';
+  return r ? r.slice(0, 8) : DASH;
+};
 
 /** Left-rail card: does this device run its configuration's current revision, and what happened per key. */
 export function ConfigStatusCard({ status }: { status: ConfigStatus | null }) {

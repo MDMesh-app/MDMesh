@@ -33,6 +33,10 @@ export function parseOutcomes(detail: string | null | undefined): ConfigOutcomes
   } catch { return null; }
 }
 
+/** Applied revision an agent (0.3.4+) reports after turning Wi-Fi back on by itself (Wi-Fi radio self-heal). */
+export const DEVICE_RESET_REVISION = '0'.repeat(64);
+export const DEVICE_RESET_LABEL = 'Reset by device (Wi-Fi turned back on)';
+
 /** One-line verdict for badges. Pure so it can be unit-tested once Vitest lands (Phase 6.1). */
 export function summarizeStatus(s: ConfigStatus | null): { tone: 'ok' | 'warn' | 'alert' | 'idle'; label: string } {
   if (!s || s.configurationId == null) return { tone: 'idle', label: 'No configuration' };
@@ -42,5 +46,6 @@ export function summarizeStatus(s: ConfigStatus | null): { tone: 'ok' | 'warn' |
   if (st === 'pending' || st === 'delivered') return { tone: 'warn', label: 'Applying…' };
   if (st === 'failed') return { tone: 'alert', label: 'Apply failed' };
   if (!s.appliedRevision) return { tone: 'idle', label: 'Not reported yet' };
+  if (s.appliedRevision === DEVICE_RESET_REVISION) return { tone: 'warn', label: DEVICE_RESET_LABEL };
   return { tone: 'warn', label: 'Out of sync' };
 }

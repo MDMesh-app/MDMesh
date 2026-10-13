@@ -15,6 +15,7 @@ import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -113,7 +114,7 @@ class CheckInCoordinatorTest {
         // A server that doesn't send it (an older one, e.g. after a rollback) gets the old behaviour back.
         api.checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse())
         coordinator.runOnce()
-        assertTrue(!policy.required)
+        assertFalse(policy.required)
     }
 
     @Test
@@ -214,65 +215,32 @@ class CheckInCoordinatorTest {
     private fun ack(id: String) = CommandResult(commandId = id, status = CommandStatus.DONE, completedAt = "t")
 
     @Test
-    fun `a result backlog goes out in bounded batches within one run`() = runTest {
+    fun `a backlog beyond one batch waits for the next check-in`() = runTest {
         val api = FakeMdmApi()
-        val pending = PendingResults().apply { add((1..250).map { ack("c$it") }) }
+        val total = PendingResults.MAX_BATCH_RESULTS + 5
+        val pending = PendingResults().apply { add((1..total).map { ack("c$it") }) }
 
-        coordinator(api, pending).runOnce()
+        val coordinator = coordinator(api, pending)
+        coordinator.runOnce()
+        assertEquals(listOf(PendingResults.MAX_BATCH_RESULTS), api.checkInRequests.map { it.results.size })
 
-        assertEquals(listOf(100, 100, 50), api.checkInRequests.map { it.results.size })
-        assertTrue(pending.drain().isEmpty())
+        coordinator.runOnce()
+        assertEquals(5, api.checkInRequests.last().results.size)
     }
 
     @Test
-    fun `a single-check-in run leaves the backlog for the next check-in`() = runTest {
-        val api = FakeMdmApi()
-        val pending = PendingResults().apply { add((1..250).map { ack("c$it") }) }
-
-        coordinator(api, pending).runOnce(maxCheckIns = 1)
-
-        assertEquals(listOf(100), api.checkInRequests.map { it.results.size })
-        // drain() hands out one batch (100) at a time.
-        assertEquals(listOf(100, 50), listOf(pending.drain().size, pending.drain().size))
-    }
-
-    @Test
-    fun `one run makes at most MAX_CHECK_INS_PER_RUN check-ins`() = runTest {
-        val api = FakeMdmApi().apply {
-            checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse(resultsAccepted = 1))
-        }
-        val pending = PendingResults().apply { add((1..30).map { ack("c$it") }) }
-
-        coordinator(api, pending).runOnce()
-
-        assertEquals(CheckInCoordinator.MAX_CHECK_INS_PER_RUN, api.checkInRequests.size)
-        assertEquals(30 - CheckInCoordinator.MAX_CHECK_INS_PER_RUN, pending.drain().size)
-    }
-
-    @Test
-    fun `results the server did not accept are resent, not lost`() = runTest {
+    fun `results the server did not accept are resent on the next check-in`() = runTest {
         val api = FakeMdmApi().apply {
             checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse(resultsAccepted = 1))
         }
         val pending = PendingResults().apply { add(listOf(ack("a"), ack("b"), ack("c"))) }
 
-        coordinator(api, pending).runOnce()
+        val coordinator = coordinator(api, pending)
+        coordinator.runOnce()
+        coordinator.runOnce()
 
-        assertEquals(listOf(listOf("a", "b", "c"), listOf("b", "c"), listOf("c")),
+        assertEquals(listOf(listOf("a", "b", "c"), listOf("b", "c")),
             api.checkInRequests.map { r -> r.results.map { it.commandId } })
-        assertTrue(pending.drain().isEmpty())
-    }
-
-    @Test
-    fun `stops resending when the server makes no progress`() = runTest {
-        val api = FakeMdmApi().apply {
-            checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse(resultsAccepted = 0))
-        }
-        val pending = PendingResults().apply { add(listOf(ack("a"))) }
-
-        coordinator(api, pending).runOnce()
-
-        assertEquals(1, api.checkInRequests.size)
-        assertEquals(listOf("a"), pending.drain().map { it.commandId })
+        assertEquals(listOf("c"), pending.drain().map { it.commandId })
     }
 }

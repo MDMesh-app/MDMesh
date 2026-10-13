@@ -15,8 +15,6 @@ class PendingResultsTest {
         override fun write(raw: String?) { this.raw = raw }
     }
 
-    private fun result(id: String) =
-        CommandResult(commandId = id, status = CommandStatus.DONE, completedAt = "2026-10-12T00:00:00Z")
 
     @Test
     fun `results survive a process restart`() {
@@ -57,7 +55,7 @@ class PendingResultsTest {
         assertTrue(PendingResults(backup).drain().isEmpty())
     }
 
-    private fun result(id: String, detail: String?) =
+    private fun result(id: String, detail: String? = null) =
         CommandResult(
             commandId = id,
             status = CommandStatus.DONE,
@@ -68,7 +66,8 @@ class PendingResultsTest {
     @Test
     fun `drain hands out at most one batch by count`() {
         val pending = PendingResults(FakeBackup())
-        pending.add((1..250).map { result("c$it") })
+        val total = 2 * PendingResults.MAX_BATCH_RESULTS + 5
+        pending.add((1..total).map { result("c$it") })
 
         val first = pending.drain()
         assertEquals(PendingResults.MAX_BATCH_RESULTS, first.size)
@@ -76,7 +75,7 @@ class PendingResultsTest {
         pending.delivered()
         assertEquals(PendingResults.MAX_BATCH_RESULTS, pending.drain().size)
         pending.delivered()
-        assertEquals(250 - 2 * PendingResults.MAX_BATCH_RESULTS, pending.drain().size)
+        assertEquals(5, pending.drain().size)
     }
 
     @Test
@@ -85,14 +84,16 @@ class PendingResultsTest {
         val big = "x".repeat(PendingResults.MAX_DETAIL_CHARS - 1000)
         pending.add(listOf(result("a", big), result("b", big), result("c", big), result("d", big)))
 
-        val first = pending.drain()
-        assertTrue(first.isNotEmpty())
-        assertTrue(first.sumOf { it.detail?.length ?: 0 } <= PendingResults.MAX_BATCH_CHARS)
-        assertTrue("a batch carries several big results when they fit", first.size >= 1)
+        // Two of these fit in MAX_BATCH_CHARS, a third does not.
+        assertEquals(listOf("a", "b"), pending.drain().map { it.commandId })
         pending.delivered()
-        val rest = generateSequence { pending.drain().also { pending.delivered() }.takeIf { it.isNotEmpty() } }
-            .flatten().map { it.commandId }.toList()
-        assertEquals(listOf("a", "b", "c", "d"), (first.map { it.commandId } + rest))
+        assertEquals(listOf("c", "d"), pending.drain().map { it.commandId })
+        pending.delivered()
+        assertTrue(pending.drain().isEmpty())
+
+        // A single result larger than a batch still goes out on its own.
+        pending.add(listOf(result("e", "x".repeat(PendingResults.MAX_DETAIL_CHARS))))
+        assertEquals(listOf("e"), pending.drain().map { it.commandId })
     }
 
     @Test

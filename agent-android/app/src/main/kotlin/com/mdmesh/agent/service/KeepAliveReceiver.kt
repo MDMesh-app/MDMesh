@@ -32,9 +32,7 @@ class KeepAliveReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // One check-in only: goAsync() gives a receiver ~10 s, so a result backlog is left to the
-                // service / worker paths, which keep draining it.
-                coordinator.runOnce(maxCheckIns = 1)
+                coordinator.runOnce()
             } catch (e: Exception) {
                 Log.w(TAG, "heartbeat check-in failed", e) // transient — the next heartbeat retries
             } finally {

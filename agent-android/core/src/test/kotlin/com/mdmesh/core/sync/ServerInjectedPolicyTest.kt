@@ -4,6 +4,7 @@ import android.content.ComponentName
 import com.mdmesh.core.command.CommandDispatcher
 import com.mdmesh.core.command.handlers.ConfigApplyHandler
 import com.mdmesh.core.command.handlers.PolicyApplyHandler
+import com.mdmesh.core.install.InstallIntegrityPolicy
 import com.mdmesh.core.config.ConfigApplier
 import com.mdmesh.core.kiosk.KioskApplier
 import com.mdmesh.core.kiosk.KioskHomeSwitch
@@ -99,6 +100,7 @@ class ServerInjectedPolicyTest {
             store = InMemoryKioskStateStore(),
             home = NoHome,
             homeComponent = ComponentName("com.mdmesh.agent", "com.mdmesh.agent.KioskHomeAlias"),
+            isLockTaskActive = { false },
         )
 
         val applier = ConfigApplier(toggles, kiosk, setLocationMode = {}, store = configStore)
@@ -124,6 +126,7 @@ class ServerInjectedPolicyTest {
             stateSource = DeviceStateSource { snapshot(configStore) },
             telemetrySource = { null },
             eventSink = NoopEventSink,
+            installIntegrity = InstallIntegrityPolicy(),
         )
 
         /** Script the next check-in response: this is the "server" handing down a command batch. */

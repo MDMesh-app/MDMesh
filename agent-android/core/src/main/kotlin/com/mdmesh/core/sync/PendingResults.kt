@@ -84,7 +84,7 @@ class PendingResults(private val backup: Backup = Backup.None) {
     fun drain(): List<CommandResult> {
         load()
         val batch = mutableListOf<CommandResult>()
-        var chars = 0L
+        var chars = 0
         for (result in buffer) {
             val size = ProtocolJson.json.encodeToString(CommandResult.serializer(), result).length
             val full = batch.size >= MAX_BATCH_RESULTS || (batch.isNotEmpty() && chars + size > MAX_BATCH_CHARS)
@@ -95,13 +95,6 @@ class PendingResults(private val backup: Backup = Backup.None) {
         inFlight.addAll(batch)
         buffer.subList(0, batch.size).clear()
         return batch
-    }
-
-    /** Whether results are still waiting to be drained. */
-    @Synchronized
-    fun hasBacklog(): Boolean {
-        load()
-        return buffer.isNotEmpty()
     }
 
     /** Put drained results back (front) when delivery failed, so they retry next cycle. */
@@ -132,10 +125,10 @@ class PendingResults(private val backup: Backup = Backup.None) {
     }
 
     companion object {
-        /** Results per check-in. The server takes up to 1000 and reports how many it took. */
-        const val MAX_BATCH_RESULTS = 100
+        /** Results per check-in: what the server takes at most (it reports how many it took). */
+        const val MAX_BATCH_RESULTS = 1000
         /** Serialized results per check-in; the server refuses request bodies over 32 MiB. */
-        const val MAX_BATCH_CHARS = 4L * 1024 * 1024
+        const val MAX_BATCH_CHARS = 4 * 1024 * 1024
         /** A result detail longer than this (the server's own limit) is replaced by a short failure. */
         const val MAX_DETAIL_CHARS = 2 * 1024 * 1024
 

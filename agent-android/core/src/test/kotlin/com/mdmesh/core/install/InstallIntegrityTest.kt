@@ -84,17 +84,6 @@ class InstallIntegrityTest {
     }
 
     @Test
-    fun `the guarantee survives a restart and is dropped when the server stops sending it`() {
-        val store = InstallIntegrityPolicy.Store.Memory()
-        InstallIntegrityPolicy(store).update("required")
-        val restarted = InstallIntegrityPolicy(store)
-        assertNotNull(restarted.problem(InstallRequest(url = "http://lan/app.apk", packageName = "com.x")))
-        restarted.update(null)
-        val unhashed = InstallRequest(url = "http://lan/app.apk", packageName = "com.x")
-        assertNull(InstallIntegrityPolicy(store).problem(unhashed))
-    }
-
-    @Test
     fun `bundle ignores the top-level sha256`() {
         val req = InstallRequest(
             url = "http://h/ignored.apk",

@@ -20,7 +20,8 @@ import javax.inject.Singleton
  * One full check-in cycle — the source of truth of the sync loop:
  *
  *  1. ensure the device is enrolled (server-issued id);
- *  2. drain pending command acks and POST them together with the fresh capabilities;
+ *  2. drain the next batch of pending command acks and POST it with the fresh capabilities (results beyond one
+ *     batch, or that the server did not take, wait for the next check-in);
  *  3. dispatch each returned (capability-gated) command;
  *  4. buffer the new results for delivery on the next cycle.
  *
@@ -43,24 +44,16 @@ class CheckInCoordinator @Inject constructor(
     private val stateSource: DeviceStateSource,
     private val telemetrySource: TelemetrySource,
     private val eventSink: EventSink,
+    private val installIntegrity: InstallIntegrityPolicy,
     private val hardwareIdSource: HardwareIdSource = HardwareIdSource { null },
     private val syncStatus: SyncStatus = SyncStatus(),
-    private val installIntegrity: InstallIntegrityPolicy = InstallIntegrityPolicy(),
 ) {
 
     private val mutex = Mutex()
 
-    /**
-     * Checks in, then checks in again right away while a result backlog bigger than one batch remains and the server
-     * keeps taking results: at most [maxCheckIns] check-ins in all (bounded, so a server that takes none cannot spin
-     * us). Callers with a short execution window (the doze heartbeat's `goAsync`) pass 1; the rest waits for the next
-     * check-in.
-     */
-    suspend fun runOnce(maxCheckIns: Int = MAX_CHECK_INS_PER_RUN): Unit = mutex.withLock {
-        require(maxCheckIns >= 1) { "maxCheckIns must be at least 1" }
+    suspend fun runOnce(): Unit = mutex.withLock {
         try {
-            var checkIns = 1
-            while (cycle() && checkIns < maxCheckIns) checkIns++
+            cycle()
             syncStatus.clear()
         } catch (t: Throwable) {
             if (t !is CancellationException) syncStatus.recordFailure(t)
@@ -68,8 +61,7 @@ class CheckInCoordinator @Inject constructor(
         }
     }
 
-    /** @return true when results that were waiting before this cycle are still due and the server took some. */
-    private suspend fun cycle(): Boolean {
+    private suspend fun cycle() {
         val deviceId = enrollment.ensureEnrolled()
         val authorization = "Bearer ${identity.secret().orEmpty()}"
         val matrix = capabilitySource.matrix(deviceId)
@@ -101,10 +93,7 @@ class CheckInCoordinator @Inject constructor(
             eventSink.restore(bufferedEvents)
             throw CheckInException(response.message ?: "check-in rejected")
         }
-        val accepted = data.resultsAccepted
-        pending.delivered(accepted)
-        val progressed = accepted == null || accepted > 0
-        val backlog = progressed && pending.hasBacklog()
+        pending.delivered(data.resultsAccepted)
         // Before this batch runs: its installs are judged by what this server guarantees.
         installIntegrity.update(data.installIntegrity)
 
@@ -116,12 +105,6 @@ class CheckInCoordinator @Inject constructor(
             // Record each command outcome as a timeline event (flushed next cycle).
             eventSink.record(EventType.COMMAND_RESULT, "${result.commandId}:${result.status}")
         }
-        return backlog
-    }
-
-    companion object {
-        /** The first check-in plus up to 19 follow-ups for a result backlog. */
-        const val MAX_CHECK_INS_PER_RUN = 20
     }
 }
 

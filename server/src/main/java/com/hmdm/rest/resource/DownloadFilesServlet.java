@@ -49,7 +49,6 @@ import org.slf4j.LoggerFactory;
 @Singleton
 public class DownloadFilesServlet extends HttpServlet {
     private final ApplicationDAO applicationDAO;
-    private final String filesDirectory;
     private final File baseDirectory;
     private final PublicIPFilter publicIPFilter;
 
@@ -68,7 +67,6 @@ public class DownloadFilesServlet extends HttpServlet {
                                 @Named("secure.enrollment") boolean secureEnrollment,
                                 @Named("hash.secret") String hashSecret) {
         this.applicationDAO = applicationDAO;
-        this.filesDirectory = filesDirectory;
         this.baseDirectory = new File(filesDirectory);
         this.publicIPFilter = publicIPFilter;
         this.secureEnrollment = secureEnrollment;

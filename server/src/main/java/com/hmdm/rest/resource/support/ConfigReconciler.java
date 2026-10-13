@@ -58,11 +58,6 @@ public class ConfigReconciler {
         return d == null ? null : d.getRevision();
     }
 
-    /** @return true when a config.apply was enqueued. Never throws. */
-    public boolean reconcile(Device device, Set<String> deviceTokens, String appliedRevision, long now) {
-        return reconcile(device, deviceTokens, appliedRevision, null, null, now);
-    }
-
     /**
      * @param agentVersion       the version the device reports in this check-in (null when unknown)
      * @param configAgentVersion the version that last completed config.apply (null = no baseline yet)

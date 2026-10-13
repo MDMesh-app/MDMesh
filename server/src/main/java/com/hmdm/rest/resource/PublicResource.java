@@ -22,47 +22,26 @@
 package com.hmdm.rest.resource;
 
 import javax.inject.Inject;
-import javax.inject.Singleton;
 import javax.inject.Named;
+import javax.inject.Singleton;
 
-import com.hmdm.persistence.domain.ApplicationType;
 import com.hmdm.rest.json.NameResponse;
-import com.hmdm.util.FileUtil;
-import net.glxn.qrgen.core.image.ImageType;
-import net.glxn.qrgen.javase.QRCode;
-import org.apache.poi.util.IOUtils;
-import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
-import org.glassfish.jersey.media.multipart.FormDataParam;
+import com.hmdm.rest.json.Response;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.ApiParam;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.poi.util.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import com.hmdm.persistence.CustomerDAO;
-import com.hmdm.persistence.UnsecureDAO;
-import com.hmdm.persistence.domain.Application;
-import com.hmdm.persistence.domain.Customer;
-import com.hmdm.persistence.domain.Device;
-import com.hmdm.rest.json.Response;
-import com.hmdm.util.CryptoUtil;
-import com.hmdm.util.StringUtil;
 
-import javax.servlet.ServletOutputStream;
-import javax.ws.rs.*;
+import javax.ws.rs.GET;
+import javax.ws.rs.Path;
+import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.StreamingOutput;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.URLEncoder;
-import java.util.ArrayList;
-import java.util.List;
-
-import static com.hmdm.util.FileUtil.writeToFile;
 
 /**
  * <p>A publicly available API which does not require authentication/authorization.</p>
@@ -75,12 +54,6 @@ import static com.hmdm.util.FileUtil.writeToFile;
 public class PublicResource {
 
     private static final Logger logger  = LoggerFactory.getLogger(PublicResource.class);
-
-    private UnsecureDAO unsecureDAO;
-    private CustomerDAO customerDAO;
-    private String hashSecret;
-    private String filesDirectory;
-    private String baseUrl;
 
     private String appName;
     private String appLogo;
@@ -99,28 +72,18 @@ public class PublicResource {
      * <p>Constructs new <code>PublicResource</code> instance. This implementation does nothing.</p>
      */
     @Inject
-    public PublicResource(@Named("files.directory") String filesDirectory,
-                          @Named("base.url") String baseUrl,
-                          @Named("rebranding.name") String appName,
+    public PublicResource(@Named("rebranding.name") String appName,
                           @Named("rebranding.logo") String appLogo,
                           @Named("rebranding.vendor.name") String appVendorName,
                           @Named("rebranding.vendor.link") String appVendorLink,
                           @Named("rebranding.signup.link") String appSignupLink,
-                          @Named("rebranding.terms.link") String appTermsLink,
-                          UnsecureDAO unsecureDAO,
-                          CustomerDAO customerDAO,
-                          @Named("hash.secret") String hashSecret) {
-        this.filesDirectory = filesDirectory;
-        this.baseUrl = baseUrl;
+                          @Named("rebranding.terms.link") String appTermsLink) {
         this.appName = appName;
         this.appLogo = appLogo;
         this.appVendorName = appVendorName;
         this.appVendorLink = appVendorLink;
         this.appSignupLink = appSignupLink;
         this.appTermsLink = appTermsLink;
-        this.unsecureDAO = unsecureDAO;
-        this.customerDAO = customerDAO;
-        this.hashSecret = hashSecret;
     }
     
     // =================================================================================================================

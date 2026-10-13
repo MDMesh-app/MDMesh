@@ -320,15 +320,10 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
     }
 
     /**
-     * <p>Updates existing application version record in DB.</p>
+     * <p>Stores the SHA-256 (apkHash form, see {@code InstallIntegrity.toApkHash}) of a version's APK, for a version of
+     * an application the current user may change.</p>
      *
-     * @param applicationVersion an application version record to be updated.
-     * @throws DuplicateApplicationException if another application record with same package ID and version already
-     *         exists either for current or master customer account.
-     */
-    /**
-     * Stores the SHA-256 (apkHash form, see {@code InstallIntegrity.toApkHash}) of a version's APK, for a version of an
-     * application the current user may change. @return false when there is no such version.
+     * @return false when there is no such version.
      */
     public boolean saveApkHash(Integer applicationVersionId, String apkHash) {
         final ApplicationVersion version = applicationVersionId == null ? null
@@ -341,6 +336,13 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
         return true;
     }
 
+    /**
+     * <p>Updates existing application version record in DB.</p>
+     *
+     * @param applicationVersion an application version record to be updated.
+     * @throws DuplicateApplicationException if another application record with same package ID and version already
+     *         exists either for current or master customer account.
+     */
     @Transactional
     public void updateApplicationVersion(ApplicationVersion applicationVersion) {
         // The version decides which application is affected, not the applicationId sent with it

@@ -1,5 +1,5 @@
 /*
- * MDMesh: computes the SHA-256 of an APK by URL, for install integrity and QR provisioning.
+ * MDMesh: computes the SHA-256 of an APK this server hosts, for install integrity.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

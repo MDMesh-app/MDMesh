@@ -58,10 +58,9 @@ first update, which pins the versions (or set `SERVER_VERSION`/`WEB_VERSION`/`CU
 >   shows it as deferred. If a device can't reach the server for about 30 minutes after Wi-Fi was turned off (SIM
 >   removed, server only reachable on the Wi-Fi network), the agent turns Wi-Fi back on and keeps it on until the
 >   configuration is changed; the console shows the Off as deferred. A server outage that long (keep upgrades short)
->   or a user cutting the device off (airplane mode, pulling the SIM) does the same; to apply Off again, change and
->   save the configuration. The existing Wi-Fi setting, now
->   labelled **Wi-Fi settings**, still only locks the Wi-Fi settings. **Lock volume buttons (kiosk)** blocks volume
->   changes in kiosk; Android mutes the device while it is locked, so **Ring device** is silent on it. **Lock hardware
+>   or a user cutting the device off (airplane mode, pulling the SIM) does the same. Any change to the configuration
+>   applies Off again. The existing Wi-Fi setting, now labelled **Wi-Fi settings**, still only locks the Wi-Fi
+>   settings. **Lock volume buttons (kiosk)** blocks volume changes in kiosk; Android mutes the device while it is locked, so **Ring device** is silent on it. **Lock hardware
 >   buttons** blocks only the power menu. Both new settings need agent 0.3.4; older agents report Wi-Fi radio as
 >   unsupported and ignore the volume lock.
 > - The Headwind launcher's provisioning QR routes (`/rest/public/qr/*`) also answer 404 unless `LEGACY_DEVICE_API=1`.

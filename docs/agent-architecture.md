@@ -69,10 +69,10 @@ network). If no check-in reaches the server for 30 minutes (about three heartbea
 Off is deferred (`deferred: no connection to the server ...`) until a document with a revision other than the last
 delivered one arrives. The agent then reports an applied revision of 64 zeros, which matches no configuration, so the
 server re-sends `config.apply` after its normal backoff and the result shows the deferral. A server outage that long,
-or a user cutting the device off, also heals; changing the configuration (a new revision) re-applies Off.
+or a user cutting the device off, also heals; any change to the configuration (a new revision) applies Off again.
 `kioskLockButtons` blocks the power menu only; the new `kioskLockVolume` blocks volume in kiosk via
-`DISALLOW_ADJUST_VOLUME`, which Android pairs with muting, so it is a separate opt-in. New columns are NULL on upgrade, so revisions only move for
-configurations that use them, and for Do-not-track configurations (whose devices get one config.apply).
+`DISALLOW_ADJUST_VOLUME`, which Android pairs with muting, so it is a separate opt-in. New columns are NULL on
+upgrade, so revisions only move for configurations that use them, and for Do-not-track configurations (whose devices get one config.apply).
 
 ## Status UI — BUILD-NEW (Views, minSdk 24 friendly)
 Replace the `TextView` stub `MainActivity` with a real MDMesh status screen: managed state, device id,

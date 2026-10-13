@@ -33,7 +33,7 @@ export function ConfigStatusCard({ status }: { status: ConfigStatus | null }) {
       {outcomes ? (
         <ul className="cfg-outcomes">
           {Object.entries(outcomes.outcomes).map(([k, o]) => (
-            <li key={k} className={o === 'applied' ? 'ok' : o === 'unsupported' ? 'muted' : 'alert'}>
+            <li key={k} className={outcomeClass(o)}>
               <span className="mono">{k}</span> <span>{o}</span>
             </li>
           ))}
@@ -41,4 +41,12 @@ export function ConfigStatusCard({ status }: { status: ConfigStatus | null }) {
       ) : null}
     </div>
   );
+}
+
+/** applied = ok; unsupported = muted; deferred (protocol 1.4, not applied yet on purpose, does not block) = warn. */
+function outcomeClass(outcome: string): string {
+  if (outcome === 'applied') return 'ok';
+  if (outcome === 'unsupported') return 'muted';
+  if (outcome.startsWith('deferred')) return 'warn';
+  return 'alert';
 }

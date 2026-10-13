@@ -1391,6 +1391,7 @@ a {
 .cfg-outcomes li { display:flex; justify-content:space-between; gap:8px; }
 .cfg-outcomes li.ok { color:var(--ok); }
 .cfg-outcomes li.alert { color:var(--danger); }
+.cfg-outcomes li.warn { color:var(--warn); }
 .cfg-legacy-note { color:var(--muted); font-size:12px; margin:4px 0 10px; }
 .cfg-sync { display:flex; align-items:center; gap:8px; margin-top:6px; font-size:12px; }
 .cfg-sync .rollout-track { flex:1; }

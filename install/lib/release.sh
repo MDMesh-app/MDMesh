@@ -46,14 +46,14 @@ mdm_fetch_release_apk() {
     MDM_RELEASE_PROBLEM="minisign is unavailable, so the release manifest cannot be verified and its APK is not trusted"; return 1
   fi
   if [ ! -r "$pubkey" ]; then
-    MDM_RELEASE_PROBLEM="The release signing key release/minisign.pub is missing from this checkout, so the manifest cannot be verified"; return 1
+    MDM_RELEASE_PROBLEM="The release signing key ${pubkey} is missing, so the manifest cannot be verified"; return 1
   fi
   if ! mdm_gh_curl -fsSL "$man_url" -o "$d/manifest.json" 2>>"$log" \
      || ! mdm_gh_curl -fsSL "$sig_url" -o "$d/manifest.json.minisig" 2>>"$log"; then
     MDM_RELEASE_PROBLEM="Could not download the release manifest or its signature${details}"; return 1
   fi
   if ! "$ms" -V -p "$pubkey" -m "$d/manifest.json" >> "$log" 2>&1; then
-    MDM_RELEASE_PROBLEM="The release manifest's signature is invalid (it does not verify with release/minisign.pub), so its APK is not trusted"; return 1
+    MDM_RELEASE_PROBLEM="The release manifest's signature is invalid (it does not verify with ${pubkey}), so its APK is not trusted"; return 1
   fi
   # Bind the signed manifest to this release: an older release's manifest is signed too, and served in its place (a
   # replay) it would verify. Its version must be the release tag without the "v".

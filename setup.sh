@@ -305,8 +305,6 @@ if [ -n "${GITHUB_REPO:-}" ] && command -v python3 >/dev/null && command -v curl
     if { docker image inspect "$SUPERVISOR_IMAGE" >/dev/null 2>&1 || docker compose $COMPOSE_ARGS build supervisor >/dev/null 2>&1; } \
        && docker run --rm --pull never --network none --entrypoint minisign "$SUPERVISOR_IMAGE" -v >/dev/null 2>&1; then
       MDM_MINISIGN=mdm_container_minisign
-    else
-      warn "The supervisor image could not provide minisign either."
     fi
   fi
   REL_DIR=$(mktemp -d 2>/dev/null || true)
@@ -320,8 +318,11 @@ if [ -n "${GITHUB_REPO:-}" ] && command -v python3 >/dev/null && command -v curl
       warn "The release manifest's APK signing checksum is malformed (not 43 base64url characters) — the console keeps its debug enrollment defaults."
     fi
   else
-    warn "${MDM_RELEASE_PROBLEM} — the console keeps its debug enrollment defaults."
-    command -v "${MDM_MINISIGN:-minisign}" >/dev/null 2>&1 || warn "Install minisign (e.g. apt-get install minisign) and re-run ./setup.sh to bake the release QR parameters."
+    if command -v "${MDM_MINISIGN:-minisign}" >/dev/null 2>&1; then
+      warn "${MDM_RELEASE_PROBLEM} — the console keeps its debug enrollment defaults."
+    else
+      warn "minisign is unavailable (not on this host, and the supervisor image's could not be used), so the release manifest cannot be verified — install it (e.g. apt-get install minisign) and re-run ./setup.sh; until then the console keeps its debug enrollment defaults."
+    fi
   fi
   [ -z "$REL_DIR" ] || rm -rf -- "$REL_DIR"
 else

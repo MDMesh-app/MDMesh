@@ -34,6 +34,32 @@ public class SeedDefaultsTest {
     }
 
     @Test
+    public void theSeedDrawsThePinApartFromTheQrKey() throws Exception {
+        String seed = read("install/sql/hmdm_init.en.sql");
+        Matcher pin = Pattern.compile("password = [^\\n]*substr\\(%s").matcher(seed);
+        assertTrue("the PIN comes from its own random draw", pin.find());
+        assertTrue(seed.contains("qr_key, pin_hex)"));
+    }
+
+    @Test
+    public void postSeedReplacesThePublishedQrKeys() throws Exception {
+        String postSeed = read("install/sql/post_seed.sql");
+        Matcher update = Pattern.compile("UPDATE configurations SET qrcodekey = [^;]*WHERE qrcodekey IN \\(([^)]*)\\)",
+                Pattern.CASE_INSENSITIVE).matcher(postSeed);
+        assertTrue("post_seed.sql rotates QR keys", update.find());
+        for (String key : PUBLISHED_QR_KEYS) {
+            assertTrue("rotated: " + key, update.group(1).contains("'" + key + "'"));
+        }
+    }
+
+    @Test
+    public void theObserverRoleLosesTheDeviceDescriptionGrant() throws Exception {
+        String changelog = read("server/src/main/resources/liquibase/db.changelog.xml");
+        assertTrue(Pattern.compile("DELETE FROM userRolePermissions WHERE roleId = 100\\s+AND permissionId IN "
+                + "\\(SELECT id FROM permissions WHERE name = 'edit_device_desc'\\)").matcher(changelog).find());
+    }
+
+    @Test
     public void theChangelogAdminRowAcceptsNoPassword() throws Exception {
         String changelog = read("server/src/main/resources/liquibase/db.changelog.xml");
         Matcher m = Pattern.compile("INSERT INTO users\\(login, email, name, password\\)\\s*VALUES \\('admin', '[^']*', "

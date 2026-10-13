@@ -239,15 +239,20 @@ SELECT pg_catalog.setval('public.configurations_id_seq', 3, true);
 
 -- A kiosk exit PIN (8 digits) and a QR key of this install's own for each configuration above, never a value
 -- shared with other installs. gen_random_uuid() (PostgreSQL 13+) supplies the randomness where it exists.
+-- The PIN and the QR key are two separate random draws and must never derive from each other: the QR key is not
+-- a secret on a par with the PIN (it travels in QR payloads), so knowing it must say nothing about the PIN.
 DO $$
 DECLARE
-    hex text := CASE WHEN current_setting('server_version_num')::int >= 130000
-                     THEN $h$replace(gen_random_uuid()::text, '-', '')$h$
-                     ELSE $h$md5(random()::text || clock_timestamp()::text)$h$ END;
+    strong boolean := current_setting('server_version_num')::int >= 130000;
+    qr_key text := CASE WHEN strong THEN $h$replace(gen_random_uuid()::text, '-', '')$h$
+                        ELSE $h$md5(random()::text || clock_timestamp()::text)$h$ END;
+    pin_hex text := CASE WHEN strong THEN $h$replace(gen_random_uuid()::text, '-', '')$h$
+                         ELSE $h$md5(random()::text || clock_timestamp()::text)$h$ END;
 BEGIN
-    EXECUTE format($q$UPDATE configurations SET qrcodekey = %1$s,
-        password = lpad(((('x' || substr(%1$s, 1, 12))::bit(48)::bigint) %% 100000000)::text, 8, '0')
-        WHERE id IN (1, 2, 3)$q$, hex);
+    EXECUTE format($q$UPDATE configurations SET
+        qrcodekey = %s,
+        password = lpad(((('x' || substr(%s, 1, 12))::bit(48)::bigint) %% 100000000)::text, 8, '0')
+        WHERE id IN (1, 2, 3)$q$, qr_key, pin_hex);
 END $$;
 
 INSERT INTO configurationapplications (id, configurationid, applicationid, remove, showicon, applicationversionid) VALUES 

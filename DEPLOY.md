@@ -54,7 +54,8 @@ first update, which pins the versions (or set `SERVER_VERSION`/`WEB_VERSION`/`CU
 > - New installs give each of those configurations its own random 8-digit kiosk exit PIN (shown in the console's
 >   configuration editor). Existing configurations keep their PIN; one still set to `12345678`, the default of older
 >   installs and of configurations copied from them, is flagged in the console: set a PIN of your own there.
-> - The Observer role no longer has the push and messaging send permissions. Other roles keep theirs.
+> - The read-only Observer role no longer has the push and messaging send permissions or the device-description
+>   edit permission. Other roles keep theirs.
 > - `SECURE_ENROLLMENT=1` is honoured as before: `/files/*` downloads need the Headwind launcher's request
 >   signature, which the MDMesh agent doesn't send, so it also blocks the agent's APK and app downloads. With
 >   `LEGACY_DEVICE_API` off the server now logs a warning about this at startup. Set it to `0` unless you need

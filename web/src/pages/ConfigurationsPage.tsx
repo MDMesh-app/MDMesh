@@ -41,6 +41,8 @@ const isLocked = (c: Configuration) => c.id != null && SEED_IDS.has(c.id) && SEE
 
 /** The server flags a kiosk exit PIN that is a well-known default (absent on older servers). */
 const hasDefaultPin = (c: Configuration) => c.defaultKioskPin === true;
+/** Kiosk on with no exit PIN: anyone can leave kiosk mode without a prompt. */
+const hasNoPin = (c: Configuration) => c.kioskMode === true && !c.password;
 
 // The configurations INSERT sets every column explicitly, so NOT-NULL columns
 // can't fall back to their DB defaults — a blank config must supply them or the
@@ -270,6 +272,9 @@ function ConfigCard({
         {hasDefaultPin(c) ? (
           <span className="cfg-badge warn" title="The kiosk exit PIN is a well-known default. Change it.">Default PIN</span>
         ) : null}
+        {hasNoPin(c) ? (
+          <span className="cfg-badge warn" title="Kiosk mode has no exit PIN, so anyone can leave it. Set one.">No PIN</span>
+        ) : null}
       </div>
       {c.description ? <div className="cfg-desc">{String(c.description)}</div> : null}
       <div className="cfg-meta">
@@ -495,6 +500,7 @@ function ConfigEditor({
 
   // The server marks a well-known default PIN; once the PIN is edited here that flag is stale.
   const defaultPin = hasDefaultPin(draft) && (draft.password ?? '') === (baseline.password ?? '');
+  const noPin = hasNoPin(draft);
 
   return (
     <>
@@ -552,6 +558,15 @@ function ConfigEditor({
         </div>
       )}
 
+      {noPin && (
+        <div className="banner banner-warn" role="alert">
+          <b>No kiosk exit PIN.</b>{' '}
+          {readOnly
+            ? 'Devices on this template can leave kiosk mode without a PIN. Duplicate it, set a PIN, and move the devices to the copy.'
+            : 'Anyone can leave kiosk mode on these devices without a prompt. Set a PIN under Kiosk → Kiosk exit PIN.'}
+        </div>
+      )}
+
       {enforcedByGroup.map(({ group, fields }) => (
         <section className="panel cfg-panel" key={group}>
           <div className="cfg-sec-h">{group}</div>
@@ -563,7 +578,9 @@ function ConfigEditor({
               value={draft[f.key]}
               stored={baseline[f.key]}
               kioskOn={draft.kioskMode === true}
-              warn={f.key === 'password' && defaultPin ? 'Well-known default PIN: change it.' : undefined}
+              warn={f.key !== 'password' ? undefined
+                : defaultPin ? 'Well-known default PIN: change it.'
+                : noPin ? 'No PIN: anyone can leave kiosk. Set one.' : undefined}
               apps={f.key === 'mainAppId' ? mainAppChoices : apps}
               assigned={allowed}
               disabled={readOnly}

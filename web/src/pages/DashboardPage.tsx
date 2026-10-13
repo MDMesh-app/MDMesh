@@ -5,7 +5,7 @@ import { useDevices } from '../data/useDevices';
 import { isOnline as isOnlineByRecency, type StatusTone } from '../ui/status';
 import { fmtRelative, orDash } from '../ui/format';
 import { getEvents, type DeviceEvent } from '../api/events';
-import { DEVICE_RESET_LABEL, getConfigStatus, getSyncSummary, summarizeStatus } from '../api/configSync';
+import { DEVICE_RESET_LABEL, SOME_DEFERRED_LABEL, getConfigStatus, getSyncSummary, summarizeStatus } from '../api/configSync';
 import type { DeviceView, ConfigurationLookup } from '../api/devices';
 
 type Bucket = 'online' | 'attention' | 'offline';
@@ -38,7 +38,8 @@ const ATTENTION_PROBE_CAP = 50;
 
 /** A configuration state worth an admin's look; "Applying…" and "Not reported yet" are transient. */
 function isConfigIssue(v: ConfigIssue): boolean {
-  return v.tone === 'alert' || v.label === 'Out of sync' || v.label === DEVICE_RESET_LABEL || v.label === 'Agent too old';
+  const labels = ['Out of sync', DEVICE_RESET_LABEL, SOME_DEFERRED_LABEL, 'Agent too old'];
+  return v.tone === 'alert' || labels.includes(v.label);
 }
 
 function bucketOf(d: DeviceView, issues: Record<number, ConfigIssue>, now?: number): Bucket {

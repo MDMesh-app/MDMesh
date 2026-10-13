@@ -36,7 +36,6 @@ import com.hmdm.persistence.domain.*;
 import com.hmdm.rest.json.*;
 import com.hmdm.service.DeviceApplicationsStatus;
 import com.hmdm.service.DeviceConfigFilesStatus;
-import org.apache.commons.math3.stat.descriptive.summary.Sum;
 import org.mybatis.guice.transactional.Transactional;
 import com.hmdm.persistence.mapper.DeviceMapper;
 import com.hmdm.security.SecurityContext;

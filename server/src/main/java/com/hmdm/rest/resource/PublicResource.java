@@ -29,7 +29,7 @@ import com.hmdm.rest.json.NameResponse;
 import com.hmdm.rest.json.Response;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
-import org.apache.poi.util.IOUtils;
+import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

@@ -20,6 +20,8 @@ export interface Application {
   system?: boolean;
   latestVersion?: number;
   runAfterInstall?: boolean;
+  /** Library list only: whether the latest version has a stored APK SHA-256. */
+  hasApkHash?: boolean;
   /** Owned by the master customer; only a super-admin can delete it. */
   commonApplication?: boolean;
   /** Split-bundle parts as a raw JSON string `[{url,sha256,name}]` (server stores it as text);

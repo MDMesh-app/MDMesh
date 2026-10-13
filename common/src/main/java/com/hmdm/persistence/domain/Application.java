@@ -88,6 +88,8 @@ public class Application implements CustomerData, Serializable {
     @ApiModelProperty("Hex SHA-256 of the APK at url, given when it is not hosted by this server; stored as the "
             + "version's apkHash. Input only")
     private String sha256;
+    @ApiModelProperty(value = "Whether the latest version has a stored APK SHA-256 (list results only)", hidden = true)
+    private Boolean hasApkHash;
     @ApiModelProperty("An ID of an icon to represent the application")
     private Integer iconId;
     @ApiModelProperty("An file name with the icon to represent the application")
@@ -414,6 +416,14 @@ public class Application implements CustomerData, Serializable {
 
     public void setParts(String parts) {
         this.parts = parts;
+    }
+
+    public Boolean getHasApkHash() {
+        return hasApkHash;
+    }
+
+    public void setHasApkHash(Boolean hasApkHash) {
+        this.hasApkHash = hasApkHash;
     }
 
     public String getSha256() {

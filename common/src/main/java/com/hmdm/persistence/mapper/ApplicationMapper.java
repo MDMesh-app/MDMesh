@@ -43,7 +43,8 @@ public interface ApplicationMapper {
                     "applicationVersions.version, applicationVersions.versionCode, applicationVersions.url, applicationVersions.parts," +
                     "applicationVersions.split, applicationVersions.urlArmeabi, applicationVersions.urlArm64," +
                     "applications.latestVersion AS usedVersionId, " +
-                    "(usageData.usageCount > 0) AS deletionProhibited " +
+                    "(usageData.usageCount > 0) AS deletionProhibited, " +
+                    "(COALESCE(applicationVersions.apkHash, '') <> '') AS hasApkHash " +
             "FROM applications " +
             "INNER JOIN customers ON customers.id = applications.customerId " +
             "INNER JOIN applicationVersions ON applicationVersions.id = applications.latestVersion " +

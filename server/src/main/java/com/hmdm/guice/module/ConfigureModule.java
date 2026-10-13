@@ -107,19 +107,19 @@ public class ConfigureModule extends AbstractModule {
     }
 
     /**
-     * The effective {@code secure.enrollment}: it makes {@code /files/*} demand the Headwind launcher's request
-     * signature, which the MDMesh agent never sends (agent and app downloads would fail), so it applies only while the
-     * legacy device API is on, and is ignored with a log line otherwise.
+     * {@code secure.enrollment} as configured: it makes {@code /files/*} demand the Headwind launcher's request
+     * signature. The MDMesh agent never sends one, so with the legacy device API off this also blocks the agent's
+     * APK and app downloads; that is logged once at startup, and the setting is still honoured.
      */
     static boolean secureEnrollment(ServletContext context) {
         String value = context.getInitParameter("secure.enrollment");
-        boolean requested = value != null && (value.trim().equals("1") || value.trim().equalsIgnoreCase("true"));
-        if (requested && !LegacyDeviceApiFilter.isEnabled(context)) {
-            LoggerFactory.getLogger(ConfigureModule.class).warn("secure.enrollment is ignored: it applies to the "
-                    + "Headwind launcher only and needs " + LegacyDeviceApiFilter.PARAMETER + "=1");
-            return false;
+        boolean on = value != null && (value.equals("1") || value.equalsIgnoreCase("true"));
+        if (on && !LegacyDeviceApiFilter.isEnabled(context)) {
+            LoggerFactory.getLogger(ConfigureModule.class).warn("secure.enrollment is on: /files/* downloads need the "
+                    + "Headwind launcher's request signature, which the MDMesh agent does not send, so agent APK and "
+                    + "app downloads will fail. Set it to 0 unless you need launcher-signed downloads.");
         }
-        return requested;
+        return on;
     }
 
     protected void configure() {

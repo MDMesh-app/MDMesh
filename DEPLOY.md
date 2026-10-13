@@ -55,8 +55,10 @@ first update, which pins the versions (or set `SERVER_VERSION`/`WEB_VERSION`/`CU
 >   configuration editor). Existing configurations keep their PIN; one still set to `12345678`, the default of older
 >   installs and of configurations copied from them, is flagged in the console: set a PIN of your own there.
 > - The Observer role no longer has the push and messaging send permissions. Other roles keep theirs.
-> - `SECURE_ENROLLMENT=1` now applies only together with `LEGACY_DEVICE_API=1` (it is a Headwind launcher setting
->   and blocks agent downloads); otherwise the server ignores it and logs that it did.
+> - `SECURE_ENROLLMENT=1` is honoured as before: `/files/*` downloads need the Headwind launcher's request
+>   signature, which the MDMesh agent doesn't send, so it also blocks the agent's APK and app downloads. With
+>   `LEGACY_DEVICE_API` off the server now logs a warning about this at startup. Set it to `0` unless you need
+>   launcher-signed downloads.
 
 > **Docker: supervisor restarting with `Cannot find module '/project/server.js'`?** Every Docker install from v0.1.0
 > through v0.3.0 hit this (#27), so Settings → Updates, the `/recovery` page and the Docker `/files/agent.apk` mirror
@@ -403,7 +405,8 @@ which listens on loopback `:9000` only, on the host with `curl -fsS 127.0.0.1:90
   holds one), and the native installer replaces such a `jwt.secretkey`.
 - TLS everywhere (Cloudflare or Caddy/Let's Encrypt). DB + server ports are never published.
 - The agent talks HTTPS only. `SECURE_ENROLLMENT` is a legacy Headwind launcher setting; leave it at `0` for
-  MDMesh agents. The server ignores it unless `LEGACY_DEVICE_API=1`.
+  MDMesh agents. When it is `1`, `/files/*` requires the launcher's request signature, which also blocks the agent's
+  APK and app downloads (the server logs a warning at startup when `LEGACY_DEVICE_API` is off).
 - Legacy Headwind launcher endpoints are off by default (they answer 404); MDMesh agents don't use them. Set
   `LEGACY_DEVICE_API=1` (`.env`, or the installer's environment on native installs, which writes `legacy.device.api`
   to `ROOT.xml`) only if you still run the Headwind launcher. MQTT push stays off on both kinds of install (agents

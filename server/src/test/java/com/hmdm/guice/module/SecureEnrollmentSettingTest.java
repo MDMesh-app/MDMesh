@@ -12,8 +12,8 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * {@code secure.enrollment} makes {@code /files/*} demand the Headwind launcher's request signature, which the MDMesh
- * agent never sends, so the setting only takes effect together with the legacy device API.
+ * {@code secure.enrollment} makes {@code /files/*} demand the Headwind launcher's request signature. It is honoured as
+ * configured whatever the legacy device API switch says: an operator who asked for signed downloads keeps them.
  */
 public class SecureEnrollmentSettingTest {
 
@@ -23,16 +23,18 @@ public class SecureEnrollmentSettingTest {
     }
 
     @Test
-    public void itIsIgnoredWhileTheLegacyDeviceApiIsOff() {
+    public void itIsHonouredWhileTheLegacyDeviceApiIsOff() {
         Map<String, String> p = new HashMap<>();
         p.put("secure.enrollment", "1");
-        assertFalse(ConfigureModule.secureEnrollment(context(p)));
+        assertTrue(ConfigureModule.secureEnrollment(context(p)));
         p.put(LegacyDeviceApiFilter.PARAMETER, "0");
+        assertTrue(ConfigureModule.secureEnrollment(context(p)));
+        p.put("secure.enrollment", "0");
         assertFalse(ConfigureModule.secureEnrollment(context(p)));
     }
 
     @Test
-    public void itStillWorksForLegacyLauncherFleets() {
+    public void itIsHonouredWhileTheLegacyDeviceApiIsOn() {
         Map<String, String> p = new HashMap<>();
         p.put("secure.enrollment", "true");
         p.put(LegacyDeviceApiFilter.PARAMETER, "1");

@@ -2,7 +2,8 @@ import { apiClient } from './client';
 
 // Configurations list — see com.hmdm.rest.resource.ConfigurationResource#getAllConfigurations
 //   GET /rest/private/configurations/search  ->  ConfigurationView[]
-// The `qrCodeKey` identifies a configuration for the public QR endpoints
+// The `qrCodeKey` identifies a configuration for the Headwind launcher's legacy public QR endpoints, which answer
+// 404 unless the server runs with LEGACY_DEVICE_API=1 (the console draws the agent's enrollment QR itself):
 //   GET /rest/public/qr/{qrCodeKey}        (provisioning QR as PNG)
 //   GET /rest/public/qr/json/{qrCodeKey}   (inner admin-extras bundle as JSON)
 

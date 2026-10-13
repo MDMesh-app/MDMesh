@@ -106,7 +106,7 @@ cat > "$_root_xml_tmp" <<EOF
 
     <Parameter name="usage.scenario"    value="private"/>
     <Parameter name="secure.enrollment" value="${SECURE_ENROLLMENT}"/>
-    <!-- Headwind launcher device routes (and the MQTT broker): off unless 1. The MDMesh agent never uses them. -->
+    <!-- Headwind launcher device routes: off unless 1. The MDMesh agent never uses them. -->
     <Parameter name="legacy.device.api" value="$(xml_attr "${LEGACY_DEVICE_API}")"/>
     <Parameter name="hash.secret"       value="${HASH_SECRET}"/>
     <Parameter name="jwt.secretkey"     value="${JWT_SECRET}"/>

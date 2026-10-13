@@ -153,6 +153,11 @@ for _v in SMTP_SSL SMTP_STARTTLS; do
   case "${!_v,,}" in true|1) printf -v "$_v" true ;; false|0) printf -v "$_v" false ;;
     *) echo "  $_v must be true or false."; exit 1 ;; esac
 done
+# LEGACY_DEVICE_API: same values, written to ROOT.xml as 1/0.
+if [ -n "${LEGACY_DEVICE_API+x}" ]; then
+  case "${LEGACY_DEVICE_API,,}" in true|1) LEGACY_DEVICE_API=1 ;; false|0) LEGACY_DEVICE_API=0 ;;
+    *) echo "  LEGACY_DEVICE_API must be 1 or 0."; exit 1 ;; esac
+fi
 # The HTTP port (HTTP_PORT) is settled below, once the existing install's server.xml can be read the safe way.
 DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
 JWT_SECRET=$(openssl rand -hex 64)   # jwt.secretkey: hex only (see the reuse rule below)
@@ -789,7 +794,7 @@ done < <(find "$REPO/install/emails" -type f -print0)
 # Host the release agent APK the QR points at (/files/agent.apk), if we fetched one above.
 [ -n "$AGENT_APK" ] && { base_write files/agent.apk cat "$AGENT_APK"; ok "agent APK hosted at /files/agent.apk"; }
 agent_fetch_cleanup   # the fetched release files are no longer needed (the EXIT trap covers every other path)
-# Headwind launcher device routes (and the MQTT broker): off unless 1, kept across re-runs like the settings below.
+# Headwind launcher device routes: off unless 1, kept across re-runs like the settings below.
 X_LEGACY_DEVICE_API=$(root_param LEGACY_DEVICE_API legacy.device.api 0)
 # SMTP (password-recovery email): the Docker .env's variables. Read here, after the deferred ROOT.xml read above.
 X_SMTP_HOST=$(root_param SMTP_HOST smtp.host "")

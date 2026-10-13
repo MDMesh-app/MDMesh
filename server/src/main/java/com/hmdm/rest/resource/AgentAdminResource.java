@@ -235,13 +235,9 @@ public class AgentAdminResource {
 
         final String payload;
         try {
-            payload = InstallIntegrity.forCommand(body.getType(), body.getPayload(), installHashes.forCustomer(customerId.get()));
-        } catch (InstallIntegrity.LookupFailedException e) {
-            logger.error("Agent command {} for device {}: APK hash lookup failed", body.getType(), deviceId, e);
-            return Response.ERROR("Cannot install: the APK's SHA-256 could not be looked up; try again");
-        } catch (IllegalArgumentException e) {
-            logger.warn("Agent command {} for device {} rejected: {}", body.getType(), deviceId, e.getMessage());
-            return Response.ERROR("Cannot install: " + e.getMessage());
+            payload = payloadToQueue(body.getType(), body.getPayload(), customerId.get());
+        } catch (CommandRejectedException e) {
+            return e.response;
         }
 
         AgentCommand command = new AgentCommand();
@@ -259,6 +255,30 @@ public class AgentAdminResource {
         logger.info("Agent command {} queued for device {}", command.getId(), deviceId);
         // Payload-free view (same shape as the history): never echo a payload back to the console.
         return Response.OK(CommandHistoryView.from(command));
+    }
+
+    /** A command that cannot be queued, with the response that says why. */
+    private static final class CommandRejectedException extends Exception {
+        final Response response;
+
+        CommandRejectedException(Response response) {
+            super(response.getMessage());
+            this.response = response;
+        }
+    }
+
+    /** The payload to queue: an {@code app.install} gets its APK's SHA-256 (see {@link InstallIntegrity}). */
+    private String payloadToQueue(String type, String payload, int customerId) throws CommandRejectedException {
+        try {
+            return InstallIntegrity.forCommand(type, payload, installHashes.forCustomer(customerId));
+        } catch (InstallIntegrity.LookupFailedException e) {
+            logger.error("Agent command {}: APK hash lookup failed", type, e);
+            throw new CommandRejectedException(
+                    Response.ERROR("Cannot install: the APK's SHA-256 could not be looked up; try again"));
+        } catch (IllegalArgumentException e) {
+            logger.warn("Agent command {} rejected: {}", type, e.getMessage());
+            throw new CommandRejectedException(Response.ERROR("Cannot install: " + e.getMessage()));
+        }
     }
 
     /** Command types that must never be issued in bulk (destructive group). Lowercased — matched
@@ -297,13 +317,9 @@ public class AgentAdminResource {
         // Hashed once for the whole fan-out: every device verifies the same bytes.
         final String payload;
         try {
-            payload = InstallIntegrity.forCommand(type, req.getCommand().getPayload(), installHashes.forCustomer(customerId.get()));
-        } catch (InstallIntegrity.LookupFailedException e) {
-            logger.error("Bulk command {}: APK hash lookup failed", type, e);
-            return Response.ERROR("Cannot install: the APK's SHA-256 could not be looked up; try again");
-        } catch (IllegalArgumentException e) {
-            logger.warn("Bulk command {} rejected: {}", type, e.getMessage());
-            return Response.ERROR("Cannot install: " + e.getMessage());
+            payload = payloadToQueue(type, req.getCommand().getPayload(), customerId.get());
+        } catch (CommandRejectedException e) {
+            return e.response;
         }
 
         int queued = 0;

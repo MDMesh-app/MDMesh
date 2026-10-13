@@ -16,6 +16,9 @@ import {
   PRIMARY_FIELDS,
   LEGACY_FIELDS,
   GROUP_ORDER,
+  GROUP_NOTES,
+  DEFAULT_SEGMENTS,
+  flagOffValue,
   type FieldDef,
 } from '../data/configFields';
 import { AppPicker } from '../components/AppPicker';
@@ -23,13 +26,14 @@ import { SyncBar } from '../components/SyncBar';
 import { KioskChangeConfirm, kioskAffectingChanges } from '../components/KioskChangeConfirm';
 
 // The seeded device-template defaults are locked: view-only, and used as bases
-// for new configs (start from scratch or from one of these).
-const DEFAULT_CONFIG_NAMES = new Set([
-  'Managed Launcher',
-  'MIUI (Xiaomi Redmi)',
-  'Background (Agent) Mode',
-]);
-const isLocked = (c: Configuration) => DEFAULT_CONFIG_NAMES.has(c.name);
+// for new configs (start from scratch or from one of these). Matched by id, not
+// name: the seed SQL inserts them with fixed ids 1-3 (and moves the sequence past
+// them), so renaming the seed rows can't silently unlock them.
+const DEFAULT_CONFIG_IDS: ReadonlySet<number> = new Set([1, 2, 3]);
+const isLocked = (c: Configuration) => c.id != null && DEFAULT_CONFIG_IDS.has(c.id);
+
+/** The server flags a kiosk exit PIN that is a well-known default (absent on older servers). */
+const hasDefaultPin = (c: Configuration) => c.defaultKioskPin === true;
 
 // The configurations INSERT sets every column explicitly, so NOT-NULL columns
 // can't fall back to their DB defaults — a blank config must supply them or the
@@ -256,6 +260,9 @@ function ConfigCard({
         <div className="cfg-nm">{c.name}</div>
         {locked ? <span className="cfg-badge default">Default</span> : null}
         {c.kioskMode ? <span className="cfg-badge">Kiosk</span> : null}
+        {hasDefaultPin(c) ? (
+          <span className="cfg-badge warn" title="The kiosk exit PIN is a well-known default. Change it.">Default PIN</span>
+        ) : null}
       </div>
       {c.description ? <div className="cfg-desc">{String(c.description)}</div> : null}
       <div className="cfg-meta">
@@ -479,6 +486,9 @@ function ConfigEditor({
     fields: LEGACY_FIELDS.filter((f) => f.group === g),
   })).filter((x) => x.fields.length > 0);
 
+  // SEC-32: the server marks a well-known default PIN; once the PIN is edited here that flag is stale.
+  const defaultPin = hasDefaultPin(draft) && (draft.password ?? '') === (baseline.password ?? '');
+
   return (
     <>
       <div className="crumb">
@@ -526,11 +536,32 @@ function ConfigEditor({
         </div>
       )}
 
+      {defaultPin && (
+        <div className="banner banner-warn" role="alert">
+          <b>Default kiosk exit PIN.</b>{' '}
+          {readOnly
+            ? 'Devices on this template use a well-known PIN, so anyone who knows it can leave kiosk mode. Duplicate it, set your own PIN, and move the devices to the copy.'
+            : 'This configuration uses a well-known PIN, so anyone who knows it can leave kiosk mode. Set your own under Kiosk → Kiosk exit PIN.'}
+        </div>
+      )}
+
       {enforcedByGroup.map(({ group, fields }) => (
         <section className="panel cfg-panel" key={group}>
           <div className="cfg-sec-h">{group}</div>
+          {GROUP_NOTES[group] ? <p className="cfg-legacy-note">{GROUP_NOTES[group]}</p> : null}
           {fields.map((f) => (
-            <Field key={f.key} def={f} value={draft[f.key]} apps={f.key === 'mainAppId' ? mainAppChoices : apps} assigned={allowed} disabled={readOnly} onChange={(v) => set(f.key, v)} />
+            <Field
+              key={f.key}
+              def={f}
+              value={draft[f.key]}
+              stored={baseline[f.key]}
+              kioskOn={draft.kioskMode === true}
+              warn={f.key === 'password' && defaultPin ? 'Well-known default PIN: change it.' : undefined}
+              apps={f.key === 'mainAppId' ? mainAppChoices : apps}
+              assigned={allowed}
+              disabled={readOnly}
+              onChange={(v) => set(f.key, v)}
+            />
           ))}
         </section>
       ))}
@@ -545,7 +576,8 @@ function ConfigEditor({
           )}
         </div>
         <p className="note" style={{ margin: '0 0 12px' }}>
-          Apps this template installs on its devices. Set an app to “Remove” to uninstall it.
+          Apps this template installs on its devices. “Do not install” keeps an app listed without installing it.
+          “Remove” takes the app out of this configuration; it is not uninstalled from devices yet.
           {draft.kioskMode === true ? ' “Show in kiosk” controls whether an installed app appears in the kiosk launcher.' : ''}
         </p>
         {allowed.length === 0 && <div className="cfg-empty">No apps assigned.</div>}
@@ -583,10 +615,10 @@ function ConfigEditor({
       </section>
 
       <button className="cfg-adv-toggle" onClick={() => setAdvanced((v) => !v)}>
-        {advanced ? '▾' : '▸'} Legacy Headwind fields ({LEGACY_FIELDS.length}) — not applied by the MDMesh agent
+        {advanced ? '▾' : '▸'} Headwind launcher only (not used by the MDMesh agent) · {LEGACY_FIELDS.length}
       </button>
       {advanced && (
-        <p className="cfg-legacy-note">These fields are stored with the configuration but the MDMesh agent does not enforce them yet. They are kept for the built-in launcher and for future ports.</p>
+        <p className="cfg-legacy-note">Only the Headwind launcher read these settings; the MDMesh agent does not apply them. They stay stored with the configuration, and saving keeps their values.</p>
       )}
 
       {advanced &&
@@ -594,7 +626,7 @@ function ConfigEditor({
           <section className="panel cfg-panel" key={group}>
             <div className="cfg-sec-h">{group}</div>
             {fields.map((f) => (
-              <Field key={f.key} def={f} value={draft[f.key]} apps={apps} assigned={allowed} disabled={readOnly} onChange={(v) => set(f.key, v)} />
+              <Field key={f.key} def={f} value={draft[f.key]} stored={baseline[f.key]} apps={apps} assigned={allowed} disabled={readOnly} onChange={(v) => set(f.key, v)} />
             ))}
           </section>
         ))}
@@ -615,6 +647,9 @@ function ConfigEditor({
 function Field({
   def,
   value,
+  stored,
+  kioskOn,
+  warn,
   apps,
   assigned,
   disabled,
@@ -622,6 +657,10 @@ function Field({
 }: {
   def: FieldDef;
   value: unknown;
+  /** The value as loaded, before edits: a `flag` switched off restores a stored null. */
+  stored: unknown;
+  kioskOn?: boolean;
+  warn?: string;
   apps: Application[];
   assigned: ConfigApp[];
   disabled?: boolean;
@@ -632,31 +671,80 @@ function Field({
       <div className="cfg-field-label">
         <label>{def.label}</label>
         {def.enforced ? <span className="chip chip-enforced" title="Applied on devices by the MDMesh agent">Enforced</span> : null}
+        {def.kioskOnly ? (
+          <span
+            className={`chip chip-enforced chip-scope${kioskOn ? '' : ' off'}`}
+            title={kioskOn ? 'Applies only while kiosk mode is on' : 'Kiosk mode is off, so this has no effect until it is turned on'}
+          >
+            Applies in kiosk mode
+          </span>
+        ) : null}
+        {def.enrollQr ? (
+          <span className="chip chip-enforced chip-scope" title="Read by the Enroll page's QR code; not sent to devices">Enrollment QR</span>
+        ) : null}
         <span className="cfg-field-help">{def.help}</span>
+        {warn ? <span className="cfg-field-help cfg-field-warn">{warn}</span> : null}
       </div>
       <div className="cfg-field-ctl">
-        <FieldControl def={def} value={value} apps={apps} assigned={assigned} disabled={disabled} onChange={onChange} />
+        <FieldControl def={def} value={value} stored={stored} apps={apps} assigned={assigned} disabled={disabled} onChange={onChange} />
       </div>
     </div>
   );
 }
 
-function FieldControl({ def, value, apps, assigned, disabled, onChange }: { def: FieldDef; value: unknown; apps: Application[]; assigned: ConfigApp[]; disabled?: boolean; onChange: (v: unknown) => void }) {
+/** Password input with a show/hide toggle (the kiosk exit PIN must stay readable for admins). */
+function PasswordInput({ label, value, disabled, onChange }: { label: string; value: unknown; disabled?: boolean; onChange: (v: unknown) => void }) {
+  const [shown, setShown] = useState(false);
+  return (
+    <span className="cfg-reveal">
+      <input
+        className="input"
+        type={shown ? 'text' : 'password'}
+        value={value == null ? '' : String(value)}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        autoComplete="new-password"
+        spellCheck={false}
+        aria-label={label}
+      />
+      <button type="button" className="btn btn-sm btn-ghost" onClick={() => setShown((v) => !v)} aria-pressed={shown}>
+        {shown ? 'Hide' : 'Show'}
+      </button>
+    </span>
+  );
+}
+
+function FieldControl({ def, value, stored, apps, assigned, disabled, onChange }: { def: FieldDef; value: unknown; stored: unknown; apps: Application[]; assigned: ConfigApp[]; disabled?: boolean; onChange: (v: unknown) => void }) {
   switch (def.type) {
     case 'switch':
       return (
         <input type="checkbox" className="dev-check" checked={value === true} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
       );
+    case 'flag': {
+      // null and false mean the same on the device; switching off never turns a stored null into false.
+      const set = (on: boolean) => onChange(on ? true : flagOffValue(stored));
+      const labels = def.flagLabels;
+      if (labels) {
+        return (
+          <span className="seg">
+            {[false, true].map((on) => (
+              <button key={String(on)} className={(value === true) === on ? 'on' : ''} disabled={disabled} onClick={() => set(on)}>
+                {labels[on ? 1 : 0]}
+              </button>
+            ))}
+          </span>
+        );
+      }
+      return (
+        <input type="checkbox" className="dev-check" checked={value === true} disabled={disabled} onChange={(e) => set(e.target.checked)} aria-label={def.label} />
+      );
+    }
     case 'tri':
       return (
         <span className="seg">
-          {[
-            { v: null, l: 'Auto' },
-            { v: true, l: 'On' },
-            { v: false, l: 'Off' },
-          ].map((o) => (
-            <button key={String(o.v)} className={value === o.v || (o.v === null && value == null) ? 'on' : ''} disabled={disabled} onClick={() => onChange(o.v)}>
-              {o.l}
+          {(def.segments ?? DEFAULT_SEGMENTS).map((o) => (
+            <button key={String(o.value)} className={value === o.value || (o.value === null && value == null) ? 'on' : ''} disabled={disabled} onClick={() => onChange(o.value)}>
+              {o.label}
             </button>
           ))}
         </span>
@@ -697,9 +785,20 @@ function FieldControl({ def, value, apps, assigned, disabled, onChange }: { def:
     case 'time':
       return <input className="input" type="time" value={value == null ? '' : String(value)} disabled={disabled} onChange={(e) => onChange(e.target.value || null)} />;
     case 'color':
-      return <input type="color" value={value ? String(value) : '#ffffff'} disabled={disabled} onChange={(e) => onChange(e.target.value)} />;
+      // Unset = the kiosk launcher's own default, so say "Default" instead of implying white.
+      return (
+        <span className="cfg-color">
+          <span className="cfg-color-v">{value ? String(value) : 'Default'}</span>
+          <input type="color" value={value ? String(value) : '#ffffff'} disabled={disabled} onChange={(e) => onChange(e.target.value)} aria-label={def.label} />
+          {value && !disabled ? (
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => onChange(null)} title="Use the kiosk launcher's default color">
+              Reset
+            </button>
+          ) : null}
+        </span>
+      );
     case 'password':
-      return <input className="input" type="password" value={value == null ? '' : String(value)} disabled={disabled} onChange={(e) => onChange(e.target.value)} autoComplete="new-password" />;
+      return <PasswordInput label={def.label} value={value} disabled={disabled} onChange={onChange} />;
     default:
       return <input className="input" type="text" value={value == null ? '' : String(value)} disabled={disabled} onChange={(e) => onChange(e.target.value)} />;
   }

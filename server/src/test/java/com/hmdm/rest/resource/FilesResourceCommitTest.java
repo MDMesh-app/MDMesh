@@ -62,11 +62,13 @@ public class FilesResourceCommitTest {
     private static final class UnusedConfigurationFileDAO extends com.hmdm.persistence.ConfigurationFileDAO {
         UnusedConfigurationFileDAO() { super(null, null, null); }
         @Override public boolean isFileUsed(Integer fileId) { return false; }
+        @Override public List<String> getUsingConfigurations(Integer customerId, Integer fileId) { return new ArrayList<>(); }
     }
 
     private static final class UnusedIconDAO extends com.hmdm.persistence.IconDAO {
         UnusedIconDAO() { super(null); }
         @Override public boolean isFileUsed(Integer fileId) { return false; }
+        @Override public List<String> getUsingIcons(Integer customerId, Integer fileId) { return new ArrayList<>(); }
     }
 
     private File filesDir;
@@ -144,6 +146,70 @@ public class FilesResourceCommitTest {
         assertEquals(FilesResource.EXTERNAL_URL_NOT_HTTP, resource.updateFile(external(5, "file:///etc/passwd")).getMessage());
         assertEquals(Response.ResponseStatus.OK,
                 resource.updateFile(external(5, "https://cdn.example.com/a.png")).getStatus());
+    }
+
+    private static UploadedFile hosted(Integer id, String filePath) {
+        UploadedFile f = new UploadedFile();
+        f.setId(id);
+        f.setExternal(false);
+        f.setFilePath(filePath);
+        return f;
+    }
+
+    private static void expectBadRequest(Runnable call) {
+        try {
+            call.run();
+            fail("expected 400");
+        } catch (javax.ws.rs.BadRequestException expected) {
+            // ok
+        }
+    }
+
+    @Test
+    public void aHostedFileUpdateNeverStoresAnExternalUrlFromTheRequest() {
+        uploadedFileDAO.existing = hosted(5, "a.png");
+        UploadedFile req = hosted(5, "a.png");
+        req.setExternalUrl("file:///etc/passwd");
+        assertEquals(Response.ResponseStatus.OK, resource.updateFile(req).getStatus());
+        assertEquals(1, uploadedFileDAO.written.size());
+        assertEquals(null, uploadedFileDAO.written.get(0).getExternalUrl());
+        assertFalse(uploadedFileDAO.written.get(0).isExternal());
+    }
+
+    @Test
+    public void anUpdateCannotTurnAHostedFileExternal() {
+        uploadedFileDAO.existing = hosted(5, "a.png");
+        expectBadRequest(() -> resource.updateFile(external(5, "file:///etc/passwd")));
+        expectBadRequest(() -> resource.updateFile(external(5, "https://cdn.example.com/a.png")));
+        assertEquals(0, uploadedFileDAO.written.size());
+    }
+
+    @Test
+    public void anUpdateCannotTurnAnExternalFileHosted() {
+        uploadedFileDAO.existing = external(5, "https://cdn.example.com/a.png");
+        UploadedFile req = hosted(5, "");
+        req.setExternalUrl("file:///etc/passwd");
+        expectBadRequest(() -> resource.updateFile(req));
+        assertEquals(0, uploadedFileDAO.written.size());
+    }
+
+    @Test
+    public void anUpdateOfAMissingFileIsDenied() {
+        uploadedFileDAO.existing = null;
+        assertDenied(resource.updateFile(external(5, "https://cdn.example.com/a.png")));
+        assertDenied(resource.updateFile(hosted(5, "a.png")));
+        assertEquals(0, uploadedFileDAO.written.size());
+    }
+
+    @Test
+    public void aNewHostedFileNeverStoresAnExternalUrl() throws IOException {
+        File tmpFile = com.hmdm.util.FileUtil.createUploadFile(customer, "new.png");
+        UploadedFile req = commit(tmpFile.getAbsolutePath(), "new.png");
+        req.setExternalUrl("file:///etc/passwd");
+        assertEquals(Response.ResponseStatus.OK, resource.updateFile(req).getStatus());
+        assertEquals(1, uploadedFileDAO.written.size());
+        assertEquals(null, uploadedFileDAO.written.get(0).getExternalUrl());
+        new File(filesDir, "acme/new.png").delete();
     }
 
     @Test

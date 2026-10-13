@@ -224,6 +224,8 @@ public class FilesResource {
     }
 
     private Response createFileInternal(UploadedFile uploadedFile) {
+        // A hosted file has no external URL, whatever the request carries.
+        uploadedFile.setExternalUrl(null);
         if (uploadedFile.getFilePath() == null) {
             uploadedFile.setFilePath("");
         }
@@ -308,18 +310,32 @@ public class FilesResource {
     private Response updateFileInternal(UploadedFile uploadedFile) {
         return SecurityContext.get().getCurrentUser().map(u -> {
             Customer customer = customerDAO.findById(u.getCustomerId());
-            if (uploadedFile.isExternal()) {
+            // The stored row decides what kind of file this is; the request may not change it.
+            final UploadedFile dbFile;
+            try {
+                dbFile = uploadedFileDAO.getById(uploadedFile.getId());
+            } catch (com.hmdm.security.SecurityException e) {
+                logger.warn("Refused to update file {}: not a file of this customer", uploadedFile.getId());
+                return Response.PERMISSION_DENIED();
+            }
+            if (dbFile == null) {
+                logger.warn("Refused to update file {}: no such file", uploadedFile.getId());
+                return Response.PERMISSION_DENIED();
+            }
+            if (uploadedFile.isExternal() != dbFile.isExternal()) {
+                logger.warn("Refused to update file {}: the external flag cannot change", uploadedFile.getId());
+                throw new javax.ws.rs.BadRequestException();
+            }
+            if (dbFile.isExternal()) {
                 // A changed URL must be http(s); an older file keeps whatever URL it already has.
-                UploadedFile dbFile = uploadedFileDAO.getById(uploadedFile.getId());
                 String url = uploadedFile.getExternalUrl();
-                boolean changed = dbFile == null || url == null || !url.equals(dbFile.getExternalUrl());
-                if (changed && !com.hmdm.util.HostedFiles.isHttpUrl(url)) {
+                if (!java.util.Objects.equals(url, dbFile.getExternalUrl()) && !com.hmdm.util.HostedFiles.isHttpUrl(url)) {
                     logger.warn("Refused to set a non-http(s) URL on external file {}", uploadedFile.getId());
                     return Response.ERROR(EXTERNAL_URL_NOT_HTTP);
                 }
-            }
-            if (!uploadedFile.isExternal()) {
-                UploadedFile dbFile = uploadedFileDAO.getById(uploadedFile.getId());
+            } else {
+                // A hosted file keeps its stored external URL (none), whatever the request carries.
+                uploadedFile.setExternalUrl(dbFile.getExternalUrl());
                 if (!StringUtil.isEmpty(uploadedFile.getTmpPath())) {
                     if (!FileUtil.isUploadedTempFile(uploadedFile.getTmpPath(), customer)) {
                         logger.warn("Refused to replace file {}: not an upload of this customer", dbFile.getFilePath());

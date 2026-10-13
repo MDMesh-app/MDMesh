@@ -100,7 +100,7 @@ public class UserResourceTest {
     public void orgAdminCannotCreateSuperAdmin() {
         signIn(orgAdmin);
 
-        Response response = resource.updateUser(newUser("mallory", SUPER_ADMIN));
+        Response response = resource.updateUser(newUser("newadmin", SUPER_ADMIN));
 
         assertDenied(response);
         assertTrue(writes.isEmpty());
@@ -216,7 +216,7 @@ public class UserResourceTest {
     @Test
     public void userCannotEditAnotherUserOfSameCustomer() {
         signIn(tenantUser);
-        User request = details(orgAdmin.getId(), "attacker@example.com");
+        User request = details(orgAdmin.getId(), "other@example.com");
         request.setOldPassword(PASSWORD_MD5);      // the caller's own password does not help
 
         Response response = resource.updateUserDetails(request);

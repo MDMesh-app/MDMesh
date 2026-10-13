@@ -210,20 +210,20 @@ public class FilesResourceCommitTest {
     @Test
     public void createRejectsTraversalThroughTheTempDir() {
         String tmpdir = System.getProperty("java.io.tmpdir");
-        Response r = resource.updateFile(commit(tmpdir + "/.." + secret.getAbsolutePath(), "stolen.txt"));
+        Response r = resource.updateFile(commit(tmpdir + "/.." + secret.getAbsolutePath(), "copied.txt"));
         assertDenied(r);
         assertTrue(secret.exists());
-        assertFalse(new File(filesDir, "acme/stolen.txt").exists());
+        assertFalse(new File(filesDir, "acme/copied.txt").exists());
         assertEquals(0, uploadedFileDAO.written.size());
     }
 
     @Test
     public void createRejectsAnArbitraryAbsolutePath() {
         // TemporaryFolder lives under java.io.tmpdir, so this also passes a naive prefix check.
-        Response r = resource.updateFile(commit(secret.getAbsolutePath(), "stolen.txt"));
+        Response r = resource.updateFile(commit(secret.getAbsolutePath(), "copied.txt"));
         assertDenied(r);
         assertTrue(secret.exists());
-        assertFalse(new File(filesDir, "acme/stolen.txt").exists());
+        assertFalse(new File(filesDir, "acme/copied.txt").exists());
         assertEquals(0, uploadedFileDAO.written.size());
     }
 
@@ -256,11 +256,11 @@ public class FilesResourceCommitTest {
         File theirs = com.hmdm.util.FileUtil.createUploadFile(other, "theirs.apk");
         theirs.deleteOnExit();
 
-        Response r = resource.updateFile(commit(theirs.getAbsolutePath(), "stolen.apk"));
+        Response r = resource.updateFile(commit(theirs.getAbsolutePath(), "copied.apk"));
 
         assertDenied(r);
         assertTrue(theirs.exists());
-        assertFalse(new File(filesDir, "acme/stolen.apk").exists());
+        assertFalse(new File(filesDir, "acme/copied.apk").exists());
     }
 
     @Test

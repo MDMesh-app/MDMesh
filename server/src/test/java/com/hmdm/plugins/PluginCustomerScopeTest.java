@@ -86,7 +86,7 @@ public class PluginCustomerScopeTest {
     }
 
     @Test
-    public void anotherCustomersDeviceLogSettingsAreNotUpdatedWithAForgedCustomerId() {
+    public void anotherCustomersDeviceLogSettingsAreNotUpdatedWithAnotherCustomerId() {
         FakeMapper<PostgresDeviceLogMapper> fake = new FakeMapper<>(PostgresDeviceLogMapper.class)
                 .answer("findPluginSettingsById", a -> settings((Integer) a[0], 2));
         PostgresDeviceLogPluginSettingsDAO dao = new PostgresDeviceLogPluginSettingsDAO(fake.mapper);

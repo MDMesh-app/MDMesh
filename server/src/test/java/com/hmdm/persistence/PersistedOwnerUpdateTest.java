@@ -47,7 +47,7 @@ public class PersistedOwnerUpdateTest {
     }
 
     @Test
-    public void anotherCustomersGroupIsNotRenamedWithAForgedCustomerId() {
+    public void anotherCustomersGroupIsNotRenamedWithAnotherCustomerId() {
         try {
             dao.updateGroup(group(2, 1));
             fail("expected a SecurityException");

@@ -2892,31 +2892,22 @@
     </changeSet>
 
     <changeSet id="26.10.12-configurations-disableSafeBoot" author="lunacy" context="common">
-        <comment>Column,new: configurations#disableSafeBoot — "disable Safe Mode", sent to the agent inverted
-            as policies.safeBoot (true = allowed), like disableFactoryReset -> factoryReset.
-            Nullable with no DEFAULT: NULL means unmanaged, the key is then omitted from config.apply and the
-            agent applies nothing. A DEFAULT would insert the key into every existing configuration's
-            revision and mass re-apply policies.safeBoot across the fleet on upgrade.</comment>
+        <comment>Column,new: configurations#disableSafeBoot (sent inverted as policies.safeBoot). No DEFAULT: NULL
+            = unmanaged, so existing configurations keep their revision.</comment>
         <sql>ALTER TABLE configurations ADD COLUMN disableSafeBoot BOOLEAN;</sql>
         <rollback>ALTER TABLE configurations DROP COLUMN disableSafeBoot;</rollback>
     </changeSet>
 
     <changeSet id="26.10.12-deviceState-configAgentVersion" author="lunacy" context="common">
-        <comment>Column,new: device_state#configAgentVersion — agent versionName that last completed config.apply.
-            When the device later reports a different version (agent self-update), config.apply is re-sent until
-            one comes back done, so per-key results refresh (a newer agent may support keys the old one reported
-            unsupported). Seeded from the last reported agentVersion, so a device that self-updates across the
-            server upgrade is still detected. NULL = no baseline: the first check-in records one, re-sends nothing.</comment>
+        <comment>Column,new: device_state#configAgentVersion (agent version of the last completed config.apply;
+            seeded from agentVersion)</comment>
         <sql>ALTER TABLE device_state ADD COLUMN configAgentVersion VARCHAR(64);
             UPDATE device_state SET configAgentVersion = agentVersion;</sql>
         <rollback>ALTER TABLE device_state DROP COLUMN configAgentVersion;</rollback>
     </changeSet>
 
     <changeSet id="26.10.12-agentCommand-agentVersion" author="lunacy" context="common">
-        <comment>Column,new: agentCommand#agentVersion — for config.apply, the agent versionName it was queued for.
-            Its done result records this as device_state.configAgentVersion, not the version reporting the result,
-            so an agent that updated itself before its result arrived still gets its own config.apply.
-            NULL (older rows, other commands): the reporting version is recorded, as before.</comment>
+        <comment>Column,new: agentCommand#agentVersion (for config.apply, the agent version it was queued for)</comment>
         <sql>ALTER TABLE agentCommand ADD COLUMN agentVersion VARCHAR(64);</sql>
         <rollback>ALTER TABLE agentCommand DROP COLUMN agentVersion;</rollback>
     </changeSet>

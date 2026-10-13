@@ -20,11 +20,9 @@ import java.io.InputStream;
  * larger {@code Content-Length} is refused with 413 before it is read; an undeclared (chunked) or understated one
  * fails with 413 as soon as more than the limit has been read, so the JSON reader never sees more than that.</p>
  *
- * <p>The limit is a backstop against abuse only, far above anything a real agent sends: telemetry is capped at
- * 256 KB server-side, events at 100 x 4 KB (the agent buffers at most 500 short ones), the capability tree at 64 KB,
- * and current agents send results in batches of at most 100 / 4 MiB. It must stay well clear of legitimate traffic:
- * an agent whose check-in is refused keeps its results and resends the same body, so a too-tight limit would stop
- * that device from ever checking in again. Per-result size is enforced in AgentResource instead.</p>
+ * <p>The limit sits far above any real agent request (telemetry, events and the capability tree are capped
+ * server-side; results come in size-capped batches), because a refused check-in is resent unchanged and a tight limit
+ * would keep that device from ever checking in. Per-result size is enforced in AgentResource.</p>
  */
 @Provider
 @AgentBodyLimit

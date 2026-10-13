@@ -90,7 +90,7 @@ public class QRCodeApkHashTest {
     @Test
     public void aLookalikeHostIsRemote() throws Exception {
         try {
-            hash("https://mdm.example.com.evil.test/files/acme/launcher.apk");
+            hash("https://mdm.example.com.other.test/files/acme/launcher.apk");
             fail("a different host must not count as local");
         } catch (QRCodeResource.ApkChecksumUnavailableException expected) {
             // ok

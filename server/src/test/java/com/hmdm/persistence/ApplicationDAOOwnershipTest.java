@@ -209,7 +209,7 @@ public class ApplicationDAOOwnershipTest {
         v.setId(id);
         v.setApplicationId(applicationId);
         v.setVersion("2");
-        v.setUrl("https://evil.example.com/x.apk");
+        v.setUrl("https://other.example.com/x.apk");
         return v;
     }
 

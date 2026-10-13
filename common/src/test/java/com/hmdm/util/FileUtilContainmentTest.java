@@ -110,7 +110,7 @@ public class FileUtilContainmentTest {
 
     @Test
     public void rejectsASymlinkPlantedInTheUploadDir() throws IOException {
-        Path link = cdir.resolve("evil" + FileUtil.TEMP_FILE_DELIMITER + "1.temp");
+        Path link = cdir.resolve("link" + FileUtil.TEMP_FILE_DELIMITER + "1.temp");
         Files.createSymbolicLink(link, secret.toPath());
         assertRejected(() -> FileUtil.moveFile(customer, filesDir, null, link.toString(), "x.txt", uploadDir));
         assertTrue(secret.exists());
@@ -168,11 +168,11 @@ public class FileUtilContainmentTest {
     @Test
     public void deleteDoesNotFollowASymlinkedSubdirOut() throws IOException {
         File outside = tmp.newFolder("outside");
-        File victim = new File(outside, "doc.txt");
-        Files.write(victim.toPath(), "x".getBytes(StandardCharsets.UTF_8));
+        File outsideFile = new File(outside, "doc.txt");
+        Files.write(outsideFile.toPath(), "x".getBytes(StandardCharsets.UTF_8));
         Files.createSymbolicLink(new File(filesDir, "acme/out").toPath(), outside.toPath());
         assertFalse(FileUtil.deleteFile(customer, filesDir, "out/doc.txt"));
-        assertTrue(victim.exists());
+        assertTrue(outsideFile.exists());
     }
 
     // ---- destination side -------------------------------------------------------------------------------------------
@@ -226,7 +226,7 @@ public class FileUtilContainmentTest {
         File mine = new File(filesDir, "acme/mine.txt");
         Files.write(mine.toPath(), "x".getBytes(StandardCharsets.UTF_8));
 
-        assertRejected(() -> FileUtil.renameFile(customer, filesDir, "../other/theirs.txt", "stolen.txt"));
+        assertRejected(() -> FileUtil.renameFile(customer, filesDir, "../other/theirs.txt", "copied.txt"));
         assertRejected(() -> FileUtil.renameFile(customer, filesDir, "mine.txt", "../other/planted.txt"));
         assertTrue(theirs.exists());
         assertTrue(mine.exists());

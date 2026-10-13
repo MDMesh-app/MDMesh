@@ -25,11 +25,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * The document is rebuilt from the Configuration row each time (no stored revision to drift), using the
  * optimized app query (two plain selects per capable check-in — no temp table).
  *
- * <p>It is also re-sent when the device's agent version differs from the one that last completed config.apply
- * (recorded by {@code AgentResource} when the result comes back done): a self-updated agent may now support policy
- * keys the old one reported {@code unsupported}. It re-applies the persisted document on its own, but per-key
- * results only refresh through a config.apply round-trip. A lost or failed re-send is retried with the normal
- * backoff instead of silently consuming the resync.</p>
+ * <p>It is also re-sent once when the device runs a different agent version than the one the last completed
+ * config.apply was queued for: a newer agent may support policy keys the old one reported {@code unsupported}.</p>
  */
 @Singleton
 public class ConfigReconciler {
@@ -73,13 +70,11 @@ public class ConfigReconciler {
             if (doc == null) return false;
             String number = device.getNumber();
             if (configAgentVersion == null && agentVersion != null) {
-                // First sighting (e.g. right after this column was added): baseline only. Treating it as a change
-                // would re-send config.apply to the whole fleet on server upgrade.
+                // First sighting: record a baseline only, so a server upgrade does not re-send to the whole fleet.
                 commandDAO.updateConfigAgentVersion(number, agentVersion);
             }
             boolean agentChanged = ConfigReconcileDecision.agentChanged(agentVersion, configAgentVersion);
-            // Steady state (device already applied this revision, same agent) must cost only the config + apps
-            // selects: skip the command-queue lookups entirely. decide() would return NOOP anyway.
+            // Steady state: skip the command-queue lookups (decide() would return NONE anyway).
             if (doc.getRevision().equals(appliedRevision) && !agentChanged) return false;
             boolean open = commandDAO.hasOpenOfType(number, DesiredConfigBuilder.COMMAND_TYPE);
             AgentCommand latest = open ? null : commandDAO.findLatestOfType(number, DesiredConfigBuilder.COMMAND_TYPE);
@@ -92,7 +87,6 @@ public class ConfigReconciler {
             cmd.setType(DesiredConfigBuilder.COMMAND_TYPE);
             cmd.setPayload(DesiredConfigBuilder.toPayloadJson(doc));
             cmd.setRequiresCapability(DesiredConfigBuilder.CAPABILITY);
-            // Recorded as the config baseline when this command comes back done (see recordConfigApplyDone).
             cmd.setAgentVersion(agentVersion);
             cmd.setStatus("pending");
             cmd.setCreatedAt(now);

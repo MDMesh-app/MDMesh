@@ -57,7 +57,7 @@ public class AgentBodyLimitInterceptorTest {
     }
 
     @Test
-    public void defaultLimitIsOnlyReachableByAbuse() {
+    public void defaultLimitIsFarAboveRealAgentRequests() {
         // Far above anything a real agent sends, so a legitimate device is never locked out by a resend loop.
         assertEquals(32L * 1024 * 1024, AgentBodyLimitInterceptor.MAX_BODY_BYTES);
     }

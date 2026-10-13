@@ -90,7 +90,7 @@ public class IconFileResourceTest {
         return out.toByteArray();
     }
 
-    /** A PNG whose header claims huge dimensions (a decompression bomb needs nothing more to start allocating). */
+    /** A PNG whose header claims huge dimensions (a decoder would size its buffer from them). */
     private static byte[] pngClaiming(int w, int h) throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         DataOutputStream d = new DataOutputStream(out);

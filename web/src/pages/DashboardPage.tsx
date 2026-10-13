@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { AppShell } from '../ui/AppShell';
 import { useDevices } from '../data/useDevices';
-import { statusMeta, isOnline as isOnlineByRecency } from '../ui/status';
+import { isOnline as isOnlineByRecency, type StatusTone } from '../ui/status';
 import { fmtRelative, orDash } from '../ui/format';
 import { getEvents, type DeviceEvent } from '../api/events';
+import { getConfigStatus, getSyncSummary, summarizeStatus } from '../api/configSync';
 import type { DeviceView, ConfigurationLookup } from '../api/devices';
 
 type Bucket = 'online' | 'attention' | 'offline';
@@ -27,11 +28,24 @@ function configName(
   return configs[String(d.configurationId)]?.name ?? 'Unassigned';
 }
 
-function bucketOf(d: DeviceView, now?: number): Bucket {
-  // Offline first (recency of last check-in); a still-reporting device with a config issue is
-  // "attention". statusCode alone can't say offline — it stays green after a factory reset.
+interface ConfigIssue {
+  tone: StatusTone;
+  label: string;
+}
+
+/** Online devices whose configuration state is probed per device (one request each). */
+const ATTENTION_PROBE_CAP = 50;
+
+/** A configuration state worth an admin's look; "Applying…" and "Not reported yet" are transient. */
+function isConfigIssue(v: ConfigIssue): boolean {
+  return v.tone === 'alert' || v.label === 'Out of sync' || v.label === 'Agent too old';
+}
+
+function bucketOf(d: DeviceView, issues: Record<number, ConfigIssue>, now?: number): Bucket {
+  // Offline first (recency of last check-in); a still-reporting device whose configuration
+  // didn't apply is "attention". statusCode can't say either: it is a Headwind recency colour.
   if (!isOnlineByRecency(d.lastUpdate, now)) return 'offline';
-  return statusMeta(d.statusCode).tone === 'warn' ? 'attention' : 'online';
+  return issues[d.id] ? 'attention' : 'online';
 }
 
 interface ActivityItem {
@@ -99,6 +113,7 @@ export function DashboardPage() {
   const navigate = useNavigate();
   const { devices, total, configurations, loading, error } = useDevices();
   const [activity, setActivity] = useState<ActivityItem[] | null>(null);
+  const [issues, setIssues] = useState<Record<number, ConfigIssue>>({});
 
   // Tick every 30s so the online/attention/offline split decays as devices go quiet.
   const [now, setNow] = useState(() => Date.now());
@@ -112,13 +127,13 @@ export function DashboardPage() {
       attention = 0,
       offline = 0;
     for (const d of devices) {
-      const b = bucketOf(d, now);
+      const b = bucketOf(d, issues, now);
       if (b === 'online') online++;
       else if (b === 'attention') attention++;
       else offline++;
     }
     return { online, attention, offline };
-  }, [devices, now]);
+  }, [devices, issues, now]);
 
   const shown = devices.length;
   const pct = (n: number) => (shown ? `${(n / shown) * 100}%` : '0%');
@@ -126,11 +141,42 @@ export function DashboardPage() {
   const attention = useMemo(
     () =>
       [...devices]
-        .filter((d) => bucketOf(d, now) !== 'online')
-        .sort((a, b) => (a.lastUpdate ?? 0) - (b.lastUpdate ?? 0))
+        .filter((d) => bucketOf(d, issues, now) !== 'online')
+        // Online devices with a configuration problem first, then the longest-silent.
+        .sort((a, b) => Number(!!issues[b.id]) - Number(!!issues[a.id]) || (a.lastUpdate ?? 0) - (b.lastUpdate ?? 0))
         .slice(0, 6),
-    [devices, now],
+    [devices, issues, now],
   );
+
+  // Configuration problems: the sync summary names the configurations with devices not in sync,
+  // then only those configurations' online devices are probed (capped), so a healthy fleet costs
+  // one request.
+  useEffect(() => {
+    if (loading) return;
+    let cancelled = false;
+    void (async () => {
+      const summary = await getSyncSummary().catch(() => null);
+      if (cancelled || !summary) return;
+      const suspect = new Set(
+        summary.filter((s) => s.outOfSync > 0 || s.unsupported > 0 || s.neverSeen > 0).map((s) => s.configurationId),
+      );
+      const probe = devices
+        .filter((d) => d.configurationId != null && suspect.has(d.configurationId) && isOnlineByRecency(d.lastUpdate))
+        .slice(0, ATTENTION_PROBE_CAP);
+      const results = await Promise.allSettled(
+        probe.map((d) => getConfigStatus(d.number).then((s) => ({ id: d.id, v: summarizeStatus(s) }))),
+      );
+      if (cancelled) return;
+      const next: Record<number, ConfigIssue> = {};
+      for (const r of results) {
+        if (r.status === 'fulfilled' && isConfigIssue(r.value.v)) next[r.value.id] = r.value.v;
+      }
+      setIssues(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, devices]);
 
   const byConfig = useMemo(() => {
     const m = new Map<string, number>();
@@ -276,11 +322,12 @@ export function DashboardPage() {
               ) : attention.length === 0 ? (
                 <div className="empty">
                   <span className="label">All clear</span>
-                  Every device is online.
+                  Every device is online and in sync.
                 </div>
               ) : (
                 attention.map((d) => {
-                  const m = statusMeta(d.statusCode);
+                  const issue = isOnlineByRecency(d.lastUpdate, now) ? issues[d.id] : undefined;
+                  const m: ConfigIssue = issue ?? { tone: 'alert', label: 'Offline' };
                   return (
                     <div
                       key={d.id}

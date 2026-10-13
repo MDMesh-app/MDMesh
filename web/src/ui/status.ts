@@ -1,5 +1,6 @@
-// Maps the server's device statusCode colour (green/red/yellow/brown/grey)
-// onto our instrument status tones (ok/warn/alert/idle) + a human label.
+// Maps the server's device statusCode (a Headwind check-in recency colour: green <2h,
+// yellow <4h, red older; grey = missing) onto our status tones (ok/warn/alert/idle) + a label.
+// It says nothing about configuration; the dashboard's "attention" uses config sync instead.
 // Brand amber is never used for status — only ok/warn/alert/idle.
 
 export type StatusTone = 'ok' | 'warn' | 'alert' | 'idle';
@@ -12,7 +13,6 @@ interface StatusMeta {
 const MAP: Record<string, StatusMeta> = {
   green: { tone: 'ok', label: 'Online' },
   yellow: { tone: 'warn', label: 'Idle' },
-  brown: { tone: 'warn', label: 'Stale' },
   red: { tone: 'alert', label: 'Offline' },
   grey: { tone: 'idle', label: 'Unknown' },
 };

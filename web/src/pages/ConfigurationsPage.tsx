@@ -493,7 +493,7 @@ function ConfigEditor({
     fields: LEGACY_FIELDS.filter((f) => f.group === g),
   })).filter((x) => x.fields.length > 0);
 
-  // SEC-32: the server marks a well-known default PIN; once the PIN is edited here that flag is stale.
+  // The server marks a well-known default PIN; once the PIN is edited here that flag is stale.
   const defaultPin = hasDefaultPin(draft) && (draft.password ?? '') === (baseline.password ?? '');
 
   return (

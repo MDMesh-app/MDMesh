@@ -32,8 +32,8 @@ export interface CommandTemplate {
 export const COMMAND_TEMPLATES: CommandTemplate[] = [
   {
     key: 'wifi-off',
-    label: 'Disable Wi-Fi',
-    description: 'Apply a policy that turns the device Wi-Fi radio off.',
+    label: 'Lock Wi-Fi settings',
+    description: 'Apply a policy that locks the device Wi-Fi settings (the radio is left as it is).',
     request: {
       type: 'policy.apply',
       requiresCapability: 'policy.wifi',
@@ -42,8 +42,8 @@ export const COMMAND_TEMPLATES: CommandTemplate[] = [
   },
   {
     key: 'wifi-on',
-    label: 'Enable Wi-Fi',
-    description: 'Apply a policy that turns the device Wi-Fi radio on.',
+    label: 'Unlock Wi-Fi settings',
+    description: 'Apply a policy that lifts the Wi-Fi settings lock.',
     request: {
       type: 'policy.apply',
       requiresCapability: 'policy.wifi',

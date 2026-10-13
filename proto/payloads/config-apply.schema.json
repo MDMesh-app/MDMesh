@@ -10,7 +10,7 @@
     "configurationId": { "type": "integer" },
     "policies": {
       "type": "object", "additionalProperties": { "type": "boolean" },
-      "properties": { "wifi": {"type":"boolean"}, "bluetooth": {"type":"boolean"}, "usbStorage": {"type":"boolean"}, "screenshots": {"type":"boolean"}, "factoryReset": {"type":"boolean"}, "safeBoot": {"type":"boolean"} },
+      "properties": { "wifi": {"type":"boolean", "description":"false = lock Wi-Fi settings (not the radio)"}, "wifiRadio": {"type":"boolean", "description":"1.4: false = radio off, true = radio on"}, "bluetooth": {"type":"boolean"}, "usbStorage": {"type":"boolean"}, "screenshots": {"type":"boolean"}, "factoryReset": {"type":"boolean"}, "safeBoot": {"type":"boolean"} },
       "description": "Only keys the configuration manages are present. true = allowed/enabled."
     },
     "kiosk": {
@@ -20,12 +20,12 @@
         "mode": { "enum": ["single", "launcher"] },
         "allowedPackages": { "type": "array", "items": { "type": "string" }, "description": "The configuration's apps set to Install with \"Show in kiosk\" on (showIcon); the main app is pinned only under the same rule." },
         "pinPackage": { "type": "string" },
-        "features": { "type": "object", "properties": { "home": {"type":"boolean"}, "recents": {"type":"boolean"}, "notifications": {"type":"boolean"}, "systemInfo": {"type":"boolean"}, "keyguard": {"type":"boolean"}, "lockButtons": {"type":"boolean"} } },
+        "features": { "type": "object", "properties": { "home": {"type":"boolean"}, "recents": {"type":"boolean"}, "notifications": {"type":"boolean"}, "systemInfo": {"type":"boolean"}, "keyguard": {"type":"boolean"}, "lockButtons": {"type":"boolean", "description":"true = block the power menu (no LOCK_TASK_FEATURE_GLOBAL_ACTIONS); does not touch volume"}, "lockVolume": {"type":"boolean", "description":"1.4: true = DISALLOW_ADJUST_VOLUME while in kiosk (the platform mutes the device meanwhile); released on exit"} } },
         "exitMode": { "enum": ["gesture", "visible", "remote"] },
         "password": { "type": "string" },
         "theme": { "type": "object", "properties": { "backgroundColor": {"type":"string"}, "textColor": {"type":"string"}, "iconSize": {"type":"string"} } }
       }
     },
-    "location": { "type": "object", "properties": { "mode": { "enum": ["passive", "active"] } } }
+    "location": { "type": "object", "properties": { "mode": { "enum": ["passive", "active", "off"], "description": "active = fresh fix each check-in (GPS), passive = last-known (Network), off = read no location (Do not track; 1.4, older agents treat it as passive and the server drops what they report)" } } }
   }
 }

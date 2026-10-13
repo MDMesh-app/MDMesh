@@ -22,7 +22,8 @@ data class KioskToggles(
  * Each enabling toggle adds its feature flag. The power menu
  * ([DevicePolicyManager.LOCK_TASK_FEATURE_GLOBAL_ACTIONS]) is ON by default — that is the
  * framework's own default in lock-task — and is removed only when [KioskToggles.lockButtons]
- * is explicitly `true` ("lock the hardware buttons").
+ * is explicitly `true` ("lock the hardware buttons"). That is the power menu only: lock task has no
+ * volume feature flag; volume is [KioskController.setVolumeLocked] (`features.lockVolume`).
  */
 fun lockTaskFeatures(t: KioskToggles): Int {
     var f = 0

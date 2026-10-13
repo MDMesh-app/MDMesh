@@ -48,15 +48,33 @@ public final class DesiredConfigBuilder {
         d.setPolicies(policies(cfg));
         d.setKiosk(cfg.isKioskMode() ? kiosk(cfg, apps == null ? Collections.<Application>emptyList() : apps) : null);
         DesiredLocation loc = new DesiredLocation();
-        loc.setMode(cfg.getRequestUpdates() == RequestUpdatesType.GPS ? "active" : "passive");
+        loc.setMode(locationMode(cfg.getRequestUpdates()));
         d.setLocation(loc);
         d.setRevision(revision(d));
         return d;
     }
 
+    /**
+     * GPS = a fresh fix each check-in; WIFI ("Network") = the OS's last-known fix; DONOTTRACK (the column default,
+     * also used for null) = read nothing. {@code off} is protocol 1.4: an older agent treats it as passive, which is
+     * why {@link #isDoNotTrack} also makes the server drop any location such a device still reports.
+     */
+    static String locationMode(RequestUpdatesType t) {
+        if (t == RequestUpdatesType.GPS) return "active";
+        if (t == RequestUpdatesType.WIFI) return "passive";
+        return "off";
+    }
+
+    /** True when the configuration says "Do not track": the server then stores no location for its devices. */
+    public static boolean isDoNotTrack(Configuration cfg) {
+        return cfg != null && "off".equals(locationMode(cfg.getRequestUpdates()));
+    }
+
     private static Map<String, Boolean> policies(Configuration cfg) {
         Map<String, Boolean> p = new TreeMap<String, Boolean>();
+        // wifi = lock/allow the Wi-Fi settings only; wifiRadio (1.4) switches the radio itself.
         putIfManaged(p, "wifi", cfg.getWifi());
+        putIfManaged(p, "wifiRadio", cfg.getWifiRadio());
         putIfManaged(p, "bluetooth", cfg.getBluetooth());
         putIfManaged(p, "usbStorage", cfg.getUsbStorage());
         putIfManaged(p, "screenshots", cfg.getDisableScreenshots() == null ? null : !cfg.getDisableScreenshots());
@@ -101,6 +119,9 @@ public final class DesiredConfigBuilder {
         DesiredKioskFeatures f = new DesiredKioskFeatures();
         f.setHome(cfg.getKioskHome()); f.setRecents(cfg.getKioskRecents()); f.setNotifications(cfg.getKioskNotifications());
         f.setSystemInfo(cfg.getKioskSystemInfo()); f.setKeyguard(cfg.getKioskKeyguard()); f.setLockButtons(cfg.getKioskLockButtons());
+        // Its own column, not lockButtons: DISALLOW_ADJUST_VOLUME mutes the device, so existing lockButtons=true
+        // kiosks must not start muting on upgrade. Null (all existing rows) is dropped from the canonical JSON.
+        f.setLockVolume(cfg.getKioskLockVolume());
         k.setFeatures(f);
         k.setExitMode(Boolean.TRUE.equals(cfg.getKioskExit()) ? "visible" : "gesture");
         k.setPassword(cfg.getPassword());

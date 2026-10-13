@@ -66,6 +66,7 @@ import com.mdmesh.oem.KnoxAdapter
 import com.mdmesh.oem.OemAdapter
 import com.mdmesh.policy.CapabilityRegistry
 import com.mdmesh.policy.TogglePolicy
+import com.mdmesh.policy.wifi.AndroidWifiRadio
 import com.mdmesh.policy.wifi.DpmHandle
 import com.mdmesh.remote.RemoteControlTierDetector
 import dagger.Module
@@ -97,8 +98,8 @@ object AgentModule {
 
     @Provides
     @Singleton
-    fun provideCapabilityRegistry(handle: DpmHandle): CapabilityRegistry =
-        CapabilityRegistry(handle)
+    fun provideCapabilityRegistry(@ApplicationContext context: Context, handle: DpmHandle): CapabilityRegistry =
+        CapabilityRegistry(handle, AndroidWifiRadio(context))
 
     @Provides
     @Singleton

@@ -39,4 +39,13 @@ class ConfigCommandTest {
         val dto = AgentDeviceStateDto(battery = 1, charging = false, locked = false, kioskActive = false, androidRelease = "14", lastBootAt = 0L, appliedConfigRevision = "r1")
         assertTrue(ProtocolJson.json.encodeToString(dto).contains("\"appliedConfigRevision\":\"r1\""))
     }
+
+    @Test
+    fun `location off is advertised and decodes (protocol 1_4)`() {
+        assertTrue(DeviceAction.ADVERTISED_KEYS.contains(DeviceAction.LOCATION_OFF_KEY))
+        val json = """{"revision":"r","location":{"mode":"off"}}"""
+        val p = ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), json)
+        assertEquals(DeviceAction.LOCATION_OFF, p.location?.mode)
+        assertEquals("1.4", ProtocolJson.PROTOCOL_VERSION)
+    }
 }

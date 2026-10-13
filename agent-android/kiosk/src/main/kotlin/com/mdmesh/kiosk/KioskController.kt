@@ -63,6 +63,15 @@ interface KioskController {
      */
     fun exit(): KioskResult
 
+    /**
+     * Block ([locked] = true) or allow volume changes, via `UserManager.DISALLOW_ADJUST_VOLUME`
+     * (Device Owner, API 21+).
+     * Lock-task mode has no feature flag for the volume keys, so this is the only platform lever, and the platform
+     * MUTES the device while the restriction is set. The kiosk sets it only when asked (`features.lockVolume`) and
+     * releases it on exit.
+     */
+    fun setVolumeLocked(locked: Boolean): KioskResult = KioskResult.Unsupported
+
     /** True if the device is currently pinned in lock-task mode. */
     fun isLocked(context: Context): Boolean
 

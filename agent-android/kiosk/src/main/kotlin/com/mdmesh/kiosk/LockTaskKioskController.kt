@@ -6,6 +6,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.IntentFilter
 import android.os.Build
+import android.os.UserManager
 
 /**
  * Real [KioskController] backed by the native lock-task APIs.
@@ -63,6 +64,17 @@ class LockTaskKioskController(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                 // Reset features to the framework default (only SYSTEM_INFO / status bar).
                 dpm.setLockTaskFeatures(admin, DevicePolicyManager.LOCK_TASK_FEATURE_NONE)
+            }
+        }
+    }
+
+    override fun setVolumeLocked(locked: Boolean): KioskResult {
+        if (!dpm.isDeviceOwnerApp(admin.packageName)) return KioskResult.Unsupported
+        return runGuarded {
+            if (locked) {
+                dpm.addUserRestriction(admin, UserManager.DISALLOW_ADJUST_VOLUME)
+            } else {
+                dpm.clearUserRestriction(admin, UserManager.DISALLOW_ADJUST_VOLUME)
             }
         }
     }

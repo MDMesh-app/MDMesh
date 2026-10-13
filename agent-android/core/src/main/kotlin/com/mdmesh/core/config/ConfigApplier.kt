@@ -4,6 +4,7 @@ import com.mdmesh.core.kiosk.KioskApplier
 import com.mdmesh.core.store.ConfigStateStore
 import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.policy.PolicyOutcome
+import com.mdmesh.policy.ReleasablePolicy
 import com.mdmesh.policy.TogglePolicy
 import com.mdmesh.proto.ConfigApplyPayload
 import com.mdmesh.proto.ConfigApplyResult
@@ -35,12 +36,9 @@ class ConfigApplier(
     private suspend fun applyLocked(doc: ConfigApplyPayload): ConfigApplyResult {
         val outcomes = linkedMapOf<String, String>()
         for ((key, enabled) in doc.policies) {
-            outcomes["policies.$key"] = when (val o = toggles[key]?.setEnabled(enabled)) {
-                null, PolicyOutcome.Unsupported -> ConfigOutcome.UNSUPPORTED
-                PolicyOutcome.Applied -> ConfigOutcome.APPLIED
-                is PolicyOutcome.Failed -> ConfigOutcome.failed(o.reason)
-            }
+            outcomes["policies.$key"] = toOutcome(toggles[key]?.setEnabled(enabled))
         }
+        releaseUnmanaged(doc, outcomes)
         applyKiosk(doc)?.let { outcomes["kiosk"] = it }
         doc.location?.let { loc ->
             outcomes["location"] = runCatching { setLocationMode(loc.mode); ConfigOutcome.APPLIED }
@@ -49,6 +47,26 @@ class ConfigApplier(
         val result = ConfigApplyResult(doc.revision, outcomes)
         if (succeeded(result)) store.save(doc)
         return result
+    }
+
+    /**
+     * A key the previously applied document managed and this one does not: lift what it left behind (once; the new
+     * document is what gets persisted). Reported only when the release failed, so it is retried.
+     */
+    private fun releaseUnmanaged(doc: ConfigApplyPayload, outcomes: MutableMap<String, String>) {
+        val previous = store.load()?.policies?.keys.orEmpty()
+        for (key in previous - doc.policies.keys) {
+            val releasable = toggles[key] as? ReleasablePolicy ?: continue
+            val o = toOutcome(releasable.release())
+            if (ConfigOutcome.isFailed(o)) outcomes["policies.$key"] = o
+        }
+    }
+
+    private fun toOutcome(o: PolicyOutcome?): String = when (o) {
+        null, PolicyOutcome.Unsupported -> ConfigOutcome.UNSUPPORTED
+        PolicyOutcome.Applied -> ConfigOutcome.APPLIED
+        is PolicyOutcome.Failed -> ConfigOutcome.failed(o.reason)
+        is PolicyOutcome.Deferred -> ConfigOutcome.deferred(o.reason)
     }
 
     /** @return the kiosk outcome, or null when nothing was asserted or exited (the key is then omitted). */

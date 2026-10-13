@@ -40,4 +40,6 @@ public class DesiredKioskFeatures {
     private Boolean systemInfo;
     private Boolean keyguard;
     private Boolean lockButtons;
+    /** Protocol 1.4: block volume changes while in kiosk (the platform mutes the device meanwhile). */
+    private Boolean lockVolume;
 }

@@ -68,10 +68,12 @@ export const DEFAULT_SEGMENTS: TriSegment[] = [
   { value: null, label: 'Not managed' }, { value: true, label: 'On' }, { value: false, label: 'Off' },
 ];
 
-// Behaviour that changed in agent 0.3.4. Kept here so the wording is easy to adjust when the agent lands.
-const WIFI_HELP = 'With agent 0.3.4 or later, Off turns Wi-Fi off and stops users turning it on (a Wi-Fi-only device then loses its connection to MDMesh). Older agents only lock Wi-Fi settings. Allow lifts the lock.';
-const LOCK_BUTTONS_HELP = 'Block the power menu in kiosk; with agent 0.3.4 or later, the volume buttons too.';
-const LOCATION_HELP = 'Do not track collects no location with agent 0.3.4 or later (older agents still report the last known location). Last known reports the location the device already has at each check-in; GPS asks for a fresh fix (more accurate, more battery).';
+// Behaviour that depends on the agent version (agent 0.3.4 / protocol 1.4).
+const WIFI_HELP = 'Block locks the Wi-Fi settings so users cannot change networks. It does not turn Wi-Fi off: that is Wi-Fi radio. Allow lifts the lock.';
+const WIFI_RADIO_HELP = 'Needs agent 0.3.4 or later. On turns Wi-Fi on. Off turns it off and, on Android 13 and later, stops users turning it back on. Off is deferred while Wi-Fi is the only network, so the device stays reachable and reports why. Not managed lifts the lock and leaves the radio as it is.';
+const LOCK_BUTTONS_HELP = 'Block the power menu in kiosk. Volume buttons are a separate setting, Lock volume.';
+const LOCK_VOLUME_HELP = 'Applies in kiosk mode, with agent 0.3.4 or later: blocks volume changes. Android mutes the device while volume is locked; the lock is lifted when kiosk ends.';
+const LOCATION_HELP = 'Do not track collects no location with agent 0.3.4 or later, and the server drops any location an older agent still reports. Last known reports the location the device already has at each check-in; GPS asks for a fresh fix (more accurate, more battery).';
 
 export const GROUP_ORDER: FieldGroup[] = [
   'Identity', 'Apps', 'Kiosk', 'Kiosk appearance', 'Network', 'Restrictions', 'Enrollment',
@@ -107,6 +109,7 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'kioskSystemInfo', label: 'System info', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: 'Show the status bar (time, battery, signal) in kiosk.' },
   { key: 'kioskKeyguard', label: 'Lock screen', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: 'Allow the lock screen in kiosk.' },
   { key: 'kioskLockButtons', label: 'Lock hardware buttons', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: LOCK_BUTTONS_HELP },
+  { key: 'kioskLockVolume', label: 'Lock volume', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: LOCK_VOLUME_HELP },
   { key: 'runDefaultLauncher', label: 'Allow stock launcher', type: 'tri', group: 'Kiosk', help: 'Headwind launcher did not make itself the Home app. MDMesh only takes Home in kiosk.' },
   { key: 'kioskScreenOn', label: 'Keep screen on', type: 'tri', group: 'Kiosk', help: 'Headwind launcher kept the screen awake in kiosk.' },
   { key: 'showWifi', label: 'Show Wi-Fi on error', type: 'tri', group: 'Kiosk', help: 'Headwind launcher showed Wi-Fi settings when it could not reach the server.' },
@@ -119,9 +122,8 @@ export const CONFIG_FIELDS: FieldDef[] = [
   ] },
 
   // ── Network ───────────────────────────────────────────────────────────────
-  { key: 'wifi', label: 'Wi-Fi', type: 'tri', group: 'Network', enforced: true, segments: [
-    { value: null, label: 'Not managed' }, { value: true, label: 'Allow' }, { value: false, label: 'Off' },
-  ], help: WIFI_HELP },
+  { key: 'wifi', label: 'Wi-Fi settings', type: 'tri', group: 'Network', enforced: true, segments: ALLOW_BLOCK, help: WIFI_HELP },
+  { key: 'wifiRadio', label: 'Wi-Fi radio', type: 'tri', group: 'Network', enforced: true, segments: DEFAULT_SEGMENTS, help: WIFI_RADIO_HELP },
   { key: 'bluetooth', label: 'Bluetooth', type: 'tri', group: 'Network', enforced: true, segments: ALLOW_BLOCK, help: 'Block turns Bluetooth off and stops users turning it on. Allow lifts the block (it does not turn Bluetooth on).' },
   { key: 'requestUpdates', label: 'Location reporting', type: 'enum', group: 'Network', enforced: true, help: LOCATION_HELP, options: [
     { value: 'DONOTTRACK', label: 'Do not track' }, { value: 'WIFI', label: 'Last known (passive)' }, { value: 'GPS', label: 'GPS (fresh fix)' },
@@ -207,7 +209,7 @@ export const ENFORCED_KEYS: ReadonlySet<string> = new Set(ENFORCED_FIELDS.map((f
 /** Changing any of these re-enters/exits kiosk on every device of the configuration. */
 export const KIOSK_AFFECTING_KEYS: ReadonlySet<string> = new Set([
   'kioskMode', 'mainAppId', 'kioskExit', 'kioskHome', 'kioskRecents', 'kioskNotifications', 'kioskSystemInfo',
-  'kioskKeyguard', 'kioskLockButtons', 'password', 'backgroundColor', 'textColor', 'iconSize', 'applications',
+  'kioskKeyguard', 'kioskLockButtons', 'kioskLockVolume', 'password', 'backgroundColor', 'textColor', 'iconSize', 'applications',
 ]);
 
 /**

@@ -1,7 +1,6 @@
 package com.mdmesh.agent
 
 import android.app.ActivityManager
-import android.content.ComponentName
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
@@ -25,6 +24,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.flow.distinctUntilChanged
 import com.mdmesh.agent.service.CheckInService
+import com.mdmesh.core.kiosk.KioskApplier
 import com.mdmesh.core.store.KioskStateStore
 import com.mdmesh.core.telemetry.EventSink
 import com.mdmesh.kiosk.CrashLoopGuard
@@ -54,7 +54,8 @@ import javax.inject.Inject
 class KioskLauncherActivity : ComponentActivity() {
 
     @Inject lateinit var store: KioskStateStore
-    @Inject lateinit var controller: KioskController
+    /** Every on-device exit goes through [KioskApplier.exit], which also releases the kiosk's volume lock. */
+    @Inject lateinit var applier: KioskApplier
     @Inject lateinit var events: EventSink
     @Inject lateinit var crashGuard: CrashLoopGuard
 
@@ -121,9 +122,9 @@ class KioskLauncherActivity : ComponentActivity() {
     private fun bailOnCrashLoop(): Boolean {
         if (!crashGuard.isCrashLoopDetected()) return false
         events.record("kioskCrashLoop", "dropped kiosk after repeated crashes")
-        controller.exit()
         active = null
-        lifecycleScope.launch { store.save(null) }
+        // Stay HOME to show the recovery screen; force: local state is cleared even if the controller fails.
+        lifecycleScope.launch { applier.exit(handBackHome = false, force = true) }
         setContentView(recoveryView())
         return true
     }
@@ -167,26 +168,11 @@ class KioskLauncherActivity : ComponentActivity() {
 
     private fun doExit() {
         runCatching { if (isFinishing.not()) stopLockTask() }
-        controller.exit()
         events.record("kioskExit", "exited on-device")
-        // Drop our HOME claim and hand off to the OEM launcher so the device returns to normal
-        // (mirrors KioskExitHandler for the remote-exit path).
-        runCatching {
-            packageManager.setComponentEnabledSetting(
-                ComponentName(this, HOME_ALIAS),
-                android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                android.content.pm.PackageManager.DONT_KILL_APP,
-            )
-        }
+        // Same exit as the remote kiosk.exit: releases the lock-task policy, the volume lock and the HOME claim,
+        // then hands off to the OEM launcher. Forced: the admin PIN was entered, the user must get out.
         lifecycleScope.launch {
-            store.save(null)
-            runCatching {
-                startActivity(
-                    Intent(Intent.ACTION_MAIN)
-                        .addCategory(Intent.CATEGORY_HOME)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                )
-            }
+            applier.exit(handBackHome = true, force = true)
             finish()
         }
     }
@@ -377,7 +363,6 @@ class KioskLauncherActivity : ComponentActivity() {
         const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         const val GESTURE_TAPS = 7
         const val GESTURE_WINDOW_MS = 3_000L
-        const val HOME_ALIAS = "com.mdmesh.agent.KioskHomeAlias"
         val INK = Color.parseColor("#0E1117")
         val TEXT = Color.parseColor("#E8EEF4")
         val MUTED = Color.parseColor("#8693A4")

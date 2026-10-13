@@ -5,6 +5,7 @@ import {
 } from '../api/commands';
 import { useToast } from '../ui/toast';
 import { KioskEnterModal } from './KioskEnterModal';
+import { DO_NOT_TRACK_HINT, useDoNotTrack } from '../api/locationTracking';
 
 type Device = { number: string; configurationId?: number };
 
@@ -23,6 +24,10 @@ export function ActionConsole({ device }: { device: Device }) {
   const [confirmText, setConfirmText] = useState('');
   const [busy, setBusy] = useState(false);
   const [kioskOpen, setKioskOpen] = useState(false);
+  const doNotTrack = useDoNotTrack(device.configurationId);
+  /** Location-mode actions do nothing on a Do-not-track configuration (no location is read or stored). */
+  const blockedReason = (t: CommandTemplateExt): string | null =>
+    doNotTrack && t.request.type === 'device.locationMode' ? DO_NOT_TRACK_HINT : null;
 
   const refresh = useCallback(async () => {
     const [st, hist] = await Promise.all([
@@ -113,8 +118,8 @@ export function ActionConsole({ device }: { device: Device }) {
               <button
                 key={t.key}
                 className={`btn ${t.danger ? 'btn-danger' : ''}`}
-                disabled={busy}
-                title={t.description}
+                disabled={busy || blockedReason(t) != null}
+                title={blockedReason(t) ?? t.description}
                 onClick={() => { void onClick(t); }}
               >
                 {t.label}

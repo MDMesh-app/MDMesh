@@ -139,7 +139,9 @@ public interface ConfigurationMapper {
             "downloadUpdates=#{downloadUpdates}, " +
             "defaultFilePath=#{defaultFilePath}, " +
             "disableFactoryReset=#{disableFactoryReset}, " +
-            "disableSafeBoot=#{disableSafeBoot} " +
+            "disableSafeBoot=#{disableSafeBoot}, " +
+            "wifiRadio=#{wifiRadio}, " +
+            "kioskLockVolume=#{kioskLockVolume} " +
             "WHERE id=#{id}"})
     void updateConfiguration(Configuration configuration);
 

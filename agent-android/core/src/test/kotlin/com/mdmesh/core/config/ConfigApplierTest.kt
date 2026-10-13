@@ -8,6 +8,7 @@ import com.mdmesh.core.store.InMemoryKioskStateStore
 import com.mdmesh.kiosk.KioskController
 import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.policy.PolicyOutcome
+import com.mdmesh.policy.ReleasablePolicy
 import com.mdmesh.policy.TogglePolicy
 import com.mdmesh.proto.ConfigApplyPayload
 import com.mdmesh.proto.ConfigLocation
@@ -100,5 +101,37 @@ class ConfigApplierTest {
         val r = ConfigApplier(mapOf("wifi" to wifi), kiosk(FakeController()), {}, store).reapplyPersisted()
         assertEquals("p1", r?.revision); assertEquals(true, wifi.last)
         assertNull(ConfigApplier(emptyMap(), kiosk(FakeController()), {}, InMemoryConfigStateStore()).reapplyPersisted())
+    }
+
+    private class FakeReleasable(private val outcome: PolicyOutcome) : TogglePolicy, ReleasablePolicy {
+        override val capabilityKey = "wifiRadio"
+        var releases = 0
+        override fun isSupported() = true
+        override fun setEnabled(enabled: Boolean): PolicyOutcome = outcome
+        override fun release(): PolicyOutcome { releases++; return PolicyOutcome.Applied }
+    }
+
+    @Test fun `a deferred key is reported with its reason and does not block persistence`() = runTest {
+        // wifiRadio off refused because Wi-Fi is the only network: the rest of the document must still persist,
+        // or a reboot would replay an older document (and a stale kiosk decision).
+        val store = InMemoryConfigStateStore()
+        val radio = FakeReleasable(PolicyOutcome.Deferred("only network"))
+        val r = ConfigApplier(mapOf("wifiRadio" to radio), kiosk(FakeController()), {}, store)
+            .apply(ConfigApplyPayload(revision = "d1", policies = mapOf("wifiRadio" to false)))
+        assertEquals("deferred: only network", r.outcomes["policies.wifiRadio"])
+        assertTrue(ConfigApplier.succeeded(r))
+        assertEquals("d1", store.revision())
+    }
+
+    @Test fun `a key the configuration stops managing is released once`() = runTest {
+        val store = InMemoryConfigStateStore(); val radio = FakeReleasable(PolicyOutcome.Applied)
+        val a = ConfigApplier(mapOf("wifiRadio" to radio), kiosk(FakeController()), {}, store)
+        a.apply(ConfigApplyPayload(revision = "w1", policies = mapOf("wifiRadio" to false)))
+        assertEquals(0, radio.releases)
+        val r = a.apply(ConfigApplyPayload(revision = "w2"))
+        assertEquals("Off -> Not managed lifts what Off left behind", 1, radio.releases)
+        assertTrue(ConfigApplier.succeeded(r)); assertEquals("w2", store.revision())
+        a.apply(ConfigApplyPayload(revision = "w3"))
+        assertEquals("not managed before either -> nothing to release", 1, radio.releases)
     }
 }

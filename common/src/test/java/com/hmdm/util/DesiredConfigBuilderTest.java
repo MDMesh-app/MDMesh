@@ -194,6 +194,56 @@ public class DesiredConfigBuilderTest {
         assertNotEquals(blocked.getRevision(), DesiredConfigBuilder.build(unmanaged, Collections.emptyList()).getRevision());
     }
 
+    @Test
+    public void location_do_not_track_is_off_network_is_passive_gps_is_active() {
+        Configuration c = policiesConfig();
+        c.setRequestUpdates(RequestUpdatesType.DONOTTRACK);
+        assertEquals("Do not track must read no location at all", "off",
+                DesiredConfigBuilder.build(c, Collections.emptyList()).getLocation().getMode());
+        c.setRequestUpdates(RequestUpdatesType.WIFI);
+        assertEquals("passive", DesiredConfigBuilder.build(c, Collections.emptyList()).getLocation().getMode());
+        c.setRequestUpdates(RequestUpdatesType.GPS);
+        assertEquals("active", DesiredConfigBuilder.build(c, Collections.emptyList()).getLocation().getMode());
+        c.setRequestUpdates(null);
+        assertEquals("the column's own default is DONOTTRACK", "off",
+                DesiredConfigBuilder.build(c, Collections.emptyList()).getLocation().getMode());
+    }
+
+    @Test
+    public void wifi_radio_is_its_own_key_and_wifi_false_still_only_locks_settings() {
+        // Stored wifi=false has always meant "lock Wi-Fi settings": it must not start switching the radio off.
+        DesiredConfig legacy = DesiredConfigBuilder.build(policiesConfig(), Collections.emptyList());
+        assertEquals(Boolean.FALSE, legacy.getPolicies().get("wifi"));
+        assertFalse("null wifiRadio = radio not managed", legacy.getPolicies().containsKey("wifiRadio"));
+
+        Configuration off = policiesConfig(); off.setWifiRadio(false);
+        DesiredConfig d = DesiredConfigBuilder.build(off, Collections.emptyList());
+        assertEquals(Boolean.FALSE, d.getPolicies().get("wifiRadio"));
+        assertNotEquals(legacy.getRevision(), d.getRevision());
+
+        Configuration on = policiesConfig(); on.setWifiRadio(true);
+        assertEquals(Boolean.TRUE, DesiredConfigBuilder.build(on, Collections.emptyList()).getPolicies().get("wifiRadio"));
+        // Existing configurations upgrade with a NULL column: the kiosk golden revision must not move.
+        assertEquals(resource("desired-config-kiosk.sha256"),
+                DesiredConfigBuilder.build(kioskConfig(), Arrays.asList(app(5, 505, "com.acme.pos", 1))).getRevision());
+    }
+
+    @Test
+    public void kiosk_volume_lock_is_its_own_opt_in_not_part_of_lock_buttons() {
+        // Android mutes the device while volume is locked: lockButtons=true configurations must not start muting.
+        Configuration buttons = kioskConfig(); buttons.setKioskLockButtons(true);
+        DesiredConfig d = DesiredConfigBuilder.build(buttons, Collections.emptyList());
+        assertEquals(Boolean.TRUE, d.getKiosk().getFeatures().getLockButtons());
+        assertNull(d.getKiosk().getFeatures().getLockVolume());
+
+        Configuration volume = kioskConfig(); volume.setKioskLockVolume(true);
+        assertEquals(Boolean.TRUE,
+                DesiredConfigBuilder.build(volume, Collections.emptyList()).getKiosk().getFeatures().getLockVolume());
+        // A NULL column (every existing configuration) keeps the golden revision.
+        assertEquals(resource("desired-config-kiosk.sha256"),
+                DesiredConfigBuilder.build(kioskConfig(), Arrays.asList(app(5, 505, "com.acme.pos", 1))).getRevision());
+    }
+
     /** GOLDEN for the flat policy block. Kept separate from the kiosk fixture so an unmanaged
      *  disableFactoryReset there still proves the key is omitted. Update deliberately. */
     @Test

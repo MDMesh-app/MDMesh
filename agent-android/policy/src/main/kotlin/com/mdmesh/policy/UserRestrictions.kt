@@ -23,6 +23,9 @@ object UserRestrictions {
     const val DISALLOW_FACTORY_RESET = "no_factory_reset"
     const val DISALLOW_SAFE_BOOT = "no_safe_boot"
 
+    /** API 33. Used by the `wifiRadio` policy (not by [forKey]: it is added only on "off"). */
+    const val DISALLOW_CHANGE_WIFI_STATE = "no_change_wifi_state"
+
     /**
      * The set of `DISALLOW_*` restriction keys backing a capability, or `null` if
      * the capability is not implemented via user restrictions.

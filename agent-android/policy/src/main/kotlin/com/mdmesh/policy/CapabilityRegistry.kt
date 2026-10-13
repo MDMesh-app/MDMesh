@@ -15,7 +15,9 @@ import com.mdmesh.policy.usb.UsbStoragePolicyFactory
 import com.mdmesh.policy.wifi.DpmHandle
 import com.mdmesh.policy.wifi.WifiPolicy
 import com.mdmesh.policy.wifi.WifiPolicyFactory
+import com.mdmesh.policy.wifi.InMemoryWifiRadioOffState
 import com.mdmesh.policy.wifi.WifiRadio
+import com.mdmesh.policy.wifi.WifiRadioOffState
 import com.mdmesh.policy.wifi.WifiRadioPolicy
 import com.mdmesh.policy.wifi.WifiRadioPolicyFactory
 
@@ -37,6 +39,8 @@ class CapabilityRegistry(
     private val handle: DpmHandle,
     /** The Wi-Fi radio surface for `wifiRadio`; null (e.g. in instrumented tests) leaves that key unadvertised. */
     private val wifiRadio: WifiRadio? = null,
+    /** Persisted `wifiRadio` off state (self-heal across reboots); in memory when not given. */
+    private val wifiRadioState: WifiRadioOffState = InMemoryWifiRadioOffState(),
 ) {
 
     /**
@@ -53,7 +57,8 @@ class CapabilityRegistry(
         UsbStoragePolicyFactory.create(handle)?.let { put(UsbStoragePolicy.CAPABILITY_KEY, it) }
         FactoryResetPolicyFactory.create(handle)?.let { put(FactoryResetPolicy.CAPABILITY_KEY, it) }
         SafeBootPolicyFactory.create(handle)?.let { put(SafeBootPolicy.CAPABILITY_KEY, it) }
-        WifiRadioPolicyFactory.create(handle, wifiRadio)?.let { put(WifiRadioPolicy.CAPABILITY_KEY, it) }
+        WifiRadioPolicyFactory.create(handle, wifiRadio, wifiRadioState)
+            ?.let { put(WifiRadioPolicy.CAPABILITY_KEY, it) }
         // Each factory probe returns null on an unsupported device, so a key only
         // appears here when a usable strategy exists.
         // Absence == "not advertised" == "never commanded".

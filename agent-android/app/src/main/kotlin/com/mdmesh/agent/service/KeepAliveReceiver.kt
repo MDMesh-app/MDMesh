@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.mdmesh.core.config.ConfigApplier
 import com.mdmesh.core.sync.CheckInCoordinator
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -19,11 +20,15 @@ import javax.inject.Inject
  *
  * A check-in here does NOT require starting a foreground service, so it sidesteps the Android 12+
  * background-FGS-start restriction.
+ *
+ * It fires with or without a network, so it is also where a `wifiRadio` Off that left the device offline is undone
+ * ([ConfigApplier.selfHealWifiRadio]): before the check-in, so a healed device can try to reach the server at once.
  */
 @AndroidEntryPoint
 class KeepAliveReceiver : BroadcastReceiver() {
 
     @Inject lateinit var coordinator: CheckInCoordinator
+    @Inject lateinit var configApplier: ConfigApplier
 
     override fun onReceive(context: Context, intent: Intent) {
         // Re-arm the next alarm BEFORE the check-in (FLAG_UPDATE_CURRENT makes it idempotent):
@@ -32,6 +37,8 @@ class KeepAliveReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                runCatching { configApplier.selfHealWifiRadio(System.currentTimeMillis()) }
+                    .onFailure { Log.w(TAG, "wifi radio self-heal check failed", it) }
                 coordinator.runOnce()
             } catch (e: Exception) {
                 Log.w(TAG, "heartbeat check-in failed", e) // transient — the next heartbeat retries

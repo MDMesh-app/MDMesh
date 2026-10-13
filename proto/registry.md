@@ -16,7 +16,7 @@ Advertised only when the device has a working strategy for it (`CapabilityRegist
 | key | meaning | min SDK | notes |
 |-----|---------|---------|-------|
 | `wifi` | lock/allow the Wi-Fi settings | 24 | `false` = `DISALLOW_CONFIG_WIFI` (+ configured-networks lockdown on API 30+). Does **not** switch the radio; see `wifiRadio`. |
-| `wifiRadio` | switch the Wi-Fi radio on/off | 24 | 1.4. `WifiManager.setWifiEnabled` (Device Owner is exempt from the API 29 restriction). Off is deferred (outcome `deferred: <reason>`, does not block the document) while Wi-Fi is the only validated non-VPN network; on API 33+ off also adds `DISALLOW_CHANGE_WIFI_STATE`, on lifts it, and so does the key becoming unmanaged (radio left as is). Device Owner only. |
+| `wifiRadio` | switch the Wi-Fi radio on/off | 24 | 1.4. `WifiManager.setWifiEnabled` (Device Owner is exempt from the API 29 restriction). Off is deferred (outcome `deferred: <reason>`, does not block the document) while Wi-Fi is the only validated non-VPN network; on API 33+ off also adds `DISALLOW_CHANGE_WIFI_STATE`, on lifts it, and so does the key becoming unmanaged (radio left as is). Self-heal: if the device then has no other network for 10 minutes (checked on the agent heartbeat), the agent turns Wi-Fi back on, lifts the restriction and drops its applied revision, so the re-sent config.apply reports `deferred: no other network`. Device Owner only. |
 | `bluetooth` | toggle/lock Bluetooth | 24 | BLUETOOTH_SCAN auto-grant fails if target app targetSdk<=30 |
 | `usbStorage` | block USB mass storage | 24 | |
 | `camera` | disable camera | 24 | |

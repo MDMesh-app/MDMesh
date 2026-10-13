@@ -68,6 +68,7 @@ import com.mdmesh.policy.CapabilityRegistry
 import com.mdmesh.policy.TogglePolicy
 import com.mdmesh.policy.wifi.AndroidWifiRadio
 import com.mdmesh.policy.wifi.DpmHandle
+import com.mdmesh.policy.wifi.SharedPrefsWifiRadioOffState
 import com.mdmesh.remote.RemoteControlTierDetector
 import dagger.Module
 import dagger.Provides
@@ -99,7 +100,7 @@ object AgentModule {
     @Provides
     @Singleton
     fun provideCapabilityRegistry(@ApplicationContext context: Context, handle: DpmHandle): CapabilityRegistry =
-        CapabilityRegistry(handle, AndroidWifiRadio(context))
+        CapabilityRegistry(handle, AndroidWifiRadio(context), SharedPrefsWifiRadioOffState(context))
 
     @Provides
     @Singleton

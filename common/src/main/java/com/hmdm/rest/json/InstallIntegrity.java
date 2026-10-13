@@ -3,6 +3,7 @@ package com.hmdm.rest.json;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.hmdm.util.CryptoUtil;
 
 import java.util.Base64;
 import java.util.Locale;
@@ -153,11 +154,7 @@ public final class InstallIntegrity {
         if (bytes == null || bytes.length != 32) {
             return null;
         }
-        StringBuilder sb = new StringBuilder(64);
-        for (byte b : bytes) {
-            sb.append(String.format("%02x", b));
-        }
-        return sb.toString();
+        return CryptoUtil.getLowerHexString(bytes);
     }
 
     /** {@code applicationVersions.apkHash} form (base64url, as QR provisioning computes it) of a hex SHA-256. */

@@ -11,6 +11,7 @@
 package com.hmdm.rest.resource.support;
 
 import com.hmdm.rest.json.InstallIntegrity;
+import com.hmdm.util.CryptoUtil;
 import com.hmdm.util.HostedFiles;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -19,8 +20,6 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 
 /**
  * The hex SHA-256 of an APK this server hosts ({@code <base.url>/files/...}), read from the files directory — the bytes
@@ -52,31 +51,12 @@ public class ApkHashResolver implements InstallIntegrity.Sha256Source {
             throw new IOException(NOT_HOSTED);
         }
         try (InputStream in = new FileInputStream(local)) {
-            return digest(in);
+            return CryptoUtil.getLowerHexString(CryptoUtil.sha256(in));
         }
     }
 
     /** The hosted file a {@code <base.url>/files/...} URL names, or null (not ours, missing, or outside the dir). */
     File localFile(String url) {
         return hostedFiles.localFile(url);
-    }
-
-    private static String digest(InputStream in) throws IOException {
-        MessageDigest md;
-        try {
-            md = MessageDigest.getInstance("SHA-256");
-        } catch (NoSuchAlgorithmException e) {
-            throw new IOException(e);
-        }
-        byte[] buf = new byte[64 * 1024];
-        int n;
-        while ((n = in.read(buf)) > 0) {
-            md.update(buf, 0, n);
-        }
-        StringBuilder sb = new StringBuilder(64);
-        for (byte b : md.digest()) {
-            sb.append(String.format("%02x", b));
-        }
-        return sb.toString();
     }
 }

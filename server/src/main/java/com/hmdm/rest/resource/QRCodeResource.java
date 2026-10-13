@@ -57,7 +57,6 @@ import java.io.*;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLDecoder;
-import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
 
@@ -341,22 +340,14 @@ public class QRCodeResource {
         }
         logger.info("Digesting the application file: {}", apkUrl);
 
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        byte[] buffer= new byte[8192];
-        int count;
-
         File file = DownloadFilesServlet.resolveRequestedFile(new File(filesDirectory), new URL(apkUrl).getPath());
         if (file == null) {
             throw new FileNotFoundException("Not a file under files.directory: " + apkUrl);
         }
+        final String sha256;
         try (InputStream input = new FileInputStream(file)) {
-            while ((count = input.read(buffer)) > 0) {
-                digest.update(buffer, 0, count);
-            }
+            sha256 = CryptoUtil.getBase64String(CryptoUtil.sha256(input));
         }
-
-        final byte[] hash = digest.digest();
-        String sha256 = CryptoUtil.getBase64String(hash);
 
         logger.info("Finished digesting the application file: {}. Hash: {}", apkUrl, sha256);
         return sha256;

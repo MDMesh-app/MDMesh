@@ -14,6 +14,9 @@ import java.io.File;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Locale;
 
 /**
  * The file a {@code <base.url>/files/...} URL names, read from the files directory, so the server can hash what it
@@ -47,7 +50,7 @@ public class HostedFiles {
         if (url == null) {
             return false;
         }
-        String u = url.trim().toLowerCase(java.util.Locale.ROOT);
+        String u = url.trim().toLowerCase(Locale.ROOT);
         return (u.startsWith("http://") && u.length() > 7) || (u.startsWith("https://") && u.length() > 8);
     }
 
@@ -77,17 +80,35 @@ public class HostedFiles {
     }
 
     private File contained(String path) {
-        if (path == null || path.isEmpty()) {
+        return containedFile(filesDirectory, path);
+    }
+
+    /**
+     * The file {@code relative} (already decoded) names below {@code baseDirectory}: only an existing regular file
+     * whose real path (symlinks resolved) lies inside the directory, else null.
+     */
+    public static File containedFile(File baseDirectory, String relative) {
+        if (relative == null) {
+            return null;
+        }
+        while (relative.startsWith("/")) {
+            relative = relative.substring(1); // "/files//a" names "a"
+        }
+        if (relative.isEmpty() || relative.indexOf('\0') >= 0) {
             return null;
         }
         try {
-            File root = filesDirectory.getCanonicalFile();
-            File f = new File(root, path).getCanonicalFile();
-            if (!f.toPath().startsWith(root.toPath()) || !f.isFile()) {
+            Path base = baseDirectory.toPath().toRealPath();
+            Path requested = base.resolve(relative).normalize();
+            if (!requested.startsWith(base) || !Files.exists(requested)) {
                 return null;
             }
-            return f;
-        } catch (IOException | RuntimeException e) {
+            Path real = requested.toRealPath();
+            if (!real.startsWith(base) || real.equals(base) || !Files.isRegularFile(real)) {
+                return null;
+            }
+            return real.toFile();
+        } catch (IllegalArgumentException | IOException e) {
             return null;
         }
     }

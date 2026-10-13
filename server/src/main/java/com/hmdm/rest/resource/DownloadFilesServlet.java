@@ -29,8 +29,6 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URLDecoder;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import javax.servlet.ServletException;
 import javax.servlet.ServletOutputStream;
 import javax.servlet.http.HttpServlet;
@@ -42,6 +40,7 @@ import com.hmdm.persistence.ApplicationDAO;
 import com.hmdm.rest.filter.PublicIPFilter;
 import com.hmdm.rest.json.Response;
 import com.hmdm.util.CryptoUtil;
+import com.hmdm.util.HostedFiles;
 import org.apache.poi.util.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -163,23 +162,8 @@ public class DownloadFilesServlet extends HttpServlet {
             return null;
         }
         try {
-            String relative = URLDecoder.decode(requestUri.substring(index + "/files/".length()), "UTF8");
-            while (relative.startsWith("/")) {
-                relative = relative.substring(1); // "/files//a" was served as "a" before; keep it relative
-            }
-            if (relative.isEmpty() || relative.indexOf('\0') >= 0) {
-                return null;
-            }
-            Path base = baseDirectory.toPath().toRealPath();
-            Path requested = base.resolve(relative).normalize();
-            if (!requested.startsWith(base) || !Files.exists(requested)) {
-                return null;
-            }
-            Path real = requested.toRealPath();
-            if (!real.startsWith(base) || real.equals(base) || !Files.isRegularFile(real)) {
-                return null;
-            }
-            return real.toFile();
+            return HostedFiles.containedFile(baseDirectory,
+                    URLDecoder.decode(requestUri.substring(index + "/files/".length()), "UTF8"));
         } catch (IllegalArgumentException | IOException e) {
             return null;
         }

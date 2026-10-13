@@ -47,8 +47,8 @@ first update, which pins the versions (or set `SERVER_VERSION`/`WEB_VERSION`/`CU
 > this server hosts is hashed automatically; for a Library app that points at an external URL, add its SHA-256 with
 > the **SHA-256…** button (or upload the APK instead), or installs of it fail with a message saying so.
 
-> **Upgrading to v0.3.4?** Update the agents (Settings → Updates) and check two things: location reporting and
-> kiosk PINs. What changes:
+> **Upgrading to v0.3.4?** Update the server first (Settings → Updates, or re-run the installer on native installs),
+> then roll out agent 0.3.4 from **Rollouts**, and check two things: location reporting and kiosk PINs. What changes:
 > - **Do not track** now collects no location. It is the default of the configurations the installer creates and of
 >   new configurations, so devices on them stop reporting location: agent 0.3.4 reads none, and the server drops what
 >   older agents still send. To keep location, set the configuration's **Location reporting** to **Last known

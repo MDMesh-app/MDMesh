@@ -2,7 +2,7 @@ name: release
 
 # Cut a release:  git tag v1.2.3 && git push --tags
 # Produces a tested, signed GitHub Release: the release APK, server+web images on GHCR, and a
-# minisign-signed manifest the fleet updater consumes. Requires repo secrets (see RELEASING.md):
+# minisign-signed manifest the fleet updater consumes. Requires these `release` environment secrets (see RELEASING.md):
 # MDM_RELEASE_STORE_B64, MDM_RELEASE_STORE_PASSWORD, MDM_RELEASE_KEY_ALIAS, MDM_RELEASE_KEY_PASSWORD,
 # MINISIGN_SECRET_KEY, MINISIGN_PASSWORD.
 #

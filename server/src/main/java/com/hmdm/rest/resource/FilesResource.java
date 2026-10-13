@@ -271,7 +271,7 @@ public class FilesResource {
                 return Response.FILE_EXISTS();
             } catch (UnsafePathException e) {
                 logger.warn("Refused to create file {}: {}", uploadedFile.getFilePath(), e.getMessage());
-                throw new javax.ws.rs.BadRequestException();
+                return Response.ERROR(UNSAFE_FILE_PATH);
             } catch (IOException e) {
                 logger.warn("While creating file {}: {}", uploadedFile.getFilePath(), e.getMessage());
                 e.printStackTrace();
@@ -279,6 +279,11 @@ public class FilesResource {
             }
         }).orElse(Response.PERMISSION_DENIED());
     }
+
+    /** Shown when a file path would leave the customer's files directory. */
+    static final String UNSAFE_FILE_PATH = "The file path is not allowed";
+    /** Shown when an update would turn an uploaded file into an external one or back. */
+    static final String FILE_KIND_CHANGE = "An uploaded file cannot become an external file, or the other way round";
 
     /** Shown when an external file's URL is not http(s). */
     static final String EXTERNAL_URL_NOT_HTTP = "An external file's URL must start with http:// or https://";
@@ -323,7 +328,7 @@ public class FilesResource {
             }
             if (uploadedFile.isExternal() != dbFile.isExternal()) {
                 logger.warn("Refused to update file {}: the external flag cannot change", uploadedFile.getId());
-                throw new javax.ws.rs.BadRequestException();
+                return Response.ERROR(FILE_KIND_CHANGE);
             }
             if (dbFile.isExternal()) {
                 // A changed URL must be http(s); an older file keeps whatever URL it already has.
@@ -350,7 +355,7 @@ public class FilesResource {
                                 uploadedFile.getTmpPath(), dbFile.getFileName());
                     } catch (UnsafePathException e) {
                         logger.warn("Refused to replace file {}: {}", dbFile.getFilePath(), e.getMessage());
-                        throw new javax.ws.rs.BadRequestException();
+                        return Response.ERROR(UNSAFE_FILE_PATH);
                     }
                     if (movedFile == null) {
                         return Response.ERROR("error.file.save");
@@ -374,7 +379,7 @@ public class FilesResource {
                                 dbFile.getFilePath(), uploadedFile.getFilePath());
                     } catch (UnsafePathException e) {
                         logger.warn("Refused to move a file to path {}: {}", uploadedFile.getFilePath(), e.getMessage());
-                        throw new javax.ws.rs.BadRequestException();
+                        return Response.ERROR(UNSAFE_FILE_PATH);
                     }
                     if (movedFile == null) {
                         logger.error("Failed to move a file to path: " + uploadedFile.getFilePath());

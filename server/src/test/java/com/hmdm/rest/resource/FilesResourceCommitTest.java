@@ -156,13 +156,8 @@ public class FilesResourceCommitTest {
         return f;
     }
 
-    private static void expectBadRequest(Runnable call) {
-        try {
-            call.run();
-            fail("expected 400");
-        } catch (javax.ws.rs.BadRequestException expected) {
-            // ok
-        }
+    private static void expectKindChangeRefused(Response r) {
+        assertEquals(FilesResource.FILE_KIND_CHANGE, r.getMessage());
     }
 
     @Test
@@ -179,8 +174,8 @@ public class FilesResourceCommitTest {
     @Test
     public void anUpdateCannotTurnAHostedFileExternal() {
         uploadedFileDAO.existing = hosted(5, "a.png");
-        expectBadRequest(() -> resource.updateFile(external(5, "file:///etc/passwd")));
-        expectBadRequest(() -> resource.updateFile(external(5, "https://cdn.example.com/a.png")));
+        expectKindChangeRefused(resource.updateFile(external(5, "file:///etc/passwd")));
+        expectKindChangeRefused(resource.updateFile(external(5, "https://cdn.example.com/a.png")));
         assertEquals(0, uploadedFileDAO.written.size());
     }
 
@@ -189,7 +184,7 @@ public class FilesResourceCommitTest {
         uploadedFileDAO.existing = external(5, "https://cdn.example.com/a.png");
         UploadedFile req = hosted(5, "");
         req.setExternalUrl("file:///etc/passwd");
-        expectBadRequest(() -> resource.updateFile(req));
+        expectKindChangeRefused(resource.updateFile(req));
         assertEquals(0, uploadedFileDAO.written.size());
     }
 
@@ -271,8 +266,8 @@ public class FilesResourceCommitTest {
     @Test
     public void replaceIsRejectedBeforeDeletingWhenTheRecordedPathLeadsOut() throws IOException {
         File outside = tmp.newFolder("outside");
-        File victim = new File(outside, "doc.txt");
-        Files.write(victim.toPath(), "victim".getBytes(StandardCharsets.UTF_8));
+        File outsideFile = new File(outside, "doc.txt");
+        Files.write(outsideFile.toPath(), "outside".getBytes(StandardCharsets.UTF_8));
         Files.createSymbolicLink(new File(filesDir, "acme/out").toPath(), outside.toPath());
         UploadedFile existing = new UploadedFile();
         existing.setId(7);
@@ -284,13 +279,8 @@ public class FilesResourceCommitTest {
 
         UploadedFile req = commit(upload.getAbsolutePath(), "out/doc.txt");
         req.setId(7);
-        try {
-            resource.updateFile(req);
-            fail("expected 400");
-        } catch (javax.ws.rs.WebApplicationException e) {
-            assertEquals(400, e.getResponse().getStatus());
-        }
-        assertTrue(victim.exists());
+        assertEquals(FilesResource.UNSAFE_FILE_PATH, resource.updateFile(req).getMessage());
+        assertTrue(outsideFile.exists());
         assertEquals(0, uploadedFileDAO.written.size());
     }
 

@@ -41,6 +41,12 @@ first update, which pins the versions (or set `SERVER_VERSION`/`WEB_VERSION`/`CU
 > configuration after the upgrade (GPS → active, otherwise passive), so an ad-hoc `device.locationMode` override
 > is replaced.
 
+> **Upgrading to v0.3.3?** The Headwind launcher's device routes (`/rest/public/sync/*`, notifications, the plugin
+> device uploads, usage stats) now answer 404 unless you set `LEGACY_DEVICE_API=1`; MDMesh agents don't use them.
+> Every app install the server queues now carries the APK's SHA-256, and current agents refuse one without it. An APK
+> this server hosts is hashed automatically; for a Library app that points at an external URL, add its SHA-256 with
+> the **SHA-256…** button (or upload the APK instead), or installs of it fail with a message saying so.
+
 > **Docker: supervisor restarting with `Cannot find module '/project/server.js'`?** Every Docker install from v0.1.0
 > through v0.3.0 hit this (#27), so Settings → Updates, the `/recovery` page and the Docker `/files/agent.apk` mirror
 > (the APK the enrollment QR points to) never worked. Fixed in v0.3.1 in the image itself — your existing compose file
@@ -54,10 +60,11 @@ first update, which pins the versions (or set `SERVER_VERSION`/`WEB_VERSION`/`CU
 
 ## Option B — from source (clone + build)
 
-Prereqs: Docker + Compose v2, and `openssl`. Also `minisign` (installed for you when `setup.sh` runs as root on
-Debian/Ubuntu), `python3` and `curl`: like the
-native installer, `setup.sh` bakes the release agent APK's signing checksum into the enrollment QR only after the release's
-`manifest.json` verifies against `release/minisign.pub`; without them the console keeps its debug enrollment defaults.
+Prereqs: Docker + Compose v2, `openssl`, `python3` and `curl`. Like the native installer, `setup.sh` bakes the
+release agent APK's signing checksum into the enrollment QR only after the release's `manifest.json` verifies against
+`release/minisign.pub`. It uses `minisign` from the host (installed for you when `setup.sh` runs as root on
+Debian/Ubuntu), else the one in the supervisor image it builds; if neither works, or `python3`/`curl` are missing, the
+console keeps its debug enrollment defaults.
 
 ```bash
 git clone https://github.com/MDMesh-app/MDMesh.git && cd MDMesh
@@ -386,10 +393,10 @@ which listens on loopback `:9000` only, on the host with `curl -fsS 127.0.0.1:90
 - TLS everywhere (Cloudflare or Caddy/Let's Encrypt). DB + server ports are never published.
 - The agent talks HTTPS only. `SECURE_ENROLLMENT` is a legacy Headwind launcher setting; leave it at `0` for
   MDMesh agents.
-- Legacy Headwind launcher endpoints are off by default (they answer 404, and the MQTT broker stays off); MDMesh
-  agents don't use them. Set `LEGACY_DEVICE_API=1` (`.env`, or the installer's environment on native installs, which
-  writes `legacy.device.api` to `ROOT.xml`) only if you still run the Headwind launcher. An external MQTT broker
-  (`mqtt.external=1` with `mqtt.auth=1`) also needs `mqtt.admin.password` set in `ROOT.xml`; without it MQTT stays off.
+- Legacy Headwind launcher endpoints are off by default (they answer 404); MDMesh agents don't use them. Set
+  `LEGACY_DEVICE_API=1` (`.env`, or the installer's environment on native installs, which writes `legacy.device.api`
+  to `ROOT.xml`) only if you still run the Headwind launcher. MQTT push stays off on both kinds of install (agents
+  are woken over a WebSocket).
 - The admin starts with a generated password and is **required to set its own on first login** (the
   console routes the first sign-in to a "set your password" screen). Configure SMTP (in `.env`, or the installer's
   environment on native installs) to enable email-based password recovery thereafter. `SMTP_SSL=true` is for port

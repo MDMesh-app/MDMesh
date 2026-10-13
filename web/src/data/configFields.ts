@@ -68,6 +68,11 @@ export const DEFAULT_SEGMENTS: TriSegment[] = [
   { value: null, label: 'Not managed' }, { value: true, label: 'On' }, { value: false, label: 'Off' },
 ];
 
+// Behaviour that changed in agent 0.3.4. Kept here so the wording is easy to adjust when the agent lands.
+const WIFI_HELP = 'With agent 0.3.4 or later, Off turns Wi-Fi off and stops users turning it on (a Wi-Fi-only device then loses its connection to MDMesh). Older agents only lock Wi-Fi settings. Allow lifts the lock.';
+const LOCK_BUTTONS_HELP = 'Block the power menu in kiosk; with agent 0.3.4 or later, the volume buttons too.';
+const LOCATION_HELP = 'Do not track collects no location with agent 0.3.4 or later (older agents still report the last known location). Last known reports the location the device already has at each check-in; GPS asks for a fresh fix (more accurate, more battery).';
+
 export const GROUP_ORDER: FieldGroup[] = [
   'Identity', 'Apps', 'Kiosk', 'Kiosk appearance', 'Network', 'Restrictions', 'Enrollment',
   'Security', 'Display', 'Updates', 'Advanced',
@@ -101,7 +106,7 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'kioskNotifications', label: 'Notifications', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: 'Allow the notification shade in kiosk.' },
   { key: 'kioskSystemInfo', label: 'System info', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: 'Show the status bar (time, battery, signal) in kiosk.' },
   { key: 'kioskKeyguard', label: 'Lock screen', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: 'Allow the lock screen in kiosk.' },
-  { key: 'kioskLockButtons', label: 'Lock hardware buttons', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: 'Block the power menu and the volume buttons in kiosk.' },
+  { key: 'kioskLockButtons', label: 'Lock hardware buttons', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: LOCK_BUTTONS_HELP },
   { key: 'runDefaultLauncher', label: 'Allow stock launcher', type: 'tri', group: 'Kiosk', help: 'Headwind launcher did not make itself the Home app. MDMesh only takes Home in kiosk.' },
   { key: 'kioskScreenOn', label: 'Keep screen on', type: 'tri', group: 'Kiosk', help: 'Headwind launcher kept the screen awake in kiosk.' },
   { key: 'showWifi', label: 'Show Wi-Fi on error', type: 'tri', group: 'Kiosk', help: 'Headwind launcher showed Wi-Fi settings when it could not reach the server.' },
@@ -116,9 +121,9 @@ export const CONFIG_FIELDS: FieldDef[] = [
   // ── Network ───────────────────────────────────────────────────────────────
   { key: 'wifi', label: 'Wi-Fi', type: 'tri', group: 'Network', enforced: true, segments: [
     { value: null, label: 'Not managed' }, { value: true, label: 'Allow' }, { value: false, label: 'Off' },
-  ], help: 'Off turns Wi-Fi off and stops users turning it back on; a Wi-Fi-only device then loses its connection to MDMesh. Allow lifts that.' },
+  ], help: WIFI_HELP },
   { key: 'bluetooth', label: 'Bluetooth', type: 'tri', group: 'Network', enforced: true, segments: ALLOW_BLOCK, help: 'Block turns Bluetooth off and stops users turning it on. Allow lifts the block (it does not turn Bluetooth on).' },
-  { key: 'requestUpdates', label: 'Location reporting', type: 'enum', group: 'Network', enforced: true, help: 'Do not track collects no location. Last known reports the location the device already has at each check-in; GPS asks for a fresh fix (more accurate, more battery).', options: [
+  { key: 'requestUpdates', label: 'Location reporting', type: 'enum', group: 'Network', enforced: true, help: LOCATION_HELP, options: [
     { value: 'DONOTTRACK', label: 'Do not track' }, { value: 'WIFI', label: 'Last known (passive)' }, { value: 'GPS', label: 'GPS (fresh fix)' },
   ] },
   { key: 'mobileData', label: 'Mobile data', type: 'tri', group: 'Network', help: 'Headwind launcher switched mobile data (needed system-app rights).' },

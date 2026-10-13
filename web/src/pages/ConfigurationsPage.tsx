@@ -26,11 +26,18 @@ import { SyncBar } from '../components/SyncBar';
 import { KioskChangeConfirm, kioskAffectingChanges } from '../components/KioskChangeConfirm';
 
 // The seeded device-template defaults are locked: view-only, and used as bases
-// for new configs (start from scratch or from one of these). Matched by id, not
-// name: the seed SQL inserts them with fixed ids 1-3 (and moves the sequence past
-// them), so renaming the seed rows can't silently unlock them.
-const DEFAULT_CONFIG_IDS: ReadonlySet<number> = new Set([1, 2, 3]);
-const isLocked = (c: Configuration) => c.id != null && DEFAULT_CONFIG_IDS.has(c.id);
+// for new configs (start from scratch or from one of these). Both the fixed seed
+// id (the seed SQL inserts ids 1-3) and the seed name must match: a user config
+// that happens to reuse a seed name stays editable, and so does a seed row an admin
+// renamed through the API. This never locks more than the name-only check did.
+// A future seed rename must update both sets in the same release.
+const SEED_IDS: ReadonlySet<number> = new Set([1, 2, 3]);
+const SEED_NAMES: ReadonlySet<string> = new Set([
+  'Managed Launcher',
+  'MIUI (Xiaomi Redmi)',
+  'Background (Agent) Mode',
+]);
+const isLocked = (c: Configuration) => c.id != null && SEED_IDS.has(c.id) && SEED_NAMES.has(c.name);
 
 /** The server flags a kiosk exit PIN that is a well-known default (absent on older servers). */
 const hasDefaultPin = (c: Configuration) => c.defaultKioskPin === true;
@@ -728,7 +735,7 @@ function FieldControl({ def, value, stored, apps, assigned, disabled, onChange }
         return (
           <span className="seg">
             {[false, true].map((on) => (
-              <button key={String(on)} className={(value === true) === on ? 'on' : ''} disabled={disabled} onClick={() => set(on)}>
+              <button key={String(on)} className={(value === true) === on ? 'on' : ''} aria-pressed={(value === true) === on} disabled={disabled} onClick={() => set(on)}>
                 {labels[on ? 1 : 0]}
               </button>
             ))}
@@ -743,7 +750,7 @@ function FieldControl({ def, value, stored, apps, assigned, disabled, onChange }
       return (
         <span className="seg">
           {(def.segments ?? DEFAULT_SEGMENTS).map((o) => (
-            <button key={String(o.value)} className={value === o.value || (o.value === null && value == null) ? 'on' : ''} disabled={disabled} onClick={() => onChange(o.value)}>
+            <button key={String(o.value)} className={value === o.value || (o.value === null && value == null) ? 'on' : ''} aria-pressed={value === o.value || (o.value === null && value == null)} disabled={disabled} onClick={() => onChange(o.value)}>
               {o.label}
             </button>
           ))}

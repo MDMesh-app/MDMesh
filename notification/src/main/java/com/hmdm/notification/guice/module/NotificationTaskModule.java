@@ -63,7 +63,8 @@ public class NotificationTaskModule {
             messagePurgeService.scheduleWithFixedDelay(new MessagePurgeWorker(notificationDAO),
                     1, 1, TimeUnit.HOURS);
         } else {
-            // Nothing is queued while the legacy device API is off: purge what an earlier version left, once.
+            // Nothing is queued while the legacy device API is off, so run the purge once at startup: it deletes
+            // messages past the usual limits (undelivered after 1 hour, delivered after 7 days) and keeps newer ones.
             log.info("Push message purge runs once: " + LegacyDeviceApiFilter.PARAMETER + " is off");
             messagePurgeService.schedule(new MessagePurgeWorker(notificationDAO), 1, TimeUnit.MINUTES);
         }

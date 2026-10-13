@@ -302,7 +302,9 @@ export function DeviceDetailPage() {
   ];
   const managementRows: Row[] = [
     { k: 'Config', v: configName },
-    { k: 'Agent', v: orDash(ds?.agentVersion ?? device.launcherVersion) },
+    // Only the agent's own report: device.launcherVersion is the configuration's main-app version
+    // (Headwind assumed the main app was its launcher), so a kiosk app's version would show here.
+    { k: 'Agent', v: orDash(ds?.agentVersion) },
     { k: 'MDM mode', v: onOff(sec.isDeviceOwner, device.mdmMode) },
     { k: 'Enrolled', v: fmtDateTime(device.enrollTime) },
   ];

@@ -68,21 +68,21 @@ public class NewDeviceConfigurationTest {
 
     @Test
     public void tokenEnrollmentRefusesADefaultConfigurationOfAnotherCustomer() {
-        FakeMapper<DeviceMapper> devices = new FakeMapper<>(DeviceMapper.class);
+        FakeMapper<DeviceMapper> devices = devicesWithGroups();
         assertNull(unsecureDAO(devices, OTHER_CONFIG).createNewDeviceForToken("new-device", CUSTOMER, null));
         assertTrue(devices.calls.toString(), devices.callsTo("insertDevice").isEmpty());
     }
 
     @Test
     public void tokenEnrollmentRefusesABoundConfigurationOfAnotherCustomer() {
-        FakeMapper<DeviceMapper> devices = new FakeMapper<>(DeviceMapper.class);
+        FakeMapper<DeviceMapper> devices = devicesWithGroups();
         assertNull(unsecureDAO(devices, OWN_CONFIG).createNewDeviceForToken("new-device", CUSTOMER, OTHER_CONFIG));
         assertTrue(devices.calls.toString(), devices.callsTo("insertDevice").isEmpty());
     }
 
     @Test
     public void tokenEnrollmentStillUsesTheOwnDefaultConfiguration() {
-        FakeMapper<DeviceMapper> devices = new FakeMapper<>(DeviceMapper.class);
+        FakeMapper<DeviceMapper> devices = devicesWithGroups();
         unsecureDAO(devices, OWN_CONFIG).createNewDeviceForToken("new-device", CUSTOMER, null);
         assertTrue(devices.calls.toString(), devices.callsTo("insertDevice").size() == 1);
     }

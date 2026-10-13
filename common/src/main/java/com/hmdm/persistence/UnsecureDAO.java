@@ -618,8 +618,7 @@ public class UnsecureDAO {
         if (groupId == null) {
             return false;
         }
-        final Group group = this.deviceMapper.getGroupById(groupId);
-        if (group == null || group.getCustomerId() != customerId) {
+        if (!this.deviceMapper.isCustomerGroup(groupId, customerId)) {
             logger.warn("Default group {} does not belong to customer {}, group ignored", groupId, customerId);
             return false;
         }
@@ -627,9 +626,7 @@ public class UnsecureDAO {
     }
 
     private boolean isCustomerConfiguration(Integer configurationId, int customerId) {
-        final Configuration configuration = configurationId == null ? null
-                : this.configurationMapper.getConfigurationById(configurationId);
-        return configuration != null && configuration.getCustomerId() == customerId;
+        return configurationId != null && this.deviceMapper.isCustomerConfiguration(configurationId, customerId);
     }
 
     public Device createNewDeviceOnDemand(String deviceId) {

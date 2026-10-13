@@ -18,6 +18,7 @@ import {
   type BundleUploadResult,
 } from '../api/applications';
 import { serverBaseUrl } from '../enroll/provisioning';
+import { getServerBaseUrl } from '../api/configurations';
 import { searchFdroid, type FDroidApp } from '../api/fdroid';
 import { DeployModal, type DeploySubject } from '../components/DeployModal';
 
@@ -54,9 +55,22 @@ function targetVersion(app: Application, versions: ApplicationVersion[]): Applic
     ?? [...installable].sort((a, b) => (b.versionCode ?? 0) - (a.versionCode ?? 0))[0];
 }
 
-/** A URL of a file this server hosts: the server hashes it itself, so the admin never has to supply a SHA-256. */
-function isHostedHere(url: string | undefined): boolean {
-  return !!url && url.trim().startsWith(`${serverBaseUrl()}/files/`);
+/**
+ * A URL of a file this server hosts: the server hashes it itself, so the admin never has to supply a SHA-256.
+ * Mirrors the server's HostedFiles: `<base.url>/files/` or `<origin of base.url>/files/`. `baseUrl` is the
+ * server's base.url; until it is known (or if it can't be read) the console's own origin stands in.
+ */
+function isHostedHere(url: string | undefined, baseUrl: string | null): boolean {
+  if (!url) return false;
+  const u = url.trim();
+  const base = (baseUrl ?? serverBaseUrl()).trim().replace(/\/+$/, '');
+  let origin = base;
+  try {
+    origin = new URL(base).origin;
+  } catch {
+    /* keep the base as given */
+  }
+  return u.startsWith(`${base}/files/`) || u.startsWith(`${origin}/files/`);
 }
 
 async function resolveApp(app: Application): Promise<DeploySubject> {
@@ -157,6 +171,8 @@ function LibrarySource({ onDeploy }: { onDeploy: (app: Application) => void }) {
   const [q, setQ] = useState('');
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [shaFor, setShaFor] = useState<{ app: Application; version: ApplicationVersion } | null>(null);
+  // The server's base.url decides which APK URLs it hosts (and hashes itself); null until read.
+  const [baseUrl, setBaseUrl] = useState<string | null>(null);
   const toast = useToast();
   const { user } = useAuth();
 
@@ -165,6 +181,9 @@ function LibrarySource({ onDeploy }: { onDeploy: (app: Application) => void }) {
     listApplications()
       .then((list) => !cancelled && setApps(list.filter(isDeployableLibraryApp)))
       .catch(() => !cancelled && (setApps([]), setError('Could not load the app library.')));
+    getServerBaseUrl()
+      .then((u) => !cancelled && setBaseUrl(u))
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -259,7 +278,7 @@ function LibrarySource({ onDeploy }: { onDeploy: (app: Application) => void }) {
               </div>
               <div className="app-foot">
                 <span className="app-ver">{a.version ? `v${a.version}` : '—'}</span>
-                {a.url && !isHostedHere(a.url) && a.hasApkHash === false && (
+                {a.url && !isHostedHere(a.url, baseUrl) && a.hasApkHash === false && (
                   <span
                     className="chip tone-warn"
                     title="This APK isn't hosted by MDMesh and has no SHA-256, so devices refuse to install it."
@@ -270,7 +289,7 @@ function LibrarySource({ onDeploy }: { onDeploy: (app: Application) => void }) {
                 <button className="btn btn-sm btn-primary" onClick={() => onDeploy(a)}>
                   Deploy
                 </button>
-                {a.url && !isHostedHere(a.url) && !a.commonApplication && (
+                {a.url && !isHostedHere(a.url, baseUrl) && !a.commonApplication && (
                   <button className="btn btn-sm" title="Set the APK's SHA-256" onClick={() => void editSha256(a)}>
                     SHA-256…
                   </button>

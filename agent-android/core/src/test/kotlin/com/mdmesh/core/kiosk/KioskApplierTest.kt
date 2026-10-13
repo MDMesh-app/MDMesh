@@ -2,10 +2,14 @@ package com.mdmesh.core.kiosk
 
 import android.content.ComponentName
 import com.mdmesh.core.store.InMemoryKioskStateStore
+import com.mdmesh.core.store.KioskStateStore
 import com.mdmesh.kiosk.KioskController
 import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.proto.KioskApplyPayload
 import com.mdmesh.proto.KioskFeaturesDto
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Test
@@ -150,6 +154,31 @@ class KioskApplierTest {
         store.save(KioskApplyPayload(features = KioskFeaturesDto(lockVolume = true)))
         KioskApplier(c, store, FakeHome(), home) { true }.releaseStaleVolumeLock()
         assertEquals("kiosk with lockVolume -> left locked", listOf(false, false), c.volume)
+    }
+
+    /** Delegates to [InMemoryKioskStateStore]; the first load() reads, then holds that value until [gate] completes. */
+    private class GatedFirstLoadStore(private val inner: KioskStateStore = InMemoryKioskStateStore()) : KioskStateStore by inner {
+        val gate = CompletableDeferred<Unit>()
+        private var loads = 0
+        override suspend fun load(): KioskApplyPayload? {
+            val v = inner.load()
+            if (loads++ == 0) gate.await()
+            return v
+        }
+    }
+
+    @Test fun `stale volume release cannot wipe the lock a concurrent kiosk enter sets`() = runTest {
+        val c = FakeController(KioskResult.Ok); val store = GatedFirstLoadStore()
+        val a = KioskApplier(c, store, FakeHome(), home) { false }
+        // Boot-time release reads "no kiosk" and is held there; a kiosk.enter asking for the volume lock arrives.
+        launch { a.releaseStaleVolumeLock() }
+        advanceUntilIdle()
+        launch { a.enter(KioskApplyPayload(features = KioskFeaturesDto(lockVolume = true))) }
+        advanceUntilIdle()
+        store.gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals("the enter's lock is applied last", true, c.volume.last())
+        assertEquals(true, store.load()?.features?.lockVolume)
     }
 
     @Test fun `exit clears store and returns to oem home`() = runTest {

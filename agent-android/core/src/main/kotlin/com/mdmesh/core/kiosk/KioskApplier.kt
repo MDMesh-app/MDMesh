@@ -7,6 +7,8 @@ import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.kiosk.KioskToggles
 import com.mdmesh.kiosk.lockTaskFeatures
 import com.mdmesh.proto.KioskApplyPayload
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * The one implementation of "put this device in kiosk with payload P" / "leave kiosk", shared by the
@@ -16,6 +18,10 @@ import com.mdmesh.proto.KioskApplyPayload
  * Entering with the payload already persisted while lock task is active is a no-op: a re-sent `config.apply`
  * (e.g. after an agent update) must not relaunch the kiosk launcher on a device already showing it; only the
  * volume lock is re-asserted.
+ *
+ * Serialized: [enter], [exit] and [releaseStaleVolumeLock] run one at a time, whichever path calls them
+ * (`kiosk.enter`/`kiosk.exit`, `config.apply` and its boot re-apply, the launcher's exits, agent start). Otherwise
+ * the boot-time release could read "no kiosk", then clear the volume lock a concurrent enter had just set.
  */
 class KioskApplier(
     private val kiosk: KioskController,
@@ -25,7 +31,11 @@ class KioskApplier(
     /** Whether lock task is active now ([KioskController.isLocked]). */
     private val isLockTaskActive: () -> Boolean,
 ) {
-    suspend fun enter(p: KioskApplyPayload): KioskResult {
+    private val mutex = Mutex()
+
+    suspend fun enter(p: KioskApplyPayload): KioskResult = mutex.withLock { enterLocked(p) }
+
+    private suspend fun enterLocked(p: KioskApplyPayload): KioskResult {
         // Already in this kiosk: no re-entry or relaunch, but re-assert the volume lock (it may have failed before).
         if (store.load() == p && isLockTaskActive()) return applyVolume(p, KioskResult.Ok)
         val features = lockTaskFeatures(
@@ -66,7 +76,11 @@ class KioskApplier(
      * @param force clear local state and the volume lock even when the controller could not exit (on-device exits:
      *   the user must get out).
      */
-    suspend fun exit(handBackHome: Boolean = true, force: Boolean = false): KioskResult {
+    suspend fun exit(handBackHome: Boolean = true, force: Boolean = false): KioskResult = mutex.withLock {
+        exitLocked(handBackHome, force)
+    }
+
+    private suspend fun exitLocked(handBackHome: Boolean, force: Boolean): KioskResult {
         val r = kiosk.exit()
         if (r != KioskResult.Ok && !force) return r
         kiosk.setVolumeLocked(false) // best effort: lift the kiosk's volume lock (and its mute)
@@ -79,7 +93,7 @@ class KioskApplier(
     }
 
     /** At agent start: drop a volume lock left behind (e.g. by an interrupted exit) unless the kiosk wants it. */
-    suspend fun releaseStaleVolumeLock() {
+    suspend fun releaseStaleVolumeLock(): Unit = mutex.withLock {
         if (store.load()?.features?.lockVolume != true) kiosk.setVolumeLocked(false)
     }
 

@@ -660,8 +660,9 @@ if [ "$DB_STATE" = seeded ]; then
 fi
 
 step "Building the server"
+# clean: an upgrade builds in the previous checkout, and classes a release deletes must not stay in target/.
 run "Maven package (JDK 17, ~1-2 min)" bash -c \
-  'cp server/build.properties.example server/build.properties 2>/dev/null || true; mvn -q -B -DskipTests -pl server -am package'
+  'cp server/build.properties.example server/build.properties 2>/dev/null || true; mvn -q -B -DskipTests -pl server -am clean package'
 
 step "Fetching the agent APK from GitHub Releases"
 # The agent APK is a release artifact, not a repo file. Pull the latest release's signed APK (+ manifest)

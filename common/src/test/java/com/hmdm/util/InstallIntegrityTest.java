@@ -1,4 +1,4 @@
-package com.hmdm.rest.json;
+package com.hmdm.util;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

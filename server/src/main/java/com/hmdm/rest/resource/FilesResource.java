@@ -47,6 +47,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
@@ -66,8 +67,10 @@ import org.apache.poi.util.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.hmdm.security.SecurityContext;
+import com.hmdm.security.SecurityException;
 import com.hmdm.util.FileExistsException;
 import com.hmdm.util.FileUtil;
+import com.hmdm.util.HostedFiles;
 import com.hmdm.util.UnsafePathException;
 
 @Api(tags = {"Files"}, authorizations = {@Authorization("Bearer Token")})
@@ -293,7 +296,7 @@ public class FilesResource {
             logger.warn("While creating external file: empty URL");
             return Response.ERROR();
         }
-        if (!com.hmdm.util.HostedFiles.isHttpUrl(uploadedFile.getExternalUrl())) {
+        if (!HostedFiles.isHttpUrl(uploadedFile.getExternalUrl())) {
             logger.warn("Refused to create an external file with a non-http(s) URL");
             return Response.ERROR(EXTERNAL_URL_NOT_HTTP);
         }
@@ -318,7 +321,7 @@ public class FilesResource {
             final UploadedFile dbFile;
             try {
                 dbFile = uploadedFileDAO.getById(uploadedFile.getId());
-            } catch (com.hmdm.security.SecurityException e) {
+            } catch (SecurityException e) {
                 logger.warn("Refused to update file {}: not a file of this customer", uploadedFile.getId());
                 return Response.PERMISSION_DENIED();
             }
@@ -333,7 +336,7 @@ public class FilesResource {
             if (dbFile.isExternal()) {
                 // A changed URL must be http(s); an older file keeps whatever URL it already has.
                 String url = uploadedFile.getExternalUrl();
-                if (!java.util.Objects.equals(url, dbFile.getExternalUrl()) && !com.hmdm.util.HostedFiles.isHttpUrl(url)) {
+                if (!Objects.equals(url, dbFile.getExternalUrl()) && !HostedFiles.isHttpUrl(url)) {
                     logger.warn("Refused to set a non-http(s) URL on external file {}", uploadedFile.getId());
                     return Response.ERROR(EXTERNAL_URL_NOT_HTTP);
                 }

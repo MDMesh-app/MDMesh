@@ -23,10 +23,12 @@ package com.hmdm.rest.resource;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
@@ -265,7 +267,7 @@ public class DeviceResource {
                         if (dbDevice != null) {
                             this.deviceDAO.updateDeviceConfiguration(id, device.getConfigurationId());
                             this.pushService.notifyDeviceOnSettingUpdate(dbDevice.getId());
-                            if (!java.util.Objects.equals(dbDevice.getConfigurationId(), device.getConfigurationId())) {
+                            if (!Objects.equals(dbDevice.getConfigurationId(), device.getConfigurationId())) {
                                 this.wakeHub.wake(dbDevice.getNumber(), "commands");
                             }
                         }
@@ -443,7 +445,7 @@ public class DeviceResource {
     public Response notifyDevicesOnUpdate(@PathParam("id") Integer id) {
         try {
             if (!SecurityContext.get().hasPermission("edit_devices")
-                    || !this.deviceDAO.areAccessibleToUser(java.util.Collections.singletonList(id))) {
+                    || !this.deviceDAO.areAccessibleToUser(Collections.singletonList(id))) {
                 log.error("Unauthorized attempt to notify device #{} by user {}", id,
                         SecurityContext.get().getCurrentUserName());
                 return Response.PERMISSION_DENIED();

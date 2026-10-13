@@ -24,6 +24,7 @@ package com.hmdm.util;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -71,8 +72,8 @@ public final class AgentCapabilityTokens {
 
     /** Iterative walk (no recursion on untrusted depth) that stops as soon as a bound is exceeded. */
     private static boolean withinShapeLimits(JsonNode root) {
-        java.util.ArrayDeque<JsonNode> nodes = new java.util.ArrayDeque<>();
-        java.util.ArrayDeque<Integer> depths = new java.util.ArrayDeque<>();
+        ArrayDeque<JsonNode> nodes = new ArrayDeque<>();
+        ArrayDeque<Integer> depths = new ArrayDeque<>();
         nodes.push(root);
         depths.push(1);
         int count = 0;

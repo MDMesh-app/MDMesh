@@ -1,9 +1,8 @@
-package com.hmdm.rest.json;
+package com.hmdm.util;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.hmdm.util.CryptoUtil;
 
 import java.util.Base64;
 import java.util.Locale;

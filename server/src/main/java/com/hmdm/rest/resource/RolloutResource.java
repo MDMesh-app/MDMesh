@@ -101,7 +101,7 @@ public class RolloutResource {
 
     /** The fleet stage reaches every device of the customer, so it is only for users not limited to some device groups. */
     private static boolean canReachWholeFleet(String action) {
-        if (SecurityContext.get().getCurrentUser().map(u -> u.isSuperAdmin() || u.isAllDevicesAvailable()).orElse(false)) {
+        if (SecurityContext.get().canReachAllDevices()) {
             return true;
         }
         logger.warn("Permission denied: {} requires access to all devices (user {})", action,

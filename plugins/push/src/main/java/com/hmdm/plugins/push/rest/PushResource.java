@@ -354,8 +354,7 @@ public class PushResource {
         }
         // A scheduled task runs later without a user, so it is not limited by device groups: wider scopes than
         // one device are only for users who may reach every device
-        if (!"device".equals(task.getScope()) && !SecurityContext.get().getCurrentUser()
-                .map(u -> u.isSuperAdmin() || u.isAllDevicesAvailable()).orElse(false)) {
+        if (!"device".equals(task.getScope()) && !SecurityContext.get().canReachAllDevices()) {
             logger.error("Scheduled task with scope {} refused for user {} limited to some device groups",
                     task.getScope(), SecurityContext.get().getCurrentUserName());
             return Response.PERMISSION_DENIED();

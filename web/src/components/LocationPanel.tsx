@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { listLocations, type LocationFix } from '../api/deviceLocations';
 import { LocationMap } from './LocationMap';
 import { fmtRelative } from '../ui/format';
+import { DO_NOT_TRACK_HINT, useDoNotTrack } from '../api/locationTracking';
 
-export function LocationPanel({ device }: { device: { number: string } }) {
+export function LocationPanel({ device }: { device: { number: string; configurationId?: number } }) {
+  const doNotTrack = useDoNotTrack(device.configurationId);
   const [fixes, setFixes] = useState<LocationFix[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -36,8 +38,14 @@ export function LocationPanel({ device }: { device: { number: string } }) {
         </div>
       </div>
       {err && <p className="err-text">{err}</p>}
+      {doNotTrack && (
+        <p className="muted">
+          {DO_NOT_TRACK_HINT}
+          {fixes && fixes.length > 0 ? ' The fixes below were reported before tracking was turned off.' : ''}
+        </p>
+      )}
       {!fixes && !err && <p className="muted">Loading location…</p>}
-      {fixes && fixes.length === 0 && (
+      {fixes && fixes.length === 0 && !doNotTrack && (
         <p className="muted">No location reported yet. Wake the device, or switch it to Accurate location mode.</p>
       )}
       {fixes && fixes.length > 0 && <LocationMap fixes={fixes} />}

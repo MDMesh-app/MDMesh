@@ -21,7 +21,8 @@ class KioskApplier(
     private val store: KioskStateStore,
     private val home: KioskHomeSwitch,
     private val homeComponent: ComponentName,
-    private val isLockTaskActive: () -> Boolean = { false },
+    /** Whether lock task is active now ([KioskController.isLocked]). */
+    private val isLockTaskActive: () -> Boolean,
 ) {
     suspend fun enter(p: KioskApplyPayload): KioskResult {
         if (store.load() == p && isLockTaskActive()) return KioskResult.Ok

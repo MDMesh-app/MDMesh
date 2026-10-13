@@ -28,7 +28,10 @@ class ConfigApplyHandlerTest {
     private object NoHome : KioskHomeSwitch { override fun setClaimEnabled(enabled: Boolean) {}; override fun showLauncher() {}; override fun showOemHome() {} }
     private fun handler(o: PolicyOutcome) = ConfigApplyHandler(
         ConfigApplier(mapOf("wifi" to Toggle(o)),
-            KioskApplier(StubKioskController(), InMemoryKioskStateStore(), NoHome, ComponentName("a", "b")), {}, InMemoryConfigStateStore()),
+            KioskApplier(StubKioskController(), InMemoryKioskStateStore(), NoHome, ComponentName("a", "b")) { false },
+            {},
+            InMemoryConfigStateStore(),
+        ),
     )
     private fun cmd(payload: kotlinx.serialization.json.JsonObject?) = CommandEnvelope(commandId = "9", issuedAt = "2026-01-01T00:00:00Z", type = "config.apply", payload = payload)
     private val doc = buildJsonObject { put("revision", "r1"); put("configurationId", 1); putJsonObject("policies") { put("wifi", true) } }

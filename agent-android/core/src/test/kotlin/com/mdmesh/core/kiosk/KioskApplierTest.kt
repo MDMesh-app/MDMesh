@@ -27,7 +27,8 @@ class KioskApplierTest {
 
     @Test fun `enter ok persists payload and shows launcher`() = runTest {
         val c = FakeController(KioskResult.Ok); val h = FakeHome(); val store = InMemoryKioskStateStore()
-        val r = KioskApplier(c, store, h, home).enter(KioskApplyPayload(mode = "single", pinPackage = "com.a", allowedPackages = listOf("com.a")))
+        val r = KioskApplier(c, store, h, home) { false }
+            .enter(KioskApplyPayload(mode = "single", pinPackage = "com.a", allowedPackages = listOf("com.a")))
         assertEquals(KioskResult.Ok, r)
         assertEquals(listOf("com.a"), c.entered)
         assertEquals("com.a", store.load()?.pinPackage)
@@ -35,7 +36,8 @@ class KioskApplierTest {
     }
     @Test fun `enter unsupported reverts the home claim and persists nothing`() = runTest {
         val h = FakeHome(); val store = InMemoryKioskStateStore()
-        val r = KioskApplier(FakeController(KioskResult.Unsupported), store, h, home).enter(KioskApplyPayload())
+        val r = KioskApplier(FakeController(KioskResult.Unsupported), store, h, home) { false }
+            .enter(KioskApplyPayload())
         assertEquals(KioskResult.Unsupported, r)
         assertNull(store.load())
         assertEquals(listOf("claim:true", "claim:false"), h.log)
@@ -60,7 +62,7 @@ class KioskApplierTest {
     }
     @Test fun `exit clears store and returns to oem home`() = runTest {
         val h = FakeHome(); val store = InMemoryKioskStateStore(); store.save(KioskApplyPayload())
-        val a = KioskApplier(FakeController(KioskResult.Ok), store, h, home)
+        val a = KioskApplier(FakeController(KioskResult.Ok), store, h, home) { false }
         assertTrue(a.isPersisted())
         assertEquals(KioskResult.Ok, a.exit())
         assertFalse(a.isPersisted())

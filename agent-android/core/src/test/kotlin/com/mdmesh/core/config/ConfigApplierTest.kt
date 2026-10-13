@@ -33,7 +33,7 @@ class ConfigApplierTest {
     private object NoHome : KioskHomeSwitch { override fun setClaimEnabled(enabled: Boolean) {}; override fun showLauncher() {}; override fun showOemHome() {} }
 
     private fun kiosk(c: KioskController, store: InMemoryKioskStateStore = InMemoryKioskStateStore()) =
-        KioskApplier(c, store, NoHome, ComponentName("a", "b"))
+        KioskApplier(c, store, NoHome, ComponentName("a", "b")) { false }
 
     @Test fun `applies present policies only and persists on full success`() = runTest {
         val wifi = FakeToggle("wifi", PolicyOutcome.Applied); val bt = FakeToggle("bluetooth", PolicyOutcome.Applied)

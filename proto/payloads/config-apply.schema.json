@@ -26,6 +26,6 @@
         "theme": { "type": "object", "properties": { "backgroundColor": {"type":"string"}, "textColor": {"type":"string"}, "iconSize": {"type":"string"} } }
       }
     },
-    "location": { "type": "object", "properties": { "mode": { "enum": ["passive", "active", "off"], "description": "active = fresh fix each check-in (GPS), passive = last-known (Network), off = read no location (Do not track; 1.4, older agents treat it as passive and the server drops what they report)" } } }
+    "location": { "type": "object", "properties": { "mode": { "enum": ["passive", "active", "off"], "description": "active = fresh fix each check-in (GPS), passive = last-known (console: Last known (passive), formerly Network), off = read no location (Do not track; 1.4, older agents treat it as passive and the server drops what they report)" } } }
   }
 }

@@ -55,7 +55,7 @@ public final class DesiredConfigBuilder {
     }
 
     /**
-     * GPS = a fresh fix each check-in; WIFI ("Network") = the OS's last-known fix; DONOTTRACK (the column default,
+     * GPS = a fresh fix each check-in; WIFI (console "Last known (passive)", formerly "Network") = the OS's last-known fix; DONOTTRACK (the column default,
      * also used for null) = read nothing. {@code off} is protocol 1.4: an older agent treats it as passive, which is
      * why {@link #isDoNotTrack} also makes the server drop any location such a device still reports.
      */

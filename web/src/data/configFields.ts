@@ -71,9 +71,9 @@ export const DEFAULT_SEGMENTS: TriSegment[] = [
 // Behaviour that depends on the agent version (agent 0.3.4 / protocol 1.4).
 const WIFI_HELP = 'Block locks the Wi-Fi settings so users cannot change networks. It does not turn Wi-Fi off: that is Wi-Fi radio. Allow lifts the lock.';
 const WIFI_RADIO_HELP = 'Needs agent 0.3.4 or later. On turns Wi-Fi on. Off turns it off and, on Android 13 and later, stops users turning it back on. Off is deferred while Wi-Fi is the only network, so the device stays reachable and reports why. Not managed lifts the lock and leaves the radio as it is.';
-const LOCK_BUTTONS_HELP = 'Block the power menu in kiosk. Volume buttons are a separate setting, Lock volume.';
+const LOCK_BUTTONS_HELP = 'Block the power menu in kiosk. Volume buttons are a separate setting, Lock volume buttons (kiosk).';
 const LOCK_VOLUME_HELP = 'Applies in kiosk mode, with agent 0.3.4 or later: blocks volume changes. Android mutes the device while volume is locked; the lock is lifted when kiosk ends.';
-const LOCATION_HELP = 'Do not track collects no location with agent 0.3.4 or later, and the server drops any location an older agent still reports. Last known reports the location the device already has at each check-in; GPS asks for a fresh fix (more accurate, more battery).';
+const LOCATION_HELP = 'Do not track collects no location with agent 0.3.4 or later, and the server drops any location an older agent still reports. Last known (passive) reports the location the device already has at each check-in; GPS (fresh fix) asks for a new fix each time (more accurate, more battery).';
 
 export const GROUP_ORDER: FieldGroup[] = [
   'Identity', 'Apps', 'Kiosk', 'Kiosk appearance', 'Network', 'Restrictions', 'Enrollment',
@@ -109,7 +109,7 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'kioskSystemInfo', label: 'System info', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: 'Show the status bar (time, battery, signal) in kiosk.' },
   { key: 'kioskKeyguard', label: 'Lock screen', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: 'Allow the lock screen in kiosk.' },
   { key: 'kioskLockButtons', label: 'Lock hardware buttons', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: LOCK_BUTTONS_HELP },
-  { key: 'kioskLockVolume', label: 'Lock volume', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: LOCK_VOLUME_HELP },
+  { key: 'kioskLockVolume', label: 'Lock volume buttons (kiosk)', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: LOCK_VOLUME_HELP },
   { key: 'runDefaultLauncher', label: 'Allow stock launcher', type: 'tri', group: 'Kiosk', help: 'Headwind launcher did not make itself the Home app. MDMesh only takes Home in kiosk.' },
   { key: 'kioskScreenOn', label: 'Keep screen on', type: 'tri', group: 'Kiosk', help: 'Headwind launcher kept the screen awake in kiosk.' },
   { key: 'showWifi', label: 'Show Wi-Fi on error', type: 'tri', group: 'Kiosk', help: 'Headwind launcher showed Wi-Fi settings when it could not reach the server.' },
@@ -138,7 +138,7 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'disableScreenshots', label: 'Screenshots', type: 'tri', group: 'Restrictions', enforced: true, segments: ALLOW_BLOCK_INVERTED, help: 'Block prevents screenshots and screen recording.' },
   { key: 'usbStorage', label: 'USB storage', type: 'tri', group: 'Restrictions', enforced: true, segments: ALLOW_BLOCK, help: 'Block stops USB file transfer and mounting external storage.' },
   { key: 'blockStatusBar', label: 'Lock status bar', type: 'switch', group: 'Restrictions', help: 'Headwind launcher covered the status bar.' },
-  { key: 'lockVolume', label: 'Lock volume', type: 'tri', group: 'Restrictions', help: 'Headwind launcher blocked volume changes.' },
+  { key: 'lockVolume', label: 'Lock volume (legacy)', type: 'tri', group: 'Restrictions', help: 'Headwind launcher blocked volume changes.' },
   { key: 'allowedClasses', label: 'Allowed app classes', type: 'text', group: 'Restrictions', help: 'Headwind launcher allowlist of settings screens.' },
   { key: 'restrictions', label: 'Android restrictions', type: 'textarea', group: 'Restrictions', help: 'Comma-separated Android user restrictions the Headwind launcher applied.' },
 

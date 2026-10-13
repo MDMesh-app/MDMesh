@@ -20,7 +20,7 @@
         "mode": { "enum": ["single", "launcher"] },
         "allowedPackages": { "type": "array", "items": { "type": "string" }, "description": "The configuration's apps set to Install with \"Show in kiosk\" on (showIcon); the main app is pinned only under the same rule." },
         "pinPackage": { "type": "string" },
-        "features": { "type": "object", "properties": { "home": {"type":"boolean"}, "recents": {"type":"boolean"}, "notifications": {"type":"boolean"}, "systemInfo": {"type":"boolean"}, "keyguard": {"type":"boolean"}, "lockButtons": {"type":"boolean"} } },
+        "features": { "type": "object", "properties": { "home": {"type":"boolean"}, "recents": {"type":"boolean"}, "notifications": {"type":"boolean"}, "systemInfo": {"type":"boolean"}, "keyguard": {"type":"boolean"}, "lockButtons": {"type":"boolean", "description":"true = block the power menu (no LOCK_TASK_FEATURE_GLOBAL_ACTIONS); does not touch volume"}, "lockVolume": {"type":"boolean", "description":"1.4: true = DISALLOW_ADJUST_VOLUME while in kiosk (the platform mutes the device meanwhile); released on exit"} } },
         "exitMode": { "enum": ["gesture", "visible", "remote"] },
         "password": { "type": "string" },
         "theme": { "type": "object", "properties": { "backgroundColor": {"type":"string"}, "textColor": {"type":"string"}, "iconSize": {"type":"string"} } }

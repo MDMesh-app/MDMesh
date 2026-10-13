@@ -2906,6 +2906,14 @@
         <rollback>ALTER TABLE configurations DROP COLUMN wifiRadio;</rollback>
     </changeSet>
 
+    <changeSet id="26.10.13-configurations-kioskLockVolume" author="lunacy" context="common">
+        <comment>Column,new: configurations#kioskLockVolume (sent as kiosk.features.lockVolume: DISALLOW_ADJUST_VOLUME
+            while in kiosk, which also mutes the device). Separate from #kioskLockButtons so existing kiosks never start
+            muting on upgrade. No DEFAULT: NULL = off, so existing configurations keep their revision.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN kioskLockVolume BOOLEAN;</sql>
+        <rollback>ALTER TABLE configurations DROP COLUMN kioskLockVolume;</rollback>
+    </changeSet>
+
     <changeSet id="26.10.12-deviceState-configAgentVersion" author="lunacy" context="common">
         <comment>Column,new: device_state#configAgentVersion (agent version of the last completed config.apply;
             seeded from agentVersion)</comment>

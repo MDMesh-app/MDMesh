@@ -5,15 +5,23 @@ import com.mdmesh.core.store.InMemoryKioskStateStore
 import com.mdmesh.kiosk.KioskController
 import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.proto.KioskApplyPayload
+import com.mdmesh.proto.KioskFeaturesDto
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Test
 
 class KioskApplierTest {
-    private class FakeController(private val enterResult: KioskResult, private val exitResult: KioskResult = KioskResult.Ok) : KioskController {
+    private class FakeController(
+        private val enterResult: KioskResult,
+        private val exitResult: KioskResult = KioskResult.Ok,
+        private val volumeResult: KioskResult = KioskResult.Ok,
+    ) : KioskController {
         var entered: List<String>? = null; var exited = false
+        /** Every setVolumeLocked call, in order. */
+        val volume = mutableListOf<Boolean>()
         override fun enter(homeComponent: ComponentName, allowedPackages: List<String>, features: Int): KioskResult { entered = allowedPackages; return enterResult }
         override fun exit(): KioskResult { exited = true; return exitResult }
+        override fun setVolumeLocked(locked: Boolean): KioskResult { volume += locked; return volumeResult }
         override fun isLocked(context: android.content.Context): Boolean = false
         override fun allowedPackages(): List<String> = entered ?: emptyList()
     }
@@ -60,6 +68,37 @@ class KioskApplierTest {
         KioskApplier(changed, store, FakeHome(), home) { true }.enter(widened)
         assertEquals(listOf("com.a", "com.b"), changed.entered)
     }
+    @Test fun `lockVolume locks volume while in kiosk, absent releases it`() = runTest {
+        val locked = KioskApplyPayload(
+            mode = "single", pinPackage = "com.a", features = KioskFeaturesDto(lockVolume = true),
+        )
+        val c = FakeController(KioskResult.Ok); val store = InMemoryKioskStateStore()
+        assertEquals(KioskResult.Ok, KioskApplier(c, store, FakeHome(), home) { false }.enter(locked))
+        assertEquals(listOf(true), c.volume)
+
+        // lockButtons alone never touches volume (DISALLOW_ADJUST_VOLUME mutes the device): released, not locked.
+        val buttonsOnly = locked.copy(features = KioskFeaturesDto(lockButtons = true))
+        KioskApplier(c, store, FakeHome(), home) { false }.enter(buttonsOnly)
+        assertEquals(listOf(true, false), c.volume)
+    }
+
+    @Test fun `exit releases the volume lock`() = runTest {
+        val c = FakeController(KioskResult.Ok); val store = InMemoryKioskStateStore()
+        store.save(KioskApplyPayload(features = KioskFeaturesDto(lockVolume = true)))
+        assertEquals(KioskResult.Ok, KioskApplier(c, store, FakeHome(), home) { false }.exit())
+        assertEquals(listOf(false), c.volume)
+    }
+
+    @Test fun `a failed volume lock is reported and not persisted, so the next apply retries`() = runTest {
+        val p = KioskApplyPayload(
+            mode = "single", pinPackage = "com.a", features = KioskFeaturesDto(lockVolume = true),
+        )
+        val c = FakeController(KioskResult.Ok, volumeResult = KioskResult.Failed("dpm"))
+        val store = InMemoryKioskStateStore()
+        assertEquals(KioskResult.Failed("dpm"), KioskApplier(c, store, FakeHome(), home) { false }.enter(p))
+        assertNull(store.load())
+    }
+
     @Test fun `exit clears store and returns to oem home`() = runTest {
         val h = FakeHome(); val store = InMemoryKioskStateStore(); store.save(KioskApplyPayload())
         val a = KioskApplier(FakeController(KioskResult.Ok), store, h, home) { false }

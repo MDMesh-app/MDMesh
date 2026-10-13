@@ -35,13 +35,23 @@ class KioskApplier(
         val allowed = (p.allowedPackages + listOfNotNull(p.pinPackage)).distinct()
         home.setClaimEnabled(true)
         return when (val r = kiosk.enter(homeComponent, allowed, features)) {
-            KioskResult.Ok -> { store.save(p); home.showLauncher(); r }
+            KioskResult.Ok -> {
+                // Volume is its own opt-in (it mutes the device); anything else releases a lock set earlier.
+                val volume = kiosk.setVolumeLocked(p.features.lockVolume == true)
+                // Not persisted on failure, so the next apply retries instead of short-circuiting above.
+                if (volume !is KioskResult.Failed) store.save(p)
+                home.showLauncher()
+                if (volume is KioskResult.Failed) volume else r
+            }
             else -> { home.setClaimEnabled(false); r } // never leave a non-kiosk device claiming HOME
         }
     }
 
     suspend fun exit(): KioskResult = when (val r = kiosk.exit()) {
-        KioskResult.Ok -> { store.save(null); home.setClaimEnabled(false); home.showOemHome(); r }
+        KioskResult.Ok -> {
+            kiosk.setVolumeLocked(false) // best effort: lift the kiosk's volume lock (and its mute)
+            store.save(null); home.setClaimEnabled(false); home.showOemHome(); r
+        }
         else -> r
     }
 

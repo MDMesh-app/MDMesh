@@ -119,6 +119,9 @@ public final class DesiredConfigBuilder {
         DesiredKioskFeatures f = new DesiredKioskFeatures();
         f.setHome(cfg.getKioskHome()); f.setRecents(cfg.getKioskRecents()); f.setNotifications(cfg.getKioskNotifications());
         f.setSystemInfo(cfg.getKioskSystemInfo()); f.setKeyguard(cfg.getKioskKeyguard()); f.setLockButtons(cfg.getKioskLockButtons());
+        // Its own column, not lockButtons: DISALLOW_ADJUST_VOLUME mutes the device, so existing lockButtons=true
+        // kiosks must not start muting on upgrade. Null (all existing rows) is dropped from the canonical JSON.
+        f.setLockVolume(cfg.getKioskLockVolume());
         k.setFeatures(f);
         k.setExitMode(Boolean.TRUE.equals(cfg.getKioskExit()) ? "visible" : "gesture");
         k.setPassword(cfg.getPassword());

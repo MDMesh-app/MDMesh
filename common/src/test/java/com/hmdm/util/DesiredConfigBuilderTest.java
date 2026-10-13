@@ -228,6 +228,22 @@ public class DesiredConfigBuilderTest {
                 DesiredConfigBuilder.build(kioskConfig(), Arrays.asList(app(5, 505, "com.acme.pos", 1))).getRevision());
     }
 
+    @Test
+    public void kiosk_volume_lock_is_its_own_opt_in_not_part_of_lock_buttons() {
+        // Android mutes the device while volume is locked: lockButtons=true configurations must not start muting.
+        Configuration buttons = kioskConfig(); buttons.setKioskLockButtons(true);
+        DesiredConfig d = DesiredConfigBuilder.build(buttons, Collections.emptyList());
+        assertEquals(Boolean.TRUE, d.getKiosk().getFeatures().getLockButtons());
+        assertNull(d.getKiosk().getFeatures().getLockVolume());
+
+        Configuration volume = kioskConfig(); volume.setKioskLockVolume(true);
+        assertEquals(Boolean.TRUE,
+                DesiredConfigBuilder.build(volume, Collections.emptyList()).getKiosk().getFeatures().getLockVolume());
+        // A NULL column (every existing configuration) keeps the golden revision.
+        assertEquals(resource("desired-config-kiosk.sha256"),
+                DesiredConfigBuilder.build(kioskConfig(), Arrays.asList(app(5, 505, "com.acme.pos", 1))).getRevision());
+    }
+
     /** GOLDEN for the flat policy block. Kept separate from the kiosk fixture so an unmanaged
      *  disableFactoryReset there still proves the key is omitted. Update deliberately. */
     @Test

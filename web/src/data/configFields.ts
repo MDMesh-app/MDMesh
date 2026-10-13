@@ -64,7 +64,8 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'kioskNotifications', label: 'Notifications', type: 'tri', group: 'Kiosk', enforced: true, help: 'Allow the notification shade while in kiosk.' },
   { key: 'kioskSystemInfo', label: 'System info', type: 'tri', group: 'Kiosk', enforced: true, help: 'Show the status/system-info bar while in kiosk.' },
   { key: 'kioskKeyguard', label: 'Lock screen', type: 'tri', group: 'Kiosk', enforced: true, help: 'Allow the keyguard / lock screen while in kiosk.' },
-  { key: 'kioskLockButtons', label: 'Lock hardware buttons', type: 'tri', group: 'Kiosk', enforced: true, help: 'Disable power/volume buttons while in kiosk.' },
+  { key: 'kioskLockButtons', label: 'Lock hardware buttons', type: 'tri', group: 'Kiosk', enforced: true, help: 'Block the power menu while in kiosk. Volume is a separate setting.' },
+  { key: 'kioskLockVolume', label: 'Lock volume in kiosk', type: 'tri', group: 'Kiosk', enforced: true, help: 'Block volume changes while in kiosk. Android mutes the device while volume is locked; released when kiosk ends.' },
   { key: 'kioskScreenOn', label: 'Keep screen on', type: 'tri', group: 'Kiosk', help: 'Force the screen to stay awake while in kiosk.' },
   { key: 'showWifi', label: 'Show Wi-Fi on error', type: 'tri', group: 'Kiosk', help: 'Surface Wi-Fi settings if the device loses connectivity in kiosk.' },
 
@@ -159,5 +160,5 @@ export const ENFORCED_KEYS: ReadonlySet<string> = new Set(ENFORCED_FIELDS.map((f
 /** Changing any of these re-enters/exits kiosk on every device of the configuration. */
 export const KIOSK_AFFECTING_KEYS: ReadonlySet<string> = new Set([
   'kioskMode', 'mainAppId', 'kioskExit', 'kioskHome', 'kioskRecents', 'kioskNotifications', 'kioskSystemInfo',
-  'kioskKeyguard', 'kioskLockButtons', 'password', 'backgroundColor', 'textColor', 'iconSize', 'applications',
+  'kioskKeyguard', 'kioskLockButtons', 'kioskLockVolume', 'password', 'backgroundColor', 'textColor', 'iconSize', 'applications',
 ]);

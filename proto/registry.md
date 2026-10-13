@@ -77,7 +77,7 @@ string, except `configApply`.
 | `app.uninstall` | — | `{ packageName }`; no console or server sender yet |
 | `apps.scan` | — | none; result detail is `{ apps: [...] }` |
 | `apps.icons` | — | `{ packages: [...] }`; result detail is `{ icons: [{ pkg, pngBase64 }] }` |
-| `kiosk.enter` | — | `{ mode, allowedPackages, pinPackage, features, exitMode, password, theme }` (`KioskApplyPayload`) |
+| `kiosk.enter` | — | `{ mode, allowedPackages, pinPackage, features, exitMode, password, theme }` (`KioskApplyPayload`); `features.lockButtons` blocks the power menu, `features.lockVolume` (1.4) blocks volume changes and mutes while in kiosk |
 | `kiosk.exit` | — | none |
 | `device.lock` | `device.lock` | none |
 | `device.reboot` | `device.reboot` | none (DO) |

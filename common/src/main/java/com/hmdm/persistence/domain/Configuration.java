@@ -120,6 +120,8 @@ public class Configuration implements CustomerData, Serializable {
     private Boolean disableFactoryReset;
     @ApiModelProperty("Flag indicating if rebooting into Safe Mode is disabled on the device")
     private Boolean disableSafeBoot;
+    @ApiModelProperty("Block volume changes while in kiosk (Android mutes the device meanwhile); sent as kiosk.features.lockVolume")
+    private Boolean kioskLockVolume;
     @ApiModelProperty("Wi-Fi radio: null = not managed, true = turn on, false = turn off (sent as policies.wifiRadio)")
     private Boolean wifiRadio;
     @ApiModelProperty("Flag indicating if auto-started apps should be kept in the foreground")
@@ -889,6 +891,14 @@ public class Configuration implements CustomerData, Serializable {
         this.disableSafeBoot = disableSafeBoot;
     }
 
+    public Boolean getKioskLockVolume() {
+        return kioskLockVolume;
+    }
+
+    public void setKioskLockVolume(Boolean kioskLockVolume) {
+        this.kioskLockVolume = kioskLockVolume;
+    }
+
     public Boolean getWifiRadio() {
         return wifiRadio;
     }
@@ -981,6 +991,7 @@ public class Configuration implements CustomerData, Serializable {
         copy.setDefaultFilePath(getDefaultFilePath());
         copy.setDisableFactoryReset(getDisableFactoryReset());
         copy.setDisableSafeBoot(getDisableSafeBoot());
+        copy.setKioskLockVolume(getKioskLockVolume());
         copy.setWifiRadio(getWifiRadio());
 
         return copy;

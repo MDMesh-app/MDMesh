@@ -47,13 +47,24 @@ first update, which pins the versions (or set `SERVER_VERSION`/`WEB_VERSION`/`CU
 > this server hosts is hashed automatically; for a Library app that points at an external URL, add its SHA-256 with
 > the **SHA-256…** button (or upload the APK instead), or installs of it fail with a message saying so.
 
-> **Upgrading to v0.3.4?** No action is needed for MDMesh agents or the console. What changes:
+> **Upgrading to v0.3.4?** Update the agents (Settings → Updates) and check two things: location reporting and
+> kiosk PINs. What changes:
+> - **Do not track** now collects no location. It is the default of the configurations the installer creates, so
+>   devices on them stop reporting location: agent 0.3.4 reads none, and the server drops what older agents still
+>   send. To keep location, set the configuration's **Location reporting** to **Last known (passive)** (shown as
+>   *Network* before v0.3.4) or **GPS**.
+> - New configuration settings, both off until you set them (existing configurations are unchanged): **Wi-Fi radio**
+>   turns Wi-Fi on or off (Off waits while Wi-Fi is the device's only network, so it stays reachable); the existing
+>   Wi-Fi setting, now labelled **Wi-Fi settings**, still only locks the Wi-Fi settings. **Lock volume** blocks volume
+>   changes in kiosk (Android mutes the device while it is locked); **Lock hardware buttons** blocks only the power
+>   menu. Both new settings need agent 0.3.4; older agents report Wi-Fi radio as unsupported and ignore Lock volume.
 > - The Headwind launcher's provisioning QR routes (`/rest/public/qr/*`) also answer 404 unless `LEGACY_DEVICE_API=1`.
 >   The console draws the agent's enrollment QR itself and doesn't use them. The three configurations the installer
 >   creates get a new QR key on the first start.
 > - New installs give each of those configurations its own random 8-digit kiosk exit PIN (shown in the console's
 >   configuration editor). Existing configurations keep their PIN; one still set to `12345678`, the default of older
->   installs and of configurations copied from them, is flagged in the console: set a PIN of your own there.
+>   installs and of configurations copied from them, is flagged in the console: set a PIN of your own there, since
+>   anyone who knows the default can leave the kiosk.
 > - The read-only Observer role no longer has the push and messaging send permissions or the device-description
 >   edit permission. Other roles keep theirs.
 > - `SECURE_ENROLLMENT=1` is honoured as before: `/files/*` downloads need the Headwind launcher's request

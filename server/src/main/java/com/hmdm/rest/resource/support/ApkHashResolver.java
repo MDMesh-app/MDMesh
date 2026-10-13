@@ -29,9 +29,8 @@ import java.io.InputStream;
 @Singleton
 public class ApkHashResolver implements InstallIntegrity.Sha256Source {
 
-    /** Why an APK hosted elsewhere has no hash; follows "no sha256 for URL: ". */
-    static final String NOT_HOSTED = "it is not hosted by this server and no SHA-256 is known for it — set it on "
-            + "the Library app (SHA-256…), enter it with the URL under Custom APK, or upload the APK";
+    /** Why an APK hosted elsewhere has no hash (shown after "no sha256 for URL"). */
+    static final String NOT_HOSTED = "not hosted by this server";
 
     private final HostedFiles hostedFiles;
 

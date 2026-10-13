@@ -9,6 +9,7 @@ import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.Application;
 import com.hmdm.persistence.domain.ApplicationVersion;
 import com.hmdm.persistence.domain.Device;
+import com.hmdm.util.InstallIntegrity;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -168,7 +169,7 @@ public class ConfigAppInstallerTest {
         AgentCommand c = commands.inserted.get(0);
         assertEquals("failed", c.getStatus());
         assertTrue(c.getDetail(), c.getDetail().contains("no sha256 for http://apks.lan/c.apk"));
-        assertTrue(c.getDetail(), c.getDetail().contains("set it on the Library app"));
+        assertTrue(c.getDetail(), c.getDetail().contains(InstallIntegrity.ADD_HASH));
         assertEquals(c.getCreatedAt(), c.getCompletedAt());
         assertTrue(dao.savedHashes.isEmpty());
     }

@@ -3,6 +3,7 @@ package com.hmdm.rest.resource.support;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentCommand;
+import com.hmdm.util.InstallIntegrity;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -79,7 +80,7 @@ public class InstallHashesTest {
             fail("no hash is known");
         } catch (IllegalArgumentException e) {
             assertTrue(e.getMessage(), e.getMessage().contains("no sha256 for https://apks.example/b.apk"));
-            assertTrue(e.getMessage(), e.getMessage().contains("set it on the Library app"));
+            assertTrue(e.getMessage(), e.getMessage().contains(InstallIntegrity.ADD_HASH));
         }
     }
 

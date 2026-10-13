@@ -74,6 +74,9 @@ public final class InstallIntegrity {
         }
     }
 
+    /** What the admin can do about an APK without a known SHA-256. */
+    public static final String ADD_HASH = "Add the APK's SHA-256 in the Library (SHA-256\u2026 button) or upload the APK.";
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private InstallIntegrity() {}
@@ -135,10 +138,10 @@ public final class InstallIntegrity {
             } catch (LookupFailedException e) {
                 throw e;
             } catch (Exception e) {
-                throw new IllegalArgumentException("no sha256 for " + url + ": " + e.getMessage());
+                throw new IllegalArgumentException("no sha256 for " + url + " (" + e.getMessage() + "). " + ADD_HASH);
             }
             if (hex == null) {
-                throw new IllegalArgumentException("no sha256 for " + url);
+                throw new IllegalArgumentException("no sha256 for " + url + ". " + ADD_HASH);
             }
         }
         apk.put("sha256", hex);

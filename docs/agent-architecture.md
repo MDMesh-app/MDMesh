@@ -64,13 +64,14 @@ Protocol 1.4 (v0.3.4): `requestUpdates = DONOTTRACK` ("Do not track", the column
 `off`, and the agent then reads no location at all; older agents treat `off` as passive, so the server also removes
 the location from check-ins of devices on a Do-not-track configuration. `wifi` still only locks the Wi-Fi settings;
 the new `wifiRadio` key switches the radio (deferred, without blocking the rest, while Wi-Fi is the device's only
-network). If no check-in reaches the server for 10 minutes after an Off turned Wi-Fi off (SIM removed, server only
-reachable on the Wi-Fi network), the agent's heartbeat turns Wi-Fi back on and holds it on: Off is deferred
-(`deferred: no connection to the server ...`) until a document with another revision arrives. The agent then reports
-an applied revision of 64 zeros, which matches no configuration, so the server re-sends `config.apply` after its
-normal backoff and the result shows the deferral. `kioskLockButtons`
-blocks the power menu only; the new `kioskLockVolume` blocks volume in kiosk via `DISALLOW_ADJUST_VOLUME`, which
-Android pairs with muting, so it is a separate opt-in. New columns are NULL on upgrade, so revisions only move for
+network). If no check-in reaches the server for 30 minutes (about three heartbeats) after an Off turned Wi-Fi off
+(SIM removed, server only reachable on the Wi-Fi network), the agent's heartbeat turns Wi-Fi back on and holds it on:
+Off is deferred (`deferred: no connection to the server ...`) until a document with a revision other than the last
+delivered one arrives. The agent then reports an applied revision of 64 zeros, which matches no configuration, so the
+server re-sends `config.apply` after its normal backoff and the result shows the deferral. A server outage that long,
+or a user cutting the device off, also heals; changing the configuration (a new revision) re-applies Off.
+`kioskLockButtons` blocks the power menu only; the new `kioskLockVolume` blocks volume in kiosk via
+`DISALLOW_ADJUST_VOLUME`, which Android pairs with muting, so it is a separate opt-in. New columns are NULL on upgrade, so revisions only move for
 configurations that use them, and for Do-not-track configurations (whose devices get one config.apply).
 
 ## Status UI — BUILD-NEW (Views, minSdk 24 friendly)

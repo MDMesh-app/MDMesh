@@ -52,6 +52,16 @@ export async function getConfigurations(): Promise<Configuration[]> {
   return apiClient.get<Configuration[]>('/private/configurations/search');
 }
 
+/**
+ * The server's own base URL (its `base.url` setting), which the server puts on every configuration it
+ * returns. null when there is no configuration to read it from.
+ */
+export async function getServerBaseUrl(): Promise<string | null> {
+  const list = await getConfigurations();
+  const u = list.map((c) => c.baseUrl).find((v): v is string => typeof v === 'string' && v.trim() !== '');
+  return u ?? null;
+}
+
 /** One full configuration. */
 export async function getConfiguration(id: number): Promise<Configuration> {
   return apiClient.get<Configuration>(`/private/configurations/${id}`);

@@ -157,7 +157,9 @@ class KioskApplierTest {
     }
 
     /** Delegates to [InMemoryKioskStateStore]; the first load() reads, then holds that value until [gate] completes. */
-    private class GatedFirstLoadStore(private val inner: KioskStateStore = InMemoryKioskStateStore()) : KioskStateStore by inner {
+    private class GatedFirstLoadStore(
+        private val inner: KioskStateStore = InMemoryKioskStateStore(),
+    ) : KioskStateStore by inner {
         val gate = CompletableDeferred<Unit>()
         private var loads = 0
         override suspend fun load(): KioskApplyPayload? {

@@ -500,7 +500,12 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
         if (application == null) {
             throw SecurityException.onApplicationAccessViolation(id);
         }
-        if (!application.isCommon() && application.getCustomerId() != user.getCustomerId()) {
+        return requireVisible(user, application);
+    }
+
+    /** {@code application} when it is the user's customer's or a common one; a security exception otherwise. */
+    private static Application requireVisible(User user, Application application) {
+        if (!application.isCommonApplication() && application.getCustomerId() != user.getCustomerId()) {
             throw SecurityException.onApplicationAccessViolation(application);
         }
         return application;
@@ -511,13 +516,11 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
      * limited to some configurations, the other ones.</p>
      */
     private <L> void retainEditableConfigurations(User user, List<L> links, Function<L, Integer> configurationId) {
-        final Set<Integer> editable = new HashSet<>(this.mapper.getCustomerConfigurationIds(user.getCustomerId()));
-        if (!user.isAllConfigAvailable()) {
-            final List<LookupItem> userConfigurations = user.getConfigurations() == null
-                    ? new ArrayList<>() : user.getConfigurations();
-            editable.retainAll(userConfigurations.stream().map(LookupItem::getId).collect(Collectors.toSet()));
-        }
-        links.removeIf(link -> !editable.contains(configurationId.apply(link)));
+        final Set<Integer> customerConfigurations = new HashSet<>(this.mapper.getCustomerConfigurationIds(user.getCustomerId()));
+        links.removeIf(link -> {
+            final Integer id = configurationId.apply(link);
+            return !customerConfigurations.contains(id) || !user.mayUseConfiguration(id);
+        });
     }
 
     @Transactional
@@ -689,10 +692,7 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
             return null;
         }
         final User user = SecurityContext.get().getCurrentUser().orElseThrow(SecurityException::onAnonymousAccess);
-        if (!application.isCommonApplication() && application.getCustomerId() != user.getCustomerId()) {
-            throw SecurityException.onApplicationAccessViolation(application);
-        }
-        return application;
+        return requireVisible(user, application);
     }
 
     public ApplicationVersion findApplicationVersionById(int id) {

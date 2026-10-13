@@ -304,6 +304,15 @@ public class User implements CustomerData, Serializable {
         this.configurations = configurations;
     }
 
+    /**
+     * True when the user is not limited to some configurations, or {@code configurationId} is one of them. Whether the
+     * configuration belongs to the user's customer is checked separately.
+     */
+    public boolean mayUseConfiguration(int configurationId) {
+        return allConfigAvailable
+                || configurations != null && configurations.stream().anyMatch(c -> c.getId() == configurationId);
+    }
+
     public String toString() {
         StringBuilder builder = new StringBuilder();
         builder.append(this.getName());

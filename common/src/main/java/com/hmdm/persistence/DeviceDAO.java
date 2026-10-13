@@ -292,8 +292,7 @@ public class DeviceDAO extends AbstractDAO<Device> {
         }
         return SecurityContext.get().getCurrentUser()
                 .map(u -> this.mapper.isCustomerConfiguration(configurationId, u.getCustomerId())
-                        && (u.isAllConfigAvailable() || u.getConfigurations() != null
-                            && u.getConfigurations().stream().anyMatch(c -> c.getId() == configurationId)))
+                        && u.mayUseConfiguration(configurationId))
                 .orElse(false);
     }
 

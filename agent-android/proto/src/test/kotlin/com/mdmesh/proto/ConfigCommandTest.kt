@@ -43,7 +43,8 @@ class ConfigCommandTest {
     @Test
     fun `location off is advertised and decodes (protocol 1_4)`() {
         assertTrue(DeviceAction.ADVERTISED_KEYS.contains(DeviceAction.LOCATION_OFF_KEY))
-        val p = ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), """{"revision":"r","location":{"mode":"off"}}""")
+        val json = """{"revision":"r","location":{"mode":"off"}}"""
+        val p = ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), json)
         assertEquals(DeviceAction.LOCATION_OFF, p.location?.mode)
         assertEquals("1.4", ProtocolJson.PROTOCOL_VERSION)
     }

@@ -19,7 +19,10 @@ import com.mdmesh.policy.TogglePolicy
  */
 interface WifiPolicy : TogglePolicy {
 
-    /** Enable or disable Wi-Fi as Device Owner. (from [TogglePolicy]) */
+    /**
+     * Allow (`true`) or lock (`false`) the Wi-Fi settings. Does not switch the radio: that is the separate
+     * `wifiRadio` policy ([WifiRadioPolicy]). (from [TogglePolicy])
+     */
     override fun setEnabled(enabled: Boolean): PolicyOutcome
 
     /** Lock the user out of changing Wi-Fi configuration. */

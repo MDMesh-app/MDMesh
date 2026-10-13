@@ -2898,6 +2898,14 @@
         <rollback>ALTER TABLE configurations DROP COLUMN disableSafeBoot;</rollback>
     </changeSet>
 
+    <changeSet id="26.10.13-configurations-wifiRadio" author="lunacy" context="common">
+        <comment>Column,new: configurations#wifiRadio (sent as policies.wifiRadio: switches the Wi-Fi radio). The
+            existing #wifi keeps meaning "lock Wi-Fi settings", so no stored value starts turning Wi-Fi off.
+            No DEFAULT: NULL = unmanaged, so existing configurations keep their revision.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN wifiRadio BOOLEAN;</sql>
+        <rollback>ALTER TABLE configurations DROP COLUMN wifiRadio;</rollback>
+    </changeSet>
+
     <changeSet id="26.10.12-deviceState-configAgentVersion" author="lunacy" context="common">
         <comment>Column,new: device_state#configAgentVersion (agent version of the last completed config.apply;
             seeded from agentVersion)</comment>

@@ -15,7 +15,8 @@ Advertised only when the device has a working strategy for it (`CapabilityRegist
 
 | key | meaning | min SDK | notes |
 |-----|---------|---------|-------|
-| `wifi` | toggle/lock Wi-Fi | 24 | |
+| `wifi` | lock/allow the Wi-Fi settings | 24 | `false` = `DISALLOW_CONFIG_WIFI` (+ configured-networks lockdown on API 30+). Does **not** switch the radio; see `wifiRadio`. |
+| `wifiRadio` | switch the Wi-Fi radio on/off | 24 | 1.4. `WifiManager.setWifiEnabled` (Device Owner is exempt from the API 29 restriction). Off is refused while Wi-Fi is the only validated network; on API 33+ off also adds `DISALLOW_CHANGE_WIFI_STATE`, on lifts it. Device Owner only. |
 | `bluetooth` | toggle/lock Bluetooth | 24 | BLUETOOTH_SCAN auto-grant fails if target app targetSdk<=30 |
 | `usbStorage` | block USB mass storage | 24 | |
 | `camera` | disable camera | 24 | |

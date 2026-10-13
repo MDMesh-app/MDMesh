@@ -32,6 +32,11 @@ WifiPolicy (interface)
  └─ WifiPolicyFactory  (picks the first isSupported() strategy)
 ```
 
+`wifi` only locks or allows the Wi-Fi *settings*. Switching the radio is the separate `wifiRadio` toggle
+(`WifiRadioPolicy`, protocol 1.4): `WifiManager.setWifiEnabled` (Device Owners are exempt from the API 29
+restriction), refused while Wi-Fi is the only validated network, plus `DISALLOW_CHANGE_WIFI_STATE` on API 33+.
+Keeping them apart means a configuration stored with `wifi = false` never starts turning Wi-Fi off on upgrade.
+
 Adding a new policy (mobileData, gps, ...) means: define its
 interface, write its strategies, add a factory, and register the probe in
 `CapabilityRegistry`. Nothing in `:core`/`:app` needs to know the SDK details.

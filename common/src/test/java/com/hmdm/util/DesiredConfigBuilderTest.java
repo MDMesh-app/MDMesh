@@ -209,6 +209,25 @@ public class DesiredConfigBuilderTest {
                 DesiredConfigBuilder.build(c, Collections.emptyList()).getLocation().getMode());
     }
 
+    @Test
+    public void wifi_radio_is_its_own_key_and_wifi_false_still_only_locks_settings() {
+        // Stored wifi=false has always meant "lock Wi-Fi settings": it must not start switching the radio off.
+        DesiredConfig legacy = DesiredConfigBuilder.build(policiesConfig(), Collections.emptyList());
+        assertEquals(Boolean.FALSE, legacy.getPolicies().get("wifi"));
+        assertFalse("null wifiRadio = radio not managed", legacy.getPolicies().containsKey("wifiRadio"));
+
+        Configuration off = policiesConfig(); off.setWifiRadio(false);
+        DesiredConfig d = DesiredConfigBuilder.build(off, Collections.emptyList());
+        assertEquals(Boolean.FALSE, d.getPolicies().get("wifiRadio"));
+        assertNotEquals(legacy.getRevision(), d.getRevision());
+
+        Configuration on = policiesConfig(); on.setWifiRadio(true);
+        assertEquals(Boolean.TRUE, DesiredConfigBuilder.build(on, Collections.emptyList()).getPolicies().get("wifiRadio"));
+        // Existing configurations upgrade with a NULL column: the kiosk golden revision must not move.
+        assertEquals(resource("desired-config-kiosk.sha256"),
+                DesiredConfigBuilder.build(kioskConfig(), Arrays.asList(app(5, 505, "com.acme.pos", 1))).getRevision());
+    }
+
     /** GOLDEN for the flat policy block. Kept separate from the kiosk fixture so an unmanaged
      *  disableFactoryReset there still proves the key is omitted. Update deliberately. */
     @Test

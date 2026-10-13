@@ -69,7 +69,8 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'showWifi', label: 'Show Wi-Fi on error', type: 'tri', group: 'Kiosk', help: 'Surface Wi-Fi settings if the device loses connectivity in kiosk.' },
 
   // ── Network ─────────────────────────────────────────────────────────────-─
-  { key: 'wifi', label: 'Wi-Fi', type: 'tri', group: 'Network', focused: true, enforced: true, help: 'Wi-Fi radio: unmanaged, force on, or force off.' },
+  { key: 'wifi', label: 'Wi-Fi', type: 'tri', group: 'Network', focused: true, enforced: true, help: 'Wi-Fi settings: Off locks them (users cannot change networks); it does not turn the radio off. Auto leaves an existing lock on the device.' },
+  { key: 'wifiRadio', label: 'Wi-Fi radio', type: 'tri', group: 'Network', enforced: true, help: 'On turns Wi-Fi on. Off turns it off (Android 13+ also stops users turning it back on); a device whose only network is Wi-Fi refuses Off so it stays reachable. Auto leaves the radio alone.' },
   { key: 'mobileData', label: 'Mobile data', type: 'tri', group: 'Network', focused: true, help: 'Mobile data: unmanaged, on, or off.' },
   { key: 'bluetooth', label: 'Bluetooth', type: 'tri', group: 'Network', focused: true, enforced: true, help: 'Bluetooth radio: unmanaged, on, or off.' },
   { key: 'gps', label: 'GPS / location', type: 'tri', group: 'Network', focused: true, help: 'Location radio: unmanaged, on, or off.' },

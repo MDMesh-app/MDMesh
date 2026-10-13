@@ -72,7 +72,9 @@ public final class DesiredConfigBuilder {
 
     private static Map<String, Boolean> policies(Configuration cfg) {
         Map<String, Boolean> p = new TreeMap<String, Boolean>();
+        // wifi = lock/allow the Wi-Fi settings only; wifiRadio (1.4) switches the radio itself.
         putIfManaged(p, "wifi", cfg.getWifi());
+        putIfManaged(p, "wifiRadio", cfg.getWifiRadio());
         putIfManaged(p, "bluetooth", cfg.getBluetooth());
         putIfManaged(p, "usbStorage", cfg.getUsbStorage());
         putIfManaged(p, "screenshots", cfg.getDisableScreenshots() == null ? null : !cfg.getDisableScreenshots());

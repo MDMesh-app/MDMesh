@@ -34,21 +34,30 @@ class ConfigApplier(
     private val mutex = Mutex()
 
     suspend fun apply(doc: ConfigApplyPayload): ConfigApplyResult = mutex.withLock {
+        // What came before: the last saved document, and the last delivered one if a failed section kept it unsaved.
+        val previous = listOfNotNull(store.load(), store.delivered)
         // A changed configuration ends a Wi-Fi radio self-heal hold; a re-send of the same one does not (nor does the
         // boot re-apply, which does not come through here).
-        if (doc.revision != store.deliveredRevision) wifiRadio()?.endHold()
-        store.deliveredRevision = doc.revision
-        applyLocked(doc)
+        if (doc.revision != store.delivered?.revision) wifiRadio()?.endHold()
+        store.delivered = doc
+        applyLocked(doc, previous)
     }
 
-    /** @param persist false for the boot re-apply: the document is already stored (or stale until re-sent). */
-    private suspend fun applyLocked(doc: ConfigApplyPayload, persist: Boolean = true): ConfigApplyResult {
+    /**
+     * @param previous the documents whose keys this one may stop managing.
+     * @param persist false for the boot re-apply: the document is already stored (or stale until re-sent).
+     */
+    private suspend fun applyLocked(
+        doc: ConfigApplyPayload,
+        previous: List<ConfigApplyPayload>,
+        persist: Boolean = true,
+    ): ConfigApplyResult {
         val outcomes = linkedMapOf<String, String>()
         for ((key, enabled) in doc.policies) {
             outcomes["policies.$key"] = toOutcome(toggles[key]?.setEnabled(enabled))
         }
-        releaseUnmanaged(doc, outcomes)
-        applyKiosk(doc)?.let { outcomes["kiosk"] = it }
+        releaseUnmanaged(doc, previous, outcomes)
+        applyKiosk(doc, previous)?.let { outcomes["kiosk"] = it }
         doc.location?.let { loc ->
             outcomes["location"] = runCatching { setLocationMode(loc.mode); ConfigOutcome.APPLIED }
                 .getOrElse { ConfigOutcome.failed(it.message ?: "location mode") }
@@ -59,12 +68,15 @@ class ConfigApplier(
     }
 
     /**
-     * A key the previously applied document managed and this one does not: lift what it left behind (once; the new
-     * document is what gets persisted). Reported only when the release failed, so it is retried.
+     * A key a previous document (last saved or last delivered) managed and this one does not: lift what it left
+     * behind. Reported only when the release failed, so it is retried.
      */
-    private fun releaseUnmanaged(doc: ConfigApplyPayload, outcomes: MutableMap<String, String>) {
-        val previous = store.load()?.policies?.keys.orEmpty()
-        for (key in previous - doc.policies.keys) {
+    private fun releaseUnmanaged(
+        doc: ConfigApplyPayload,
+        previous: List<ConfigApplyPayload>,
+        outcomes: MutableMap<String, String>,
+    ) {
+        for (key in previous.flatMap { it.policies.keys }.toSet() - doc.policies.keys) {
             val releasable = toggles[key] as? ReleasablePolicy ?: continue
             val o = toOutcome(releasable.release())
             if (ConfigOutcome.isFailed(o)) outcomes["policies.$key"] = o
@@ -79,11 +91,11 @@ class ConfigApplier(
     }
 
     /** @return the kiosk outcome, or null when nothing was asserted or exited (the key is then omitted). */
-    private suspend fun applyKiosk(doc: ConfigApplyPayload): String? {
-        // Absent kiosk = "configuration does not assert kiosk". Exit only when the LAST APPLIED CONFIG asserted
-        // it (the admin turned it off). Kiosk entered by an ad-hoc kiosk.enter is never lifted here — otherwise
-        // the first apply after upgrading would drop every manually-kiosked device.
-        val previousConfigHadKiosk = store.load()?.kiosk != null
+    private suspend fun applyKiosk(doc: ConfigApplyPayload, previous: List<ConfigApplyPayload>): String? {
+        // Absent kiosk = "configuration does not assert kiosk". Exit only when a PREVIOUS CONFIG (last saved or last
+        // delivered) asserted it (the admin turned it off). Kiosk entered by an ad-hoc kiosk.enter is never lifted
+        // here — otherwise the first apply after upgrading would drop every manually-kiosked device.
+        val previousConfigHadKiosk = previous.any { it.kiosk != null }
         val desiredKiosk = doc.kiosk
         val r = when {
             desiredKiosk != null -> kiosk.enter(desiredKiosk)
@@ -102,7 +114,7 @@ class ConfigApplier(
      * again: a stale document ([selfHealWifiRadio]) stays stale until the server re-sends it.
      */
     suspend fun reapplyPersisted(): ConfigApplyResult? = mutex.withLock {
-        store.load()?.let { applyLocked(it, persist = false) }
+        store.load()?.let { applyLocked(it, listOf(it), persist = false) }
     }
 
     /**

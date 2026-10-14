@@ -23,10 +23,11 @@ interface ConfigStateStore {
     fun markStale()
 
     /**
-     * Revision of the last document the server delivered, applied in full or not (one with a failed section is never
-     * saved). A Wi-Fi radio self-heal hold belongs to it: only a different revision ends the hold.
+     * The last document the server delivered, applied in full or not (one with a failed section is never saved, but
+     * may have changed the device). The next document releases its keys too, and a Wi-Fi radio self-heal hold
+     * belongs to its revision: only a different revision ends the hold.
      */
-    var deliveredRevision: String?
+    var delivered: ConfigApplyPayload?
 
     companion object {
         /** Well-formed (64 hex) but never a real revision, so it never matches the configuration. */
@@ -50,11 +51,11 @@ class SharedPrefsConfigStateStore(context: Context) : ConfigStateStore {
     override fun revision(): String? = prefs.getString(KEY_REV, null)
     override fun clear() { prefs.edit().remove(KEY_DOC).remove(KEY_REV).apply() }
     override fun markStale() { prefs.edit().putString(KEY_REV, ConfigStateStore.STALE_REVISION).commit() }
-    override var deliveredRevision: String?
-        get() = prefs.getString(KEY_DELIVERED, null)
-        set(v) { prefs.edit().putString(KEY_DELIVERED, v).apply() }
+    override var delivered: ConfigApplyPayload?
+        get() = ConfigStateCodec.decode(prefs.getString(KEY_DELIVERED, null))
+        set(v) { prefs.edit().putString(KEY_DELIVERED, v?.let(ConfigStateCodec::encode)).apply() }
     private companion object {
-        const val KEY_DOC = "doc"; const val KEY_REV = "revision"; const val KEY_DELIVERED = "deliveredRevision"
+        const val KEY_DOC = "doc"; const val KEY_REV = "revision"; const val KEY_DELIVERED = "deliveredDoc"
     }
 }
 
@@ -66,5 +67,5 @@ class InMemoryConfigStateStore : ConfigStateStore {
     override fun revision(): String? = rev
     override fun clear() { doc = null; rev = null }
     override fun markStale() { rev = ConfigStateStore.STALE_REVISION }
-    override var deliveredRevision: String? = null
+    override var delivered: ConfigApplyPayload? = null
 }

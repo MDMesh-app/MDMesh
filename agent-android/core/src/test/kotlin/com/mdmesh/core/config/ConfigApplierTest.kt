@@ -208,6 +208,23 @@ class ConfigApplierTest {
         assertEquals("a changed configuration applies Off again", false, radio.on)
     }
 
+    @Test fun `a key from a delivered but unsaved document is still released when the next one drops it`() = runTest {
+        // Saved A has no wifiRadio. B turns Wi-Fi off (and locks it) but bluetooth fails, so B is never saved. C drops
+        // wifiRadio: the lock B left must still be lifted, or Wi-Fi stays off and locked for good.
+        val radio = StrandableRadio(); val locks = mutableSetOf<String>(); val store = InMemoryConfigStateStore()
+        val policy = WifiRadioPolicy(radio, { k, add -> if (add) locks += k else locks -= k }, 33) { true }
+        val bt = FakeToggle("bluetooth", PolicyOutcome.Failed("dpm said no"))
+        val a = ConfigApplier(mapOf("wifiRadio" to policy, "bluetooth" to bt), kiosk(FakeController()), {}, store)
+        a.apply(ConfigApplyPayload(revision = "A"))
+        val offAndBluetooth = mapOf("wifiRadio" to false, "bluetooth" to false)
+        val b = a.apply(ConfigApplyPayload(revision = "B", policies = offAndBluetooth))
+        assertFalse(ConfigApplier.succeeded(b)); assertEquals("A", store.revision())
+        assertEquals(false, radio.on); assertTrue(locks.isNotEmpty())
+
+        assertTrue(ConfigApplier.succeeded(a.apply(ConfigApplyPayload(revision = "C"))))
+        assertTrue("B's lock lifted", locks.isEmpty())
+    }
+
     @Test fun `no Wi-Fi radio policy, nothing to heal`() = runTest {
         val store = InMemoryConfigStateStore()
         store.save(ConfigApplyPayload(revision = "n1"))

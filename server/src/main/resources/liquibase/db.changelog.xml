@@ -2974,4 +2974,12 @@
         <rollback>ALTER TABLE configurations DROP COLUMN kioskLockVolume;</rollback>
     </changeSet>
 
+    <changeSet id="26.10.14-agentCommand-deviceNumber-type-id-idx" author="lunacy" context="common">
+        <comment>Index,new: agentCommand (deviceNumber, type, id). The latest command of a type per device (the config
+            sync summary's deferred check, config reconcile) becomes one index lookup instead of a scan of all the
+            device's commands; agentCommand is never purged. IF NOT EXISTS: safe on fresh and upgraded databases.</comment>
+        <sql>CREATE INDEX IF NOT EXISTS agentCommand_deviceNumber_type_id_idx ON agentCommand (deviceNumber, type, id);</sql>
+        <rollback>DROP INDEX IF EXISTS agentCommand_deviceNumber_type_id_idx;</rollback>
+    </changeSet>
+
 </databaseChangeLog>

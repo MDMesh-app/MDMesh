@@ -90,7 +90,8 @@ public interface AgentDeviceMapper {
 
     /**
      * One row per device of the customer with its configuration + last applied revision (LEFT JOIN: never-reported
-     * devices included), and whether its latest config.apply result has a deferred outcome (one indexed lookup each).
+     * devices included), and whether its latest config.apply result has a deferred outcome (one lookup per device on
+     * the agentCommand (deviceNumber, type, id) index).
      */
     @Select({"SELECT d.number AS deviceNumber, d.configurationId AS configurationId, d.agentCapabilities AS capabilitiesJson, " +
             "s.appliedConfigRevision AS appliedConfigRevision, " +

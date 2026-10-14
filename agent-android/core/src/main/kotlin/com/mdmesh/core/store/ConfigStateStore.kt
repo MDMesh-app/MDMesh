@@ -29,6 +29,9 @@ interface ConfigStateStore {
      */
     var delivered: ConfigApplyPayload?
 
+    /** Result keys (`policies.<key>`, `kiosk`) whose release or kiosk exit failed: the next document retries them. */
+    var unreleased: Set<String>
+
     companion object {
         /** Well-formed (64 hex) but never a real revision, so it never matches the configuration. */
         val STALE_REVISION = "0".repeat(64)
@@ -54,8 +57,12 @@ class SharedPrefsConfigStateStore(context: Context) : ConfigStateStore {
     override var delivered: ConfigApplyPayload?
         get() = ConfigStateCodec.decode(prefs.getString(KEY_DELIVERED, null))
         set(v) { prefs.edit().putString(KEY_DELIVERED, v?.let(ConfigStateCodec::encode)).apply() }
+    override var unreleased: Set<String>
+        get() = prefs.getStringSet(KEY_UNRELEASED, null)?.toSet().orEmpty()
+        set(v) { prefs.edit().putStringSet(KEY_UNRELEASED, v.toSet()).apply() }
     private companion object {
         const val KEY_DOC = "doc"; const val KEY_REV = "revision"; const val KEY_DELIVERED = "deliveredDoc"
+        const val KEY_UNRELEASED = "unreleased"
     }
 }
 
@@ -68,4 +75,5 @@ class InMemoryConfigStateStore : ConfigStateStore {
     override fun clear() { doc = null; rev = null }
     override fun markStale() { rev = ConfigStateStore.STALE_REVISION }
     override var delivered: ConfigApplyPayload? = null
+    override var unreleased: Set<String> = emptySet()
 }

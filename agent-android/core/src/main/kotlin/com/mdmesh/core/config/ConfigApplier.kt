@@ -40,24 +40,38 @@ class ConfigApplier(
         // boot re-apply, which does not come through here).
         if (doc.revision != store.delivered?.revision) wifiRadio()?.endHold()
         store.delivered = doc
-        applyLocked(doc, previous)
+        val result = applyLocked(doc, previous, store.unreleased)
+        // A release or kiosk exit that failed is retried with the next document, whatever that one says.
+        store.unreleased = result.outcomes.filter { (k, o) -> ConfigOutcome.isFailed(o) && !manages(doc, k) }.keys
+        result
+    }
+
+    private fun manages(doc: ConfigApplyPayload, outcomeKey: String): Boolean = when {
+        outcomeKey == KIOSK -> doc.kiosk != null
+        outcomeKey.startsWith(POLICIES) -> outcomeKey.removePrefix(POLICIES) in doc.policies
+        else -> true
     }
 
     /**
      * @param previous the documents whose keys this one may stop managing.
+     * @param unreleased outcome keys whose release (or kiosk exit) failed before: released again.
      * @param persist false for the boot re-apply: the document is already stored (or stale until re-sent).
      */
     private suspend fun applyLocked(
         doc: ConfigApplyPayload,
         previous: List<ConfigApplyPayload>,
+        unreleased: Set<String> = emptySet(),
         persist: Boolean = true,
     ): ConfigApplyResult {
         val outcomes = linkedMapOf<String, String>()
         for ((key, enabled) in doc.policies) {
-            outcomes["policies.$key"] = toOutcome(toggles[key]?.setEnabled(enabled))
+            outcomes["$POLICIES$key"] = toOutcome(toggles[key]?.setEnabled(enabled))
         }
-        releaseUnmanaged(doc, previous, outcomes)
-        applyKiosk(doc, previous)?.let { outcomes["kiosk"] = it }
+        val previousKeys = previous.flatMap { it.policies.keys } +
+            unreleased.filter { it.startsWith(POLICIES) }.map { it.removePrefix(POLICIES) }
+        releaseUnmanaged(doc, previousKeys.toSet(), outcomes)
+        val previousKiosk = previous.any { it.kiosk != null } || KIOSK in unreleased
+        applyKiosk(doc, previousKiosk)?.let { outcomes[KIOSK] = it }
         doc.location?.let { loc ->
             outcomes["location"] = runCatching { setLocationMode(loc.mode); ConfigOutcome.APPLIED }
                 .getOrElse { ConfigOutcome.failed(it.message ?: "location mode") }
@@ -68,18 +82,19 @@ class ConfigApplier(
     }
 
     /**
-     * A key a previous document (last saved or last delivered) managed and this one does not: lift what it left
-     * behind. Reported only when the release failed, so it is retried.
+     * A key a previous document (last saved or last delivered) managed, or whose release failed before, and this one
+     * does not: lift what it left behind. Reported only when the release failed, which keeps it in
+     * [ConfigStateStore.unreleased], so the next document retries it.
      */
     private fun releaseUnmanaged(
         doc: ConfigApplyPayload,
-        previous: List<ConfigApplyPayload>,
+        previousKeys: Set<String>,
         outcomes: MutableMap<String, String>,
     ) {
-        for (key in previous.flatMap { it.policies.keys }.toSet() - doc.policies.keys) {
+        for (key in previousKeys - doc.policies.keys) {
             val releasable = toggles[key] as? ReleasablePolicy ?: continue
             val o = toOutcome(releasable.release())
-            if (ConfigOutcome.isFailed(o)) outcomes["policies.$key"] = o
+            if (ConfigOutcome.isFailed(o)) outcomes["$POLICIES$key"] = o
         }
     }
 
@@ -91,11 +106,11 @@ class ConfigApplier(
     }
 
     /** @return the kiosk outcome, or null when nothing was asserted or exited (the key is then omitted). */
-    private suspend fun applyKiosk(doc: ConfigApplyPayload, previous: List<ConfigApplyPayload>): String? {
+    private suspend fun applyKiosk(doc: ConfigApplyPayload, previousConfigHadKiosk: Boolean): String? {
         // Absent kiosk = "configuration does not assert kiosk". Exit only when a PREVIOUS CONFIG (last saved or last
-        // delivered) asserted it (the admin turned it off). Kiosk entered by an ad-hoc kiosk.enter is never lifted
-        // here — otherwise the first apply after upgrading would drop every manually-kiosked device.
-        val previousConfigHadKiosk = previous.any { it.kiosk != null }
+        // delivered, or one whose exit failed) asserted it (the admin turned it off). Kiosk entered by an ad-hoc
+        // kiosk.enter is never lifted here — otherwise the first apply after upgrading would drop every
+        // manually-kiosked device.
         val desiredKiosk = doc.kiosk
         val r = when {
             desiredKiosk != null -> kiosk.enter(desiredKiosk)
@@ -135,6 +150,9 @@ class ConfigApplier(
     private fun wifiRadio(): WifiRadioPolicy? = toggles[WifiRadioPolicy.CAPABILITY_KEY] as? WifiRadioPolicy
 
     companion object {
+        private const val POLICIES = "policies."
+        private const val KIOSK = "kiosk"
+
         fun succeeded(r: ConfigApplyResult): Boolean = r.outcomes.values.none(ConfigOutcome::isFailed)
     }
 }

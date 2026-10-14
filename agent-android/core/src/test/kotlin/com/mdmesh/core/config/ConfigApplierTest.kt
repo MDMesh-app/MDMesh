@@ -30,8 +30,9 @@ class ConfigApplierTest {
     }
     private class FakeController(private val enterResult: KioskResult = KioskResult.Ok) : KioskController {
         var enters = 0; var exits = 0
+        var exitResult: KioskResult = KioskResult.Ok
         override fun enter(homeComponent: ComponentName, allowedPackages: List<String>, features: Int): KioskResult { enters++; return enterResult }
-        override fun exit(): KioskResult { exits++; return KioskResult.Ok }
+        override fun exit(): KioskResult { exits++; return exitResult }
         override fun isLocked(context: android.content.Context) = false
         override fun allowedPackages(): List<String> = emptyList()
     }
@@ -223,6 +224,49 @@ class ConfigApplierTest {
 
         assertTrue(ConfigApplier.succeeded(a.apply(ConfigApplyPayload(revision = "C"))))
         assertTrue("B's lock lifted", locks.isEmpty())
+    }
+
+    private class FlakyRelease : TogglePolicy, ReleasablePolicy {
+        override val capabilityKey = "wifiRadio"
+        var releaseOutcome: PolicyOutcome = PolicyOutcome.Applied
+        var releases = 0
+        override fun isSupported() = true
+        override fun setEnabled(enabled: Boolean): PolicyOutcome = PolicyOutcome.Applied
+        override fun release(): PolicyOutcome { releases++; return releaseOutcome }
+    }
+
+    @Test fun `a failed release is retried by the re-send of the same document`() = runTest {
+        // Saved A without wifiRadio; B (wifiRadio Off) fails elsewhere, unsaved; C drops wifiRadio but its release
+        // fails. The re-send of C must release it again, though neither A nor C mentions wifiRadio.
+        val radio = FlakyRelease(); val store = InMemoryConfigStateStore()
+        val bt = FakeToggle("bluetooth", PolicyOutcome.Failed("dpm said no"))
+        val a = ConfigApplier(mapOf("wifiRadio" to radio, "bluetooth" to bt), kiosk(FakeController()), {}, store)
+        a.apply(ConfigApplyPayload(revision = "A"))
+        a.apply(ConfigApplyPayload(revision = "B", policies = mapOf("wifiRadio" to false, "bluetooth" to false)))
+        radio.releaseOutcome = PolicyOutcome.Failed("busy")
+        val c = ConfigApplyPayload(revision = "C")
+        assertFalse(ConfigApplier.succeeded(a.apply(c)))
+        radio.releaseOutcome = PolicyOutcome.Applied
+        assertTrue(ConfigApplier.succeeded(a.apply(c)))
+        assertEquals("released again on the re-send", 2, radio.releases)
+        a.apply(c)
+        assertEquals("and only until it worked", 2, radio.releases)
+    }
+
+    @Test fun `a failed kiosk exit is retried by the re-send of the same document`() = runTest {
+        val c = FakeController(); val kstore = InMemoryKioskStateStore(); val store = InMemoryConfigStateStore()
+        val bt = FakeToggle("bluetooth", PolicyOutcome.Failed("dpm said no"))
+        val a = ConfigApplier(mapOf("bluetooth" to bt), kiosk(c, kstore), {}, store)
+        a.apply(ConfigApplyPayload(revision = "A"))
+        val kioskOn = KioskApplyPayload(mode = "single", pinPackage = "com.a")
+        a.apply(ConfigApplyPayload(revision = "B", kiosk = kioskOn, policies = mapOf("bluetooth" to false)))
+        assertNotNull("B entered kiosk, but is not saved", kstore.load()); assertEquals("A", store.revision())
+        c.exitResult = KioskResult.Failed("lock task busy")
+        val off = ConfigApplyPayload(revision = "C")
+        assertFalse(ConfigApplier.succeeded(a.apply(off)))
+        c.exitResult = KioskResult.Ok
+        assertTrue(ConfigApplier.succeeded(a.apply(off)))
+        assertEquals(2, c.exits); assertNull(kstore.load())
     }
 
     @Test fun `no Wi-Fi radio policy, nothing to heal`() = runTest {

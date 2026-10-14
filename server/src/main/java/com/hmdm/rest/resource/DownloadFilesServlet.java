@@ -115,9 +115,9 @@ public class DownloadFilesServlet extends HttpServlet {
                 return;
             }
 
-            String range = req.getHeader("Range");
-            if (range != null && range.startsWith("bytes=")) {
-                sendPartialContent(range.substring(6), file, resp);
+            String range = singleRange(req.getHeader("Range"));
+            if (range != null) {
+                sendPartialContent(range, file, resp);
                 return;
             }
 
@@ -167,6 +167,14 @@ public class DownloadFilesServlet extends HttpServlet {
         } catch (IllegalArgumentException | IOException e) {
             return null;
         }
+    }
+
+    /**
+     * @return the spec of a single {@code bytes=} range, or null when there is none. A multi-range request is
+     *         served as the whole file (allowed by RFC 9110), so it gets null too.
+     */
+    static String singleRange(String header) {
+        return header != null && header.startsWith("bytes=") && !header.contains(",") ? header.substring(6) : null;
     }
 
     /**

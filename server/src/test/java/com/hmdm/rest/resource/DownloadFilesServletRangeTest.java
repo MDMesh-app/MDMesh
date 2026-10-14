@@ -6,6 +6,7 @@ package com.hmdm.rest.resource;
 import org.junit.Test;
 
 import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 
 /** A {@code Range: bytes=} spec maps to inclusive first/last bytes, as RFC 9110 defines them. */
@@ -37,10 +38,16 @@ public class DownloadFilesServletRangeTest {
     }
 
     @Test
-    public void unsatisfiable_or_malformed_ranges_are_rejected() {
+    public void a_multi_range_request_gets_the_whole_file() {
+        assertNull(DownloadFilesServlet.singleRange("bytes=0-1,5-9"));
+        assertNull(DownloadFilesServlet.singleRange(null));
+        assertEquals("0-999", DownloadFilesServlet.singleRange("bytes=0-999"));
+    }
+
+    @Test
+    public void unsatisfiable_or_malformed_single_ranges_are_rejected() {
         assertNull(range("5000-", 5000));
         assertNull(range("10-5", 5000));
-        assertNull(range("0-1,5-9", 5000));
         assertNull(range("abc", 5000));
         assertNull(range("0-", 0));
     }

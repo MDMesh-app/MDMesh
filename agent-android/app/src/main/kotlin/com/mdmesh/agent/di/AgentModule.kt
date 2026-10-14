@@ -102,7 +102,7 @@ object AgentModule {
     @Provides
     @Singleton
     fun provideCapabilityRegistry(@ApplicationContext context: Context, handle: DpmHandle): CapabilityRegistry =
-        CapabilityRegistry(handle, AndroidWifiRadio(context), SharedPrefsWifiRadioOffState(context))
+        CapabilityRegistry(handle, AndroidWifiRadio.from(context), SharedPrefsWifiRadioOffState(context))
 
     @Provides
     @Singleton

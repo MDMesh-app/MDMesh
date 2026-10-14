@@ -197,11 +197,21 @@ class WifiRadioPolicy(
     }
 }
 
-/** [WifiRadio] over [WifiManager] and [ConnectivityManager]. */
-class AndroidWifiRadio(context: Context) : WifiRadio {
-    private val app = context.applicationContext
-    private val wifi = app.getSystemService(Context.WIFI_SERVICE) as WifiManager
-    private val connectivity = app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+/** [WifiRadio] over [WifiManager] and [ConnectivityManager]; create it with [from]. */
+class AndroidWifiRadio private constructor(
+    private val wifi: WifiManager,
+    private val connectivity: ConnectivityManager,
+) : WifiRadio {
+
+    companion object {
+        /** Null on a device without Wi-Fi hardware (no [WifiManager]): `wifiRadio` is then never advertised. */
+        fun from(context: Context): AndroidWifiRadio? {
+            val app = context.applicationContext
+            val wifi = app.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            val connectivity = app.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            return if (wifi != null && connectivity != null) AndroidWifiRadio(wifi, connectivity) else null
+        }
+    }
 
     override fun isEnabled(): Boolean = wifi.isWifiEnabled
 

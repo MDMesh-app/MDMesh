@@ -169,38 +169,56 @@ public class DownloadFilesServlet extends HttpServlet {
         }
     }
 
-    private void sendPartialContent(String rangeStr, File file, HttpServletResponse resp) {
+    /**
+     * <p>Parses a single {@code bytes=} range spec ({@code first-last}, {@code first-} or the suffix {@code -n}).</p>
+     *
+     * @return the first and last byte (both inclusive) clamped to the file, or null when it is malformed or
+     *         unsatisfiable.
+     */
+    static long[] byteRange(String rangeStr, long length) {
         try {
-            String[] range = rangeStr.split("-");
-            Long start = Long.parseLong(range[0]);
-            Long end = null;
-            if (range.length > 1) {
-                end = Long.parseLong(range[1]);
-            }
-            InputStream input = new FileInputStream(file);
-            ServletOutputStream outputStream = resp.getOutputStream();
-            long length = file.length();
-            if (end == null) {
-                end = length;
-            }
-
-            resp.setStatus(206);
-            resp.setHeader("Content-Range", "bytes " + start + "-" + end + "/" + length);
-            long contentLength = end - start;
-            if (length <= 2147483647L) {
-                resp.setContentLength((int)contentLength);
+            String[] parts = rangeStr.trim().split("-", 2);
+            if (parts.length < 2) return null;
+            String a = parts[0].trim();
+            String b = parts[1].trim();
+            long first;
+            long last;
+            if (a.isEmpty()) {
+                first = Math.max(0, length - Long.parseLong(b)); // the last n bytes
+                last = length - 1;
             } else {
-                resp.addHeader("Content-Length", Long.toString(contentLength));
+                first = Long.parseLong(a);
+                last = b.isEmpty() ? length - 1 : Math.min(Long.parseLong(b), length - 1);
             }
-            if (file.getAbsolutePath().endsWith(".apk")) {
-                resp.setContentType(CONTENT_TYPE_APK);
-            }
+            return first >= 0 && first <= last ? new long[]{first, last} : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
 
-            input.skip(start);
-
-            IOUtils.copyLarge(input, outputStream, 0, contentLength);
+    private void sendPartialContent(String rangeStr, File file, HttpServletResponse resp) {
+        long length = file.length();
+        long[] range = byteRange(rangeStr, length);
+        if (range == null) {
+            resp.setStatus(416);
+            resp.setHeader("Content-Range", "bytes */" + length);
+            return;
+        }
+        long contentLength = range[1] - range[0] + 1;
+        resp.setStatus(206);
+        resp.setHeader("Content-Range", "bytes " + range[0] + "-" + range[1] + "/" + length);
+        if (contentLength <= 2147483647L) {
+            resp.setContentLength((int) contentLength);
+        } else {
+            resp.addHeader("Content-Length", Long.toString(contentLength));
+        }
+        if (file.getAbsolutePath().endsWith(".apk")) {
+            resp.setContentType(CONTENT_TYPE_APK);
+        }
+        try (InputStream input = new FileInputStream(file);
+             ServletOutputStream outputStream = resp.getOutputStream()) {
+            IOUtils.copyLarge(input, outputStream, range[0], contentLength);
             outputStream.flush();
-
         } catch (Exception e) {
             e.printStackTrace();
         }

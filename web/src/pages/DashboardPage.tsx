@@ -152,7 +152,7 @@ export function DashboardPage() {
     [devices, issues, now],
   );
 
-  // Configuration problems: the sync summary names the configurations with devices not in sync,
+  // Configuration problems: the sync summary names the configurations with devices not in sync (or deferring settings),
   // then only those configurations' online devices are probed (capped), so a healthy fleet costs
   // one request.
   useEffect(() => {
@@ -167,7 +167,9 @@ export function DashboardPage() {
         return;
       }
       const suspect = new Set(
-        summary.filter((s) => s.outOfSync > 0 || s.unsupported > 0 || s.neverSeen > 0).map((s) => s.configurationId),
+        summary
+          .filter((s) => s.outOfSync > 0 || s.unsupported > 0 || s.neverSeen > 0 || (s.deferred ?? 0) > 0)
+          .map((s) => s.configurationId),
       );
       const suspects = devices.filter(
         (d) => d.configurationId != null && suspect.has(d.configurationId) && isOnlineByRecency(d.lastUpdate),

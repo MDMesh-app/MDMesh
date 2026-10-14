@@ -12,6 +12,8 @@ export interface ConfigStatus {
 
 export interface ConfigSyncSummary {
   configurationId: number; total: number; inSync: number; outOfSync: number; unsupported: number; neverSeen: number;
+  /** Of inSync: devices whose latest config.apply deferred some settings (absent on older servers). */
+  deferred?: number;
 }
 
 /** Shape of `lastCommand.detail` for config.apply (proto/payloads/config-apply-result.schema.json). */

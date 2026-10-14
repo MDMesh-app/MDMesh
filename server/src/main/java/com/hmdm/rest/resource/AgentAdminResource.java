@@ -423,6 +423,7 @@ public class AgentAdminResource {
                 s.setNeverSeen(s.getNeverSeen() + 1);
             } else if (row.getAppliedConfigRevision().equals(current)) {
                 s.setInSync(s.getInSync() + 1);
+                if (row.isLastApplyDeferred()) s.setDeferred(s.getDeferred() + 1);
             } else {
                 s.setOutOfSync(s.getOutOfSync() + 1);
             }

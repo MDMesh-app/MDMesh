@@ -114,6 +114,9 @@ public class AgentDeviceAccessTest {
                     DeviceSyncRow r = new DeviceSyncRow();
                     r.setDeviceNumber(n);
                     r.setConfigurationId(5);
+                    r.setCapabilitiesJson("{\"device\":[\"configApply\"]}");
+                    r.setAppliedConfigRevision("rev");
+                    r.setLastApplyDeferred(true);
                     rows.add(r);
                 }
                 return rows;
@@ -301,6 +304,14 @@ public class AgentDeviceAccessTest {
         List<ConfigSyncSummary> rows = (List<ConfigSyncSummary>) r.getData();
         assertEquals(1, rows.size());
         assertEquals(1, rows.get(0).getTotal());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void syncSummaryCountsInSyncDevicesWithDeferredSettings() {
+        ConfigSyncSummary s = ((List<ConfigSyncSummary>) resource.getSyncSummary().getData()).get(0);
+        assertEquals(1, s.getInSync());
+        assertEquals("in sync, but the latest config.apply deferred something", 1, s.getDeferred());
     }
 
     @Test

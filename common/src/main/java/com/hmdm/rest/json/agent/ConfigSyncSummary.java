@@ -39,4 +39,6 @@ public class ConfigSyncSummary {
     private int outOfSync;
     private int unsupported;
     private int neverSeen;
+    /** Of {@link #inSync}: devices whose latest config.apply deferred some settings. */
+    private int deferred;
 }

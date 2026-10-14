@@ -56,10 +56,10 @@ class SharedPrefsConfigStateStore(context: Context) : ConfigStateStore {
     override fun markStale() { prefs.edit().putString(KEY_REV, ConfigStateStore.STALE_REVISION).commit() }
     override var delivered: ConfigApplyPayload?
         get() = ConfigStateCodec.decode(prefs.getString(KEY_DELIVERED, null))
-        set(v) { prefs.edit().putString(KEY_DELIVERED, v?.let(ConfigStateCodec::encode)).apply() }
+        set(v) { prefs.edit().putString(KEY_DELIVERED, v?.let(ConfigStateCodec::encode)).commit() }
     override var unreleased: Set<String>
         get() = prefs.getStringSet(KEY_UNRELEASED, null)?.toSet().orEmpty()
-        set(v) { prefs.edit().putStringSet(KEY_UNRELEASED, v.toSet()).apply() }
+        set(v) { prefs.edit().putStringSet(KEY_UNRELEASED, v.toSet()).commit() }
     private companion object {
         const val KEY_DOC = "doc"; const val KEY_REV = "revision"; const val KEY_DELIVERED = "deliveredDoc"
         const val KEY_UNRELEASED = "unreleased"

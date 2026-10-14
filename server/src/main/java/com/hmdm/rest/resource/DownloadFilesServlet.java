@@ -115,14 +115,14 @@ public class DownloadFilesServlet extends HttpServlet {
                 return;
             }
 
+            // XSS: never let a hosted file open as a page on the server's domain (full and partial responses)
+            resp.addHeader("Content-Disposition", "attachment; filename=\"" + file.getName() + "\"");
             String range = singleRange(req.getHeader("Range"));
             if (range != null) {
                 sendPartialContent(range, file, resp);
                 return;
             }
 
-            // Cross XSS vulnerability fix: prevent opening a potentially malicious file having the Headwind MDM domain
-            resp.addHeader("Content-Disposition", "attachment; filename=\"" + file.getName() + "\"");
             try (InputStream input = new FileInputStream(file);
                  ServletOutputStream outputStream = resp.getOutputStream()) {
                 long length = file.length();

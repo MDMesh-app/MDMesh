@@ -65,4 +65,12 @@ class PolicyApplyHandlerTest {
         val result = PolicyApplyHandler(mapOf("wifi" to wifi)).handle(command(payload("wifi", true)))
         assertEquals(CommandStatus.FAILED, result.status)
     }
+
+    @Test
+    fun `a deferred policy is done with the reason, not failed (as in config apply)`() = runTest {
+        val radio = FakeToggle("wifiRadio", PolicyOutcome.Deferred("only network"))
+        val result = PolicyApplyHandler(mapOf("wifiRadio" to radio)).handle(command(payload("wifiRadio", false)))
+        assertEquals(CommandStatus.DONE, result.status)
+        assertEquals("deferred: only network", result.detail)
+    }
 }

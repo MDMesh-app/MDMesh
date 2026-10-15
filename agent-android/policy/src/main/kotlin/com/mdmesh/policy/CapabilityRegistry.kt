@@ -45,6 +45,8 @@ class CapabilityRegistry(
     private val wifiRadio: WifiRadio? = null,
     /** Persisted `wifiRadio` off state (self-heal across reboots); in memory when not given. */
     private val wifiRadioState: WifiRadioOffState = InMemoryWifiRadioOffState(),
+    /** Pre-lift values of the app install/uninstall restrictions (process-death repair); in memory when not given. */
+    private val liftStore: LiftRestoreStore = InMemoryLiftRestoreStore(),
 ) {
 
     /**
@@ -63,8 +65,8 @@ class CapabilityRegistry(
         SafeBootPolicyFactory.create(handle)?.let { put(SafeBootPolicy.CAPABILITY_KEY, it) }
         WifiRadioPolicyFactory.create(handle, wifiRadio, wifiRadioState)
             ?.let { put(WifiRadioPolicy.CAPABILITY_KEY, it) }
-        UserAppInstallPolicyFactory.create(handle)?.let { put(UserAppInstallPolicy.CAPABILITY_KEY, it) }
-        UserAppUninstallPolicyFactory.create(handle)?.let { put(UserAppUninstallPolicy.CAPABILITY_KEY, it) }
+        UserAppInstallPolicyFactory.create(handle, liftStore)?.let { put(UserAppInstallPolicy.CAPABILITY_KEY, it) }
+        UserAppUninstallPolicyFactory.create(handle, liftStore)?.let { put(UserAppUninstallPolicy.CAPABILITY_KEY, it) }
         // Each factory probe returns null on an unsupported device, so a key only
         // appears here when a usable strategy exists.
         // Absence == "not advertised" == "never commanded".

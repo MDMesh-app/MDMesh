@@ -81,6 +81,19 @@ configuration; an ad-hoc "Enter kiosk" from the console is left alone.
     so it's a separate opt-in. `kioskLockButtons` blocks only the power menu.
   - New columns are NULL on upgrade, so revisions only change for configurations that use them, and for
     Do-not-track configurations (whose devices get one `config.apply`).
+- **1.5:** the `userAppInstall` / `userAppUninstall` keys (`blockUserAppInstall` / `blockUserAppUninstall`,
+  inverted). Agents without them report `unsupported`.
+
+**App installs and removal, in detail**
+- Block sets `DISALLOW_INSTALL_APPS` / `DISALLOW_UNINSTALL_APPS`. Android applies them to the Device Owner too, so
+  the agent lifts only the one it needs around its own install or uninstall (`InstallManager`, one operation at a
+  time) and puts the previous value back when it finishes, fails or is cancelled.
+- A change to that key that arrives during the operation is reported failed, never applied early: `config.apply` is
+  re-sent by the server as usual, an ad-hoc `policy.apply` has to be sent again.
+- The value before the lift is saved first. If the process dies mid-operation (crash, low-memory kill, the agent
+  replacing itself), the check-in service puts it back at its next start; boot and self-update also re-apply the
+  saved document.
+- Install blocking also stops Play Store installs and updates.
 
 **Wi-Fi radio Off, in detail**
 - Off is deferred, without blocking the other keys, while Wi-Fi is the device's only network. It's retried only at
@@ -112,9 +125,3 @@ lean on DO + lock-task auto-launch + WorkManager.
   `kiosk.enter`/`kiosk.exit`/`device.reboot`/`device.lock`); `policy.apply` expanded; telemetry in check-in.
 - `:app` — status UI, manifest (install receiver, FGS types, `lockTaskMode`, queries), DI multibindings,
   baseline policy applied on enrollment.
-
-Protocol 1.3 adds `userAppInstall` / `userAppUninstall` toggle policies for Device
-Owner agents. They use Android's install/uninstall user restrictions; managed
-operations lift only the relevant restriction and restore it when the operation
-finishes. These exceptions are process-local; reboot / self-update re-applies
-explicit policies from the persisted configuration.

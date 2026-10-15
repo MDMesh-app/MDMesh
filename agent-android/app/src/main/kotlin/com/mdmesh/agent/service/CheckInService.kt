@@ -17,6 +17,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import com.mdmesh.agent.R
+import com.mdmesh.core.install.InstallManager
 import com.mdmesh.core.power.PowerModeStore
 import com.mdmesh.core.store.DeviceIdentity
 import com.mdmesh.core.sync.CheckInCoordinator
@@ -25,6 +26,7 @@ import com.mdmesh.core.transport.TransportManager
 import com.mdmesh.core.transport.WakeSignal
 import com.mdmesh.proto.EventType
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -50,6 +52,7 @@ class CheckInService : LifecycleService() {
     @Inject lateinit var identity: DeviceIdentity
     @Inject lateinit var powerModeStore: PowerModeStore
     @Inject lateinit var eventLog: EventLog
+    @Inject lateinit var installManager: InstallManager
 
     @Volatile private var started = false
     @Volatile private var interactiveUntil = 0L
@@ -95,6 +98,8 @@ class CheckInService : LifecycleService() {
         if (first) {
             started = true
             graceUntil = System.currentTimeMillis() + REACHABILITY_GRACE_MS
+            // A restart after a process death: put back an app restriction an interrupted install left lifted.
+            lifecycleScope.launch(Dispatchers.IO) { installManager.restoreInterruptedLifts() }
             lifecycleScope.launch {
                 delay(REACHABILITY_GRACE_MS + 1_000L)
                 reevaluateSocket() // drop back to adaptive gating once the grace window lapses

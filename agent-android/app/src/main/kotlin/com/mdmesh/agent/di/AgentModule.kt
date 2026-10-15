@@ -67,6 +67,7 @@ import com.mdmesh.oem.GenericOemAdapter
 import com.mdmesh.oem.KnoxAdapter
 import com.mdmesh.oem.OemAdapter
 import com.mdmesh.policy.CapabilityRegistry
+import com.mdmesh.policy.SharedPrefsLiftRestoreStore
 import com.mdmesh.policy.TogglePolicy
 import com.mdmesh.policy.wifi.AndroidWifiRadio
 import com.mdmesh.policy.wifi.DpmHandle
@@ -102,7 +103,12 @@ object AgentModule {
     @Provides
     @Singleton
     fun provideCapabilityRegistry(@ApplicationContext context: Context, handle: DpmHandle): CapabilityRegistry =
-        CapabilityRegistry(handle, AndroidWifiRadio.from(context), SharedPrefsWifiRadioOffState(context))
+        CapabilityRegistry(
+            handle,
+            AndroidWifiRadio.from(context),
+            SharedPrefsWifiRadioOffState(context),
+            SharedPrefsLiftRestoreStore(context),
+        )
 
     @Provides
     @Singleton

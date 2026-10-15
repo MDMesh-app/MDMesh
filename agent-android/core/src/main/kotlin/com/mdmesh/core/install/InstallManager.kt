@@ -8,6 +8,7 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 import com.mdmesh.policy.ManagedAppPolicy
 import com.mdmesh.policy.TogglePolicy
 import com.mdmesh.policy.apps.UserAppInstallPolicy
@@ -214,6 +215,18 @@ class InstallManager @Inject constructor(
         }
     }
 
+    /**
+     * At agent start: put back an app install/uninstall restriction that a process death (crash, low-memory kill)
+     * left lifted in the middle of a managed operation. Safe while an operation starts meanwhile: the policy takes
+     * the same lock, skips a running operation, and an operation that starts first restores the recorded value.
+     */
+    fun restoreInterruptedLifts() {
+        toggles.values.filterIsInstance<ManagedAppPolicy>().forEach { policy ->
+            runCatching { policy.restoreInterrupted() }
+                .onFailure { Log.w(TAG, "restore of ${policy.capabilityKey} failed; retried at next start", it) }
+        }
+    }
+
     /** Serialize managed operations and lift only the policy used by this operation. */
     private suspend fun managedOperation(key: String, operation: suspend () -> InstallOutcome): InstallOutcome =
         operationMutex.withLock {
@@ -363,5 +376,6 @@ class InstallManager @Inject constructor(
     private companion object {
         /** How long a committed session may take to report back before the install counts as failed. */
         const val RESULT_TIMEOUT_MS = 10 * 60_000L
+        private const val TAG = "InstallManager"
     }
 }

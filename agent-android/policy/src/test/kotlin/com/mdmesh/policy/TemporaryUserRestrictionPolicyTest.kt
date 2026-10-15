@@ -8,6 +8,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -28,7 +29,8 @@ class TemporaryUserRestrictionPolicyTest {
             if (!ignoreWrites) blocked = value
             if (!value && failAfterClear) error("clear changed OS then failed")
         }
-        fun policy() = TemporaryUserRestrictionPolicy("userAppInstall", { supported }, { blocked }, ::write)
+        val store = InMemoryLiftRestoreStore()
+        fun policy() = TemporaryUserRestrictionPolicy("userAppInstall", { supported }, { blocked }, ::write, store)
     }
 
     @Test fun `explicit toggles use allowed polarity`() {
@@ -122,5 +124,53 @@ class TemporaryUserRestrictionPolicyTest {
         val job = launch { b.policy().withAllowed { entered.complete(Unit); result.await() } }
         entered.await(); assertTrue(job.isActive); assertFalse(b.blocked)
         job.cancel(); job.join(); assertTrue(b.blocked)
+    }
+
+    // --- process death: the pre-lift value is recorded first and put back at the next agent start ---
+
+    @Test fun `the pre-lift value is recorded during the operation and cleared after it`() = runBlocking {
+        val b = Backend()
+        b.policy().withAllowed { assertEquals(true, b.store.get("userAppInstall")) }
+        assertNull(b.store.get("userAppInstall")); assertTrue(b.blocked)
+    }
+    @Test fun `a lift left by a dead process is restored at the next start`() {
+        // The process died mid-install: restriction still lifted, record still there. A fresh policy instance
+        // (new process) shares only the persisted store.
+        val b = Backend(blocked = false); b.store.put("userAppInstall", true)
+        assertTrue(b.policy().restoreInterrupted())
+        assertTrue(b.blocked); assertNull(b.store.get("userAppInstall"))
+    }
+    @Test fun `restore is a no-op with nothing recorded`() {
+        val b = Backend(blocked = false)
+        assertFalse(b.policy().restoreInterrupted()); assertTrue(b.writes.isEmpty())
+    }
+    @Test fun `an operation that starts before the restore keeps the recorded value`() = runBlocking {
+        val b = Backend(blocked = false); b.store.put("userAppInstall", true)
+        b.policy().withAllowed { assertFalse(b.blocked) }
+        assertTrue("restores what the dead process lifted, not the lifted state it found", b.blocked)
+        assertNull(b.store.get("userAppInstall"))
+    }
+    @Test fun `restore does not touch a running operation`() = runBlocking {
+        val b = Backend(); val p = b.policy()
+        p.withAllowed { assertFalse(p.restoreInterrupted()); assertFalse(b.blocked) }
+        assertTrue(b.blocked)
+    }
+    @Test fun `a failed restore keeps the record for the next start`() = runBlocking {
+        val b = Backend(); b.rejectRestore = true
+        assertNotNull(runCatching { b.policy().withAllowed { "installed" } }.exceptionOrNull())
+        assertFalse(b.blocked); assertEquals(true, b.store.get("userAppInstall"))
+        b.rejectRestore = false
+        assertTrue(b.policy().restoreInterrupted()); assertTrue(b.blocked)
+    }
+    @Test fun `an explicit policy apply supersedes a stale record`() {
+        val b = Backend(blocked = false); b.store.put("userAppInstall", true)
+        val p = b.policy()
+        assertEquals(PolicyOutcome.Applied, p.setEnabled(true)); assertFalse(b.blocked)
+        assertNull(b.store.get("userAppInstall")); assertFalse(p.restoreInterrupted()); assertFalse(b.blocked)
+    }
+    @Test fun `a rejected clear leaves no record behind`() = runBlocking {
+        val b = Backend(); b.rejectClear = true
+        assertNotNull(runCatching { b.policy().withAllowed { } }.exceptionOrNull())
+        assertTrue(b.blocked); assertNull(b.store.get("userAppInstall"))
     }
 }

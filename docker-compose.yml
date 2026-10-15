@@ -45,13 +45,17 @@ services:
       # Optional; unset = the key the server keeps in its volume. Prefixed .env key for the reason given at JAVA_OPTS.
       JWT_SECRET: ${SERVER_JWT_SECRET:-}
       SECURE_ENROLLMENT: ${SECURE_ENROLLMENT:-0}
+      LEGACY_DEVICE_API: ${LEGACY_DEVICE_API:-0}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-25}
       SMTP_FROM: ${SMTP_FROM:-mdm@localhost}
       SMTP_USERNAME: ${SMTP_USERNAME:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      # Optional JVM flags, e.g. a temporary DEBUG log config (DEPLOY.md "Server logs"). Read from the prefixed .env key:
-      # compose lets the shell override .env, and a generic JAVA_OPTS exported on a Java host must not reach the server.
+      SMTP_SSL: ${SMTP_SSL:-false}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
+      # Optional JVM flags, e.g. a temporary DEBUG log config (docs/OPERATIONS.md "Server logs"). Read from the
+      # prefixed .env key: compose lets the shell override .env, and a generic JAVA_OPTS exported on a Java host must
+      # not reach the server.
       JAVA_OPTS: ${SERVER_JAVA_OPTS:-}
     volumes:
       - mdmeshdata:/opt/mdmesh

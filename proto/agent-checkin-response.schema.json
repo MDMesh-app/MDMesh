@@ -12,6 +12,15 @@
       "type": "array",
       "description": "Capability-gated commands for this device.",
       "items": { "$ref": "command-envelope.schema.json" }
+    },
+    "installIntegrity": {
+      "type": "string",
+      "description": "\"required\" when every app.install the server queues carries the APK's sha256; the agent then refuses one without. Absent from servers before protocol 1.3."
+    },
+    "resultsAccepted": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "How many of the request's results, counted from the first, the server took. The agent keeps the rest and resends them on its next check-in. Absent from older servers: treat as all."
     }
   }
 }

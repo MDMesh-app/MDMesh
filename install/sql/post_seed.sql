@@ -9,8 +9,33 @@
 -- without them every /agent/v1/enroll fails). COALESCE keeps a previously chosen default config.
 UPDATE settings SET createnewdevices=true, newdeviceconfigurationid=COALESCE(newdeviceconfigurationid, (SELECT MIN(id) FROM configurations));
 
--- Remove the auxiliary Headwind seed apps (not used by our agent). The launcher (com.hmdm.launcher)
--- is left in place — the default configurations reference it as their main app.
-DELETE FROM configurationapplications WHERE applicationid IN (SELECT id FROM applications WHERE pkg IN ('com.hmdm.pager','com.hmdm.phoneproxy','com.hmdm.emuilauncherrestarter'));
-DELETE FROM applicationversions      WHERE applicationid IN (SELECT id FROM applications WHERE pkg IN ('com.hmdm.pager','com.hmdm.phoneproxy','com.hmdm.emuilauncherrestarter'));
-DELETE FROM applications             WHERE pkg IN ('com.hmdm.pager','com.hmdm.phoneproxy','com.hmdm.emuilauncherrestarter');
+-- Older seeds gave the three demo configurations the same QR keys on every install; replace any of those still in
+-- place with a random key (Liquibase changeset 26.10.13-configurations-new-qrCodeKeys does the same at server start).
+-- Matches nothing once they are gone, so re-running is a no-op. gen_random_uuid() needs PostgreSQL 13+.
+DO $$
+BEGIN
+    IF current_setting('server_version_num')::int >= 130000 THEN
+        EXECUTE $q$UPDATE configurations SET qrcodekey = replace(gen_random_uuid()::text, '-', '')
+            WHERE qrcodekey IN ('6fb9c8dc81483173a0c0e9f8b2e46be1', '8e6ca072ddb926a1af61578dfa9fc334',
+                                '350e0fb7fc3f4b7fe61cac75fd43818f')$q$;
+    ELSE
+        EXECUTE $q$UPDATE configurations SET qrcodekey = md5(random()::text || clock_timestamp()::text)
+            WHERE qrcodekey IN ('6fb9c8dc81483173a0c0e9f8b2e46be1', '8e6ca072ddb926a1af61578dfa9fc334',
+                                '350e0fb7fc3f4b7fe61cac75fd43818f')$q$;
+    END IF;
+END $$;
+
+-- Remove the Headwind agent/launcher seed records. MDMesh's agent is com.mdmesh.agent and is
+-- supplied through the signed release/update path, not this legacy application library. The old
+-- launcher row pointed at a non-existent h-mdm.com artifact and must not be offered for install
+-- or kiosk selection. Clear the old version references before deleting, because mainAppId and
+-- contentAppId retain restrictive foreign keys on upgraded databases.
+UPDATE configurations SET mainappid = NULL
+WHERE mainappid IN (SELECT id FROM applicationversions WHERE applicationid IN
+    (SELECT id FROM applications WHERE pkg IN ('com.hmdm.launcher','com.hmdm.pager','com.hmdm.phoneproxy','com.hmdm.emuilauncherrestarter')));
+UPDATE configurations SET contentappid = NULL
+WHERE contentappid IN (SELECT id FROM applicationversions WHERE applicationid IN
+    (SELECT id FROM applications WHERE pkg IN ('com.hmdm.launcher','com.hmdm.pager','com.hmdm.phoneproxy','com.hmdm.emuilauncherrestarter')));
+DELETE FROM configurationapplications WHERE applicationid IN (SELECT id FROM applications WHERE pkg IN ('com.hmdm.launcher','com.hmdm.pager','com.hmdm.phoneproxy','com.hmdm.emuilauncherrestarter'));
+DELETE FROM applicationversions      WHERE applicationid IN (SELECT id FROM applications WHERE pkg IN ('com.hmdm.launcher','com.hmdm.pager','com.hmdm.phoneproxy','com.hmdm.emuilauncherrestarter'));
+DELETE FROM applications             WHERE pkg IN ('com.hmdm.launcher','com.hmdm.pager','com.hmdm.phoneproxy','com.hmdm.emuilauncherrestarter');

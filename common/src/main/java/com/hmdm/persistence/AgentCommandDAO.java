@@ -108,6 +108,16 @@ public class AgentCommandDAO {
         return stateMapper.findByDeviceNumber(deviceNumber);
     }
 
+    /** Baseline the agent version for config resync (see ConfigReconciler). */
+    public void updateConfigAgentVersion(String deviceNumber, String version) {
+        stateMapper.updateConfigAgentVersion(deviceNumber, version);
+    }
+
+    /** A command was acked done: if it was a config.apply, the reporting agent version completed it. */
+    public void recordConfigApplyDone(String deviceNumber, Integer commandId) {
+        stateMapper.recordConfigApplyDone(deviceNumber, commandId);
+    }
+
     /** Insert one agent lifecycle event. */
     public void insertEvent(String deviceNumber, String type, Long ts, String detail) {
         DeviceEvent e = new DeviceEvent();

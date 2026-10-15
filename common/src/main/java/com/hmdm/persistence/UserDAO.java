@@ -63,6 +63,39 @@ public class UserDAO extends AbstractDAO<User> {
         return getSingleRecord(() -> mapper.findById( id ), SecurityException::onUserAccessViolation);
     }
 
+    /**
+     * <p>Gets the persisted user account which the current user is allowed to administer: an account of the same
+     * customer, or of any customer for a super-admin. Only a super-admin may administer a super-admin account.</p>
+     *
+     * @param id an ID of the user account.
+     * @return the persisted user account or <code>null</code> if there is no such account.
+     * @throws SecurityException if the current user is not allowed to administer the account.
+     */
+    public User getManagedUser(int id) {
+        User target = mapper.findById(id);
+        if (target == null) {
+            return null;
+        }
+        boolean allowed = SecurityContext.get().getCurrentUser()
+                .map(u -> u.isSuperAdmin() ||
+                        (u.getCustomerId() == target.getCustomerId() && !target.isSuperAdmin()))
+                .orElse(false);
+        if (!allowed) {
+            throw SecurityException.onUserAccessViolation(target);
+        }
+        return target;
+    }
+
+    /**
+     * <p>Checks if the current user may grant the specified role: one of the roles returned by
+     * {@link #findAllUserRoles()}, so the super-admin roles are granted by a super-admin only. The role is looked up by
+     * ID, whatever else the request says about it.</p>
+     */
+    public boolean canGrantRole(UserRole role) {
+        return role != null && role.getId() != null &&
+                findAllUserRoles().stream().anyMatch(r -> role.getId().equals(r.getId()));
+    }
+
 
     @Transactional
     public void updatePassword(User user ) {

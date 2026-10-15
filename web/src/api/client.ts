@@ -29,6 +29,19 @@ export class ApiError extends Error {
   }
 }
 
+type SessionExpiredListener = () => void;
+const sessionExpiredListeners = new Set<SessionExpiredListener>();
+
+/** Subscribe to an HTTP session expiry; routing remains owned by the React layer. */
+export function onSessionExpired(listener: SessionExpiredListener): () => void {
+  sessionExpiredListeners.add(listener);
+  return () => sessionExpiredListeners.delete(listener);
+}
+
+function notifySessionExpired(): void {
+  for (const listener of sessionExpiredListeners) listener();
+}
+
 interface RequestOptions {
   method?: string;
   body?: unknown;
@@ -84,6 +97,7 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   }
 
   if (res.status === 401 || res.status === 403) {
+    notifySessionExpired();
     throw new ApiError('Not authenticated', 'ERROR', res.status);
   }
 

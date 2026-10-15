@@ -24,6 +24,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * reported applied revision differs from its configuration's current revision, queue ONE {@code config.apply}.
  * The document is rebuilt from the Configuration row each time (no stored revision to drift), using the
  * optimized app query (two plain selects per capable check-in — no temp table).
+ *
+ * <p>It is also re-sent when the device runs a different agent version than the one the last completed
+ * config.apply was queued for (a newer agent may support policy keys the old one reported {@code unsupported}),
+ * and keeps being re-sent until one queued for the new version comes back done (a failed or expired attempt
+ * keeps the normal backoff).</p>
  */
 @Singleton
 public class ConfigReconciler {
@@ -52,22 +57,31 @@ public class ConfigReconciler {
         return d == null ? null : d.getRevision();
     }
 
-    /** @return true when a config.apply was enqueued. Never throws. */
-    public boolean reconcile(Device device, Set<String> deviceTokens, String appliedRevision, long now) {
+    /**
+     * @param agentVersion       the version the device reports in this check-in (null when unknown)
+     * @param configAgentVersion the version that last completed config.apply (null = no baseline yet)
+     * @return true when a config.apply was enqueued. Never throws.
+     */
+    public boolean reconcile(Device device, Set<String> deviceTokens, String appliedRevision,
+                             String agentVersion, String configAgentVersion, long now) {
         try {
             // Cost short-circuit only: an old agent without the capability pays nothing (no config/app
             // query at all). ConfigReconcileDecision.decide still re-checks this same gate below.
             if (!AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, deviceTokens)) return false;
             DesiredConfig doc = currentDocument(device);
             if (doc == null) return false;
-            // Steady state (device already applied this revision) must cost only the config + apps
-            // selects: skip the command-queue lookups entirely. decide() would return NOOP anyway.
-            if (doc.getRevision().equals(appliedRevision)) return false;
             String number = device.getNumber();
+            if (configAgentVersion == null && agentVersion != null) {
+                // First sighting: record a baseline only, so a server upgrade does not re-send to the whole fleet.
+                commandDAO.updateConfigAgentVersion(number, agentVersion);
+            }
+            boolean agentChanged = ConfigReconcileDecision.agentChanged(agentVersion, configAgentVersion);
+            // Steady state: skip the command-queue lookups (decide() would return NONE anyway).
+            if (doc.getRevision().equals(appliedRevision) && !agentChanged) return false;
             boolean open = commandDAO.hasOpenOfType(number, DesiredConfigBuilder.COMMAND_TYPE);
             AgentCommand latest = open ? null : commandDAO.findLatestOfType(number, DesiredConfigBuilder.COMMAND_TYPE);
-            if (ConfigReconcileDecision.decide(deviceTokens, doc.getRevision(), appliedRevision, open, latest, now)
-                    != ConfigReconcileDecision.Action.ENQUEUE) {
+            if (ConfigReconcileDecision.decide(deviceTokens, doc.getRevision(), appliedRevision, open, latest, now,
+                    agentChanged) != ConfigReconcileDecision.Action.ENQUEUE) {
                 return false;
             }
             AgentCommand cmd = new AgentCommand();
@@ -75,10 +89,12 @@ public class ConfigReconciler {
             cmd.setType(DesiredConfigBuilder.COMMAND_TYPE);
             cmd.setPayload(DesiredConfigBuilder.toPayloadJson(doc));
             cmd.setRequiresCapability(DesiredConfigBuilder.CAPABILITY);
+            cmd.setAgentVersion(agentVersion);
             cmd.setStatus("pending");
             cmd.setCreatedAt(now);
             commandDAO.insert(cmd);
-            logger.info("config.apply queued for {} (revision {} -> {})", number, appliedRevision, doc.getRevision());
+            logger.info("config.apply queued for {} (revision {} -> {}, agent {})", number, appliedRevision,
+                    doc.getRevision(), agentChanged ? configAgentVersion + " -> " + agentVersion : agentVersion);
             return true;
         } catch (Exception e) {
             // A broken configuration fails on EVERY check-in of every device on it: WARN at most once

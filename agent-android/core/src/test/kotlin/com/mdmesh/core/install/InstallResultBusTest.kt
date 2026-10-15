@@ -3,6 +3,7 @@ package com.mdmesh.core.install
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
@@ -54,5 +55,48 @@ class InstallResultBusTest {
         val event = bus.await(sessionId = 7)
         assertEquals(7, event.sessionId)
         assertEquals(STATUS_SUCCESS, event.status)
+    }
+
+    @Test
+    fun `await gives up after the timeout when no result ever arrives`() = runTest {
+        val bus = InstallResultBus()
+        // A lost broadcast must not suspend forever: the caller holds the check-in mutex while it waits.
+        assertNull(bus.await(sessionId = 9, timeoutMs = 10 * 60_000L))
+        // A late result for the abandoned session must not throw.
+        bus.publish(sessionId = 9, status = STATUS_FAILURE, message = "late")
+    }
+
+    @Test
+    fun `a late result for a timed-out session is not handed to the next wait on the same id`() = runTest {
+        // Uninstall derives its session id from the package, so the next uninstall of that package reuses it.
+        val bus = InstallResultBus()
+        bus.expect(-3)
+        assertNull(bus.await(sessionId = -3, timeoutMs = 1_000L))
+        bus.publish(sessionId = -3, status = STATUS_FAILURE, message = "late") // dropped by the abandoned mark
+        bus.publish(sessionId = -3, status = STATUS_FAILURE, message = "later") // leaves a completed stale slot
+
+        bus.expect(-3)
+        val next = async { bus.await(sessionId = -3, timeoutMs = 60_000L) }
+        bus.publish(sessionId = -3, status = STATUS_SUCCESS, message = "fresh")
+        assertEquals("fresh", next.await()?.message)
+    }
+
+    @Test
+    fun `a fast result on a reused id is kept even before the wait starts`() = runTest {
+        val bus = InstallResultBus()
+        bus.expect(-4)
+        assertNull(bus.await(sessionId = -4, timeoutMs = 1_000L)) // leaves -4 marked abandoned
+
+        bus.expect(-4) // the next uninstall, before the platform call
+        bus.publish(sessionId = -4, status = STATUS_SUCCESS, message = "fast") // the receiver beats the await
+        assertEquals("fast", bus.await(sessionId = -4, timeoutMs = 60_000L)?.message)
+    }
+
+    @Test
+    fun `await with a timeout returns a result that arrives in time`() = runTest {
+        val bus = InstallResultBus()
+        val deferred = async { bus.await(sessionId = 5, timeoutMs = 60_000L) }
+        bus.publish(sessionId = 5, status = STATUS_SUCCESS, message = null)
+        assertEquals(STATUS_SUCCESS, deferred.await()?.status)
     }
 }

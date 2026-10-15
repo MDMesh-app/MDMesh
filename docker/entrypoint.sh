@@ -2,7 +2,7 @@
 # Generates the Tomcat ROOT context (server config) from environment at start, then runs Tomcat.
 # Keeping it env-driven means the same image serves any deployment — the setup wizard supplies
 # values via .env. Secrets are generated alphanumeric (no XML-special chars), so plain interpolation
-# is safe. MQTT is intentionally off (our agent wakes over WebSocket; see ROOT.xml mqtt.server.uri="").
+# is safe; operator-typed SMTP values go through xml_attr. MQTT is intentionally off (our agent wakes over WebSocket; see ROOT.xml mqtt.server.uri="").
 set -e
 
 # The server writes /opt/mdmesh/initialized.txt when its initialization is over ("OK", or the error), and only if the
@@ -19,10 +19,16 @@ rm -f /opt/mdmesh/initialized.txt
 : "${HASH_SECRET:?HASH_SECRET is required}"
 : "${DB_PASSWORD:?DB_PASSWORD is required}"
 : "${SECURE_ENROLLMENT:=0}"
+: "${LEGACY_DEVICE_API:=0}"
 : "${SMTP_HOST:=}"
 : "${SMTP_PORT:=25}"
 : "${SMTP_FROM:=mdm@localhost}"
+: "${SMTP_SSL:=false}"
+: "${SMTP_STARTTLS:=false}"
 : "${JWT_SECRET:=}"
+
+# xml_attr RAW: RAW escaped for an XML attribute value (an SMTP password with & or " must not break ROOT.xml).
+xml_attr() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g' -e "s/'/\&apos;/g"; }
 
 CONF_DIR=/usr/local/tomcat/conf/Catalina/localhost
 # The chown -R below hands conf/Catalina to the server user, and root writes ROOT.xml into CONF_DIR on the next start:
@@ -100,6 +106,8 @@ cat > "$_root_xml_tmp" <<EOF
 
     <Parameter name="usage.scenario"    value="private"/>
     <Parameter name="secure.enrollment" value="${SECURE_ENROLLMENT}"/>
+    <!-- Headwind launcher device routes: off unless 1. The MDMesh agent never uses them. -->
+    <Parameter name="legacy.device.api" value="$(xml_attr "${LEGACY_DEVICE_API}")"/>
     <Parameter name="hash.secret"       value="${HASH_SECRET}"/>
     <Parameter name="jwt.secretkey"     value="${JWT_SECRET}"/>
 
@@ -120,13 +128,13 @@ cat > "$_root_xml_tmp" <<EOF
 
     <Parameter name="device.fast.search.chars" value="5"/>
 
-    <Parameter name="smtp.host" value="${SMTP_HOST}"/>
-    <Parameter name="smtp.port" value="${SMTP_PORT}"/>
-    <Parameter name="smtp.ssl" value="false"/>
-    <Parameter name="smtp.starttls" value="false"/>
-    <Parameter name="smtp.username" value="${SMTP_USERNAME:-}"/>
-    <Parameter name="smtp.password" value="${SMTP_PASSWORD:-}"/>
-    <Parameter name="smtp.from" value="${SMTP_FROM}"/>
+    <Parameter name="smtp.host" value="$(xml_attr "${SMTP_HOST}")"/>
+    <Parameter name="smtp.port" value="$(xml_attr "${SMTP_PORT}")"/>
+    <Parameter name="smtp.ssl" value="$(xml_attr "${SMTP_SSL}")"/>
+    <Parameter name="smtp.starttls" value="$(xml_attr "${SMTP_STARTTLS}")"/>
+    <Parameter name="smtp.username" value="$(xml_attr "${SMTP_USERNAME:-}")"/>
+    <Parameter name="smtp.password" value="$(xml_attr "${SMTP_PASSWORD:-}")"/>
+    <Parameter name="smtp.from" value="$(xml_attr "${SMTP_FROM}")"/>
 
     <Parameter name="email.recovery.subj" value="/opt/mdmesh/emails/_LANGUAGE_/recovery_subj.txt"/>
     <Parameter name="email.recovery.body" value="/opt/mdmesh/emails/_LANGUAGE_/recovery_body.txt"/>

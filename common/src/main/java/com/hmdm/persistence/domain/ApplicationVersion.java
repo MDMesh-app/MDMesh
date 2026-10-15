@@ -24,6 +24,7 @@ package com.hmdm.persistence.domain;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.hmdm.util.InstallIntegrity;
 
 import java.io.Serializable;
 
@@ -107,6 +108,7 @@ public class ApplicationVersion implements Serializable {
             this.urlArm64 = application.getUrl();
         }
         this.parts = application.getParts();
+        this.apkHash = InstallIntegrity.toApkHash(application.getSha256());
     }
 
     public Integer getId() {

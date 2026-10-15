@@ -21,8 +21,12 @@
 
 package com.hmdm.util;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.RolloutDeviceRow;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -43,6 +47,8 @@ public final class RolloutProgress {
 
     public enum Status { UPDATED, INELIGIBLE, PENDING, OUTSTANDING }
 
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
     private RolloutProgress() {
     }
 
@@ -58,6 +64,50 @@ public final class RolloutProgress {
             return Status.INELIGIBLE; // too old / can't self-install — the gate would block the command
         }
         return hasPending ? Status.PENDING : Status.OUTSTANDING;
+    }
+
+    /** Device numbers whose in-flight app.install is for {@code packageName}. Any other install (an F-Droid or Library
+     *  app) does not mean the device is installing the update. Payloads are opaque text, so a malformed one is skipped. */
+    public static Set<String> inFlightFor(String packageName, List<AgentCommand> inFlight) {
+        Set<String> out = new HashSet<>();
+        if (inFlight == null) {
+            return out;
+        }
+        for (AgentCommand c : inFlight) {
+            if (isFor(packageName, c)) {
+                out.add(c.getDeviceNumber());
+            }
+        }
+        return out;
+    }
+
+    /** Whether the app.install {@code c} installs {@code packageName}. Payloads are opaque text: a malformed one is not. */
+    public static boolean isFor(String packageName, AgentCommand c) {
+        if (packageName == null || c == null || c.getPayload() == null) {
+            return false;
+        }
+        try {
+            JsonNode p = MAPPER.readTree(c.getPayload());
+            return p != null && packageName.equals(p.path("packageName").asText(null));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Install attempts per device per rollout after which a failed one is no longer retried. */
+    public static final int MAX_ATTEMPTS = 3;
+
+    /** Whether an OUTSTANDING device gets the update queued again, given its newest command for this rollout (null =
+     *  none, and whether that one ever reached the device) and how many of this rollout's commands reached it. A
+     *  never-queued one is sent, and so is one that expired undelivered (the device was offline). One that reached the
+     *  device and failed, or expired (its result was lost: the agent died mid-install, say), is retried up to
+     *  {@link #MAX_ATTEMPTS} attempts in all, so a device that keeps failing, or installs but never reports the target
+     *  version, is not reinstalled forever. */
+    public static boolean shouldRequeue(String latestStatus, boolean latestDelivered, int deliveredAttempts) {
+        if (latestStatus == null || ("expired".equals(latestStatus) && !latestDelivered)) {
+            return true;
+        }
+        return ("expired".equals(latestStatus) || "failed".equals(latestStatus)) && deliveredAttempts < MAX_ATTEMPTS;
     }
 
     /** Tally a cohort. {@code pendingDeviceNumbers} = the set with an outstanding app.install. */

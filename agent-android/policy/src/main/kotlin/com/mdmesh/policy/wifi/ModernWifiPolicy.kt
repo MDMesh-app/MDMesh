@@ -22,9 +22,9 @@ internal class ModernWifiPolicy(
             handle.dpm.isDeviceOwnerApp(handle.admin.packageName)
 
     override fun setEnabled(enabled: Boolean): PolicyOutcome = runCatching {
-        // On a fully-managed device the DO toggles Wi-Fi by lifting/applying the
-        // DISALLOW_CONFIG_WIFI restriction and driving the radio via the platform.
-        // (Concrete radio toggle wiring lands with the real implementation.)
+        // `wifi` locks or unlocks the Wi-Fi settings only (DISALLOW_CONFIG_WIFI); the radio
+        // itself is the separate `wifiRadio` policy (WifiRadioPolicy), so a stored wifi=false
+        // never turns a device's Wi-Fi off.
         if (enabled) {
             handle.dpm.clearUserRestriction(handle.admin, UserManager.DISALLOW_CONFIG_WIFI)
         } else {

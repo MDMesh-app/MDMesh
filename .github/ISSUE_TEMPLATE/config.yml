@@ -5,7 +5,7 @@ contact_links:
     about: Usage questions, ideas, and general discussion — please use Discussions, not issues.
   - name: 📖 Setup & deployment guide
     url: https://github.com/MDMesh-app/MDMesh/blob/main/DEPLOY.md
-    about: Most install/configuration questions are answered in DEPLOY.md.
+    about: Most install, upgrade and configuration questions are answered in DEPLOY.md and the docs it links.
   - name: 🔐 Security disclosure
     url: https://github.com/MDMesh-app/MDMesh/security/advisories/new
     about: Report security vulnerabilities privately — never in a public issue.

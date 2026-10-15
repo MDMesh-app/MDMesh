@@ -24,7 +24,9 @@ package com.hmdm.notification.guice.module;
 import com.hmdm.util.ExecutorRegistry;
 
 import com.google.inject.Inject;
+import com.google.inject.name.Named;
 import com.hmdm.notification.persistence.NotificationDAO;
+import com.hmdm.rest.filter.LegacyDeviceApiFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,19 +43,31 @@ public class NotificationTaskModule {
 
     private final ScheduledExecutorService messagePurgeService = ExecutorRegistry.register(Executors.newScheduledThreadPool(1));
 
+    private static final Logger log = LoggerFactory.getLogger(NotificationTaskModule.class);
+
     private final NotificationDAO notificationDAO;
+    private final boolean legacyDeviceApi;
 
     /**
      * <p>Constructs new <code>NotificationTaskModule</code> instance. This implementation does nothing.</p>
      */
     @Inject
-    public NotificationTaskModule(NotificationDAO notificationDAO) {
+    public NotificationTaskModule(NotificationDAO notificationDAO,
+                                  @Named(LegacyDeviceApiFilter.PARAMETER) boolean legacyDeviceApi) {
         this.notificationDAO = notificationDAO;
+        this.legacyDeviceApi = legacyDeviceApi;
     }
 
     public void init() {
-        messagePurgeService.scheduleWithFixedDelay(new MessagePurgeWorker(notificationDAO),
-                1, 1, TimeUnit.HOURS);
+        if (legacyDeviceApi) {
+            messagePurgeService.scheduleWithFixedDelay(new MessagePurgeWorker(notificationDAO),
+                    1, 1, TimeUnit.HOURS);
+        } else {
+            // Nothing is queued while the legacy device API is off, so run the purge once at startup: it deletes
+            // messages past the usual limits (undelivered after 1 hour, delivered after 7 days) and keeps newer ones.
+            log.info("Push message purge runs once: " + LegacyDeviceApiFilter.PARAMETER + " is off");
+            messagePurgeService.schedule(new MessagePurgeWorker(notificationDAO), 1, TimeUnit.MINUTES);
+        }
 
         Runtime.getRuntime().addShutdownHook(new Thread(messagePurgeService::shutdown));
     }

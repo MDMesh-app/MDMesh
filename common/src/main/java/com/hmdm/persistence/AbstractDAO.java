@@ -181,6 +181,32 @@ public abstract class AbstractDAO<T extends CustomerData> {
     }
 
     /**
+     * <p>Updates the specified record after authorizing the <b>persisted</b> record with the same ID rather than the
+     * ownership fields of the submitted one: the record must exist and belong to the customer of current user (any
+     * customer for a super-admin). The submitted record keeps the persisted customer, so an update never moves a record
+     * to another customer.</p>
+     *
+     * @param record a record to be updated.
+     * @param findByIdLogic a logic to be used for finding the persisted record by ID.
+     * @param recordUpdateLogic a logic to be used for updating the record.
+     * @param exceptionProvider a provider for exception to be thrown in case the access to specified record is denied.
+     */
+    protected void updateRecord(T record,
+                                Function<Integer, T> findByIdLogic,
+                                Consumer<T> recordUpdateLogic,
+                                Function<T, SecurityException> exceptionProvider) {
+        final T dbRecord = record.getId() == null ? null : findByIdLogic.apply(record.getId());
+        if (dbRecord == null) {
+            throw exceptionProvider.apply(record);
+        }
+        SecurityContext.get().getCurrentUser()
+                .filter(u -> u.isSuperAdmin() || u.getCustomerId() == dbRecord.getCustomerId())
+                .orElseThrow(() -> exceptionProvider.apply(dbRecord));
+        record.setCustomerId(dbRecord.getCustomerId());
+        recordUpdateLogic.accept(record);
+    }
+
+    /**
      * <p>Updates the specified record referenced by the ID. Verifies that specified record exists. If so then updates
      * the record within current security context.</p>
      *

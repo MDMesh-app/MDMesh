@@ -23,8 +23,10 @@ package com.hmdm.persistence;
 
 import com.google.inject.Inject;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
-import java.net.URL;
+import java.io.InputStream;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
 import java.util.List;
@@ -42,6 +44,7 @@ import com.hmdm.persistence.domain.ConfigurationApplicationParameters;
 import com.hmdm.persistence.mapper.ConfigurationMapper;
 import com.hmdm.security.SecurityException;
 import com.hmdm.util.CryptoUtil;
+import com.hmdm.util.HostedFiles;
 import org.mybatis.guice.transactional.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -59,6 +62,7 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
     private final ApplicationSettingDAO applicationSettingDAO;
     private final ConfigurationFileDAO configurationFileDAO;
     private String baseUrl;
+    private HostedFiles hostedFiles;
     private final EventService eventService;
 
 
@@ -68,12 +72,14 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
                             ApplicationSettingDAO applicationSettingDAO,
                             ConfigurationFileDAO configurationFileDAO,
                             @Named("base.url") String baseUrl,
+                            @Named("files.directory") String filesDirectory,
                             EventService eventService) {
         this.mapper = mapper;
         this.applicationMapper = applicationMapper;
         this.applicationSettingDAO = applicationSettingDAO;
         this.configurationFileDAO = configurationFileDAO;
         this.baseUrl = baseUrl;
+        this.hostedFiles = new HostedFiles(filesDirectory, baseUrl);
         this.eventService = eventService;
         log.info("Base URL: " + baseUrl);
     }
@@ -122,6 +128,7 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
     public void updateConfiguration(Configuration config) {
         updateRecord(
                 config,
+                this.mapper::getConfigurationById,
                 configuration -> {
                     this.mapper.updateConfiguration(configuration);
                     this.mapper.removeConfigurationApplicationsById(configuration.getId());
@@ -162,17 +169,11 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
                         files.stream()
                                 .filter(file -> file.getExternalUrl() != null)
                                 .forEach(file -> {
-                                    try {
-                                        ConfigurationFile legacyFile = legacyFilesMap.get(file.getId());
-                                        if (legacyFile != null && file.getExternalUrl().equals(legacyFile.getExternalUrl())) {
-                                            file.setChecksum(legacyFile.getChecksum());
-                                        } else {
-                                            final String checksum = CryptoUtil.calculateChecksum(new URL(file.getExternalUrl()).openStream());
-                                            file.setChecksum(checksum);
-                                        }
-                                    } catch (NoSuchAlgorithmException | IOException e) {
-                                        log.error("Failed to calculate checksum for content URL: {}", file.getExternalUrl(), e);
-                                        file.setChecksum("");
+                                    ConfigurationFile legacyFile = legacyFilesMap.get(file.getId());
+                                    if (legacyFile != null && file.getExternalUrl().equals(legacyFile.getExternalUrl())) {
+                                        file.setChecksum(legacyFile.getChecksum());
+                                    } else {
+                                        file.setChecksum(externalFileChecksum(file.getExternalUrl(), this.hostedFiles));
                                     }
                                 });
                         this.mapper.insertConfigurationFiles(configuration.getId(), files);
@@ -272,6 +273,30 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
                 },
                 SecurityException::onConfigurationAccessViolation
         );
+    }
+
+    /**
+     * The checksum stored with a configuration file's external URL (the Headwind launcher compares it with the file it
+     * downloads): the MD5 of the file when this server hosts it ({@code <base.url>/files/...}), read from disk; empty for
+     * any other URL, however it is spelled (never an error: saving a configuration must not depend on its file URLs).
+     * The server never fetches a URL to hash it; the Files page only accepts http(s) URLs for new or changed files.
+     */
+    static String externalFileChecksum(String url, HostedFiles hosted) {
+        File local;
+        try {
+            local = url == null || hosted == null ? null : hosted.localFile(url);
+        } catch (RuntimeException e) {
+            local = null;
+        }
+        if (local == null) {
+            return "";
+        }
+        try (InputStream in = new FileInputStream(local)) {
+            return CryptoUtil.calculateChecksum(in);
+        } catch (NoSuchAlgorithmException | IOException e) {
+            log.error("Failed to calculate checksum for hosted file: {}", url, e);
+            return "";
+        }
     }
 
     // Moved baseUrl here from resources due to a weird Guice issue (bug?):

@@ -99,6 +99,11 @@ public class PushScheduleTaskModule implements PluginTaskModule {
      */
     @Override
     public void init() {
+        // Scheduled pushes reach only the Headwind launcher, so they run only with the legacy device API on.
+        if (!pushService.isEnabled()) {
+            logger.info("Scheduled push messages are off: the legacy device API is off");
+            return;
+        }
         taskRunner.submitRepeatableTask(this::sendScheduledMessages, 1, 1, TimeUnit.MINUTES);
     }
 

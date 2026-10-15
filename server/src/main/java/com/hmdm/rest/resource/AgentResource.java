@@ -43,6 +43,7 @@ import com.hmdm.rest.json.agent.AgentProtocol;
 import com.hmdm.util.AgentCapabilityTokens;
 import com.hmdm.util.CryptoUtil;
 import com.hmdm.util.DesiredConfigBuilder;
+import com.hmdm.util.InstallIntegrity;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import org.slf4j.Logger;
@@ -72,6 +73,7 @@ import java.util.UUID;
 @Singleton
 @Path("/public/agent/v1")
 @Api(tags = {"Agent v1"})
+@com.hmdm.rest.filter.AgentBodyLimit
 public class AgentResource {
 
     private static final Logger logger = LoggerFactory.getLogger(AgentResource.class);
@@ -87,12 +89,22 @@ public class AgentResource {
     private static final int MAX_EVENTS_PER_CHECKIN = 100;
     private static final int MAX_EVENT_DETAIL_CHARS = 4000;
     private static final int MAX_TELEMETRY_CHARS = 256 * 1024;
+    // Each result is one UPDATE. Current agents send at most 100 per check-in; the rest of a backlog follows on the
+    // next ones. Past this count the server stops and reports how many it took (resultsAccepted), so the agent
+    // resends the remainder rather than losing it. Older agents that send everything at once never get near it.
+    static final int MAX_RESULTS_PER_CHECKIN = 1000;
+    // Details are short diagnostics, except apps.scan / apps.icons, which return JSON: the console asks for icons in
+    // batches of 24 (96 px PNG, base64), well under 1 MiB even for incompressible icons. A larger detail is not
+    // stored (cut JSON would be useless); the command is marked failed with a short note instead.
+    static final int MAX_RESULT_DETAIL_CHARS = 2 * 1024 * 1024;
 
     private UnsecureDAO unsecureDAO;
     private AgentEnrollmentTokenDAO tokenDAO;
     private AgentCommandDAO commandDAO;
     private com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller;
     private com.hmdm.rest.resource.support.ConfigReconciler configReconciler;
+    private com.hmdm.rest.resource.support.RolloutRequeuer rolloutRequeuer;
+    private com.hmdm.rest.resource.support.InstallHashes installHashes;
 
     /**
      * <p>A constructor required by Swagger.</p>
@@ -105,12 +117,16 @@ public class AgentResource {
                          AgentEnrollmentTokenDAO tokenDAO,
                          AgentCommandDAO commandDAO,
                          com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller,
-                         com.hmdm.rest.resource.support.ConfigReconciler configReconciler) {
+                         com.hmdm.rest.resource.support.ConfigReconciler configReconciler,
+                         com.hmdm.rest.resource.support.RolloutRequeuer rolloutRequeuer,
+                         com.hmdm.rest.resource.support.InstallHashes installHashes) {
         this.unsecureDAO = unsecureDAO;
         this.tokenDAO = tokenDAO;
         this.commandDAO = commandDAO;
         this.configAppInstaller = configAppInstaller;
         this.configReconciler = configReconciler;
+        this.rolloutRequeuer = rolloutRequeuer;
+        this.installHashes = installHashes;
     }
 
     // =================================================================================================================
@@ -247,7 +263,12 @@ public class AgentResource {
         String capsJson = null;
         if (request.getCapabilities() != null) {
             capsJson = capabilitiesJson(request.getCapabilities());
-            commandDAO.updateDeviceCapabilities(deviceNumber, capsJson);
+            if (capsJson != null) {
+                commandDAO.updateDeviceCapabilities(deviceNumber, capsJson);
+            } else if (request.getCapabilities().getTree() != null) {
+                logger.warn("Device {} capability tree exceeds the size limits — ignored, keeping the stored one",
+                        deviceNumber);
+            }
         }
 
         // Persist the latest device-state snapshot (powers the admin console).
@@ -272,6 +293,7 @@ public class AgentResource {
             if (tel != null && tel.isObject()) {
                 ((com.fasterxml.jackson.databind.node.ObjectNode) tel).put("publicIp", clientIp(httpRequest));
             }
+            dropLocationWhenNotTracked(device, tel);
             // An authenticated device can still be hostile/buggy: cap the stored blob so a single
             // client can't bloat device_state via the 5s foreground poll.
             String telJson = tel == null ? null : tel.toString();
@@ -315,8 +337,16 @@ public class AgentResource {
         }
 
         // Ack results from previously-delivered commands.
+        int resultsAccepted = 0;
         if (request.getResults() != null) {
-            for (AgentCommandResult result : request.getResults()) {
+            List<AgentCommandResult> results = request.getResults();
+            if (results.size() > MAX_RESULTS_PER_CHECKIN) {
+                logger.info("Device {} sent {} results in one check-in — taking the first {}, the agent resends the rest",
+                        deviceNumber, results.size(), MAX_RESULTS_PER_CHECKIN);
+                results = results.subList(0, MAX_RESULTS_PER_CHECKIN);
+            }
+            resultsAccepted = results.size();
+            for (AgentCommandResult result : results) {
                 if (result == null || result.getCommandId() == null || result.getStatus() == null) {
                     continue;
                 }
@@ -330,8 +360,20 @@ public class AgentResource {
                 }
                 // Ownership is enforced inside the UPDATE's WHERE (id + deviceNumber) — no
                 // per-result pre-SELECT needed on the hot path.
-                commandDAO.markResultWithTime(deviceNumber, commandId, result.getStatus(),
-                        result.getDetail(), System.currentTimeMillis());
+                String status = result.getStatus();
+                String detail = result.getDetail();
+                if (detail != null && detail.length() > MAX_RESULT_DETAIL_CHARS) {
+                    logger.warn("Device {} result detail for command {} oversized ({} chars) — stored as failed",
+                            deviceNumber, commandId, detail.length());
+                    status = "failed";
+                    detail = "result too large (" + detail.length() + " chars)";
+                }
+                commandDAO.markResultWithTime(deviceNumber, commandId, status,
+                        detail, System.currentTimeMillis());
+                if ("done".equals(status)) {
+                    // A completed config.apply records which agent version applied it (config resync baseline).
+                    commandDAO.recordConfigApplyDone(deviceNumber, commandId);
+                }
             }
         }
 
@@ -348,22 +390,41 @@ public class AgentResource {
                 capsJson != null ? capsJson : commandDAO.getDeviceCapabilities(deviceNumber));
         long now = System.currentTimeMillis();
 
-        if (appliedRevision == null && AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, deviceTokens)) {
-            // The check-in omitted it (state block absent, or invalid value) — fall back to the last
-            // stored value so a missing field never masquerades as drift. Only capable agents pay
-            // for this read: the value is consumed solely by reconcile, which ignores the others.
+        String agentVersion = request.getState() == null ? null : request.getState().getAgentVersion();
+        String configAgentVersion = null;
+        if (AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, deviceTokens)) {
+            // Only capable agents pay for this read: its values are consumed solely by reconcile, which ignores
+            // the others. A check-in that omitted the revision (state block absent, or invalid value) falls back
+            // to the last stored value so a missing field never masquerades as drift.
             com.hmdm.persistence.domain.DeviceState stored = commandDAO.getState(deviceNumber);
-            appliedRevision = stored == null ? null : stored.getAppliedConfigRevision();
+            if (appliedRevision == null) {
+                appliedRevision = stored == null ? null : stored.getAppliedConfigRevision();
+            }
+            configAgentVersion = stored == null ? null : stored.getConfigAgentVersion();
         }
 
-        // Desired-state reconciliation: queue config.apply when the device drifted from its configuration, so the
-        // command rides THIS response instead of waiting for the next cycle.
-        configReconciler.reconcile(device, deviceTokens, appliedRevision, now);
+        // Desired-state reconciliation: queue config.apply when the device drifted from its configuration (or now
+        // runs a different agent version), so the command rides THIS response instead of waiting for the next cycle.
+        configReconciler.reconcile(device, deviceTokens, appliedRevision, agentVersion, configAgentVersion, now);
+        // A staged agent update whose command expired (its result was lost) or was never queued: queue it again here.
+        rolloutRequeuer.requeue(device, now);
 
         List<AgentCommand> pending = commandDAO.listPending(deviceNumber);
         List<com.hmdm.rest.json.agent.AgentCommand> commands = new ArrayList<>();
         for (AgentCommand stored : pending) {
             if (!AgentCapabilityTokens.isAllowed(stored.getRequiresCapability(), deviceTokens)) {
+                continue;
+            }
+            // An app.install queued before hashes were required has none: give it one now (this response tells the
+            // agent to refuse an install without), or end it with the reason when there is definitely none. A lookup
+            // that failed (the database, say) leaves it pending for the next check-in.
+            try {
+                stored.setPayload(installHashes.forDelivery(stored, device.getCustomerId()));
+            } catch (InstallIntegrity.LookupFailedException e) {
+                logger.warn("Command {} for device {} held back: {}", stored.getId(), deviceNumber, e.toString());
+                continue;
+            } catch (IllegalArgumentException e) {
+                commandDAO.markResultWithTime(deviceNumber, stored.getId(), "failed", e.getMessage(), now);
                 continue;
             }
             // Atomically claim it so a concurrent check-in can't deliver the same command twice.
@@ -372,7 +433,9 @@ public class AgentResource {
             }
         }
 
-        return Response.OK(new AgentCheckInResponse(commands));
+        AgentCheckInResponse response = new AgentCheckInResponse(commands);
+        response.setResultsAccepted(resultsAccepted);
+        return Response.OK(response);
     }
 
     /**
@@ -428,11 +491,36 @@ public class AgentResource {
         }
     }
 
+    /** The capability tree to store, or null when absent or over {@link AgentCapabilityTokens#boundedJson} limits. */
     private static String capabilitiesJson(AgentCapabilities capabilities) {
-        if (capabilities == null || capabilities.getTree() == null) {
+        if (capabilities == null) {
             return null;
         }
-        return capabilities.getTree().toString();
+        return AgentCapabilityTokens.boundedJson(capabilities.getTree());
+    }
+
+    /**
+     * "Do not track" is enforced here too, not only by the agent: agents before protocol 1.4 read the config's
+     * {@code location.mode = off} as passive and keep reporting last-known fixes, and any agent reports one before
+     * its first config.apply lands. So when the device's configuration says Do not track, the fix is removed from the
+     * telemetry before it is stored (and so never reaches the breadcrumb trail). Looked up only when a fix is present.
+     */
+    private void dropLocationWhenNotTracked(Device device, JsonNode tel) {
+        if (tel == null || !tel.path("dynamic").isObject() || !tel.path("dynamic").has("location")
+                || device.getConfigurationId() == null) {
+            return;
+        }
+        try {
+            Configuration cfg = unsecureDAO.getConfigurationById(device.getConfigurationId());
+            if (DesiredConfigBuilder.isDoNotTrack(cfg)) {
+                ((com.fasterxml.jackson.databind.node.ObjectNode) tel.path("dynamic")).remove("location");
+            }
+        } catch (Exception e) {
+            // Fail closed: when the configuration can't be read, don't store a location this check-in.
+            ((com.fasterxml.jackson.databind.node.ObjectNode) tel.path("dynamic")).remove("location");
+            logger.warn("Location dropped for {}: configuration {} unreadable: {}", device.getNumber(),
+                    device.getConfigurationId(), e.getMessage());
+        }
     }
 
     /** Pull dynamic.location out of the telemetry JSON and append it to the device's trail. */

@@ -435,9 +435,10 @@ a {
   display: none;
 }
 
-/* route fade-in */
+/* Route fade-in. No fill-mode: a transform kept after the animation would make <main> the containing block for
+   position:fixed, pushing every modal backdrop inside it off-screen on long pages. */
 .route-enter {
-  animation: routeIn 0.2s ease both;
+  animation: routeIn 0.2s ease;
 }
 @keyframes routeIn {
   from {
@@ -1376,6 +1377,13 @@ a {
   background: var(--surface);
 }
 .chip-enforced { margin-left:6px; font-size:10px; padding:1px 6px; color:var(--ok); border-color:var(--ok); }
+.chip-enforced.chip-scope { color:var(--secondary); border-color:var(--border); }
+.chip-enforced.chip-scope.off { color:var(--faint); border-style:dashed; }
+.cfg-field-warn { color:var(--warn); font-weight:500; }
+.cfg-reveal { display:flex; align-items:center; gap:6px; width:100%; }
+.cfg-reveal .input { flex:1; min-width:0; }
+.cfg-color { display:inline-flex; align-items:center; gap:8px; }
+.cfg-color-v { font-size:12px; color:var(--muted); font-family:var(--font-mono); }
 .chip.tone-ok { color:var(--ok); border-color:var(--ok); }
 .chip.tone-warn { color:var(--warn); border-color:var(--warn); }
 .chip.tone-alert { color:var(--danger); border-color:var(--danger); }
@@ -1383,6 +1391,7 @@ a {
 .cfg-outcomes li { display:flex; justify-content:space-between; gap:8px; }
 .cfg-outcomes li.ok { color:var(--ok); }
 .cfg-outcomes li.alert { color:var(--danger); }
+.cfg-outcomes li.warn { color:var(--warn); }
 .cfg-legacy-note { color:var(--muted); font-size:12px; margin:4px 0 10px; }
 .cfg-sync { display:flex; align-items:center; gap:8px; margin-top:6px; font-size:12px; }
 .cfg-sync .rollout-track { flex:1; }
@@ -1991,6 +2000,14 @@ a {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.cfg-app-kiosk {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
 .cfg-app-add {
   margin-top: 12px;
 }
@@ -2015,6 +2032,13 @@ a {
 .cfg-badge.default {
   color: var(--ink);
   background: var(--surface-2);
+}
+.cfg-badge + .cfg-badge {
+  margin-left: 0;
+}
+.cfg-badge.warn {
+  color: color-mix(in srgb, var(--warn) 72%, var(--text));
+  background: color-mix(in srgb, var(--warn) 14%, var(--surface));
 }
 .cfg-default-note {
   background: var(--surface-2);
@@ -2718,7 +2742,7 @@ a {
 
 /* Release notes ("What's new") + apply actions (Settings › Updates) */
 .whatsnew { max-height:180px; overflow:auto; white-space:pre-wrap; word-break:break-word;
-  font-family:var(--mono, ui-monospace, monospace); font-size:12px; line-height:1.5;
+  font-family:var(--font-mono); font-size:12px; line-height:1.5;
   color:var(--text); background:var(--panel-2); border:1px solid var(--line);
   border-radius:8px; padding:8px 10px; max-width:52ch; }
 .whatsnew-link { display:inline-block; margin-top:6px; font-size:12px; }

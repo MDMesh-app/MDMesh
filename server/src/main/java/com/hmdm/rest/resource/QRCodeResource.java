@@ -57,7 +57,6 @@ import java.io.*;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLDecoder;
-import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
 
@@ -72,6 +71,18 @@ import java.util.List;
 public class QRCodeResource {
 
     private static final Logger logger = LoggerFactory.getLogger(QRCodeResource.class);
+
+    static final int QR_DEFAULT_SIZE = 250;
+    static final int QR_MIN_SIZE = 64;
+    static final int QR_MAX_SIZE = 1024;
+
+    /** The requested image size (pixels per side), clamped to a fixed range; the default when absent. */
+    static int qrImageSize(Integer requested) {
+        if (requested == null) {
+            return QR_DEFAULT_SIZE;
+        }
+        return Math.max(QR_MIN_SIZE, Math.min(QR_MAX_SIZE, requested));
+    }
 
     private UnsecureDAO unsecureDAO;
     private CustomerDAO customerDAO;
@@ -196,7 +207,19 @@ public class QRCodeResource {
                         final String sha256;
                         if (appVersion.getApkHash() == null) {
                             // Here we keep the original URL to be able to access the file locally
-                            sha256 = calculateApkHash(appVersion.getUrl());
+                            try {
+                                sha256 = calculateApkHash(appVersion.getUrl(), baseUrlForQrCode, filesDirectory);
+                            } catch (ApkChecksumUnavailableException e) {
+                                // Android requires a package (or signature) checksum next to the download
+                                // location; a remote APK is never downloaded here just to compute it.
+                                logger.warn("QR-code key {}: no checksum for the main app version {} ({}); host the APK "
+                                        + "on this server to generate a provisioning QR", id, appVersion.getId(), e.getMessage());
+                                return javax.ws.rs.core.Response.status(javax.ws.rs.core.Response.Status.CONFLICT)
+                                        .type(MediaType.TEXT_PLAIN)
+                                        .entity("The main app APK is not hosted on this server, so its checksum is unknown. "
+                                                + "Upload the APK to MDMesh to generate a provisioning QR code.")
+                                        .build();
+                            }
                             this.unsecureDAO.saveApkFileHash(appVersion.getId(), sha256);
                         } else {
                             sha256 = appVersion.getApkHash();
@@ -268,10 +291,7 @@ public class QRCodeResource {
                         logger.info("The base for QR code generation:\n{}", s);
 
                         return javax.ws.rs.core.Response.ok( (StreamingOutput) output -> {
-                            int imageSize = 250;
-                            if (size != null) {
-                                imageSize = size;
-                            }
+                            int imageSize = qrImageSize(size);
                             try {
                                 QRCode.from(s).withCharset("UTF-8").to(ImageType.PNG).withSize(imageSize, imageSize).writeTo(output);
                                 output.flush();
@@ -298,40 +318,36 @@ public class QRCodeResource {
         }
     }
 
-    private String calculateApkHash(String apkUrl) throws NoSuchAlgorithmException, IOException {
+    /** The package checksum cannot be derived from a file this server serves. */
+    static final class ApkChecksumUnavailableException extends Exception {
+        ApkChecksumUnavailableException(String message) {
+            super(message);
+        }
+    }
+
+    /**
+     * <p>SHA-256 (base64) of the APK at {@code apkUrl}, for PROVISIONING_DEVICE_ADMIN_PACKAGE_CHECKSUM. Only an APK
+     * this server hosts under {@code <base>/files/} is hashed, read from files.directory exactly as /files/* would
+     * serve it (same decoding and containment). A remote URL is never fetched server-side.</p>
+     *
+     * @throws ApkChecksumUnavailableException if the URL is not one of this server's /files/ URLs.
+     * @throws FileNotFoundException if it does not name a servable file inside files.directory.
+     */
+    static String calculateApkHash(String apkUrl, String baseUrlForQrCode, String filesDirectory)
+            throws NoSuchAlgorithmException, IOException, ApkChecksumUnavailableException {
+        if (apkUrl == null || !apkUrl.startsWith(baseUrlForQrCode + "/files/")) {
+            throw new ApkChecksumUnavailableException("The APK is not hosted on this server: " + apkUrl);
+        }
         logger.info("Digesting the application file: {}", apkUrl);
 
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        byte[] buffer= new byte[8192];
-        int count;
-
-        URL url = new URL(apkUrl);
-        if (apkUrl.startsWith(baseUrlForQrCode + "/files/")) {
-            // Local URL, use the file system
-            String urlPath = url.getPath();
-            int index = urlPath.indexOf("/files/", 0) + "/files/".length();
-            String path = urlPath.substring(index);
-            File file = new File(String.format("%s/%s", this.filesDirectory, path));
-            if (file.exists()) {
-                try (InputStream input = new FileInputStream(file)) {
-                    while ((count = input.read(buffer)) > 0) {
-                        digest.update(buffer, 0, count);
-                    }
-                }
-            } else {
-                throw new FileNotFoundException();
-            }
-        } else {
-            // Remote URL, use HTTP
-            try (BufferedInputStream bis = new BufferedInputStream(url.openStream())) {
-                while ((count = bis.read(buffer)) > 0) {
-                    digest.update(buffer, 0, count);
-                }
-            }
+        File file = DownloadFilesServlet.resolveRequestedFile(new File(filesDirectory), new URL(apkUrl).getPath());
+        if (file == null) {
+            throw new FileNotFoundException("Not a file under files.directory: " + apkUrl);
         }
-
-        final byte[] hash = digest.digest();
-        String sha256 = CryptoUtil.getBase64String(hash);
+        final String sha256;
+        try (InputStream input = new FileInputStream(file)) {
+            sha256 = CryptoUtil.getBase64String(CryptoUtil.sha256(input));
+        }
 
         logger.info("Finished digesting the application file: {}. Hash: {}", apkUrl, sha256);
         return sha256;

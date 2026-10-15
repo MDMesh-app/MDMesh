@@ -6,6 +6,7 @@ import com.mdmesh.policy.PolicyOutcome
 import com.mdmesh.policy.TogglePolicy
 import com.mdmesh.proto.CommandEnvelope
 import com.mdmesh.proto.CommandResult
+import com.mdmesh.proto.ConfigOutcome
 import com.mdmesh.proto.ProtocolJson
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -46,6 +47,8 @@ class PolicyApplyHandler(
             PolicyOutcome.Applied -> CommandResults.done(command)
             PolicyOutcome.Unsupported -> CommandResults.unsupported(command)
             is PolicyOutcome.Failed -> CommandResults.failed(command, outcome.reason)
+            // Not a failure, as in config.apply: skipped on purpose for now (e.g. Wi-Fi radio Off on the only network).
+            is PolicyOutcome.Deferred -> CommandResults.done(command, ConfigOutcome.deferred(outcome.reason))
         }
     }
 }

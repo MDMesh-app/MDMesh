@@ -1,7 +1,10 @@
-import { parseOutcomes, summarizeStatus, type ConfigStatus } from '../api/configSync';
+import { DEVICE_RESET_REVISION, parseOutcomes, summarizeStatus, type ConfigStatus } from '../api/configSync';
 import { fmtRelative, DASH } from '../ui/format';
 
-const short = (r?: string | null): string => (r ? r.slice(0, 8) : DASH);
+const short = (r?: string | null): string => {
+  if (r === DEVICE_RESET_REVISION) return 'Reset by device';
+  return r ? r.slice(0, 8) : DASH;
+};
 
 /** Left-rail card: does this device run its configuration's current revision, and what happened per key. */
 export function ConfigStatusCard({ status }: { status: ConfigStatus | null }) {
@@ -33,7 +36,7 @@ export function ConfigStatusCard({ status }: { status: ConfigStatus | null }) {
       {outcomes ? (
         <ul className="cfg-outcomes">
           {Object.entries(outcomes.outcomes).map(([k, o]) => (
-            <li key={k} className={o === 'applied' ? 'ok' : o === 'unsupported' ? 'muted' : 'alert'}>
+            <li key={k} className={outcomeClass(o)}>
               <span className="mono">{k}</span> <span>{o}</span>
             </li>
           ))}
@@ -41,4 +44,12 @@ export function ConfigStatusCard({ status }: { status: ConfigStatus | null }) {
       ) : null}
     </div>
   );
+}
+
+/** applied = ok; unsupported = muted; deferred (protocol 1.4, not applied yet on purpose, does not block) = warn. */
+function outcomeClass(outcome: string): string {
+  if (outcome === 'applied') return 'ok';
+  if (outcome === 'unsupported') return 'muted';
+  if (outcome.startsWith('deferred')) return 'warn';
+  return 'alert';
 }

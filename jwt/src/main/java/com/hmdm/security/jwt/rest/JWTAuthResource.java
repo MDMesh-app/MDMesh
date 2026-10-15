@@ -128,6 +128,10 @@ public class JWTAuthResource {
                 userDAO.setUserLoginFailTime(user, System.currentTimeMillis());
                 Thread.sleep(1000);
                 return Response.status(Response.Status.UNAUTHORIZED).build();
+            } else if (userDAO.isTwoFactorRequired(user)) {
+                // A token is issued on the password alone, so it can't be issued where a second factor is required
+                log.warn("Token not issued for user {}: two-factor authentication is required", user.getLogin());
+                return Response.status(Response.Status.FORBIDDEN).build();
             } else {
                 this.taskRunner.submitTask(() -> {
                     this.customerDAO.recordLastLoginTime(user.getCustomerId(), System.currentTimeMillis());

@@ -34,26 +34,65 @@ Keep the SDK-guard discipline; drop reflection hacks. Each policy advertises a c
 applied via a `policy.apply` command or the enroll baseline.
 
 ### Desired state (`config.apply`)
-Alongside the imperative `policy.apply`/`kiosk.enter` commands, the server reconciles each device to its
-configuration on every check-in: it builds a desired-state document from the `Configuration` row (policy
-toggles, kiosk shape, location mode), hashes it into a `revision`, and compares that with the revision the
-device last applied. A mismatch enqueues one `config.apply` command in the same check-in — no extra polling.
-The agent applies each present key through the existing strategies (wifi/bluetooth/usbStorage/screenshots
-toggles, kiosk via the same `KioskApplier` path as `kiosk.enter`, location capture mode) and reports a
-per-key outcome (`applied` / `unsupported` / `failed: reason`) in the command result; it persists the new
-revision only when nothing failed, and re-applies the last-persisted document after boot or a self-update
-so a reboot can't silently regress. The command is only sent to devices whose capability matrix advertises
-`configApply` — older agents are never sent it and show as "Agent too old" in the console instead of hanging.
-Kiosk follows the configuration: kiosk-on drives entry, kiosk-off exits kiosk only on devices that entered
-it via a configuration (an ad-hoc console "Enter kiosk" is left alone). The enforced configuration fields
-are: `mainAppId`, `kioskMode`, `kioskExit`, `kioskHome`, `kioskRecents`, `kioskNotifications`,
-`kioskSystemInfo`, `kioskKeyguard`, `kioskLockButtons`, `password` (kiosk exit password, stored as entered),
-`backgroundColor`, `textColor`, `iconSize`, `wifi`, `bluetooth`, `usbStorage`, `disableScreenshots`,
-`disableFactoryReset`, `blockUserAppInstall`, `blockUserAppUninstall`
-and `requestUpdates` (location capture mode); `name`/`description` are metadata only. See
-`proto/payloads/config-apply.schema.json` for the wire shape and `proto/payloads/config-apply-result.schema.json`
-for the per-key result. `config.apply` is protocol 1.1 — an additive change; 1.0 agents keep working unchanged.
-Protocol 1.2 adds the `factoryReset` policy key; agents that do not advertise it report it `unsupported`.
+
+Besides the one-off `policy.apply`/`kiosk.enter` commands, the server keeps each device in line with its
+configuration.
+
+**How it works**
+- On every check-in the server builds a desired-state document from the `Configuration` row (policy toggles, kiosk
+  shape, location mode) and hashes it into a `revision`.
+- If that differs from the revision the device last applied, the same check-in carries one `config.apply`. No extra
+  polling.
+- The agent applies each key through the existing strategies (kiosk via the same `KioskApplier` as `kiosk.enter`)
+  and reports a per-key outcome: `applied`, `unsupported`, `failed: <reason>` or `deferred: <reason>`.
+- It saves the new revision only when nothing failed, and re-applies the saved document after a boot or self-update,
+  so a reboot can't silently undo it.
+- Only agents that advertise `configApply` get the command. Older ones show "Agent too old" in the console.
+- When a device reports a new agent version, the server re-sends `config.apply` until one queued for that version
+  comes back done (`device_state.configAgentVersion`), so stale `unsupported` results refresh. A re-sent document
+  with the same kiosk payload doesn't relaunch the launcher.
+
+**Kiosk.** Kiosk on in the configuration enters kiosk. Kiosk off exits it only on devices that entered via a
+configuration; an ad-hoc "Enter kiosk" from the console is left alone.
+
+**The 24 enforced fields**
+
+| Area | Fields |
+|------|--------|
+| Kiosk | `mainAppId`, `kioskMode`, `kioskExit`, `kioskHome`, `kioskRecents`, `kioskNotifications`, `kioskSystemInfo`, `kioskKeyguard`, `kioskLockButtons`, `kioskLockVolume`, `password` (exit PIN, stored as entered) |
+| Launcher look | `backgroundColor`, `textColor`, `iconSize` |
+| Device policy | `wifi`, `wifiRadio`, `bluetooth`, `usbStorage`, `disableScreenshots`, `disableFactoryReset`, `disableSafeBoot`, `blockUserAppInstall`, `blockUserAppUninstall` |
+| Location | `requestUpdates` (location capture mode) |
+
+`name` and `description` are metadata only. Wire shapes: `proto/payloads/config-apply.schema.json` and
+`proto/payloads/config-apply-result.schema.json`.
+
+**Protocol history** (all additive; older agents keep working)
+- **1.1:** `config.apply` itself.
+- **1.2:** the `factoryReset` policy key. Agents without it report `unsupported`.
+- **1.3:** the `safeBoot` key, the same way. An agent updated later picks it up from the saved document on its
+  post-update re-apply, without re-enrollment.
+- **1.4 (v0.3.4):**
+  - **Do not track** (`requestUpdates = DONOTTRACK`, the column default) is sent as location mode `off`, and the
+    agent reads no location. Older agents treat `off` as passive, so the server also drops location from check-ins
+    of devices on a Do-not-track configuration.
+  - **`wifiRadio`** switches the radio; `wifi` still only locks the Wi-Fi settings. See below.
+  - **`kioskLockVolume`** blocks volume in kiosk (`DISALLOW_ADJUST_VOLUME`). Android mutes the device along with it,
+    so it's a separate opt-in. `kioskLockButtons` blocks only the power menu.
+  - New columns are NULL on upgrade, so revisions only change for configurations that use them, and for
+    Do-not-track configurations (whose devices get one `config.apply`).
+
+**Wi-Fi radio Off, in detail**
+- Off is deferred, without blocking the other keys, while Wi-Fi is the device's only network. It's retried only at
+  the next configuration change, reboot or agent update. Phones that drop mobile data while on Wi-Fi never apply it.
+- If no check-in reaches the server for 30 minutes (about three heartbeats) after Off turned Wi-Fi off (SIM
+  removed, server only reachable over Wi-Fi), the heartbeat turns Wi-Fi back on and holds it on. Off stays deferred
+  (`deferred: no connection to the server ...`) until a document with a different revision than the last delivered
+  one arrives.
+- The agent then reports an applied revision of 64 zeros, which matches no configuration, so the server re-sends
+  `config.apply` after its normal backoff and the console shows the deferral.
+- A server outage that long, or a user cutting the device off, also triggers this. Any configuration change (a new
+  revision) applies Off again.
 
 ## Status UI — BUILD-NEW (Views, minSdk 24 friendly)
 Replace the `TextView` stub `MainActivity` with a real MDMesh status screen: managed state, device id,

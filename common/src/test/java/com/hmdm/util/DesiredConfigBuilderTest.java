@@ -17,7 +17,7 @@ public class DesiredConfigBuilderTest {
 
     /** Application ids and version ids are deliberately distinct: mainAppId is an applicationVersions.id. */
     private static Application app(int id, int versionId, String pkg, int action) {
-        Application a = new Application(); a.setId(id); a.setUsedVersionId(versionId); a.setPkg(pkg); a.setAction(action); return a;
+        Application a = new Application(); a.setId(id); a.setUsedVersionId(versionId); a.setPkg(pkg); a.setAction(action); a.setShowIcon(true); return a;
     }
 
     private static Configuration kioskConfig() {
@@ -31,13 +31,14 @@ public class DesiredConfigBuilderTest {
 
     /**
      * Every policy key managed: the kiosk counterpart of {@link #kioskConfig()} for the flat policy block.
-     * disableFactoryReset is a "block the wipe" flag, so the wire key factoryReset is its INVERSE.
+     * disableFactoryReset is a "block the wipe" flag, so the wire key factoryReset is its INVERSE;
+     * disableSafeBoot likewise inverts into safeBoot.
      */
     private static Configuration policiesConfig() {
         Configuration c = new Configuration();
         c.setId(7);
         c.setWifi(false); c.setBluetooth(true); c.setUsbStorage(true);
-        c.setDisableScreenshots(false); c.setDisableFactoryReset(true);
+        c.setDisableScreenshots(false); c.setDisableFactoryReset(true); c.setDisableSafeBoot(true);
         c.setRequestUpdates(RequestUpdatesType.DONOTTRACK);
         return c;
     }
@@ -139,6 +140,17 @@ public class DesiredConfigBuilderTest {
     }
 
     @Test
+    public void installedAppHiddenFromKioskIsNotAllowedOrPinned() {
+        Application hidden = app(5, 505, "com.acme.hidden", 1);
+        hidden.setShowIcon(false);
+        DesiredConfig d = DesiredConfigBuilder.build(kioskConfig(), Arrays.asList(
+                hidden, app(6, 606, "com.acme.visible", 1)));
+        assertNull(d.getKiosk().getPinPackage());
+        assertEquals(Collections.singletonList("com.acme.visible"), d.getKiosk().getAllowedPackages());
+        assertEquals("launcher", d.getKiosk().getMode());
+    }
+
+    @Test
     public void revision_is_stable_and_independent_of_field_order_and_revision_field() {
         DesiredConfig a = DesiredConfigBuilder.build(kioskConfig(), Arrays.asList(app(5, 505, "com.acme.pos", 1)));
         DesiredConfig b = DesiredConfigBuilder.build(kioskConfig(), Arrays.asList(app(5, 505, "com.acme.pos", 1)));
@@ -184,6 +196,88 @@ public class DesiredConfigBuilderTest {
 
         Configuration unmanaged = policiesConfig(); unmanaged.setDisableFactoryReset(null);
         assertNotEquals(blocked.getRevision(), DesiredConfigBuilder.build(unmanaged, Collections.emptyList()).getRevision());
+    }
+
+    @Test
+    public void safe_boot_is_inverted_into_the_blocking_policy() {
+        // disableSafeBoot=true means "block Safe Mode", so the agent receives safeBoot=false.
+        DesiredConfig blocked = DesiredConfigBuilder.build(policiesConfig(), Collections.emptyList());
+        assertEquals("disableSafeBoot=true -> policies.safeBoot=false", Boolean.FALSE,
+                blocked.getPolicies().get("safeBoot"));
+
+        Configuration allowed = policiesConfig(); allowed.setDisableSafeBoot(false);
+        assertEquals("disableSafeBoot=false -> policies.safeBoot=true", Boolean.TRUE,
+                DesiredConfigBuilder.build(allowed, Collections.emptyList()).getPolicies().get("safeBoot"));
+    }
+
+    @Test
+    public void null_safe_boot_is_unmanaged_and_the_key_is_omitted() {
+        Configuration unmanaged = policiesConfig(); unmanaged.setDisableSafeBoot(null);
+        DesiredConfig d = DesiredConfigBuilder.build(unmanaged, Collections.emptyList());
+        assertFalse("null disableSafeBoot = not managed", d.getPolicies().containsKey("safeBoot"));
+        // Existing configurations upgrade with a NULL column: their revision must not move.
+        assertEquals(resource("desired-config-kiosk.sha256"),
+                DesiredConfigBuilder.build(kioskConfig(), Arrays.asList(app(5, 505, "com.acme.pos", 1))).getRevision());
+    }
+
+    @Test
+    public void safe_boot_alone_changes_the_revision() {
+        DesiredConfig blocked = DesiredConfigBuilder.build(policiesConfig(), Collections.emptyList());
+        Configuration allowed = policiesConfig(); allowed.setDisableSafeBoot(false);
+        assertNotEquals(blocked.getRevision(), DesiredConfigBuilder.build(allowed, Collections.emptyList()).getRevision());
+
+        Configuration unmanaged = policiesConfig(); unmanaged.setDisableSafeBoot(null);
+        assertNotEquals(blocked.getRevision(), DesiredConfigBuilder.build(unmanaged, Collections.emptyList()).getRevision());
+    }
+
+    @Test
+    public void location_do_not_track_is_off_network_is_passive_gps_is_active() {
+        Configuration c = policiesConfig();
+        c.setRequestUpdates(RequestUpdatesType.DONOTTRACK);
+        assertEquals("Do not track must read no location at all", "off",
+                DesiredConfigBuilder.build(c, Collections.emptyList()).getLocation().getMode());
+        c.setRequestUpdates(RequestUpdatesType.WIFI);
+        assertEquals("passive", DesiredConfigBuilder.build(c, Collections.emptyList()).getLocation().getMode());
+        c.setRequestUpdates(RequestUpdatesType.GPS);
+        assertEquals("active", DesiredConfigBuilder.build(c, Collections.emptyList()).getLocation().getMode());
+        c.setRequestUpdates(null);
+        assertEquals("the column's own default is DONOTTRACK", "off",
+                DesiredConfigBuilder.build(c, Collections.emptyList()).getLocation().getMode());
+    }
+
+    @Test
+    public void wifi_radio_is_its_own_key_and_wifi_false_still_only_locks_settings() {
+        // Stored wifi=false has always meant "lock Wi-Fi settings": it must not start switching the radio off.
+        DesiredConfig legacy = DesiredConfigBuilder.build(policiesConfig(), Collections.emptyList());
+        assertEquals(Boolean.FALSE, legacy.getPolicies().get("wifi"));
+        assertFalse("null wifiRadio = radio not managed", legacy.getPolicies().containsKey("wifiRadio"));
+
+        Configuration off = policiesConfig(); off.setWifiRadio(false);
+        DesiredConfig d = DesiredConfigBuilder.build(off, Collections.emptyList());
+        assertEquals(Boolean.FALSE, d.getPolicies().get("wifiRadio"));
+        assertNotEquals(legacy.getRevision(), d.getRevision());
+
+        Configuration on = policiesConfig(); on.setWifiRadio(true);
+        assertEquals(Boolean.TRUE, DesiredConfigBuilder.build(on, Collections.emptyList()).getPolicies().get("wifiRadio"));
+        // Existing configurations upgrade with a NULL column: the kiosk golden revision must not move.
+        assertEquals(resource("desired-config-kiosk.sha256"),
+                DesiredConfigBuilder.build(kioskConfig(), Arrays.asList(app(5, 505, "com.acme.pos", 1))).getRevision());
+    }
+
+    @Test
+    public void kiosk_volume_lock_is_its_own_opt_in_not_part_of_lock_buttons() {
+        // Android mutes the device while volume is locked: lockButtons=true configurations must not start muting.
+        Configuration buttons = kioskConfig(); buttons.setKioskLockButtons(true);
+        DesiredConfig d = DesiredConfigBuilder.build(buttons, Collections.emptyList());
+        assertEquals(Boolean.TRUE, d.getKiosk().getFeatures().getLockButtons());
+        assertNull(d.getKiosk().getFeatures().getLockVolume());
+
+        Configuration volume = kioskConfig(); volume.setKioskLockVolume(true);
+        assertEquals(Boolean.TRUE,
+                DesiredConfigBuilder.build(volume, Collections.emptyList()).getKiosk().getFeatures().getLockVolume());
+        // A NULL column (every existing configuration) keeps the golden revision.
+        assertEquals(resource("desired-config-kiosk.sha256"),
+                DesiredConfigBuilder.build(kioskConfig(), Arrays.asList(app(5, 505, "com.acme.pos", 1))).getRevision());
     }
 
     /** GOLDEN for the flat policy block. Kept separate from the kiosk fixture so an unmanaged

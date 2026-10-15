@@ -23,10 +23,12 @@ package com.hmdm.rest.resource;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
@@ -38,6 +40,7 @@ import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.MediaType;
 
+import com.hmdm.notification.AgentWakeHub;
 import com.hmdm.notification.PushService;
 import com.hmdm.persistence.*;
 import com.hmdm.persistence.domain.*;
@@ -66,6 +69,7 @@ public class DeviceResource {
     private ConfigurationFileDAO configurationFileDAO;
     private CommonDAO commonDAO;
     private UnsecureDAO unsecureDAO;
+    private AgentWakeHub wakeHub;
 
     /**
      * <p>A constructor required by Swagger.</p>
@@ -79,13 +83,15 @@ public class DeviceResource {
                           PushService pushService,
                           ConfigurationFileDAO configurationFileDAO,
                           CommonDAO commonDAO,
-                          UnsecureDAO unsecureDAO) {
+                          UnsecureDAO unsecureDAO,
+                          AgentWakeHub wakeHub) {
         this.deviceDAO = deviceDAO;
         this.configurationDAO = configurationDAO;
         this.pushService = pushService;
         this.configurationFileDAO = configurationFileDAO;
         this.commonDAO = commonDAO;
         this.unsecureDAO = unsecureDAO;
+        this.wakeHub = wakeHub;
     }
 
     // =================================================================================================================
@@ -165,7 +171,10 @@ public class DeviceResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response getDevice(@PathParam("number") @ApiParam("Device number") String number) {
         try {
-            Device device = this.deviceDAO.getDeviceByNumber(number);
+            Device device = this.deviceDAO.getAccessibleDeviceByNumber(number);
+            if (device == null) {
+                return Response.DEVICE_NOT_FOUND_ERROR();
+            }
             DeviceView deviceView = new DeviceView(device);
             return Response.OK(deviceView);
         } catch (Exception e) {
@@ -230,13 +239,26 @@ public class DeviceResource {
                         boolean notify = (dbDevice.getConfigurationId() != null &&
                                 !dbDevice.getConfigurationId().equals(device.getConfigurationId())) ||
                                 (dbDevice.getOldNumber() == null && device.getOldNumber() != null);
+                        boolean configChanged = device.getConfigurationId() != null &&
+                                !device.getConfigurationId().equals(dbDevice.getConfigurationId());
                         this.deviceDAO.updateDevice(device);
                         if (notify) {
                             this.pushService.notifyDeviceOnSettingUpdate(device.getId());
                         }
+                        if (configChanged) {
+                            // The MDMesh agent reconciles its new configuration on check-in: wake it so that happens
+                            // now, not at the periodic check-in. updateDevice has committed by now.
+                            this.wakeHub.wake(dbDevice.getNumber(), "commands");
+                        }
                     }
                 } else if (device.getIds() != null) {
-                    // This is a bulk request to update configurations for selected devices
+                    // This is a bulk request to update configurations for selected devices: all or nothing
+                    if (!this.deviceDAO.areAccessibleToUser(device.getIds())
+                            || !this.deviceDAO.isConfigurationUsableByUser(device.getConfigurationId())) {
+                        log.error("Bulk configuration change refused: devices or configuration not accessible to user {}",
+                                SecurityContext.get().getCurrentUserName());
+                        return Response.PERMISSION_DENIED();
+                    }
                     Iterator it = device.getIds().iterator();
 
                     while (it.hasNext()) {
@@ -245,6 +267,9 @@ public class DeviceResource {
                         if (dbDevice != null) {
                             this.deviceDAO.updateDeviceConfiguration(id, device.getConfigurationId());
                             this.pushService.notifyDeviceOnSettingUpdate(dbDevice.getId());
+                            if (!Objects.equals(dbDevice.getConfigurationId(), device.getConfigurationId())) {
+                                this.wakeHub.wake(dbDevice.getNumber(), "commands");
+                            }
                         }
                     }
                 } else {
@@ -310,7 +335,12 @@ public class DeviceResource {
         }
 
         if (device.getIds() != null) {
-            // Device IDs are transferred in the "ids" parameter
+            // Device IDs are transferred in the "ids" parameter; all of them are deleted or none
+            if (!this.deviceDAO.areAccessibleToUser(device.getIds())) {
+                log.error("Bulk delete refused: not all devices are accessible to user {}",
+                        SecurityContext.get().getCurrentUserName());
+                return Response.PERMISSION_DENIED();
+            }
             Iterator it = device.getIds().iterator();
 
             while (it.hasNext()) {
@@ -339,7 +369,12 @@ public class DeviceResource {
         }
 
         if (request.getIds() != null) {
-            // Device IDs are transferred in the "ids" parameter
+            // Device IDs are transferred in the "ids" parameter; all of them are regrouped or none
+            if (!this.deviceDAO.areAccessibleToUser(request.getIds())) {
+                log.error("Bulk regroup refused: not all devices are accessible to user {}",
+                        SecurityContext.get().getCurrentUserName());
+                return Response.PERMISSION_DENIED();
+            }
             Iterator it = request.getIds().iterator();
 
             while (it.hasNext()) {
@@ -409,6 +444,12 @@ public class DeviceResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response notifyDevicesOnUpdate(@PathParam("id") Integer id) {
         try {
+            if (!SecurityContext.get().hasPermission("edit_devices")
+                    || !this.deviceDAO.areAccessibleToUser(Collections.singletonList(id))) {
+                log.error("Unauthorized attempt to notify device #{} by user {}", id,
+                        SecurityContext.get().getCurrentUserName());
+                return Response.PERMISSION_DENIED();
+            }
             this.pushService.notifyDeviceOnApplicationSettingUpdate(id);
             return Response.OK();
         } catch (Exception e) {

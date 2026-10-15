@@ -36,7 +36,6 @@ import com.hmdm.persistence.domain.*;
 import com.hmdm.rest.json.*;
 import com.hmdm.service.DeviceApplicationsStatus;
 import com.hmdm.service.DeviceConfigFilesStatus;
-import org.apache.commons.math3.stat.descriptive.summary.Sum;
 import org.mybatis.guice.transactional.Transactional;
 import com.hmdm.persistence.mapper.DeviceMapper;
 import com.hmdm.security.SecurityContext;
@@ -153,8 +152,8 @@ public class DeviceDAO extends AbstractDAO<Device> {
     }
 
     public List<ApplicationSetting> getDeviceApplicationSettings(int deviceId) {
-        final Device dbDevice
-                = getSingleRecord(() -> this.mapper.getDeviceById(deviceId), SecurityException::onDeviceAccessViolation);
+        final Device dbDevice = requireAccessible(
+                getSingleRecord(() -> this.mapper.getDeviceById(deviceId), SecurityException::onDeviceAccessViolation));
         if (dbDevice != null) {
             final List<ApplicationSetting> deviceAppSettings
                     = this.applicationSettingDAO.getApplicationSettingsByDeviceId(dbDevice.getId());
@@ -167,7 +166,7 @@ public class DeviceDAO extends AbstractDAO<Device> {
     public void removeDeviceById(Integer id) {
         updateById(
                 id,
-                this.mapper::getDeviceById,
+                this::getAccessibleDeviceForUpdate,
                 device -> this.mapper.removeDevice(device.getId()),
                 SecurityException::onDeviceAccessViolation
         );
@@ -176,8 +175,11 @@ public class DeviceDAO extends AbstractDAO<Device> {
     public void updateDeviceConfiguration(Integer deviceId, Integer configurationId) {
         updateById(
                 deviceId,
-                this.mapper::getDeviceById,
-                device -> this.mapper.updateDeviceConfiguration(device.getId(), configurationId),
+                this::getAccessibleDeviceForUpdate,
+                device -> {
+                    requireUsableConfiguration(configurationId, device.getConfigurationId());
+                    this.mapper.updateDeviceConfiguration(device.getId(), configurationId);
+                },
                 SecurityException::onDeviceAccessViolation
         );
     }
@@ -193,6 +195,7 @@ public class DeviceDAO extends AbstractDAO<Device> {
     @Transactional
     public void insertDevice(Device device) {
         insertRecord(device, d -> {
+            requireUsableConfiguration(d.getConfigurationId(), null);
             d.updateFastSearch(fastSearchChars);
             this.mapper.insertDevice(d);
             if (d.getGroups() != null && !d.getGroups().isEmpty()) {
@@ -213,7 +216,8 @@ public class DeviceDAO extends AbstractDAO<Device> {
      */
     @Transactional
     public void updateDevice(Device device) {
-        updateById(device.getId(), this.mapper::getDeviceById, dbDevice -> {
+        updateById(device.getId(), this::getAccessibleDeviceForUpdate, dbDevice -> {
+            requireUsableConfiguration(device.getConfigurationId(), dbDevice.getConfigurationId());
             device.setCustomerId(dbDevice.getCustomerId());
             device.updateFastSearch(fastSearchChars);
 
@@ -234,6 +238,95 @@ public class DeviceDAO extends AbstractDAO<Device> {
     }
 
     /**
+     * <p>Checks if the current user may see and manage the device: it belongs to the user's customer and, for a user
+     * limited to some device groups, to one of those groups. Same rule as the device list.</p>
+     *
+     * @param device a device, as found by any lookup (may be <code>null</code>).
+     * @return <code>true</code> if the device is accessible to the current user.
+     */
+    public boolean isAccessibleToUser(Device device) {
+        if (device == null || device.getId() == null) {
+            return false;
+        }
+        return SecurityContext.get().getCurrentUser()
+                .filter(u -> u.getCustomerId() == device.getCustomerId())
+                .map(u -> u.isSuperAdmin()
+                        || this.mapper.isDeviceAccessibleToUser(device.getId(), u.getId(), u.getCustomerId()))
+                .orElse(false);
+    }
+
+    /**
+     * <p>Gets the device with the given number if the current user may access it (see
+     * {@link #isAccessibleToUser(Device)}); <code>null</code> when it does not exist or is not accessible.</p>
+     */
+    public Device getAccessibleDeviceByNumber(String number) {
+        final Device device = this.mapper.getDeviceByNumber(number);
+        return isAccessibleToUser(device) ? device : null;
+    }
+
+    /**
+     * <p>Checks that every existing device among the given IDs is accessible to the current user, so that a bulk
+     * action can be refused as a whole before anything is changed. Unknown IDs are ignored.</p>
+     */
+    public boolean areAccessibleToUser(Collection<Integer> deviceIds) {
+        if (deviceIds == null) {
+            return true;
+        }
+        for (Integer id : deviceIds) {
+            final Device device = id == null ? null : this.mapper.getDeviceById(id);
+            if (device != null && !isAccessibleToUser(device)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * <p>Checks if the current user may put devices into the configuration: it belongs to the user's customer and,
+     * for a user limited to some configurations, is one of those.</p>
+     */
+    public boolean isConfigurationUsableByUser(Integer configurationId) {
+        if (configurationId == null) {
+            return true;
+        }
+        return SecurityContext.get().getCurrentUser()
+                .map(u -> this.mapper.isCustomerConfiguration(configurationId, u.getCustomerId())
+                        && u.mayUseConfiguration(configurationId))
+                .orElse(false);
+    }
+
+    /** A device may be moved only into a configuration usable by the current user; keeping its current one is fine. */
+    private void requireUsableConfiguration(Integer configurationId, Integer currentConfigurationId) {
+        if (configurationId == null || configurationId.equals(currentConfigurationId)) {
+            return;
+        }
+        if (!isConfigurationUsableByUser(configurationId)) {
+            throw SecurityException.onConfigurationAccessViolation(configurationId);
+        }
+    }
+
+    /** The stored device for a change, if the current user may access it; a security exception otherwise. */
+    private Device getAccessibleDeviceForUpdate(Integer id) {
+        return requireAccessible(this.mapper.getDeviceById(id));
+    }
+
+    private Device requireAccessible(Device device) {
+        if (device != null && !isAccessibleToUser(device)) {
+            throw SecurityException.onDeviceAccessViolation(device);
+        }
+        return device;
+    }
+
+    /**
+     * <p>Gets the numbers of the devices accessible to the current user (see {@link #isAccessibleToUser(Device)}).</p>
+     */
+    public Set<String> getDeviceNumbersAccessibleToUser() {
+        return SecurityContext.get().getCurrentUser()
+                .map(u -> (Set<String>) new HashSet<>(this.mapper.getDeviceNumbersAccessibleToUser(u.getId(), u.getCustomerId())))
+                .orElse(Collections.emptySet());
+    }
+
+    /**
      * <p>Gets the applications installed on specified device.</p>
      *
      * @param deviceId an ID of a device.
@@ -241,7 +334,7 @@ public class DeviceDAO extends AbstractDAO<Device> {
      */
     @Transactional
     public List<DeviceApplication> getDeviceInstalledApplications(int deviceId) {
-        final Device dbDevice = getDeviceById(deviceId);
+        final Device dbDevice = requireAccessible(getDeviceById(deviceId));
         if (dbDevice != null) {
             return this.mapper.getDeviceInstalledApplications(dbDevice.getId());
         } else {
@@ -265,7 +358,7 @@ public class DeviceDAO extends AbstractDAO<Device> {
 
     @Transactional
     public void saveDeviceApplicationSettings(Integer deviceId, List<ApplicationSetting> applicationSettings) {
-        final Device dbDevice = getDeviceById(deviceId);
+        final Device dbDevice = requireAccessible(getDeviceById(deviceId));
         if (dbDevice != null) {
             this.mapper.deleteDeviceApplicationSettings(dbDevice.getId());
             this.mapper.insertDeviceApplicationSettings(dbDevice.getId(), applicationSettings);
@@ -283,8 +376,8 @@ public class DeviceDAO extends AbstractDAO<Device> {
     public void updateDeviceDescription(Integer deviceId, String newDeviceDescription) {
         updateById(
                 deviceId,
-                this.mapper::getDeviceById,
-                device -> this.mapper.updateDeviceDescription(deviceId, newDeviceDescription),
+                this::getAccessibleDeviceForUpdate,
+                device -> this.mapper.updateDeviceDescription(device.getId(), newDeviceDescription),
                 SecurityException::onDeviceAccessViolation
         );
     }

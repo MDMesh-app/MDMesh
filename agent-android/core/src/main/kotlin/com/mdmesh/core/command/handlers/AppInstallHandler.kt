@@ -13,10 +13,11 @@ import kotlinx.serialization.Serializable
 
 /**
  * `app.install` — silently install (or upgrade) an app as Device Owner. Payload:
- * `{ url, packageName, versionCode?, sha256?, runAfterInstall?, parts? }`. A `parts` list
- * (`[{url, sha256?}]`) installs a split-APK bundle (base + splits) in one session; without it
- * the single `url`/`localPath` is used. Version gating, downgrade-blocking, and the install
- * itself are delegated to [InstallManager].
+ * `{ url, packageName, versionCode?, sha256?, runAfterInstall?, parts? }`. A `parts` list (`[{url, sha256?}]`)
+ * installs a split-APK bundle (base + splits) in one session; without it the single `url`/`localPath` is used.
+ * A hex `sha256` that is present is always verified; it is required only while the server says it sends one with
+ * every install ([com.mdmesh.core.install.InstallIntegrityPolicy]). Version gating, downgrade-blocking and the
+ * install itself are delegated to [InstallManager].
  */
 class AppInstallHandler(
     private val installManager: InstallManager,

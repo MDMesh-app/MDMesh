@@ -9,6 +9,7 @@ import { ActionConsole } from '../components/ActionConsole';
 import { TelemetryCard } from '../components/TelemetryCard';
 import { EventTimeline } from '../components/EventTimeline';
 import { LocationPanel } from '../components/LocationPanel';
+import { listLocations, type LocationFix } from '../api/deviceLocations';
 import { ConfigStatusCard } from '../components/ConfigStatusCard';
 import { getTelemetry, type TelemetrySnapshot } from '../api/telemetry';
 import { getConfigStatus, type ConfigStatus } from '../api/configSync';
@@ -125,6 +126,7 @@ export function DeviceDetailPage() {
   const [tele, setTele] = useState<TelemetrySnapshot | null>(null);
   const [ds, setDs] = useState<DeviceState | null>(null);
   const [cfgStatus, setCfgStatus] = useState<ConfigStatus | null>(null);
+  const [latestLocation, setLatestLocation] = useState<LocationFix | null>(null);
   const [tab, setTab] = useState<Tab>('control');
   const [busy, setBusy] = useState(false);
 
@@ -176,6 +178,19 @@ export function DeviceDetailPage() {
     void poll();
     return () => { on = false; clearTimeout(t); };
   }, [device]);
+
+  // Location is persisted independently from the compact telemetry snapshot. Refresh it when a
+  // real device-state update arrives, so the summary does not claim “no fix” merely because a
+  // later check-in omitted its optional dynamic.location object.
+  useEffect(() => setLatestLocation(null), [device?.number]);
+  useEffect(() => {
+    if (!device) return;
+    let active = true;
+    listLocations(device.number)
+      .then((fixes) => { if (active) setLatestLocation(fixes[0] ?? null); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [device?.number, ds?.updatedAt]);
 
   const configName =
     device?.configurationId != null
@@ -287,14 +302,26 @@ export function DeviceDetailPage() {
   ];
   const managementRows: Row[] = [
     { k: 'Config', v: configName },
-    { k: 'Agent', v: orDash(ds?.agentVersion ?? device.launcherVersion) },
+    // Only the agent's own report: device.launcherVersion is the configuration's main-app version
+    // (Headwind assumed the main app was its launcher), so a kiosk app's version would show here.
+    { k: 'Agent', v: orDash(ds?.agentVersion) },
     { k: 'MDM mode', v: onOff(sec.isDeviceOwner, device.mdmMode) },
     { k: 'Enrolled', v: fmtDateTime(device.enrollTime) },
   ];
 
-  const loc = dyn.location as
+  const telemetryLocation = dyn.location as
     | { lat?: number; lon?: number; accuracyM?: number; provider?: string; capturedAt?: number }
     | undefined;
+  const storedLocation = latestLocation
+    ? {
+        lat: latestLocation.lat,
+        lon: latestLocation.lon,
+        accuracyM: latestLocation.accuracy,
+        provider: latestLocation.provider,
+        capturedAt: latestLocation.capturedAt,
+      }
+    : undefined;
+  const loc = storedLocation ?? telemetryLocation;
   const hasFix = !!loc && typeof loc.lat === 'number' && typeof loc.lon === 'number';
   const locationRows: Row[] = hasFix
     ? [

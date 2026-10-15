@@ -21,6 +21,7 @@
 
 package com.hmdm.persistence.domain;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import java.io.Serializable;
@@ -47,6 +48,9 @@ public class AgentCommand implements Serializable {
     /** Device-reported result detail (e.g. a command's JSON output). Mapped from SELECT * so the
      *  command-history endpoint exposes it; without this field MyBatis silently drops the column. */
     private String detail;
+    /** config.apply: the agent version it was queued for (server-side only, never sent or accepted). */
+    @JsonIgnore
+    private String agentVersion;
 
     public AgentCommand() {
     }
@@ -129,5 +133,15 @@ public class AgentCommand implements Serializable {
 
     public void setDetail(String detail) {
         this.detail = detail;
+    }
+
+    @JsonIgnore
+    public String getAgentVersion() {
+        return agentVersion;
+    }
+
+    @JsonIgnore
+    public void setAgentVersion(String agentVersion) {
+        this.agentVersion = agentVersion;
     }
 }

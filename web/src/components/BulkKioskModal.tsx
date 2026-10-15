@@ -1,14 +1,20 @@
 import { useEffect, useState } from 'react';
 import { listApplications, type Application } from '../api/applications';
 import { bulkQueueCommand } from '../api/commands';
-import { buildKioskPayload, type KioskChoice } from './KioskEnterModal';
+import { getConfigurations, type Configuration } from '../api/configurations';
+import { buildKioskPayload, kioskTheme, type KioskChoice } from './KioskEnterModal';
 import { useToast } from '../ui/toast';
 
 type Mode = 'launcher' | 'single';
 
 export function BulkKioskModal({
-  deviceIds, onClose, onDone,
-}: { deviceIds: number[]; onClose: () => void; onDone: () => void }) {
+  deviceIds, devices, onClose, onDone,
+}: {
+  deviceIds: number[];
+  devices: { id: number; configurationId?: number }[];
+  onClose: () => void;
+  onDone: () => void;
+}) {
   const toast = useToast();
   const n = deviceIds.length;
   const [apps, setApps] = useState<Application[] | null>(null);
@@ -46,15 +52,27 @@ export function BulkKioskModal({
   async function apply() {
     setBusy(true);
     try {
-      const payload = buildKioskPayload({
-        mode, packages: Array.from(selected), exitMode, password,
-      } as KioskChoice);
-      const res = await bulkQueueCommand(deviceIds, {
-        type: 'kiosk.enter', payload: JSON.stringify(payload),
-      });
-      const skipped = res.skipped?.length ?? 0;
+      const choice: KioskChoice = { mode, packages: Array.from(selected), exitMode, password };
+      // One command per configuration, each carrying that configuration's launcher theme
+      // (see KioskEnterModal). Without the configurations, fall back to no theme.
+      const groups = new Map<number | undefined, number[]>();
+      for (const id of deviceIds) {
+        const cid = devices.find((d) => d.id === id)?.configurationId;
+        groups.set(cid, [...(groups.get(cid) ?? []), id]);
+      }
+      const configs: Configuration[] = await getConfigurations().catch(() => []);
+      let queued = 0;
+      let skipped = 0;
+      for (const [cid, ids] of groups) {
+        const payload = buildKioskPayload(choice, kioskTheme(configs.find((c) => c.id === cid)));
+        const res = await bulkQueueCommand(ids, {
+          type: 'kiosk.enter', payload: JSON.stringify(payload),
+        });
+        queued += res.queued;
+        skipped += res.skipped?.length ?? 0;
+      }
       toast.push('ok', 'Kiosk queued',
-        `Enter kiosk → ${res.queued} device${res.queued === 1 ? '' : 's'}` +
+        `Enter kiosk → ${queued} device${queued === 1 ? '' : 's'}` +
         (skipped ? ` (${skipped} skipped)` : '') + '.');
       onDone(); onClose();
     } catch (e) {

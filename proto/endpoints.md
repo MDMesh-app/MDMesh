@@ -67,8 +67,16 @@ Response `data` (`agent-checkin-response.schema.json`):
 { "protocolVersion": "1.0", "commands": [ { "protocolVersion":"1.0","commandId":"...","type":"policy.apply","issuedAt":"...","requiresCapability":"policy.wifi","payload":{"policy":"wifi","value":false} } ] }
 ```
 
+`installIntegrity: "required"` (protocol 1.3) says every `app.install` this server queues carries the APK's
+`sha256`; the agent keeps the last value and, while it is set, refuses an `app.install` without one. An older server
+omits it and the agent installs as before.
+
 `results` acks let the server mark queued commands `done`/`failed`/`unsupported`. `capabilities`
 is re-posted every check-in (cheap, keeps the token set fresh as the OS/agent changes).
+
+`resultsAccepted` (protocol 1.3) is how many of the request's `results`, counted from the first, the server took (it
+takes at most 1000 per check-in). The agent drops those and keeps the rest for its next check-in. Absent (an older
+server) means all of them were taken.
 
 ## Auth posture (v1)
 

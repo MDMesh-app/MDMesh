@@ -10,7 +10,7 @@
     <ID>ForbiddenComment:InputInjectionService.kt$InputInjectionService$// TODO: dispatchGesture(...) wiring lands with the remote-control input channel.</ID>
     <ID>InstanceOfCheckForException:CheckInCoordinator.kt$CheckInCoordinator$t !is CancellationException</ID>
     <ID>LongParameterList:CapabilityCollector.kt$CapabilityCollector$( private val agentVersion: String, private val agentPackage: String, private val isDeviceOwner: () -&gt; Boolean, private val policyKeys: () -&gt; List&lt;String&gt;, private val remoteControl: () -&gt; RemoteControlCapability, private val oem: () -&gt; OemCapability, private val deviceOwnerAppManagementKeys: List&lt;String&gt; = emptyList(), private val deviceActionKeys: List&lt;String&gt; = emptyList(), private val buildInfo: BuildInfo = BuildInfo.fromAndroid(), )</ID>
-    <ID>LongParameterList:CheckInCoordinator.kt$CheckInCoordinator$( private val api: MdmApi, private val enrollment: EnrollmentManager, private val identity: DeviceIdentity, private val capabilitySource: CapabilitySource, private val dispatcher: CommandDispatcher, private val pending: PendingResults, private val stateSource: DeviceStateSource, private val telemetrySource: TelemetrySource, private val eventSink: EventSink, private val hardwareIdSource: HardwareIdSource = HardwareIdSource { null }, private val syncStatus: SyncStatus = SyncStatus(), )</ID>
+    <ID>LongParameterList:CheckInCoordinator.kt$CheckInCoordinator$( private val api: MdmApi, private val enrollment: EnrollmentManager, private val identity: DeviceIdentity, private val capabilitySource: CapabilitySource, private val dispatcher: CommandDispatcher, private val pending: PendingResults, private val stateSource: DeviceStateSource, private val telemetrySource: TelemetrySource, private val eventSink: EventSink, private val installIntegrity: InstallIntegrityPolicy, private val hardwareIdSource: HardwareIdSource = HardwareIdSource { null }, private val syncStatus: SyncStatus = SyncStatus(), )</ID>
     <ID>LoopWithTooManyJumpStatements:KioskLauncherActivity.kt$KioskLauncherActivity$for</ID>
     <ID>MagicNumber:AppInventoryCollector.kt$AppInventoryCollector$100</ID>
     <ID>MagicNumber:CheckInService.kt$CheckInService$1000L</ID>
@@ -66,6 +66,7 @@
     <ID>MagicNumber:TransportManager.kt$TransportManager$50</ID>
     <ID>MagicNumber:TransportManager.kt$TransportManager$60_000L</ID>
     <ID>MagicNumber:UserRestrictions.kt$UserRestrictions$21</ID>
+    <ID>MagicNumber:UserRestrictions.kt$UserRestrictions$23</ID>
     <ID>MagicNumber:UserRestrictions.kt$UserRestrictions$26</ID>
     <ID>MagicNumber:WakeKeepAlive.kt$WakeKeepAlive$10</ID>
     <ID>MatchingDeclarationName:KioskFeatures.kt$KioskToggles</ID>

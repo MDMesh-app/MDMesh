@@ -14,4 +14,6 @@ public class DeviceSyncRow {
     private Integer configurationId;
     private String capabilitiesJson;
     private String appliedConfigRevision;
+    /** The latest config.apply result reports a deferred outcome (e.g. Wi-Fi radio Off on the only network). */
+    private boolean lastApplyDeferred;
 }

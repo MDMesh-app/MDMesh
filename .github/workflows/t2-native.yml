@@ -36,7 +36,7 @@ on:
         options: [all, fresh, upgrade, killed]
         default: all
       from-ref:
-        description: Release to upgrade from (empty = the latest GitHub release). Never "the newest tag" — the history also carries upstream Headwind tags.
+        description: Release to upgrade from (empty = the latest GitHub release).
         type: string
         default: ""
 

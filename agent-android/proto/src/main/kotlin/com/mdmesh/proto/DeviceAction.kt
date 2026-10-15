@@ -25,12 +25,20 @@ object DeviceAction {
     const val POWER_ADAPTIVE = "adaptive"
     const val POWER_ALWAYS_ON = "alwaysOn"
 
-    /** Set how location is captured. Payload: `{ "mode": "passive" | "active" }`. */
+    /** Set how location is captured. Payload: `{ "mode": "passive" | "active" | "off" }` (`off` since 1.4). */
     const val LOCATION_MODE = "device.locationMode"
 
-    /** Location-mode values (see [LOCATION_MODE]). Passive = last-known (cheap); active = fresh fix. */
+    /**
+     * Location-mode values (see [LOCATION_MODE]). Passive = last-known (cheap); active = fresh fix;
+     * off = no location is read at all (the configuration's "Do not track"). An agent without
+     * [LOCATION_OFF_KEY] treats `off` as passive, so the server must not assume it is honoured there.
+     */
     const val LOCATION_PASSIVE = "passive"
     const val LOCATION_ACTIVE = "active"
+    const val LOCATION_OFF = "off"
+
+    /** Device key advertised when the agent honours [LOCATION_OFF] (protocol 1.4). */
+    const val LOCATION_OFF_KEY = "locationOff"
 
     /** Desired-state document push (see ConfigApplyPayload). Advertised as device key [CONFIG_APPLY_KEY]. */
     const val CONFIG_APPLY = "config.apply"
@@ -39,6 +47,6 @@ object DeviceAction {
     /** Keys (after the `device.` prefix) advertised in `capabilities.device`. */
     val ADVERTISED_KEYS: List<String> = listOf(
         "lock", "reboot", "lockscreenMessage", "alert", "ring", "ringStop",
-        "passcodeReset", "wipe", "powerMode", "locationMode", "configApply",
+        "passcodeReset", "wipe", "powerMode", "locationMode", "configApply", LOCATION_OFF_KEY,
     )
 }

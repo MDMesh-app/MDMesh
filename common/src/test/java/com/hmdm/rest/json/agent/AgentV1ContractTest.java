@@ -69,6 +69,13 @@ public class AgentV1ContractTest {
         assertTrue(json.contains("\"commands\""));
     }
 
+    /** The agent requires a sha256 on app.install only when the check-in says the server guarantees one. */
+    @Test
+    public void checkin_response_announces_install_integrity() throws Exception {
+        String json = mapper.writeValueAsString(new AgentCheckInResponse(Collections.emptyList()));
+        assertTrue(json, json.contains("\"installIntegrity\":\"required\""));
+    }
+
     @Test
     public void enroll_response_keeps_secret_fields() throws Exception {
         String json = mapper.writeValueAsString(new AgentEnrollResponse("dev-1", "Default", "s3cr3t"));

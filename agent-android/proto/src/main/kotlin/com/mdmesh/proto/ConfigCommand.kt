@@ -10,7 +10,7 @@ import kotlinx.serialization.Serializable
  * @property policies only the keys the configuration manages (true = allowed/enabled).
  * @property kiosk present = ensure kiosk with this payload; absent = the configuration does not assert kiosk
  *   (exit only if the previously applied configuration did — see ConfigApplier).
- * @property location capture cadence, see [DeviceAction.LOCATION_MODE].
+ * @property location capture cadence (`passive`, `active`, or `off` since 1.4), see [DeviceAction.LOCATION_MODE].
  */
 @Serializable
 data class ConfigApplyPayload(
@@ -36,5 +36,8 @@ object ConfigOutcome {
     const val APPLIED = "applied"
     const val UNSUPPORTED = "unsupported"
     fun failed(reason: String): String = "failed: $reason"
+
+    /** 1.4: deliberately not applied now (e.g. Wi-Fi off while Wi-Fi is the only network); does not block. */
+    fun deferred(reason: String): String = "deferred: $reason"
     fun isFailed(outcome: String): Boolean = outcome.startsWith("failed")
 }

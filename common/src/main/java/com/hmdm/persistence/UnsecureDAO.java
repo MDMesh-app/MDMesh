@@ -235,6 +235,15 @@ public class UnsecureDAO {
         return this.settingsMapper.getSettings(customerId);
     }
 
+    /**
+     * <p>Checks if the customer of the specified user requires two-factor authentication. A sign-in which does not
+     * complete the second factor must not authenticate such a user.</p>
+     */
+    public boolean isTwoFactorRequired(User user) {
+        Settings settings = getSettings(user.getCustomerId());
+        return settings != null && settings.isTwoFactor();
+    }
+
     public Settings getSingleCustomerSettings() {
         return this.settingsMapper.getSettings(DEFAULT_CUSTOMER_ID);
     }
@@ -367,6 +376,11 @@ public class UnsecureDAO {
      */
     public void saveApkFileHash(Integer appVersionId, String hashValue) {
         this.applicationMapper.saveApkFileHash(appVersionId, hashValue);
+    }
+
+    /** The stored apkHash of a Library version (the customer's own, or a common app's) whose URL is {@code url}. */
+    public String findApkHashByUrl(int customerId, String url) {
+        return this.applicationMapper.findApkHashByUrl(customerId, url);
     }
 
     /**
@@ -577,12 +591,16 @@ public class UnsecureDAO {
                 return null;
             }
         }
+        if (!isCustomerConfiguration(configurationId, customerId)) {
+            logger.warn("Configuration {} does not belong to customer {}, device not created", configurationId, customerId);
+            return null;
+        }
 
         Device newDevice = new Device();
         newDevice.setCustomerId(customerId);
         newDevice.setConfigurationId(configurationId);
         Integer groupId = settings == null ? null : settings.getNewDeviceGroupId();
-        if (groupId != null) {
+        if (isCustomerGroup(groupId, customerId)) {
             List<LookupItem> groups = new LinkedList<>();
             groups.add(new LookupItem(groupId, ""));
             newDevice.setGroups(groups);
@@ -595,6 +613,22 @@ public class UnsecureDAO {
         return getDeviceByNumber(deviceId);
     }
 
+    /** A default group from the settings is applied only when it belongs to the device's customer. */
+    private boolean isCustomerGroup(Integer groupId, int customerId) {
+        if (groupId == null) {
+            return false;
+        }
+        if (!this.deviceMapper.isCustomerGroup(groupId, customerId)) {
+            logger.warn("Default group {} does not belong to customer {}, group ignored", groupId, customerId);
+            return false;
+        }
+        return true;
+    }
+
+    private boolean isCustomerConfiguration(Integer configurationId, int customerId) {
+        return configurationId != null && this.deviceMapper.isCustomerConfiguration(configurationId, customerId);
+    }
+
     public Device createNewDeviceOnDemand(String deviceId) {
 
         Settings settings = getSingleCustomerSettings();
@@ -603,7 +637,7 @@ public class UnsecureDAO {
             newDevice.setCustomerId(settings.getCustomerId());
             newDevice.setConfigurationId(settings.getNewDeviceConfigurationId());
             Integer groupId = settings.getNewDeviceGroupId();
-            if (groupId != null) {
+            if (isCustomerGroup(groupId, settings.getCustomerId())) {
                 List<LookupItem> groups = new LinkedList<>();
                 groups.add(new LookupItem(groupId, ""));
                 newDevice.setGroups(groups);
@@ -667,6 +701,11 @@ public class UnsecureDAO {
             }
         } else if (settings != null && settings.isCreateNewDevices()) {
             // Configuration not specified, we will add a device only if a legacy setting "Create new devices" is set
+            if (settings.getNewDeviceConfigurationId() != null
+                    && !isCustomerConfiguration(settings.getNewDeviceConfigurationId(), customerId)) {
+                logger.warn("Default configuration of customer {} does not belong to it, device not created", customerId);
+                return null;
+            }
             newDevice.setConfigurationId(settings.getNewDeviceConfigurationId());
         } else {
             logger.warn("Creating new devices disabled by settings, configuration ID not set");
@@ -697,7 +736,7 @@ public class UnsecureDAO {
             }
         } else if (settings != null) {
             Integer groupId = settings.getNewDeviceGroupId();
-            if (groupId != null) {
+            if (isCustomerGroup(groupId, customerId)) {
                 List<LookupItem> groups = new LinkedList<>();
                 groups.add(new LookupItem(groupId, ""));
                 newDevice.setGroups(groups);

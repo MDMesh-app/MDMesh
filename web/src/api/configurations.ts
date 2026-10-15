@@ -2,7 +2,8 @@ import { apiClient } from './client';
 
 // Configurations list — see com.hmdm.rest.resource.ConfigurationResource#getAllConfigurations
 //   GET /rest/private/configurations/search  ->  ConfigurationView[]
-// The `qrCodeKey` identifies a configuration for the public QR endpoints
+// The `qrCodeKey` identifies a configuration for the Headwind launcher's legacy public QR endpoints, which answer
+// 404 unless the server runs with LEGACY_DEVICE_API=1 (the console draws the agent's enrollment QR itself):
 //   GET /rest/public/qr/{qrCodeKey}        (provisioning QR as PNG)
 //   GET /rest/public/qr/json/{qrCodeKey}   (inner admin-extras bundle as JSON)
 
@@ -50,6 +51,21 @@ export interface Configuration {
 /** Full configurations (every field) — same endpoint as the list. */
 export async function getConfigurations(): Promise<Configuration[]> {
   return apiClient.get<Configuration[]>('/private/configurations/search');
+}
+
+/**
+ * The server's own base URL (its `base.url` setting), which the server puts on every configuration it
+ * returns. null when there is no configuration to read it from.
+ */
+export async function getServerBaseUrl(): Promise<string | null> {
+  const list = await getConfigurations();
+  const u = list.map((c) => c.baseUrl).find((v): v is string => typeof v === 'string' && v.trim() !== '');
+  return u ?? null;
+}
+
+/** One full configuration. */
+export async function getConfiguration(id: number): Promise<Configuration> {
+  return apiClient.get<Configuration>(`/private/configurations/${id}`);
 }
 
 // The app↔configuration matrix for one config. The server (GET

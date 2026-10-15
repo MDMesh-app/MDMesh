@@ -44,7 +44,6 @@
         <java.version>1.8</java.version>
         <javax.mail>1.5.0-b01</javax.mail>
         <java.rest.webservice>2.0.1</java.rest.webservice>
-        <jackson.version>1.9.13</jackson.version>
 
         <guice.version>4.2.3</guice.version>
 
@@ -58,8 +57,6 @@
 
         <junit.version>4.13.2</junit.version>
         <slf4j.version>2.0.20</slf4j.version>
-
-        <poi.version>5.5.1</poi.version>
 
         <timestamp>${maven.build.timestamp}</timestamp>
         <maven.build.timestamp.format>D-HH-mm</maven.build.timestamp.format>
@@ -296,32 +293,11 @@
             <version>${slf4j.version}</version>
         </dependency>
 
-        <!-- XLSX poi -->
-        <dependency>
-            <groupId>org.apache.poi</groupId>
-            <artifactId>poi</artifactId>
-            <version>${poi.version}</version>
-        </dependency>
-
-        <dependency>
-            <groupId>org.apache.poi</groupId>
-            <artifactId>poi-ooxml</artifactId>
-            <version>${poi.version}</version>
-        </dependency>
-
         <!-- https://mvnrepository.com/artifact/org.json/json -->
         <dependency>
             <groupId>org.json</groupId>
             <artifactId>json</artifactId>
             <version>20260814</version>
-        </dependency>
-
-        <!-- https://mvnrepository.com/artifact/org.mockito/mockito-all -->
-        <dependency>
-            <groupId>org.mockito</groupId>
-            <artifactId>mockito-all</artifactId>
-            <version>1.10.19</version>
-            <scope>test</scope>
         </dependency>
 
 

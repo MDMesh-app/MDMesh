@@ -173,7 +173,7 @@ public class PushResource {
                 // Send by device number
                 if (sendRequest.getDeviceNumber() != null) {
                     PluginPushMessage message = new PluginPushMessage();
-                    Device device = deviceDAO.getDeviceByNumber(sendRequest.getDeviceNumber());
+                    Device device = deviceDAO.getAccessibleDeviceByNumber(sendRequest.getDeviceNumber());
                     if (device == null) {
                         String error = "Attempt to send Push message to wrong device number " + sendRequest.getDeviceNumber();
                         logger.error(error);
@@ -352,10 +352,17 @@ public class PushResource {
                     SecurityContext.get().getCurrentUserName());
             return Response.PERMISSION_DENIED();
         }
+        // A scheduled task runs later without a user, so it is not limited by device groups: wider scopes than
+        // one device are only for users who may reach every device
+        if (!"device".equals(task.getScope()) && !SecurityContext.get().canReachAllDevices()) {
+            logger.error("Scheduled task with scope {} refused for user {} limited to some device groups",
+                    task.getScope(), SecurityContext.get().getCurrentUserName());
+            return Response.PERMISSION_DENIED();
+        }
         try {
             if (task.getScope().equals("device")) {
                 // Autocomplete returns device number
-                Device dbDevice = deviceDAO.getDeviceByNumber(task.getDeviceNumber());
+                Device dbDevice = deviceDAO.getAccessibleDeviceByNumber(task.getDeviceNumber());
                 if (dbDevice == null) {
                     logger.error("Invalid device number in the scheduled task! " + task.getDeviceNumber());
                     return Response.INTERNAL_ERROR();

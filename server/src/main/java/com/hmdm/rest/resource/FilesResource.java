@@ -43,11 +43,11 @@ import java.io.InputStream;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.GET;
@@ -63,12 +63,15 @@ import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import io.swagger.annotations.Authorization;
 import io.swagger.annotations.ResponseHeader;
-import org.apache.poi.util.IOUtils;
+import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.hmdm.security.SecurityContext;
+import com.hmdm.security.SecurityException;
 import com.hmdm.util.FileExistsException;
 import com.hmdm.util.FileUtil;
+import com.hmdm.util.HostedFiles;
+import com.hmdm.util.UnsafePathException;
 
 @Api(tags = {"Files"}, authorizations = {@Authorization("Bearer Token")})
 @Singleton
@@ -173,25 +176,19 @@ public class FilesResource {
             }
 
             if (!file.isExternal()) {
-                java.nio.file.Path filePath;
-                if (customer.getFilesDir() == null || customer.getFilesDir().isEmpty()) {
-                    filePath = Paths.get(this.filesDirectory, file.getFilePath());
-                } else {
-                    filePath = Paths.get(this.filesDirectory, customer.getFilesDir(), file.getFilePath());
+                // Delete the file the record points at, never a path taken from the request.
+                UploadedFile dbFile = uploadedFileDAO.getById(file.getId());
+                if (dbFile == null) {
+                    return Response.PERMISSION_DENIED();
                 }
-
-                try {
-                    logger.info("File {} is removed by user {}", file.getFilePath(), SecurityContext.get().getCurrentUserName());
-                    uploadedFileDAO.remove(file.getId());
-                    if (filePath.toFile().exists() &&
-                            uploadedFileDAO.getByPath(customer.getId(), file.getFilePath()) == null) {
-                        Files.delete(filePath);
-                    }
-                    return Response.OK();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                    return Response.ERROR("error.file.deletion");
+                String recordedPath = dbFile.getFilePath();
+                logger.info("File {} is removed by user {}", recordedPath, SecurityContext.get().getCurrentUserName());
+                uploadedFileDAO.remove(file.getId());
+                if (recordedPath != null && !recordedPath.isEmpty()
+                        && uploadedFileDAO.getByPath(customer.getId(), recordedPath) == null) {
+                    FileUtil.deleteFile(customer, filesDirectory, recordedPath);
                 }
+                return Response.OK();
             } else {
                 logger.info("External file {} ({}) is removed by user {}",
                         file.getDescription(), file.getUrl(), SecurityContext.get().getCurrentUserName());
@@ -229,14 +226,17 @@ public class FilesResource {
     }
 
     private Response createFileInternal(UploadedFile uploadedFile) {
+        // A hosted file has no external URL, whatever the request carries.
+        uploadedFile.setExternalUrl(null);
         if (uploadedFile.getFilePath() == null) {
             uploadedFile.setFilePath("");
         }
-        String tmpdir = System.getProperty("java.io.tmpdir");
+        Customer uploader = SecurityContext.get().getCurrentUser()
+                .map(u -> customerDAO.findById(u.getCustomerId())).orElse(null);
         if (!FileUtil.isSafePath(uploadedFile.getFilePath()) ||
-            !uploadedFile.getTmpPath().startsWith(tmpdir)) {
-            logger.error("Attempt to create a file with unsafe path: " + uploadedFile.getFilePath() +
-                    " tmp path: " + uploadedFile.getTmpPath());
+            !FileUtil.isUploadedTempFile(uploadedFile.getTmpPath(), uploader)) {
+            logger.warn("Refused to create file {}: not a safe path or not an upload of this customer",
+                    uploadedFile.getFilePath());
             return Response.PERMISSION_DENIED();
         }
 
@@ -272,6 +272,9 @@ public class FilesResource {
             } catch (FileExistsException e) {
                 logger.warn("File {} already exists", uploadedFile.getFilePath());
                 return Response.FILE_EXISTS();
+            } catch (UnsafePathException e) {
+                logger.warn("Refused to create file {}: {}", uploadedFile.getFilePath(), e.getMessage());
+                return Response.ERROR(UNSAFE_FILE_PATH);
             } catch (IOException e) {
                 logger.warn("While creating file {}: {}", uploadedFile.getFilePath(), e.getMessage());
                 e.printStackTrace();
@@ -280,10 +283,22 @@ public class FilesResource {
         }).orElse(Response.PERMISSION_DENIED());
     }
 
+    /** Shown when a file path would leave the customer's files directory. */
+    static final String UNSAFE_FILE_PATH = "The file path is not allowed";
+    /** Shown when an update would turn an uploaded file into an external one or back. */
+    static final String FILE_KIND_CHANGE = "An uploaded file cannot become an external file, or the other way round";
+
+    /** Shown when an external file's URL is not http(s). */
+    static final String EXTERNAL_URL_NOT_HTTP = "An external file's URL must start with http:// or https://";
+
     private Response createExternalFileInternal(UploadedFile uploadedFile) {
         if (uploadedFile.getExternalUrl() == null || uploadedFile.getExternalUrl().trim().equals("")) {
             logger.warn("While creating external file: empty URL");
             return Response.ERROR();
+        }
+        if (!HostedFiles.isHttpUrl(uploadedFile.getExternalUrl())) {
+            logger.warn("Refused to create an external file with a non-http(s) URL");
+            return Response.ERROR(EXTERNAL_URL_NOT_HTTP);
         }
         return SecurityContext.get().getCurrentUser().map(u -> {
             if (uploadedFile.getFilePath() == null) {
@@ -302,13 +317,49 @@ public class FilesResource {
     private Response updateFileInternal(UploadedFile uploadedFile) {
         return SecurityContext.get().getCurrentUser().map(u -> {
             Customer customer = customerDAO.findById(u.getCustomerId());
-            if (!uploadedFile.isExternal()) {
-                UploadedFile dbFile = uploadedFileDAO.getById(uploadedFile.getId());
+            // The stored row decides what kind of file this is; the request may not change it.
+            final UploadedFile dbFile;
+            try {
+                dbFile = uploadedFileDAO.getById(uploadedFile.getId());
+            } catch (SecurityException e) {
+                logger.warn("Refused to update file {}: not a file of this customer", uploadedFile.getId());
+                return Response.PERMISSION_DENIED();
+            }
+            if (dbFile == null) {
+                logger.warn("Refused to update file {}: no such file", uploadedFile.getId());
+                return Response.PERMISSION_DENIED();
+            }
+            if (uploadedFile.isExternal() != dbFile.isExternal()) {
+                logger.warn("Refused to update file {}: the external flag cannot change", uploadedFile.getId());
+                return Response.ERROR(FILE_KIND_CHANGE);
+            }
+            if (dbFile.isExternal()) {
+                // A changed URL must be http(s); an older file keeps whatever URL it already has.
+                String url = uploadedFile.getExternalUrl();
+                if (!Objects.equals(url, dbFile.getExternalUrl()) && !HostedFiles.isHttpUrl(url)) {
+                    logger.warn("Refused to set a non-http(s) URL on external file {}", uploadedFile.getId());
+                    return Response.ERROR(EXTERNAL_URL_NOT_HTTP);
+                }
+            } else {
+                // A hosted file keeps its stored external URL (none), whatever the request carries.
+                uploadedFile.setExternalUrl(dbFile.getExternalUrl());
                 if (!StringUtil.isEmpty(uploadedFile.getTmpPath())) {
-                    // Renew the file content - remove the old file and overwrite with the new content
-                    FileUtil.deleteFile(customer, filesDirectory, dbFile.getFilePath());
-                    File movedFile = FileUtil.moveFile(customer, filesDirectory, dbFile.getSubdir(),
-                            uploadedFile.getTmpPath(), dbFile.getFileName());
+                    if (!FileUtil.isUploadedTempFile(uploadedFile.getTmpPath(), customer)) {
+                        logger.warn("Refused to replace file {}: not an upload of this customer", dbFile.getFilePath());
+                        return Response.PERMISSION_DENIED();
+                    }
+                    File movedFile;
+                    try {
+                        // Validate the target exactly as moveFile will, before the old content is removed
+                        FileUtil.checkTarget(customer, filesDirectory, dbFile.getSubdir(), dbFile.getFileName());
+                        // Renew the file content - remove the old file and overwrite with the new content
+                        FileUtil.deleteFile(customer, filesDirectory, dbFile.getFilePath());
+                        movedFile = FileUtil.moveFile(customer, filesDirectory, dbFile.getSubdir(),
+                                uploadedFile.getTmpPath(), dbFile.getFileName());
+                    } catch (UnsafePathException e) {
+                        logger.warn("Refused to replace file {}: {}", dbFile.getFilePath(), e.getMessage());
+                        return Response.ERROR(UNSAFE_FILE_PATH);
+                    }
                     if (movedFile == null) {
                         return Response.ERROR("error.file.save");
                     }
@@ -325,9 +376,14 @@ public class FilesResource {
                         logger.error("Attempt to move a file to unsafe path: " + uploadedFile.getFilePath());
                         return Response.PERMISSION_DENIED();
                     }
-                    String srcPath = String.format("%s/%s/%s", filesDirectory, customer.getFilesDir(), dbFile.getFilePath());
-                    File movedFile = FileUtil.moveFile(customer, filesDirectory, "",
-                            srcPath, uploadedFile.getFilePath());
+                    File movedFile;
+                    try {
+                        movedFile = FileUtil.renameFile(customer, filesDirectory,
+                                dbFile.getFilePath(), uploadedFile.getFilePath());
+                    } catch (UnsafePathException e) {
+                        logger.warn("Refused to move a file to path {}: {}", uploadedFile.getFilePath(), e.getMessage());
+                        return Response.ERROR(UNSAFE_FILE_PATH);
+                    }
                     if (movedFile == null) {
                         logger.error("Failed to move a file to path: " + uploadedFile.getFilePath());
                         return Response.ERROR("error.file.save");
@@ -446,7 +502,7 @@ public class FilesResource {
                 request.getConfigurations().removeIf(c ->
                         user.getConfigurations()
                                 .stream()
-                                .filter(uc -> uc.getId() == c.getConfigurationId()).findFirst() == null);
+                                .noneMatch(uc -> uc.getId() == c.getConfigurationId()));
             }
             // Avoid access to objects of another customer
             request.getConfigurations().removeIf(c -> {
@@ -517,7 +573,8 @@ public class FilesResource {
             // https://stackoverflow.com/questions/50582435/jersey-filename-encoded
             String fileName = new String(fileDetail.getFileName().getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
             String adjustedFileName = FileUtil.adjustFileName(fileName);
-            File uploadFile = FileUtil.createTempFile(adjustedFileName);
+            Customer uploader = customerDAO.findById(SecurityContext.get().getCurrentCustomerId().get());
+            File uploadFile = FileUtil.createUploadFile(uploader, adjustedFileName);
             FileUtil.writeToFile(uploadedInputStream, uploadFile.getAbsolutePath());
 
             FileUploadResult result = new FileUploadResult();
@@ -626,7 +683,8 @@ public class FilesResource {
             String fileName = new String(fileDetail.getFileName().getBytes(StandardCharsets.ISO_8859_1),
                     StandardCharsets.UTF_8);
             String lower = fileName.toLowerCase();
-            bundleTmp = FileUtil.createTempFile(FileUtil.adjustFileName(fileName));
+            Customer customer = customerDAO.findById(SecurityContext.get().getCurrentCustomerId().get());
+            bundleTmp = FileUtil.createUploadFile(customer, FileUtil.adjustFileName(fileName));
             FileUtil.writeToFile(uploadedInputStream, bundleTmp.getAbsolutePath());
 
             // Extract the APK parts. A bare .apk is a one-part install; anything else is treated as a
@@ -635,13 +693,11 @@ public class FilesResource {
                 partTmps.add(bundleTmp);
                 bundleTmp = null; // it IS a part now; don't double-delete
             } else {
-                partTmps = extractApkParts(bundleTmp);
+                partTmps = extractApkParts(bundleTmp, customer);
                 if (partTmps.isEmpty()) {
                     return Response.ERROR("error.bundle.noApks"); // encrypted .apkm, or not an APK bundle
                 }
             }
-
-            Customer customer = customerDAO.findById(SecurityContext.get().getCurrentCustomerId().get());
 
             // Package + version come from any part (splits share them); prefer one that parses cleanly.
             APKFileDetails meta = null;
@@ -692,7 +748,7 @@ public class FilesResource {
 
     /** Extract every {@code *.apk} entry of a zip container to temp files. If a {@code universal.apk}
      *  is present (bundletool .apks), return ONLY it — it's a self-contained single install. */
-    private List<File> extractApkParts(File zip) throws IOException {
+    private List<File> extractApkParts(File zip, Customer customer) throws IOException {
         List<File> parts = new LinkedList<>();
         File universal = null;
         try (java.util.zip.ZipInputStream zin =
@@ -703,7 +759,7 @@ public class FilesResource {
                 String base = new File(entry.getName()).getName().toLowerCase();
                 if (!base.endsWith(".apk")) continue;
                 // Output name is generated (not the entry name), so a malicious entry path can't escape.
-                File out = FileUtil.createTempFile("bundlepart");
+                File out = FileUtil.createUploadFile(customer, "bundlepart");
                 try (java.io.OutputStream os = new java.io.BufferedOutputStream(new java.io.FileOutputStream(out))) {
                     byte[] buf = new byte[64 * 1024];
                     int n;

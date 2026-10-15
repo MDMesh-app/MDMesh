@@ -9,9 +9,14 @@ import javax.inject.Singleton
  * Last check-in/enroll failure, for surfacing on the status screen. [CheckInCoordinator]
  * records it on every failed cycle and clears it on the next successful one, so an operator
  * staring at "Enrolling…" can see *why* it isn't progressing without adb.
+ *
+ * It also remembers when a check-in last succeeded ([lastSuccessAtMs], persisted).
  */
 @Singleton
-class SyncStatus @Inject constructor() {
+class SyncStatus @Inject constructor(private val lastCheckIn: LastCheckIn) {
+
+    /** Not persisted: for tests. */
+    constructor() : this(InMemoryLastCheckIn())
 
     data class Failure(val message: String, val atMillis: Long)
 
@@ -22,7 +27,11 @@ class SyncStatus @Inject constructor() {
         _lastError.value = Failure(t.message ?: t.javaClass.simpleName, System.currentTimeMillis())
     }
 
-    fun clear() {
+    /** Wall clock of the last successful check-in; null when none yet. */
+    val lastSuccessAtMs: Long? get() = lastCheckIn.okAtMs
+
+    fun recordSuccess() {
         _lastError.value = null
+        lastCheckIn.okAtMs = System.currentTimeMillis()
     }
 }

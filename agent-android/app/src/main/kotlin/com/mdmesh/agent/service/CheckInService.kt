@@ -91,13 +91,18 @@ class CheckInService : LifecycleService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
         startAsForeground()
-        if (!started) {
+        val first = !started
+        if (first) {
             started = true
             graceUntil = System.currentTimeMillis() + REACHABILITY_GRACE_MS
             lifecycleScope.launch {
                 delay(REACHABILITY_GRACE_MS + 1_000L)
                 reevaluateSocket() // drop back to adaptive gating once the grace window lapses
             }
+        }
+        // Also when started again without credentials: the first sync can run before provisioning has saved the
+        // enroll token, and then it is retried now rather than at the next cycle.
+        if (first || deviceId.isNullOrBlank() || secret.isNullOrBlank()) {
             lifecycleScope.launch {
                 runCatching { coordinator.runOnce() } // initial sync
                     .onFailure { Log.w(TAG, "initial check-in failed", it) }
@@ -217,6 +222,14 @@ class CheckInService : LifecycleService() {
     }
 
     companion object {
+        /**
+         * Start the instant command channel from outside the app's screens (provisioning). A Device Owner may start a
+         * foreground service from the background; if an OEM refuses anyway, the scheduled check-ins still run.
+         */
+        fun start(context: Context) {
+            runCatching { ContextCompat.startForegroundService(context, Intent(context, CheckInService::class.java)) }
+        }
+
         private const val TAG = "CheckInService"
         private const val CHANNEL_ID = "mdm_checkin"
         private const val NOTIFICATION_ID = 1001

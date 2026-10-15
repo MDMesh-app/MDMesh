@@ -29,6 +29,8 @@ REPO="$PWD"   # repo root — used for absolute paths inside subshells (e.g. exp
 # database), or the mdmesh role (anything reading the mdmesh database), isolated from root's environment and terminal.
 # shellcheck source=lib/runas.sh
 . "$REPO/install/lib/runas.sh"
+# shellcheck source=lib/release.sh
+. "$REPO/install/lib/release.sh"
 
 [ "$(id -u)" = "0" ] || { echo "Run as root (sudo)."; exit 1; }
 command -v apt-get >/dev/null || { echo "This script targets Debian/Ubuntu."; exit 1; }
@@ -115,7 +117,8 @@ printf '\n  %sMDMesh · native install%s\n' "$c_bold" "$c_reset"
 cat <<WARN
 
   ${c_yel}⚠  This will modify THIS host:${c_reset}
-    • apt-get install openjdk-17-jdk, postgresql, maven, nodejs, npm, curl, python3, aapt
+    • apt-get install postgresql, maven, curl, python3, aapt (and openjdk-17-jdk where the distro packages it)
+    • download Node.js 24 and/or a JDK 17 into /opt/mdmesh-runtime when this host has no suitable one
     • create or alter a PostgreSQL role and database "mdmesh" (resets that role's password)
     • download and unpack Apache Tomcat 9 into /opt/mdmesh-tc (clears its webapps/)
     • write config and uploaded files under /opt/mdmesh (the server logs to the systemd journal)
@@ -142,12 +145,38 @@ if [ -z "$BASE_URL" ]; then
   read -rp "  Public base URL (e.g. https://mdm.example.com): " BASE_URL
 fi
 mdm_check_base_url BASE_URL || exit 1   # install/lib/url.sh: http(s)://host[:port]; lower-cases the scheme
+case "${SMTP_PORT-25}" in ''|*[!0-9]*) echo "  SMTP_PORT must be a number."; exit 1 ;; esac
+# SMTP_SSL / SMTP_STARTTLS: what the server and the Docker .env accept ("true" or "1", any case; else false), written
+# to ROOT.xml as true/false.
+for _v in SMTP_SSL SMTP_STARTTLS; do
+  [ -n "${!_v+x}" ] || continue
+  case "${!_v,,}" in true|1) printf -v "$_v" true ;; false|0) printf -v "$_v" false ;;
+    *) echo "  $_v must be true or false."; exit 1 ;; esac
+done
+# LEGACY_DEVICE_API: same values, written to ROOT.xml as 1/0.
+if [ -n "${LEGACY_DEVICE_API+x}" ]; then
+  case "${LEGACY_DEVICE_API,,}" in true|1) LEGACY_DEVICE_API=1 ;; false|0) LEGACY_DEVICE_API=0 ;;
+    *) echo "  LEGACY_DEVICE_API must be 1 or 0."; exit 1 ;; esac
+fi
 # The HTTP port (HTTP_PORT) is settled below, once the existing install's server.xml can be read the safe way.
 DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
 JWT_SECRET=$(openssl rand -hex 64)   # jwt.secretkey: hex only (see the reuse rule below)
 BASE_DIR=/opt/mdmesh
 CATALINA=/opt/mdmesh-tc
 TOMCAT_VER=9.0.89
+# Runtimes the installer downloads when the distro's are missing or too old (Debian 12 / Ubuntu 24.04 ship Node 18; Debian
+# 13 packages no JDK 17). Pinned with their published SHA-256s, unpacked under $RUNTIME_DIR: root-owned and never handed
+# to $SVC_USER, since root runs them during the install. NODE_VER moves with web/package.json "engines".
+RUNTIME_DIR=/opt/mdmesh-runtime
+NODE_VER=24.21.0
+JDK17_VER=17.0.20.1+1
+case "$(uname -m)" in
+  x86_64)  NODE_ARCH=x64   NODE_SHA=6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff
+           JDK17_ARCH=x64     JDK17_SHA=3808d1d15e3ec6bd5b84057fb5d84c33d8a1536a258146bcea2e603fc726e08e ;;
+  aarch64) NODE_ARCH=arm64 NODE_SHA=724282c3b43aec998aa9527380465b45d229e021b58035f5f4f63095eabfe5d5
+           JDK17_ARCH=aarch64 JDK17_SHA=457b57af8f9c93ec39080bb8c764f559dc8c89a6da1a39d718a400b7890d3e41 ;;
+  *)       NODE_ARCH="" JDK17_ARCH="" ;;
+esac
 # Tomcat lifecycle helpers. CATALINA_PID lets `catalina.sh stop -force` actually kill a JVM that ignores
 # the shutdown command (the server keeps scheduler threads alive after context stop), and the pgrep
 # fallback covers instances started by older versions of this script without a PID file.
@@ -414,6 +443,16 @@ if [ -f "$_old_root" ] && ! _old_xml=$(svc_cat "$_old_root" 2>>"$LOGFILE"); then
 fi
 # Value of <Parameter name="$1" value="…"/> in the existing ROOT.xml; empty when there is none.
 old_root_param() { printf '%s\n' "$_old_xml" | sed -n "s/.*name=\"$1\"[[:space:]]*value=\"\([^\"]*\)\".*/\1/p" | head -n 1; }
+# xml_attr RAW: RAW escaped for an XML attribute value (an SMTP password with & or " must not break ROOT.xml).
+xml_attr() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g' -e "s/'/\&apos;/g"; }
+# root_param ENV_VAR PARAM DEFAULT: the XML-ready value for <Parameter name="PARAM">. The env var when it is set (even to
+# "", which is how a value is cleared), else the value in the existing ROOT.xml as it stands (already escaped), else
+# DEFAULT. Settings made on an earlier run therefore survive re-runs and upgrades.
+root_param() {
+  if [ -n "${!1+x}" ]; then xml_attr "${!1}"
+  elif grep -q "name=\"$2\"" <<< "$_old_xml"; then old_root_param "$2"
+  else xml_attr "$3"; fi
+}
 # jwt.secretkey signs REST API clients' JWTs (/rest/public/jwt/login), so it is kept the same way: those tokens then
 # survive restarts and upgrades, and an install from before it existed gets the key generated above. JJWT 0.9.1
 # base64-decodes the key and silently drops characters outside the base64 alphabet and a trailing partial 4-character
@@ -441,35 +480,92 @@ select_jdk17() {
   local c
   for c in "${JAVA17_HOME:-}" \
            /usr/lib/jvm/java-17-openjdk* /usr/lib/jvm/*temurin-17* /usr/lib/jvm/*zulu*17* \
-           /usr/lib/jvm/*corretto*17* /usr/lib/jvm/*-17-* /usr/lib/jvm/*17* /opt/*jdk-17* /opt/*jdk17*; do
+           /usr/lib/jvm/*corretto*17* /usr/lib/jvm/*-17-* /usr/lib/jvm/*17* /opt/*jdk-17* /opt/*jdk17* "$RUNTIME_DIR/jdk-$JDK17_VER"; do
     [ -n "$c" ] && [ -x "$c/bin/javac" ] || continue
     case "$("$c/bin/javac" -version 2>&1)" in *' 17.'*) printf '%s' "$c"; return 0 ;; esac
   done
   return 1
 }
+# The console is built (and the supervisor run) on one Node line, NODE_VER's major: a host Node on that line is used,
+# anything else (none, the distros' 18, a newer line) gets the pinned download. The host's own Node is never replaced.
+# The supervisor runs it as $SVC_USER, so a Node only root can run (nvm under /root) does not count either. On a fresh
+# host that account does not exist yet, and nobody stands in for it.
+host_node_ok() {
+  local u="$SVC_USER"
+  command -v node >/dev/null && command -v npm >/dev/null || return 1
+  case "$(node -v 2>/dev/null)" in "v${NODE_VER%%.*}."*) ;; *) return 1 ;; esac
+  id -u "$u" >/dev/null 2>&1 || u=nobody
+  ( cd / && setpriv --reuid="$u" --regid="$(id -g "$u")" --init-groups "$(command -v node)" -e '' ) >/dev/null 2>&1
+}
+# fetch_runtime NAME URL SHA256: download URL, check it against the SHA-256 pinned above (never one fetched alongside it),
+# and unpack it as $RUNTIME_DIR/NAME. It is unpacked beside its final place and renamed into it, so NAME exists only once
+# the check passed, and a re-run reuses it.
+fetch_runtime() {
+  local name="$1" url="$2" sha="$3" t got
+  [ -d "$RUNTIME_DIR/$name" ] && { info "$name already in $RUNTIME_DIR"; return 0; }
+  [ -n "$sha" ] || _fail "No pinned Node/JDK download for $(uname -m): install Node ${NODE_VER%%.*} / JDK 17 yourself and re-run."
+  [ ! -L "$RUNTIME_DIR" ] || _fail "Refusing to use $RUNTIME_DIR: it is a symbolic link. Remove it and re-run."
+  { mkdir -p "$RUNTIME_DIR" && chmod 755 "$RUNTIME_DIR" && rm -rf "$RUNTIME_DIR"/.fetch.??????; } \
+    || _fail "Could not prepare $RUNTIME_DIR"   # the rm: what a killed run left behind
+  t=$(mktemp -d "$RUNTIME_DIR/.fetch.XXXXXX") || _fail "Could not create a temporary directory in $RUNTIME_DIR"
+  run "Downloading $name" curl -fsSL --retry 3 "$url" -o "$t/rt.tar.gz"
+  got=$(sha256sum "$t/rt.tar.gz" | awk '{print $1}') || _fail "Could not checksum the $name download"
+  if [ "$got" != "$sha" ]; then
+    rm -rf "$t"; _fail "The $name download does not match its pinned SHA-256"
+  fi
+  mkdir "$t/rt" || _fail "Could not create $t/rt"
+  run "Unpacking $name" tar -xzf "$t/rt.tar.gz" -C "$t/rt" --strip-components=1 --no-same-owner
+  chmod -R a+rX,go-w "$t/rt" || _fail "Could not set permissions on $name"   # umask 077 above; $SVC_USER runs these too
+  mv -T "$t/rt" "$RUNTIME_DIR/$name" || _fail "Could not move $name into $RUNTIME_DIR"
+  rm -rf "$t"
+  ok "$name installed in $RUNTIME_DIR (SHA-256 verified)"
+}
 # Install only what is missing. Asking apt for packages the host already provides another way (Node
 # from nodesource, a JDK under /opt, Postgres from PGDG) is how "held broken packages" conflicts happen
-# on otherwise healthy boxes — and openjdk-17-jdk is not packaged on every release (Debian 13 has 21/25).
+# on otherwise healthy boxes. Node, and JDK 17 where the distro packages none (Debian 13), come from fetch_runtime.
 PKGS=()
-select_jdk17 >/dev/null || PKGS+=(openjdk-17-jdk)
 command -v psql    >/dev/null && command -v pg_ctlcluster >/dev/null || PKGS+=(postgresql)
 command -v mvn     >/dev/null || PKGS+=(maven)
-command -v node    >/dev/null || PKGS+=(nodejs)
-command -v npm     >/dev/null || PKGS+=(npm)
 command -v curl    >/dev/null || PKGS+=(curl)
 command -v python3 >/dev/null || PKGS+=(python3)
 command -v aapt    >/dev/null || PKGS+=(aapt)
-if [ ${#PKGS[@]} -eq 0 ]; then
-  ok "all build/runtime dependencies already present — nothing to install"
-else
+APT_UPDATED=0
+apt_update() {
+  [ "$APT_UPDATED" = 1 ] && return 0
   # Tolerate an unrelated broken third-party APT source (e.g. a Docker repo on a codename Docker doesn't
   # publish for → "does not have a Release file") — the native install only needs base Debian packages.
-  run "$(IFS=,; echo "${PKGS[*]}" | sed 's/,/, /g')" bash -c \
-    "apt-get update -y || echo '(some apt sources failed to refresh — continuing)'; DEBIAN_FRONTEND=noninteractive apt-get install -y ${PKGS[*]}"
+  run "Refreshing package lists" bash -c "apt-get update -y || echo '(some apt sources failed to refresh — continuing)'"
+  APT_UPDATED=1
+}
+FETCH_JDK17=0
+if ! select_jdk17 >/dev/null; then
+  apt_update
+  # A case, not `| grep -q`: grep's early exit would SIGPIPE apt-cache and fail the pipeline under pipefail.
+  case "$(apt-cache policy openjdk-17-jdk 2>/dev/null)" in *'Candidate: '[0-9]*) PKGS+=(openjdk-17-jdk) ;; *) FETCH_JDK17=1 ;; esac
+fi
+if [ ${#PKGS[@]} -eq 0 ]; then
+  ok "all packaged dependencies already present — nothing to install"
+else
+  apt_update
+  run "$(IFS=,; echo "${PKGS[*]}" | sed 's/,/, /g')" bash -c "DEBIAN_FRONTEND=noninteractive apt-get install -y ${PKGS[*]}"
 fi
 # minisign verifies release-manifest signatures for the updater supervisor. Best-effort: without it
 # the supervisor still runs but reports releases as unverified (and never mirrors an APK).
 DEBIAN_FRONTEND=noninteractive apt-get install -y minisign >> "$LOGFILE" 2>&1 || info "minisign unavailable — updater will report releases as unverified"
+if host_node_ok; then
+  ok "Node $(node -v) from this host"
+else
+  NODE_NAME="node-v${NODE_VER}-linux-${NODE_ARCH}"
+  info "no Node ${NODE_VER%%.*} on this host that $SVC_USER can run (found: $(node -v 2>/dev/null || echo none)): using the pinned Node ${NODE_VER}"
+  fetch_runtime "$NODE_NAME" "https://nodejs.org/dist/v${NODE_VER}/${NODE_NAME}.tar.gz" "${NODE_ARCH:+$NODE_SHA}"
+  export PATH="$RUNTIME_DIR/$NODE_NAME/bin:$PATH"
+fi
+if [ "$FETCH_JDK17" = 1 ]; then
+  info "the distro packages no JDK 17: using the pinned Temurin ${JDK17_VER}"
+  fetch_runtime "jdk-${JDK17_VER}" \
+    "https://github.com/adoptium/temurin17-binaries/releases/download/jdk-${JDK17_VER/+/%2B}/OpenJDK17U-jdk_${JDK17_ARCH}_linux_hotspot_${JDK17_VER/+/_}.tar.gz" \
+    "${JDK17_ARCH:+$JDK17_SHA}"
+fi
 
 step "Selecting the Java 17 toolchain"
 JAVA_HOME=$(select_jdk17) || {
@@ -564,8 +660,9 @@ if [ "$DB_STATE" = seeded ]; then
 fi
 
 step "Building the server"
+# clean: an upgrade builds in the previous checkout, and classes a release deletes must not stay in target/.
 run "Maven package (JDK 17, ~1-2 min)" bash -c \
-  'cp server/build.properties.example server/build.properties 2>/dev/null || true; mvn -q -B -DskipTests -pl server -am package'
+  'cp server/build.properties.example server/build.properties 2>/dev/null || true; mvn -q -B -DskipTests -pl server -am clean package'
 
 step "Fetching the agent APK from GitHub Releases"
 # The agent APK is a release artifact, not a repo file. Pull the latest release's signed APK (+ manifest)
@@ -585,70 +682,21 @@ AGENT_FETCH_DIR=""
 agent_fetch_cleanup() { if [ -n "$AGENT_FETCH_DIR" ]; then rm -rf -- "$AGENT_FETCH_DIR"; AGENT_FETCH_DIR=""; fi; }
 trap agent_fetch_cleanup EXIT
 if [ -n "$GITHUB_REPO" ]; then
-  # gh_curl ARGS...: curl, sending GITHUB_TOKEN (when set) as an Authorization header read from stdin (-H @-, curl 7.55+),
-  # never on curl's command line, which every local user can read (ps, /proc/<pid>/cmdline).
-  gh_curl() {
-    if [ -n "${GITHUB_TOKEN:-}" ]; then printf 'Authorization: Bearer %s\n' "$GITHUB_TOKEN" | curl -H @- "$@"
-    else curl "$@"; fi
-  }
-  # jget NAME: the download URL of release asset NAME in the release JSON on stdin; empty (and success) when there is
-  # none or the reply is not JSON (no release yet, an empty body, a rate-limit page): under set -euo pipefail a failing
-  # jget would end the install at the assignment instead of taking the "no published release" branch.
-  jget() { python3 -c 'import sys,json;
-d=json.load(sys.stdin)
-def asset(n): return next((a["browser_download_url"] for a in d.get("assets",[]) if a["name"]==n),"")
-print({"apk":asset("mdmesh-agent.apk"),"manifest":asset("manifest.json"),
-       "signature":asset("manifest.json.minisig"),"tag":str(d.get("tag_name") or "")}.get(sys.argv[1],""))' "$1" 2>/dev/null || true; }
-  # manifest_apk FIELD FILE: components.apk.FIELD of the manifest FILE; empty when it has none.
-  manifest_apk() { python3 -c 'import sys,json;print(json.load(open(sys.argv[2]))["components"]["apk"][sys.argv[1]])' "$1" "$2" 2>/dev/null || true; }
-  # manifest_version FILE: the manifest's top-level "version" (release/build-manifest.sh: the tag without its "v").
-  manifest_version() { python3 -c 'import sys,json;v=json.load(open(sys.argv[1])).get("version");print(v if isinstance(v,str) else "")' "$1" 2>/dev/null || true; }
-  # fetch_agent_apk: sets AGENT_APK (and AGENT_CK) when the latest release's APK verifies as described above; otherwise
-  # says why in one line and leaves AGENT_APK empty. Always returns 0, so set -e still stops the run on anything else.
+  # fetch_agent_apk: sets AGENT_APK (and AGENT_CK) when the latest release's APK verifies (install/lib/release.sh);
+  # otherwise says why in one line and leaves AGENT_APK empty. Always returns 0, so set -e still stops the run on
+  # anything else.
   fetch_agent_apk() {
-    local rel apk_url man_url sig_url tag mver d want_sha soft=" — console uses debug defaults; host /files/agent.apk manually"
+    local soft=" — console uses debug defaults; host /files/agent.apk manually"
     AGENT_CK=""
-    rel=$(gh_curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>>"$LOGFILE" || true)
-    apk_url=$(printf '%s' "$rel" | jget apk); man_url=$(printf '%s' "$rel" | jget manifest)
-    sig_url=$(printf '%s' "$rel" | jget signature)
-    if [ -z "$apk_url" ] || [ -z "$man_url" ]; then info "No published release found for ${GITHUB_REPO}${soft}"; return; fi
-    if [ -z "$sig_url" ]; then
-      info "The latest release of ${GITHUB_REPO} has no manifest signature (manifest.json.minisig), so its APK is not trusted${soft}"; return
-    fi
-    if ! command -v minisign >/dev/null 2>&1; then
-      info "minisign is unavailable, so the release manifest cannot be verified and its APK is not trusted${soft}"; return
-    fi
-    if [ ! -r "$REPO/release/minisign.pub" ]; then
-      info "The release signing key release/minisign.pub is missing from this checkout, so the manifest cannot be verified${soft}"; return
-    fi
     # The ERR trap does not fire inside a function (no set -E), so a failure here must be caught here, or the install
     # would end without a word.
     AGENT_FETCH_DIR=$(mktemp -d) || { AGENT_FETCH_DIR=""; info "Could not create a temporary directory for the release files${soft}"; return 0; }
-    d=$AGENT_FETCH_DIR
-    if ! gh_curl -fsSL "$man_url" -o "$d/manifest.json" 2>>"$LOGFILE" \
-       || ! gh_curl -fsSL "$sig_url" -o "$d/manifest.json.minisig" 2>>"$LOGFILE"; then
-      info "Could not download the release manifest or its signature (details in $LOGFILE)${soft}"; return
+    if mdm_fetch_release_apk "$GITHUB_REPO" "$REPO/release/minisign.pub" "$AGENT_FETCH_DIR" "$LOGFILE"; then
+      AGENT_CK=$MDM_AGENT_CK; AGENT_APK="$AGENT_FETCH_DIR/agent.apk"
+    else
+      info "${MDM_RELEASE_PROBLEM}${soft}"
     fi
-    if ! minisign -V -p "$REPO/release/minisign.pub" -m "$d/manifest.json" >> "$LOGFILE" 2>&1; then
-      info "The release manifest's signature is invalid (it does not verify with release/minisign.pub), so its APK is not trusted${soft}"; return
-    fi
-    # Bind the signed manifest to this release: an older release's manifest is signed too, and served in its place (a
-    # replay) it would verify. Its version must be the release tag without the "v".
-    tag=$(printf '%s' "$rel" | jget tag); mver=$(manifest_version "$d/manifest.json")
-    if [ -z "$mver" ] || [ "$mver" != "${tag#v}" ]; then
-      info "The signed manifest is for version ${mver:-(none)}, not for the latest release ${tag:-(untagged)}, so its APK is not trusted${soft}"; return
-    fi
-    AGENT_CK=$(manifest_apk signatureChecksum "$d/manifest.json"); want_sha=$(manifest_apk sha256 "$d/manifest.json")
-    if [ -z "$AGENT_CK" ] || [ -z "$want_sha" ]; then
-      AGENT_CK=""; info "The signed release manifest names no agent APK checksum or sha256${soft}"; return
-    fi
-    if ! gh_curl -fsSL "$apk_url" -o "$d/agent.apk" 2>>"$LOGFILE"; then
-      AGENT_CK=""; info "Could not download the release APK (details in $LOGFILE)${soft}"; return
-    fi
-    if [ "$(sha256sum "$d/agent.apk" | awk '{print $1}')" != "$want_sha" ]; then
-      AGENT_CK=""; info "The downloaded APK does not match the sha256 in the signed manifest, so it is not trusted${soft}"; return
-    fi
-    AGENT_APK="$d/agent.apk"
+    return 0
   }
   fetch_agent_apk
   if [ -n "$AGENT_APK" ]; then
@@ -747,6 +795,16 @@ done < <(find "$REPO/install/emails" -type f -print0)
 # Host the release agent APK the QR points at (/files/agent.apk), if we fetched one above.
 [ -n "$AGENT_APK" ] && { base_write files/agent.apk cat "$AGENT_APK"; ok "agent APK hosted at /files/agent.apk"; }
 agent_fetch_cleanup   # the fetched release files are no longer needed (the EXIT trap covers every other path)
+# Headwind launcher device routes: off unless 1, kept across re-runs like the settings below.
+X_LEGACY_DEVICE_API=$(root_param LEGACY_DEVICE_API legacy.device.api 0)
+# SMTP (password-recovery email): the Docker .env's variables. Read here, after the deferred ROOT.xml read above.
+X_SMTP_HOST=$(root_param SMTP_HOST smtp.host "")
+X_SMTP_PORT=$(root_param SMTP_PORT smtp.port 25)
+X_SMTP_SSL=$(root_param SMTP_SSL smtp.ssl false)
+X_SMTP_STARTTLS=$(root_param SMTP_STARTTLS smtp.starttls false)
+X_SMTP_USERNAME=$(root_param SMTP_USERNAME smtp.username "")
+X_SMTP_PASSWORD=$(root_param SMTP_PASSWORD smtp.password "")
+X_SMTP_FROM=$(root_param SMTP_FROM smtp.from "mdm@localhost")
 # ROOT.xml carries the DB password, hash.secret and jwt.secretkey: tc_write makes it mode 600.
 tc_write conf/Catalina/localhost/ROOT.xml cat <<XML
 <?xml version="1.0" encoding="UTF-8"?>
@@ -763,6 +821,7 @@ tc_write conf/Catalina/localhost/ROOT.xml cat <<XML
     <Parameter name="base.url"        value="${BASE_URL}"/>
     <Parameter name="usage.scenario"    value="private"/>
     <Parameter name="secure.enrollment" value="0"/>
+    <Parameter name="legacy.device.api" value="${X_LEGACY_DEVICE_API}"/>
     <Parameter name="hash.secret"       value="${HASH_SECRET}"/>
     <Parameter name="jwt.secretkey"     value="${JWT_SECRET}"/>
     <Parameter name="plugins.files.directory" value="${BASE_DIR}/plugins"/>
@@ -777,9 +836,17 @@ tc_write conf/Catalina/localhost/ROOT.xml cat <<XML
     <!-- Loopback updater supervisor; /update/* is passed through by UpdateProxyServlet so the
          console's Updates + staged-rollout views are same-origin (no proxy config needed). -->
     <Parameter name="supervisor.base" value="http://127.0.0.1:9000"/>
-    <!-- TODO(parity): the Docker stack wires SMTP via env (smtp.host/port/ssl/starttls/username/
-         password/from — see docker/entrypoint.sh); this installer writes no smtp.* Parameters yet,
-         so password-reset emails stay disabled on native installs. Add them when SMTP is needed. -->
+    <!-- SMTP (password recovery): env SMTP_HOST/PORT/SSL/STARTTLS/USERNAME/PASSWORD/FROM, as in the Docker .env.
+         Re-runs keep these values unless the variable is set. An empty smtp.host turns email off. -->
+    <Parameter name="smtp.host" value="${X_SMTP_HOST}"/>
+    <Parameter name="smtp.port" value="${X_SMTP_PORT}"/>
+    <Parameter name="smtp.ssl" value="${X_SMTP_SSL}"/>
+    <Parameter name="smtp.starttls" value="${X_SMTP_STARTTLS}"/>
+    <Parameter name="smtp.username" value="${X_SMTP_USERNAME}"/>
+    <Parameter name="smtp.password" value="${X_SMTP_PASSWORD}"/>
+    <Parameter name="smtp.from" value="${X_SMTP_FROM}"/>
+    <Parameter name="email.recovery.subj" value="${BASE_DIR}/emails/_LANGUAGE_/recovery_subj.txt"/>
+    <Parameter name="email.recovery.body" value="${BASE_DIR}/emails/_LANGUAGE_/recovery_body.txt"/>
 </Context>
 XML
 # Tomcat runs unprivileged (like the Docker image). Create the service account and hand it the trees it
@@ -1015,6 +1082,14 @@ else
   printf '  %s✗ post-seed repairs failed — device enrollment would not work. Details: %s%s\n' "$c_red" "$LOGFILE" "$c_reset"
   tail -n 15 "$LOGFILE" | sed "s/^/    ${c_dim}/;s/$/${c_reset}/"; exit 1
 fi
+
+# Runtimes an earlier run fetched that this one no longer uses (an older pin, or the host now has its own).
+for _rt in "$RUNTIME_DIR"/node-v* "$RUNTIME_DIR"/jdk-*; do
+  [ -d "$_rt" ] || continue
+  case "$_rt" in "$JAVA_HOME"|"${NODE_BIN%/bin/node}") continue ;; esac
+  rm -rf "$_rt"; info "removed the unused runtime $_rt"
+done
+rm -rf "$RUNTIME_DIR"/.fetch.??????   # a failed download's leftovers
 
 trap - ERR
 printf '\n  %s%s✓ MDMesh installed (native)%s\n\n' "$c_grn" "$c_bold" "$c_reset"

@@ -9,10 +9,16 @@ import com.hmdm.persistence.ConfigurationDAO;
 import com.hmdm.persistence.DeviceDAO;
 import com.hmdm.persistence.domain.Configuration;
 import com.hmdm.persistence.domain.Device;
+import com.hmdm.rest.filter.LegacyDeviceApiFilter;
 import org.mybatis.guice.transactional.Transactional;
 
 import java.util.List;
 
+/**
+ * <p>Queues push messages for the Headwind launcher (MQTT, or the long-poll queue in {@code pushMessages} /
+ * {@code pendingPushes}). Only the launcher reads them: MDMesh agents are woken over their WebSocket. So while the
+ * legacy device API ({@code legacy.device.api}) is off, every method here is a no-op and touches no table.</p>
+ */
 @Singleton
 public class PushService {
 
@@ -20,18 +26,29 @@ public class PushService {
     private final PushSender pushSenderPolling;
     private final ConfigurationDAO configurationDAO;
     private final DeviceDAO deviceDAO;
+    private final boolean enabled;
 
     @Inject
     public PushService(@Named("MQTT") PushSender pushSenderMqtt, @Named("Polling") PushSender pushSenderPolling,
-                       ConfigurationDAO configurationDAO, DeviceDAO deviceDAO) {
+                       ConfigurationDAO configurationDAO, DeviceDAO deviceDAO,
+                       @Named(LegacyDeviceApiFilter.PARAMETER) boolean legacyDeviceApi) {
         this.pushSenderMqtt = pushSenderMqtt;
         this.pushSenderPolling = pushSenderPolling;
         this.configurationDAO = configurationDAO;
         this.deviceDAO = deviceDAO;
+        this.enabled = legacyDeviceApi;
+    }
+
+    /** True when messages are queued at all, i.e. the legacy device API is on. */
+    public boolean isEnabled() {
+        return enabled;
     }
 
     // Use both ways to send a message, because the decision how to receive messages is done on the device (configuration)
     public int send(PushMessage message) {
+        if (!enabled) {
+            return 0;
+        }
         pushSenderMqtt.send(message);
         return pushSenderPolling.send(message);
     }
@@ -43,6 +60,9 @@ public class PushService {
      */
     @Transactional
     public void notifyDevicesOnUpdate(Integer configurationId) {
+        if (!enabled) {
+            return;
+        }
         final Configuration configuration = this.configurationDAO.getConfigurationById(configurationId);
         if (configuration != null) {
             final List<Device> devices
@@ -84,6 +104,9 @@ public class PushService {
      * @param messageType Message type
      */
     public void sendSimpleMessage(Integer deviceId, String messageType) {
+        if (!enabled) {
+            return;
+        }
         final Device dbDevice = this.deviceDAO.getDeviceById(deviceId);
         if (dbDevice != null) {
             PushMessage message = new PushMessage();

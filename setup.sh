@@ -30,6 +30,8 @@ err()  { printf '\033[1;31m%s\033[0m\n' "$*" >&2; }
 . ./install/lib/version.sh
 # shellcheck source=install/lib/url.sh
 . ./install/lib/url.sh
+# shellcheck source=install/lib/release.sh
+. ./install/lib/release.sh
 rand() { mdm_rand; }
 # Update KEY in .env in place (or append it) — persists values discovered after .env was written
 # (GITHUB_REPO autodetection, the release QR build args) so compose substitution + the supervisor
@@ -253,53 +255,76 @@ setenv CURRENT_VERSION "$CURRENT_VERSION"
 export CURRENT_VERSION
 
 say "Checking GitHub Releases for the signed agent APK…"
-# Mirror of the native installer's release fetch: pull the latest release's manifest + APK, verify
-# the APK's sha256 against the manifest, and bake the agent package/signing checksum + the canonical
-# /files/agent.apk URL into the web build so the enrollment QR matches a real, verified APK. The
-# fetched file itself is NOT hosted here — in Docker, Caddy serves /files/agent.apk straight from
-# the supervisor's sha256-verified release mirror, so the download below is verification only.
-# Anonymous once the repo is public; honours GITHUB_TOKEN if set. Graceful: no release, unreachable,
-# or no python3/curl on the host → warn and keep the SPA's debug defaults, exactly like native.
+# The native installer's release check (install/lib/release.sh): the latest release's manifest.json must verify with
+# minisign against release/minisign.pub and belong to that release, and its APK must match the manifest's sha256; only
+# then are the agent package/signing checksum + the canonical /files/agent.apk URL baked into the web build, so the
+# enrollment QR matches a real, verified APK. The fetched file itself is NOT hosted here — in Docker, Caddy serves
+# /files/agent.apk straight from the supervisor's verified release mirror, so the download below is verification only.
+# Anonymous once the repo is public; honours GITHUB_TOKEN if set. Graceful, like native: no release, unreachable, no
+# signature or minisign, or no python3/curl on the host → warn and keep the SPA's debug defaults.
 VITE_AGENT_PACKAGE=""; VITE_AGENT_CHECKSUM=""; VITE_AGENT_APK_URL=""
 if [ -n "${GITHUB_REPO:-}" ] && command -v python3 >/dev/null && command -v curl >/dev/null; then
-  # gh_curl ARGS...: curl, sending GITHUB_TOKEN (when set) as an Authorization header read from stdin (-H @-, curl 7.55+),
-  # never on curl's command line, which every local user can read (ps, /proc/<pid>/cmdline).
-  gh_curl() {
-    if [ -n "${GITHUB_TOKEN:-}" ]; then printf 'Authorization: Bearer %s\n' "$GITHUB_TOKEN" | curl -H @- "$@"
-    else curl "$@"; fi
-  }
-  # jget NAME: the download URL of release asset NAME in the release JSON on stdin; empty (and success) when there is
-  # none or the reply is not JSON (no release yet, an empty body, a rate-limit page): under set -euo pipefail a failing
-  # jget would end setup.sh at the assignment instead of taking the "no published release" branch.
-  jget() { python3 -c 'import sys,json;
-d=json.load(sys.stdin)
-def asset(n): return next((a["browser_download_url"] for a in d.get("assets",[]) if a["name"]==n),"")
-print({"apk":asset("mdmesh-agent.apk"),"manifest":asset("manifest.json")}.get(sys.argv[1],""))' "$1" 2>/dev/null || true; }
   # agent_ck_ok CK: CK looks like an APK signing-certificate checksum (unpadded base64url of a SHA-256: 43 characters of
   # A-Z a-z 0-9 _ -). It is written to .env, which this script sources as root on every re-run, so nothing else from a
   # download may go there.
   # (The letters are spelled out: a range like A-Z follows the locale and matches non-ASCII letters under en_US.UTF-8.)
   agent_ck_ok() { case "$1" in *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-]*) return 1 ;; esac; [ "${#1}" -eq 43 ]; }
-  REL=$(gh_curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>/dev/null || true)
-  APK_URL=$(printf '%s' "$REL" | jget apk); MAN_URL=$(printf '%s' "$REL" | jget manifest)
-  if [ -n "$APK_URL" ] && [ -n "$MAN_URL" ]; then
-    MAN=$(gh_curl -fsSL "$MAN_URL" 2>/dev/null || true)
-    AGENT_CK=$(printf '%s' "$MAN" | python3 -c 'import sys,json;print(json.load(sys.stdin)["components"]["apk"]["signatureChecksum"])' 2>/dev/null || true)
-    WANT_SHA=$(printf '%s' "$MAN" | python3 -c 'import sys,json;print(json.load(sys.stdin)["components"]["apk"]["sha256"])' 2>/dev/null || true)
-    TMP_APK=$(mktemp)
-    if [ -n "$AGENT_CK" ] && ! agent_ck_ok "$AGENT_CK"; then
-      warn "The release manifest's APK signing checksum is malformed (not 43 base64url characters) — the console keeps its debug enrollment defaults."
-    elif gh_curl -fsSL "$APK_URL" -o "$TMP_APK" 2>/dev/null && [ -n "$AGENT_CK" ] \
-       && [ "$(sha256sum "$TMP_APK" | awk '{print $1}')" = "$WANT_SHA" ]; then
-      VITE_AGENT_PACKAGE="com.mdmesh.agent"; VITE_AGENT_CHECKSUM="$AGENT_CK"; VITE_AGENT_APK_URL="/files/agent.apk"
-      say "Release APK verified (signing checksum ${AGENT_CK}) — the QR will point at /files/agent.apk."
-    else
-      warn "Could not fetch/verify the release APK — the console keeps its debug enrollment defaults."
-    fi
-    rm -f "$TMP_APK"
-  else
-    warn "No published release found for ${GITHUB_REPO} — the console keeps its debug enrollment defaults."
+  # minisign does the verifying. As root on a Debian/Ubuntu host, install it quietly like the native installer does;
+  # otherwise the warning below says how.
+  if ! command -v minisign >/dev/null 2>&1 && [ "$(id -u)" = 0 ] && command -v apt-get >/dev/null 2>&1; then
+    say "Installing minisign (verifies the release manifest)…"
+    { DEBIAN_FRONTEND=noninteractive apt-get install -y -qq minisign \
+      || { apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq minisign; }; } >/dev/null 2>&1 || true
   fi
+  # Still no minisign on the host: verify with the one the supervisor image ships (docker/supervisor.Dockerfile), building
+  # that image now (the `up --build` below reuses it). The container gets no network and only the key and the release
+  # directory, read-only.
+  if ! command -v minisign >/dev/null 2>&1; then
+    SUPERVISOR_IMAGE="ghcr.io/${IMAGE_OWNER:-local}/mdmesh-supervisor:${SUPERVISOR_VERSION:-${CURRENT_VERSION:-latest}}"
+    say "minisign is not on this host — using the one in the supervisor image (${SUPERVISOR_IMAGE})…"
+    # mdm_container_minisign -V -p PUBKEY -m FILE: minisign inside the supervisor image (only this form is supported).
+    mdm_container_minisign() {
+      local pub="" msg=""
+      while [ $# -gt 0 ]; do
+        case "$1" in
+          -V) shift ;;
+          -p) pub=${2:-}; shift 2 ;;
+          -m) msg=${2:-}; shift 2 ;;
+          *) return 2 ;;
+        esac
+      done
+      [ -n "$pub" ] && [ -n "$msg" ] && [ -r "$pub" ] && [ -r "$msg" ] || return 2
+      local pub_abs msg_dir
+      pub_abs="$(cd "$(dirname -- "$pub")" && pwd)/$(basename -- "$pub")"
+      msg_dir="$(cd "$(dirname -- "$msg")" && pwd)"
+      docker run --rm --pull never --network none --entrypoint minisign \
+        -v "${pub_abs}:/verify/minisign.pub:ro" -v "${msg_dir}:/verify/release:ro" \
+        "$SUPERVISOR_IMAGE" -V -p /verify/minisign.pub -m "/verify/release/$(basename -- "$msg")"
+    }
+    # shellcheck disable=SC2086
+    if { docker image inspect "$SUPERVISOR_IMAGE" >/dev/null 2>&1 || docker compose $COMPOSE_ARGS build supervisor >/dev/null 2>&1; } \
+       && docker run --rm --pull never --network none --entrypoint minisign "$SUPERVISOR_IMAGE" -v >/dev/null 2>&1; then
+      MDM_MINISIGN=mdm_container_minisign
+    fi
+  fi
+  REL_DIR=$(mktemp -d 2>/dev/null || true)
+  if [ -z "$REL_DIR" ]; then
+    warn "Could not create a temporary directory for the release files — the console keeps its debug enrollment defaults."
+  elif mdm_fetch_release_apk "$GITHUB_REPO" ./release/minisign.pub "$REL_DIR" /dev/null; then
+    if agent_ck_ok "$MDM_AGENT_CK"; then
+      VITE_AGENT_PACKAGE="com.mdmesh.agent"; VITE_AGENT_CHECKSUM="$MDM_AGENT_CK"; VITE_AGENT_APK_URL="/files/agent.apk"
+      say "Release APK verified (manifest signature + sha256; signing checksum ${MDM_AGENT_CK}) — the QR will point at /files/agent.apk."
+    else
+      warn "The release manifest's APK signing checksum is malformed (not 43 base64url characters) — the console keeps its debug enrollment defaults."
+    fi
+  else
+    if command -v "${MDM_MINISIGN:-minisign}" >/dev/null 2>&1; then
+      warn "${MDM_RELEASE_PROBLEM} — the console keeps its debug enrollment defaults."
+    else
+      warn "minisign is unavailable (not on this host, and the supervisor image's could not be used), so the release manifest cannot be verified — install it (e.g. apt-get install minisign) and re-run ./setup.sh; until then the console keeps its debug enrollment defaults."
+    fi
+  fi
+  [ -z "$REL_DIR" ] || rm -rf -- "$REL_DIR"
 else
   warn "No GitHub repo detected (or python3/curl missing) — skipping the release check; the console keeps its debug enrollment defaults."
 fi

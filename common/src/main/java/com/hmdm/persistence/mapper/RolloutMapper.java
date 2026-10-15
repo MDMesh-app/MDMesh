@@ -21,6 +21,7 @@
 
 package com.hmdm.persistence.mapper;
 
+import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.AgentRollout;
 import com.hmdm.persistence.domain.RolloutDeviceRow;
 import org.apache.ibatis.annotations.Insert;
@@ -60,7 +61,28 @@ public interface RolloutMapper {
             "FROM devices d LEFT JOIN device_state s ON s.deviceNumber = d.number WHERE d.customerId = #{customerId}"})
     List<RolloutDeviceRow> listCustomerDevices(@Param("customerId") int customerId);
 
-    @Select({"SELECT DISTINCT c.deviceNumber FROM agentCommand c JOIN devices d ON d.number = c.deviceNumber " +
+    @Select({"SELECT c.* FROM agentCommand c JOIN devices d ON d.number = c.deviceNumber " +
             "WHERE d.customerId = #{customerId} AND c.type = 'app.install' AND c.status IN ('pending','delivered')"})
-    List<String> listPendingInstallNumbers(@Param("customerId") int customerId);
+    List<AgentCommand> listInFlightInstalls(@Param("customerId") int customerId);
+
+    @Select({"SELECT d.number AS deviceNumber, s.agentVersion AS agentVersion, d.agentCapabilities AS capabilitiesJson " +
+            "FROM devices d LEFT JOIN device_state s ON s.deviceNumber = d.number WHERE d.number = #{deviceNumber}"})
+    RolloutDeviceRow findDeviceRow(@Param("deviceNumber") String deviceNumber);
+
+    @Select({"SELECT COUNT(*) > 0 FROM agentRolloutCanary WHERE rolloutId = #{rolloutId} AND deviceNumber = #{deviceNumber}"})
+    boolean isCanary(@Param("rolloutId") int rolloutId, @Param("deviceNumber") String deviceNumber);
+
+    /** Queues {@code cmd} unless the same command is already pending or delivered to the device. One statement closes
+     *  almost all of the window between a check-in re-queue and a create/promote loop; two transactions running at the
+     *  same instant can still both pass NOT EXISTS (READ COMMITTED), and the worst case is one duplicate install that
+     *  the agent's version check skips once the first has installed. @return rows inserted, 0 or 1. */
+    @Insert({"INSERT INTO agentCommand (deviceNumber, type, payload, requiresCapability, status, createdAt) " +
+            "SELECT #{deviceNumber}, #{type}, #{payload}, #{requiresCapability}, #{status}, #{createdAt} " +
+            "WHERE NOT EXISTS (SELECT 1 FROM agentCommand WHERE deviceNumber = #{deviceNumber} AND type = #{type} " +
+            "AND payload = #{payload} AND status IN ('pending','delivered'))"})
+    int insertIfNotInFlight(AgentCommand cmd);
+
+    @Select({"SELECT * FROM agentCommand WHERE deviceNumber = #{deviceNumber} AND type = 'app.install' " +
+            "AND createdAt >= #{since} ORDER BY id DESC"})
+    List<AgentCommand> listInstallsSince(@Param("deviceNumber") String deviceNumber, @Param("since") long since);
 }

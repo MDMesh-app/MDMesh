@@ -126,6 +126,27 @@ public class CryptoUtil {
         }
     }
 
+    /** SHA-256 of everything {@code in} holds (read to the end, not closed). */
+    public static byte[] sha256(InputStream in) throws IOException {
+        MessageDigest md;
+        try {
+            md = MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new IOException(e);
+        }
+        byte[] buf = new byte[64 * 1024];
+        int n;
+        while ((n = in.read(buf)) > 0) {
+            md.update(buf, 0, n);
+        }
+        return md.digest();
+    }
+
+    /** Lowercase hex of {@code bytes}. */
+    public static String getLowerHexString(byte[] bytes) {
+        return getHexString(bytes).toLowerCase(java.util.Locale.ROOT);
+    }
+
     public static String getSHA256String(String value) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");

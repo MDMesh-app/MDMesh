@@ -57,7 +57,7 @@ healthy() {
 # The caller switches .env to the backup's versions only AFTER this succeeds, so on any failure .env still names the
 # version the database belongs to (a later `docker compose up` never pairs old images with the new database). On a
 # failed restore the server is left stopped on purpose. The operator retries Roll back (same backup) once the cause is
-# fixed; DEPLOY.md has the by-hand restore.
+# fixed; docs/UPGRADING.md ("Restoring by hand") has the by-hand restore.
 restore_db() {
   local sql="$1" log="$2" running lt=60s   # the lock bound: a constant, never taken from the environment (it goes into SQL)
   running="$(grep -E '^CURRENT_VERSION=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2-)"
@@ -79,7 +79,7 @@ restore_db() {
     # /update/status, so it only points at the file.
     echo "psql: $(grep -m1 -E 'ERROR|FATAL' "$log" || tail -n1 "$log")" >&2
     errln "database restore failed: see $log"
-    errln "the server is stopped (on purpose: the old version must not run on a database it was not restored for); the database is unchanged (the restore runs in one transaction); .env still names ${running:-the running version}, the version this database belongs to; caddy and /recovery are up. Fix the cause (full psql output: docker compose exec supervisor cat $log), then Roll back again from /recovery; to restore by hand see DEPLOY.md (Recovery)."
+    errln "the server is stopped (on purpose: the old version must not run on a database it was not restored for); the database is unchanged (the restore runs in one transaction); .env still names ${running:-the running version}, the version this database belongs to; caddy and /recovery are up. Fix the cause (full psql output: docker compose exec supervisor cat $log), then Roll back again from /recovery; to restore by hand see docs/UPGRADING.md (Restoring by hand)."
     return 1
   fi
 }

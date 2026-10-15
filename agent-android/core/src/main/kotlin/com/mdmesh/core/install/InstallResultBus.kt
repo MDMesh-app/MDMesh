@@ -2,6 +2,7 @@ package com.mdmesh.core.install
 
 import android.content.pm.PackageInstaller
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -35,13 +36,31 @@ class InstallResultBus @Inject constructor() {
 
     private val lock = Any()
     private val pending = mutableMapOf<Int, CompletableDeferred<InstallResultEvent>>()
+    /** Sessions whose wait timed out: their late result is dropped instead of waiting for the next use of the id. */
+    private val abandoned = mutableSetOf<Int>()
 
     private fun slotFor(sessionId: Int): CompletableDeferred<InstallResultEvent> =
         synchronized(lock) { pending.getOrPut(sessionId) { CompletableDeferred() } }
 
     /** Called by the result receiver for every committed session's outcome. */
     fun publish(sessionId: Int, status: Int, message: String?) {
-        slotFor(sessionId).complete(InstallResultEvent(sessionId, status, message))
+        val slot = synchronized(lock) {
+            if (abandoned.remove(sessionId)) return
+            pending.getOrPut(sessionId) { CompletableDeferred() }
+        }
+        slot.complete(InstallResultEvent(sessionId, status, message))
+    }
+
+    /**
+     * Call before handing [sessionId] to the platform. Forgets anything left for a reused id (uninstall derives it
+     * from the package): an abandoned mark, which would drop this operation's own fast result, and a slot a late
+     * result completed, which would hand that stale result to this wait.
+     */
+    fun expect(sessionId: Int) {
+        synchronized(lock) {
+            abandoned.remove(sessionId)
+            pending[sessionId] = CompletableDeferred()
+        }
     }
 
     /** Suspends until the result for [sessionId] is published, then returns it. */
@@ -50,8 +69,26 @@ class InstallResultBus @Inject constructor() {
         try {
             return slot.await()
         } finally {
-            synchronized(lock) { pending.remove(sessionId) }
+            synchronized(lock) { if (pending[sessionId] === slot) pending.remove(sessionId) }
         }
+    }
+
+    /**
+     * Like [await], but returns null when no result arrives within [timeoutMs]. A broadcast the platform never
+     * delivers (the process died and restarted mid-commit, an OEM quirk) must not suspend the caller forever: an
+     * install runs under the check-in mutex, so an endless wait would stop every later check-in.
+     */
+    suspend fun await(sessionId: Int, timeoutMs: Long): InstallResultEvent? {
+        val slot = slotFor(sessionId)
+        withTimeoutOrNull(timeoutMs) { slot.await() }
+        // On a timeout, dropping the slot and marking the id happen under one lock, so a result published meanwhile
+        // either completed this slot (and is returned) or finds the mark and is dropped: it never completes a fresh
+        // slot for the next operation on this id.
+        val timedOut = synchronized(lock) {
+            if (pending[sessionId] === slot) pending.remove(sessionId)
+            (!slot.isCompleted).also { if (it) abandoned.add(sessionId) }
+        }
+        return if (timedOut) null else slot.await()
     }
 
     companion object {

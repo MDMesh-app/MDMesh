@@ -24,6 +24,7 @@ package com.hmdm.util;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -45,7 +46,54 @@ public final class AgentCapabilityTokens {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
+    // Bounds for the device-supplied tree, which is stored per device and re-parsed on every check-in. The current
+    // agent sends ~1 KB, ~60 nodes, 3 levels deep (root -> remoteControl -> transport[]); these leave ample headroom.
+    /** Maximum serialized length of a capability tree, in characters. */
+    public static final int MAX_TREE_CHARS = 64 * 1024;
+    /** Maximum nesting of objects/arrays; the root object is level 1. */
+    public static final int MAX_TREE_DEPTH = 8;
+    /** Maximum number of nodes (containers, field values and array items, the root included). */
+    public static final int MAX_TREE_NODES = 2000;
+
     private AgentCapabilityTokens() {
+    }
+
+    /**
+     * <p>The JSON to store for a device-reported capability tree, or null when there is none or it exceeds the size,
+     * depth or node-count bounds (in which case it must be ignored rather than stored).</p>
+     */
+    public static String boundedJson(JsonNode tree) {
+        if (tree == null || !withinShapeLimits(tree)) {
+            return null;
+        }
+        String json = tree.toString();
+        return json.length() > MAX_TREE_CHARS ? null : json;
+    }
+
+    /** Iterative walk (no recursion on untrusted depth) that stops as soon as a bound is exceeded. */
+    private static boolean withinShapeLimits(JsonNode root) {
+        ArrayDeque<JsonNode> nodes = new ArrayDeque<>();
+        ArrayDeque<Integer> depths = new ArrayDeque<>();
+        nodes.push(root);
+        depths.push(1);
+        int count = 0;
+        while (!nodes.isEmpty()) {
+            JsonNode node = nodes.pop();
+            int depth = depths.pop();
+            if (++count > MAX_TREE_NODES) {
+                return false;
+            }
+            if (node.isContainerNode()) {
+                if (depth > MAX_TREE_DEPTH) {
+                    return false;
+                }
+                for (JsonNode child : node) {
+                    nodes.push(child);
+                    depths.push(depth + 1);
+                }
+            }
+        }
+        return true;
     }
 
     /**
@@ -57,7 +105,8 @@ public final class AgentCapabilityTokens {
      * @return an unmodifiable set of capability tokens (possibly empty, never null).
      */
     public static Set<String> flatten(String capabilitiesJson) {
-        if (capabilitiesJson == null || capabilitiesJson.trim().isEmpty()) {
+        if (capabilitiesJson == null || capabilitiesJson.trim().isEmpty()
+                || capabilitiesJson.length() > MAX_TREE_CHARS) {
             return Collections.emptySet();
         }
         try {

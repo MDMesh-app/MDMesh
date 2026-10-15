@@ -39,4 +39,19 @@ sealed interface PolicyOutcome {
     data object Unsupported : PolicyOutcome
 
     data class Failed(val reason: String) : PolicyOutcome
+
+    /**
+     * Deliberately not applied right now, for [reason] (e.g. Wi-Fi off refused while Wi-Fi is the only network).
+     * Unlike [Failed] it does not block the rest of a `config.apply` document; it is re-tried on the next re-apply.
+     */
+    data class Deferred(val reason: String) : PolicyOutcome
+}
+
+/**
+ * A toggle whose managed state leaves something behind that must be lifted when the configuration stops managing
+ * the key (e.g. `wifiRadio` off leaves `DISALLOW_CHANGE_WIFI_STATE`). `config.apply` calls [release] once, when the
+ * previously applied document had the key and the new one does not.
+ */
+interface ReleasablePolicy {
+    fun release(): PolicyOutcome
 }

@@ -11,6 +11,8 @@ export interface Application {
   versionCode?: number;
   url?: string;
   apkHash?: string;
+  /** Input only: hex SHA-256 of an APK at a URL not hosted by MDMesh (stored as the version's apkHash). */
+  sha256?: string;
   icon?: string;
   iconId?: number;
   /** "app" | "web" */
@@ -18,6 +20,10 @@ export interface Application {
   system?: boolean;
   latestVersion?: number;
   runAfterInstall?: boolean;
+  /** Library list only: whether the latest version has a stored APK SHA-256. */
+  hasApkHash?: boolean;
+  /** Owned by the master customer; only a super-admin can delete it. */
+  commonApplication?: boolean;
   /** Split-bundle parts as a raw JSON string `[{url,sha256,name}]` (server stores it as text);
    *  present only for multi-part bundles. Use JSON.parse to read, JSON.stringify to send. */
   parts?: string;
@@ -79,6 +85,16 @@ export async function listApplications(value?: string): Promise<Application[]> {
 
 export async function getVersions(appId: number): Promise<ApplicationVersion[]> {
   return apiClient.get<ApplicationVersion[]>(`/private/applications/${appId}/versions`);
+}
+
+/** Store the hex SHA-256 of a version's APK (needed before devices install an APK MDMesh doesn't host). */
+export async function setVersionSha256(versionId: number, sha256: string): Promise<void> {
+  await apiClient.put(`/private/applications/versions/${versionId}/sha256`, { sha256 });
+}
+
+/** Remove a Library record and its server-hosted APK files (unless another entry shares them). This never sends an uninstall command. */
+export async function deleteApplication(appId: number): Promise<void> {
+  await apiClient.del(`/private/applications/${appId}`);
 }
 
 export async function getAppConfigLinks(appId: number): Promise<AppConfigLink[]> {

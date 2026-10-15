@@ -29,5 +29,7 @@ and a fresh agent on Android 16 talk to the same server without special-casing.
 | version | release | notes |
 |---------|---------|-------|
 | 1.1 | v0.3.0 | config.apply command + device.configApply capability (additive) |
-| 1.2 | next | config.apply `factoryReset` policy key + `factoryReset` policy capability (additive) |
-| 1.3 | next | userAppInstall / userAppUninstall policy capabilities (additive) |
+| 1.2 | v0.3.2 | config.apply `factoryReset` policy key + `factoryReset` policy capability (additive) |
+| 1.3 | v0.3.3 | config.apply `safeBoot` policy key + `safeBoot` policy capability (additive; older agents report the key `unsupported`); check-in response `installIntegrity` and `resultsAccepted` (additive; absent `resultsAccepted` = all results taken) |
+| 1.4 | v0.3.4 | config.apply / `device.locationMode` mode `off` + `locationOff` device capability (additive; older agents treat `off` as passive, so the server also drops locations reported for a "Do not track" configuration); config.apply `wifiRadio` policy key + `wifiRadio` policy capability (additive; older agents report it `unsupported`; `wifi` keeps meaning "lock Wi-Fi settings"); kiosk `features.lockVolume` (additive; older agents ignore it until their update re-sends config.apply); config.apply result outcome `deferred: <reason>` (non-blocking, like `unsupported`) |
+| 1.5 | next | config.apply `userAppInstall` / `userAppUninstall` policy keys + the matching policy capabilities (additive; older agents report them `unsupported`) |

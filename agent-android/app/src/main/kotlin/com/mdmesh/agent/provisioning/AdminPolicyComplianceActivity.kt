@@ -5,6 +5,7 @@ import android.app.admin.DevicePolicyManager
 import android.os.Bundle
 import android.os.PersistableBundle
 import com.mdmesh.agent.admin.AdminReceiver
+import com.mdmesh.agent.service.CheckInService
 import com.mdmesh.core.action.ResetPasswordTokenStore
 import com.mdmesh.core.config.ServerConfigStore
 import com.mdmesh.core.store.EnrollTokenStore
@@ -43,9 +44,13 @@ class AdminPolicyComplianceActivity : Activity() {
             CoroutineScope(Dispatchers.IO).launch {
                 EnrollTokenStore(ctx).save(token)
                 CheckInWorker.scheduleNow(ctx)
+                // Open the instant channel now that the token is saved (its first sync enrolls); otherwise it only
+                // started from the app's screens or a reboot, and commands waited for the periodic check-in.
+                CheckInService.start(ctx)
             }
         } else {
             CheckInWorker.scheduleNow(ctx)
+            CheckInService.start(ctx)
         }
 
         // TODO: enforce mandatory baseline policy here before returning RESULT_OK.

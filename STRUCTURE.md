@@ -1,6 +1,6 @@
 # Repository Structure
 
-<sub>[← README](README.md) · [Deploy](DEPLOY.md) · **Structure** · [Contributing](CONTRIBUTING.md) · [Releasing](RELEASING.md) · [ADRs](docs/adr)</sub>
+<sub>[← README](README.md) · [Deploy](DEPLOY.md) · [Upgrading](docs/UPGRADING.md) · [Operations](docs/OPERATIONS.md) · **Structure** · [Contributing](CONTRIBUTING.md) · [Releasing](RELEASING.md) · [ADRs](docs/adr)</sub>
 
 This is a **monorepo** for an MDM product forked from Headwind MDM. It contains four
 cooperating planes plus shared protocol and docs.

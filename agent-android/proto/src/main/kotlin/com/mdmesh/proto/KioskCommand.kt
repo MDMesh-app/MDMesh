@@ -34,6 +34,11 @@ data class KioskFeaturesDto(
     val systemInfo: Boolean? = null,
     val keyguard: Boolean? = null,
     val lockButtons: Boolean? = null,
+    /**
+     * 1.4: block volume changes while in kiosk (`DISALLOW_ADJUST_VOLUME`). Android also MUTES the device while that
+     * restriction is set, which is why this is its own opt-in rather than part of [lockButtons] (power menu only).
+     */
+    val lockVolume: Boolean? = null,
 )
 
 @Serializable

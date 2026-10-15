@@ -8,6 +8,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.PersistableBundle
 import android.os.UserManager
+import com.mdmesh.agent.service.CheckInService
 import com.mdmesh.core.config.ServerConfigStore
 import com.mdmesh.core.store.EnrollTokenStore
 import com.mdmesh.core.sync.CheckInWorker
@@ -51,6 +52,8 @@ class AdminReceiver : DeviceAdminReceiver() {
 
         val token = extrasToken(intent)
         if (token.isNullOrBlank()) {
+            // On Android 12+ the token reaches AdminPolicyComplianceActivity instead, which starts the service once
+            // it is saved; starting it here would only race that save.
             CheckInWorker.scheduleNow(context)
             return
         }
@@ -61,6 +64,7 @@ class AdminReceiver : DeviceAdminReceiver() {
                 EnrollTokenStore(context.applicationContext).save(token)
             } finally {
                 CheckInWorker.scheduleNow(context)
+                CheckInService.start(context)
                 pending.finish()
             }
         }

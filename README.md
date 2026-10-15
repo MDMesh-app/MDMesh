@@ -27,13 +27,11 @@ signed auto-updates, with a console that doesn't feel like 2012.
 
 ## What is MDMesh?
 
-MDMesh is an open-source **Mobile Device Management** platform for Android: enroll devices as
-Device Owner via a QR code, then manage them from a clean web console — push apps, lock devices into
-kiosk mode, track location, run remote actions, and keep the whole fleet (server **and** agent) updated
-with **signed, auto-rolling-back** releases.
+MDMesh is an open-source **Mobile Device Management** platform for Android. Enroll devices as Device Owner with
+a QR code, then manage them from a web console: push apps, lock devices into kiosk mode, track location, run remote
+actions, and keep server **and** agent updated with **signed releases that roll back on failure**.
 
-It began as a fork of [Headwind MDM](https://h-mdm.com) and is being rebuilt into a distinct product
-across four planes:
+It began as a fork of [Headwind MDM](https://h-mdm.com) and is being rebuilt as a distinct product in four planes:
 
 | Plane | What it is | Stack |
 |------|------------|-------|
@@ -44,11 +42,9 @@ across four planes:
 
 ### Our goal
 
-> A **genuinely complete, robust, and modernized** open-source MDM — not a museum piece with a paywalled
-> "enterprise edition." Kiosk, app delivery, location, reliable connectivity, one-command deployment, and
-> a real CI/CD auto-update pipeline are all in the **open-source core**. The agent is engineered against a
-> versioned, capability-negotiated protocol so the Android version treadmill stays cheap to maintain, and
-> old agents keep working across server updates.
+> A **genuinely complete, modern** open-source MDM, with no paywalled "enterprise edition". Kiosk, app delivery,
+> location, one-command deployment and signed auto-updates are all in the open-source core. A versioned,
+> capability-negotiated agent protocol keeps old agents working across server updates.
 
 ---
 
@@ -100,37 +96,25 @@ One-click or unattended server updates with DB backup + auto-rollback on quick-s
 <details>
 <summary><b>Full feature list</b></summary>
 
-- **Enrollment** — QR-code Device-Owner provisioning (factory-reset → scan); one signed APK serves every
-  deployment (server URL delivered in the QR, not baked in).
-- **Modern console** — dashboard, fleet views, device detail, app catalog, enrollment, settings; dark/light
-  themes; keyboard-friendly and responsive.
-- **Remote actions** — lock-screen message, alert, ring, lock, reboot, passcode reset, factory wipe,
-  connectivity power mode, location mode — all capability-gated so old agents never get a command they
-  can't run.
-- **Kiosk** — COSU lock-task, home-screen replacement, allowed-apps, themed app grid, crash-loop protection.
-- **App management** — upload/parse APKs, F-Droid catalog, silent Device-Owner install/upgrade, version &
-  downgrade gating.
-- **Telemetry** — battery, storage, network, Android version, Device-Owner status, lifecycle event timeline.
-- **Deployment** — one `./setup.sh`: Docker Compose with bundled auto-HTTPS (Caddy) for your own domain, or
-  a permanent Cloudflare Tunnel; a native (non-Docker) installer; generated secrets.
-- **CI/CD auto-update** — tag a release → CI builds & **signs** artifacts (Ed25519/minisign) + a manifest →
-  every deployment notices and **verifies** it. Quick-start (registry-image) installs then update server/web
-  (on approval, or unattended) with a database backup and **automatic rollback** on failure; from-source Docker
-  and native installs show the update and the command to apply it. A decoupled recovery service stays up if an
-  update breaks the main server.
-- **Staged device rollout** — push the newest **compatible** agent APK to a hand-picked **canary** set,
-  watch it land, then **promote to the fleet** — mirrored from your own origin, integrity-checked.
-- **Backward compatibility** — versioned `/agent/v1` contract (additive-only, golden contract test in CI),
-  so a newer server keeps serving older agents.
-- **Desired-state configuration** — saving a configuration makes its devices converge to it: the server
-  hashes the configuration into a revision and pushes one `config.apply` command whenever a device's
-  applied revision differs, at the next check-in. The device detail page shows sync state and per-field
-  outcomes; the configuration list shows how many of its devices are in sync. Only capability-advertising
-  agents receive it — older agents show "agent too old" instead of silently ignoring it. Enforced fields
-  include: main app, kiosk mode + exit/home/recents/notifications/system-info/keyguard/lock-buttons, kiosk exit
-  password, background/text color, icon size, Wi-Fi, Bluetooth, USB storage, block screenshots, block factory
-  reset, user app installation/removal restrictions, and location reporting mode. Name and description
-  are configuration metadata and are not sent to devices.
+- **Enrollment** — QR-code Device-Owner provisioning. One signed APK serves every deployment; the server URL comes
+  in the QR.
+- **Modern console** — dark/light themes, keyboard-friendly and responsive.
+- **Remote actions** — message, alert, ring, lock, reboot, passcode reset, wipe, power and location modes. All are
+  capability-gated, so old agents never get a command they can't run.
+- **Kiosk** — COSU lock-task, home-screen replacement, per-app "Show in kiosk", themed app grid, crash-loop
+  protection.
+- **App management** — APK upload, F-Droid catalog, silent install/upgrade from your server or any HTTPS host,
+  with version and downgrade gating.
+- **Telemetry** — battery, storage, network, Android version, Device-Owner status and an event timeline.
+- **Deployment** — one `./setup.sh`: Docker Compose with auto-HTTPS (Caddy) or a Cloudflare Tunnel, or a native
+  installer.
+- **Signed auto-update** — CI signs every release (Ed25519/minisign) and deployments verify it. Quick-start installs
+  update themselves with a database backup and automatic rollback; other installs show the command to run. A
+  separate recovery service survives a bad update.
+- **Staged device rollout** — new agent APKs go to a **canary** set, then **the fleet**.
+- **Backward compatibility** — the `/agent/v1` contract is additive-only, checked by a golden test in CI.
+- **Desired-state configuration** — devices converge to their saved configuration at the next check-in, with
+  per-field sync status in the console. It enforces 24 fields, from kiosk options to Wi-Fi, factory reset and app installs.
 
 </details>
 
@@ -141,47 +125,41 @@ One-click or unattended server updates with DB backup + auto-rollback on quick-s
 <div align="center">
 
 <img src="docs/screenshots/devices.png" width="780" alt="Device list" /><br/>
-<sub><i>Devices — fleet at a glance with status, configuration, and an update banner.</i></sub>
+<sub><i>Devices — the fleet at a glance.</i></sub>
 
 <br/><br/>
 
 <img src="docs/screenshots/device-detail.png" width="780" alt="Device detail" /><br/>
-<sub><i>Device detail — live status, location, hardware, and the remote-action console.</i></sub>
+<sub><i>Device detail — status, location, hardware and remote actions.</i></sub>
 
 <br/><br/>
 
 <img src="docs/screenshots/apps.png" width="780" alt="App catalog" /><br/>
-<sub><i>Apps — library, custom APKs, and F-Droid, with one-click deploy.</i></sub>
+<sub><i>Apps — library, custom APKs and F-Droid.</i></sub>
 
 <br/><br/>
 
 <img src="docs/screenshots/rollout.png" width="640" alt="Staged agent rollout" /><br/>
-<sub><i>Staged canary → fleet agent-APK rollout, with live progress.</i></sub>
+<sub><i>Staged canary → fleet agent rollout.</i></sub>
 
 </div>
 
-> Screenshots show the real console rendered with representative sample data. Regenerate them with
-> `cd web && npm run build && cd ../scripts/shots && npm install && npx playwright install chromium && node capture.mjs`
-> (see [CONTRIBUTING.md](CONTRIBUTING.md#regenerating-the-docs-screenshots)).
+> Screenshots show the real console with representative sample data
+> ([how to regenerate them](CONTRIBUTING.md#regenerating-the-docs-screenshots)).
 
 ---
 
 ## 🚀 Quick start
 
-**Requirements:** Docker + Docker Compose v2 + `openssl`/`curl`. A Linux host.
+**Requirements:** a Linux host with Docker, Docker Compose v2, `openssl` and `curl`.
 
-### Option A — one line, no clone (published images)
+**One line, no clone** (pulls the released GHCR images; private ones need `docker login ghcr.io` first):
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/quickstart.sh)
 ```
 
-Pulls the released images from GHCR (no build), generates secrets, brings the stack up in `./mdmesh`,
-and prints the console URL + a temporary admin password. *(Needs a published release with **public**
-GHCR packages — or `docker login ghcr.io` first; see [RELEASING.md](RELEASING.md).)* Image tags carry **no `v`
-prefix**: release `v0.3.1` publishes `ghcr.io/mdmesh-app/mdmesh-server:0.3.1` (and `:latest`).
-
-### Option B — from source (clone + build)
+**From source** (clone + build):
 
 ```bash
 git clone https://github.com/MDMesh-app/MDMesh.git
@@ -189,18 +167,18 @@ cd MDMesh
 ./setup.sh           # interactive: Cloudflare Tunnel, or your own HTTPS domain
 ```
 
-Either way, `setup.sh`/`quickstart.sh` is interactive (Cloudflare Tunnel or your own HTTPS domain),
-generates your secrets, and prints the console URL + a generated admin password. Then:
+**No Docker** ([native install](DEPLOY.md#option-c--native-no-docker): Debian 12/13 or Ubuntu 24.04, needs only `git`),
+from the clone: `sudo ./setup.sh --native`
 
-1. Open the console — you'll be prompted to **set your own password** on first login.
+Each installer prints the console URL and a temporary admin password. Then enroll a device:
+
+1. Sign in to the console and **set your own password**.
 2. Go to **Enroll** and generate a QR code.
 3. **Factory-reset** an Android device and tap the welcome screen 6× to open the QR scanner (or use
    `adb shell dpm set-device-owner` for a dev device).
-4. Scan the QR — the device enrolls as Device Owner and checks in.
+4. Scan the QR. The device enrolls as Device Owner and checks in.
 
-No Docker? Run `sudo ./setup.sh --native` on Debian 12/13 or Ubuntu 24.04; it needs Node ≥ 20.19 and a JDK 17
-first where the distro doesn't ship them (see [DEPLOY.md](DEPLOY.md#option-c--native-no-docker)). Full details, hosting modes, updates, recovery, and uninstalling are in the
-**[full setup guide → DEPLOY.md](DEPLOY.md)**.
+Hosting modes, the native install and everything else: **[DEPLOY.md](DEPLOY.md)**.
 
 ---
 
@@ -208,24 +186,27 @@ first where the distro doesn't ship them (see [DEPLOY.md](DEPLOY.md#option-c--na
 
 | I want to… | Read |
 |------------|------|
-| Deploy it properly (domains, tunnels, updates, recovery) | **[DEPLOY.md](DEPLOY.md)** |
-| Understand the codebase layout (the four planes) | **[STRUCTURE.md](STRUCTURE.md)** + [docs/adr](docs/adr) |
-| Contribute code, file a bug, or request a feature | **[CONTRIBUTING.md](CONTRIBUTING.md)** |
-| Cut and sign a release | **[RELEASING.md](RELEASING.md)** |
-| Understand the agent internals | [docs/agent-architecture.md](docs/agent-architecture.md) |
+| Install it | **[DEPLOY.md](DEPLOY.md)** |
+| Update, roll back or recover | **[docs/UPGRADING.md](docs/UPGRADING.md)** |
+| Configure, monitor, back up or uninstall it | **[docs/OPERATIONS.md](docs/OPERATIONS.md)** |
+| Understand the codebase | **[STRUCTURE.md](STRUCTURE.md)** + [docs/adr](docs/adr) |
+| Contribute | **[CONTRIBUTING.md](CONTRIBUTING.md)** |
+| Set up a dev environment | [docs/DEV.md](docs/DEV.md) |
+| Cut and sign a release | [RELEASING.md](RELEASING.md) |
+| Read about the agent internals | [docs/agent-architecture.md](docs/agent-architecture.md) |
 
 ---
 
 ## 🗺 Roadmap
 
 - ✅ Modern React + TypeScript console
-- ✅ From-scratch Kotlin Device-Owner agent (versioned, capability-negotiated protocol)
+- ✅ From-scratch Kotlin Device-Owner agent
 - ✅ Kiosk / COSU + custom launcher
 - ✅ App catalog + silent deploy
 - ✅ Location tracking + history + map
-- ✅ Reliable always-on connectivity (wake channel, reboot/self-update resume)
-- ✅ One-command deployment (Docker + Caddy auto-HTTPS + Cloudflare Tunnel + native installer)
-- ✅ CI/CD: signed releases, one-click/unattended server update + auto-rollback + recovery page
+- ✅ Reliable always-on connectivity
+- ✅ One-command deployment (Docker or native)
+- ✅ Signed releases, server auto-update with rollback, recovery page
 - ✅ Staged canary → fleet agent-APK rollout
 - 🔜 **Live remote control** (screen view + input, WebRTC + self-hosted TURN)
 - 🔭 OEM-privileged tier (Knox / Zebra adapters) — parked behind the capability layer
@@ -234,15 +215,11 @@ first where the distro doesn't ship them (see [DEPLOY.md](DEPLOY.md#option-c--na
 
 ## 🤝 Contributing
 
-Contributions are welcome — code, docs, bug reports, and ideas. Start with **[CONTRIBUTING.md](CONTRIBUTING.md)**
-for the dev setup (server, agent, console), build/test commands, and conventions.
+Code, docs, bug reports and ideas are all welcome. Start with **[CONTRIBUTING.md](CONTRIBUTING.md)**.
 
 - **🐞 Found a bug?** Open a [bug report](https://github.com/MDMesh-app/MDMesh/issues/new?template=bug_report.yml).
 - **💡 Have an idea?** Open a [feature request](https://github.com/MDMesh-app/MDMesh/issues/new?template=feature_request.yml).
-- **🔧 Sending a PR?** The [PR template](.github/pull_request_template.md) has the checklist — small, focused PRs with tests + docs are easiest to merge.
-
-> One hard rule for the agent ↔ server contract: the `/agent/v1` API is **additive-only** so older agents
-> keep working. See [ADR-0009](docs/adr/0009-agent-v1-contract-stability.md).
+- **🔧 Sending a PR?** Follow the [PR template](.github/pull_request_template.md); small, focused PRs merge fastest.
 
 ---
 
@@ -250,6 +227,5 @@ for the dev setup (server, agent, console), build/test commands, and conventions
 
 MDMesh is licensed under the **[Apache License 2.0](LICENSE)**.
 
-It is a fork of and builds on **[Headwind MDM](https://h-mdm.com)** by Headwind Solutions LLC, also
-Apache-2.0. The licensing and rebrand rationale is recorded in
-[ADR-0008](docs/adr/0008-licensing-and-rebrand.md). Trademarks and brand names belong to their owners.
+It is a fork of **[Headwind MDM](https://h-mdm.com)** by Headwind Solutions LLC, also Apache-2.0
+([why and how: ADR-0008](docs/adr/0008-licensing-and-rebrand.md)). Trademarks and brand names belong to their owners.

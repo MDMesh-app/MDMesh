@@ -116,12 +116,15 @@ public class MessagingDAO extends AbstractDAO<Message> {
     }
 
     /**
-     * <p>Deletes the message</p>
+     * <p>Deletes the message if it belongs to the customer of current user</p>
      *
      * @param id message identifier
      */
     public void deleteMessage(int id) {
-        this.messageMapper.deleteMessage(id);
+        final int customerId = SecurityContext.get().getCurrentUser()
+                .orElseThrow(com.hmdm.security.SecurityException::onAnonymousAccess)
+                .getCustomerId();
+        this.messageMapper.deleteMessage(id, customerId);
     }
 
     /**

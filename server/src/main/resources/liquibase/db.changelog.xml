@@ -2860,8 +2860,132 @@
         <rollback>ALTER TABLE configurations DROP COLUMN disableFactoryReset;</rollback>
     </changeSet>
 
-    <changeSet id="26.10.08-user-app-toggle-restrictions-v1" author="local" context="common">
-        <comment>Nullable app restrictions: NULL leaves the device policy unmanaged.</comment>
+    <changeSet id="26.10.12-remove-headwind-seed-apps" author="lunacy" context="common">
+        <comment>Remove the Headwind launcher/pager/phoneproxy/restarter seed apps, as install/sql/post_seed.sql does.
+            post_seed.sql runs only from the installers, so a deployment updated from the console kept them, and
+            their h-mdm.com downloads reached devices. Only rows that are still the seed's are touched: an app
+            under one of these packages with any version hosted elsewhere is kept. A no-op on a fresh database (the
+            seed is loaded after the first start) and after post_seed.sql. Never blocks startup: a reference this
+            does not clear leaves the apps in place (the server's URL filter still keeps them off devices).</comment>
+        <sql splitStatements="false">
+            DO $$
+            BEGIN
+                CREATE TEMP TABLE hmdm_seed_apps ON COMMIT DROP AS
+                SELECT a.id FROM applications a
+                WHERE a.pkg IN ('com.hmdm.launcher', 'com.hmdm.pager', 'com.hmdm.phoneproxy', 'com.hmdm.emuilauncherrestarter')
+                  AND NOT EXISTS (
+                      SELECT 1 FROM applicationVersions v, unnest(ARRAY[v.url, v.urlArmeabi, v.urlArm64]) AS u(url)
+                      WHERE v.applicationId = a.id AND COALESCE(u.url, '') &lt;&gt; ''
+                        AND u.url !~* '^https?://([^/]*\.)?h-mdm\.com/' AND strpos(u.url, '_HMDM_') = 0);
+                UPDATE configurations SET mainAppId = NULL WHERE mainAppId IN
+                    (SELECT id FROM applicationVersions WHERE applicationId IN (SELECT id FROM hmdm_seed_apps));
+                UPDATE configurations SET contentAppId = NULL WHERE contentAppId IN
+                    (SELECT id FROM applicationVersions WHERE applicationId IN (SELECT id FROM hmdm_seed_apps));
+                DELETE FROM configurationApplications WHERE applicationId IN (SELECT id FROM hmdm_seed_apps);
+                DELETE FROM applicationVersions WHERE applicationId IN (SELECT id FROM hmdm_seed_apps);
+                DELETE FROM applications WHERE id IN (SELECT id FROM hmdm_seed_apps);
+            EXCEPTION WHEN foreign_key_violation THEN
+                RAISE NOTICE 'Headwind seed apps left in place: %', SQLERRM;
+            END $$;
+        </sql>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="26.10.12-configurations-disableSafeBoot" author="lunacy" context="common">
+        <comment>Column,new: configurations#disableSafeBoot (sent inverted as policies.safeBoot). No DEFAULT: NULL
+            = unmanaged, so existing configurations keep their revision.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN disableSafeBoot BOOLEAN;</sql>
+        <rollback>ALTER TABLE configurations DROP COLUMN disableSafeBoot;</rollback>
+    </changeSet>
+
+    <changeSet id="26.10.12-deviceState-configAgentVersion" author="lunacy" context="common">
+        <comment>Column,new: device_state#configAgentVersion (agent version of the last completed config.apply;
+            seeded from agentVersion)</comment>
+        <sql>ALTER TABLE device_state ADD COLUMN configAgentVersion VARCHAR(64);
+            UPDATE device_state SET configAgentVersion = agentVersion;</sql>
+        <rollback>ALTER TABLE device_state DROP COLUMN configAgentVersion;</rollback>
+    </changeSet>
+
+    <changeSet id="26.10.12-agentCommand-agentVersion" author="lunacy" context="common">
+        <comment>Column,new: agentCommand#agentVersion (for config.apply, the agent version it was queued for)</comment>
+        <sql>ALTER TABLE agentCommand ADD COLUMN agentVersion VARCHAR(64);</sql>
+        <rollback>ALTER TABLE agentCommand DROP COLUMN agentVersion;</rollback>
+    </changeSet>
+
+    <changeSet id="26.10.13-configurations-new-qrCodeKeys" author="lunacy" context="common">
+        <comment>Give the three configurations the old installer seed created a new random qrCodeKey, replacing the
+            fixed values that seed shipped with. Only rows still holding one of those values change; the key is not
+            part of the agent's desired-state revision, so devices see no change. gen_random_uuid() (PostgreSQL 13+)
+            supplies the randomness where it exists, md5(random()) otherwise. A no-op on a fresh database (the seed
+            is loaded after the first start and no longer carries fixed keys).</comment>
+        <sql splitStatements="false">
+            DO $$
+            BEGIN
+                IF current_setting('server_version_num')::int &gt;= 130000 THEN
+                    EXECUTE $q$UPDATE configurations SET qrCodeKey = replace(gen_random_uuid()::text, '-', '')
+                        WHERE qrCodeKey IN ('6fb9c8dc81483173a0c0e9f8b2e46be1', '8e6ca072ddb926a1af61578dfa9fc334',
+                                            '350e0fb7fc3f4b7fe61cac75fd43818f')$q$;
+                ELSE
+                    EXECUTE $q$UPDATE configurations SET qrCodeKey = md5(random()::text || clock_timestamp()::text)
+                        WHERE qrCodeKey IN ('6fb9c8dc81483173a0c0e9f8b2e46be1', '8e6ca072ddb926a1af61578dfa9fc334',
+                                            '350e0fb7fc3f4b7fe61cac75fd43818f')$q$;
+                END IF;
+            END $$;
+        </sql>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="26.10.13-users-admin-email" author="lunacy" context="common">
+        <comment>The first changeset inserts the admin user with an upstream developer's address; the installers
+            replace it, a database set up some other way kept it. Clear it, so no account mail (password recovery)
+            can go to that address. The admin's email can be set again through the users API.</comment>
+        <sql>UPDATE users SET email = NULL WHERE lower(email) = 'fast.daemon@gmail.com';</sql>
+        <rollback/>
+    </changeSet>
+
+    <changeSet id="26.10.13-observer-edit-device-desc" author="lunacy" context="common">
+        <comment>The read-only Observer role (id 100) does not edit device descriptions: take back the edit_device_desc
+            grant changeset 04.10.19-10:14 gave every role. Super-Admin, Admin and User keep it; roles added later
+            are not touched.</comment>
+        <sql>
+            DELETE FROM userRolePermissions WHERE roleId = 100
+                AND permissionId IN (SELECT id FROM permissions WHERE name = 'edit_device_desc');
+        </sql>
+        <rollback>
+            INSERT INTO userRolePermissions (roleId, permissionId)
+                SELECT 100, id FROM permissions WHERE name = 'edit_device_desc'
+                AND EXISTS (SELECT 1 FROM userRoles WHERE id = 100);
+        </rollback>
+    </changeSet>
+
+    <changeSet id="26.10.13-configurations-wifiRadio" author="lunacy" context="common">
+        <comment>Column,new: configurations#wifiRadio (sent as policies.wifiRadio: switches the Wi-Fi radio). The
+            existing #wifi keeps meaning "lock Wi-Fi settings", so no stored value starts turning Wi-Fi off.
+            No DEFAULT: NULL = unmanaged, so existing configurations keep their revision.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN wifiRadio BOOLEAN;</sql>
+        <rollback>ALTER TABLE configurations DROP COLUMN wifiRadio;</rollback>
+    </changeSet>
+
+    <changeSet id="26.10.13-configurations-kioskLockVolume" author="lunacy" context="common">
+        <comment>Column,new: configurations#kioskLockVolume (sent as kiosk.features.lockVolume: DISALLOW_ADJUST_VOLUME
+            while in kiosk, which also mutes the device). Separate from #kioskLockButtons so existing kiosks never start
+            muting on upgrade. No DEFAULT: NULL = off, so existing configurations keep their revision.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN kioskLockVolume BOOLEAN;</sql>
+        <rollback>ALTER TABLE configurations DROP COLUMN kioskLockVolume;</rollback>
+    </changeSet>
+
+    <changeSet id="26.10.14-agentCommand-deviceNumber-type-id-idx" author="lunacy" context="common">
+        <comment>Index,new: agentCommand (deviceNumber, type, id). The latest command of a type per device (the config
+            sync summary's deferred check, config reconcile) becomes one index lookup instead of a scan of all the
+            device's commands; agentCommand is never purged. IF NOT EXISTS: safe on fresh and upgraded databases.</comment>
+        <sql>CREATE INDEX IF NOT EXISTS agentCommand_deviceNumber_type_id_idx ON agentCommand (deviceNumber, type, id);</sql>
+        <rollback>DROP INDEX IF EXISTS agentCommand_deviceNumber_type_id_idx;</rollback>
+    </changeSet>
+
+    <changeSet id="26.10.15-configurations-blockUserApp" author="lared3294" context="common">
+        <comment>Column,new: configurations#blockUserAppInstall + #blockUserAppUninstall (sent inverted as
+            policies.userAppInstall / policies.userAppUninstall). No DEFAULT: NULL = unmanaged, so existing
+            configurations keep their revision.</comment>
         <sql>
             ALTER TABLE configurations ADD COLUMN IF NOT EXISTS blockUserAppInstall BOOLEAN NULL;
             ALTER TABLE configurations ADD COLUMN IF NOT EXISTS blockUserAppUninstall BOOLEAN NULL;

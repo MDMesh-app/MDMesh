@@ -38,6 +38,15 @@ class UserRestrictionsTest {
         assertEquals("no_usb_file_transfer", UserRestrictions.DISALLOW_USB_FILE_TRANSFER)
         assertEquals("no_physical_media", UserRestrictions.DISALLOW_MOUNT_PHYSICAL_MEDIA)
         assertEquals("no_factory_reset", UserRestrictions.DISALLOW_FACTORY_RESET)
+        assertEquals("no_safe_boot", UserRestrictions.DISALLOW_SAFE_BOOT)
+    }
+
+    @Test
+    fun `safeBoot maps to the single DISALLOW_SAFE_BOOT restriction`() {
+        assertEquals(
+            setOf(UserRestrictions.DISALLOW_SAFE_BOOT),
+            UserRestrictions.forKey("safeBoot"),
+        )
     }
 
     @Test
@@ -85,6 +94,13 @@ class UserRestrictionsTest {
         val min = UserRestrictions.minSdkForKey("factoryReset")
         assertEquals(21, min)
         assertTrue("factoryReset min SDK must be <= module minSdk (24)", min!! <= 24)
+    }
+
+    @Test
+    fun `safeBoot requires API 23 so the module floor is sufficient`() {
+        val min = UserRestrictions.minSdkForKey("safeBoot")
+        assertEquals(23, min)
+        assertTrue("safeBoot min SDK must be <= module minSdk (24)", min!! <= 24)
     }
 
     @Test

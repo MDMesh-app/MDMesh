@@ -72,7 +72,11 @@ class CapabilityRegistry(
         // Absence == "not advertised" == "never commanded".
     }
 
-    /** Each supported policy is advertised through the same factory-backed registry. */
+    /**
+     * The set of policy keys with a working strategy on this device — derived from the
+     * registered strategies, so it can never drift from what can actually be applied.
+     * Each entry corresponds to a row in `proto/registry.md` § policy.
+     */
     fun supportedPolicyKeys(): List<String> = togglePolicies().keys.toList()
 
     /** Convenience: resolve the live [DeviceControl] facade for this device. */

@@ -80,6 +80,8 @@ public final class DesiredConfigBuilder {
         putIfManaged(p, "screenshots", cfg.getDisableScreenshots() == null ? null : !cfg.getDisableScreenshots());
         putIfManaged(p, "factoryReset", cfg.getDisableFactoryReset() == null ? null : !cfg.getDisableFactoryReset());
         putIfManaged(p, "safeBoot", cfg.getDisableSafeBoot() == null ? null : !cfg.getDisableSafeBoot());
+        putIfManaged(p, "userAppInstall", cfg.getBlockUserAppInstall() == null ? null : !cfg.getBlockUserAppInstall());
+        putIfManaged(p, "userAppUninstall", cfg.getBlockUserAppUninstall() == null ? null : !cfg.getBlockUserAppUninstall());
         return p;
     }
 

@@ -23,6 +23,8 @@ Advertised only when the device has a working strategy for it (`CapabilityRegist
 | `screenshots` | disable screenshots | 24 | |
 | `factoryReset` | block/restore the user-initiated factory reset | 24 | `UserManager.DISALLOW_FACTORY_RESET`; Device Owner only; does **not** cover a wipe from recovery mode or fastboot. Not to be confused with `factoryResetProtection` below. |
 | `safeBoot` | block/restore rebooting into Safe Mode | 24 | `UserManager.DISALLOW_SAFE_BOOT` (API 23); Device Owner only. Closes the Safe-Mode escape from a kiosk. |
+| `userAppInstall` | allow/block installing apps | 24 | 1.5. Device Owner; `DISALLOW_INSTALL_APPS`. Android applies it to the Device Owner too, so the agent lifts it device-wide around its own installs (up to the 10-minute result wait) and puts it back. Also stops Play Store installs and updates, system apps (WebView, Play services) included. |
+| `userAppUninstall` | allow/block uninstalling apps | 24 | 1.5. Device Owner; `DISALLOW_UNINSTALL_APPS`, lifted the same way around the agent's own uninstalls. |
 | `gps` | location toggle | 24 | Planned: not advertised yet. |
 | `mobileData` | mobile data toggle | 24 | Planned: not advertised yet. |
 | `kioskLockTask` | COSU lock-task kiosk | 24 | Planned: not advertised; kiosk commands are ungated (see below). |

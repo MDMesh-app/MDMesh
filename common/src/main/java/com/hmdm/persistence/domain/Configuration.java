@@ -124,6 +124,10 @@ public class Configuration implements CustomerData, Serializable {
     private Boolean kioskLockVolume;
     @ApiModelProperty("Wi-Fi radio: null = not managed, true = turn on, false = turn off (sent as policies.wifiRadio)")
     private Boolean wifiRadio;
+    @ApiModelProperty("Block installing apps on the device (MDMesh's own installs still run); sent inverted as policies.userAppInstall")
+    private Boolean blockUserAppInstall;
+    @ApiModelProperty("Block uninstalling apps on the device (MDMesh's own removals still run); sent inverted as policies.userAppUninstall")
+    private Boolean blockUserAppUninstall;
     @ApiModelProperty("Flag indicating if auto-started apps should be kept in the foreground")
     private Boolean autostartForeground;
     @ApiModelProperty("Time zone settings: null for using default settings, auto for automatic time zone, or Olson time zone string")
@@ -792,6 +796,22 @@ public class Configuration implements CustomerData, Serializable {
         this.runDefaultLauncher = runDefaultLauncher;
     }
 
+    public Boolean getBlockUserAppInstall() {
+        return blockUserAppInstall;
+    }
+
+    public void setBlockUserAppInstall(Boolean blockUserAppInstall) {
+        this.blockUserAppInstall = blockUserAppInstall;
+    }
+
+    public Boolean getBlockUserAppUninstall() {
+        return blockUserAppUninstall;
+    }
+
+    public void setBlockUserAppUninstall(Boolean blockUserAppUninstall) {
+        this.blockUserAppUninstall = blockUserAppUninstall;
+    }
+
     public Boolean getDisableScreenshots() {
         return disableScreenshots;
     }
@@ -982,6 +1002,8 @@ public class Configuration implements CustomerData, Serializable {
         copy.setOrientation(getOrientation());
         copy.setRunDefaultLauncher(getRunDefaultLauncher());
         copy.setDisableScreenshots(getDisableScreenshots());
+        copy.setBlockUserAppInstall(getBlockUserAppInstall());
+        copy.setBlockUserAppUninstall(getBlockUserAppUninstall());
         copy.setAutostartForeground(getAutostartForeground());
         copy.setTimeZone(getTimeZone());
         copy.setAllowedClasses(getAllowedClasses());

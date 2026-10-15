@@ -8,8 +8,11 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
+import com.mdmesh.policy.TogglePolicy
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.mdmesh.core.di.DownloadHttpClient
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -113,7 +116,10 @@ class InstallManager @Inject constructor(
     private val resultBus: InstallResultBus,
     @DownloadHttpClient private val httpClient: OkHttpClient,
     private val integrity: InstallIntegrityPolicy,
+    private val toggles: Map<String, @JvmSuppressWildcards TogglePolicy>,
 ) {
+
+    private val managed = ManagedOperations(toggles)
 
     private val packageInstaller: PackageInstaller
         get() = context.packageManager.packageInstaller
@@ -144,7 +150,10 @@ class InstallManager @Inject constructor(
         try {
             for (part in parts) {
                 val file = runCatching { obtainPart(part) }
-                    .getOrElse { return InstallOutcome.Failure(null, "apk fetch failed: ${it.message}") }
+                    .getOrElse {
+                        if (it is CancellationException) throw it
+                        return InstallOutcome.Failure(null, "apk fetch failed: ${it.message}")
+                    }
                 fetched += FetchedApk(file, downloaded = part.url != null)
                 part.sha256?.trim()?.let { expected ->
                     val actual = sha256Of(file)
@@ -155,8 +164,15 @@ class InstallManager @Inject constructor(
             }
 
             // 3. Create + write EVERY part into ONE session + commit, awaiting the broadcast result.
-            val outcome = runCatching { commitInstall(req.packageName, fetched.map { it.file }) }
-                .getOrElse { return InstallOutcome.Failure(null, "install session error: ${it.message}") }
+            val outcome = runCatching {
+                managed.install {
+                    commitInstall(req.packageName, fetched.map { it.file })
+                }
+            }
+                .getOrElse {
+                    if (it is CancellationException) throw it
+                    return InstallOutcome.Failure(null, "install session error: ${it.message}")
+                }
 
             // 4. Optionally launch the app on success.
             if (outcome is InstallOutcome.Success && req.runAfterInstall) {
@@ -181,12 +197,29 @@ class InstallManager @Inject constructor(
         // Reuse a stable session id derived from the package so the PendingIntent is unique.
         val sessionId = -(packageName.hashCode() and 0x7fff_ffff) - 1
         return try {
-            resultBus.expect(sessionId)
-            packageInstaller.uninstall(packageName, resultSender(sessionId).intentSender)
-            resultBus.await(sessionId, RESULT_TIMEOUT_MS)?.let(::mapResult)
-                ?: InstallOutcome.Failure(null, "uninstall result timed out")
+            managed.uninstall {
+                resultBus.expect(sessionId)
+                packageInstaller.uninstall(packageName, resultSender(sessionId).intentSender)
+                resultBus.await(sessionId, RESULT_TIMEOUT_MS)?.let(::mapResult)
+                    ?: InstallOutcome.Failure(null, "uninstall result timed out")
+            }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             InstallOutcome.Failure(null, "uninstall error: ${e.message}")
+        }
+    }
+
+    /**
+     * Put back an app install/uninstall restriction that a process death (crash, low-memory kill) left lifted in the
+     * middle of a managed operation, or whose restore failed. Called at check-in service start and at the top of every
+     * check-in cycle; a no-op (no DPM call) when nothing was recorded. Safe while an operation starts meanwhile: the
+     * policy takes the same lock, skips a running operation, and an operation that starts first restores the recorded
+     * value. Never throws.
+     */
+    fun restoreInterruptedLifts() {
+        managed.restoreInterrupted().forEach { (key, error) ->
+            Log.w(TAG, "restore of $key failed; retried at the next check-in", error)
         }
     }
 
@@ -332,5 +365,6 @@ class InstallManager @Inject constructor(
     private companion object {
         /** How long a committed session may take to report back before the install counts as failed. */
         const val RESULT_TIMEOUT_MS = 10 * 60_000L
+        private const val TAG = "InstallManager"
     }
 }

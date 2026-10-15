@@ -58,6 +58,42 @@ public class DesiredConfigBuilderTest {
     }
 
     @Test
+    public void app_restrictions_are_opt_in_inverted_and_change_revision() {
+        Configuration c = kioskConfig();
+        DesiredConfig unmanaged = DesiredConfigBuilder.build(c, Collections.emptyList());
+        assertFalse(unmanaged.getPolicies().containsKey("userAppInstall"));
+        assertFalse(unmanaged.getPolicies().containsKey("userAppUninstall"));
+
+        c.setBlockUserAppInstall(true);
+        c.setBlockUserAppUninstall(true);
+        DesiredConfig blocked = DesiredConfigBuilder.build(c, Collections.emptyList());
+        assertEquals(Boolean.FALSE, blocked.getPolicies().get("userAppInstall"));
+        assertEquals(Boolean.FALSE, blocked.getPolicies().get("userAppUninstall"));
+        assertNotEquals(unmanaged.getRevision(), blocked.getRevision());
+
+        c.setBlockUserAppInstall(false);
+        c.setBlockUserAppUninstall(false);
+        DesiredConfig allowed = DesiredConfigBuilder.build(c, Collections.emptyList());
+        assertEquals(Boolean.TRUE, allowed.getPolicies().get("userAppInstall"));
+        assertEquals(Boolean.TRUE, allowed.getPolicies().get("userAppUninstall"));
+        assertNotEquals(blocked.getRevision(), allowed.getRevision());
+
+        c.setBlockUserAppInstall(null);
+        c.setBlockUserAppUninstall(null);
+        assertEquals(unmanaged.getRevision(), DesiredConfigBuilder.build(c, Collections.emptyList()).getRevision());
+    }
+
+    @Test
+    public void copied_configuration_preserves_app_restrictions() {
+        Configuration c = kioskConfig();
+        c.setBlockUserAppInstall(true);
+        c.setBlockUserAppUninstall(false);
+        Configuration copy = c.newCopy();
+        assertEquals(Boolean.TRUE, copy.getBlockUserAppInstall());
+        assertEquals(Boolean.FALSE, copy.getBlockUserAppUninstall());
+    }
+
+    @Test
     public void kiosk_single_when_main_app_is_the_only_install_app() {
         DesiredConfig d = DesiredConfigBuilder.build(kioskConfig(), Arrays.asList(app(5, 505, "com.acme.pos", 1), app(9, 909, "com.acme.old", 2)));
         assertEquals("single", d.getKiosk().getMode());

@@ -27,6 +27,14 @@ class ConfigCommandTest {
     }
 
     @Test
+    fun `app policy keys survive roundtrip without changing the document shape`() {
+        val old = ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), """{"revision":"r"}""")
+        val document = old.copy(policies = mapOf("userAppInstall" to false, "userAppUninstall" to true))
+        val encoded = ProtocolJson.json.encodeToString(ConfigApplyPayload.serializer(), document)
+        assertEquals(document, ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), encoded))
+    }
+
+    @Test
     fun `result encodes outcomes map`() {
         val s = ProtocolJson.json.encodeToString(ConfigApplyResult("r1", mapOf("policies.wifi" to ConfigOutcome.APPLIED, "kiosk" to ConfigOutcome.failed("nope"))))
         assertTrue(s.contains("\"policies.wifi\":\"applied\""))
@@ -46,6 +54,11 @@ class ConfigCommandTest {
         val json = """{"revision":"r","location":{"mode":"off"}}"""
         val p = ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), json)
         assertEquals(DeviceAction.LOCATION_OFF, p.location?.mode)
-        assertEquals("1.4", ProtocolJson.PROTOCOL_VERSION)
+    }
+
+    @Test
+    fun `protocol version is 1_5 (userAppInstall and userAppUninstall policy keys)`() {
+        // Bumped together with AgentProtocol.VERSION on the server; see proto/VERSIONING.md.
+        assertEquals("1.5", ProtocolJson.PROTOCOL_VERSION)
     }
 }

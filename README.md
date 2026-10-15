@@ -114,7 +114,7 @@ One-click or unattended server updates with DB backup + auto-rollback on quick-s
 - **Staged device rollout** — new agent APKs go to a **canary** set, then **the fleet**.
 - **Backward compatibility** — the `/agent/v1` contract is additive-only, checked by a golden test in CI.
 - **Desired-state configuration** — devices converge to their saved configuration at the next check-in, with
-  per-field sync status in the console. It enforces 22 fields, from kiosk options to Wi-Fi and factory reset.
+  per-field sync status in the console. It enforces 24 fields, from kiosk options to Wi-Fi, factory reset and app installs.
 
 </details>
 

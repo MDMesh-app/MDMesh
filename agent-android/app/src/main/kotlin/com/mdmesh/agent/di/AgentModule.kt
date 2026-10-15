@@ -42,6 +42,7 @@ import com.mdmesh.core.sync.HardwareIdSource
 import com.mdmesh.core.sync.LastCheckIn
 import com.mdmesh.core.sync.SharedPrefsLastCheckIn
 import com.mdmesh.core.install.InstallManager
+import com.mdmesh.core.install.LiftRestorer
 import com.mdmesh.core.state.DeviceStateCollector
 import com.mdmesh.core.state.DeviceStateSource
 import com.mdmesh.core.store.ConfigStateStore
@@ -67,6 +68,7 @@ import com.mdmesh.oem.GenericOemAdapter
 import com.mdmesh.oem.KnoxAdapter
 import com.mdmesh.oem.OemAdapter
 import com.mdmesh.policy.CapabilityRegistry
+import com.mdmesh.policy.SharedPrefsLiftRestoreStore
 import com.mdmesh.policy.TogglePolicy
 import com.mdmesh.policy.wifi.AndroidWifiRadio
 import com.mdmesh.policy.wifi.DpmHandle
@@ -102,7 +104,12 @@ object AgentModule {
     @Provides
     @Singleton
     fun provideCapabilityRegistry(@ApplicationContext context: Context, handle: DpmHandle): CapabilityRegistry =
-        CapabilityRegistry(handle, AndroidWifiRadio.from(context), SharedPrefsWifiRadioOffState(context))
+        CapabilityRegistry(
+            handle,
+            AndroidWifiRadio.from(context),
+            SharedPrefsWifiRadioOffState(context),
+            SharedPrefsLiftRestoreStore(context),
+        )
 
     @Provides
     @Singleton
@@ -151,6 +158,11 @@ object AgentModule {
     @Provides
     fun provideCapabilitySource(collector: CapabilityCollector): CapabilitySource = collector
 
+    /** Run at the top of every check-in cycle: puts back an app restriction an interrupted install left lifted. */
+    @Provides
+    fun provideLiftRestorer(installManager: InstallManager): LiftRestorer =
+        LiftRestorer(installManager::restoreInterruptedLifts)
+
     /** Stable, permission-free device id for enrollment de-duplication. */
     @Provides
     fun provideHardwareIdSource(collector: HardwareIdCollector): HardwareIdSource = collector
@@ -180,6 +192,7 @@ object AgentModule {
 
     /** The supported toggle policies, keyed by capability key (data-driven routing). */
     @Provides
+    @Singleton
     fun providePolicyToggles(registry: CapabilityRegistry): Map<String, TogglePolicy> =
         registry.togglePolicies()
 

@@ -4,6 +4,7 @@ import com.mdmesh.core.command.CommandDispatcher
 import com.mdmesh.core.command.CommandHandler
 import com.mdmesh.core.command.CommandResults
 import com.mdmesh.core.install.InstallIntegrityPolicy
+import com.mdmesh.core.install.LiftRestorer
 import com.mdmesh.proto.AgentCheckInResponse
 import com.mdmesh.proto.CommandEnvelope
 import com.mdmesh.proto.CommandResult
@@ -46,11 +47,11 @@ class CheckInCoordinatorTest {
     private fun coordinator(
         api: FakeMdmApi,
         pending: PendingResults,
-        identityId: String = "dev-1",
         syncStatus: SyncStatus = SyncStatus(),
         installIntegrity: InstallIntegrityPolicy = InstallIntegrityPolicy(),
+        liftRestorer: LiftRestorer = LiftRestorer { },
     ): CheckInCoordinator {
-        val identity = FakeIdentity(initialId = identityId, initialSecret = "sek-1")
+        val identity = FakeIdentity(initialId = "dev-1", initialSecret = "sek-1")
         val eventSink = object : com.mdmesh.core.telemetry.EventSink {
             override fun record(type: String, detail: String?) {}
             override fun drain() = emptyList<com.mdmesh.proto.TelemetryEventDto>()
@@ -69,6 +70,7 @@ class CheckInCoordinatorTest {
             eventSink = eventSink,
             syncStatus = syncStatus,
             installIntegrity = installIntegrity,
+            liftRestorer = liftRestorer,
         )
     }
 
@@ -282,5 +284,18 @@ class CheckInCoordinatorTest {
         assertEquals(listOf(listOf("a", "b", "c"), listOf("b", "c")),
             api.checkInRequests.map { r -> r.results.map { it.commandId } })
         assertEquals(listOf("c"), pending.drain().map { it.commandId })
+    }
+
+    @Test
+    fun `every cycle first restores an app restriction an interrupted install left lifted`() = runTest {
+        val api = FakeMdmApi()
+        val checkInsSeenByRestore = mutableListOf<Int>()
+        val c = coordinator(api, PendingResults(), liftRestorer = { checkInsSeenByRestore += api.checkInRequests.size })
+
+        c.runOnce()
+        c.runOnce()
+
+        // Runs inside the single-flight cycle, before the check-in (so before any command could start an install).
+        assertEquals(listOf(0, 1), checkInsSeenByRestore)
     }
 }

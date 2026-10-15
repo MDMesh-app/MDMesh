@@ -10,7 +10,7 @@
     "configurationId": { "type": "integer" },
     "policies": {
       "type": "object", "additionalProperties": { "type": "boolean" },
-      "properties": { "wifi": {"type":"boolean", "description":"false = lock Wi-Fi settings (not the radio)"}, "wifiRadio": {"type":"boolean", "description":"1.4: false = radio off, true = radio on"}, "bluetooth": {"type":"boolean"}, "usbStorage": {"type":"boolean"}, "screenshots": {"type":"boolean"}, "factoryReset": {"type":"boolean"}, "safeBoot": {"type":"boolean"} },
+      "properties": { "wifi": {"type":"boolean", "description":"false = lock Wi-Fi settings (not the radio)"}, "wifiRadio": {"type":"boolean", "description":"1.4: false = radio off, true = radio on"}, "bluetooth": {"type":"boolean"}, "usbStorage": {"type":"boolean"}, "screenshots": {"type":"boolean"}, "factoryReset": {"type":"boolean"}, "safeBoot": {"type":"boolean"}, "userAppInstall": {"type":"boolean", "description":"1.5: false = DISALLOW_INSTALL_APPS; the agent lifts it only around its own installs"}, "userAppUninstall": {"type":"boolean", "description":"1.5: false = DISALLOW_UNINSTALL_APPS; the agent lifts it only around its own removals"} },
       "description": "Only keys the configuration manages are present. true = allowed/enabled."
     },
     "kiosk": {

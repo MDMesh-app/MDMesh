@@ -2982,4 +2982,18 @@
         <rollback>DROP INDEX IF EXISTS agentCommand_deviceNumber_type_id_idx;</rollback>
     </changeSet>
 
+    <changeSet id="26.10.15-configurations-blockUserApp" author="lared3294" context="common">
+        <comment>Column,new: configurations#blockUserAppInstall + #blockUserAppUninstall (sent inverted as
+            policies.userAppInstall / policies.userAppUninstall). No DEFAULT: NULL = unmanaged, so existing
+            configurations keep their revision.</comment>
+        <sql>
+            ALTER TABLE configurations ADD COLUMN IF NOT EXISTS blockUserAppInstall BOOLEAN NULL;
+            ALTER TABLE configurations ADD COLUMN IF NOT EXISTS blockUserAppUninstall BOOLEAN NULL;
+        </sql>
+        <rollback>
+            ALTER TABLE configurations DROP COLUMN blockUserAppUninstall;
+            ALTER TABLE configurations DROP COLUMN blockUserAppInstall;
+        </rollback>
+    </changeSet>
+
 </databaseChangeLog>

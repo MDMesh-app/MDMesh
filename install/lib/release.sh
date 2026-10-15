@@ -41,7 +41,7 @@ mdm_fetch_release_apk() {
   # The HTTP status says why a lookup failed (curl prints 000 when GitHub could not be reached).
   code=$(mdm_gh_curl -sSL -o "$d/release.json" -w '%{http_code}' "$api" 2>>"$log" || true)
   if [ "$code" = 401 ] && [ -n "${GITHUB_TOKEN:-}" ]; then
-    MDM_RELEASE_NOTE="GitHub refused GITHUB_TOKEN (HTTP 401: expired or revoked?), so the release was fetched without it. Set a new token, or remove it"
+    MDM_RELEASE_NOTE="GitHub refused GITHUB_TOKEN (HTTP 401: expired or revoked?), so the release was fetched without it"
     # Shadows the caller's GITHUB_TOKEN for the rest of this function (and mdm_gh_curl, which it calls) only.
     local GITHUB_TOKEN=""
     code=$(mdm_gh_curl -sSL -o "$d/release.json" -w '%{http_code}' "$api" 2>>"$log" || true)

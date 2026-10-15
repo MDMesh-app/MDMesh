@@ -802,7 +802,7 @@ if [ -n "$GITHUB_REPO" ]; then
       info "${MDM_RELEASE_PROBLEM}${soft}"
     fi
     if [ -n "$MDM_RELEASE_NOTE" ]; then
-      printf '  %s!%s %s (re-run with GITHUB_TOKEN=<new token>, or GITHUB_TOKEN= to remove it; the updater uses it too)\n' \
+      printf '  %s!%s %s . The updater uses it too: re-run with GITHUB_TOKEN=<new token>, or GITHUB_TOKEN= to remove it\n' \
         "$c_yel" "$c_reset" "$MDM_RELEASE_NOTE"
     fi
     return 0

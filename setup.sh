@@ -324,7 +324,7 @@ if [ -n "${GITHUB_REPO:-}" ] && command -v python3 >/dev/null && command -v curl
       warn "minisign is unavailable (not on this host, and the supervisor image's could not be used), so the release manifest cannot be verified — install it (e.g. apt-get install minisign) and re-run ./setup.sh; until then the console keeps its debug enrollment defaults."
     fi
   fi
-  [ -z "${MDM_RELEASE_NOTE:-}" ] || warn "${MDM_RELEASE_NOTE} (GITHUB_TOKEN in .env)."
+  [ -z "${MDM_RELEASE_NOTE:-}" ] || warn "${MDM_RELEASE_NOTE}. Set a new GITHUB_TOKEN in .env, or remove it."
   [ -z "$REL_DIR" ] || rm -rf -- "$REL_DIR"
 else
   warn "No GitHub repo detected (or python3/curl missing) — skipping the release check; the console keeps its debug enrollment defaults."

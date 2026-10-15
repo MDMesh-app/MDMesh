@@ -10,6 +10,10 @@ import com.mdmesh.policy.CapabilityRegistry
 import com.mdmesh.policy.PolicyOutcome
 import com.mdmesh.policy.TogglePolicy
 import com.mdmesh.policy.UserRestrictions
+import com.mdmesh.policy.apps.UserAppInstallPolicy
+import com.mdmesh.policy.apps.UserAppInstallPolicyFactory
+import com.mdmesh.policy.apps.UserAppUninstallPolicy
+import com.mdmesh.policy.apps.UserAppUninstallPolicyFactory
 import com.mdmesh.policy.camera.CameraPolicy
 import com.mdmesh.policy.factoryreset.FactoryResetPolicy
 import com.mdmesh.policy.factoryreset.FactoryResetPolicyFactory
@@ -17,6 +21,7 @@ import com.mdmesh.policy.safeboot.SafeBootPolicy
 import com.mdmesh.policy.safeboot.SafeBootPolicyFactory
 import com.mdmesh.policy.screenshots.ScreenshotsPolicy
 import com.mdmesh.policy.wifi.DpmHandle
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -98,6 +103,10 @@ class DevicePolicyEffectTest {
             SafeBootPolicy.CAPABILITY_KEY in toggles,
         )
         assertTrue(
+            "a Device Owner must advertise userAppInstall and userAppUninstall; the server gates on these tokens",
+            UserAppInstallPolicy.CAPABILITY_KEY in toggles && UserAppUninstallPolicy.CAPABILITY_KEY in toggles,
+        )
+        assertTrue(
             "a Device Owner must advertise the other DO-gated toggles too",
             "camera" in toggles && "screenshots" in toggles,
         )
@@ -129,6 +138,45 @@ class DevicePolicyEffectTest {
             describe = "safeBoot",
             isBlockedOnDevice = { restrictionActive(UserRestrictions.DISALLOW_SAFE_BOOT) },
         )
+    }
+
+    @Test
+    fun userAppInstallFalseBlocksInstallsAndTrueReleasesIt() {
+        val policy = requireNotNull(UserAppInstallPolicyFactory.create(handle)) {
+            "userAppInstall resolved no strategy on a Device Owner — the probe chain is broken"
+        }
+        assertTogglesDeviceState(
+            toggle = policy,
+            describe = "userAppInstall",
+            isBlockedOnDevice = { restrictionActive(UserRestrictions.DISALLOW_INSTALL_APPS) },
+        )
+    }
+
+    @Test
+    fun userAppUninstallFalseBlocksUninstallsAndTrueReleasesIt() {
+        val policy = requireNotNull(UserAppUninstallPolicyFactory.create(handle)) {
+            "userAppUninstall resolved no strategy on a Device Owner — the probe chain is broken"
+        }
+        assertTogglesDeviceState(
+            toggle = policy,
+            describe = "userAppUninstall",
+            isBlockedOnDevice = { restrictionActive(UserRestrictions.DISALLOW_UNINSTALL_APPS) },
+        )
+    }
+
+    /** The lift around MDMesh's own installs, against the real DPM: cleared inside, the block back after. */
+    @Test
+    fun managedOperationLiftsOnlyItsRestrictionAndRestoresIt() = runBlocking {
+        val install = requireNotNull(UserAppInstallPolicyFactory.create(handle))
+        val uninstall = requireNotNull(UserAppUninstallPolicyFactory.create(handle))
+        assertEquals(PolicyOutcome.Applied, install.setEnabled(false))
+        assertEquals(PolicyOutcome.Applied, uninstall.setEnabled(false))
+
+        install.withAllowed {
+            assertFalse("install block lifted inside", restrictionActive(UserRestrictions.DISALLOW_INSTALL_APPS))
+            assertTrue("uninstall block untouched", restrictionActive(UserRestrictions.DISALLOW_UNINSTALL_APPS))
+        }
+        assertTrue("install block restored", restrictionActive(UserRestrictions.DISALLOW_INSTALL_APPS))
     }
 
     @Test
@@ -188,6 +236,14 @@ class DevicePolicyEffectTest {
             restrictionKey(UserRestrictions.DISALLOW_SAFE_BOOT),
             restrictionActive(UserRestrictions.DISALLOW_SAFE_BOOT),
         )
+        put(
+            restrictionKey(UserRestrictions.DISALLOW_INSTALL_APPS),
+            restrictionActive(UserRestrictions.DISALLOW_INSTALL_APPS),
+        )
+        put(
+            restrictionKey(UserRestrictions.DISALLOW_UNINSTALL_APPS),
+            restrictionActive(UserRestrictions.DISALLOW_UNINSTALL_APPS),
+        )
         put("cameraDisabled", dpm.getCameraDisabled(handle.admin))
         put("screenCaptureDisabled", dpm.getScreenCaptureDisabled(handle.admin))
     }
@@ -201,6 +257,10 @@ class DevicePolicyEffectTest {
                 ?.setEnabled(state.getValue(restrictionKey(UserRestrictions.DISALLOW_FACTORY_RESET)).not())
             toggles[SafeBootPolicy.CAPABILITY_KEY]
                 ?.setEnabled(state.getValue(restrictionKey(UserRestrictions.DISALLOW_SAFE_BOOT)).not())
+            toggles[UserAppInstallPolicy.CAPABILITY_KEY]
+                ?.setEnabled(state.getValue(restrictionKey(UserRestrictions.DISALLOW_INSTALL_APPS)).not())
+            toggles[UserAppUninstallPolicy.CAPABILITY_KEY]
+                ?.setEnabled(state.getValue(restrictionKey(UserRestrictions.DISALLOW_UNINSTALL_APPS)).not())
             toggles[CameraPolicy.CAPABILITY_KEY]?.setEnabled(state.getValue("cameraDisabled").not())
             toggles[ScreenshotsPolicy.CAPABILITY_KEY]?.setEnabled(state.getValue("screenCaptureDisabled").not())
         }

@@ -124,7 +124,8 @@ install_with_settings() {
 
 # settings_kept LABEL: after the run LABEL, base.url, GITHUB_REPO and GITHUB_TOKEN are what they were before, the repo is
 # marked as a setting, supervisor.env is root-only in /etc/mdmesh, and that run fetched the release APK (without the
-# refused token, which it reported when it had read it in time).
+# refused token, which it reported when it had read it in time). GitHub's anonymous rate limit is not the change's
+# doing: when the run says it hit it, the fetch check is skipped with a WARN instead of failing.
 settings_kept() {
   local label=$1 k
   guest settings > "$OUT/$label.settings"
@@ -133,7 +134,13 @@ settings_kept() {
   done
   check "GITHUB_REPO_FROM=setting after $label" "$(sed -n 's/^GITHUB_REPO_FROM=//p' "$OUT/$label.settings")" setting
   check "supervisor.env in /etc/mdmesh, root-only, after $label" "$(sed -n 's/^supervisor.env=//p' "$OUT/$label.settings")" "root:root 600"
-  check "$label fetched and verified the release APK" "$(grep -c 'release agent APK fetched' "$OUT/$label.out" || true)" 1
+  if grep -q 'release agent APK fetched' "$OUT/$label.out"; then
+    check "$label fetched and verified the release APK" yes yes
+  elif grep -q 'rate limit' "$OUT/$label.out"; then
+    log "  WARN SKIP $label fetched and verified the release APK: GitHub's rate limit stopped the lookup ($(grep -m1 'rate limit' "$OUT/$label.out" | sed 's/^ *//'))"
+  else
+    check "$label fetched and verified the release APK" "no: $(grep -m1 -E 'No published release|Could not|not trusted|refused the release' "$OUT/$label.out" | sed 's/^ *//')" yes
+  fi
   if grep -q 'GitHub refused GITHUB_TOKEN' "$OUT/$label.out"; then log "  INFO $label reported the refused token"; fi
 }
 

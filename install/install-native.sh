@@ -802,7 +802,7 @@ if [ -n "$GITHUB_REPO" ]; then
       info "${MDM_RELEASE_PROBLEM}${soft}"
     fi
     if [ -n "$MDM_RELEASE_NOTE" ]; then
-      printf '  %s!%s %s . The updater uses it too: re-run with GITHUB_TOKEN=<new token>, or GITHUB_TOKEN= to remove it\n' \
+      printf '  %s!%s %s. The updater uses it too: re-run with GITHUB_TOKEN=<new token>, or GITHUB_TOKEN= to remove it\n' \
         "$c_yel" "$c_reset" "$MDM_RELEASE_NOTE"
     fi
     return 0
@@ -1022,7 +1022,7 @@ CURRENT_VERSION=$(mdm_repo_version "$REPO")
 # is removed once the new file is in place (so a run killed in between still finds the settings in one of them).
 # GITHUB_REPO / GITHUB_TOKEN: settled in the release-fetch step above. Never print the token itself.
 if [ -z "$_token_in_env" ] && [ -n "$GITHUB_TOKEN" ]; then info "Keeping the GitHub token from the existing settings (GITHUB_TOKEN= removes it)"; fi
-if [ "$GITHUB_REPO_FROM" = setting ] && [ -n "$_origin" ] && [ "$GITHUB_REPO" != "$_origin" ]; then
+if [ "$GITHUB_REPO_FROM" = setting ] && [ -n "$_origin" ] && [ "${GITHUB_REPO,,}" != "${_origin,,}" ]; then   # GitHub ignores case
   # Worth seeing: release/minisign.pub in this clone must be the key that repo signs its releases with.
   printf '  %s!%s Updater repository: %s%s%s (the GITHUB_REPO setting; this clone'"'"'s origin is %s: GITHUB_REPO= follows the origin)\n' \
     "$c_yel" "$c_reset" "$c_bold" "$GITHUB_REPO" "$c_reset" "$_origin"

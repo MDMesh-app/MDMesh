@@ -1,9 +1,10 @@
 # Changelog
 
 What changed in each MDMesh release, for the people running it, newest first. A version's section is its tag
-annotation and GitHub release notes, word for word ([RELEASING.md](RELEASING.md)). Sections, in this order, empty ones
-left out: Upgrading, Heads-up, New, Fixes, Under the hood. Feature releases (0.x.0) ship every three weeks; patch
-releases (0.x.y) only for a security fix or something broken in the field. Each PR adds its line under Unreleased.
+annotation and GitHub release notes, word for word ([RELEASING.md](RELEASING.md)). From v0.3.2 on, its sections come
+in this order, empty ones left out: Upgrading, Heads-up, New, Fixes, Under the hood. Feature releases (0.x.0) ship
+every three weeks; patch releases (0.x.y) only for a security fix or something broken in the field. Each PR adds its
+line under Unreleased.
 
 ## Unreleased
 
@@ -11,9 +12,9 @@ Upgrading
 - Update the server: Settings → Updates (quick-start installs), or re-run the installer on native installs.
 
 New
-- Re-running the native installer to upgrade keeps `BASE_URL`, `GITHUB_REPO` and `GITHUB_TOKEN` from the existing
-  install, so `sudo ./setup.sh --native -y` is enough. A value you pass still wins, and `GITHUB_TOKEN=` clears the
-  token.
+- Re-running the native installer to upgrade keeps `BASE_URL`, `GITHUB_TOKEN` and a `GITHUB_REPO` you set from the
+  existing install, so `sudo ./setup.sh --native -y` is enough. A repo that came from the clone's origin keeps
+  following the origin. A value you pass still wins, and `GITHUB_TOKEN=` clears the token.
 
 Fixes
 - The native installer says when GitHub refuses the token, and downloads the release without it. Rate limits are
@@ -22,6 +23,8 @@ Fixes
 - Enroll: "New code" keeps the chosen configuration. <!-- pending PR #94 -->
 - Configuration copies keep their apps, and saving one never overwrites the original. <!-- pending PR #94 -->
 - The "Password updated" notice shows on the sign-in page. <!-- pending PR #94 -->
+- Saving a configuration keeps its configuration files and app settings. <!-- pending fix/console-data -->
+- Device pages always open the device you clicked, even when a device's number matches another device's internal id. <!-- pending fix/console-data -->
 
 Under the hood: dependency updates (React Router 8, Caddy 2.11.7, pgjdbc 42.7.14, Vite, Guava), and CI runs the
 agent's protocol tests on every change.
@@ -151,9 +154,9 @@ Thanks @letternumber, @Keidevk and @benailjamim for the contributions.
 
 ## v0.3.1 — 2026-09-25
 
-Security fixes, Docker supervisor fix (#27), Cloudflare-mode fix.
+v0.3.1 — security fixes, Docker supervisor fix (#27), Cloudflare-mode fix
 
-Fixes
+Security
 - Agent admin and rollout APIs now enforce the `edit_devices` permission for every change: queueing commands (incl.
   wipe / passcode reset), bulk commands, sync, app sync, minting enrollment tokens, and creating, promoting or cancelling
   rollouts. Users without it (the seeded Observer role, or custom roles) now get "permission denied"; read-only views are
@@ -168,6 +171,8 @@ Fixes
   admin password hash); the API returns the target package as `subject` for app.install/app.uninstall. The queue endpoint
   (POST …/devices/{id}/commands) answers with the same slim view instead of echoing the payload. Integrations that read
   `payload` or `deviceNumber` from these endpoints must adapt.
+
+Fixes
 - Docker (#27): the updater/recovery supervisor crash-looped on every Docker install since v0.1.0
   ("Cannot find module '/project/server.js'"). Settings → Updates, the recovery page and the Docker /files/agent.apk
   download (the APK URL in enrollment QR codes) now work. On from-source Docker installs the recovery page shows status and
@@ -183,26 +188,25 @@ Fixes
   no longer shows a permanent false "Update available". Pull and native installs are unchanged.
 - Cloudflare mode: the web container's Caddy config now starts with an empty ACME_EMAIL. Own-domain mode unchanged.
 
-Under the hood
+CI / release
 - The supervisor image is smoke-tested (booted the way compose runs it) in the fast gate and before any release push, and the
   release publishes exactly the image that passed. `:latest` image tags move only after the release is published (same digest
   as `:VERSION`). The Caddyfile is validated in every hosting mode and all compose files are checked in CI.
 
 ## v0.3.0 — 2026-09-22
 
-Desired-state configuration — saving a configuration now converges its devices. Configurations are now enforced on devices, not just stored.
+v0.3.0: desired-state configuration — saving a configuration now converges its devices
 
-Upgrading
-- Database: two nullable columns on device_state (Liquibase, automatic). Docker installs: pull the new images as usual.
+Configurations are now enforced on devices, not just stored.
 
-Heads-up
-- Behaviour change on upgrade: the first check-in of every updated device applies its configuration's managed policies, and devices whose configuration has kiosk ON enter kiosk. Kiosk is never lifted by the upgrade itself; turning kiosk OFF in a configuration only lifts it on devices that entered through that configuration. Location capture mode follows the configuration (GPS = active, otherwise passive). See DEPLOY.md "Upgrading to v0.3.0".
-
-New
 - Server: on every check-in the server derives a desired-state document from the device's configuration, hashes it, and sends one `config.apply` command when the device has drifted (delivered in the same check-in). Saving a configuration wakes its devices. New admin endpoints: `GET /rest/private/agent/v1/devices/{id}/configStatus` and `GET /rest/private/agent/v1/configurations/syncSummary`.
 - Agent: applies Wi-Fi, Bluetooth, USB storage, screenshots, kiosk (same path as `kiosk.enter`) and location capture mode; reports per-key outcomes (applied / unsupported / failed); persists the revision only when nothing failed; re-applies after boot or self-update. Advertises the new `configApply` capability.
 - Console: an "Enforced" chip marks the 18 fields the agent applies; the rest are collapsed under "Legacy Headwind fields". Configuration list shows "N/M in sync"; device pages get a "Configuration status" card; kiosk-affecting edits ask for confirmation with the affected device count. The main-app picker now stores the correct application-version id.
 - Protocol: additive (1.1). Old agents are never sent `config.apply` and show "Agent too old" until updated.
+
+Behaviour change on upgrade: the first check-in of every updated device applies its configuration's managed policies, and devices whose configuration has kiosk ON enter kiosk. Kiosk is never lifted by the upgrade itself; turning kiosk OFF in a configuration only lifts it on devices that entered through that configuration. Location capture mode follows the configuration (GPS = active, otherwise passive). See DEPLOY.md "Upgrading to v0.3.0".
+
+Database: two nullable columns on device_state (Liquibase, automatic). Docker installs: pull the new images as usual.
 
 ## Older releases
 

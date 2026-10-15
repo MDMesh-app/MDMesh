@@ -3,6 +3,7 @@ package com.mdmesh.core.sync
 import com.mdmesh.core.capability.CapabilitySource
 import com.mdmesh.core.command.CommandDispatcher
 import com.mdmesh.core.install.InstallIntegrityPolicy
+import com.mdmesh.core.install.LiftRestorer
 import com.mdmesh.core.net.MdmApi
 import com.mdmesh.core.state.DeviceStateSource
 import com.mdmesh.core.store.DeviceIdentity
@@ -47,6 +48,7 @@ class CheckInCoordinator @Inject constructor(
     private val installIntegrity: InstallIntegrityPolicy,
     private val hardwareIdSource: HardwareIdSource = HardwareIdSource { null },
     private val syncStatus: SyncStatus = SyncStatus(),
+    private val liftRestorer: LiftRestorer = LiftRestorer { },
 ) {
 
     private val mutex = Mutex()
@@ -61,6 +63,9 @@ class CheckInCoordinator @Inject constructor(
     }
 
     private suspend fun cycle() {
+        // Under the mutex: commands (and so managed installs) run only inside a cycle, so none is in flight here.
+        // Covers a lift left by a process death when the check-in service is not restarted, and a failed restore.
+        liftRestorer.restore()
         val deviceId = enrollment.ensureEnrolled()
         val authorization = "Bearer ${identity.secret().orEmpty()}"
         val matrix = capabilitySource.matrix(deviceId)

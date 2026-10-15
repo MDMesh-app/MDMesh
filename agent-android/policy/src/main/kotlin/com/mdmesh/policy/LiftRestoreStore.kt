@@ -1,6 +1,7 @@
 package com.mdmesh.policy
 
 import android.content.Context
+import android.content.SharedPreferences
 
 /**
  * The value an app restriction had before a managed install/uninstall lifted it ([TemporaryUserRestrictionPolicy]),
@@ -23,9 +24,10 @@ class InMemoryLiftRestoreStore : LiftRestoreStore {
 }
 
 /** [LiftRestoreStore] in SharedPreferences (commit, not apply: it must be on disk before the restriction is lifted). */
-class SharedPrefsLiftRestoreStore(context: Context) : LiftRestoreStore {
-    private val prefs =
-        context.applicationContext.getSharedPreferences("mdm_app_restriction_lift", Context.MODE_PRIVATE)
+class SharedPrefsLiftRestoreStore(private val prefs: SharedPreferences) : LiftRestoreStore {
+    constructor(context: Context) :
+        this(context.applicationContext.getSharedPreferences("mdm_app_restriction_lift", Context.MODE_PRIVATE))
+
     override fun get(key: String): Boolean? = if (prefs.contains(key)) prefs.getBoolean(key, true) else null
     override fun put(key: String, blocked: Boolean) {
         check(prefs.edit().putBoolean(key, blocked).commit()) { "could not record $key before lifting it" }

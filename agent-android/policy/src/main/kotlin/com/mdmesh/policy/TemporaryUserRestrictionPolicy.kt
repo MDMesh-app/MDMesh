@@ -4,8 +4,9 @@ package com.mdmesh.policy
  * Process-local coordination of an app restriction and managed operations.
  * Platform access is injected so failure and concurrency behavior can be tested without Android.
  * Explicit changes during an exception fail for retry; they are never reported as applied early.
- * Process death skips the restore, so the pre-lift value is recorded in [store] first and put back by
- * [restoreInterrupted] at the next agent start (boot and self-update also re-apply the persisted config).
+ * Nothing is written when the restriction is not set. Process death skips the restore, so the pre-lift value is
+ * recorded in [store] first and put back by [restoreInterrupted] at the next check-in cycle or service start (boot and
+ * self-update also re-apply the persisted config).
  */
 internal open class TemporaryUserRestrictionPolicy(
     final override val capabilityKey: String,
@@ -17,6 +18,7 @@ internal open class TemporaryUserRestrictionPolicy(
     private val lock = Any()
     private var active = 0
     private var restoreBlocked = false
+    private var lifted = false
 
     override fun isSupported(): Boolean = supported()
 
@@ -54,27 +56,39 @@ internal open class TemporaryUserRestrictionPolicy(
     }
 
     private fun beginException() = synchronized(lock) {
-        check(isSupported()) { "$capabilityKey is not supported" }
-        if (active == 0) {
-            // A value left by an interrupted operation is the real pre-lift state (the device may still be lifted).
-            restoreBlocked = store.get(capabilityKey) ?: isBlocked()
-            store.put(capabilityKey, restoreBlocked)
-            runCatching { writeBlocked(false) }.onFailure { error ->
-                // A failed clear may already have changed the OS. Restore before returning.
-                runCatching { writeBlocked(restoreBlocked); store.remove(capabilityKey) }
-                    .exceptionOrNull()?.let(error::addSuppressed)
-                throw error
-            }
-        }
+        if (active == 0) lifted = liftIfBlocked()
         active++
+    }
+
+    /**
+     * Lifts the restriction for the first of overlapping operations; false when there is nothing to lift. That case
+     * touches neither the store nor the DPM (one read at most), so a device that does not use the block, or is no
+     * longer Device Owner, gains no new way for an install (or the agent's own self-update) to fail.
+     */
+    private fun liftIfBlocked(): Boolean {
+        val saved = store.get(capabilityKey)
+        // An unreadable state is treated as "not blocked": the install then behaves as it did before this policy.
+        val needsLift = isSupported() && (saved != null || runCatching { isBlocked() }.getOrDefault(false))
+        if (!needsLift) return false
+        // A value left by an interrupted operation is the real pre-lift state (the device may still be lifted).
+        restoreBlocked = saved ?: true
+        store.put(capabilityKey, restoreBlocked)
+        runCatching { writeBlocked(false) }.onFailure { error ->
+            // A failed clear may already have changed the OS. Restore before returning.
+            runCatching { writeBlocked(restoreBlocked); store.remove(capabilityKey) }
+                .exceptionOrNull()?.let(error::addSuppressed)
+            throw error
+        }
+        return true
     }
 
     private fun endException() = synchronized(lock) {
         check(active > 0) { "No active $capabilityKey exception" }
         active--
-        if (active == 0) {
+        if (active == 0 && lifted) {
+            lifted = false
             writeBlocked(restoreBlocked)
-            store.remove(capabilityKey) // kept when the write throws: the next agent start retries it
+            store.remove(capabilityKey) // kept when the write throws: restoreInterrupted retries it
         }
     }
 

@@ -9,15 +9,10 @@ import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
-import com.mdmesh.policy.ManagedAppPolicy
 import com.mdmesh.policy.TogglePolicy
-import com.mdmesh.policy.apps.UserAppInstallPolicy
-import com.mdmesh.policy.apps.UserAppUninstallPolicy
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.mdmesh.core.di.DownloadHttpClient
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -124,7 +119,7 @@ class InstallManager @Inject constructor(
     private val toggles: Map<String, @JvmSuppressWildcards TogglePolicy>,
 ) {
 
-    private val operationMutex = Mutex()
+    private val managed = ManagedOperations(toggles)
 
     private val packageInstaller: PackageInstaller
         get() = context.packageManager.packageInstaller
@@ -170,7 +165,7 @@ class InstallManager @Inject constructor(
 
             // 3. Create + write EVERY part into ONE session + commit, awaiting the broadcast result.
             val outcome = runCatching {
-                managedOperation(UserAppInstallPolicy.CAPABILITY_KEY) {
+                managed.install {
                     commitInstall(req.packageName, fetched.map { it.file })
                 }
             }
@@ -202,7 +197,7 @@ class InstallManager @Inject constructor(
         // Reuse a stable session id derived from the package so the PendingIntent is unique.
         val sessionId = -(packageName.hashCode() and 0x7fff_ffff) - 1
         return try {
-            managedOperation(UserAppUninstallPolicy.CAPABILITY_KEY) {
+            managed.uninstall {
                 resultBus.expect(sessionId)
                 packageInstaller.uninstall(packageName, resultSender(sessionId).intentSender)
                 resultBus.await(sessionId, RESULT_TIMEOUT_MS)?.let(::mapResult)
@@ -216,23 +211,17 @@ class InstallManager @Inject constructor(
     }
 
     /**
-     * At agent start: put back an app install/uninstall restriction that a process death (crash, low-memory kill)
-     * left lifted in the middle of a managed operation. Safe while an operation starts meanwhile: the policy takes
-     * the same lock, skips a running operation, and an operation that starts first restores the recorded value.
+     * Put back an app install/uninstall restriction that a process death (crash, low-memory kill) left lifted in the
+     * middle of a managed operation, or whose restore failed. Called at check-in service start and at the top of every
+     * check-in cycle; a no-op (no DPM call) when nothing was recorded. Safe while an operation starts meanwhile: the
+     * policy takes the same lock, skips a running operation, and an operation that starts first restores the recorded
+     * value. Never throws.
      */
     fun restoreInterruptedLifts() {
-        toggles.values.filterIsInstance<ManagedAppPolicy>().forEach { policy ->
-            runCatching { policy.restoreInterrupted() }
-                .onFailure { Log.w(TAG, "restore of ${policy.capabilityKey} failed; retried at next start", it) }
+        managed.restoreInterrupted().forEach { (key, error) ->
+            Log.w(TAG, "restore of $key failed; retried at the next check-in", error)
         }
     }
-
-    /** Serialize managed operations and lift only the policy used by this operation. */
-    private suspend fun managedOperation(key: String, operation: suspend () -> InstallOutcome): InstallOutcome =
-        operationMutex.withLock {
-            val policy = toggles[key] as? ManagedAppPolicy
-            if (policy == null) operation() else policy.withAllowed(operation)
-        }
 
     // --- internals -----------------------------------------------------------------
 

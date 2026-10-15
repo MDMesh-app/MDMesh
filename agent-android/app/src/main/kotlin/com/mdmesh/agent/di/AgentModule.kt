@@ -42,6 +42,7 @@ import com.mdmesh.core.sync.HardwareIdSource
 import com.mdmesh.core.sync.LastCheckIn
 import com.mdmesh.core.sync.SharedPrefsLastCheckIn
 import com.mdmesh.core.install.InstallManager
+import com.mdmesh.core.install.LiftRestorer
 import com.mdmesh.core.state.DeviceStateCollector
 import com.mdmesh.core.state.DeviceStateSource
 import com.mdmesh.core.store.ConfigStateStore
@@ -156,6 +157,11 @@ object AgentModule {
     /** Expose the collector behind its interface for the Android-free sync/enroll logic. */
     @Provides
     fun provideCapabilitySource(collector: CapabilityCollector): CapabilitySource = collector
+
+    /** Run at the top of every check-in cycle: puts back an app restriction an interrupted install left lifted. */
+    @Provides
+    fun provideLiftRestorer(installManager: InstallManager): LiftRestorer =
+        LiftRestorer(installManager::restoreInterruptedLifts)
 
     /** Stable, permission-free device id for enrollment de-duplication. */
     @Provides

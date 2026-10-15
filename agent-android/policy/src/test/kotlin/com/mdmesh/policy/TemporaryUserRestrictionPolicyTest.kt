@@ -21,6 +21,7 @@ class TemporaryUserRestrictionPolicyTest {
         var rejectRestore = false
         var ignoreWrites = false
         var failAfterClear = false
+        var readFails = false
         val writes = mutableListOf<Boolean>()
         fun write(value: Boolean) {
             writes += value
@@ -30,7 +31,8 @@ class TemporaryUserRestrictionPolicyTest {
             if (!value && failAfterClear) error("clear changed OS then failed")
         }
         val store = InMemoryLiftRestoreStore()
-        fun policy() = TemporaryUserRestrictionPolicy("userAppInstall", { supported }, { blocked }, ::write, store)
+        fun policy() = TemporaryUserRestrictionPolicy("userAppInstall", { supported }, ::read, ::write, store)
+        fun read(): Boolean = if (readFails) error("read failed") else blocked
     }
 
     @Test fun `explicit toggles use allowed polarity`() {
@@ -172,5 +174,36 @@ class TemporaryUserRestrictionPolicyTest {
         val b = Backend(); b.rejectClear = true
         assertNotNull(runCatching { b.policy().withAllowed { } }.exceptionOrNull())
         assertTrue(b.blocked); assertNull(b.store.get("userAppInstall"))
+    }
+
+    // --- fast path: a device that does not use the block gets no writes, so installs gain no new failure mode ---
+
+    @Test fun `nothing is written when the restriction is not set`() = runBlocking {
+        val b = Backend(blocked = false)
+        assertEquals("installed", b.policy().withAllowed { "installed" })
+        assertTrue(b.writes.isEmpty()); assertNull(b.store.get("userAppInstall")); assertFalse(b.blocked)
+    }
+    @Test fun `the busy guard still holds on the fast path`() = runBlocking {
+        val b = Backend(blocked = false); val p = b.policy()
+        p.withAllowed { assertTrue(p.setEnabled(false) is PolicyOutcome.Failed) }
+        assertTrue(b.writes.isEmpty())
+        assertEquals(PolicyOutcome.Applied, p.setEnabled(false)); assertTrue(b.blocked)
+    }
+    @Test fun `a device that lost Device Owner runs the operation without lifting`() = runBlocking {
+        val b = Backend(); b.supported = false
+        assertEquals("installed", b.policy().withAllowed { "installed" })
+        assertTrue(b.writes.isEmpty())
+    }
+    @Test fun `an unreadable state runs the operation as before the policy`() = runBlocking {
+        val b = Backend(blocked = false); b.readFails = true
+        assertEquals("installed", b.policy().withAllowed { "installed" })
+        assertTrue(b.writes.isEmpty()); assertNull(b.store.get("userAppInstall"))
+    }
+    @Test fun `a block set by a later operation is lifted again`() = runBlocking {
+        val b = Backend(blocked = false); val p = b.policy()
+        p.withAllowed { }
+        assertEquals(PolicyOutcome.Applied, p.setEnabled(false))
+        p.withAllowed { assertFalse(b.blocked) }
+        assertTrue(b.blocked); assertEquals(listOf(true, false, true), b.writes)
     }
 }

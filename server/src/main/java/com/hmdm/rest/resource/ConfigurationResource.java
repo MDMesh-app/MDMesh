@@ -166,7 +166,8 @@ public class ConfigurationResource {
     // =================================================================================================================
     @ApiOperation(
             value = "Create or update configuration",
-            notes = "Creates a new configuration (if id is not provided) or update existing one otherwise."
+            notes = "Creates a new configuration (if id is not provided) or update existing one otherwise. " +
+                    "On update, files and applicationSettings left out of the request are kept; an empty list clears them."
     )
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)

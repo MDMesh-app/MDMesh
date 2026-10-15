@@ -2,23 +2,45 @@
 
 <sub>[← README](README.md) · [Deploy](DEPLOY.md) · [Upgrading](docs/UPGRADING.md) · [Operations](docs/OPERATIONS.md) · [Structure](STRUCTURE.md) · [Contributing](CONTRIBUTING.md) · **Releasing**</sub>
 
-Cutting a release is one command — push an annotated semver tag (its message opens the release notes):
+## Release cycle
 
-```bash
-git tag -a v1.2.3 -m "v1.2.3" && git push --tags
-```
+- **Feature releases (0.x.0) every three weeks.** Everything merged to `main` since the last one ships together.
+- **Patch releases (0.x.y) only for a security fix or something broken in the field.** The notes say why it
+  couldn't wait. Same checklist, without the freeze.
+- **Freeze about three days before a feature release.** Only fixes merge to `main` until the release PR lands.
+- **[CHANGELOG.md](CHANGELOG.md) is the release notes.** Each PR adds its line under Unreleased. A version's section
+  is its tag annotation and its GitHub release notes, word for word; the workflow refuses a tag whose annotation
+  differs.
 
-Before tagging, run the native install/upgrade tier on `main` and wait for all nine jobs to pass (T2; see
-"T2 native rig" in [docs/DEV.md](docs/DEV.md)). Pull requests run it only when the installers change, so this is
-what catches a server change that breaks a native upgrade:
+1. **Freeze and release PR.** Branch `release/vX.Y.Z` from `main` and open a PR. Rebase it onto any fix that
+   lands during the freeze.
+2. **Move Unreleased to `## vX.Y.Z — YYYY-MM-DD`** in CHANGELOG.md, with a new empty `## Unreleased` above it.
+   Drop `<!-- pending PR #N -->` lines whose PR didn't merge and the markers on the rest, and sum up the Dependabot
+   bumps in Under the hood. Preview it with `release/changelog-section.sh X.Y.Z`.
+3. **Review and CI.** The PR's code review, green CI, and the native install matrix on the release branch, all nine
+   jobs (T2; see "T2 native rig" in [docs/DEV.md](docs/DEV.md)). Pull requests run T2 only when the installers
+   change, so this is what catches a server change that breaks a native upgrade:
+   `gh workflow run t2-native.yml --ref release/vX.Y.Z`
+4. **The owner's phone check** of the release branch, and the owner's go.
+5. **Squash-merge** the release PR as `vX.Y.Z (#N)`.
+6. **Tag from the changelog section and push the tag**, on the merge commit:
 
-```bash
-gh workflow run t2-native.yml --ref main
-```
+   ```bash
+   git switch main && git pull --ff-only
+   git tag -a vX.Y.Z -F <(release/changelog-section.sh X.Y.Z)
+   git push origin vX.Y.Z
+   ```
 
-The tag must point at a commit on `main` (its first-parent history) and be newer than every earlier release: the
-workflow's `gate` job checks that first, and the `release` job (the
-only one with the signing secrets) waits for a reviewer's approval in the `release` environment (setup step 4).
+   Then approve the `release` environment's deployment once the `gate` job is green (setup step 4).
+7. **Verify the published release** ([below](#verifying-a-published-release)): asset SHA-256 against the
+   manifest, the minisign signature, the APK's signing certificate, its versionCode, and the GHCR images.
+
+## What the release workflow does
+
+The tag must point at a commit on `main` (its first-parent history), be newer than every earlier release, and carry
+the tagged commit's CHANGELOG.md section as its annotation (`release/changelog-section.sh --check vX.Y.Z`, which
+you can also run locally): the workflow's `gate` job checks that first, and the `release` job (the only one with the
+signing secrets) waits for a reviewer's approval in the `release` environment (setup step 4).
 
 `.github/workflows/release.yml` then: runs the agent unit tests + builds the **signed** release APK,
 builds & pushes the **server**, **web**, and **supervisor** images to GHCR as `:VERSION`, builds a
@@ -29,6 +51,15 @@ and `manifest.json.minisig`. The fleet auto-updater consumes that signed manifes
 have all succeeded does the final step retag each image's `:latest` to the release's `:VERSION` (same
 digest, registry-side, no rebuild), then verify all three digests. A failure anywhere earlier leaves
 `:latest` — and so every quick-start install — on the previous release.
+
+**If the `gate` job says the annotation differs**, nothing was built or published. Delete the tag and tag again
+from the changelog (deleting a `v*` tag needs the tag ruleset's bypass). If the section itself is wrong, fix it in a
+PR to `main` first and tag the new merge commit.
+
+```bash
+git push origin :refs/tags/vX.Y.Z
+git tag -f -a vX.Y.Z -F <(release/changelog-section.sh X.Y.Z) && git push origin vX.Y.Z
+```
 
 **If the job goes red after the GitHub Release step** (i.e. in "Move :latest to this release"): the
 Release and its `:VERSION` images are published and fine, but `:latest` may point at the previous release
@@ -92,8 +123,7 @@ Images pushed by Actions to an org are **private by default**. For the no-clone 
 to work anonymously, set each package to public: **org → Packages → `mdmesh-server` / `mdmesh-web` /
 `mdmesh-supervisor` → Package settings → Change visibility → Public.** (Otherwise deployers must
 `docker login ghcr.io` with a PAT.) The release workflow verifies this: after pushing, it fetches each image
-manifest **anonymously** and fails the release with instructions if any package is still private. Release notes
-come from the annotated tag message (`git tag -a vX.Y.Z -m "..."`) plus GitHub's generated list.
+manifest **anonymously** and fails the release with instructions if any package is still private.
 
 ### 4. Release environment and tag protection
 The release job runs in the `release` environment, so the repo settings decide who can publish:
@@ -117,9 +147,19 @@ The updater fetches the GitHub Release, verifies `manifest.json` against the bak
 without the private minisign key fails verification and is refused — so a hijacked repo/account alone
 can't push code to the fleet.
 
-## Verifying locally
+## Verifying a published release
+
+Needs `gh`, `minisign`, the Android build-tools (`apksigner`, `aapt2`) and `docker buildx`:
+
 ```bash
-release/version.sh 1.2.3            # → 10203
-release/apk-checksum.sh some.apk    # → provisioning signature checksum
-release/verify-manifest.sh manifest.json   # needs minisign + the real public key
+V=1.2.3; d=$(mktemp -d); gh release download "v$V" -R MDMesh-app/MDMesh -D "$d"
+release/verify-manifest.sh "$d/manifest.json"     # minisign: signed by the release key
+python3 -c 'import json,sys; a=json.load(open(sys.argv[1]))["components"]["apk"]; print(a["sha256"], a["versionCode"], a["signatureChecksum"])' "$d/manifest.json"
+sha256sum "$d/mdmesh-agent.apk"                   # = the manifest's sha256
+release/apk-checksum.sh "$d/mdmesh-agent.apk"     # = its signatureChecksum, and the same as every earlier release
+release/version.sh "$V"                           # = its versionCode, and the APK's:
+aapt2 dump badging "$d/mdmesh-agent.apk" | grep -o "versionCode='[0-9]*'"
+for img in mdmesh-server mdmesh-web mdmesh-supervisor; do   # :V and :latest print the same digest
+  for t in "$V" latest; do docker buildx imagetools inspect --format "$img:$t {{.Manifest.Digest}}{{println}}" "ghcr.io/mdmesh-app/$img:$t"; done
+done
 ```

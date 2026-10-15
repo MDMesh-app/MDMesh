@@ -6,8 +6,8 @@
 #   distro:   debian-12 | debian-13 | ubuntu-24.04
 #   scenario: fresh    the code under test (T2_TO_REF) on a clean host
 #             upgrade  T2_FROM_REF (the last release) installed with GITHUB_REPO (and a dummy GITHUB_TOKEN put in its
-#                      supervisor.env, which GitHub refuses), then T2_TO_REF
-#                      over it (`git pull` + the same command, without HTTP_PORT, BASE_URL, GITHUB_REPO or GITHUB_TOKEN:
+#                      supervisor.env, which GitHub refuses), then T2_TO_REF over it (`git pull` + the same command,
+#                      without HTTP_PORT, BASE_URL, GITHUB_REPO or GITHUB_TOKEN:
 #                      the upgrade must keep the port, the base URL and the updater settings the install has)
 #             killed   the same upgrade, SIGKILLed at each kill point (tests/native/lib/guest.sh), then re-run: it must
 #                      converge, keep the same settings and pass every check (the re-run also leaves HTTP_PORT and

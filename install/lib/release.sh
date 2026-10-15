@@ -48,7 +48,8 @@ mdm_fetch_release_apk() {
   fi
   case "$code" in
     200) rel=$(cat -- "$d/release.json" 2>/dev/null || true) ;;
-    403) MDM_RELEASE_PROBLEM="GitHub refused the release lookup for ${repo} (HTTP 403: a rate limit, or the token lacks access$([ -n "${GITHUB_TOKEN:-}" ] || echo '; a GITHUB_TOKEN raises the limit'))"; return 1 ;;
+    403) if [ -n "${GITHUB_TOKEN:-}" ]; then MDM_RELEASE_PROBLEM="GitHub refused the release lookup for ${repo} (HTTP 403: a rate limit, or GITHUB_TOKEN lacks access)"
+         else MDM_RELEASE_PROBLEM="GitHub refused the release lookup for ${repo} (HTTP 403: a rate limit; a GITHUB_TOKEN raises it)"; fi; return 1 ;;
     429) MDM_RELEASE_PROBLEM="GitHub's rate limit stopped the release lookup for ${repo} (HTTP 429$([ -n "${GITHUB_TOKEN:-}" ] || echo '; a GITHUB_TOKEN raises it'))"; return 1 ;;
     000|'') MDM_RELEASE_PROBLEM="Could not reach GitHub to look up the latest release of ${repo}${details}"; return 1 ;;
     404) if [ -n "${GITHUB_TOKEN:-}" ]; then MDM_RELEASE_PROBLEM="No published release found for ${repo}, or GITHUB_TOKEN has no access to it (HTTP 404)"

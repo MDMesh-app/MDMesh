@@ -70,8 +70,8 @@ enrollment secret alone, after a `pg_dump` to `/opt/mdmesh/backups/` ([restore](
 - **Interrupted run:** run the same command again. It picks up where the last run stopped.
 - **Settings:** SMTP, `LEGACY_DEVICE_API`, `GITHUB_REPO` and `GITHUB_TOKEN` carry over from earlier runs, Erase
   included. Pass one to change it; `GITHUB_TOKEN=` removes the token ([how](OPERATIONS.md#updater-supervisor)). On the
-  first upgrade from v0.3.1 or older, pass `GITHUB_TOKEN` and `GITHUB_REPO` once more if you use them: that run's
-  release download can't read the old settings file in time.
+  first upgrade from v0.3.1 or older they are still kept, but that run's agent APK download can't read the old
+  settings file in time: pass `GITHUB_TOKEN` and `GITHUB_REPO` once more if that download needs them.
 
 ## Recovery and rollback
 

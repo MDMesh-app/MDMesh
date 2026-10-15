@@ -147,7 +147,7 @@ T2_KILL_POINTS=mid-deploy,migrating tests/native/run.sh debian-12 killed
 It runs the native install ([DEPLOY.md Option C](../DEPLOY.md#option-c--native-no-docker)) in a throwaway systemd
 container that looks like a fresh VPS, with the documented command:
 `sudo BASE_URL=… HTTP_PORT=… ./setup.sh --native -y`. An upgrade moves the checkout to the new commit and runs it
-again.
+again without `BASE_URL` and `HTTP_PORT`, which it must keep.
 
 | Scenario | What it proves |
 |----------|----------------|

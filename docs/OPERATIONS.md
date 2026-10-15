@@ -77,7 +77,8 @@ number, and `SMTP_SSL` / `SMTP_STARTTLS` take `true`/`1` or `false`/`0`.
 
 ## Base URL and hostname rules
 
-The installers check `BASE_URL` before they change anything. The rule is an allowlist
+The installers check `BASE_URL` before they change anything (on a native re-run after an interrupted run, possibly
+only once the old server is stopped). The rule is an allowlist
 ([`install/lib/url.sh`](../install/lib/url.sh)):
 
 - `http://` or `https://`, in any case (stored in lowercase);

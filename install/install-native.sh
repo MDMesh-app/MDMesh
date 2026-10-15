@@ -732,16 +732,23 @@ elif [ -e "$SUP_ENV_LEGACY" ] || [ -L "$SUP_ENV_LEGACY" ]; then
 fi
 # sup_old_param KEY: KEY's value in _sup_old, as systemd reads an EnvironmentFile: lines starting with # or ; are
 # comments, the last KEY= line wins, and the CR of a CRLF line, whitespace around the key, the "=" and the value, and one
-# pair of matching quotes around the value are dropped. (Escapes and a quoted value running over several lines are not
-# followed: what they leave fails repo_ok/token_ok and is ignored.)
+# pair of matching quotes around the value are dropped. A value that runs on (a quote not closed on its line, or a
+# trailing \) is not followed: the lines it runs over are skipped, never read as KEY= lines of their own, and its first
+# line fails repo_ok/token_ok. (Escapes inside a value are not undone either; they fail those checks too.)
 sup_old_param() {
-  local line k v=""
+  local line k v="" raw q="" cont=0
   while IFS= read -r line; do
-    line=${line%$'\r'}; line=${line#"${line%%[![:space:]]*}"}
+    line=${line%$'\r'}
+    if [ -n "$q" ]; then case "$line" in *"$q"*) q="" ;; esac; continue; fi       # inside an open quote
+    if [ "$cont" = 1 ]; then case "$line" in *\\) ;; *) cont=0 ;; esac; continue; fi   # after a trailing \
+    line=${line#"${line%%[![:space:]]*}"}
     case "$line" in '#'*|';'*) continue ;; *=*) ;; *) continue ;; esac
     k=${line%%=*}; k=${k%"${k##*[![:space:]]}"}
+    raw=${line#*=}; raw=${raw#"${raw%%[![:space:]]*}"}; raw=${raw%"${raw##*[![:space:]]}"}
+    case "$raw" in \"*|\'*) case "${raw:1}" in *"${raw:0:1}"*) ;; *) q=${raw:0:1} ;; esac ;; esac
+    if [ -z "$q" ]; then case "$raw" in *\\) cont=1 ;; esac; fi
     [ "$k" = "$1" ] || continue
-    v=${line#*=}; v=${v#"${v%%[![:space:]]*}"}; v=${v%"${v##*[![:space:]]}"}
+    v=$raw
     case "$v" in \"*\"|\'*\') v=${v:1:${#v}-2} ;; esac
   done <<< "$_sup_old"
   printf '%s' "$v"
@@ -749,7 +756,7 @@ sup_old_param() {
 # origin_repo: owner/name of the clone's origin, or empty (no origin, no git, or not a GitHub owner/name).
 origin_repo() {
   local o
-  o=$(git -C "$REPO" remote get-url origin 2>/dev/null | sed -E 's#(git@|https?://)[^/:]+[/:]##; s#\.git$##' || true)
+  o=$(git -C "$REPO" remote get-url origin 2>/dev/null | sed -E 's#^(ssh://)?(git@|https?://)[^/:]+[/:]##; s#/+$##; s#\.git$##' || true)
   if repo_ok "$o"; then printf '%s' "$o"; fi
 }
 # resolve_sup_settings: GITHUB_REPO, GITHUB_REPO_FROM and GITHUB_TOKEN by the rules above, from _sup_old as it stands.

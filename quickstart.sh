@@ -235,7 +235,7 @@ chmod 600 .env
 say "Wrote .env (secrets generated). docker compose reads COMPOSE_FILE/PROFILES from it."
 
 say "Pulling images…"
-docker compose pull || { err "Could not pull the :${IMAGE_TAG} images from ghcr.io/${IMAGE_OWNER}. Has a release been published? (cut one with: git tag v0.1.0 && git push --tags)"; exit 1; }
+docker compose pull || { err "Could not pull the :${IMAGE_TAG} images from ghcr.io/${IMAGE_OWNER}. Has a release been published? (to cut one, see RELEASING.md)"; exit 1; }
 # The init marker the wait below reads is on the server's data volume, and the server writes it only when it is absent.
 # The entrypoint removes the previous start's marker only in images after v0.3.1, and this script (served from main) may
 # be installing v0.3.1 or older, so a re-run over an existing volume would read the last run's result. Remove it here:

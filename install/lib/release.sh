@@ -28,14 +28,33 @@ _mdm_manifest_version() { python3 -c 'import sys,json;v=json.load(open(sys.argv[
 # existing private directory the caller owns and removes) and verify it as described above, sending tool output to LOG.
 # Returns 0 with MDM_AGENT_CK (the APK's signing-certificate checksum from the signed manifest) and the APK at
 # DIR/agent.apk; otherwise returns 1 with MDM_RELEASE_PROBLEM set to a one-line reason and MDM_AGENT_CK empty.
+# Either way MDM_RELEASE_NOTE is a one-line note for the caller to show, or empty: when GitHub refuses GITHUB_TOKEN
+# (HTTP 401: expired or revoked), the release is fetched again without it, and the note says so.
 # The reasons are worded to be followed by the caller's own consequence (e.g. " — console uses debug defaults").
 # MDM_MINISIGN names the minisign command (default: minisign on PATH); setup.sh points it at the supervisor image's.
-# shellcheck disable=SC2034  # MDM_AGENT_CK / MDM_RELEASE_PROBLEM are results for the caller
+# shellcheck disable=SC2034  # MDM_AGENT_CK / MDM_RELEASE_PROBLEM / MDM_RELEASE_NOTE are results for the caller
 mdm_fetch_release_apk() {
-  local repo=$1 pubkey=$2 d=$3 log=$4 rel apk_url man_url sig_url tag mver want_sha details="" ms=${MDM_MINISIGN:-minisign}
-  MDM_AGENT_CK=""; MDM_RELEASE_PROBLEM=""
+  local repo=$1 pubkey=$2 d=$3 log=$4 rel="" code apk_url man_url sig_url tag mver want_sha details="" ms=${MDM_MINISIGN:-minisign}
+  local api="https://api.github.com/repos/${repo}/releases/latest"
+  MDM_AGENT_CK=""; MDM_RELEASE_PROBLEM=""; MDM_RELEASE_NOTE=""
   [ "$log" = /dev/null ] || details=" (details in $log)"
-  rel=$(mdm_gh_curl -fsSL "https://api.github.com/repos/${repo}/releases/latest" 2>>"$log" || true)
+  # The HTTP status says why a lookup failed (curl prints 000 when GitHub could not be reached).
+  code=$(mdm_gh_curl -sSL -o "$d/release.json" -w '%{http_code}' "$api" 2>>"$log" || true)
+  if [ "$code" = 401 ] && [ -n "${GITHUB_TOKEN:-}" ]; then
+    MDM_RELEASE_NOTE="GitHub refused GITHUB_TOKEN (HTTP 401: expired or revoked?), so the release was fetched without it. Set a new token, or remove it"
+    # Shadows the caller's GITHUB_TOKEN for the rest of this function (and mdm_gh_curl, which it calls) only.
+    local GITHUB_TOKEN=""
+    code=$(mdm_gh_curl -sSL -o "$d/release.json" -w '%{http_code}' "$api" 2>>"$log" || true)
+  fi
+  case "$code" in
+    200) rel=$(cat -- "$d/release.json" 2>/dev/null || true) ;;
+    403|429) MDM_RELEASE_PROBLEM="GitHub's rate limit stopped the release lookup for ${repo} (HTTP ${code}$([ -n "${GITHUB_TOKEN:-}" ] || echo '; a GITHUB_TOKEN raises it'))"; return 1 ;;
+    000|'') MDM_RELEASE_PROBLEM="Could not reach GitHub to look up the latest release of ${repo}${details}"; return 1 ;;
+    404) if [ -n "${GITHUB_TOKEN:-}" ]; then MDM_RELEASE_PROBLEM="No published release found for ${repo}, or GITHUB_TOKEN has no access to it (HTTP 404)"
+         else MDM_RELEASE_PROBLEM="No published release found for ${repo}"; fi; return 1 ;;
+    *) MDM_RELEASE_PROBLEM="No published release found for ${repo} (HTTP ${code:-000})"; return 1 ;;
+  esac
+  rm -f -- "$d/release.json"
   apk_url=$(printf '%s' "$rel" | _mdm_rel_get apk); man_url=$(printf '%s' "$rel" | _mdm_rel_get manifest)
   sig_url=$(printf '%s' "$rel" | _mdm_rel_get signature)
   if [ -z "$apk_url" ] || [ -z "$man_url" ]; then MDM_RELEASE_PROBLEM="No published release found for ${repo}"; return 1; fi

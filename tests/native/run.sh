@@ -6,11 +6,12 @@
 #   distro:   debian-12 | debian-13 | ubuntu-24.04
 #   scenario: fresh    the code under test (T2_TO_REF) on a clean host
 #             upgrade  T2_FROM_REF (the last release) installed with GITHUB_REPO (and a dummy GITHUB_TOKEN put in its
-#                      supervisor.env), then T2_TO_REF
+#                      supervisor.env, which GitHub refuses), then T2_TO_REF
 #                      over it (`git pull` + the same command, without HTTP_PORT, BASE_URL, GITHUB_REPO or GITHUB_TOKEN:
 #                      the upgrade must keep the port, the base URL and the updater settings the install has)
 #             killed   the same upgrade, SIGKILLed at each kill point (tests/native/lib/guest.sh), then re-run: it must
-#                      converge and pass every check (the re-run also leaves HTTP_PORT and BASE_URL out)
+#                      converge, keep the same settings and pass every check (the re-run also leaves HTTP_PORT and
+#                      BASE_URL out)
 #
 # Environment (all optional):
 #   T2_FROM_REF   the release to upgrade from (default v0.3.1). CI passes the latest GitHub release.
@@ -100,6 +101,42 @@ install_and_sign_in() {
   check_install "$label" "$ref"
 }
 
+# Updater settings an upgrade (and a killed upgrade's re-run) must keep. The repo is the origin's in other letter case
+# (GitHub ignores case, so release fetches still work, and it differs from the origin the installer would follow). The
+# token is a dummy in GitHub's characters, put into supervisor.env after the install (guest.sh set-token says why):
+# GitHub refuses it (401), and the installer must say so and fetch the release without it.
+origin_repo=$(printf '%s' "$T2_ORIGIN_URL" | sed -E 's#(git@|https?://)[^/:]+[/:]##; s#\.git$##')
+SET_REPO=${origin_repo,,}; [ "$SET_REPO" != "$origin_repo" ] || SET_REPO=${origin_repo^^}
+SET_TOKEN="t2_dummy_token_$RAND"
+
+# install_with_settings LABEL REF: install_and_sign_in with GITHUB_REPO=SET_REPO, then SET_TOKEN in its supervisor.env;
+# the settings are recorded in $OUT/settings.before.
+install_with_settings() {
+  INSTALL_GITHUB_REPO=$SET_REPO install_and_sign_in "$1" "$2"
+  guest set-token "$SET_TOKEN"
+  guest settings > "$OUT/settings.before"
+  log "  settings: $(tr '\n' ' ' < "$OUT/settings.before")"
+  check "the $1 install wrote GITHUB_REPO" "$(sed -n 's/^GITHUB_REPO=//p' "$OUT/settings.before")" "$SET_REPO"
+  check "the $1 install wrote base.url" "$(sed -n 's/^base.url=//p' "$OUT/settings.before")" "$T2_BASE_URL"
+  check "GITHUB_TOKEN set in supervisor.env" "$(sed -n 's/^GITHUB_TOKEN=//p' "$OUT/settings.before")" \
+    "$(printf '%s' "$SET_TOKEN" | sha256sum | cut -c1-16)"
+}
+
+# settings_kept LABEL: after the run LABEL, base.url, GITHUB_REPO and GITHUB_TOKEN are what they were before, the repo is
+# marked as a setting, supervisor.env is root-only in /etc/mdmesh, and that run fetched the release APK (without the
+# refused token, which it reported when it had read it in time).
+settings_kept() {
+  local label=$1 k
+  guest settings > "$OUT/$label.settings"
+  for k in base.url GITHUB_REPO GITHUB_TOKEN; do
+    check "$k kept by $label" "$(sed -n "s/^$k=//p" "$OUT/$label.settings")" "$(sed -n "s/^$k=//p" "$OUT/settings.before")"
+  done
+  check "GITHUB_REPO_FROM=setting after $label" "$(sed -n 's/^GITHUB_REPO_FROM=//p' "$OUT/$label.settings")" setting
+  check "supervisor.env in /etc/mdmesh, root-only, after $label" "$(sed -n 's/^supervisor.env=//p' "$OUT/$label.settings")" "root:root 600"
+  check "$label fetched and verified the release APK" "$(grep -c 'release agent APK fetched' "$OUT/$label.out" || true)" 1
+  if grep -q 'GitHub refused GITHUB_TOKEN' "$OUT/$label.out"; then log "  INFO $label reported the refused token"; fi
+}
+
 case "$SCENARIO" in
   fresh)
     start_container "$NAME" "$IMAGE"
@@ -112,33 +149,16 @@ case "$SCENARIO" in
   upgrade)
     start_container "$NAME" "$IMAGE"
     prepare_checkout "$FROM_SHA"
-    # Updater settings the upgrade must keep. The repo is the origin's in other letter case (GitHub ignores case, so
-    # release fetches still work, and it differs from the default the installer would fall back to). The token is a
-    # dummy put into supervisor.env afterwards (guest.sh set-token says why), so GitHub refuses the upgrade's release
-    # fetch (401) and the upgrade carries on with debug defaults.
-    origin_repo=$(printf '%s' "$T2_ORIGIN_URL" | sed -E 's#(git@|https?://)[^/:]+[/:]##; s#\.git$##')
-    set_repo=${origin_repo,,}; [ "$set_repo" != "$origin_repo" ] || set_repo=${origin_repo^^}
-    INSTALL_GITHUB_REPO=$set_repo install_and_sign_in "install-$T2_FROM_REF" "$FROM_SHA"
+    install_with_settings "install-$T2_FROM_REF" "$FROM_SHA"
     before_e2e=$E2E_RESULT
     [ "$CHECK_FAILS" -eq 0 ] || die "the $T2_FROM_REF install failed its checks; not upgrading it"
-    guest set-token "t2-dummy-token-$RAND"
-    guest settings > "$OUT/settings.before"
-    log "  settings: $(tr '\n' ' ' < "$OUT/settings.before")"
-    check "the $T2_FROM_REF install wrote GITHUB_REPO" "$(sed -n 's/^GITHUB_REPO=//p' "$OUT/settings.before")" "$set_repo"
-    check "the $T2_FROM_REF install wrote base.url" "$(sed -n 's/^base.url=//p' "$OUT/settings.before")" "$T2_BASE_URL"
-    check "a GITHUB_TOKEN is set before the upgrade" "$(sed -n 's/^GITHUB_TOKEN=//p' "$OUT/settings.before")" \
-      "$(printf '%s' "t2-dummy-token-$RAND" | sha256sum | cut -c1-16)"
     continuity_before
     guest checkout "$TO_SHA" | while IFS= read -r l; do log "$l"; done
     # Without HTTP_PORT, BASE_URL, GITHUB_REPO and GITHUB_TOKEN: the install is on T2_HTTP_PORT (not 8080), and the
     # upgrade must keep it, the base URL in ROOT.xml and the updater settings (-y never prompts).
     rc=0; OMIT_PORT=1 OMIT_BASE_URL=1 run_install upgrade || rc=$?
     check "the upgrade's installer exits 0" "$rc" 0
-    guest settings > "$OUT/settings.after"
-    for k in base.url GITHUB_REPO GITHUB_TOKEN; do
-      check "$k kept by the upgrade" "$(sed -n "s/^$k=//p" "$OUT/settings.after")" "$(sed -n "s/^$k=//p" "$OUT/settings.before")"
-    done
-    check "supervisor.env in /etc/mdmesh, root-only" "$(sed -n 's/^supervisor.env=//p' "$OUT/settings.after")" "root:root 600"
+    settings_kept upgrade
     continuity_after upgrade
     check_install upgrade "$TO_SHA"
     verdict=$([ "$CHECK_FAILS" -eq 0 ] && echo PASS || echo FAIL)
@@ -150,7 +170,7 @@ case "$SCENARIO" in
     # starts from that snapshot: the host boots back into the release, and the upgrade is killed and re-run there.
     start_container "$NAME" "$IMAGE"
     prepare_checkout "$FROM_SHA"
-    install_and_sign_in "install-$T2_FROM_REF" "$FROM_SHA"
+    install_with_settings "install-$T2_FROM_REF" "$FROM_SHA"
     [ "$CHECK_FAILS" -eq 0 ] || die "the $T2_FROM_REF install failed its checks; not upgrading it"
     continuity_before
     docker exec "$CTR" systemctl stop mdmesh-supervisor mdmesh-server postgresql
@@ -185,6 +205,7 @@ case "$SCENARIO" in
           CHECK_FAILS=$((CHECK_FAILS + 1))
         fi
         continuity_after "rerun-$point"
+        settings_kept "rerun-$point"
         check_install "rerun-$point" "$TO_SHA"
         if [ -z "$verdict" ]; then
           verdict=$([ "$CHECK_FAILS" -eq "$fails0" ] && echo CONVERGED || echo NOT-CONVERGED)

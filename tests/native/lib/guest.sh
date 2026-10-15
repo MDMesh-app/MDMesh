@@ -202,6 +202,7 @@ cmd_set_token() { sed -i "s/^GITHUB_TOKEN=.*/GITHUB_TOKEN=$1/" "$(sup_env_file)"
 cmd_settings() {
   echo "base.url=$(xml_param base.url)"
   echo "GITHUB_REPO=$(sup_param GITHUB_REPO)"
+  echo "GITHUB_REPO_FROM=$(sup_param GITHUB_REPO_FROM)"
   echo "GITHUB_TOKEN=$(fp "$(sup_param GITHUB_TOKEN)")"
   echo "supervisor.env=$(stat -c '%U:%G %a' /etc/mdmesh/supervisor.env 2>/dev/null || echo missing)"
 }

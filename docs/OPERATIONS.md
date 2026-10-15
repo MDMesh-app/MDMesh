@@ -8,8 +8,11 @@
 you edit it, run `docker compose up -d`.
 
 **Native:** pass a setting to `sudo ./setup.sh --native` in its environment. The installer writes it to
-`/opt/mdmesh-tc/conf/Catalina/localhost/ROOT.xml` or `/etc/mdmesh/supervisor.env`, and later runs keep it until you
-pass a new value.
+`/opt/mdmesh-tc/conf/Catalina/localhost/ROOT.xml` or `/etc/mdmesh/supervisor.env`. Later runs keep `BASE_URL`,
+`SMTP_*`, `LEGACY_DEVICE_API`, `GITHUB_REPO` and `GITHUB_TOKEN` until you pass a new value. `HTTP_PORT` follows the
+port the install serves on, `REPLACE_DATA` applies to one run, and the rest of `supervisor.env` is rewritten on every
+run: only `GITHUB_REPO` and `GITHUB_TOKEN` survive a hand edit there (a hand-edited `GITHUB_REPO` also needs
+`GITHUB_REPO_FROM=setting`, or the next run follows `origin` again).
 
 ### Server
 
@@ -34,7 +37,7 @@ The wizard writes `SITE_ADDRESS`, `ACME_EMAIL` and `TUNNEL_TOKEN` for the hostin
 
 | Setting | Where | Default | Meaning |
 |---------|-------|---------|---------|
-| `GITHUB_REPO` | `.env`; native env → `supervisor.env` | the clone's `origin` (quick start asks) | `owner/repo` to poll. Without it, there are no updates. |
+| `GITHUB_REPO` | `.env`; native env → `supervisor.env` | the clone's `origin` (quick start asks); native re-runs: the value you set, else the current `origin` | `owner/repo` to poll. Without it, there are no updates. On native, `GITHUB_REPO=` goes back to following `origin`. |
 | `UPDATE_CHANNEL` | `.env` (native: always `stable`) | `stable` | `beta` also offers prereleases. |
 | `POLL_INTERVAL_HOURS` | `.env` (native: always `6`) | `6` | How often to check. |
 | `GITHUB_TOKEN` | `.env`; native env → `supervisor.env` | empty | Needed for a private repo; raises rate limits. See note. |

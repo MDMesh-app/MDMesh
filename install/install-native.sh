@@ -152,6 +152,19 @@ if [ -n "${LEGACY_DEVICE_API+x}" ]; then
   case "${LEGACY_DEVICE_API,,}" in true|1) LEGACY_DEVICE_API=1 ;; false|0) LEGACY_DEVICE_API=0 ;;
     *) echo "  LEGACY_DEVICE_API must be 1 or 0."; exit 1 ;; esac
 fi
+# GITHUB_REPO / GITHUB_TOKEN: the updater's settings. They are written to /etc/mdmesh/supervisor.env, which systemd reads
+# (and a root shell might source), so they are allowlists: repo_ok is owner/name in GitHub's characters, with no "." or
+# ".." for either part; token_ok is letters, digits and "_" (ghp_…, github_pat_…, a 40-hex classic token), or empty (no
+# token). A value passed in the environment that fails stops the install here, before anything changes. (Kept across
+# re-runs: see the release-fetch step.)
+repo_ok() {
+  case "$1" in */*/*|*[!${_MDM_ALNUM}._/-]*) return 1 ;; */*) ;; *) return 1 ;; esac
+  case "${1%%/*}" in ''|.|..) return 1 ;; esac
+  case "${1#*/}" in ''|.|..) return 1 ;; esac
+}
+token_ok() { case "$1" in *[!${_MDM_ALNUM}_]*) return 1 ;; esac; }
+if [ -n "${GITHUB_REPO:-}" ] && ! repo_ok "$GITHUB_REPO"; then echo "  GITHUB_REPO must be owner/name (e.g. MDMesh-app/MDMesh)."; exit 1; fi
+if [ -n "${GITHUB_TOKEN:-}" ] && ! token_ok "$GITHUB_TOKEN"; then echo "  GITHUB_TOKEN must be a GitHub token: letters, digits and _ only."; exit 1; fi
 # The HTTP port (HTTP_PORT) is settled below, once the existing install's server.xml can be read the safe way.
 DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
 JWT_SECRET=$(openssl rand -hex 64)   # jwt.secretkey: hex only (see the reuse rule below)
@@ -415,12 +428,12 @@ old_root_param() { printf '%s\n' "$_old_xml" | sed -n "s/.*name=\"$1\"[[:space:]
 # enroll again are given the same address. The value from ROOT.xml is checked like any other (mdm_check_base_url) before
 # it is used, since $SVC_USER can write that file; one that fails is ignored, as on a fresh install. When ROOT.xml can
 # only be read after heal_trees (see above), -y (or Enter at the prompt) reads it there instead.
-_cur_url=$(old_root_param base.url)
-if [ -n "$_cur_url" ] && ! mdm_check_base_url _cur_url; then
-  info "That is the base URL in the existing ROOT.xml: ignoring it"; _cur_url=
-fi
 BASE_URL="${BASE_URL:-}"; _url_deferred=0
 if [ -z "$BASE_URL" ]; then
+  _cur_url=$(old_root_param base.url)
+  if [ -n "$_cur_url" ] && ! mdm_check_base_url _cur_url; then
+    info "That is the base URL in the existing ROOT.xml: ignoring it"; _cur_url=
+  fi
   if [ -n "$_cur_url" ]; then
     [ "$ASSUME_YES" = 1 ] || read -rp "  Public base URL [${_cur_url}]: " BASE_URL
     if [ -z "$BASE_URL" ]; then BASE_URL=$_cur_url; info "Keeping the base URL ${BASE_URL} (from ROOT.xml; set BASE_URL to change it)"; fi
@@ -696,9 +709,13 @@ step "Fetching the agent APK from GitHub Releases"
 # Anything less (no signature, a bad one, no minisign, a failed download, a mismatch) is refused, with its own message.
 # GITHUB_REPO and GITHUB_TOKEN (also the updater's settings, written to supervisor.env below) are kept across re-runs, like
 # the ROOT.xml settings: a variable set in the environment wins, even set to "" (GITHUB_TOKEN= removes the token,
-# GITHUB_REPO= goes back to the default); otherwise the value in the current supervisor.env; otherwise the default (the
-# clone's origin; no token). Erase keeps them as well: they configure this host's updater, not the data. The file is
-# parsed, never sourced: a value is everything after the first "=" on the last KEY= line, as systemd reads it.
+# GITHUB_REPO= goes back to the clone's origin); otherwise the value in the current supervisor.env; otherwise the default
+# (the clone's origin; no token). Erase keeps them as well: they configure this host's updater, not the data.
+# GITHUB_REPO_FROM in that file records where the repo came from: "origin" (the default) is derived from the clone again
+# on every run, so a clone moved to a fork follows it; "setting" (it was passed) is kept until a new value is passed. A
+# file from before GITHUB_REPO_FROM existed counts as "origin" when its repo is the origin's, else as "setting".
+# The file is parsed, never sourced (sup_old_param), and what it holds is checked like a passed value (repo_ok, token_ok):
+# one that fails is ignored, with a note that does not print it.
 # Before v0.3.2 the file was $BASE_DIR/supervisor.env, in $SVC_USER's tree: it is read as that account (svc_cat), and if
 # it cannot read it yet (root-owned, as those versions wrote it; see readable_after_heal), after heal_trees.
 SUP_ENV="$SUP_ENV_DIR/supervisor.env"; SUP_ENV_LEGACY="$BASE_DIR/supervisor.env"
@@ -713,29 +730,55 @@ elif [ -e "$SUP_ENV_LEGACY" ] || [ -L "$SUP_ENV_LEGACY" ]; then
     else info "Could not read $SUP_ENV_LEGACY as $SVC_USER (not a regular file?): the updater settings start from their defaults"; fi
   fi
 fi
-sup_old_param() { printf '%s\n' "$_sup_old" | sed -n "s/^[[:space:]]*$1=//p" | tail -n 1; }
-# repo_ok VALUE: VALUE is owner/name in GitHub's characters. A GITHUB_REPO read from the file must be: the pre-v0.3.2 file
-# is $SVC_USER's to write, and the value goes into URLs and messages. One that is not is ignored.
-repo_ok() {
-  case "$1" in */*/*|/*|*/|*[!${_MDM_ALNUM}._/-]*) return 1 ;; */*) return 0 ;; *) return 1 ;; esac
+# sup_old_param KEY: KEY's value in _sup_old, as systemd reads an EnvironmentFile: lines starting with # or ; are
+# comments, the last KEY= line wins, and the CR of a CRLF line, whitespace around the key, the "=" and the value, and one
+# pair of matching quotes around the value are dropped. (Escapes and a quoted value running over several lines are not
+# followed: what they leave fails repo_ok/token_ok and is ignored.)
+sup_old_param() {
+  local line k v=""
+  while IFS= read -r line; do
+    line=${line%$'\r'}; line=${line#"${line%%[![:space:]]*}"}
+    case "$line" in '#'*|';'*) continue ;; *=*) ;; *) continue ;; esac
+    k=${line%%=*}; k=${k%"${k##*[![:space:]]}"}
+    [ "$k" = "$1" ] || continue
+    v=${line#*=}; v=${v#"${v%%[![:space:]]*}"}; v=${v%"${v##*[![:space:]]}"}
+    case "$v" in \"*\"|\'*\') v=${v:1:${#v}-2} ;; esac
+  done <<< "$_sup_old"
+  printf '%s' "$v"
 }
-# resolve_sup_settings: GITHUB_REPO and GITHUB_TOKEN by the rules above, from _sup_old as it stands.
+# origin_repo: owner/name of the clone's origin, or empty (no origin, no git, or not a GitHub owner/name).
+origin_repo() {
+  local o
+  o=$(git -C "$REPO" remote get-url origin 2>/dev/null | sed -E 's#(git@|https?://)[^/:]+[/:]##; s#\.git$##' || true)
+  if repo_ok "$o"; then printf '%s' "$o"; fi
+}
+# resolve_sup_settings: GITHUB_REPO, GITHUB_REPO_FROM and GITHUB_TOKEN by the rules above, from _sup_old as it stands.
 resolve_sup_settings() {
+  local stored from
+  _origin=$(origin_repo); GITHUB_REPO=""; GITHUB_REPO_FROM=setting
   if [ -n "$_repo_in_env" ]; then GITHUB_REPO=$_env_repo
   else
-    GITHUB_REPO=$(sup_old_param GITHUB_REPO)
-    if [ -n "$GITHUB_REPO" ] && ! repo_ok "$GITHUB_REPO"; then
-      info "Ignoring the GITHUB_REPO in the existing supervisor.env: it is not owner/name"; GITHUB_REPO=
+    stored=$(sup_old_param GITHUB_REPO); from=$(sup_old_param GITHUB_REPO_FROM)
+    if [ -n "$stored" ] && ! repo_ok "$stored"; then
+      info "Ignoring the GITHUB_REPO in the existing supervisor.env: it is not owner/name"; stored=
+    fi
+    if [ "$from" = origin ] || { [ "$from" != setting ] && [ "$stored" = "$_origin" ]; }; then stored=; fi
+    GITHUB_REPO=$stored
+  fi
+  [ -n "$GITHUB_REPO" ] || { GITHUB_REPO=$_origin; GITHUB_REPO_FROM=origin; }
+  if [ -z "$_token_in_env" ]; then
+    GITHUB_TOKEN=$(sup_old_param GITHUB_TOKEN)
+    if ! token_ok "$GITHUB_TOKEN"; then
+      info "Ignoring the GITHUB_TOKEN in the existing supervisor.env: it is not a GitHub token (letters, digits and _)"; GITHUB_TOKEN=
     fi
   fi
-  [ -n "$GITHUB_REPO" ] || GITHUB_REPO=$(git remote get-url origin 2>/dev/null | sed -E 's#(git@|https?://)[^/:]+[/:]##; s#\.git$##')
-  [ -n "$_token_in_env" ] || GITHUB_TOKEN=$(sup_old_param GITHUB_TOKEN)
-  # One line each in supervisor.env: a line break in either would add settings of its own.
-  case "$GITHUB_REPO$GITHUB_TOKEN" in *$'\n'*|*$'\r'*) _fail "GITHUB_REPO and GITHUB_TOKEN must not contain line breaks" ;; esac
   return 0
 }
 resolve_sup_settings
-[ "$_sup_old_deferred" = 0 ] || info "The existing $SUP_ENV_LEGACY is root-owned: its updater settings are read once this run has handed the tree back"
+if [ "$_sup_old_deferred" = 1 ] && { [ -z "$_repo_in_env" ] || [ -z "$_token_in_env" ]; }; then
+  info "The existing $SUP_ENV_LEGACY (v0.3.1 or older) is root-owned: its GITHUB_REPO and GITHUB_TOKEN are kept, but read"
+  info "  only once this run has handed the tree back, so this release fetch goes without them (pass them once more if needed)"
+fi
 AGENT_APK=""
 # The manifest, its signature and the APK are fetched into one private directory (mktemp -d). The deploy step removes it
 # once the APK is hosted; this EXIT trap removes it on every other way the run ends (_fail, an error under set -e, a
@@ -757,6 +800,10 @@ if [ -n "$GITHUB_REPO" ]; then
       AGENT_CK=$MDM_AGENT_CK; AGENT_APK="$AGENT_FETCH_DIR/agent.apk"
     else
       info "${MDM_RELEASE_PROBLEM}${soft}"
+    fi
+    if [ -n "$MDM_RELEASE_NOTE" ]; then
+      printf '  %s!%s %s (re-run with GITHUB_TOKEN=<new token>, or GITHUB_TOKEN= to remove it; the updater uses it too)\n' \
+        "$c_yel" "$c_reset" "$MDM_RELEASE_NOTE"
     fi
     return 0
   }
@@ -795,7 +842,7 @@ fi
 if [ "$_url_deferred" = 1 ]; then
   BASE_URL=$(old_root_param base.url)
   mdm_check_base_url BASE_URL \
-    || _fail "No valid base URL in $_old_root. Re-run with BASE_URL=https://mdm.example.com (your public address) set."
+    || _fail "No valid base URL in $_old_root. The server stays down until you re-run with BASE_URL=https://mdm.example.com (your public address) set."
   info "Keeping the base URL ${BASE_URL} (read from ROOT.xml after handing the tree back)"
 fi
 if [ "$_sup_old_deferred" = 1 ]; then
@@ -975,11 +1022,20 @@ CURRENT_VERSION=$(mdm_repo_version "$REPO")
 # is removed once the new file is in place (so a run killed in between still finds the settings in one of them).
 # GITHUB_REPO / GITHUB_TOKEN: settled in the release-fetch step above. Never print the token itself.
 if [ -z "$_token_in_env" ] && [ -n "$GITHUB_TOKEN" ]; then info "Keeping the GitHub token from the existing settings (GITHUB_TOKEN= removes it)"; fi
-info "Updater repository: ${GITHUB_REPO:-none}"
+if [ "$GITHUB_REPO_FROM" = setting ] && [ -n "$_origin" ] && [ "$GITHUB_REPO" != "$_origin" ]; then
+  # Worth seeing: release/minisign.pub in this clone must be the key that repo signs its releases with.
+  printf '  %s!%s Updater repository: %s%s%s (the GITHUB_REPO setting; this clone'"'"'s origin is %s: GITHUB_REPO= follows the origin)\n' \
+    "$c_yel" "$c_reset" "$c_bold" "$GITHUB_REPO" "$c_reset" "$_origin"
+else
+  _from_txt="the clone's origin"; [ "$GITHUB_REPO_FROM" = origin ] || _from_txt="the GITHUB_REPO setting"
+  info "Updater repository: ${GITHUB_REPO:-none (the clone has no GitHub origin; set GITHUB_REPO=owner/name)}${GITHUB_REPO:+ ($_from_txt)}"
+fi
 write_under "$SUP_ENV_DIR" supervisor.env cat <<ENV
 SUPERVISOR_PORT=9000
 SUPERVISOR_BIND=127.0.0.1
 GITHUB_REPO=${GITHUB_REPO}
+# origin: GITHUB_REPO is the clone's origin, derived again on every run; setting: it was passed, and is kept.
+GITHUB_REPO_FROM=${GITHUB_REPO_FROM}
 GITHUB_TOKEN=${GITHUB_TOKEN}
 UPDATE_CHANNEL=stable
 POLL_INTERVAL_HOURS=6
@@ -1029,8 +1085,9 @@ UNIT
     && ok "supervisor running v${CURRENT_VERSION:-0.0.0} as $SVC_USER (systemd unit ${SUP_UNIT}, loopback :9000)" \
     || info "supervisor unit failed to start — check: journalctl -u ${SUP_UNIT}"
 else
-  info "no systemd — start the supervisor manually, as $SVC_USER (never as root):"
-  info "  env -i PATH=/usr/local/bin:/usr/bin:/bin sh -c 'cd /; set -a; . ${SUP_ENV_DIR}/supervisor.env; setsid setpriv --reuid=$SVC_USER --regid=$SVC_USER --init-groups --no-new-privs $NODE_BIN ${SUP_DIR}/server.js </dev/null >>/var/log/mdmesh-supervisor.log 2>&1 &'"
+  # No ready-made command: one that sources supervisor.env would have root's shell evaluate that file.
+  info "no systemd — start the supervisor yourself, as $SVC_USER (never as root): $NODE_BIN ${SUP_DIR}/server.js, with the"
+  info "  KEY=VALUE settings of ${SUP_ENV_DIR}/supervisor.env in its environment"
 fi
 
 step "Starting the server"

@@ -47,7 +47,8 @@ Patches are tagged from `main` for now, like every release (the `gate` job accep
 
 - A patch ships all of `main`, so its section is all of Unreleased and it goes through the full checklist, without
   the three-day freeze.
-- If `main` already holds new features, the release is 0.(x+1).0 instead of a patch.
+- If `main` already holds new features, the release is 0.(x+1).0 instead of a patch. An early 0.(x+1).0 restarts
+  the three-week clock.
 - If an urgent fix ever has to skip unreleased work on `main`, the path is a protected `maint/v0.X` branch cut from
   the last tag: the fix and its section are cherry-picked there, tagged, and the section merged back to `main`. The
   `gate` job would have to accept that branch first; it doesn't today.
@@ -56,8 +57,15 @@ Patches are tagged from `main` for now, like every release (the `gate` job accep
 
 A fix for a vulnerability that isn't public yet is developed in a GitHub private security advisory (Security →
 Advisories → New draft advisory → Start a temporary private fork), not in a public PR. Its changelog line says what
-operators see, without the details. The fix is merged from the private fork when its release is ready and goes out
-in that release; the advisory is published once it's out. See [SECURITY.md](SECURITY.md) for reporting.
+operators see, without the details.
+
+The fix is public from the moment it merges, so keep that window short:
+
+- Merge it from the private fork only when the release is otherwise ready (reviewed, Unreleased final).
+- Then rebase the release PR onto it, run T2 and the phone check, and tag the same day.
+- An advisory merge may skip `main`'s required checks, and whether CI runs in the temporary private fork depends on
+  GitHub (check GitHub's docs). Treat CI on the release PR as the only CI the fix gets.
+- Publish the advisory once the release is out. See [SECURITY.md](SECURITY.md) for reporting.
 
 ## What the release workflow does
 
@@ -81,11 +89,14 @@ digest, registry-side, no rebuild), then verify all three digests. A failure any
 **If a changelog check fails**, re-tag. In the `gate` job or at the start of the `release` job nothing was built or
 published; just before publishing (the tag changed during the run) the `:VERSION` images are pushed but there is no
 Release, and the new tag's run pushes them again. Delete the tag and tag again from the changelog (deleting a `v*` tag
-needs the tag ruleset's bypass). If the section itself is wrong, fix it in a PR to `main` first and tag the new merge
-commit.
+needs the tag ruleset's bypass). Take the commit from the release PR's merge commit, not from the tag, which may be
+the stale or the moved one. If the section itself is wrong, fix it in a PR to `main` first and tag that PR's merge
+commit instead.
 
 ```bash
-sha=$(git rev-parse 'vX.Y.Z^{commit}') && git switch --detach "$sha"
+git fetch origin
+sha=$(gh pr view N -R MDMesh-app/MDMesh --json mergeCommit -q .mergeCommit.oid)   # the release PR, as in step 6
+git switch --detach "$sha" && git log -1 --format=%s     # must print: vX.Y.Z (#N)
 git push origin :refs/tags/vX.Y.Z
 n=$(release/changelog-section.sh X.Y.Z) && git tag -f -a vX.Y.Z --cleanup=whitespace -m "$n" "$sha"
 release/changelog-section.sh --check vX.Y.Z "$sha" && git push origin vX.Y.Z

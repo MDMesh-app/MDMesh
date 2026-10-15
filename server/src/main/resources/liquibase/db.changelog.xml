@@ -2982,4 +2982,13 @@
         <rollback>DROP INDEX IF EXISTS agentCommand_deviceNumber_type_id_idx;</rollback>
     </changeSet>
 
+    <changeSet id="26.10.15-device_location-provider-plain" author="lunacy" context="common">
+        <comment>device_location provider: keep plain names. The server now stores a location's provider only when it
+            is a plain name such as gps, network or fused (letters, digits, '_', '.', '-', up to 32 characters). Clear
+            older values that are not, keeping the fix itself. NULL rows are left alone; a no-op on an empty table or
+            when every value already matches.</comment>
+        <sql>UPDATE device_location SET provider = NULL WHERE provider IS NOT NULL AND provider !~ '^[A-Za-z0-9_.-]{1,32}$';</sql>
+        <rollback/>
+    </changeSet>
+
 </databaseChangeLog>

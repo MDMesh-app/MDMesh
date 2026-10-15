@@ -5,7 +5,8 @@
 # Usage: tests/native/run.sh <distro> <scenario>
 #   distro:   debian-12 | debian-13 | ubuntu-24.04
 #   scenario: fresh    the code under test (T2_TO_REF) on a clean host
-#             upgrade  T2_FROM_REF (the last release) installed with GITHUB_REPO and a dummy GITHUB_TOKEN, then T2_TO_REF
+#             upgrade  T2_FROM_REF (the last release) installed with GITHUB_REPO (and a dummy GITHUB_TOKEN put in its
+#                      supervisor.env), then T2_TO_REF
 #                      over it (`git pull` + the same command, without HTTP_PORT, BASE_URL, GITHUB_REPO or GITHUB_TOKEN:
 #                      the upgrade must keep the port, the base URL and the updater settings the install has)
 #             killed   the same upgrade, SIGKILLed at each kill point (tests/native/lib/guest.sh), then re-run: it must
@@ -113,16 +114,20 @@ case "$SCENARIO" in
     prepare_checkout "$FROM_SHA"
     # Updater settings the upgrade must keep. The repo is the origin's in other letter case (GitHub ignores case, so
     # release fetches still work, and it differs from the default the installer would fall back to). The token is a
-    # dummy, so GitHub refuses the release fetches it is sent with (401): both installers carry on with debug defaults.
+    # dummy put into supervisor.env afterwards (guest.sh set-token says why), so GitHub refuses the upgrade's release
+    # fetch (401) and the upgrade carries on with debug defaults.
     origin_repo=$(printf '%s' "$T2_ORIGIN_URL" | sed -E 's#(git@|https?://)[^/:]+[/:]##; s#\.git$##')
     set_repo=${origin_repo,,}; [ "$set_repo" != "$origin_repo" ] || set_repo=${origin_repo^^}
-    INSTALL_GITHUB_REPO=$set_repo INSTALL_GITHUB_TOKEN="t2-dummy-token-$RAND" install_and_sign_in "install-$T2_FROM_REF" "$FROM_SHA"
+    INSTALL_GITHUB_REPO=$set_repo install_and_sign_in "install-$T2_FROM_REF" "$FROM_SHA"
     before_e2e=$E2E_RESULT
     [ "$CHECK_FAILS" -eq 0 ] || die "the $T2_FROM_REF install failed its checks; not upgrading it"
+    guest set-token "t2-dummy-token-$RAND"
     guest settings > "$OUT/settings.before"
     log "  settings: $(tr '\n' ' ' < "$OUT/settings.before")"
     check "the $T2_FROM_REF install wrote GITHUB_REPO" "$(sed -n 's/^GITHUB_REPO=//p' "$OUT/settings.before")" "$set_repo"
     check "the $T2_FROM_REF install wrote base.url" "$(sed -n 's/^base.url=//p' "$OUT/settings.before")" "$T2_BASE_URL"
+    check "a GITHUB_TOKEN is set before the upgrade" "$(sed -n 's/^GITHUB_TOKEN=//p' "$OUT/settings.before")" \
+      "$(printf '%s' "t2-dummy-token-$RAND" | sha256sum | cut -c1-16)"
     continuity_before
     guest checkout "$TO_SHA" | while IFS= read -r l; do log "$l"; done
     # Without HTTP_PORT, BASE_URL, GITHUB_REPO and GITHUB_TOKEN: the install is on T2_HTTP_PORT (not 8080), and the

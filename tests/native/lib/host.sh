@@ -135,15 +135,20 @@ prepare_checkout() {   # prepare_checkout SHA
 }
 
 # run_install LABEL [KILL_POINT]: the documented install command in the guest; its output lands in $OUT/LABEL.out.
-# Returns the installer's exit code (0 after a kill: the kill point itself succeeded). With OMIT_PORT=1 the command
-# leaves HTTP_PORT out, as a re-run or upgrade may: the installer must keep the port the install is on.
+# Returns the installer's exit code (0 after a kill: the kill point itself succeeded). With OMIT_PORT=1 / OMIT_BASE_URL=1
+# the command leaves HTTP_PORT / BASE_URL out, as a re-run or upgrade may: the installer must keep the port and the base
+# URL the install has. INSTALL_GITHUB_REPO / INSTALL_GITHUB_TOKEN, when set, are passed as GITHUB_REPO / GITHUB_TOKEN.
 run_install() {
-  local label=$1 point=${2:-} rc=0 t0 port=$T2_HTTP_PORT
+  local label=$1 point=${2:-} rc=0 t0 port=$T2_HTTP_PORT url=$T2_BASE_URL shown=""
+  local -a gh=()
   [ "${OMIT_PORT:-0}" != 1 ] || port=""
+  [ "${OMIT_BASE_URL:-0}" != 1 ] || url=""
+  if [ -n "${INSTALL_GITHUB_REPO+x}" ]; then gh+=(-e "T2_GITHUB_REPO=$INSTALL_GITHUB_REPO"); shown+="GITHUB_REPO=$INSTALL_GITHUB_REPO "; fi
+  if [ -n "${INSTALL_GITHUB_TOKEN+x}" ]; then gh+=(-e "T2_GITHUB_TOKEN=$INSTALL_GITHUB_TOKEN"); shown+="GITHUB_TOKEN=… "; fi
   t0=$(date +%s)
-  log "install [$label]${point:+ (kill at $point)}: sudo BASE_URL=$T2_BASE_URL ${port:+HTTP_PORT=$port }./setup.sh --native -y"
+  log "install [$label]${point:+ (kill at $point)}: sudo ${url:+BASE_URL=$url }${port:+HTTP_PORT=$port }${shown}./setup.sh --native -y"
   # Bounded: a hung install must end in a failure with logs, not run into the CI job timeout.
-  timeout "${T2_STEP_TIMEOUT:-3600}" docker exec -e T2_BASE_URL="$T2_BASE_URL" -e T2_HTTP_PORT="$port" "$CTR" \
+  timeout "${T2_STEP_TIMEOUT:-3600}" docker exec -e T2_BASE_URL="$url" -e T2_HTTP_PORT="$port" "${gh[@]}" "$CTR" \
     bash /t2/guest.sh install "/t2/out/$label.out" ${point:+"$point"} > "$OUT/$label.result" 2>&1 || rc=$?
   [ "$rc" -ne 124 ] || echo "T2 install timed out after ${T2_STEP_TIMEOUT:-3600}s" >> "$OUT/$label.result"
   docker cp "$CTR:/t2/out/$label.out" "$OUT/$label.out" > /dev/null 2>&1 || true

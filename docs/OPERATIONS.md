@@ -8,13 +8,14 @@
 you edit it, run `docker compose up -d`.
 
 **Native:** pass a setting to `sudo ./setup.sh --native` in its environment. The installer writes it to
-`/opt/mdmesh-tc/conf/Catalina/localhost/ROOT.xml` or `/etc/mdmesh/supervisor.env`.
+`/opt/mdmesh-tc/conf/Catalina/localhost/ROOT.xml` or `/etc/mdmesh/supervisor.env`, and later runs keep it until you
+pass a new value.
 
 ### Server
 
 | Setting | Where | Default | Meaning |
 |---------|-------|---------|---------|
-| `BASE_URL` | `.env`; native: env or prompt, every run | none | Public address of the server, also put in the enrollment QR ([rules](#base-url-and-hostname-rules)). |
+| `BASE_URL` | `.env`; native: env or prompt → `ROOT.xml` | none | Public address of the server, also put in the enrollment QR ([rules](#base-url-and-hostname-rules)). |
 | `HTTP_PORT` | native env | current port; fresh install `8080` | Tomcat's HTTP port. |
 | `REPLACE_DATA` | native env | asks; `-y`: keep | `yes` erases existing data on a re-run. |
 | `DB_PASSWORD`, `HASH_SECRET` | `.env`; native: `ROOT.xml` | generated | Don't change them: the database keeps its original password, and a new `HASH_SECRET` invalidates every enrolled device's token. |
@@ -33,10 +34,10 @@ The wizard writes `SITE_ADDRESS`, `ACME_EMAIL` and `TUNNEL_TOKEN` for the hostin
 
 | Setting | Where | Default | Meaning |
 |---------|-------|---------|---------|
-| `GITHUB_REPO` | `.env`; native env → `supervisor.env`, every run | the clone's `origin` (quick start asks) | `owner/repo` to poll. Without it, there are no updates. |
+| `GITHUB_REPO` | `.env`; native env → `supervisor.env` | the clone's `origin` (quick start asks) | `owner/repo` to poll. Without it, there are no updates. |
 | `UPDATE_CHANNEL` | `.env` (native: always `stable`) | `stable` | `beta` also offers prereleases. |
 | `POLL_INTERVAL_HOURS` | `.env` (native: always `6`) | `6` | How often to check. |
-| `GITHUB_TOKEN` | `.env`; native env → `supervisor.env`, every run | empty | Needed for a private repo; raises rate limits. See note. |
+| `GITHUB_TOKEN` | `.env`; native env → `supervisor.env` | empty | Needed for a private repo; raises rate limits. See note. |
 | `IMAGE_OWNER` | `.env` | quick start `mdmesh-app`; from source `local` | GHCR owner (lowercase). `local` means built from the clone. |
 | `SERVER_VERSION`, `WEB_VERSION` | `.env` | the installed release | Image tags, without the `v` (`0.3.2`). Updates set them. |
 | `CURRENT_VERSION` | `.env`; native: `supervisor.env` | `0.0.0` | Running release, compared with GitHub's latest. Updates and rollbacks set it. |
@@ -48,8 +49,8 @@ The wizard writes `SITE_ADDRESS`, `ACME_EMAIL` and `TUNNEL_TOKEN` for the hostin
 ([Upgrading](UPGRADING.md#from-source-docker-installs)).
 
 **`GITHUB_TOKEN` note:** use a read-only token, either fine-grained with **Contents: read** on the repo or classic
-with `repo` scope. On native the `mdmesh` user can read it, and the installer rewrites it on every run, so pass it
-(and a custom `GITHUB_REPO`) each time, off the command line:
+with `repo` scope. On native the `mdmesh` user can read it. Pass it once, off the command line; later runs keep it
+(and `GITHUB_REPO`) until you pass a new value, or `GITHUB_TOKEN=` to remove it:
 
 ```bash
 read -rs GITHUB_TOKEN && export GITHUB_TOKEN

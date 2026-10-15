@@ -94,8 +94,8 @@ Both downloads cover x86_64 and arm64. On other architectures, install both runt
 The installer asks you to type `yes`, then asks for the base URL and the HTTP port. `-y` skips these
 questions (and answers Keep on an upgrade), and `-v` shows the full output:
 
-- **Base URL:** set `BASE_URL=https://mdm.example.com` to answer it in advance. `-y` requires it
-  ([on every run](docs/UPGRADING.md#native-installs)).
+- **Base URL:** set `BASE_URL=https://mdm.example.com` to answer it in advance. `-y` requires it on a fresh
+  install; re-runs keep the current one unless you set it ([Upgrading](docs/UPGRADING.md#native-installs)).
 - **Port:** set `HTTP_PORT=9090` to answer it in advance. The default is the port the install already uses (8080 on a
   fresh install), and `-y` takes that default.
 

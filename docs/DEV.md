@@ -152,7 +152,7 @@ again.
 | Scenario | What it proves |
 |----------|----------------|
 | `fresh` | The change installs on a clean host and the admin can sign in. |
-| `upgrade` | The release in `T2_FROM_REF`, then the change over it. The upgrade succeeds and keeps the data: a device enrolled before checks in after with its original secret; secrets, counts and the admin password are unchanged. |
+| `upgrade` | The release in `T2_FROM_REF`, then the change over it. The upgrade succeeds and keeps the data: a device enrolled before checks in after with its original secret; secrets, counts and the admin password are unchanged. Run without `HTTP_PORT`, `BASE_URL`, `GITHUB_REPO` or `GITHUB_TOKEN`, it keeps the port, the base URL and the updater settings. |
 | `killed` | The same upgrade, SIGKILLed at each kill point and re-run once: it must converge and pass every check. The points are listed in `tests/native/lib/guest.sh` (`bash tests/native/lib/guest.sh kill-points`). |
 
 After every install the same checks run: the services are active, `/rest/public/name` answers 200, admin signs in,

@@ -5,10 +5,11 @@
 # Usage: tests/native/run.sh <distro> <scenario>
 #   distro:   debian-12 | debian-13 | ubuntu-24.04
 #   scenario: fresh    the code under test (T2_TO_REF) on a clean host
-#             upgrade  T2_FROM_REF (the last release) installed, then T2_TO_REF over it (`git pull` + the same command,
-#                      without HTTP_PORT: the upgrade must keep the port the install is on)
+#             upgrade  T2_FROM_REF (the last release) installed with GITHUB_REPO and a dummy GITHUB_TOKEN, then T2_TO_REF
+#                      over it (`git pull` + the same command, without HTTP_PORT, BASE_URL, GITHUB_REPO or GITHUB_TOKEN:
+#                      the upgrade must keep the port, the base URL and the updater settings the install has)
 #             killed   the same upgrade, SIGKILLed at each kill point (tests/native/lib/guest.sh), then re-run: it must
-#                      converge and pass every check (the re-run also leaves HTTP_PORT out)
+#                      converge and pass every check (the re-run also leaves HTTP_PORT and BASE_URL out)
 #
 # Environment (all optional):
 #   T2_FROM_REF   the release to upgrade from (default v0.3.1). CI passes the latest GitHub release.
@@ -110,14 +111,29 @@ case "$SCENARIO" in
   upgrade)
     start_container "$NAME" "$IMAGE"
     prepare_checkout "$FROM_SHA"
-    install_and_sign_in "install-$T2_FROM_REF" "$FROM_SHA"
+    # Updater settings the upgrade must keep. The repo is the origin's in other letter case (GitHub ignores case, so
+    # release fetches still work, and it differs from the default the installer would fall back to). The token is a
+    # dummy, so GitHub refuses the release fetches it is sent with (401): both installers carry on with debug defaults.
+    origin_repo=$(printf '%s' "$T2_ORIGIN_URL" | sed -E 's#(git@|https?://)[^/:]+[/:]##; s#\.git$##')
+    set_repo=${origin_repo,,}; [ "$set_repo" != "$origin_repo" ] || set_repo=${origin_repo^^}
+    INSTALL_GITHUB_REPO=$set_repo INSTALL_GITHUB_TOKEN="t2-dummy-token-$RAND" install_and_sign_in "install-$T2_FROM_REF" "$FROM_SHA"
     before_e2e=$E2E_RESULT
     [ "$CHECK_FAILS" -eq 0 ] || die "the $T2_FROM_REF install failed its checks; not upgrading it"
+    guest settings > "$OUT/settings.before"
+    log "  settings: $(tr '\n' ' ' < "$OUT/settings.before")"
+    check "the $T2_FROM_REF install wrote GITHUB_REPO" "$(sed -n 's/^GITHUB_REPO=//p' "$OUT/settings.before")" "$set_repo"
+    check "the $T2_FROM_REF install wrote base.url" "$(sed -n 's/^base.url=//p' "$OUT/settings.before")" "$T2_BASE_URL"
     continuity_before
     guest checkout "$TO_SHA" | while IFS= read -r l; do log "$l"; done
-    # Without HTTP_PORT: the install is on T2_HTTP_PORT (not 8080), and the upgrade must keep it (-y never prompts).
-    rc=0; OMIT_PORT=1 run_install upgrade || rc=$?
+    # Without HTTP_PORT, BASE_URL, GITHUB_REPO and GITHUB_TOKEN: the install is on T2_HTTP_PORT (not 8080), and the
+    # upgrade must keep it, the base URL in ROOT.xml and the updater settings (-y never prompts).
+    rc=0; OMIT_PORT=1 OMIT_BASE_URL=1 run_install upgrade || rc=$?
     check "the upgrade's installer exits 0" "$rc" 0
+    guest settings > "$OUT/settings.after"
+    for k in base.url GITHUB_REPO GITHUB_TOKEN; do
+      check "$k kept by the upgrade" "$(sed -n "s/^$k=//p" "$OUT/settings.after")" "$(sed -n "s/^$k=//p" "$OUT/settings.before")"
+    done
+    check "supervisor.env in /etc/mdmesh, root-only" "$(sed -n 's/^supervisor.env=//p' "$OUT/settings.after")" "root:root 600"
     continuity_after upgrade
     check_install upgrade "$TO_SHA"
     verdict=$([ "$CHECK_FAILS" -eq 0 ] && echo PASS || echo FAIL)
@@ -154,11 +170,11 @@ case "$SCENARIO" in
       else
         guest state > "$OUT/kill-$point.state" 2>&1 || true
         note="killed at: $(sed -n 's/.*last installer line: *//p' "$OUT/kill-$point.result" | head -n 1)"
-        rc=0; OMIT_PORT=1 run_install "rerun-$point" || rc=$?   # the re-run must also find the port itself
+        rc=0; OMIT_PORT=1 OMIT_BASE_URL=1 run_install "rerun-$point" || rc=$?   # the re-run must find the port and URL itself
         if [ "$rc" -ne 0 ]; then
           note="$note; re-run FAILED (rc=$rc): $(grep -v '^[[:space:]]*$' "$OUT/rerun-$point.out" | grep -m1 '✗' | sed 's/^ *//')"
           collect "rerun-failed-$point"; COLLECTED=$CTR
-          rc=0; OMIT_PORT=1 run_install "rerun2-$point" || rc=$?
+          rc=0; OMIT_PORT=1 OMIT_BASE_URL=1 run_install "rerun2-$point" || rc=$?
           note="$note; a second re-run $([ "$rc" -eq 0 ] && echo succeeded || echo "failed too (rc=$rc)")"
           verdict="NOT-CONVERGED"
           CHECK_FAILS=$((CHECK_FAILS + 1))

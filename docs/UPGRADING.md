@@ -63,14 +63,13 @@ git pull && sudo ./setup.sh --native
 Choose **Keep** (the default) or **Erase** (type `ERASE`). Keep runs migrations and leaves all data and the
 enrollment secret alone, after a `pg_dump` to `/opt/mdmesh/backups/` ([restore](OPERATIONS.md#backups-and-restore)).
 
-- **Base URL:** every run asks for it again. With `-y`, pass it every time:
-  `sudo BASE_URL=https://mdm.example.com ./setup.sh --native -y`.
+- **Base URL:** kept from the last run (`base.url` in `ROOT.xml`). An interactive run offers it as the default, and
+  `-y` uses it. Set `BASE_URL` to change it.
 - **Unattended (`-y`):** never erases unless you set `REPLACE_DATA=yes`. It keeps the current port unless you set
   `HTTP_PORT`.
 - **Interrupted run:** run the same command again. It picks up where the last run stopped.
-- **Settings:** SMTP and `LEGACY_DEVICE_API` carry over from earlier runs. `GITHUB_REPO` and `GITHUB_TOKEN` don't:
-  `/etc/mdmesh/supervisor.env` is rewritten on every run, so pass them each time
-  ([how](OPERATIONS.md#updater-supervisor)).
+- **Settings:** SMTP, `LEGACY_DEVICE_API`, `GITHUB_REPO` and `GITHUB_TOKEN` carry over from earlier runs, Erase
+  included. Pass one to change it; `GITHUB_TOKEN=` removes the token ([how](OPERATIONS.md#updater-supervisor)).
 
 ## Recovery and rollback
 

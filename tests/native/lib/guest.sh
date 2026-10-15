@@ -5,12 +5,15 @@
 #   clone <origin-url>             clone /t2/repo.bundle as t2user into ~t2user/MDMesh, origin set to <origin-url>
 #   checkout <sha>                 as t2user: the checkout's main branch moves to <sha> (what `git pull` leaves behind)
 #   install <out> [kill-point]     the documented command, as t2user: `sudo BASE_URL=… HTTP_PORT=… ./setup.sh --native -y`
-#                                  (T2_BASE_URL, T2_HTTP_PORT from the environment; an empty T2_HTTP_PORT leaves
-#                                  HTTP_PORT out), output to <out>. With a kill point,
+#                                  (T2_BASE_URL, T2_HTTP_PORT from the environment; an empty one leaves BASE_URL or
+#                                  HTTP_PORT out; T2_GITHUB_REPO / T2_GITHUB_TOKEN, when set, add GITHUB_REPO= /
+#                                  GITHUB_TOKEN=), output to <out>. With a kill point,
 #                                  SIGKILLs the installer's process group when the point is reached (see KILL POINTS).
 #   kill-points                    list the kill points, one per line
 #   admin-temp-password <out>      the temporary admin password a fresh install printed in <out>
 #   secrets                        a short fingerprint (sha256) of hash.secret / jwt.secretkey in ROOT.xml
+#   settings                       what a re-run must keep: base.url (ROOT.xml), GITHUB_REPO, a fingerprint of
+#                                  GITHUB_TOKEN, and the owner and mode of the supervisor.env they are in
 #   counts                         configurations / devices / users counts (psql as postgres)
 #   deployed                       "match" when Tomcat serves this checkout's build (server WAR + console)
 #   port                           server.xml's HTTP connector port, and whether it is listening ("9090 listening")
@@ -110,10 +113,13 @@ installer_pgid() {
 
 cmd_install() {
   local out=$1 point=${2:-} spec="" marker cond delay late rc=0 pid pg i
-  : "${T2_BASE_URL:?}"
-  # T2_HTTP_PORT empty: the command without HTTP_PORT (a re-run must keep the port the install is on).
-  local port_arg=""
-  [ -z "${T2_HTTP_PORT:-}" ] || port_arg="HTTP_PORT='$T2_HTTP_PORT' "
+  # T2_BASE_URL / T2_HTTP_PORT empty: the command without BASE_URL / HTTP_PORT (a re-run must keep the base URL and
+  # the port the install has). The values are the rig's own (no quotes in them).
+  local env_args=""
+  [ -z "${T2_BASE_URL:-}" ] || env_args+="BASE_URL='$T2_BASE_URL' "
+  [ -z "${T2_HTTP_PORT:-}" ] || env_args+="HTTP_PORT='$T2_HTTP_PORT' "
+  [ -z "${T2_GITHUB_REPO+x}" ] || env_args+="GITHUB_REPO='$T2_GITHUB_REPO' "
+  [ -z "${T2_GITHUB_TOKEN+x}" ] || env_args+="GITHUB_TOKEN='$T2_GITHUB_TOKEN' "
   if [ -n "$point" ]; then
     for spec in "${KILL_POINTS[@]}"; do [ "${spec%%|*}" = "$point" ] && break; spec=""; done
     [ -n "$spec" ] || { echo "unknown kill point: $point (known: $(cmd_kill_points | tr '\n' ' '))" >&2; return 2; }
@@ -123,7 +129,7 @@ cmd_install() {
   : > "$out"
   # The user's shell: a login shell of the sudo user in the checkout, running the documented command. setsid gives the
   # run a session (and process group) of its own, as a terminal would.
-  setsid runuser -l t2user -c "cd MDMesh && exec sudo BASE_URL='$T2_BASE_URL' ${port_arg}./setup.sh --native -y" \
+  setsid runuser -l t2user -c "cd MDMesh && exec sudo ${env_args}./setup.sh --native -y" \
     < /dev/null > "$out" 2>&1 &
   pid=$!
   if [ -z "$point" ]; then
@@ -182,6 +188,17 @@ cmd_secrets() {
   [ -f "$ROOT_XML" ] || { echo "ROOT.xml=missing"; return 0; }
   echo "hash.secret=$(fp "$(xml_param hash.secret)")"
   echo "jwt.secretkey=$(fp "$(xml_param jwt.secretkey)")"
+}
+
+# The supervisor's settings file: /etc/mdmesh/supervisor.env, or $BASE_DIR/supervisor.env before v0.3.2.
+sup_env_file() { if [ -f /etc/mdmesh/supervisor.env ]; then echo /etc/mdmesh/supervisor.env; else echo "$BASE_DIR/supervisor.env"; fi; }
+sup_param() { sed -n "s/^$1=//p" "$(sup_env_file)" 2>/dev/null | tail -n 1; }
+
+cmd_settings() {
+  echo "base.url=$(xml_param base.url)"
+  echo "GITHUB_REPO=$(sup_param GITHUB_REPO)"
+  echo "GITHUB_TOKEN=$(fp "$(sup_param GITHUB_TOKEN)")"
+  echo "supervisor.env=$(stat -c '%U:%G %a' /etc/mdmesh/supervisor.env 2>/dev/null || echo missing)"
 }
 
 psql_pg() { (cd / && runuser -u postgres -- psql -X -d mdmesh -tAc "$1"); }
@@ -257,7 +274,7 @@ cmd_collect() {
 
 cmd=${1:?usage: guest.sh <subcommand> ...}; shift
 case "$cmd" in
-  clone|checkout|install|admin-temp-password|secrets|counts|deployed|port|initialized|units|state|collect) "cmd_${cmd//-/_}" "$@" ;;
+  clone|checkout|install|admin-temp-password|secrets|settings|counts|deployed|port|initialized|units|state|collect) "cmd_${cmd//-/_}" "$@" ;;
   kill-points) cmd_kill_points ;;
   *) echo "unknown subcommand: $cmd" >&2; exit 2 ;;
 esac

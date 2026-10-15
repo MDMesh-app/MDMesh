@@ -138,13 +138,7 @@ fi
 rand() { mdm_rand; }
 
 printf '\n'
-# Public base URL. Override non-interactively with BASE_URL=https://mdm.example.com (required with -y).
-BASE_URL="${BASE_URL:-}"
-if [ -z "$BASE_URL" ]; then
-  [ "$ASSUME_YES" = "1" ] && { echo "  BASE_URL must be set when running with -y (e.g. BASE_URL=https://mdm.example.com)."; exit 1; }
-  read -rp "  Public base URL (e.g. https://mdm.example.com): " BASE_URL
-fi
-mdm_check_base_url BASE_URL || exit 1   # install/lib/url.sh: http(s)://host[:port]; lower-cases the scheme
+# The base URL (BASE_URL) is settled below, once the existing install's ROOT.xml can be read the safe way.
 case "${SMTP_PORT-25}" in ''|*[!0-9]*) echo "  SMTP_PORT must be a number."; exit 1 ;; esac
 # SMTP_SSL / SMTP_STARTTLS: what the server and the Docker .env accept ("true" or "1", any case; else false), written
 # to ROOT.xml as true/false.
@@ -394,6 +388,53 @@ heal_trees() {
   done
 }
 
+# Upgrades re-run this script. hash.secret signs enrollment/sync requests and download URLs, so rotating
+# it would silently break every already-enrolled device; reuse the value from the existing ROOT.xml.
+# (DB_PASSWORD is different: it is re-applied to the role via ALTER USER below, so a fresh one is fine.)
+_old_root="$CATALINA/conf/Catalina/localhost/ROOT.xml"
+# It is read as $SVC_USER (svc_cat), whose tree $CATALINA is. If that account cannot read it because it is root-owned (a
+# run interrupted before it handed the tree over; see readable_after_heal), it is read again after heal_trees, before
+# ROOT.xml is rewritten. Otherwise (a link, anything but a regular file) stop: carrying on would silently rotate the
+# secrets enrolled devices depend on.
+_old_xml=; _old_root_deferred=0
+_old_root_unreadable="Could not read $_old_root as $SVC_USER. It holds hash.secret, which enrolled devices depend on: if it is a symbolic link, remove it; if root owns it, chown it to $SVC_USER. Then re-run."
+if [ -f "$_old_root" ] && ! _old_xml=$(svc_cat "$_old_root" 2>>"$LOGFILE"); then
+  if readable_after_heal "$CATALINA" conf/Catalina/localhost/ROOT.xml; then
+    _old_root_deferred=1
+    info "The existing ROOT.xml is root-owned (an earlier run was interrupted): it is read once this run has handed the tree back"
+  else
+    _fail "$_old_root_unreadable"
+  fi
+fi
+# Value of <Parameter name="$1" value="…"/> in the existing ROOT.xml; empty when there is none.
+old_root_param() { printf '%s\n' "$_old_xml" | sed -n "s/.*name=\"$1\"[[:space:]]*value=\"\([^\"]*\)\".*/\1/p" | head -n 1; }
+
+# Public base URL. BASE_URL=https://mdm.example.com sets it; a fresh install with -y requires it. Otherwise a re-run keeps
+# the one the install already has (base.url in ROOT.xml): -y uses it, an interactive run offers it as the default. Erase
+# (REPLACE_DATA=yes) keeps it too: it is this host's public address, not data in the database, and the devices that will
+# enroll again are given the same address. The value from ROOT.xml is checked like any other (mdm_check_base_url) before
+# it is used, since $SVC_USER can write that file; one that fails is ignored, as on a fresh install. When ROOT.xml can
+# only be read after heal_trees (see above), -y (or Enter at the prompt) reads it there instead.
+_cur_url=$(old_root_param base.url)
+if [ -n "$_cur_url" ] && ! mdm_check_base_url _cur_url; then
+  info "That is the base URL in the existing ROOT.xml: ignoring it"; _cur_url=
+fi
+BASE_URL="${BASE_URL:-}"; _url_deferred=0
+if [ -z "$BASE_URL" ]; then
+  if [ -n "$_cur_url" ]; then
+    [ "$ASSUME_YES" = 1 ] || read -rp "  Public base URL [${_cur_url}]: " BASE_URL
+    if [ -z "$BASE_URL" ]; then BASE_URL=$_cur_url; info "Keeping the base URL ${BASE_URL} (from ROOT.xml; set BASE_URL to change it)"; fi
+  elif [ "$_old_root_deferred" = 1 ]; then
+    [ "$ASSUME_YES" = 1 ] || read -rp "  Public base URL [keep the current one]: " BASE_URL
+    [ -n "$BASE_URL" ] || { _url_deferred=1; info "Keeping the base URL in ROOT.xml (read once this run has handed the tree back)"; }
+  else
+    [ "$ASSUME_YES" = 1 ] && { echo "  BASE_URL must be set when running with -y (e.g. BASE_URL=https://mdm.example.com)."; exit 1; }
+    read -rp "  Public base URL (e.g. https://mdm.example.com): " BASE_URL
+  fi
+fi
+# install/lib/url.sh: http(s)://host[:port][/path]; lower-cases the scheme.
+[ "$_url_deferred" = 1 ] || mdm_check_base_url BASE_URL || exit 1
+
 # HTTP port Tomcat listens on. HTTP_PORT=9090 sets it. Otherwise a re-run keeps the port the install already serves on (the
 # HTTP/1.1 connector in its server.xml, read as $SVC_USER), and a fresh install takes 8080: -y takes that default, an
 # interactive run asks with it as the default. If that server.xml exists but $SVC_USER cannot read it yet (root-owned by
@@ -423,26 +464,6 @@ if [ "$_port_deferred" = 0 ] && [ "$(port_owner)" = foreign ]; then refuse_forei
 # again after the stop below, which closes the gap; see refuse_svc_user_jobs).
 refuse_svc_user_jobs
 
-# Upgrades re-run this script. hash.secret signs enrollment/sync requests and download URLs, so rotating
-# it would silently break every already-enrolled device; reuse the value from the existing ROOT.xml.
-# (DB_PASSWORD is different: it is re-applied to the role via ALTER USER below, so a fresh one is fine.)
-_old_root="$CATALINA/conf/Catalina/localhost/ROOT.xml"
-# It is read as $SVC_USER (svc_cat), whose tree $CATALINA is. If that account cannot read it because it is root-owned (a
-# run interrupted before it handed the tree over; see readable_after_heal), it is read again after heal_trees, before
-# ROOT.xml is rewritten. Otherwise (a link, anything but a regular file) stop: carrying on would silently rotate the
-# secrets enrolled devices depend on.
-_old_xml=; _old_root_deferred=0
-_old_root_unreadable="Could not read $_old_root as $SVC_USER. It holds hash.secret, which enrolled devices depend on: if it is a symbolic link, remove it; if root owns it, chown it to $SVC_USER. Then re-run."
-if [ -f "$_old_root" ] && ! _old_xml=$(svc_cat "$_old_root" 2>>"$LOGFILE"); then
-  if readable_after_heal "$CATALINA" conf/Catalina/localhost/ROOT.xml; then
-    _old_root_deferred=1
-    info "The existing ROOT.xml is root-owned (an earlier run was interrupted): it is read once this run has handed the tree back"
-  else
-    _fail "$_old_root_unreadable"
-  fi
-fi
-# Value of <Parameter name="$1" value="…"/> in the existing ROOT.xml; empty when there is none.
-old_root_param() { printf '%s\n' "$_old_xml" | sed -n "s/.*name=\"$1\"[[:space:]]*value=\"\([^\"]*\)\".*/\1/p" | head -n 1; }
 # xml_attr RAW: RAW escaped for an XML attribute value (an SMTP password with & or " must not break ROOT.xml).
 xml_attr() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g' -e "s/'/\&apos;/g"; }
 # root_param ENV_VAR PARAM DEFAULT: the XML-ready value for <Parameter name="PARAM">. The env var when it is set (even to
@@ -673,7 +694,48 @@ step "Fetching the agent APK from GitHub Releases"
 # The APK is trusted only through the release's signed manifest, as the supervisor does: manifest.json must verify with
 # minisign against release/minisign.pub before its checksum and sha256 are read, and the APK must match that sha256.
 # Anything less (no signature, a bad one, no minisign, a failed download, a mismatch) is refused, with its own message.
-GITHUB_REPO="${GITHUB_REPO:-$(git remote get-url origin 2>/dev/null | sed -E 's#(git@|https?://)[^/:]+[/:]##; s#\.git$##')}"
+# GITHUB_REPO and GITHUB_TOKEN (also the updater's settings, written to supervisor.env below) are kept across re-runs, like
+# the ROOT.xml settings: a variable set in the environment wins, even set to "" (GITHUB_TOKEN= removes the token,
+# GITHUB_REPO= goes back to the default); otherwise the value in the current supervisor.env; otherwise the default (the
+# clone's origin; no token). Erase keeps them as well: they configure this host's updater, not the data. The file is
+# parsed, never sourced: a value is everything after the first "=" on the last KEY= line, as systemd reads it.
+# Before v0.3.2 the file was $BASE_DIR/supervisor.env, in $SVC_USER's tree: it is read as that account (svc_cat), and if
+# it cannot read it yet (root-owned, as those versions wrote it; see readable_after_heal), after heal_trees.
+SUP_ENV="$SUP_ENV_DIR/supervisor.env"; SUP_ENV_LEGACY="$BASE_DIR/supervisor.env"
+_repo_in_env=${GITHUB_REPO+x}; _token_in_env=${GITHUB_TOKEN+x}; _env_repo=${GITHUB_REPO-}
+_sup_old=; _sup_old_deferred=0
+if [ -f "$SUP_ENV" ]; then
+  _sup_old=$(head -c 65536 -- "$SUP_ENV") || _fail "Could not read $SUP_ENV"
+elif [ -e "$SUP_ENV_LEGACY" ] || [ -L "$SUP_ENV_LEGACY" ]; then
+  if ! _sup_old=$(svc_cat "$SUP_ENV_LEGACY" 2>>"$LOGFILE"); then
+    _sup_old=
+    if readable_after_heal "$BASE_DIR" supervisor.env; then _sup_old_deferred=1
+    else info "Could not read $SUP_ENV_LEGACY as $SVC_USER (not a regular file?): the updater settings start from their defaults"; fi
+  fi
+fi
+sup_old_param() { printf '%s\n' "$_sup_old" | sed -n "s/^[[:space:]]*$1=//p" | tail -n 1; }
+# repo_ok VALUE: VALUE is owner/name in GitHub's characters. A GITHUB_REPO read from the file must be: the pre-v0.3.2 file
+# is $SVC_USER's to write, and the value goes into URLs and messages. One that is not is ignored.
+repo_ok() {
+  case "$1" in */*/*|/*|*/|*[!${_MDM_ALNUM}._/-]*) return 1 ;; */*) return 0 ;; *) return 1 ;; esac
+}
+# resolve_sup_settings: GITHUB_REPO and GITHUB_TOKEN by the rules above, from _sup_old as it stands.
+resolve_sup_settings() {
+  if [ -n "$_repo_in_env" ]; then GITHUB_REPO=$_env_repo
+  else
+    GITHUB_REPO=$(sup_old_param GITHUB_REPO)
+    if [ -n "$GITHUB_REPO" ] && ! repo_ok "$GITHUB_REPO"; then
+      info "Ignoring the GITHUB_REPO in the existing supervisor.env: it is not owner/name"; GITHUB_REPO=
+    fi
+  fi
+  [ -n "$GITHUB_REPO" ] || GITHUB_REPO=$(git remote get-url origin 2>/dev/null | sed -E 's#(git@|https?://)[^/:]+[/:]##; s#\.git$##')
+  [ -n "$_token_in_env" ] || GITHUB_TOKEN=$(sup_old_param GITHUB_TOKEN)
+  # One line each in supervisor.env: a line break in either would add settings of its own.
+  case "$GITHUB_REPO$GITHUB_TOKEN" in *$'\n'*|*$'\r'*) _fail "GITHUB_REPO and GITHUB_TOKEN must not contain line breaks" ;; esac
+  return 0
+}
+resolve_sup_settings
+[ "$_sup_old_deferred" = 0 ] || info "The existing $SUP_ENV_LEGACY is root-owned: its updater settings are read once this run has handed the tree back"
 AGENT_APK=""
 # The manifest, its signature and the APK are fetched into one private directory (mktemp -d). The deploy step removes it
 # once the APK is hosted; this EXIT trap removes it on every other way the run ends (_fail, an error under set -e, a
@@ -729,6 +791,17 @@ heal_trees
 if [ "$_old_root_deferred" = 1 ]; then
   _old_xml=$(svc_cat "$_old_root" 2>>"$LOGFILE") || _fail "$_old_root_unreadable"
   adopt_old_secrets
+fi
+if [ "$_url_deferred" = 1 ]; then
+  BASE_URL=$(old_root_param base.url)
+  mdm_check_base_url BASE_URL \
+    || _fail "No valid base URL in $_old_root. Re-run with BASE_URL=https://mdm.example.com (your public address) set."
+  info "Keeping the base URL ${BASE_URL} (read from ROOT.xml after handing the tree back)"
+fi
+if [ "$_sup_old_deferred" = 1 ]; then
+  _sup_old=$(svc_cat "$SUP_ENV_LEGACY" 2>>"$LOGFILE") \
+    || { _sup_old=; info "Could not read $SUP_ENV_LEGACY as $SVC_USER: the updater settings start from their defaults"; }
+  resolve_sup_settings
 fi
 if [ "$_port_deferred" = 1 ]; then
   HTTP_PORT=$(svc_cat "$CATALINA/conf/server.xml" 2>>"$LOGFILE" | connector_port) || true
@@ -898,13 +971,16 @@ chown -R "$SVC_USER:$SVC_USER" "$SUP_DIR"
 # supervisor compares it against GitHub's latest to decide "update available". Same rule as setup.sh
 # (install/lib/version.sh).
 CURRENT_VERSION=$(mdm_repo_version "$REPO")
-# Settings go to $SUP_ENV_DIR (root-owned; see its definition). Earlier versions kept them in $BASE_DIR/supervisor.env.
-rm -f "$BASE_DIR/supervisor.env"
+# Settings go to $SUP_ENV_DIR (root-owned; see its definition). Versions before v0.3.2 kept them in $SUP_ENV_LEGACY, which
+# is removed once the new file is in place (so a run killed in between still finds the settings in one of them).
+# GITHUB_REPO / GITHUB_TOKEN: settled in the release-fetch step above. Never print the token itself.
+if [ -z "$_token_in_env" ] && [ -n "$GITHUB_TOKEN" ]; then info "Keeping the GitHub token from the existing settings (GITHUB_TOKEN= removes it)"; fi
+info "Updater repository: ${GITHUB_REPO:-none}"
 write_under "$SUP_ENV_DIR" supervisor.env cat <<ENV
 SUPERVISOR_PORT=9000
 SUPERVISOR_BIND=127.0.0.1
 GITHUB_REPO=${GITHUB_REPO}
-GITHUB_TOKEN=${GITHUB_TOKEN:-}
+GITHUB_TOKEN=${GITHUB_TOKEN}
 UPDATE_CHANNEL=stable
 POLL_INTERVAL_HOURS=6
 CURRENT_VERSION=${CURRENT_VERSION:-0.0.0}
@@ -916,6 +992,7 @@ PUBLISH_APK_TO=${BASE_DIR}/files/agent.apk
 SERVER_BASE=http://127.0.0.1:${HTTP_PORT}
 APPLY_SUPPORTED=0
 ENV
+rm -f "$SUP_ENV_LEGACY"
 NODE_BIN=$(command -v node)
 # Node installed under a private home (nvm in /root, say) is not executable by $SVC_USER, and the unit would only
 # restart-loop quietly (systemctl restart still reports success for Type=simple), so say so here.

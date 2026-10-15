@@ -19,10 +19,10 @@ New
 Fixes
 - The native installer says when GitHub refuses the token, and downloads the release without it. Rate limits are
   reported as rate limits.
-- Location popups in the device map render as plain text. <!-- pending PR #93 -->
-- Enroll: "New code" keeps the chosen configuration. <!-- pending PR #94 -->
-- Configuration copies keep their apps, and saving one never overwrites the original. <!-- pending PR #94 -->
-- The "Password updated" notice shows on the sign-in page. <!-- pending PR #94 -->
+- Location popups in the device map render as plain text.
+- Enroll: "New code" keeps the chosen configuration.
+- Configuration copies keep their apps, and saving one never overwrites the original.
+- The "Password updated" notice shows on the sign-in page.
 - Saving a configuration keeps its configuration files and app settings. <!-- pending fix/console-data -->
 - Device pages always open the device you clicked, even when a device's number matches another device's internal id. <!-- pending fix/console-data -->
 

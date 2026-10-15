@@ -1,6 +1,6 @@
 name: release
 
-# Cut a release:  git tag v1.2.3 && git push --tags
+# Cut a release (RELEASING.md):  git tag -a v1.2.3 -F <(release/changelog-section.sh 1.2.3) && git push origin v1.2.3
 # Produces a tested, signed GitHub Release: the release APK, server+web images on GHCR, and a
 # minisign-signed manifest the fleet updater consumes. Requires these `release` environment secrets (see RELEASING.md):
 # MDM_RELEASE_STORE_B64, MDM_RELEASE_STORE_PASSWORD, MDM_RELEASE_KEY_ALIAS, MDM_RELEASE_KEY_PASSWORD,
@@ -51,6 +51,18 @@ jobs:
             exit 1
           fi
           echo "${REF_NAME} is newer than ${latest:-(no earlier release)}"
+      # The annotation becomes the release notes (release job), so it must be this version's CHANGELOG.md section as
+      # `release/changelog-section.sh X.Y.Z` prints it from the tagged commit (RELEASING.md). Checkout can leave the tag
+      # lightweight, so fetch the annotated tag first. REF_NAME was validated as vX.Y.Z above.
+      - name: Tag annotation matches CHANGELOG.md
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          git fetch --force --quiet origin "refs/tags/${REF_NAME}:refs/tags/${REF_NAME}"
+          [ "$(git rev-parse "refs/tags/${REF_NAME}^{commit}")" = "$(git rev-parse 'HEAD^{commit}')" ] \
+            || { echo "::error::${REF_NAME} no longer points at the commit this run checked out (the tag was moved)"; exit 1; }
+          release/changelog-section.sh --check "$REF_NAME" \
+            || { echo "::error::${REF_NAME}'s annotation is not its CHANGELOG.md section (diff above; RELEASING.md)"; exit 1; }
 
   release:
     needs: gate
@@ -206,10 +218,12 @@ jobs:
           release/sign-manifest.sh manifest.json
 
       # --- Publish ---
+      # The gate job checked this annotation against CHANGELOG.md; strip the same signature blocks it ignores.
       - name: Release notes from the tag annotation
         run: |
           git fetch --tags --force --quiet
-          { git tag -l --format='%(contents)' "${GITHUB_REF_NAME}" | sed '/^-----BEGIN PGP SIGNATURE-----/,$d'; } > release-notes.md
+          { git tag -l --format='%(contents)' "${GITHUB_REF_NAME}" \
+            | sed -E '/^-----BEGIN (PGP SIGNATURE|SSH SIGNATURE|SIGNED MESSAGE)-----/,$d'; } > release-notes.md
           [ -s release-notes.md ] || echo "See the commit history for this release." > release-notes.md
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
         with:

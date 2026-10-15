@@ -541,7 +541,11 @@ public class AgentResource {
                 row.setAccuracy((float) loc.get("accuracyM").asDouble());
             }
             if (loc.hasNonNull("provider")) {
-                row.setProvider(loc.get("provider").asText());
+                // Android provider names ("gps", "network", "fused", ...); anything else is dropped, never stored.
+                String provider = loc.get("provider").asText();
+                if (PROVIDER_NAME.matcher(provider).matches()) {
+                    row.setProvider(provider);
+                }
             }
             row.setCapturedAt(loc.hasNonNull("capturedAt") ? loc.get("capturedAt").asLong() : System.currentTimeMillis());
             commandDAO.recordLocation(row);
@@ -549,6 +553,8 @@ public class AgentResource {
             logger.warn("Failed to record location for {}: {}", deviceNumber, e.getMessage());
         }
     }
+
+    private static final java.util.regex.Pattern PROVIDER_NAME = java.util.regex.Pattern.compile("[A-Za-z0-9_.-]{1,32}");
 
     private static Integer parseCommandId(String commandId) {
         try {

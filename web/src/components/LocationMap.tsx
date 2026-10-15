@@ -3,6 +3,13 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { LocationFix } from '../api/deviceLocations';
 
+/** A text-only popup body (never parsed as HTML). */
+function popupText(text: string): HTMLElement {
+  const el = document.createElement('span');
+  el.textContent = text;
+  return el;
+}
+
 /**
  * Leaflet + OpenStreetMap breadcrumb map. [fixes] are newest-first (as the API returns them);
  * we draw the trail chronologically with a polyline + circle markers and highlight the latest fix.
@@ -44,10 +51,13 @@ export function LocationMap({ fixes }: { fixes: LocationFix[] }) {
         fillOpacity: latest ? 0.9 : 0.5,
         weight: latest ? 2 : 1,
       })
+        // A DOM node, not a string: Leaflet renders popup strings as HTML, and `provider` comes from the device.
         .bindPopup(
-          `${new Date(f.capturedAt).toLocaleString()}` +
-            (f.accuracy != null ? ` · ±${Math.round(f.accuracy)} m` : '') +
-            (f.provider ? ` · ${f.provider}` : ''),
+          popupText(
+            `${new Date(f.capturedAt).toLocaleString()}` +
+              (f.accuracy != null ? ` · ±${Math.round(f.accuracy)} m` : '') +
+              (f.provider ? ` · ${f.provider}` : ''),
+          ),
         )
         .addTo(layer);
     });

@@ -9,10 +9,13 @@ import com.hmdm.persistence.AgentCommandDAO;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.Device;
+import com.hmdm.persistence.domain.DeviceLocation;
+import com.hmdm.persistence.domain.DeviceState;
 import com.hmdm.rest.json.Response;
 import com.hmdm.rest.json.agent.AgentCapabilities;
 import com.hmdm.rest.json.agent.AgentCheckInRequest;
 import com.hmdm.rest.json.agent.AgentCommandResult;
+import com.hmdm.rest.json.agent.AgentDeviceState;
 import com.hmdm.rest.resource.support.ConfigAppInstaller;
 import com.hmdm.rest.resource.support.ConfigReconciler;
 import com.hmdm.rest.resource.support.InstallHashes;
@@ -27,6 +30,8 @@ import java.util.List;
 import java.util.Set;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /** One authenticated check-in can only cause a bounded amount of database work and storage. */
@@ -52,6 +57,8 @@ public class AgentCheckInLimitsTest {
         final List<String> details = new ArrayList<>();
         final List<String> statuses = new ArrayList<>();
         final List<String> storedCaps = new ArrayList<>();
+        final List<DeviceLocation> locations = new ArrayList<>();
+        String telemetry;
         int capabilityReads;
         FakeCommandDAO() { super(null, null, null, null); }
         @Override public String getDeviceSecretHash(String n) { return CryptoUtil.getSHA256String(SECRET); }
@@ -68,6 +75,9 @@ public class AgentCheckInLimitsTest {
             return "{\"device\":[\"lock\"]}";
         }
         @Override public List<AgentCommand> listPending(String n) { return Collections.emptyList(); }
+        @Override public void upsertState(DeviceState s) { telemetry = s.getTelemetry(); }
+        @Override public void updateAndroidVersion(String n, String v) { }
+        @Override public void recordLocation(DeviceLocation l) { locations.add(l); }
     }
 
     private static final class NoopReconciler extends ConfigReconciler {
@@ -208,5 +218,47 @@ public class AgentCheckInLimitsTest {
         assertEquals(Collections.singletonList(root.toString()), commands.storedCaps);
         assertEquals(0, commands.capabilityReads);
         assertTrue(reconciler.tokens.contains("device.wipe"));
+    }
+
+    private DeviceLocation checkInWithProvider(String provider) {
+        ObjectNode tel = JsonNodeFactory.instance.objectNode();
+        ObjectNode loc = tel.putObject("dynamic").putObject("location");
+        loc.put("lat", 52.1);
+        loc.put("lon", 4.3);
+        loc.put("capturedAt", 1L);
+        loc.set("provider", JsonNodeFactory.instance.textNode(provider));
+        AgentCheckInRequest req = new AgentCheckInRequest();
+        req.setState(new AgentDeviceState());
+        req.setTelemetry(tel);
+
+        assertEquals(Response.ResponseStatus.OK, checkin(req).getStatus());
+        assertEquals(1, commands.locations.size());
+        return commands.locations.get(0);
+    }
+
+    @Test
+    public void dropsAProviderThatIsNotAPlainNameAndKeepsTheFix() {
+        DeviceLocation row = checkInWithProvider("<img src=x onerror=alert(1)>");
+        assertNull(row.getProvider());
+        assertEquals(52.1, row.getLat(), 0.0);
+        assertEquals(4.3, row.getLon(), 0.0);
+        assertFalse(commands.telemetry, commands.telemetry.contains("provider"));
+        assertTrue(commands.telemetry, commands.telemetry.contains("\"lat\":52.1"));
+    }
+
+    @Test
+    public void keepsAPlainProviderName() {
+        assertEquals("fused", checkInWithProvider("fused").getProvider());
+        assertTrue(commands.telemetry, commands.telemetry.contains("\"provider\":\"fused\""));
+    }
+
+    @Test
+    public void dropsAnOverlongProviderButStillStoresTheRow() {
+        String longName = "abcdefghijklmnopqrstuvwxyz0123456";
+        assertEquals(33, longName.length());
+        DeviceLocation row = checkInWithProvider(longName);
+        assertNull(row.getProvider());
+        assertEquals(52.1, row.getLat(), 0.0);
+        assertFalse(commands.telemetry, commands.telemetry.contains("provider"));
     }
 }

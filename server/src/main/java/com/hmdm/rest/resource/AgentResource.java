@@ -97,6 +97,8 @@ public class AgentResource {
     // batches of 24 (96 px PNG, base64), well under 1 MiB even for incompressible icons. A larger detail is not
     // stored (cut JSON would be useless); the command is marked failed with a short note instead.
     static final int MAX_RESULT_DETAIL_CHARS = 2 * 1024 * 1024;
+    // Location provider names as Android reports them ("gps", "network", "fused", ...). Fits device_location.provider.
+    private static final java.util.regex.Pattern PROVIDER_NAME = java.util.regex.Pattern.compile("[A-Za-z0-9_.-]{1,32}");
 
     private UnsecureDAO unsecureDAO;
     private AgentEnrollmentTokenDAO tokenDAO;
@@ -294,6 +296,7 @@ public class AgentResource {
                 ((com.fasterxml.jackson.databind.node.ObjectNode) tel).put("publicIp", clientIp(httpRequest));
             }
             dropLocationWhenNotTracked(device, tel);
+            dropUnknownLocationProvider(tel);
             // An authenticated device can still be hostile/buggy: cap the stored blob so a single
             // client can't bloat device_state via the 5s foreground poll.
             String telJson = tel == null ? null : tel.toString();
@@ -523,6 +526,17 @@ public class AgentResource {
         }
     }
 
+    /** Keep dynamic.location.provider in the stored telemetry only when it is a plain provider name. */
+    private static void dropUnknownLocationProvider(JsonNode tel) {
+        JsonNode loc = tel == null ? null : tel.path("dynamic").path("location");
+        if (loc == null || !loc.isObject() || !loc.hasNonNull("provider")) {
+            return;
+        }
+        if (!PROVIDER_NAME.matcher(loc.get("provider").asText()).matches()) {
+            ((com.fasterxml.jackson.databind.node.ObjectNode) loc).remove("provider");
+        }
+    }
+
     /** Pull dynamic.location out of the telemetry JSON and append it to the device's trail. */
     private void recordLocation(String deviceNumber, JsonNode tel) {
         if (tel == null) {
@@ -553,8 +567,6 @@ public class AgentResource {
             logger.warn("Failed to record location for {}: {}", deviceNumber, e.getMessage());
         }
     }
-
-    private static final java.util.regex.Pattern PROVIDER_NAME = java.util.regex.Pattern.compile("[A-Za-z0-9_.-]{1,32}");
 
     private static Integer parseCommandId(String commandId) {
         try {

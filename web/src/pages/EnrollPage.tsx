@@ -86,10 +86,14 @@ export function EnrollPage() {
   // Mint a token whenever the selected configuration changes (including first load): the token
   // BINDS the device to that configuration server-side, so a QR generated for "Kiosk fleet"
   // must never carry a token minted for a different config. Waits for the list, so a stored default
-  // that no longer exists falls back to the server setting instead of minting against a dead id.
+  // that no longer exists falls back to the server setting instead of minting against a dead id,
+  // and is forgotten so the next visit doesn't fall back again.
   useEffect(() => {
     if (configsState === 'loading') return;
     if (cfgId && configsState === 'ok' && !configs.some((c) => String(c.id) === cfgId)) {
+      try {
+        if (localStorage.getItem(DEFAULT_CONFIG_KEY) === cfgId) localStorage.removeItem(DEFAULT_CONFIG_KEY);
+      } catch { /* storage unavailable */ }
       setCfgId('');
       return;
     }
@@ -141,6 +145,11 @@ export function EnrollPage() {
                       )}
                       size={320}
                     />
+                  ) : tokError ? (
+                    <div className="empty">
+                      <span className="label">No code</span>
+                      Use New code to try again.
+                    </div>
                   ) : (
                     <div className="empty"><span className="spin" /> Preparing…</div>
                   )}

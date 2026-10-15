@@ -206,4 +206,29 @@ class TemporaryUserRestrictionPolicyTest {
         p.withAllowed { assertFalse(b.blocked) }
         assertTrue(b.blocked); assertEquals(listOf(true, false, true), b.writes)
     }
+
+    @Test fun `an unreadable state on a blocked device writes nothing and keeps the block`() = runBlocking {
+        val b = Backend(blocked = true); b.readFails = true
+        assertEquals("ran", b.policy().withAllowed { "ran" })
+        assertTrue(b.writes.isEmpty()); assertTrue(b.blocked); assertNull(b.store.get("userAppInstall"))
+    }
+    @Test fun `a record that cannot be cleared makes an explicit apply fail for re-send`() {
+        val b = Backend(blocked = true)
+        val store = object : LiftRestoreStore by b.store {
+            override fun remove(key: String) = error("disk full")
+        }
+        store.put("userAppInstall", true)
+        val p = TemporaryUserRestrictionPolicy("userAppInstall", { true }, b::read, b::write, store)
+        assertTrue(p.setEnabled(true) is PolicyOutcome.Failed)
+    }
+    @Test fun `a record that cannot be cleared does not fail a finished install`() = runBlocking {
+        val b = Backend(blocked = true)
+        val store = object : LiftRestoreStore by b.store {
+            override fun remove(key: String) = error("disk full")
+        }
+        val p = TemporaryUserRestrictionPolicy("userAppInstall", { true }, b::read, b::write, store)
+        assertEquals("installed", p.withAllowed { "installed" })
+        // The leftover record equals the device state, so the next restore rewrites the same value.
+        assertTrue(b.blocked); assertEquals(true, store.get("userAppInstall"))
+    }
 }

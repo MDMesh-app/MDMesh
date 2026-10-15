@@ -29,7 +29,9 @@ internal open class TemporaryUserRestrictionPolicy(
         }
         runCatching {
             writeBlocked(!enabled)
-            store.remove(capabilityKey) // an explicit value supersedes one left by an interrupted operation
+            // An explicit value supersedes one left by an interrupted operation. A failed clear reports Failed, so the
+            // server re-sends instead of the record re-blocking over this value at the next cycle.
+            if (store.get(capabilityKey) != null) store.remove(capabilityKey)
             PolicyOutcome.Applied
         }.getOrElse { PolicyOutcome.Failed(it.message ?: "$capabilityKey setEnabled failed") }
     }
@@ -88,7 +90,10 @@ internal open class TemporaryUserRestrictionPolicy(
         if (active == 0 && lifted) {
             lifted = false
             writeBlocked(restoreBlocked)
-            store.remove(capabilityKey) // kept when the write throws: restoreInterrupted retries it
+            // Kept when the write throws: restoreInterrupted retries it. A failed clear of the record alone must not
+            // fail a finished install: the record then equals the device state, so the next restore rewrites the same
+            // value.
+            runCatching { store.remove(capabilityKey) }
         }
     }
 

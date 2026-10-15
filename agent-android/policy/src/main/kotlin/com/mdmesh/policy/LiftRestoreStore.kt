@@ -12,6 +12,7 @@ import android.content.SharedPreferences
 interface LiftRestoreStore {
     fun get(key: String): Boolean?
     fun put(key: String, blocked: Boolean)
+    /** Throws when the record could not be cleared. */
     fun remove(key: String)
 }
 
@@ -32,5 +33,8 @@ class SharedPrefsLiftRestoreStore(private val prefs: SharedPreferences) : LiftRe
     override fun put(key: String, blocked: Boolean) {
         check(prefs.edit().putBoolean(key, blocked).commit()) { "could not record $key before lifting it" }
     }
-    override fun remove(key: String) { prefs.edit().remove(key).commit() }
+    override fun remove(key: String) {
+        // Fails loudly: a record left behind would re-block over an explicit Allow at the next check-in cycle.
+        check(prefs.edit().remove(key).commit()) { "could not clear the saved $key value" }
+    }
 }

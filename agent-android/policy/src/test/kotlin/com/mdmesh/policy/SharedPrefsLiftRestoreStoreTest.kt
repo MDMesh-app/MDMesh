@@ -77,4 +77,13 @@ class SharedPrefsLiftRestoreStoreTest {
         val opError = runCatching { kotlinx.coroutines.runBlocking { policy.withAllowed { } } }.exceptionOrNull()
         assertTrue(opError is IllegalStateException); assertTrue("no clear without a record", !cleared)
     }
+
+    @Test fun `a failed remove throws and keeps the record`() {
+        val prefs = FakePrefs()
+        val store = SharedPrefsLiftRestoreStore(prefs)
+        store.put("userAppInstall", true)
+        prefs.commitResult = false
+        assertTrue(runCatching { store.remove("userAppInstall") }.exceptionOrNull() is IllegalStateException)
+        assertEquals(true, store.get("userAppInstall"))
+    }
 }

@@ -118,7 +118,8 @@ jobs:
         # detekt runs in the same Gradle invocation (no second JVM start; ~5 s on the whole agent);
         # pre-existing findings are in agent-android/config/detekt/baseline.xml, new code must be clean.
         working-directory: agent-android
-        run: ./gradlew --no-daemon detekt assembleDebug lintDebug testDebugUnitTest
+        # :proto is a plain JVM module, so testDebugUnitTest skips it; run its tests by name (release.yml does too).
+        run: ./gradlew --no-daemon detekt assembleDebug lintDebug testDebugUnitTest :proto:test
 
       # --- supervisor (#27): build the image, run its unit tests on the shipped Node, then run it the
       # way docker-compose runs it (working_dir /project + project mounted) and probe its routes. ---

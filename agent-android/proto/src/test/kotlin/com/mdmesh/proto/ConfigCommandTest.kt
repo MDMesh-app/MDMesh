@@ -54,6 +54,11 @@ class ConfigCommandTest {
         val json = """{"revision":"r","location":{"mode":"off"}}"""
         val p = ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), json)
         assertEquals(DeviceAction.LOCATION_OFF, p.location?.mode)
-        assertEquals("1.4", ProtocolJson.PROTOCOL_VERSION)
+    }
+
+    @Test
+    fun `protocol version is 1_5 (userAppInstall and userAppUninstall policy keys)`() {
+        // Bumped together with AgentProtocol.VERSION on the server; see proto/VERSIONING.md.
+        assertEquals("1.5", ProtocolJson.PROTOCOL_VERSION)
     }
 }

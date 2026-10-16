@@ -84,17 +84,23 @@ function heroHTML(theme) {
 // fadeR/fadeB/fadeT = soft bleed edges, yb = distance from the tile's bottom, float = lifted shadow.
 const R1 = 64, R2 = 762, TH = 674;
 const TILES = [
-  { x: 64, y: R1, w: 900, eyebrow: 'Overview', title: 'Needs attention, first', line: 'Failed applies, old agents and offline devices, each with its next step.',
+  { x: 64, y: R1, w: 900, eyebrow: 'Overview', title: 'Devices that need attention',
+    line: 'Devices with a failed configuration apply, an agent too old to sync or no recent check-in, each with a button for the next step.',
     imgs: [{ k: 'attention', z: 1.3, x: 56, y: 236, fadeR: true, fadeB: true }] },
-  { x: 988, y: R1, w: 600, eyebrow: 'Overview', title: 'Sync, per configuration', line: 'Spot drift before your users do.',
+  { x: 988, y: R1, w: 600, eyebrow: 'Overview', title: 'Sync per configuration',
+    line: 'How many devices of each configuration are in sync, out of sync or not reported.',
     imgs: [{ k: 'sync', z: 1.22, x: 36, y: 236 }] },
-  { x: 1612, y: R1, w: 724, eyebrow: 'Enroll', title: 'Enroll with a QR code', line: 'Factory-reset, tap six times, scan.',
+  { x: 1612, y: R1, w: 724, eyebrow: 'Enroll', title: 'Enrollment QR code',
+    line: 'Factory-reset a device, tap its welcome screen six times, then scan this code.',
     imgs: [{ k: 'enroll', z: 1.18, x: 56, y: 236, fadeR: true, fadeB: true }] },
-  { x: 64, y: R2, w: 1100, eyebrow: 'Configurations', title: 'Tri-state settings, changes marked', line: 'Not managed, Allow or Block. Every edit is flagged before you save and apply.',
+  { x: 64, y: R2, w: 1100, eyebrow: 'Configurations', title: 'Three-state configuration settings',
+    line: 'Each setting is Not managed, Allow or Block. Changed settings are marked until you save and apply them.',
     imgs: [{ k: 'cfg', z: 1.12, x: 56, y: 222, cy: 84, ch: 280, fadeT: true }, { k: 'cfgbar', z: 1.12, x: 56, yb: 40, float: true }] },
-  { x: 1188, y: R2, w: 560, eyebrow: 'Device', title: 'Remote actions', line: 'Destructive actions ask first.',
+  { x: 1188, y: R2, w: 560, eyebrow: 'Device', title: 'Remote actions',
+    line: 'Lock or reboot a device. Passcode reset and factory reset ask you to confirm.',
     imgs: [{ k: 'remote', z: 1.12, x: 40, y: 222, cy: 222, fadeR: true, fadeT: true }] },
-  { x: 1772, y: R2, w: 564, eyebrow: 'Settings', title: 'Staged agent rollouts', line: 'Canary devices first, then everyone.',
+  { x: 1772, y: R2, w: 564, eyebrow: 'Settings', title: 'Staged agent rollout',
+    line: 'A new agent version goes to canary devices first, then to all other devices when you promote it.',
     imgs: [{ k: 'rollout', z: 1.2, x: 40, y: 236, fadeR: true }] },
 ];
 
@@ -112,7 +118,7 @@ function featuresHTML(theme) {
     const mask = [m.fadeR && 'linear-gradient(90deg,#000 calc(100% - 150px),transparent)', m.fadeB && 'linear-gradient(180deg,#000 calc(100% - 130px),transparent)',
       m.fadeT && 'linear-gradient(0deg,#000 calc(100% - 46px),transparent)'].filter(Boolean);
     const maskCss = mask.length ? `-webkit-mask-image:${mask.join(',')};-webkit-mask-composite:source-in;` : '';
-    return `<div class="crop${m.float ? ' float' : ''}" style="left:${m.x}px;${top};width:${vw}px;height:${vh}px;border-radius:${rad};${maskCss}">
+    return `<div class="crop${m.float ? ' float' : ''}"${m.yb == null ? ` data-min="${m.y}"` : ''}${m.fadeB ? ' data-fadeb' : ''} style="left:${m.x}px;${top};width:${vw}px;height:${vh}px;border-radius:${rad};${maskCss}">
       <img src="${shot(m.k, theme)}" style="width:${cw0 * m.z}px;height:${ch0 * m.z}px;margin-top:${-cy * m.z}px"></div>`;
   };
   const css = `${gridCSS(theme, { mask: 'ellipse 70% 75% at 50% 60%' })}
@@ -121,13 +127,20 @@ function featuresHTML(theme) {
 .tile::before{content:'';position:absolute;inset:0;background:radial-gradient(700px 360px at 85% 100%,${dark ? 'rgba(43,185,121,.07)' : 'rgba(26,167,102,.05)'},transparent 70%)}
 .txt{position:absolute;left:64px;top:56px;right:64px}
 .eb{font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:${c.online}}
-.tt{margin-top:12px;font-size:40px;font-weight:600;letter-spacing:-.015em;color:${c.ink};line-height:1.15}
-.ln{margin-top:10px;font-size:25px;color:${c.secondary};line-height:1.4}
+.tt{margin-top:12px;font-size:38px;font-weight:600;letter-spacing:-.015em;color:${c.ink};line-height:1.15}
+.ln{margin-top:10px;font-size:24px;color:${c.secondary};line-height:1.4}
 .crop{position:absolute;overflow:hidden;box-shadow:0 0 0 1px ${dark ? 'rgba(255,255,255,.06)' : 'rgba(21,24,29,.06)'},0 24px 50px -24px rgba(${c.shadow},${dark ? '.9' : '.22'})}
 .crop img{display:block}
 .crop.float{box-shadow:0 0 0 1px ${dark ? 'rgba(255,255,255,.10)' : 'rgba(21,24,29,.08)'},0 30px 60px -20px rgba(${c.shadow},${dark ? '.95' : '.35'}),0 10px 20px -10px rgba(${c.shadow},${dark ? '.6' : '.15'})}`;
   const body = TILES.map((t) => `<div class="tile" style="left:${t.x}px;top:${t.y}px;width:${t.w}px"><div class="sg"></div><div class="sgv"></div>
-    <div class="txt"><div class="eb">${t.eyebrow}</div><div class="tt">${t.title}</div><div class="ln">${t.line}</div></div>${t.imgs.map((m) => crop(t, m)).join('')}</div>`).join('');
+    <div class="txt"><div class="eb">${t.eyebrow}</div><div class="tt">${t.title}</div><div class="ln">${t.line}</div></div>${t.imgs.map((m) => crop(t, m)).join('')}</div>`).join('')
+    // A crop starts at its own y, or 26px below the tile's text when the description wraps further down.
+    + `<script>document.fonts.ready.then(() => { for (const tile of document.querySelectorAll('.tile')) {
+        const txt = tile.querySelector('.txt'); const bottom = txt.offsetTop + txt.offsetHeight;
+        for (const c of tile.querySelectorAll('.crop[data-min]')) {
+          const top = Math.max(+c.dataset.min, bottom + 26);
+          if (c.hasAttribute('data-fadeb')) c.style.height = Math.min(c.offsetHeight, ${TH} - top) + 'px';  // keep the bottom fade inside the tile
+          c.style.top = top + 'px'; } } });</script>`;
   return page(theme, 2400, 1500, css, body);
 }
 

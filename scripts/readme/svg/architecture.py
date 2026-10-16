@@ -60,14 +60,14 @@ def build(theme):
     A(f'<rect x=".5" y=".5" width="{W - 1}" height="{H - 1}" rx="20" fill="{c["panel"]}" stroke="{c["pborder"]}"/>')
 
     # --- groups
-    group(32, 52, 262, 214, 'ADMIN BROWSER')
-    group(32, 330, 262, 278, 'ANDROID FLEET')
+    group(32, 52, 262, 214, 'YOUR BROWSER')
+    group(32, 330, 262, 278, 'ANDROID DEVICES')
     group(420, 52, 504, 556, 'YOUR HOST · DOCKER OR NATIVE')
     group(1032, 332, 140, 276, 'GITHUB')
 
     # --- boxes
     box(52, 82, 222, 160, 'Console', ['React 19 · Vite', 'The admin web app.'], 'web/', accent=c['ink'])
-    box(52, 360, 222, 224, 'Agent', ['Kotlin · Device Owner', 'Applies configuration,', 'reports state, runs', 'remote actions.'], 'agent-android/', accent=c['green'])
+    box(52, 360, 222, 224, 'Agent', ['Kotlin · Device Owner', 'Applies configurations,', 'reports device state, runs', 'remote actions.'], 'agent-android/', accent=c['green'])
     # edge (tall)
     ex, ey, ew, eh = 444, 82, 172, 502
     box(ex, ey, ew, eh, 'Edge', ['Caddy, auto-HTTPS', 'or Cloudflare Tunnel'], None)
@@ -80,11 +80,12 @@ def build(theme):
         A(f'<line x1="{ex + 20}" y1="{yy + 9}" x2="{ex + ew - 20}" y2="{yy + 9}" stroke="{c["bborder"]}"/>')
         A(text(MONO(500), p, ex + 20, yy, 13, c['ink']))
         A(text(SANS(400), to, ex + ew - 20, yy, 13, c['sec'], anchor='end'))
-    A(text(SANS(400), 'TLS terminates here.', ex + 20, ey + eh - 52, 13, c['sec']))
-    A(text(SANS(400), 'No other ports open.', ex + 20, ey + eh - 32, 13, c['sec']))
+    A(text(SANS(400), 'TLS ends here. A', ex + 20, ey + eh - 72, 13, c['sec']))
+    A(text(SANS(400), 'native install uses', ex + 20, ey + eh - 52, 13, c['sec']))
+    A(text(SANS(400), 'your own TLS proxy.', ex + 20, ey + eh - 32, 13, c['sec']))
 
     sx, sw = 676, 222
-    box(sx, 82, sw, 156, 'Server', ['Java 17 · Jersey REST', 'Fleet, configs, commands.'], 'launcher.war', accent=c['ink'])
+    box(sx, 82, sw, 156, 'Server', ['Java 17 · Jersey REST API', 'Devices, configurations', 'and commands.'], 'launcher.war', accent=c['ink'])
     # postgres cylinder
     py = 296
     pw = 178
@@ -95,9 +96,9 @@ def build(theme):
       f'<ellipse cx="{cx0}" cy="{cy0}" rx="13" ry="5" fill="none" stroke="{c["sec"]}" stroke-width="1.5"/>'
       f'<path d="M{cx0 - 13},{cy0 + 11} a13,5 0 0 0 26,0" fill="none" stroke="{c["sec"]}" stroke-width="1.5"/>')
     A(text(SANS(600), 'PostgreSQL', sx + 60, py + 40, 18, c['ink']))
-    A(text(SANS(400), 'State, history.', sx + 60, py + 62, 14, c['sec']))
-    box(sx, 452, sw, 132, 'Updater', ['Supervisor · Node', 'Backs up, applies, rolls back.'], 'minisign', accent=c['amber'])
-    box(1050, 360, 104, 224, 'Releases', ['Signed', 'manifest,', 'images,', 'agent APK'], None)
+    A(text(SANS(400), 'All server data.', sx + 60, py + 62, 14, c['sec']))
+    box(sx, 452, sw, 132, 'Updater', ['Supervisor · Node', 'Verifies and applies updates.'], 'minisign', accent=c['amber'])
+    box(1050, 360, 104, 224, 'Releases', ['Signed', 'manifest,', 'server', 'images,', 'agent APK'], None)
 
     # --- connectors
     # console <-> edge
@@ -125,16 +126,16 @@ def build(theme):
     # legend
     lx, ly = 52, 636
     A(f'<line x1="{lx}" y1="{ly - 4}" x2="{lx + 26}" y2="{ly - 4}" stroke="{c["green"]}" stroke-width="1.8"/>')
-    A(text(SANS(400), 'device channel', lx + 34, ly, 13, c['sec']))
-    lx2 = lx + 34 + measure(SANS(400), 'device channel', 13) + 28
+    A(text(SANS(400), 'to and from devices', lx + 34, ly, 13, c['sec']))
+    lx2 = lx + 34 + measure(SANS(400), 'to and from devices', 13) + 28
     A(f'<line x1="{lx2}" y1="{ly - 4}" x2="{lx2 + 26}" y2="{ly - 4}" stroke="{c["amber"]}" stroke-width="1.8"/>')
-    A(text(SANS(400), 'signed update path', lx2 + 34, ly, 13, c['sec']))
-    lx3 = lx2 + 34 + measure(SANS(400), 'signed update path', 13) + 28
+    A(text(SANS(400), 'signed updates', lx2 + 34, ly, 13, c['sec']))
+    lx3 = lx2 + 34 + measure(SANS(400), 'signed updates', 13) + 28
     A(f'<line x1="{lx3}" y1="{ly - 4}" x2="{lx3 + 26}" y2="{ly - 4}" stroke="{c["line"]}" stroke-width="1.6" stroke-dasharray="5 5"/>')
-    A(text(SANS(400), 'dashed: on demand', lx3 + 34, ly, 13, c['sec']))
+    A(text(SANS(400), 'dashed: only when needed', lx3 + 34, ly, 13, c['sec']))
 
-    label_ = ('MDMesh architecture: the console and the agents reach the server through the Caddy or Cloudflare '
-              'Tunnel edge; the updater applies minisign-signed releases.')
+    label_ = ('MDMesh architecture: the console and the agents reach the server through Caddy or a Cloudflare Tunnel; '
+              'the server keeps its data in PostgreSQL; the updater verifies minisign-signed releases from GitHub and applies them.')
     write(f'architecture-{theme}.svg', svg_doc(W, H, f'0 0 {W} {H}', label_, 'MDMesh architecture', defs, '', ''.join(s)))
 
 if __name__ == '__main__':

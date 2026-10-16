@@ -154,7 +154,7 @@ def build(theme, geom):
     pill, _, _ = status_pill(tk, 'ok', 'Applied', ax, ay, k, tail='in 4s')
     applied = (f'<g class="hiw-applied"><rect x="{f(ax)}" y="{f(ay + 8)}" width="{f(apw)}" height="{f(aph)}" rx="{f(aph / 2)}" fill="{tk["shadow"]}" '
                f'fill-opacity="{tk["shadow_op"] * .8}" filter="url(#sh)"/>{pill}</g>')
-    note = text(MONO(400), 'Phone: the agent’s status screen, drawn from its layout code', W - M - 36, H - M - 26, 17, tk['muted'], anchor='end')
+    note = text(MONO(400), 'The phone shows the agent’s status screen, redrawn from its layout code (not a screenshot)', W - M - 36, H - M - 26, 17, tk['muted'], anchor='end')
     gd, gb = grid(tk, W - 2 * M, H - 2 * M, cell=16, mask_id='gm', cx=(W - 2 * M) * .62, rx=(W - 2 * M) * .5, ry=(H - 2 * M) * .7)
     vd, vb = vignette(tk, W - 2 * M, H - 2 * M)
     card = (f'<g class="hiw-card"><rect x="{M}" y="{M + 6}" width="{W - 2 * M}" height="{H - 2 * M}" rx="32" fill="{tk["shadow"]}" fill-opacity="{.45 if dark else .10}" filter="url(#sh2)"/>'
@@ -169,7 +169,7 @@ def build(theme, geom):
     # Layer order: the phone is drawn after the packet and the burst, which hides them "behind" it.
     body = f'{card}{console}{track_line}{active}{idle}{lit}{origin}{packet}<g class="hiw-burst">{"".join(burst)}</g>{phone}{chip}{check}{applied}{note}'
     write(f'how-it-works-{theme}.svg', svg_doc(W // 2, H // 2, f'0 0 {W} {H}',
-          'A configuration change travels from the console to a managed Android device and is applied',
+          'Animation: a configuration change goes from the console’s Save and apply button to an Android device, which applies it',
           'How it works: config.apply from the console to the device', defs, ''.join(css), body))
     return t
 

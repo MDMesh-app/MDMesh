@@ -4,11 +4,11 @@
 <p align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/readme/banner-dark.svg">
-  <img src="docs/readme/banner-light.svg" alt="MDMesh, self-hosted Android MDM" width="100%">
+  <img src="docs/readme/banner-light.svg" alt="MDMesh: self-hosted mobile device management for Android" width="100%">
 </picture>
 </p>
 
-**Self-hosted Android MDM, with a console that doesn't feel like 2012.**
+**Self-hosted mobile device management (MDM) for Android: a server, a web console and a Device Owner agent.**
 
 [![Release](https://img.shields.io/github/v/release/MDMesh-app/MDMesh?sort=semver)](https://github.com/MDMesh-app/MDMesh/releases)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -20,42 +20,51 @@
 <p align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/readme/hero-dark.webp">
-  <img src="docs/readme/hero-light.webp" alt="The MDMesh console's Overview: fleet status, the devices that need attention, and sync per configuration" width="100%">
+  <img src="docs/readme/hero-light.webp" alt="The Overview page of the MDMesh console: device counts by status, the list of devices that need attention, and sync status per configuration" width="100%">
 </picture>
 </p>
 
 </div>
 
-MDMesh is an open-source Mobile Device Management platform for Android. Enroll devices as Device Owner with a QR
-code, then manage them from a web console: push apps, lock devices into kiosk mode, track location and run remote
-actions. The server and the agent update themselves from signed releases that roll back on failure.
+You enroll an Android device by scanning a QR code during its setup, which makes the MDMesh agent its Device Owner.
+From the web console you then install apps on it, lock it into kiosk mode, see its location and send it remote
+actions. The server and the agent update from signed releases.
 
 ### Why MDMesh
 
-- **Open-source core, no paid edition.** Kiosk, app delivery, location and one-command deploy are all Apache-2.0.
-- **Signed auto-updates with rollback.** Every release is signed. The server verifies it, backs up the database and
-  rolls back if the update fails.
-- **A from-scratch Device Owner agent.** Kotlin, capability-gated commands and a versioned protocol, so older agents
-  keep working.
-- **One-command deploy.** Docker Compose with auto-HTTPS or a Cloudflare Tunnel, or a native install on Debian and
-  Ubuntu.
+- **There is no paid edition.** Kiosk mode, app installs, location and the installers are all open source under
+  Apache-2.0.
+- **Updates are signed, and a failed update rolls back.** The updater only offers releases whose signature verifies.
+  On quick-start installs it backs up the database before an update and rolls back by itself if the new version
+  fails its health check.
+- **Older agents keep working after a server update.** The agent is a Device Owner app written in Kotlin. The server
+  only sends it commands it reports it supports, and the agent protocol (`/agent/v1`) only ever adds fields.
+- **One command installs the server.** It runs on Docker Compose with automatic HTTPS (Caddy) or a Cloudflare Tunnel,
+  or natively on Debian 12/13 and Ubuntu 24.04.
 
 ## ■ Features
 
 <p align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/readme/features-dark.webp">
-  <img src="docs/readme/features-light.webp" alt="Six console details: devices that need attention, sync per configuration, QR enrollment, tri-state settings with changes marked, remote actions, and a staged agent rollout" width="100%">
+  <img src="docs/readme/features-light.webp" alt="Six parts of the console: devices that need attention, sync per configuration, the enrollment QR code, three-state configuration settings, remote actions, and a staged agent rollout" width="100%">
 </picture>
 </p>
 
-- **Fleet:** live status, search and filters, with the devices that need attention first.
-- **Configurations:** desired state for 22 settings, from kiosk to Wi-Fi, with per-setting sync status.
-- **Kiosk:** single- or multi-app lock task, a themed launcher and a crash-loop guard.
-- **Apps:** a library, custom APK uploads and F-Droid, installed silently.
-- **Remote actions:** message, ring, lock, reboot, passcode reset and wipe, each gated on what the device supports.
-- **Location:** passive or GPS tracking, with history on a map.
-- **Staged rollouts:** new agent versions go to canary devices first, then to the fleet.
+- **Devices:** the device list shows each device's status, with search and filters. The Overview lists the devices
+  that need attention, each with a button for the next step.
+- **Configurations:** a configuration sets up to 22 device settings, from kiosk options to Wi-Fi and factory reset.
+  Devices apply it at their next check-in, and the device page shows the result for each setting.
+- **Kiosk mode:** locks a device to one app or to a grid of chosen apps, in the colours the configuration sets. If a
+  kiosk app keeps crashing, the agent turns kiosk mode off so the device stays usable.
+- **Apps:** add apps from your own APK uploads or from the F-Droid catalog. The agent installs them without asking
+  the device's user.
+- **Remote actions:** send an alert or a lock-screen message, ring, lock, reboot, enter or exit kiosk mode, reset the
+  passcode or factory-reset a device. Passcode reset and factory reset ask you to confirm.
+- **Location:** a configuration sets whether devices report their last known location, a fresh GPS fix or nothing.
+  The device page shows the location history on a map.
+- **Staged agent rollouts:** a new agent version goes to a set of canary devices first. You promote it to the other
+  devices once the canaries have updated.
 
 ## ■ Quick start
 
@@ -74,41 +83,47 @@ and a temporary admin password. Then enroll a device:
 3. Factory-reset an Android device and tap the welcome screen six times to open the QR scanner.
 4. Scan the code. The device enrolls as Device Owner and checks in.
 
-Hosting modes, the native install and updates: **[DEPLOY.md](DEPLOY.md)**.
+**[DEPLOY.md](DEPLOY.md)** covers the hosting modes and the native install, and
+**[docs/UPGRADING.md](docs/UPGRADING.md)** covers updates.
 
 ## ■ How it works
 
 <p align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/readme/how-it-works-dark.svg">
-  <img src="docs/readme/how-it-works-light.svg" alt="A configuration change goes from the console's Save and apply to an Android device, which applies it and reports back" width="85%">
+  <img src="docs/readme/how-it-works-light.svg" alt="Animation: a configuration change goes from the console's Save and apply button to an Android device, which applies it and shows Applied" width="85%">
 </picture>
 </p>
 
-1. **You change a configuration.** Each edit is marked until you save and apply it.
-2. **The server wakes the devices** on their wake channel and sends `config.apply`.
-3. **Each agent applies it and reports back** setting by setting, so the console shows what applied, failed or isn't
-   supported.
+1. **You edit a configuration in the console.** Each changed setting is marked "Changed" until you select **Save and
+   apply**.
+2. **The server wakes the devices that use the configuration** over their WebSocket connection. Each agent checks in
+   and gets a `config.apply` command. A device without an open connection gets it at its next regular check-in.
+3. **The agent applies each setting and reports the result for each one.** The device page shows which settings were
+   applied, which failed and which the device doesn't support.
 
 ## ■ Architecture
 
 <p align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/readme/architecture-dark.svg">
-  <img src="docs/readme/architecture-light.svg" alt="Architecture: the console and the agents reach the server through the Caddy or Cloudflare Tunnel edge; the server keeps its state in PostgreSQL; the updater verifies minisign-signed releases from GitHub and applies them" width="100%">
+  <img src="docs/readme/architecture-light.svg" alt="Architecture diagram: the console and the agents reach the server through Caddy or a Cloudflare Tunnel; the server keeps its data in PostgreSQL; the updater verifies minisign-signed releases from GitHub and applies them" width="100%">
 </picture>
 </p>
 
-A Java (Jersey) server on PostgreSQL sits behind Caddy or a Cloudflare Tunnel and serves the React console. Agents
-check in over REST and keep a WebSocket open so the server can wake them. A separate updater polls GitHub Releases,
-verifies the minisign signature and applies the update, with a database backup and rollback. More in
-[STRUCTURE.md](STRUCTURE.md).
+The server is a Java (Jersey) REST API with a PostgreSQL database. In the Docker install, Caddy ends TLS (behind a
+Cloudflare Tunnel, if you use one), serves the React console and passes API requests to the server. A native install
+serves the console from Tomcat, behind your own TLS proxy. Agents check in over REST and keep a WebSocket open, so the
+server can wake them when there's a command. The updater, a separate service, checks GitHub Releases and verifies
+each release's minisign signature. On quick-start installs it also applies the update, with a database backup and an
+automatic rollback. [STRUCTURE.md](STRUCTURE.md) describes the code layout.
 
 ## ■ Roadmap
 
-- ✅ Console, Device Owner agent, kiosk, app delivery, location, signed updates, staged rollouts
-- 🔜 Live remote control: screen view and input over WebRTC, with a self-hosted TURN server
-- 🔭 An OEM-privileged tier (Knox, Zebra), behind the capability layer
+- ✅ Done: the web console, the Device Owner agent, kiosk mode, app installs, location, signed updates and staged
+  agent rollouts.
+- 🔜 Next: remote control of a device's screen (view and input) over WebRTC, with a self-hosted TURN server.
+- 🔭 Later: support for device makers' management APIs (Samsung Knox, Zebra) through the agent's capability layer.
 
 ## ■ Contributing
 

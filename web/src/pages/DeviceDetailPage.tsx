@@ -116,8 +116,11 @@ function NameField({
 }
 
 const NUMBER_PAGE = 500;
+const NUMBER_PAGES_MAX = 20;
 const ID_PAGE = 1000;
 const ID_PAGES_MAX = 10;
+/** Database ids are small integers; a longer all-digit value (an IMEI, a serial) is only ever a number. */
+const ID_LIKE = /^\d{1,9}$/;
 
 /**
  * The device a /devices/:id link names. Every link carries the device number, so an exact number match
@@ -127,21 +130,25 @@ const ID_PAGES_MAX = 10;
 async function resolveDevice(param: string): Promise<{
   device: DeviceView | null;
   configurations: Record<string, ConfigurationLookup>;
+  /** Found by database id, not by number. */
+  byId?: boolean;
 }> {
+  // A blank value would drop the server's filter and page through the whole fleet.
+  if (!param.trim()) return { device: null, configurations: {} };
   // fastSearch makes the server match the number exactly (or its fast-search suffix), not as a substring.
-  for (let pageNum = 1; ; pageNum++) {
+  for (let pageNum = 1; pageNum <= NUMBER_PAGES_MAX; pageNum++) {
     const res = await searchDevices({ value: param, fastSearch: true, pageSize: NUMBER_PAGE, pageNum });
     const items = res.devices?.items ?? [];
     const hit = items.find((d) => d.number === param);
     if (hit) return { device: hit, configurations: res.configurations ?? {} };
     if (items.length < NUMBER_PAGE) break;
   }
-  if (/^\d+$/.test(param)) {
+  if (ID_LIKE.test(param)) {
     for (let pageNum = 1; pageNum <= ID_PAGES_MAX; pageNum++) {
       const res = await searchDevices({ pageSize: ID_PAGE, pageNum });
       const items = res.devices?.items ?? [];
       const hit = items.find((d) => String(d.id) === param);
-      if (hit) return { device: hit, configurations: res.configurations ?? {} };
+      if (hit) return { device: hit, configurations: res.configurations ?? {}, byId: true };
       if (items.length < ID_PAGE) break;
     }
   }
@@ -167,12 +174,19 @@ export function DeviceDetailPage() {
   const load = useCallback(async () => {
     // A slower answer for the previous route must not replace this one's device.
     const seq = ++loadSeq.current;
+    let redirected = false;
     setLoading(true);
     setError(null);
     try {
       // The route param is the device number (see DevicesPage/DashboardPage links).
-      const { device: found, configurations } = await resolveDevice(id ?? '');
+      const { device: found, configurations, byId } = await resolveDevice(id ?? '');
       if (seq !== loadSeq.current) return;
+      if (found && byId) {
+        // An old id-style link: show the device under its number, so the URL names what is open.
+        redirected = true; // stay on the spinner until the number route loads
+        navigate(`/devices/${encodeURIComponent(found.number)}`, { replace: true });
+        return;
+      }
       setConfigs(configurations);
       setDevice(found);
       if (!found) setError('Device not found.');
@@ -183,9 +197,9 @@ export function DeviceDetailPage() {
         setError('Cannot reach the server.');
       else setError('Failed to load device.');
     } finally {
-      if (seq === loadSeq.current) setLoading(false);
+      if (seq === loadSeq.current && !redirected) setLoading(false);
     }
-  }, [id]);
+  }, [id, navigate]);
 
   useEffect(() => {
     void load();

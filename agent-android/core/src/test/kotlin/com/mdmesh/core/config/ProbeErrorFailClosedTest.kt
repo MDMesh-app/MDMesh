@@ -194,4 +194,68 @@ class ProbeErrorFailClosedTest {
         assertTrue(applier.selfHealWifiRadio { null })
         assertTrue(radio.on)
     }
+
+    /** A wifiRadio policy whose Device-Owner check throws while [dpm] is broken, with its saved state exposed. */
+    private class RadioSetup {
+        val radio = StrandedRadio()
+        val state = InMemoryWifiRadioOffState()
+        val dpm = Flaky()
+        val policy = WifiRadioPolicy(radio, { _, _ -> }, 33, state) { dpm.check(); true }
+    }
+
+    private fun off(revision: String) = ConfigApplyPayload(revision = revision, policies = mapOf("wifiRadio" to false))
+
+    @Test
+    fun `a new revision ends a self-heal hold through the kept instance when its check throws`() = runTest {
+        val r = RadioSetup()
+        val toggles = TogglePolicyResolver(linkedMapOf<String, () -> TogglePolicy?>("wifiRadio" to { r.policy }))
+        val applier = ConfigApplier(toggles::current, kiosk(), {}, InMemoryConfigStateStore())
+        applier.apply(off("h1"))
+        r.state.heldOn = true // a self-heal turned Wi-Fi back on
+
+        r.dpm.broken = true
+        val result = applier.apply(off("h2"))
+
+        assertTrue(ConfigOutcome.isFailed(result.outcomes.getValue("policies.wifiRadio")))
+        assertFalse("the new configuration ended the hold", r.state.heldOn)
+    }
+
+    @Test
+    fun `a hold the new revision could not end is ended when that revision is re-sent`() = runTest {
+        val r = RadioSetup()
+        // Never resolved in this process: the probe itself checks Device Owner, and that throws.
+        val toggles = TogglePolicyResolver(
+            linkedMapOf<String, () -> TogglePolicy?>("wifiRadio" to { r.policy.takeIf { it.isSupported() } }),
+        )
+        val store = InMemoryConfigStateStore().apply { delivered = off("h1") } // from before the restart
+        val applier = ConfigApplier(toggles::current, kiosk(), {}, store)
+        r.state.heldOn = true
+
+        r.dpm.broken = true
+        val first = applier.apply(off("h2"))
+        assertTrue(ConfigOutcome.isFailed(first.outcomes.getValue("policies.wifiRadio")))
+        assertTrue("cannot be ended yet", r.state.heldOn)
+
+        r.dpm.broken = false
+        val resend = applier.apply(off("h2"))
+
+        assertFalse("ended on the re-send of the same revision", r.state.heldOn)
+        assertEquals(ConfigOutcome.APPLIED, resend.outcomes["policies.wifiRadio"])
+        assertFalse(r.radio.on)
+    }
+
+    @Test
+    fun `a re-send of the revision that was delivered before the upgrade keeps the hold`() = runTest {
+        val r = RadioSetup()
+        val toggles = TogglePolicyResolver(linkedMapOf<String, () -> TogglePolicy?>("wifiRadio" to { r.policy }))
+        // Written by an agent without holdEndedFor: only the delivered document is known.
+        val store = InMemoryConfigStateStore().apply { delivered = off("h1") }
+        val applier = ConfigApplier(toggles::current, kiosk(), {}, store)
+        r.state.heldOn = true
+
+        val resend = applier.apply(off("h1"))
+
+        assertTrue("same configuration: the hold stays", r.state.heldOn)
+        assertTrue(resend.outcomes.getValue("policies.wifiRadio").startsWith("deferred:"))
+    }
 }

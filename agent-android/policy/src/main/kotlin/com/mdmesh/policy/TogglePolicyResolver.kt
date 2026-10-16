@@ -20,11 +20,13 @@ import java.util.concurrent.ConcurrentHashMap
  * Callers read [current] once per operation and never keep the result. Thread-safe.
  *
  * @param probes capability key -> factory probe (null = no usable strategy right now), in advertising order.
- * @param onProbeError told about a key whose probe or support check threw.
+ * @param onProbeError told about a key whose probe or support check threw (e.g. [ProbeErrorLog.failed]).
+ * @param onProbeOk told about a key whose probe and support check returned normally (e.g. [ProbeErrorLog.recovered]).
  */
 class TogglePolicyResolver(
     private val probes: Map<String, () -> TogglePolicy?>,
     private val onProbeError: (key: String, error: Throwable) -> Unit = { _, _ -> },
+    private val onProbeOk: (key: String) -> Unit = {},
 ) {
 
     private val resolved = ConcurrentHashMap<String, TogglePolicy>()
@@ -37,6 +39,7 @@ class TogglePolicyResolver(
         for ((key, probe) in probes) {
             runCatching { resolve(key, probe) }
                 .onSuccess { policy ->
+                    onProbeOk(key)
                     if (policy != null) {
                         policies[key] = policy
                         advertised += key

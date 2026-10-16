@@ -44,6 +44,11 @@ class CapabilityRegistry(
     private val wifiRadioState: WifiRadioOffState = InMemoryWifiRadioOffState(),
 ) {
 
+    /** Probe errors, logged once per key and error class per interval, plus the recovery. */
+    private val probeLog = ProbeErrorLog { message, error ->
+        if (error != null) Log.w(TAG, message, error) else Log.i(TAG, message)
+    }
+
     /**
      * Each toggle's factory probe, keyed by capability key. This is the single extension point for on/off policies:
      * add a probe here and both the advertised capabilities ([supportedPolicyKeys]) and the generic `policy.apply` /
@@ -62,7 +67,8 @@ class CapabilityRegistry(
             SafeBootPolicy.CAPABILITY_KEY to { SafeBootPolicyFactory.create(handle) },
             WifiRadioPolicy.CAPABILITY_KEY to { WifiRadioPolicyFactory.create(handle, wifiRadio, wifiRadioState) },
         ),
-        onProbeError = { key, error -> Log.w(TAG, "policy probe failed: $key", error) },
+        onProbeError = probeLog::failed,
+        onProbeOk = probeLog::recovered,
     )
 
     /**

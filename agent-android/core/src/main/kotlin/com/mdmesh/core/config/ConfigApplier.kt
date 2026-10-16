@@ -42,18 +42,32 @@ class ConfigApplier(
         // What came before: the last saved document, and the last delivered one if a failed section kept it unsaved.
         val previous = listOfNotNull(store.load(), store.delivered)
         val policies = toggles()
-        // A changed configuration ends a Wi-Fi radio self-heal hold; a re-send of the same one does not (nor does the
-        // boot re-apply, which does not come through here).
-        if (doc.revision != store.delivered?.revision) {
-            // endHold only clears saved state, so it also runs on a kept instance whose check threw just now.
-            (wifiRadio(policies) ?: policies.errors[WifiRadioPolicy.CAPABILITY_KEY]?.kept as? WifiRadioPolicy)
-                ?.endHold()
-        }
+        endWifiRadioHold(doc.revision, policies)
         store.delivered = doc
         val result = applyLocked(doc, policies, previous, store.unreleased)
         // A release or kiosk exit that failed is retried with the next document, whatever that one says.
         store.unreleased = result.outcomes.filter { (k, o) -> ConfigOutcome.isFailed(o) && !manages(doc, k) }.keys
         result
+    }
+
+    /**
+     * A changed configuration ends a Wi-Fi radio self-heal hold; a re-send of the same one does not (nor does the boot
+     * re-apply, which does not come through here). When the `wifiRadio` check throws and no instance was kept, the
+     * hold cannot be ended now: [ConfigStateStore.holdEndedFor] stays as it was, so the re-send of this revision
+     * ends it.
+     */
+    private fun endWifiRadioHold(revision: String, policies: ResolvedToggles) {
+        // A store from before holdEndedFor existed: the last delivered revision had ended the hold.
+        val endedFor = store.holdEndedFor ?: store.delivered?.revision
+        if (revision == endedFor) return
+        val errored = policies.errors[WifiRadioPolicy.CAPABILITY_KEY]
+        // endHold only clears saved state, so it also runs on a kept instance whose check threw just now.
+        val radio = wifiRadio(policies) ?: errored?.kept as? WifiRadioPolicy
+        store.holdEndedFor = when {
+            radio != null -> revision.also { radio.endHold() }
+            errored != null -> endedFor ?: NO_REVISION // not ended yet: kept explicit, so the fallback above stops
+            else -> revision // no wifiRadio on this device right now: no hold to end
+        }
     }
 
     private fun manages(doc: ConfigApplyPayload, outcomeKey: String): Boolean = when {
@@ -127,13 +141,6 @@ class ConfigApplier(
         return (toggles[key] as? ReleasablePolicy)?.let { toOutcome(it.release()) }
     }
 
-    private fun toOutcome(o: PolicyOutcome?): String = when (o) {
-        null, PolicyOutcome.Unsupported -> ConfigOutcome.UNSUPPORTED
-        PolicyOutcome.Applied -> ConfigOutcome.APPLIED
-        is PolicyOutcome.Failed -> ConfigOutcome.failed(o.reason)
-        is PolicyOutcome.Deferred -> ConfigOutcome.deferred(o.reason)
-    }
-
     /** @return the kiosk outcome, or null when nothing was asserted or exited (the key is then omitted). */
     private suspend fun applyKiosk(doc: ConfigApplyPayload, previousConfigHadKiosk: Boolean): String? {
         // Absent kiosk = "configuration does not assert kiosk". Exit only when a PREVIOUS CONFIG (last saved or last
@@ -184,6 +191,16 @@ class ConfigApplier(
         private const val POLICIES = "policies."
         private const val KIOSK = "kiosk"
 
+        /** Never a real revision (config.apply requires a non-blank one). */
+        private const val NO_REVISION = ""
+
         fun succeeded(r: ConfigApplyResult): Boolean = r.outcomes.values.none(ConfigOutcome::isFailed)
     }
+}
+
+private fun toOutcome(o: PolicyOutcome?): String = when (o) {
+    null, PolicyOutcome.Unsupported -> ConfigOutcome.UNSUPPORTED
+    PolicyOutcome.Applied -> ConfigOutcome.APPLIED
+    is PolicyOutcome.Failed -> ConfigOutcome.failed(o.reason)
+    is PolicyOutcome.Deferred -> ConfigOutcome.deferred(o.reason)
 }

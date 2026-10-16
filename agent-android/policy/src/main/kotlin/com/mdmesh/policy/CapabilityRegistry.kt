@@ -66,22 +66,25 @@ class CapabilityRegistry(
     )
 
     /**
-     * The toggle policies with a working strategy on this device right now, keyed by capability key.
+     * The toggle policies with a working strategy on this device right now, keyed by capability key, plus the keys
+     * whose probe threw on this read ([ResolvedToggles.errors]: fail closed, never treat them as unsupported).
      *
      * Resolve per operation; never inject or store the result. Device-Owner status flips to true partway through
      * QR provisioning, after this process may have started (#76), so a stored map misses every Device-Owner policy
      * for the life of the process. Pass `registry::togglePolicies` instead. Each policy is created once and the
      * same instance is returned on every later call (see [TogglePolicyResolver]). TogglePolicyWiringTest fails
-     * the build when production code stores or injects the map.
+     * the build when production code stores or injects the result.
      */
-    fun togglePolicies(): Map<String, TogglePolicy> = toggles.current()
+    fun togglePolicies(): ResolvedToggles = toggles.current()
 
     /**
      * The set of policy keys with a working strategy on this device — derived from the
      * registered strategies, so it can never drift from what can actually be applied.
+     * A key whose check threw on this read stays advertised if it resolved before (so the
+     * server keeps sending it and the agent keeps retrying); see [ResolvedToggles.advertisedKeys].
      * Each entry corresponds to a row in `proto/registry.md` § policy.
      */
-    fun supportedPolicyKeys(): List<String> = togglePolicies().keys.toList()
+    fun supportedPolicyKeys(): List<String> = togglePolicies().advertisedKeys
 
     /** Convenience: resolve the live [DeviceControl] facade for this device. */
     fun deviceControl(): DeviceControl? {

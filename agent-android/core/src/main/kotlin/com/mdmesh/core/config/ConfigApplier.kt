@@ -5,7 +5,7 @@ import com.mdmesh.core.store.ConfigStateStore
 import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.policy.PolicyOutcome
 import com.mdmesh.policy.ReleasablePolicy
-import com.mdmesh.policy.TogglePolicy
+import com.mdmesh.policy.ResolvedToggles
 import com.mdmesh.policy.wifi.WifiRadioPolicy
 import com.mdmesh.proto.ConfigApplyPayload
 import com.mdmesh.proto.ConfigApplyResult
@@ -27,10 +27,11 @@ import kotlinx.coroutines.sync.withLock
  *
  * @param toggles the toggle policies supported right now (`CapabilityRegistry.togglePolicies`), read once per
  *   operation and never kept: Device-Owner status flips to true partway through QR provisioning, after this
- *   singleton may have been built (#76).
+ *   singleton may have been built (#76). A key whose check threw ([ResolvedToggles.errors]) is reported failed,
+ *   never unsupported, so the document is not saved and the server re-sends it; it is never applied or released.
  */
 class ConfigApplier(
-    private val toggles: () -> Map<String, TogglePolicy>,
+    private val toggles: () -> ResolvedToggles,
     private val kiosk: KioskApplier,
     private val setLocationMode: (String) -> Unit,
     private val store: ConfigStateStore,
@@ -43,7 +44,11 @@ class ConfigApplier(
         val policies = toggles()
         // A changed configuration ends a Wi-Fi radio self-heal hold; a re-send of the same one does not (nor does the
         // boot re-apply, which does not come through here).
-        if (doc.revision != store.delivered?.revision) wifiRadio(policies)?.endHold()
+        if (doc.revision != store.delivered?.revision) {
+            // endHold only clears saved state, so it also runs on a kept instance whose check threw just now.
+            (wifiRadio(policies) ?: policies.errors[WifiRadioPolicy.CAPABILITY_KEY]?.kept as? WifiRadioPolicy)
+                ?.endHold()
+        }
         store.delivered = doc
         val result = applyLocked(doc, policies, previous, store.unreleased)
         // A release or kiosk exit that failed is retried with the next document, whatever that one says.
@@ -65,14 +70,20 @@ class ConfigApplier(
      */
     private suspend fun applyLocked(
         doc: ConfigApplyPayload,
-        toggles: Map<String, TogglePolicy>,
+        toggles: ResolvedToggles,
         previous: List<ConfigApplyPayload>,
         unreleased: Set<String> = emptySet(),
         persist: Boolean = true,
     ): ConfigApplyResult {
         val outcomes = linkedMapOf<String, String>()
         for ((key, enabled) in doc.policies) {
-            outcomes["$POLICIES$key"] = toOutcome(toggles[key]?.setEnabled(enabled))
+            // Fail closed: a check that threw is a failure (retried), not an unsupported key (final).
+            val errored = toggles.errors[key]
+            outcomes["$POLICIES$key"] = if (errored != null) {
+                ConfigOutcome.failed(errored.reason)
+            } else {
+                toOutcome(toggles[key]?.setEnabled(enabled))
+            }
         }
         val previousKeys = previous.flatMap { it.policies.keys } +
             unreleased.filter { it.startsWith(POLICIES) }.map { it.removePrefix(POLICIES) }
@@ -95,15 +106,25 @@ class ConfigApplier(
      */
     private fun releaseUnmanaged(
         doc: ConfigApplyPayload,
-        toggles: Map<String, TogglePolicy>,
+        toggles: ResolvedToggles,
         previousKeys: Set<String>,
         outcomes: MutableMap<String, String>,
     ) {
         for (key in previousKeys - doc.policies.keys) {
-            val releasable = toggles[key] as? ReleasablePolicy ?: continue
-            val o = toOutcome(releasable.release())
-            if (ConfigOutcome.isFailed(o)) outcomes["$POLICIES$key"] = o
+            releaseOutcome(toggles, key)?.takeIf(ConfigOutcome::isFailed)?.let { outcomes["$POLICIES$key"] = it }
         }
+    }
+
+    /** The release outcome for [key], or null when it has nothing to release. */
+    private fun releaseOutcome(toggles: ResolvedToggles, key: String): String? {
+        val errored = toggles.errors[key]
+        // Never released while its check throws. Failed unless it is known not to need a release, which keeps it in
+        // ConfigStateStore.unreleased (and the document unsaved), so it is retried.
+        if (errored != null) {
+            val mayNeedRelease = errored.kept == null || errored.kept is ReleasablePolicy
+            return ConfigOutcome.failed(errored.reason).takeIf { mayNeedRelease }
+        }
+        return (toggles[key] as? ReleasablePolicy)?.let { toOutcome(it.release()) }
     }
 
     private fun toOutcome(o: PolicyOutcome?): String = when (o) {
@@ -148,6 +169,7 @@ class ConfigApplier(
      * @param lastCheckInOkMs when a check-in last reached the server (wall clock), null when never.
      */
     suspend fun selfHealWifiRadio(lastCheckInOkMs: () -> Long?): Boolean = mutex.withLock {
+        // Null also when its check threw: this heartbeat is skipped and the next one checks again.
         val radio = wifiRadio(toggles()) ?: return@withLock false
         // Read under the lock, not before waiting for it.
         if (!radio.selfHeal(lastCheckInOkMs())) return@withLock false
@@ -155,7 +177,7 @@ class ConfigApplier(
         true
     }
 
-    private fun wifiRadio(toggles: Map<String, TogglePolicy>): WifiRadioPolicy? =
+    private fun wifiRadio(toggles: ResolvedToggles): WifiRadioPolicy? =
         toggles[WifiRadioPolicy.CAPABILITY_KEY] as? WifiRadioPolicy
 
     companion object {

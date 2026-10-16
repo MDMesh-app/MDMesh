@@ -16,6 +16,7 @@ import com.mdmesh.core.store.InMemoryKioskStateStore
 import com.mdmesh.kiosk.KioskController
 import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.policy.PolicyOutcome
+import com.mdmesh.policy.ResolvedToggles
 import com.mdmesh.policy.TogglePolicy
 import com.mdmesh.proto.AgentCheckInResponse
 import com.mdmesh.proto.AgentDeviceStateDto
@@ -103,7 +104,7 @@ class ServerInjectedPolicyTest {
             isLockTaskActive = { false },
         )
 
-        val applier = ConfigApplier({ toggles }, kiosk, setLocationMode = {}, store = configStore)
+        val applier = ConfigApplier({ ResolvedToggles(toggles) }, kiosk, setLocationMode = {}, store = configStore)
 
         private val identity = FakeIdentity(initialId = "srv-1", initialSecret = "sek-1")
 
@@ -119,7 +120,7 @@ class ServerInjectedPolicyTest {
             identity = identity,
             capabilitySource = FakeCapabilitySource(),
             dispatcher = CommandDispatcher(
-                listOf(PolicyApplyHandler({ toggles }), ConfigApplyHandler(applier))
+                listOf(PolicyApplyHandler({ ResolvedToggles(toggles) }), ConfigApplyHandler(applier))
             ),
             pending = pending,
             // Same wiring as DeviceStateCollector: the applied revision is what the server reads back.

@@ -90,7 +90,7 @@ class DeviceOwnerAfterStartTest {
             assertEquals(ConfigOutcome.APPLIED, r.outcomes["policies.factoryReset"])
             assertEquals(listOf("screenshots=false", "factoryReset=false"), dpm.calls)
             // What the agent advertises (CapabilityRegistry.supportedPolicyKeys) is what it just applied.
-            assertEquals(listOf("screenshots", "factoryReset"), toggles.current().keys.toList())
+            assertEquals(listOf("screenshots", "factoryReset"), toggles.current().advertisedKeys)
         }
 
     @Test
@@ -146,7 +146,7 @@ class DeviceOwnerAfterStartTest {
         val handler = PolicyApplyHandler(toggles::current)
         dpm.deviceOwner = true
 
-        val policy = toggles.current().getValue("screenshots")
+        val policy = toggles.current().policies.getValue("screenshots")
         applier.apply(blockBoth)
         handler.handle(
             CommandEnvelope(
@@ -160,7 +160,7 @@ class DeviceOwnerAfterStartTest {
             ),
         )
 
-        assertSame(policy, toggles.current().getValue("screenshots"))
+        assertSame(policy, toggles.current().policies.getValue("screenshots"))
         assertEquals(2, (policy as DeviceOwnerToggle).uses)
     }
 }

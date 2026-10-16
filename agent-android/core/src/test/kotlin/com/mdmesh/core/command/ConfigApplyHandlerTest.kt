@@ -7,6 +7,7 @@ import com.mdmesh.core.kiosk.KioskApplier
 import com.mdmesh.core.kiosk.KioskHomeSwitch
 import com.mdmesh.core.store.InMemoryConfigStateStore
 import com.mdmesh.core.store.InMemoryKioskStateStore
+import com.mdmesh.core.testing.fixedToggles
 import com.mdmesh.kiosk.StubKioskController
 import com.mdmesh.policy.PolicyOutcome
 import com.mdmesh.policy.TogglePolicy
@@ -27,7 +28,7 @@ class ConfigApplyHandlerTest {
     }
     private object NoHome : KioskHomeSwitch { override fun setClaimEnabled(enabled: Boolean) {}; override fun showLauncher() {}; override fun showOemHome() {} }
     private fun handler(o: PolicyOutcome) = ConfigApplyHandler(
-        ConfigApplier({ mapOf("wifi" to Toggle(o)) },
+        ConfigApplier(fixedToggles("wifi" to Toggle(o)),
             KioskApplier(StubKioskController(), InMemoryKioskStateStore(), NoHome, ComponentName("a", "b")) { false },
             {},
             InMemoryConfigStateStore(),

@@ -8,12 +8,13 @@ import java.io.File
  * Guard for GitHub #76: the toggle-policy map must be resolved per operation (`registry::togglePolicies`), never
  * injected or stored. A stored map built before the agent is Device Owner misses every Device-Owner policy for the
  * life of the process. This scans the production sources of every module for a stored or injected
- * `Map<String, TogglePolicy>`, and the app module (the Hilt wiring) for a `togglePolicies()` call whose result
- * could be captured: it passes `registry::togglePolicies`.
+ * `Map<String, TogglePolicy>` or `ResolvedToggles`, and the app module (the Hilt wiring) for a `togglePolicies()`
+ * call whose result could be captured: it passes `registry::togglePolicies`.
  */
 class TogglePolicyWiringTest {
 
-    private val mapType = """Map<\s*String\s*,\s*(@JvmSuppressWildcards\s+)?TogglePolicy\s*>"""
+    private val mapType =
+        """(Map<\s*String\s*,\s*(@JvmSuppressWildcards\s+)?TogglePolicy\s*>|\bResolvedToggles\b(?!\s*\())"""
 
     /** A property (constructor `val`/`var` included) of the map type. */
     private val stored = Regex("""\b(val|var)\s+\w+\s*:\s*$mapType""")
@@ -39,7 +40,8 @@ class TogglePolicyWiringTest {
         val sources = mainSources(root)
         assertTrue("found no sources under $root", sources.any { it.name == "CapabilityRegistry.kt" })
 
-        val offenders = sources.flatMap { file ->
+        // The resolver defines the result type, so it is the one file that holds the map.
+        val offenders = sources.filter { it.name != "TogglePolicyResolver.kt" }.flatMap { file ->
             val inApp = file.relativeTo(root).path.startsWith("app")
             file.readLines().mapIndexedNotNull { i, line ->
                 if (isOffending(line, inApp)) "${file.relativeTo(root)}:${i + 1}: ${line.trim()}" else null
@@ -47,7 +49,7 @@ class TogglePolicyWiringTest {
         }
 
         assertTrue(
-            "Inject or store `() -> Map<String, TogglePolicy>` (registry::togglePolicies) instead:\n" +
+            "Inject or store `() -> ResolvedToggles` (registry::togglePolicies) instead:\n" +
                 offenders.joinToString("\n"),
             offenders.isEmpty(),
         )

@@ -30,40 +30,40 @@ class TogglePolicyResolverTest {
 
     @Test
     fun `a Device Owner policy appears on the first call after Device Owner arrives`() {
-        assertEquals(listOf("camera"), resolver.current().keys.toList())
-        assertEquals(listOf("camera"), resolver.current().keys.toList())
+        assertEquals(listOf("camera"), resolver.current().policies.keys.toList())
+        assertEquals(listOf("camera"), resolver.current().policies.keys.toList())
 
         deviceOwner = true
 
-        assertEquals(listOf("camera", "screenshots"), resolver.current().keys.toList())
+        assertEquals(listOf("camera", "screenshots"), resolver.current().policies.keys.toList())
         assertEquals("probed on every call until it resolved", 3, probes)
     }
 
     @Test
     fun `a resolved policy is the same instance on every call and is not probed again`() {
         deviceOwner = true
-        val first = resolver.current().getValue("screenshots")
+        val first = resolver.current().policies.getValue("screenshots")
 
-        repeat(3) { assertSame(first, resolver.current().getValue("screenshots")) }
-        assertSame(resolver.current().getValue("camera"), resolver.current().getValue("camera"))
+        repeat(3) { assertSame(first, resolver.current().policies.getValue("screenshots")) }
+        assertSame(resolver.current().policies.getValue("camera"), resolver.current().policies.getValue("camera"))
         assertEquals(1, probes)
     }
 
     @Test
     fun `a policy whose support goes away drops out and comes back as the same instance`() {
         deviceOwner = true
-        val first = resolver.current().getValue("screenshots")
+        val first = resolver.current().policies.getValue("screenshots")
 
         deviceOwner = false
         assertTrue("screenshots" !in resolver.current())
 
         deviceOwner = true
-        assertSame(first, resolver.current().getValue("screenshots"))
+        assertSame(first, resolver.current().policies.getValue("screenshots"))
         assertEquals(1, probes)
     }
 
     @Test
-    fun `a throwing probe leaves out only its key, is reported and is tried again`() {
+    fun `a throwing probe marks only its key errored, is reported and is tried again`() {
         var failing = true
         val errors = mutableListOf<String>()
         val r = TogglePolicyResolver(
@@ -75,15 +75,17 @@ class TogglePolicyResolverTest {
             onProbeError = { key, error -> errors += "$key: ${error.message}" },
         )
 
-        assertEquals(listOf("camera", "bluetooth"), r.current().keys.toList())
+        assertEquals(listOf("camera", "bluetooth"), r.current().policies.keys.toList())
         assertEquals(listOf("screenshots: binder died"), errors)
+        assertEquals("errored, not unsupported", setOf("screenshots"), r.current().errors.keys)
+        assertEquals("never resolved: not advertised", listOf("camera", "bluetooth"), r.current().advertisedKeys)
 
         failing = false
-        assertEquals(listOf("camera", "screenshots", "bluetooth"), r.current().keys.toList())
+        assertEquals(listOf("camera", "screenshots", "bluetooth"), r.current().policies.keys.toList())
     }
 
     @Test
-    fun `a kept policy whose support check throws is left out of that call only`() {
+    fun `a kept policy whose support check throws is errored for that call only`() {
         var failing = false
         val errors = mutableListOf<String>()
         val r = TogglePolicyResolver(
@@ -93,13 +95,16 @@ class TogglePolicyResolverTest {
             ),
             onProbeError = { key, _ -> errors += key },
         )
-        val camera = r.current().getValue("camera")
+        val camera = r.current().policies.getValue("camera")
 
         failing = true
-        assertEquals(listOf("bluetooth"), r.current().keys.toList())
+        val read = r.current()
+        assertEquals(listOf("bluetooth"), read.policies.keys.toList())
         assertEquals(listOf("camera"), errors)
+        assertSame("the kept instance travels with the error", camera, read.errors.getValue("camera").kept)
+        assertEquals("resolved before: still advertised", listOf("camera", "bluetooth"), read.advertisedKeys)
 
         failing = false
-        assertSame(camera, r.current().getValue("camera"))
+        assertSame(camera, r.current().policies.getValue("camera"))
     }
 }

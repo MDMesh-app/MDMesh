@@ -1,6 +1,7 @@
 package com.mdmesh.core.command
 
 import com.mdmesh.core.command.handlers.PolicyApplyHandler
+import com.mdmesh.core.testing.fixedToggles
 import com.mdmesh.policy.PolicyOutcome
 import com.mdmesh.policy.TogglePolicy
 import com.mdmesh.proto.CommandEnvelope
@@ -41,7 +42,7 @@ class PolicyApplyHandlerTest {
     @Test
     fun `applies a known toggle policy and reports done`() = runTest {
         val wifi = FakeToggle("wifi", PolicyOutcome.Applied)
-        val result = PolicyApplyHandler({ mapOf("wifi" to wifi) }).handle(command(payload("wifi", false)))
+        val result = PolicyApplyHandler(fixedToggles("wifi" to wifi)).handle(command(payload("wifi", false)))
 
         assertEquals(CommandStatus.DONE, result.status)
         assertEquals(false, wifi.lastEnabled)
@@ -49,27 +50,27 @@ class PolicyApplyHandlerTest {
 
     @Test
     fun `reports unsupported for a policy with no registered strategy`() = runTest {
-        val result = PolicyApplyHandler({ emptyMap() }).handle(command(payload("camera", true)))
+        val result = PolicyApplyHandler(fixedToggles()).handle(command(payload("camera", true)))
         assertEquals(CommandStatus.UNSUPPORTED, result.status)
     }
 
     @Test
     fun `reports failed when the payload is missing`() = runTest {
-        val result = PolicyApplyHandler({ emptyMap() }).handle(command(payload = null))
+        val result = PolicyApplyHandler(fixedToggles()).handle(command(payload = null))
         assertEquals(CommandStatus.FAILED, result.status)
     }
 
     @Test
     fun `surfaces a strategy failure as failed`() = runTest {
         val wifi = FakeToggle("wifi", PolicyOutcome.Failed("dpm blew up"))
-        val result = PolicyApplyHandler({ mapOf("wifi" to wifi) }).handle(command(payload("wifi", true)))
+        val result = PolicyApplyHandler(fixedToggles("wifi" to wifi)).handle(command(payload("wifi", true)))
         assertEquals(CommandStatus.FAILED, result.status)
     }
 
     @Test
     fun `a deferred policy is done with the reason, not failed (as in config apply)`() = runTest {
         val radio = FakeToggle("wifiRadio", PolicyOutcome.Deferred("only network"))
-        val result = PolicyApplyHandler({ mapOf("wifiRadio" to radio) }).handle(command(payload("wifiRadio", false)))
+        val result = PolicyApplyHandler(fixedToggles("wifiRadio" to radio)).handle(command(payload("wifiRadio", false)))
         assertEquals(CommandStatus.DONE, result.status)
         assertEquals("deferred: only network", result.detail)
     }

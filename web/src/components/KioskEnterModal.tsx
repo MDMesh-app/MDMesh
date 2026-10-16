@@ -5,7 +5,7 @@ import { getConfiguration, type Configuration } from '../api/configurations';
 import { queueCommand } from '../api/commands';
 import { useToast } from '../ui/toast';
 
-type Device = { number: string; configurationId?: number };
+type Device = { number: string; configurationId?: number; description?: string };
 type Mode = 'launcher' | 'single';
 type Source = 'library' | 'device';
 
@@ -251,6 +251,10 @@ export function KioskEnterModal({
     <div className="modal-backdrop" role="dialog" aria-modal="true">
       <div className="modal kiosk-modal">
         <h3>Enter kiosk</h3>
+        <p>
+          Device <strong className="mono">{device.number}</strong>
+          {device.description ? <> · {device.description}</> : null}
+        </p>
         <p className="muted">Pick the apps to lock the device to — from your library, or by scanning the device.</p>
         {themeLoading && <p className="muted">Loading configured launcher appearance…</p>}
         {themeError && <p className="muted">{themeError}</p>}

@@ -1,5 +1,6 @@
 package com.mdmesh.policy
 
+import android.util.Log
 import com.mdmesh.policy.bluetooth.BluetoothPolicy
 import com.mdmesh.policy.bluetooth.BluetoothPolicyFactory
 import com.mdmesh.policy.camera.CameraPolicy
@@ -61,15 +62,17 @@ class CapabilityRegistry(
             SafeBootPolicy.CAPABILITY_KEY to { SafeBootPolicyFactory.create(handle) },
             WifiRadioPolicy.CAPABILITY_KEY to { WifiRadioPolicyFactory.create(handle, wifiRadio, wifiRadioState) },
         ),
+        onProbeError = { key, error -> Log.w(TAG, "policy probe failed: $key", error) },
     )
 
     /**
      * The toggle policies with a working strategy on this device right now, keyed by capability key.
      *
-     * Evaluated on every call, never captured: Device-Owner status flips to true partway through QR provisioning,
-     * after this process may have started (#76). Each policy is created once and the same instance is returned on
-     * every later call (see [TogglePolicyResolver]), so callers read this once per operation instead of holding
-     * the map.
+     * Resolve per operation; never inject or store the result. Device-Owner status flips to true partway through
+     * QR provisioning, after this process may have started (#76), so a stored map misses every Device-Owner policy
+     * for the life of the process. Pass `registry::togglePolicies` instead. Each policy is created once and the
+     * same instance is returned on every later call (see [TogglePolicyResolver]). TogglePolicyWiringTest fails
+     * the build when production code stores or injects the map.
      */
     fun togglePolicies(): Map<String, TogglePolicy> = toggles.current()
 
@@ -84,6 +87,10 @@ class CapabilityRegistry(
     fun deviceControl(): DeviceControl? {
         val wifi = WifiPolicyFactory.create(handle) ?: return null
         return DefaultDeviceControl(wifi)
+    }
+
+    private companion object {
+        const val TAG = "CapabilityRegistry"
     }
 }
 

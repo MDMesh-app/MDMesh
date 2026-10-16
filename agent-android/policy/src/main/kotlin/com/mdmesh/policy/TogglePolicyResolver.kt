@@ -13,25 +13,37 @@ import java.util.concurrent.ConcurrentHashMap
  *    keep state in memory); after that, only the instance's own [PolicyStrategy.isSupported] is checked, so a key
  *    whose support goes away (Device Owner removed) drops out of the map and comes back as the same object.
  *
+ * A probe or support check that throws (e.g. a DevicePolicyManager binder error) leaves only that key out of this
+ * call, reported to [onProbeError]; the other keys are unaffected and the key is tried again on the next call.
+ *
  * Callers read [current] once per operation and never keep the map. Thread-safe.
  *
  * @param probes capability key -> factory probe (null = no usable strategy right now), in advertising order.
+ * @param onProbeError told about a key left out because its probe or support check threw.
  */
-class TogglePolicyResolver(private val probes: Map<String, () -> TogglePolicy?>) {
+class TogglePolicyResolver(
+    private val probes: Map<String, () -> TogglePolicy?>,
+    private val onProbeError: (key: String, error: Throwable) -> Unit = { _, _ -> },
+) {
 
     private val resolved = ConcurrentHashMap<String, TogglePolicy>()
 
     /** The policies with a working strategy right now, keyed by capability key, in [probes] order. */
     fun current(): Map<String, TogglePolicy> = buildMap {
         for ((key, probe) in probes) {
-            val kept = resolved[key]
-            val policy = if (kept != null) {
-                kept.takeIf { it.isSupported() }
-            } else {
-                // Two threads may probe at once: the first instance stored wins and both return it.
-                probe()?.let { resolved.putIfAbsent(key, it) ?: it }
-            }
-            if (policy != null) put(key, policy)
+            runCatching { resolve(key, probe) }
+                .onSuccess { policy -> if (policy != null) put(key, policy) }
+                .onFailure { error -> onProbeError(key, error) }
+        }
+    }
+
+    private fun resolve(key: String, probe: () -> TogglePolicy?): TogglePolicy? {
+        val kept = resolved[key]
+        return if (kept != null) {
+            kept.takeIf { it.isSupported() }
+        } else {
+            // Two threads may probe at once: the first instance stored wins and both return it.
+            probe()?.let { resolved.putIfAbsent(key, it) ?: it }
         }
     }
 }

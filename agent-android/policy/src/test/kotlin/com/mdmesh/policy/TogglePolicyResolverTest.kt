@@ -61,4 +61,45 @@ class TogglePolicyResolverTest {
         assertSame(first, resolver.current().getValue("screenshots"))
         assertEquals(1, probes)
     }
+
+    @Test
+    fun `a throwing probe leaves out only its key, is reported and is tried again`() {
+        var failing = true
+        val errors = mutableListOf<String>()
+        val r = TogglePolicyResolver(
+            linkedMapOf<String, () -> TogglePolicy?>(
+                "camera" to { Toggle("camera") { true } },
+                "screenshots" to { check(!failing) { "binder died" }; Toggle("screenshots") { true } },
+                "bluetooth" to { Toggle("bluetooth") { true } },
+            ),
+            onProbeError = { key, error -> errors += "$key: ${error.message}" },
+        )
+
+        assertEquals(listOf("camera", "bluetooth"), r.current().keys.toList())
+        assertEquals(listOf("screenshots: binder died"), errors)
+
+        failing = false
+        assertEquals(listOf("camera", "screenshots", "bluetooth"), r.current().keys.toList())
+    }
+
+    @Test
+    fun `a kept policy whose support check throws is left out of that call only`() {
+        var failing = false
+        val errors = mutableListOf<String>()
+        val r = TogglePolicyResolver(
+            linkedMapOf<String, () -> TogglePolicy?>(
+                "camera" to { Toggle("camera") { check(!failing) { "binder died" }; true } },
+                "bluetooth" to { Toggle("bluetooth") { true } },
+            ),
+            onProbeError = { key, _ -> errors += key },
+        )
+        val camera = r.current().getValue("camera")
+
+        failing = true
+        assertEquals(listOf("bluetooth"), r.current().keys.toList())
+        assertEquals(listOf("camera"), errors)
+
+        failing = false
+        assertSame(camera, r.current().getValue("camera"))
+    }
 }

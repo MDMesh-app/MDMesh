@@ -10,8 +10,10 @@ package com.mdmesh.policy
  * true on the current device.
  *
  * Keeping the `Build.VERSION.SDK_INT` test inside [isSupported] — rather than
- * scattered through call sites — is the whole point: selection happens once, in
- * one place, and the chosen strategy is then used unconditionally.
+ * scattered through call sites — is the whole point: selection happens in one
+ * place, once per key when it is first supported ([TogglePolicyResolver]; Device
+ * Owner may arrive after the process started), and the chosen strategy is then
+ * kept for good.
  */
 interface PolicyStrategy {
 

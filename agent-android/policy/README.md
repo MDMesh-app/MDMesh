@@ -43,5 +43,8 @@ interface, write its strategies, add a factory, and register the probe in
 `CapabilityRegistry`. Nothing in `:core`/`:app` needs to know the SDK details.
 
 For an on/off policy the shortest path is three files (`XPolicy`, `XStrategy`/`XRestrictionPolicy`,
-`XPolicyFactory`) plus one line in `CapabilityRegistry.togglePolicies()` — that single registration
-is enough for both the capability advertisement and the generic command routing.
+`XPolicyFactory`) plus one probe line in `CapabilityRegistry`'s probe map (the `TogglePolicyResolver`) —
+that single registration is enough for both the capability advertisement and the generic command routing.
+Probes are resolved per call until a strategy is supported (Device Owner arrives partway through QR
+provisioning, after the process started), and that instance is then kept. Consumers take
+`registry::togglePolicies` and read it once per operation; never inject or store the resulting map.

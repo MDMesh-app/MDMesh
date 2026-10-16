@@ -142,7 +142,10 @@ New here? Look for **good first issue**, or open a discussion before a large cha
 
 ## Regenerating the docs screenshots
 
-The README screenshots come from the real SPA against sample data:
+The README images in `docs/readme/` come from the real SPA against sample data. Regenerate them with
+`scripts/readme/generate.sh --build` (setup and details in [scripts/readme/README.md](scripts/readme/README.md)).
+
+The page screenshots in `docs/screenshots/` come from the same harness:
 
 ```bash
 cd web && npm run build          # build the SPA first

@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
 import { OUT, PARTS, SHOTS, THEMES, T, closeBrowser, fontCSS, openPage, readJSON, shot } from './common.mjs';
+import { AGENT as AGENT_VERSION, RUNNING } from './versions.mjs';
 
 const CARDS = readJSON(path.join(SHOTS, 'cards.json'));
 
@@ -69,11 +70,11 @@ function heroHTML(theme) {
 .shot .frame{position:absolute;inset:0;border-top-left-radius:${12 * zoom}px;box-shadow:inset 1px 1px 0 ${dark ? 'rgba(255,255,255,.09)' : 'rgba(21,24,29,.10)'}}
 .under{position:absolute;left:${ox}px;top:${oy}px;right:0;bottom:0;border-top-left-radius:${12 * zoom}px;box-shadow:-10px -6px 60px -10px rgba(${c.shadow},${dark ? '.6' : '.12'});
   -webkit-mask-image:linear-gradient(90deg,#000 50%,transparent),linear-gradient(180deg,#000 50%,transparent);-webkit-mask-composite:source-in}`;
-  // The floating cards repeat what the screen says: 2 devices need attention; 0.1.15 is signature-verified.
+  // The floating cards repeat what the screen says (2 devices need attention) and the running release, verified.
   const body = `<div class="card"><div class="sg"></div><div class="sgv"></div><div class="under"></div>
   <div class="shot"><img src="${shot('screen-overview', theme)}"><div class="frame"></div></div>
   <div class="scard" style="left:1340px;top:396px"><span class="lab"><span class="sdot"></span>Needs attention</span><span class="val">2</span></div>
-  <div class="scard" style="left:1870px;top:1150px"><span class="okb">${check}Signature verified</span><span class="sub">0.1.15</span></div></div>`;
+  <div class="scard" style="left:1870px;top:1150px"><span class="okb">${check}Signature verified</span><span class="sub">${RUNNING}</span></div></div>`;
   return page(theme, W, H, css, body);
 }
 
@@ -147,7 +148,7 @@ function agentScreen() {
       ${row('MANAGEMENT', 'Device Owner — active', `font:400 16px/1.17 Roboto;color:${AGENT.OK}`)}
       ${row('DEVICE ID', '7c1e4b2a-93f0-4d6e-8a51-2f0b9c3d6e14', `font:400 14px/1.17 'Noto Sans Mono';color:${AGENT.TEXT}`)}
       ${row('KIOSK', 'Not locked', `font:400 16px/1.17 Roboto;color:${AGENT.TEXT}`)}
-      ${row('AGENT VERSION', '0.1.15 (build 115)', `font:400 15px/1.17 'Noto Sans Mono';color:${AGENT.TEXT}`)}
+      ${row('AGENT VERSION', `${AGENT_VERSION.version} (build ${AGENT_VERSION.build})`, `font:400 15px/1.17 'Noto Sans Mono';color:${AGENT.TEXT}`)}
       ${row('SERVER', 'https://mdm.acme.example/', `font:400 13px/1.17 'Noto Sans Mono';color:${AGENT.MUTED}`)}
       <div style="font:400 12px/1.17 Roboto;color:${AGENT.MUTED};text-align:center;padding-top:24px">Managed by MDMesh</div>
     </div><div class="gesture"></div></div>`;

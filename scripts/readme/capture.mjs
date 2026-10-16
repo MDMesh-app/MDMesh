@@ -4,10 +4,14 @@
 // Output (.cache/shots/): screen-overview-<theme>.png (1440x900 viewport) and one PNG per card, clipped to its
 // DOM box: attention, sync, enroll, remote, rollout, cfg (Security card after three real edits), cfgbar (the
 // sticky "3 unsaved changes · Save and apply" bar). Card sizes in CSS px go to .cache/shots/cards.json.
+// The sample versions are overridden for the README (versions.mjs); a page that still shows an old one fails.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fx, newContext, startServer, DIST } from '../shots/harness.mjs';
 import { SHOTS, THEMES, launch, closeBrowser } from './common.mjs';
+import { applyReadmeVersions, STALE } from './versions.mjs';
+
+applyReadmeVersions(fx); // README-only sample versions (see versions.mjs)
 
 if (!fs.existsSync(path.join(DIST, 'index.html'))) {
   console.error('web/dist not found: run `npm run build` in web/ first (or ./generate.sh --build).');
@@ -27,6 +31,8 @@ async function open(browser, theme, route, height) {
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(1000);
   if (errors.length) throw new Error(`${route}: ${errors.join('; ')}`);
+  const stale = (await page.evaluate(() => document.body.innerText)).match(STALE);
+  if (stale) throw new Error(`${route}: shows the fixtures' own version ${stale[0]} (extend versions.mjs)`);
   return { ctx, page };
 }
 

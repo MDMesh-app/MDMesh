@@ -15,7 +15,7 @@ from kit import (TOK, SANS, MONO, GLYPHS, CHECK_D, f, measure, text, dot, shadow
                  kf, bz, HOLD, svg_doc, write)
 
 W, H, K = 1200, 300, 1.35          # K: console CSS px -> banner units
-VERSION = '0.4.0'
+VERSION = '0.4.0'                  # the running release; keep in step with scripts/readme/versions.mjs
 BUTTER, FADE = bz((.3, 0, .1, 1)), bz((.4, 0, .2, 1))
 RISE = 12
 # Timeline (ms). Durations: rise 990, fade 1210, green 660, edge 836, push 968, card fades 1265.

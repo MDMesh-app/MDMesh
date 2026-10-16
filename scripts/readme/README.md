@@ -36,6 +36,9 @@ The steps, in `generate.sh`:
 
 1. **`capture.mjs`** shoots the console at 2x: the Overview screen and seven cards, each clipped to its DOM box
    (`.cache/shots/`). The configuration-editor crops come from real clicks on Default's Security settings.
+   The sample versions are README-only (`versions.mjs`): server 0.4.0 with a signed 0.4.1 available, agents on
+   0.4.0 (build 400). The shared fixtures keep their own versions for the parity tests, and a shot page that still
+   shows one of them fails the capture.
 2. **`compose.mjs`** lays out the hero and the bento in HTML and encodes them as WebP. It also renders the two "How it
    works" parts, the console panel and the phone, tilted toward each other with CSS 3D, and measures where the line
    attaches (`.cache/parts/`).

@@ -15,13 +15,14 @@ import kotlinx.serialization.Serializable
  * `policy.apply` — applies a single toggle policy to a value. Payload (per
  * `proto/registry.md`): `{ "policy": "wifi", "value": false }`.
  *
- * Routing is fully data-driven: the policy key is looked up in [toggles] (built from the
- * device's supported strategies in the capability-abstraction layer). There is no
+ * Routing is fully data-driven: the policy key is looked up in [toggles] (the device's
+ * supported strategies in the capability-abstraction layer, read per command, never kept:
+ * Device-Owner status flips to true partway through QR provisioning, #76). There is no
  * per-policy `when` — adding a policy means registering its strategy, not editing here.
  * Unknown / unsupported keys degrade to `unsupported`, mirroring the open-registry contract.
  */
 class PolicyApplyHandler(
-    private val toggles: Map<String, TogglePolicy>,
+    private val toggles: () -> Map<String, TogglePolicy>,
 ) : CommandHandler {
 
     override val type: String = "policy.apply"
@@ -40,7 +41,7 @@ class PolicyApplyHandler(
             ProtocolJson.json.decodeFromJsonElement(Payload.serializer(), payload)
         }.getOrElse { return CommandResults.failed(command, "bad payload: ${it.message}") }
 
-        val toggle = toggles[parsed.policy]
+        val toggle = toggles()[parsed.policy]
             ?: return CommandResults.unsupported(command, "policy not supported: ${parsed.policy}")
 
         return when (val outcome = toggle.setEnabled(parsed.enabled)) {

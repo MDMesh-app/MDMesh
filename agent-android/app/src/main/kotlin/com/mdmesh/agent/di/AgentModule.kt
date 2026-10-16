@@ -67,7 +67,6 @@ import com.mdmesh.oem.GenericOemAdapter
 import com.mdmesh.oem.KnoxAdapter
 import com.mdmesh.oem.OemAdapter
 import com.mdmesh.policy.CapabilityRegistry
-import com.mdmesh.policy.TogglePolicy
 import com.mdmesh.policy.wifi.AndroidWifiRadio
 import com.mdmesh.policy.wifi.DpmHandle
 import com.mdmesh.policy.wifi.SharedPrefsWifiRadioOffState
@@ -178,11 +177,6 @@ object AgentModule {
         security = { security.collect() },
     )
 
-    /** The supported toggle policies, keyed by capability key (data-driven routing). */
-    @Provides
-    fun providePolicyToggles(registry: CapabilityRegistry): Map<String, TogglePolicy> =
-        registry.togglePolicies()
-
     // --- Command handlers (multibound). Add a command == add one @IntoSet provider. ---
 
     @Provides
@@ -191,9 +185,9 @@ object AgentModule {
 
     @Provides
     @IntoSet
-    fun providePolicyApplyHandler(
-        toggles: Map<String, @JvmSuppressWildcards TogglePolicy>,
-    ): CommandHandler = PolicyApplyHandler(toggles)
+    fun providePolicyApplyHandler(registry: CapabilityRegistry): CommandHandler =
+        // A function, not a map: the toggles are resolved per command (Device Owner arrives after process start, #76).
+        PolicyApplyHandler(registry::togglePolicies)
 
     @Provides
     @Singleton
@@ -337,11 +331,11 @@ object AgentModule {
     @Provides
     @Singleton
     fun provideConfigApplier(
-        toggles: Map<String, @JvmSuppressWildcards TogglePolicy>,
+        registry: CapabilityRegistry,
         kiosk: KioskApplier,
         location: LocationModeStore,
         store: ConfigStateStore,
-    ): ConfigApplier = ConfigApplier(toggles, kiosk, location::set, store)
+    ): ConfigApplier = ConfigApplier(registry::togglePolicies, kiosk, location::set, store)
 
     @Provides
     @IntoSet

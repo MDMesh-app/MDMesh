@@ -24,9 +24,13 @@ import kotlinx.coroutines.sync.withLock
  *
  * Serialized: a boot re-apply ([reapplyPersisted]) and a freshly delivered `config.apply` never interleave —
  * otherwise an older persisted document could finish last and overwrite the newer one.
+ *
+ * @param toggles the toggle policies supported right now (`CapabilityRegistry.togglePolicies`), read once per
+ *   operation and never kept: Device-Owner status flips to true partway through QR provisioning, after this
+ *   singleton may have been built (#76).
  */
 class ConfigApplier(
-    private val toggles: Map<String, TogglePolicy>,
+    private val toggles: () -> Map<String, TogglePolicy>,
     private val kiosk: KioskApplier,
     private val setLocationMode: (String) -> Unit,
     private val store: ConfigStateStore,
@@ -36,11 +40,12 @@ class ConfigApplier(
     suspend fun apply(doc: ConfigApplyPayload): ConfigApplyResult = mutex.withLock {
         // What came before: the last saved document, and the last delivered one if a failed section kept it unsaved.
         val previous = listOfNotNull(store.load(), store.delivered)
+        val policies = toggles()
         // A changed configuration ends a Wi-Fi radio self-heal hold; a re-send of the same one does not (nor does the
         // boot re-apply, which does not come through here).
-        if (doc.revision != store.delivered?.revision) wifiRadio()?.endHold()
+        if (doc.revision != store.delivered?.revision) wifiRadio(policies)?.endHold()
         store.delivered = doc
-        val result = applyLocked(doc, previous, store.unreleased)
+        val result = applyLocked(doc, policies, previous, store.unreleased)
         // A release or kiosk exit that failed is retried with the next document, whatever that one says.
         store.unreleased = result.outcomes.filter { (k, o) -> ConfigOutcome.isFailed(o) && !manages(doc, k) }.keys
         result
@@ -53,12 +58,14 @@ class ConfigApplier(
     }
 
     /**
+     * @param toggles the supported toggle policies, read once for this document.
      * @param previous the documents whose keys this one may stop managing.
      * @param unreleased outcome keys whose release (or kiosk exit) failed before: released again.
      * @param persist false for the boot re-apply: the document is already stored (or stale until re-sent).
      */
     private suspend fun applyLocked(
         doc: ConfigApplyPayload,
+        toggles: Map<String, TogglePolicy>,
         previous: List<ConfigApplyPayload>,
         unreleased: Set<String> = emptySet(),
         persist: Boolean = true,
@@ -69,7 +76,7 @@ class ConfigApplier(
         }
         val previousKeys = previous.flatMap { it.policies.keys } +
             unreleased.filter { it.startsWith(POLICIES) }.map { it.removePrefix(POLICIES) }
-        releaseUnmanaged(doc, previousKeys.toSet(), outcomes)
+        releaseUnmanaged(doc, toggles, previousKeys.toSet(), outcomes)
         val previousKiosk = previous.any { it.kiosk != null } || KIOSK in unreleased
         applyKiosk(doc, previousKiosk)?.let { outcomes[KIOSK] = it }
         doc.location?.let { loc ->
@@ -88,6 +95,7 @@ class ConfigApplier(
      */
     private fun releaseUnmanaged(
         doc: ConfigApplyPayload,
+        toggles: Map<String, TogglePolicy>,
         previousKeys: Set<String>,
         outcomes: MutableMap<String, String>,
     ) {
@@ -129,7 +137,7 @@ class ConfigApplier(
      * again: a stale document ([selfHealWifiRadio]) stays stale until the server re-sends it.
      */
     suspend fun reapplyPersisted(): ConfigApplyResult? = mutex.withLock {
-        store.load()?.let { applyLocked(it, listOf(it), persist = false) }
+        store.load()?.let { applyLocked(it, toggles(), listOf(it), persist = false) }
     }
 
     /**
@@ -140,14 +148,15 @@ class ConfigApplier(
      * @param lastCheckInOkMs when a check-in last reached the server (wall clock), null when never.
      */
     suspend fun selfHealWifiRadio(lastCheckInOkMs: () -> Long?): Boolean = mutex.withLock {
-        val radio = wifiRadio() ?: return@withLock false
+        val radio = wifiRadio(toggles()) ?: return@withLock false
         // Read under the lock, not before waiting for it.
         if (!radio.selfHeal(lastCheckInOkMs())) return@withLock false
         store.markStale()
         true
     }
 
-    private fun wifiRadio(): WifiRadioPolicy? = toggles[WifiRadioPolicy.CAPABILITY_KEY] as? WifiRadioPolicy
+    private fun wifiRadio(toggles: Map<String, TogglePolicy>): WifiRadioPolicy? =
+        toggles[WifiRadioPolicy.CAPABILITY_KEY] as? WifiRadioPolicy
 
     companion object {
         private const val POLICIES = "policies."

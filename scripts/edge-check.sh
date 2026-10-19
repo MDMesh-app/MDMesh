@@ -46,7 +46,7 @@ for mode in "${MODES[@]}"; do
   read -r -a pairs <<< "${mode#*|}"
   for kv in "${pairs[@]}"; do env_args+=(-e "$kv"); done
   if out="$(docker run --rm --network none "${env_args[@]}" \
-      -v "$CADDYFILE:/etc/caddy/Caddyfile:ro" "$CADDY_IMAGE" \
+      -v "$CADDYFILE:/etc/caddy/Caddyfile:ro" -v "$ROOT/docker/Caddyfile.routes:/etc/caddy/Caddyfile.routes:ro" "$CADDY_IMAGE" \
       caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1)"; then
     pass "caddy validate: $label (${mode#*|})"
   else
@@ -55,11 +55,22 @@ for mode in "${MODES[@]}"; do
   fi
 done
 
+# The opt-in origin config is also mounted over old published web images by quickstart.sh.
+if out="$(docker run --rm --network none -e SITE_ADDRESS=https://mdmesh.internal:443 \
+    -e TRUSTED_PROXIES=192.0.2.10/32 -v "$ROOT/docker/Caddyfile.proxy:/etc/caddy/Caddyfile:ro" \
+    -v "$ROOT/docker/Caddyfile.routes:/etc/caddy/Caddyfile.routes:ro" "$CADDY_IMAGE" \
+    caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1)"; then
+  pass "caddy validate: reverse proxy with internal TLS"
+else
+  fail "caddy validate: reverse proxy with internal TLS"
+  printf '%s\n' "$out" | tail -5 | sed 's/^/         /'
+fi
+
 # --- 2. Compose files, each combination setup.sh / quickstart.sh / DEPLOY.md / DEV.md use. ---
 # A fixed env file with the required (:?) variables, so a developer's own .env or shell cannot change the result.
 ENVF="$(mktemp)"
 trap 'rm -f "$ENVF"' EXIT
-printf 'DB_PASSWORD=x\nBASE_URL=https://mdm.example.com\nHASH_SECRET=x\n' > "$ENVF"
+printf 'DB_PASSWORD=x\nBASE_URL=https://mdm.example.com\nHASH_SECRET=x\nSITE_ADDRESS=https://mdmesh.internal:443\nTRUSTED_PROXIES=192.0.2.10/32\n' > "$ENVF"
 unset COMPOSE_FILE COMPOSE_PROFILES COMPOSE_PROJECT_NAME
 
 echo "Compose (docker compose config -q):"
@@ -67,6 +78,8 @@ COMBOS=(
   "-f docker-compose.yml"
   "-f docker-compose.yml --profile cloudflare"
   "-f docker-compose.yml -f docker-compose.domain.yml"
+  "-f docker-compose.yml -f docker-compose.reverse-proxy.yml"
+  "-f docker-compose.release.yml -f docker-compose.reverse-proxy.yml"
   "-f docker-compose.release.yml"
   "-f docker-compose.release.yml --profile cloudflare"
   "-f docker-compose.release.yml -f docker-compose.domain.yml"
@@ -93,10 +106,19 @@ F=0
 SPA='<!doctype html><title>spa</title>'
 DOWN='server unavailable'
 SUP_DOWN='supervisor unavailable'
+BASE=http://127.0.0.1
+[ "${PROXY_TLS:-0}" != 1 ] || BASE=https://mdmesh.internal
 command -v curl >/dev/null || { echo "  FAIL no curl in the caddy image (the probe reads 503 bodies with it)"; exit 1; }
 mkdir -p /srv /tmp/stub && echo "$SPA" > /srv/index.html
 http_code() { # http_code <url> [body file]: the status code, or nothing when there is no response (curl's 000)
-  c="$(curl -s -m 5 -o "${2:-/dev/null}" -w '%{http_code}' "$1" || true)"; [ "$c" = 000 ] || printf '%s' "$c"
+  if [ "${PROXY_TLS:-0}" = 1 ]; then
+    c="$(curl -s -m 5 --cacert /data/caddy/pki/authorities/local/root.crt \
+      --resolve mdmesh.internal:443:127.0.0.1 -H 'Host: mdm.example.com' \
+      -o "${2:-/dev/null}" -w '%{http_code}' "$1" || true)"
+  else
+    c="$(curl -s -m 5 -o "${2:-/dev/null}" -w '%{http_code}' "$1" || true)"
+  fi
+  [ "$c" = 000 ] || printf '%s' "$c"
 }
 stub() {   # stub <port> <site body>: start a throwaway upstream on :<port> and wait until it answers
   printf '{\n\tadmin off\n}\n:%s {\n%s\n}\n' "$1" "$2" > "/tmp/stub/$1"
@@ -108,11 +130,15 @@ stub() {   # stub <port> <site body>: start a throwaway upstream on :<port> and 
 unstub() { kill "$(cat "/tmp/stub/$1.pid")"; wait "$(cat "/tmp/stub/$1.pid")" 2>/dev/null || true; }
 expect() { # expect <label> <path> <status> [body]
   rm -f /tmp/body
-  code="$(http_code "http://127.0.0.1$2" /tmp/body)"; body="$(cat /tmp/body 2>/dev/null || true)"
+  code="$(http_code "$BASE$2" /tmp/body)"; body="$(cat /tmp/body 2>/dev/null || true)"
   if [ "$code" = "$3" ] && { [ -z "${4:-}" ] || [ "$body" = "$4" ]; }; then echo "  ok   $1"
   else echo "  FAIL $1 (expected $3${4:+ $4}, got ${code:-no response}${body:+: $(printf '%.40s' "$body")})"; F=$((F + 1)); fi
 }
 caddy start --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1 || { echo "  FAIL edge did not start"; exit 1; }
+# Internal certificates are issued asynchronously after the listener starts.
+if [ "${PROXY_TLS:-0}" = 1 ]; then
+  for _ in $(seq 1 50); do [ -n "$(http_code "$BASE/")" ] && break; sleep 0.1; done
+fi
 expect "/healthz: 503 while the server is down"                    /healthz             503 "$DOWN"
 expect "/healthz/: 503 while the server is down"                   /healthz/            503 "$DOWN"
 expect "/healthz/supervisor: 503 while the supervisor is down"     /healthz/supervisor  503 "$SUP_DOWN"
@@ -142,12 +168,24 @@ PROBE
 )"
 echo "Health routes (SITE_ADDRESS=:80, stub upstreams):"
 out="$(docker run --rm --network none --add-host server:127.0.0.1 --add-host supervisor:127.0.0.1 \
-    -e SITE_ADDRESS=:80 -e ACME_EMAIL= -v "$CADDYFILE:/etc/caddy/Caddyfile:ro" "$CADDY_IMAGE" \
+    -e SITE_ADDRESS=:80 -e ACME_EMAIL= -v "$CADDYFILE:/etc/caddy/Caddyfile:ro" \
+    -v "$ROOT/docker/Caddyfile.routes:/etc/caddy/Caddyfile.routes:ro" "$CADDY_IMAGE" \
     sh -c "$HEALTH_PROBE" 2>&1)" && rc=0 || rc=$?
 printf '%s\n' "$out"
 n="$(grep -c '^  FAIL' <<<"$out" || true)"
 FAILED=$((FAILED + n))
 if [ "$rc" -ne 0 ] && [ "$n" -eq 0 ]; then fail "health routes: probe container exited $rc"; fi
+
+echo "Health routes (internal HTTPS, public Host / internal SNI, trusted CA):"
+out="$(docker run --rm --network none --add-host server:127.0.0.1 --add-host supervisor:127.0.0.1 \
+    -e PROXY_TLS=1 -e 'SITE_ADDRESS=https://mdmesh.internal:443, https://mdm.example.com:443' \
+    -e TRUSTED_PROXIES=127.0.0.1/32 -v "$ROOT/docker/Caddyfile.proxy:/etc/caddy/Caddyfile:ro" \
+    -v "$ROOT/docker/Caddyfile.routes:/etc/caddy/Caddyfile.routes:ro" "$CADDY_IMAGE" \
+    sh -c "$HEALTH_PROBE" 2>&1)" && rc=0 || rc=$?
+printf '%s\n' "$out"
+n="$(grep -c '^  FAIL' <<<"$out" || true)"
+FAILED=$((FAILED + n))
+if [ "$rc" -ne 0 ] && [ "$n" -eq 0 ]; then fail "HTTPS health routes: probe container exited $rc"; fi
 
 # --- 4. The dev stack, configured by docker/dev.env ALONE (not the fixed env file above), so a variable
 # docker-compose.yml requires but dev.env lacks fails here. dev.env pins the project name: without it the project

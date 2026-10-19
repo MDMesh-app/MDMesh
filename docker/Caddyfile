@@ -6,95 +6,12 @@
 	email "{$ACME_EMAIL}"
 	# Which direct peers may set X-Forwarded-For (so the server records a device's real public IP).
 	# Default: loopback only — no Docker peer is loopback, so behaviour is effectively unchanged for the
-	# own-domain and Cloudflare modes. The bring-your-own-proxy overlays (planned, #24) will set
-	# private_ranges, because there the user's proxy is the peer.
+	# own-domain and Cloudflare modes. The reverse-proxy overlay trusts only configured proxy peers.
 	servers {
 		trusted_proxies static {$TRUSTED_PROXIES:127.0.0.1/32 ::1/128}
 	}
 }
 
 {$SITE_ADDRESS} {
-	encode gzip
-
-	# Canonical agent-APK URL: /files/agent.apk works on BOTH deployment shapes (native serves a
-	# real file from Tomcat; here it's the supervisor's sha256-verified release mirror — the same
-	# upstream as /update/agent.apk, which stays below for back-compat). The exact-path matcher
-	# outranks the /files/* → server route (Caddy sorts handles longest-path-first), so this must
-	# stay more specific than @backend.
-	handle /files/agent.apk {
-		rewrite * /update/agent.apk
-		reverse_proxy supervisor:9000
-	}
-
-	# API, uploaded files, and the agent wake WebSocket → the Tomcat server. reverse_proxy
-	# upgrades WebSockets automatically, so /agent/ws works without extra config.
-	@backend path /rest/* /files/* /agent/ws/*
-	handle @backend {
-		reverse_proxy server:8080
-	}
-
-	# Updater status + recovery page → the decoupled supervisor (always up, independent of the
-	# server), so "update available" + recovery stay reachable even mid-update.
-	handle /update/* {
-		reverse_proxy supervisor:9000
-	}
-	handle /recovery* {
-		reverse_proxy supervisor:9000
-	}
-
-	# Health probes for uptime monitors. Both answer 200 "ok" or 503, never the SPA's catch-all 200:
-	#   /healthz            the edge AND the API server answer (the probe apply.sh/rollback.sh use to call
-	#                       an update healthy: GET /rest/public/name, no DB round-trip, no auth)
-	#   /healthz/supervisor the updater/recovery supervisor answers (update checks, recovery page, and the
-	#                       /files/agent.apk mirror that new enrollments download)
-	# Each also answers with a trailing slash (exact paths only, nothing below them), so /healthz/ cannot fall through
-	# to the SPA's 200. `rewrite` inside reverse_proxy changes only the upstream request, so handle_errors below still
-	# sees the probe path.
-	@healthz path /healthz /healthz/
-	@healthzSupervisor path /healthz/supervisor /healthz/supervisor/
-	handle @healthz {
-		reverse_proxy server:8080 {
-			rewrite /rest/public/name
-			@up status 2xx
-			handle_response @up {
-				respond "ok" 200
-			}
-			handle_response {
-				respond "server unavailable" 503
-			}
-		}
-	}
-	handle @healthzSupervisor {
-		reverse_proxy supervisor:9000 {
-			rewrite /healthz
-			@up status 2xx
-			handle_response @up {
-				respond "ok" 200
-			}
-			handle_response {
-				respond "supervisor unavailable" 503
-			}
-		}
-	}
-
-	# Everything else is the single-page app.
-	handle {
-		root * /srv
-		try_files {path} /index.html
-		file_server
-	}
-
-	# If the server (API) is down/erroring, fall back to the supervisor's recovery page. Not for the health
-	# probes: proxied as-is, /healthz would reach the supervisor's own /healthz and call a dead server "ok".
-	handle_errors {
-		handle @healthz {
-			respond "server unavailable" 503
-		}
-		handle @healthzSupervisor {
-			respond "supervisor unavailable" 503
-		}
-		handle {
-			reverse_proxy supervisor:9000
-		}
-	}
+	import /etc/caddy/Caddyfile.routes
 }

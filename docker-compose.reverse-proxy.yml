@@ -1,0 +1,12 @@
+# External proxy -> HTTPS origin. Do not combine with docker-compose.domain.yml.
+# Bind-mounted config also supports web images published before this hosting mode.
+services:
+  caddy:
+    ports:
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS for the HTTPS origin}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:?set the external proxy IP or CIDR}
+    volumes:
+      - ./docker/Caddyfile.proxy:/etc/caddy/Caddyfile:ro
+      - ./docker/Caddyfile.routes:/etc/caddy/Caddyfile.routes:ro

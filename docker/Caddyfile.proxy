@@ -1,0 +1,13 @@
+# HTTPS origin behind a reverse proxy which owns the publicly trusted certificate.
+{
+	auto_https disable_redirects
+	skip_install_trust
+	servers {
+		trusted_proxies static {$TRUSTED_PROXIES}
+	}
+}
+
+{$SITE_ADDRESS} {
+	tls internal
+	import /etc/caddy/Caddyfile.routes
+}

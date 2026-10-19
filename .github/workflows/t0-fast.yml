@@ -43,7 +43,7 @@ jobs:
             supervisor: supervisor/**, docker/supervisor.Dockerfile, release/minisign.pub, scripts/supervisor-smoke.sh, .dockerignore
             # Listed explicitly: the kit's fail-closed **/Dockerfile* does not match docker/web.Dockerfile. web/**,
             # web-entrypoint.sh and .dockerignore are the web image build's inputs.
-            edge: docker/Caddyfile, docker/web.Dockerfile, docker/web-entrypoint.sh, web/**, .dockerignore, docker-compose*.yml, docker/dev.env, scripts/edge-check.sh
+            edge: docker/Caddyfile*, docker/web.Dockerfile, docker/web-entrypoint.sh, web/**, .dockerignore, docker-compose*.yml, docker/dev.env, scripts/edge-check.sh
             # The installer scripts. Only the edge entry's cheap quickstart.sh copy check runs on these, not its image work.
             installers: quickstart.sh, setup.sh, install/**
 
@@ -150,6 +150,22 @@ jobs:
             exit 1
           fi
           echo "quickstart.sh's url.sh functions are identical to install/lib/url.sh's"
+          proxy_fn() { sed -n '/^# >>> proxy.sh functions /,/^# <<< proxy.sh functions <<<$/p' "$1"; }
+          proxy_lib=$(proxy_fn install/lib/proxy.sh); proxy_qs=$(proxy_fn quickstart.sh)
+          test -n "$proxy_lib" && test "$proxy_lib" = "$proxy_qs"
+          (
+            . install/lib/url.sh
+            . install/lib/proxy.sh
+            HOST=mdm.example.com:8443; CADDY_HOST=mdmesh.internal; TRUSTED_PROXIES='192.0.2.10/32 2001:db8::1/128'
+            mdm_proxy_settings
+            test "$SITE_ADDRESS" = 'https://mdmesh.internal:443, https://mdm.example.com:443'
+            test "$COMPOSE_FILE" = 'docker-compose.yml:docker-compose.reverse-proxy.yml'
+            CADDY_HOST=''
+            mdm_proxy_settings
+            test "$SITE_ADDRESS" = 'https://mdm.example.com:443'
+            if (TRUSTED_PROXIES=private_ranges; mdm_proxy_settings); then exit 1; fi
+            if (CADDY_HOST=x:8443; mdm_proxy_settings); then exit 1; fi
+          )
       - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).edge)
         name: Caddyfile modes + compose overlays
         run: scripts/edge-check.sh

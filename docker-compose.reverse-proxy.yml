@@ -5,6 +5,7 @@ services:
     ports:
       - "443:443"
     environment:
+      CADDY_HOST: ${CADDY_HOST:?set CADDY_HOST for the origin TLS certificate}
       SITE_ADDRESS: ${SITE_ADDRESS:?set SITE_ADDRESS for the HTTPS origin}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:?set the external proxy IP or CIDR}
     volumes:

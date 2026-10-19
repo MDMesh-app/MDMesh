@@ -166,6 +166,8 @@ Use the proxy's source IP/CIDR in `TRUSTED_PROXIES` (multiple peers are space-se
 `CADDY_HOST` defaults to the public hostname. A separate internal name need only resolve
 on the proxy, or the proxy can connect to the origin IP with that name as TLS SNI.
 Caddy accepts both names so the proxy can preserve the public `Host` header.
+It also uses `CADDY_HOST` as the default certificate name for older proxies that
+omit TLS SNI, including legacy WSS connections.
 `BASE_URL` remains public for enrollment, APK downloads and links sent to devices.
 
 After starting the stack, export the **public root certificate** and trust it in

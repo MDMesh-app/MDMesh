@@ -56,7 +56,7 @@ for mode in "${MODES[@]}"; do
 done
 
 # The opt-in origin config is also mounted over old published web images by quickstart.sh.
-if out="$(docker run --rm --network none -e SITE_ADDRESS=https://mdmesh.internal:443 \
+if out="$(docker run --rm --network none -e CADDY_HOST=mdmesh.internal -e SITE_ADDRESS=https://mdmesh.internal:443 \
     -e TRUSTED_PROXIES=192.0.2.10/32 -v "$ROOT/docker/Caddyfile.proxy:/etc/caddy/Caddyfile:ro" \
     -v "$ROOT/docker/Caddyfile.routes:/etc/caddy/Caddyfile.routes:ro" "$CADDY_IMAGE" \
     caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1)"; then
@@ -70,7 +70,7 @@ fi
 # A fixed env file with the required (:?) variables, so a developer's own .env or shell cannot change the result.
 ENVF="$(mktemp)"
 trap 'rm -f "$ENVF"' EXIT
-printf 'DB_PASSWORD=x\nBASE_URL=https://mdm.example.com\nHASH_SECRET=x\nSITE_ADDRESS=https://mdmesh.internal:443\nTRUSTED_PROXIES=192.0.2.10/32\n' > "$ENVF"
+printf 'DB_PASSWORD=x\nBASE_URL=https://mdm.example.com\nHASH_SECRET=x\nCADDY_HOST=mdmesh.internal\nSITE_ADDRESS=https://mdmesh.internal:443\nTRUSTED_PROXIES=192.0.2.10/32\n' > "$ENVF"
 unset COMPOSE_FILE COMPOSE_PROFILES COMPOSE_PROJECT_NAME
 
 echo "Compose (docker compose config -q):"
@@ -178,7 +178,7 @@ if [ "$rc" -ne 0 ] && [ "$n" -eq 0 ]; then fail "health routes: probe container 
 
 echo "Health routes (internal HTTPS, public Host / internal SNI, trusted CA):"
 out="$(docker run --rm --network none --add-host server:127.0.0.1 --add-host supervisor:127.0.0.1 \
-    -e PROXY_TLS=1 -e 'SITE_ADDRESS=https://mdmesh.internal:443, https://mdm.example.com:443' \
+    -e PROXY_TLS=1 -e CADDY_HOST=mdmesh.internal -e 'SITE_ADDRESS=https://mdmesh.internal:443, https://mdm.example.com:443' \
     -e TRUSTED_PROXIES=127.0.0.1/32 -v "$ROOT/docker/Caddyfile.proxy:/etc/caddy/Caddyfile:ro" \
     -v "$ROOT/docker/Caddyfile.routes:/etc/caddy/Caddyfile.routes:ro" "$CADDY_IMAGE" \
     sh -c "$HEALTH_PROBE" 2>&1)" && rc=0 || rc=$?

@@ -9,22 +9,25 @@ line under Unreleased.
 ## Unreleased
 
 Upgrading
-- Update the server: Settings → Updates (quick-start installs), or re-run the installer on native installs.
+- Update the server: Settings → Updates (quick-start installs), or re-run the installer on native installs. Then
+  roll out the new agent from Settings → Agent rollout, to one device first. Devices enrolled by QR code on 0.3.4 or
+  earlier apply their restrictions once they have the new agent (or after a restart).
 
-New
+Fixes
+- Agent: restrictions that need Device Owner (camera, screenshots, factory reset, Bluetooth, USB storage, Safe Mode,
+  Wi-Fi) apply on devices enrolled by QR code. Before, they showed as "unsupported" until the phone restarted.
 - Re-running the native installer to upgrade keeps `BASE_URL`, `GITHUB_TOKEN` and a `GITHUB_REPO` you set from the
   existing install, so `sudo ./setup.sh --native -y` is enough. A repo that came from the clone's origin keeps
   following the origin. A value you pass still wins, and `GITHUB_TOKEN=` clears the token.
-
-Fixes
 - The native installer says when GitHub refuses the token, and downloads the release without it. Rate limits are
   reported as rate limits.
-- Location popups in the device map render as plain text.
-- Enroll: "New code" keeps the chosen configuration.
+- Saving a configuration keeps its configuration files and app settings.
 - Configuration copies keep their apps, and saving one never overwrites the original.
+- Device pages always open the device you clicked, even when a device's number matches another device's internal id.
+  Device action dialogs, Enter kiosk included, name the device.
+- Enroll: "New code" keeps the chosen configuration.
+- Location popups in the device map render as plain text.
 - The "Password updated" notice shows on the sign-in page.
-- Saving a configuration keeps its configuration files and app settings. <!-- pending fix/console-data -->
-- Device pages always open the device you clicked, even when a device's number matches another device's internal id. <!-- pending fix/console-data -->
 
 Under the hood: dependency updates (React Router 8, Caddy 2.11.7, pgjdbc 42.7.14, Vite, Guava), and CI runs the
 agent's protocol tests on every change.

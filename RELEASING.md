@@ -97,9 +97,8 @@ commit instead.
 git fetch origin
 sha=$(gh pr view N -R MDMesh-app/MDMesh --json mergeCommit -q .mergeCommit.oid)   # the release PR, as in step 6
 git switch --detach "$sha" && git log -1 --format=%s     # must print: vX.Y.Z (#N)
-git push origin :refs/tags/vX.Y.Z
 n=$(release/changelog-section.sh X.Y.Z) && git tag -f -a vX.Y.Z --cleanup=whitespace -m "$n" "$sha"
-release/changelog-section.sh --check vX.Y.Z "$sha" && git push origin vX.Y.Z
+release/changelog-section.sh --check vX.Y.Z "$sha" && git push origin :refs/tags/vX.Y.Z && git push origin vX.Y.Z
 ```
 
 **If the job goes red after the GitHub Release step** (i.e. in "Move :latest to this release"): the

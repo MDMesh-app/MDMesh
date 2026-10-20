@@ -28,6 +28,7 @@ Fixes
 - Enroll: "New code" keeps the chosen configuration.
 - Location popups in the device map render as plain text.
 - The "Password updated" notice shows on the sign-in page.
+- The enrollment QR code is drawn at its real size, so it isn't blurred and scans reliably (thanks @vanek-Impacts).
 
 Under the hood: dependency updates (React Router 8, Caddy 2.11.7, pgjdbc 42.7.14, Vite, Guava), and CI runs the
 agent's protocol tests on every change.

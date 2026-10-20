@@ -1605,8 +1605,9 @@ a {
 .qr-frame img,
 .qr-frame svg,
 .qr-frame canvas {
-  width: 226px;
-  height: 226px;
+  width: 320px;
+  height: 320px;
+  max-width: 100%;
   display: block;
 }
 .qr-cap {

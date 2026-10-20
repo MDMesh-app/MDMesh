@@ -1615,6 +1615,8 @@ a {
   height: 320px;
   max-width: 100%;
   display: block;
+  /* QrCanvas draws at device-pixel size; if anything still rescales the code, its modules stay sharp */
+  image-rendering: pixelated;
 }
 .qr-cap {
   text-align: center;

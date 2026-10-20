@@ -35,6 +35,7 @@ RUN apk add --no-cache libcap su-exec \
 COPY --from=web /web/dist /srv
 COPY docker/Caddyfile /etc/caddy/Caddyfile
 COPY docker/web-entrypoint.sh /web-entrypoint.sh
+COPY docker/edge-peers.sh /edge-peers.sh
 RUN chmod +x /web-entrypoint.sh && chown -R caddy:caddy /srv /etc/caddy /data /config
 EXPOSE 80 443
 ENTRYPOINT ["/web-entrypoint.sh"]

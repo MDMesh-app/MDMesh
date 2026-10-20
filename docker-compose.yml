@@ -81,6 +81,9 @@ services:
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:-:80}
       ACME_EMAIL: ${ACME_EMAIL:-}
+      # The hosting mode: in tunnel mode (cloudflare) the edge believes cloudflared's CF-Connecting-IP
+      # (docker/edge-peers.sh).
+      COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}
     volumes:
       - caddy_data:/data
       - caddy_config:/config

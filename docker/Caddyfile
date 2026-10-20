@@ -5,21 +5,22 @@
 {
 	email "{$ACME_EMAIL}"
 	# Who Caddy believes about a client's address ({client_ip}, which the server records as a device's public IP).
-	# Set per listener, so each hosting mode gets its own rule:
+	# Set per listener, so each hosting mode gets its own rule. Strict mode reads a header list from the right, so an
+	# address a client prepends never counts.
 	#   :443  own domain. Devices connect to Caddy directly, so nothing they send is believed: only a peer in
-	#         TRUSTED_PROXIES (default loopback, which no Docker peer is) may set X-Forwarded-For, and strict mode
-	#         reads that list from the right, so an address a client prepends never counts. The bring-your-own-proxy
-	#         overlays (planned, #24) will set TRUSTED_PROXIES, because there the user's proxy is the peer.
-	#   :80   Cloudflare tunnel. Nothing is published in this mode, so only containers on the stack's own network
-	#         (cloudflared) reach this listener. Believe CF-Connecting-IP, which Cloudflare sets, from a private peer.
+	#         TRUSTED_PROXIES (default loopback, which no Docker peer is) may set X-Forwarded-For.
+	#   :80   set by docker/edge-peers.sh (the image's entrypoint), by hosting mode. Cloudflare tunnel: cloudflared's
+	#         CF-Connecting-IP, from a private peer. Anything else (the dev stack, a proxy of your own in front):
+	#         TRUSTED_PROXIES and X-Forwarded-For, as on :443. The defaults here are that second rule.
 	# Own-domain's :80 only redirects to HTTPS, so the :80 rule never applies to its traffic.
 	servers :443 {
 		trusted_proxies static {$TRUSTED_PROXIES:127.0.0.1/32 ::1/128}
 		trusted_proxies_strict
 	}
 	servers :80 {
-		trusted_proxies static private_ranges
-		client_ip_headers CF-Connecting-IP
+		trusted_proxies static {$HTTP_TRUSTED_PEERS:127.0.0.1/32 ::1/128}
+		client_ip_headers {$HTTP_CLIENT_IP_HEADER:X-Forwarded-For}
+		trusted_proxies_strict
 	}
 }
 

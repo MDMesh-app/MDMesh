@@ -1588,7 +1588,7 @@ a {
 }
 .qr-layout {
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: 354px 1fr;
   gap: 24px;
   align-items: start;
   padding: 20px;

@@ -168,6 +168,49 @@ host check `curl -fsS 127.0.0.1:9000/healthz` or `systemctl is-active mdmesh-sup
 before v0.3.2 serves the console on these paths until you
 [re-run the installer](UPGRADING.md#native-installs).
 
+## Device public address
+
+A device page shows the public IP the device last checked in from. The server reads it from a header only when the
+request comes from a loopback or private address, which is your proxy. A device that reaches the server directly is
+recorded at the address it connects from. From the proxy, the server takes, in order:
+
+1. `CF-Connecting-IP`, which Cloudflare sets.
+2. Otherwise the **last** `X-Forwarded-For` entry, the one your proxy added. Earlier entries are whatever the device
+   sent.
+3. Otherwise the proxy's own address.
+
+A value that isn't an IP address is ignored.
+
+**Docker:** Caddy sets these headers. It sends the server one `X-Forwarded-For` value, its own view of the client,
+and drops any `CF-Connecting-IP` a device sends. In Cloudflare mode it takes that view from cloudflared's
+`CF-Connecting-IP`. That mode publishes no ports, so devices can reach Caddy only through the tunnel.
+
+**Native installs:** your proxy must set the headers itself and not pass on what the device sent.
+
+- Overwrite `X-Forwarded-For` with the address the proxy sees; don't append to it. (The server reads the last entry,
+  so a proxy that appends still gets the right address recorded, but overwriting leaves a device nothing to set.)
+- Remove `CF-Connecting-IP`, unless the proxy is cloudflared or sits behind Cloudflare, which sets it.
+- Overwrite `X-Real-IP` the same way. Code inherited from Headwind (the audit log) reads it from a proxy on the same
+  host.
+
+nginx:
+
+```nginx
+proxy_set_header X-Forwarded-For  $remote_addr;
+proxy_set_header X-Real-IP        $remote_addr;
+proxy_set_header CF-Connecting-IP "";
+```
+
+Caddy:
+
+```caddyfile
+reverse_proxy 127.0.0.1:8080 {
+	header_up X-Forwarded-For {client_ip}
+	header_up X-Real-IP {client_ip}
+	header_up -CF-Connecting-IP
+}
+```
+
 ## Backups and restore
 
 **Docker.** One-click updates dump the database first, and a rollback restores that dump

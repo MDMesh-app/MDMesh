@@ -32,11 +32,14 @@ ipv4_int() {
 # on_own_subnet A.B.C.D: succeeds when the address is inside a subnet of one of this container's interfaces.
 on_own_subnet() {
   _ip=$(ipv4_int "$1") || return 1
-  for _cidr in $(ip -o -4 addr show 2>/dev/null | awk '{ print $4 }'); do
+  # Global-scope addresses only: loopback is not the stack's network.
+  for _cidr in $(ip -o -4 addr show scope global 2>/dev/null | awk '{ print $4 }'); do
     _net=$(ipv4_int "${_cidr%/*}") || continue
     _len=${_cidr#*/}
-    _mask=0
-    [ "$_len" -gt 0 ] && _mask=$(( (0xFFFFFFFF << (32 - _len)) & 0xFFFFFFFF ))
+    # A prefix length must be 1..32; anything else (or /0, which matches everything) is skipped.
+    case "$_len" in ''|*[!0-9]*) continue ;; esac
+    if [ "$_len" -lt 1 ] || [ "$_len" -gt 32 ]; then continue; fi
+    _mask=$(( (0xFFFFFFFF << (32 - _len)) & 0xFFFFFFFF ))
     [ $(( _ip & _mask )) -eq $(( _net & _mask )) ] && return 0
   done
   return 1

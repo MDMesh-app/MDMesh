@@ -4,13 +4,32 @@
 #   cloudflare  → ":80" (Cloudflare terminates TLS; cloudflared connects to this internally)
 {
 	email "{$ACME_EMAIL}"
-	# Which direct peers may set X-Forwarded-For (so the server records a device's real public IP).
-	# Default: loopback only — no Docker peer is loopback, so behaviour is effectively unchanged for the
-	# own-domain and Cloudflare modes. The bring-your-own-proxy overlays (planned, #24) will set
-	# private_ranges, because there the user's proxy is the peer.
-	servers {
+	# Who Caddy believes about a client's address ({client_ip}, which the server records as a device's public IP).
+	# Set per listener, so each hosting mode gets its own rule:
+	#   :443  own domain. Devices connect to Caddy directly, so nothing they send is believed: only a peer in
+	#         TRUSTED_PROXIES (default loopback, which no Docker peer is) may set X-Forwarded-For, and strict mode
+	#         reads that list from the right, so an address a client prepends never counts. The bring-your-own-proxy
+	#         overlays (planned, #24) will set TRUSTED_PROXIES, because there the user's proxy is the peer.
+	#   :80   Cloudflare tunnel. Nothing is published in this mode, so only containers on the stack's own network
+	#         (cloudflared) reach this listener. Believe CF-Connecting-IP, which Cloudflare sets, from a private peer.
+	# Own-domain's :80 only redirects to HTTPS, so the :80 rule never applies to its traffic.
+	servers :443 {
 		trusted_proxies static {$TRUSTED_PROXIES:127.0.0.1/32 ::1/128}
+		trusted_proxies_strict
 	}
+	servers :80 {
+		trusted_proxies static private_ranges
+		client_ip_headers CF-Connecting-IP
+	}
+}
+
+# Every reverse_proxy to the server imports this. The server reads the client's address from X-Forwarded-For (and
+# X-Real-IP, in code inherited from Headwind), so send exactly one value, Caddy's {client_ip}, and drop a client-sent
+# CF-Connecting-IP. header_up runs after reverse_proxy's own X-Forwarded-For handling, so it wins.
+(client_address) {
+	header_up X-Forwarded-For {client_ip}
+	header_up X-Real-IP {client_ip}
+	header_up -CF-Connecting-IP
 }
 
 {$SITE_ADDRESS} {
@@ -30,7 +49,9 @@
 	# upgrades WebSockets automatically, so /agent/ws works without extra config.
 	@backend path /rest/* /files/* /agent/ws/*
 	handle @backend {
-		reverse_proxy server:8080
+		reverse_proxy server:8080 {
+			import client_address
+		}
 	}
 
 	# Updater status + recovery page → the decoupled supervisor (always up, independent of the
@@ -54,6 +75,7 @@
 	@healthzSupervisor path /healthz/supervisor /healthz/supervisor/
 	handle @healthz {
 		reverse_proxy server:8080 {
+			import client_address
 			rewrite /rest/public/name
 			@up status 2xx
 			handle_response @up {

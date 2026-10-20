@@ -8,6 +8,8 @@
 #   3. /healthz and /healthz/supervisor (with or without a trailing slash), served by that caddy against stub upstreams:
 #      503 + reason while the upstream is down or failing (not the SPA's or the recovery page's catch-all 200), 200 "ok"
 #      once it answers.
+#   3b. The client address the server is told: exactly Caddy's view of the client in own-domain and Cloudflare mode,
+#      whatever forwarding headers the client sends (echo upstream), and Cloudflare mode publishes no port.
 #   4. The dev stack (docker-compose.dev.yml over docker-compose.yml) with docker/dev.env alone, and that the overlay
 #      refuses to load without it.
 # Guards the v0.3.1 Cloudflare-mode break: `email {$ACME_EMAIL}` with the empty ACME_EMAIL that setup.sh and
@@ -148,6 +150,84 @@ printf '%s\n' "$out"
 n="$(grep -c '^  FAIL' <<<"$out" || true)"
 FAILED=$((FAILED + n))
 if [ "$rc" -ne 0 ] && [ "$n" -eq 0 ]; then fail "health routes: probe container exited $rc"; fi
+
+# --- 3b. The client address the server is told. The server records a device's public IP from the X-Forwarded-For
+# (and X-Real-IP) the edge sends, so every request to it must carry exactly Caddy's own view of the client, whatever
+# CF-Connecting-IP / X-Forwarded-For / X-Real-IP the client sent. A stub `server` echoes the headers it receives.
+#   own-domain  SITE_ADDRESS=localhost: the own-domain shape (HTTPS on :443, from Caddy's internal CA for localhost).
+#               The client connects from 127.0.0.2, outside the default TRUSTED_PROXIES, like a device on the internet.
+#   cloudflare  SITE_ADDRESS=:80, the client on loopback (private, so it stands in for cloudflared): CF-Connecting-IP
+#               is believed, everything else is replaced. This mode publishes no port (checked below), so only
+#               containers on the stack's network reach Caddy at all.
+CLIENT_PROBE="$(cat <<'PROBE'
+set -u
+F=0
+command -v curl >/dev/null || { echo "  FAIL no curl in the caddy image"; exit 1; }
+mkdir -p /srv /tmp/stub && echo spa > /srv/index.html
+printf '{\n\tadmin off\n}\n:8080 {\n\trespond "xff=[{header.X-Forwarded-For}] xri=[{header.X-Real-IP}] cf=[{header.CF-Connecting-IP}]" 200\n}\n' > /tmp/stub/echo
+caddy run --config /tmp/stub/echo --adapter caddyfile >/dev/null 2>&1 &
+caddy start --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1 || { echo "  FAIL edge did not start"; exit 1; }
+if [ "$MODE" = own-domain ]; then
+  URL=https://localhost/rest/echo; CURL="curl -sk -m 5 --resolve localhost:443:127.0.0.1 --interface 127.0.0.2"
+else
+  URL=http://127.0.0.1/rest/echo; CURL="curl -s -m 5"
+fi
+# The edge (for own-domain, also its local certificate) and the stub take a moment to come up.
+for _ in $(seq 1 100); do case "$($CURL "$URL" 2>/dev/null || true)" in xff=*) break ;; esac; sleep 0.1; done
+expect() { # expect <label> <want> [curl args...]
+  label="$1"; want="$2"; shift 2
+  got="$($CURL "$@" "$URL" 2>/dev/null || true)"
+  if [ "$got" = "$want" ]; then echo "  ok   $MODE: $label"
+  else echo "  FAIL $MODE: $label (expected '$want', got '${got:-no response}')"; F=$((F + 1)); fi
+}
+if [ "$MODE" = own-domain ]; then
+  expect "no forwarding headers: the server is told the client's address" \
+    'xff=[127.0.0.2] xri=[127.0.0.2] cf=[]'
+  expect "forged CF-Connecting-IP / X-Forwarded-For / X-Real-IP: replaced or dropped" \
+    'xff=[127.0.0.2] xri=[127.0.0.2] cf=[]' -H 'CF-Connecting-IP: 6.6.6.6' -H 'X-Forwarded-For: 7.7.7.7' -H 'X-Real-IP: 8.8.8.8'
+  expect "a forged X-Forwarded-For list: replaced, not appended to" \
+    'xff=[127.0.0.2] xri=[127.0.0.2] cf=[]' -H 'X-Forwarded-For: 7.7.7.7, 127.0.0.1'
+else
+  expect "from cloudflared with CF-Connecting-IP: the server is told that address" \
+    'xff=[203.0.113.9] xri=[203.0.113.9] cf=[]' -H 'CF-Connecting-IP: 203.0.113.9' -H 'X-Forwarded-For: 6.6.6.6, 203.0.113.9'
+  expect "from cloudflared without CF-Connecting-IP: the peer, not X-Forwarded-For" \
+    'xff=[127.0.0.1] xri=[127.0.0.1] cf=[]' -H 'X-Forwarded-For: 6.6.6.6' -H 'X-Real-IP: 8.8.8.8'
+  expect "a CF-Connecting-IP that is not an address: the peer" \
+    'xff=[127.0.0.1] xri=[127.0.0.1] cf=[]' -H 'CF-Connecting-IP: 6.6.6.6.6'
+fi
+exit "$F"
+PROBE
+)"
+for m in "own-domain|localhost" "cloudflare|:80"; do
+  echo "Client address sent to the server (${m%%|*}, SITE_ADDRESS=${m#*|}, echo upstream):"
+  out="$(docker run --rm --network none --add-host server:127.0.0.1 --add-host supervisor:127.0.0.1 \
+      -e MODE="${m%%|*}" -e SITE_ADDRESS="${m#*|}" -e ACME_EMAIL= -v "$CADDYFILE:/etc/caddy/Caddyfile:ro" "$CADDY_IMAGE" \
+      sh -c "$CLIENT_PROBE" 2>&1)" && rc=0 || rc=$?
+  printf '%s\n' "$out"
+  n="$(grep -c '^  FAIL' <<<"$out" || true)"
+  FAILED=$((FAILED + n))
+  if [ "$rc" -ne 0 ] && [ "$n" -eq 0 ]; then fail "client address (${m%%|*}): probe container exited $rc"; fi
+done
+
+# Cloudflare mode believes CF-Connecting-IP from any private peer, which is safe only because that mode publishes no
+# port: a device can then reach Caddy through cloudflared alone. The own-domain overlay must still publish, or this
+# check could not see a port at all.
+echo "Published edge ports (docker compose config caddy):"
+PORT_COMBOS=(
+  "-f docker-compose.yml --profile cloudflare|no"
+  "-f docker-compose.release.yml --profile cloudflare|no"
+  "-f docker-compose.yml -f docker-compose.domain.yml|some"
+  "-f docker-compose.release.yml -f docker-compose.domain.yml|some"
+)
+for combo in "${PORT_COMBOS[@]}"; do
+  read -r -a args <<< "${combo%|*}"
+  if ! out="$(docker compose --env-file "$ENVF" "${args[@]}" config caddy 2>&1)"; then
+    fail "compose ${combo%|*} config caddy"; printf '%s\n' "$out" | tail -5 | sed 's/^/         /'; continue
+  fi
+  if grep -qE '^ {4}ports:' <<<"$out"; then has=some; else has=no; fi
+  if [ "$has" = "${combo#*|}" ]; then pass "compose ${combo%|*}: caddy publishes $has ports"
+  else fail "compose ${combo%|*}: caddy publishes $has ports, want ${combo#*|}"; fi
+done
 
 # --- 4. The dev stack, configured by docker/dev.env ALONE (not the fixed env file above), so a variable
 # docker-compose.yml requires but dev.env lacks fails here. dev.env pins the project name: without it the project

@@ -579,26 +579,57 @@ public class AgentResource {
     /**
      * The device's public IP as seen by the server. Forwarding headers are client-controllable,
      * so they're honored ONLY when the direct peer is a local/private address — i.e. our own
-     * fronting proxy (Caddy/cloudflared on this host or LAN). A device reaching Tomcat directly
-     * cannot forge the recorded publicIp.
+     * fronting proxy (Caddy/cloudflared on this host or LAN, or a native install's proxy). A device
+     * reaching Tomcat directly cannot forge the recorded publicIp. From such a peer, in order:
+     * <ol>
+     *   <li>{@code CF-Connecting-IP}, which Cloudflare sets. The Docker edge drops a client-sent one;
+     *       on a native install the operator's proxy must (docs/OPERATIONS.md).</li>
+     *   <li>The LAST {@code X-Forwarded-For} entry: the one the nearest proxy added. The Docker edge
+     *       sends exactly one, its own view of the client. Earlier entries are whatever the client sent.</li>
+     *   <li>Otherwise the peer itself.</li>
+     * </ol>
+     * A header value that is not an IP address is ignored (never recorded).
      */
-    private static String clientIp(javax.servlet.http.HttpServletRequest request) {
+    static String clientIp(javax.servlet.http.HttpServletRequest request) {
         if (request == null) {
             return null;
         }
         String remote = request.getRemoteAddr();
         if (isLocalOrPrivate(remote)) {
-            String cf = request.getHeader("CF-Connecting-IP");
-            if (cf != null && !cf.trim().isEmpty()) {
-                return cf.trim();
+            String cf = ipOrNull(request.getHeader("CF-Connecting-IP"));
+            if (cf != null) {
+                return cf;
             }
-            String xff = request.getHeader("X-Forwarded-For");
-            if (xff != null && !xff.trim().isEmpty()) {
-                // First hop is the original client.
-                return xff.split(",")[0].trim();
+            String xff = ipOrNull(lastForwardedFor(request.getHeaders("X-Forwarded-For")));
+            if (xff != null) {
+                return xff;
             }
         }
         return remote;
+    }
+
+    /** The last entry of the X-Forwarded-For header lines, or null when there is none. */
+    private static String lastForwardedFor(java.util.Enumeration<String> lines) {
+        String last = null;
+        while (lines != null && lines.hasMoreElements()) {
+            String line = lines.nextElement();
+            if (line != null && !line.trim().isEmpty()) {
+                last = line;
+            }
+        }
+        if (last == null) {
+            return null;
+        }
+        return last.substring(last.lastIndexOf(',') + 1);
+    }
+
+    /** The trimmed value when it is an IPv4 or IPv6 address literal (no DNS lookup), else null. */
+    private static String ipOrNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String v = value.trim();
+        return com.google.common.net.InetAddresses.isInetAddress(v) ? v : null;
     }
 
     /** Loopback / RFC1918 / link-local / IPv6 ULA — the address space our own proxy lives in. */
@@ -607,7 +638,7 @@ public class AgentResource {
             return false;
         }
         try {
-            java.net.InetAddress a = java.net.InetAddress.getByName(addr);
+            java.net.InetAddress a = com.google.common.net.InetAddresses.forString(addr);
             return a.isLoopbackAddress() || a.isSiteLocalAddress() || a.isLinkLocalAddress()
                     || (a.getAddress().length == 16 && (a.getAddress()[0] & 0xfe) == 0xfc);
         } catch (Exception e) {

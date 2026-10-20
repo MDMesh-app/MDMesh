@@ -1,5 +1,6 @@
 package com.hmdm.rest.filter;
 
+import com.google.common.net.InetAddresses;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -133,9 +134,11 @@ public class BaseIPFilter {
             }
         }
         if (isFromProxy) {
+            // The proxy must set this header itself (docs/OPERATIONS.md); a value that is not an IP address
+            // literal is ignored rather than recorded or matched against the whitelist.
             String forwardedIp = request.getHeader(ipHeader);
-            if (forwardedIp != null) {
-                return forwardedIp;
+            if (forwardedIp != null && InetAddresses.isInetAddress(forwardedIp.trim())) {
+                return forwardedIp.trim();
             }
         }
         return request.getRemoteAddr();

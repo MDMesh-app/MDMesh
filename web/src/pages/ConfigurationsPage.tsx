@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppShell } from '../ui/AppShell';
 import { useToast } from '../ui/toast';
 import {
   getConfigurations,
+  getConfiguration,
   getConfigurationApps,
   saveConfiguration,
   deleteConfiguration,
@@ -61,7 +62,17 @@ const NEW_CONFIG_DEFAULTS: Partial<Configuration> = {
   useDefaultDesignSettings: true,
 };
 
-/** A fresh editable draft, optionally seeded from a base config. */
+/**
+ * The configuration to edit: GET /configurations/{id} (every column plus its files, app settings and usage
+ * parameters) with its assigned apps. The /configurations/search row lacks those lists, and a save replaces
+ * them on the server with what it is sent, so the editor never starts from a list row.
+ */
+async function loadFull(id: number): Promise<Configuration> {
+  const [full, applications] = await Promise.all([getConfiguration(id), getConfigurationApps(id)]);
+  return { ...full, applications };
+}
+
+/** A fresh editable draft, optionally seeded from a full base config (see loadFull). */
 function cloneForNew(base: Configuration | null): Configuration {
   if (!base) return { ...NEW_CONFIG_DEFAULTS, name: '', applications: [] } as Configuration;
   const c: Configuration = { ...base, name: `${base.name} copy` };
@@ -77,13 +88,41 @@ export function ConfigurationsPage() {
   const [apps, setApps] = useState<Application[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Configuration | null>(null);
-  // For a new configuration copied from another one: the source's id, whose apps the copy starts with.
-  const [copyFrom, setCopyFrom] = useState<number | null>(null);
   const [readOnly, setReadOnly] = useState(false);
   const [chooserOpen, setChooserOpen] = useState(false);
   const [copyOf, setCopyOf] = useState<Configuration | null>(null);
   const [sync, setSync] = useState<Record<number, ConfigSyncSummary>>({});
   const [watch, setWatch] = useState<{ id: number; until: number } | null>(null);
+  // Remounts the editor for every configuration it opens, so no draft carries over (e.g. Duplicate to edit).
+  const [editorKey, setEditorKey] = useState(0);
+  const [opening, setOpening] = useState(false);
+  const openSeq = useRef(0);
+
+  const startEditing = (c: Configuration, ro: boolean) => {
+    setReadOnly(ro);
+    setEditing(c);
+    setEditorKey((k) => k + 1);
+  };
+
+  /** Load the full configuration, then edit it (or start a new one from it). Nothing opens if the load fails. */
+  async function openConfig(c: Configuration, asTemplate: boolean) {
+    if (c.id == null) return;
+    const seq = ++openSeq.current;
+    setOpening(true);
+    try {
+      const full = await loadFull(c.id);
+      if (seq !== openSeq.current) return;
+      setChooserOpen(false);
+      if (asTemplate) startEditing(cloneForNew(full), false);
+      else startEditing(full, isLocked(c));
+    } catch (e) {
+      if (seq === openSeq.current) {
+        toast.push('err', 'Could not open the configuration', e instanceof Error ? e.message : '');
+      }
+    } finally {
+      if (seq === openSeq.current) setOpening(false);
+    }
+  }
 
   const refreshSync = () => getSyncSummary()
     .then((rows) => setSync(Object.fromEntries(rows.map((r) => [r.configurationId, r]))))
@@ -130,9 +169,8 @@ export function ConfigurationsPage() {
     return (
       <AppShell title="Configuration">
         <ConfigEditor
-          key={editing.id ?? `new-${copyFrom ?? 'blank'}`}
+          key={editorKey}
           initial={editing}
-          copyFrom={copyFrom}
           apps={apps}
           readOnly={readOnly}
           deviceCount={editing.id != null ? affectedDeviceCount(sync[editing.id]) : 0}
@@ -142,11 +180,7 @@ export function ConfigurationsPage() {
             setEditing(null);
             void load();
           }}
-          onDuplicate={() => {
-            setCopyFrom(editing.id ?? copyFrom);
-            setEditing(cloneForNew(editing));
-            setReadOnly(false);
-          }}
+          onDuplicate={() => startEditing(cloneForNew(editing), false)}
         />
       </AppShell>
     );
@@ -176,11 +210,8 @@ export function ConfigurationsPage() {
               locked={isLocked(c)}
               appName={appNameForVersionId(apps, c.mainAppId as number | undefined)}
               sync={c.id != null ? sync[c.id] : undefined}
-              onEdit={() => {
-                setCopyFrom(null);
-                setReadOnly(isLocked(c));
-                setEditing(c);
-              }}
+              busy={opening}
+              onEdit={() => void openConfig(c, false)}
               onCopy={() => setCopyOf(c)}
               onDelete={() => void doDelete(c)}
             />
@@ -202,11 +233,18 @@ export function ConfigurationsPage() {
       {chooserOpen && (
         <NewChooser
           defaults={(configs ?? []).filter(isLocked)}
-          onClose={() => setChooserOpen(false)}
+          busy={opening}
+          onClose={() => {
+            openSeq.current++; // a template still loading must not open after the chooser closed
+            setOpening(false);
+            setChooserOpen(false);
+          }}
           onPick={(base) => {
-            setCopyFrom(base?.id ?? null);
-            setEditing(cloneForNew(base));
-            setReadOnly(false);
+            if (base) {
+              void openConfig(base, true);
+              return;
+            }
+            startEditing(cloneForNew(null), false);
             setChooserOpen(false);
           }}
         />
@@ -257,6 +295,7 @@ function ConfigCard({
   locked,
   appName,
   sync,
+  busy,
   onEdit,
   onCopy,
   onDelete,
@@ -265,6 +304,8 @@ function ConfigCard({
   locked: boolean;
   appName: string;
   sync?: ConfigSyncSummary;
+  /** A configuration is being opened. */
+  busy: boolean;
   onEdit: () => void;
   onCopy: () => void;
   onDelete: () => void;
@@ -290,7 +331,7 @@ function ConfigCard({
       </div>
       <SyncBar s={sync} />
       <div className="cfg-actions">
-        <button className="btn btn-sm btn-primary" onClick={onEdit}>{locked ? 'View' : 'Edit'}</button>
+        <button className="btn btn-sm btn-primary" onClick={onEdit} disabled={busy}>{locked ? 'View' : 'Edit'}</button>
         <button className="btn btn-sm" onClick={onCopy}>{locked ? 'Use as template' : 'Copy'}</button>
         {!locked && <button className="btn btn-sm btn-danger" onClick={onDelete}>Delete</button>}
       </div>
@@ -300,10 +341,13 @@ function ConfigCard({
 
 function NewChooser({
   defaults,
+  busy,
   onClose,
   onPick,
 }: {
   defaults: Configuration[];
+  /** A base template is being loaded. */
+  busy: boolean;
   onClose: () => void;
   onPick: (base: Configuration | null) => void;
 }) {
@@ -313,12 +357,12 @@ function NewChooser({
         <h3>New configuration</h3>
         <p className="muted" style={{ margin: '2px 0 14px' }}>Start from scratch, or base it on a default template.</p>
         <div className="chooser-list">
-          <button className="chooser-opt" onClick={() => onPick(null)}>
+          <button className="chooser-opt" disabled={busy} onClick={() => onPick(null)}>
             <span className="chooser-nm">Blank configuration</span>
             <span className="chooser-sub">Empty template — set everything yourself.</span>
           </button>
           {defaults.map((d) => (
-            <button key={d.id} className="chooser-opt" onClick={() => onPick(d)}>
+            <button key={d.id} className="chooser-opt" disabled={busy} onClick={() => onPick(d)}>
               <span className="chooser-nm">Based on “{d.name}”</span>
               <span className="chooser-sub">Copy this default’s settings and apps, then customise.</span>
             </button>
@@ -370,7 +414,6 @@ function CopyModal({ source, onClose, onDone }: { source: Configuration; onClose
 // ── Editor ────────────────────────────────────────────────────────────────-
 function ConfigEditor({
   initial,
-  copyFrom,
   apps,
   readOnly,
   deviceCount,
@@ -379,8 +422,6 @@ function ConfigEditor({
   onDuplicate,
 }: {
   initial: Configuration;
-  /** A new copy: the configuration whose apps it starts with (the list rows carry none). */
-  copyFrom: number | null;
   apps: Application[];
   readOnly: boolean;
   /** Devices that will re-apply kiosk; null when unknown (confirm without a number). */
@@ -390,46 +431,16 @@ function ConfigEditor({
   onDuplicate: () => void;
 }) {
   const toast = useToast();
+  // `initial` is the full configuration with its assigned apps (loadFull), or a new draft. The save sends
+  // the whole draft, so the server keeps every list and column the editor doesn't render.
   const [draft, setDraft] = useState<Configuration>(() => ({ ...initial }));
   // The unmodified starting point for change detection (e.g. kioskAffectingChanges).
-  // Kept separate from `initial` because the list endpoint omits `applications` —
-  // once the real assigned apps load, both `draft` and `baseline` are updated so
-  // comparisons don't see a spurious apps diff on every save.
-  const [baseline, setBaseline] = useState<Configuration>(() => ({ ...initial }));
+  const baseline = initial;
   const [advanced, setAdvanced] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [confirmKeys, setConfirmKeys] = useState<string[] | null>(null);
   const isNew = initial.id == null;
-
-  // The list endpoint doesn't carry a config's assigned apps, so for an existing
-  // config (or the source of a copy) we must fetch them here. Until they arrive, block
-  // save — otherwise a PUT (which replaces the whole app set) would wipe the config's
-  // apps, or create the copy without them.
-  // A failed fetch does NOT unblock save (fail closed): with desired state, saving an
-  // empty app set would also wipe the kiosk allowlist on every device. Offer a retry.
-  const appsSource = initial.id ?? copyFrom;
-  const [appsReady, setAppsReady] = useState(appsSource == null);
-  const [appsError, setAppsError] = useState(false);
-  const [appsAttempt, setAppsAttempt] = useState(0);
-  useEffect(() => {
-    if (appsSource == null) return;
-    let cancelled = false;
-    setAppsError(false);
-    getConfigurationApps(appsSource)
-      .then((assigned) => {
-        if (cancelled) return;
-        setDraft((d) => ({ ...d, applications: assigned }));
-        setBaseline((b) => ({ ...b, applications: assigned }));
-        setAppsReady(true);
-      })
-      .catch(() => {
-        if (!cancelled) setAppsError(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [appsSource, appsAttempt]);
 
   const set = (key: string, value: unknown) => setDraft((d) => ({ ...d, [key]: value }));
 
@@ -474,10 +485,6 @@ function ConfigEditor({
   function requestSave() {
     if (!String(draft.name ?? '').trim()) {
       toast.push('err', 'Name required', 'Give the configuration a name.');
-      return;
-    }
-    if (!appsReady) {
-      toast.push('err', 'Still loading', 'The assigned apps are still loading — try again in a moment.');
       return;
     }
     const keys = isNew ? [] : kioskAffectingChanges(baseline, draft);
@@ -530,24 +537,11 @@ function ConfigEditor({
         {readOnly ? (
           <button className="btn btn-primary" onClick={onDuplicate}>Duplicate to edit</button>
         ) : (
-          <button className="btn btn-primary" onClick={requestSave} disabled={busy || !appsReady}>
-            {busy ? 'Saving…' : !appsReady && !appsError ? 'Loading…' : 'Save'}
+          <button className="btn btn-primary" onClick={requestSave} disabled={busy}>
+            {busy ? 'Saving…' : 'Save'}
           </button>
         )}
       </div>
-
-      {appsError && !appsReady ? (
-        <div className="banner banner-alert" role="alert" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span>
-            {isNew
-              ? 'Could not load the apps of the configuration this copies. Saving is disabled so the copy is not created without them.'
-              : 'Could not load this configuration’s assigned apps. Saving is disabled so the app list (and kiosk allowlist) is not wiped.'}
-          </span>
-          <button className="btn btn-sm" style={{ marginLeft: 'auto' }} onClick={() => setAppsAttempt((n) => n + 1)}>
-            Retry
-          </button>
-        </div>
-      ) : null}
 
       {confirmKeys ? (
         <KioskChangeConfirm

@@ -16,6 +16,8 @@ export interface DeviceSearchRequest {
   pageNum?: number;
   sortBy?: string;
   sortDir?: 'ASC' | 'DESC';
+  /** Match `value` as the exact device number (or its fast-search suffix) instead of a substring of any field. */
+  fastSearch?: boolean;
 }
 
 /**

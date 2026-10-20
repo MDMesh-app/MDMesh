@@ -166,16 +166,26 @@ public class ConfigurationResource {
     // =================================================================================================================
     @ApiOperation(
             value = "Create or update configuration",
-            notes = "Creates a new configuration (if id is not provided) or update existing one otherwise."
+            notes = "Creates a new configuration (if id is not provided) or update existing one otherwise. " +
+                    "An update replaces the configuration: every column, and the applications list, are written " +
+                    "as sent, so a column left out becomes null and a missing applications list removes every app. " +
+                    "Only files and applicationSettings left out (null) are kept; an empty list clears them. " +
+                    "applicationUsageParameters are upserted and never removed. " +
+                    "An explicit \"applications\": null is refused with HTTP 400."
     )
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response updateConfiguration(Configuration configuration) {
         if (!SecurityContext.get().hasPermission("configurations")) {
-            log.error("Unauthorized attempt to update the configuration " + configuration.getId() +
-            ", user " + SecurityContext.get().getCurrentUserName());
+            log.error("Unauthorized attempt to update the configuration " +
+                    (configuration == null ? null : configuration.getId()) +
+                    ", user " + SecurityContext.get().getCurrentUserName());
             return Response.PERMISSION_DENIED();
+        }
+        if (configuration == null || configuration.getApplications() == null) {
+            // Saving needs the applications list (an empty one for none); null used to fail with a 500.
+            throw new BadRequestException("applications must be a list");
         }
         try {
             Configuration dbConfiguration = this.configurationDAO.getConfigurationByName(configuration.getName());

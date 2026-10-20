@@ -14,8 +14,9 @@ import com.mdmesh.policy.TogglePolicy
  *  - [com.mdmesh.policy.wifi.LegacyWifiPolicy] (API 24–29) falls back to the
  *    older user-restriction path.
  *
- * [WifiPolicyFactory] selects the right one once, at construction. Feature code
- * only ever sees this interface.
+ * [WifiPolicyFactory] selects the right one once, when Wi-Fi control is first
+ * supported (see [com.mdmesh.policy.TogglePolicyResolver]). Feature code only
+ * ever sees this interface.
  */
 interface WifiPolicy : TogglePolicy {
 

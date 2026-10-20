@@ -1,6 +1,8 @@
 name: release
 
-# Cut a release:  git tag v1.2.3 && git push --tags
+# Cut a release: tag the release PR's merge commit with its CHANGELOG.md section, then push the tag (RELEASING.md):
+#   n=$(release/changelog-section.sh 1.2.3) && git tag -a v1.2.3 --cleanup=whitespace -m "$n" SHA
+#   release/changelog-section.sh --check v1.2.3 SHA && git push origin v1.2.3
 # Produces a tested, signed GitHub Release: the release APK, server+web images on GHCR, and a
 # minisign-signed manifest the fleet updater consumes. Requires these `release` environment secrets (see RELEASING.md):
 # MDM_RELEASE_STORE_B64, MDM_RELEASE_STORE_PASSWORD, MDM_RELEASE_KEY_ALIAS, MDM_RELEASE_KEY_PASSWORD,
@@ -51,6 +53,17 @@ jobs:
             exit 1
           fi
           echo "${REF_NAME} is newer than ${latest:-(no earlier release)}"
+      # The annotation becomes the release notes (release job), so it must be this version's CHANGELOG.md section as
+      # `release/changelog-section.sh X.Y.Z` prints it from the tagged commit (RELEASING.md), and the tag must still
+      # point at the commit this run checked out. Checkout can leave the tag lightweight, so fetch the annotated tag
+      # first. REF_NAME was validated as vX.Y.Z above. The release job repeats this check twice.
+      - name: Tag annotation matches CHANGELOG.md
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          git fetch --force --quiet origin "refs/tags/${REF_NAME}:refs/tags/${REF_NAME}"
+          release/changelog-section.sh --check "$REF_NAME" "$GITHUB_SHA" \
+            || { echo "::error::${REF_NAME} is not its CHANGELOG.md section on ${GITHUB_SHA} (details above; RELEASING.md)"; exit 1; }
 
   release:
     needs: gate
@@ -83,6 +96,14 @@ jobs:
             echo "code=$(release/version.sh "$V")"
             echo "proto=$(grep -oP 'PROTOCOL_VERSION[^\"]*\"\K[^\"]+' agent-android/proto/src/main/kotlin/com/mdmesh/proto/ProtocolJson.kt)"
           } >> "$GITHUB_OUTPUT"
+      # Same check as the gate's: approval can come hours later, and the tag could have been moved or re-annotated since.
+      - name: Tag still matches this commit and CHANGELOG.md
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          git fetch --force --quiet origin "refs/tags/${REF_NAME}:refs/tags/${REF_NAME}"
+          release/changelog-section.sh --check "$REF_NAME" "$GITHUB_SHA" \
+            || { echo "::error::${REF_NAME} is not its CHANGELOG.md section on ${GITHUB_SHA} (details above; RELEASING.md)"; exit 1; }
 
       # Supervisor smoke BEFORE anything is built or pushed (#27): a supervisor that can't start the way
       # compose runs it must never reach GHCR. The Supervisor image step below pushes this very $SUP_IMG
@@ -206,15 +227,22 @@ jobs:
           release/sign-manifest.sh manifest.json
 
       # --- Publish ---
+      # The notes are the tag annotation, checked once more against CHANGELOG.md right before publishing, with the
+      # same signature blocks stripped that the check ignores. Nothing else is added (generate_release_notes: false).
       - name: Release notes from the tag annotation
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          git fetch --tags --force --quiet
-          { git tag -l --format='%(contents)' "${GITHUB_REF_NAME}" | sed '/^-----BEGIN PGP SIGNATURE-----/,$d'; } > release-notes.md
-          [ -s release-notes.md ] || echo "See the commit history for this release." > release-notes.md
+          git fetch --force --quiet origin "refs/tags/${REF_NAME}:refs/tags/${REF_NAME}"
+          release/changelog-section.sh --check "$REF_NAME" "$GITHUB_SHA" \
+            || { echo "::error::${REF_NAME} is not its CHANGELOG.md section on ${GITHUB_SHA} (details above; RELEASING.md)"; exit 1; }
+          { git tag -l --format='%(contents)' "$REF_NAME" \
+            | sed -E '/^-----BEGIN (PGP SIGNATURE|SSH SIGNATURE|SIGNED MESSAGE)-----/,$d'; } > release-notes.md
+          grep -q '[^[:space:]]' release-notes.md || { echo "::error::release notes for ${REF_NAME} came out empty"; exit 1; }
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
         with:
           body_path: release-notes.md
-          generate_release_notes: true
+          generate_release_notes: false
           files: |
             mdmesh-agent.apk
             manifest.json

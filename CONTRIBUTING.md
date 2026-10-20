@@ -59,7 +59,10 @@ stack.
 2. **Make focused changes** — one logical change per PR. Match the style of the code around you.
 3. **Test what you touched**; add or update tests for behavior changes.
 4. **Update docs** when you change behavior, config, or the API.
-5. **Open a PR** against `main` using the [PR template](.github/pull_request_template.md).
+5. **Add a changelog line** under Unreleased in [CHANGELOG.md](CHANGELOG.md), in its section: one short bullet for the
+   people running MDMesh, or "none" in the PR if they won't notice. Releases go out every three weeks
+   ([release cycle](RELEASING.md#release-cycle)). Conflicts under Unreleased are expected: keep both lines.
+6. **Open a PR** against `main` using the [PR template](.github/pull_request_template.md).
 
 ### CI
 

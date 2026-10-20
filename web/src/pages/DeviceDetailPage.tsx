@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { AppShell } from '../ui/AppShell';
 import { DeviceGlyph } from '../ui/DeviceGlyph';
@@ -115,6 +115,46 @@ function NameField({
   );
 }
 
+const NUMBER_PAGE = 500;
+const NUMBER_PAGES_MAX = 20;
+const ID_PAGE = 1000;
+const ID_PAGES_MAX = 10;
+/** Database ids are small integers; a longer all-digit value (an IMEI, a serial) is only ever a number. */
+const ID_LIKE = /^\d{1,9}$/;
+
+/**
+ * The device a /devices/:id link names. Every link carries the device number, so an exact number match
+ * wins. The database id is only a fallback for old id-style links, used when no device has that number:
+ * /devices/12 must never open the device whose id is 12 while a device numbered "12" exists.
+ */
+async function resolveDevice(param: string): Promise<{
+  device: DeviceView | null;
+  configurations: Record<string, ConfigurationLookup>;
+  /** Found by database id, not by number. */
+  byId?: boolean;
+}> {
+  // A blank value would drop the server's filter and page through the whole fleet.
+  if (!param.trim()) return { device: null, configurations: {} };
+  // fastSearch makes the server match the number exactly (or its fast-search suffix), not as a substring.
+  for (let pageNum = 1; pageNum <= NUMBER_PAGES_MAX; pageNum++) {
+    const res = await searchDevices({ value: param, fastSearch: true, pageSize: NUMBER_PAGE, pageNum });
+    const items = res.devices?.items ?? [];
+    const hit = items.find((d) => d.number === param);
+    if (hit) return { device: hit, configurations: res.configurations ?? {} };
+    if (items.length < NUMBER_PAGE) break;
+  }
+  if (ID_LIKE.test(param)) {
+    for (let pageNum = 1; pageNum <= ID_PAGES_MAX; pageNum++) {
+      const res = await searchDevices({ pageSize: ID_PAGE, pageNum });
+      const items = res.devices?.items ?? [];
+      const hit = items.find((d) => String(d.id) === param);
+      if (hit) return { device: hit, configurations: res.configurations ?? {}, byId: true };
+      if (items.length < ID_PAGE) break;
+    }
+  }
+  return { device: null, configurations: {} };
+}
+
 export function DeviceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -129,32 +169,37 @@ export function DeviceDetailPage() {
   const [latestLocation, setLatestLocation] = useState<LocationFix | null>(null);
   const [tab, setTab] = useState<Tab>('control');
   const [busy, setBusy] = useState(false);
+  const loadSeq = useRef(0);
 
   const load = useCallback(async () => {
+    // A slower answer for the previous route must not replace this one's device.
+    const seq = ++loadSeq.current;
+    let redirected = false;
     setLoading(true);
     setError(null);
     try {
-      // The route param is the device number (see DevicesPage/DashboardPage links), so a narrow
-      // server-side search finds it without downloading the fleet. Old id-style links (and rare
-      // substring collisions on the number) miss it and fall back to the broad fetch.
-      const matches = (d: DeviceView) => d.number === id || String(d.id) === id;
-      let res = await searchDevices({ value: id, pageSize: 1 });
-      let found = (res.devices?.items ?? []).find(matches) ?? null;
-      if (!found) {
-        res = await searchDevices({ pageSize: 1000 });
-        found = (res.devices?.items ?? []).find(matches) ?? null;
+      // The route param is the device number (see DevicesPage/DashboardPage links).
+      const { device: found, configurations, byId } = await resolveDevice(id ?? '');
+      if (seq !== loadSeq.current) return;
+      if (found && byId) {
+        // An old id-style link: show the device under its number, so the URL names what is open.
+        redirected = true; // stay on the spinner until the number route loads
+        navigate(`/devices/${encodeURIComponent(found.number)}`, { replace: true });
+        return;
       }
-      setConfigs(res.configurations ?? {});
+      setConfigs(configurations);
       setDevice(found);
       if (!found) setError('Device not found.');
     } catch (err) {
+      if (seq !== loadSeq.current) return;
+      setDevice(null);
       if (err instanceof ApiError && err.httpStatus === 0)
         setError('Cannot reach the server.');
       else setError('Failed to load device.');
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current && !redirected) setLoading(false);
     }
-  }, [id]);
+  }, [id, navigate]);
 
   useEffect(() => {
     void load();

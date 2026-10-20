@@ -1,5 +1,6 @@
 package com.mdmesh.policy
 
+import android.util.Log
 import com.mdmesh.policy.bluetooth.BluetoothPolicy
 import com.mdmesh.policy.bluetooth.BluetoothPolicyFactory
 import com.mdmesh.policy.camera.CameraPolicy
@@ -43,38 +44,62 @@ class CapabilityRegistry(
     private val wifiRadioState: WifiRadioOffState = InMemoryWifiRadioOffState(),
 ) {
 
-    /**
-     * The toggle policies with a working strategy on this device, keyed by capability
-     * key. This is the single extension point for on/off policies: add a probe here and
-     * both the advertised capabilities ([supportedPolicyKeys]) and the generic
-     * `policy.apply` routing pick it up automatically — no switch to update.
-     */
-    fun togglePolicies(): Map<String, TogglePolicy> = buildMap {
-        WifiPolicyFactory.create(handle)?.let { put(WifiPolicy.CAPABILITY_KEY, it) }
-        CameraPolicyFactory.create(handle)?.let { put(CameraPolicy.CAPABILITY_KEY, it) }
-        ScreenshotsPolicyFactory.create(handle)?.let { put(ScreenshotsPolicy.CAPABILITY_KEY, it) }
-        BluetoothPolicyFactory.create(handle)?.let { put(BluetoothPolicy.CAPABILITY_KEY, it) }
-        UsbStoragePolicyFactory.create(handle)?.let { put(UsbStoragePolicy.CAPABILITY_KEY, it) }
-        FactoryResetPolicyFactory.create(handle)?.let { put(FactoryResetPolicy.CAPABILITY_KEY, it) }
-        SafeBootPolicyFactory.create(handle)?.let { put(SafeBootPolicy.CAPABILITY_KEY, it) }
-        WifiRadioPolicyFactory.create(handle, wifiRadio, wifiRadioState)
-            ?.let { put(WifiRadioPolicy.CAPABILITY_KEY, it) }
-        // Each factory probe returns null on an unsupported device, so a key only
-        // appears here when a usable strategy exists.
-        // Absence == "not advertised" == "never commanded".
+    /** Probe errors, logged once per key and error class per interval, plus the recovery. */
+    private val probeLog = ProbeErrorLog { message, error ->
+        if (error != null) Log.w(TAG, message, error) else Log.i(TAG, message)
     }
+
+    /**
+     * Each toggle's factory probe, keyed by capability key. This is the single extension point for on/off policies:
+     * add a probe here and both the advertised capabilities ([supportedPolicyKeys]) and the generic `policy.apply` /
+     * `config.apply` routing pick it up automatically — no switch to update. Each probe returns null on a device
+     * where the policy is unsupported, so a key only appears when a usable strategy exists.
+     * Absence == "not advertised" == "never commanded".
+     */
+    private val toggles = TogglePolicyResolver(
+        linkedMapOf<String, () -> TogglePolicy?>(
+            WifiPolicy.CAPABILITY_KEY to { WifiPolicyFactory.create(handle) },
+            CameraPolicy.CAPABILITY_KEY to { CameraPolicyFactory.create(handle) },
+            ScreenshotsPolicy.CAPABILITY_KEY to { ScreenshotsPolicyFactory.create(handle) },
+            BluetoothPolicy.CAPABILITY_KEY to { BluetoothPolicyFactory.create(handle) },
+            UsbStoragePolicy.CAPABILITY_KEY to { UsbStoragePolicyFactory.create(handle) },
+            FactoryResetPolicy.CAPABILITY_KEY to { FactoryResetPolicyFactory.create(handle) },
+            SafeBootPolicy.CAPABILITY_KEY to { SafeBootPolicyFactory.create(handle) },
+            WifiRadioPolicy.CAPABILITY_KEY to { WifiRadioPolicyFactory.create(handle, wifiRadio, wifiRadioState) },
+        ),
+        onProbeError = probeLog::failed,
+        onProbeOk = probeLog::recovered,
+    )
+
+    /**
+     * The toggle policies with a working strategy on this device right now, keyed by capability key, plus the keys
+     * whose probe threw on this read ([ResolvedToggles.errors]: fail closed, never treat them as unsupported).
+     *
+     * Resolve per operation; never inject or store the result. Device-Owner status flips to true partway through
+     * QR provisioning, after this process may have started (#76), so a stored map misses every Device-Owner policy
+     * for the life of the process. Pass `registry::togglePolicies` instead. Each policy is created once and the
+     * same instance is returned on every later call (see [TogglePolicyResolver]). TogglePolicyWiringTest fails
+     * the build when production code stores or injects the result.
+     */
+    fun togglePolicies(): ResolvedToggles = toggles.current()
 
     /**
      * The set of policy keys with a working strategy on this device — derived from the
      * registered strategies, so it can never drift from what can actually be applied.
+     * A key whose check threw on this read stays advertised if it resolved before (so the
+     * server keeps sending it and the agent keeps retrying); see [ResolvedToggles.advertisedKeys].
      * Each entry corresponds to a row in `proto/registry.md` § policy.
      */
-    fun supportedPolicyKeys(): List<String> = togglePolicies().keys.toList()
+    fun supportedPolicyKeys(): List<String> = togglePolicies().advertisedKeys
 
     /** Convenience: resolve the live [DeviceControl] facade for this device. */
     fun deviceControl(): DeviceControl? {
         val wifi = WifiPolicyFactory.create(handle) ?: return null
         return DefaultDeviceControl(wifi)
+    }
+
+    private companion object {
+        const val TAG = "CapabilityRegistry"
     }
 }
 

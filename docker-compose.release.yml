@@ -2,7 +2,9 @@
 # "no clone, no build" deploy. Easiest via quickstart.sh, or by hand:
 #
 #   curl -fsSLO https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/docker-compose.release.yml
-#   # write a .env (DB_PASSWORD, HASH_SECRET, BASE_URL, IMAGE_OWNER, …) — see quickstart.sh
+#   # write a .env (DB_PASSWORD, HASH_SECRET, BASE_URL, IMAGE_OWNER, …) — see quickstart.sh. For the tunnel, include
+#   # COMPOSE_PROFILES=cloudflare: --profile alone doesn't reach caddy, which then won't believe cloudflared's
+#   # CF-Connecting-IP (docker/edge-peers.sh)
 #   docker compose -f docker-compose.release.yml --profile cloudflare up -d                 # tunnel
 #   docker compose -f docker-compose.release.yml -f docker-compose.domain.yml up -d         # own domain
 #

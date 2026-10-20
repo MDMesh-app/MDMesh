@@ -165,14 +165,15 @@ if [ "$rc" -ne 0 ] && [ "$n" -eq 0 ]; then fail "health routes: probe container 
 # receives, and answers /rest/public/name (the /healthz probe) with 200 only when they are the expected ones. Clients
 # connect from extra addresses on the container's loopback (NET_ADMIN, still --network none):
 #   127.0.0.2    own-domain: a device on the internet (outside the default TRUSTED_PROXIES of 127.0.0.1/32)
-#   172.18.0.1   a private peer: cloudflared, a proxy of your own, or Docker's port proxy (the dev stack's 8088)
+#   172.18.0.1   a private peer: cloudflared, a proxy of your own, or Docker's port proxy (the dev stack's 8088).
+#                Added as 172.18.0.1/16, the stack network's shape, so a `cloudflared` at 172.18.0.3 is on it.
 #   203.0.113.1  a public peer
 # own-domain runs SITE_ADDRESS=localhost: the own-domain shape (HTTPS on :443, from Caddy's internal CA for localhost).
 CLIENT_PROBE="$(cat <<'PROBE'
 set -u
 F=0
 command -v curl >/dev/null || { echo "  FAIL no curl in the caddy image"; exit 1; }
-ip addr add 172.18.0.1/32 dev lo && ip addr add 203.0.113.1/32 dev lo || { echo "  FAIL could not add test addresses"; exit 1; }
+ip addr add 172.18.0.1/16 dev lo && ip addr add 203.0.113.1/32 dev lo || { echo "  FAIL could not add test addresses"; exit 1; }
 . /edge-peers.sh
 case "$KIND" in   # the address the /healthz request below must reach the server with
   own-domain) HZ=127.0.0.2 ;; tunnel) HZ=203.0.113.9 ;; proxy) HZ=198.51.100.4 ;; *) HZ=172.18.0.1 ;;
@@ -253,7 +254,8 @@ PROBE
 SETUPS=(
   "own-domain|own-domain|SITE_ADDRESS=localhost COMPOSE_PROFILES=|"
   "cloudflare|tunnel|SITE_ADDRESS=:80 COMPOSE_PROFILES=cloudflare|"
-  "cloudflare, compose file from before v0.3.5|tunnel|SITE_ADDRESS=:80|--add-host cloudflared:127.0.0.1"
+  "cloudflare, compose file from before v0.3.5|tunnel|SITE_ADDRESS=:80|--add-host cloudflared:172.18.0.3"
+  ":80, compose file from before v0.3.5, a cloudflared off caddy's network|http|SITE_ADDRESS=:80 CLOUDFLARED_WAIT=1|--add-host cloudflared:198.51.100.7"
   "dev stack (:80, no tunnel)|http|SITE_ADDRESS=:80 COMPOSE_PROFILES=|"
   ":80, compose file from before v0.3.5, no cloudflared|http|SITE_ADDRESS=:80 CLOUDFLARED_WAIT=1|"
   "behind your own proxy at 172.18.0.1|proxy|SITE_ADDRESS=:80 COMPOSE_PROFILES= TRUSTED_PROXIES=172.18.0.1/32|"

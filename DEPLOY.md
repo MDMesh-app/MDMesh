@@ -143,3 +143,67 @@ location and a single-use token.
 - [Health checks](docs/OPERATIONS.md#health-checks), [backups](docs/OPERATIONS.md#backups-and-restore),
   [moving to a new BASE_URL](docs/OPERATIONS.md#moving-to-a-new-base_url),
   [uninstalling](docs/OPERATIONS.md#uninstalling) and [security](docs/OPERATIONS.md#security-notes).
+
+## External reverse proxy with an HTTPS origin (Docker)
+
+Choose **3) External reverse proxy** in `setup.sh` or `quickstart.sh`. The proxy owns
+and renews the public certificate. Caddy uses its persistent internal CA and publishes
+only TCP 443; it does not request public certificates or listen for HTTP redirects.
+The native installer already expects an external proxy and is unchanged.
+
+The wizard separates the public URL from the origin TLS name, for example:
+
+```dotenv
+BASE_URL=https://mdm.example.com
+CADDY_HOST=mdmesh.internal
+SITE_ADDRESS='https://mdmesh.internal:443, https://mdm.example.com:443'
+TRUSTED_PROXIES='192.0.2.10/32'
+COMPOSE_FILE=docker-compose.yml:docker-compose.reverse-proxy.yml
+COMPOSE_PROFILES=
+```
+
+Use the proxy's source IP/CIDR in `TRUSTED_PROXIES` (multiple peers are space-separated).
+`CADDY_HOST` defaults to the public hostname. A separate internal name need only resolve
+on the proxy, or the proxy can connect to the origin IP with that name as TLS SNI.
+Caddy accepts both names so the proxy can preserve the public `Host` header.
+It also uses `CADDY_HOST` as the default certificate name for older proxies that
+omit TLS SNI, including legacy WSS connections.
+`BASE_URL` remains public for enrollment, APK downloads and links sent to devices.
+
+After starting the stack, export the **public root certificate** and trust it in
+**the proxy** (Android devices use the public proxy certificate):
+
+```bash
+docker compose cp caddy:/data/caddy/pki/authorities/local/root.crt ./mdmesh-origin-ca.crt
+```
+
+Preserve `caddy_data`: replacing its CA requires updating the proxy's trust. Configure
+upstream HTTPS on port 443 with SNI `mdmesh.internal`, certificate verification and
+this CA. Forward `Host`, `X-Forwarded-For`, `X-Forwarded-Proto` and WebSocket upgrades.
+For an existing Nginx public TLS site:
+
+```nginx
+# In http {}:
+map $http_upgrade $mdmesh_connection {
+    default upgrade;
+    ''      close;
+}
+# In the public site's location / {}:
+proxy_pass https://192.0.2.20:443;
+proxy_ssl_server_name on;
+proxy_ssl_name mdmesh.internal;
+proxy_ssl_verify on;
+proxy_ssl_trusted_certificate /etc/nginx/mdmesh-origin-ca.crt;
+proxy_set_header Host $host;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
+proxy_http_version 1.1;
+proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection $mdmesh_connection;
+```
+
+Use the reverse-proxy overlay alone, without `docker-compose.domain.yml`. Restrict
+origin access to the proxy at your firewall. Setup re-runs and the updater retain
+`COMPOSE_FILE`. Quickstart mounts the origin config over published web images;
+its opt-in overlay and edge config come from the wizard's branch, while compose,
+seed and images stay release-pinned.

@@ -1,0 +1,15 @@
+# HTTPS origin behind a reverse proxy which owns the publicly trusted certificate.
+{
+	# Older WSS proxies may omit SNI when connecting to the origin.
+	default_sni {$CADDY_HOST}
+	auto_https disable_redirects
+	skip_install_trust
+	servers {
+		trusted_proxies static {$TRUSTED_PROXIES}
+	}
+}
+
+{$SITE_ADDRESS} {
+	tls internal
+	import /etc/caddy/Caddyfile.routes
+}

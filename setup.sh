@@ -32,6 +32,8 @@ err()  { printf '\033[1;31m%s\033[0m\n' "$*" >&2; }
 . ./install/lib/url.sh
 # shellcheck source=install/lib/release.sh
 . ./install/lib/release.sh
+# shellcheck source=install/lib/proxy.sh
+. ./install/lib/proxy.sh
 rand() { mdm_rand; }
 # Update KEY in .env in place (or append it) — persists values discovered after .env was written
 # (GITHUB_REPO autodetection, the release QR build args) so compose substitution + the supervisor
@@ -122,6 +124,12 @@ if [ -f .env ] && [ "$RESET" != 1 ]; then
     MODE=1
     COMPOSE_ARGS="--profile cloudflare"
     EXTRA_NOTE="In Cloudflare, route the tunnel's public hostname ($HOST) to http://caddy:80."
+  elif [[ ":${COMPOSE_FILE:-}:" == *:docker-compose.reverse-proxy.yml:* ]]; then
+    MODE=3
+    mdm_proxy_settings || { err "Fix the reverse-proxy settings in .env, then re-run."; exit 1; }
+    setenv SITE_ADDRESS "'${SITE_ADDRESS}'"
+    COMPOSE_ARGS="-f docker-compose.yml -f docker-compose.reverse-proxy.yml"
+    EXTRA_NOTE="Point your proxy at https://${CADDY_HOST}:443 and trust Caddy's internal CA (DEPLOY.md)."
   else
     MODE=2
     COMPOSE_ARGS="-f docker-compose.yml -f docker-compose.domain.yml"
@@ -136,12 +144,14 @@ else
   echo "Hosting mode:"
   echo "  1) Cloudflare Tunnel   (no open ports; Cloudflare manages TLS — needs a domain in Cloudflare)"
   echo "  2) Your own domain     (open 80/443; Caddy auto-provisions a Let's Encrypt cert)"
+  echo "  3) External reverse proxy (public TLS at the proxy; Caddy internal HTTPS on 443 only)"
   MODE=""
-  while [ "$MODE" != "1" ] && [ "$MODE" != "2" ]; do
-    read -rp "Choose [1/2]: " MODE || { err "No selection (non-interactive run?). Aborting."; exit 1; }
-    case "$MODE" in 1|2) ;; *) warn "Please enter 1 or 2." ;; esac
+  while [ "$MODE" != "1" ] && [ "$MODE" != "2" ] && [ "$MODE" != "3" ]; do
+    read -rp "Choose [1/2/3]: " MODE || { err "No selection (non-interactive run?). Aborting."; exit 1; }
+    case "$MODE" in 1|2|3) ;; *) warn "Please enter 1, 2 or 3." ;; esac
   done
 
+  CADDY_HOST=""; TRUSTED_PROXIES=""
   DB_PASSWORD=$(rand)
   HASH_SECRET=$(rand)
   if [ -n "$REPO_VERSION" ]; then CURRENT_VERSION=$REPO_VERSION; fi   # else the heredoc's ${CURRENT_VERSION:-0.0.0}
@@ -157,6 +167,15 @@ else
     COMPOSE_FILE="docker-compose.yml"
     COMPOSE_PROFILES="cloudflare"
     EXTRA_NOTE="In Cloudflare, route the tunnel's public hostname ($HOST) to http://caddy:80."
+  elif [ "$MODE" = "3" ]; then
+    read -rp "Public hostname devices will use (e.g. mdm.example.com): " HOST
+    mdm_check_host HOST || exit 1
+    BASE_URL="https://${HOST}"
+    read -rp "Origin TLS hostname [$(mdm_proxy_hostname "$HOST")]: " CADDY_HOST
+    read -rp "External proxy IP/CIDR (space-separated if more than one): " TRUSTED_PROXIES
+    mdm_proxy_settings || exit 1
+    COMPOSE_ARGS="-f docker-compose.yml -f docker-compose.reverse-proxy.yml"
+    EXTRA_NOTE="Point your proxy at https://${CADDY_HOST}:443 and trust Caddy's internal CA (DEPLOY.md)."
   else
     read -rp "Your domain (DNS already pointing here, e.g. mdm.example.com): " HOST
     mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
@@ -179,8 +198,10 @@ DB_PASSWORD=${DB_PASSWORD}
 BASE_URL=${BASE_URL}
 HASH_SECRET=${HASH_SECRET}
 SECURE_ENROLLMENT=0
-SITE_ADDRESS=${SITE_ADDRESS}
+SITE_ADDRESS='${SITE_ADDRESS}'
 ACME_EMAIL=${ACME_EMAIL}
+CADDY_HOST=${CADDY_HOST:-}
+TRUSTED_PROXIES='${TRUSTED_PROXIES:-}'
 TUNNEL_TOKEN=${TUNNEL_TOKEN}
 GITHUB_REPO=${GITHUB_REPO:-}
 UPDATE_CHANNEL=stable
@@ -415,7 +436,8 @@ else
 fi
 echo
 echo "  Access is via the URL above only — Postgres and the server publish no host ports;"
-echo "  the edge (Caddy) is the single entry point ($([ "$MODE" = "1" ] && echo "Cloudflare Tunnel" || echo "ports 80/443"))."
+case "$MODE" in 1) EDGE_NOTE="Cloudflare Tunnel" ;; 2) EDGE_NOTE="ports 80/443" ;; 3) EDGE_NOTE="HTTPS port 443 only" ;; esac
+echo "  the edge (Caddy) is the single entry point ($EDGE_NOTE)."
 echo
 if [ "$SEED" = yes ]; then
   warn "Sign in with the temporary password — you'll be required to set your own on first login."

@@ -34,6 +34,7 @@ RUN apk add --no-cache libcap su-exec \
  && setcap cap_net_bind_service=+ep /usr/bin/caddy
 COPY --from=web /web/dist /srv
 COPY docker/Caddyfile /etc/caddy/Caddyfile
+COPY docker/Caddyfile.routes /etc/caddy/Caddyfile.routes
 COPY docker/web-entrypoint.sh /web-entrypoint.sh
 RUN chmod +x /web-entrypoint.sh && chown -R caddy:caddy /srv /etc/caddy /data /config
 EXPOSE 80 443

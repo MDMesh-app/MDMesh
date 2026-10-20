@@ -122,6 +122,63 @@ mdm_check_host() {
 }
 # <<< url.sh functions <<<
 
+# >>> proxy.sh functions (quickstart.sh keeps a verbatim copy) >>>
+# Turn the validated public host[:port] into a certificate name (the origin always listens on 443).
+mdm_proxy_hostname() {
+  case "$1" in
+    \[*) printf '%s]\n' "${1%%]*}" ;;
+    *) printf '%s\n' "${1%%:*}" ;;
+  esac
+}
+
+# Validate addresses before writing a shell-readable .env. Trust only explicit IPs/CIDRs,
+# never all private networks. Caddy validates the final IP syntax when loading its config.
+mdm_proxy_settings() {
+  local public_host token ip prefix octet candidate
+  local -a proxies octets
+  mdm_check_host HOST || return 1
+  public_host=$(mdm_proxy_hostname "$HOST")
+  CADDY_HOST=${CADDY_HOST:-$public_host}
+  mdm_check_host CADDY_HOST || return 1
+  [ "$(mdm_proxy_hostname "$CADDY_HOST")" = "$CADDY_HOST" ] || {
+    echo 'CADDY_HOST must be a hostname or IP without a port (the origin uses 443).' >&2; return 1;
+  }
+  read -r -a proxies <<< "${TRUSTED_PROXIES:-}"
+  [ "${#proxies[@]}" -gt 0 ] || { echo 'Set the external proxy IP/CIDR in TRUSTED_PROXIES.' >&2; return 1; }
+  for token in "${proxies[@]}"; do
+    ip=${token%%/*}; prefix=${token#*/}
+    case "$ip" in
+      *:*)
+        candidate="[$ip]"
+        mdm_check_host candidate || return 1
+        if [ "$prefix" != "$token" ]; then
+          [[ "$prefix" =~ ^[0-9]{1,3}$ ]] && [ "$((10#$prefix))" -le 128 ] || {
+            echo "Invalid proxy prefix: $token" >&2; return 1;
+          }
+        fi ;;
+      *)
+        [[ "$ip" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || {
+          echo "Use a proxy IP or CIDR, not a hostname: $token" >&2; return 1;
+        }
+        IFS=. read -r -a octets <<< "$ip"
+        for octet in "${octets[@]}"; do
+          [ "$((10#$octet))" -le 255 ] || { echo "Invalid proxy IP: $token" >&2; return 1; }
+        done
+        if [ "$prefix" != "$token" ]; then
+          [[ "$prefix" =~ ^[0-9]{1,2}$ ]] && [ "$((10#$prefix))" -le 32 ] || {
+            echo "Invalid proxy prefix: $token" >&2; return 1;
+          }
+        fi ;;
+    esac
+  done
+  TRUSTED_PROXIES="${proxies[*]}"
+  SITE_ADDRESS="https://${CADDY_HOST}:443"
+  [ "$CADDY_HOST" = "$public_host" ] || SITE_ADDRESS+=", https://${public_host}:443"
+  ACME_EMAIL=''; TUNNEL_TOKEN=''; COMPOSE_PROFILES=''
+  COMPOSE_FILE='docker-compose.yml:docker-compose.reverse-proxy.yml'
+}
+# <<< proxy.sh functions <<<
+
 command -v docker >/dev/null || { err "Docker is required."; exit 1; }
 docker compose version >/dev/null 2>&1 || { err "Docker Compose v2 is required ('docker compose')."; exit 1; }
 command -v curl    >/dev/null || { err "curl is required."; exit 1; }
@@ -140,10 +197,11 @@ echo
 echo "Hosting mode:"
 echo "  1) Cloudflare Tunnel   (no open ports; Cloudflare manages TLS — needs a domain in Cloudflare)"
 echo "  2) Your own domain     (open 80/443; Caddy auto-provisions a Let's Encrypt cert)"
+echo "  3) External reverse proxy (public TLS at the proxy; Caddy internal HTTPS on 443 only)"
 MODE=""
-while [ "$MODE" != "1" ] && [ "$MODE" != "2" ]; do
-  read -rp "Choose [1/2]: " MODE || { err "No selection (non-interactive run?). Aborting."; exit 1; }
-  case "$MODE" in 1|2) ;; *) warn "Please enter 1 or 2." ;; esac
+while [ "$MODE" != "1" ] && [ "$MODE" != "2" ] && [ "$MODE" != "3" ]; do
+  read -rp "Choose [1/2/3]: " MODE || { err "No selection (non-interactive run?). Aborting."; exit 1; }
+  case "$MODE" in 1|2|3) ;; *) warn "Please enter 1, 2 or 3." ;; esac
 done
 
 read -rp "Pull releases from GitHub repo [${REPO}]: " GH_REPO;       GH_REPO="${GH_REPO:-$REPO}"
@@ -169,6 +227,7 @@ else
   warn "version (see DEPLOY.md)."
 fi
 
+CADDY_HOST=""; TRUSTED_PROXIES=""
 DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
 
 if [ "$MODE" = "1" ]; then
@@ -178,6 +237,14 @@ if [ "$MODE" = "1" ]; then
   BASE_URL="https://${HOST}"; SITE_ADDRESS=":80"; ACME_EMAIL=""
   COMPOSE_FILE="docker-compose.yml"; COMPOSE_PROFILES="cloudflare"
   EXTRA_NOTE="In Cloudflare, route the tunnel's public hostname ($HOST) to http://caddy:80."
+elif [ "$MODE" = "3" ]; then
+  read -rp "Public hostname devices will use (e.g. mdm.example.com): " HOST
+  mdm_check_host HOST || exit 1
+  BASE_URL="https://${HOST}"
+  read -rp "Origin TLS hostname [$(mdm_proxy_hostname "$HOST")]: " CADDY_HOST
+  read -rp "External proxy IP/CIDR (space-separated if more than one): " TRUSTED_PROXIES
+  mdm_proxy_settings || exit 1
+  EXTRA_NOTE="Point your proxy at https://${CADDY_HOST}:443 and trust Caddy's internal CA (DEPLOY.md)."
 else
   read -rp "Your domain (DNS already pointing here, e.g. mdm.example.com): " HOST
   mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
@@ -191,6 +258,15 @@ mdm_check_base_url BASE_URL || { err "Check the hostname you entered (the name o
 say "Downloading the pull-only compose + seed…"
 curl -fsSL "${RAW}/docker-compose.release.yml" -o docker-compose.yml
 curl -fsSL "${RAW}/docker-compose.domain.yml"  -o docker-compose.domain.yml
+if [ "$MODE" = "3" ]; then
+  # These opt-in edge files travel with this wizard, not with the release being installed.
+  # The bind mounts also work with older web images; compose, SQL and db.sh stay release-pinned.
+  PROXY_RAW="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
+  mkdir -p docker
+  curl -fsSL "${PROXY_RAW}/docker-compose.reverse-proxy.yml" -o docker-compose.reverse-proxy.yml
+  curl -fsSL "${PROXY_RAW}/docker/Caddyfile.proxy" -o docker/Caddyfile.proxy
+  curl -fsSL "${PROXY_RAW}/docker/Caddyfile.routes" -o docker/Caddyfile.routes
+fi
 mkdir -p install/sql
 curl -fsSL "${RAW}/install/sql/hmdm_init.en.sql" -o install/sql/hmdm_init.en.sql
 curl -fsSL "${RAW}/install/sql/post_seed.sql"    -o install/sql/post_seed.sql
@@ -211,8 +287,10 @@ DB_PASSWORD=${DB_PASSWORD}
 BASE_URL=${BASE_URL}
 HASH_SECRET=${HASH_SECRET}
 SECURE_ENROLLMENT=0
-SITE_ADDRESS=${SITE_ADDRESS}
+SITE_ADDRESS='${SITE_ADDRESS}'
 ACME_EMAIL=${ACME_EMAIL}
+CADDY_HOST=${CADDY_HOST:-}
+TRUSTED_PROXIES='${TRUSTED_PROXIES:-}'
 TUNNEL_TOKEN=${TUNNEL_TOKEN}
 IMAGE_OWNER=${IMAGE_OWNER}
 SERVER_VERSION=${IMAGE_TAG}

@@ -171,27 +171,42 @@ before v0.3.2 serves the console on these paths until you
 ## Device public address
 
 A device page shows the public IP the device last checked in from. The server reads it from a header only when the
-request comes from a loopback or private address, which is your proxy. A device that reaches the server directly is
-recorded at the address it connects from. From the proxy, the server takes, in order:
+request comes from a loopback or private address, which it takes to be your proxy. From such a peer, the server takes,
+in order:
 
 1. `CF-Connecting-IP`, which Cloudflare sets.
 2. Otherwise the **last** `X-Forwarded-For` entry, the one your proxy added. Earlier entries are whatever the device
    sent.
-3. Otherwise the proxy's own address.
+3. Otherwise the peer's own address.
 
-A value that isn't an IP address is ignored.
+A value that isn't an IP address is ignored. A request from any other address is recorded at that address.
 
 **Docker:** Caddy sets these headers. It sends the server one `X-Forwarded-For` value, its own view of the client,
-and drops any `CF-Connecting-IP` a device sends. In Cloudflare mode it takes that view from cloudflared's
-`CF-Connecting-IP`. That mode publishes no ports, so devices can reach Caddy only through the tunnel.
+and drops any `CF-Connecting-IP` a device sends.
 
-**Native installs:** your proxy must set the headers itself and not pass on what the device sent.
+- **Cloudflare mode:** Caddy takes the client's address from cloudflared's `CF-Connecting-IP`. The mode publishes no
+  ports, so devices reach Caddy only through the tunnel. Caddy knows the mode from `COMPOSE_PROFILES=cloudflare` in
+  `.env`, which the installers write. A quick-start install from before v0.3.5 keeps its old `docker-compose.yml`
+  through updates, which doesn't pass that variable, so Caddy looks for the `cloudflared` container instead. To pass it,
+  add `COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}` under `caddy:` → `environment:` in that file.
+- **Own domain and the dev stack:** nothing a device sends is believed.
+
+**Native installs:** keep Tomcat's port (`HTTP_PORT`, default `8080`) reachable only by your proxy. A device on a
+private network that reaches it directly is trusted like a proxy, so it can set its own address. Either firewall the
+port, or bind it to loopback: in `/opt/mdmesh-tc/conf/server.xml`, add `address="127.0.0.1"` to the HTTP connector,
+after `protocol="HTTP/1.1"` (installer re-runs keep it there), then run `systemctl restart mdmesh-server`.
+
+Your proxy must also set the headers itself and not pass on what the device sent:
 
 - Overwrite `X-Forwarded-For` with the address the proxy sees; don't append to it. (The server reads the last entry,
   so a proxy that appends still gets the right address recorded, but overwriting leaves a device nothing to set.)
-- Remove `CF-Connecting-IP`, unless the proxy is cloudflared or sits behind Cloudflare, which sets it.
-- Overwrite `X-Real-IP` the same way. Code inherited from Headwind (the audit log) reads it from a proxy on the same
-  host.
+- Remove `CF-Connecting-IP`, unless the proxy is cloudflared, or sits behind Cloudflare and accepts connections only
+  from Cloudflare. Otherwise a client that bypasses Cloudflare can set it.
+- Overwrite `X-Real-IP` the same way. Code inherited from Headwind reads it from a proxy on the same host (or one
+  listed in `proxy.addresses`): the IP allowlists `ui.allowed.address` and `device.allowed.address`, and the audit log.
+  An allowlist blocks a request whose `X-Real-IP` isn't an IP address.
+- Behind a load balancer, have nginx take the client's address from it first (`set_real_ip_from <balancer address>;`
+  and `real_ip_header X-Forwarded-For;`), so `$remote_addr` below is the client, not the balancer.
 
 nginx:
 

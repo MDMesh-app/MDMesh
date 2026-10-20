@@ -28,8 +28,8 @@ Fixes
 - Enroll: "New code" keeps the chosen configuration.
 - Location popups in the device map render as plain text.
 - The "Password updated" notice shows on the sign-in page.
-- A device's recorded public address comes from the edge, not from headers the device sends. Native installs: the
-  headers your proxy should set are in docs/OPERATIONS.md, "Device public address".
+- A device's recorded public address comes from the edge, not from headers the device sends. Native installs: set
+  your proxy's headers and limit Tomcat's port to the proxy, as docs/OPERATIONS.md "Device public address" describes.
 
 Under the hood: dependency updates (React Router 8, Caddy 2.11.7, pgjdbc 42.7.14, Vite, Guava), and CI runs the
 agent's protocol tests on every change.

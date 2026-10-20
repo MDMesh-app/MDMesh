@@ -28,6 +28,7 @@ Fixes
 - Enroll: "New code" keeps the chosen configuration.
 - Location popups in the device map render as plain text.
 - The "Password updated" notice shows on the sign-in page.
+- The enrollment QR code is drawn at its real size, so it isn't blurred and scans reliably (thanks @vanek-Impacts).
 - A device's recorded public address comes from the edge, not from headers the device sends. Native installs: set
   your proxy's headers and limit Tomcat's port to the proxy, as docs/OPERATIONS.md "Device public address" describes.
 

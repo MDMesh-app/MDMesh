@@ -1588,10 +1588,16 @@ a {
 }
 .qr-layout {
   display: grid;
-  grid-template-columns: 260px 1fr;
+  /* 354 = the 320px code + 2×16px frame padding + 2×1px border, so the code shows 1:1 */
+  grid-template-columns: minmax(0, 354px) minmax(0, 1fr);
   gap: 24px;
   align-items: start;
   padding: 20px;
+}
+@media (max-width: 720px) {
+  .qr-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 /* QR keeps a white quiet-zone in both themes so it always scans */
 .qr-frame {
@@ -1605,9 +1611,12 @@ a {
 .qr-frame img,
 .qr-frame svg,
 .qr-frame canvas {
-  width: 226px;
-  height: 226px;
+  width: 320px;
+  height: 320px;
+  max-width: 100%;
   display: block;
+  /* QrCanvas draws at device-pixel size; if anything still rescales the code, its modules stay sharp */
+  image-rendering: pixelated;
 }
 .qr-cap {
   text-align: center;

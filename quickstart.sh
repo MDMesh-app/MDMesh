@@ -261,7 +261,10 @@ curl -fsSL "${RAW}/docker-compose.domain.yml"  -o docker-compose.domain.yml
 if [ "$MODE" = "3" ]; then
   # These opt-in edge files travel with this wizard, not with the release being installed.
   # The bind mounts also work with older web images; compose, SQL and db.sh stay release-pinned.
-  PROXY_RAW="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
+  # An unmerged installer can fetch its edge files from a fork/ref without changing
+  # GH_REPO or IMAGE_OWNER (the release, database seed and images remain official).
+  PROXY_RAW="${MDMESH_PROXY_CONFIG_URL:-https://raw.githubusercontent.com/${REPO}/${BRANCH}}"
+  PROXY_RAW="${PROXY_RAW%/}"
   mkdir -p docker
   curl -fsSL "${PROXY_RAW}/docker-compose.reverse-proxy.yml" -o docker-compose.reverse-proxy.yml
   curl -fsSL "${PROXY_RAW}/docker/Caddyfile.proxy" -o docker/Caddyfile.proxy

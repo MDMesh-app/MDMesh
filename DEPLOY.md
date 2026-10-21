@@ -207,3 +207,10 @@ origin access to the proxy at your firewall. Setup re-runs and the updater retai
 `COMPOSE_FILE`. Quickstart mounts the origin config over published web images;
 its opt-in overlay and edge config come from the wizard's branch, while compose,
 seed and images stay release-pinned.
+
+To test an unmerged proxy configuration, set `MDMESH_PROXY_CONFIG_URL` to the raw
+GitHub base URL of its fork/ref when running `quickstart.sh`, for example
+`https://raw.githubusercontent.com/YOUR_FORK/YOUR_REPO/YOUR_REF`.
+Only the reverse-proxy overlay and the two Caddy config files use this override.
+Keep the release repository `MDMesh-app/MDMesh` and image owner `mdmesh-app` to use
+official images and the matching database seed.

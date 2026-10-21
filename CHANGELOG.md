@@ -8,6 +8,8 @@ line under Unreleased.
 
 ## Unreleased
 
+## v0.3.5 — 2026-10-21
+
 Upgrading
 - Update the server: Settings → Updates (quick-start installs), or re-run the installer on native installs. Then
   roll out the new agent from Settings → Agent rollout, to one device first. Devices enrolled by QR code on 0.3.4 or

@@ -26,6 +26,10 @@ class KioskApplierTest {
         var failFor: List<String>? = null
         /** Every setVolumeLocked call, in order. */
         val volume = mutableListOf<Boolean>()
+        /** Every setSafeModeBlocked call, in order. */
+        val safeMode = mutableListOf<Boolean>()
+        var safeModeResult: KioskResult = KioskResult.Ok
+        override fun setSafeModeBlocked(blocked: Boolean): KioskResult { safeMode += blocked; return safeModeResult }
         override fun enter(homeComponent: ComponentName, allowedPackages: List<String>, features: Int): KioskResult {
             entered = allowedPackages; enters += allowedPackages
             return if (allowedPackages == failFor) KioskResult.Failed("dpm") else enterResult
@@ -42,6 +46,7 @@ class KioskApplierTest {
         override fun showOemHome() { log += "oem" }
     }
     private val home = ComponentName("com.mdmesh.agent", "com.mdmesh.agent.KioskHomeAlias")
+    private fun setting(value: Boolean?) = object : SafeModeSetting { override fun current() = value }
 
     @Test fun `enter ok persists payload and shows launcher`() = runTest {
         val c = FakeController(KioskResult.Ok); val h = FakeHome(); val store = InMemoryKioskStateStore()
@@ -70,6 +75,67 @@ class KioskApplierTest {
         assertEquals("the old kiosk is put back", listOf(listOf("com.b"), listOf("com.a")), c.enters)
         assertEquals(p, store.load())
         assertFalse("HOME stays claimed, so a restart comes back to kiosk", "claim:false" in h.log)
+    }
+    @Test fun `entering kiosk blocks Safe Mode unless the configuration allows it`() = runTest {
+        val p = KioskApplyPayload(mode = "single", pinPackage = "com.a")
+        val c = FakeController(KioskResult.Ok)
+        KioskApplier(c, InMemoryKioskStateStore(), FakeHome(), home, setting(null)) { false }.enter(p)
+        assertEquals("kiosk.enter from the console, configuration silent", listOf(true), c.safeMode)
+
+        val allowed = FakeController(KioskResult.Ok)
+        KioskApplier(allowed, InMemoryKioskStateStore(), FakeHome(), home, setting(true)) { false }.enter(p)
+        assertEquals(listOf(false), allowed.safeMode)
+    }
+    @Test fun `staying in kiosk re-asserts the Safe Mode block`() = runTest {
+        val p = KioskApplyPayload(mode = "single", pinPackage = "com.a")
+        val c = FakeController(KioskResult.Ok); val store = InMemoryKioskStateStore(); store.save(p)
+        assertEquals(KioskResult.Ok, KioskApplier(c, store, FakeHome(), home, setting(null)) { true }.enter(p))
+        assertNull("no re-entry", c.entered)
+        assertEquals(listOf(true), c.safeMode)
+    }
+    @Test fun `a Safe Mode block that fails is reported`() = runTest {
+        val c = FakeController(KioskResult.Ok); c.safeModeResult = KioskResult.Failed("dpm")
+        val r = KioskApplier(c, InMemoryKioskStateStore(), FakeHome(), home, setting(null)) { false }
+            .enter(KioskApplyPayload(mode = "single", pinPackage = "com.a"))
+        assertEquals(KioskResult.Failed("dpm"), r)
+    }
+    @Test fun `leaving kiosk lifts the Safe Mode block unless the configuration blocks it`() = runTest {
+        val p = KioskApplyPayload(mode = "single", pinPackage = "com.a")
+        val c = FakeController(KioskResult.Ok); val store = InMemoryKioskStateStore(); store.save(p)
+        KioskApplier(c, store, FakeHome(), home, setting(null)) { true }.exit()
+        assertEquals(listOf(false), c.safeMode)
+
+        val blocked = FakeController(KioskResult.Ok); val store2 = InMemoryKioskStateStore(); store2.save(p)
+        KioskApplier(blocked, store2, FakeHome(), home, setting(false)) { true }.exit()
+        assertEquals("the configuration's own Block stays", listOf(true), blocked.safeMode)
+    }
+    @Test fun `a failed entry on a device in kiosk keeps Safe Mode blocked`() = runTest {
+        val p = KioskApplyPayload(mode = "single", pinPackage = "com.a", allowedPackages = listOf("com.a"))
+        val c = FakeController(KioskResult.Ok); val store = InMemoryKioskStateStore(); store.save(p)
+        c.failFor = listOf("com.b")
+        KioskApplier(c, store, FakeHome(), home, setting(null)) { true }
+            .enter(KioskApplyPayload(mode = "single", pinPackage = "com.b", allowedPackages = listOf("com.b")))
+        assertEquals(listOf(true), c.safeMode)
+    }
+    @Test fun `a lift that fails is not reported, a block that fails is`() = runTest {
+        val c = FakeController(KioskResult.Ok); c.safeModeResult = KioskResult.Failed("dpm")
+        val store = InMemoryKioskStateStore()
+        val a = KioskApplier(c, store, FakeHome(), home, setting(null)) { false }
+        assertEquals("lifting failed: Safe Mode stays blocked, which is safe", KioskResult.Ok, a.syncSafeMode())
+        store.save(KioskApplyPayload(mode = "single", pinPackage = "com.a"))
+        assertEquals(KioskResult.Failed("dpm"), a.syncSafeMode())
+    }
+    @Test fun `syncSafeMode follows the saved kiosk and the configuration's setting`() = runTest {
+        val c = FakeController(KioskResult.Ok); val store = InMemoryKioskStateStore()
+        var policy: Boolean? = null
+        val setting = object : SafeModeSetting { override fun current() = policy }
+        val a = KioskApplier(c, store, FakeHome(), home, setting) { false }
+        a.syncSafeMode()
+        store.save(KioskApplyPayload(mode = "single", pinPackage = "com.a"))
+        a.syncSafeMode()
+        policy = true
+        a.syncSafeMode()
+        assertEquals(listOf(false, true, false), c.safeMode)
     }
     @Test fun `re-entering with the same payload while locked is a no-op`() = runTest {
         val p = KioskApplyPayload(mode = "single", pinPackage = "com.a", allowedPackages = listOf("com.a"))

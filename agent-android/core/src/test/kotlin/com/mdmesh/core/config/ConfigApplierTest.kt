@@ -1,6 +1,7 @@
 package com.mdmesh.core.config
 
 import android.content.ComponentName
+import com.mdmesh.core.kiosk.ConfiguredSafeModeSetting
 import com.mdmesh.core.kiosk.KioskApplier
 import com.mdmesh.core.kiosk.KioskHomeSwitch
 import com.mdmesh.core.store.ConfigStateStore
@@ -37,6 +38,15 @@ class ConfigApplierTest {
         override fun isLocked(context: android.content.Context) = false
         override fun allowedPackages(): List<String> = emptyList()
     }
+    /** Records Safe Mode blocks; [safeModeResult] is what each call returns. */
+    private class SafeModeController(var safeModeResult: KioskResult = KioskResult.Ok) : KioskController {
+        val safeMode = mutableListOf<Boolean>()
+        override fun enter(homeComponent: ComponentName, allowedPackages: List<String>, features: Int) = KioskResult.Ok
+        override fun exit() = KioskResult.Ok
+        override fun setSafeModeBlocked(blocked: Boolean): KioskResult { safeMode += blocked; return safeModeResult }
+        override fun isLocked(context: android.content.Context) = false
+        override fun allowedPackages(): List<String> = emptyList()
+    }
     private object NoHome : KioskHomeSwitch { override fun setClaimEnabled(enabled: Boolean) {}; override fun showLauncher() {}; override fun showOemHome() {} }
 
     private fun kiosk(c: KioskController, store: InMemoryKioskStateStore = InMemoryKioskStateStore()) =
@@ -53,6 +63,64 @@ class ConfigApplierTest {
         assertEquals("active", loc)
         assertEquals("r1", store.revision())
         assertTrue(ConfigApplier.succeeded(r))
+    }
+
+    /** A kiosk that reads Safe Mode the way production does: from [config], the store the applier writes. */
+    private fun safeModeKiosk(c: KioskController, config: InMemoryConfigStateStore,
+                              kioskStore: InMemoryKioskStateStore = InMemoryKioskStateStore()) =
+        KioskApplier(c, kioskStore, NoHome, ComponentName("a", "b"), ConfiguredSafeModeSetting(config)) { false }
+
+    @Test fun `Safe Mode follows the kiosk and the policy, and is lifted when neither asks for it`() = runTest {
+        val c = SafeModeController(); val config = InMemoryConfigStateStore()
+        val a = ConfigApplier(fixedToggles(), safeModeKiosk(c, config), {}, config)
+        a.apply(ConfigApplyPayload(revision = "s1", kiosk = KioskApplyPayload(mode = "single", pinPackage = "com.a")))
+        assertEquals("kiosk, Safe Mode not managed: blocked", true, c.safeMode.last())
+        a.apply(ConfigApplyPayload(revision = "s2"))
+        assertEquals("kiosk turned off, not managed: lifted", false, c.safeMode.last())
+        a.apply(ConfigApplyPayload(revision = "s3", policies = mapOf("safeBoot" to false)))
+        assertEquals("an explicit Block outside kiosk", true, c.safeMode.last())
+        a.apply(ConfigApplyPayload(revision = "s4"))
+        assertEquals("Block no longer managed: lifted", false, c.safeMode.last())
+    }
+
+    @Test fun `an explicit Allow wins in kiosk, an explicit Block holds outside it`() = runTest {
+        val c = SafeModeController(); val config = InMemoryConfigStateStore()
+        val a = ConfigApplier(fixedToggles(), safeModeKiosk(c, config), {}, config)
+        a.apply(ConfigApplyPayload(revision = "a1", policies = mapOf("safeBoot" to true),
+            kiosk = KioskApplyPayload(mode = "single", pinPackage = "com.a")))
+        assertEquals("kiosk with Allow", false, c.safeMode.last())
+        a.apply(ConfigApplyPayload(revision = "a2", policies = mapOf("safeBoot" to false)))
+        assertEquals("kiosk off with Block", true, c.safeMode.last())
+    }
+
+    @Test fun `a kiosk entered from the console keeps Safe Mode blocked without a kiosk configuration`() = runTest {
+        val c = SafeModeController()
+        val config = InMemoryConfigStateStore()
+        val kioskStore = InMemoryKioskStateStore()
+        kioskStore.save(KioskApplyPayload(mode = "single", pinPackage = "com.a")) // kiosk.enter, not the configuration
+        ConfigApplier(fixedToggles(), safeModeKiosk(c, config, kioskStore), {}, config)
+            .apply(ConfigApplyPayload(revision = "m1"))
+        assertEquals(listOf(true), c.safeMode)
+    }
+
+    @Test fun `the boot re-apply follows the newer delivered setting, not an old saved Allow`() = runTest {
+        val c = SafeModeController()
+        val config = InMemoryConfigStateStore()
+        val kioskStore = InMemoryKioskStateStore()
+        kioskStore.save(KioskApplyPayload(mode = "single", pinPackage = "com.a"))
+        config.save(ConfigApplyPayload(revision = "old", policies = mapOf("safeBoot" to true))) // saved: Allow
+        config.delivered = ConfigApplyPayload(revision = "new") // newer, not managed, failed elsewhere: never saved
+        ConfigApplier(fixedToggles(), safeModeKiosk(c, config, kioskStore), {}, config).reapplyPersisted()
+        assertEquals("in kiosk, the server no longer allows it: blocked", true, c.safeMode.last())
+    }
+
+    @Test fun `a Safe Mode block that fails is reported and the document is not saved`() = runTest {
+        val config = InMemoryConfigStateStore(); val kioskStore = InMemoryKioskStateStore()
+        kioskStore.save(KioskApplyPayload(mode = "single", pinPackage = "com.a"))
+        val refusing = safeModeKiosk(SafeModeController(KioskResult.Failed("dpm")), config, kioskStore)
+        val r = ConfigApplier(fixedToggles(), refusing, {}, config).apply(ConfigApplyPayload(revision = "f1"))
+        assertEquals("failed: dpm", r.outcomes["policies.safeBoot"])
+        assertNull(config.revision())
     }
 
     @Test fun `unsupported policy still counts as success and persists`() = runTest {

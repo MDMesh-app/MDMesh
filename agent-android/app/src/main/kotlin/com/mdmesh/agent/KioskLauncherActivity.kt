@@ -195,7 +195,9 @@ class KioskLauncherActivity : ComponentActivity() {
                 if (outcome.started) reportLockout(outcome)
                 showExitLocked(outcome.remainingMs)
             }
-            ExitPinGate.Outcome.Unavailable -> Unit
+            // The attempt couldn't be saved, so it wasn't checked (or the PIN was removed meanwhile).
+            ExitPinGate.Outcome.Unavailable ->
+                Toast.makeText(this, "Exit unavailable right now", Toast.LENGTH_SHORT).show()
         }
     }
 

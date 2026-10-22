@@ -6,6 +6,7 @@ import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.policy.PolicyOutcome
 import com.mdmesh.policy.ReleasablePolicy
 import com.mdmesh.policy.ResolvedToggles
+import com.mdmesh.policy.safeboot.SafeBootPolicy
 import com.mdmesh.policy.wifi.WifiRadioPolicy
 import com.mdmesh.proto.ConfigApplyPayload
 import com.mdmesh.proto.ConfigApplyResult
@@ -104,6 +105,13 @@ class ConfigApplier(
         releaseUnmanaged(doc, toggles, previousKeys.toSet(), outcomes)
         val previousKiosk = previous.any { it.kiosk != null } || KIOSK in unreleased
         applyKiosk(doc, previousKiosk)?.let { outcomes[KIOSK] = it }
+        // Last: the policies and the kiosk are now what this document says, so Safe Mode can follow both. The
+        // setting is the delivered document's (ConfiguredSafeModeSetting): this one on a normal apply (recorded as
+        // delivered above), and on the boot re-apply the newer one the server sent, if any. Only a failed block is
+        // reported, on policies.safeBoot, so the document is re-applied.
+        (kiosk.syncSafeMode() as? KioskResult.Failed)?.let {
+            outcomes["$POLICIES${SafeBootPolicy.CAPABILITY_KEY}"] = ConfigOutcome.failed(it.reason)
+        }
         doc.location?.let { loc ->
             outcomes["location"] = runCatching { setLocationMode(loc.mode); ConfigOutcome.APPLIED }
                 .getOrElse { ConfigOutcome.failed(it.message ?: "location mode") }

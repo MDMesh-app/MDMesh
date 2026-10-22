@@ -66,7 +66,7 @@ public class KioskLockoutAlert {
 
     /**
      * One daemon thread with a bounded queue. Registered with {@link ExecutorRegistry}, which shuts it down when the
-     * web application stops; the SMTP timeouts in {@link EmailService} make sure a send in progress then ends too.
+     * web application stops; the SMTP connect and read timeouts in {@link EmailService} bound a send in progress.
      */
     private static Executor newMailThread() {
         return ExecutorRegistry.register(new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,

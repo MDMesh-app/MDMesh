@@ -8,12 +8,19 @@ line under Unreleased.
 
 ## Unreleased
 
-New
-- Configurations can keep system location enabled and prevent user changes (Device Owner, Android 11+; needs the updated agent).
+## v0.3.7 — 2026-10-22
+
+Upgrading
+- Update the server, then roll out agent 0.3.7 from Settings → Agent rollout, to one device first.
+- Until devices have agent 0.3.7, set Safe Mode to Block on configurations whose devices you put into kiosk with Enter
+  kiosk.
 
 Fixes
-- GPS reporting after enrolment no longer waits for a manual Accurate command: collect telemetry off the main thread, allow a 30-second first fix, and report immediately after applying a GPS configuration.
-- Location reporting repairs missing foreground/background permissions on already enrolled Device Owners, including after agent upgrades.
+- Kiosk: Safe Mode is blocked whenever a device is in kiosk, including kiosks started with Enter kiosk on the device
+  page, unless the configuration's Safe Mode setting is Allow. The block is lifted once nothing asks for it: when such
+  a kiosk ends, or when kiosk is turned off on the configuration, unless the setting is Block. Needs agent 0.3.7.
+- Kiosk: an exit PIN that can't be checked right now says so ("Exit unavailable right now") instead of closing.
+- The console's kiosk help says which behaviour needs agent 0.3.6 or later.
 
 ## v0.3.6 — 2026-10-21
 

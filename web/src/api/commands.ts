@@ -268,8 +268,8 @@ export async function listCommandHistory(
   );
 }
 
-export async function forceSync(deviceId: number | string): Promise<void> {
-  await apiClient.post(`/private/agent/v1/devices/${deviceId}/sync`, {});
+export async function forceSync(deviceId: number | string, signal?: AbortSignal): Promise<void> {
+  await apiClient.post(`/private/agent/v1/devices/${deviceId}/sync`, {}, signal);
 }
 
 /** Queue app.install for the device's configuration apps marked action=install. */

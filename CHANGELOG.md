@@ -8,6 +8,14 @@ line under Unreleased.
 
 ## Unreleased
 
+New
+- Device pages have an Applications tab with the full installed-app inventory, a system-app filter and search.
+  Full scans need the updated agent; older agents are reported explicitly instead of showing a partial inventory.
+
+Fixes
+- The installed-app list refreshes after successful installations and removals. The console requests pending
+  command results promptly instead of waiting for the device's next periodic check-in.
+
 ## v0.3.6 — 2026-10-21
 
 Upgrading

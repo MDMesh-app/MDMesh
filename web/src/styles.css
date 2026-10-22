@@ -2768,3 +2768,13 @@ a {
 .rollout-device { display:flex; align-items:center; gap:10px; padding:6px 8px; border-radius:8px; font-size:13px; }
 .rollout-device:hover { background:var(--panel-2); }
 .rollout-device .muted { color:var(--muted); }
+
+.device-apps-filters { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin: 16px 0; }
+.device-apps-filters > input { flex: 1; min-width: 200px; }
+.device-apps-filters label { display: flex; align-items: center; gap: 6px; }
+.device-apps-table { overflow-x: auto; }
+.device-apps-table table { width: 100%; border-collapse: collapse; }
+.device-apps-table th, .device-apps-table td { text-align: left; padding: 12px 8px; border-bottom: 1px solid var(--line); }
+.device-apps-table .mono { overflow-wrap: anywhere; }
+
+.device-apps-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

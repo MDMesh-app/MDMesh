@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "MDMesh — admin console for the device fleet",
+  "description": "MDMesh \u2014 admin console for the device fleet",
   "engines": {
     "node": "^24"
   },
@@ -11,7 +11,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -b --noEmit"
+    "typecheck": "tsc -b --noEmit",
+    "test:inventory": "node scripts/tests/deviceApps.test.cjs"
   },
   "dependencies": {
     "leaflet": "^1.9.4",

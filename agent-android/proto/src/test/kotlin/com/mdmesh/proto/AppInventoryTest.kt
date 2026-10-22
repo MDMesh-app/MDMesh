@@ -18,6 +18,21 @@ class AppInventoryTest {
     }
 
     @Test
+    fun `full scan is explicit and old scan results are not full inventory`() {
+        assertEquals(false, ProtocolJson.json.decodeFromString(AppScanRequest.serializer(), "{}").includeAll)
+        assertEquals(
+            true, ProtocolJson.json.decodeFromString(AppScanRequest.serializer(), "{\"includeAll\":true}").includeAll,
+        )
+        assertEquals(false, ProtocolJson.json.decodeFromString(AppScanResult.serializer(), "{\"apps\":[]}").includeAll)
+        val result = AppScanResult(
+            listOf(AppInfo("com.example.hidden", "Hidden", launchable = false)), includeAll = true,
+        )
+        assertEquals(result, ProtocolJson.json.decodeFromString(
+            AppScanResult.serializer(), ProtocolJson.json.encodeToString(AppScanResult.serializer(), result),
+        ))
+    }
+
+    @Test
     fun `icons request and result round-trip`() {
         val req = AppIconsRequest(listOf("com.a", "com.b"))
         assertEquals(

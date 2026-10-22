@@ -23,9 +23,10 @@ import javax.inject.Singleton
 /**
  * Reads the device location for telemetry. Passive mode (default) returns the OS's freshest
  * last-known fix across providers — near-zero battery, no active GPS. Active mode requests one fresh
- * fix per call (API 30+) with a short timeout, falling back to last-known. Off mode ("Do not track")
- * returns null without touching [LocationManager] at all. Never throws; returns null without a
- * location permission, with location services off, or when no fix is available.
+ * fix per call (API 30+), waiting 5 s (30 s for a first fix, at most every 15 min), falling back to
+ * last-known. Off mode ("Do not track") returns null without touching [LocationManager] at all. Never
+ * throws; returns null without a location permission, with location services off, or when no fix is
+ * available.
  */
 @Singleton
 class LocationCollector @Inject constructor(
@@ -109,7 +110,8 @@ class LocationCollector @Inject constructor(
         private val FRESH_FIX_PROVIDERS = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
 
         /** A device with no cached fix gets a GPS cold start, at most every 15 minutes (it delays that check-in). */
-        fun fixTimeoutSeconds(coldStart: Boolean): Long = if (coldStart) COLD_START_TIMEOUT_SEC else FIX_TIMEOUT_SEC
+        private fun fixTimeoutSeconds(coldStart: Boolean): Long =
+            if (coldStart) COLD_START_TIMEOUT_SEC else FIX_TIMEOUT_SEC
 
         fun plan(mode: String): Plan = when (LocationModeStore.normalize(mode)) {
             DeviceAction.LOCATION_OFF -> Plan.NONE

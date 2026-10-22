@@ -2,11 +2,11 @@ package com.mdmesh.core.telemetry
 
 import com.mdmesh.proto.DynamicState
 import com.mdmesh.proto.SecurityPosture
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
-import kotlinx.coroutines.test.runTest
 
 class TelemetryAssemblerTest {
     private fun dyn() = DynamicState(

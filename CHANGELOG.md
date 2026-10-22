@@ -8,6 +8,16 @@ line under Unreleased.
 
 ## Unreleased
 
+## v0.3.6 — 2026-10-21
+
+Upgrading
+- Update the server first, then roll out agent 0.3.6 from Settings → Agent rollout, to one device first. This is a
+  security release for kiosk devices: update every server.
+- Kiosk configurations without an exit PIN have no exit on the device with agent 0.3.6. Set an exit PIN first if you
+  need one.
+- Kiosk devices re-apply their configuration once after the server update, because Safe Mode is now blocked on them
+  unless allowed.
+
 Heads-up
 - Kiosk: a kiosk without an exit PIN has no exit on the device; end it from the console. Set an exit PIN on the
   configuration to keep the on-device exit. Needs agent 0.3.6.

@@ -8,6 +8,13 @@ line under Unreleased.
 
 ## Unreleased
 
+## v0.3.7 — 2026-10-22
+
+Upgrading
+- Update the server, then roll out agent 0.3.7 from Settings → Agent rollout, to one device first.
+- Until devices have agent 0.3.7, set Safe Mode to Block on configurations whose devices you put into kiosk with Enter
+  kiosk.
+
 Fixes
 - Kiosk: Safe Mode is blocked whenever a device is in kiosk, including kiosks started with Enter kiosk on the device
   page, unless the configuration's Safe Mode setting is Allow. The block is lifted once nothing asks for it: when such

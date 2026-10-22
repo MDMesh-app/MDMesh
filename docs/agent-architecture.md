@@ -113,3 +113,9 @@ lean on DO + lock-task auto-launch + WorkManager.
   `kiosk.enter`/`kiosk.exit`/`device.reboot`/`device.lock`); `policy.apply` expanded; telemetry in check-in.
 - `:app` — status UI, manifest (install receiver, FGS types, `lockTaskMode`, queries), DI multibindings,
   baseline policy applied on enrollment.
+
+GPS reporting applies `location.mode = active` automatically from Location reporting = GPS.
+The agent immediately checks in once more after a successful GPS config.apply, so its first GPS
+telemetry does not depend on a manual command or the next heartbeat. Telemetry collectors run on
+Dispatchers.IO (location callbacks run on the main executor); a device without a cached position
+has up to 30 seconds for its first fix, with a 5-second timeout for later fixes.

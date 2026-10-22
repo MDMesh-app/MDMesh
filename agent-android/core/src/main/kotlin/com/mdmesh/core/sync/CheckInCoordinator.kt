@@ -11,6 +11,9 @@ import com.mdmesh.core.telemetry.TelemetrySource
 import com.mdmesh.proto.AgentCheckInRequest
 import com.mdmesh.proto.EventType
 import kotlinx.coroutines.CancellationException
+import com.mdmesh.proto.CommandStatus
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
@@ -53,14 +56,22 @@ class CheckInCoordinator @Inject constructor(
 
     suspend fun runOnce(): Unit = mutex.withLock {
         try {
-            cycle()
+            // Telemetry in the request precedes commands. A newly applied GPS config needs one
+            // follow-up check-in now, rather than waiting for a heartbeat or an operator wake.
+            if (cycle()) cycle()
         } catch (t: Throwable) {
             if (t !is CancellationException) syncStatus.recordFailure(t)
             throw t
         }
     }
 
-    private suspend fun cycle() {
+    private fun requestsGps(command: com.mdmesh.proto.CommandEnvelope): Boolean {
+        if (command.type != "config.apply") return false
+        val location = (command.payload as? JsonObject)?.get("location") as? JsonObject
+        return (location?.get("mode") as? JsonPrimitive)?.content == "active"
+    }
+
+    private suspend fun cycle(): Boolean {
         val deviceId = enrollment.ensureEnrolled()
         val authorization = "Bearer ${identity.secret().orEmpty()}"
         val matrix = capabilitySource.matrix(deviceId)
@@ -98,14 +109,17 @@ class CheckInCoordinator @Inject constructor(
         // Before this batch runs: its installs are judged by what this server guarantees.
         installIntegrity.update(data.installIntegrity)
 
+        var reportGps = false
         for (command in data.commands) {
             val result = dispatcher.dispatch(command)
             // Saved one by one: a later command can end the process (an agent self-update does), and the results
             // before it must still reach the server.
             pending.add(listOf(result))
+            if (result.status == CommandStatus.DONE && requestsGps(command)) reportGps = true
             // Record each command outcome as a timeline event (flushed next cycle).
             eventSink.record(EventType.COMMAND_RESULT, "${result.commandId}:${result.status}")
         }
+        return reportGps
     }
 }
 

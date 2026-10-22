@@ -6,6 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
+import kotlinx.coroutines.test.runTest
 
 class TelemetryAssemblerTest {
     private fun dyn() = DynamicState(
@@ -14,7 +15,7 @@ class TelemetryAssemblerTest {
         screenOn = true, locked = false, kioskActive = false, uptimeMs = 1, lastBootAt = 1,
     )
 
-    @Test fun dynamicAlwaysPresent_failingCollectorsOmitted() {
+    @Test fun dynamicAlwaysPresent_failingCollectorsOmitted() = runTest {
         val a = TelemetryAssembler(
             hardware = { error("no perm") },
             identity = { error("no perm") },
@@ -29,7 +30,7 @@ class TelemetryAssemblerTest {
         assertNull(snap.security)
     }
 
-    @Test fun includesSecurityWhenAvailable() {
+    @Test fun includesSecurityWhenAvailable() = runTest {
         val sec = SecurityPosture(true, true, false, false, false, 10, true)
         val a = TelemetryAssembler({ error("x") }, { error("x") }, { dyn() }, { sec })
         assertEquals(sec, a.snapshot().security)

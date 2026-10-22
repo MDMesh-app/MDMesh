@@ -5,6 +5,8 @@ import com.mdmesh.proto.HardwareInfo
 import com.mdmesh.proto.IdentityInfo
 import com.mdmesh.proto.SecurityPosture
 import com.mdmesh.proto.TelemetrySnapshot
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Composes the census from per-category producers. [dynamic] always succeeds; the other three are
@@ -17,10 +19,13 @@ class TelemetryAssembler(
     private val dynamic: () -> DynamicState,
     private val security: () -> SecurityPosture,
 ) : TelemetrySource {
-    override fun snapshot(): TelemetrySnapshot = TelemetrySnapshot(
-        dynamic = dynamic(),
-        hardware = runCatching { hardware() }.getOrNull(),
-        identity = runCatching { identity() }.getOrNull(),
-        security = runCatching { security() }.getOrNull(),
-    )
+    // GPS waits for mainExecutor callbacks: never block the enrolment service's Main thread.
+    override suspend fun snapshot(): TelemetrySnapshot = withContext(Dispatchers.IO) {
+        TelemetrySnapshot(
+            dynamic = dynamic(),
+            hardware = runCatching { hardware() }.getOrNull(),
+            identity = runCatching { identity() }.getOrNull(),
+            security = runCatching { security() }.getOrNull(),
+        )
+    }
 }

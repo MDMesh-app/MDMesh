@@ -29,13 +29,16 @@ import javax.inject.Singleton
 class LocationCollector @Inject constructor(
     @ApplicationContext private val context: Context,
     private val modeStore: LocationModeStore,
+    private val permissionAccess: LocationPermissionAccess,
 ) {
     /** What one collection reads, per location mode. */
     enum class Plan { NONE, LAST_KNOWN, FRESH_FIX }
 
     fun collect(): LocationDto? {
         val plan = plan(modeStore.get())
-        if (plan == Plan.NONE || !hasPermission()) return null
+        if (plan == Plan.NONE) return null
+        permissionAccess.ensure()
+        if (!hasPermission()) return null
         val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
         val loc = if (plan == Plan.FRESH_FIX) (currentFix(lm) ?: lastKnown(lm)) else lastKnown(lm)
         return loc?.let {

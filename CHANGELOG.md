@@ -8,6 +8,12 @@ line under Unreleased.
 
 ## Unreleased
 
+New
+- Configurations can keep system location enabled and prevent user changes (Device Owner, Android 11+; needs the updated agent).
+
+Fixes
+- Location reporting repairs missing foreground/background permissions on already enrolled Device Owners, including after agent upgrades.
+
 ## v0.3.6 — 2026-10-21
 
 Upgrading

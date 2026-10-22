@@ -128,6 +128,7 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'requestUpdates', label: 'Location reporting', type: 'enum', group: 'Network', enforced: true, help: LOCATION_HELP, options: [
     { value: 'DONOTTRACK', label: 'Do not track' }, { value: 'WIFI', label: 'Last known (passive)' }, { value: 'GPS', label: 'GPS (fresh fix)' },
   ] },
+  { key: 'keepLocationEnabled', label: 'Keep location enabled', type: 'tri', group: 'Network', enforced: true, segments: [{ value: null, label: 'Not managed' }, { value: true, label: 'Enforce' }, { value: false, label: 'Release' }], help: 'Enforce enables system location and prevents user changes (Device Owner, Android 11+; needs the updated agent). Release or Not managed releases the lock without turning location off. Location reporting is configured separately.' },
   { key: 'mobileData', label: 'Mobile data', type: 'tri', group: 'Network', help: 'Headwind launcher switched mobile data (needed system-app rights).' },
   { key: 'gps', label: 'GPS / location', type: 'tri', group: 'Network', help: 'Headwind launcher switched the location setting.' },
   { key: 'mobileEnrollment', label: 'Enroll over mobile data', type: 'switch', group: 'Network', help: "Read only by Headwind's server QR. The MDMesh enrollment QR ignores it." },

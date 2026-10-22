@@ -124,6 +124,9 @@ public class Configuration implements CustomerData, Serializable {
     private Boolean kioskLockVolume;
     @ApiModelProperty("Wi-Fi radio: null = not managed, true = turn on, false = turn off (sent as policies.wifiRadio)")
     private Boolean wifiRadio;
+
+    @ApiModelProperty("Keep location on and prevent user changes; null = not managed")
+    private Boolean keepLocationEnabled;
     @ApiModelProperty("Flag indicating if auto-started apps should be kept in the foreground")
     private Boolean autostartForeground;
     @ApiModelProperty("Time zone settings: null for using default settings, auto for automatic time zone, or Olson time zone string")
@@ -909,6 +912,14 @@ public class Configuration implements CustomerData, Serializable {
 
     public void setKioskLockVolume(Boolean kioskLockVolume) {
         this.kioskLockVolume = kioskLockVolume;
+    }
+
+    public Boolean getKeepLocationEnabled() {
+        return keepLocationEnabled;
+    }
+
+    public void setKeepLocationEnabled(Boolean keepLocationEnabled) {
+        this.keepLocationEnabled = keepLocationEnabled;
     }
 
     public Boolean getWifiRadio() {

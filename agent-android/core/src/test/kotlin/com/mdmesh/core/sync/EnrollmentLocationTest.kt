@@ -1,15 +1,11 @@
 package com.mdmesh.core.sync
 
 import com.mdmesh.core.command.CommandDispatcher
-import com.mdmesh.core.command.CommandHandler
-import com.mdmesh.core.command.CommandResults
 import com.mdmesh.core.install.InstallIntegrityPolicy
 import com.mdmesh.core.telemetry.EventSink
-import com.mdmesh.core.telemetry.TelemetrySource
 import com.mdmesh.core.telemetry.TelemetryAssembler
+import com.mdmesh.core.telemetry.TelemetrySource
 import com.mdmesh.proto.DynamicState
-import com.mdmesh.proto.CommandEnvelope
-import com.mdmesh.proto.CommandResult
 import com.mdmesh.proto.TelemetryEventDto
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.runBlocking
@@ -30,15 +26,9 @@ class EnrollmentLocationTest {
             override fun drain() = emptyList<TelemetryEventDto>()
             override fun restore(events: List<TelemetryEventDto>) = Unit
         }
-        val handler = object : CommandHandler {
-            override val type = "config.apply"
-            override suspend fun handle(command: CommandEnvelope): CommandResult {
-                return CommandResults.done(command)
-            }
-        }
         return CheckInCoordinator(
             api, EnrollmentManager(api, identity, FakeTokenProvider("t"), FakeCapabilitySource(), events),
-            identity, FakeCapabilitySource(), CommandDispatcher(listOf(handler)), PendingResults(), { null }, telemetry,
+            identity, FakeCapabilitySource(), CommandDispatcher(emptyList()), PendingResults(), { null }, telemetry,
             events, InstallIntegrityPolicy(),
         )
     }

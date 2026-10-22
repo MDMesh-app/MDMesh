@@ -10,8 +10,8 @@ line under Unreleased.
 
 Fixes
 - Location: devices enrolled by QR code report their location. The agent grants itself the background location access
-  it was missing, and GPS configurations no longer stall the check-in waiting for a fix. Needs agent 0.3.8; no server
-  update needed (thanks @lared3294).
+  it was missing, and "GPS (fresh fix)" configurations get a fresh fix instead of always timing out. Needs agent
+  0.3.8; no server update needed (thanks @lared3294).
 
 ## v0.3.7 — 2026-10-22
 

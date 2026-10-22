@@ -1,10 +1,9 @@
 package com.mdmesh.core.location
 
-import android.Manifest
 import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.pm.PackageManager
-import android.os.Build
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.mdmesh.policy.wifi.DpmHandle
@@ -12,7 +11,12 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** Reconcile permissions at collection time, including agents upgraded without re-provisioning. */
+/**
+ * Before each collection, as Device Owner, grant any location permission the agent is missing: a QR-enrolled agent
+ * can hold only the foreground grants, and agents upgraded without re-provisioning may lack background too. Cheap
+ * when everything is granted. A missing grant is retried at most every 15 minutes and logged only when what's missing
+ * changes, so a device that refuses it doesn't spam the log or DevicePolicyManager every check-in.
+ */
 @Singleton
 class LocationPermissionAccess @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -20,30 +24,36 @@ class LocationPermissionAccess @Inject constructor(
 ) {
     private val repair = LocationPermissionRepair(
         isOwner = { handle.dpm.isDeviceOwnerApp(context.packageName) },
-        isGranted = { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED },
+        isGranted = ::isGranted,
         grant = {
             handle.dpm.setPermissionGrantState(
                 handle.admin, context.packageName, it, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED,
             )
         },
     )
+    private val retries = Throttle(RETRY_EVERY_MS) { SystemClock.elapsedRealtime() }
+    @Volatile private var lastMissing: List<String> = emptyList()
 
     fun ensure() {
-        val permissions = mutableListOf(
-            Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION,
-        )
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            permissions.add(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+        val permissions = LocationPermissions.forThisDevice()
+        val missing = when {
+            permissions.all(::isGranted) -> emptyList()
+            !retries.tryUse() -> return
+            else -> runCatching { repair.ensure(permissions) }.getOrElse {
+                Log.w(TAG, "Cannot reconcile location permissions", it)
+                permissions.filterNot(::isGranted)
+            }
         }
-        val failed = runCatching { repair.ensure(permissions) }.getOrElse {
-            Log.w(TAG, "Cannot reconcile location permissions", it)
-            return
-        }
-        if (failed.isNotEmpty()) Log.w(TAG, "Location permissions unavailable: $failed")
+        if (missing != lastMissing && missing.isNotEmpty()) Log.w(TAG, "Location permissions unavailable: $missing")
+        lastMissing = missing
     }
+
+    private fun isGranted(permission: String): Boolean =
+        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 
     private companion object {
         const val TAG = "LocationPermission"
+        const val RETRY_EVERY_MS = 15 * 60_000L
     }
 }
 

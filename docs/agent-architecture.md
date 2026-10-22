@@ -113,8 +113,10 @@ lean on DO + lock-task auto-launch + WorkManager.
 - `:app` — status UI, manifest (install receiver, FGS types, `lockTaskMode`, queries), DI multibindings,
   baseline policy applied on enrollment.
 
-Location: before collecting, the agent (as Device Owner) grants itself any missing foreground or background location
-permission, so devices enrolled by QR code, which used to miss the background grant, report their location; a denied
-grant is logged and retried. Telemetry collectors run on Dispatchers.IO and the location callback runs on the
-binder thread, so a check-in never waits on the main thread. A device without a cached position gets up to 30
-seconds for a first fix, at most once every 15 minutes; otherwise a fix has 5 seconds.
+## Location collection
+
+Before reading a location, the agent (as Device Owner) grants itself any missing foreground or background location
+permission; devices enrolled by QR code used to lack the background one (agent 0.3.8). A missing grant is retried at
+most every 15 minutes. The fix callback runs on the binder thread and telemetry on Dispatchers.IO, so a check-in never
+blocks the main thread. With no cached position, "GPS (fresh fix)" gets up to 30 seconds for a first fix at most once
+every 15 minutes; otherwise a fix has 5 seconds.

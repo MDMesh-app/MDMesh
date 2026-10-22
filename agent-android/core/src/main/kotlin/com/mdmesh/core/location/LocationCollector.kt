@@ -8,6 +8,8 @@ import android.location.Location
 import android.location.LocationManager
 import android.os.Build
 import android.os.CancellationSignal
+import android.os.SystemClock
+import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
 import com.mdmesh.proto.DeviceAction
 import com.mdmesh.proto.LocationDto
@@ -31,8 +33,8 @@ class LocationCollector @Inject constructor(
     private val modeStore: LocationModeStore,
     private val permissionAccess: LocationPermissionAccess,
 ) {
-    /** When the last cold-start (no cached fix) wait began; bounds how often a check-in can wait that long. */
-    @Volatile private var lastColdStartAt = 0L
+    /** A cold-start wait (no cached fix) delays its check-in, so it happens at most once per 15 minutes. */
+    private val coldStarts = Throttle(COLD_START_EVERY_MS) { SystemClock.elapsedRealtime() }
 
     /** What one collection reads, per location mode. */
     enum class Plan { NONE, LAST_KNOWN, FRESH_FIX }
@@ -45,7 +47,7 @@ class LocationCollector @Inject constructor(
         if (!hasPermission()) return null
         val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
         val cached = lastKnown(lm)
-        val loc = if (plan == Plan.FRESH_FIX) (currentFix(lm, fixTimeout(cached != null)) ?: cached) else cached
+        val loc = if (plan == Plan.FRESH_FIX) (freshFix(lm, hasCachedFix = cached != null) ?: cached) else cached
         return loc?.let {
             LocationDto(
                 lat = it.latitude,
@@ -71,42 +73,40 @@ class LocationCollector @Inject constructor(
             .maxByOrNull { it.time }
     }.getOrNull()
 
-    /** A single fresh fix with a short timeout (API 30+ only); null on timeout/failure. */
-    @SuppressLint("MissingPermission") // gated by collect()'s hasPermission() check
-    private fun currentFix(lm: LocationManager, timeoutSeconds: Long): Location? {
-        val provider = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
-                .firstOrNull { lm.isProviderEnabled(it) }
-        } else null
-        if (provider == null) return null
-        return runCatching {
-            val latch = CountDownLatch(1)
-            val ref = AtomicReference<Location?>()
-            val cancel = CancellationSignal()
-            // Delivered on the binder thread, not the main executor: the caller may itself be on Main (CheckInService).
-            lm.getCurrentLocation(provider, cancel, Runnable::run) { loc ->
-                ref.set(loc); latch.countDown()
-            }
-            if (!latch.await(timeoutSeconds, TimeUnit.SECONDS)) {
-                cancel.cancel()
-                null
-            } else {
-                ref.get()
-            }
-        }.getOrNull()
+    /**
+     * A fresh fix (API 30+) from the first enabled of GPS and network, or null when there is none to wait for. The
+     * cold-start budget is only spent when there is a provider to wait on.
+     */
+    private fun freshFix(lm: LocationManager, hasCachedFix: Boolean): Location? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        val provider = FRESH_FIX_PROVIDERS.firstOrNull { lm.isProviderEnabled(it) }
+        val coldStart = provider != null && !hasCachedFix && coldStarts.tryUse()
+        return provider?.let { currentFix(lm, it, fixTimeoutSeconds(coldStart)) }
     }
 
-    private fun fixTimeout(hasCachedFix: Boolean): Long {
-        val now = System.currentTimeMillis()
-        val cold = !hasCachedFix && now - lastColdStartAt >= COLD_START_EVERY_MS
-        if (cold) lastColdStartAt = now
-        return fixTimeoutSeconds(cold)
-    }
+    /** One fix from [provider] within [timeoutSeconds]; null on timeout or failure. */
+    @RequiresApi(Build.VERSION_CODES.R)
+    @SuppressLint("MissingPermission") // gated by collect()'s hasPermission() check
+    private fun currentFix(lm: LocationManager, provider: String, timeoutSeconds: Long): Location? = runCatching {
+        val latch = CountDownLatch(1)
+        val ref = AtomicReference<Location?>()
+        val cancel = CancellationSignal()
+        // Delivered on the binder thread, not the main executor: the caller may itself be on Main (CheckInService).
+        lm.getCurrentLocation(provider, cancel, Runnable::run) { loc ->
+            ref.set(loc); latch.countDown()
+        }
+        try {
+            if (latch.await(timeoutSeconds, TimeUnit.SECONDS)) ref.get() else null
+        } finally {
+            if (latch.count > 0) cancel.cancel() // timed out or interrupted: stop the request
+        }
+    }.getOrNull()
 
     companion object {
         private const val FIX_TIMEOUT_SEC = 5L
         private const val COLD_START_TIMEOUT_SEC = 30L
         private const val COLD_START_EVERY_MS = 15 * 60_000L
+        private val FRESH_FIX_PROVIDERS = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
 
         /** A device with no cached fix gets a GPS cold start, at most every 15 minutes (it delays that check-in). */
         fun fixTimeoutSeconds(coldStart: Boolean): Long = if (coldStart) COLD_START_TIMEOUT_SEC else FIX_TIMEOUT_SEC

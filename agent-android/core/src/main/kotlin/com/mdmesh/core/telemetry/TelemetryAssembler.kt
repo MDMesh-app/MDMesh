@@ -19,7 +19,7 @@ class TelemetryAssembler(
     private val dynamic: () -> DynamicState,
     private val security: () -> SecurityPosture,
 ) : TelemetrySource {
-    // GPS waits for mainExecutor callbacks: never block the enrolment service's Main thread.
+    // A GPS fix can take seconds: collect off the caller's thread (the check-in service calls from Main).
     override suspend fun snapshot(): TelemetrySnapshot = withContext(Dispatchers.IO) {
         TelemetrySnapshot(
             dynamic = dynamic(),

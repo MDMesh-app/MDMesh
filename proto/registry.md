@@ -75,7 +75,7 @@ string, except `configApply`.
 | `policy.apply` | `policy.<key>` (e.g. `policy.wifi`) | `{ policy: "wifi", value: false }` |
 | `app.install` | `app.silentInstall` | `{ url, packageName, versionCode, sha256, runAfterInstall }`, or `parts: [{ url, sha256 }]` instead of `url`/`sha256` for a split APK; `sha256` (hex) is required while the check-in says `installIntegrity: "required"` (1.3) |
 | `app.uninstall` | — | `{ packageName }`; no console or server sender yet |
-| `apps.scan` | — | none; result detail is `{ apps: [...] }` |
+| `apps.scan` | — | optional `{ includeAll: true }` requests all installed packages for the managed Android user; absent/false keeps the launcher-only scan. Result detail is `{ apps: [...], includeAll?: true }`; older agents omit the flag. |
 | `apps.icons` | — | `{ packages: [...] }`; result detail is `{ icons: [{ pkg, pngBase64 }] }` |
 | `kiosk.enter` | — | `{ mode, allowedPackages, pinPackage, features, exitMode, password, theme }` (`KioskApplyPayload`); `features.lockButtons` blocks the power menu, `features.lockVolume` (1.4) blocks volume changes and mutes while in kiosk |
 | `kiosk.exit` | — | none |

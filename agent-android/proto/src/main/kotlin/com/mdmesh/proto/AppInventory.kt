@@ -24,10 +24,15 @@ data class AppInfo(
     val versionCode: Long? = null,
 )
 
+/** By default scans launcher apps for kiosk; includeAll also reports hidden/system packages. */
+@Serializable
+data class AppScanRequest(val includeAll: Boolean = false)
+
 /** Result payload of `apps.scan` (carried as JSON in the command-result `detail`). */
 @Serializable
 data class AppScanResult(
     val apps: List<AppInfo> = emptyList(),
+    val includeAll: Boolean = false,
 )
 
 /** Payload of the `apps.icons` command: the packages whose icons the console wants rendered. */

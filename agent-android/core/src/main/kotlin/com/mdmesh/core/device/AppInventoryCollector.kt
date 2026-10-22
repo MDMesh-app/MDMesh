@@ -3,6 +3,7 @@ package com.mdmesh.core.device
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
@@ -13,7 +14,7 @@ import com.mdmesh.proto.AppInfo
 import java.io.ByteArrayOutputStream
 
 /**
- * Enumerates installed packages for the console's kiosk app picker. As Device Owner the agent holds
+ * Enumerates installed packages for the console inventory and kiosk app picker. As Device Owner the agent holds
  * `QUERY_ALL_PACKAGES`, so this sees every package including `com.android.*` system binaries.
  *
  * Split into a cheap [scan] (metadata only) and an on-demand, batched [icons] render, so the picker
@@ -22,7 +23,7 @@ import java.io.ByteArrayOutputStream
 class AppInventoryCollector(private val context: Context) {
 
     @Suppress("DEPRECATION") // PackageInfoFlags overloads are API 33+; we support minSdk 24
-    fun scan(): List<AppInfo> {
+    fun scan(includeAll: Boolean = false): List<AppInfo> {
         val pm = context.packageManager
         // Resolve all launchable packages in ONE query instead of getLaunchIntentForPackage per app
         // (that did an intent resolution each — ~hundreds of IPC round-trips, tens of seconds).
@@ -32,11 +33,14 @@ class AppInventoryCollector(private val context: Context) {
                 0,
             ).mapNotNull { it.activityInfo?.packageName }.toSet()
         }.getOrDefault(emptySet())
-        // Only launchable apps are useful for kiosk, so skip everything else entirely — we never
-        // label or emit the ~hundreds of non-launchable system packages, which keeps the result
-        // small and the scan fast. getInstalledPackages gives version + ApplicationInfo in one call.
-        return pm.getInstalledPackages(0).asSequence()
-            .filter { it.packageName in launchable }
+        // MATCH_UNINSTALLED_PACKAGES includes policy-hidden apps, but also retained data from
+        // removed packages. FLAG_INSTALLED excludes those entries for the agent's Android user.
+        val flags = if (includeAll) PackageManager.MATCH_UNINSTALLED_PACKAGES else 0
+        return pm.getInstalledPackages(flags).asSequence()
+            .filter { pi ->
+                if (includeAll) pi.applicationInfo?.let { (it.flags and ApplicationInfo.FLAG_INSTALLED) != 0 } == true
+                else pi.packageName in launchable
+            }
             .mapNotNull { pi ->
                 runCatching {
                     val ai = pi.applicationInfo
@@ -48,7 +52,7 @@ class AppInventoryCollector(private val context: Context) {
                         pkg = pi.packageName,
                         label = ai?.let { runCatching { pm.getApplicationLabel(it).toString() }.getOrNull() } ?: pi.packageName,
                         system = system,
-                        launchable = true,
+                        launchable = pi.packageName in launchable,
                         versionName = pi.versionName,
                         versionCode = code,
                     )

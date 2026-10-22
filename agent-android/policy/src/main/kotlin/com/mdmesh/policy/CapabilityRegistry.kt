@@ -1,8 +1,6 @@
 package com.mdmesh.policy
 
 import android.util.Log
-import com.mdmesh.policy.location.KeepLocationEnabledPolicy
-import com.mdmesh.policy.location.KeepLocationEnabledPolicyFactory
 import com.mdmesh.policy.bluetooth.BluetoothPolicy
 import com.mdmesh.policy.bluetooth.BluetoothPolicyFactory
 import com.mdmesh.policy.camera.CameraPolicy
@@ -60,7 +58,6 @@ class CapabilityRegistry(
      */
     private val toggles = TogglePolicyResolver(
         linkedMapOf<String, () -> TogglePolicy?>(
-            KeepLocationEnabledPolicy.CAPABILITY_KEY to { KeepLocationEnabledPolicyFactory.create(handle) },
             WifiPolicy.CAPABILITY_KEY to { WifiPolicyFactory.create(handle) },
             CameraPolicy.CAPABILITY_KEY to { CameraPolicyFactory.create(handle) },
             ScreenshotsPolicy.CAPABILITY_KEY to { ScreenshotsPolicyFactory.create(handle) },

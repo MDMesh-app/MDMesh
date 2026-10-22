@@ -31,19 +31,21 @@ class LocationCollector @Inject constructor(
     private val modeStore: LocationModeStore,
     private val permissionAccess: LocationPermissionAccess,
 ) {
+    /** When the last cold-start (no cached fix) wait began; bounds how often a check-in can wait that long. */
+    @Volatile private var lastColdStartAt = 0L
+
     /** What one collection reads, per location mode. */
     enum class Plan { NONE, LAST_KNOWN, FRESH_FIX }
 
     fun collect(): LocationDto? {
         val plan = plan(modeStore.get())
         if (plan == Plan.NONE) return null
+        // Before the check: a QR-enrolled agent can hold only the foreground grants (see LocationPermissionAccess).
         permissionAccess.ensure()
         if (!hasPermission()) return null
         val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
         val cached = lastKnown(lm)
-        val loc = if (plan == Plan.FRESH_FIX) {
-            currentFix(lm, fixTimeoutSeconds(cached != null)) ?: cached
-        } else cached
+        val loc = if (plan == Plan.FRESH_FIX) (currentFix(lm, fixTimeout(cached != null)) ?: cached) else cached
         return loc?.let {
             LocationDto(
                 lat = it.latitude,
@@ -81,7 +83,8 @@ class LocationCollector @Inject constructor(
             val latch = CountDownLatch(1)
             val ref = AtomicReference<Location?>()
             val cancel = CancellationSignal()
-            lm.getCurrentLocation(provider, cancel, context.mainExecutor) { loc ->
+            // Delivered on the binder thread, not the main executor: the caller may itself be on Main (CheckInService).
+            lm.getCurrentLocation(provider, cancel, Runnable::run) { loc ->
                 ref.set(loc); latch.countDown()
             }
             if (!latch.await(timeoutSeconds, TimeUnit.SECONDS)) {
@@ -93,13 +96,20 @@ class LocationCollector @Inject constructor(
         }.getOrNull()
     }
 
+    private fun fixTimeout(hasCachedFix: Boolean): Long {
+        val now = System.currentTimeMillis()
+        val cold = !hasCachedFix && now - lastColdStartAt >= COLD_START_EVERY_MS
+        if (cold) lastColdStartAt = now
+        return fixTimeoutSeconds(cold)
+    }
+
     companion object {
         private const val FIX_TIMEOUT_SEC = 5L
-        private const val FIRST_FIX_TIMEOUT_SEC = 30L
+        private const val COLD_START_TIMEOUT_SEC = 30L
+        private const val COLD_START_EVERY_MS = 15 * 60_000L
 
-        /** Freshly enrolled/reset devices have no cached fix: allow a GPS cold start. */
-        fun fixTimeoutSeconds(hasCachedFix: Boolean): Long =
-            if (hasCachedFix) FIX_TIMEOUT_SEC else FIRST_FIX_TIMEOUT_SEC
+        /** A device with no cached fix gets a GPS cold start, at most every 15 minutes (it delays that check-in). */
+        fun fixTimeoutSeconds(coldStart: Boolean): Long = if (coldStart) COLD_START_TIMEOUT_SEC else FIX_TIMEOUT_SEC
 
         fun plan(mode: String): Plan = when (LocationModeStore.normalize(mode)) {
             DeviceAction.LOCATION_OFF -> Plan.NONE

@@ -76,7 +76,6 @@ configuration; an ad-hoc "Enter kiosk" from the console is left alone.
   - **Do not track** (`requestUpdates = DONOTTRACK`, the column default) is sent as location mode `off`, and the
     agent reads no location. Older agents treat `off` as passive, so the server also drops location from check-ins
     of devices on a Do-not-track configuration.
-  - **`keepLocationEnabled`** (Device Owner, Android 11+) keeps system location on and prevents user changes. Off or Not managed unlocks it without switching it off. Reporting remains controlled by Location reporting. Before collecting a location, the agent repairs missing foreground/background permissions as Device Owner, including after an upgrade; denied grants are logged and retried.
   - **`wifiRadio`** switches the radio; `wifi` still only locks the Wi-Fi settings. See below.
   - **`kioskLockVolume`** blocks volume in kiosk (`DISALLOW_ADJUST_VOLUME`). Android mutes the device along with it,
     so it's a separate opt-in. `kioskLockButtons` blocks only the power menu.
@@ -114,8 +113,8 @@ lean on DO + lock-task auto-launch + WorkManager.
 - `:app` — status UI, manifest (install receiver, FGS types, `lockTaskMode`, queries), DI multibindings,
   baseline policy applied on enrollment.
 
-GPS reporting applies `location.mode = active` automatically from Location reporting = GPS.
-The agent immediately checks in once more after a successful GPS config.apply, so its first GPS
-telemetry does not depend on a manual command or the next heartbeat. Telemetry collectors run on
-Dispatchers.IO (location callbacks run on the main executor); a device without a cached position
-has up to 30 seconds for its first fix, with a 5-second timeout for later fixes.
+Location: before collecting, the agent (as Device Owner) grants itself any missing foreground or background location
+permission, so devices enrolled by QR code, which used to miss the background grant, report their location; a denied
+grant is logged and retried. Telemetry collectors run on Dispatchers.IO and the location callback runs on the
+binder thread, so a check-in never waits on the main thread. A device without a cached position gets up to 30
+seconds for a first fix, at most once every 15 minutes; otherwise a fix has 5 seconds.

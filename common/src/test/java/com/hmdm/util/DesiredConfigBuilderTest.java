@@ -14,20 +14,6 @@ import java.util.Scanner;
 import static org.junit.Assert.*;
 
 public class DesiredConfigBuilderTest {
-    @Test
-    public void keep_location_is_optional_and_changes_revision() {
-        Configuration c = new Configuration();
-        DesiredConfig initial = DesiredConfigBuilder.build(c, Collections.emptyList());
-        assertFalse(initial.getPolicies().containsKey("keepLocationEnabled"));
-        c.setKeepLocationEnabled(true);
-        DesiredConfig locked = DesiredConfigBuilder.build(c, Collections.emptyList());
-        assertEquals(Boolean.TRUE, locked.getPolicies().get("keepLocationEnabled"));
-        assertNotEquals(initial.getRevision(), locked.getRevision());
-        c.setKeepLocationEnabled(false);
-        assertEquals(Boolean.FALSE,
-                DesiredConfigBuilder.build(c, Collections.emptyList()).getPolicies().get("keepLocationEnabled"));
-    }
-
 
     /** Application ids and version ids are deliberately distinct: mainAppId is an applicationVersions.id. */
     private static Application app(int id, int versionId, String pkg, int action) {

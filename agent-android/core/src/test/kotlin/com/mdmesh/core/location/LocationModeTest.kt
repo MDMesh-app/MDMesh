@@ -5,9 +5,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class LocationModeTest {
-    @Test fun `first GPS fix gets a cold start window and later fixes keep short timeout`() {
-        assertEquals(30L, LocationCollector.fixTimeoutSeconds(false))
-        assertEquals(5L, LocationCollector.fixTimeoutSeconds(true))
+    @Test fun `a cold start gets a longer window, other fixes keep the short timeout`() {
+        assertEquals(30L, LocationCollector.fixTimeoutSeconds(coldStart = true))
+        assertEquals(5L, LocationCollector.fixTimeoutSeconds(coldStart = false))
     }
 
     @Test fun `off is kept, unknown values fall back to passive`() {

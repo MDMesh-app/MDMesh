@@ -68,12 +68,17 @@ class AdminPolicyComplianceActivity : Activity() {
             // Provision the DO reset-password token once, so device.passcodeReset works later.
             ResetPasswordTokenStore(ctx, handle).ensureToken()
             // Silently grant the telemetry runtime permissions as Device Owner.
-            listOf(
+            (listOf(
                 android.Manifest.permission.READ_PHONE_STATE,
                 android.Manifest.permission.READ_PHONE_NUMBERS,
                 android.Manifest.permission.ACCESS_FINE_LOCATION,
                 android.Manifest.permission.ACCESS_COARSE_LOCATION,
-            ).forEach { perm ->
+                // After the foreground grants: Android grants background location only on top of them. On this
+                // (Android 10+ QR) path nothing else is known to grant it while the agent is Device Owner.
+            ) + listOfNotNull(
+                android.Manifest.permission.ACCESS_BACKGROUND_LOCATION
+                    .takeIf { android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q },
+            )).forEach { perm ->
                 runCatching {
                     dpm.setPermissionGrantState(
                         handle.admin, ctx.packageName, perm,

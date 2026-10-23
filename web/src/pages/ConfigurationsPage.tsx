@@ -42,7 +42,10 @@ const isLocked = (c: Configuration) => c.id != null && SEED_IDS.has(c.id) && SEE
 
 /** The server flags a kiosk exit PIN that is a well-known default (absent on older servers). */
 const hasDefaultPin = (c: Configuration) => c.defaultKioskPin === true;
-/** Kiosk on with no exit PIN: anyone can leave kiosk mode without a prompt. */
+/**
+ * Kiosk on with no exit PIN: agents before 0.3.6 let anyone leave without a prompt; 0.3.6 and later have no exit on
+ * the device.
+ */
 const hasNoPin = (c: Configuration) => c.kioskMode === true && !c.password;
 
 // The configurations INSERT sets every column explicitly, so NOT-NULL columns
@@ -321,7 +324,7 @@ function ConfigCard({
           <span className="cfg-badge warn" title="The kiosk exit PIN is a well-known default. Change it.">Default PIN</span>
         ) : null}
         {hasNoPin(c) ? (
-          <span className="cfg-badge warn" title="Kiosk mode has no exit PIN, so anyone can leave it. Set one.">No PIN</span>
+          <span className="cfg-badge warn" title="Kiosk mode has no exit PIN. Agents before 0.3.6 let anyone leave it; 0.3.6 and later have no exit on the device. Set one.">No PIN</span>
         ) : null}
       </div>
       {c.description ? <div className="cfg-desc">{String(c.description)}</div> : null}
@@ -590,7 +593,7 @@ function ConfigEditor({
               kioskOn={draft.kioskMode === true}
               warn={f.key !== 'password' ? undefined
                 : defaultPin ? 'Well-known default PIN: change it.'
-                : noPin ? 'No PIN: anyone can leave kiosk. Set one.' : undefined}
+                : noPin ? 'No PIN: agents before 0.3.6 let anyone leave kiosk; 0.3.6+ have no exit on the device. Set one.' : undefined}
               apps={f.key === 'mainAppId' ? mainAppChoices : apps}
               assigned={allowed}
               disabled={readOnly}

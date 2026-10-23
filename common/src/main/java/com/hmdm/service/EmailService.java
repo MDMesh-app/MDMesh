@@ -186,6 +186,8 @@ public class EmailService {
         }
         properties.setProperty("mail.smtp.connectiontimeout", String.valueOf(CONNECT_TIMEOUT_MS));
         properties.setProperty("mail.smtp.timeout", String.valueOf(READ_TIMEOUT_MS));
+        // Honoured from JavaMail 1.5.2 on. The bundled 1.5.0 ignores it, so there only the connect and read timeouts
+        // apply; kept so an upgrade picks it up.
         properties.setProperty("mail.smtp.writetimeout", String.valueOf(WRITE_TIMEOUT_MS));
         return properties;
     }

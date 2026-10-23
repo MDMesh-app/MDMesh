@@ -86,8 +86,12 @@ public final class DesiredConfigBuilder {
 
     /**
      * Safe Mode starts the phone's own launcher and gets around kiosk, so a kiosk configuration that leaves it
-     * unmanaged blocks it. An explicit setting wins either way; when kiosk ends the key is unmanaged again and the agent
-     * lifts the block.
+     * unmanaged blocks it. An explicit setting wins either way. This is for agents before 0.3.7, which don't block Safe
+     * Mode in kiosk themselves; they also can't lift a block when the key stops being sent, so a device that leaves
+     * kiosk on such an agent keeps Safe Mode blocked until the setting is Allow. Agent 0.3.7 blocks Safe Mode in every
+     * kiosk itself (however it was entered); for it this default only makes the kiosk configuration's block explicit,
+     * so leaving kiosk with the PIN or Exit kiosk keeps Safe Mode blocked until kiosk is turned off on the
+     * configuration (the key then stops being sent and the agent lifts the block).
      */
     private static Boolean safeBootAllowed(Configuration cfg) {
         if (cfg.getDisableSafeBoot() != null) return !cfg.getDisableSafeBoot();

@@ -110,6 +110,18 @@ class ExitPinGateTest {
     }
 
     @Test
+    fun `after a reboot the lockout never ends before its full time has really passed`() {
+        // Locked at 10 min of uptime for 30 s; after a reboot uptime restarts at 0, so any reading past the old lock
+        // time means at least that much real time has passed since boot alone.
+        uptimeMs = 10 * 60_000L
+        lockOut()
+        uptimeMs = 10 * 60_000L + 5_000L // rebooted and has been up a little longer than before
+        assertEquals("treated as the same boot: 25 s left", 25_000L, gate.remainingLockMs())
+        uptimeMs += 25_000L
+        assertNull(gate.remainingLockMs())
+    }
+
+    @Test
     fun `an attempt that can't be saved is refused, not checked`() {
         store.writable = false
         assertEquals("not even the right PIN", Outcome.Unavailable, gate.attempt(pin, pin))

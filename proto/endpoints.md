@@ -79,9 +79,9 @@ takes at most 1000 per check-in). The agent drops those and keeps the rest for i
 server) means all of them were taken.
 
 An agent runs its commands inside a check-in, one check-in at a time, and reports each result in a later check-in. So
-when a check-in arrives without the result of a `config.apply` delivered before it, and the device's applied revision
-differs from the current one, the server takes it that the agent stopped mid-apply (Android ended it, a restart, an
-update): it records that `config.apply` as `expired` and sends the current configuration in the same response. A
+when a check-in arrives without the result of a `config.apply` delivered before it, and the server would send the
+configuration again (the device's applied revision differs from the current one, or its agent version changed), the
+server takes it that the agent stopped mid-apply (Android ended it, a restart, an update): it records that `config.apply` as `expired` and sends the current configuration in the same response. A
 result that arrives later still counts. Agents must keep this property: never send a check-in while a delivered
 `config.apply` is still running.
 

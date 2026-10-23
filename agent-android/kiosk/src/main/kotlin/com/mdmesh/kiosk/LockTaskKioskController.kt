@@ -79,6 +79,17 @@ class LockTaskKioskController(
         }
     }
 
+    override fun setSafeModeBlocked(blocked: Boolean): KioskResult {
+        if (!dpm.isDeviceOwnerApp(admin.packageName)) return KioskResult.Unsupported
+        return runGuarded {
+            if (blocked) {
+                dpm.addUserRestriction(admin, UserManager.DISALLOW_SAFE_BOOT)
+            } else {
+                dpm.clearUserRestriction(admin, UserManager.DISALLOW_SAFE_BOOT)
+            }
+        }
+    }
+
     override fun isLocked(context: Context): Boolean {
         val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
             ?: return false

@@ -118,7 +118,7 @@ export function BulkKioskModal({
         </label>
         <label className="field">
           <span>Kiosk exit PIN</span>
-          <input type="password" value={password} placeholder="Empty: no exit on the device"
+          <input type="password" value={password} placeholder="Empty: no exit on the device (agent 0.3.6+)"
                  title={EXIT_PIN_HELP} onChange={(e) => setPassword(e.target.value)} />
         </label>
 

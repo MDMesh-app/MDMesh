@@ -35,6 +35,7 @@ import com.mdmesh.core.power.PowerModeStore
 import com.mdmesh.core.command.handlers.KioskEnterHandler
 import com.mdmesh.core.command.handlers.KioskExitHandler
 import com.mdmesh.core.kiosk.AndroidKioskHomeSwitch
+import com.mdmesh.core.kiosk.ConfiguredSafeModeSetting
 import com.mdmesh.core.kiosk.KioskApplier
 import com.mdmesh.core.command.handlers.PolicyApplyHandler
 import com.mdmesh.core.device.AppInventoryCollector
@@ -268,10 +269,15 @@ object AgentModule {
     fun provideKioskApplier(
         kiosk: KioskController,
         store: KioskStateStore,
+        configStore: ConfigStateStore,
         @ApplicationContext context: Context,
     ): KioskApplier {
         val home = kioskHomeAlias(context)
-        return KioskApplier(kiosk, store, AndroidKioskHomeSwitch(context, home), home) { kiosk.isLocked(context) }
+        return KioskApplier(
+            kiosk, store, AndroidKioskHomeSwitch(context, home), home,
+            safeMode = ConfiguredSafeModeSetting(configStore),
+            isLockTaskActive = { kiosk.isLocked(context) },
+        )
     }
 
     @Provides @IntoSet

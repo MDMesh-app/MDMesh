@@ -112,7 +112,7 @@ class ExitPinGate(
          * Constant-time comparison, so response timing doesn't reveal how much of a guess was right. Both sides are
          * NFKC-normalised first, so full-width digits from a CJK keyboard match the ASCII digits of the PIN.
          */
-        fun matches(entered: String, pin: String): Boolean =
+        internal fun matches(entered: String, pin: String): Boolean =
             MessageDigest.isEqual(normalized(entered), normalized(pin))
 
         private fun normalized(s: String): ByteArray =

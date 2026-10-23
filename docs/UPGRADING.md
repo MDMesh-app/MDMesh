@@ -140,6 +140,21 @@ available).
 
 ## Version notes
 
+### v0.3.7
+
+Completes the Safe Mode part of 0.3.6. Update the server, then roll out agent 0.3.7 from **Settings → Agent
+rollout**, to one device first.
+
+- **Safe Mode in kiosk:** agent 0.3.7 blocks Safe Mode whenever the device is in kiosk, however kiosk was started
+  (a configuration, or **Enter kiosk** on the device page), unless the configuration's Safe Mode setting is **Allow**.
+- **When the block is lifted:** once nothing asks for it. That is when a kiosk started with **Enter kiosk** ends, or
+  when kiosk is turned off on the configuration, unless the setting is **Block**. A kiosk configuration keeps Safe Mode
+  blocked while it has kiosk on, even after someone leaves kiosk with the PIN.
+- **Not managed** now really means not managed outside kiosk: agent 0.3.7 lifts a Safe Mode block nothing asks for.
+  On older agents, a device that left a kiosk configuration keeps Safe Mode blocked until the setting is **Allow**.
+- **Until devices have agent 0.3.7:** a device put into kiosk with **Enter kiosk**, on a configuration without kiosk,
+  can still reboot into Safe Mode. Set Safe Mode to **Block** on that configuration.
+
 ### v0.3.6
 
 A security release for kiosk devices. Update every server, then roll out agent 0.3.6 from **Settings → Agent
@@ -152,7 +167,10 @@ rollout**, to one device first.
   an hour. A restart doesn't end a lockout. Administrators who can manage the device get an email, if SMTP is set up
   ([Kiosk alerts](OPERATIONS.md#server)).
 - **Safe Mode:** kiosk configurations whose Safe Mode setting is **Not managed** now block Safe Mode. Kiosk devices
-  re-apply their configuration once after the server update. To allow Safe Mode, set it to **Allow**.
+  get their configuration again once after the server update, which also applies it to devices that hadn't received
+  the latest version. That puts a device you took out with **Exit kiosk** back into its configuration's kiosk, and
+  starts kiosk on configurations whose Recents or Notifications without Home had kept it from starting. To allow Safe
+  Mode, set it to **Allow**. See v0.3.7 for kiosks started from the device page.
 - **A kiosk app that keeps stopping** leaves the device in kiosk on an "App closed" screen with an **Open again**
   button. Before, kiosk ended.
 - **Apps page:** saving app assignments no longer changes other configurations' settings. With `LEGACY_DEVICE_API=1`,

@@ -8,6 +8,13 @@ line under Unreleased.
 
 ## Unreleased
 
+New
+- Configurations can keep system location enabled and prevent user changes (Device Owner, Android 11+; needs the updated agent).
+
+Fixes
+- GPS reporting after enrolment no longer waits for a manual Accurate command: collect telemetry off the main thread, allow a 30-second first fix, and report immediately after applying a GPS configuration.
+- Location reporting repairs missing foreground/background permissions on already enrolled Device Owners, including after agent upgrades.
+
 ## v0.3.7 — 2026-10-22
 
 Upgrading

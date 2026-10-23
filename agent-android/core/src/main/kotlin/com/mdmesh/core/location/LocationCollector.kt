@@ -29,15 +29,21 @@ import javax.inject.Singleton
 class LocationCollector @Inject constructor(
     @ApplicationContext private val context: Context,
     private val modeStore: LocationModeStore,
+    private val permissionAccess: LocationPermissionAccess,
 ) {
     /** What one collection reads, per location mode. */
     enum class Plan { NONE, LAST_KNOWN, FRESH_FIX }
 
     fun collect(): LocationDto? {
         val plan = plan(modeStore.get())
-        if (plan == Plan.NONE || !hasPermission()) return null
+        if (plan == Plan.NONE) return null
+        permissionAccess.ensure()
+        if (!hasPermission()) return null
         val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
-        val loc = if (plan == Plan.FRESH_FIX) (currentFix(lm) ?: lastKnown(lm)) else lastKnown(lm)
+        val cached = lastKnown(lm)
+        val loc = if (plan == Plan.FRESH_FIX) {
+            currentFix(lm, fixTimeoutSeconds(cached != null)) ?: cached
+        } else cached
         return loc?.let {
             LocationDto(
                 lat = it.latitude,
@@ -65,13 +71,12 @@ class LocationCollector @Inject constructor(
 
     /** A single fresh fix with a short timeout (API 30+ only); null on timeout/failure. */
     @SuppressLint("MissingPermission") // gated by collect()'s hasPermission() check
-    private fun currentFix(lm: LocationManager): Location? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
-        val provider = when {
-            lm.isProviderEnabled(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
-            lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER) -> LocationManager.NETWORK_PROVIDER
-            else -> return null
-        }
+    private fun currentFix(lm: LocationManager, timeoutSeconds: Long): Location? {
+        val provider = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+                .firstOrNull { lm.isProviderEnabled(it) }
+        } else null
+        if (provider == null) return null
         return runCatching {
             val latch = CountDownLatch(1)
             val ref = AtomicReference<Location?>()
@@ -79,7 +84,7 @@ class LocationCollector @Inject constructor(
             lm.getCurrentLocation(provider, cancel, context.mainExecutor) { loc ->
                 ref.set(loc); latch.countDown()
             }
-            if (!latch.await(FIX_TIMEOUT_SEC, TimeUnit.SECONDS)) {
+            if (!latch.await(timeoutSeconds, TimeUnit.SECONDS)) {
                 cancel.cancel()
                 null
             } else {
@@ -90,6 +95,11 @@ class LocationCollector @Inject constructor(
 
     companion object {
         private const val FIX_TIMEOUT_SEC = 5L
+        private const val FIRST_FIX_TIMEOUT_SEC = 30L
+
+        /** Freshly enrolled/reset devices have no cached fix: allow a GPS cold start. */
+        fun fixTimeoutSeconds(hasCachedFix: Boolean): Long =
+            if (hasCachedFix) FIX_TIMEOUT_SEC else FIRST_FIX_TIMEOUT_SEC
 
         fun plan(mode: String): Plan = when (LocationModeStore.normalize(mode)) {
             DeviceAction.LOCATION_OFF -> Plan.NONE

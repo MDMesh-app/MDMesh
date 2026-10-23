@@ -3007,4 +3007,9 @@
         <rollback>DROP INDEX IF EXISTS agentCommand_one_open_config_apply;</rollback>
     </changeSet>
 
+    <changeSet id="26.10.22-configurations-keepLocationEnabled" author="mdmesh" context="common">
+        <comment>Optional policy to keep system location enabled and prevent user changes.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN keepLocationEnabled BOOLEAN;</sql>
+        <rollback>ALTER TABLE configurations DROP COLUMN keepLocationEnabled;</rollback>
+    </changeSet>
 </databaseChangeLog>

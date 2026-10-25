@@ -8,6 +8,8 @@ line under Unreleased.
 
 ## Unreleased
 
+## v0.3.8 — 2026-10-24
+
 Upgrading
 - Update every server: this is a security release. The security fixes need no new agent; the location fix below
   needs agent 0.3.8.

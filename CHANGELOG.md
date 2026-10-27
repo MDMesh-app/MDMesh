@@ -8,6 +8,11 @@ line under Unreleased.
 
 ## Unreleased
 
+New
+- Connectivity per configuration: set Always-on (the agent keeps its live connection up, so Lock, Ring or Wipe reach
+  a locked phone within seconds) or Battery-saver on the configuration instead of on each device. Not managed, the
+  default, leaves each device's own setting. Needs the new agent (protocol 1.5); older agents ignore it.
+
 ## v0.3.9 — 2026-10-27
 
 Upgrading

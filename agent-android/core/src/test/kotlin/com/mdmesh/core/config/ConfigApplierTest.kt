@@ -17,6 +17,7 @@ import com.mdmesh.policy.wifi.InMemoryWifiRadioOffState
 import com.mdmesh.policy.wifi.WifiRadio
 import com.mdmesh.policy.wifi.WifiRadioPolicy
 import com.mdmesh.proto.ConfigApplyPayload
+import com.mdmesh.proto.ConfigConnectivity
 import com.mdmesh.proto.ConfigLocation
 import com.mdmesh.proto.ConfigOutcome
 import com.mdmesh.proto.KioskApplyPayload
@@ -346,5 +347,29 @@ class ConfigApplierTest {
         store.save(ConfigApplyPayload(revision = "n1"))
         assertFalse(ConfigApplier(fixedToggles(), kiosk(FakeController()), {}, store).selfHealWifiRadio { null })
         assertEquals("n1", store.revision())
+    }
+
+    @Test fun `connectivity sets the power mode, and a document without it leaves the mode alone`() = runTest {
+        val store = InMemoryConfigStateStore(); val modes = mutableListOf<String>()
+        val applier = ConfigApplier(fixedToggles(), kiosk(FakeController()), {}, store, setPowerMode = { modes += it })
+
+        val r = applier.apply(ConfigApplyPayload(revision = "c1", connectivity = ConfigConnectivity("alwaysOn")))
+        assertEquals(mapOf("connectivity" to ConfigOutcome.APPLIED), r.outcomes)
+        assertEquals(listOf("alwaysOn"), modes)
+        assertEquals("c1", store.revision())
+
+        val unmanaged = applier.apply(ConfigApplyPayload(revision = "c2"))
+        assertFalse("not managed -> no connectivity key", unmanaged.outcomes.containsKey("connectivity"))
+        assertEquals("not managed -> the device keeps its mode", listOf("alwaysOn"), modes)
+        assertEquals("c2", store.revision())
+    }
+
+    @Test fun `a connectivity mode that can't be set fails and the document is not saved`() = runTest {
+        val store = InMemoryConfigStateStore()
+        val r = ConfigApplier(fixedToggles(), kiosk(FakeController()), {}, store, setPowerMode = { error("prefs") })
+            .apply(ConfigApplyPayload(revision = "c3", connectivity = ConfigConnectivity("adaptive")))
+        assertEquals(ConfigOutcome.failed("prefs"), r.outcomes["connectivity"])
+        assertFalse(ConfigApplier.succeeded(r))
+        assertNull(store.revision())
     }
 }

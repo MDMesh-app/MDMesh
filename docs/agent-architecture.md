@@ -55,7 +55,7 @@ configuration.
 **Kiosk.** Kiosk on in the configuration enters kiosk. Kiosk off exits it only on devices that entered via a
 configuration; an ad-hoc "Enter kiosk" from the console is left alone.
 
-**The 22 enforced fields**
+**The 23 enforced fields**
 
 | Area | Fields |
 |------|--------|
@@ -63,6 +63,7 @@ configuration; an ad-hoc "Enter kiosk" from the console is left alone.
 | Launcher look | `backgroundColor`, `textColor`, `iconSize` |
 | Device policy | `wifi`, `wifiRadio`, `bluetooth`, `usbStorage`, `disableScreenshots`, `disableFactoryReset`, `disableSafeBoot` |
 | Location | `requestUpdates` (location capture mode) |
+| Connectivity | `connectivityMode` (live-connection mode, 1.5) |
 
 `name` and `description` are metadata only. Wire shapes: `proto/payloads/config-apply.schema.json` and
 `proto/payloads/config-apply-result.schema.json`.
@@ -81,6 +82,11 @@ configuration; an ad-hoc "Enter kiosk" from the console is left alone.
     so it's a separate opt-in. `kioskLockButtons` blocks only the power menu.
   - New columns are NULL on upgrade, so revisions only change for configurations that use them, and for
     Do-not-track configurations (whose devices get one `config.apply`).
+- **1.5:** the `connectivity` section (`connectivityMode`): `adaptive` (Battery-saver, the agent's default) holds the
+  wake socket only while the screen is on or charging; `alwaysOn` holds it 24/7, so commands reach a locked device in
+  seconds instead of at the next heartbeat. Applied through the same `PowerModeStore` as `device.powerMode`. NULL is
+  not managed: the section is omitted, so existing revisions don't move, and each device keeps its mode, including
+  one set by `device.powerMode` (which lasts until the configuration's next `config.apply`). Older agents ignore it.
 
 **Wi-Fi radio Off, in detail**
 - Off is deferred, without blocking the other keys, while Wi-Fi is the device's only network. It's retried only at

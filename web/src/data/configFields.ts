@@ -73,6 +73,7 @@ const WIFI_HELP = 'Block locks the Wi-Fi settings so users cannot change network
 const WIFI_RADIO_HELP = 'Needs agent 0.3.4 or later. On turns Wi-Fi on. Off turns it off and, on Android 13 and later, stops users turning it back on. Off is skipped (shown as deferred) while Wi-Fi is the only network, so the device stays reachable, and is tried again at the next configuration change, reboot or agent update. Phones that switch mobile data off while on Wi-Fi cannot apply it. If the device cannot reach the server for about 30 minutes after Wi-Fi was turned off (SIM removed, server only reachable on the Wi-Fi network), the agent turns Wi-Fi back on and keeps it on until the configuration is changed; Off then shows as deferred. A longer server outage, or a user cutting the device off (airplane mode, pulling the SIM), does the same. Any change to the configuration applies Off again. Not managed lifts the lock and leaves the radio as it is.';
 const LOCK_BUTTONS_HELP = 'Block the power menu in kiosk. Volume buttons are a separate setting, Lock volume buttons (kiosk).';
 const LOCK_VOLUME_HELP = 'Applies in kiosk mode, with agent 0.3.4 or later: blocks volume changes. Android mutes the device while volume is locked, so Ring device is silent on it; the lock is lifted when kiosk ends.';
+const CONNECTIVITY_HELP = 'Needs an agent with protocol 1.5 or later; older agents ignore it. Battery-saver holds the live connection only while the screen is on or the device is charging, so a command sent to a locked phone on battery waits for the next heartbeat (about 10 minutes, longer in deep Doze) or for the screen to come on. Always-on keeps the connection up 24/7, so commands such as Lock, Ring or Wipe reach a locked phone within seconds, at a battery cost. For the fastest delivery, also exempt the MDMesh agent from battery optimization on the device. Not managed leaves each device as it is, including a mode set from its device page; a mode set on the device page lasts until this configuration changes.';
 const LOCATION_HELP = 'Do not track collects no location with agent 0.3.4 or later, and the server drops any location an older agent still reports. Last known (passive) reports the location the device already has at each check-in; GPS (fresh fix) asks for a new fix each time (more accurate, more battery).';
 
 export const GROUP_ORDER: FieldGroup[] = [
@@ -127,6 +128,9 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'bluetooth', label: 'Bluetooth', type: 'tri', group: 'Network', enforced: true, segments: ALLOW_BLOCK, help: 'Block turns Bluetooth off and stops users turning it on. Allow lifts the block (it does not turn Bluetooth on).' },
   { key: 'requestUpdates', label: 'Location reporting', type: 'enum', group: 'Network', enforced: true, help: LOCATION_HELP, options: [
     { value: 'DONOTTRACK', label: 'Do not track' }, { value: 'WIFI', label: 'Last known (passive)' }, { value: 'GPS', label: 'GPS (fresh fix)' },
+  ] },
+  { key: 'connectivityMode', label: 'Connectivity', type: 'enum', group: 'Network', enforced: true, help: CONNECTIVITY_HELP, options: [
+    { value: 'adaptive', label: 'Battery-saver' }, { value: 'alwaysOn', label: 'Always-on' },
   ] },
   { key: 'mobileData', label: 'Mobile data', type: 'tri', group: 'Network', help: 'Headwind launcher switched mobile data (needed system-app rights).' },
   { key: 'gps', label: 'GPS / location', type: 'tri', group: 'Network', help: 'Headwind launcher switched the location setting.' },

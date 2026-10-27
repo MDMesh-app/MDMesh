@@ -141,7 +141,8 @@ public interface ConfigurationMapper {
             "disableFactoryReset=#{disableFactoryReset}, " +
             "disableSafeBoot=#{disableSafeBoot}, " +
             "wifiRadio=#{wifiRadio}, " +
-            "kioskLockVolume=#{kioskLockVolume} " +
+            "kioskLockVolume=#{kioskLockVolume}, " +
+            "connectivityMode=#{connectivityMode} " +
             "WHERE id=#{id}"})
     void updateConfiguration(Configuration configuration);
 

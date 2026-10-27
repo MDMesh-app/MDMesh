@@ -16,8 +16,8 @@ import kotlinx.coroutines.sync.withLock
 
 /**
  * Converges the device to a desired-state document. Each present section is applied through the code that
- * already serves the imperative commands (toggle strategies, [KioskApplier], location mode), so `config.apply`
- * adds no new device behavior — only orchestration and reporting.
+ * already serves the imperative commands (toggle strategies, [KioskApplier], location mode, connectivity mode), so
+ * `config.apply` adds no new device behavior — only orchestration and reporting.
  *
  * Idempotent: applying the same document twice is a no-op at the OS level. The document is persisted (and its
  * revision reported to the server) only when no section failed; `unsupported` is final and `deferred` (1.4) is
@@ -30,12 +30,14 @@ import kotlinx.coroutines.sync.withLock
  *   operation and never kept: Device-Owner status flips to true partway through QR provisioning, after this
  *   singleton may have been built (#76). A key whose check threw ([ResolvedToggles.errors]) is reported failed,
  *   never unsupported, so the document is not saved and the server re-sends it; it is never applied or released.
+ * @param setPowerMode sets the live-connection mode for the `connectivity` section (1.5), as `device.powerMode` does.
  */
 class ConfigApplier(
     private val toggles: () -> ResolvedToggles,
     private val kiosk: KioskApplier,
     private val setLocationMode: (String) -> Unit,
     private val store: ConfigStateStore,
+    private val setPowerMode: (String) -> Unit = {},
 ) {
     private val mutex = Mutex()
 
@@ -115,6 +117,11 @@ class ConfigApplier(
         doc.location?.let { loc ->
             outcomes["location"] = runCatching { setLocationMode(loc.mode); ConfigOutcome.APPLIED }
                 .getOrElse { ConfigOutcome.failed(it.message ?: "location mode") }
+        }
+        // Absent = not managed: the device keeps its mode, including one set by a device.powerMode command.
+        doc.connectivity?.let { c ->
+            outcomes[CONNECTIVITY] = runCatching { setPowerMode(c.mode); ConfigOutcome.APPLIED }
+                .getOrElse { ConfigOutcome.failed(it.message ?: "connectivity mode") }
         }
         val result = ConfigApplyResult(doc.revision, outcomes)
         if (persist && succeeded(result)) store.save(doc)
@@ -198,6 +205,7 @@ class ConfigApplier(
     companion object {
         private const val POLICIES = "policies."
         private const val KIOSK = "kiosk"
+        private const val CONNECTIVITY = "connectivity"
 
         /** Never a real revision (config.apply requires a non-blank one). */
         private const val NO_REVISION = ""

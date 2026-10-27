@@ -263,6 +263,30 @@ public class DesiredConfigBuilderTest {
     }
 
     @Test
+    public void connectivity_is_sent_only_when_managed_and_null_keeps_the_revision() {
+        // Existing configurations upgrade with a NULL column (protocol 1.5): no section, and no revision moves.
+        DesiredConfig unmanaged = DesiredConfigBuilder.build(policiesConfig(), Collections.emptyList());
+        assertNull("null connectivityMode = not managed", unmanaged.getConnectivity());
+        assertFalse(DesiredConfigBuilder.canonicalJson(unmanaged).contains("connectivity"));
+        assertEquals(resource("desired-config-kiosk.sha256"),
+                DesiredConfigBuilder.build(kioskConfig(), Arrays.asList(app(5, 505, "com.acme.pos", 1))).getRevision());
+
+        Configuration always = policiesConfig(); always.setConnectivityMode("alwaysOn");
+        DesiredConfig d = DesiredConfigBuilder.build(always, Collections.emptyList());
+        assertEquals("alwaysOn", d.getConnectivity().getMode());
+        assertTrue(DesiredConfigBuilder.canonicalJson(d).contains("\"connectivity\":{\"mode\":\"alwaysOn\"}"));
+        assertNotEquals(unmanaged.getRevision(), d.getRevision());
+
+        Configuration adaptive = policiesConfig(); adaptive.setConnectivityMode("adaptive");
+        assertEquals("adaptive", DesiredConfigBuilder.build(adaptive, Collections.emptyList()).getConnectivity().getMode());
+
+        Configuration unknown = policiesConfig(); unknown.setConnectivityMode("turbo");
+        DesiredConfig u = DesiredConfigBuilder.build(unknown, Collections.emptyList());
+        assertNull("a mode this server doesn't know is not managed", u.getConnectivity());
+        assertEquals(unmanaged.getRevision(), u.getRevision());
+    }
+
+    @Test
     public void kiosk_volume_lock_is_its_own_opt_in_not_part_of_lock_buttons() {
         // Android mutes the device while volume is locked: lockButtons=true configurations must not start muting.
         Configuration buttons = kioskConfig(); buttons.setKioskLockButtons(true);

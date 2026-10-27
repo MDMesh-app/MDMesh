@@ -124,6 +124,8 @@ public class Configuration implements CustomerData, Serializable {
     private Boolean kioskLockVolume;
     @ApiModelProperty("Wi-Fi radio: null = not managed, true = turn on, false = turn off (sent as policies.wifiRadio)")
     private Boolean wifiRadio;
+    @ApiModelProperty("Agent connectivity: null = not managed, adaptive = battery-saver, alwaysOn = always connected (connectivity.mode)")
+    private String connectivityMode;
     @ApiModelProperty("Flag indicating if auto-started apps should be kept in the foreground")
     private Boolean autostartForeground;
     @ApiModelProperty("Time zone settings: null for using default settings, auto for automatic time zone, or Olson time zone string")
@@ -919,6 +921,14 @@ public class Configuration implements CustomerData, Serializable {
         this.wifiRadio = wifiRadio;
     }
 
+    public String getConnectivityMode() {
+        return connectivityMode;
+    }
+
+    public void setConnectivityMode(String connectivityMode) {
+        this.connectivityMode = connectivityMode;
+    }
+
     public Configuration newCopy() {
         Configuration copy = new Configuration();
 
@@ -1005,6 +1015,7 @@ public class Configuration implements CustomerData, Serializable {
         copy.setDisableSafeBoot(getDisableSafeBoot());
         copy.setKioskLockVolume(getKioskLockVolume());
         copy.setWifiRadio(getWifiRadio());
+        copy.setConnectivityMode(getConnectivityMode());
 
         return copy;
     }

@@ -3016,4 +3016,12 @@
         <rollback>ALTER TABLE users DROP COLUMN passwordResetTokenTime;</rollback>
     </changeSet>
 
+    <changeSet id="26.10.27-configurations-connectivityMode" author="Przemek-Magic" context="common">
+        <comment>Column,new: configurations#connectivityMode (sent as connectivity.mode in config.apply, protocol 1.5):
+            adaptive (battery-saver) or alwaysOn (keep the live connection up). No DEFAULT: NULL = unmanaged, so each
+            device keeps its own setting and existing configurations keep their revision.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN connectivityMode VARCHAR(16);</sql>
+        <rollback>ALTER TABLE configurations DROP COLUMN connectivityMode;</rollback>
+    </changeSet>
+
 </databaseChangeLog>

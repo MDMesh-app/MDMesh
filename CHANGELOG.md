@@ -8,6 +8,8 @@ line under Unreleased.
 
 ## Unreleased
 
+## v0.3.9 — 2026-10-27
+
 Upgrading
 - Update every server: this is a security release. Devices need no new agent, and the updater (supervisor) is
   unchanged. Quick-start and from-source installs: apply the update from Settings → Updates. Native installs: re-run

@@ -146,6 +146,8 @@ class ResourceAuditor {
                     StripPasswordResponse response = stripPassword(body);
                     body = response.result;
                     requestedLogin = response.login;
+                } else if (needStripCommandPayload(action)) {
+                    body = stripCommandPayload(body);
                 }
                 payloadString += "\nBody: " + body;
             }
@@ -193,6 +195,40 @@ class ResourceAuditor {
                "plugin.audit.action.password.changed".equals(action) ||
                "plugin.audit.action.update.configuration".equals(action) ||
                "plugin.audit.action.update.user".equals(action);
+    }
+
+    private boolean needStripCommandPayload(String action) {
+        return "plugin.audit.action.device.command".equals(action) ||
+               "plugin.audit.action.device.bulk.command".equals(action);
+    }
+
+    /**
+     * <p>Masks the payload of an agent command request, for one device ({"type", "payload", ...}) or many
+     * ({"deviceIds", "command": {"type", "payload", ...}}). A payload can carry a secret (a kiosk exit password, a
+     * new screen lock PIN), so it is never stored; the command type, the device IDs and the capability are kept.
+     * A body that is not valid JSON is not stored either.</p>
+     *
+     * @param jsonPayload a request body.
+     * @return the request body to store in the audit log.
+     */
+    static String stripCommandPayload(String jsonPayload) {
+        try {
+            JSONObject jsonObject = new JSONObject(jsonPayload);
+            maskCommandPayload(jsonObject);
+            JSONObject command = jsonObject.optJSONObject("command");
+            if (command != null) {
+                maskCommandPayload(command);
+            }
+            return jsonObject.toString();
+        } catch (JSONException e) {
+            return "(not valid JSON, not stored)";
+        }
+    }
+
+    private static void maskCommandPayload(JSONObject command) {
+        if (command.has("payload") && !command.isNull("payload")) {
+            command.put("payload", "******");
+        }
     }
 
     private class StripPasswordResponse {

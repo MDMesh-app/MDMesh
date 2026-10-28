@@ -27,6 +27,7 @@ import javax.servlet.ServletResponse;
 import java.awt.image.ImagingOpException;
 import java.io.IOException;
 import java.util.Optional;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
@@ -62,7 +63,9 @@ public enum ResourceAuditInfo {
     PASSWORD_CHANGED("PUT", "/rest/private/users/current", true, "plugin.audit.action.password.changed", true, true),
     DEVICE_PASSWORD_RESET("PUT", "/rest/plugins/devicereset/private/password", true, "plugin.audit.action.password.reset", true, true),
     DEVICE_FACTORY_RESET("PUT", "/rest/plugins/devicereset/private/reset", false, "plugin.audit.action.device.reset", false, true),
-    DEVICE_LOCK("PUT", "/rest/plugins/devicereset/private/lock", true, "plugin.audit.action.device.lock", true, true);
+    DEVICE_LOCK("PUT", "/rest/plugins/devicereset/private/lock", true, "plugin.audit.action.device.lock", true, true),
+    DEVICE_COMMAND("POST", Pattern.compile("/rest/private/agent/v1/devices/[^/]+/commands/?"), "plugin.audit.action.device.command", true, true),
+    BULK_DEVICE_COMMAND("POST", Pattern.compile("/rest/private/agent/v1/bulk/commands/?"), "plugin.audit.action.device.bulk.command", true, true);
 
     /**
      * <p>Method for the REST resource to track audit log for.</p>
@@ -79,6 +82,12 @@ public enum ResourceAuditInfo {
      * audited.</p>
      */
     private final boolean uriExactMatch;
+
+    /**
+     * <p>A pattern the whole resource URI must match, for URIs with a path parameter in the middle (a device ID).
+     * When set, it replaces {@link #uri} and {@link #uriExactMatch}.</p>
+     */
+    private final Pattern uriPattern;
 
     /**
      * <p>A key in message resource bundle referring to description of action mapped to audited request.</p>
@@ -102,6 +111,20 @@ public enum ResourceAuditInfo {
         this.method = method;
         this.uri = uri;
         this.uriExactMatch = uriExactMatch;
+        this.uriPattern = null;
+        this.auditLogAction = auditLogAction;
+        this.payload = payload;
+        this.checkResponse = checkResponse;
+    }
+
+    /**
+     * <p>Constructs new <code>ResourceAuditInfo</code> instance matching the request URI against a pattern.</p>
+     */
+    ResourceAuditInfo(String method, Pattern uriPattern, String auditLogAction, boolean payload, boolean checkResponse) {
+        this.method = method;
+        this.uri = null;
+        this.uriExactMatch = true;
+        this.uriPattern = uriPattern;
         this.auditLogAction = auditLogAction;
         this.payload = payload;
         this.checkResponse = checkResponse;
@@ -129,6 +152,9 @@ public enum ResourceAuditInfo {
     private boolean matches(String requestMethod, String requestUri) {
         if (!this.method.equalsIgnoreCase(requestMethod)) {
             return false;
+        }
+        if (this.uriPattern != null) {
+            return this.uriPattern.matcher(requestUri).matches();
         }
         if (this.uriExactMatch) {
             return this.uri.equals(requestUri);

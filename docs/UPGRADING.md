@@ -141,6 +141,129 @@ available).
 
 ## Version notes
 
+### v0.4.0
+
+The console is new: every page was rebuilt. This part is for everyone who runs MDMesh. Forks that change the console
+or add server plugins also read [v0.4.0 for forks](#v040-for-forks) below.
+
+- **Updating.** As the [table](#upgrading-mdmesh) at the top says: quick start, **Settings → Updates**; from source,
+  `git pull && ./setup.sh`; native, `git pull && sudo ./setup.sh --native`. The database update is automatic: on start, the server adds one column, `configurations.extensions`, set
+  to `{}` for every existing configuration. There is nothing new to set: no new `.env` setting or server parameter,
+  no new agent, no supervisor update, and no device re-applies its configuration.
+- **Rolling back to 0.3.9 is safe.** A one-click rollback, and the restores in
+  [Backups and restore](OPERATIONS.md#backups-and-restore), bring back the database from before the update, without
+  the column. A 0.3.9 server started on the 0.4.0 database works too: it never reads or writes the column, and a
+  configuration it creates gets the `{}` default. What a fork's plugin or extension stored there stays for the next
+  0.4.0.
+- **Pages and actions follow the role**, below.
+- **Old bookmarks redirect.** The v0.3 console's `/dashboard` goes to `/`, and `/configs` to `/configurations`. The
+  device page's tab is in its address now (`/devices/WH-12?tab=activity`; the tabs are `control`, `telemetry`,
+  `activity` and `location`).
+- **What's new.** After the update, each browser shows 0.4.0's notes once, after sign-in, and Settings → Server opens
+  them again. A browser that never opened the console before doesn't show them. A tab left open on the v0.3 console
+  during the update is signed out when the server restarts: reload it and sign in, and the notes show.
+- **API changes.** `POST /rest/public/passwordReset/reset` answers OK with no data. It returned the account, with the
+  new password's stored hash in `newPassword`. A configuration carries a new `extensions` object, which a save that
+  leaves it out keeps; the configuration lists leave it out.
+
+**Pages and actions follow the role.** The console hides what the server, or the updater, would refuse for the
+signed-in role. Super-admin, Admin and User roles see every page; Observer sees Overview, Devices, Apps and Settings.
+Configurations need the `configurations` permission, Apps `applications` and Enroll `edit_devices`, and a link to a
+hidden page says "You don't have access to this page". The buttons follow these permissions:
+
+- `edit_devices`: device actions and kiosk, Sync now, the Devices list's row and bulk actions, pushing an app to
+  devices from Deploy, and Enroll. Agent rollouts also need a user not limited to some device groups.
+- `edit_device_desc`: renaming a device.
+- `edit_applications`: Add to library (F-Droid, Custom APK), Remove from library, and Deploy's "Add to a
+  configuration". Deploy shows when the role may push or add, with only those choices.
+- `edit_application_versions`: setting an app's SHA-256 checksum. `edit_files`: uploading on Custom APK.
+- `add_config`: New configuration; a link to a new one says "You don't have access to this page". `copy_config`:
+  Duplicate and Delete.
+- Check now, Update and automatic updates in Settings → Updates, and the help that speaks of Update, show only to
+  the admin who runs the install (a super-admin, or the org admin of a single-customer install, as since
+  [v0.3.8](#v038)), whatever the role's permissions. Everyone else's sidebar update card says an admin who runs the
+  install can apply it. The updater refuses everyone else, roll back included.
+
+Every role still sees what it saw before, with two exceptions. Without `edit_devices`, the device page's Control tab
+loses its Remote actions card, and with it the location mode and the kiosk and "Do not track" hints it showed. Apps
+shows its Custom APK and F-Droid tabs only to a role that can add to the library or deploy; without them the Library
+is the only tab, and a link to a hidden one opens it.
+
+A role change reaches a console that is already open when its tab is shown again, or when the page is loaded, with no
+new sign-in.
+
+### v0.4.0 for forks
+
+For forks that change the console or add server plugins; read [v0.4.0](#v040) first. From 0.4.0 a fork adds to the
+console in `web/src/extensions/<id>/` and to the server in `plugins/fork/<id>/`, and edits no core file
+([web/EXTENDING.md](../web/EXTENDING.md)).
+
+**The new console replaces the v0.3 console.** Every page was rewritten, so a patch to a v0.3 page file won't apply.
+Where they went (paths under `web/src/`):
+
+| v0.3 | v0.4.0 | Add to it with |
+|---|---|---|
+| `App.tsx` (routes), `ui/AppShell.tsx` (sidebar) | `ext/core/routes.ts` (the routes), `ext/core/nav.ts` (the sidebar's items), `ui/Sidebar.tsx` (the sidebar), `ui/AppShell.tsx` (the frame around the pages) | `route.page`, `nav.item` |
+| `pages/DashboardPage.tsx` | `pages/OverviewPage.tsx`, `pages/overview/` | `overview.card` |
+| `pages/DevicesPage.tsx`, `components/BulkActionModal.tsx` | `pages/DevicesPage.tsx`, `ui/BulkModals.tsx` | `list.column`, `list.rowAction`, `list.bulkAction` |
+| `pages/DeviceDetailPage.tsx`, `components/ActionConsole.tsx`, `ConfigStatusCard.tsx` | `pages/DeviceDetailPage.tsx` (data, rail), `pages/DeviceDetailControl.tsx` (Control tab) | `device.tab`, `device.railGroup` |
+| `components/TelemetryCard.tsx`, `EventTimeline.tsx`, `LocationPanel.tsx`, `LocationMap.tsx` | `pages/DeviceDetailTabs.tsx` (Telemetry, Activity, Location), `data/deviceActivity.ts`, `ui/LocationMap.tsx` (moved) | `device.tab` |
+| `components/KioskEnterModal.tsx`, `BulkKioskModal.tsx` | `pages/DeviceKioskDialog.tsx`, `ui/BulkModals.tsx` | — |
+| `pages/ConfigurationsPage.tsx` (list and editor), `components/AppPicker.tsx`, `KioskChangeConfirm.tsx`, `SyncBar.tsx` | `pages/ConfigurationsPage.tsx` (list), `pages/ConfigEditorPage.tsx` (`/configurations/:id`), `pages/configurations/` (`sync.ts` has the sync line) | `config.section` |
+| `pages/AppsPage.tsx`, `components/DeployModal.tsx` | `pages/AppsPage.tsx`, `AppsLibrary.tsx`, `AppsCustom.tsx`, `AppsFdroid.tsx`, `ui/DeployModal.tsx` | `list.column`, `list.rowAction` (`list: 'apps'`) |
+| `pages/SettingsPage.tsx`, `components/RolloutPanel.tsx` | `pages/SettingsPage.tsx`, `pages/settings/` | `settings.section` |
+| `components/UpdateBanner.tsx`, `ReloadPrompt.tsx` | `ui/Sidebar.tsx` (the update card), `pages/settings/UpdatesSection.tsx` (Update and its progress), `ui/ReloadPrompt.tsx` | — |
+| `pages/EnrollPage.tsx`, `components/QrCanvas.tsx` | `pages/EnrollPage.tsx` (rewritten), `ui/QrCode.tsx`, `ui/QrPanel.tsx` | — |
+| `pages/LoginPage.tsx`, `SetPasswordPage.tsx`, `ui/Wordmark.tsx` | `pages/LoginPage.tsx`, `SetPasswordPage.tsx` (rewritten), `pages/authCommon.ts`, `ui/AuthLayout.tsx`, `ui/Sidebar.tsx` (`Wordmark`) | — |
+| `ui/status.ts` | `data/presence.ts` (`isOnline`), `ui/Status.tsx` (status pills); `statusMeta` is gone, and only `ui/DeployModal.tsx` still reads a device's `statusCode` | — |
+| `styles.css` | `tokens.css`, one CSS file per page | the design tokens, `x-<id>-` classes |
+
+**Port a page or tab onto slots:**
+
+1. Move your files into `web/src/extensions/<id>/` and add an `index.ts` with `defineExtension`.
+2. Replace each edit of a core file with a contribution: a page becomes a `route.page` and a `nav.item`; a device tab a
+   `device.tab` that reads the device with `useDevice()` instead of the page's props; extra configuration fields a
+   `config.section` that stores its value in the configuration's `extensions`, instead of a new column.
+3. Import only `@mdmesh/console`, `react` and your extension's own files. Its tests may also import `vitest`,
+   `@testing-library/react`, `@testing-library/dom` and `@mdmesh/console/testing`. If you need something
+   `@mdmesh/console` lacks, open an issue: adding to it is cheap.
+4. Run `npm test` in `web/`: it validates your manifest and the import rules.
+
+**After the merge.** Merging 0.4.0 into a fork conflicts on every v0.3 page the fork changed. Then:
+
+1. Run `npm run build` in `web/`. It stops first on each v0.3 console file still in the tree (`deleted by them` in
+   `git status`), with one line per file saying where its content belongs now. Move your changes there or into your
+   extension, then delete the file.
+2. `web/src/styles.css` above all: nothing imports it any more, so without that check a kept copy would build and
+   none of its styles would apply. The v0.3 class names (`btn`, `card` and the rest) are gone too, so fork CSS kept
+   elsewhere stops matching without an error. Restyle with the design tokens and `x-<id>-` classes in your extension.
+3. `components/` → `ui/`: git takes `web/src/components/` as renamed to `ui/` (`LocationMap.tsx` moved), so a file
+   your fork added under `components/` gets `CONFLICT (file location)` and lands in `web/src/ui/`. The build can't
+   tell it from a file you put in `ui/` on purpose, so look for it in `git status` and move it to
+   `web/src/extensions/<id>/`.
+4. Extensions: run `npm test` in `web/`. It checks each manifest and the import rules.
+5. Plugins: move them under `plugins/fork/` as described below, then run the server build's tests
+   (`mvn -B -pl server -am test`), which check the public routes.
+
+**Your contributions follow the role too.** Pages and actions follow the role ([v0.4.0](#v040)), and your items
+follow the same check through their `requires`, so give each the permission its server calls need. When a role
+changes, an unsaved edit in a configuration section an extension added, which the new role can't see, is dropped,
+and a message says so. Without extensions, the console is as it is for everyone else.
+
+**Server plugins** go in `plugins/fork/<id>/`. `init-plugin.sh` registers a plugin folder by editing core's poms: it
+adds a `<dependency>` to `server/pom.xml` and a `<module>` to `plugins/pom.xml`. (The `<module>` line it writes is
+literally `<module>%~1</module>`, not the plugin's name.) For such a plugin, move its folder under `plugins/fork/`,
+set its parent to `fork`, take its lines out of those two poms, and add it to `plugins/fork/pom.xml` and
+`plugins/fork/bundle/pom.xml`. The plugin scan now also covers `com.mdmesh`. Keep the conventions (web/EXTENDING.md,
+Server plugin): REST under `/rest/plugins/<id>/`, tables `plugin_<id>_*` and permissions `plugin_<id>_*` (dashes as
+underscores), changeSet ids `plugin-<id>-*`, and one `plugins` row, without which the plugin is off for every
+customer.
+
+**The AngularJS parts of plugins are dead.** The server no longer copies a plugin's `src/main/webapp` (its AngularJS
+module, views and translations) into the WAR, as the console that loaded them is gone. The `plugins` row's
+`javascriptModuleFile`, `functionsViewTemplate` and `settingsViewTemplate` are not read by the console. Port a
+plugin's screens to a console extension.
+
 ### v0.3.9
 
 A security release. Update every server. Devices need no new agent, and the supervisor is unchanged: quick-start and

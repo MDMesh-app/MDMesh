@@ -1,0 +1,330 @@
+/* ============================================================================
+   MDMesh design tokens and base styles. Every token is scoped under `.v2`.
+   Light values are taken from the design boards. The boards have no dark mode, so the dark values extend the
+   v0.3 console's dark palette. Where a board value failed contrast (body text needs 4.5:1, borders and icons 3:1),
+   the value here is the nearest one that passes.
+
+   The `.v2` class sits on <body> (index.html): it is the console's namespace, and every component class is
+   prefixed `v2-`.
+   ========================================================================= */
+
+.v2 {
+  /* ---- surfaces ---- */
+  --app: #f6f7f9; /* page background */
+  --surface: #ffffff; /* cards, sidebar, inputs, buttons */
+  --surface-2: #f1f2f5; /* segmented track, active nav, letter tiles, "Changed" chip, bulk bar */
+  --surface-sunken: #fafbfc; /* card footer dl, waiting rollout step */
+  --row-selected: #f4f6f9; /* selected table row */
+  --hover: #f6f7f9; /* hover fill for quiet controls (boards draw no hover; = --app) */
+  --seg-selected: #ffffff; /* raised segment / tab / active section-nav item */
+
+  /* ---- lines ---- */
+  --border: #e7e9ee; /* card and panel border, icon buttons, sidebar rule */
+  --border-strong: #d6dae1; /* buttons, outline tags, select chrome in toolbars */
+  --line-soft: #eef0f3; /* row dividers inside cards, bar tracks */
+  --input-border: #878f9c; /* text inputs, selects, textareas: 3:1 on white and on --app (#d6dae1 was under) */
+
+  /* ---- ink + text ---- */
+  --ink: #15181d; /* primary button, active text, focus ring, toggle on */
+  --on-ink: #ffffff;
+  --ink-hover: #23272f;
+  --text: #1b2230;
+  --text-2: #384152; /* labels in rows, subtitles, inactive nav */
+  --secondary: #586073; /* help, meta, table head */
+  --muted: #6b7686; /* offline ring only: 4.30:1 on --app, never text off white */
+  --faint: #9aa3b0; /* disabled text only (2.55:1) */
+
+  /* ---- status: dot / ink / soft / line ---- */
+  --online: #1aa766;
+  --ok-ink: #0e7a47;
+  --ok-soft: #e6f6ee;
+  --ok-line: #bfe8d2;
+  --ok-wash: #f7fcf9; /* success panel fill */
+  --ok-mark: #8fd8b1; /* file glyph bars on the success panel */
+
+  --warn: #d98a2b;
+  --warn-ink: #8f5410;
+  --warn-soft: #fcf1e3;
+  --warn-line: #f1d3ad;
+
+  --alert: #d64545;
+  --alert-ink: #a92f2f;
+  --alert-soft: #fbe9e9;
+  --alert-line: #f0d4d4;
+
+  --offline: #b6bdc7; /* offline bar fill (always with a text legend) */
+  --idle-ink: #586073;
+  --idle-soft: #f1f2f5;
+  --idle-line: #e7e9ee;
+  --bar-idle: #d6dae1; /* "not reported" segment in per-configuration bars */
+
+  /* ---- disabled ---- */
+  --disabled-bg: #e7e9ee;
+  --disabled-ink: #586073; /* disabled primary (Promote, Set password) */
+
+  /* ---- controls ---- */
+  --switch-on: var(--ink);
+  --switch-on-knob: #ffffff;
+  --switch-off: #d6dae1;
+  --switch-off-knob: #ffffff;
+  --switch-off-ring: var(--muted); /* 1px ring on the off track: the board's #d6dae1 alone is 1.40:1 */
+  --swatch-line: rgba(21, 24, 29, 0.15);
+  --glyph-body: var(--surface); /* DeviceGlyph body (board hard-codes #fff) */
+  --glyph-screen: #d6dae1; /* DeviceGlyph screen */
+  --backdrop: rgba(20, 30, 55, 0.35);
+
+  /* ---- shadows (cards are flat: 1px border, no shadow) ---- */
+  --shadow-seg: 0 1px 2px rgba(20, 30, 55, 0.08); /* selected segment / tab */
+  --shadow-knob: 0 1px 2px rgba(20, 30, 55, 0.3); /* toggle knob */
+  --shadow-float: 0 8px 24px rgba(20, 30, 55, 0.12); /* sticky unsaved bar, toast */
+  --shadow-auth: 0 12px 32px rgba(20, 30, 55, 0.06); /* sign-in card */
+  --shadow-modal: 0 24px 48px rgba(20, 30, 55, 0.18);
+
+  /* ---- type ---- */
+  --font-sans: 'IBM Plex Sans', 'Helvetica Neue', Arial, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --fs-display: 40px; /* Mono 500, -0.02em, lh 1: fleet total */
+  --fs-h1: 28px; /* 600, -0.025em, lh 1.15: page titles */
+  --fs-h1-sm: 24px; /* 600: device name (rail), auth card titles */
+  --fs-stat: 24px; /* Mono 500, lh 1.1: stat cells */
+  --fs-stat-sm: 22px; /* Mono 500: rollout cohort count */
+  --fs-title-lg: 18px; /* 600: "Add your own app", auth wordmark */
+  --fs-title: 17px; /* 600: numbered step cards, "0.3.4 is ready", sidebar wordmark */
+  --fs-h2: 16px; /* 600: card titles */
+  --fs-lead: 15px; /* page subtitle (text-2), card names, auth submit */
+  --fs-body: 14px; /* lh 1.5 */
+  --fs-control: 13.5px; /* lg segmented, sticky-bar sentence, card descriptions */
+  --fs-sm: 13px; /* md segmented, help text, links, small buttons */
+  --fs-meta: 12.5px; /* pills, stat footnotes, sub-lines */
+  --fs-small: 12px; /* table head, eyebrow, nav meta, mono package */
+  --fs-tiny: 11.5px; /* "Changed" chip, count badge, card dt */
+  --fs-micro: 11px; /* "Later" chip, duplicate chip, device-card dt, glyph caption */
+
+  --lh-body: 1.5;
+  --lh-h1: 1.15;
+  --ls-h1: -0.025em;
+  --ls-display: -0.02em;
+  --ls-eyebrow: 0.06em;
+
+  /* ---- radii ---- */
+  --radius-xs: 3px; /* bar segments */
+  --radius-swatch: 6px; /* colour swatch, outcome icon tile */
+  --radius-chip: 7px; /* file-extension chip, small segmented option */
+  --radius-seg: 8px; /* md segmented option, 30px icon button */
+  --radius-tile: 9px; /* 32-34px icon buttons, letter tiles, lg segmented option, tabs */
+  --radius-sm: 10px; /* buttons, inputs, selects, nav items, callouts */
+  --radius-md: 12px; /* lg segmented track, update card, 44px tiles */
+  --radius-card-sm: 14px; /* attention strip, bulk bar, sticky bar, success panel, 60px tile */
+  --radius-lg: 16px; /* cards */
+  --radius-auth: 20px; /* sign-in card */
+  --radius-pill: 999px;
+
+  /* ---- spacing: 4-step scale plus the boards' off-grid 2/6/10/14 ---- */
+  --space-0: 2px;
+  --space-1: 4px;
+  --space-1h: 6px;
+  --space-2: 8px;
+  --space-2h: 10px;
+  --space-3: 12px;
+  --space-3h: 14px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* ---- layout ---- */
+  --sidebar-w: 232px;
+  --main-max: 1280px;
+  --page-pad: clamp(20px, 3vw, 32px);
+  --page-gap: 20px;
+  --card-pad: 20px 24px;
+  --mobilebar-h: 52px;
+
+  color-scheme: light;
+}
+
+/* ----------------------------------------------------------------------------
+   Dark. The boards define none: extends the v0.3 console's dark theme with the new tokens.
+   Every text colour reaches 4.5:1 or more on --surface (#161922).
+   ------------------------------------------------------------------------- */
+[data-theme='dark'] .v2,
+.v2[data-theme='dark'] {
+  --app: #0f1115;
+  --surface: #161922;
+  --surface-2: #1e222c;
+  --surface-sunken: #13161d;
+  --row-selected: #1b2030;
+  --hover: #1b1f28;
+  --seg-selected: #2b313d; /* lighter than the track, so the selected segment still reads as raised */
+
+  --border: #272c37;
+  --border-strong: #39404e;
+  --line-soft: #21262f;
+  --input-border: #646c7a; /* 3.32:1 on --surface, 3.57:1 on --app */
+
+  --ink: #f2f4f8;
+  --on-ink: #15181d;
+  --ink-hover: #dfe3ea;
+  --text: #e7ebf1;
+  --text-2: #c4ccd7;
+  --secondary: #9aa3b0;
+  --muted: #8b95a3;
+  --faint: #6c7480;
+
+  --online: #2bb979;
+  --ok-ink: #4fd194;
+  --ok-soft: #13261d;
+  --ok-line: #1f4a35;
+  --ok-wash: #121f19;
+  --ok-mark: #2f7a55;
+
+  --warn: #e0973a;
+  --warn-ink: #f0b265;
+  --warn-soft: #2a2015;
+  --warn-line: #4d3a20;
+
+  --alert: #e25757;
+  --alert-ink: #f08a8a;
+  --alert-soft: #2a1b1e;
+  --alert-line: #45292d;
+
+  --offline: #4a5260;
+  --idle-ink: #9aa3b0;
+  --idle-soft: #1e222c;
+  --idle-line: #272c37;
+  --bar-idle: #39404e;
+
+  --disabled-bg: #272c37;
+  --disabled-ink: #9aa3b0;
+
+  --switch-on-knob: #15181d;
+  --switch-off: #39404e;
+  --switch-off-knob: #c4ccd7;
+  --switch-off-ring: var(--muted);
+  --swatch-line: rgba(242, 244, 248, 0.2);
+  --glyph-screen: #39404e;
+  --backdrop: rgba(0, 0, 0, 0.6);
+
+  --shadow-seg: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-knob: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-float: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-auth: 0 12px 32px rgba(0, 0, 0, 0.4);
+  --shadow-modal: 0 24px 48px rgba(0, 0, 0, 0.6);
+
+  color-scheme: dark;
+}
+
+/* ----------------------------------------------------------------------------
+   Reset. Border-box sizing everywhere, no default body margin, and a full-height root (the shell and the auth pages
+   size themselves from it). The theme switch crossfades the page (View Transitions where supported, else the body
+   transition), and scrollbars are thin and quiet.
+   ------------------------------------------------------------------------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+body {
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 0.3s;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ----------------------------------------------------------------------------
+   Base. Mirrors the boards' page-level CSS: body 14/1.5 Plex Sans on --app, links ink, inherited fonts in
+   controls, and the 2px ink focus ring.
+   ------------------------------------------------------------------------- */
+.v2 {
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--text);
+  background: var(--app);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+.v2 a {
+  color: var(--ink);
+  text-decoration: underline;
+}
+.v2 a:hover {
+  color: var(--text-2);
+}
+.v2 button,
+.v2 input,
+.v2 select,
+.v2 textarea {
+  font: inherit;
+}
+.v2 :focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.v2 :where(h1, h2, h3, h4, p, dl, dd, figure) {
+  margin: 0;
+}
+.v2 ::placeholder {
+  color: var(--secondary);
+  opacity: 1;
+}
+
+/* Utility classes page code may use alongside the components. */
+.v2 .v2-mono {
+  font-family: var(--font-mono);
+}
+.v2 .v2-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.v2 .v2-secondary {
+  color: var(--secondary);
+}
+.v2 .v2-eyebrow {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--ls-eyebrow);
+  color: var(--secondary);
+}
+.v2 .v2-visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v2 *,
+  .v2 *::before,
+  .v2 *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

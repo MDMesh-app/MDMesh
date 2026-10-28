@@ -1,0 +1,94 @@
+.v2 .v2-bar--ok {
+  background: var(--online);
+}
+.v2 .v2-bar--warn {
+  background: var(--warn);
+}
+.v2 .v2-bar--alert {
+  background: var(--alert);
+}
+.v2 .v2-bar--idle {
+  background: var(--offline);
+}
+.v2 .v2-bar--pending {
+  background: var(--bar-idle);
+}
+.v2 .v2-bar--neutral {
+  background: var(--secondary);
+}
+.v2 .v2-bar--ink {
+  background: var(--ink);
+}
+.v2 .v2-bar--track {
+  background: transparent;
+}
+
+/* ---- stacked ---- */
+.v2 .v2-stack {
+  display: flex;
+}
+.v2 .v2-stack--fleet {
+  gap: 3px;
+  height: 12px;
+}
+.v2 .v2-stack--fleet .v2-stack__seg {
+  border-radius: 2px;
+}
+.v2 .v2-stack--fleet .v2-stack__seg:first-child {
+  border-radius: 6px 2px 2px 6px;
+}
+.v2 .v2-stack--fleet .v2-stack__seg:last-child {
+  border-radius: 2px 6px 6px 2px;
+}
+.v2 .v2-stack--fleet .v2-stack__seg:only-child {
+  border-radius: 6px;
+}
+.v2 .v2-stack--config {
+  gap: 2px;
+  height: 6px;
+  border-radius: var(--radius-xs);
+}
+.v2 .v2-stack--config .v2-stack__seg {
+  border-radius: var(--radius-xs);
+}
+.v2 .v2-stack--track {
+  background: var(--line-soft);
+}
+
+/* ---- single progress ---- */
+.v2 .v2-progress {
+  display: flex;
+  overflow: hidden;
+  background: var(--line-soft);
+}
+.v2 .v2-progress--md {
+  height: 6px;
+  border-radius: var(--radius-xs);
+}
+.v2 .v2-progress--mini {
+  flex: 0 0 40px;
+  width: 40px;
+  height: 6px;
+  border-radius: var(--radius-xs);
+}
+.v2 .v2-progress--mini .v2-progress__fill {
+  border-radius: var(--radius-xs);
+}
+.v2 .v2-progress--micro {
+  flex: 0 1 48px;
+  width: 48px;
+  min-width: 16px;
+  height: 4px;
+  border-radius: 2px;
+}
+.v2 .v2-progress__fill {
+  display: block;
+  height: 100%;
+}
+
+@media (forced-colors: active) {
+  .v2 .v2-stack__seg,
+  .v2 .v2-progress__fill {
+    forced-color-adjust: none;
+  }
+}

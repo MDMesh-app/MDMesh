@@ -1,0 +1,24 @@
+/* Bulk dialogs (BulkModals.tsx): action groups as wrapping rows of buttons under an eyebrow. */
+.v2 .v2-bulkmodal__text {
+  margin: 0;
+}
+.v2 .v2-bulkmodal__group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.v2 .v2-bulkmodal__grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.v2 .v2-bulkmodal__kiosks {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.v2 .v2-bulkmodal__kiosks .is-skipped {
+  color: var(--secondary);
+}

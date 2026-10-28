@@ -201,6 +201,34 @@ chk "restore kioskMode=false" "$(curl -s -b "$CJ" -X PUT -H 'Content-Type: appli
 chk "device restored to its configuration" "$(curl -s -b "$CJ" -X PUT -H 'Content-Type: application/json' -d "{\"ids\":[$KDEV],\"configurationId\":$CFG_ID}" "$BASE/rest/private/devices" | field "d['status']")" "OK"
 chk "kiosk scenario configuration deleted" "$(curl -s -b "$CJ" -X DELETE "$BASE/rest/private/configurations/$KCFG" | field "d['status']")" "OK"
 
+echo "== configuration extensions: a save without them keeps them, with them replaces them, a copy copies them =="
+# A temporary configuration with no apps, made from the shared one's columns.
+XNAME="e2e-ext-$(date +%s)-$$"
+xcfg_body(){ # $1 = id or "" ; $2 = the extensions JSON, or - to leave the key out (an older client)
+  KCFG_SRC="$KCFG_SRC" XID="$1" XEXT="$2" XNAME="$XNAME" python3 -c '
+import json,os
+c=json.loads(os.environ["KCFG_SRC"])["data"]
+for k in ("id","qrCodeKey","selected","extensions"): c.pop(k,None)
+if os.environ["XID"]: c["id"]=int(os.environ["XID"])
+c["name"]=os.environ["XNAME"]; c["description"]="agent-v1-e2e extensions (temporary)"
+c["applications"]=[]; c["kioskMode"]=False; c["mainAppId"]=None; c["contentAppId"]=None
+if os.environ["XEXT"]!="-": c["extensions"]=json.loads(os.environ["XEXT"])
+print(json.dumps(c))'; }
+xput(){ curl -s -b "$CJ" -X PUT -H 'Content-Type: application/json' -d "$(xcfg_body "$1" "$2")" "$BASE/rest/private/configurations"; }
+xext(){ curl -s -b "$CJ" "$BASE/rest/private/configurations/$1" | field "json.dumps(d['data']['extensions'],sort_keys=True)"; }
+XNEW=$(xput "" '{"e2e":{"n":1}}')
+XCFG=$(echo "$XNEW" | field "d['data']['id']")
+chk "created with extensions" "$(echo "$XNEW" | field "str(d['status'])+':'+json.dumps(d['data']['extensions'])")" 'OK:{"e2e": {"n": 1}}'
+chk "a save without extensions keeps them" "$(xput "$XCFG" - | field "d['status']"):$(xext "$XCFG")" 'OK:{"e2e": {"n": 1}}'
+chk "a save with extensions replaces them" "$(xput "$XCFG" '{"e2e.more":{"m":true}}' | field "d['status']"):$(xext "$XCFG")" 'OK:{"e2e.more": {"m": true}}'
+chk "a namespace that is not one is refused, and nothing changes" \
+  "$(xput "$XCFG" '{"Not One":{}}' | field "str(d['status'])+':'+d['message']"):$(xext "$XCFG")" 'ERROR:error.extensions.namespace:{"e2e.more": {"m": true}}'
+chk "copy OK" "$(curl -s -b "$CJ" -X PUT -H 'Content-Type: application/json' -d "{\"id\":$XCFG,\"name\":\"$XNAME-copy\"}" "$BASE/rest/private/configurations/copy" | field "d['status']")" "OK"
+XCOPY=$(curl -s -b "$CJ" "$BASE/rest/private/configurations/search" | field "[c['id'] for c in d['data'] if c['name']=='$XNAME-copy'][0]")
+chk "the copy has the extensions" "$(xext "$XCOPY")" '{"e2e.more": {"m": true}}'
+chk "extensions copy deleted" "$(curl -s -b "$CJ" -X DELETE "$BASE/rest/private/configurations/$XCOPY" | field "d['status']")" "OK"
+chk "extensions configuration deleted" "$(curl -s -b "$CJ" -X DELETE "$BASE/rest/private/configurations/$XCFG" | field "d['status']")" "OK"
+
 echo "== command history (payload-free, 6.6) =="
 HIST=$(curl -s -b "$CJ" "$BASE/rest/private/agent/v1/devices/$DID/commands?since=0")
 chk "history has completedAt" "$(echo "$HIST" | field "any(c.get('completedAt') for c in d['data'])")" "True"

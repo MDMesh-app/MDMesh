@@ -1,0 +1,42 @@
+.v2 .v2-apptile {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  font-weight: 600;
+  line-height: 1;
+}
+.v2 .v2-apptile.is-neutral {
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.v2 .v2-apptile.is-ink {
+  background: var(--ink);
+  color: var(--on-ink);
+}
+.v2 .v2-apptile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.v2 .v2-apptile--32 {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-tile);
+  font-size: var(--fs-sm);
+}
+.v2 .v2-apptile--38 {
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-lead);
+}
+.v2 .v2-apptile--44 {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  font-size: var(--fs-h2);
+}

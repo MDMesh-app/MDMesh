@@ -30,6 +30,8 @@ import org.slf4j.LoggerFactory;
 
 import javax.servlet.ServletContext;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -43,6 +45,13 @@ import java.util.concurrent.ConcurrentSkipListSet;
 public final class PluginList {
 
     private static final Logger log = LoggerFactory.getLogger(PluginList.class);
+
+    /**
+     * <p>The root packages of the server's code: Headwind's <code>com.hmdm</code>, and <code>com.mdmesh</code> for a
+     * fork's plugins (web/EXTENDING.md). The plugin scan below reads them, and so do Jersey's and Swagger's resource
+     * scans (<code>HMDMApplication</code>), so a plugin found here also gets its REST served.</p>
+     */
+    public static final List<String> PACKAGES = Collections.unmodifiableList(Arrays.asList("com.hmdm", "com.mdmesh"));
 
     /**
      * <p>A collection of identifiers for plugins which have been enabled for the current build.</p>
@@ -74,7 +83,8 @@ public final class PluginList {
         if (initialized) {
             return;
         }
-        try (ScanResult scanResult = new ClassGraph().enableAllInfo().acceptPackages("com.hmdm").scan()) {
+        try (ScanResult scanResult = new ClassGraph().enableAllInfo()
+                .acceptPackages(PACKAGES.toArray(new String[0])).scan()) {
             ClassInfoList pluginConfigClasses = scanResult.getClassesImplementing(PluginConfiguration.class.getName());
             List<String> plugins = pluginConfigClasses.getNames();
 

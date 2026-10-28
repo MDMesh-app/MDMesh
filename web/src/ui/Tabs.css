@@ -1,0 +1,97 @@
+/* Tabs: the lg segmented track (r12) with 7×14 tabs at body size, icon gap 7, mono 12px counts. */
+.v2 .v2-tabs {
+  align-self: flex-start;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  max-width: 100%;
+  box-sizing: border-box;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.v2 .v2-tabs__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border: 0;
+  border-radius: var(--radius-tile);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-2);
+  font-size: var(--fs-body);
+  font-weight: 400;
+  line-height: var(--lh-body);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+}
+.v2 .v2-tabs__tab:not(.is-selected):not(:disabled):hover {
+  color: var(--ink);
+}
+.v2 .v2-tabs__tab.is-selected {
+  background: var(--seg-selected);
+  box-shadow: var(--shadow-seg);
+  color: var(--ink);
+  font-weight: 600;
+}
+.v2 .v2-tabs__tab:disabled,
+.v2 .v2-tabs__tab.is-disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
+/* link tabs */
+.v2 a.v2-tabs__tab,
+.v2 a.v2-tabs__tab:hover {
+  text-decoration: none;
+  color: var(--text-2);
+}
+.v2 a.v2-tabs__tab:not(.is-selected):hover {
+  color: var(--ink);
+}
+.v2 a.v2-tabs__tab.is-selected {
+  color: var(--ink);
+}
+
+/* sizes: lg = Segmented lg (Table / Cards), md = Segmented md (QR code / Token) */
+.v2 .v2-tabs--lg .v2-tabs__tab {
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: var(--fs-control);
+}
+.v2 .v2-tabs--md {
+  border-radius: var(--radius-sm);
+}
+.v2 .v2-tabs--md .v2-tabs__tab {
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: var(--radius-seg);
+  font-size: var(--fs-sm);
+}
+.v2 .v2-tabs__icon {
+  display: inline-flex;
+}
+.v2 .v2-tabs__count {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  font-weight: 400;
+  color: var(--secondary);
+}
+.v2 .v2-tabpanel:focus-visible {
+  outline-offset: 4px;
+}
+
+@media (max-width: 860px) {
+  .v2 .v2-tabs__tab {
+    min-height: 40px;
+  }
+}
+@media (forced-colors: active) {
+  .v2 .v2-tabs__tab.is-selected {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}

@@ -1,127 +1,75 @@
 // Capture MDMesh docs screenshots from the REAL built SPA, answering its REST calls with sample
-// fixtures (Playwright request interception), in dark mode, then round the corners (sharp).
+// fixtures (Playwright request interception), in the light theme (the design's; `--theme dark` for dark),
+// then round the corners (sharp).
 //
 //   node capture.mjs            # build is expected to exist at ../../web/dist
 //   node capture.mjs --check    # runtime smoke for dependency bumps instead; writes nothing
 //
 // --check visits, against the same fixtures:
-//   * signed in: /dashboard /devices /devices/WH-SCAN-07 /apps /configs /enroll /settings, plus /no-such-page
-//     (catch-all) and /devices/101 (an id-style link) — each must render the app shell (.shell .sidebar
-//     .wordmark) and end on the requested path (/dashboard for the catch-all, /devices/WH-SCAN-07 for the
-//     id-style link);
-//   * signed out: /login — the login form must render and the page must stay on /login;
-//   * flagged first-login session (passwordReset + token in storage): /set-password — the set-password
-//     form must render and the page must stay on /set-password.
+//   * signed in: / /devices /devices/WH-SCAN-07 /configurations /configurations/1 /apps /enroll /settings — each
+//     must render the app shell (.v2-shell .v2-sidebar .v2-wordmark) and end on the requested path; /devices/101
+//     (an old id link) must move to the device's number, /devices/WH-SCAN-07; /no-such-page (catch-all) and the old
+//     bookmarks /dashboard, /configs and /v2/devices must land on /, /configurations and /devices;
+//   * signed out: /login — the sign-in form must render and the page must stay on /login;
+//   * flagged first-login session (passwordReset + token in storage, as an older console stored it; the console
+//     itself keeps the token in memory, which v2-parity/auth.mjs covers): /set-password — the set-password form
+//     must render and the page must stay on /set-password.
 // A route is FAIL if its selector never appears, its final path differs, or it raised any uncaught page
 // error or console.error. Prints `ok|FAIL <route> -> <final path>` per route, then `check: PASS` (exit 0)
 // or the problems on stderr (exit 1).
 //
 // Output: ../../docs/screenshots/{overview,devices,device-detail,apps,rollout}.png
 import { chromium } from 'playwright';
-import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildFixtures } from './fixtures.mjs';
 import { roundCorners } from './round.mjs';
+import { DIST, fx, serve, newContext } from './harness.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DIST = path.resolve(__dirname, '../../web/dist');
 const OUT = path.resolve(__dirname, '../../docs/screenshots');
-const fx = buildFixtures();
 const CHECK = process.argv.includes('--check');
-
-// ---- tiny static server for the SPA (with history fallback to index.html) ----
-const MIME = {
-  '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
-  '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2',
-  '.woff': 'font/woff', '.map': 'application/json', '.webmanifest': 'application/manifest+json',
-};
-function serve() {
-  return http.createServer((req, res) => {
-    const urlPath = decodeURIComponent(req.url.split('?')[0]);
-    let file = path.join(DIST, urlPath);
-    if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) {
-      const ext = path.extname(urlPath);
-      file = ext && ext !== '.html' ? file : path.join(DIST, 'index.html'); // SPA fallback
-    }
-    if (!fs.existsSync(file)) { res.writeHead(404).end('not found'); return; }
-    res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream' });
-    fs.createReadStream(file).pipe(res);
-  });
+const themeArg = process.argv.indexOf('--theme');
+const THEME = themeArg > 0 ? process.argv[themeArg + 1] : 'light';
+if (THEME !== 'light' && THEME !== 'dark') {
+  console.error('--theme must be light or dark');
+  process.exit(2);
 }
 
-// ---- map an intercepted request to its fixture (envelope-wrapped for /rest) ----
-const ok = (data) => ({ status: 'OK', message: null, data });
-const deviceListView = { configurations: fx.configurations, devices: { items: fx.devices, totalItemsCount: fx.devices.length } };
-
-function restData(method, p) {
-  if (p === '/public/auth/options') return fx.authOptions;
-  if (p === '/public/auth/login') return fx.user;
-  if (p.endsWith('/devices/search')) return deviceListView;
-  if (p.endsWith('/configurations/search')) return fx.configList;
-  if (p.endsWith('/applications/search') || /\/applications\/search\//.test(p)) return fx.applications;
-  if (/\/devices\/[^/]+\/state$/.test(p)) return fx.state;
-  if (/\/devices\/[^/]+\/telemetry$/.test(p)) return fx.telemetry;
-  if (/\/devices\/[^/]+\/events/.test(p)) return fx.events;
-  if (/\/devices\/[^/]+\/locations/.test(p)) return fx.locations;
-  if (p.endsWith('/rollout/active')) return fx.activeRollout;
-  if (/\/applications\/\d+\/versions/.test(p)) return [];
-  if (method === 'POST') return {};           // bulk ops etc.
-  return [];                                   // unknown GET → empty list (never errors the UI)
-}
-
-// ---- browser context: dark theme, optional stored user, API answered from fixtures ----
-async function newContext(browser, user) {
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
-  // Seed theme (+ auth when given) before any app script runs.
-  await context.addInitScript((u) => {
-    if (u) localStorage.setItem('hmdm.admin.user', JSON.stringify(u));
-    localStorage.setItem('mdmesh-theme', 'dark');
-    localStorage.setItem('mdmesh-density', 'comfortable');
-  }, user);
-
-  // Answer the SPA's API calls from fixtures.
-  await context.route('**/rest/**', async (route) => {
-    const url = new URL(route.request().url());
-    const p = url.pathname.replace(/^\/rest/, '');
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(ok(restData(route.request().method(), p))) });
-  });
-  // One handler for /update/* (Playwright applies the LAST matching route, so keep it single).
-  await context.route('**/update/**', (route) => {
-    const body = route.request().url().includes('/update/status') ? fx.updateStatus : { ok: true };
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
-  });
-  return context;
-}
+// Static server, fixtures and the mocked browser context live in harness.mjs (shared with compare-v2.mjs).
 
 // ---- --check: runtime smoke over every route (see header) ----
-const SHELL = '.shell .sidebar .wordmark';
+const SHELL = '.v2-shell .v2-sidebar .v2-wordmark';
+const SIGNED_IN = ['/', '/devices', '/devices/WH-SCAN-07', '/configurations', '/configurations/1', '/apps', '/enroll', '/settings'];
 const CHECK_GROUPS = [
   {
     user: fx.user,
     routes: [
-      ...['/dashboard', '/devices', '/devices/WH-SCAN-07', '/apps', '/configs', '/enroll', '/settings']
-        .map((route) => ({ route, expect: route, selector: SHELL })),
-      // An old id-style device link moves to the device's number.
+      ...SIGNED_IN.map((route) => ({ route, expect: route, selector: SHELL })),
+      // An old link by database id (no device has the number 101): the device page finds it by id and moves to
+      // the device's number.
       { route: '/devices/101', expect: '/devices/WH-SCAN-07', selector: SHELL },
-      { route: '/no-such-page', expect: '/dashboard', selector: SHELL },
+      { route: '/no-such-page', expect: '/', selector: SHELL },
+      // Old bookmarks: the v0.3 console's paths and the redesign preview's /v2/*.
+      { route: '/dashboard', expect: '/', selector: SHELL },
+      { route: '/configs', expect: '/configurations', selector: SHELL },
+      { route: '/v2/devices', expect: '/devices', selector: SHELL },
     ],
   },
   {
     user: null,
-    routes: [{ route: '/login', expect: '/login', selector: '.login-card input[autocomplete="username"]' }],
+    routes: [{ route: '/login', expect: '/login', selector: '.v2-auth__card input[autocomplete="username"]' }],
   },
   {
     user: { ...fx.user, passwordReset: true, passwordResetToken: 'check-token' },
-    routes: [{ route: '/set-password', expect: '/set-password', selector: '.login-card input[autocomplete="new-password"]' }],
+    routes: [{ route: '/set-password', expect: '/set-password', selector: '.v2-auth__card input[autocomplete="new-password"]' }],
   },
 ];
 
 async function runCheck(browser, base) {
   const problems = [];
   for (const group of CHECK_GROUPS) {
-    const context = await newContext(browser, group.user);
+    const context = await newContext(browser, group.user, { theme: THEME });
     const page = await context.newPage();
     page.on('pageerror', (e) => problems.push(`pageerror on ${page.url()}: ${e.message}`));
     page.on('console', (m) => { if (m.type() === 'error') problems.push(`console.error on ${page.url()}: ${m.text()}`); });
@@ -162,20 +110,20 @@ async function main() {
     process.exit(passed ? 0 : 1);
   }
 
-  const context = await newContext(browser, fx.user);
+  const context = await newContext(browser, fx.user, { theme: THEME });
   const page = await context.newPage();
   const shots = [
-    { name: 'overview', route: '/dashboard' },
+    { name: 'overview', route: '/' },
     { name: 'devices', route: '/devices' },
     { name: 'device-detail', route: '/devices/WH-SCAN-07' },
     { name: 'apps', route: '/apps' },
-    // The staged-rollout panel lives down the Settings page — capture it as a focused card.
-    { name: 'rollout', route: '/settings', element: 'section.panel:has(h2:has-text("Agent rollout"))' },
+    // The staged-rollout card lives down the Settings page — capture it as a focused card.
+    { name: 'rollout', route: '/settings', element: '#agent-rollout' },
   ];
 
   for (const s of shots) {
     await page.goto(base + s.route, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('.wordmark', { timeout: 10000 }).catch(() => {});
+    await page.waitForSelector(SHELL, { timeout: 10000 }).catch(() => {});
     await page.waitForTimeout(1400); // let intercepted data render + transitions settle
     let raw;
     if (s.element) {
@@ -186,7 +134,9 @@ async function main() {
     } else {
       raw = await page.screenshot({ fullPage: false });
     }
-    const final = await roundCorners(raw, { radius: 28, pad: 48, blur: 34 });
+    // The frame's hairline: light on dark shots, a soft dark line on light ones (white on white would vanish).
+    const border = THEME === 'light' ? 'rgba(21,24,29,0.10)' : undefined;
+    const final = await roundCorners(raw, { radius: 28, pad: 48, blur: 34, border });
     fs.writeFileSync(path.join(OUT, `${s.name}.png`), final);
     console.log('captured', s.name, '→', s.route);
   }

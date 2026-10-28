@@ -7,6 +7,7 @@ import {
 } from '../api/devices';
 import { ActionConsole } from '../components/ActionConsole';
 import { TelemetryCard } from '../components/TelemetryCard';
+import { InstalledAppsCard } from '../components/InstalledAppsCard';
 import { EventTimeline } from '../components/EventTimeline';
 import { LocationPanel } from '../components/LocationPanel';
 import { listLocations, type LocationFix } from '../api/deviceLocations';
@@ -21,7 +22,7 @@ import { isOnline as isOnlineByRecency } from '../ui/status';
 import { useToast } from '../ui/toast';
 import { fmtDateTime, fmtRelative, orDash } from '../ui/format';
 
-type Tab = 'control' | 'telemetry' | 'events' | 'location';
+type Tab = 'control' | 'telemetry' | 'apps' | 'events' | 'location';
 
 interface Row {
   k: string;
@@ -453,6 +454,9 @@ export function DeviceDetailPage() {
             <button className={tab === 'telemetry' ? 'on' : ''} onClick={() => setTab('telemetry')}>
               Telemetry
             </button>
+            <button className={tab === 'apps' ? 'on' : ''} onClick={() => setTab('apps')}>
+              Apps
+            </button>
             <button className={tab === 'events' ? 'on' : ''} onClick={() => setTab('events')}>
               Events
             </button>
@@ -464,6 +468,7 @@ export function DeviceDetailPage() {
           <div className="tabbody">
             {tab === 'control' && <ActionConsole device={device} />}
             {tab === 'telemetry' && <TelemetryCard device={device} />}
+            {tab === 'apps' && <InstalledAppsCard device={device} />}
             {tab === 'events' && <EventTimeline device={device} />}
             {tab === 'location' && <LocationPanel device={device} />}
           </div>

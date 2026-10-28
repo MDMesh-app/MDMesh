@@ -8,6 +8,10 @@ line under Unreleased.
 
 ## Unreleased
 
+New
+- Device page: an Apps tab lists the device's installed apps (those with a launcher icon) from its latest scan,
+  with Scan now, a search, a system-apps toggle and an Export CSV for app audits.
+
 ## v0.3.9 — 2026-10-27
 
 Upgrading

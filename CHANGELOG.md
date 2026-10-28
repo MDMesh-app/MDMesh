@@ -8,6 +8,10 @@ line under Unreleased.
 
 ## Unreleased
 
+Fixes
+- Device page: Storage (free of total) and Local IP show what the agent reports, and Enrolled shows when the device
+  enrolled. Devices enrolled before this update keep Enrolled empty.
+
 ## v0.3.9 — 2026-10-27
 
 Upgrading

@@ -19,7 +19,7 @@ import {
 import { ApiError } from '../api/client';
 import { isOnline as isOnlineByRecency } from '../ui/status';
 import { useToast } from '../ui/toast';
-import { fmtDateTime, fmtRelative, orDash } from '../ui/format';
+import { fmtBytes, fmtDateTime, fmtRelative, orDash } from '../ui/format';
 
 type Tab = 'control' | 'telemetry' | 'events' | 'location';
 
@@ -334,15 +334,20 @@ export function DeviceDetailPage() {
     { k: 'Kiosk', v: ds ? (ds.kioskActive ? 'On' : 'Off') : '—' },
     { k: 'Connectivity', v: powerLabel(ds?.powerMode) },
   ];
+  // The MDMesh agent reports storage as byte counts (hardware.totalStorageBytes, dynamic.freeStorageBytes) and the
+  // local address as dynamic.ipAddress; hw.storage / hw.storageFree / localIp are the Headwind-era names.
+  const storageFree = fmtBytes(dyn.freeStorageBytes);
+  const storageTotal = fmtBytes(hw.totalStorageBytes);
+  const storage = storageFree && storageTotal ? `${storageFree} free of ${storageTotal}` : storageTotal ?? storageFree;
   const hardwareRows: Row[] = [
     { k: 'Android', v: orDash(teleStr(hw.osRelease) ?? ds?.androidRelease ?? device.androidVersion) },
-    { k: 'Storage', v: orDash(teleStr(hw.storage) ?? teleStr(hw.storageFree)) },
+    { k: 'Storage', v: orDash(storage ?? teleStr(hw.storage) ?? teleStr(hw.storageFree)) },
     { k: 'Serial', v: orDash(teleStr(idn.serial) ?? device.serial), mono: true },
     { k: 'IMEI', v: orDash(teleStr(idn.imei) ?? device.imei), mono: true },
   ];
   const networkRows: Row[] = [
     { k: 'Type', v: orDash(teleStr(dyn.networkType) ?? teleStr(dyn.network)) },
-    { k: 'Local IP', v: orDash(teleStr(dyn.localIp) ?? teleStr(hw.localIp)), mono: true },
+    { k: 'Local IP', v: orDash(teleStr(dyn.ipAddress) ?? teleStr(dyn.localIp) ?? teleStr(hw.localIp)), mono: true },
     { k: 'Public IP', v: orDash(teleStr((tele as Record<string, unknown> | null)?.publicIp) ?? device.publicIp), mono: true },
   ];
   const managementRows: Row[] = [

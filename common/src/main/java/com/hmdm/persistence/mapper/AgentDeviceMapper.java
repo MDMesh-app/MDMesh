@@ -54,6 +54,10 @@ public interface AgentDeviceMapper {
     @Update({"UPDATE devices SET lastUpdate = #{ts} WHERE number = #{deviceNumber}"})
     void updateLastUpdate(@Param("deviceNumber") String deviceNumber, @Param("ts") long ts);
 
+    /** The console's "Enrolled". Set once: a time already there (a legacy launcher's first sync) is kept. */
+    @Update({"UPDATE devices SET enrollTime = COALESCE(enrollTime, #{ts}) WHERE number = #{deviceNumber}"})
+    void updateEnrollTime(@Param("deviceNumber") String deviceNumber, @Param("ts") long ts);
+
     @Update({"UPDATE devices SET hardwareid = #{hardwareId} WHERE number = #{deviceNumber}"})
     void updateHardwareId(@Param("deviceNumber") String deviceNumber,
                           @Param("hardwareId") String hardwareId);

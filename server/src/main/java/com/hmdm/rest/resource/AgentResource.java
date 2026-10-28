@@ -190,6 +190,7 @@ public class AgentResource {
                 commandDAO.updateHardwareId(deviceId, request.getHardwareId().trim());
             }
             commandDAO.touchLastUpdate(deviceId);
+            commandDAO.recordEnrollTime(deviceId);
 
             String configurationName = null;
             if (device.getConfigurationId() != null) {

@@ -8,6 +8,10 @@ line under Unreleased.
 
 ## Unreleased
 
+New
+- The device page's location history has a time range (last hour to last 7 days, or All): the map then shows only
+  the fixes taken in that period, with their count. All, the default, still shows the newest 500.
+
 ## v0.3.9 — 2026-10-27
 
 Upgrading

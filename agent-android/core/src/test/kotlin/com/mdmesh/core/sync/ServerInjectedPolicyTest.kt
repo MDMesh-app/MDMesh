@@ -235,7 +235,7 @@ class ServerInjectedPolicyTest {
         val camera = RecordingToggle("camera")
         val harness = Harness(mapOf("camera" to camera))
         harness.serverSays(
-            policyCommand("c1", "factoryResetProtection", enabled = false), // not implemented
+            policyCommand("c1", "mobileData", enabled = false), // planned key: no strategy registered
             policyCommand("c2", "camera", enabled = false),
         )
 

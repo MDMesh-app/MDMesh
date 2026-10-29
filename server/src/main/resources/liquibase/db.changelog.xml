@@ -2974,6 +2974,23 @@
         <rollback>ALTER TABLE configurations DROP COLUMN kioskLockVolume;</rollback>
     </changeSet>
 
+    <changeSet id="26.10.19-configurations-factoryResetProtection" author="lunacy" context="common">
+        <comment>Columns,new: configurations#factoryResetProtection (Enhanced Factory Reset Protection, EFRP:
+            null = not managed, true = a wiped device demands an authorized account, false = FRP explicitly
+            disabled) and configurations#factoryResetProtectionAccounts (comma or newline separated Google
+            account ids allowed to bypass FRP at setup). Sent as config.apply's factoryResetProtection section
+            (protocol 1.5), applied by the agent through setFactoryResetProtectionPolicy (API 30+, Device Owner).
+            No DEFAULT: NULL = unmanaged, so existing configurations and the golden revisions keep unchanged.</comment>
+        <sql>
+            ALTER TABLE configurations ADD COLUMN factoryResetProtection BOOLEAN;
+            ALTER TABLE configurations ADD COLUMN factoryResetProtectionAccounts TEXT;
+        </sql>
+        <rollback>
+            ALTER TABLE configurations DROP COLUMN factoryResetProtectionAccounts;
+            ALTER TABLE configurations DROP COLUMN factoryResetProtection;
+        </rollback>
+    </changeSet>
+
     <changeSet id="26.10.14-agentCommand-deviceNumber-type-id-idx" author="lunacy" context="common">
         <comment>Index,new: agentCommand (deviceNumber, type, id). The latest command of a type per device (the config
             sync summary's deferred check, config reconcile) becomes one index lookup instead of a scan of all the

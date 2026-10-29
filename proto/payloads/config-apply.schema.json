@@ -26,6 +26,15 @@
         "theme": { "type": "object", "properties": { "backgroundColor": {"type":"string"}, "textColor": {"type":"string"}, "iconSize": {"type":"string"} } }
       }
     },
-    "location": { "type": "object", "properties": { "mode": { "enum": ["passive", "active", "off"], "description": "active = fresh fix each check-in (GPS), passive = last-known (console: Last known (passive), formerly Network), off = read no location (Do not track; 1.4, older agents treat it as passive and the server drops what they report)" } } }
+    "location": { "type": "object", "properties": { "mode": { "enum": ["passive", "active", "off"], "description": "active = fresh fix each check-in (GPS), passive = last-known (console: Last known (passive), formerly Network), off = read no location (Do not track; 1.4, older agents treat it as passive and the server drops what they report)" } } },
+    "factoryResetProtection": {
+      "type": "object",
+      "description": "1.5: Enhanced Factory Reset Protection (EFRP). Present => ensure this policy (setFactoryResetProtectionPolicy, API 30+, Device Owner); absent = the configuration does not manage it (the agent releases it only if the previously applied document had it). Does not prevent a wipe: it decides whether a wiped device demands an authorized Google account at setup. Older agents report the key `unsupported`.",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean", "description": "true = FRP required after a wipe; false = FRP explicitly disabled" },
+        "accounts": { "type": "array", "items": { "type": "string" }, "description": "Google account ids allowed to bypass FRP at setup; omitted/empty = the platform default (the device's last account)" }
+      }
+    }
   }
 }

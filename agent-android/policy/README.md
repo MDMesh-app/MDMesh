@@ -8,7 +8,8 @@ an interface here; feature code never touches DPM directly.
 - `DeviceControl` — the narrow surface feature code may use. Exposes policy areas
   (currently `wifi`).
 - Policies, one directory each: `wifi/`, `bluetooth/`, `camera/`, `usb/` (`usbStorage`),
-  `screenshots/`, `factoryreset/` (`factoryReset`), `safeboot/` (`safeBoot`). These are the keys `CapabilityRegistry` can
+  `screenshots/`, `factoryreset/` (`factoryReset`), `safeboot/` (`safeBoot`),
+  `factoryresetprotection/` (`factoryResetProtection`, EFRP). These are the keys `CapabilityRegistry` can
   advertise.
 - `PolicyStrategy` — base for SDK-gated implementations. `isSupported()` carries the
   `Build.VERSION.SDK_INT` (+ Device-Owner) check, evaluated once at selection.
@@ -43,6 +44,13 @@ interface, write its strategies, add a factory, and register the probe in
 `CapabilityRegistry`. Nothing in `:core`/`:app` needs to know the SDK details.
 
 For an on/off policy the shortest path is three files (`XPolicy`, `XStrategy`/`XRestrictionPolicy`,
+`XPolicyFactory`) plus one line in `CapabilityRegistry.togglePolicies()` — that single registration
+is enough for both the capability advertisement and the generic command routing.
+
+A policy whose desired state is **not** a bare boolean (e.g. `factoryResetProtection`, whose EFRP
+allow-list rides alongside the on/off flag) does not implement `TogglePolicy`: it is probed by its own
+`CapabilityRegistry` accessor, advertised through `supportedPolicyKeys()`, and applied by its own
+`config.apply` section — never routed through the boolean `policy.apply`.
 `XPolicyFactory`) plus one probe line in `CapabilityRegistry`'s probe map (the `TogglePolicyResolver`) —
 that single registration is enough for both the capability advertisement and the generic command routing.
 Probes are resolved per call until a strategy is supported (Device Owner arrives partway through QR

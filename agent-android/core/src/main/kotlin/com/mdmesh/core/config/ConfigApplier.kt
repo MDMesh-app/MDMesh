@@ -5,6 +5,8 @@ import com.mdmesh.core.store.ConfigStateStore
 import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.policy.PolicyOutcome
 import com.mdmesh.policy.ReleasablePolicy
+import com.mdmesh.policy.TogglePolicy
+import com.mdmesh.policy.factoryresetprotection.FactoryResetProtectionPolicy
 import com.mdmesh.policy.ResolvedToggles
 import com.mdmesh.policy.safeboot.SafeBootPolicy
 import com.mdmesh.policy.wifi.WifiRadioPolicy
@@ -36,6 +38,11 @@ class ConfigApplier(
     private val kiosk: KioskApplier,
     private val setLocationMode: (String) -> Unit,
     private val store: ConfigStateStore,
+    /**
+     * Enhanced Factory Reset Protection (EFRP, 1.5), or `null` when the device does not support it. Not a
+     * [TogglePolicy]: its desired state carries the account allow-list too, so it is applied by its own section.
+     */
+    private val factoryResetProtection: FactoryResetProtectionPolicy? = null,
 ) {
     private val mutex = Mutex()
 
@@ -73,6 +80,7 @@ class ConfigApplier(
 
     private fun manages(doc: ConfigApplyPayload, outcomeKey: String): Boolean = when {
         outcomeKey == KIOSK -> doc.kiosk != null
+        outcomeKey == FACTORY_RESET_PROTECTION -> doc.factoryResetProtection != null
         outcomeKey.startsWith(POLICIES) -> outcomeKey.removePrefix(POLICIES) in doc.policies
         else -> true
     }
@@ -116,6 +124,7 @@ class ConfigApplier(
             outcomes["location"] = runCatching { setLocationMode(loc.mode); ConfigOutcome.APPLIED }
                 .getOrElse { ConfigOutcome.failed(it.message ?: "location mode") }
         }
+        applyFactoryResetProtection(doc, previous, unreleased, outcomes)
         val result = ConfigApplyResult(doc.revision, outcomes)
         if (persist && succeeded(result)) store.save(doc)
         return result
@@ -169,6 +178,32 @@ class ConfigApplier(
     }
 
     /**
+     * Applies the Enhanced Factory Reset Protection section (protocol 1.5). A present section is applied through
+     * [factoryResetProtection]; an absent one releases the policy only when a previously applied document managed
+     * it (turning it off is a configuration change, not a revert). A release that fails is reported so it stays in
+     * [ConfigStateStore.unreleased] and is retried with the next document. Unsupported (API below 30 / not Device
+     * Owner) is final and never blocks.
+     */
+    private fun applyFactoryResetProtection(
+        doc: ConfigApplyPayload,
+        previous: List<ConfigApplyPayload>,
+        unreleased: Set<String>,
+        outcomes: MutableMap<String, String>,
+    ) {
+        val desired = doc.factoryResetProtection
+        if (desired != null) {
+            outcomes[FACTORY_RESET_PROTECTION] =
+                toOutcome(factoryResetProtection?.apply(desired.enabled, desired.accounts))
+            return
+        }
+        val previouslyManaged = previous.any { it.factoryResetProtection != null } ||
+            FACTORY_RESET_PROTECTION in unreleased
+        if (!previouslyManaged) return
+        val o = toOutcome(factoryResetProtection?.release())
+        if (ConfigOutcome.isFailed(o)) outcomes[FACTORY_RESET_PROTECTION] = o
+    }
+
+    /**
      * Re-run the last fully-applied document (after boot / self-update). Null when nothing is persisted. Not saved
      * again: a stale document ([selfHealWifiRadio]) stays stale until the server re-sends it.
      */
@@ -198,6 +233,7 @@ class ConfigApplier(
     companion object {
         private const val POLICIES = "policies."
         private const val KIOSK = "kiosk"
+        private const val FACTORY_RESET_PROTECTION = "factoryResetProtection"
 
         /** Never a real revision (config.apply requires a non-blank one). */
         private const val NO_REVISION = ""

@@ -13,12 +13,14 @@ import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.policy.PolicyOutcome
 import com.mdmesh.policy.ReleasablePolicy
 import com.mdmesh.policy.TogglePolicy
+import com.mdmesh.policy.factoryresetprotection.FactoryResetProtectionPolicy
 import com.mdmesh.policy.wifi.InMemoryWifiRadioOffState
 import com.mdmesh.policy.wifi.WifiRadio
 import com.mdmesh.policy.wifi.WifiRadioPolicy
 import com.mdmesh.proto.ConfigApplyPayload
 import com.mdmesh.proto.ConfigLocation
 import com.mdmesh.proto.ConfigOutcome
+import com.mdmesh.proto.FactoryResetProtectionConfig
 import com.mdmesh.proto.KioskApplyPayload
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
@@ -346,5 +348,72 @@ class ConfigApplierTest {
         store.save(ConfigApplyPayload(revision = "n1"))
         assertFalse(ConfigApplier(fixedToggles(), kiosk(FakeController()), {}, store).selfHealWifiRadio { null })
         assertEquals("n1", store.revision())
+    }
+
+    private class FakeFrp(
+        private val outcome: PolicyOutcome = PolicyOutcome.Applied,
+    ) : FactoryResetProtectionPolicy {
+        override val capabilityKey = FactoryResetProtectionPolicy.CAPABILITY_KEY
+        var applied: Pair<Boolean, List<String>>? = null
+        var releaseOutcome: PolicyOutcome = PolicyOutcome.Applied
+        var releases = 0
+        override fun isSupported() = true
+        override fun apply(enabled: Boolean, accounts: List<String>): PolicyOutcome {
+            applied = enabled to accounts
+            return outcome
+        }
+        override fun release(): PolicyOutcome { releases++; return releaseOutcome }
+    }
+
+    @Test fun `the EFRP section is applied with its accounts and persists the revision`() = runTest {
+        val frp = FakeFrp(); val store = InMemoryConfigStateStore()
+        val r = ConfigApplier(emptyMap(), kiosk(FakeController()), {}, store, frp).apply(
+            ConfigApplyPayload(
+                revision = "f1",
+                factoryResetProtection = FactoryResetProtectionConfig(true, listOf("admin@acme.com")),
+            ),
+        )
+        assertEquals(ConfigOutcome.APPLIED, r.outcomes["factoryResetProtection"])
+        assertEquals(true to listOf("admin@acme.com"), frp.applied)
+        assertEquals("f1", store.revision())
+    }
+
+    @Test fun `EFRP is released only when a previously applied document managed it`() = runTest {
+        val frp = FakeFrp(); val store = InMemoryConfigStateStore()
+        val a = ConfigApplier(emptyMap(), kiosk(FakeController()), {}, store, frp)
+        a.apply(ConfigApplyPayload(revision = "f1", factoryResetProtection = FactoryResetProtectionConfig()))
+        assertEquals("still managed -> no release", 0, frp.releases)
+        val released = a.apply(ConfigApplyPayload(revision = "f2"))
+        assertEquals("dropped after being managed -> released once", 1, frp.releases)
+        assertFalse(
+            "a successful release reports no outcome, like a lifted restriction",
+            released.outcomes.containsKey("factoryResetProtection"),
+        )
+        assertEquals("f2", store.revision())
+        a.apply(ConfigApplyPayload(revision = "f3"))
+        assertEquals("never managed before either -> nothing to release", 1, frp.releases)
+    }
+
+    @Test fun `a failed EFRP release keeps the revision unsaved and is retried`() = runTest {
+        val frp = FakeFrp(); val store = InMemoryConfigStateStore()
+        val a = ConfigApplier(emptyMap(), kiosk(FakeController()), {}, store, frp)
+        a.apply(ConfigApplyPayload(revision = "f1", factoryResetProtection = FactoryResetProtectionConfig()))
+        frp.releaseOutcome = PolicyOutcome.Failed("dpm busy")
+        val off = ConfigApplyPayload(revision = "f2")
+        assertFalse(ConfigApplier.succeeded(a.apply(off)))
+        assertEquals("f1", store.revision())
+        frp.releaseOutcome = PolicyOutcome.Applied
+        assertTrue(ConfigApplier.succeeded(a.apply(off)))
+        assertEquals("released again on the re-send", 2, frp.releases)
+        assertEquals("f2", store.revision())
+    }
+
+    @Test fun `EFRP on a device without the policy is unsupported and does not block`() = runTest {
+        val store = InMemoryConfigStateStore()
+        val r = ConfigApplier(emptyMap(), kiosk(FakeController()), {}, store).apply(
+            ConfigApplyPayload(revision = "f9", factoryResetProtection = FactoryResetProtectionConfig()),
+        )
+        assertEquals(ConfigOutcome.UNSUPPORTED, r.outcomes["factoryResetProtection"])
+        assertEquals("f9", store.revision())
     }
 }

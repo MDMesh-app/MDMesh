@@ -28,7 +28,7 @@ Advertised only when the device has a working strategy for it (`CapabilityRegist
 | `kioskLockTask` | COSU lock-task kiosk | 24 | Planned: not advertised; kiosk commands are ungated (see below). |
 | `passwordComplexity` | password policy | 31 | Planned: not advertised yet. setRequiredPasswordComplexity (setPasswordQuality deprecated @26) |
 | `systemUpdatePolicy` | OS update windows | 24 | Planned: not advertised yet. |
-| `factoryResetProtection` | FRP policy | 30 | setFactoryResetProtectionPolicy; does not *prevent* a wipe, it decides whether a wiped device demands a Google account. Not implemented. |
+| `factoryResetProtection` | Enhanced FRP (EFRP) policy | 30 | 1.5. `DevicePolicyManager.setFactoryResetProtectionPolicy`; does not *prevent* a wipe, it decides whether a wiped device demands an authorized Google account and which accounts may unlock it. Device Owner only. Not a boolean `policy.apply` key: `config.apply` carries it as the `factoryResetProtection` section `{ enabled, accounts[] }`, and the policy is cleared back to the platform default when a configuration stops managing it. Not to be confused with `factoryReset` above. |
 
 ### appManagement
 | key | meaning | notes |
@@ -71,7 +71,7 @@ string, except `configApply`.
 | type | requiresCapability | payload (sketch) |
 |------|--------------------|------------------|
 | `config.sync` | — | none (triggers a full reconcile); no console or server sender yet |
-| `config.apply` | `device.configApply` | desired-state document, see `payloads/config-apply.schema.json`; result detail is `payloads/config-apply-result.schema.json` |
+| `config.apply` | `device.configApply` | desired-state document (policies, kiosk, location, `factoryResetProtection`), see `payloads/config-apply.schema.json`; result detail is `payloads/config-apply-result.schema.json` |
 | `policy.apply` | `policy.<key>` (e.g. `policy.wifi`) | `{ policy: "wifi", value: false }` |
 | `app.install` | `app.silentInstall` | `{ url, packageName, versionCode, sha256, runAfterInstall }`, or `parts: [{ url, sha256 }]` instead of `url`/`sha256` for a split APK; `sha256` (hex) is required while the check-in says `installIntegrity: "required"` (1.3) |
 | `app.uninstall` | — | `{ packageName }`; no console or server sender yet |

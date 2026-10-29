@@ -46,6 +46,30 @@ class ConfigCommandTest {
         val json = """{"revision":"r","location":{"mode":"off"}}"""
         val p = ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), json)
         assertEquals(DeviceAction.LOCATION_OFF, p.location?.mode)
-        assertEquals("1.4", ProtocolJson.PROTOCOL_VERSION)
+        assertEquals("1.5", ProtocolJson.PROTOCOL_VERSION)
+    }
+
+    @Test
+    fun `factory reset protection section decodes with accounts and defaults enabled`() {
+        val json = """{"revision":"r","factoryResetProtection":{"accounts":["admin@acme.com"]}}"""
+        val p = ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), json)
+        assertEquals(true, p.factoryResetProtection?.enabled)
+        assertEquals(listOf("admin@acme.com"), p.factoryResetProtection?.accounts)
+
+        val disabled = ProtocolJson.json.decodeFromString(
+            ConfigApplyPayload.serializer(),
+            """{"revision":"r","factoryResetProtection":{"enabled":false}}""",
+        )
+        assertEquals(false, disabled.factoryResetProtection?.enabled)
+        assertEquals(emptyList<String>(), disabled.factoryResetProtection?.accounts)
+    }
+
+    @Test
+    fun `factory reset protection is absent by default`() {
+        val p = ProtocolJson.json.decodeFromString(
+            ConfigApplyPayload.serializer(),
+            """{"revision":"r","configurationId":1}""",
+        )
+        assertNull(p.factoryResetProtection)
     }
 }

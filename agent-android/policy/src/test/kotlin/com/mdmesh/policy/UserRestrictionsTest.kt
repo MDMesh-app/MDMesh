@@ -63,7 +63,7 @@ class UserRestrictionsTest {
         assertNull(UserRestrictions.forKey("screenshots"))
         assertNull(UserRestrictions.forKey("wifi"))
         assertNull(UserRestrictions.forKey("unknown"))
-        // The registry's unimplemented FRP row is a different capability: setFactoryResetProtectionPolicy
+        // factoryResetProtection (EFRP) is a different capability: setFactoryResetProtectionPolicy
         // (API 30) and not a user restriction, so it must not be served by this mapping.
         assertNull(UserRestrictions.forKey("factoryResetProtection"))
     }

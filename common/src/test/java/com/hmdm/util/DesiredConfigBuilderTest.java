@@ -286,4 +286,53 @@ public class DesiredConfigBuilderTest {
         assertEquals(resource("desired-config-policies.json"), DesiredConfigBuilder.canonicalJson(d));
         assertEquals(resource("desired-config-policies.sha256"), d.getRevision());
     }
+
+    @Test
+    public void factory_reset_protection_is_absent_when_unmanaged_and_keeps_the_golden_revision() {
+        DesiredConfig d = DesiredConfigBuilder.build(policiesConfig(), Collections.emptyList());
+        assertNull("null columns = not managed", d.getFactoryResetProtection());
+        assertFalse(DesiredConfigBuilder.canonicalJson(d).contains("factoryResetProtection"));
+        // Every existing configuration upgrades with NULL columns: the kiosk golden revision must not move.
+        assertEquals(resource("desired-config-kiosk.sha256"),
+                DesiredConfigBuilder.build(kioskConfig(), Arrays.asList(app(5, 505, "com.acme.pos", 1))).getRevision());
+    }
+
+    @Test
+    public void factory_reset_protection_enabled_carries_the_deduped_account_allow_list() {
+        Configuration c = policiesConfig();
+        c.setFactoryResetProtection(true);
+        c.setFactoryResetProtectionAccounts("admin@acme.com, ops@acme.com\r\n admin@acme.com ,");
+        DesiredConfig d = DesiredConfigBuilder.build(c, Collections.emptyList());
+        assertEquals(Boolean.TRUE, d.getFactoryResetProtection().getEnabled());
+        assertEquals(Arrays.asList("admin@acme.com", "ops@acme.com"), d.getFactoryResetProtection().getAccounts());
+    }
+
+    @Test
+    public void factory_reset_protection_off_wins_over_a_listed_account() {
+        // A disabled policy with an allow-list is contradictory; the explicit Off drops the accounts.
+        Configuration c = policiesConfig();
+        c.setFactoryResetProtection(false);
+        c.setFactoryResetProtectionAccounts("admin@acme.com");
+        DesiredConfig d = DesiredConfigBuilder.build(c, Collections.emptyList());
+        assertEquals(Boolean.FALSE, d.getFactoryResetProtection().getEnabled());
+        assertNull(d.getFactoryResetProtection().getAccounts());
+    }
+
+    @Test
+    public void accounts_alone_imply_factory_reset_protection_enabled() {
+        Configuration c = policiesConfig();
+        c.setFactoryResetProtection(null);
+        c.setFactoryResetProtectionAccounts("admin@acme.com");
+        DesiredConfig d = DesiredConfigBuilder.build(c, Collections.emptyList());
+        assertEquals(Boolean.TRUE, d.getFactoryResetProtection().getEnabled());
+        assertEquals(Collections.singletonList("admin@acme.com"), d.getFactoryResetProtection().getAccounts());
+    }
+
+    @Test
+    public void factory_reset_protection_alone_changes_the_revision() {
+        DesiredConfig base = DesiredConfigBuilder.build(policiesConfig(), Collections.emptyList());
+        Configuration c = policiesConfig();
+        c.setFactoryResetProtection(true);
+        assertNotEquals(base.getRevision(), DesiredConfigBuilder.build(c, Collections.emptyList()).getRevision());
+    }
 }

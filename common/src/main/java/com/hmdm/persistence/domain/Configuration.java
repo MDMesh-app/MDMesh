@@ -120,6 +120,10 @@ public class Configuration implements CustomerData, Serializable {
     private Boolean disableFactoryReset;
     @ApiModelProperty("Flag indicating if rebooting into Safe Mode is disabled on the device")
     private Boolean disableSafeBoot;
+    @ApiModelProperty("Enhanced FRP: null = not managed, true = a wiped device requires an authorized account, false = FRP explicitly disabled (sent as config.apply factoryResetProtection.enabled)")
+    private Boolean factoryResetProtection;
+    @ApiModelProperty("Enhanced FRP: comma or newline separated Google account ids allowed to bypass FRP after a wipe (sent as config.apply factoryResetProtection.accounts)")
+    private String factoryResetProtectionAccounts;
     @ApiModelProperty("Block volume changes while in kiosk (Android mutes the device meanwhile); sent as kiosk.features.lockVolume")
     private Boolean kioskLockVolume;
     @ApiModelProperty("Wi-Fi radio: null = not managed, true = turn on, false = turn off (sent as policies.wifiRadio)")
@@ -903,6 +907,22 @@ public class Configuration implements CustomerData, Serializable {
         this.disableSafeBoot = disableSafeBoot;
     }
 
+    public Boolean getFactoryResetProtection() {
+        return factoryResetProtection;
+    }
+
+    public void setFactoryResetProtection(Boolean factoryResetProtection) {
+        this.factoryResetProtection = factoryResetProtection;
+    }
+
+    public String getFactoryResetProtectionAccounts() {
+        return factoryResetProtectionAccounts;
+    }
+
+    public void setFactoryResetProtectionAccounts(String factoryResetProtectionAccounts) {
+        this.factoryResetProtectionAccounts = factoryResetProtectionAccounts;
+    }
+
     public Boolean getKioskLockVolume() {
         return kioskLockVolume;
     }
@@ -1003,6 +1023,8 @@ public class Configuration implements CustomerData, Serializable {
         copy.setDefaultFilePath(getDefaultFilePath());
         copy.setDisableFactoryReset(getDisableFactoryReset());
         copy.setDisableSafeBoot(getDisableSafeBoot());
+        copy.setFactoryResetProtection(getFactoryResetProtection());
+        copy.setFactoryResetProtectionAccounts(getFactoryResetProtectionAccounts());
         copy.setKioskLockVolume(getKioskLockVolume());
         copy.setWifiRadio(getWifiRadio());
 

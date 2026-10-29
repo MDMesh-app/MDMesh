@@ -39,7 +39,7 @@ angular.module('plugin-push', ['ngResource', 'ui.bootstrap', 'ui.router', 'ngTag
     })
     .factory('pluginPushService', function ($resource) {
         return $resource('', {}, {
-            purgeOldMessages: {url: 'rest/plugins/push/private/purge/:days', method: 'GET'},
+            purgeOldMessages: {url: 'rest/plugins/push/private/purge/:days', method: 'POST'},
             getMessages: {url: 'rest/plugins/push/private/search', method: 'POST'},
             sendMessage: {url: 'rest/plugins/push/private/send', method: 'POST'},
             deleteMessage: {url: 'rest/plugins/push/private/:id', method: 'DELETE'},
@@ -342,7 +342,7 @@ angular.module('plugin-push', ['ngResource', 'ui.bootstrap', 'ui.router', 'ngTag
                 $scope.errorMessage = localization.localize('plugin.push.settings.enter.number');
             }
 
-            pluginPushService.purgeOldMessages({"days": $scope.settings.pushPurgePeriod}, function (response) {
+            pluginPushService.purgeOldMessages({"days": $scope.settings.pushPurgePeriod}, {}, function (response) {
                 if (response.status === 'OK') {
                     $scope.successMessage = localization.localize('plugin.push.settings.message.purge.success');
                 } else {

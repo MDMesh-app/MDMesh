@@ -6,6 +6,7 @@ import { useTheme } from '../ui/theme';
 import { listConfigurations, type ConfigurationSummary } from '../api/configurations';
 import { API_BASE } from '../api/client';
 import { fetchAuthOptions } from '../api/auth';
+import { useMayManageDeployment } from '../auth/useMayManageDeployment';
 import { getUpdateStatus, setAutoUpdate, checkForUpdates, applyUpdate, type UpdateStatus } from '../api/updates';
 import { RolloutPanel } from '../components/RolloutPanel';
 import { orDash, fmtRelative } from '../ui/format';
@@ -18,6 +19,7 @@ type Conn = 'checking' | 'ok' | 'down';
 export function SettingsPage() {
   const navigate = useNavigate();
   const { user, signOut } = useAuth();
+  const canUpdate = useMayManageDeployment();
   const { theme, setTheme, density, setDensity } = useTheme();
   const [configList, setConfigList] = useState<ConfigurationSummary[]>([]);
   const [conn, setConn] = useState<Conn>('checking');
@@ -213,7 +215,7 @@ export function SettingsPage() {
                 </span>
                 <span className="v">
                   <div className="upd-actions">
-                    {upd.applySupported !== false && (
+                    {upd.applySupported !== false && canUpdate && (
                       <button
                         className="btn btn-sm btn-primary"
                         onClick={() => void applyNow()}
@@ -226,6 +228,9 @@ export function SettingsPage() {
                       Roll out agent to devices ↓
                     </button>
                   </div>
+                  {upd.applySupported !== false && !canUpdate && (
+                    <p className="au-note">Only a super-admin, or the admin of a single-customer install, can update.</p>
+                  )}
                   {upd.applySupported === false && (
                     <p className="au-note">
                       This deployment was installed from source — update the server/console with the
@@ -241,6 +246,7 @@ export function SettingsPage() {
                 </span>
               </div>
             )}
+            {canUpdate && (
             <div className="set-row">
               <span className="k">
                 Check for updates
@@ -255,7 +261,8 @@ export function SettingsPage() {
                 </button>
               </span>
             </div>
-            {upd.applySupported !== false && (
+            )}
+            {upd.applySupported !== false && canUpdate && (
             <div className="set-row auto-update-row">
               <span className="k">
                 Automatic updates

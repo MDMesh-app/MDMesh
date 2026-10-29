@@ -5,6 +5,7 @@ import com.hmdm.persistence.domain.Settings;
 import com.hmdm.persistence.domain.User;
 import com.hmdm.persistence.domain.UserRole;
 import com.hmdm.rest.json.UserCredentials;
+import com.hmdm.security.LoginThrottle;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.security.jwt.rest.JWTAuthResource;
 import com.hmdm.util.BackgroundTaskRunnerService;
@@ -19,6 +20,7 @@ import javax.servlet.http.HttpServletResponse;
 import javax.ws.rs.core.Response;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +39,8 @@ public class JWTTwoFactorTest {
     private final Map<String, User> users = new HashMap<>();
     private TokenProvider tokenProvider;
     private UnsecureDAO unsecureDAO;
+    private final LoginThrottle throttle = new LoginThrottle("", false, SECRET, "http://localhost");
+    static final String SECRET = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     @Before
     public void setUp() {
@@ -84,6 +88,7 @@ public class JWTTwoFactorTest {
         assertEquals(Response.Status.FORBIDDEN.getStatusCode(), response.getStatus());
         assertNull(response.getEntity());
         assertNull(response.getHeaderString("Authorization"));
+        assertNull("the password alone doesn't make a client known", response.getHeaderString("Set-Cookie"));
     }
 
     @Test
@@ -99,6 +104,49 @@ public class JWTTwoFactorTest {
         Response response = login("guarded", "0123456789ABCDEF0123456789ABCDEF");
 
         assertEquals(Response.Status.UNAUTHORIZED.getStatusCode(), response.getStatus());
+    }
+
+    @Test
+    public void tooManyFailedSignInsAnswer429WithRetryAfterAtOnce() {
+        long start = System.nanoTime();
+        for (int i = 0; i < 10; i++) {
+            assertEquals(401, login("plain", "0123456789ABCDEF0123456789ABCDEF", "203.0.113.7").getStatus());
+        }
+        assertTrue("no failed sign-in sleeps", System.nanoTime() - start < 2_000_000_000L);
+
+        Response refused = login("plain", PASSWORD_MD5, "203.0.113.7");
+        assertEquals("the right password is refused too", 429, refused.getStatus());
+        assertEquals("always the full window", "900", refused.getHeaderString("Retry-After"));
+        assertNull(refused.getHeaderString("Authorization"));
+
+        assertEquals("another client still signs in", 200, login("plain", PASSWORD_MD5, "198.51.100.1").getStatus());
+    }
+
+    @Test
+    public void unknownLoginsAreLimitedLikeKnownOnes() {
+        for (int i = 0; i < 10; i++) {
+            assertEquals(401, login("nobody", PASSWORD_MD5, "203.0.113.7").getStatus());
+        }
+        assertEquals(429, login("nobody", PASSWORD_MD5, "203.0.113.7").getStatus());
+    }
+
+    @Test
+    public void anApiClientThatKeepsTheCookieOrItsHostKeepsSigningInDuringAnAttack() {
+        Response first = login("plain", PASSWORD_MD5, "198.51.100.1", null);
+        assertEquals(200, first.getStatus());
+        String setCookie = first.getHeaderString("Set-Cookie");
+        assertTrue(setCookie, setCookie.startsWith(LoginThrottle.KNOWN_BROWSER_COOKIE + "="));
+        assertTrue(setCookie, setCookie.contains("; Path=/rest/public;"));
+        String cookie = setCookie.substring(setCookie.indexOf('=') + 1, setCookie.indexOf(';'));
+
+        for (int i = 0; i < 40; i++) {
+            login("plain", "0123456789ABCDEF0123456789ABCDEF", "203.0.113." + i, null);
+        }
+        assertEquals("a new client on a new host", 429, login("plain", PASSWORD_MD5, "198.51.100.2", null).getStatus());
+        assertEquals("the same host, no cookie jar", 200, login("plain", PASSWORD_MD5, "198.51.100.1", null)
+                .getStatus());
+        assertEquals("the cookie, from a new host", 200, login("plain", PASSWORD_MD5, "198.51.100.3", cookie)
+                .getStatus());
     }
 
     // ---- JWTFilter on /rest/private/* --------------------------------------------------------------------------------
@@ -128,16 +176,41 @@ public class JWTTwoFactorTest {
     // ---- helpers -----------------------------------------------------------------------------------------------------
 
     private Response login(String login, String passwordMd5) {
+        return login(login, passwordMd5, null);
+    }
+
+    private static HttpServletRequest request(String peer, String cookie) {
+        return (HttpServletRequest) Proxy.newProxyInstance(HttpServletRequest.class.getClassLoader(),
+                new Class<?>[]{HttpServletRequest.class}, (p, m, a) -> {
+                    if (m.getName().equals("getRemoteAddr")) {
+                        return peer;
+                    }
+                    if (m.getName().equals("getHeaders")) {
+                        return Collections.emptyEnumeration();
+                    }
+                    if (m.getName().equals("getCookies") && cookie != null) {
+                        return new javax.servlet.http.Cookie[]{
+                                new javax.servlet.http.Cookie(LoginThrottle.KNOWN_BROWSER_COOKIE, cookie)};
+                    }
+                    return null;
+                });
+    }
+
+    private Response login(String login, String passwordMd5, String peer) {
+        return login(login, passwordMd5, peer, null);
+    }
+
+    private Response login(String login, String passwordMd5, String peer, String cookie) {
         BackgroundTaskRunnerService taskRunner = new BackgroundTaskRunnerService() {
             @Override
             public void submitTask(Runnable task) {
             }
         };
-        JWTAuthResource resource = new JWTAuthResource(tokenProvider, unsecureDAO, null, taskRunner);
+        JWTAuthResource resource = new JWTAuthResource(tokenProvider, unsecureDAO, null, taskRunner, throttle);
         UserCredentials credentials = new UserCredentials();
         credentials.setLogin(login);
         credentials.setPassword(passwordMd5);
-        return resource.login(credentials);
+        return resource.login(credentials, peer == null ? null : request(peer, cookie));
     }
 
     private static final class FilterResult {

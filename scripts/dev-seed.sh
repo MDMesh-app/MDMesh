@@ -96,9 +96,11 @@ print(d.get("passwordResetToken") or "" if d.get("passwordReset") else "")')
   seeded)
     mdm_post_seed install/sql/post_seed.sql
     # A run that seeded but failed before the password reset left admin behind a random password it never printed.
-    # mdm_seed stored the reset token; finish the reset with it.
-    token=$(mdm_psql -c "SELECT passwordresettoken FROM users
-                         WHERE login='admin' AND passwordreset AND passwordresettoken IS NOT NULL")
+    # mdm_seed stored the reset token; finish the reset with it. The server takes a reset token for 24 hours from
+    # its issue time, which the seed does not set, so it is stamped now.
+    token=$(mdm_psql -c "UPDATE users SET passwordresettokentime = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT
+                         WHERE login='admin' AND passwordreset AND passwordresettoken IS NOT NULL
+                         RETURNING passwordresettoken")
     if [ -n "$token" ]; then
       reset_pw "$token" || exit 1
       echo "seeded (admin password reset resumed): admin / $PW"

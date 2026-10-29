@@ -58,6 +58,44 @@ public class ConfigReconcileDecisionTest {
         assertEquals("still capability-gated", NONE,
                 ConfigReconcileDecision.decide(Collections.<String>emptySet(), "r1", "r1", false, null, NOW, true));
     }
+    private static AgentCommand abandoned(String revision, long at) {
+        AgentCommand c = cmd(revision, "expired", at);
+        c.setDetail(ConfigReconcileDecision.ABANDONED_DETAIL);
+        return c;
+    }
+    @Test public void an_abandoned_attempt_is_sent_again_at_once() {
+        // The agent checked in again without its result: it restarted mid-apply or never got the response.
+        AgentCommand gone = abandoned("r2", NOW - 1000L);
+        assertEquals(ENQUEUE, ConfigReconcileDecision.decide(CAPABLE, "r2", "r1", false, gone, null, NOW, false));
+        assertEquals("an older failure of the same revision does not hold it back", ENQUEUE,
+                ConfigReconcileDecision.decide(CAPABLE, "r2", "r1", false, gone,
+                        cmd("r2", "failed", NOW - 2 * ConfigReconcileDecision.RETRY_BACKOFF_MS), NOW, false));
+        assertEquals("after an agent update too", ENQUEUE,
+                ConfigReconcileDecision.decide(CAPABLE, "r1", "r1", false, abandoned("r1", NOW - 1000L), null, NOW, true));
+    }
+    @Test public void a_second_abandoned_attempt_in_a_row_keeps_the_backoff() {
+        // E.g. a document that kills the agent every time: one quick retry, then the normal backoff.
+        AgentCommand again = abandoned("r2", NOW - 1000L);
+        AgentCommand first = abandoned("r2", NOW - 60_000L);
+        assertEquals(NONE, ConfigReconcileDecision.decide(CAPABLE, "r2", "r1", false, again, first, NOW, false));
+        AgentCommand old = abandoned("r2", NOW - 2 * ConfigReconcileDecision.RETRY_BACKOFF_MS);
+        assertEquals(ENQUEUE, ConfigReconcileDecision.decide(CAPABLE, "r2", "r1", false, old, first, NOW, false));
+        assertEquals("an abandoned attempt of another revision before it does not count", ENQUEUE,
+                ConfigReconcileDecision.decide(CAPABLE, "r2", "r1", false, again, abandoned("r1", NOW - 60_000L),
+                        NOW, false));
+    }
+    @Test public void a_command_expired_by_its_lease_keeps_the_backoff() {
+        AgentCommand leased = cmd("r2", "expired", NOW - 1000L);
+        assertEquals(NONE, ConfigReconcileDecision.decide(CAPABLE, "r2", "r1", false, leased, null, NOW, false));
+    }
+    @Test public void abandoned_needs_the_marker_and_the_expired_status() {
+        assertTrue(ConfigReconcileDecision.abandoned(abandoned("r1", 1L)));
+        assertFalse(ConfigReconcileDecision.abandoned(cmd("r1", "expired", 1L)));
+        AgentCommand lateResult = abandoned("r1", 1L);
+        lateResult.setStatus("done"); // the device's late result overwrote the server's guess
+        assertFalse(ConfigReconcileDecision.abandoned(lateResult));
+        assertFalse(ConfigReconcileDecision.abandoned(null));
+    }
     @Test public void agentChanged_needs_both_versions() {
         assertTrue(ConfigReconcileDecision.agentChanged("0.3.3", "0.3.2"));
         assertFalse(ConfigReconcileDecision.agentChanged("0.3.3", "0.3.3"));

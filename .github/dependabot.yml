@@ -39,6 +39,10 @@ updates:
       # breaking the server compile (#37's red run). Revisit together with dropping the JitPack repository.
       - dependency-name: "com.github.kenglxn.qrgen:*"
         versions: ["[2.6,)"]
+      # classgraph 6 is built for JDK 25 (the server runs on JDK 17) and 5.x changed the scan API that PluginList uses.
+      # Lifted by the JDK move, or porting PluginList (plugins/platform) to the new API.
+      - dependency-name: "io.github.classgraph:classgraph"
+        versions: ["[5,)"]
   - package-ecosystem: npm
     directory: "/web"
     schedule: { interval: weekly, day: monday }

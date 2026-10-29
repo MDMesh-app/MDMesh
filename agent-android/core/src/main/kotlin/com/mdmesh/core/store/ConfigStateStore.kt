@@ -32,6 +32,13 @@ interface ConfigStateStore {
     /** Result keys (`policies.<key>`, `kiosk`) whose release or kiosk exit failed: the next document retries them. */
     var unreleased: Set<String>
 
+    /**
+     * The revision for which a Wi-Fi radio self-heal hold was last ended (a changed configuration ends it). Kept apart
+     * from [delivered], so a hold that could not be ended when its revision arrived (the `wifiRadio` check threw) is
+     * ended when that revision is re-sent. Null on a store written before this existed.
+     */
+    var holdEndedFor: String?
+
     companion object {
         /** Well-formed (64 hex) but never a real revision, so it never matches the configuration. */
         val STALE_REVISION = "0".repeat(64)
@@ -60,9 +67,12 @@ class SharedPrefsConfigStateStore(context: Context) : ConfigStateStore {
     override var unreleased: Set<String>
         get() = prefs.getStringSet(KEY_UNRELEASED, null)?.toSet().orEmpty()
         set(v) { prefs.edit().putStringSet(KEY_UNRELEASED, v.toSet()).commit() }
+    override var holdEndedFor: String?
+        get() = prefs.getString(KEY_HOLD_ENDED, null)
+        set(v) { prefs.edit().putString(KEY_HOLD_ENDED, v).commit() }
     private companion object {
         const val KEY_DOC = "doc"; const val KEY_REV = "revision"; const val KEY_DELIVERED = "deliveredDoc"
-        const val KEY_UNRELEASED = "unreleased"
+        const val KEY_UNRELEASED = "unreleased"; const val KEY_HOLD_ENDED = "holdEndedFor"
     }
 }
 
@@ -76,4 +86,5 @@ class InMemoryConfigStateStore : ConfigStateStore {
     override fun markStale() { rev = ConfigStateStore.STALE_REVISION }
     override var delivered: ConfigApplyPayload? = null
     override var unreleased: Set<String> = emptySet()
+    override var holdEndedFor: String? = null
 }

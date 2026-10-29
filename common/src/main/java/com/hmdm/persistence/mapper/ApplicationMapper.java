@@ -450,11 +450,6 @@ public interface ApplicationMapper {
     int recheckConfigurationContentApplication(@Param("configurationId") Integer configurationId);
 
     @Update("UPDATE configurations " +
-            "SET kioskMode = false " +
-            "WHERE configurations.customerId = #{customerId} AND configurations.contentAppId IS NULL")
-    int recheckConfigurationKioskModes(@Param("customerId") Integer customerId);
-
-    @Update("UPDATE configurations " +
             "SET contentAppId = #{newId} " +
             "WHERE configurations.autoUpdate IS TRUE " +
             "AND EXISTS (SELECT 1 FROM applicationVersions " +
@@ -494,6 +489,22 @@ public interface ApplicationMapper {
 
     @Select("SELECT id FROM configurations WHERE customerId = #{customerId}")
     List<Integer> getCustomerConfigurationIds(@Param("customerId") int customerId);
+
+    /**
+     * Per configuration of the customer, as text: its main app, content app and kiosk flag, and its links to the
+     * applications with this application's package (every column but the link id, which a re-link renews). Compared
+     * before and after a link edit to tell which configurations it changed.
+     */
+    @Select("SELECT c.id AS id, json_build_array(c.mainAppId, c.contentAppId, c.kioskMode, " +
+            "(SELECT jsonb_agg(to_jsonb(ca) - 'id' ORDER BY to_jsonb(ca) - 'id') " +
+            " FROM configurationApplications ca " +
+            " INNER JOIN applications apps ON apps.id = ca.applicationId " +
+            " WHERE ca.configurationId = c.id " +
+            " AND apps.pkg = (SELECT pkg FROM applications WHERE id = #{applicationId})))::text AS name " +
+            "FROM configurations c " +
+            "WHERE c.customerId = #{customerId}")
+    List<LookupItem> getConfigurationLinkStates(@Param("customerId") int customerId,
+                                                @Param("applicationId") int applicationId);
 
     @Delete("DELETE FROM configurationApplications " +
             "WHERE configurationId = #{configurationId} " +

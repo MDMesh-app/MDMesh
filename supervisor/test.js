@@ -1,7 +1,8 @@
 const t = require('node:test');
 const a = require('node:assert');
 const { semverGt, pickRelease, shapeStatus, imageTags, nextPhase, isTerminal, apkAsset, sha256Matches, recoveryPage, isPublishTemp,
-  assetRequest, fetchAsset, envValue, applyLine, applyRefusal } = require('./lib');
+  assetRequest, fetchAsset, envValue, applyLine, applyRefusal, deploymentAdminVerdict,
+  legacyDeploymentAdmin } = require('./lib');
 
 t.test('semverGt', () => {
   a.equal(semverGt('1.2.4', '1.2.3'), true);
@@ -538,18 +539,127 @@ async function fakeGitHub(dir, opts) {
   };
 }
 
-/** A fake Headwind server for authorizeApply: any request with a JSESSIONID cookie is an admin. */
-async function fakeAuthz() {
+/** A fake MDMesh server for authorizeApply, shaped like the real one. JSESSIONID=abc is the admin of a private-mode
+ *  (single-customer) install: role 2 in customer 1, not a super-admin, and the deployment's operator.
+ *  JSESSIONID=root is a super-admin. JSESSIONID=orgadmin is a customer's admin (role 2, customer 5) on a
+ *  multi-customer install. All three hold the settings permission; deploymentAdmin in /rest/private/users/current
+ *  tells them apart. With { legacy: true } it answers like a 0.3.7 server: no deploymentAdmin field, and
+ *  JSESSIONID=noshape is a user whose answer lacks customerId. Anything else is 403 (AuthFilter: no session). */
+async function fakeAuthz({ legacy = false } = {}) {
   const http = require('http');
+  const users = {
+    abc: { id: 1, login: 'admin', customerId: 1, superAdmin: false, deploymentAdmin: true,
+      userRole: { id: 2, superAdmin: false } },
+    root: { id: 2, login: 'superadmin', customerId: 2, superAdmin: true, deploymentAdmin: true,
+      userRole: { id: 1, superAdmin: true } },
+    orgadmin: { id: 10, login: 'tenant', customerId: 5, superAdmin: false, deploymentAdmin: false,
+      userRole: { id: 2, superAdmin: false } },
+    noshape: { id: 11, login: 'odd', deploymentAdmin: true, userRole: { id: 2, superAdmin: false } },
+  };
   const server = http.createServer((req, res) => {
     res.setHeader('content-type', 'application/json');
-    res.end(JSON.stringify(/JSESSIONID=/.test(req.headers.cookie || '') ? { status: 'OK', data: [] } : { status: 'ERROR' }));
+    const m = /(?:^|;\s*)JSESSIONID=([^;]+)/.exec(req.headers.cookie || '');
+    const user = m && Object.prototype.hasOwnProperty.call(users, m[1]) ? { ...users[m[1]] } : null;
+    if (!user) { res.statusCode = 403; res.end(); return; }
+    if (legacy) delete user.deploymentAdmin;
+    if (req.url === '/rest/private/users/all') { res.end(JSON.stringify({ status: 'OK', data: [] })); return; } // 0.3.7's old rule: never asked
+    if (req.url === '/rest/private/users/current') { res.end(JSON.stringify({ status: 'OK', data: user })); return; }
+    res.statusCode = 404; res.end();
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   return { base: `http://127.0.0.1:${server.address().port}`,
     close: async () => { server.closeAllConnections(); await new Promise((r) => server.close(r)); } };
 }
 const ADMIN = { 'X-MDMesh-Console': '1', Cookie: 'JSESSIONID=abc', 'content-type': 'application/json' };
+const ORG_ADMIN = { ...ADMIN, Cookie: 'JSESSIONID=orgadmin' };
+const UPDATE_ROUTES = [['/update/apply'], ['/update/rollback'], ['/update/auto', { auto: true }], ['/update/check']];
+
+t.test('deploymentAdminVerdict: the server\'s users/current answer decides; no field means an older server', () => {
+  a.equal(deploymentAdminVerdict({ status: 'OK', data: { superAdmin: false, deploymentAdmin: true } }), true);
+  a.equal(deploymentAdminVerdict({ status: 'OK', data: { superAdmin: true, deploymentAdmin: false } }), false,
+    'the server\'s verdict wins');
+  a.equal(deploymentAdminVerdict({ status: 'OK', data: { deploymentAdmin: 'true' } }), false, 'a string is not true');
+  a.equal(deploymentAdminVerdict({ status: 'OK', data: { superAdmin: true } }), null, 'a server before 0.3.8');
+  a.equal(deploymentAdminVerdict({ status: 'OK', data: [] }), false, 'the users/all shape');
+  a.equal(deploymentAdminVerdict({ status: 'OK', data: null }), false, 'no user in the session');
+  a.equal(deploymentAdminVerdict({ status: 'ERROR', data: { deploymentAdmin: true } }), false);
+  a.equal(deploymentAdminVerdict(null), false);
+  a.equal(deploymentAdminVerdict('OK'), false);
+});
+
+t.test('legacyDeploymentAdmin: before 0.3.8, only a super-admin or the org admin of customer 1; missing fields refuse', () => {
+  const ok = (data) => legacyDeploymentAdmin({ status: 'OK', data });
+  a.equal(ok({ customerId: 2, userRole: { id: 1, superAdmin: true } }), true, 'a super-admin');
+  a.equal(ok({ customerId: 1, userRole: { id: 2, superAdmin: false } }), true, 'the private-mode operator');
+  a.equal(ok({ customerId: 5, userRole: { id: 2, superAdmin: false } }), false, 'another customer\'s org admin');
+  a.equal(ok({ customerId: 1, userRole: { id: 3, superAdmin: false } }), false, 'a user role in customer 1');
+  a.equal(ok({ customerId: 1, userRole: { id: 7, superAdmin: false } }), false, 'a custom role, even with settings');
+  a.equal(ok({ userRole: { id: 2, superAdmin: false } }), false, 'no customerId');
+  a.equal(ok({ customerId: '1', userRole: { id: 2 } }), false, 'a string customerId');
+  a.equal(ok({ customerId: 1, userRole: { superAdmin: false } }), false, 'no role id');
+  a.equal(ok({ customerId: 1, userRole: { id: '2' } }), false, 'a string role id');
+  a.equal(ok({ customerId: 1, userRole: { id: 1, superAdmin: 'true' } }), false, 'a string is not true');
+  a.equal(ok({ customerId: 1 }), false, 'no role');
+  a.equal(ok({ customerId: 1, userRole: [] }), false, 'a role array');
+  a.equal(ok(null), false, 'no user');
+  a.equal(ok([]), false, 'the users/all shape');
+  a.equal(legacyDeploymentAdmin({ status: 'ERROR', data: { customerId: 1, userRole: { id: 2 } } }), false);
+  a.equal(legacyDeploymentAdmin(null), false);
+});
+
+t.test('update routes need an admin who may manage the deployment: a customer admin of a multi-customer install is refused everywhere',
+  { timeout: 20000 }, async (tt) => {
+    const fs = require('fs'), os = require('os'), path = require('path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sup-superadmin-'));
+    let sup = null, authz = null;
+    tt.after(async () => { await stopChild(sup && sup.child); if (authz) await authz.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+    authz = await fakeAuthz();
+    sup = await spawnSupervisor(dir, { APPLY_SUPPORTED: '1', SERVER_BASE: authz.base }, /supervisor on/);
+    const url = (p) => `http://127.0.0.1:${sup.port}${p}`;
+    for (const [route, body] of UPDATE_ROUTES) {
+      const r = await fetch(url(route), { method: 'POST', headers: ORG_ADMIN, body: body && JSON.stringify(body) });
+      a.equal(r.status, 401, route + ' refuses a customer admin');
+    }
+    for (const cookie of ['', 'JSESSIONID=unknown', 'other=1']) {
+      const r = await fetch(url('/update/auto'), { method: 'POST', headers: { ...ADMIN, Cookie: cookie }, body: '{"auto":true}' });
+      a.equal(r.status, 401, 'cookie ' + JSON.stringify(cookie));
+    }
+    const s = await (await fetch(url('/update/status'))).json();
+    a.equal(s.apply, null, 'nothing started');
+    a.equal(s.auto, false, 'auto-update unchanged');
+    a.ok(!fs.existsSync(path.join(dir, 'auto.json')), 'nothing saved');
+
+    // The private-mode operator (role 2, no super-admin) and a super-admin pass the same gate.
+    for (const headers of [ADMIN, { ...ADMIN, Cookie: 'JSESSIONID=root' }]) {
+      const ok = await fetch(url('/update/auto'), { method: 'POST', headers, body: '{"auto":false}' });
+      a.equal(ok.status, 200, headers.Cookie);
+      a.equal((await fetch(url('/update/check'), { method: 'POST', headers })).status, 200, headers.Cookie);
+    }
+  });
+
+t.test('against a server before 0.3.8 (no deploymentAdmin) the operator can still apply the release that brings it, '
+  + 'and another customer\'s admin can\'t', { timeout: 20000 }, async (tt) => {
+    const fs = require('fs'), os = require('os'), path = require('path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sup-legacyauthz-'));
+    let sup = null, authz = null;
+    tt.after(async () => { await stopChild(sup && sup.child); if (authz) await authz.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+    authz = await fakeAuthz({ legacy: true });
+    sup = await spawnSupervisor(dir, { APPLY_SUPPORTED: '1', SERVER_BASE: authz.base }, /supervisor on/);
+    const url = (p) => `http://127.0.0.1:${sup.port}${p}`;
+    for (const headers of [ADMIN, { ...ADMIN, Cookie: 'JSESSIONID=root' }]) {
+      a.equal((await fetch(url('/update/auto'), { method: 'POST', headers, body: '{"auto":false}' })).status, 200,
+        headers.Cookie);
+    }
+    for (const cookie of ['JSESSIONID=orgadmin', 'JSESSIONID=noshape', 'JSESSIONID=nobody']) {
+      for (const [route, body] of UPDATE_ROUTES) {
+        const r = await fetch(url(route), { method: 'POST', headers: { ...ADMIN, Cookie: cookie },
+          body: body && JSON.stringify(body) });
+        a.equal(r.status, 401, route + ' refuses ' + cookie);
+      }
+    }
+    const s = await (await fetch(url('/update/status'))).json();
+    a.equal(s.apply, null, 'nothing started');
+  });
 
 t.test('private repo: with GITHUB_TOKEN the manifest, signature and APK come through the asset API URL, and the token '
   + 'never reaches the CDN it redirects to', { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 20000 }, async (tt) => {

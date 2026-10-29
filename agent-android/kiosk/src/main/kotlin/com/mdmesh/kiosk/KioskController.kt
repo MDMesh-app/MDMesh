@@ -72,6 +72,12 @@ interface KioskController {
      */
     fun setVolumeLocked(locked: Boolean): KioskResult = KioskResult.Unsupported
 
+    /**
+     * Block ([blocked] = true) or allow rebooting into Safe Mode, via `UserManager.DISALLOW_SAFE_BOOT` (Device Owner,
+     * API 23+). Callers decide with [safeModeBlocked]; this only sets the restriction.
+     */
+    fun setSafeModeBlocked(blocked: Boolean): KioskResult = KioskResult.Unsupported
+
     /** True if the device is currently pinned in lock-task mode. */
     fun isLocked(context: Context): Boolean
 

@@ -42,8 +42,8 @@ jobs:
             agent: agent-android/**, proto/**
             supervisor: supervisor/**, docker/supervisor.Dockerfile, release/minisign.pub, scripts/supervisor-smoke.sh, .dockerignore
             # Listed explicitly: the kit's fail-closed **/Dockerfile* does not match docker/web.Dockerfile. web/**,
-            # web-entrypoint.sh and .dockerignore are the web image build's inputs.
-            edge: docker/Caddyfile, docker/web.Dockerfile, docker/web-entrypoint.sh, web/**, .dockerignore, docker-compose*.yml, docker/dev.env, scripts/edge-check.sh
+            # web-entrypoint.sh, edge-peers.sh and .dockerignore are the web image build's inputs.
+            edge: docker/Caddyfile, docker/web.Dockerfile, docker/web-entrypoint.sh, docker/edge-peers.sh, web/**, .dockerignore, docker-compose*.yml, docker/dev.env, scripts/edge-check.sh
             # The installer scripts. Only the edge entry's cheap quickstart.sh copy check runs on these, not its image work.
             installers: quickstart.sh, setup.sh, install/**
 
@@ -67,7 +67,7 @@ jobs:
 
       # --- server (from server.yml) ---
       - if: matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)
-        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6  # v6.0.1
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad  # v6.1.0
         with:
           distribution: temurin
           java-version: "17"

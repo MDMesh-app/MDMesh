@@ -219,6 +219,9 @@ public class AgentAdminResource {
         if (body == null || body.getType() == null || body.getType().trim().isEmpty()) {
             return Response.ERROR("error.agent.command.invalid");
         }
+        if (isServerOwned(body.getType())) {
+            return Response.ERROR("error.agent.command.serverOwned");
+        }
 
         Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
         if (!customerId.isPresent()) {
@@ -281,6 +284,14 @@ public class AgentAdminResource {
         }
     }
 
+    /**
+     * {@code config.apply} is queued only by the server, from the device's configuration (ConfigReconciler), and at most
+     * one is open per device: an admin one is refused before anything is queued. Case-insensitive, like the bulk guard.
+     */
+    private static boolean isServerOwned(String type) {
+        return DesiredConfigBuilder.COMMAND_TYPE.equalsIgnoreCase(type.trim());
+    }
+
     /** Command types that must never be issued in bulk (destructive group). Lowercased — matched
      *  case-insensitively so a mixed-case type can't slip past this destructive-action guard. */
     private static final Set<String> BULK_FORBIDDEN_TYPES =
@@ -307,6 +318,9 @@ public class AgentAdminResource {
         final String type = req.getCommand().getType().trim();
         if (BULK_FORBIDDEN_TYPES.contains(type.toLowerCase(java.util.Locale.ROOT))) {
             return Response.ERROR("error.agent.command.bulkForbidden");
+        }
+        if (isServerOwned(type)) {
+            return Response.ERROR("error.agent.command.serverOwned");
         }
 
         Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();

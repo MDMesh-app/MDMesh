@@ -51,6 +51,10 @@ public class UserView {
     public boolean isSuperAdmin() {
         return user.getUserRole().isSuperAdmin();
     }
+    /** May apply, roll back or schedule updates (see UnsecureDAO.mayManageDeployment). */
+    public boolean isDeploymentAdmin() {
+        return Boolean.TRUE.equals(user.getDeploymentAdmin());
+    }
     public boolean isAllDevicesAvailable() {
         return user.isAllDevicesAvailable();
     }

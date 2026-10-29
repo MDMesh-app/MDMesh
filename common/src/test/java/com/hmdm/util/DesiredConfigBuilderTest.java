@@ -58,6 +58,41 @@ public class DesiredConfigBuilderTest {
     }
 
     @Test
+    public void kiosk_blocks_safe_mode_unless_the_configuration_says_otherwise() {
+        // Safe Mode starts the phone's own launcher and gets around kiosk, so a kiosk that leaves it unmanaged blocks it.
+        Configuration c = kioskConfig(); c.setDisableSafeBoot(null);
+        assertEquals(Boolean.FALSE, DesiredConfigBuilder.build(c, Collections.emptyList()).getPolicies().get("safeBoot"));
+
+        c.setDisableSafeBoot(false);
+        assertEquals("an explicit Allow is kept", Boolean.TRUE,
+                DesiredConfigBuilder.build(c, Collections.emptyList()).getPolicies().get("safeBoot"));
+
+        c.setDisableSafeBoot(null); c.setKioskMode(false);
+        assertFalse("without kiosk, unmanaged stays unmanaged",
+                DesiredConfigBuilder.build(c, Collections.emptyList()).getPolicies().containsKey("safeBoot"));
+    }
+
+    @Test
+    public void kiosk_recents_and_notifications_need_home() {
+        // Android refuses them without Home and the whole kiosk entry fails: dropped, Home never turned on.
+        Configuration c = kioskConfig(); c.setKioskHome(null); c.setKioskRecents(true); c.setKioskNotifications(true);
+        DesiredConfig d = DesiredConfigBuilder.build(c, Collections.emptyList());
+        assertNull(d.getKiosk().getFeatures().getHome());
+        assertNull(d.getKiosk().getFeatures().getRecents());
+        assertNull(d.getKiosk().getFeatures().getNotifications());
+
+        c.setKioskHome(false); c.setKioskRecents(false);
+        d = DesiredConfigBuilder.build(c, Collections.emptyList());
+        assertEquals("a false is kept (unchanged revision)", Boolean.FALSE, d.getKiosk().getFeatures().getRecents());
+        assertNull(d.getKiosk().getFeatures().getNotifications());
+
+        c.setKioskHome(true); c.setKioskRecents(true); c.setKioskNotifications(true);
+        d = DesiredConfigBuilder.build(c, Collections.emptyList());
+        assertEquals(Boolean.TRUE, d.getKiosk().getFeatures().getRecents());
+        assertEquals(Boolean.TRUE, d.getKiosk().getFeatures().getNotifications());
+    }
+
+    @Test
     public void kiosk_single_when_main_app_is_the_only_install_app() {
         DesiredConfig d = DesiredConfigBuilder.build(kioskConfig(), Arrays.asList(app(5, 505, "com.acme.pos", 1), app(9, 909, "com.acme.old", 2)));
         assertEquals("single", d.getKiosk().getMode());
@@ -178,10 +213,9 @@ public class DesiredConfigBuilderTest {
     public void null_safe_boot_is_unmanaged_and_the_key_is_omitted() {
         Configuration unmanaged = policiesConfig(); unmanaged.setDisableSafeBoot(null);
         DesiredConfig d = DesiredConfigBuilder.build(unmanaged, Collections.emptyList());
+        // Configurations without kiosk upgrade with a NULL column and keep their revision: the key stays omitted.
+        // Kiosk ones block Safe Mode instead (kiosk_blocks_safe_mode_unless_the_configuration_says_otherwise).
         assertFalse("null disableSafeBoot = not managed", d.getPolicies().containsKey("safeBoot"));
-        // Existing configurations upgrade with a NULL column: their revision must not move.
-        assertEquals(resource("desired-config-kiosk.sha256"),
-                DesiredConfigBuilder.build(kioskConfig(), Arrays.asList(app(5, 505, "com.acme.pos", 1))).getRevision());
     }
 
     @Test

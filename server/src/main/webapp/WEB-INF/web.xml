@@ -5,7 +5,19 @@
 <web-app>
     <display-name>Headwind MDM</display-name>
 
-    <!-- Headwind launcher device routes: 404 unless the legacy.device.api context parameter is 1 (mapped first). -->
+    <!-- A path that routing would read differently from the security filters (";" path parameters, encoded "/", "\",
+         ";" or ".", "//", "." and ".." segments): 400. Mapped first, before every other filter. -->
+    <filter>
+        <filter-name>ambiguous-path</filter-name>
+        <filter-class>com.hmdm.rest.filter.AmbiguousPathFilter</filter-class>
+    </filter>
+    <!-- Browser security headers (nosniff, no framing, Referrer-Policy; HSTS when base.url is https) on every response:
+         on Docker the edge sets them too, on native installs this is where they come from. Mapped second. -->
+    <filter>
+        <filter-name>security-headers</filter-name>
+        <filter-class>com.hmdm.rest.filter.SecurityHeadersFilter</filter-class>
+    </filter>
+    <!-- Headwind launcher device routes: 404 unless the legacy.device.api context parameter is 1 (mapped third). -->
     <filter>
         <filter-name>legacy-device-api</filter-name>
         <filter-class>com.hmdm.rest.filter.LegacyDeviceApiFilter</filter-class>
@@ -24,6 +36,14 @@
         </init-param>
     </filter>
 
+    <filter-mapping>
+        <filter-name>ambiguous-path</filter-name>
+        <url-pattern>/*</url-pattern>
+    </filter-mapping>
+    <filter-mapping>
+        <filter-name>security-headers</filter-name>
+        <url-pattern>/*</url-pattern>
+    </filter-mapping>
     <filter-mapping>
         <filter-name>legacy-device-api</filter-name>
         <url-pattern>/*</url-pattern>

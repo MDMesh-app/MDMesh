@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Context>
+    <!-- The session cookie is SameSite=Lax: a cross-site page cannot send a POST, PUT or DELETE with it. -->
+    <CookieProcessor className="org.apache.tomcat.util.http.Rfc6265CookieProcessor" sameSiteCookies="lax"/>
+
     <!-- database settings -->
     <Parameter name="JDBC.driver"   value="${jdbc.driver}"/>
     <Parameter name="JDBC.url"      value="${jdbc.url}"/>

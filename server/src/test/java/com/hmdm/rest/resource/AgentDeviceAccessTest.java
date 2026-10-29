@@ -260,6 +260,32 @@ public class AgentDeviceAccessTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    public void configApplyIsServerOwnedAndRejectedBeforeAnythingIsQueued() {
+        // The server queues config.apply from the device's configuration, at most one open per device. An admin one
+        // would hit that limit halfway through a bulk fan-out, so it is refused up front, whatever its case.
+        for (String type : new String[]{"config.apply", " Config.Apply "}) {
+            AgentCommand cmd = new AgentCommand();
+            cmd.setType(type);
+            Response one = resource.queueCommand(VISIBLE, cmd);
+            assertEquals(Response.ResponseStatus.ERROR, one.getStatus());
+            assertEquals("error.agent.command.serverOwned", one.getMessage());
+
+            AgentBulkCommandRequest req = new AgentBulkCommandRequest();
+            req.setDeviceIds(Fakes.list(VISIBLE_ID, HIDDEN_ID));
+            req.setCommand(cmd);
+            Response bulk = resource.queueCommandBulk(req);
+            assertEquals(Response.ResponseStatus.ERROR, bulk.getStatus());
+            assertEquals("error.agent.command.serverOwned", bulk.getMessage());
+        }
+        login(true);
+        AgentCommand cmd = new AgentCommand();
+        cmd.setType("config.apply");
+        assertEquals("error.agent.command.serverOwned", resource.queueCommand(HIDDEN, cmd).getMessage());
+        assertEquals("nothing queued or woken", Collections.emptyList(), sideEffects);
+    }
+
+    @Test
     public void everyPerDeviceRouteRejectsADeviceOutsideTheUsersGroups() {
         perDeviceRoutes(HIDDEN).forEach((name, call) ->
                 assertNotEquals(name + " must be rejected", Response.ResponseStatus.OK, call.get().getStatus()));

@@ -282,7 +282,7 @@ public class PushResource {
             notes = "Deletes all Push messages older than a specified number of days.",
             authorizations = {@Authorization("Bearer Token")}
     )
-    @GET
+    @POST
     @Path("/private/purge/{days}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response purgeMessages(@PathParam("days") Integer days) {

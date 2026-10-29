@@ -42,7 +42,8 @@
     <!-- dependencies version -->
     <properties>
         <java.version>1.8</java.version>
-        <javax.mail>1.5.0-b01</javax.mail>
+        <!-- Jakarta Mail 1.6.8: the javax.mail API and package, with the CVE-2025-7962 (SMTP injection) fix. -->
+        <jakarta.mail>1.6.8</jakarta.mail>
         <java.rest.webservice>2.0.1</java.rest.webservice>
 
         <guice.version>4.2.3</guice.version>
@@ -275,9 +276,9 @@
 
         <!-- Mail -->
         <dependency>
-            <groupId>javax.mail</groupId>
-            <artifactId>mail</artifactId>
-            <version>${javax.mail}</version>
+            <groupId>com.sun.mail</groupId>
+            <artifactId>jakarta.mail</artifactId>
+            <version>${jakarta.mail}</version>
         </dependency>
 
         <!-- Logging -->

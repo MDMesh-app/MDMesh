@@ -36,6 +36,8 @@ import javax.ws.rs.core.MediaType;
 
 import javax.inject.Named;
 
+import com.hmdm.event.ConfigurationUpdatedEvent;
+import com.hmdm.event.EventService;
 import com.hmdm.notification.PushService;
 import com.hmdm.persistence.*;
 import com.hmdm.persistence.domain.*;
@@ -57,6 +59,7 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Api(tags = {"Application"}, authorizations = {@Authorization("Bearer Token")})
 @Singleton
@@ -69,6 +72,7 @@ public class ApplicationResource {
     private ApplicationDAO applicationDAO;
     private ConfigurationDAO configurationDAO;
     private PushService pushService;
+    private EventService eventService;
 
     /**
      * <p>A constructor required by Swagger.</p>
@@ -80,10 +84,12 @@ public class ApplicationResource {
     public ApplicationResource(ApplicationDAO applicationDAO,
                                ConfigurationDAO configurationDAO,
                                PushService pushService,
+                               EventService eventService,
                                @Named("files.directory") String filesDirectory) {
         this.applicationDAO = applicationDAO;
         this.configurationDAO = configurationDAO;
         this.pushService = pushService;
+        this.eventService = eventService;
         this.baseDirectory = new File(filesDirectory);
 
         if (!this.baseDirectory.exists()) {
@@ -563,13 +569,14 @@ public class ApplicationResource {
                        configuration.getCustomerId() != user.getCustomerId();
             });
             logger.info("Application configurations updated by user " + SecurityContext.get().getCurrentUserName());
-            this.applicationDAO.updateApplicationConfigurations(request);
+            Set<Integer> changed = this.applicationDAO.updateApplicationConfigurations(request);
 
             for (ApplicationConfigurationLink configurationLink : request.getConfigurations()) {
                 if (configurationLink.isNotify()) {
                     this.pushService.notifyDevicesOnUpdate(configurationLink.getConfigurationId());
                 }
             }
+            configurationsUpdated(changed);
 
             return Response.OK();
         } catch (Exception e) {
@@ -602,17 +609,28 @@ public class ApplicationResource {
             }
             logger.info("Application version configurations updated by user " +
                     SecurityContext.get().getCurrentUserName());
-            this.applicationDAO.updateApplicationVersionConfigurations(request, user);
+            Set<Integer> changed = this.applicationDAO.updateApplicationVersionConfigurations(request, user);
             for (ApplicationVersionConfigurationLink configurationLink : request.getConfigurations()) {
                 if (configurationLink.isNotify()) {
                     this.pushService.notifyDevicesOnUpdate(configurationLink.getConfigurationId());
                 }
             }
+            configurationsUpdated(changed);
 
             return Response.OK();
         } catch (Exception e) {
             logger.error("Unexpected error when updating application configurations", e);
             return Response.INTERNAL_ERROR();
+        }
+    }
+
+    /**
+     * Link edits changed these configurations: tell their devices as a configuration save does (MDMesh agents are
+     * woken to check in, after AgentConfigUpdatedListener's commit delay). Fired once the save has committed.
+     */
+    private void configurationsUpdated(Set<Integer> configurationIds) {
+        for (Integer id : configurationIds) {
+            this.eventService.fireEvent(new ConfigurationUpdatedEvent(id));
         }
     }
 

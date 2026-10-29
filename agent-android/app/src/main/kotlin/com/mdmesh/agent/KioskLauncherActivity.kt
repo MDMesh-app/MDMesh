@@ -16,6 +16,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
@@ -26,9 +27,12 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import com.mdmesh.agent.service.CheckInService
 import com.mdmesh.core.kiosk.KioskApplier
 import com.mdmesh.core.store.KioskStateStore
+import com.mdmesh.core.sync.CheckInWorker
 import com.mdmesh.core.telemetry.EventSink
 import com.mdmesh.kiosk.CrashLoopGuard
+import com.mdmesh.kiosk.ExitPinGate
 import com.mdmesh.kiosk.KioskController
+import com.mdmesh.kiosk.KioskReturnPolicy
 import com.mdmesh.proto.KioskApplyPayload
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -44,11 +48,13 @@ import javax.inject.Inject
  *  - no payload → an idle "managed device" screen (the agent is not in kiosk).
  *
  * Exit affordance is driven by [KioskApplyPayload.exitMode] (`gesture` 7-tap corner / `visible`
- * button / `remote` none) and gated by [KioskApplyPayload.password].
+ * button / `remote` none) and gated by [KioskApplyPayload.password] through [ExitPinGate]: no PIN
+ * means no on-device exit, and wrong PINs lock the exit for longer and longer.
  *
  * A [CrashLoopGuard] protects against a crashing pinned app bouncing back to HOME in a tight
- * loop: each single-app launch registers a fault, and once the loop trips the launcher drops
- * kiosk instead of re-pinning, so a misconfigured deployment cannot brick the device.
+ * loop: each return to HOME counts, and once the loop trips the launcher stops reopening the app
+ * and holds on its own screen ([KioskReturnPolicy]). Kiosk stays on: only [doExit] (the admin
+ * PIN) or the server ends it, because a user can close the app on purpose as often as it crashes.
  */
 @AndroidEntryPoint
 class KioskLauncherActivity : ComponentActivity() {
@@ -58,9 +64,15 @@ class KioskLauncherActivity : ComponentActivity() {
     @Inject lateinit var applier: KioskApplier
     @Inject lateinit var events: EventSink
     @Inject lateinit var crashGuard: CrashLoopGuard
+    @Inject lateinit var pinGate: ExitPinGate
 
     /** Last applied non-null kiosk state, so [onResume] can recover a bounced single-app pin. */
     private var active: KioskApplyPayload? = null
+
+    private val returns by lazy { KioskReturnPolicy(crashGuard) }
+
+    /** The hold screen is showing (so its event is recorded once per hold). */
+    private var holding = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -85,21 +97,33 @@ class KioskLauncherActivity : ComponentActivity() {
         // handled by the flow collector, not here.
         val p = active ?: return
         if (p.mode == "single") {
-            crashGuard.registerFault()
-            if (bailOnCrashLoop()) return
-            launchPinned(p)
+            when (returns.onReturned()) {
+                KioskReturnPolicy.Action.HOLD -> hold(p)
+                KioskReturnPolicy.Action.REOPEN -> launchPinned(p)
+            }
         }
     }
 
     private fun applyState(p: KioskApplyPayload?) {
+        val previous = active
         active = p
         if (p == null) {
+            holding = false
             stopLockTaskSafely()
             setContentView(idleView())
             return
         }
-        if (bailOnCrashLoop()) return
+        // Pin first: a held device (a loop that tripped just before a reboot) is still in kiosk.
         startLockTaskSafely()
+        if (returns.onApplied(changed = previous != null && previous != p) == KioskReturnPolicy.Action.HOLD) {
+            hold(p)
+            return
+        }
+        show(p)
+    }
+
+    private fun show(p: KioskApplyPayload) {
+        holding = false
         if (p.mode == "single" && p.pinPackage != null) {
             launchPinned(p)
         } else {
@@ -118,15 +142,11 @@ class KioskLauncherActivity : ComponentActivity() {
         runCatching { startActivity(intent) }
     }
 
-    /** @return true if a crash loop tripped (kiosk dropped + recovery shown), so the caller stops. */
-    private fun bailOnCrashLoop(): Boolean {
-        if (!crashGuard.isCrashLoopDetected()) return false
-        events.record("kioskCrashLoop", "dropped kiosk after repeated crashes")
-        active = null
-        // Stay HOME to show the recovery screen; force: local state is cleared even if the controller fails.
-        lifecycleScope.launch { applier.exit(handBackHome = false, force = true) }
-        setContentView(recoveryView())
-        return true
+    /** The app closed too often: stay in kiosk on the hold screen, without reopening it. */
+    private fun hold(p: KioskApplyPayload) {
+        if (!holding) events.record("kioskCrashLoop", "kiosk app closed repeatedly; kiosk stays on, app not reopened")
+        holding = true
+        setContentView(holdView(p))
     }
 
     private fun startLockTaskSafely() {
@@ -146,23 +166,55 @@ class KioskLauncherActivity : ComponentActivity() {
     // --- Exit flow ---------------------------------------------------------------------------
 
     private fun promptExit(p: KioskApplyPayload) {
-        val pw = p.password
-        if (pw.isNullOrBlank()) {
-            doExit()
-            return
-        }
+        // No PIN, no on-device exit (the affordance isn't shown either): kiosk then ends only from the console.
+        if (!pinGate.isAvailable(p.password)) return
+        pinGate.remainingLockMs()?.let { showExitLocked(it); return }
         val input = EditText(this).apply {
             inputType = android.text.InputType.TYPE_CLASS_TEXT or
                 android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-            hint = "Admin password"
+            hint = "Exit PIN"
         }
         AlertDialog.Builder(this)
             .setTitle("Exit kiosk")
             .setView(input)
-            .setPositiveButton("Exit") { _, _ ->
-                if (input.text.toString() == pw) doExit()
-            }
+            .setPositiveButton("Exit") { _, _ -> onPinEntered(input.text.toString()) }
             .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /**
+     * The one place a PIN is checked, and the only caller of [doExit]. It checks against the kiosk applied now, not
+     * the one the prompt was opened for: a PIN changed or removed meanwhile must not still open the exit.
+     */
+    private fun onPinEntered(entered: String) {
+        val pin = active?.password
+        when (val outcome = pinGate.attempt(entered, pin)) {
+            ExitPinGate.Outcome.Open -> doExit()
+            is ExitPinGate.Outcome.Wrong -> Toast.makeText(this, "Wrong PIN", Toast.LENGTH_SHORT).show()
+            is ExitPinGate.Outcome.Locked -> {
+                if (outcome.started) reportLockout(outcome)
+                showExitLocked(outcome.remainingMs)
+            }
+            // The attempt couldn't be saved, so it wasn't checked (or the PIN was removed meanwhile).
+            ExitPinGate.Outcome.Unavailable ->
+                Toast.makeText(this, "Exit unavailable right now", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** Tell the server now, so administrators hear about it while it's happening (it emails them). */
+    private fun reportLockout(lockout: ExitPinGate.Outcome.Locked) {
+        events.record(
+            "kioskPinLockout",
+            "${lockout.failures} wrong exit PINs; exit locked for ${ExitPinGate.describe(lockout.remainingMs)}",
+        )
+        CheckInWorker.scheduleNow(applicationContext)
+    }
+
+    private fun showExitLocked(remainingMs: Long) {
+        AlertDialog.Builder(this)
+            .setTitle("Exit locked")
+            .setMessage("Too many wrong PINs. Try again in ${ExitPinGate.describe(remainingMs)}.")
+            .setPositiveButton("OK", null)
             .show()
     }
 
@@ -280,26 +332,41 @@ class KioskLauncherActivity : ComponentActivity() {
         addView(col)
     }
 
-    private fun recoveryView(): View = frame(INK).apply {
-        val col = LinearLayout(this@KioskLauncherActivity).apply {
+    private fun holdView(p: KioskApplyPayload): View {
+        val bg = parseColor(p.theme.backgroundColor, INK)
+        val fg = parseColor(p.theme.textColor, TEXT)
+        val col = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             setPadding(dp(28), 0, dp(28), 0)
             layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
         }
-        col.addView(centeredText("Kiosk stopped", 22f, ALERT, bold = true))
+        col.addView(centeredText("App closed", 22f, fg, bold = true))
         col.addView(
             centeredText(
-                "A kiosk app crashed repeatedly, so kiosk mode was disabled to keep the device usable.",
+                "The app closed several times in a row, so it wasn't opened again.",
                 14f,
                 MUTED,
-            ).apply { setPadding(0, dp(12), 0, 0) },
+            ).apply { setPadding(0, dp(12), 0, dp(24)) },
         )
-        addView(col)
+        col.addView(
+            Button(this).apply {
+                text = "Open again"
+                setOnClickListener {
+                    returns.retry()
+                    show(p)
+                }
+            },
+        )
+        val root = frame(bg)
+        root.addView(col)
+        addExitAffordance(p, root)
+        return root
     }
 
-    /** Add the per-[KioskApplyPayload.exitMode] exit affordance to [parent]. */
+    /** Add the per-[KioskApplyPayload.exitMode] exit affordance to [parent]; none without an exit PIN. */
     private fun addExitAffordance(p: KioskApplyPayload, parent: ViewGroup) {
+        if (!pinGate.isAvailable(p.password)) return
         when (p.exitMode) {
             "visible" -> {
                 val btn = Button(this).apply {
@@ -367,7 +434,6 @@ class KioskLauncherActivity : ComponentActivity() {
         val TEXT = Color.parseColor("#E8EEF4")
         val MUTED = Color.parseColor("#8693A4")
         val SIGNAL = Color.parseColor("#F4B942")
-        val ALERT = Color.parseColor("#F2545B")
     }
 }
 

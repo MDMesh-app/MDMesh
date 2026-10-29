@@ -4,8 +4,8 @@ package com.mdmesh.kiosk
  * Safety valve for kiosk deployments: a misconfigured allowlist or a crashing kiosk
  * app can pin a Device-Owner device in an unrecoverable boot/crash loop. This guard
  * counts crashes inside a rolling time window; once the threshold is exceeded the
- * caller stops self-restarting and surfaces a recovery path (e.g. exit lock-task /
- * offer a launcher chooser) so a broken DPC cannot brick the device.
+ * caller stops self-restarting and holds on a recovery screen ([KioskReturnPolicy]).
+ * It never ends kiosk: a user can close an app on purpose as often as a crash does.
  *
  * Ported from Headwind MDM's `CrashLoopProtection` (Apache-2.0). The counting logic
  * is deliberately Android-free so it is unit-testable on the JVM:
@@ -55,6 +55,11 @@ class CrashLoopGuard(
             return false
         }
         return store.counter > LOOP_CRASHES
+    }
+
+    /** Forget every recorded fault, as if none had happened. */
+    fun reset() {
+        store.write(counter = 0, lastFaultTime = -1L)
     }
 
     companion object {

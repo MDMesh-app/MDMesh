@@ -4,11 +4,16 @@ import { useAuth } from '../auth/AuthContext';
 import { ApiError } from '../api/client';
 import { Wordmark } from '../ui/Wordmark';
 
+/** The server refuses sign-in for a while after too many failed ones (AuthResource.TOO_MANY_ATTEMPTS). */
+const TOO_MANY_ATTEMPTS = 'error.auth.too.many.attempts';
+
 export function LoginPage() {
   const { signIn } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const state = location.state as { from?: string; passwordChanged?: boolean; sessionExpired?: boolean } | null;
+  const state = location.state as {
+    from?: string; passwordChanged?: boolean; sessionExpired?: boolean; resetExpired?: boolean;
+  } | null;
   // Only a same-origin path: React Router 7 throws on '//host', '/\host' and absolute URLs.
   const from = typeof state?.from === 'string' && /^\/(?![/\\])/.test(state.from) ? state.from : '/dashboard';
 
@@ -27,6 +32,8 @@ export function LoginPage() {
     } catch (err) {
       if (err instanceof ApiError && err.httpStatus === 0) {
         setError('Cannot reach the server. Check that it is running.');
+      } else if (err instanceof ApiError && err.message === TOO_MANY_ATTEMPTS) {
+        setError('Too many failed sign-ins. Wait a few minutes, then try again.');
       } else {
         setError('Wrong login or password');
       }
@@ -75,6 +82,9 @@ export function LoginPage() {
 
         {state?.passwordChanged && !error && (
           <div className="login-ok">Password updated — sign in with your new password.</div>
+        )}
+        {state?.resetExpired && !error && (
+          <div className="login-ok">That password change expired. Sign in again to set your password.</div>
         )}
         {state?.sessionExpired && !error && (
           <div className="login-ok">Your session expired. Sign in again to continue.</div>

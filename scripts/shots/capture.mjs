@@ -5,9 +5,10 @@
 //   node capture.mjs --check    # runtime smoke for dependency bumps instead; writes nothing
 //
 // --check visits, against the same fixtures:
-//   * signed in: /dashboard /devices /devices/101 /apps /configs /enroll /settings, plus /no-such-page
-//     (catch-all) — each must render the app shell (.shell .sidebar .wordmark) and end on the requested
-//     path (/dashboard for the catch-all);
+//   * signed in: /dashboard /devices /devices/WH-SCAN-07 /apps /configs /enroll /settings, plus /no-such-page
+//     (catch-all) and /devices/101 (an id-style link) — each must render the app shell (.shell .sidebar
+//     .wordmark) and end on the requested path (/dashboard for the catch-all, /devices/WH-SCAN-07 for the
+//     id-style link);
 //   * signed out: /login — the login form must render and the page must stay on /login;
 //   * flagged first-login session (passwordReset + token in storage): /set-password — the set-password
 //     form must render and the page must stay on /set-password.
@@ -100,8 +101,10 @@ const CHECK_GROUPS = [
   {
     user: fx.user,
     routes: [
-      ...['/dashboard', '/devices', '/devices/101', '/apps', '/configs', '/enroll', '/settings']
+      ...['/dashboard', '/devices', '/devices/WH-SCAN-07', '/apps', '/configs', '/enroll', '/settings']
         .map((route) => ({ route, expect: route, selector: SHELL })),
+      // An old id-style device link moves to the device's number.
+      { route: '/devices/101', expect: '/devices/WH-SCAN-07', selector: SHELL },
       { route: '/no-such-page', expect: '/dashboard', selector: SHELL },
     ],
   },
@@ -164,7 +167,7 @@ async function main() {
   const shots = [
     { name: 'overview', route: '/dashboard' },
     { name: 'devices', route: '/devices' },
-    { name: 'device-detail', route: '/devices/101' },
+    { name: 'device-detail', route: '/devices/WH-SCAN-07' },
     { name: 'apps', route: '/apps' },
     // The staged-rollout panel lives down the Settings page — capture it as a focused card.
     { name: 'rollout', route: '/settings', element: 'section.panel:has(h2:has-text("Agent rollout"))' },

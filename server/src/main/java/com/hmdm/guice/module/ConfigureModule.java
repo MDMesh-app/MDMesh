@@ -70,20 +70,8 @@ public class ConfigureModule extends AbstractModule {
     private final String adminEmail = "admin.email";
     private final String mailchimpUrl = "mailchimp.url";
     private final String mailchimpKey = "mailchimp.key";
-    private final String customerSignup = "customer.signup";
-    private final String customerSignupCopySettings = "customer.signup.copy.settings";
-    private final String customerSignupConfigurations = "customer.signup.configurations";
-    private final String customerSignupSupportEmail = "customer.signup.support.email";
-    private final String customerSignupDeviceLimit = "customer.signup.device.limit";
-    private final String customerSignupSizeLimit = "customer.signup.size.limit";
-    private final String customerSignupExpiryDays = "customer.signup.expiry.days";
-    private final String customerSignupDeviceConfig = "customer.signup.device.config";
     private final String emailRecoverySubj = "email.recovery.subj";
     private final String emailRecoveryBody = "email.recovery.body";
-    private final String emailSignupSubj = "email.signup.subj";
-    private final String emailSignupBody = "email.signup.body";
-    private final String emailSignupCompleteSubj = "email.signup.complete.subj";
-    private final String emailSignupCompleteBody = "email.signup.complete.body";
     private final String ldapAdminBind = "ldap.admin.bind";
     private final String ldapHost = "ldap.host";
     private final String ldapPort = "ldap.port";
@@ -209,6 +197,11 @@ public class ConfigureModule extends AbstractModule {
         this.bindConstant().annotatedWith(Names.named(sqlInitScriptPath)).to(opt != null ? opt : "");
         opt = this.context.getInitParameter(proxyAddresses);
         this.bindConstant().annotatedWith(Names.named(proxyAddresses)).to(opt != null ? opt : "");
+        // 1 on Docker (docker/entrypoint.sh): only the edge reaches the server there, so any private-network peer is
+        // the install's proxy. Native leaves it off: a LAN client can reach Tomcat directly (LoginThrottle).
+        opt = this.context.getInitParameter(com.hmdm.security.LoginThrottle.PRIVATE_PEERS_ARE_PROXIES);
+        this.bindConstant().annotatedWith(Names.named(com.hmdm.security.LoginThrottle.PRIVATE_PEERS_ARE_PROXIES)).to(
+                opt != null && (opt.trim().equals("1") || opt.trim().equalsIgnoreCase("true")));
         opt = this.context.getInitParameter(proxyIpHeader);
         this.bindConstant().annotatedWith(Names.named(proxyIpHeader)).to(opt != null ? opt : "");
         opt = this.context.getInitParameter(customerAutoStatus);
@@ -220,39 +213,10 @@ public class ConfigureModule extends AbstractModule {
         this.bindConstant().annotatedWith(Names.named(mailchimpUrl)).to(opt != null ? opt : "");
         opt = this.context.getInitParameter(mailchimpKey);
         this.bindConstant().annotatedWith(Names.named(mailchimpKey)).to(opt != null ? opt : "");
-        opt = this.context.getInitParameter(customerSignup);
-        this.bindConstant().annotatedWith(Names.named(customerSignup)).to(
-                opt != null && (opt.equals("1") || opt.equalsIgnoreCase("true")));
-        opt = this.context.getInitParameter(customerSignupCopySettings);
-        this.bindConstant().annotatedWith(Names.named(customerSignupCopySettings)).to(
-                opt != null && (opt.equals("1") || opt.equalsIgnoreCase("true")));
-        opt = this.context.getInitParameter(customerSignupConfigurations);
-        this.bindConstant().annotatedWith(Names.named(customerSignupConfigurations)).to(opt != null ? opt : "");
-        opt = this.context.getInitParameter(customerSignupSupportEmail);
-        this.bindConstant().annotatedWith(Names.named(customerSignupSupportEmail)).to(opt != null ? opt : "");
-        opt = this.context.getInitParameter(customerSignupDeviceLimit);
-        // I have absolutely no idea why int can't be bound here but it can't!!!
-        // Let's proceed as an Indian and send String to SignupResource instead of int :-/
-        this.bindConstant().annotatedWith(Names.named(customerSignupDeviceLimit)).to(opt != null ? opt : "");
-        opt = this.context.getInitParameter(customerSignupSizeLimit);
-        this.bindConstant().annotatedWith(Names.named(customerSignupSizeLimit)).to(opt != null ? opt : "");
-        opt = this.context.getInitParameter(customerSignupExpiryDays);
-        this.bindConstant().annotatedWith(Names.named(customerSignupExpiryDays)).to(opt != null ? opt : "");
-        opt = this.context.getInitParameter(customerSignupDeviceConfig);
-        this.bindConstant().annotatedWith(Names.named(customerSignupDeviceConfig)).to(opt != null ? opt : "");
-
         opt = this.context.getInitParameter(emailRecoverySubj);
         this.bindConstant().annotatedWith(Names.named(emailRecoverySubj)).to(opt != null ? opt : "");
         opt = this.context.getInitParameter(emailRecoveryBody);
         this.bindConstant().annotatedWith(Names.named(emailRecoveryBody)).to(opt != null ? opt : "");
-        opt = this.context.getInitParameter(emailSignupSubj);
-        this.bindConstant().annotatedWith(Names.named(emailSignupSubj)).to(opt != null ? opt : "");
-        opt = this.context.getInitParameter(emailSignupBody);
-        this.bindConstant().annotatedWith(Names.named(emailSignupBody)).to(opt != null ? opt : "");
-        opt = this.context.getInitParameter(emailSignupCompleteSubj);
-        this.bindConstant().annotatedWith(Names.named(emailSignupCompleteSubj)).to(opt != null ? opt : "");
-        opt = this.context.getInitParameter(emailSignupCompleteBody);
-        this.bindConstant().annotatedWith(Names.named(emailSignupCompleteBody)).to(opt != null ? opt : "");
 
         opt = this.context.getInitParameter(ldapAdminBind);
         this.bindConstant().annotatedWith(Names.named(ldapAdminBind)).to(

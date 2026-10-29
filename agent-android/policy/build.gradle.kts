@@ -29,3 +29,11 @@ dependencies {
 
     testImplementation(libs.junit)
 }
+
+// TogglePolicyWiringTest scans every module's production sources: make them test inputs, so a change in
+// another module (the Hilt wiring in :app) re-runs it instead of leaving it UP-TO-DATE.
+tasks.withType<Test>().configureEach {
+    inputs.files(
+        rootProject.fileTree(rootProject.projectDir) { include("*/src/main/**/*.kt", "*/src/main/**/*.java") },
+    ).withPropertyName("productionSources").withPathSensitivity(PathSensitivity.RELATIVE)
+}

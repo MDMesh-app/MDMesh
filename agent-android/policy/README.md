@@ -51,3 +51,8 @@ A policy whose desired state is **not** a bare boolean (e.g. `factoryResetProtec
 allow-list rides alongside the on/off flag) does not implement `TogglePolicy`: it is probed by its own
 `CapabilityRegistry` accessor, advertised through `supportedPolicyKeys()`, and applied by its own
 `config.apply` section — never routed through the boolean `policy.apply`.
+`XPolicyFactory`) plus one probe line in `CapabilityRegistry`'s probe map (the `TogglePolicyResolver`) —
+that single registration is enough for both the capability advertisement and the generic command routing.
+Probes are resolved per call until a strategy is supported (Device Owner arrives partway through QR
+provisioning, after the process started), and that instance is then kept. Consumers take
+`registry::togglePolicies` and read it once per operation; never inject or store the resulting map.

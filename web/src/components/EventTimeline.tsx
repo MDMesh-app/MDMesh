@@ -11,6 +11,8 @@ const LABELS: Record<string, string> = {
   connectivityChange: 'Network change',
   lowBattery: 'Low battery',
   enrolled: 'Enrolled',
+  kioskPinLockout: 'Exit PIN locked',
+  kioskCrashLoop: 'Kiosk app keeps closing',
 };
 
 export function EventTimeline({ device }: { device: Device }) {

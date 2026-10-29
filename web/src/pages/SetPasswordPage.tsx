@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate, Navigate } from 'react-router';
 import { useAuth } from '../auth/AuthContext';
 import { submitForcedPasswordReset } from '../api/auth';
+import { ApiError } from '../api/client';
 import { Wordmark } from '../ui/Wordmark';
 
 /**
@@ -43,7 +44,14 @@ export function SetPasswordPage() {
       setLeaving(true);
       await signOut(); // clear the flagged session; require a fresh login with the new password
       navigate('/login', { replace: true, state: { passwordChanged: true } });
-    } catch {
+    } catch (e) {
+      if (e instanceof ApiError && e.message === 'error.user.not.found') {
+        // The server refused the reset token: it works once, for 24 hours. Signing in again issues a fresh one.
+        setLeaving(true);
+        await signOut();
+        navigate('/login', { replace: true, state: { resetExpired: true } });
+        return;
+      }
       setError('Could not set the password. Please try again.');
     } finally {
       setBusy(false);

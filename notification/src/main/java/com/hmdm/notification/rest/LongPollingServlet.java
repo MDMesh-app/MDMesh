@@ -129,7 +129,7 @@ public class LongPollingServlet extends HttpServlet {
             try {
                 String goodSignature = CryptoUtil.getSHA1String(hashSecret + path);
                 if (!signature.equalsIgnoreCase(goodSignature)) {
-                    log.warn("Wrong signature for push request from " + path + ": " + signature + " Should be: " + goodSignature);
+                    log.warn("Wrong signature for push request from " + path);
                     resp.sendError(403);
                     return;
                 }

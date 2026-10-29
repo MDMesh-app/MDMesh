@@ -95,6 +95,9 @@ trap 'rm -f "$_root_xml_tmp"' EXIT
 cat > "$_root_xml_tmp" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <Context>
+    <!-- The session cookie is SameSite=Lax: a cross-site page cannot send a POST, PUT or DELETE with it. -->
+    <CookieProcessor className="org.apache.tomcat.util.http.Rfc6265CookieProcessor" sameSiteCookies="lax"/>
+
     <Parameter name="JDBC.driver"   value="org.postgresql.Driver"/>
     <Parameter name="JDBC.url"      value="jdbc:postgresql://${DB_HOST}:${DB_PORT}/${DB_NAME}"/>
     <Parameter name="JDBC.username" value="${DB_USER}"/>
@@ -103,6 +106,10 @@ cat > "$_root_xml_tmp" <<EOF
     <Parameter name="base.directory"  value="/opt/mdmesh"/>
     <Parameter name="files.directory" value="/opt/mdmesh/files"/>
     <Parameter name="base.url"        value="${BASE_URL}"/>
+
+    <!-- Only the edge (Caddy) reaches the server: a private-network peer is the proxy, and its X-Forwarded-For names
+         the client for the sign-in limit. -->
+    <Parameter name="proxy.private.networks" value="1"/>
 
     <Parameter name="usage.scenario"    value="private"/>
     <Parameter name="secure.enrollment" value="${SECURE_ENROLLMENT}"/>

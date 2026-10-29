@@ -78,6 +78,13 @@ is re-posted every check-in (cheap, keeps the token set fresh as the OS/agent ch
 takes at most 1000 per check-in). The agent drops those and keeps the rest for its next check-in. Absent (an older
 server) means all of them were taken.
 
+An agent runs its commands inside a check-in, one check-in at a time, and reports each result in a later check-in. So
+when a check-in arrives without the result of a `config.apply` delivered before it, and the server would send the
+configuration again (the device's applied revision differs from the current one, or its agent version changed), the
+server takes it that the agent stopped mid-apply (Android ended it, a restart, an update): it records that `config.apply` as `expired` and sends the current configuration in the same response. A
+result that arrives later still counts. Agents must keep this property: never send a check-in while a delivered
+`config.apply` is still running.
+
 ## Auth posture (v1)
 
 - `/enroll` is gated by the single-use `enrollToken` (minted by an authenticated admin via a

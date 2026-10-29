@@ -139,12 +139,22 @@ C_DS=$(curl -s -X POST -H "Authorization: Bearer $SEC" -H 'Content-Type: applica
 chk "config.apply delivered on drift" "$(echo "$C_DS" | field "[c['type'] for c in d['data']['commands']].count('config.apply')")" "1"
 chk "config.apply carries current revision" "$(echo "$C_DS" | field "[c['payload']['revision'] for c in d['data']['commands'] if c['type']=='config.apply'][0]")" "$CUR_REV"
 DS_CMD=$(echo "$C_DS" | field "[c['commandId'] for c in d['data']['commands'] if c['type']=='config.apply'][0]")
-# not re-issued while open
-chk "not re-issued while delivered" "$(curl -s -X POST -H "Authorization: Bearer $SEC" -H 'Content-Type: application/json' -d "{\"deviceId\":\"$DID\",\"capabilities\":{\"policy\":[\"wifi\"],\"device\":[\"configApply\"]}}" "$BASE/rest/public/agent/v1/checkin" | field "[c['type'] for c in d['data']['commands']].count('config.apply')")" "0"
-# ack done with the revision applied -> in sync
+# The agent checks in again without a result (it restarted mid-apply, or never got the response): the delivered
+# config.apply is ended and the same revision is sent again at once, once. A second one in a row gets the backoff.
+CI_NORESULT="{\"deviceId\":\"$DID\",\"capabilities\":{\"policy\":[\"wifi\"],\"device\":[\"configApply\"]}}"
+ABANDONED="no result: the agent checked in again without finishing it"
+hist_row(){ curl -s -b "$CJ" "$BASE/rest/private/agent/v1/devices/$DID/commands?since=0" | field "[str(c['status'])+':'+str(c.get('detail')) for c in d['data'] if str(c['id'])=='$1'][0]"; }
+C_RE=$(curl -s -X POST -H "Authorization: Bearer $SEC" -H 'Content-Type: application/json' -d "$CI_NORESULT" "$BASE/rest/public/agent/v1/checkin")
+chk "re-sent at once after a check-in without its result" "$(echo "$C_RE" | field "[c['payload']['revision'] for c in d['data']['commands'] if c['type']=='config.apply']")" "['$CUR_REV']"
+DS_RE=$(echo "$C_RE" | field "[c['commandId'] for c in d['data']['commands'] if c['type']=='config.apply'][0]")
+chk "the unfinished config.apply is ended with the reason" "$(hist_row "$DS_CMD")" "expired:$ABANDONED"
+chk "abandoned again: backoff, no re-send" "$(curl -s -X POST -H "Authorization: Bearer $SEC" -H 'Content-Type: application/json' -d "$CI_NORESULT" "$BASE/rest/public/agent/v1/checkin" | field "[c['type'] for c in d['data']['commands']].count('config.apply')")" "0"
+chk "the re-send is ended too" "$(hist_row "$DS_RE")" "expired:$ABANDONED"
+# The first command's result turns up after all (ack done, revision applied) -> it replaces the server's guess; in sync
 curl -s -X POST -H "Authorization: Bearer $SEC" -H 'Content-Type: application/json' \
   -d "{\"deviceId\":\"$DID\",\"capabilities\":{\"policy\":[\"wifi\"],\"device\":[\"configApply\"]},\"results\":[{\"commandId\":\"$DS_CMD\",\"status\":\"done\",\"detail\":\"{\\\"revision\\\":\\\"$CUR_REV\\\",\\\"outcomes\\\":{\\\"policies.wifi\\\":\\\"applied\\\"}}\",\"completedAt\":\"2026-01-01T00:00:00Z\"}],\"state\":{\"battery\":77,\"charging\":true,\"locked\":false,\"kioskActive\":false,\"androidRelease\":\"14\",\"lastBootAt\":1000,\"appliedConfigRevision\":\"$CUR_REV\"}}" \
   "$BASE/rest/public/agent/v1/checkin" >/dev/null
+chk "a late result overwrites the abandoned row" "$(hist_row "$DS_CMD" | cut -d: -f1)" "done"
 chk "configStatus inSync after ack" "$(curl -s -b "$CJ" "$BASE/rest/private/agent/v1/devices/$DID/configStatus" | field "d['data']['inSync']")" "True"
 chk "syncSummary counts this device in sync" "$(curl -s -b "$CJ" "$BASE/rest/private/agent/v1/configurations/syncSummary" | field "[s['inSync'] for s in d['data'] if s['configurationId']==$CFG_ID][0] >= 1")" "True"
 # old agent (no configApply key) never gets the command

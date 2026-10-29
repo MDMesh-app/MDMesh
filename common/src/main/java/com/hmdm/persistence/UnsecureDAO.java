@@ -35,6 +35,7 @@ import com.hmdm.rest.json.PaginatedData;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.security.SecurityException;
 import com.hmdm.util.CryptoUtil;
+import com.hmdm.util.PasswordResetTokens;
 import com.hmdm.util.PasswordUtil;
 import org.mybatis.guice.transactional.Transactional;
 import org.slf4j.Logger;
@@ -133,8 +134,20 @@ public class UnsecureDAO {
         return userMapper.findByEmail(email);
     }
 
+    /**
+     * The user holding this password reset token, or null when no user does or the token has expired
+     * ({@link PasswordResetTokens}). Every use of a reset token goes through here.
+     */
     public User findByPasswordResetToken( String token ) {
-        return userMapper.findByPasswordResetToken(token);
+        if (token == null || token.trim().isEmpty()) {
+            return null;
+        }
+        User user = userMapper.findByPasswordResetToken(token);
+        if (user != null && !PasswordResetTokens.isFresh(user, System.currentTimeMillis())) {
+            logger.info("Refused an expired password reset token of user {}", user.getLogin());
+            return null;
+        }
+        return user;
     }
 
     public List<User> findAllWithOldPassword() {
@@ -149,8 +162,23 @@ public class UnsecureDAO {
         }
     }
 
+    /**
+     * Sets the user's password ({@code newPassword}, already hashed). It also gives the user a new authToken, so every
+     * session and JWT issued before the change ends.
+     */
     public void setUserNewPasswordUnsecure(User user ) {
+        user.setAuthToken(PasswordUtil.generateToken());
         userMapper.setNewPassword(user);
+    }
+
+    /** Stores the user's authToken alone, for a user who has none yet (first sign-in). The password is untouched. */
+    public void setAuthTokenUnsecure(User user) {
+        userMapper.setAuthToken(user);
+    }
+
+    /** Stores the user's password reset token and its issue time. The password and the sessions are untouched. */
+    public void setPasswordResetTokenUnsecure(User user) {
+        userMapper.setPasswordResetToken(user);
     }
 
     public void setUserLoginFailTime(User user, long ts) {
@@ -437,6 +465,24 @@ public class UnsecureDAO {
         return !customerMapper.isMultiTenant();
     }
 
+    /**
+     * <p>Whether the user may manage the whole deployment: apply, roll back or schedule updates (the updater asks
+     * through GET /private/users/current). A super-admin may. On a single-customer install (every private-mode
+     * install: its admin is the customer's org admin, and no super-admin exists) the org admin is the operator and may
+     * too. Once the install has a second customer, only a super-admin may: a customer's admin must not roll back
+     * every customer's data. Only the org admin role counts, not a role that merely holds "settings".</p>
+     */
+    public boolean mayManageDeployment(User user) {
+        if (user == null || user.getUserRole() == null) {
+            return false;
+        }
+        if (user.getUserRole().isSuperAdmin()) {
+            return true;
+        }
+        Integer roleId = user.getUserRole().getId();
+        return roleId != null && roleId == this.orgAdminRoleId && isSingleCustomer();
+    }
+
     // This should only be called from the tasks, not from the web resource methods
     public List<Customer> getAllCustomersUnsecure() {
         return customerMapper.findAll();
@@ -460,105 +506,6 @@ public class UnsecureDAO {
 
     public Customer getCustomerByIdUnsecure(Integer id) {
         return customerMapper.findCustomerById(id);
-    }
-
-    public void signupCustomerUnsecure(Customer customer, String passwordMD5, boolean copySettings) {
-
-        logger.debug("Registering customer account: {}", customer);
-
-        File customerFilesDir;
-        do {
-            customerFilesDir = new File(this.filesDirectory, UUID.randomUUID().toString());
-        } while (customerFilesDir.exists());
-        if (customerFilesDir.mkdirs()) {
-            customer.setRegistrationTime(System.currentTimeMillis());
-            customer.setFilesDir(customerFilesDir.getName());
-            generatePrefix(customer);
-            customerMapper.insert(customer);
-
-            // Here we assume that nobody will delete the default customer!
-            final Settings masterSettings = getSingleCustomerSettings();
-
-            // Create a customer admin record
-            UserRole orgAdminRole = new UserRole();
-            orgAdminRole.setId(this.orgAdminRoleId);
-
-            User user = new User();
-            user.setCustomerId(customer.getId());
-            user.setPassword(PasswordUtil.getHashFromMd5(passwordMD5));
-            user.setAuthToken(PasswordUtil.generateToken());
-            user.setLogin(customer.getName());
-            user.setName(customer.getName());
-            user.setEmail(customer.getEmail());
-            user.setUserRole(orgAdminRole);
-
-            // Works here without a security context, see notice to UserDAO.insert()
-            userDAO.insert(user);
-            logger.info("Registered customer account: {}", customer);
-            logger.info("Registered customer admin account: {}", user.getLogin());
-
-            // Copy design settings if required
-            Settings customerSettings = new Settings();
-
-            if (copySettings) {
-                customerSettings.setBackgroundColor(masterSettings.getBackgroundColor());
-                customerSettings.setBackgroundImageUrl(masterSettings.getBackgroundImageUrl());
-                customerSettings.setDesktopHeader(masterSettings.getDesktopHeader());
-                customerSettings.setDesktopHeaderTemplate(masterSettings.getDesktopHeaderTemplate());
-                customerSettings.setIconSize(masterSettings.getIconSize());
-                customerSettings.setTextColor(masterSettings.getTextColor());
-                customerSettings.setCustomerId(customer.getId());
-
-                settingDAO.saveDefaultDesignSettingsBySuperAdmin(customerSettings);
-            }
-
-            // Copy configurations if required
-            Map<Integer, Integer> configIdsMapping = new HashMap<>();
-            if (customer.getConfigurationIds() != null && customer.getConfigurationIds().length > 0) {
-                for (Integer configurationId: customer.getConfigurationIds()) {
-                    final Integer copyId = customerDAO.copyConfigurationForCustomer(customer, DEFAULT_CUSTOMER_ID, configurationId);
-                    configIdsMapping.put(configurationId, copyId);
-                }
-            }
-            logger.debug("Mapping for original and copied configurations: {}", configIdsMapping);
-
-            // Notify plugins about new customer so they could set up default settings for this customer
-            eventService.fireEvent(new CustomerCreatedEvent(customer));
-
-            // Generate three default devices
-            for (int i = 0; i < CustomerDAO.DEFAULT_DEVICE_SUFFIXES.length; i++) {
-                String deviceNumber = customer.getPrefix() + CustomerDAO.DEFAULT_DEVICE_SUFFIXES[i];
-                Device newDevice = new Device();
-                newDevice.setLastUpdate(0L);
-                newDevice.setNumber(deviceNumber);
-                newDevice.setConfigurationId(configIdsMapping.get(customer.getDeviceConfigurationId()));
-                newDevice.setCustomerId(customer.getId());
-
-                deviceMapper.insertDevice(newDevice);
-
-                eventService.fireEvent(new DeviceInfoUpdatedEvent(newDevice.getId()));
-
-                logger.info("Created default device '{}' for new customer account", deviceNumber);
-            }
-        } else {
-            logger.error("Could not create files directory when creating customer {}", customer);
-            throw new IllegalArgumentException("Could not create directory for customer's file.");
-        }
-    }
-
-    private void generatePrefix(Customer customer) {
-        String prefix;
-
-        for (int n = 2; n < customer.getName().length(); n++) {
-            prefix = customer.getName().substring(0, n).toLowerCase();
-            if (!customerMapper.isPrefixUsed(prefix)) {
-                customer.setPrefix(prefix);
-                return;
-            }
-        }
-        // The customer username is unique, so it could always be used as a prefix
-        // So we shouldn't be here, but set the prefix anyway
-        customer.setPrefix(customer.getName().toLowerCase());
     }
 
     public Application getDefaultLauncher() {

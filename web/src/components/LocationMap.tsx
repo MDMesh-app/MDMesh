@@ -28,6 +28,9 @@ export function LocationMap({ fixes }: { fixes: LocationFix[] }) {
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
         attribution: '© OpenStreetMap contributors',
+        // The edge sends Referrer-Policy: same-origin, so tiles would go without a Referer, which OpenStreetMap's
+        // tile policy requires. Send the origin only (never the console path), as browsers do by default.
+        referrerPolicy: 'strict-origin-when-cross-origin',
       }).addTo(mapRef.current);
       layerRef.current = L.layerGroup().addTo(mapRef.current);
     }

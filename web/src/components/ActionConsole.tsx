@@ -7,7 +7,7 @@ import { useToast } from '../ui/toast';
 import { KioskEnterModal } from './KioskEnterModal';
 import { DO_NOT_TRACK_HINT, useDoNotTrack } from '../api/locationTracking';
 
-type Device = { number: string; configurationId?: number };
+type Device = { number: string; configurationId?: number; description?: string };
 
 const GROUPS: Array<{ id: 'safe' | 'disruptive' | 'destructive'; title: string }> = [
   { id: 'safe', title: 'Actions' },
@@ -143,6 +143,11 @@ export function ActionConsole({ device }: { device: Device }) {
         <div className="modal-backdrop" role="dialog" aria-modal="true">
           <div className="modal">
             <h3>{active.label}</h3>
+            {/* Name the device, so a destructive action can't be confirmed for the wrong one. */}
+            <p>
+              Device <strong className="mono">{device.number}</strong>
+              {device.description ? <> · {device.description}</> : null}
+            </p>
             <p className="muted">{active.description}</p>
             {active.params?.map((p) => (
               <label key={p.key} className="field">

@@ -113,6 +113,15 @@ public final class Initializer extends GuiceServletContextListener {
 
     public void contextInitialized(ServletContextEvent servletContextEvent) {
         this.context = servletContextEvent.getServletContext();
+        // The session cookie is Secure when the install's public address is https (SecureTransport says why that is
+        // the signal). Only possible while the context starts, so before anything else here.
+        try {
+            if (com.hmdm.util.SecureTransport.secureSessionCookie(this.context)) {
+                System.out.println("[HMDM-INITIALIZER]: base.url is https: the session cookie is Secure");
+            }
+        } catch (IllegalStateException e) {
+            System.err.println("[HMDM-INITIALIZER]: " + e.getMessage() + ": " + e.getCause());
+        }
         // Logging is the WAR's log4j.xml only. log4j reads it when the first logger is created, which is before this
         // listener runs, so a context parameter can never pick another config at start (the old log4j.config
         // parameter only took effect after a context reload).

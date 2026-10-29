@@ -52,7 +52,8 @@ public class HstsFilter implements Filter {
     public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
         HttpServletResponse res = (HttpServletResponse) servletResponse;
         if (hsts) {
-            res.addHeader("Strict-Transport-Security", "max-age=31536000");
+            // set, not add: never a second header next to the one SecurityHeadersFilter sets for an https base.url
+            res.setHeader("Strict-Transport-Security", "max-age=31536000");
         }
         filterChain.doFilter(servletRequest, servletResponse);
     }

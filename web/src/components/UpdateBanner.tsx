@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { getUpdateStatus, applyUpdate, isApplyTerminal, type UpdateStatus } from '../api/updates';
+import { useMayManageDeployment } from '../auth/useMayManageDeployment';
 
 const PHASE_LABEL: Record<string, string> = {
   authorizing: 'Authorizing…',
@@ -16,6 +17,7 @@ const PHASE_LABEL: Record<string, string> = {
 /** "Update available" banner + one-click apply with live phase progress. Talks to the decoupled
  *  supervisor (origin /update/*), so it works even while the API server is mid-restart. */
 export function UpdateBanner() {
+  const canUpdate = useMayManageDeployment();
   const [s, setS] = useState<UpdateStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -81,7 +83,10 @@ export function UpdateBanner() {
         {s.channel ? <span className="ub-ch"> ({s.channel})</span> : null}
         {err ? <span className="ub-warn"> · {err}</span> : null}
       </span>
-      {s.applySupported !== false ? (
+      {s.applySupported !== false && !canUpdate ? (
+        // The updater refuses anyone else: show the release, not a button that can only fail.
+        <span className="ub-ch"> · an admin who runs this install can apply it</span>
+      ) : s.applySupported !== false ? (
         <button className="btn btn-sm" onClick={onClick} disabled={busy || !s.verified}>
           {busy ? 'Starting…' : 'Update…'}
         </button>

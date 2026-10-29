@@ -3008,4 +3008,29 @@
         <rollback/>
     </changeSet>
 
+    <changeSet id="26.10.21-agentCommand-one-open-config-apply" author="lunacy" context="common">
+        <comment>Index,new: at most one open (pending or delivered) config.apply per device, so two check-ins racing to
+            queue one never both do. Any older duplicates are ended first ('expired', newest one kept), as the lazy
+            expiry would have done. IF NOT EXISTS: safe on fresh and upgraded databases.</comment>
+        <sql>
+            UPDATE agentCommand SET status = 'expired', completedAt = (EXTRACT(EPOCH FROM NOW()) * 1000)::BIGINT,
+                detail = 'superseded by a newer config.apply'
+            WHERE type = 'config.apply' AND status IN ('pending', 'delivered')
+            AND EXISTS (SELECT 1 FROM agentCommand newer WHERE newer.deviceNumber = agentCommand.deviceNumber
+                AND newer.type = 'config.apply' AND newer.status IN ('pending', 'delivered') AND newer.id > agentCommand.id);
+            CREATE UNIQUE INDEX IF NOT EXISTS agentCommand_one_open_config_apply ON agentCommand (deviceNumber)
+                WHERE type = 'config.apply' AND status IN ('pending', 'delivered');
+        </sql>
+        <rollback>DROP INDEX IF EXISTS agentCommand_one_open_config_apply;</rollback>
+    </changeSet>
+
+    <changeSet id="26.10.23-users-passwordResetTokenTime" author="lunacy" context="common">
+        <comment>Column,new: users#passwordResetTokenTime (ms since epoch): when the password reset token was issued.
+            A token is good for 24 hours. NULL (every token issued before this change, and installer seeds) counts as
+            expired; signing in with the password issues a fresh one where a change is forced, and a recovery request
+            issues a new link.</comment>
+        <sql>ALTER TABLE users ADD COLUMN passwordResetTokenTime BIGINT;</sql>
+        <rollback>ALTER TABLE users DROP COLUMN passwordResetTokenTime;</rollback>
+    </changeSet>
+
 </databaseChangeLog>

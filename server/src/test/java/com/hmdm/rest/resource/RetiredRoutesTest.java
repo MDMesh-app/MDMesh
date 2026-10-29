@@ -65,4 +65,25 @@ public class RetiredRoutesTest {
     public void legacyVideoRoutesAreGone() {
         assertFalse(registeredRootPaths().contains("/videos"));
     }
+
+    @Test
+    public void selfSignupIsGone() {
+        // MDMesh has no self-signup: no resource answers below /public/signup (an unknown route is a 404), and no
+        // code path is left that creates a customer and its admin without a super-admin.
+        for (String p : registeredRootPaths()) {
+            assertFalse(p, p.equals("/public/signup") || p.startsWith("/public/signup/"));
+        }
+        for (java.lang.reflect.Method m : com.hmdm.persistence.UnsecureDAO.class.getDeclaredMethods()) {
+            assertFalse(m.getName(), m.getName().toLowerCase().contains("signup"));
+        }
+        for (String gone : new String[]{"com.hmdm.rest.resource.SignupResource", "com.hmdm.persistence.PendingSignupDAO",
+                "com.hmdm.persistence.mapper.PendingSignupMapper"}) {
+            try {
+                Class.forName(gone, false, RetiredRoutesTest.class.getClassLoader());
+                throw new AssertionError(gone + " is still on the classpath");
+            } catch (ClassNotFoundException expected) {
+                // gone
+            }
+        }
+    }
 }

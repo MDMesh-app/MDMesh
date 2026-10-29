@@ -33,7 +33,8 @@ import static org.junit.Assert.assertTrue;
  * ({@code @ServerEndpoint}) and plugin {@code publicResources} registration in the source tree must either sit below a
  * {@code private} segment (session-checked), be switched off by {@link LegacyDeviceApiFilter}, or be listed in
  * {@link #KEPT_PUBLIC} below. A new public route therefore fails this test until someone decides which it is.
- * Also pins that the filter is the first filter in {@code web.xml}, ahead of the Guice filter.
+ * Also pins that {@link AmbiguousPathFilter}, {@link SecurityHeadersFilter} and then this filter are the first filters
+ * in {@code web.xml}, ahead of the Guice filter.
  */
 public class PublicRouteInventoryTest {
 
@@ -45,7 +46,6 @@ public class PublicRouteInventoryTest {
             "/rest/public/auth",                // console sign-in
             "/rest/public/jwt",                 // API client sign-in
             "/rest/public/passwordReset",       // console password reset
-            "/rest/public/signup",              // signup (off unless configured)
             "/rest/public/name",                // health / branding
             "/rest/public/logo",                // branding
             "/rest/plugin/main/public/registered", // plugin list for the console shell
@@ -97,26 +97,41 @@ public class PublicRouteInventoryTest {
     }
 
     @Test
-    public void theFilterIsMappedFirstInWebXml() throws Exception {
+    public void theFiltersAreMappedFirstInWebXml() throws Exception {
         File webXml = new File(repoRoot(), "server/src/main/webapp/WEB-INF/web.xml");
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         factory.setValidating(false);
         factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
         Document doc = factory.newDocumentBuilder().parse(webXml);
 
+        String ambiguous = filterNamed(doc, AmbiguousPathFilter.class.getName());
+        String headers = filterNamed(doc, SecurityHeadersFilter.class.getName());
+        String legacy = filterNamed(doc, LegacyDeviceApiFilter.class.getName());
+        assertTrue("web.xml declares AmbiguousPathFilter", ambiguous != null);
+        assertTrue("web.xml declares SecurityHeadersFilter", headers != null);
+        assertTrue("web.xml declares LegacyDeviceApiFilter", legacy != null);
+
+        // AmbiguousPathFilter first (no other filter sees an ambiguous path), then SecurityHeadersFilter, then
+        // LegacyDeviceApiFilter, all for every path and all ahead of the Guice filter, which runs every Guice-registered
+        // filter (auth, IP, plugins).
+        NodeList mappings = doc.getElementsByTagName("filter-mapping");
+        String[] expected = {ambiguous, headers, legacy};
+        for (int i = 0; i < expected.length; i++) {
+            Element mapping = (Element) mappings.item(i);
+            assertEquals("filter-mapping " + (i + 1), expected[i], text(mapping, "filter-name"));
+            assertEquals("filter-mapping " + (i + 1), "/*", text(mapping, "url-pattern"));
+        }
+    }
+
+    private static String filterNamed(Document doc, String className) {
         NodeList filters = doc.getElementsByTagName("filter");
-        String filterName = null;
         for (int i = 0; i < filters.getLength(); i++) {
             Element f = (Element) filters.item(i);
-            if (text(f, "filter-class").equals(LegacyDeviceApiFilter.class.getName())) {
-                filterName = text(f, "filter-name");
+            if (text(f, "filter-class").equals(className)) {
+                return text(f, "filter-name");
             }
         }
-        assertTrue("web.xml declares LegacyDeviceApiFilter", filterName != null);
-
-        Element first = (Element) doc.getElementsByTagName("filter-mapping").item(0);
-        assertEquals(filterName, text(first, "filter-name"));
-        assertEquals("/*", text(first, "url-pattern"));
+        return null;
     }
 
     // ---- helpers ----------------------------------------------------------------------------------------------------

@@ -24,7 +24,6 @@ package com.hmdm.service;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import com.hmdm.event.EventService;
-import com.hmdm.persistence.domain.Customer;
 import com.hmdm.util.StringUtil;
 import liquibase.util.FileUtil;
 import org.apache.commons.io.FileUtils;
@@ -33,6 +32,7 @@ import org.slf4j.LoggerFactory;
 
 import javax.inject.Named;
 import javax.mail.*;
+import javax.mail.internet.AddressException;
 import javax.mail.internet.InternetAddress;
 import javax.mail.internet.MimeBodyPart;
 import javax.mail.internet.MimeMessage;
@@ -51,6 +51,11 @@ public class EmailService {
 
     private static final Logger logger = LoggerFactory.getLogger(EmailService.class);
 
+    /** How long to wait for the mail server to accept a connection, answer, or take data. */
+    static final int CONNECT_TIMEOUT_MS = 10_000;
+    static final int READ_TIMEOUT_MS = 20_000;
+    static final int WRITE_TIMEOUT_MS = 20_000;
+
     private final String smtpHost;
     private final int smtpPort;
     private final boolean sslEnabled;
@@ -66,10 +71,6 @@ public class EmailService {
 
     private final String recoveryEmailSubj;
     private final String recoveryEmailBody;
-    private final String signupEmailSubj;
-    private final String signupEmailBody;
-    private final String signupCompleteEmailSubj;
-    private final String signupCompleteEmailBody;
 
     @Inject
     public EmailService(@Named("smtp.host") String smtpHost,
@@ -84,11 +85,7 @@ public class EmailService {
                         @Named("rebranding.name") String appName,
                         @Named("base.url") String baseUrl,
                         @Named("email.recovery.subj") String recoveryEmailSubj,
-                        @Named("email.recovery.body") String recoveryEmailBody,
-                        @Named("email.signup.subj") String signupEmailSubj,
-                        @Named("email.signup.body") String signupEmailBody,
-                        @Named("email.signup.complete.subj") String signupCompleteEmailSubj,
-                        @Named("email.signup.complete.body") String signupCompleteEmailBody) {
+                        @Named("email.recovery.body") String recoveryEmailBody) {
         this.smtpHost = smtpHost;
         this.smtpPort = smtpPort;
         this.sslEnabled = sslEnabled;
@@ -105,10 +102,6 @@ public class EmailService {
         this.appName = appName;
         this.recoveryEmailSubj = recoveryEmailSubj;
         this.recoveryEmailBody = recoveryEmailBody;
-        this.signupEmailSubj = signupEmailSubj;
-        this.signupEmailBody = signupEmailBody;
-        this.signupCompleteEmailSubj = signupCompleteEmailSubj;
-        this.signupCompleteEmailBody = signupCompleteEmailBody;
     }
 
     public boolean isConfigured() {
@@ -125,18 +118,69 @@ public class EmailService {
             return false;
         }
         try {
-            Properties properties = new Properties();
-            properties.put("mail.smtp.host", smtpHost);
-            properties.put("mail.smtp.port", smtpPort);
-            properties.put("mail.smtp.auth", !smtpUsername.equals(""));
-            properties.put("mail.smtp.ssl.enable", sslEnabled);
-            properties.put("mail.smtp.starttls.enable", startTlsEnabled);
-            if (!StringUtil.isEmpty(sslProtocols)) {
-                properties.put("mail.smtp.ssl.protocols", sslProtocols);
-            }
-            if (!StringUtil.isEmpty(sslTrust)) {
-                properties.put("mail.smtp.ssl.trust", sslTrust);
-            }
+            return send(InternetAddress.parse(to), subj, body, replyTo, "text/html; charset=utf-8");
+        } catch (Exception e) {
+            logger.warn(e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Sends a plain-text mail (the body is shown as is, never rendered as HTML) to exactly one address. A list of
+     * addresses is refused, so one user's email field can't fan the mail out.
+     */
+    public boolean sendPlainTextEmail(String to, String subj, String body) {
+        InternetAddress address = singleAddress(to);
+        if (address == null) {
+            logger.warn("Mail not sent: the recipient is not a single email address");
+            return false;
+        }
+        if (smtpHost.equals("")) {
+            return false;
+        }
+        return send(new InternetAddress[]{address}, subj, body, null, "text/plain; charset=utf-8");
+    }
+
+    /** One strictly parsed address ("a@example.com" or "Ann <a@example.com>"), or null for anything else. */
+    public static InternetAddress singleAddress(String text) {
+        if (text == null || text.trim().isEmpty() || text.indexOf(',') >= 0) {
+            return null;
+        }
+        try {
+            return new InternetAddress(text.trim(), true);
+        } catch (AddressException e) {
+            return null;
+        }
+    }
+
+    /**
+     * The JavaMail session settings. The timeouts matter: JavaMail waits forever by default, so a mail server that
+     * stops answering would hang the sending thread (a request thread, or the background alert thread) for good. The
+     * transport is always "smtp" (SSL is switched on with mail.smtp.ssl.enable), so no mail.smtps.* keys are needed.
+     */
+    Properties smtpProperties() {
+        Properties properties = new Properties();
+        properties.put("mail.smtp.host", smtpHost);
+        properties.put("mail.smtp.port", smtpPort);
+        properties.put("mail.smtp.auth", !smtpUsername.equals(""));
+        properties.put("mail.smtp.ssl.enable", sslEnabled);
+        properties.put("mail.smtp.starttls.enable", startTlsEnabled);
+        if (!StringUtil.isEmpty(sslProtocols)) {
+            properties.put("mail.smtp.ssl.protocols", sslProtocols);
+        }
+        if (!StringUtil.isEmpty(sslTrust)) {
+            properties.put("mail.smtp.ssl.trust", sslTrust);
+        }
+        properties.setProperty("mail.smtp.connectiontimeout", String.valueOf(CONNECT_TIMEOUT_MS));
+        properties.setProperty("mail.smtp.timeout", String.valueOf(READ_TIMEOUT_MS));
+        // Honoured from JavaMail 1.5.2 on (the server ships Jakarta Mail 1.6.8).
+        properties.setProperty("mail.smtp.writetimeout", String.valueOf(WRITE_TIMEOUT_MS));
+        return properties;
+    }
+
+    private boolean send(InternetAddress[] to, String subj, String body, String replyTo, String contentType) {
+        try {
+            Properties properties = smtpProperties();
 
             logger.info("SMTP connection: " + smtpHost + ":" + smtpPort + ", ssl:" + sslEnabled + ", startTls:" + startTlsEnabled);
 
@@ -149,14 +193,14 @@ public class EmailService {
 
             Message message = new MimeMessage(session);
             message.setFrom(new InternetAddress(smtpFrom));
-            message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(to));
+            message.setRecipients(Message.RecipientType.TO, to);
             if (replyTo != null && !replyTo.equals("")) {
                 message.addHeader("Reply-To", replyTo);
             }
             message.setSubject(subj);
 
             MimeBodyPart mimeBodyPart = new MimeBodyPart();
-            mimeBodyPart.setContent(body, "text/html; charset=utf-8");
+            mimeBodyPart.setContent(body, contentType);
 
             Multipart multipart = new MimeMultipart();
             multipart.addBodyPart(mimeBodyPart);
@@ -182,68 +226,6 @@ public class EmailService {
 
         return getLocalizedText(recoveryEmailBody, language)
                 .replace("${passwordResetUrl}", passwordResetUrl);
-    }
-
-    public String getVerifyEmailSubj(String language) {
-        return getLocalizedText(signupEmailSubj, language);
-    }
-
-    public String getVerifyEmailBody(String language, String verifyToken) {
-        String signupCompleteUrl = baseUrl + "/#/signupComplete/" + verifyToken;
-
-        return getLocalizedText(signupEmailBody, language)
-                .replace("${signupCompleteUrl}", signupCompleteUrl);
-    }
-
-    public String getSignupCompleteEmailSubj(String language) {
-        return getLocalizedText(signupCompleteEmailSubj, language);
-    }
-
-
-    public String getSignupCompleteEmailBody(Customer customer) {
-        String deviceIds = customer.getPrefix() + "001, " +
-                customer.getPrefix() + "002," +
-                customer.getPrefix() + "003";
-
-        return getLocalizedText(signupCompleteEmailBody, customer.getLanguage())
-                .replace("${firstName}", customer.getFirstName())
-                .replace("${lastName}", customer.getLastName())
-                .replace("${customerName}", customer.getName())
-                .replace("${deviceLimit}", "" + customer.getDeviceLimit())
-                .replace("${sizeLimit}", "" + customer.getSizeLimit() + " Mb")
-                .replace("${prefix}", customer.getPrefix())
-                .replace("${deviceIds}", deviceIds);
-    }
-
-    public String getSignupNotifyEmailSubj() {
-        return "New customer created at " + appName;
-    }
-
-    public String getSignupNotifyEmailBody(Customer customer) {
-        int schemePos = baseUrl.indexOf("://");
-        String server = schemePos != -1 ? baseUrl.substring(schemePos + 3) : baseUrl;
-
-        StringBuilder builder = new StringBuilder();
-        builder.append("Username: ");
-        builder.append(customer.getName());
-        builder.append("\n<br>");
-        builder.append("Email: ");
-        builder.append(customer.getEmail());
-        builder.append("\n<br>");
-        builder.append("Name: ");
-        builder.append(customer.getFirstName());
-        builder.append(" ");
-        builder.append(customer.getLastName());
-        builder.append("\n<br>");
-        builder.append("Description: ");
-        builder.append(customer.getDescription());
-        builder.append("\n<br>");
-        builder.append("Language: ");
-        builder.append(customer.getLanguage());
-        builder.append("\n<br>");
-        builder.append("Server: ");
-        builder.append(server);
-        return builder.toString();
     }
 
     // Default language is English

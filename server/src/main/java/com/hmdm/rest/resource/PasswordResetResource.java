@@ -29,8 +29,10 @@ import com.hmdm.persistence.domain.Settings;
 import com.hmdm.persistence.domain.User;
 import com.hmdm.persistence.domain.UserRole;
 import com.hmdm.rest.json.Response;
+import com.hmdm.util.WindowLimiter;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.service.EmailService;
+import com.hmdm.util.PasswordResetTokens;
 import com.hmdm.util.PasswordUtil;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -65,6 +67,11 @@ public class PasswordResetResource {
     private CommonDAO commonDAO;
     private UnsecureDAO unsecureDAO;
     private EmailService emailService;
+
+    /** Recovery mails per account per hour: enough to retry, too few to flood someone's inbox. */
+    static final int RECOVERY_MAILS_PER_HOUR = 3;
+    private final WindowLimiter recoveryMails =
+            new WindowLimiter(WindowLimiter.MONOTONIC, 60L * 60 * 1000, RECOVERY_MAILS_PER_HOUR);
 
     /**
      * <p>A constructor required by Swagger.</p>
@@ -131,10 +138,14 @@ public class PasswordResetResource {
                 return Response.ERROR("error.user.not.found");
             }
 
+            if (newData.getNewPassword() == null || newData.getNewPassword().isEmpty()) {
+                return Response.ERROR("error.password.empty");
+            }
+
             user.setNewPassword(PasswordUtil.getHashFromMd5(newData.getNewPassword()));
             user.setPasswordReset(false);
-            user.setPasswordResetToken(null);
-            unsecureDAO.setUserNewPasswordUnsecure(user);
+            PasswordResetTokens.clear(user);             // the link works once
+            unsecureDAO.setUserNewPasswordUnsecure(user); // and ends the user's sessions
             return Response.OK(user);
         } catch (Exception e) {
             logger.error("Unexpected error when resetting the user password", e);
@@ -191,10 +202,17 @@ public class PasswordResetResource {
                 return Response.OK();
             }
 
-            if (user.getPasswordResetToken() == null || user.getPasswordResetToken().equals("")) {
-                user.setPasswordResetToken(PasswordUtil.generateToken());
-                user.setNewPassword(user.getPassword());
-                unsecureDAO.setUserNewPasswordUnsecure(user);
+            if (!recoveryMails.tryAcquire(String.valueOf(user.getId()))) {
+                logger.warn("Not sending another password recovery mail to user {}: {} in the last hour already",
+                        user.getId(), RECOVERY_MAILS_PER_HOUR);
+                return Response.OK();   // the same answer as a sent mail, so it tells nothing about the account
+            }
+
+            // A link already sent stays good until it expires; then a new one is issued. Asking for a link never
+            // changes the password or ends a session.
+            if (!PasswordResetTokens.isFresh(user, System.currentTimeMillis())) {
+                PasswordResetTokens.issue(user, System.currentTimeMillis());
+                unsecureDAO.setPasswordResetTokenUnsecure(user);
             }
 
             Customer customer = unsecureDAO.getCustomerByIdUnsecure(user.getCustomerId());

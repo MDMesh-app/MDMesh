@@ -12,9 +12,10 @@
 #   kill-points                    list the kill points, one per line
 #   admin-temp-password <out>      the temporary admin password a fresh install printed in <out>
 #   secrets                        a short fingerprint (sha256) of hash.secret / jwt.secretkey in ROOT.xml
-#   settings                       what a re-run must keep: base.url (ROOT.xml), GITHUB_REPO, a fingerprint of
-#                                  GITHUB_TOKEN, and the owner and mode of the supervisor.env they are in
+#   settings                       what a re-run must keep: base.url and proxy.addresses (ROOT.xml), GITHUB_REPO, a
+#                                  fingerprint of GITHUB_TOKEN, and the owner and mode of the supervisor.env they are in
 #   set-token <token>              GITHUB_TOKEN=<token> in the current supervisor.env, as an admin would edit it
+#   set-proxy <addresses>          proxy.addresses=<addresses> added to ROOT.xml, as an admin would edit it (docs/OPERATIONS.md)
 #   counts                         configurations / devices / users counts (psql as postgres)
 #   deployed                       "match" when Tomcat serves this checkout's build (server WAR + console)
 #   port                           server.xml's HTTP connector port, and whether it is listening ("9090 listening")
@@ -198,9 +199,16 @@ sup_param() { sed -n "s/^$1=//p" "$(sup_env_file)" 2>/dev/null | tail -n 1; }
 # A hand edit, not GITHUB_TOKEN= on the install command: an installer from before v0.3.2 aborts when GitHub refuses the
 # release lookup (as it does for a dummy token). GNU sed -i keeps the file's owner and mode.
 cmd_set_token() { sed -i "s/^GITHUB_TOKEN=.*/GITHUB_TOKEN=$1/" "$(sup_env_file)"; }
+# Rewritten in place (not sed -i, which would make it root's): the installer reads ROOT.xml as the service user.
+cmd_set_proxy() {
+  local xml
+  xml=$(grep -v 'name="proxy.addresses"' "$ROOT_XML" | sed "s#</Context>#    <Parameter name=\"proxy.addresses\" value=\"$1\"/>\n</Context>#")
+  printf '%s\n' "$xml" > "$ROOT_XML"
+}
 
 cmd_settings() {
   echo "base.url=$(xml_param base.url)"
+  echo "proxy.addresses=$(xml_param proxy.addresses)"
   echo "GITHUB_REPO=$(sup_param GITHUB_REPO)"
   echo "GITHUB_REPO_FROM=$(sup_param GITHUB_REPO_FROM)"
   echo "GITHUB_TOKEN=$(fp "$(sup_param GITHUB_TOKEN)")"
@@ -280,7 +288,7 @@ cmd_collect() {
 
 cmd=${1:?usage: guest.sh <subcommand> ...}; shift
 case "$cmd" in
-  clone|checkout|install|admin-temp-password|secrets|settings|set-token|counts|deployed|port|initialized|units|state|collect) "cmd_${cmd//-/_}" "$@" ;;
+  clone|checkout|install|admin-temp-password|secrets|settings|set-token|set-proxy|counts|deployed|port|initialized|units|state|collect) "cmd_${cmd//-/_}" "$@" ;;
   kill-points) cmd_kill_points ;;
   *) echo "unknown subcommand: $cmd" >&2; exit 2 ;;
 esac

@@ -8,6 +8,7 @@ import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.User;
 import com.hmdm.service.RsaKeyService;
 import com.hmdm.task.CustomerStatusTask;
+import com.hmdm.task.ExtraCustomersCheck;
 import com.hmdm.task.FileCheckTask;
 import com.hmdm.task.FileMigrateTask;
 import com.hmdm.util.BackgroundTaskRunnerService;
@@ -38,6 +39,7 @@ public class StartupTaskModule {
     private boolean customerAutoStatus;
     private boolean transmitPassword;
     private RsaKeyService rsaKeyService;
+    private ExtraCustomersCheck extraCustomersCheck;
 
     private static final Logger logger = LoggerFactory.getLogger(EventService.class);
 
@@ -50,6 +52,7 @@ public class StartupTaskModule {
                              FileCheckTask fileCheckTask,
                              FileMigrateTask fileMigrateTask,
                              RsaKeyService rsaKeyService,
+                             ExtraCustomersCheck extraCustomersCheck,
                              @Named("device.fast.search.chars") int deviceFastSearchChars,
                              @Named("sql.init.script.path") String sqlInitScriptPath,
                              @Named("customer.auto.status") boolean customerAutoStatus,
@@ -65,6 +68,7 @@ public class StartupTaskModule {
         this.customerAutoStatus = customerAutoStatus;
         this.transmitPassword = transmitPassword;
         this.rsaKeyService = rsaKeyService;
+        this.extraCustomersCheck = extraCustomersCheck;
     }
 
     public void init() {
@@ -72,6 +76,7 @@ public class StartupTaskModule {
         taskRunner.submitTask(new UpdateDeviceFastSearchTask());
         taskRunner.submitTask(new ResetUserLoginFailTimeTask());
         taskRunner.submitTask(fileMigrateTask);
+        taskRunner.submitTask(extraCustomersCheck);
         if (!sqlInitScriptPath.equals("")) {
             taskRunner.submitTask(new ExecuteInitSqlTask());
         }

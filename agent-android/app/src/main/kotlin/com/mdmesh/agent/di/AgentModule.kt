@@ -3,6 +3,7 @@ package com.mdmesh.agent.di
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
+import android.os.SystemClock
 import com.mdmesh.agent.BuildConfig
 import com.mdmesh.agent.admin.AdminReceiver
 import com.mdmesh.core.capability.CapabilityCollector
@@ -34,6 +35,7 @@ import com.mdmesh.core.power.PowerModeStore
 import com.mdmesh.core.command.handlers.KioskEnterHandler
 import com.mdmesh.core.command.handlers.KioskExitHandler
 import com.mdmesh.core.kiosk.AndroidKioskHomeSwitch
+import com.mdmesh.core.kiosk.ConfiguredSafeModeSetting
 import com.mdmesh.core.kiosk.KioskApplier
 import com.mdmesh.core.command.handlers.PolicyApplyHandler
 import com.mdmesh.core.device.AppInventoryCollector
@@ -59,15 +61,17 @@ import com.mdmesh.core.telemetry.TelemetrySource
 import com.mdmesh.proto.AppManagement
 import com.mdmesh.proto.DeviceAction
 import com.mdmesh.kiosk.CrashLoopGuard
+import com.mdmesh.kiosk.ExitPinGate
 import com.mdmesh.kiosk.FaultStore
 import com.mdmesh.kiosk.KioskController
 import com.mdmesh.kiosk.LockTaskKioskController
+import com.mdmesh.kiosk.PinAttemptStore
 import com.mdmesh.kiosk.SharedPrefsFaultStore
+import com.mdmesh.kiosk.SharedPrefsPinAttemptStore
 import com.mdmesh.oem.GenericOemAdapter
 import com.mdmesh.oem.KnoxAdapter
 import com.mdmesh.oem.OemAdapter
 import com.mdmesh.policy.CapabilityRegistry
-import com.mdmesh.policy.TogglePolicy
 import com.mdmesh.policy.wifi.AndroidWifiRadio
 import com.mdmesh.policy.wifi.DpmHandle
 import com.mdmesh.policy.wifi.SharedPrefsWifiRadioOffState
@@ -178,11 +182,6 @@ object AgentModule {
         security = { security.collect() },
     )
 
-    /** The supported toggle policies, keyed by capability key (data-driven routing). */
-    @Provides
-    fun providePolicyToggles(registry: CapabilityRegistry): Map<String, TogglePolicy> =
-        registry.togglePolicies()
-
     // --- Command handlers (multibound). Add a command == add one @IntoSet provider. ---
 
     @Provides
@@ -191,9 +190,9 @@ object AgentModule {
 
     @Provides
     @IntoSet
-    fun providePolicyApplyHandler(
-        toggles: Map<String, @JvmSuppressWildcards TogglePolicy>,
-    ): CommandHandler = PolicyApplyHandler(toggles)
+    fun providePolicyApplyHandler(registry: CapabilityRegistry): CommandHandler =
+        // A function, not a map: the toggles are resolved per command (Device Owner arrives after process start, #76).
+        PolicyApplyHandler(registry::togglePolicies)
 
     @Provides
     @Singleton
@@ -221,6 +220,17 @@ object AgentModule {
     @Provides
     @Singleton
     fun provideCrashLoopGuard(store: FaultStore): CrashLoopGuard = CrashLoopGuard(store)
+
+    @Provides
+    @Singleton
+    fun providePinAttemptStore(@ApplicationContext context: Context): PinAttemptStore =
+        SharedPrefsPinAttemptStore(context)
+
+    @Provides
+    @Singleton
+    fun provideExitPinGate(store: PinAttemptStore): ExitPinGate =
+        // Uptime, not wall time: it can't be set, so changing the clock can't shorten a lockout.
+        ExitPinGate(store) { SystemClock.elapsedRealtime() }
 
     // --- App-management + kiosk + device command handlers (multibound) ---
 
@@ -259,10 +269,15 @@ object AgentModule {
     fun provideKioskApplier(
         kiosk: KioskController,
         store: KioskStateStore,
+        configStore: ConfigStateStore,
         @ApplicationContext context: Context,
     ): KioskApplier {
         val home = kioskHomeAlias(context)
-        return KioskApplier(kiosk, store, AndroidKioskHomeSwitch(context, home), home) { kiosk.isLocked(context) }
+        return KioskApplier(
+            kiosk, store, AndroidKioskHomeSwitch(context, home), home,
+            safeMode = ConfiguredSafeModeSetting(configStore),
+            isLockTaskActive = { kiosk.isLocked(context) },
+        )
     }
 
     @Provides @IntoSet
@@ -337,12 +352,17 @@ object AgentModule {
     @Provides
     @Singleton
     fun provideConfigApplier(
-        toggles: Map<String, @JvmSuppressWildcards TogglePolicy>,
+        registry: CapabilityRegistry,
         kiosk: KioskApplier,
         location: LocationModeStore,
         store: ConfigStateStore,
-        registry: CapabilityRegistry,
-    ): ConfigApplier = ConfigApplier(toggles, kiosk, location::set, store, registry.factoryResetProtection())
+    ): ConfigApplier = ConfigApplier(
+        registry::togglePolicies,
+        kiosk,
+        location::set,
+        store,
+        registry.factoryResetProtection(),
+    )
 
     @Provides
     @IntoSet

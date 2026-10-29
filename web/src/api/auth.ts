@@ -26,11 +26,24 @@ export interface AuthUser {
   passwordResetToken?: string;
   twoFactor?: boolean;
   superAdmin?: boolean;
+  /** May apply, roll back or schedule updates: a super-admin, or the admin of a single-customer install (0.3.8+). */
+  deploymentAdmin?: boolean;
   singleCustomer?: boolean;
   userRole?: {
     superAdmin?: boolean;
     permissions?: { name: string }[];
   };
+}
+
+/** Whether the user may apply, roll back or schedule updates, as the server says (deploymentAdmin). The updater
+ *  checks the same answer with the server; the console only hides what would be refused. */
+export function mayManageDeployment(u: AuthUser | null | undefined): boolean {
+  return u?.deploymentAdmin === true;
+}
+
+/** The signed-in user as the server sees it now (GET /private/users/current). */
+export async function fetchCurrentUser(): Promise<AuthUser | null> {
+  return apiClient.get<AuthUser | null>('/private/users/current');
 }
 
 export interface AuthOptions {

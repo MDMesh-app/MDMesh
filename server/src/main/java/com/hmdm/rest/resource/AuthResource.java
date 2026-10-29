@@ -29,18 +29,21 @@ import com.hmdm.persistence.domain.Settings;
 import com.hmdm.rest.filter.AuthFilter;
 import com.hmdm.rest.json.AuthOptionsResponse;
 import com.hmdm.rest.json.Response;
+import com.hmdm.security.LoginThrottle;
 import com.hmdm.rest.json.UserCredentials;
 import com.hmdm.persistence.domain.User;
 import com.hmdm.rest.json.view.user.UserView;
 import com.hmdm.service.EmailService;
 import com.hmdm.service.RsaKeyService;
 import com.hmdm.util.BackgroundTaskRunnerService;
+import com.hmdm.util.PasswordResetTokens;
 import com.hmdm.util.PasswordUtil;
 
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 import javax.ws.rs.*;
 import javax.ws.rs.core.Context;
@@ -61,11 +64,14 @@ public class AuthResource {
     private CustomerDAO customerDAO;
     private UnsecureDAO settingsDAO;
     private BackgroundTaskRunnerService taskRunner;
-    private boolean customerSignup;
     private EmailService emailService;
     private RsaKeyService rsaKeyService;
     private boolean transmitPassword;
     private HmdmAuthInterface authEngine;
+    private LoginThrottle loginThrottle;
+
+    /** The message of a sign-in refused because of too many failed ones (LoginThrottle); the console shows it. */
+    public static final String TOO_MANY_ATTEMPTS = "error.auth.too.many.attempts";
 
     /**
      * <p>A constructor required by Swagger.</p>
@@ -83,18 +89,18 @@ public class AuthResource {
                         BackgroundTaskRunnerService taskRunner,
                         EmailService emailService,
                         RsaKeyService rsaKeyService,
-                        @Named("customer.signup") boolean customerSignup,
                         @Named("transmit.password") boolean transmitPassword,
-                        @Named("auth.class") HmdmAuthInterface authEngine) {
+                        @Named("auth.class") HmdmAuthInterface authEngine,
+                        LoginThrottle loginThrottle) {
         this.userDAO = userDAO;
         this.customerDAO = customerDAO;
         this.settingsDAO = settingsDAO;
         this.taskRunner = taskRunner;
         this.emailService = emailService;
         this.rsaKeyService = rsaKeyService;
-        this.customerSignup = customerSignup;
         this.transmitPassword = transmitPassword;
         this.authEngine = authEngine;
+        this.loginThrottle = loginThrottle;
     }
 
     /**
@@ -110,19 +116,21 @@ public class AuthResource {
     @Consumes( MediaType.APPLICATION_JSON )
     @Produces( MediaType.APPLICATION_JSON )
     public Response login( UserCredentials credentials,
-                           @Context HttpServletRequest req ) throws InterruptedException {
+                           @Context HttpServletRequest req,
+                           @Context HttpServletResponse resp ) {
         if ( credentials.getLogin() == null || credentials.getPassword() == null ) {
             return Response.ERROR();
         }
 
+        // Failed sign-ins are limited per client address and per account (LoginThrottle), without sleeping: a refused
+        // attempt is answered at once, with the same message whichever limit refused, and its password is never
+        // checked. The account is looked up first, so every attempt costs that lookup.
         User user = authEngine.findUser(credentials.getLogin());
-        if (user == null) {
-            Thread.sleep(1000);
-            return Response.ERROR();
+        LoginThrottle.Verdict verdict = loginThrottle.begin(req, user, credentials.getLogin());
+        if (!verdict.allowed()) {
+            return Response.ERROR(TOO_MANY_ATTEMPTS);
         }
-        if (user.getLastLoginFail() > System.currentTimeMillis() - 1000) {
-            // No delay to avoid server overload while there's a brute force attack
-            Thread.sleep(1000);
+        if (user == null) {
             return Response.ERROR();
         }
 
@@ -136,9 +144,9 @@ public class AuthResource {
 
         // Web app sends MD5 hash, we need to re-hash it to compare with the DB value
         if (!authEngine.authenticate(user, password)) {
-            Thread.sleep(1000);
             return Response.ERROR();
         }
+        loginThrottle.succeeded(verdict.attempt());
 
         try {
             this.taskRunner.submitTask(() -> {
@@ -148,24 +156,43 @@ public class AuthResource {
             HttpSession userSession = req.getSession();
             userSession.setAttribute(AuthFilter.sessionCredentials, user );
 
+            boolean secondFactorPending = false;
             Settings settings = settingsDAO.getSettings(user.getCustomerId());
             if (settings != null) {
                 if (settings.isTwoFactor()) {
                     userSession.setAttribute(AuthFilter.twoFactorNeeded, "true");
                     user.setTwoFactor(true);
+                    secondFactorPending = true;
                 }
                 user.setIdleLogout(settings.getIdleLogout());
             }
 
             if (user.getAuthToken() == null || user.getAuthToken().length() == 0) {
                 user.setAuthToken(PasswordUtil.generateToken());
-                user.setNewPassword(user.getPassword());        // copy value for setUserNewPasswordUnsecure
-                userDAO.setUserNewPasswordUnsecure(user);
+                userDAO.setAuthTokenUnsecure(user);
+            }
+
+            // A forced change at first sign-in uses a reset token, which expires. The password was just proven, so a
+            // token that expired (or was seeded without an issue time) is replaced with a fresh one.
+            if (user.isPasswordReset() && !PasswordResetTokens.isFresh(user, System.currentTimeMillis())) {
+                PasswordResetTokens.issue(user, System.currentTimeMillis());
+                userDAO.setPasswordResetTokenUnsecure(user);
             }
 
             user.setPassword(null);
 
             user.setSingleCustomer(userDAO.isSingleCustomer());
+            user.setDeploymentAdmin(userDAO.mayManageDeployment(user));
+
+            // A full sign-in: this browser and this address now know the account, so someone failing sign-ins for it
+            // can't lock them out (LoginThrottle). Not while a second factor is pending: MDMesh has no second-factor
+            // step today, so such a session never gets further, and the password alone must not make a browser known.
+            if (!secondFactorPending) {
+                String knownBrowser = loginThrottle.signedIn(verdict.attempt(), user);
+                if (resp != null) {
+                    resp.addHeader("Set-Cookie", knownBrowser);
+                }
+            }
 
             return Response.OK(new UserView(user));
         } catch (Exception e) {
@@ -197,7 +224,7 @@ public class AuthResource {
     @Produces( MediaType.APPLICATION_JSON )
     public Response options() {
         AuthOptionsResponse response = new AuthOptionsResponse();
-        response.setSignup(emailService.isConfigured() && customerSignup);
+        response.setSignup(false);  // MDMesh has no self-signup
         response.setRecover(emailService.isConfigured());
         if (transmitPassword) {
             PublicKey publicKey = rsaKeyService.getPublicKey();

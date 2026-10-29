@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { listApplications, type Application } from '../api/applications';
 import { bulkQueueCommand } from '../api/commands';
 import { getConfigurations, type Configuration } from '../api/configurations';
-import { buildKioskPayload, kioskTheme, type KioskChoice } from './KioskEnterModal';
+import { EXIT_PIN_HELP, buildKioskPayload, kioskTheme, type KioskChoice } from './KioskEnterModal';
 import { useToast } from '../ui/toast';
 
 type Mode = 'launcher' | 'single';
@@ -117,9 +117,9 @@ export function BulkKioskModal({
           </select>
         </label>
         <label className="field">
-          <span>Exit password</span>
-          <input type="password" value={password} placeholder="optional"
-                 onChange={(e) => setPassword(e.target.value)} />
+          <span>Kiosk exit PIN</span>
+          <input type="password" value={password} placeholder="Empty: no exit on the device (agent 0.3.6+)"
+                 title={EXIT_PIN_HELP} onChange={(e) => setPassword(e.target.value)} />
         </label>
 
         <div className="modal-actions">

@@ -35,6 +35,8 @@ public class PublicRestModule extends ServletModule {
         this.filter("*").through(HstsFilter.class);
         this.filter("/rest/public/*").through(PublicIPFilter.class);
         this.serve("/files/*").with(DownloadFilesServlet.class);
+        // One sign-in limiter for both sign-in routes (console and API), so they share every counter.
+        this.bind(com.hmdm.security.LoginThrottle.class).in(com.google.inject.Singleton.class);
         this.bind(AuthResource.class);
         this.bind(JWTAuthResource.class);
         this.bind(PublicResource.class);

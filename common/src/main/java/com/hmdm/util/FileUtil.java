@@ -51,6 +51,8 @@ public final class FileUtil {
                 .replace(' ', '_')
                 .replace('+', '_')          // Not valid in URL
                 .replace('%', '_')          // Not valid in URL
+                .replace(';', '_')          // A path parameter: the server refuses paths with one (AmbiguousPathFilter)
+                .replace('\\', '_')         // Refused in a path too
                 .replace("(", "")           // These characters are used by Windows when a file is downloaded twice
                 .replace(")", "");
     }

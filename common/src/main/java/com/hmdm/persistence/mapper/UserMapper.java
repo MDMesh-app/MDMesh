@@ -52,10 +52,10 @@ public interface UserMapper {
 
     @Insert({"INSERT INTO users (login, email, name, password, customerId, userRoleId, " +
             "allDevicesAvailable, allConfigAvailable, passwordReset, authToken, " +
-            "passwordResetToken, authData, twoFactorSecret, twoFactorAccepted) " +
+            "passwordResetToken, passwordResetTokenTime, authData, twoFactorSecret, twoFactorAccepted) " +
             "VALUES (#{login}, #{email}, #{name}, #{password}, #{customerId}, #{userRole.id}, " +
             "#{allDevicesAvailable}, #{allConfigAvailable}, #{passwordReset}, #{authToken}, " +
-            "#{passwordResetToken}, #{authData}, #{twoFactorSecret}, #{twoFactorAccepted})"})
+            "#{passwordResetToken}, #{passwordResetTokenTime}, #{authData}, #{twoFactorSecret}, #{twoFactorAccepted})"})
     @SelectKey( statement = "SELECT currval('users_id_seq')", keyColumn = "id", keyProperty = "id", before = false, resultType = int.class )
     void insert(User user);
 
@@ -70,15 +70,31 @@ public interface UserMapper {
             "WHERE id=#{id} AND customerId=#{customerId}"})
     void updateUserMainDetails(User user);
 
+    /** Sets a password. Call through UserDAO.updatePassword, which also gives the user a new authToken. */
     @Update({"UPDATE users SET password=#{password}, passwordReset=#{passwordReset}, " +
             "authToken=#{authToken}, passwordResetToken=#{passwordResetToken}, " +
+            "passwordResetTokenTime=#{passwordResetTokenTime}, " +
             "twoFactorSecret=#{twoFactorSecret}, twoFactorAccepted=#{twoFactorAccepted} " +
             "WHERE id=#{id} AND customerId=#{customerId}"})
     void updatePassword(User user);
 
+    /**
+     * Sets a password. Call through UnsecureDAO.setUserNewPasswordUnsecure or UserDAO.updatePasswordBySuperAdmin,
+     * which also give the user a new authToken, so the sessions and JWTs issued for the old password end.
+     */
     @Update({"UPDATE users SET password=#{newPassword}, passwordReset=#{passwordReset}, " +
-            "authToken=#{authToken}, passwordResetToken=#{passwordResetToken} WHERE id=#{id}"})
+            "authToken=#{authToken}, passwordResetToken=#{passwordResetToken}, " +
+            "passwordResetTokenTime=#{passwordResetTokenTime} WHERE id=#{id}"})
     void setNewPassword(User user);
+
+    /** Stores the session/JWT binding token alone (a first sign-in, impersonation); the password is untouched. */
+    @Update({"UPDATE users SET authToken=#{authToken} WHERE id=#{id}"})
+    void setAuthToken(User user);
+
+    /** Stores a password reset token and when it was issued; the password and the sessions are untouched. */
+    @Update({"UPDATE users SET passwordResetToken=#{passwordResetToken}, " +
+            "passwordResetTokenTime=#{passwordResetTokenTime} WHERE id=#{id}"})
+    void setPasswordResetToken(User user);
 
     @Update({"UPDATE users SET lastLoginFail=#{lastLoginFail} WHERE id=#{id}"})
     void setLoginFailTime(User user);

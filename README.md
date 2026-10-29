@@ -61,7 +61,7 @@ Groups, configurations, live status, and a fast device list with search + filter
 <td width="33%" valign="top">
 
 **🔒 Kiosk / COSU**
-Single-app or multi-app lock-task with a custom home launcher and a crash-loop guard.
+Single-app or multi-app lock-task with a custom home launcher, a crash-loop guard and an exit PIN that locks after wrong guesses.
 
 </td>
 <td width="33%" valign="top">
@@ -102,7 +102,7 @@ One-click or unattended server updates with DB backup + auto-rollback on quick-s
 - **Remote actions** — message, alert, ring, lock, reboot, passcode reset, wipe, power and location modes. All are
   capability-gated, so old agents never get a command they can't run.
 - **Kiosk** — COSU lock-task, home-screen replacement, per-app "Show in kiosk", themed app grid, crash-loop
-  protection.
+  protection, an exit PIN that locks after wrong guesses and emails administrators.
 - **App management** — APK upload, F-Droid catalog, silent install/upgrade from your server or any HTTPS host,
   with version and downgrade gating.
 - **Telemetry** — battery, storage, network, Android version, Device-Owner status and an event timeline.

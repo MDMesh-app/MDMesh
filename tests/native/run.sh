@@ -108,28 +108,31 @@ install_and_sign_in() {
 origin_repo=$(printf '%s' "$T2_ORIGIN_URL" | sed -E 's#(git@|https?://)[^/:]+[/:]##; s#\.git$##')
 SET_REPO=${origin_repo,,}; [ "$SET_REPO" != "$origin_repo" ] || SET_REPO=${origin_repo^^}
 SET_TOKEN="t2_dummy_token_$RAND"
+SET_PROXY="192.0.2.10,192.0.2.11"   # proxy.addresses, added to ROOT.xml by hand as docs/OPERATIONS.md says
 
 # install_with_settings LABEL REF: install_and_sign_in with GITHUB_REPO=SET_REPO, then SET_TOKEN in its supervisor.env;
 # the settings are recorded in $OUT/settings.before.
 install_with_settings() {
   INSTALL_GITHUB_REPO=$SET_REPO install_and_sign_in "$1" "$2"
   guest set-token "$SET_TOKEN"
+  guest set-proxy "$SET_PROXY"
   guest settings > "$OUT/settings.before"
   log "  settings: $(tr '\n' ' ' < "$OUT/settings.before")"
   check "the $1 install wrote GITHUB_REPO" "$(sed -n 's/^GITHUB_REPO=//p' "$OUT/settings.before")" "$SET_REPO"
   check "the $1 install wrote base.url" "$(sed -n 's/^base.url=//p' "$OUT/settings.before")" "$T2_BASE_URL"
+  check "proxy.addresses set in ROOT.xml" "$(sed -n 's/^proxy.addresses=//p' "$OUT/settings.before")" "$SET_PROXY"
   check "GITHUB_TOKEN set in supervisor.env" "$(sed -n 's/^GITHUB_TOKEN=//p' "$OUT/settings.before")" \
     "$(printf '%s' "$SET_TOKEN" | sha256sum | cut -c1-16)"
 }
 
-# settings_kept LABEL: after the run LABEL, base.url, GITHUB_REPO and GITHUB_TOKEN are what they were before, the repo is
-# marked as a setting, supervisor.env is root-only in /etc/mdmesh, and that run fetched the release APK (without the
-# refused token, which it reported when it had read it in time). GitHub's anonymous rate limit is not the change's
-# doing: when the run says it hit it, the fetch check is skipped with a WARN instead of failing.
+# settings_kept LABEL: after the run LABEL, base.url, proxy.addresses, GITHUB_REPO and GITHUB_TOKEN are what they were
+# before, the repo is marked as a setting, supervisor.env is root-only in /etc/mdmesh, and that run fetched the release
+# APK (without the refused token, which it reported when it had read it in time). GitHub's anonymous rate limit is not
+# the change's doing: when the run says it hit it, the fetch check is skipped with a WARN instead of failing.
 settings_kept() {
   local label=$1 k
   guest settings > "$OUT/$label.settings"
-  for k in base.url GITHUB_REPO GITHUB_TOKEN; do
+  for k in base.url proxy.addresses GITHUB_REPO GITHUB_TOKEN; do
     check "$k kept by $label" "$(sed -n "s/^$k=//p" "$OUT/$label.settings")" "$(sed -n "s/^$k=//p" "$OUT/settings.before")"
   done
   check "GITHUB_REPO_FROM=setting after $label" "$(sed -n 's/^GITHUB_REPO_FROM=//p' "$OUT/$label.settings")" setting

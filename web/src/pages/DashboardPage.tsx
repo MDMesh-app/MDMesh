@@ -18,6 +18,8 @@ const EVENT_VERBS: Record<string, string> = {
   connectivityChange: 'changed network',
   lowBattery: 'reported low battery',
   enrolled: 'enrolled',
+  kioskPinLockout: 'locked the exit PIN',
+  kioskCrashLoop: 'reported the kiosk app keeps closing',
 };
 
 function configName(
@@ -93,8 +95,16 @@ function ActivityIcon({ type }: { type: string }) {
           <path d="M20 6 9 17l-5-5" />
         </svg>
       );
+    case 'kioskPinLockout':
+      return (
+        <svg {...common}>
+          <rect x="5" y="11" width="14" height="10" rx="2" />
+          <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+        </svg>
+      );
     case 'lowBattery':
     case 'connectivityChange':
+    case 'kioskCrashLoop':
       return (
         <svg {...common}>
           <circle cx="12" cy="12" r="9" />

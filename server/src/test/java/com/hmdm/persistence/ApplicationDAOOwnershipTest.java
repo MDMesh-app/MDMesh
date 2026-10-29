@@ -370,7 +370,7 @@ public class ApplicationDAOOwnershipTest {
     @Test
     public void applicationDetailsAreServedForOwnAndCommonApplicationsOnly() {
         com.hmdm.rest.resource.ApplicationResource resource =
-                new com.hmdm.rest.resource.ApplicationResource(dao, null, null, "target");
+                new com.hmdm.rest.resource.ApplicationResource(dao, null, null, null, "target");
         login(Fakes.user(5, CUSTOMER, "applications"));
         com.hmdm.rest.json.Response other = resource.getApplication(OTHER_APP);
         assertTrue("another customer's application must not be returned",
@@ -400,7 +400,7 @@ public class ApplicationDAOOwnershipTest {
     @Test
     public void androidAppSaveUpdatesOnlyTheStoredLatestVersionOfThatApplication() {
         com.hmdm.rest.resource.ApplicationResource resource =
-                new com.hmdm.rest.resource.ApplicationResource(dao, null, null, "target");
+                new com.hmdm.rest.resource.ApplicationResource(dao, null, null, null, "target");
         Application body = request(OWN_APP, CUSTOMER);
         body.setUrl("https://mdm.example.com/new.apk");
         body.setLatestVersion(OWN_APP_2_VERSION);   // a version of another application

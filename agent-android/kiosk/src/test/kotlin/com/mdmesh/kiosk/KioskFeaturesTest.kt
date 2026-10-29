@@ -25,6 +25,15 @@ class KioskFeaturesTest {
     }
 
     @Test
+    fun `recents and notifications need home`() {
+        // Android refuses OVERVIEW or NOTIFICATIONS without HOME, which would fail the whole kiosk entry.
+        assertEquals(16, lockTaskFeatures(KioskToggles(recents = true, notifications = true)))
+        assertEquals(16, lockTaskFeatures(KioskToggles(home = false, recents = true, notifications = true)))
+        // 4 | 8 | 2 | 16
+        assertEquals(30, lockTaskFeatures(KioskToggles(home = true, recents = true, notifications = true)))
+    }
+
+    @Test
     fun `lockButtons removes the power menu`() {
         assertEquals(0, lockTaskFeatures(KioskToggles(lockButtons = true)))
         // with other toggles, global actions is still removed

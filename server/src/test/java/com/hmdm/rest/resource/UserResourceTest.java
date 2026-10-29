@@ -9,6 +9,7 @@ import com.hmdm.persistence.domain.UserRole;
 import com.hmdm.persistence.domain.UserRolePermission;
 import com.hmdm.persistence.mapper.UserMapper;
 import com.hmdm.rest.json.Response;
+import com.hmdm.security.LoginThrottle;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.util.PasswordUtil;
 import org.junit.After;
@@ -49,6 +50,9 @@ public class UserResourceTest {
     private final List<User> written = new ArrayList<>();
 
     private UserResource resource;
+    private LoginThrottle throttle;
+    /** What CustomerMapper.isMultiTenant answers: false = a single-customer (private-mode) install. */
+    private boolean multiTenant = false;
 
     private User superAdmin;
     private User masterOrgAdmin;
@@ -60,15 +64,19 @@ public class UserResourceTest {
     public void setUp() {
         UserMapper mapper = fakeMapper();
         UserDAO userDAO = new UserDAO(mapper, ORG_ADMIN.getId());
+        com.hmdm.testsupport.Fakes.FakeMapper<com.hmdm.persistence.mapper.CustomerMapper> customers =
+                new com.hmdm.testsupport.Fakes.FakeMapper<>(com.hmdm.persistence.mapper.CustomerMapper.class);
+        customers.answer("isMultiTenant", a -> multiTenant);
         UnsecureDAO unsecureDAO = new UnsecureDAO(null, mapper, null, null, null, null, null, null, null, null,
-                null, null, null, null, ".", ORG_ADMIN.getId(), "com.hmdm.launcher");
+                null, null, customers.mapper, null, ".", ORG_ADMIN.getId(), "com.hmdm.launcher");
         CommonDAO settingsDAO = new CommonDAO(null, null, null) {
             @Override
             public Settings getSettings() {
                 return new Settings();
             }
         };
-        resource = new UserResource(userDAO, settingsDAO, unsecureDAO);
+        throttle = new LoginThrottle("", false, "0123456789abcdef0123456789abcdef0123456789abcdef", "");
+        resource = new UserResource(userDAO, settingsDAO, unsecureDAO, throttle);
 
         superAdmin = user(1, "admin", MASTER, SUPER_ADMIN);
         masterOrgAdmin = user(2, "masterorgadmin", MASTER, ORG_ADMIN);
@@ -219,7 +227,7 @@ public class UserResourceTest {
         User request = details(orgAdmin.getId(), "other@example.com");
         request.setOldPassword(PASSWORD_MD5);      // the caller's own password does not help
 
-        Response response = resource.updateUserDetails(request);
+        Response response = resource.updateUserDetails(request, null);
 
         assertDenied(response);
         assertTrue(writes.isEmpty());
@@ -230,7 +238,7 @@ public class UserResourceTest {
     public void emailChangeRequiresCurrentPassword() {
         signIn(tenantUser);
 
-        Response response = resource.updateUserDetails(details(tenantUser.getId(), "new@example.com"));
+        Response response = resource.updateUserDetails(details(tenantUser.getId(), "new@example.com"), null);
 
         assertNotEquals(Response.ResponseStatus.OK, response.getStatus());
         assertTrue(writes.isEmpty());
@@ -243,7 +251,7 @@ public class UserResourceTest {
         User request = details(tenantUser.getId(), "new@example.com");
         request.setOldPassword("0123456789ABCDEF0123456789ABCDEF");
 
-        Response response = resource.updateUserDetails(request);
+        Response response = resource.updateUserDetails(request, null);
 
         assertNotEquals(Response.ResponseStatus.OK, response.getStatus());
         assertTrue(writes.isEmpty());
@@ -255,7 +263,7 @@ public class UserResourceTest {
         User request = details(tenantUser.getId(), "new@example.com");
         request.setOldPassword(PASSWORD_MD5);
 
-        Response response = resource.updateUserDetails(request);
+        Response response = resource.updateUserDetails(request, null);
 
         assertEquals(Response.ResponseStatus.OK, response.getStatus());
         assertEquals("new@example.com", users.get(tenantUser.getId()).getEmail());
@@ -267,7 +275,7 @@ public class UserResourceTest {
         User request = details(tenantUser.getId(), tenantUser.getEmail());
         request.setName("New Name");
 
-        Response response = resource.updateUserDetails(request);
+        Response response = resource.updateUserDetails(request, null);
 
         assertEquals(Response.ResponseStatus.OK, response.getStatus());
         assertEquals("New Name", users.get(tenantUser.getId()).getName());
@@ -279,7 +287,7 @@ public class UserResourceTest {
         User request = details(null, tenantUser.getEmail());
         request.setName("Self");
 
-        Response response = resource.updateUserDetails(request);
+        Response response = resource.updateUserDetails(request, null);
 
         assertEquals(Response.ResponseStatus.OK, response.getStatus());
         assertEquals("Self", users.get(tenantUser.getId()).getName());
@@ -291,7 +299,7 @@ public class UserResourceTest {
         User request = details(tenantUser.getId(), "moved@example.com");
         request.setOldPassword(PASSWORD_MD5);
 
-        Response response = resource.updateUserDetails(request);
+        Response response = resource.updateUserDetails(request, null);
 
         assertEquals(Response.ResponseStatus.OK, response.getStatus());
         assertEquals("moved@example.com", users.get(tenantUser.getId()).getEmail());
@@ -303,7 +311,7 @@ public class UserResourceTest {
         User request = details(otherTenantUser.getId(), "moved@example.com");
         request.setOldPassword(PASSWORD_MD5);
 
-        Response response = resource.updateUserDetails(request);
+        Response response = resource.updateUserDetails(request, null);
 
         assertDenied(response);
         assertTrue(writes.isEmpty());
@@ -335,11 +343,139 @@ public class UserResourceTest {
         request.setOldPassword(PASSWORD_MD5);
         request.setNewPassword("0123456789ABCDEF0123456789ABCDEF");
 
-        Response response = resource.updatePassword(request);
+        Response response = resource.updatePassword(request, null);
 
         assertEquals(Response.ResponseStatus.OK, response.getStatus());
         assertEquals(java.util.Collections.singletonList("updatePassword"), writes);
         assertEquals(tenantUser.getId(), written.get(0).getId());
+    }
+
+    @Test
+    public void ownPasswordChangeEndsOtherSessionsAndKeepsThisOne() {
+        signIn(tenantUser);
+        User thisSession = copy(tenantUser, false);              // what AuthResource stored at sign-in
+        List<Object> sessionWrites = new ArrayList<>();
+        User request = new User();
+        request.setId(tenantUser.getId());
+        request.setOldPassword(PASSWORD_MD5);
+        request.setNewPassword("0123456789ABCDEF0123456789ABCDEF");
+
+        Response response = resource.updatePassword(request, request(sessionWrites, thisSession));
+
+        assertEquals(Response.ResponseStatus.OK, response.getStatus());
+        String newToken = written.get(0).getAuthToken();
+        assertNotNull(newToken);
+        assertNotEquals("every other session and JWT of the old password ends", "token-11", newToken);
+        assertEquals("this session moves to the new token", newToken, thisSession.getAuthToken());
+        assertEquals(1, sessionWrites.size());
+        assertEquals(null, written.get(0).getPasswordResetToken());
+    }
+
+    @Test
+    public void ownPasswordChangeWithAWrongPasswordKeepsEverything() {
+        signIn(tenantUser);
+        User thisSession = copy(tenantUser, false);
+        List<Object> sessionWrites = new ArrayList<>();
+        User request = new User();
+        request.setId(tenantUser.getId());
+        request.setOldPassword("0123456789ABCDEF0123456789ABCDEF");
+        request.setNewPassword("0123456789ABCDEF0123456789ABCDEF");
+
+        resource.updatePassword(request, request(sessionWrites, thisSession));
+
+        assertTrue(writes.isEmpty());
+        assertTrue(sessionWrites.isEmpty());
+        assertEquals("token-11", thisSession.getAuthToken());
+    }
+
+    // ---- the current-password checks count against the sign-in limit ---------------------------------------------------
+
+    private User passwordChange(String oldPassword) {
+        User request = new User();
+        request.setId(tenantUser.getId());
+        request.setOldPassword(oldPassword);
+        request.setNewPassword("0123456789ABCDEF0123456789ABCDEF");
+        return request;
+    }
+
+    @Test
+    public void guessingTheCurrentPasswordThroughAPasswordChangeIsLimitedLikeSignIn() {
+        signIn(tenantUser);
+        int checked = 0;
+        for (int i = 0; i < 40; i++) {
+            Response r = resource.updatePassword(passwordChange("0123456789ABCDEF0123456789ABCDE" + (i % 10)), null);
+            if (!AuthResource.TOO_MANY_ATTEMPTS.equals(r.getMessage())) {
+                assertEquals("error.password.wrong", r.getMessage());
+                checked++;
+            }
+        }
+        assertEquals("the account's limit", 20, checked);
+        assertEquals("the right one is refused too", AuthResource.TOO_MANY_ATTEMPTS,
+                resource.updatePassword(passwordChange(PASSWORD_MD5), null).getMessage());
+        assertTrue(writes.isEmpty());
+        User account = users.get(tenantUser.getId());
+        assertTrue("the same counter as sign-in", !throttle.begin((String) null, account, account.getLogin(), null)
+                .allowed());
+    }
+
+    @Test
+    public void guessingTheCurrentPasswordThroughAnEmailChangeIsLimitedLikeSignIn() {
+        signIn(tenantUser);
+        int checked = 0;
+        for (int i = 0; i < 40; i++) {
+            User request = details(tenantUser.getId(), "new@example.com");
+            request.setOldPassword("0123456789ABCDEF0123456789ABCDEF");
+            if (!AuthResource.TOO_MANY_ATTEMPTS.equals(resource.updateUserDetails(request, null).getMessage())) {
+                checked++;
+            }
+        }
+        assertEquals(20, checked);
+        User request = details(tenantUser.getId(), "new@example.com");
+        request.setOldPassword(PASSWORD_MD5);
+        assertEquals(AuthResource.TOO_MANY_ATTEMPTS, resource.updateUserDetails(request, null).getMessage());
+        assertEquals("operator@example.com", users.get(tenantUser.getId()).getEmail());
+    }
+
+    @Test
+    public void aRightCurrentPasswordGivesItsSlotBack() {
+        signIn(tenantUser);
+        for (int i = 0; i < 30; i++) {
+            User request = details(tenantUser.getId(), "n" + i + "@example.com");
+            request.setOldPassword(PASSWORD_MD5);
+            assertEquals(Response.ResponseStatus.OK, resource.updateUserDetails(request, null).getStatus());
+        }
+    }
+
+    @Test
+    public void anAdminPasswordChangeEndsTheUsersSessions() {
+        signIn(orgAdmin);
+        User request = edit(tenantUser, USER);
+        request.setNewPassword(PASSWORD_MD5);
+
+        resource.updateUser(request);
+
+        User passwordWrite = written.get(writes.indexOf("updatePassword"));
+        assertNotNull(passwordWrite.getAuthToken());
+        assertNotEquals("token-11", passwordWrite.getAuthToken());
+    }
+
+    @Test
+    public void aSuperAdminPasswordSetIssuesItsOwnTokens() {
+        signIn(superAdmin);
+        User request = new User();
+        request.setId(tenantUser.getId());
+        request.setNewPassword(PASSWORD_MD5);
+        request.setAuthToken("chosen-by-the-client");
+        request.setPasswordResetToken("chosen-reset-token");
+
+        Response response = resource.updatePasswordBySuperAdmin(request);
+
+        assertEquals(Response.ResponseStatus.OK, response.getStatus());
+        User write = written.get(writes.indexOf("setNewPassword"));
+        assertNotNull(write.getAuthToken());
+        assertNotEquals("chosen-by-the-client", write.getAuthToken());
+        assertNotEquals("token-11", write.getAuthToken());
+        assertEquals(null, write.getPasswordResetToken());
     }
 
     // ---- DELETE /private/users/other/{id} ----------------------------------------------------------------------------
@@ -370,7 +506,7 @@ public class UserResourceTest {
         assertEquals(java.util.Collections.singletonList("deleteUser:" + tenantUser.getId()), writes);
     }
 
-    // ---- GET /private/users/impersonate/{id} -------------------------------------------------------------------------
+    // ---- POST /private/users/impersonate/{id} ------------------------------------------------------------------------
 
     @Test
     public void orgAdminOfSuperAdminCustomerCannotImpersonateSuperAdmin() throws Exception {
@@ -436,6 +572,35 @@ public class UserResourceTest {
     }
 
     @Test
+    public void theCurrentUserAnswerSaysWhoMayManageTheDeployment() throws Exception {
+        // The updater (supervisor/lib.js deploymentAdminVerdict) lets only a session whose GET /private/users/current
+        // answer has deploymentAdmin === true apply, roll back or schedule updates.
+        multiTenant = false;                      // private mode: one customer, its org admin is the operator
+        assertDeploymentAdmin(superAdmin, true);
+        assertDeploymentAdmin(masterOrgAdmin, true);
+        assertDeploymentAdmin(tenantUser, false);  // a user role, even on a single-customer install
+
+        multiTenant = true;                       // a second customer exists: super-admins only
+        assertDeploymentAdmin(superAdmin, true);
+        assertDeploymentAdmin(orgAdmin, false);
+        assertDeploymentAdmin(masterOrgAdmin, false);
+    }
+
+    @Test
+    public void aRoleWithTheSettingsPermissionIsNotAnOrgAdmin() throws Exception {
+        multiTenant = false;
+        User custom = user(30, "custom", MASTER, role(7, false));
+        custom.getUserRole().setPermissions(role(2, false).getPermissions());   // holds "settings"
+        assertDeploymentAdmin(custom, false);
+    }
+
+    private void assertDeploymentAdmin(User who, boolean expected) throws Exception {
+        signIn(who);
+        String json = json(resource.getCurrentUserDetails().getData());
+        assertTrue(who.getLogin() + ": " + json, json.contains("\"deploymentAdmin\":" + expected));
+    }
+
+    @Test
     public void passwordResetTokenIsStillAcceptedInRequests() throws Exception {
         // POST /public/passwordReset/reset reads the token from a User body
         User body = new com.fasterxml.jackson.databind.ObjectMapper()
@@ -459,11 +624,19 @@ public class UserResourceTest {
 
     /** A request whose session records what is stored in it. */
     private static javax.servlet.http.HttpServletRequest request(List<Object> sessionWrites) {
+        return request(sessionWrites, null);
+    }
+
+    /** A request whose session holds {@code credentials} and records what is stored in it. */
+    private static javax.servlet.http.HttpServletRequest request(List<Object> sessionWrites, User credentials) {
         javax.servlet.http.HttpSession session = (javax.servlet.http.HttpSession) Proxy.newProxyInstance(
                 UserResourceTest.class.getClassLoader(), new Class<?>[]{javax.servlet.http.HttpSession.class},
                 (proxy, method, args) -> {
                     if ("setAttribute".equals(method.getName())) {
                         sessionWrites.add(args[1]);
+                    }
+                    if ("getAttribute".equals(method.getName()) && "credentials".equals(args[0])) {
+                        return credentials;
                     }
                     return null;
                 });
@@ -629,6 +802,7 @@ public class UserResourceTest {
                         }
                         case "updateUserMainDetails":
                         case "updatePassword":
+                        case "setNewPassword":
                             persist(method.getName(), (User) args[0]);
                             return null;
                         case "removeDeviceGroupsAccessByUserId":

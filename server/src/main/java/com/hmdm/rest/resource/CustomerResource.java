@@ -86,11 +86,27 @@ public class CustomerResource {
         this.mailchimpService = mailchimpService;
     }
 
+    /**
+     * Customer accounts are super-admin business. Every route starts here, before it reads or writes anything (the
+     * DAO checks again, but a refusal there surfaced as an internal error, and two reads had no check at all).
+     */
+    private static boolean notSuperAdmin(String what) {
+        SecurityContext context = SecurityContext.get();
+        if (context != null && context.isSuperAdmin()) {
+            return false;
+        }
+        log.warn("Refused to {} for {}: super-admin only", what, context == null ? "null" : context.getCurrentUserName());
+        return true;
+    }
+
     @GET
     @Path("/search")
     @Produces(MediaType.APPLICATION_JSON)
     @Deprecated
     public Response getAllCustomers() {
+        if (notSuperAdmin("list customers")) {
+            return Response.PERMISSION_DENIED();
+        }
         try {
             return Response.OK(this.customerDAO.getAllCustomers());
         } catch (Exception e) {
@@ -104,6 +120,9 @@ public class CustomerResource {
     @Produces(MediaType.APPLICATION_JSON)
     @Deprecated
     public Response searchCustomers(@PathParam("value") String value) {
+        if (notSuperAdmin("search customers")) {
+            return Response.PERMISSION_DENIED();
+        }
         try {
             return Response.OK(this.customerDAO.getAllCustomersByValue(value));
         } catch (Exception e) {
@@ -118,6 +137,9 @@ public class CustomerResource {
     @Produces(MediaType.APPLICATION_JSON)
     @Deprecated
     public Response searchCustomers(CustomerSearchRequest request) {
+        if (notSuperAdmin("search customers")) {
+            return Response.PERMISSION_DENIED();
+        }
         try {
             PaginatedData<Customer> customers = this.customerDAO.searchCustomers(request);
             return Response.OK(customers);
@@ -131,6 +153,9 @@ public class CustomerResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response updateCustomer(Customer customer) {
+        if (notSuperAdmin("save a customer")) {
+            return Response.PERMISSION_DENIED();
+        }
         try {
             Customer dbCustomer = customerDAO.getCustomerByName(customer.getName());
             User dbUser = null;
@@ -196,6 +221,9 @@ public class CustomerResource {
     @Path("/{id}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response removeCustomer(@PathParam("id") Integer id) {
+        if (notSuperAdmin("delete a customer")) {
+            return Response.PERMISSION_DENIED();
+        }
         try {
             this.customerDAO.removeCustomerById(id);
             return Response.OK();
@@ -209,6 +237,9 @@ public class CustomerResource {
     @Path("/{id}/edit")
     @Produces(MediaType.APPLICATION_JSON)
     public Response getCustomerForUpdate(@PathParam("id") Integer id) {
+        if (notSuperAdmin("read a customer")) {
+            return Response.PERMISSION_DENIED();
+        }
         try {
             final Customer customer = this.customerDAO.findByIdForUpdate(id);
             return Response.OK(customer);
@@ -222,6 +253,9 @@ public class CustomerResource {
     @Path("/prefix/{prefix}/used")
     @Produces(MediaType.APPLICATION_JSON)
     public Response validatePrefix(@PathParam("prefix") String prefix) {
+        if (notSuperAdmin("check a customer prefix")) {
+            return Response.PERMISSION_DENIED();
+        }
         try {
             final boolean prefixUsed = this.customerDAO.isPrefixUsed(prefix);
             return Response.OK(prefixUsed);
@@ -231,12 +265,16 @@ public class CustomerResource {
         }
     }
 
-    @GET
+    // A POST, like users/impersonate: a cross-site link can't switch a super-admin's session.
+    @POST
     @Path("/impersonate/{id}")
     @Produces(MediaType.APPLICATION_JSON)
     public Response impersonateCustomer(@PathParam("id") Integer id,
                                         @Context HttpServletRequest req,
                                         @Context HttpServletResponse res) throws IOException {
+        if (notSuperAdmin("impersonate a customer")) {
+            return Response.PERMISSION_DENIED();
+        }
         try {
             if (SecurityContext.get().isSuperAdmin()) {
                 Customer customer = this.customerDAO.findById(id);
@@ -249,11 +287,9 @@ public class CustomerResource {
 
                     // If the org admin didn't log in, we need to generate a token for him
                     if (orgAdmin.getAuthToken() == null || orgAdmin.getAuthToken().length() == 0) {
-                        // findOrgAdmin() doesn't return password, so we need to get the user's password
                         User user = unsecureDAO.findByLoginOrEmail(orgAdmin.getLogin());
                         user.setAuthToken(PasswordUtil.generateToken());
-                        user.setNewPassword(user.getPassword());        // copy value for setUserNewPasswordUnsecure
-                        unsecureDAO.setUserNewPasswordUnsecure(user);
+                        unsecureDAO.setAuthTokenUnsecure(user);
                         orgAdmin.setAuthToken(user.getAuthToken());
                     }
 

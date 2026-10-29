@@ -932,6 +932,10 @@ X_SMTP_STARTTLS=$(root_param SMTP_STARTTLS smtp.starttls false)
 X_SMTP_USERNAME=$(root_param SMTP_USERNAME smtp.username "")
 X_SMTP_PASSWORD=$(root_param SMTP_PASSWORD smtp.password "")
 X_SMTP_FROM=$(root_param SMTP_FROM smtp.from "mdm@localhost")
+# The reverse proxies on other hosts whose X-Forwarded-For the server believes (the sign-in limit, the IP allowlists, the
+# audit log), comma-separated: env PROXY_ADDRESSES, else what ROOT.xml has (an admin may have added it by hand). A proxy
+# on this host needs no entry. Unlisted, a proxy on another host is limited as one client at sign-in.
+X_PROXY_ADDRESSES=$(root_param PROXY_ADDRESSES proxy.addresses "")
 # ROOT.xml carries the DB password, hash.secret and jwt.secretkey: tc_write makes it mode 600.
 tc_write conf/Catalina/localhost/ROOT.xml cat <<XML
 <?xml version="1.0" encoding="UTF-8"?>
@@ -939,6 +943,8 @@ tc_write conf/Catalina/localhost/ROOT.xml cat <<XML
     <!-- SPA fallback: serve index.html for client-side routes so a reload on /devices etc. works.
          Rules live in webapps/ROOT/WEB-INF/rewrite.config (written below). -->
     <Valve className="org.apache.catalina.valves.rewrite.RewriteValve"/>
+    <!-- The session cookie is SameSite=Lax: a cross-site page cannot send a POST, PUT or DELETE with it. -->
+    <CookieProcessor className="org.apache.tomcat.util.http.Rfc6265CookieProcessor" sameSiteCookies="lax"/>
     <Parameter name="JDBC.driver"   value="org.postgresql.Driver"/>
     <Parameter name="JDBC.url"      value="jdbc:postgresql://127.0.0.1:5432/mdmesh"/>
     <Parameter name="JDBC.username" value="mdmesh"/>
@@ -974,6 +980,9 @@ tc_write conf/Catalina/localhost/ROOT.xml cat <<XML
     <Parameter name="smtp.from" value="${X_SMTP_FROM}"/>
     <Parameter name="email.recovery.subj" value="${BASE_DIR}/emails/_LANGUAGE_/recovery_subj.txt"/>
     <Parameter name="email.recovery.body" value="${BASE_DIR}/emails/_LANGUAGE_/recovery_body.txt"/>
+    <!-- Reverse proxies on other hosts whose X-Forwarded-For is believed, comma-separated (env PROXY_ADDRESSES; re-runs
+         keep it). A proxy on this host needs no entry. docs/OPERATIONS.md, Sign-in limits. -->
+    <Parameter name="proxy.addresses" value="${X_PROXY_ADDRESSES}"/>
 </Context>
 XML
 # Tomcat runs unprivileged (like the Docker image). Create the service account and hand it the trees it
@@ -1246,5 +1255,10 @@ printf '  %sTomcat%s         %s (serving on :%s — front it with your TLS rever
 printf '  %sLocal URL%s      http://localhost:%s/\n' "$c_dim" "$c_reset" "$HTTP_PORT"
 printf '  %sUpdater%s        Settings -> Updates in the console (supervisor on loopback :9000; recovery page: curl 127.0.0.1:9000)\n' "$c_dim" "$c_reset"
 printf '  %sWebSockets%s     your TLS proxy MUST forward WebSocket upgrades for /agent/ws (instant commands; otherwise ~10 min polling)\n' "$c_dim" "$c_reset"
+if [ -n "$X_PROXY_ADDRESSES" ]; then
+  printf '  %sProxies%s        %s (proxy.addresses; set PROXY_ADDRESSES to change it)\n' "$c_dim" "$c_reset" "$X_PROXY_ADDRESSES"
+else
+  printf '  %sProxies%s        none listed: a TLS proxy on another host must be, or all its clients share one sign-in limit (PROXY_ADDRESSES=<its IP> on a re-run)\n' "$c_dim" "$c_reset"
+fi
 printf '\n  %sService: systemctl status %s   ·   logs: journalctl -u %s -f  /  %s/logs/%s\n' "$c_dim" "$SVC_UNIT" "$SVC_UNIT" "$CATALINA" "$c_reset"
 printf '  %sInstall log: %s%s\n\n' "$c_dim" "$LOGFILE" "$c_reset"

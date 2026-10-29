@@ -387,7 +387,6 @@ public class Customer implements Serializable {
                 ", name='" + name + '\'' +
                 ", email='" + email + '\'' +
                 ", description='" + description + '\'' +
-                ", filesDir='" + filesDir + '\'' +
                 ", master=" + master +
                 ", prefix=" + prefix +
                 ", deviceConfigurationId=" + deviceConfigurationId +
@@ -402,7 +401,6 @@ public class Customer implements Serializable {
                 ", pauseState=" + pauseState +
                 ", abandonState=" + abandonState +
                 ", signupStatus=" + signupStatus +
-                ", signupToken=" + signupToken +
                 '}';
     }
 }

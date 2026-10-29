@@ -14,6 +14,7 @@ import com.hmdm.rest.resource.support.ApkHashResolver;
 import com.hmdm.rest.resource.support.ConfigAppInstaller;
 import com.hmdm.rest.resource.support.ConfigReconciler;
 import com.hmdm.rest.resource.support.InstallHashes;
+import com.hmdm.rest.resource.support.KioskLockoutAlert;
 import com.hmdm.rest.resource.support.RolloutRequeuer;
 import com.hmdm.util.CryptoUtil;
 import org.junit.Before;
@@ -82,7 +83,7 @@ public class AgentDeliveryHashTest {
         };
         ConfigReconciler reconciler = new ConfigReconciler(null, null) {
             @Override public boolean reconcile(Device d, Set<String> t, String rev, String agentVersion,
-                                               String configAgentVersion, long now) { return false; }
+                                               String configAgentVersion, long now, long receivedAt) { return false; }
         };
         RolloutRequeuer requeuer = new RolloutRequeuer(null) {
             @Override public boolean requeue(Device d, long now) { return false; }
@@ -90,7 +91,8 @@ public class AgentDeliveryHashTest {
         String files = Files.createTempDirectory("files").toString();
         InstallHashes hashes = new InstallHashes(new ApkHashResolver(files, "https://mdm.example.com"), unsecureDAO);
         resource = new AgentResource(unsecureDAO, null, commands,
-                new ConfigAppInstaller(null, null, null, null), reconciler, requeuer, hashes);
+                new ConfigAppInstaller(null, null, null, null), reconciler, requeuer, hashes,
+                new KioskLockoutAlert(null, null, null));
     }
 
     private List<com.hmdm.rest.json.agent.AgentCommand> checkIn() {

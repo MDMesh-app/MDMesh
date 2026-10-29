@@ -26,10 +26,8 @@ public class LocalAuth implements HmdmAuthInterface {
 
     @Override
     public boolean authenticate(User user, String password) {
-        boolean match = PasswordUtil.passwordMatch(password, user.getPassword());
-        if (!match) {
-            userDAO.setUserLoginFailTime(user, System.currentTimeMillis());
-        }
-        return match;
+        // No write on a failure: a database round trip only for accounts that exist would tell them apart by timing,
+        // and nothing reads lastLoginFail since sign-in is limited by LoginThrottle.
+        return PasswordUtil.passwordMatch(password, user.getPassword());
     }
 }

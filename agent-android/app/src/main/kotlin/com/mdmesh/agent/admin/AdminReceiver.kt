@@ -10,6 +10,7 @@ import android.os.PersistableBundle
 import android.os.UserManager
 import com.mdmesh.agent.service.CheckInService
 import com.mdmesh.core.config.ServerConfigStore
+import com.mdmesh.core.location.LocationPermissions
 import com.mdmesh.core.store.EnrollTokenStore
 import com.mdmesh.core.sync.CheckInWorker
 import kotlinx.coroutines.CoroutineScope
@@ -112,14 +113,7 @@ class AdminReceiver : DeviceAdminReceiver() {
             val pkg = context.packageName
             if (!dpm.isDeviceOwnerApp(pkg)) return
             val admin = componentName(context)
-            val perms = mutableListOf(
-                android.Manifest.permission.ACCESS_FINE_LOCATION,
-                android.Manifest.permission.ACCESS_COARSE_LOCATION,
-            )
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                perms.add(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION)
-            }
-            perms.forEach { perm ->
+            LocationPermissions.forThisDevice().forEach { perm ->
                 runCatching {
                     dpm.setPermissionGrantState(
                         admin, pkg, perm, DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED,

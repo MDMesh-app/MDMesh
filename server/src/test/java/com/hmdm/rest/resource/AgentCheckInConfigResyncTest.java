@@ -16,6 +16,7 @@ import com.hmdm.rest.json.agent.AgentCommandResult;
 import com.hmdm.rest.json.agent.AgentDeviceState;
 import com.hmdm.rest.resource.support.ConfigReconciler;
 import com.hmdm.rest.resource.support.InstallHashes;
+import com.hmdm.rest.resource.support.KioskLockoutAlert;
 import com.hmdm.rest.resource.support.RolloutRequeuer;
 import com.hmdm.util.ConfigReconcileDecision;
 import com.hmdm.util.CryptoUtil;
@@ -45,6 +46,7 @@ public class AgentCheckInConfigResyncTest {
     private static final class FakeUnsecureDAO extends UnsecureDAO {
         Device device;
         Configuration configuration;
+        List<Application> apps = new ArrayList<>();
 
         FakeUnsecureDAO() {
             super(null, null, null, null, null, null, null, null, null, null, null, null, null, null, "/tmp", 0, "x");
@@ -53,7 +55,7 @@ public class AgentCheckInConfigResyncTest {
         @Override public Device getDeviceByNumber(String number) { return NUMBER.equals(number) ? device : null; }
         @Override public Configuration getConfigurationById(Integer id) { return configuration; }
         @Override public List<Application> getPlainConfigurationAppsOptimized(Integer configurationId) {
-            return Collections.emptyList();
+            return apps;
         }
     }
 
@@ -100,7 +102,17 @@ public class AgentCheckInConfigResyncTest {
         final List<com.hmdm.persistence.domain.DeviceLocation> locations = new ArrayList<>();
         @Override public void recordLocation(com.hmdm.persistence.domain.DeviceLocation l) { locations.add(l); }
 
-        @Override public void insert(AgentCommand c) { c.setId(commands.size() + 1); commands.add(c); }
+        /** Set to make the next insert fail like the one-open-config.apply unique index does. */
+        boolean nextInsertIsDuplicate;
+        @Override public void insert(AgentCommand c) {
+            if (nextInsertIsDuplicate) {
+                nextInsertIsDuplicate = false;
+                throw new org.apache.ibatis.exceptions.PersistenceException(new java.sql.SQLException(
+                        "duplicate key value violates unique constraint \"agentcommand_one_open_config_apply\"", "23505"));
+            }
+            c.setId(commands.size() + 1);
+            commands.add(c);
+        }
         @Override public List<AgentCommand> listPending(String n) {
             List<AgentCommand> out = new ArrayList<>();
             for (AgentCommand c : commands) if ("pending".equals(c.getStatus())) out.add(c);
@@ -110,12 +122,38 @@ public class AgentCheckInConfigResyncTest {
             AgentCommand c = commands.get(id - 1);
             if (!"pending".equals(c.getStatus())) return false;
             c.setStatus("delivered");
+            c.setDeliveredAt(at);
             return true;
         }
         @Override public void markResultWithTime(String n, Integer id, String status, String detail, Long at) {
             AgentCommand c = commands.get(id - 1);
+            // status NOT IN ('done','failed','unsupported'): a device result overwrites only an open or expired row
+            if ("done".equals(c.getStatus()) || "failed".equals(c.getStatus()) || "unsupported".equals(c.getStatus())) {
+                return;
+            }
             c.setStatus(status);
+            c.setDetail(detail);
             c.setCompletedAt(at);
+        }
+        @Override public int abandonDelivered(String n, String type, long deliveredBefore, long now, String detail) {
+            int ended = 0;
+            for (AgentCommand c : commands) {
+                if (type.equals(c.getType()) && "delivered".equals(c.getStatus()) && c.getDeliveredAt() != null
+                        && c.getDeliveredAt() < deliveredBefore) {
+                    c.setStatus("expired");
+                    c.setDetail(detail);
+                    c.setCompletedAt(now);
+                    ended++;
+                }
+            }
+            return ended;
+        }
+        @Override public List<AgentCommand> listLatestOfType(String n, String type, int limit) {
+            List<AgentCommand> out = new ArrayList<>();
+            for (int i = commands.size() - 1; i >= 0 && out.size() < limit; i--) {
+                if (type.equals(commands.get(i).getType())) out.add(commands.get(i));
+            }
+            return out;
         }
         @Override public boolean hasOpenOfType(String n, String type) {
             for (AgentCommand c : commands) {
@@ -159,7 +197,7 @@ public class AgentCheckInConfigResyncTest {
         };
         resource = new AgentResource(unsecureDAO, null, commandDAO, null,
                 new ConfigReconciler(unsecureDAO, commandDAO), noRollout,
-                new InstallHashes(null, unsecureDAO));
+                new InstallHashes(null, unsecureDAO), new KioskLockoutAlert(null, null, null));
     }
 
     /** One agent check-in; the agent acks every command it receives as done on the following check-in. */
@@ -321,6 +359,160 @@ public class AgentCheckInConfigResyncTest {
         req.setCapabilities(new AgentCapabilities(new ObjectMapper().readTree(CAPS)));
         Response r = resource.checkin("Bearer " + SECRET, null, req);
         assertEquals(0, ((AgentCheckInResponse) r.getData()).getCommands().size());
+    }
+
+    /** The agent's process ends while it runs what it was just handed: its result never comes. */
+    private AgentCommand agentDiesWithItsCommand() {
+        outbox.clear();
+        AgentCommand c = commandDAO.commands.get(commandDAO.commands.size() - 1);
+        c.setDeliveredAt(c.getDeliveredAt() - 1000L); // it checks in again a moment later
+        return c;
+    }
+
+    private String changeConfiguration() {
+        unsecureDAO.configuration.setDisableSafeBoot(false);
+        return DesiredConfigBuilder.build(unsecureDAO.configuration, Collections.<Application>emptyList()).getRevision();
+    }
+
+    private String revisionOf(com.hmdm.rest.json.agent.AgentCommand c) {
+        return c.getPayload().get("revision").asText();
+    }
+
+    @Test
+    public void a_config_apply_the_agent_never_finished_does_not_hold_back_a_newer_configuration() throws Exception {
+        assertEquals(1, checkIn("0.3.5", null).size());
+        AgentCommand lost = agentDiesWithItsCommand();
+        String newer = changeConfiguration();
+
+        // The restarted agent checks in without a result: the old command is ended and the new revision goes out now,
+        // not after the 6 h delivered lease.
+        List<com.hmdm.rest.json.agent.AgentCommand> got = checkIn("0.3.5", null);
+        assertEquals(1, got.size());
+        assertEquals(newer, revisionOf(got.get(0)));
+        assertEquals("expired", lost.getStatus());
+        assertEquals(ConfigReconcileDecision.ABANDONED_DETAIL, lost.getDetail());
+        assertNull("nothing is marked applied for the device", commandDAO.getState(NUMBER).getAppliedConfigRevision());
+
+        assertEquals("acked, and in sync from then on", 0, checkIn("0.3.5", newer).size());
+        assertEquals(0, checkIn("0.3.5", newer).size());
+        assertEquals(2, configApplies());
+    }
+
+    @Test
+    public void a_restart_mid_apply_gets_the_same_revision_again_once_then_the_backoff() throws Exception {
+        checkIn("0.3.5", null);
+        agentDiesWithItsCommand();
+        List<com.hmdm.rest.json.agent.AgentCommand> again = checkIn("0.3.5", null);
+        assertEquals("sent again at once", 1, again.size());
+        assertEquals(revision, revisionOf(again.get(0)));
+
+        // It dies again (a document that kills the agent, say): no re-send on every check-in.
+        AgentCommand second = agentDiesWithItsCommand();
+        assertEquals(0, checkIn("0.3.5", null).size());
+        assertEquals(0, checkIn("0.3.5", null).size());
+        assertEquals(2, configApplies());
+
+        moveBackBeyondBackoff(second);
+        assertEquals("retried after the backoff", 1, checkIn("0.3.5", null).size());
+    }
+
+    @Test
+    public void a_late_result_for_an_abandoned_command_is_recorded_and_changes_nothing_else() throws Exception {
+        checkIn("0.3.5", null);
+        AgentCommand lost = agentDiesWithItsCommand();
+        String newer = changeConfiguration();
+        assertEquals(1, checkIn("0.3.5", null).size());
+        AgentCommand current = commandDAO.commands.get(1);
+        assertEquals(newer, ConfigReconcileDecision.revisionOf(current));
+
+        // The old command's result turns up after all (it had finished; the ack was held back), next to the new one's.
+        AgentCommandResult late = new AgentCommandResult();
+        late.setCommandId(String.valueOf(lost.getId()));
+        late.setStatus("done");
+        outbox.add(0, late);
+        assertEquals(0, checkIn("0.3.5", newer).size());
+        assertEquals("the device's own report wins over the server's guess", "done", lost.getStatus());
+        assertEquals("done", current.getStatus());
+        assertEquals("the applied revision is only ever what the agent reports", newer,
+                commandDAO.getState(NUMBER).getAppliedConfigRevision());
+        assertEquals(0, checkIn("0.3.5", newer).size());
+        assertEquals(2, configApplies());
+    }
+
+    @Test
+    public void a_late_failure_for_an_abandoned_command_does_not_trigger_anything() throws Exception {
+        checkIn("0.3.5", null);
+        AgentCommand lost = agentDiesWithItsCommand();
+        assertEquals(1, checkIn("0.3.5", null).size()); // the quick re-send of the same revision
+        AgentCommandResult late = new AgentCommandResult();
+        late.setCommandId(String.valueOf(lost.getId()));
+        late.setStatus("failed");
+        outbox.add(0, late);
+        assertEquals(0, checkIn("0.3.5", revision).size());
+        assertEquals("failed", lost.getStatus());
+        assertEquals(revision, commandDAO.getState(NUMBER).getAppliedConfigRevision());
+        assertEquals(2, configApplies());
+    }
+
+    @Test
+    public void a_check_in_that_reached_the_server_before_the_delivery_ends_nothing() throws Exception {
+        // Two requests of one device overlapping on the server: the delivery happened after this one arrived, so this
+        // check-in says nothing about whether the agent runs the command.
+        checkIn("0.3.5", null);
+        AgentCommand inFlight = commandDAO.commands.get(0);
+        outbox.clear();
+        inFlight.setDeliveredAt(System.currentTimeMillis() + 60_000L);
+        changeConfiguration();
+        assertEquals(0, checkIn("0.3.5", null).size());
+        assertEquals("delivered", inFlight.getStatus());
+        assertEquals(1, configApplies());
+    }
+
+    @Test
+    public void an_in_sync_check_in_leaves_a_delivered_command_alone() throws Exception {
+        checkIn("0.3.5", null);
+        AgentCommand c = agentDiesWithItsCommand();
+        // It had applied the document; only the result was lost. Nothing to do, and no extra work on the hot path.
+        assertEquals(0, checkIn("0.3.5", revision).size());
+        assertEquals("delivered", c.getStatus());
+    }
+
+    @Test
+    public void a_config_apply_another_check_in_queued_first_is_not_an_error() throws Exception {
+        commandDAO.nextInsertIsDuplicate = true;
+        assertEquals(0, checkIn("0.3.5", null).size());
+        assertEquals(0, configApplies());
+        assertEquals("queued on the next check-in", 1, checkIn("0.3.5", null).size());
+    }
+
+    private static Application installed(String pkg) {
+        Application a = new Application();
+        a.setPkg(pkg);
+        a.setAction(1);
+        a.setShowIcon(true);
+        return a;
+    }
+
+    @Test
+    public void an_app_linked_to_a_kiosk_configuration_reaches_the_device_on_its_next_check_in() throws Exception {
+        // What the wake after an Apps-page link edit leads to: the kiosk's allowed apps are part of the revision.
+        unsecureDAO.configuration.setKioskMode(true);
+        String kiosk = DesiredConfigBuilder.build(unsecureDAO.configuration, unsecureDAO.apps).getRevision();
+        checkIn("0.3.5", null);
+        assertEquals(0, checkIn("0.3.5", kiosk).size());
+
+        unsecureDAO.apps.add(installed("com.example.shop"));
+        List<com.hmdm.rest.json.agent.AgentCommand> got = checkIn("0.3.5", kiosk);
+        assertEquals(1, got.size());
+        assertEquals("com.example.shop", got.get(0).getPayload().path("kiosk").path("allowedPackages").path(0).asText());
+    }
+
+    @Test
+    public void app_links_are_not_part_of_a_configuration_without_kiosk() throws Exception {
+        checkIn("0.3.5", null);
+        unsecureDAO.apps.add(installed("com.example.shop"));
+        assertEquals("app installs go out as app.install (enrollment, Sync apps), not config.apply", 0,
+                checkIn("0.3.5", revision).size());
     }
 
     /** A check-in from an agent that (whatever its mode) still reports a location fix in its telemetry. */

@@ -39,7 +39,7 @@ angular.module('plugin-messaging', ['ngResource', 'ui.bootstrap', 'ui.router', '
     })
     .factory('pluginMessagingService', function ($resource) {
         return $resource('', {}, {
-            purgeOldMessages: {url: 'rest/plugins/messaging/private/purge/:days', method: 'GET'},
+            purgeOldMessages: {url: 'rest/plugins/messaging/private/purge/:days', method: 'POST'},
             getMessages: {url: 'rest/plugins/messaging/private/search', method: 'POST'},
             sendMessage: {url: 'rest/plugins/messaging/private/send', method: 'POST'},
             deleteMessage: {url: 'rest/plugins/messaging/private/:id', method: 'DELETE'},
@@ -260,7 +260,7 @@ angular.module('plugin-messaging', ['ngResource', 'ui.bootstrap', 'ui.router', '
                 $scope.errorMessage = localization.localize('plugin.messaging.settings.enter.number');
             }
 
-            pluginMessagingService.purgeOldMessages({"days": $scope.settings.messagingPurgePeriod}, function (response) {
+            pluginMessagingService.purgeOldMessages({"days": $scope.settings.messagingPurgePeriod}, {}, function (response) {
                 if (response.status === 'OK') {
                     $scope.successMessage = localization.localize('plugin.messaging.settings.message.purge.success');
                 } else {

@@ -107,6 +107,7 @@ public class AgentResource {
     private com.hmdm.rest.resource.support.ConfigReconciler configReconciler;
     private com.hmdm.rest.resource.support.RolloutRequeuer rolloutRequeuer;
     private com.hmdm.rest.resource.support.InstallHashes installHashes;
+    private com.hmdm.rest.resource.support.KioskLockoutAlert kioskLockoutAlert;
 
     /**
      * <p>A constructor required by Swagger.</p>
@@ -121,7 +122,8 @@ public class AgentResource {
                          com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller,
                          com.hmdm.rest.resource.support.ConfigReconciler configReconciler,
                          com.hmdm.rest.resource.support.RolloutRequeuer rolloutRequeuer,
-                         com.hmdm.rest.resource.support.InstallHashes installHashes) {
+                         com.hmdm.rest.resource.support.InstallHashes installHashes,
+                         com.hmdm.rest.resource.support.KioskLockoutAlert kioskLockoutAlert) {
         this.unsecureDAO = unsecureDAO;
         this.tokenDAO = tokenDAO;
         this.commandDAO = commandDAO;
@@ -129,6 +131,7 @@ public class AgentResource {
         this.configReconciler = configReconciler;
         this.rolloutRequeuer = rolloutRequeuer;
         this.installHashes = installHashes;
+        this.kioskLockoutAlert = kioskLockoutAlert;
     }
 
     // =================================================================================================================
@@ -251,6 +254,10 @@ public class AgentResource {
             return Response.ERROR("error.agent.unauthorized");
         }
 
+        // Before any result is recorded: a config.apply delivered before this moment and still open afterwards is
+        // one the agent is not running (ConfigReconciler).
+        long receivedAt = System.currentTimeMillis();
+
         // Stamp last-seen so the admin UI shows the device online.
         commandDAO.touchLastUpdate(deviceNumber);
 
@@ -336,6 +343,7 @@ public class AgentResource {
                     detail = detail.substring(0, MAX_EVENT_DETAIL_CHARS);
                 }
                 commandDAO.insertEvent(deviceNumber, e.getType(), ts, detail);
+                kioskLockoutAlert.onEvent(device, e.getType(), detail);
             }
         }
 
@@ -408,7 +416,8 @@ public class AgentResource {
 
         // Desired-state reconciliation: queue config.apply when the device drifted from its configuration (or now
         // runs a different agent version), so the command rides THIS response instead of waiting for the next cycle.
-        configReconciler.reconcile(device, deviceTokens, appliedRevision, agentVersion, configAgentVersion, now);
+        configReconciler.reconcile(device, deviceTokens, appliedRevision, agentVersion, configAgentVersion, now,
+                receivedAt);
         // A staged agent update whose command expired (its result was lost) or was never queued: queue it again here.
         rolloutRequeuer.requeue(device, now);
 
@@ -577,41 +586,11 @@ public class AgentResource {
     }
 
     /**
-     * The device's public IP as seen by the server. Forwarding headers are client-controllable,
-     * so they're honored ONLY when the direct peer is a local/private address — i.e. our own
-     * fronting proxy (Caddy/cloudflared on this host or LAN). A device reaching Tomcat directly
-     * cannot forge the recorded publicIp.
+     * The device's public IP as seen by the server: a forwarding header only from the install's own proxy (a loopback
+     * or private peer), else the peer itself. {@link com.hmdm.util.ClientAddress} has the rule; a device reaching
+     * Tomcat directly cannot forge the recorded publicIp.
      */
-    private static String clientIp(javax.servlet.http.HttpServletRequest request) {
-        if (request == null) {
-            return null;
-        }
-        String remote = request.getRemoteAddr();
-        if (isLocalOrPrivate(remote)) {
-            String cf = request.getHeader("CF-Connecting-IP");
-            if (cf != null && !cf.trim().isEmpty()) {
-                return cf.trim();
-            }
-            String xff = request.getHeader("X-Forwarded-For");
-            if (xff != null && !xff.trim().isEmpty()) {
-                // First hop is the original client.
-                return xff.split(",")[0].trim();
-            }
-        }
-        return remote;
-    }
-
-    /** Loopback / RFC1918 / link-local / IPv6 ULA — the address space our own proxy lives in. */
-    private static boolean isLocalOrPrivate(String addr) {
-        if (addr == null) {
-            return false;
-        }
-        try {
-            java.net.InetAddress a = java.net.InetAddress.getByName(addr);
-            return a.isLoopbackAddress() || a.isSiteLocalAddress() || a.isLinkLocalAddress()
-                    || (a.getAddress().length == 16 && (a.getAddress()[0] & 0xfe) == 0xfc);
-        } catch (Exception e) {
-            return false;
-        }
+    static String clientIp(javax.servlet.http.HttpServletRequest request) {
+        return com.hmdm.util.ClientAddress.of(request);
     }
 }

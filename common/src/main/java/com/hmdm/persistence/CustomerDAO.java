@@ -33,6 +33,7 @@ import com.hmdm.persistence.mapper.ApplicationMapper;
 import com.hmdm.persistence.mapper.DeviceMapper;
 import com.hmdm.rest.json.CustomerSearchRequest;
 import com.hmdm.rest.json.PaginatedData;
+import com.hmdm.util.PasswordResetTokens;
 import com.hmdm.util.PasswordUtil;
 import org.mybatis.guice.transactional.Transactional;
 import org.slf4j.Logger;
@@ -115,7 +116,6 @@ public class CustomerDAO {
                         walk
                                 .sorted(Comparator.reverseOrder())
                                 .map(Path::toFile)
-                                .peek(System.out::println)
                                 .forEach(File::delete);
                     } catch (IOException e) {
                         log.error("Failed to delete the customer's files directory {} due to unexpected error",
@@ -198,7 +198,7 @@ public class CustomerDAO {
             user.setAuthToken(PasswordUtil.generateToken());
             if (masterSettings.isPasswordReset()) {
                 user.setPasswordReset(true);
-                user.setPasswordResetToken(PasswordUtil.generateToken());
+                PasswordResetTokens.issue(user, System.currentTimeMillis());
             }
             user.setLogin(transliterate(customer.getName()));
             user.setName(customer.getMainUserName());
@@ -207,7 +207,7 @@ public class CustomerDAO {
 
             userDAO.insert(user);
             log.info("Created customer account: {}", customer);
-            log.info("Created customer admin account: {}/{}", user.getLogin(), password);
+            log.info("Created customer admin account: {}", user.getLogin());
 
             // Copy design settings if required
             Settings customerSettings = new Settings();
@@ -361,6 +361,9 @@ public class CustomerDAO {
     }
 
     public Customer findByIdForUpdate(int customerId) {
+        if (!SecurityContext.get().isSuperAdmin()) {
+            throw SecurityException.onAdminDataAccessViolation("get customer account with ID " + customerId);
+        }
         return mapper.findCustomerByIdForUpdate(customerId);
     }
 
@@ -370,6 +373,9 @@ public class CustomerDAO {
      * @return <code>true</code> if prefix is already used; <code>false</code> otherwise.
      */
     public boolean isPrefixUsed(String prefix) {
+        if (!SecurityContext.get().isSuperAdmin()) {
+            throw SecurityException.onAdminDataAccessViolation("check customer prefix " + prefix);
+        }
         return mapper.isPrefixUsed(prefix);
     }
 

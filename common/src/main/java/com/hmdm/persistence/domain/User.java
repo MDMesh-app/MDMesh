@@ -21,6 +21,7 @@
 
 package com.hmdm.persistence.domain;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.annotations.ApiModel;
@@ -64,6 +65,16 @@ public class User implements CustomerData, Serializable {
     @ApiModelProperty("Password reset token")
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String passwordResetToken;
+    /** When {@link #passwordResetToken} was issued (ms since epoch); see PasswordResetTokens. Never in JSON. */
+    @JsonIgnore
+    private Long passwordResetTokenTime;
+    /**
+     * Transient, set by the server in its answers (UnsecureDAO.mayManageDeployment): whether this user may apply,
+     * roll back or schedule updates of the deployment. The updater reads it from GET /private/users/current.
+     */
+    @ApiModelProperty("May manage the deployment's updates (a transient parameter, no db entry)")
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private Boolean deploymentAdmin;
     @ApiModelProperty("Third party authentication data")
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String authData;
@@ -238,6 +249,22 @@ public class User implements CustomerData, Serializable {
 
     public void setPasswordResetToken(String passwordResetToken) {
         this.passwordResetToken = passwordResetToken;
+    }
+
+    public Boolean getDeploymentAdmin() {
+        return deploymentAdmin;
+    }
+
+    public void setDeploymentAdmin(Boolean deploymentAdmin) {
+        this.deploymentAdmin = deploymentAdmin;
+    }
+
+    public Long getPasswordResetTokenTime() {
+        return passwordResetTokenTime;
+    }
+
+    public void setPasswordResetTokenTime(Long passwordResetTokenTime) {
+        this.passwordResetTokenTime = passwordResetTokenTime;
     }
 
     public String getAuthData() {

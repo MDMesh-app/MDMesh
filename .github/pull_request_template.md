@@ -6,6 +6,11 @@
 
 Closes #
 
+## Changelog
+
+<!-- The line this adds under Unreleased in CHANGELOG.md, written for operators, and its section
+     (Upgrading, Heads-up, New, Fixes, Under the hood). Or "none". -->
+
 ## Type of change
 
 - [ ] 🐞 Bug fix

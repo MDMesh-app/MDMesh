@@ -26,10 +26,15 @@ run: only `GITHUB_REPO` and `GITHUB_TOKEN` survive a hand edit there (a hand-edi
 | `SERVER_JAVA_OPTS` | `.env` (native: `JAVA_OPTS` in a `systemctl edit mdmesh-server` drop-in) | empty | Extra JVM flags, e.g. `-Xmx1g`. |
 | `LEGACY_DEVICE_API` | `.env`; native env → `ROOT.xml` | `0` | `1` re-enables the Headwind launcher's device routes. |
 | `SECURE_ENROLLMENT` | `.env`; native: always `0` | `0` | Legacy Headwind setting. Leave it at `0`: `1` blocks agent downloads. |
-| `SMTP_HOST`, `SMTP_PORT` | `.env`; native env → `ROOT.xml` | empty, `25` | Mail server for password recovery. Empty host: no email. |
+| `SMTP_HOST`, `SMTP_PORT` | `.env`; native env → `ROOT.xml` | empty, `25` | Mail server for password recovery and kiosk alerts. Empty host: no email. |
 | `SMTP_FROM` | same | `mdm@<hostname>` (Docker), `mdm@localhost` (native) | Sender address. |
 | `SMTP_USERNAME`, `SMTP_PASSWORD` | same | empty | Mail login. |
 | `SMTP_SSL`, `SMTP_STARTTLS` | same | `false` | `SMTP_SSL=true` for port 465, `SMTP_STARTTLS=true` for 587. |
+
+**Kiosk alerts.** When too many wrong exit PINs lock a device's kiosk exit (agent 0.3.6 or later), the server emails
+the users of that device's customer who have an email address, may edit devices (or are super-admins) and can see the
+device (all devices, or one of its device groups). At most one alert per device, and ten per customer, per hour.
+This needs `SMTP_HOST`; without it the lockout only shows in the device's events.
 
 The wizard writes `SITE_ADDRESS`, `ACME_EMAIL` and `TUNNEL_TOKEN` for the hosting mode you choose.
 
@@ -168,6 +173,167 @@ host check `curl -fsS 127.0.0.1:9000/healthz` or `systemctl is-active mdmesh-sup
 before v0.3.2 serves the console on these paths until you
 [re-run the installer](UPGRADING.md#native-installs).
 
+## Device public address
+
+A device page shows the public IP the device last checked in from. The server reads it from a header only when the
+request comes from a loopback or private address, which it takes to be your proxy. From such a peer, the server takes,
+in order:
+
+1. `CF-Connecting-IP`, which Cloudflare sets.
+2. Otherwise the **last** `X-Forwarded-For` entry, the one your proxy added. Earlier entries are whatever the device
+   sent.
+3. Otherwise the peer's own address.
+
+A value that isn't an IP address is ignored. A request from any other address is recorded at that address.
+
+**Docker:** Caddy sets these headers. It sends the server one `X-Forwarded-For` value, its own view of the client,
+and drops any `CF-Connecting-IP` a device sends.
+
+- **Cloudflare mode:** Caddy takes the client's address from cloudflared's `CF-Connecting-IP`. The mode publishes no
+  ports, so devices reach Caddy only through the tunnel. Caddy knows the mode from `COMPOSE_PROFILES=cloudflare` in
+  `.env`, which the installers write. A quick-start install from before v0.3.5 keeps its old `docker-compose.yml`
+  through updates, which doesn't pass that variable, so Caddy looks for the `cloudflared` container instead. To pass it,
+  add `COMPOSE_PROFILES: ${COMPOSE_PROFILES:-}` under `caddy:` → `environment:` in that file.
+- **Own domain and the dev stack:** nothing a device sends is believed.
+
+**Native installs:** keep Tomcat's port (`HTTP_PORT`, default `8080`) reachable only by your proxy. A device on a
+private network that reaches it directly is trusted like a proxy, so it can set its own address. Either firewall the
+port, or bind it to loopback: in `/opt/mdmesh-tc/conf/server.xml`, add `address="127.0.0.1"` to the HTTP connector,
+after `protocol="HTTP/1.1"` (installer re-runs keep it there), then run `systemctl restart mdmesh-server`.
+
+Your proxy must also set the headers itself and not pass on what the device sent:
+
+- Overwrite `X-Forwarded-For` with the address the proxy sees; don't append to it. (The server reads the last entry,
+  so a proxy that appends still gets the right address recorded, but overwriting leaves a device nothing to set.)
+- Remove `CF-Connecting-IP`, unless the proxy is cloudflared, or sits behind Cloudflare and accepts connections only
+  from Cloudflare. Otherwise a client that bypasses Cloudflare can set it.
+- Overwrite `X-Real-IP` the same way. Code inherited from Headwind reads it from a proxy on the same host (or one
+  listed in `proxy.addresses`): the IP allowlists `ui.allowed.address` and `device.allowed.address`, and the audit log.
+  An allowlist blocks a request whose `X-Real-IP` isn't an IP address.
+- Behind a load balancer, have nginx take the client's address from it first (`set_real_ip_from <balancer address>;`
+  and `real_ip_header X-Forwarded-For;`), so `$remote_addr` below is the client, not the balancer.
+
+nginx:
+
+```nginx
+proxy_set_header X-Forwarded-For  $remote_addr;
+proxy_set_header X-Real-IP        $remote_addr;
+proxy_set_header CF-Connecting-IP "";
+```
+
+Caddy:
+
+```caddyfile
+reverse_proxy 127.0.0.1:8080 {
+	header_up X-Forwarded-For {client_ip}
+	header_up X-Real-IP {client_ip}
+	header_up -CF-Connecting-IP
+}
+```
+
+## Sign-in limits
+
+Failed sign-ins are limited, for the console (`/rest/public/auth/login`), API clients (`/rest/public/jwt/login`) and
+the current-password check of a password or e-mail change (`/rest/private/users`), all together. A refused attempt
+isn't checked, even with the right password. Every refusal looks the same, whichever limit refused: the console says
+"Too many failed sign-ins"; the API answers `429` with `Retry-After: 900` (the 15-minute window; try again then).
+
+Each attempt is counted under the first of these that applies:
+
+- **Known browser.** Every completed sign-in, console or API, sets a cookie (`MDMESH_SIGNIN`, HttpOnly,
+  SameSite=Strict, sent only to `/rest/public`, 30 days, Secure when `BASE_URL` is https) that names the account. A
+  browser or API client that sends it back has its own limit: 10 failures in 15 minutes.
+- **Known address.** An address that completed a sign-in to the account in the last 30 days (up to 16 per account)
+  has its own limit for that account: 10 failures in 15 minutes. These failures don't count toward the account's
+  limit below; they come on top of it. So someone at an address you signed in from (a shared office NAT, say) gets 10
+  guesses per 15 minutes in addition to the account's 20: at most 20 + 10 per known address, 180 with all 16.
+- **Anything else.** Per address: 10 failures in 15 minutes, and 50 in 6 hours, across all accounts. Per account: 20
+  failures in 15 minutes, from all addresses together. While an account is over that limit, new browsers on new
+  addresses are refused for it, even with the right password.
+
+So someone failing sign-ins for your account locks out only browsers and addresses new to it. Your browser, your
+office or home, and the host your API client runs on keep signing in. A sign-in that names no account is limited the
+same way as one that does, so a refusal doesn't tell whether the account exists.
+
+An IPv6 address counts by its /56, so a household or a small site is one address and shares its limit. The limits
+are held in memory, at most 20,000 addresses, accounts, browsers and known addresses each. A flood of new addresses
+past that shares one coarse limit instead of being let through, so during such a flood new addresses can be refused
+more often, never less. Known browsers and known addresses aren't affected. Logins that name no account share 4,096
+counters, so a flood of made-up names can't fill memory or lock out a real account.
+
+Every attempt, refused or not, first looks the login up in the database. The limit doesn't shield the database from a
+flood of requests; a rate limit at your proxy does.
+
+### During an attack
+
+- Sign in from a browser or an address you signed in from before. Each limit lifts by itself as failures age out of
+  its window: a new browser on a new address waits until the attack has paused for 15 minutes.
+- A restart clears every limit at once (`docker compose restart server`; native: `systemctl restart mdmesh-server`).
+  It also forgets the known addresses, which become known again at their next sign-in. Known-browser cookies stay
+  valid.
+- API clients: keep the `MDMESH_SIGNIN` cookie from a sign-in and send it with the next one (for example
+  `curl -c jar -b jar`), or sign in from the same host each time.
+
+### The key that signs the cookies
+
+The cookies are signed with a key derived from the API signing key (`jwt.secretkey`, see
+[API signing key](#api-signing-key-jwt)) with HMAC and a fixed label. They stay valid across restarts and upgrades.
+Changing the API signing key (a new `SERVER_JWT_SECRET`, `docker compose down -v`, or a new `jwt.secretkey`) makes every
+cookie invalid, as it signs out every API client. A server with no `jwt.secretkey` of at least 32 characters (a dev
+setup from source) uses a key of its own process, logs a warning, and forgets every browser when it restarts.
+
+### The client address
+
+The address is the one your proxy reports in `X-Forwarded-For` (its last entry), never `CF-Connecting-IP`:
+
+- **Docker:** Caddy's view of the client, in every hosting mode.
+- **Native:** believed only from a proxy on loopback (the same host, not in a container), or one whose address you
+  list in `proxy.addresses`: run the installer with `PROXY_ADDRESSES=192.168.1.2` (comma-separated for several), or
+  edit `<Parameter name="proxy.addresses" value="192.168.1.2"/>` in `ROOT.xml` and restart the server. Installer
+  re-runs keep it. Write each address as Tomcat reports it: an IPv4 address as usual, an IPv6 one in full, uncompressed
+  form (`2001:db8:0:0:0:0:0:2`); no ranges. Any other client is limited by its own address, whatever it sends: on a
+  LAN-only install with no proxy, each browser on the LAN counts on its own.
+
+Two setups make every client look alike. The server logs a warning the first time it sees each one:
+
+- **A proxy that isn't listed** in `proxy.addresses`: on another host, or in a container on this one. This is the
+  expected effect of a missing entry: the server takes the proxy for a single client, so every client behind it
+  shares the proxy's address limit, and 10 failed sign-ins from anyone refuse every new browser for 15 minutes
+  (longer once there have been 50 in 6 hours). Browsers and addresses that signed in before keep signing in. The log names each such
+  peer: `A sign-in from <proxy> carried X-Forwarded-For, but <proxy> is not a trusted proxy`. Add that address to
+  `proxy.addresses` and restart the server. The server doesn't guess that a private peer sending the header is a
+  proxy: any LAN client can send one, and it would then pick its own address.
+- **A proxy that sends no `X-Forwarded-For`.** The server can't tell the clients behind it apart and limits by account
+  only. Set the header as in [Device public address](#device-public-address).
+
+**A CDN or another proxy in front of Docker's Caddy** (Cloudflare's proxy in own-domain mode, a load balancer): Caddy
+believes `X-Forwarded-For` only from the addresses in `TRUSTED_PROXIES`, by default none. Without them, Caddy reports
+the CDN as the client, and every client shares one address. Add the CDN's ranges, space-separated, to `.env` in the
+install directory, then run `docker compose up -d caddy`:
+
+```bash
+TRUSTED_PROXIES="173.245.48.0/20 103.21.244.0/22 2400:cb00::/32"
+```
+
+That line is an example: for Cloudflare, list every range on <https://www.cloudflare.com/ips/>, and update the list
+when Cloudflare changes it. The compose file passes `TRUSTED_PROXIES` from `.env` to the `caddy` service from v0.3.9
+on. Updates don't change your compose file, so on an install set up before v0.3.9, check with
+`grep TRUSTED_PROXIES docker-compose.yml`: if nothing is found, add this line under `caddy:` → `environment:`,
+indented like the lines there:
+
+```yaml
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+```
+
+The Cloudflare tunnel mode needs none of this: Caddy reads cloudflared's `CF-Connecting-IP` there.
+
+**IPv6 clients of a Docker own-domain install.** Docker's networks are IPv4-only by default. A client that connects
+to the host over IPv6 then reaches Caddy through Docker's port proxy, from the network's gateway address (such as
+`172.18.0.1`), so Caddy and the server see every IPv6 client as that one address, and all of them share one address
+limit. Nothing logs this. If your domain has an AAAA record, either turn on IPv6 for the stack's network
+(Docker's [IPv6 guide](https://docs.docker.com/engine/daemon/ipv6/)), or remove the AAAA record so clients use IPv4.
+The Cloudflare tunnel mode is not affected.
+
 ## Backups and restore
 
 **Docker.** One-click updates dump the database first, and a rollback restores that dump
@@ -201,6 +367,82 @@ PGPASSWORD="$(setpriv --reuid=mdmesh --regid=mdmesh --init-groups \
 
 The installer and uninstaller print this command next to each dump they write. To restore an uninstall dump, install
 again first.
+
+## Removing a customer
+
+A single-customer install has no super-admin, so the console can't delete a customer. To remove one, for example one
+the self-signup API made before 0.3.8 ([Upgrading](UPGRADING.md#customers-you-didnt-create)), follow these steps
+once per customer. The SQL deletes the customer with its users, devices, configurations, applications, groups,
+uploaded-file records, settings and plugin data, and the agent data of its devices. It runs in one transaction, so if
+any statement fails, nothing changes. It refuses customer 1. It keeps the customer's rows in `plugin_audit_log`, a
+record of what the account did that nothing else reads.
+
+1. Dump the database ([Backups and restore](#backups-and-restore)). Then, in the install directory (Docker) or as
+   root (native), set up the `psql` command, which runs as the `mdmesh` role:
+
+   ```bash
+   PSQL=(docker compose exec -T postgres psql -X -U mdmesh -d mdmesh)              # Docker
+   export PGPASSWORD="$(setpriv --reuid=mdmesh --regid=mdmesh --init-groups \
+     sed -n 's/.*name="JDBC.password" value="\([^"]*\)".*/\1/p' \
+     /opt/mdmesh-tc/conf/Catalina/localhost/ROOT.xml | head -n1)"                  # native: these two lines
+   PSQL=(psql -h 127.0.0.1 -p 5432 -U mdmesh -d mdmesh -X)
+   ```
+
+2. Find the customer's `id`:
+
+   ```bash
+   "${PSQL[@]}" -c "SELECT c.id, c.name, c.email, to_timestamp(c.registrationTime / 1000) AS created,
+     to_timestamp(c.lastLoginTime / 1000) AS last_sign_in,
+     (SELECT string_agg(u.login, ', ') FROM users u WHERE u.customerId = c.id) AS logins,
+     (SELECT count(*) FROM devices d WHERE d.customerId = c.id) AS devices
+     FROM customers c WHERE c.id > 1 ORDER BY c.id"
+   ```
+
+   To see what the account did (here customer 5):
+   `"${PSQL[@]}" -c "SELECT to_timestamp(createTime / 1000), login, action, ipAddress FROM plugin_audit_log WHERE customerId = 5 ORDER BY createTime"`.
+3. Save this as `remove-customer.sql`:
+
+   ```sql
+   SELECT count(*) = 1 AS found FROM customers WHERE id = :cid AND id > 1 AND NOT master \gset
+   \if :found
+   SELECT filesDir AS files_dir FROM customers WHERE id = :cid
+     AND filesDir ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+   CREATE TEMP TABLE gone ON COMMIT DROP AS SELECT number FROM devices WHERE customerId = :cid;
+   DELETE FROM agentCommand WHERE deviceNumber IN (SELECT number FROM gone);
+   DELETE FROM device_state WHERE deviceNumber IN (SELECT number FROM gone);
+   DELETE FROM device_event WHERE deviceNumber IN (SELECT number FROM gone);
+   DELETE FROM device_location WHERE deviceNumber IN (SELECT number FROM gone);
+   DELETE FROM agentRolloutCanary WHERE rolloutId IN (SELECT id FROM agentRollout WHERE customerId = :cid);
+   DELETE FROM agentRollout WHERE customerId = :cid;
+   DELETE FROM agentEnrollmentToken WHERE customerId = :cid;
+   DELETE FROM configurations WHERE customerId = :cid;
+   DELETE FROM customers WHERE id = :cid AND id > 1 AND NOT master;
+   \else
+   \echo 'No customer with that id above 1: nothing changed.'
+   \endif
+   ```
+
+   The agent tables and enrollment tokens name devices and customers without a foreign key, so they go first.
+   Configurations go before the customer because they point at its application versions with `ON DELETE RESTRICT`.
+   Deleting the customer removes the rest through `ON DELETE CASCADE`.
+4. Stop the server (`docker compose stop server`, or `systemctl stop mdmesh-server`), then run the file with the
+   customer's id:
+
+   ```bash
+   "${PSQL[@]}" -v ON_ERROR_STOP=1 --single-transaction -v cid=5 < remove-customer.sql
+   ```
+
+5. Start the server again: `docker compose start server`, or `systemctl start mdmesh-server`.
+6. If step 4 printed a `files_dir`, delete that directory. `${DIR:?}` refuses an empty name, which would delete every
+   customer's files:
+
+   ```bash
+   DIR=<files_dir>
+   docker compose exec -T server rm -r -- "/opt/mdmesh/files/${DIR:?}"     # native: rm -r -- "/opt/mdmesh/files/${DIR:?}"
+   ```
+
+The removed customer's users are signed out, since every request re-reads its user. Once no customer above id 1 is
+left, the server logs no `SECURITY:` lines about customers at startup, and the install's org admin can update again.
 
 ## Moving to a new BASE_URL
 
@@ -250,7 +492,13 @@ It never touches apt packages, your proxy or the git checkout.
   admin no password works for, until an installer (or `scripts/dev-seed.sh`) sets one.
 - The Headwind launcher endpoints are off by default (404). MQTT push is off; agents are woken over a WebSocket.
 - The supervisor mounts the Docker socket, so it is trusted. It acts only on minisign-verified manifests and on
-  authorized callers (an admin session or the recovery token). Apply and rollback only recreate `server` and `caddy`.
+  authorized callers (the recovery token, or the session of an admin who may update: a super-admin, or the org admin
+  of a single-customer install). Apply and rollback only recreate `server` and `caddy`.
+- Setting a password ends that account's other sessions and API tokens. Password reset links work once, for 24 hours.
+- The console session cookie is `SameSite=Lax`, and `Secure` when `BASE_URL` is https.
+- Failed sign-ins are limited per address and per account ([Sign-in limits](#sign-in-limits)).
+- Responses carry no-framing, `nosniff`, `Referrer-Policy` and, on https, HSTS headers. A request path with a `;` or
+  an encoded separator or dot is refused (400).
 
 ### Native installs
 
@@ -264,7 +512,12 @@ It never touches apt packages, your proxy or the git checkout.
 ### API signing key (JWT)
 
 This key signs tokens for REST API clients (`/rest/public/jwt/login`); the console uses a session cookie. It is
-generated once and kept, so tokens survive restarts and upgrades.
+generated once and kept, so tokens survive restarts and upgrades. The sign-in limit's known-browser cookies are signed
+with a key derived from it, so changing it also makes every browser and API client new to that limit
+([Sign-in limits](#sign-in-limits)).
+
+A token sign-in also sets the `MDMESH_SIGNIN` cookie. An API client that keeps cookies and sends it with its next
+sign-in keeps signing in while someone else's failed sign-ins limit the account.
 
 - **Docker:** the key is kept in the server's data volume at `/opt/mdmesh/jwt.secret`, so `docker compose down -v`
   deletes it and API clients have to sign in again. To pin a key, set

@@ -1,5 +1,6 @@
 package com.hmdm.rest.filter;
 
+import com.google.common.net.InetAddresses;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -92,7 +93,13 @@ public class BaseIPFilter {
         if (allAllowed) {
             return true;
         }
-        return match(getRemoteAddr(request));
+        String addr = clientAddr(request);
+        if (addr == null) {
+            // Fail closed: a proxy header that is not an address must not fall back to the proxy's own address.
+            logger.info("Unusable " + ipHeader + " from proxy " + request.getRemoteAddr() + ", blocked");
+            return false;
+        }
+        return match(addr);
     }
 
     // For tests only, don't use this directly
@@ -120,24 +127,39 @@ public class BaseIPFilter {
         return false;
     }
 
+    /** For display and logging (audit log, sync response): the proxy-reported address, else the peer. */
     public String getRemoteAddr(HttpServletRequest request) {
-        boolean isFromProxy = false;
-        if (request.getRemoteAddr().equals(request.getLocalAddr())) {
-            isFromProxy = true;
-        } else {
-            for (String p : proxies) {
-                if (request.getRemoteAddr().equals(p.trim())) {
-                    isFromProxy = true;
-                    break;
-                }
+        String addr = clientAddr(request);
+        return addr != null ? addr : request.getRemoteAddr();
+    }
+
+    /**
+     * The client's address: the peer, or, when the peer is a configured proxy (or this host), the last entry of the
+     * proxy's header, the one the proxy itself added (docs/OPERATIONS.md). Null when that proxy sent a header that is
+     * not an IP address literal, so {@link #match(HttpServletRequest)} can block it.
+     */
+    private String clientAddr(HttpServletRequest request) {
+        if (!isFromProxy(request)) {
+            return request.getRemoteAddr();
+        }
+        String header = request.getHeader(ipHeader);
+        if (header == null) {
+            return request.getRemoteAddr();
+        }
+        String last = header.substring(header.lastIndexOf(',') + 1).trim();
+        return InetAddresses.isInetAddress(last) ? last : null;
+    }
+
+    private boolean isFromProxy(HttpServletRequest request) {
+        String peer = request.getRemoteAddr();
+        if (peer.equals(request.getLocalAddr())) {
+            return true;
+        }
+        for (String p : proxies) {
+            if (peer.equals(p.trim())) {
+                return true;
             }
         }
-        if (isFromProxy) {
-            String forwardedIp = request.getHeader(ipHeader);
-            if (forwardedIp != null) {
-                return forwardedIp;
-            }
-        }
-        return request.getRemoteAddr();
+        return false;
     }
 }

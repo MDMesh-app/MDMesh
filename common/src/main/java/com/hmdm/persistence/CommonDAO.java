@@ -98,17 +98,15 @@ public class CommonDAO extends AbstractDAO<Settings> {
     }
 
     /**
-     * This function doesn't check the security context because it's called when a customer is signed up
-     * There's a call of this method in UnsecureDAO.signupCustomerUnsecure()
-     * So the security context check should be performed in the calling function!!!
+     * Saves the design settings of a new customer account. Super-admin only (CustomerDAO.insertCustomer).
      * @param settings
      */
     public void saveDefaultDesignSettingsBySuperAdmin(Settings settings) {
-//        if (SecurityContext.get().getCurrentUser().get().isSuperAdmin()) {
+        if (SecurityContext.get().isSuperAdmin()) {
             this.mapper.saveDefaultDesignSettings(settings);
-//        } else {
-//            throw SecurityException.onAdminDataAccessViolation("save customer settings");
-//        }
+        } else {
+            throw SecurityException.onAdminDataAccessViolation("save customer settings");
+        }
     }
 
     public boolean isDatabaseInitialized() {

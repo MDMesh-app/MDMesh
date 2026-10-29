@@ -47,7 +47,7 @@ public class ApplicationSha256InputTest {
                 return new Application();
             }
         };
-        resource = new ApplicationResource(dao, null, null, tmp.getRoot().getAbsolutePath());
+        resource = new ApplicationResource(dao, null, null, null, tmp.getRoot().getAbsolutePath());
         SecurityContext.init(Fakes.user(1, 1, "edit_applications", "edit_application_versions"));
     }
 

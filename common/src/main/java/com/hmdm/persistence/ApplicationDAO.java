@@ -33,8 +33,10 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -523,13 +525,18 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
         });
     }
 
+    /**
+     * @return the ids of the configurations whose links to this application (or another one with its package), main
+     *         app or content app changed, so their devices can be told
+     */
     @Transactional
-    public void updateApplicationConfigurations(LinkConfigurationsToAppRequest request) {
+    public Set<Integer> updateApplicationConfigurations(LinkConfigurationsToAppRequest request) {
         final User user = SecurityContext.get().getCurrentUser().orElseThrow(SecurityException::onAnonymousAccess);
         final int customerId = user.getCustomerId();
         // Links change for the persisted application only, and within the caller's configurations only
         final int applicationId = getLinkableApplication(user, request.getApplicationId()).getId();
         retainEditableConfigurations(user, request.getConfigurations(), ApplicationConfigurationLink::getConfigurationId);
+        final Map<Integer, String> before = configurationLinkStates(customerId, applicationId);
 
         final List<ApplicationConfigurationLink> activeLinks = request.getConfigurations()
                 .stream()
@@ -568,12 +575,17 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
 
         this.mapper.recheckConfigurationMainApplications(customerId);
         this.mapper.recheckConfigurationContentApplications(customerId);
-        this.mapper.recheckConfigurationKioskModes(customerId);
+        // Kiosk mode is left as the configuration was saved, as on the configuration page: MDMesh kiosk runs the main
+        // app, not the legacy content app.
+        return changedConfigurations(before, configurationLinkStates(customerId, applicationId));
     }
 
+    /** @return the ids of the configurations whose links changed, see {@link #updateApplicationConfigurations} */
     @Transactional
-    public void updateApplicationVersionConfigurations(LinkConfigurationsToAppVersionRequest request, User user) {
+    public Set<Integer> updateApplicationVersionConfigurations(LinkConfigurationsToAppVersionRequest request, User user) {
         final int applicationVersionId = request.getApplicationVersionId();
+        final int applicationId = findApplicationVersionById(applicationVersionId).getApplicationId();
+        final Map<Integer, String> before = configurationLinkStates(user.getCustomerId(), applicationId);
         this.removeApplicationConfigurationsByVersionId(applicationVersionId, user);
 
         // If this version is set for installation, then other versions of same app must be set for de-installation
@@ -605,7 +617,26 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
 
         this.mapper.recheckConfigurationMainApplications(user.getCustomerId());
         this.mapper.recheckConfigurationContentApplications(user.getCustomerId());
-        this.mapper.recheckConfigurationKioskModes(user.getCustomerId());
+        // No kiosk mode re-check, see updateApplicationConfigurations.
+        return changedConfigurations(before, configurationLinkStates(user.getCustomerId(), applicationId));
+    }
+
+    private Map<Integer, String> configurationLinkStates(int customerId, int applicationId) {
+        final Map<Integer, String> states = new HashMap<>();
+        for (LookupItem item : this.mapper.getConfigurationLinkStates(customerId, applicationId)) {
+            states.put(item.getId(), item.getName());
+        }
+        return states;
+    }
+
+    private static Set<Integer> changedConfigurations(Map<Integer, String> before, Map<Integer, String> after) {
+        final Set<Integer> changed = new TreeSet<>();
+        final Set<Integer> ids = new HashSet<>(before.keySet());
+        ids.addAll(after.keySet());
+        for (Integer id : ids) {
+            if (!Objects.equals(before.get(id), after.get(id))) changed.add(id);
+        }
+        return changed;
     }
 
     public void removeApplicationConfigurationsByVersionId(Integer applicationVersionId, User user) {

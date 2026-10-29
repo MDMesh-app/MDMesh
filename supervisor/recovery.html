@@ -24,7 +24,7 @@ body[data-apply="0"] #rbcard{display:none}body:not([data-apply="0"]) #manual{dis
     <button class="btn btn-danger" id="rb">Roll back to previous version</button>
   </div>
   <p class="note" id="rbmsg" style="margin-top:8px"></p>
-  <p class="note">If you're signed into the console in this browser, the token isn't needed. Otherwise read it with
+  <p class="note">If you're signed into the console in this browser as an admin who can update, the token isn't needed. Otherwise read it with
     <span class="mono">docker compose exec supervisor cat /backups/recovery.token</span>.</p>
 </div>
 <div class="card" id="manual">

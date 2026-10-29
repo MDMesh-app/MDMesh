@@ -19,7 +19,8 @@ applies them: it backs up the database, then rolls back if the new version fails
 
 ## Quick-start installs
 
-An admin clicks **Update** on the console's banner. A failed update rolls back by itself.
+The install's admin (a super-admin, or the org admin of a single-customer install) clicks **Update** on the console's
+banner. A failed update rolls back by itself.
 
 **Automatic updates** (Settings, or `AUTO_UPDATE=1`) apply each release without a prompt. Once `/backups/auto.json`
 exists (the Settings switch, or any failed or rolled-back update, creates it), it wins over `AUTO_UPDATE`; change it
@@ -78,7 +79,7 @@ enrollment secret alone, after a `pg_dump` to `/opt/mdmesh/backups/` ([restore](
 ### The recovery page
 
 With one-click updates (`APPLY_SUPPORTED=1`), `https://<host>/recovery` shows the update status and a **Roll back**
-button. Signed in, you need no token. If the server is down, use the recovery token instead:
+button. Signed in as an admin who can update, you need no token. If the server is down, use the recovery token instead:
 
 ```bash
 docker compose exec supervisor cat /backups/recovery.token
@@ -139,6 +140,139 @@ server doesn't update agents; roll them out from **Settings → Agent rollout** 
 available).
 
 ## Version notes
+
+### v0.3.9
+
+A security release. Update every server. Devices need no new agent, and the supervisor is unchanged: quick-start
+installs apply it from **Settings → Updates**, from-source installs run `git pull && ./setup.sh`, and native installs
+`git pull && sudo ./setup.sh --native`.
+
+- **Sign-in limits.** Failed sign-ins are limited per address and per account, for the console, for API clients
+  (`/rest/public/jwt/login`) and for the current-password check of a password or e-mail change. A browser or API
+  client that signed in to an account before (it keeps the `MDMESH_SIGNIN` cookie), and an address that signed in to
+  it in the last 30 days, keep signing in while the account is limited; a new browser on a new address waits. The
+  console says "Too many failed sign-ins"; the API answers `429` with `Retry-After: 900`.
+  [Sign-in limits](OPERATIONS.md#sign-in-limits) has the numbers and what to do during an attack.
+- **API clients:** a token sign-in now also sets the `MDMESH_SIGNIN` cookie (path `/rest/public`). Keep it and send it
+  with the next sign-in to be spared someone else's failed sign-ins. Clients that ignore cookies work as before.
+- **https installs: the session cookie is Secure.** When `BASE_URL` starts with `https://`, the browser sends the
+  console's session cookie over https only. Sign in at the https address: signing in over plain http (Tomcat's own
+  port on a native install, say) no longer works. http installs (a LAN address) are unchanged.
+- **Security headers.** Every response says the console may not be framed (`X-Frame-Options: DENY`,
+  `frame-ancestors 'none'`), `nosniff` and `Referrer-Policy: same-origin`; https installs also get
+  `Strict-Transport-Security: max-age=15552000` (six months, this host only). On Docker the edge sends them; on native
+  installs the server does, so a proxy of yours needs no change. A page of your own that framed the console stops
+  working.
+- **Ambiguous paths are refused.** A request path with a `;` or an encoded `/`, `\`, `;` or `.`, or with `//`, `.` or
+  `..` segments, gets `400`. The console, the agent and the QR never send one. A hosted file whose name contains `;`
+  can't be downloaded any more: upload it again (uploads replace `;` with `_` now).
+- **Native installs behind a proxy on another host: list it in `proxy.addresses`.** The server believes
+  `X-Forwarded-For` for the sign-in limit only from a proxy on loopback or one listed there (a proxy in a container
+  counts as another host). Without the entry, the proxy is taken for a single client, so every client behind it
+  shares one address limit: 10 failed sign-ins from anyone refuse every new browser for 15 minutes (browsers and
+  addresses that signed in before keep signing in). The server logs a warning naming the proxy (`... is not a trusted
+  proxy`): re-run the installer with `PROXY_ADDRESSES=<its address>`, or add it to `proxy.addresses` in `ROOT.xml`
+  and restart. Installer re-runs keep it from now on. A LAN-only install with no proxy needs nothing: each client
+  counts by its own address ([Sign-in limits](OPERATIONS.md#sign-in-limits)).
+- **Docker behind a CDN or another proxy in front of Caddy** (Cloudflare's proxy in own-domain mode, a load
+  balancer): add its ranges to `TRUSTED_PROXIES` in `.env`, or every client shares one address limit. A compose file
+  from before v0.3.9 (updates keep yours) doesn't pass that variable to Caddy: add one line to it first
+  ([Sign-in limits](OPERATIONS.md#sign-in-limits)). The Cloudflare tunnel mode needs nothing.
+- **Docker own-domain installs reached over IPv6:** with Docker's default IPv4-only networks, every IPv6 client
+  reaches Caddy from one gateway address and shares one address limit. Turn on IPv6 for the stack's network, or
+  remove the domain's AAAA record ([Sign-in limits](OPERATIONS.md#sign-in-limits)).
+
+### v0.3.8
+
+A security release. Update every server. Devices need no new agent.
+
+- **Update the supervisor too.** Part of this release is in the supervisor, and updates never touch it:
+  - **Quick start:** apply 0.3.8 from **Settings → Updates**, then run `docker compose pull && docker compose up -d`
+    in the install directory. The quick start sets `SUPERVISOR_VERSION=latest`; if you pinned it in `.env`, set it to
+    `0.3.8` first.
+  - **From source:** `git pull && ./setup.sh`, also after applying 0.3.8 from the console with a registry
+    `IMAGE_OWNER`. setup.sh pins `SUPERVISOR_VERSION` to the checkout's release and rebuilds the supervisor, so
+    `docker compose pull` alone keeps the old one.
+  - **Native:** `git pull && sudo ./setup.sh --native`, which updates both.
+
+  Either order works. In front of an older server, a 0.3.8 supervisor lets only a super-admin, or the org admin of
+  customer 1, update.
+- **Who can update:** the admin who runs the install. That is a super-admin, or the org admin (the built-in
+  Administrator role) of a single-customer install. Every install made with quick start, `setup.sh` or the native
+  installer is single-customer and has no super-admin, so its admin keeps updating. Another admin with a custom role
+  can't, even with the Settings permission. Once an install has a second customer, only a super-admin can apply an
+  update, roll back, check for updates or switch automatic updates. The updater refuses everyone else, and the
+  console hides the buttons from them. The recovery token still rolls back when the server is down.
+- **Customers you didn't create:** check every single-customer install ([below](#customers-you-didnt-create)).
+- **A new password signs the account out elsewhere:** setting a password (a reset link, the change at first sign-in,
+  the user's own change, an admin's change) ends that account's other console sessions and its API tokens
+  (`/rest/public/jwt/login`). The console session that changed its own password stays signed in. API clients sign
+  in again.
+- **Reset links:** a password reset link works once, for 24 hours. Links sent before the update no longer work; ask
+  for a new one. An account that must change its password at first sign-in gets a fresh link when it signs in, so
+  freshly installed admins are not affected. An account gets at most 3 recovery mails an hour.
+- **Self-signup:** the `/rest/public/signup/*` API is removed (404). MDMesh never offered it. The `customer.signup*`
+  and `email.signup*` settings are ignored.
+- **Impersonation is a POST:** `/rest/private/users/impersonate/{id}` and `/rest/private/customers/impersonate/{id}`
+  answer only POST; a GET gets 405. The console doesn't use them. A script that calls them must POST.
+- **Session cookie:** the console's session cookie is `SameSite=Lax`. Docker sets it on every start, native installs
+  when the installer rewrites `ROOT.xml`.
+
+#### Customers you didn't create
+
+A single-customer install has one customer, id 1. Before 0.3.8, the self-signup API could add more. From 0.3.8 on,
+the server lists any others at startup, in `SECURITY:` lines:
+
+```bash
+docker compose logs server | grep 'SECURITY:'        # native: journalctl -u mdmesh-server | grep 'SECURITY:'
+```
+
+Or ask the database (Docker; on native, run the query as in [Removing a customer](OPERATIONS.md#removing-a-customer)):
+
+```bash
+docker compose exec -T postgres psql -X -U mdmesh -d mdmesh -c \
+  "SELECT id, name, email, to_timestamp(registrationTime / 1000) AS created FROM customers WHERE id > 1"
+```
+
+No rows means you are not affected. Remove each customer you didn't add yourself, with
+[Removing a customer](OPERATIONS.md#removing-a-customer). Until then the install counts as multi-customer: only a
+super-admin may update it, and it has none. Removing them restores that.
+
+### v0.3.7
+
+Completes the Safe Mode part of 0.3.6. Update the server, then roll out agent 0.3.7 from **Settings → Agent
+rollout**, to one device first.
+
+- **Safe Mode in kiosk:** agent 0.3.7 blocks Safe Mode whenever the device is in kiosk, however kiosk was started
+  (a configuration, or **Enter kiosk** on the device page), unless the configuration's Safe Mode setting is **Allow**.
+- **When the block is lifted:** once nothing asks for it. That is when a kiosk started with **Enter kiosk** ends, or
+  when kiosk is turned off on the configuration, unless the setting is **Block**. A kiosk configuration keeps Safe Mode
+  blocked while it has kiosk on, even after someone leaves kiosk with the PIN.
+- **Not managed** now really means not managed outside kiosk: agent 0.3.7 lifts a Safe Mode block nothing asks for.
+  On older agents, a device that left a kiosk configuration keeps Safe Mode blocked until the setting is **Allow**.
+- **Until devices have agent 0.3.7:** a device put into kiosk with **Enter kiosk**, on a configuration without kiosk,
+  can still reboot into Safe Mode. Set Safe Mode to **Block** on that configuration.
+
+### v0.3.6
+
+A security release for kiosk devices. Update every server, then roll out agent 0.3.6 from **Settings → Agent
+rollout**, to one device first.
+
+- **Exit PIN:** with agent 0.3.6, a kiosk configuration without an exit PIN has no exit on the device; kiosk then ends
+  only from the console. Set an exit PIN on the configuration before the rollout if people need to leave kiosk on the
+  device.
+- **Wrong PINs:** 3 wrong exit PINs lock the exit for 30 seconds, and each further wrong PIN locks it for longer, up to
+  an hour. A restart doesn't end a lockout. Administrators who can manage the device get an email, if SMTP is set up
+  ([Kiosk alerts](OPERATIONS.md#server)).
+- **Safe Mode:** kiosk configurations whose Safe Mode setting is **Not managed** now block Safe Mode. Kiosk devices
+  get their configuration again once after the server update, which also applies it to devices that hadn't received
+  the latest version. That puts a device you took out with **Exit kiosk** back into its configuration's kiosk, and
+  starts kiosk on configurations whose Recents or Notifications without Home had kept it from starting. To allow Safe
+  Mode, set it to **Allow**. See v0.3.7 for kiosks started from the device page.
+- **A kiosk app that keeps stopping** leaves the device in kiosk on an "App closed" screen with an **Open again**
+  button. Before, kiosk ended.
+- **Apps page:** saving app assignments no longer changes other configurations' settings. With `LEGACY_DEVICE_API=1`,
+  removing a Headwind content app no longer turns kiosk off.
 
 ### v0.3.4
 

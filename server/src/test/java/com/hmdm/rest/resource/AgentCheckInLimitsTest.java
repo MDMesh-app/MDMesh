@@ -19,6 +19,7 @@ import com.hmdm.rest.json.agent.AgentDeviceState;
 import com.hmdm.rest.resource.support.ConfigAppInstaller;
 import com.hmdm.rest.resource.support.ConfigReconciler;
 import com.hmdm.rest.resource.support.InstallHashes;
+import com.hmdm.rest.resource.support.KioskLockoutAlert;
 import com.hmdm.rest.resource.support.RolloutRequeuer;
 import com.hmdm.util.CryptoUtil;
 import org.junit.Before;
@@ -84,7 +85,7 @@ public class AgentCheckInLimitsTest {
         Set<String> tokens;
         NoopReconciler() { super(null, null); }
         @Override public boolean reconcile(Device d, Set<String> t, String rev, String agentVersion,
-                                           String configAgentVersion, long now) { tokens = t; return false; }
+                                           String configAgentVersion, long now, long receivedAt) { tokens = t; return false; }
     }
 
     private static final class NoopRequeuer extends RolloutRequeuer {
@@ -102,7 +103,7 @@ public class AgentCheckInLimitsTest {
         reconciler = new NoopReconciler();
         resource = new AgentResource(new FakeUnsecureDAO(), null, commands,
                 new ConfigAppInstaller(null, null, null, null), reconciler, new NoopRequeuer(),
-                new InstallHashes(null, null));
+                new InstallHashes(null, null), new KioskLockoutAlert(null, null, null));
     }
 
     private Response checkin(AgentCheckInRequest req) {

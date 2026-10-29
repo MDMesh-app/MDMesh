@@ -197,8 +197,40 @@ function recoveryPage(html, applySupported) {
   return html.replace('<body>', '<body data-apply="' + (applySupported ? '1' : '0') + '">');
 }
 
+/** What a GET /rest/private/users/current answer (the caller's session, forwarded) says about managing the
+ *  deployment. The server answers HTTP 200 with {status:"OK", data:<the session's user>}, and from 0.3.8 on the user
+ *  carries deploymentAdmin: true for a super-admin, or for the org admin of a single-customer install (its operator),
+ *  false for everyone else (UnsecureDAO.mayManageDeployment). Impersonation puts the impersonated user in the session.
+ *  Returns true or false from that field; null when the answer is a signed-in user without the field (a server before
+ *  0.3.8); false for anything else (an ERROR, no user, another shape). */
+function deploymentAdminVerdict(body) {
+  if (!body || typeof body !== 'object' || body.status !== 'OK') return false;
+  const u = body.data;
+  if (!u || typeof u !== 'object' || Array.isArray(u)) return false;
+  if (typeof u.deploymentAdmin === 'boolean') return u.deploymentAdmin;
+  return 'deploymentAdmin' in u ? false : null;
+}
+
+/** The same users/current answer from a server before 0.3.8, which has no deploymentAdmin field. That server's own
+ *  rule let any user with the "settings" permission update, every customer's admin included. Narrowed here to what
+ *  0.3.8 decides, as far as the old answer tells: a super-admin (userRole.superAdmin), or the org admin (role 2) of
+ *  customer 1, which is a private-mode install's only customer and its operator. 0.3.7 sends customerId,
+ *  userRole.id and userRole.superAdmin; an answer without them, or with another type, refuses. */
+const ORG_ADMIN_ROLE_ID = 2;
+const OPERATOR_CUSTOMER_ID = 1;
+function legacyDeploymentAdmin(body) {
+  if (!body || typeof body !== 'object' || body.status !== 'OK') return false;
+  const u = body.data;
+  if (!u || typeof u !== 'object' || Array.isArray(u)) return false;
+  const role = u.userRole;
+  if (!role || typeof role !== 'object' || Array.isArray(role)) return false;
+  if (role.superAdmin === true) return true;
+  return role.id === ORG_ADMIN_ROLE_ID && u.customerId === OPERATOR_CUSTOMER_ID;
+}
+
 module.exports = {
   parseSemver, semverGt, pickRelease, shapeStatus,
   imageTags, nextPhase, isTerminal, APPLY_PHASES, APPLY_TERMINAL,
   apkAsset, sha256Matches, recoveryPage, isPublishTemp, assetRequest, fetchAsset, envValue, applyLine, applyRefusal,
+  deploymentAdminVerdict, legacyDeploymentAdmin,
 };

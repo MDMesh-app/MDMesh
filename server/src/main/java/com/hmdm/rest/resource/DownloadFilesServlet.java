@@ -97,7 +97,7 @@ public class DownloadFilesServlet extends HttpServlet {
             try {
                 String goodSignature = CryptoUtil.getSHA1String(hashSecret + path);
                 if (!signature.equalsIgnoreCase(goodSignature)) {
-                    log.warn("Wrong signature for file request " + path + ": " + signature + " Should be: " + goodSignature);
+                    log.warn("Wrong signature for file request " + path);
                     resp.sendError(403);
                     return;
                 }

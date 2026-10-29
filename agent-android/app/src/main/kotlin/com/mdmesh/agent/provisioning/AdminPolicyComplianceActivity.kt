@@ -8,6 +8,7 @@ import com.mdmesh.agent.admin.AdminReceiver
 import com.mdmesh.agent.service.CheckInService
 import com.mdmesh.core.action.ResetPasswordTokenStore
 import com.mdmesh.core.config.ServerConfigStore
+import com.mdmesh.core.location.LocationPermissions
 import com.mdmesh.core.store.EnrollTokenStore
 import com.mdmesh.core.sync.CheckInWorker
 import com.mdmesh.policy.PolicyManager
@@ -68,11 +69,11 @@ class AdminPolicyComplianceActivity : Activity() {
             // Provision the DO reset-password token once, so device.passcodeReset works later.
             ResetPasswordTokenStore(ctx, handle).ensureToken()
             // Silently grant the telemetry runtime permissions as Device Owner.
-            listOf(
-                android.Manifest.permission.READ_PHONE_STATE,
-                android.Manifest.permission.READ_PHONE_NUMBERS,
-                android.Manifest.permission.ACCESS_FINE_LOCATION,
-                android.Manifest.permission.ACCESS_COARSE_LOCATION,
+            // Location includes background (Android 10+): on this QR path nothing else grants it while the agent is
+            // Device Owner. The collector repairs it later too (LocationPermissionAccess).
+            (
+                listOf(android.Manifest.permission.READ_PHONE_STATE, android.Manifest.permission.READ_PHONE_NUMBERS) +
+                    LocationPermissions.forThisDevice()
             ).forEach { perm ->
                 runCatching {
                     dpm.setPermissionGrantState(

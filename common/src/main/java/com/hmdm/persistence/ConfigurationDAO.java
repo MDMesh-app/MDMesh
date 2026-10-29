@@ -142,41 +142,46 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
                     // #6159: When updating the configuration via configuration editor page the state of Kiosk Mode flag
                     // is specified explicitly by the submitted form value, so there is no need to re-check the state of
                     // that flag based on presence of content app in configuration
-//                    this.applicationMapper.recheckConfigurationKioskModes(configuration.getCustomerId());
 
-                    this.mapper.removeConfigurationApplicationSettingsById(configuration.getId());
-                    if (configuration.getApplicationSettings() != null && !configuration.getApplicationSettings().isEmpty()) {
-                        this.mapper.insertConfigurationApplicationSettings(configuration.getId(), configuration.getApplicationSettings());
+                    // A list the request leaves out (null) keeps what is stored; an empty list clears it. A client that
+                    // sends a configuration without its files or app settings must not delete them.
+                    if (configuration.getApplicationSettings() != null) {
+                        this.mapper.removeConfigurationApplicationSettingsById(configuration.getId());
+                        if (!configuration.getApplicationSettings().isEmpty()) {
+                            this.mapper.insertConfigurationApplicationSettings(configuration.getId(), configuration.getApplicationSettings());
+                        }
                     }
                     if (configuration.getApplicationUsageParameters() != null && !configuration.getApplicationUsageParameters().isEmpty()) {
                         this.mapper.saveConfigurationApplicationUsageParameters(configuration.getId(), configuration.getApplicationUsageParameters());
                     }
 
-                    List<ConfigurationFile> legacyFiles = this.configurationFileDAO.getConfigurationFiles(configuration.getId());
-                    Map<Integer,ConfigurationFile> legacyFilesMap = new HashMap<Integer, ConfigurationFile>();
-                    for (ConfigurationFile file : legacyFiles) {
-                        legacyFilesMap.put(file.getId(), file);
-                    }
-
-                    this.mapper.removeConfigurationFilesById(configuration.getId());
                     final List<ConfigurationFile> files = configuration.getFiles();
-                    if (files != null && !files.isEmpty()) {
-                        files.forEach(file -> {
-                            if (!file.isOverrideDevicePath()) {
-                                file.setDevicePath(null);
-                            }
-                        });
-                        files.stream()
-                                .filter(file -> file.getExternalUrl() != null)
-                                .forEach(file -> {
-                                    ConfigurationFile legacyFile = legacyFilesMap.get(file.getId());
-                                    if (legacyFile != null && file.getExternalUrl().equals(legacyFile.getExternalUrl())) {
-                                        file.setChecksum(legacyFile.getChecksum());
-                                    } else {
-                                        file.setChecksum(externalFileChecksum(file.getExternalUrl(), this.hostedFiles));
-                                    }
-                                });
-                        this.mapper.insertConfigurationFiles(configuration.getId(), files);
+                    if (files != null) {
+                        List<ConfigurationFile> legacyFiles = this.configurationFileDAO.getConfigurationFiles(configuration.getId());
+                        Map<Integer,ConfigurationFile> legacyFilesMap = new HashMap<Integer, ConfigurationFile>();
+                        for (ConfigurationFile file : legacyFiles) {
+                            legacyFilesMap.put(file.getId(), file);
+                        }
+
+                        this.mapper.removeConfigurationFilesById(configuration.getId());
+                        if (!files.isEmpty()) {
+                            files.forEach(file -> {
+                                if (!file.isOverrideDevicePath()) {
+                                    file.setDevicePath(null);
+                                }
+                            });
+                            files.stream()
+                                    .filter(file -> file.getExternalUrl() != null)
+                                    .forEach(file -> {
+                                        ConfigurationFile legacyFile = legacyFilesMap.get(file.getId());
+                                        if (legacyFile != null && file.getExternalUrl().equals(legacyFile.getExternalUrl())) {
+                                            file.setChecksum(legacyFile.getChecksum());
+                                        } else {
+                                            file.setChecksum(externalFileChecksum(file.getExternalUrl(), this.hostedFiles));
+                                        }
+                                    });
+                            this.mapper.insertConfigurationFiles(configuration.getId(), files);
+                        }
                     }
 
                     // Deprecated and not used any more

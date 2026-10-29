@@ -8,7 +8,7 @@ const cp = require('child_process');
 const path = require('path');
 const crypto = require('crypto');
 const { pickRelease, shapeStatus, imageTags, isTerminal, apkAsset, sha256Matches, recoveryPage, isPublishTemp, fetchAsset,
-  envValue, applyLine, applyRefusal } = require('./lib');
+  envValue, applyLine, applyRefusal, deploymentAdminVerdict, legacyDeploymentAdmin } = require('./lib');
 
 const PORT = +(process.env.SUPERVISOR_PORT || 9000);
 // Bind address. Docker keeps the default (all interfaces — the container has no published ports);
@@ -352,19 +352,25 @@ function startRollback() {
   return { ok: true };
 }
 
-// Authorize an apply by forwarding the caller's session cookie to an ADMIN-gated private endpoint and
-// proving they hold an admin permission — not merely that they're logged in. The supervisor holds no
-// credentials of its own. Two subtleties drive the checks below:
-//   - Headwind's AuthFilter returns HTTP 403 for an unauthenticated request, but a logged-in user who
-//     LACKS the permission gets HTTP 200 with a JSON body {"status":"ERROR",...} (the Response wrapper
-//     is a plain DTO; permission-denied is not an HTTP status). So status===200 alone is NOT enough —
-//     we must also require body.status === "OK".
-//   - GET /rest/private/users/all is gated by hasPermission("settings"), the strongest admin perm
-//     (user management). A read-only/helpdesk role gets ERROR here, so this rejects under-privileged
-//     sessions that /rest/private/settings (no role check) would have wrongly accepted.
-// redirect:'manual' so a login redirect can't read as 200. AUTHZ_PATH overridable to tighten further.
+// Authorize an update action by forwarding the caller's session cookie to the server and proving the session may
+// manage the deployment. Apply, rollback and auto-update act on the whole deployment, every customer's data included,
+// so only a super-admin may, or on a single-customer install its org admin (the operator; private-mode installs have
+// no super-admin). A customer's admin on a multi-customer install must not, whatever permissions their role holds.
+// The server decides (UnsecureDAO.mayManageDeployment) and says so in GET /rest/private/users/current. The supervisor
+// holds no credentials of its own. The checks below:
+//   - The server's AuthFilter returns HTTP 403 without a valid session (and while a password change is forced), so
+//     anything but 200 refuses.
+//   - users/current answers 200 + {"status":"OK","data":<the session's user>} for any signed-in user, so the answer
+//     itself must say deploymentAdmin === true (deploymentAdminVerdict). An ERROR body, no user, or any other shape
+//     refuses.
+//   - A server before 0.3.8 doesn't send the field. The same answer then has to show a super-admin, or the org admin
+//     of customer 1 (legacyDeploymentAdmin): the private-mode operator can still apply the release that brings the
+//     field when the supervisor was updated first, and a customer's admin can't. From 0.3.8 on, the field is always
+//     there and that fallback never runs.
+// redirect:'manual' so a login redirect can't read as 200. The path is fixed: another endpoint would answer another
+// shape, and these checks only hold for this one.
 const SERVER_BASE = process.env.SERVER_BASE || 'http://server:8080';
-const AUTHZ_PATH = process.env.AUTHZ_PATH || '/rest/private/users/all';
+const AUTHZ_PATH = '/rest/private/users/current';
 
 // CSRF guard for the cookie-authorized state-changing routes. The console sends X-MDMesh-Console on
 // its fetches; a cross-site page cannot set a custom header without a CORS preflight, which the
@@ -394,17 +400,21 @@ function validToken(req) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+/** GET a private server route with the caller's cookie: its JSON body on HTTP 200, else null. */
+async function serverJson(p, cookie) {
+  const r = await fetch(SERVER_BASE + p, { headers: { Cookie: cookie, Accept: 'application/json' }, redirect: 'manual' });
+  if (r.status !== 200) return null;               // 403 = not logged in; 3xx = login redirect
+  return r.json().catch(() => null);
+}
+
 async function authorizeApply(req) {
   const cookie = req.headers.cookie || '';
   if (!/JSESSIONID=/.test(cookie)) return false;
   try {
-    const r = await fetch(SERVER_BASE + AUTHZ_PATH, {
-      headers: { Cookie: cookie, Accept: 'application/json' },
-      redirect: 'manual',
-    });
-    if (r.status !== 200) return false;            // 403 = not logged in; 3xx = login redirect
-    const body = await r.json().catch(() => null); // permission-denied comes back as 200 + status:ERROR
-    return !!body && body.status === 'OK';          // require the admin permission, not just a session
+    const body = await serverJson(AUTHZ_PATH, cookie);
+    const verdict = deploymentAdminVerdict(body);
+    if (verdict !== null) return verdict;           // 0.3.8+: the server's answer
+    return legacyDeploymentAdmin(body);              // older server: narrowed (see above)
   } catch {
     return false; // server unreachable / non-JSON → refuse (you update from a working console)
   }
@@ -439,7 +449,7 @@ http.createServer(async (req, res) => {
     }
     if (req.method === 'POST' && req.url.startsWith('/update/check')) {
       if (!csrfOk(req)) { json(res, 403, { error: 'missing console header' }); return; }
-      if (!(await authorizeApply(req))) { json(res, 401, { error: 'unauthorized' }); return; }
+      if (!(await authorizeApply(req))) { json(res, 401, { error: 'unauthorized (only an admin who may update this deployment)' }); return; }
       // Rate-limit so this can't be used to hammer the GitHub API; otherwise return the current state.
       if (Date.now() - lastPollAt > 15000) await poll();
       json(res, 200, state);
@@ -448,7 +458,7 @@ http.createServer(async (req, res) => {
     if (req.method === 'POST' && req.url.startsWith('/update/apply')) {
       if (!APPLY_SUPPORTED) { json(res, 501, { error: 'self-update apply is not supported on this deployment — pull and re-run the installer' }); return; }
       if (!csrfOk(req)) { json(res, 403, { error: 'missing console header' }); return; }
-      if (!(await authorizeApply(req))) { json(res, 401, { error: 'unauthorized' }); return; }
+      if (!(await authorizeApply(req))) { json(res, 401, { error: 'unauthorized (only an admin who may update this deployment)' }); return; }
       const r = startApply('manual');
       if (!r.ok) { json(res, r.code || 400, { error: r.msg }); return; }
       json(res, 202, { status: 'started', apply: state.apply });
@@ -457,7 +467,7 @@ http.createServer(async (req, res) => {
     if (req.method === 'POST' && req.url.startsWith('/update/auto')) {
       if (!APPLY_SUPPORTED) { json(res, 501, { error: 'self-update apply is not supported on this deployment' }); return; }
       if (!csrfOk(req)) { json(res, 403, { error: 'missing console header' }); return; }
-      if (!(await authorizeApply(req))) { json(res, 401, { error: 'unauthorized' }); return; }
+      if (!(await authorizeApply(req))) { json(res, 401, { error: 'unauthorized (only an admin who may update this deployment)' }); return; }
       const body = await readJson(req);
       if (!body || typeof body.auto !== 'boolean') { json(res, 400, { error: 'expected {auto:boolean}' }); return; }
       autoUpdate = body.auto; saveAuto(); state.auto = autoUpdate;
@@ -468,9 +478,9 @@ http.createServer(async (req, res) => {
     if (req.method === 'POST' && req.url.startsWith('/update/rollback')) {
       if (!APPLY_SUPPORTED) { json(res, 501, { error: 'apply/rollback is not supported on this deployment' }); return; }
       if (!csrfOk(req)) { json(res, 403, { error: 'missing console header' }); return; }
-      // Admin session OR the break-glass recovery token (for when the server is down).
+      // A session that may manage the deployment OR the break-glass recovery token (for when the server is down).
       const authed = (await authorizeApply(req)) || validToken(req);
-      if (!authed) { json(res, 401, { error: 'unauthorized (admin session or recovery token required)' }); return; }
+      if (!authed) { json(res, 401, { error: 'unauthorized (an admin who may update this deployment, or the recovery token)' }); return; }
       const r = startRollback();
       if (!r.ok) { json(res, r.code || 400, { error: r.msg }); return; }
       json(res, 202, { status: 'started', apply: state.apply });

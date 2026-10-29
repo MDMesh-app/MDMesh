@@ -20,6 +20,9 @@ defined locally.
 | `FaultStore` | counter persistence behind an interface |
 | `SharedPrefsFaultStore` | production store (SharedPreferences, synchronous `commit()`) |
 | `InMemoryFaultStore` | Android-free store for unit tests |
+| `KioskReturnPolicy` | single-app kiosk: reopen the pinned app, or hold on the "App closed" screen once the guard trips (never ends kiosk) |
+| `ExitPinGate` | the on-device exit: none without a PIN; wrong PINs lock it for longer each time, timed on uptime |
+| `PinAttemptStore` | attempt-count persistence (`SharedPrefsPinAttemptStore`, `InMemoryPinAttemptStore`) |
 
 ## What `LockTaskKioskController` does
 
@@ -81,7 +84,8 @@ loop. `:app` is responsible for (done there, not here):
 
 4. **Crash-loop wiring** — `KioskLauncherActivity` gets a `CrashLoopGuard` from Hilt and
    calls `registerFault()` each time the pinned single app returns to HOME; once
-   `isCrashLoopDetected()` trips, it drops kiosk and shows a recovery screen instead of re-pinning, so a misconfigured deployment can't brick the device.
+   `isCrashLoopDetected()` trips, it stops reopening the app and holds in kiosk on an "App closed" screen
+   (`KioskReturnPolicy`), so a crashing app can't loop. Kiosk stays on: only the admin-PIN exit or the server ends it.
 
 ## Crash-loop algorithm
 

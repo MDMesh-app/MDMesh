@@ -32,6 +32,8 @@ import com.hmdm.persistence.mapper.UserMapper;
 import com.hmdm.rest.json.LookupItem;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.security.SecurityException;
+import com.hmdm.util.PasswordResetTokens;
+import com.hmdm.util.PasswordUtil;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -97,14 +99,29 @@ public class UserDAO extends AbstractDAO<User> {
     }
 
 
+    /**
+     * Sets the user's password ({@code password}, already hashed). It also gives the user a new authToken, so every
+     * session and JWT issued before the change ends; the caller reads the new one from {@code user}.
+     */
     @Transactional
     public void updatePassword(User user ) {
+        user.setAuthToken(PasswordUtil.generateToken());
         updateRecord(user, this.mapper::updatePassword, SecurityException::onUserAccessViolation);
     }
 
+    /**
+     * Sets a user's password ({@code newPassword}, already hashed) on a super-admin's request. Only the id and the
+     * password come from the request: the user gets a new authToken, and the reset flag and token are set here.
+     */
     @Transactional
     public void updatePasswordBySuperAdmin(User user ) {
         if (SecurityContext.get().isSuperAdmin()) {
+            user.setAuthToken(PasswordUtil.generateToken());
+            if (user.isPasswordReset()) {
+                PasswordResetTokens.issue(user, System.currentTimeMillis());
+            } else {
+                PasswordResetTokens.clear(user);
+            }
             this.mapper.setNewPassword(user);
         } else {
             throw new IllegalArgumentException("Super-admin is allowed only");

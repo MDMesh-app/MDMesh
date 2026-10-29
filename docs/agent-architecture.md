@@ -121,3 +121,11 @@ lean on DO + lock-task auto-launch + WorkManager.
   `kiosk.enter`/`kiosk.exit`/`device.reboot`/`device.lock`); `policy.apply` expanded; telemetry in check-in.
 - `:app` — status UI, manifest (install receiver, FGS types, `lockTaskMode`, queries), DI multibindings,
   baseline policy applied on enrollment.
+
+## Location collection
+
+Before reading a location, the agent (as Device Owner) grants itself any missing foreground or background location
+permission; devices enrolled by QR code used to lack the background one (agent 0.3.8). A missing grant is retried at
+most every 15 minutes. The fix callback runs on the binder thread and telemetry on Dispatchers.IO, so a check-in never
+blocks the main thread. With no cached position, "GPS (fresh fix)" gets up to 30 seconds for a first fix at most once
+every 15 minutes; otherwise a fix has 5 seconds.

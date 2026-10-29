@@ -53,7 +53,9 @@ configuration.
   with the same kiosk payload doesn't relaunch the launcher.
 
 **Kiosk.** Kiosk on in the configuration enters kiosk. Kiosk off exits it only on devices that entered via a
-configuration; an ad-hoc "Enter kiosk" from the console is left alone.
+configuration; an ad-hoc "Custom kiosk" from the console is left alone. After someone leaves the kiosk, the console's
+"Return to configured kiosk" sends `kiosk.enter` with the configuration's own kiosk block (the same payload
+`config.apply` carries), so the device is back in exactly that kiosk without waiting for a configuration change.
 
 **The 22 enforced fields**
 

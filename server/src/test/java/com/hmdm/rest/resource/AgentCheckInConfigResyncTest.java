@@ -1,6 +1,7 @@
 package com.hmdm.rest.resource;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hmdm.extension.DesiredConfigContributor;
 import com.hmdm.persistence.AgentCommandDAO;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentCommand;
@@ -18,6 +19,7 @@ import com.hmdm.rest.resource.support.ConfigReconciler;
 import com.hmdm.rest.resource.support.InstallHashes;
 import com.hmdm.rest.resource.support.KioskLockoutAlert;
 import com.hmdm.rest.resource.support.RolloutRequeuer;
+import com.hmdm.testsupport.Fakes;
 import com.hmdm.util.ConfigReconcileDecision;
 import com.hmdm.util.CryptoUtil;
 import com.hmdm.util.DesiredConfigBuilder;
@@ -39,6 +41,7 @@ import static org.junit.Assert.assertNull;
  */
 public class AgentCheckInConfigResyncTest {
 
+    private static final List<DesiredConfigContributor> NO_CONTRIBUTORS = Collections.emptyList();
     private static final String NUMBER = "d1";
     private static final String SECRET = "sek";
     private static final String CAPS = "{\"device\":[\"configApply\"],\"policy\":[\"safeBoot\"]}";
@@ -189,14 +192,14 @@ public class AgentCheckInConfigResyncTest {
         cfg.setId(3);
         cfg.setDisableSafeBoot(true);
         unsecureDAO.configuration = cfg;
-        revision = DesiredConfigBuilder.build(cfg, Collections.<Application>emptyList()).getRevision();
+        revision = DesiredConfigBuilder.build(cfg, Collections.<Application>emptyList(), NO_CONTRIBUTORS).getRevision();
 
         commandDAO = new FakeCommandDAO();
         RolloutRequeuer noRollout = new RolloutRequeuer(null) {
             @Override public boolean requeue(Device d, long now) { return false; }
         };
         resource = new AgentResource(unsecureDAO, null, commandDAO, null,
-                new ConfigReconciler(unsecureDAO, commandDAO), noRollout,
+                new ConfigReconciler(unsecureDAO, commandDAO, Fakes.noExtensionPoints()), noRollout,
                 new InstallHashes(null, unsecureDAO), new KioskLockoutAlert(null, null, null));
     }
 
@@ -371,7 +374,7 @@ public class AgentCheckInConfigResyncTest {
 
     private String changeConfiguration() {
         unsecureDAO.configuration.setDisableSafeBoot(false);
-        return DesiredConfigBuilder.build(unsecureDAO.configuration, Collections.<Application>emptyList()).getRevision();
+        return DesiredConfigBuilder.build(unsecureDAO.configuration, Collections.<Application>emptyList(), NO_CONTRIBUTORS).getRevision();
     }
 
     private String revisionOf(com.hmdm.rest.json.agent.AgentCommand c) {
@@ -497,7 +500,7 @@ public class AgentCheckInConfigResyncTest {
     public void an_app_linked_to_a_kiosk_configuration_reaches_the_device_on_its_next_check_in() throws Exception {
         // What the wake after an Apps-page link edit leads to: the kiosk's allowed apps are part of the revision.
         unsecureDAO.configuration.setKioskMode(true);
-        String kiosk = DesiredConfigBuilder.build(unsecureDAO.configuration, unsecureDAO.apps).getRevision();
+        String kiosk = DesiredConfigBuilder.build(unsecureDAO.configuration, unsecureDAO.apps, NO_CONTRIBUTORS).getRevision();
         checkIn("0.3.5", null);
         assertEquals(0, checkIn("0.3.5", kiosk).size());
 

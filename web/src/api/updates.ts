@@ -23,6 +23,9 @@ export interface UpdateStatus {
   error: string | null;
   apply: ApplyState | null;
   auto: boolean;
+  /** The release automatic updates will not apply again (its update failed or was rolled back), from the
+   *  supervisor's auto.json `skipVersion`. A manual Update still applies it; a newer release still auto-applies. */
+  autoSkipped?: string | null;
   /** False on deployments that can't self-apply (native installs) — hide apply/auto controls.
    *  Absent (older supervisor) means supported. */
   applySupported?: boolean;

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  A fork's own server plugins, so adding one edits no core pom. Core owns this file and never changes its <modules>
+  beyond `bundle`: add each of your plugins as a <module> here, and as a <dependency> in bundle/pom.xml, which the
+  server bundles. See README.md.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+    <artifactId>fork</artifactId>
+    <packaging>pom</packaging>
+    <version>0.1.0</version>
+    <name>A fork's server plugins</name>
+
+    <parent>
+        <groupId>com.hmdm.plugin</groupId>
+        <artifactId>base</artifactId>
+        <version>0.1.0</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <modules>
+        <module>bundle</module>
+        <!-- Your plugins: <module>netaccess</module> -->
+    </modules>
+
+</project>

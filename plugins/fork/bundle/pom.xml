@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  Every fork plugin the server bundles: server/pom.xml depends on this pom once (type pom, runtime), so its
+  dependencies end up in launcher.war. Add one <dependency> per plugin in plugins/fork. See ../README.md.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+    <artifactId>fork-bundle</artifactId>
+    <packaging>pom</packaging>
+    <version>0.1.0</version>
+    <name>The fork plugins the server bundles</name>
+
+    <parent>
+        <groupId>com.hmdm.plugin</groupId>
+        <artifactId>fork</artifactId>
+        <version>0.1.0</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <dependencies>
+        <!-- Your plugins:
+        <dependency>
+            <groupId>com.hmdm.plugin</groupId>
+            <artifactId>netaccess</artifactId>
+            <version>0.1.0</version>
+        </dependency>
+        -->
+    </dependencies>
+
+</project>

@@ -29,53 +29,6 @@ export interface CommandTemplate {
   request: QueueCommandRequest;
 }
 
-export const COMMAND_TEMPLATES: CommandTemplate[] = [
-  {
-    key: 'wifi-off',
-    label: 'Lock Wi-Fi settings',
-    description: 'Apply a policy that locks the device Wi-Fi settings (the radio is left as it is).',
-    request: {
-      type: 'policy.apply',
-      requiresCapability: 'policy.wifi',
-      payload: JSON.stringify({ policy: 'wifi', value: false }),
-    },
-  },
-  {
-    key: 'wifi-on',
-    label: 'Unlock Wi-Fi settings',
-    description: 'Apply a policy that lifts the Wi-Fi settings lock.',
-    request: {
-      type: 'policy.apply',
-      requiresCapability: 'policy.wifi',
-      payload: JSON.stringify({ policy: 'wifi', value: true }),
-    },
-  },
-  {
-    key: 'camera-off',
-    label: 'Disable camera',
-    description: 'Apply a policy that blocks the device camera.',
-    request: {
-      type: 'policy.apply',
-      requiresCapability: 'policy.camera',
-      payload: JSON.stringify({ policy: 'camera', value: false }),
-    },
-  },
-  {
-    key: 'reboot',
-    label: 'Reboot device',
-    description: 'Restart the device now.',
-    danger: true,
-    request: { type: 'device.reboot' },
-  },
-  {
-    key: 'lock',
-    label: 'Lock device',
-    description: 'Lock the device screen immediately.',
-    danger: true,
-    request: { type: 'device.lock' },
-  },
-];
-
 export async function queueCommand(
   deviceId: number | string,
   req: QueueCommandRequest,
@@ -92,6 +45,12 @@ export interface BulkCommandResult {
   queued: number;
   skipped: number[];
 }
+
+/** What the bulk endpoint refuses (AgentAdminResource.BULK_FORBIDDEN_TYPES), lowercase: wipe and passcode reset. */
+const BULK_FORBIDDEN_TYPES: readonly string[] = ['device.wipe', 'device.passcodereset'];
+
+/** Whether the bulk endpoint refuses this command type, compared as the server compares it (trimmed, any case). */
+export const isBulkForbidden = (type: string): boolean => BULK_FORBIDDEN_TYPES.includes(type.trim().toLowerCase());
 
 /**
  * Queue one opaque command for many devices at once (agent-v1 bulk contract):
@@ -227,10 +186,11 @@ export const ACTION_TEMPLATES: CommandTemplateExt[] = [
     },
   },
   {
-    // Handled specially by ActionConsole: opens the app-picker modal (scans the device, builds the
-    // KioskApplyPayload, queues kiosk.enter ungated). Listed here only for the button + grouping.
-    key: 'kiosk-enter', label: 'Enter kiosk', group: 'disruptive', danger: true,
-    description: 'Lock the device to one app or a set of apps, chosen from a scan of the device.',
+    // The custom (one-time) kiosk, handled specially: opens the app-picker dialog (library or a scan of the device,
+    // builds the KioskApplyPayload, queues kiosk.enter ungated). Listed here only for the button + grouping. The
+    // kiosk a configuration defines is "Return to configured kiosk" (data/kiosk.ts configuredKiosk).
+    key: 'kiosk-enter', label: 'Custom kiosk', group: 'disruptive', danger: true,
+    description: 'Lock the device to apps you pick now, as a one-time kiosk that its configuration doesn’t define.',
     request: { type: 'kiosk.enter' },
   },
   {

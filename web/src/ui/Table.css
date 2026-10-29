@@ -1,0 +1,101 @@
+.v2 .v2-tablewrap {
+  position: relative; /* contain visually-hidden header text, which is absolutely positioned */
+  overflow-x: auto;
+  min-width: 0;
+}
+.v2 .v2-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-body);
+}
+.v2 .v2-table thead tr {
+  text-align: left;
+  color: var(--secondary);
+  font-size: var(--fs-small);
+}
+.v2 .v2-table th {
+  padding: 12px 8px 10px;
+  font-weight: 500;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.v2 .v2-table tbody tr {
+  border-top: 1px solid var(--line-soft);
+  background: var(--surface);
+}
+.v2 .v2-table tbody tr.is-selected {
+  background: var(--row-selected);
+}
+.v2 .v2-table td {
+  padding: 12px 8px;
+  vertical-align: middle;
+}
+.v2 .v2-table--pad10 td {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+.v2 .v2-table .is-right {
+  text-align: right;
+}
+.v2 .v2-table__shrink {
+  width: 1%;
+  white-space: nowrap;
+}
+.v2 .v2-table__mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+.v2 .v2-table__empty {
+  padding: 32px 24px;
+  text-align: center;
+  color: var(--secondary);
+}
+
+/* outer padding: first and last cells */
+.v2 .v2-table--edge16 :is(th, td):first-child {
+  padding-left: 16px;
+}
+.v2 .v2-table--edge16 :is(th, td):last-child {
+  padding-right: 16px;
+}
+.v2 .v2-table--edge20 :is(th, td):first-child {
+  padding-left: 20px;
+}
+.v2 .v2-table--edge20 :is(th, td):last-child {
+  padding-right: 20px;
+}
+.v2 .v2-table--edge24 :is(th, td):first-child {
+  padding-left: 24px;
+}
+.v2 .v2-table--edge24 :is(th, td):last-child {
+  padding-right: 24px;
+}
+.v2 .v2-table--edge0 :is(th, td):first-child {
+  padding-left: 0;
+}
+.v2 .v2-table--edge0 :is(th, td):last-child {
+  padding-right: 0;
+}
+
+/* sortable header: "Last seen ↓" 600 ink */
+.v2 .v2-table__sort {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.v2 .v2-table__sort.is-sorted {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* onRowClick: the whole row is a pointer target. */
+.v2 .v2-table--rowclick tbody tr {
+  cursor: pointer;
+}
+.v2 .v2-table--rowclick tbody tr:not(.is-selected):hover {
+  background: var(--row-selected);
+}

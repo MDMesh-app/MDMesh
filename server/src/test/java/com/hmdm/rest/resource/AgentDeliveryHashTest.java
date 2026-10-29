@@ -16,6 +16,7 @@ import com.hmdm.rest.resource.support.ConfigReconciler;
 import com.hmdm.rest.resource.support.InstallHashes;
 import com.hmdm.rest.resource.support.KioskLockoutAlert;
 import com.hmdm.rest.resource.support.RolloutRequeuer;
+import com.hmdm.testsupport.Fakes;
 import com.hmdm.util.CryptoUtil;
 import org.junit.Before;
 import org.junit.Test;
@@ -81,7 +82,7 @@ public class AgentDeliveryHashTest {
             }
             @Override public boolean claimForDelivery(Integer id, Long at) { claimed.add(id); return true; }
         };
-        ConfigReconciler reconciler = new ConfigReconciler(null, null) {
+        ConfigReconciler reconciler = new ConfigReconciler(null, null, Fakes.noExtensionPoints()) {
             @Override public boolean reconcile(Device d, Set<String> t, String rev, String agentVersion,
                                                String configAgentVersion, long now, long receivedAt) { return false; }
         };

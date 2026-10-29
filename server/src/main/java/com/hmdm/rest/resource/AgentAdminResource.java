@@ -425,10 +425,13 @@ public class AgentAdminResource {
             Integer cfgId = row.getConfigurationId();
             ConfigSyncSummary s = out.computeIfAbsent(cfgId, id -> { ConfigSyncSummary x = new ConfigSyncSummary(); x.setConfigurationId(id); return x; });
             s.setTotal(s.getTotal() + 1);
-            String current = revisionByConfig.computeIfAbsent(cfgId, id -> {
-                Device probe = new Device(); probe.setConfigurationId(id); probe.setCustomerId(customerId.get());
-                return configReconciler.currentRevision(probe);
-            });
+            // containsKey/put, not computeIfAbsent: a configuration whose plugin fails has a null revision, which
+            // computeIfAbsent wouldn't keep, so the document would be rebuilt (and fail again) for every device on it.
+            if (!revisionByConfig.containsKey(cfgId)) {
+                Device probe = new Device(); probe.setConfigurationId(cfgId); probe.setCustomerId(customerId.get());
+                revisionByConfig.put(cfgId, configReconciler.currentRevision(probe));
+            }
+            String current = revisionByConfig.get(cfgId);
             Set<String> tokens = AgentCapabilityTokens.flatten(row.getCapabilitiesJson());
             boolean supported = AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, tokens);
             if (!supported) {

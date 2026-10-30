@@ -42,7 +42,6 @@ public final class DesiredConfigBuilder {
     public static final String POLICY_PREFIX = "policies.";
     public static final String KEY_KIOSK = "kiosk";
     public static final String KEY_LOCATION = "location";
-    public static final String KEY_CONNECTIVITY = "connectivity";
     public static final String CONNECTIVITY_ADAPTIVE = "adaptive";
     public static final String CONNECTIVITY_ALWAYS_ON = "alwaysOn";
     private static final int ACTION_INSTALL = 1;

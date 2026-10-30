@@ -356,7 +356,8 @@ object AgentModule {
         kiosk: KioskApplier,
         location: LocationModeStore,
         store: ConfigStateStore,
-    ): ConfigApplier = ConfigApplier(registry::togglePolicies, kiosk, location::set, store)
+        power: PowerModeStore,
+    ): ConfigApplier = ConfigApplier(registry::togglePolicies, kiosk, location::set, store, setPowerMode = power::set)
 
     @Provides
     @IntoSet

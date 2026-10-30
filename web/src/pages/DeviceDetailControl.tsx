@@ -409,6 +409,7 @@ export function RemoteActions({
   onInstallConfigApps,
   powerMode,
   powerPending,
+  configPowerMode,
   locationMode,
   locationPending,
   locationUnknown,
@@ -423,6 +424,8 @@ export function RemoteActions({
   /** Selected connection mode ('alwaysOn' | 'adaptive'), from state or the request just sent. */
   powerMode: string | undefined;
   powerPending: boolean;
+  /** The connection mode the configuration sets ('alwaysOn' | 'adaptive'), or undefined when it doesn't manage it. */
+  configPowerMode: string | undefined;
   /** Selected location mode ('active' | 'passive'), when known. */
   locationMode: string | undefined;
   locationPending: boolean;
@@ -506,6 +509,7 @@ export function RemoteActions({
             </span>
             <Segmented<string>
               aria-labelledby={`${titleId}-conn`}
+              aria-describedby={configPowerMode ? `${titleId}-connhint` : undefined}
               value={powerMode}
               disabled={busy}
               onChange={(v) => send(v === 'alwaysOn' ? 'power-always' : 'power-adaptive')}
@@ -516,6 +520,13 @@ export function RemoteActions({
             />
             {powerPending ? <span className="v2-device-actions__pending">Waiting for the device</span> : null}
           </div>
+          {configPowerMode ? (
+            <p id={`${titleId}-connhint`} className="v2-device-actions__hint">
+              This device’s configuration sets Connectivity: {configPowerMode === 'alwaysOn' ? 'Always-on' : 'Battery-saver'}. A
+              change here lasts until the configuration changes, the device restarts or the agent updates; to keep a mode,
+              set it in the configuration.
+            </p>
+          ) : null}
           <div className="v2-device-actions__seg">
             <span className="v2-device-actions__seglabel" id={`${titleId}-loc`}>
               Location

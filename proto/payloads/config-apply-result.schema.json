@@ -8,6 +8,6 @@
   "properties": {
     "revision": { "type": "string" },
     "outcomes": { "type": "object", "additionalProperties": { "type": "string", "pattern": "^(applied|unsupported|deferred: .*|failed(: .*)?)$" },
-                  "description": "keys: policies.<key>, kiosk, location" }
+                  "description": "keys: policies.<key>, kiosk, location, connectivity (1.5; unsupported for a mode the agent doesn't know)" }
   }
 }

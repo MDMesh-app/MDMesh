@@ -104,7 +104,9 @@ class ServerInjectedPolicyTest {
             isLockTaskActive = { false },
         )
 
-        val applier = ConfigApplier({ ResolvedToggles(toggles) }, kiosk, setLocationMode = {}, store = configStore)
+        val applier = ConfigApplier(
+            { ResolvedToggles(toggles) }, kiosk, setLocationMode = {}, store = configStore, setPowerMode = {},
+        )
 
         private val identity = FakeIdentity(initialId = "srv-1", initialSecret = "sek-1")
 

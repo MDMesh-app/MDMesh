@@ -57,7 +57,7 @@ configuration; an ad-hoc "Custom kiosk" from the console is left alone. After so
 "Return to configured kiosk" sends `kiosk.enter` with the configuration's own kiosk block (the same payload
 `config.apply` carries), so the device is back in exactly that kiosk without waiting for a configuration change.
 
-**The 22 enforced fields**
+**The 23 enforced fields**
 
 | Area | Fields |
 |------|--------|
@@ -65,6 +65,7 @@ configuration; an ad-hoc "Custom kiosk" from the console is left alone. After so
 | Launcher look | `backgroundColor`, `textColor`, `iconSize` |
 | Device policy | `wifi`, `wifiRadio`, `bluetooth`, `usbStorage`, `disableScreenshots`, `disableFactoryReset`, `disableSafeBoot` |
 | Location | `requestUpdates` (location capture mode) |
+| Connectivity | `connectivityMode` (live-connection mode, 1.5) |
 
 `name` and `description` are metadata only. Wire shapes: `proto/payloads/config-apply.schema.json` and
 `proto/payloads/config-apply-result.schema.json`.
@@ -83,6 +84,14 @@ configuration; an ad-hoc "Custom kiosk" from the console is left alone. After so
     so it's a separate opt-in. `kioskLockButtons` blocks only the power menu.
   - New columns are NULL on upgrade, so revisions only change for configurations that use them, and for
     Do-not-track configurations (whose devices get one `config.apply`).
+- **1.5:** the `connectivity` section (`connectivityMode`): `adaptive` (Battery-saver, the agent's default) holds the
+  wake socket only while the screen is on or charging; `alwaysOn` holds it 24/7, so commands reach a locked device
+  without waiting for the next heartbeat. Applied through the same `PowerModeStore` as `device.powerMode`. NULL is
+  not managed: the section is omitted, so existing revisions don't move, and each device keeps its mode, including
+  one set by `device.powerMode`. A managed mode wins over `device.powerMode`: the saved document is applied again
+  after every boot and agent update (`ConfigReapplyWorker`), and the server re-sends `config.apply` when the agent
+  version changes, so a device-level mode lasts only until then. Switching a configuration from `alwaysOn` back to
+  not managed leaves its devices on `alwaysOn`; set `adaptive` to switch them back. Older agents ignore it.
 
 **Wi-Fi radio Off, in detail**
 - Off is deferred, without blocking the other keys, while Wi-Fi is the device's only network. It's retried only at

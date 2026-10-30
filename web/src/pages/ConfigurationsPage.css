@@ -1,0 +1,144 @@
+/* Configurations list. */
+.v2 .v2-configs-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.v2 .v2-configs-toolbar__search {
+  flex: 1 1 240px;
+  /* board: max-width 360px on a content-box label (12px padding, 1px border each side) */
+  max-width: 386px;
+}
+.v2 .v2-configs-toolbar__spacer {
+  flex: 1 1 0;
+}
+.v2 .v2-configs-toolbar__unassigned,
+.v2 .v2-configs-toolbar__unassigned:hover {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+  text-decoration: none;
+}
+.v2 .v2-configs-toolbar__unassigned:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+.v2 .v2-configs-toolbar__ring {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1.5px solid var(--muted);
+}
+
+.v2 .v2-configs-callout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.v2 .v2-configs__grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+  gap: 16px;
+}
+
+.v2 .v2-configs-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.v2 .v2-configs-card__body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 18px 14px;
+}
+.v2 .v2-configs-card__top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.v2 .v2-configs-card__titles {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.v2 .v2-configs-card__nameline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+.v2 .v2-configs-card__name,
+.v2 .v2-configs-card__name:hover {
+  font-size: var(--fs-h2);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.v2 .v2-configs-card__name:hover {
+  text-decoration: underline;
+}
+.v2 .v2-configs-card__desc {
+  font-size: var(--fs-control);
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.v2 .v2-configs-card__meta {
+  margin-top: auto;
+}
+.v2 .v2-configs-card__sync {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.v2 .v2-configs-card__synctext {
+  font-size: var(--fs-meta);
+}
+.v2 .v2-configs-card__synctext.is-ok {
+  color: var(--ok-ink);
+}
+.v2 .v2-configs-card__synctext.is-warn {
+  color: var(--warn-ink);
+}
+.v2 .v2-configs-card__synctext.is-idle {
+  color: var(--secondary);
+}
+.v2 .v2-configs-card__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--line-soft);
+}
+/* board: Edit / View are 7×13, 13/500 */
+.v2 .v2-configs-card__open {
+  padding-inline: 13px;
+}
+.v2 .v2-configs-card__footnote {
+  flex: 1 1 auto;
+  text-align: right;
+  font-size: var(--fs-meta);
+  color: var(--secondary);
+}

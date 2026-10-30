@@ -1,0 +1,21 @@
+/* Sign in and Set password: page-local parts around the shared AuthLayout. */
+
+/* Set password: submit + "You'll sign in once more…" stacked 8px apart. */
+.v2 .v2-login-submit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.v2 .v2-login-submit__note {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+  text-align: center;
+}
+
+/* Account name in the Set password subtitle: Mono, body ink. */
+.v2 .v2-login-account {
+  font-family: var(--font-mono);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}

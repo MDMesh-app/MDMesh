@@ -1,0 +1,114 @@
+/* Shell: the boards' page frame. */
+.v2 .v2-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-wrap: nowrap;
+  background: var(--app);
+}
+.v2 .v2-shell__side {
+  flex: 1 1 var(--sidebar-w);
+  max-width: 100%;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  height: 100vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  z-index: 20;
+}
+.v2 .v2-shell__mainwrap {
+  flex: 999 1 640px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.v2 .v2-shell__main {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  max-width: var(--main-max);
+  box-sizing: border-box;
+  padding: var(--page-pad);
+  display: flex;
+  flex-direction: column;
+  gap: var(--page-gap);
+  outline: none;
+}
+
+.v2 .v2-skip {
+  position: absolute;
+  left: 12px;
+  top: -48px;
+  z-index: 50;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--ink);
+  color: var(--on-ink);
+  text-decoration: none;
+  font-weight: 500;
+}
+.v2 .v2-skip:focus {
+  top: 12px;
+  color: var(--on-ink);
+}
+
+/* ---- ≤ 860px: top bar + drawer ---- */
+.v2 .v2-mobilebar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  align-self: stretch;
+  height: var(--mobilebar-h);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.v2 .v2-mobilebar__title {
+  font-weight: 600;
+}
+.v2 .v2-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: var(--backdrop);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+.v2 .v2-scrim.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (max-width: 860px) {
+  .v2 .v2-shell {
+    display: block;
+  }
+  .v2 .v2-shell__side {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: min(280px, 85vw);
+    height: 100%;
+    z-index: 40;
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform 0.22s ease, visibility 0s linear 0.22s;
+  }
+  .v2 .v2-shell__side.is-open {
+    transform: none;
+    visibility: visible;
+    transition: transform 0.22s ease, visibility 0s;
+    box-shadow: var(--shadow-float);
+  }
+}

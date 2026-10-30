@@ -1,0 +1,83 @@
+/* Segmented control and tabs share the track: surface-2 fill, 1px border, 3px padding, 2px gap. */
+.v2 .v2-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  box-sizing: border-box;
+  max-width: 100%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.v2 .v2-seg--wrap {
+  flex-wrap: wrap;
+}
+.v2 .v2-seg--lg {
+  border-radius: var(--radius-md);
+}
+
+.v2 .v2-seg__opt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-2);
+  font-weight: 400;
+  line-height: var(--lh-body);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+}
+.v2 .v2-seg--sm .v2-seg__opt {
+  padding: 4px 10px;
+  border-radius: var(--radius-chip);
+  font-size: var(--fs-meta);
+}
+.v2 .v2-seg--md .v2-seg__opt {
+  padding: 5px 12px;
+  border-radius: var(--radius-seg);
+  font-size: var(--fs-sm);
+}
+.v2 .v2-seg--lg .v2-seg__opt {
+  padding: 6px 12px;
+  border-radius: var(--radius-tile);
+  font-size: var(--fs-control);
+}
+
+.v2 .v2-seg__opt:not(.is-selected):not(:disabled):hover {
+  color: var(--ink);
+}
+.v2 .v2-seg__opt.is-selected {
+  background: var(--seg-selected);
+  box-shadow: var(--shadow-seg);
+  color: var(--ink);
+  font-weight: 600;
+}
+.v2 .v2-seg__opt:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+.v2 .v2-seg__icon {
+  display: inline-flex;
+}
+.v2 .v2-seg__count {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  color: var(--secondary);
+}
+
+@media (max-width: 860px) {
+  .v2 .v2-seg__opt {
+    min-height: 36px;
+  }
+}
+
+@media (forced-colors: active) {
+  .v2 .v2-seg__opt.is-selected {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}

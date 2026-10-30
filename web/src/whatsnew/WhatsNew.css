@@ -1,0 +1,80 @@
+/* What's new: a release's notes in the modal (md, 540: about 75 characters a line at 1440). The notes' type follows Settings' release notes
+   (pages/SettingsPage.css, .v2-settings-notes): text-2 body, 600 headings in text, bullets 20px in. */
+.v2 .v2-whatsnew {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.v2 .v2-whatsnew__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.v2 .v2-whatsnew__h {
+  margin: 0;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--text);
+}
+.v2 .v2-whatsnew__p,
+.v2 .v2-whatsnew__more {
+  margin: 0;
+}
+.v2 .v2-whatsnew__more {
+  margin-top: 4px;
+}
+.v2 .v2-whatsnew__list {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.v2 .v2-whatsnew__list .v2-whatsnew__list {
+  margin-top: 6px;
+}
+.v2 .v2-whatsnew__code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--text);
+}
+.v2 .v2-whatsnew__fold {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+.v2 .v2-whatsnew__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.v2 .v2-whatsnew__chev {
+  flex: none;
+  transition: transform 0.15s ease;
+}
+.v2 .v2-whatsnew__chev.is-open {
+  transform: rotate(180deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .v2 .v2-whatsnew__chev {
+    transition: none;
+  }
+}
+.v2 .v2-whatsnew__folded {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.v2 .v2-whatsnew__folded[hidden] {
+  display: none;
+}
+/* Where focus starts when the dialog opens (not in the Tab order). */
+.v2 .v2-whatsnew__start:focus {
+  outline: none;
+}

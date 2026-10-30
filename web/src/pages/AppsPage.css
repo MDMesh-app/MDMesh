@@ -1,0 +1,306 @@
+/* Apps (library, custom APK, F-Droid). Shared parts (tabs, table, cards, badges, modal) are in ui/. */
+
+/* ---- toolbar: source tabs, spacer, search (+ Source filter); wraps (gap 8 12) ---- */
+.v2 .v2-apps-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.v2 .v2-apps-toolbar__spacer {
+  flex: 1 1 0;
+}
+.v2 .v2-apps-lib__search {
+  flex: 1 1 240px;
+  max-width: 346px; /* board: 320px content box + 12px padding each side + border */
+}
+.v2 .v2-apps-fd__search {
+  flex: 1 1 260px;
+  max-width: 406px; /* board: 380px content box + padding + border */
+}
+
+/* ---- shared bits ---- */
+.v2 .v2-apps-loading {
+  margin: 0;
+  color: var(--secondary);
+}
+.v2 .v2-apps-calloutline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.v2 .v2-apps-modaltext {
+  margin: 0;
+  color: var(--text-2);
+}
+
+/* ---- library table ---- */
+.v2 .v2-apps-lib__app {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.v2 .v2-apps-lib__names {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.v2 .v2-apps-lib__name {
+  font-weight: 600;
+}
+.v2 .v2-apps-lib__pkg {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  color: var(--secondary);
+  overflow-wrap: anywhere;
+}
+.v2 .v2-apps-lib__src {
+  display: flex;
+  flex-direction: column;
+}
+.v2 .v2-apps-lib__srcnote {
+  font-size: var(--fs-meta);
+  color: var(--secondary);
+  overflow-wrap: anywhere;
+}
+.v2 .v2-apps-lib__muted {
+  color: var(--secondary);
+}
+.v2 .v2-apps-lib__actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+}
+.v2 .v2-apps-lib__menugap {
+  width: 32px;
+  flex: 0 0 auto;
+}
+.v2 .v2-apps-lib__table td .v2-badge {
+  white-space: nowrap;
+}
+
+/* library as cards (≤ 900px) */
+.v2 .v2-apps-libcards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  gap: 12px;
+}
+.v2 .v2-apps-libcard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  min-width: 0;
+}
+.v2 .v2-apps-libcard__facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+.v2 .v2-apps-libcard__facts dt {
+  font-size: var(--fs-small);
+  color: var(--secondary);
+}
+.v2 .v2-apps-libcard__facts dd {
+  margin: 2px 0 0;
+  min-width: 0;
+}
+.v2 .v2-apps-libcard .v2-apps-lib__actions {
+  justify-content: flex-start;
+}
+
+/* ---- custom APK ---- */
+.v2 .v2-apps-custom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 20px;
+}
+.v2 .v2-apps-custom__main {
+  flex: 2 1 560px;
+}
+.v2 .v2-apps-custom__head {
+  gap: 10px 12px;
+}
+.v2 .v2-apps-custom__mode {
+  align-self: flex-start;
+}
+.v2 .v2-apps-custom__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 16px;
+}
+.v2 .v2-apps-custom__wide {
+  grid-column: 1 / -1;
+}
+.v2 .v2-apps-custom__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
+}
+.v2 .v2-apps-custom__hint {
+  flex: 1 1 240px;
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+.v2 .v2-apps-custom__side {
+  flex: 1 1 300px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.v2 .v2-apps-sidecard__title {
+  margin: 0;
+  font-size: var(--fs-h2);
+  font-weight: 600;
+}
+.v2 .v2-apps-sidecard__text {
+  margin: 0;
+  font-size: var(--fs-control);
+  color: var(--text-2);
+}
+.v2 .v2-apps-sidecard__exts,
+.v2 .v2-apps-sidecard__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.v2 .v2-apps-sidecard__links {
+  gap: 8px;
+}
+
+/* ---- F-Droid ---- */
+.v2 .v2-apps-fd__info {
+  margin: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: var(--fs-control);
+  color: var(--text-2);
+}
+.v2 .v2-apps-fd__info > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--secondary);
+}
+.v2 .v2-apps-fd__grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  gap: 16px;
+}
+.v2 .v2-apps-fd__grid[aria-busy='true'] {
+  opacity: 0.6;
+}
+.v2 .v2-apps-fd__card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.v2 .v2-apps-fd__body {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+}
+.v2 .v2-apps-fd__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.v2 .v2-apps-fd__name {
+  margin: 0;
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+.v2 .v2-apps-fd__pkg {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  color: var(--secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v2 .v2-apps-fd__summary {
+  margin: 4px 0 0;
+  font-size: var(--fs-control);
+  color: var(--text-2);
+}
+.v2 .v2-apps-fd__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line-soft);
+}
+.v2 .v2-apps-fd__ver {
+  flex: 1 1 auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  color: var(--secondary);
+}
+.v2 .v2-apps-fd__inlib,
+.v2 .v2-apps-fd__blocked {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-sm);
+}
+.v2 .v2-apps-fd__inlib {
+  color: var(--ok-ink);
+}
+.v2 .v2-apps-fd__blocked {
+  color: var(--warn-ink);
+}
+.v2 .v2-apps-fd__capped {
+  margin: 0;
+  text-align: center;
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+
+/* ---- SHA-256 dialog ---- */
+.v2 .v2-apps-shaform {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.v2 .v2-apps-shaform__url {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  color: var(--secondary);
+  word-break: break-all;
+}
+
+@media (max-width: 860px) {
+  .v2 .v2-apps-lib__search,
+  .v2 .v2-apps-fd__search {
+    max-width: none;
+  }
+  .v2 .v2-apps-toolbar__spacer {
+    display: none;
+  }
+}

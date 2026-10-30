@@ -13,6 +13,12 @@ export interface AppInfo {
   versionCode?: number;
 }
 
+/** A scan result's app list, from device-supplied JSON: entries without a package name are dropped. */
+function toApps(v: unknown): AppInfo[] {
+  if (!Array.isArray(v)) return [];
+  return v.filter((a): a is AppInfo => !!a && typeof a === 'object' && typeof (a as AppInfo).pkg === 'string' && !!(a as AppInfo).pkg);
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Queue a command and poll command history until it completes, returning its result `detail`. */
@@ -44,8 +50,8 @@ async function runForResult(
 /** Scan the device for installed packages (metadata only — no icons). */
 export async function scanApps(deviceId: number | string, signal?: AbortSignal): Promise<AppInfo[]> {
   const detail = await runForResult(deviceId, { type: 'apps.scan' }, 75000, signal);
-  const parsed = JSON.parse(detail || '{}') as { apps?: AppInfo[] };
-  return parsed.apps ?? [];
+  const parsed = JSON.parse(detail || '{}') as { apps?: unknown } | null;
+  return toApps(parsed?.apps);
 }
 
 export interface ScanSnapshot {
@@ -63,7 +69,7 @@ export async function getLatestScan(deviceId: number | string): Promise<ScanSnap
   const scan = hist.find((c) => c.type === 'apps.scan' && c.status === 'done' && !!c.detail);
   if (!scan?.detail) return null;
   try {
-    const apps = (JSON.parse(scan.detail).apps ?? []) as AppInfo[];
+    const apps = toApps((JSON.parse(scan.detail) as { apps?: unknown } | null)?.apps);
     return apps.length ? { apps, scannedAt: scan.completedAt } : null;
   } catch {
     return null;

@@ -55,6 +55,24 @@ public class ApkHashResolverTest {
     }
 
     @Test
+    public void aFileIsHashedAgainOnlyWhenItChanges() throws Exception {
+        ApkHashResolver r = resolver("http://mdm.local");
+        String url = "http://mdm.local/files/cust1/app.apk";
+        File apk = new File(dir, "cust1/app.apk");
+        long mtime = apk.lastModified();
+        assertEquals(ABC, r.sha256Hex(url));
+
+        // Same size and modification time: the kept hash answers, the file is not read again.
+        Files.write(apk.toPath(), "xyz".getBytes(StandardCharsets.US_ASCII));
+        apk.setLastModified(mtime);
+        assertEquals(ABC, r.sha256Hex(url));
+
+        // Replaced at the same URL (a new modification time): hashed again.
+        apk.setLastModified(mtime + 2000);
+        assertEquals("3608bca1e44ea6c4d268eb6db02260269892c0b42b86bbf1e77a6fa16c3c9282", r.sha256Hex(url));
+    }
+
+    @Test
     public void hostedUnderAContextPath() throws Exception {
         assertEquals(ABC, resolver("https://mdm.example.com/hmdm").sha256Hex("https://mdm.example.com/hmdm/files/cust1/app.apk"));
     }

@@ -16,6 +16,7 @@ import com.hmdm.rest.json.agent.AgentCapabilities;
 import com.hmdm.rest.json.agent.AgentCheckInRequest;
 import com.hmdm.rest.json.agent.AgentCommandResult;
 import com.hmdm.rest.json.agent.AgentDeviceState;
+import com.hmdm.rest.resource.support.AppReconciler;
 import com.hmdm.rest.resource.support.ConfigAppInstaller;
 import com.hmdm.rest.resource.support.ConfigReconciler;
 import com.hmdm.rest.resource.support.InstallHashes;
@@ -103,7 +104,8 @@ public class AgentCheckInLimitsTest {
         commands = new FakeCommandDAO();
         reconciler = new NoopReconciler();
         resource = new AgentResource(new FakeUnsecureDAO(), null, commands,
-                new ConfigAppInstaller(null, null, null, null), reconciler, new NoopRequeuer(),
+                new ConfigAppInstaller(null, null, null, null), reconciler, new AppReconciler(null, null, null, null),
+                new NoopRequeuer(),
                 new InstallHashes(null, null), new KioskLockoutAlert(null, null, null));
     }
 

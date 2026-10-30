@@ -41,7 +41,8 @@ public final class DesiredConfigBuilder {
     public static final String POLICY_PREFIX = "policies.";
     public static final String KEY_KIOSK = "kiosk";
     public static final String KEY_LOCATION = "location";
-    private static final int ACTION_INSTALL = 1;
+    /** {@code configurationApplications.action} meaning "install this app". */
+    public static final int ACTION_INSTALL = 1;
 
     /** A server plugin's policy keys: {@code x.<pluginId>.<key>} ({@link DesiredConfigContributor}). */
     public static final String CONTRIBUTED_PREFIX = "x.";

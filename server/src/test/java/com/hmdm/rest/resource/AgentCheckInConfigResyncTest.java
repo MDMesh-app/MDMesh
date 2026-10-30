@@ -15,6 +15,7 @@ import com.hmdm.rest.json.agent.AgentCheckInRequest;
 import com.hmdm.rest.json.agent.AgentCheckInResponse;
 import com.hmdm.rest.json.agent.AgentCommandResult;
 import com.hmdm.rest.json.agent.AgentDeviceState;
+import com.hmdm.rest.resource.support.AppReconciler;
 import com.hmdm.rest.resource.support.ConfigReconciler;
 import com.hmdm.rest.resource.support.InstallHashes;
 import com.hmdm.rest.resource.support.KioskLockoutAlert;
@@ -199,7 +200,8 @@ public class AgentCheckInConfigResyncTest {
             @Override public boolean requeue(Device d, long now) { return false; }
         };
         resource = new AgentResource(unsecureDAO, null, commandDAO, null,
-                new ConfigReconciler(unsecureDAO, commandDAO, Fakes.noExtensionPoints()), noRollout,
+                new ConfigReconciler(unsecureDAO, commandDAO, Fakes.noExtensionPoints()),
+                new AppReconciler(null, null, null, null), noRollout,
                 new InstallHashes(null, unsecureDAO), new KioskLockoutAlert(null, null, null));
     }
 

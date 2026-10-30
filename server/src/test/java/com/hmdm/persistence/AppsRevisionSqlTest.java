@@ -93,4 +93,12 @@ public class AppsRevisionSqlTest {
         }
         assertEquals("5:2,9,10,11", seeded(5, 9, 10, 2, 11));
     }
+
+    @Test
+    public void theInstallSetLookupIsIndexed() throws Exception {
+        String cs = changeSet("26.10.29-configurationApplications-configurationId-idx");
+        assertTrue(cs, cs.contains("CREATE INDEX IF NOT EXISTS configurationApplications_configurationId_idx "
+                + "ON configurationApplications (configurationId);"));
+        assertTrue(cs, cs.contains("<rollback>DROP INDEX IF EXISTS configurationApplications_configurationId_idx;</rollback>"));
+    }
 }

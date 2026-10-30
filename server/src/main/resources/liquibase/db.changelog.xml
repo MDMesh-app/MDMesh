@@ -3043,5 +3043,12 @@
         <rollback>ALTER TABLE device_state DROP COLUMN appsRevision;</rollback>
     </changeSet>
 
+    <changeSet id="26.10.29-configurationApplications-configurationId-idx" author="lunacy" context="common">
+        <comment>Index,new: configurationApplications (configurationId). Every check-in of an agent that installs apps
+            reads its configuration's install set (com.hmdm.rest.resource.support.AppReconciler); one index lookup
+            instead of a scan of every configuration's apps. IF NOT EXISTS: safe on fresh and upgraded databases.</comment>
+        <sql>CREATE INDEX IF NOT EXISTS configurationApplications_configurationId_idx ON configurationApplications (configurationId);</sql>
+        <rollback>DROP INDEX IF EXISTS configurationApplications_configurationId_idx;</rollback>
+    </changeSet>
 
 </databaseChangeLog>

@@ -372,7 +372,7 @@ public class DesiredConfigBuilderTest {
             DesiredConfig k = DesiredConfigBuilder.build(kiosk, Arrays.asList(app(5, 505, "com.acme.pos", 1)), contributors);
             assertEquals(resource("desired-config-kiosk.json"), DesiredConfigBuilder.canonicalJson(k));
             assertEquals(resource("desired-config-kiosk.sha256"), k.getRevision());
-            DesiredConfig p = build(policiesConfig(), Collections.<Application>emptyList(), contributors);
+            DesiredConfig p = DesiredConfigBuilder.build(policiesConfig(), Collections.<Application>emptyList(), contributors);
             assertEquals(resource("desired-config-policies.json"), DesiredConfigBuilder.canonicalJson(p));
             assertEquals(resource("desired-config-policies.sha256"), p.getRevision());
         }
@@ -396,13 +396,13 @@ public class DesiredConfigBuilderTest {
     @Test
     public void a_plugin_cannot_set_a_core_key_or_another_plugins() {
         // "wifi" from plugin "x" is x.x.wifi; a dotted key that would reach another plugin's prefix is refused.
-        DesiredConfig d = build(policiesConfig(), Collections.<Application>emptyList(),
+        DesiredConfig d = DesiredConfigBuilder.build(policiesConfig(), Collections.<Application>emptyList(),
                 Collections.singletonList(contributor("x", map("wifi", true))));
         assertEquals(Boolean.FALSE, d.getPolicies().get("wifi"));
         assertEquals(Boolean.TRUE, d.getPolicies().get("x.x.wifi"));
         for (String bad : Arrays.asList("netaccess.vpn", "Vpn", "vpn-on", "", "v" + new String(new char[64]).replace('\0', 'x'))) {
             try {
-                build(policiesConfig(), Collections.<Application>emptyList(),
+                DesiredConfigBuilder.build(policiesConfig(), Collections.<Application>emptyList(),
                         Collections.singletonList(contributor("other", map(bad, true))));
                 fail("key \"" + bad + "\" was accepted");
             } catch (IllegalStateException expected) {
@@ -415,7 +415,7 @@ public class DesiredConfigBuilderTest {
     public void a_plugin_id_must_be_kebab_case_and_a_key_contributed_once() {
         for (String bad : Arrays.asList(null, "", "Net", "net.access", "net_access")) {
             try {
-                build(policiesConfig(), Collections.<Application>emptyList(),
+                DesiredConfigBuilder.build(policiesConfig(), Collections.<Application>emptyList(),
                         Collections.singletonList(contributor(bad, map("vpn", true))));
                 fail("pluginId \"" + bad + "\" was accepted");
             } catch (IllegalStateException expected) {
@@ -423,7 +423,7 @@ public class DesiredConfigBuilderTest {
             }
         }
         try {
-            build(policiesConfig(), Collections.<Application>emptyList(),
+            DesiredConfigBuilder.build(policiesConfig(), Collections.<Application>emptyList(),
                     Arrays.asList(contributor("net", map("vpn", true)), contributor("net", map("vpn", false))));
             fail("the same key from two contributors was accepted");
         } catch (IllegalStateException expected) {
@@ -444,7 +444,7 @@ public class DesiredConfigBuilderTest {
         notStringKey.put(7, true);
         for (Map raw : Arrays.asList(notBoolean, notStringKey)) {
             try {
-                build(policiesConfig(), Collections.<Application>emptyList(),
+                DesiredConfigBuilder.build(policiesConfig(), Collections.<Application>emptyList(),
                         Collections.singletonList(contributor("netaccess", (Map<String, Boolean>) raw)));
                 fail(raw + " was sent");
             } catch (IllegalStateException expected) {
@@ -462,7 +462,7 @@ public class DesiredConfigBuilderTest {
                 @Override public Map<String, Boolean> policies(Configuration c, List<Application> apps) { throw error; }
             };
             try {
-                build(policiesConfig(), Collections.<Application>emptyList(), Collections.singletonList(broken));
+                DesiredConfigBuilder.build(policiesConfig(), Collections.<Application>emptyList(), Collections.singletonList(broken));
                 fail("the error was not wrapped");
             } catch (IllegalStateException expected) {
                 assertTrue(expected.getMessage(), expected.getMessage().contains("broken"));
@@ -501,7 +501,7 @@ public class DesiredConfigBuilderTest {
         for (Throwable failure : Arrays.<Throwable>asList(new NotImplementedError(), new AssertionError("unreachable"),
                 new IOException("sneaky"))) {
             try {
-                build(policiesConfig(), Collections.<Application>emptyList(),
+                DesiredConfigBuilder.build(policiesConfig(), Collections.<Application>emptyList(),
                         Collections.singletonList(throwing("broken", failure)));
                 fail(failure + " was not wrapped");
             } catch (IllegalStateException expected) {
@@ -516,7 +516,7 @@ public class DesiredConfigBuilderTest {
     public void a_virtual_machine_error_passes_through() {
         OutOfMemoryError oom = new OutOfMemoryError("test");
         try {
-            build(policiesConfig(), Collections.<Application>emptyList(),
+            DesiredConfigBuilder.build(policiesConfig(), Collections.<Application>emptyList(),
                     Collections.singletonList(throwing("broken", oom)));
             fail("the error was swallowed");
         } catch (OutOfMemoryError expected) {
@@ -544,7 +544,7 @@ public class DesiredConfigBuilderTest {
             }
         };
         try {
-            build(policiesConfig(), Collections.<Application>emptyList(),
+            DesiredConfigBuilder.build(policiesConfig(), Collections.<Application>emptyList(),
                     Collections.singletonList(contributor("lazy", lazy)));
             fail("the failure was not wrapped");
         } catch (IllegalStateException expected) {
@@ -564,7 +564,7 @@ public class DesiredConfigBuilderTest {
                 return null;
             }
         };
-        DesiredConfig d = build(kioskConfig(), Arrays.asList(app(5, 505, "com.acme.pos", 1)),
+        DesiredConfig d = DesiredConfigBuilder.build(kioskConfig(), Arrays.asList(app(5, 505, "com.acme.pos", 1)),
                 Collections.singletonList(meddler));
         assertEquals(resource("desired-config-kiosk.json"), DesiredConfigBuilder.canonicalJson(d));
 
@@ -574,7 +574,7 @@ public class DesiredConfigBuilderTest {
             @Override public Map<String, Boolean> policies(Configuration c, List<Application> a) { a.clear(); return null; }
         };
         try {
-            build(kioskConfig(), apps, Collections.singletonList(clearer));
+            DesiredConfigBuilder.build(kioskConfig(), apps, Collections.singletonList(clearer));
             fail("the apps were writable");
         } catch (IllegalStateException expected) {
             assertTrue(expected.getMessage(), expected.getMessage().contains("clearer"));
@@ -589,7 +589,7 @@ public class DesiredConfigBuilderTest {
             @Override public Map<String, Boolean> policies(Configuration c, List<Application> apps) { throw new NullPointerException(); }
         };
         try {
-            build(policiesConfig(), Collections.<Application>emptyList(), Collections.singletonList(broken));
+            DesiredConfigBuilder.build(policiesConfig(), Collections.<Application>emptyList(), Collections.singletonList(broken));
             fail("the throw was swallowed");
         } catch (IllegalStateException expected) {
             assertTrue(expected.getMessage(), expected.getMessage().contains("broken"));

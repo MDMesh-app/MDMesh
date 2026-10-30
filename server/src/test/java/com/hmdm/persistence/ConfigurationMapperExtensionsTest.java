@@ -33,7 +33,7 @@ public class ConfigurationMapperExtensionsTest {
         InputStream in = ConfigurationMapper.class.getResourceAsStream("ConfigurationMapper.xml");
         String xml = squash(new Scanner(in, StandardCharsets.UTF_8.name()).useDelimiter("\\A").next());
         String insert = xml.substring(xml.indexOf("<insert id=\"insertConfiguration\""), xml.indexOf("</insert>"));
-        assertTrue(insert, insert.contains("kioskLockVolume, extensions)"));
-        assertTrue(insert, insert.contains("#{kioskLockVolume}, COALESCE(CAST(#{extensions} AS jsonb), '{}'::jsonb))"));
+        assertTrue(insert, insert.contains(", extensions) VALUES"));
+        assertTrue(insert, insert.contains(", COALESCE(CAST(#{extensions} AS jsonb), '{}'::jsonb))"));
     }
 }

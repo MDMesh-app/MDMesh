@@ -263,7 +263,7 @@ const LAYOUT: Record<'kiosk' | 'network' | 'security' | 'enrollment', Item[]> = 
     'textColor',
     'iconSize',
   ],
-  network: ['wifi', 'wifiRadio', 'bluetooth', 'requestUpdates'],
+  network: ['wifi', 'wifiRadio', 'bluetooth', 'requestUpdates', 'connectivityMode'],
   security: ['usbStorage', 'disableScreenshots', 'disableFactoryReset', 'disableSafeBoot'],
   enrollment: ['wifiSSID', 'wifiPassword', 'wifiSecurityType'],
 };
@@ -282,7 +282,7 @@ const HELP: Record<string, string> = {
 
 const SECTION_SUB = {
   kiosk: 'Lock the screen to the apps marked “Show in kiosk”.',
-  network: `Radios and location reporting. ${GROUP_NOTES.Network ?? ''}`.trim(),
+  network: `Radios, location reporting and connectivity. ${GROUP_NOTES.Network ?? ''}`.trim(),
   security: `What people on the device can change. ${GROUP_NOTES.Restrictions ?? ''}`.trim(),
   enrollment: GROUP_NOTES.Enrollment ?? '',
 };

@@ -126,6 +126,8 @@ public class Configuration implements CustomerData, Serializable {
     private Boolean kioskLockVolume;
     @ApiModelProperty("Wi-Fi radio: null = not managed, true = turn on, false = turn off (sent as policies.wifiRadio)")
     private Boolean wifiRadio;
+    @ApiModelProperty("Agent connectivity: null = not managed, adaptive = battery-saver, alwaysOn = always connected (connectivity.mode)")
+    private String connectivityMode;
     @ApiModelProperty("Server plugins' and console extensions' data, by namespace (an extension id, or <id>.<name>), each "
             + "a JSON object (com.hmdm.extension.ConfigurationExtensions). A save without it, or with null, keeps what is "
             + "stored; with it, replaces it whole. Only one configuration's GET returns it: the lists leave it out")
@@ -926,6 +928,14 @@ public class Configuration implements CustomerData, Serializable {
         this.wifiRadio = wifiRadio;
     }
 
+    public String getConnectivityMode() {
+        return connectivityMode;
+    }
+
+    public void setConnectivityMode(String connectivityMode) {
+        this.connectivityMode = connectivityMode;
+    }
+
     public ObjectNode getExtensions() {
         return extensions;
     }
@@ -1020,6 +1030,7 @@ public class Configuration implements CustomerData, Serializable {
         copy.setDisableSafeBoot(getDisableSafeBoot());
         copy.setKioskLockVolume(getKioskLockVolume());
         copy.setWifiRadio(getWifiRadio());
+        copy.setConnectivityMode(getConnectivityMode());
         copy.setExtensions(getExtensions() == null ? null : getExtensions().deepCopy());
 
         return copy;

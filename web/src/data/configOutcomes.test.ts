@@ -5,6 +5,8 @@ describe('outcomeKeyLabel', () => {
   it('names core’s keys after their configuration fields', () => {
     expect(outcomeKeyLabel('policies.usbStorage')).toBe('USB storage');
     expect(outcomeKeyLabel('kiosk')).toBe('Kiosk mode');
+    expect(outcomeKeyLabel('location')).toBe('Location reporting');
+    expect(outcomeKeyLabel('connectivity')).toBe('Connectivity');
   });
 
   it('names a server plugin’s key (policies.x.<plugin>.<key>) by its plugin and its key in words', () => {

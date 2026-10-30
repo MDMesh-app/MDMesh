@@ -3026,6 +3026,14 @@
         <rollback>ALTER TABLE configurations DROP COLUMN extensions;</rollback>
     </changeSet>
 
+    <changeSet id="26.10.27-configurations-connectivityMode" author="Przemek-Magic" context="common">
+        <comment>Column,new: configurations#connectivityMode (sent as connectivity.mode in config.apply, protocol 1.5):
+            adaptive (battery-saver) or alwaysOn (keep the live connection up). No DEFAULT: NULL = unmanaged, so each
+            device keeps its own setting and existing configurations keep their revision.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN connectivityMode VARCHAR(16);</sql>
+        <rollback>ALTER TABLE configurations DROP COLUMN connectivityMode;</rollback>
+    </changeSet>
+
     <changeSet id="26.10.29-configurationApplications-configurationId-idx" author="lunacy" context="common">
         <comment>Index,new: configurationApplications (configurationId). Every check-in of an agent that installs apps
             reads its configuration's install set (com.hmdm.rest.resource.support.AppReconciler); one index lookup

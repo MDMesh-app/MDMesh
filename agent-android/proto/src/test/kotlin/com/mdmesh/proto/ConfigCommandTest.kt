@@ -46,6 +46,15 @@ class ConfigCommandTest {
         val json = """{"revision":"r","location":{"mode":"off"}}"""
         val p = ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), json)
         assertEquals(DeviceAction.LOCATION_OFF, p.location?.mode)
-        assertEquals("1.4", ProtocolJson.PROTOCOL_VERSION)
+    }
+
+    @Test
+    fun `connectivity decodes and is absent by default (protocol 1_5)`() {
+        val json = """{"revision":"r","connectivity":{"mode":"alwaysOn"}}"""
+        val p = ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), json)
+        assertEquals(DeviceAction.POWER_ALWAYS_ON, p.connectivity?.mode)
+        val absent = ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), """{"revision":"r"}""")
+        assertNull(absent.connectivity)
+        assertEquals("1.5", ProtocolJson.PROTOCOL_VERSION)
     }
 }

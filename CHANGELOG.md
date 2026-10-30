@@ -38,6 +38,8 @@ New
   to the previous one. The arrow keys change tab in place, so Back then leaves the page.
 - After an update, the console shows what's new in the running version from these notes, once per version in each
   browser. It doesn't show on a browser's first visit. Settings → Server opens it again ("What's new", beside the version).
+- Device page: an Apps tab lists the apps with a launcher icon from the device's latest scan, with a search, a
+  system-apps filter and Export CSV for app audits, and Scan now for a role with `edit_devices` (thanks @Przemek-Magic).
 
 Under the hood
 - The console has unit tests (vitest), and CI runs them on every console change.

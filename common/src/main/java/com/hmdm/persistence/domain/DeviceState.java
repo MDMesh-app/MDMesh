@@ -23,6 +23,12 @@ public class DeviceState implements Serializable {
      * different version, config.apply is re-sent until one comes back done.
      */
     private String configAgentVersion;
+    /**
+     * The configuration install set (sorted version ids) the device's apps were last reconciled to
+     * (AppReconcileDecision), as configurationId:ids. Seeded for enrolled devices by the update that added the column;
+     * null for a device enrolled since, until its first check-in has decided its whole set.
+     */
+    private String appsRevision;
 
     public String getDeviceNumber() { return deviceNumber; }
     public void setDeviceNumber(String v) { this.deviceNumber = v; }
@@ -52,4 +58,6 @@ public class DeviceState implements Serializable {
     public void setAppliedConfigAt(Long v) { this.appliedConfigAt = v; }
     public String getConfigAgentVersion() { return configAgentVersion; }
     public void setConfigAgentVersion(String v) { this.configAgentVersion = v; }
+    public String getAppsRevision() { return appsRevision; }
+    public void setAppsRevision(String v) { this.appsRevision = v; }
 }

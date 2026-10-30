@@ -121,6 +121,11 @@ public class AgentCommandDAO {
         stateMapper.updateConfigAgentVersion(deviceNumber, version);
     }
 
+    /** Record the configuration install set the device's apps were reconciled to (see AppReconciler). */
+    public void updateAppsRevision(String deviceNumber, String revision) {
+        stateMapper.updateAppsRevision(deviceNumber, revision);
+    }
+
     /** A command was acked done: if it was a config.apply, the reporting agent version completed it. */
     public void recordConfigApplyDone(String deviceNumber, Integer commandId) {
         stateMapper.recordConfigApplyDone(deviceNumber, commandId);
@@ -170,6 +175,11 @@ public class AgentCommandDAO {
         deviceMapper.updateLastUpdate(deviceNumber, System.currentTimeMillis());
     }
 
+    /** Stamp the device's enrollment time (the console's "Enrolled"), keeping one already set. */
+    public void recordEnrollTime(String deviceNumber) {
+        deviceMapper.updateEnrollTime(deviceNumber, System.currentTimeMillis());
+    }
+
     /** Persist the reported Android version into infojson so the device list can show it. */
     public void updateAndroidVersion(String deviceNumber, String androidVersion) {
         deviceMapper.updateAndroidVersion(deviceNumber, androidVersion);
@@ -204,6 +214,11 @@ public class AgentCommandDAO {
     /** The device's {@code limit} most recently created commands of {@code type}, newest first. */
     public List<AgentCommand> listLatestOfType(String deviceNumber, String type, int limit) {
         return mapper.listLatestOfType(deviceNumber, type, limit);
+    }
+
+    /** The device's {@code limit} most recently created app.install and app.uninstall commands, newest first. */
+    public List<AgentCommand> listLatestAppCommands(String deviceNumber, int limit) {
+        return mapper.listLatestAppCommands(deviceNumber, limit);
     }
 
     /** Device numbers currently assigned to a configuration. */

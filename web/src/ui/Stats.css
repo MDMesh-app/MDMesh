@@ -1,0 +1,108 @@
+/* ---- stat cells ---- */
+.v2 .v2-statgrid {
+  flex: 2 1 340px;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr));
+  gap: 16px;
+}
+.v2 .v2-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 16px;
+  border-left: 1px solid var(--line-soft);
+}
+.v2 .v2-stat dd {
+  margin: 0;
+}
+.v2 .v2-stat__label {
+  font-size: var(--fs-meta);
+  color: var(--secondary);
+}
+.v2 .v2-stat__value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-stat);
+  font-weight: 500;
+  line-height: 1.1;
+}
+.v2 .v2-stat__of {
+  font-size: var(--fs-body);
+  color: var(--secondary);
+}
+.v2 .v2-stat__note {
+  font-size: var(--fs-meta);
+}
+.v2 .v2-stat__note.is-alert {
+  color: var(--alert-ink);
+}
+.v2 .v2-stat__note.is-warn {
+  color: var(--warn-ink);
+}
+.v2 .v2-stat__note.is-ok {
+  color: var(--ok-ink);
+}
+.v2 .v2-stat__note.is-muted {
+  color: var(--secondary);
+}
+
+/* ---- fleet card ---- */
+.v2 .v2-fleet {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px 24px;
+  padding: 20px 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.v2 .v2-fleet__main {
+  flex: 3 1 420px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.v2 .v2-fleet__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
+.v2 .v2-fleet__total {
+  font-family: var(--font-mono);
+  font-size: var(--fs-display);
+  font-weight: 500;
+  letter-spacing: var(--ls-display);
+  line-height: 1;
+}
+.v2 .v2-fleet__caption {
+  color: var(--secondary);
+}
+.v2 .v2-fleet__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+}
+.v2 .v2-fleet__item,
+.v2 a.v2-fleet__item:hover {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  color: var(--text);
+}
+.v2 a.v2-fleet__item:hover .v2-fleet__label {
+  text-decoration: underline;
+}
+.v2 .v2-fleet__label {
+  color: var(--text-2);
+}
+.v2 .v2-fleet__count {
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+.v2 .v2-fleet__pct {
+  font-size: var(--fs-meta);
+  color: var(--secondary);
+}

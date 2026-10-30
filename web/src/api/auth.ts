@@ -1,5 +1,5 @@
 import SparkMD5 from 'spark-md5';
-import { apiClient } from './client';
+import { ApiError, apiClient } from './client';
 
 // Endpoints (see server: com.hmdm.rest.resource.AuthResource):
 //   POST /rest/public/auth/login   body: { login, password }
@@ -21,15 +21,26 @@ export interface AuthUser {
   login: string;
   name?: string;
   email?: string;
-  // The server may also signal a forced password reset or 2FA step.
+  /** The account must set a new password first: AuthFilter refuses its session everything else until then. */
   passwordReset?: boolean;
   passwordResetToken?: string;
+  /**
+   * Set on the sign-in answer when the customer's settings require a second sign-in step (AuthResource.login). Until
+   * that step passes, AuthFilter drops the session on any call outside /rest/private/twofactor. It describes that
+   * sign-in, not the account.
+   */
   twoFactor?: boolean;
   superAdmin?: boolean;
+  /** False for a user an admin limited to some device groups (User.allDevicesAvailable; absent counts as true). */
+  allDevicesAvailable?: boolean;
   /** May apply, roll back or schedule updates: a super-admin, or the admin of a single-customer install (0.3.8+). */
   deploymentAdmin?: boolean;
   singleCustomer?: boolean;
   userRole?: {
+    /** Seeded roles: 1 super-admin, 2 admin, 3 user (UserRole.id). */
+    id?: number;
+    /** Free-text role name. The seeded names are Russian (Headwind's Liquibase seed), so don't show them raw. */
+    name?: string;
     superAdmin?: boolean;
     permissions?: { name: string }[];
   };
@@ -41,10 +52,16 @@ export function mayManageDeployment(u: AuthUser | null | undefined): boolean {
   return u?.deploymentAdmin === true;
 }
 
-/** The signed-in user as the server sees it now (GET /private/users/current). */
-export async function fetchCurrentUser(): Promise<AuthUser | null> {
-  return apiClient.get<AuthUser | null>('/private/users/current');
+/** The server refuses sign-in for a while after too many failed ones (AuthResource.TOO_MANY_ATTEMPTS, v0.3.9), and
+ *  the current-password check of a password change counts. The console's calls get it in the error envelope; an API
+ *  client's token sign-in gets HTTP 429. */
+export const TOO_MANY_ATTEMPTS = 'error.auth.too.many.attempts';
+
+export function isTooManyAttempts(err: unknown): boolean {
+  return err instanceof ApiError && (err.message === TOO_MANY_ATTEMPTS || err.httpStatus === 429);
 }
+
+export const TOO_MANY_MESSAGE = 'Too many failed sign-ins. Wait a few minutes, then try again.';
 
 export interface AuthOptions {
   signup: boolean;
@@ -76,6 +93,15 @@ export async function login(
   return apiClient.post<AuthUser>('/public/auth/login', payload);
 }
 
+/**
+ * The signed-in user as the server has it now (`GET /private/users/current`, UserResource.getCurrentUserDetails:
+ * the users row with its role and the role's permissions, the same data AuthFilter checks every request against).
+ * Its `authToken` and `passwordResetToken` are write-only on that object, so the answer carries neither.
+ */
+export async function fetchCurrentUser(): Promise<AuthUser | null> {
+  return apiClient.get<AuthUser | null>('/private/users/current');
+}
+
 export async function logout(): Promise<void> {
   try {
     await apiClient.post<void>('/public/auth/logout');
@@ -95,6 +121,24 @@ export async function submitForcedPasswordReset(
 ): Promise<void> {
   await apiClient.post('/public/passwordReset/reset', {
     passwordResetToken,
+    newPassword: hashPassword(newPassword),
+  });
+}
+
+/**
+ * Change the signed-in user's own password (`PUT /private/users/current`, UserResource.updatePassword). Both
+ * passwords are MD5-hashed like login; the server checks `oldPassword` against the stored hash and answers
+ * `error.password.wrong` when it does not match. `id` must be the signed-in user's id.
+ */
+export async function changeOwnPassword(
+  user: { id: number; login: string },
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  await apiClient.put('/private/users/current', {
+    id: user.id,
+    login: user.login,
+    oldPassword: hashPassword(currentPassword),
     newPassword: hashPassword(newPassword),
   });
 }

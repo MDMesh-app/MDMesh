@@ -1,0 +1,113 @@
+/* ---- stacked field ---- */
+.v2 .v2-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.v2 .v2-field__label {
+  font-weight: 500;
+}
+.v2 .v2-field--sm .v2-field__label {
+  font-size: var(--fs-sm);
+}
+.v2 .v2-field__help {
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+.v2 .v2-field__help.is-ok {
+  color: var(--ok-ink);
+}
+.v2 .v2-field__error {
+  font-size: var(--fs-sm);
+  color: var(--alert-ink);
+}
+
+/* ---- setting row ---- */
+.v2 .v2-fieldrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 24px;
+  padding: 13px 0;
+}
+.v2 .v2-fieldrow--divider {
+  border-top: 1px solid var(--line-soft);
+}
+.v2 .v2-fieldrow__text {
+  flex: 1 1 260px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.v2 .v2-fieldrow__text--lg {
+  flex-basis: 300px;
+  gap: 0;
+}
+.v2 .v2-fieldrow__labelline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.v2 .v2-fieldrow__label {
+  font-weight: 500;
+}
+.v2 .v2-fieldrow__help {
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+.v2 .v2-fieldrow__control {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0 0 0 auto;
+  padding: 0;
+  border: 0;
+  display: flex;
+}
+.v2 .v2-fieldrow__below {
+  flex: 1 1 100%;
+}
+/* Only for a disabled row (its control is disabled by the fieldset), so the lowered contrast is exempt. */
+.v2 .v2-fieldrow.is-disabled .v2-fieldrow__text,
+.v2 .v2-fieldrow.is-disabled .v2-fieldrow__control {
+  opacity: 0.55;
+}
+
+/* ---- chips and eyebrows ---- */
+.v2 .v2-changed {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 7px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  font-size: var(--fs-tiny);
+  font-weight: 500;
+  color: var(--ink);
+}
+.v2 .v2-changed__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink);
+}
+.v2 .v2-eyebrow {
+  margin: 0;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--ls-eyebrow);
+  color: var(--secondary);
+}
+.v2 .v2-eyebrowline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+.v2 .v2-eyebrowline__help {
+  font-size: var(--fs-meta);
+  color: var(--secondary);
+}

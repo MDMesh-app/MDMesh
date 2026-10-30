@@ -1,0 +1,10 @@
+.v2 .v2-copy {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.v2 .v2-copy__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-overflow: ellipsis;
+}

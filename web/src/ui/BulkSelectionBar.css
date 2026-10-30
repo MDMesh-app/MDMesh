@@ -1,0 +1,29 @@
+.v2 .v2-bulkbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--surface-2);
+}
+.v2 .v2-bulkbar--attached {
+  border-bottom: 1px solid var(--border);
+}
+.v2 .v2-bulkbar--standalone {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card-sm);
+}
+.v2 .v2-bulkbar__count {
+  flex: 1 1 auto;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-weight: 600;
+}
+.v2 .v2-bulkbar .v2-bulkbar__all {
+  padding: 0 4px;
+  font-weight: 400;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

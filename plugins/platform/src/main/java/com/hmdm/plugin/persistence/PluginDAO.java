@@ -24,13 +24,11 @@ package com.hmdm.plugin.persistence;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import com.hmdm.plugin.PluginList;
-import com.hmdm.plugin.persistence.domain.DisabledPlugin;
 import com.hmdm.plugin.persistence.domain.Plugin;
 import com.hmdm.plugin.persistence.mapper.PluginMapper;
 import com.hmdm.plugin.service.PluginStatusCache;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.security.SecurityException;
-import org.mybatis.guice.transactional.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -50,11 +48,21 @@ public class PluginDAO {
     private final PluginMapper pluginMapper;
 
     /**
+     * <p>The per-customer plugin state. Every write of <code>pluginsDisabled</code> goes through this DAO, which drops
+     * the customer's entry after the write's transaction ends (committed or not), so the next ask reads the table.</p>
+     */
+    private final PluginStatusCache pluginStatusCache;
+
+    private final DisabledPluginRows disabledPluginRows;
+
+    /**
      * <p>Constructs new <code>PluginDAO</code> instance. This implementation does nothing.</p>
      */
     @Inject
-    public PluginDAO(PluginMapper pluginMapper, PluginStatusCache pluginStatusCache) {
+    public PluginDAO(PluginMapper pluginMapper, PluginStatusCache pluginStatusCache, DisabledPluginRows disabledPluginRows) {
         this.pluginMapper = pluginMapper;
+        this.pluginStatusCache = pluginStatusCache;
+        this.disabledPluginRows = disabledPluginRows;
     }
 
     /**
@@ -103,30 +111,26 @@ public class PluginDAO {
      *
      * @param pluginIds a list of plugin IDs.
      */
-    @Transactional
     public void saveDisabledPlugins(Integer[] pluginIds) {
-        SecurityContext.get().getCurrentUser()
-                .map(user -> {
-                    this.pluginMapper.cleanUpDisabledPlugins(user.getCustomerId());
-                    if (pluginIds.length > 0) {
-                        this.pluginMapper.insertDisabledPlugin(pluginIds, user.getCustomerId());
-                    }
-                    return 1;
-                })
-                .orElseThrow(SecurityException::onAnonymousAccess);
+        final int customerId = SecurityContext.get().getCurrentUser()
+                .orElseThrow(SecurityException::onAnonymousAccess)
+                .getCustomerId();
+        try {
+            this.disabledPluginRows.replace(customerId, pluginIds);
+        } finally {
+            this.pluginStatusCache.invalidate(customerId);
+        }
     }
 
     /**
      * <p>Copies the disabled plugins from the master (super-admin) account to the customer account.</p>
      */
-    @Transactional
     public void copyDisabledPluginsFromMaster(int customerId) {
-        List<DisabledPlugin> disabledPlugins = this.pluginMapper.getDisabledPluginsForCustomer(1);
-        Integer[] disabledPluginIds = new Integer[disabledPlugins.size()];
-        int n = 0;
-        for (DisabledPlugin disabledPlugin : disabledPlugins) {
-            disabledPluginIds[n++] = disabledPlugin.getPluginId();
+        try {
+            this.disabledPluginRows.copyFromMaster(customerId);
+        } finally {
+            // Something may have asked about the new customer before this copy (it runs in a background task).
+            this.pluginStatusCache.invalidate(customerId);
         }
-        this.pluginMapper.insertDisabledPlugin(disabledPluginIds, customerId);
     }
 }

@@ -94,7 +94,7 @@ public class AgentCheckInKioskAlertTest {
                 executor, new KioskAlertLimits(System::currentTimeMillis), System::currentTimeMillis);
         return new AgentResource(new FakeUnsecureDAO(), null, commands,
                 new ConfigAppInstaller(null, null, null, null),
-                new ConfigReconciler(null, null) {
+                new ConfigReconciler(null, null, Fakes.noExtensionPoints()) {
                     @Override public boolean reconcile(Device d, Set<String> t, String rev, String av, String cav,
                                                        long now, long receivedAt) { return false; }
                 },

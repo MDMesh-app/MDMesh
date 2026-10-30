@@ -1,0 +1,141 @@
+.v2 .v2-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  line-height: var(--lh-body);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.v2 .v2-badge__icon {
+  display: inline-flex;
+}
+
+/* sizes */
+.v2 .v2-badge--xs {
+  padding: 0 6px;
+  font-size: var(--fs-micro);
+}
+.v2 .v2-badge--sm {
+  padding: 0 8px;
+  font-size: var(--fs-small);
+}
+.v2 .v2-badge--md {
+  padding: 1px 9px;
+  gap: 6px;
+  font-size: var(--fs-meta);
+  font-weight: 500;
+}
+.v2 .v2-badge--lg {
+  padding: 2px 10px;
+  gap: 6px;
+  font-size: var(--fs-sm);
+}
+.v2 .v2-badge--mono {
+  font-family: var(--font-mono);
+}
+.v2 .v2-badge--square {
+  border-radius: var(--radius-chip);
+}
+.v2 .v2-badge--square.v2-badge--md {
+  padding: 2px 9px;
+  font-weight: 400;
+}
+
+/* tones */
+.v2 .v2-badge--outline {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--text-2);
+}
+.v2 .v2-badge--neutral {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text-2);
+}
+.v2 .v2-badge--count {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-tiny);
+  font-weight: 500;
+}
+.v2 .v2-badge--ok {
+  background: var(--ok-soft);
+  border-color: var(--ok-line);
+  color: var(--ok-ink);
+}
+.v2 .v2-badge--warn {
+  background: var(--warn-soft);
+  border-color: var(--warn-line);
+  color: var(--warn-ink);
+}
+.v2 .v2-badge--alert {
+  background: var(--alert-soft);
+  border-color: var(--alert-line);
+  color: var(--alert-ink);
+}
+.v2 .v2-badge--idle {
+  background: var(--idle-soft);
+  border-color: var(--idle-line);
+  color: var(--idle-ink);
+}
+.v2 .v2-badge--ink {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--on-ink);
+}
+.v2 .v2-badge--quiet {
+  background: transparent;
+  border-color: var(--border);
+  color: inherit;
+}
+.v2 a.v2-badge {
+  text-decoration: none;
+}
+
+/* Chip: a Badge you can press (link or button). Keeps its tone colour on hover. */
+.v2 .v2-chip {
+  font-family: inherit;
+  line-height: var(--lh-body);
+  cursor: pointer;
+}
+.v2 .v2-chip.v2-badge--ok,
+.v2 .v2-chip.v2-badge--ok:hover {
+  color: var(--ok-ink);
+}
+.v2 .v2-chip.v2-badge--warn,
+.v2 .v2-chip.v2-badge--warn:hover {
+  color: var(--warn-ink);
+}
+.v2 .v2-chip.v2-badge--alert,
+.v2 .v2-chip.v2-badge--alert:hover {
+  color: var(--alert-ink);
+}
+.v2 .v2-chip.v2-badge--idle,
+.v2 .v2-chip.v2-badge--idle:hover {
+  color: var(--idle-ink);
+}
+.v2 .v2-chip.v2-badge--outline,
+.v2 .v2-chip.v2-badge--outline:hover {
+  color: var(--text-2);
+}
+.v2 .v2-chip:hover {
+  filter: brightness(0.97);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+[data-theme='dark'] .v2 .v2-chip:hover {
+  filter: brightness(1.15);
+}
+.v2 .v2-chip.is-pressed {
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+/* Outline tag at md is the editor title's "Kiosk" tag: 0×9, 12.5px, regular weight. */
+.v2 .v2-badge--outline.v2-badge--md {
+  padding: 0 9px;
+  font-weight: 400;
+}

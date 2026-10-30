@@ -8,16 +8,69 @@ line under Unreleased.
 
 ## Unreleased
 
+Heads-up
+- The console hides the pages a user's role can't use, which the server already refused: Configurations need the
+  `configurations` permission, Apps `applications`, Enroll `edit_devices`. Super-admin, Admin and User roles see every
+  page; Observer sees Overview, Devices, Apps and Settings. A link to a hidden page says "You don't have access to this
+  page".
+- It also hides the buttons the server, or the updater, would refuse for the role:
+  - `edit_devices`: device actions and kiosk, Sync now, the Devices list's row and bulk actions, pushing an app to
+    devices from Deploy, and Enroll. Agent rollouts also need a user not limited to some device groups.
+  - `edit_device_desc`: renaming a device.
+  - `edit_applications`: Add to library (F-Droid, Custom APK), Remove from library, and Deploy's "Add to a
+    configuration". Deploy shows when the role may push or add, with only those choices.
+  - `edit_application_versions`: setting an app's SHA-256 checksum. `edit_files`: uploading on Custom APK.
+  - `add_config`: New configuration; a link to a new one says "You don't have access to this page". `copy_config`:
+    Duplicate and Delete.
+  - Updates keep v0.3.8's rule, not a permission: Check now, Update and automatic updates in Settings → Updates, and
+    the help that speaks of Update, show only to a super-admin or the org admin of a single-customer install (the
+    updater checks it).
+  Every role still sees what it saw before, with two exceptions: without `edit_devices`, the device page's Control tab
+  loses its Remote actions card, and with it the location mode and the kiosk and "Do not track" hints it showed; and
+  Apps shows its Custom APK and F-Droid tabs only to a role that can add to the library or deploy. Without them the
+  Library is the only tab, and a link to a hidden one opens it.
+- A role change reaches a console that is already open when its tab is shown again, or when the page is loaded, with
+  no new sign-in: pages and buttons appear or go as the new role allows. For forks: an unsaved edit in a
+  configuration section an extension added, which the new role can't see, is dropped, and a message says so.
+
 New
-- Device page: an Apps tab lists the device's installed apps (those with a launcher icon) from its latest scan,
-  with Scan now, a search, a system-apps toggle and an Export CSV for app audits.
+- A device's open tab is in its address (`/devices/WH-12?tab=telemetry`), so a link opens that tab and Back returns
+  to the previous one. The arrow keys change tab in place, so Back then leaves the page.
+- After an update, the console shows what's new in the running version from these notes, once per version in each
+  browser. It doesn't show on a browser's first visit. Settings → Server opens it again ("What's new", beside the version).
+
+Under the hood
+- The console has unit tests (vitest), and CI runs them on every console change.
+- For forks: a console extension in `web/src/extensions/<id>/` adds sidebar items and pages, device tabs and rail
+  groups, configuration and Settings sections, Overview cards, and columns and actions on the Devices and Apps lists,
+  without editing core files. It imports only `@mdmesh/console` (extension API 1), `react` and its own files, and a
+  breaking change to `@mdmesh/console` gets one release of deprecation first. The guide is web/EXTENDING.md, and
+  docs/UPGRADING.md ("v0.4.0 for forks") says how to port a fork's page edits. Without extensions the console is as
+  before.
+- For forks: a server plugin goes in `plugins/fork/` and edits nothing outside it, its REST under `com.mdmesh` is
+  served, and its public routes are listed in `plugins/fork/public-routes.txt` (the server build's tests fail on one
+  that isn't, and on a private route its `ServletModule` doesn't put through `AuthFilter` and `PluginAccessFilter`).
+  Configurations carry an `extensions` object for plugins' and console extensions' data, which a save that leaves it out
+  keeps (the configuration lists leave it out). For the customers it is on for, a plugin can check that data on save
+  (`ConfigurationExtensionValidator`) and add its own `x.<plugin>.<key>` policy keys to config.apply
+  (`DesiredConfigContributor`). An agent without that toggle reports such a key as not supported, and the device page
+  names it by its plugin and its key in words (`x.netaccess.blockTethering` is "netaccess: block tethering").
+  Without plugins nothing changes, and no device re-applies its configuration.
+- A server plugin whose `plugins` row is `disabled` (set only by hand; MDMesh never sets it) is now off for every
+  customer: its private REST answers 404 and its checks and policy keys don't run.
+  Restart the server after changing it.
+- The server no longer packs the removed AngularJS console's plugin files.
+- The console no longer keeps the sign-in token (`authToken`) or a password-reset token in browser storage. When it
+  loads, it removes the copies an older version left there.
+- Setting a password with a reset token (`POST /rest/public/passwordReset/reset`) answers OK with no data. It returned
+  the account, with the new password's stored hash in `newPassword`. The console and the scripts never read it.
 
 ## v0.3.9 — 2026-10-27
 
 Upgrading
 - Update every server: this is a security release. Devices need no new agent, and the updater (supervisor) is
-  unchanged. Quick-start and from-source installs: apply the update from Settings → Updates. Native installs: re-run
-  the installer.
+  unchanged. Quick-start installs: apply the update from Settings → Updates. From source: `git pull && ./setup.sh`.
+  Native installs: `git pull && sudo ./setup.sh --native`.
 
 Heads-up
 - Sign-in is limited. After 10 failed sign-ins from one address in 15 minutes (or 50 in 6 hours), that address is

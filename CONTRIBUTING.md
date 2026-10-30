@@ -24,6 +24,11 @@ MDMesh is a monorepo with four planes (full map in **[STRUCTURE.md](STRUCTURE.md
 Read the relevant ADR in [`docs/adr/`](docs/adr) before changing a load-bearing area (signing, device IDs, the
 agent contract, etc.).
 
+**Maintaining a fork?** Add console pages, tabs and sections in `web/src/extensions/` and server plugins in
+`plugins/fork/`, so you never edit core files: [web/EXTENDING.md](web/EXTENDING.md) is the guide. A change to
+`@mdmesh/console` or a slot contract in core follows its stability rules (one release of deprecation, a CHANGELOG
+line).
+
 ---
 
 ## Build and test
@@ -33,7 +38,7 @@ stack.
 
 | Plane | Run from | Test | Type-check / build |
 |-------|----------|------|--------------------|
-| Console | `web/` | — (see [the runtime check](#dependency-updates)) | `npx tsc -b --noEmit` · `npm run build` |
+| Console | `web/` | `npm test` (vitest; also [the runtime check](#dependency-updates)) | `npx tsc -b --noEmit` · `npm run build` |
 | Server | repo root | `mvn -pl common test` (fast, DB-free) | `mvn -pl server -am compile` · `mvn -pl server -am package -DskipTests` (the WAR) |
 | Agent | `agent-android/` | `./gradlew :proto:test :core:test` · `./gradlew detekt` | `./gradlew :app:compileDebugKotlin` · `./gradlew :app:assembleDebug` (debug APK) |
 | Supervisor | `supervisor/` | `node --test` | the image + smoke test, below |
@@ -144,7 +149,12 @@ cd web && npm run build          # build the SPA first
 cd ../scripts/shots && npm install && npx playwright install chromium && node capture.mjs
 ```
 
-Output lands in `docs/screenshots/`; the harness and fixtures are in `scripts/shots/`.
+Output lands in `docs/screenshots/`, in the light theme (`node capture.mjs --theme dark` for dark); the harness and
+fixtures are in `scripts/shots/`. Behaviour checks for every page run against the same fixtures:
+`node scripts/shots/v2-parity/run.mjs --build` from the repo root. `--with-fixture` adds a check of every extension
+slot in a build that has the test fixture extension (`web/src/ext/__fixtures__/demo`) as a fork's folder:
+`node scripts/shots/v2-parity/run.mjs --with-fixture extensions` runs only that one. The normal build never has the
+fixture.
 
 ---
 

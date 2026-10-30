@@ -1,0 +1,65 @@
+.v2 .v2-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-body);
+  cursor: pointer;
+}
+.v2 .v2-toggle--bare {
+  padding: 0;
+  border-radius: 11px;
+}
+.v2 .v2-toggle__track {
+  display: flex;
+  justify-content: flex-start;
+  width: 40px;
+  height: 22px;
+  box-sizing: border-box;
+  padding: 3px;
+  border-radius: 11px;
+  background: var(--switch-off);
+  box-shadow: inset 0 0 0 1px var(--switch-off-ring);
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+.v2 .v2-toggle__knob {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--switch-off-knob);
+  box-shadow: var(--shadow-knob);
+  transform: translateX(0);
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+.v2 .v2-toggle.is-on .v2-toggle__track {
+  background: var(--switch-on);
+  box-shadow: none;
+}
+.v2 .v2-toggle.is-on .v2-toggle__knob {
+  background: var(--switch-on-knob);
+  transform: translateX(18px);
+}
+.v2 .v2-toggle:disabled {
+  cursor: default;
+  color: var(--faint);
+}
+.v2 .v2-toggle:disabled .v2-toggle__track {
+  opacity: 0.5;
+}
+
+@media (forced-colors: active) {
+  .v2 .v2-toggle__track {
+    border: 1px solid ButtonText;
+  }
+  .v2 .v2-toggle__knob {
+    background: ButtonText;
+  }
+  .v2 .v2-toggle.is-on .v2-toggle__track {
+    background: Highlight;
+  }
+}

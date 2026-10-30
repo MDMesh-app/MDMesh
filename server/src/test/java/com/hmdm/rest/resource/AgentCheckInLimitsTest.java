@@ -21,6 +21,7 @@ import com.hmdm.rest.resource.support.ConfigReconciler;
 import com.hmdm.rest.resource.support.InstallHashes;
 import com.hmdm.rest.resource.support.KioskLockoutAlert;
 import com.hmdm.rest.resource.support.RolloutRequeuer;
+import com.hmdm.testsupport.Fakes;
 import com.hmdm.util.CryptoUtil;
 import org.junit.Before;
 import org.junit.Test;
@@ -83,7 +84,7 @@ public class AgentCheckInLimitsTest {
 
     private static final class NoopReconciler extends ConfigReconciler {
         Set<String> tokens;
-        NoopReconciler() { super(null, null); }
+        NoopReconciler() { super(null, null, Fakes.noExtensionPoints()); }
         @Override public boolean reconcile(Device d, Set<String> t, String rev, String agentVersion,
                                            String configAgentVersion, long now, long receivedAt) { tokens = t; return false; }
     }

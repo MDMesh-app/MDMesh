@@ -1,0 +1,212 @@
+.v2 .v2-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  box-sizing: border-box;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.v2 .v2-card--pad-default {
+  padding: 20px 24px;
+}
+.v2 .v2-card--pad-rows {
+  padding: 20px 24px 8px;
+}
+.v2 .v2-card--pad-roomy {
+  padding: 20px 24px 24px;
+}
+.v2 .v2-card--pad-compact {
+  padding: 18px 24px;
+}
+.v2 .v2-card--pad-snug {
+  padding: 16px 24px 18px;
+}
+.v2 .v2-card--pad-rail {
+  padding: 20px 20px 16px;
+}
+.v2 .v2-card--pad-facts {
+  padding: 4px 20px 16px;
+}
+.v2 .v2-card--pad-side {
+  padding: 18px 20px;
+}
+.v2 .v2-card--pad-list,
+.v2 .v2-card--pad-none {
+  padding: 0;
+}
+.v2 .v2-card--r14 {
+  border-radius: var(--radius-card-sm);
+}
+.v2 .v2-card--clip {
+  position: relative;
+  overflow: hidden;
+}
+.v2 .v2-card--alert {
+  border-color: var(--alert-line);
+}
+.v2 .v2-card--warn {
+  border-color: var(--warn-line);
+}
+.v2 .v2-card--dashed {
+  border-style: dashed;
+  border-color: var(--border-strong);
+}
+.v2 .v2-card--selected {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 1px var(--ink);
+}
+
+/* ---- header ---- */
+.v2 .v2-cardhead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+/* numbered cards (Enroll): 26px number, 10px gap, 17/600 title, actions after */
+.v2 .v2-cardhead--numbered {
+  gap: 10px 12px;
+}
+.v2 .v2-cardhead--inset {
+  padding: 16px 24px 10px;
+}
+.v2 .v2-cardhead--sp6 {
+  padding-bottom: 6px;
+}
+.v2 .v2-cardhead--sp8 {
+  padding-bottom: 8px;
+}
+.v2 .v2-cardhead--sp10 {
+  padding-bottom: 10px;
+}
+.v2 .v2-cardhead--sp12 {
+  padding-bottom: 12px;
+}
+.v2 .v2-cardhead__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.v2 .v2-cardhead__title {
+  margin: 0;
+  font-size: var(--fs-h2);
+  font-weight: 600;
+}
+.v2 .v2-cardhead__title--17 {
+  font-size: var(--fs-title);
+}
+.v2 .v2-cardhead__title--18 {
+  font-size: var(--fs-title-lg);
+}
+.v2 .v2-cardhead__sub {
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+.v2 .v2-cardhead__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  font-size: var(--fs-sm);
+}
+.v2 .v2-cardhead__actions > a {
+  font-weight: 600;
+}
+
+/* ---- notice strip (attention / missing checksum) ---- */
+.v2 .v2-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--warn-line);
+  border-radius: var(--radius-card-sm);
+}
+.v2 .v2-notice__icon {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--warn-soft);
+  color: var(--warn-ink);
+}
+.v2 .v2-notice__body {
+  flex: 1 1 320px;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+}
+.v2 .v2-notice__action {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.v2 .v2-notice--alert {
+  border-color: var(--alert-line);
+}
+.v2 .v2-notice--alert .v2-notice__icon {
+  background: var(--alert-soft);
+  color: var(--alert-ink);
+}
+.v2 .v2-notice--ok {
+  border-color: var(--ok-line);
+}
+.v2 .v2-notice--ok .v2-notice__icon {
+  background: var(--ok-soft);
+  color: var(--ok-ink);
+}
+.v2 .v2-notice--idle {
+  border-color: var(--border);
+}
+.v2 .v2-notice--idle .v2-notice__icon {
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+
+/* ---- callout ---- */
+.v2 .v2-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+}
+.v2 .v2-callout__icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  margin-top: 2px;
+}
+.v2 .v2-callout__body {
+  min-width: 0;
+}
+.v2 .v2-callout--info {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text-2);
+}
+.v2 .v2-callout--warn {
+  background: var(--warn-soft);
+  border-color: var(--warn-line);
+  color: var(--warn-ink);
+}
+.v2 .v2-callout--alert {
+  background: var(--alert-soft);
+  border-color: var(--alert-line);
+  color: var(--alert-ink);
+}
+.v2 .v2-callout--ok {
+  background: var(--ok-wash);
+  border-color: var(--ok-line);
+  color: var(--ok-ink);
+}

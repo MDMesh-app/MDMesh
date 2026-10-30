@@ -1,0 +1,76 @@
+.v2 .v2-auth {
+  min-height: 100vh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 48px 16px;
+  background: var(--app);
+}
+.v2 .v2-auth__card {
+  width: 100%;
+  max-width: 400px;
+  box-sizing: border-box;
+  padding: 32px 32px 28px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-auth);
+  box-shadow: var(--shadow-auth);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.v2 .v2-auth__titles {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.v2 .v2-auth__title {
+  margin: 0;
+  font-size: var(--fs-h1-sm);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.v2 .v2-auth__sub {
+  margin: 0;
+  color: var(--secondary);
+}
+.v2 .v2-auth__foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 6px 16px;
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+.v2 .v2-auth__foot a {
+  color: var(--secondary);
+}
+@media (max-width: 480px) {
+  .v2 .v2-auth__card {
+    padding: 24px 20px 20px;
+  }
+}
+
+/* Footer "host · Connected": 7px dot, 7px gap (board). */
+.v2 .v2-auth-conn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.v2 .v2-auth-conn__dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--offline);
+}
+.v2 .v2-auth-conn__dot.is-ok {
+  background: var(--online);
+}
+.v2 .v2-auth-conn__dot.is-down {
+  background: var(--alert);
+}

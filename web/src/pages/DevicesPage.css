@@ -1,0 +1,158 @@
+/* Devices list (table, cards). Shared parts (table, pills, identity, bulk bar, pager) come from ui/. */
+
+/* ---- attention strip (title 600, chips gap 6) ---- */
+.v2 .v2-devices-attn__title {
+  font-weight: 600;
+}
+.v2 .v2-devices-attn__chips {
+  flex: 1 1 280px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* ---- toolbar: search 1 1 240 (max 360), status, filters, spacer, view switch; wraps (gap 8 12) ---- */
+.v2 .v2-devices-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.v2 .v2-devices-search {
+  flex: 1 0 280px;
+  max-width: 360px;
+}
+.v2 .v2-devices-toolbar__spacer {
+  flex: 1 1 0;
+}
+/* Duplicates toggle: a labelled-select-sized box (r10, 3:1 border) with the warn chip colours when on. */
+.v2 .v2-devices-dup {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.v2 .v2-devices-dup .v2-mono {
+  color: var(--secondary);
+}
+.v2 .v2-devices-dup.is-pressed {
+  background: var(--warn-soft);
+  border-color: var(--warn);
+  color: var(--warn-ink);
+  font-weight: 600;
+}
+.v2 .v2-devices-dup.is-pressed .v2-mono {
+  color: inherit;
+}
+
+/* ---- table ---- */
+.v2 .v2-devices-seen {
+  color: var(--text-2);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.v2 .v2-devices-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.v2 .v2-devices-actions--card {
+  gap: 4px;
+}
+.v2 .v2-devices-empty {
+  padding: 8px 24px 24px;
+}
+.v2 .v2-devices-loading {
+  margin: 0;
+  color: var(--secondary);
+}
+.v2 .v2-devices-callout {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+/* ---- cards: grid minmax(min(100%, 340px), 1fr), gap 16 ---- */
+.v2 .v2-devices-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+  gap: 16px;
+}
+.v2 .v2-devices-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  cursor: pointer;
+}
+.v2 .v2-devices-card.is-selected {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 1px var(--ink);
+}
+.v2 .v2-devices-card__top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 12px;
+  row-gap: 14px;
+  padding: 16px;
+}
+.v2 .v2-devices-card__check {
+  justify-self: end;
+  align-self: start;
+  margin-top: 2px;
+}
+.v2 .v2-devices-card__config {
+  padding: 10px 16px;
+  border-top: 1px solid var(--line-soft);
+}
+.v2 .v2-devices-card__config .v2-stext {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.v2 .v2-devices-card__facts {
+  margin: 0;
+  margin-top: auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  background: var(--surface-sunken);
+  border-top: 1px solid var(--line-soft);
+}
+.v2 .v2-devices-card__facts > div {
+  display: flex;
+  flex-direction: column;
+  padding: 9px 16px 10px;
+}
+.v2 .v2-devices-card__facts > div + div {
+  border-left: 1px solid var(--line-soft);
+  padding-left: 12px;
+}
+.v2 .v2-devices-card__facts dt {
+  font-size: var(--fs-micro);
+  color: var(--secondary);
+}
+.v2 .v2-devices-card__facts dd {
+  margin: 0;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+
+/* Narrow (≤ 860, drawer shell): the search box takes its own line. */
+@media (max-width: 860px) {
+  .v2 .v2-devices-search {
+    flex-basis: 100%;
+    max-width: none;
+  }
+}

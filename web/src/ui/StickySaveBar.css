@@ -1,0 +1,71 @@
+.v2 .v2-savebar {
+  position: sticky;
+  bottom: 16px;
+  z-index: 6;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 14px 20px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card-sm);
+  box-shadow: var(--shadow-float);
+  animation: v2-savebar-in 0.18s ease both;
+}
+.v2 .v2-savebar__count {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+.v2 .v2-savebar__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink);
+}
+.v2 .v2-savebar__msg {
+  flex: 1 1 280px;
+  color: var(--text-2);
+  font-size: var(--fs-control);
+}
+.v2 .v2-savebar__actions {
+  display: flex;
+  gap: 8px;
+}
+/* board: Save and apply is 9×18, Discard 9×16 */
+.v2 .v2-savebar .v2-savebar__save {
+  padding-inline: 18px;
+}
+
+@keyframes v2-savebar-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Phones: full-width bar on the bottom edge, sentence hidden, buttons stretch. */
+@media (max-width: 640px) {
+  .v2 .v2-savebar {
+    bottom: 0;
+    margin: 0 calc(-1 * var(--page-pad));
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    border-radius: 0;
+    border-width: 1px 0 0;
+  }
+  .v2 .v2-savebar__msg {
+    display: none;
+  }
+  .v2 .v2-savebar__actions {
+    flex: 1 1 100%;
+  }
+  .v2 .v2-savebar__actions > * {
+    flex: 1 1 0;
+  }
+}

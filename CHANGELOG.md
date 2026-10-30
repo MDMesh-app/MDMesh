@@ -8,6 +8,11 @@ line under Unreleased.
 
 ## Unreleased
 
+Fixes
+- Alerts: devices enrolled by QR code show Send alert messages and the "MDMesh active" notification. The agent grants
+  itself the notification permission it was missing, and an alert is reported as failed instead of done when
+  notifications are turned off on the device. Needs agent 0.4.0; no server update needed (thanks @Przemek-Magic).
+
 ## v0.3.9 — 2026-10-27
 
 Upgrading

@@ -17,6 +17,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import com.mdmesh.agent.R
+import com.mdmesh.core.action.NotificationPermissionAccess
 import com.mdmesh.core.power.PowerModeStore
 import com.mdmesh.core.store.DeviceIdentity
 import com.mdmesh.core.sync.CheckInCoordinator
@@ -50,6 +51,7 @@ class CheckInService : LifecycleService() {
     @Inject lateinit var identity: DeviceIdentity
     @Inject lateinit var powerModeStore: PowerModeStore
     @Inject lateinit var eventLog: EventLog
+    @Inject lateinit var notificationPermission: NotificationPermissionAccess
 
     @Volatile private var started = false
     @Volatile private var interactiveUntil = 0L
@@ -188,6 +190,9 @@ class CheckInService : LifecycleService() {
     }
 
     private fun startAsForeground() {
+        // Every start path (launcher, kiosk, boot, provisioning) comes through here, so the "MDMesh active"
+        // notification shows on Android 13+ even when the agent was enrolled by QR and its screen never opened.
+        notificationPermission.ensure()
         ensureChannel()
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.checkin_notification_title))

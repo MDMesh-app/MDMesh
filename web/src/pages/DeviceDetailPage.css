@@ -406,6 +406,9 @@
   gap: 12px;
   padding: 0 24px 12px;
 }
+.v2 .v2-device-apps__body > p {
+  margin: 0;
+}
 .v2 .v2-device-apps__tools {
   display: flex;
   flex-wrap: wrap;

@@ -1,21 +1,93 @@
-import { useId, useMemo, useState } from 'react';
-import type { CommandHistoryItem } from '../api/commands';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import type { CommandHistoryItem, QueueCommandRequest } from '../api/commands';
 import type { AppInfo } from '../api/deviceApps';
 import {
   Button,
+  Callout,
   Card,
   CardHeader,
   Checkbox,
   EmptyState,
   IconApps,
   IconDownload,
+  IconSync,
+  IconWarning,
   RelativeTime,
   SearchInput,
   Table,
   type Column,
 } from '../ui';
-import { appsCsv, byLabel, filterApps, latestScan } from '../data/deviceApps';
+import { appsCsv, byLabel, filterApps, latestScan, scanProgress } from '../data/deviceApps';
 import { DASH } from './deviceDetailFormat';
+
+/** How long Scan now waits for the device, as the kiosk picker does (api/deviceApps runForResult). */
+const SCAN_TIMEOUT_MS = 75_000;
+
+/** The page's queue: toasts the outcome, nudges the device and refreshes the polled history. */
+type Queue = (
+  label: string,
+  request: () => QueueCommandRequest,
+  onQueued?: (cmdId: number | string | undefined) => void,
+) => Promise<boolean>;
+
+export interface AppScanState {
+  /** Queued and not answered yet (and not timed out). */
+  scanning: boolean;
+  /** Why the last Scan now gave no list. */
+  error: string | null;
+  start: () => void;
+}
+
+/**
+ * Scan now: queues apps.scan through the page's queue and follows it in the page's polled history, so there is no
+ * second poll. Kept by the page, so a scan in flight survives a tab change; a different device forgets it.
+ */
+export function useAppScan(number: string | undefined, history: readonly CommandHistoryItem[], queue: Queue): AppScanState {
+  const [queueing, setQueueing] = useState(false);
+  const [queued, setQueued] = useState<string | null>(null);
+  const [timedOut, setTimedOut] = useState(false);
+  const seq = useRef(0);
+
+  useEffect(() => {
+    seq.current++;
+    setQueueing(false);
+    setQueued(null);
+    setTimedOut(false);
+  }, [number]);
+
+  const progress = queued ? scanProgress(history, queued) : null;
+  const waiting = progress?.state === 'pending';
+  useEffect(() => {
+    if (!waiting) return;
+    const t = setTimeout(() => setTimedOut(true), SCAN_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, [queued, waiting]);
+
+  async function start() {
+    const mine = ++seq.current;
+    setQueueing(true);
+    setQueued(null);
+    setTimedOut(false);
+    try {
+      await queue('App scan', () => ({ type: 'apps.scan' }), (cmdId) => {
+        if (mine === seq.current && cmdId != null) setQueued(String(cmdId));
+      });
+    } finally {
+      if (mine === seq.current) setQueueing(false);
+    }
+  }
+
+  return {
+    scanning: queueing || (waiting && !timedOut),
+    error:
+      progress?.state === 'failed'
+        ? progress.reason
+        : waiting && timedOut
+          ? 'Timed out waiting for the device (is it online?)'
+          : null,
+    start: () => void start(),
+  };
+}
 
 const COLUMNS: ReadonlyArray<Column<AppInfo>> = [
   { key: 'app', header: 'App', cell: (a) => a.label },
@@ -42,16 +114,19 @@ function downloadCsv(name: string, text: string) {
 
 /**
  * The device's installed apps from its latest apps.scan in the polled history: the apps with a launcher icon, as the
- * agent reports them. Export CSV writes every app, system ones included, for app audits.
+ * agent reports them. Scan now (`scan`, only for a role with edit_devices) asks the device again; Export CSV writes
+ * every app, system ones included, for app audits.
  */
 export function AppsTab({
   number,
   history,
   loaded,
+  scan,
 }: {
   number: string;
   history: readonly CommandHistoryItem[];
   loaded: boolean;
+  scan?: AppScanState;
 }) {
   const titleId = useId();
   const [query, setQuery] = useState('');
@@ -66,10 +141,10 @@ export function AppsTab({
   else if (!latest) {
     empty = {
       title: 'No recent scan',
-      text: `The device’s recent commands hold no finished app scan.`,
+      text: `The device’s recent commands hold no finished app scan.${scan ? ' Scan now asks it for its apps.' : ''}`,
     };
   } else if (all.length === 0) {
-    empty = { title: 'The last scan listed no apps' };
+    empty = { title: 'The last scan listed no apps', text: scan ? 'Give the device a moment after an update, then scan again.' : undefined };
   }
 
   return (
@@ -102,21 +177,38 @@ export function AppsTab({
             >
               Export CSV
             </Button>
+            {scan ? (
+              <Button size="md" icon={<IconSync />} disabled={scan.scanning} onClick={scan.start}>
+                {scan.scanning ? 'Scanning…' : 'Scan now'}
+              </Button>
+            ) : null}
           </>
         }
       />
-      {all.length ? (
+      {scan?.error || scan?.scanning || all.length ? (
         <div className="v2-device-apps__body">
-          <div className="v2-device-apps__tools">
-            <SearchInput
-              className="v2-device-apps__search"
-              aria-label="Search apps"
-              placeholder="Search name or package"
-              value={query}
-              onChange={setQuery}
-            />
-            <Checkbox label="Show system apps" checked={showSystem} onChange={(e) => setShowSystem(e.target.checked)} />
-          </div>
+          {scan?.error ? (
+            <Callout tone="alert" role="alert" icon={<IconWarning size={16} />}>
+              {scan.error}
+            </Callout>
+          ) : null}
+          {scan?.scanning ? (
+            <p className="v2-device-meta" role="status">
+              Asking the device for its apps…
+            </p>
+          ) : null}
+          {all.length ? (
+            <div className="v2-device-apps__tools">
+              <SearchInput
+                className="v2-device-apps__search"
+                aria-label="Search apps"
+                placeholder="Search name or package"
+                value={query}
+                onChange={setQuery}
+              />
+              <Checkbox label="Show system apps" checked={showSystem} onChange={(e) => setShowSystem(e.target.checked)} />
+            </div>
+          ) : null}
         </div>
       ) : null}
       {empty ? (

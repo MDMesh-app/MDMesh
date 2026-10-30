@@ -88,7 +88,10 @@ configuration; an ad-hoc "Custom kiosk" from the console is left alone. After so
   wake socket only while the screen is on or charging; `alwaysOn` holds it 24/7, so commands reach a locked device in
   seconds instead of at the next heartbeat. Applied through the same `PowerModeStore` as `device.powerMode`. NULL is
   not managed: the section is omitted, so existing revisions don't move, and each device keeps its mode, including
-  one set by `device.powerMode` (which lasts until the configuration's next `config.apply`). Older agents ignore it.
+  one set by `device.powerMode`. A managed mode wins over `device.powerMode`: the saved document is applied again
+  after every boot and agent update (`ConfigReapplyWorker`), and the server re-sends `config.apply` when the agent
+  version changes, so a device-level mode lasts only until then. Switching a configuration from `alwaysOn` back to
+  not managed leaves its devices on `alwaysOn`; set `adaptive` to switch them back. Older agents ignore it.
 
 **Wi-Fi radio Off, in detail**
 - Off is deferred, without blocking the other keys, while Wi-Fi is the device's only network. It's retried only at

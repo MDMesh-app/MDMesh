@@ -12,6 +12,7 @@ import com.mdmesh.kiosk.KioskController
 import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.policy.PolicyOutcome
 import com.mdmesh.policy.ReleasablePolicy
+import com.mdmesh.policy.ResolvedToggles
 import com.mdmesh.policy.TogglePolicy
 import com.mdmesh.policy.wifi.InMemoryWifiRadioOffState
 import com.mdmesh.policy.wifi.WifiRadio
@@ -53,10 +54,18 @@ class ConfigApplierTest {
     private fun kiosk(c: KioskController, store: InMemoryKioskStateStore = InMemoryKioskStateStore()) =
         KioskApplier(c, store, NoHome, ComponentName("a", "b")) { false }
 
+    /** No connectivity wiring: only the connectivity tests pass their own setPowerMode. */
+    private fun applier(
+        toggles: () -> ResolvedToggles,
+        kiosk: KioskApplier,
+        setLocationMode: (String) -> Unit,
+        store: ConfigStateStore,
+    ) = ConfigApplier(toggles, kiosk, setLocationMode, store, setPowerMode = {})
+
     @Test fun `applies present policies only and persists on full success`() = runTest {
         val wifi = FakeToggle("wifi", PolicyOutcome.Applied); val bt = FakeToggle("bluetooth", PolicyOutcome.Applied)
         val store = InMemoryConfigStateStore(); var loc: String? = null
-        val r = ConfigApplier(fixedToggles("wifi" to wifi, "bluetooth" to bt), kiosk(FakeController()), { loc = it }, store)
+        val r = applier(fixedToggles("wifi" to wifi, "bluetooth" to bt), kiosk(FakeController()), { loc = it }, store)
             .apply(ConfigApplyPayload(revision = "r1", policies = mapOf("wifi" to false), location = ConfigLocation("active")))
         assertEquals("no kiosk in the doc and none previously applied -> no kiosk key",
             mapOf("policies.wifi" to ConfigOutcome.APPLIED, "location" to ConfigOutcome.APPLIED), r.outcomes)
@@ -73,7 +82,7 @@ class ConfigApplierTest {
 
     @Test fun `Safe Mode follows the kiosk and the policy, and is lifted when neither asks for it`() = runTest {
         val c = SafeModeController(); val config = InMemoryConfigStateStore()
-        val a = ConfigApplier(fixedToggles(), safeModeKiosk(c, config), {}, config)
+        val a = applier(fixedToggles(), safeModeKiosk(c, config), {}, config)
         a.apply(ConfigApplyPayload(revision = "s1", kiosk = KioskApplyPayload(mode = "single", pinPackage = "com.a")))
         assertEquals("kiosk, Safe Mode not managed: blocked", true, c.safeMode.last())
         a.apply(ConfigApplyPayload(revision = "s2"))
@@ -86,7 +95,7 @@ class ConfigApplierTest {
 
     @Test fun `an explicit Allow wins in kiosk, an explicit Block holds outside it`() = runTest {
         val c = SafeModeController(); val config = InMemoryConfigStateStore()
-        val a = ConfigApplier(fixedToggles(), safeModeKiosk(c, config), {}, config)
+        val a = applier(fixedToggles(), safeModeKiosk(c, config), {}, config)
         a.apply(ConfigApplyPayload(revision = "a1", policies = mapOf("safeBoot" to true),
             kiosk = KioskApplyPayload(mode = "single", pinPackage = "com.a")))
         assertEquals("kiosk with Allow", false, c.safeMode.last())
@@ -99,7 +108,7 @@ class ConfigApplierTest {
         val config = InMemoryConfigStateStore()
         val kioskStore = InMemoryKioskStateStore()
         kioskStore.save(KioskApplyPayload(mode = "single", pinPackage = "com.a")) // kiosk.enter, not the configuration
-        ConfigApplier(fixedToggles(), safeModeKiosk(c, config, kioskStore), {}, config)
+        applier(fixedToggles(), safeModeKiosk(c, config, kioskStore), {}, config)
             .apply(ConfigApplyPayload(revision = "m1"))
         assertEquals(listOf(true), c.safeMode)
     }
@@ -111,7 +120,7 @@ class ConfigApplierTest {
         kioskStore.save(KioskApplyPayload(mode = "single", pinPackage = "com.a"))
         config.save(ConfigApplyPayload(revision = "old", policies = mapOf("safeBoot" to true))) // saved: Allow
         config.delivered = ConfigApplyPayload(revision = "new") // newer, not managed, failed elsewhere: never saved
-        ConfigApplier(fixedToggles(), safeModeKiosk(c, config, kioskStore), {}, config).reapplyPersisted()
+        applier(fixedToggles(), safeModeKiosk(c, config, kioskStore), {}, config).reapplyPersisted()
         assertEquals("in kiosk, the server no longer allows it: blocked", true, c.safeMode.last())
     }
 
@@ -119,14 +128,14 @@ class ConfigApplierTest {
         val config = InMemoryConfigStateStore(); val kioskStore = InMemoryKioskStateStore()
         kioskStore.save(KioskApplyPayload(mode = "single", pinPackage = "com.a"))
         val refusing = safeModeKiosk(SafeModeController(KioskResult.Failed("dpm")), config, kioskStore)
-        val r = ConfigApplier(fixedToggles(), refusing, {}, config).apply(ConfigApplyPayload(revision = "f1"))
+        val r = applier(fixedToggles(), refusing, {}, config).apply(ConfigApplyPayload(revision = "f1"))
         assertEquals("failed: dpm", r.outcomes["policies.safeBoot"])
         assertNull(config.revision())
     }
 
     @Test fun `unsupported policy still counts as success and persists`() = runTest {
         val store = InMemoryConfigStateStore()
-        val r = ConfigApplier(fixedToggles(), kiosk(FakeController()), {}, store)
+        val r = applier(fixedToggles(), kiosk(FakeController()), {}, store)
             .apply(ConfigApplyPayload(revision = "r2", policies = mapOf("usbStorage" to false)))
         assertEquals(ConfigOutcome.UNSUPPORTED, r.outcomes["policies.usbStorage"])
         assertEquals("r2", store.revision())
@@ -134,7 +143,7 @@ class ConfigApplierTest {
 
     @Test fun `a failed key blocks persistence`() = runTest {
         val store = InMemoryConfigStateStore()
-        val r = ConfigApplier(fixedToggles("wifi" to FakeToggle("wifi", PolicyOutcome.Failed("dpm"))), kiosk(FakeController()), {}, store)
+        val r = applier(fixedToggles("wifi" to FakeToggle("wifi", PolicyOutcome.Failed("dpm"))), kiosk(FakeController()), {}, store)
             .apply(ConfigApplyPayload(revision = "r3", policies = mapOf("wifi" to true)))
         assertEquals("failed: dpm", r.outcomes["policies.wifi"])
         assertFalse(ConfigApplier.succeeded(r)); assertNull(store.revision())
@@ -142,7 +151,7 @@ class ConfigApplierTest {
 
     @Test fun `kiosk present enters, kiosk absent exits only when the previous config asserted kiosk`() = runTest {
         val c = FakeController(); val kstore = InMemoryKioskStateStore()
-        val a = ConfigApplier(fixedToggles(), kiosk(c, kstore), {}, InMemoryConfigStateStore())
+        val a = applier(fixedToggles(), kiosk(c, kstore), {}, InMemoryConfigStateStore())
         val r1 = a.apply(ConfigApplyPayload(revision = "k1", kiosk = KioskApplyPayload(mode = "single", pinPackage = "com.a")))
         assertEquals(1, c.enters); assertNotNull(kstore.load())
         assertEquals(ConfigOutcome.APPLIED, r1.outcomes["kiosk"])
@@ -158,7 +167,7 @@ class ConfigApplierTest {
         val c = FakeController(); val kstore = InMemoryKioskStateStore()
         kstore.save(KioskApplyPayload(mode = "single", pinPackage = "com.manual")) // set by an ad-hoc kiosk.enter
         // No config ever applied.
-        val a = ConfigApplier(fixedToggles(), kiosk(c, kstore), {}, InMemoryConfigStateStore())
+        val a = applier(fixedToggles(), kiosk(c, kstore), {}, InMemoryConfigStateStore())
         val r = a.apply(ConfigApplyPayload(revision = "first"))
         assertEquals(0, c.exits); assertNotNull(kstore.load())
         assertFalse("nothing asserted or exited -> kiosk key omitted", r.outcomes.containsKey("kiosk"))
@@ -166,7 +175,7 @@ class ConfigApplierTest {
 
     @Test fun `kiosk unsupported is reported as unsupported not failed`() = runTest {
         val store = InMemoryConfigStateStore()
-        val r = ConfigApplier(fixedToggles(), kiosk(FakeController(KioskResult.Unsupported)), {}, store)
+        val r = applier(fixedToggles(), kiosk(FakeController(KioskResult.Unsupported)), {}, store)
             .apply(ConfigApplyPayload(revision = "k9", kiosk = KioskApplyPayload()))
         assertEquals(ConfigOutcome.UNSUPPORTED, r.outcomes["kiosk"]); assertEquals("k9", store.revision())
     }
@@ -174,9 +183,9 @@ class ConfigApplierTest {
     @Test fun `reapplyPersisted replays the stored document`() = runTest {
         val wifi = FakeToggle("wifi", PolicyOutcome.Applied); val store = InMemoryConfigStateStore()
         store.save(ConfigApplyPayload(revision = "p1", policies = mapOf("wifi" to true)))
-        val r = ConfigApplier(fixedToggles("wifi" to wifi), kiosk(FakeController()), {}, store).reapplyPersisted()
+        val r = applier(fixedToggles("wifi" to wifi), kiosk(FakeController()), {}, store).reapplyPersisted()
         assertEquals("p1", r?.revision); assertEquals(true, wifi.last)
-        val empty = ConfigApplier(fixedToggles(), kiosk(FakeController()), {}, InMemoryConfigStateStore())
+        val empty = applier(fixedToggles(), kiosk(FakeController()), {}, InMemoryConfigStateStore())
         assertNull(empty.reapplyPersisted())
     }
 
@@ -193,7 +202,7 @@ class ConfigApplierTest {
         // or a reboot would replay an older document (and a stale kiosk decision).
         val store = InMemoryConfigStateStore()
         val radio = FakeReleasable(PolicyOutcome.Deferred("only network"))
-        val r = ConfigApplier(fixedToggles("wifiRadio" to radio), kiosk(FakeController()), {}, store)
+        val r = applier(fixedToggles("wifiRadio" to radio), kiosk(FakeController()), {}, store)
             .apply(ConfigApplyPayload(revision = "d1", policies = mapOf("wifiRadio" to false)))
         assertEquals("deferred: only network", r.outcomes["policies.wifiRadio"])
         assertTrue(ConfigApplier.succeeded(r))
@@ -202,7 +211,7 @@ class ConfigApplierTest {
 
     @Test fun `a key the configuration stops managing is released once`() = runTest {
         val store = InMemoryConfigStateStore(); val radio = FakeReleasable(PolicyOutcome.Applied)
-        val a = ConfigApplier(fixedToggles("wifiRadio" to radio), kiosk(FakeController()), {}, store)
+        val a = applier(fixedToggles("wifiRadio" to radio), kiosk(FakeController()), {}, store)
         a.apply(ConfigApplyPayload(revision = "w1", policies = mapOf("wifiRadio" to false)))
         assertEquals(0, radio.releases)
         val r = a.apply(ConfigApplyPayload(revision = "w2"))
@@ -223,7 +232,7 @@ class ConfigApplierTest {
         val radio = StrandableRadio(); val state = InMemoryWifiRadioOffState(); val store = InMemoryConfigStateStore()
         var now = 0L
         val policy = WifiRadioPolicy(radio, { _, _ -> }, 33, state, { now }) { true }
-        val a = ConfigApplier(fixedToggles("wifiRadio" to policy), kiosk(FakeController()), {}, store)
+        val a = applier(fixedToggles("wifiRadio" to policy), kiosk(FakeController()), {}, store)
         val doc = ConfigApplyPayload(revision = "h1", policies = mapOf("wifiRadio" to false))
         a.apply(doc)
         assertEquals(false, radio.on); assertEquals("h1", store.revision())
@@ -262,7 +271,7 @@ class ConfigApplierTest {
         var now = 0L
         val policy = WifiRadioPolicy(radio, { _, _ -> }, 33, state, { now }) { true }
         val failingKiosk = kiosk(FakeController(KioskResult.Failed("no app")))
-        val a = ConfigApplier(fixedToggles("wifiRadio" to policy), failingKiosk, {}, store)
+        val a = applier(fixedToggles("wifiRadio" to policy), failingKiosk, {}, store)
         a.apply(ConfigApplyPayload(revision = "A"))
         val b = ConfigApplyPayload(revision = "B", policies = mapOf("wifiRadio" to false), kiosk = KioskApplyPayload())
         assertFalse(ConfigApplier.succeeded(a.apply(b)))
@@ -288,7 +297,7 @@ class ConfigApplierTest {
         val policy = WifiRadioPolicy(radio, { k, add -> if (add) locks += k else locks -= k }, 33) { true }
         val bt = FakeToggle("bluetooth", PolicyOutcome.Failed("dpm said no"))
         val toggles = fixedToggles("wifiRadio" to policy, "bluetooth" to bt)
-        val a = ConfigApplier(toggles, kiosk(FakeController()), {}, store)
+        val a = applier(toggles, kiosk(FakeController()), {}, store)
         a.apply(ConfigApplyPayload(revision = "A"))
         val offAndBluetooth = mapOf("wifiRadio" to false, "bluetooth" to false)
         val b = a.apply(ConfigApplyPayload(revision = "B", policies = offAndBluetooth))
@@ -313,7 +322,7 @@ class ConfigApplierTest {
         // fails. The re-send of C must release it again, though neither A nor C mentions wifiRadio.
         val radio = FlakyRelease(); val store = InMemoryConfigStateStore()
         val bt = FakeToggle("bluetooth", PolicyOutcome.Failed("dpm said no"))
-        val a = ConfigApplier(fixedToggles("wifiRadio" to radio, "bluetooth" to bt), kiosk(FakeController()), {}, store)
+        val a = applier(fixedToggles("wifiRadio" to radio, "bluetooth" to bt), kiosk(FakeController()), {}, store)
         a.apply(ConfigApplyPayload(revision = "A"))
         a.apply(ConfigApplyPayload(revision = "B", policies = mapOf("wifiRadio" to false, "bluetooth" to false)))
         radio.releaseOutcome = PolicyOutcome.Failed("busy")
@@ -329,7 +338,7 @@ class ConfigApplierTest {
     @Test fun `a failed kiosk exit is retried by the re-send of the same document`() = runTest {
         val c = FakeController(); val kstore = InMemoryKioskStateStore(); val store = InMemoryConfigStateStore()
         val bt = FakeToggle("bluetooth", PolicyOutcome.Failed("dpm said no"))
-        val a = ConfigApplier(fixedToggles("bluetooth" to bt), kiosk(c, kstore), {}, store)
+        val a = applier(fixedToggles("bluetooth" to bt), kiosk(c, kstore), {}, store)
         a.apply(ConfigApplyPayload(revision = "A"))
         val kioskOn = KioskApplyPayload(mode = "single", pinPackage = "com.a")
         a.apply(ConfigApplyPayload(revision = "B", kiosk = kioskOn, policies = mapOf("bluetooth" to false)))
@@ -345,7 +354,7 @@ class ConfigApplierTest {
     @Test fun `no Wi-Fi radio policy, nothing to heal`() = runTest {
         val store = InMemoryConfigStateStore()
         store.save(ConfigApplyPayload(revision = "n1"))
-        assertFalse(ConfigApplier(fixedToggles(), kiosk(FakeController()), {}, store).selfHealWifiRadio { null })
+        assertFalse(applier(fixedToggles(), kiosk(FakeController()), {}, store).selfHealWifiRadio { null })
         assertEquals("n1", store.revision())
     }
 
@@ -371,5 +380,23 @@ class ConfigApplierTest {
         assertEquals(ConfigOutcome.failed("prefs"), r.outcomes["connectivity"])
         assertFalse(ConfigApplier.succeeded(r))
         assertNull(store.revision())
+    }
+
+    @Test fun `after boot the saved connectivity is set again, over a device-level mode`() = runTest {
+        val store = InMemoryConfigStateStore(); val modes = mutableListOf<String>()
+        store.save(ConfigApplyPayload(revision = "c4", connectivity = ConfigConnectivity("alwaysOn")))
+        val r = ConfigApplier(fixedToggles(), kiosk(FakeController()), {}, store, setPowerMode = { modes += it })
+            .reapplyPersisted()
+        assertEquals(ConfigOutcome.APPLIED, r?.outcomes?.get("connectivity"))
+        assertEquals(listOf("alwaysOn"), modes)
+    }
+
+    @Test fun `an unknown connectivity mode is unsupported, not set as Battery-saver`() = runTest {
+        val store = InMemoryConfigStateStore(); val modes = mutableListOf<String>()
+        val r = ConfigApplier(fixedToggles(), kiosk(FakeController()), {}, store, setPowerMode = { modes += it })
+            .apply(ConfigApplyPayload(revision = "c5", connectivity = ConfigConnectivity("turbo")))
+        assertEquals(ConfigOutcome.UNSUPPORTED, r.outcomes["connectivity"])
+        assertTrue(modes.isEmpty())
+        assertEquals("unsupported is final: the document is saved", "c5", store.revision())
     }
 }

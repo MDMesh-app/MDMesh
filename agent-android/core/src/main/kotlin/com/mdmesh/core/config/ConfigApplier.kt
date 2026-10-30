@@ -11,6 +11,7 @@ import com.mdmesh.policy.wifi.WifiRadioPolicy
 import com.mdmesh.proto.ConfigApplyPayload
 import com.mdmesh.proto.ConfigApplyResult
 import com.mdmesh.proto.ConfigOutcome
+import com.mdmesh.proto.DeviceAction
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -31,13 +32,14 @@ import kotlinx.coroutines.sync.withLock
  *   singleton may have been built (#76). A key whose check threw ([ResolvedToggles.errors]) is reported failed,
  *   never unsupported, so the document is not saved and the server re-sends it; it is never applied or released.
  * @param setPowerMode sets the live-connection mode for the `connectivity` section (1.5), as `device.powerMode` does.
+ *   Only called with a mode this agent knows; another one is reported unsupported.
  */
 class ConfigApplier(
     private val toggles: () -> ResolvedToggles,
     private val kiosk: KioskApplier,
     private val setLocationMode: (String) -> Unit,
     private val store: ConfigStateStore,
-    private val setPowerMode: (String) -> Unit = {},
+    private val setPowerMode: (String) -> Unit,
 ) {
     private val mutex = Mutex()
 
@@ -120,8 +122,13 @@ class ConfigApplier(
         }
         // Absent = not managed: the device keeps its mode, including one set by a device.powerMode command.
         doc.connectivity?.let { c ->
-            outcomes[CONNECTIVITY] = runCatching { setPowerMode(c.mode); ConfigOutcome.APPLIED }
-                .getOrElse { ConfigOutcome.failed(it.message ?: "connectivity mode") }
+            // A mode from a newer server is not set as Battery-saver: unsupported, like a policy key this agent lacks.
+            outcomes[CONNECTIVITY] = if (c.mode !in POWER_MODES) {
+                ConfigOutcome.UNSUPPORTED
+            } else {
+                runCatching { setPowerMode(c.mode); ConfigOutcome.APPLIED }
+                    .getOrElse { ConfigOutcome.failed(it.message ?: "connectivity mode") }
+            }
         }
         val result = ConfigApplyResult(doc.revision, outcomes)
         if (persist && succeeded(result)) store.save(doc)
@@ -206,6 +213,7 @@ class ConfigApplier(
         private const val POLICIES = "policies."
         private const val KIOSK = "kiosk"
         private const val CONNECTIVITY = "connectivity"
+        private val POWER_MODES = setOf(DeviceAction.POWER_ADAPTIVE, DeviceAction.POWER_ALWAYS_ON)
 
         /** Never a real revision (config.apply requires a non-blank one). */
         private const val NO_REVISION = ""

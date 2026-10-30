@@ -30,6 +30,7 @@ import {
   IconWarning,
   KeyValueGroup,
   RelativeTime,
+  Segmented,
   type KeyValueItem,
 } from '../ui';
 import { CommandsCard } from './DeviceDetailControl';
@@ -39,10 +40,13 @@ import {
   DASH,
   capitalise,
   eventTone,
+  fixesCount,
   fmtBytes,
   fmtStorage,
+  LOCATION_RANGES,
   networkLabel,
   cleanLocation,
+  rangePhrase,
   providerLabel,
   teleNum,
   teleObj,
@@ -372,14 +376,20 @@ export function LocationTab({
   doNotTrack,
   onRefresh,
   refreshing,
+  range,
+  onRangeChange,
 }: {
   fixes: LocationFix[] | null;
   error: string | null;
   doNotTrack: boolean | null;
   onRefresh: () => void;
   refreshing: boolean;
+  /** Hours back from now; 0 is All. */
+  range: number;
+  onRangeChange: (hours: number) => void;
 }) {
   const titleId = useId();
+  const inRange = rangePhrase(range);
   return (
     <Card aria-labelledby={titleId} gap={14} className="v2-device-loc">
       <CardHeader
@@ -387,9 +397,10 @@ export function LocationTab({
         titleId={titleId}
         actions={
           <>
+            <Segmented size="sm" aria-label="Time range" options={LOCATION_RANGES} value={range} onChange={onRangeChange} />
             {fixes ? (
               <span className="v2-device-meta">
-                {fixes.length} fix{fixes.length === 1 ? '' : 'es'}
+                {fixesCount(fixes.length, range)}
                 {fixes[0] ? (
                   <>
                     {' · latest '}
@@ -420,12 +431,19 @@ export function LocationTab({
           Loading location…
         </p>
       ) : null}
-      {fixes && fixes.length === 0 && !doNotTrack ? (
+      {fixes && fixes.length === 0 && inRange ? (
+        <EmptyState bare icon={<IconPin />} title={`No location in ${inRange}`}>
+          Pick a longer range, or All.
+        </EmptyState>
+      ) : null}
+      {fixes && fixes.length === 0 && !inRange && !doNotTrack ? (
         <EmptyState bare icon={<IconPin />} title="No location reported yet">
           Wake the device, or switch it to Accurate location mode.
         </EmptyState>
       ) : null}
-      {fixes && fixes.length > 0 ? <LocationMap fixes={fixes} label="Map of the device’s recent locations" /> : null}
+      {fixes && fixes.length > 0 ? (
+        <LocationMap fixes={fixes} label={`Map of the device’s ${inRange ? `locations in ${inRange}` : 'recent locations'}`} />
+      ) : null}
     </Card>
   );
 }

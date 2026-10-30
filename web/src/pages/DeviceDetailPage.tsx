@@ -486,6 +486,13 @@ export function DeviceDetailPage() {
     void loadFixes();
   }, [loadFixes, ds?.updatedAt]);
 
+  // Another range: say it is loading rather than show the last range's fixes under the new one's name.
+  const changeFixesRange = (hours: number) => {
+    if (hours === fixesRange) return;
+    setFixesRange(hours);
+    setFixes(null);
+  };
+
   /* ---- the configuration (location tracking mode) ---- */
   const configurationId = device?.configurationId;
   useEffect(() => {
@@ -939,6 +946,8 @@ export function DeviceDetailPage() {
             doNotTrack={doNotTrack}
             refreshing={fixesLoading}
             onRefresh={() => void loadFixes()}
+            range={fixesRange}
+            onRangeChange={changeFixesRange}
           />
         ),
       },

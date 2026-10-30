@@ -58,9 +58,17 @@ public class AppReconcilerTest {
             customersAsked.add(customerId);
             return of(id);
         }
+        /** Set to remove this version from the configuration right after its ids are read (a save racing in). */
+        Integer removeAfterIdsRead;
+
         @Override public List<Integer> getConfigurationInstallVersionIds(Integer configurationId) {
             List<Integer> ids = new ArrayList<>();
             for (Application a : of(configurationId)) if (a.getAction() == 1) ids.add(a.getUsedVersionId());
+            if (removeAfterIdsRead != null) {
+                Integer v = removeAfterIdsRead;
+                removeAfterIdsRead = null;
+                of(configurationId).removeIf(a -> v.equals(a.getUsedVersionId()));
+            }
             return ids;
         }
         @Override public ApplicationVersion findApplicationVersionById(Integer id) { return versions.get(id); }
@@ -157,7 +165,7 @@ public class AppReconcilerTest {
     }
 
     private String currentRevision(int configurationId) {
-        return AppReconcileDecision.revision(dao.getConfigurationInstallVersionIds(configurationId));
+        return AppReconcileDecision.revision(configurationId, dao.getConfigurationInstallVersionIds(configurationId));
     }
 
     private String pkgOf(AgentCommand c) throws Exception {
@@ -186,13 +194,20 @@ public class AppReconcilerTest {
     }
 
     @Test
-    public void the_first_sighting_records_a_baseline_and_queues_nothing() {
+    public void a_device_enrolled_after_the_update_has_its_whole_set_decided_without_duplicates() {
         hosted(5, 10, "com.a", 1);
+        hosted(5, 11, "com.b", 1);
+        // Enrollment queued com.a; com.b was added to the configuration before the first check-in.
+        commands.insert(new ConfigAppInstaller(dao, commands, null, new FakeResolver()).installCommand(device,
+                dao.of(5).get(0), NOW));
         assertNull(commands.appsRevision);
+        assertEquals(1, reconcile());
+        assertEquals(2, commands.commands.size());
+        assertNull("com.a still in flight: not stored yet", commands.appsRevision);
+        agentInstallsEverything();
         assertEquals(0, reconcile());
-        assertTrue(commands.commands.isEmpty());
+        assertEquals(2, commands.commands.size());
         assertEquals(currentRevision(5), commands.appsRevision);
-        assertEquals("the baseline reads no app list and no history", 0, dao.appQueries + commands.historyReads);
     }
 
     @Test
@@ -230,15 +245,28 @@ public class AppReconcilerTest {
     }
 
     @Test
-    public void apps_already_in_the_reconciled_set_are_not_sent_again() throws Exception {
-        // Installed before the update (no command history for them): the baseline covers them.
+    public void a_device_offline_during_the_update_gets_an_app_added_after_it() throws Exception {
+        // a and b were on the configuration at the update, which stored that set (no command history for them).
         hosted(5, 10, "com.a", 1);
         hosted(5, 11, "com.b", 1);
-        assertEquals(0, reconcile());
+        commands.appsRevision = currentRevision(5);
+        // The device is offline while c is added; at its next check-in it gets c, and only c.
         hosted(5, 12, "com.c", 1);
         assertEquals(1, reconcile());
         assertEquals(1, commands.commands.size());
         assertEquals("com.c", pkgOf(commands.commands.get(0)));
+    }
+
+    @Test
+    public void a_set_changed_by_a_save_racing_the_check_in_is_not_stored() {
+        converged();
+        String reconciled = commands.appsRevision;
+        hosted(5, 12, "com.c", 3);
+        dao.removeAfterIdsRead = 12;   // c removed again before the app list is read: c was never decided
+        assertEquals(0, reconcile());
+        assertEquals(reconciled, commands.appsRevision);
+        hosted(5, 12, "com.c", 3);     // added back later: decided then
+        assertEquals(1, reconcile());
     }
 
     @Test
@@ -261,20 +289,24 @@ public class AppReconcilerTest {
         assertEquals(0, reconcile());
         assertEquals(before, commands.commands.size());
         assertEquals(currentRevision(5), commands.appsRevision);
+        assertEquals("no app list or history for a removal", 0, dao.appQueries + commands.historyReads);
     }
 
     @Test
     public void a_device_moved_to_another_configuration_gets_the_apps_it_lacks() throws Exception {
         converged();
+        hosted(5, 40, "com.q", 1);   // in the old set when the update stored it, never installed
+        commands.appsRevision = currentRevision(5);
         int before = commands.commands.size();
         hosted(8, 10, "com.a", 1);   // already installed
+        hosted(8, 40, "com.q", 1);
         hosted(8, 30, "com.x", 1);
-        hosted(8, 31, "com.y", 1);
         device.setConfigurationId(8);
 
+        // The new configuration's whole set is decided, not just what it adds over the old one.
         assertEquals(2, reconcile());
-        assertEquals("com.x", pkgOf(commands.commands.get(before)));
-        assertEquals("com.y", pkgOf(commands.commands.get(before + 1)));
+        assertEquals("com.q", pkgOf(commands.commands.get(before)));
+        assertEquals("com.x", pkgOf(commands.commands.get(before + 1)));
         assertEquals(Collections.singletonList(7), new ArrayList<>(new HashSet<>(dao.customersAsked)));
     }
 

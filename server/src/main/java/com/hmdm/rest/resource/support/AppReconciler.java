@@ -24,6 +24,7 @@ import org.slf4j.LoggerFactory;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -37,10 +38,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * missed wake (the next regular check-in). Saves and moves still wake the devices, so it happens in seconds.
  *
  * <p>The steady state is one plain select (the set's version ids): the new set is stored once every app it added is
- * installed or given up on, and until then each check-in looks again, so a failed install is retried with backoff. A
- * device seen without a stored set (its first check-in after the update that added the column, or after enrollment,
- * which queues the whole set itself) records the current one and queues nothing, so the update sends no installs to
- * the fleet. Apps already in that set are left as they are; Install config apps re-sends them.</p>
+ * installed or given up on, and until then each check-in looks again, so a failed install is retried with backoff.
+ * The update that added the column stored each enrolled device's set then, so it sends no installs to the fleet; apps
+ * already in a configuration before it are left as they are (Install config apps re-sends them). A device with no set
+ * stored (enrolled after the update) or one stored for another configuration (moved) has its whole set decided; its
+ * history holds what enrollment or the old configuration installed, so nothing is sent twice.</p>
  */
 @Singleton
 public class AppReconciler {
@@ -64,7 +66,7 @@ public class AppReconciler {
     }
 
     /**
-     * @param appsRevision the revision stored for the device (null = none yet: record a baseline)
+     * @param appsRevision the revision stored for the device (null = none: decide its whole set)
      * @return how many app.install were queued. Never throws.
      */
     public int reconcile(Device device, Set<String> deviceTokens, String appsRevision, long now) {
@@ -73,21 +75,27 @@ public class AppReconciler {
             if (!AgentCapabilityTokens.isAllowed(RolloutProgress.INSTALL_CAPABILITY, deviceTokens)) return 0;
             if (device == null || device.getConfigurationId() == null) return 0;
             String number = device.getNumber();
-            String current = AppReconcileDecision.revision(
-                    unsecureDAO.getConfigurationInstallVersionIds(device.getConfigurationId()));
+            Integer cfgId = device.getConfigurationId();
+            List<Integer> ids = unsecureDAO.getConfigurationInstallVersionIds(cfgId);
+            String current = AppReconcileDecision.revision(cfgId, ids);
             if (current.equals(appsRevision)) return 0;
-            if (appsRevision == null) {
-                // First sighting: record a baseline only, so a server update does not re-send to the whole fleet.
+            // The versions this change added. A device with no set stored for its configuration (enrolled after the
+            // update, or moved here) has its whole set decided: enrollment's own installs are in its history.
+            Set<Integer> added = new HashSet<Integer>(ids);
+            if (cfgId.equals(AppReconcileDecision.configurationId(appsRevision))) {
+                added.removeAll(AppReconcileDecision.versionIds(appsRevision));
+            }
+            if (added.isEmpty()) {
+                // Only removals: nothing to install, no app list or history needed.
                 commandDAO.updateAppsRevision(number, current);
                 return 0;
             }
-            // Only the versions this change added: the others were in the set the device was last reconciled to.
-            Set<Integer> reconciled = AppReconcileDecision.versionIds(appsRevision);
-            List<AgentCommand> history = commandDAO.listLatestAppCommands(number, HISTORY_LIMIT);
+            AppReconcileDecision.History history = AppReconcileDecision.History.of(
+                    commandDAO.listLatestAppCommands(number, HISTORY_LIMIT));
             boolean settled = true;
             int queued = 0;
             for (Application app : installer.installableApps(device)) {
-                if (reconciled.contains(app.getUsedVersionId())) continue;
+                if (!added.contains(app.getUsedVersionId())) continue;
                 AppReconcileDecision.State state = AppReconcileDecision.decide(app.getPkg().trim(),
                         app.getVersionCode(), history, now);
                 if (state == AppReconcileDecision.State.QUEUE) {
@@ -103,10 +111,14 @@ public class AppReconciler {
                     settled = false;
                 }
             }
-            if (settled) commandDAO.updateAppsRevision(number, current);
+            // Stored only if the set is still the one decided: a save in between is looked at next time.
+            if (settled && current.equals(AppReconcileDecision.revision(cfgId,
+                    unsecureDAO.getConfigurationInstallVersionIds(cfgId)))) {
+                commandDAO.updateAppsRevision(number, current);
+            }
             if (queued > 0) {
                 logger.info("Configuration apps for {}: {} app.install queued (configuration {})", number, queued,
-                        device.getConfigurationId());
+                        cfgId);
             }
             return queued;
         } catch (Exception e) {

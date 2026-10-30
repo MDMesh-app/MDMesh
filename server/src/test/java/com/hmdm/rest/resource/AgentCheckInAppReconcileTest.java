@@ -23,6 +23,7 @@ import com.hmdm.rest.resource.support.InstallHashes;
 import com.hmdm.rest.resource.support.KioskLockoutAlert;
 import com.hmdm.rest.resource.support.RolloutRequeuer;
 import com.hmdm.testsupport.Fakes;
+import com.hmdm.util.AppReconcileDecision;
 import com.hmdm.util.CryptoUtil;
 import org.junit.Before;
 import org.junit.Test;
@@ -134,6 +135,10 @@ public class AgentCheckInAppReconcileTest {
                 new RolloutRequeuer(null) { @Override public boolean requeue(Device d, long now) { return false; } },
                 new InstallHashes(hashes, unsecureDAO), new KioskLockoutAlert(null, null, null));
         addApp(10, "com.a");
+        // An enrolled device's row as the update that added appsRevision left it: com.a's set stored.
+        state = new DeviceState();
+        state.setDeviceNumber(NUMBER);
+        state.setAppsRevision(AppReconcileDecision.revision(3, java.util.Collections.singletonList(10)));
     }
 
     private void addApp(int versionId, String pkg) {
@@ -170,7 +175,7 @@ public class AgentCheckInAppReconcileTest {
 
     @Test
     public void an_app_added_to_the_configuration_rides_the_next_check_in_once() throws Exception {
-        // First check-in after the update: baseline only, so com.a (already on the fleet) is not re-sent.
+        // First check-in after the update: com.a (already on the fleet) is not re-sent.
         assertTrue(checkIn(CAN_INSTALL, SECRET).isEmpty());
         assertTrue(commands.isEmpty());
 

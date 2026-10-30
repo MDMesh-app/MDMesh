@@ -9,6 +9,9 @@ import org.junit.Test;
 
 import javax.ws.rs.BadRequestException;
 import java.util.ArrayList;
+import java.util.Arrays;
+
+import static org.junit.Assert.fail;
 
 /** PUT /configurations with a connectivityMode other than adaptive, alwaysOn or null is a 400, before anything is saved. */
 public class ConfigurationResourceConnectivityTest {
@@ -46,5 +49,19 @@ public class ConfigurationResourceConnectivityTest {
     @Test(expected = BadRequestException.class)
     public void anEmptyModeIsABadRequest() {
         new ConfigurationResource().updateConfiguration(withMode(""));
+    }
+
+    @Test
+    public void theKnownModesAndNotManagedPassTheCheck() {
+        for (String mode : Arrays.asList("adaptive", "alwaysOn", null)) {
+            try {
+                // No DAO is wired, so a mode that passes fails further on, past the check.
+                new ConfigurationResource().updateConfiguration(withMode(mode));
+            } catch (BadRequestException e) {
+                fail("connectivityMode " + mode + " was refused");
+            } catch (RuntimeException pastTheCheck) {
+                // expected
+            }
+        }
     }
 }

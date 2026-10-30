@@ -399,6 +399,23 @@
   overflow-wrap: anywhere;
 }
 
+/* ---- apps tab ---- */
+.v2 .v2-device-apps__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 24px 12px;
+}
+.v2 .v2-device-apps__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.v2 .v2-device-apps__search {
+  flex: 1 1 220px;
+}
+
 /* ---- telemetry tab ---- */
 .v2 .v2-device-tele {
   display: flex;

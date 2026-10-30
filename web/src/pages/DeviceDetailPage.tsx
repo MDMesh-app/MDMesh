@@ -55,6 +55,7 @@ import {
 } from '../ui';
 import { ActionDialog, CommandsCard, ConfigPanel, RemoteActions, TEMPLATE, type KioskReturnOffer } from './DeviceDetailControl';
 import { ActivityTab, LocationTab, TelemetryTab } from './DeviceDetailTabs';
+import { AppsTab } from './DeviceDetailApps';
 import { ConfiguredKioskDialog, DeviceKioskDialog } from './DeviceKioskDialog';
 import { CORE_ACTION_ACCESS } from '../ext/core/access';
 import { withCoreParts } from '../ext/core/device';
@@ -920,6 +921,7 @@ export function DeviceDetailPage() {
           </>
         ),
         telemetry: <TelemetryTab telemetry={tele} loaded={teleLoaded} reportedAt={ds?.updatedAt} />,
+        apps: <AppsTab number={device.number} history={history} loaded={historyLoaded} />,
         activity: (
           <ActivityTab events={events} eventsLoaded={eventsLoaded} commands={history} commandsLoaded={historyLoaded} now={now} />
         ),

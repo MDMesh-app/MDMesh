@@ -147,7 +147,7 @@ describe('the device page without extensions', () => {
   it('shows core’s tabs and rail groups as before, the first tab open and no ?tab in the URL', async () => {
     openDevice();
     await screen.findByRole('tab', { name: 'Control' }, LOAD);
-    await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Activity1', 'Location']), LOAD);
+    await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Apps', 'Activity1', 'Location']), LOAD);
     expect(selectedTab()).toBe('Control');
     expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Network', 'Management']);
     // Only the last group is marked last.
@@ -193,7 +193,7 @@ describe('core fills the slots like any extension', () => {
     const dropped = (c: Contribution) => (c.slot === 'device.tab' || c.slot === 'device.railGroup') && c.id === 'location';
     const { registry } = createRegistry({ ...CORE_EXTENSION, contributions: CORE_EXTENSION.contributions.filter((c) => !dropped(c)) }, []);
     openDevice({ registry });
-    await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Activity1']), LOAD);
+    await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Apps', 'Activity1']), LOAD);
     expect(railTitles()).toEqual(['Status', 'Hardware', 'Network', 'Management']);
   });
 });
@@ -202,7 +202,7 @@ describe('extension tabs and rail groups', () => {
   it('orders them among core’s by ORDER', async () => {
     openDevice({ registry: registryOf(demo) });
     await screen.findByRole('tab', { name: 'Demo' }, LOAD);
-    await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Demo', 'Activity1', 'Location', 'Demo admin']), LOAD);
+    await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Demo', 'Apps', 'Activity1', 'Location', 'Demo admin']), LOAD);
     expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Network', 'Demo', 'Management']);
     expect(within(rail()).getByText('Demo agent').closest('div, li, dl')?.textContent).toContain('0.3.7');
   });
@@ -241,7 +241,7 @@ describe('extension tabs and rail groups', () => {
       throw new Error('no icon');
     };
     openDevice({ registry: registryOf(ext('iconic', [tab('iconic', () => 'Iconic body', { label: 'Iconic', icon: BadIcon } as Partial<Contribution>)])) });
-    await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Activity1', 'Location', 'Iconic']), LOAD);
+    await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Apps', 'Activity1', 'Location', 'Iconic']), LOAD);
     expect(screen.getByRole('tab', { name: 'Iconic' }).querySelector('svg')).toBeNull();
     expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Network', 'Management']);
   });
@@ -269,7 +269,7 @@ describe('extension tabs and rail groups', () => {
     ]);
     openDevice({ registry: registryOf(broken) });
     await screen.findByRole('tab', { name: 'Counted' }, LOAD);
-    await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Activity1', 'Location', 'Counted', 'Odd']), LOAD);
+    await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Apps', 'Activity1', 'Location', 'Counted', 'Odd']), LOAD);
     expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Network', 'Management']);
     expect(within(rail()).getByRole('alert').textContent).toMatch(/The “Broken” extension ran into a problem/);
   });
@@ -301,8 +301,8 @@ describe('the open tab lives in the URL', () => {
     fireEvent.keyDown(await screen.findByRole('tab', { name: 'Control' }, LOAD), { key: 'ArrowRight' });
     await waitFor(() => expect(here).toBe('/devices/WH-1?tab=telemetry'));
     fireEvent.keyDown(screen.getByRole('tab', { name: 'Telemetry' }), { key: 'ArrowRight' });
-    await waitFor(() => expect(here).toBe('/devices/WH-1?tab=activity'));
-    fireEvent.keyDown(screen.getByRole('tab', { name: /Activity/ }), { key: 'End' });
+    await waitFor(() => expect(here).toBe('/devices/WH-1?tab=apps'));
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Apps' }), { key: 'End' });
     await waitFor(() => expect(here).toBe('/devices/WH-1?tab=location'));
     expect(selectedTab()).toBe('Location');
     await act(() => go(-1));

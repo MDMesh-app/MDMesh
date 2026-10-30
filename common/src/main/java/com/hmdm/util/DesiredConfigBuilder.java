@@ -7,6 +7,7 @@ import com.hmdm.persistence.domain.Application;
 import com.hmdm.persistence.domain.Configuration;
 import com.hmdm.persistence.domain.RequestUpdatesType;
 import com.hmdm.rest.json.agent.DesiredConfig;
+import com.hmdm.rest.json.agent.DesiredConnectivity;
 import com.hmdm.rest.json.agent.DesiredKiosk;
 import com.hmdm.rest.json.agent.DesiredKioskFeatures;
 import com.hmdm.rest.json.agent.DesiredKioskTheme;
@@ -41,6 +42,8 @@ public final class DesiredConfigBuilder {
     public static final String POLICY_PREFIX = "policies.";
     public static final String KEY_KIOSK = "kiosk";
     public static final String KEY_LOCATION = "location";
+    public static final String CONNECTIVITY_ADAPTIVE = "adaptive";
+    public static final String CONNECTIVITY_ALWAYS_ON = "alwaysOn";
     /** {@code configurationApplications.action} meaning "install this app". */
     public static final int ACTION_INSTALL = 1;
 
@@ -68,10 +71,25 @@ public final class DesiredConfigBuilder {
         DesiredLocation loc = new DesiredLocation();
         loc.setMode(locationMode(cfg.getRequestUpdates()));
         d.setLocation(loc);
+        String connectivity = connectivityMode(cfg.getConnectivityMode());
+        if (connectivity != null) {
+            DesiredConnectivity c = new DesiredConnectivity();
+            c.setMode(connectivity);
+            d.setConnectivity(c);
+        }
         // Last, once core's sections are built from cfg, so a contributor can't change them.
         contribute(policies, cfg, Collections.unmodifiableList(appList), contributors);
         d.setRevision(revision(d));
         return d;
+    }
+
+    /**
+     * The configuration's connectivity mode (protocol 1.5), or null when it is not managed: NULL, or a value this
+     * server doesn't know. Null omits the section, so the document (and its revision) is what it was before 1.5.
+     */
+    public static String connectivityMode(String mode) {
+        if (CONNECTIVITY_ADAPTIVE.equals(mode) || CONNECTIVITY_ALWAYS_ON.equals(mode)) return mode;
+        return null;
     }
 
     /**

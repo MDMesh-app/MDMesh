@@ -37,6 +37,7 @@ import com.hmdm.rest.json.LookupItem;
 import com.hmdm.rest.json.UpgradeConfigurationApplicationRequest;
 import com.hmdm.rest.resource.support.ExtensionPoints;
 import com.hmdm.security.SecurityContext;
+import com.hmdm.util.DesiredConfigBuilder;
 import com.hmdm.util.FileUtil;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -183,7 +184,8 @@ public class ConfigurationResource {
                     "the plugins' validators on the namespaces the save changes: " +
                     "a refusal is an ERROR whose message is the first problem's key and whose data lists them all. " +
                     "applicationUsageParameters are upserted and never removed. " +
-                    "An explicit \"applications\": null is refused with HTTP 400."
+                    "An explicit \"applications\": null, and a connectivityMode other than adaptive, alwaysOn or null, " +
+                    "are refused with HTTP 400."
     )
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
@@ -198,6 +200,11 @@ public class ConfigurationResource {
         if (configuration == null || configuration.getApplications() == null) {
             // Saving needs the applications list (an empty one for none); null used to fail with a 500.
             throw new BadRequestException("applications must be a list");
+        }
+        if (configuration.getConnectivityMode() != null
+                && DesiredConfigBuilder.connectivityMode(configuration.getConnectivityMode()) == null) {
+            // An unknown mode would be stored and sent as not managed; a long one used to fail with a 500.
+            throw new BadRequestException("connectivityMode must be adaptive, alwaysOn or null");
         }
         try {
             Configuration dbConfiguration = this.configurationDAO.getConfigurationByName(configuration.getName());

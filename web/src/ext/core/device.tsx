@@ -3,7 +3,7 @@
 // hands them over with the device value (withCoreParts), and the contributions here only pick theirs out. So core
 // and extension tabs share one host: ordering, `requires`, the error boundary and the `?tab=` URL.
 import type { ReactNode } from 'react';
-import { IconControl, IconHistory, IconPin, IconPulse } from '../../ui/icons';
+import { IconApps, IconControl, IconHistory, IconPin, IconPulse } from '../../ui/icons';
 import type { KeyValueItem } from '../../ui/KeyValueList';
 import { coreComponent, type DeviceContextValue, type DeviceRailGroupContribution, type DeviceTabContribution } from '../types';
 import { useDevice } from '../useDevice';
@@ -51,6 +51,7 @@ function coreRailGroup(id: CoreRailGroup, title: string): DeviceRailGroupContrib
 export const CORE_DEVICE_TABS: readonly DeviceTabContribution[] = [
   coreTab('control', 'Control', IconControl),
   coreTab('telemetry', 'Telemetry', IconPulse),
+  coreTab('apps', 'Apps', IconApps),
   { ...coreTab('activity', 'Activity', IconHistory), count: (d) => partsOf(d)?.activityCount },
   coreTab('location', 'Location', IconPin),
 ];

@@ -96,6 +96,28 @@ configuration; an ad-hoc "Custom kiosk" from the console is left alone. After so
 - A server outage that long, or a user cutting the device off, also triggers this. Any configuration change (a new
   revision) applies Off again.
 
+### Configuration apps (`app.install`)
+
+`config.apply` carries no app list: the apps a configuration marks Install reach a device as `app.install` commands.
+
+- **Enrollment** queues all of them (`ConfigAppInstaller`).
+- **Check-in** (`AppReconciler`, agents that advertise `app.silentInstall`) compares the configuration's install set
+  (its version ids) with the one stored for the device in `device_state.appsRevision`. Unchanged, that's the whole cost:
+  one plain select. Changed (an app or a new version added in the editor or by Deploy's "Add to a configuration", or
+  the device moved to another configuration), each version the change added gets an `app.install` in the same
+  response, unless the device's command history shows it installed (an install of that version or a newer one done,
+  with no `app.uninstall` since) or in flight. Saves and moves wake the devices, so this happens in seconds; a missed
+  wake waits for the next regular check-in.
+- **Retries:** an install that reached the device and failed, or whose result was lost, is sent again 15 minutes and
+  then an hour later, three attempts in all (`AppReconcileDecision`). One the server refused (no SHA-256 for the APK)
+  is recorded once. The new set is stored once every added app is installed or given up on.
+- **Upgrade:** a device seen with no stored set (its first check-in after the update, or after enrollment) records
+  its current set and gets nothing, so the update sends no installs to the fleet. Apps already in the set are left as
+  they are.
+- **Install config apps** on the device page sends every app again (`POST .../syncApps`), e.g. after one was removed on
+  the device. Removing an app from a configuration doesn't uninstall it.
+- A hosted APK is hashed once per file (kept until its size or modification time changes), not once per device.
+
 ## Status UI — BUILD-NEW (Views, minSdk 24 friendly)
 Replace the `TextView` stub `MainActivity` with a real MDMesh status screen: managed state, device id,
 applied policies, kiosk on/off, last check-in, install results. `ComponentActivity` (Hilt). Drive from

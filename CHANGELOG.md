@@ -39,6 +39,11 @@ New
 - After an update, the console shows what's new in the running version from these notes, once per version in each
   browser. It doesn't show on a browser's first visit. Settings → Server opens it again ("What's new", beside the version).
 
+Fixes
+- An app added to a configuration, in the editor or with Deploy's "Add to a configuration", now installs on its devices
+  at their next check-in, and a device moved to another configuration gets that configuration's apps, without Install
+  config apps. Apps a configuration already had before the update are not sent again (thanks @letternumber).
+
 Under the hood
 - The console has unit tests (vitest), and CI runs them on every console change.
 - For forks: a console extension in `web/src/extensions/<id>/` adds sidebar items and pages, device tabs and rail

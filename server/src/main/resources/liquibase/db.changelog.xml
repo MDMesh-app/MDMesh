@@ -3026,6 +3026,14 @@
         <rollback>ALTER TABLE configurations DROP COLUMN extensions;</rollback>
     </changeSet>
 
+    <changeSet id="26.10.29-configurationApplications-configurationId-idx" author="lunacy" context="common">
+        <comment>Index,new: configurationApplications (configurationId). Every check-in of an agent that installs apps
+            reads its configuration's install set (com.hmdm.rest.resource.support.AppReconciler); one index lookup
+            instead of a scan of every configuration's apps. IF NOT EXISTS: safe on fresh and upgraded databases.</comment>
+        <sql>CREATE INDEX IF NOT EXISTS configurationApplications_configurationId_idx ON configurationApplications (configurationId);</sql>
+        <rollback>DROP INDEX IF EXISTS configurationApplications_configurationId_idx;</rollback>
+    </changeSet>
+
     <changeSet id="26.10.29-deviceState-appsRevision" author="lunacy" context="common">
         <comment>Column,new: device_state#appsRevision, the configuration install set the device's apps were last
             reconciled to at check-in: the configuration id, ':', then its action=install applicationVersions ids,
@@ -3041,14 +3049,6 @@
                     AND ca.applicationVersionId IS NOT NULL) s), '')
             FROM devices d WHERE d.number = ds.deviceNumber AND d.configurationId IS NOT NULL;</sql>
         <rollback>ALTER TABLE device_state DROP COLUMN appsRevision;</rollback>
-    </changeSet>
-
-    <changeSet id="26.10.29-configurationApplications-configurationId-idx" author="lunacy" context="common">
-        <comment>Index,new: configurationApplications (configurationId). Every check-in of an agent that installs apps
-            reads its configuration's install set (com.hmdm.rest.resource.support.AppReconciler); one index lookup
-            instead of a scan of every configuration's apps. IF NOT EXISTS: safe on fresh and upgraded databases.</comment>
-        <sql>CREATE INDEX IF NOT EXISTS configurationApplications_configurationId_idx ON configurationApplications (configurationId);</sql>
-        <rollback>DROP INDEX IF EXISTS configurationApplications_configurationId_idx;</rollback>
     </changeSet>
 
 </databaseChangeLog>

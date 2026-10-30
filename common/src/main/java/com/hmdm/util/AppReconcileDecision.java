@@ -31,10 +31,11 @@ import java.util.TreeSet;
  * device's set are decided, or its whole set when the device has none recorded for its configuration (enrolled after
  * the update, or moved to another configuration).
  *
- * <p>An install that reached the device and didn't come back done (failed, unsupported, or expired: its result was
- * lost) is retried after {@link #backoffMs} ({@link #FIRST_RETRY_MS}, then four times longer each time), up to
- * {@link #MAX_ATTEMPTS} attempts in all; then it is left for the admin (Install config apps re-sends it). One that never
- * reached the device and failed was refused by the server (no SHA-256 for the APK), so it is not retried either. Only
+ * <p>An install that reached the device and didn't come back done (failed, or expired: its result was lost) is
+ * retried after {@link #backoffMs} ({@link #FIRST_RETRY_MS}, then four times longer each time), up to
+ * {@link #MAX_ATTEMPTS} attempts in all; then it is left for the admin (Install config apps re-sends it). An agent that
+ * answers unsupported is not asked again. One that never reached the device and failed was refused by the server (no
+ * SHA-256 for the APK), so it is not retried either. Only
  * attempts from the last {@link #ATTEMPT_WINDOW_MS} count: the whole retry ladder takes about 1 h 15 min, so an app
  * that failed long ago (removed from the configuration, then added again) is tried afresh.</p>
  */

@@ -114,7 +114,7 @@ configuration; an ad-hoc "Custom kiosk" from the console is left alone. After so
   again 15 minutes and then an hour later, three attempts in all (`AppReconcileDecision`). One the server refused (no
   SHA-256 for the APK) is recorded once. Only attempts from the last 24 hours count, so an app that failed long ago
   and is added again is tried afresh. The new set is stored once every app decided is installed or given up on.
-- **Upgrade:** the update that added the column stored each enrolled device's current set, so it sends no installs to
+- **Upgrade:** the update that added the column stored the current set of each device on a configuration, so it sends no installs to
   the fleet, and an app added after it installs at the next check-in, even on a device that was offline during the
   update. Apps a configuration already had are left as they are.
 - **Install config apps** on the device page sends every app again (`POST .../syncApps`), e.g. after one was removed on

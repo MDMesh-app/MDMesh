@@ -181,8 +181,10 @@ public class AgentAdminResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Sync configuration apps", notes = "Queues app.install commands for the device's "
-            + "configuration apps marked action=install. Use after enrolling an older device or editing a configuration.")
+    @ApiOperation(value = "Sync configuration apps", notes = "Queues app.install commands for every one of the device's "
+            + "configuration apps marked action=install. Apps added to its configuration, and a move to another "
+            + "configuration, install at the next check-in without this; use it to send apps again, e.g. after one "
+            + "was removed on the device or gave up after failing.")
     @POST
     @Path("/devices/{deviceId}/syncApps")
     @Produces(MediaType.APPLICATION_JSON)

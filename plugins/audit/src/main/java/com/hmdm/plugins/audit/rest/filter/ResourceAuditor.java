@@ -21,7 +21,9 @@
 
 package com.hmdm.plugins.audit.rest.filter;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.hmdm.persistence.domain.User;
 import com.hmdm.plugins.audit.persistence.domain.AuditLogRecord;
 import com.hmdm.plugins.audit.rest.AuditResource;
@@ -57,6 +59,13 @@ class ResourceAuditor {
     private static final String sessionCredentials = "credentials";
 
     /**
+     * <p>Reads command bodies with the same defaults as the JSON provider that hands them to the resource.</p>
+     */
+    private static final ObjectMapper COMMAND_MAPPER = new ObjectMapper();
+
+    private static final String NOT_STORED = "(not valid JSON, not stored)";
+
+    /**
      * <p>A key in message resource bundle referring to description of action mapped to audited request.</p>
      */
     private final String auditLogActionKey;
@@ -82,6 +91,11 @@ class ResourceAuditor {
     private final boolean payload;
 
     /**
+     * <p>A flag indicating if the payload of an agent command must be masked in the saved request data.</p>
+     */
+    private final boolean maskCommandPayload;
+
+    /**
      * <p>A flag indicating if response is in Headwind MDM standard format and should be checked for errors.</p>
      */
     private final boolean checkResponse;
@@ -92,7 +106,8 @@ class ResourceAuditor {
      * <p>Constructs new <code>ResourceAuditor</code> instance. This implementation does nothing.</p>
      */
     ResourceAuditor(String auditLogActionKey, ServletRequest request, ServletResponse response,
-                    FilterChain chain, boolean payload, boolean checkResponse, String proxyIps, String ipHeader) throws IOException {
+                    FilterChain chain, boolean payload, boolean maskCommandPayload, boolean checkResponse,
+                    String proxyIps, String ipHeader) throws IOException {
         this.auditLogActionKey = auditLogActionKey;
         if (payload) {
             // Wrap request only if we need to log it
@@ -103,6 +118,7 @@ class ResourceAuditor {
         this.response = new ServletResponseAuditWrapper((HttpServletResponse)response);
         this.chain = chain;
         this.payload = payload;
+        this.maskCommandPayload = maskCommandPayload;
         this.checkResponse = checkResponse;
         this.remoteAddrResolver = new BaseIPFilter("", proxyIps, ipHeader);
     }
@@ -141,7 +157,9 @@ class ResourceAuditor {
                     "URI: " + requestWrapper.getRequestURI();
             String body = requestWrapper.getBody();
             if (body != null && body.length() > 0) {
-                if (needStripPassword(action)) {
+                if (maskCommandPayload) {
+                    body = stripCommandPayload(requestWrapper.getRawBody());
+                } else if (needStripPassword(action)) {
                     // Since we parse JSON anyway, let's extract and log the login from the request
                     StripPasswordResponse response = stripPassword(body);
                     body = response.result;
@@ -193,6 +211,43 @@ class ResourceAuditor {
                "plugin.audit.action.password.changed".equals(action) ||
                "plugin.audit.action.update.configuration".equals(action) ||
                "plugin.audit.action.update.user".equals(action);
+    }
+
+    /**
+     * <p>Masks the payload of an agent command request, for one device ({"type", "payload", ...}) or many
+     * ({"deviceIds", "command": {"type", "payload", ...}}). A payload can carry a secret (a kiosk exit password, a
+     * new screen lock PIN), so it is never stored; the command type, the device IDs and the capability are kept.
+     * A body that is not a JSON object is not stored either.</p>
+     *
+     * <p>The body is parsed from its raw bytes with a default Jackson mapper, as the resource's JSON provider does,
+     * so the record shows what the resource ran (for duplicate keys, the last one; the encoding comes from the
+     * bytes, not the declared charset).</p>
+     *
+     * @param rawBody a request body as the client sent it.
+     * @return the request body to store in the audit log.
+     */
+    static String stripCommandPayload(byte[] rawBody) {
+        try {
+            JsonNode root = COMMAND_MAPPER.readTree(rawBody);
+            if (root == null || !root.isObject()) {
+                return NOT_STORED;
+            }
+            maskCommandPayload((ObjectNode) root);
+            JsonNode command = root.get("command");
+            if (command != null && command.isObject()) {
+                maskCommandPayload((ObjectNode) command);
+            }
+            return COMMAND_MAPPER.writeValueAsString(root);
+        } catch (IOException e) {
+            return NOT_STORED;
+        }
+    }
+
+    private static void maskCommandPayload(ObjectNode command) {
+        JsonNode payload = command.get("payload");
+        if (payload != null && !payload.isNull()) {
+            command.put("payload", "******");
+        }
     }
 
     private class StripPasswordResponse {

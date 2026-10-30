@@ -12,6 +12,7 @@ import com.hmdm.persistence.mapper.UserMapper;
 import com.hmdm.rest.json.Response;
 import com.hmdm.rest.json.agent.AgentCheckInRequest;
 import com.hmdm.rest.json.agent.AgentTelemetryEvent;
+import com.hmdm.rest.resource.support.AppReconciler;
 import com.hmdm.rest.resource.support.ConfigAppInstaller;
 import com.hmdm.rest.resource.support.ConfigReconciler;
 import com.hmdm.rest.resource.support.InstallHashes;
@@ -98,6 +99,7 @@ public class AgentCheckInKioskAlertTest {
                     @Override public boolean reconcile(Device d, Set<String> t, String rev, String av, String cav,
                                                        long now, long receivedAt) { return false; }
                 },
+                new AppReconciler(null, null, null, null),
                 new RolloutRequeuer(null) { @Override public boolean requeue(Device d, long now) { return false; } },
                 new InstallHashes(null, null), alert);
     }

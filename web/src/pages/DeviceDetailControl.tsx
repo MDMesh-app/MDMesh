@@ -481,7 +481,7 @@ export function RemoteActions({
             key: 'config-apps',
             label: 'Install config apps',
             icon: <IconDownload size={16} />,
-            title: 'Queue an install for every app the configuration marks Install.',
+            title: 'Send every app the configuration marks Install again. Apps added to it install at the next check-in.',
             run: onInstallConfigApps,
           },
         ]}

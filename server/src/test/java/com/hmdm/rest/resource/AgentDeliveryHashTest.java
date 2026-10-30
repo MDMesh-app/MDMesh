@@ -11,6 +11,7 @@ import com.hmdm.rest.json.Response;
 import com.hmdm.rest.json.agent.AgentCheckInRequest;
 import com.hmdm.rest.json.agent.AgentCheckInResponse;
 import com.hmdm.rest.resource.support.ApkHashResolver;
+import com.hmdm.rest.resource.support.AppReconciler;
 import com.hmdm.rest.resource.support.ConfigAppInstaller;
 import com.hmdm.rest.resource.support.ConfigReconciler;
 import com.hmdm.rest.resource.support.InstallHashes;
@@ -92,7 +93,8 @@ public class AgentDeliveryHashTest {
         String files = Files.createTempDirectory("files").toString();
         InstallHashes hashes = new InstallHashes(new ApkHashResolver(files, "https://mdm.example.com"), unsecureDAO);
         resource = new AgentResource(unsecureDAO, null, commands,
-                new ConfigAppInstaller(null, null, null, null), reconciler, requeuer, hashes,
+                new ConfigAppInstaller(null, null, null, null), reconciler, new AppReconciler(null, null, null, null), requeuer,
+                hashes,
                 new KioskLockoutAlert(null, null, null));
     }
 

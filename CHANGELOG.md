@@ -17,8 +17,8 @@ New
 
 Upgrading
 - Update every server: this is a security release. Devices need no new agent, and the updater (supervisor) is
-  unchanged. Quick-start and from-source installs: apply the update from Settings → Updates. Native installs: re-run
-  the installer.
+  unchanged. Quick-start installs: apply the update from Settings → Updates. From source: `git pull && ./setup.sh`.
+  Native installs: `git pull && sudo ./setup.sh --native`.
 
 Heads-up
 - Sign-in is limited. After 10 failed sign-ins from one address in 15 minutes (or 50 in 6 hours), that address is

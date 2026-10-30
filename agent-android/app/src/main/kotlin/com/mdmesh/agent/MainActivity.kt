@@ -1,11 +1,8 @@
 package com.mdmesh.agent
 
-import android.Manifest
 import android.app.ActivityManager
-import android.app.admin.DevicePolicyManager
 import android.graphics.Color
 import android.graphics.Typeface
-import android.os.Build
 import android.os.Bundle
 import android.util.TypedValue
 import android.view.Gravity
@@ -18,6 +15,7 @@ import androidx.activity.ComponentActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.mdmesh.agent.service.CheckInService
+import com.mdmesh.core.action.NotificationPermissionAccess
 import com.mdmesh.core.config.ServerConfigStore
 import com.mdmesh.core.store.DeviceIdStore
 import com.mdmesh.core.sync.SyncStatus
@@ -41,6 +39,7 @@ class MainActivity : ComponentActivity() {
 
     @Inject lateinit var deviceIdStore: DeviceIdStore
     @Inject lateinit var dpmHandle: DpmHandle
+    @Inject lateinit var notificationPermission: NotificationPermissionAccess
     @Inject lateinit var serverConfig: ServerConfigStore
     @Inject lateinit var syncStatus: SyncStatus
 
@@ -52,7 +51,7 @@ class MainActivity : ComponentActivity() {
         setContentView(buildUi())
         // Grant our own POST_NOTIFICATIONS as Device Owner BEFORE starting the foreground
         // service, so the "MDMesh active" notification is visible on Android 13+.
-        grantSelfNotifications()
+        notificationPermission.ensure()
         // NOTE: we intentionally do NOT pop the battery-optimization request dialog here. As a
         // foreground-service Device Owner we survive Doze well enough, and that full-screen system
         // dialog used to sit on top and pause the kiosk launcher, so a kiosk.enter wouldn't take
@@ -62,22 +61,6 @@ class MainActivity : ComponentActivity() {
         // launcher activity keeps us in the foreground-start allowance on Android 12+.
         ContextCompat.startForegroundService(this, Intent(this, CheckInService::class.java))
         refresh()
-    }
-
-    /** Self-grant POST_NOTIFICATIONS (Device Owner, API 33+) so our FGS notification shows. */
-    private fun grantSelfNotifications() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
-        runCatching {
-            val dpm = dpmHandle.dpm
-            if (dpm.isDeviceOwnerApp(packageName)) {
-                dpm.setPermissionGrantState(
-                    dpmHandle.admin,
-                    packageName,
-                    Manifest.permission.POST_NOTIFICATIONS,
-                    DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED,
-                )
-            }
-        }
     }
 
     override fun onResume() {

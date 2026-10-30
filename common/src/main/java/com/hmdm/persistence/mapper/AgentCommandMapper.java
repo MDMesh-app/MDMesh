@@ -114,4 +114,8 @@ public interface AgentCommandMapper {
     @Select({"SELECT * FROM agentCommand WHERE deviceNumber = #{deviceNumber} AND type = #{type} ORDER BY id DESC LIMIT #{limit}"})
     List<AgentCommand> listLatestOfType(@Param("deviceNumber") String deviceNumber, @Param("type") String type,
                                         @Param("limit") int limit);
+
+    @Select({"SELECT * FROM agentCommand WHERE deviceNumber = #{deviceNumber} AND type IN ('app.install','app.uninstall') " +
+            "ORDER BY id DESC LIMIT #{limit}"})
+    List<AgentCommand> listLatestAppCommands(@Param("deviceNumber") String deviceNumber, @Param("limit") int limit);
 }

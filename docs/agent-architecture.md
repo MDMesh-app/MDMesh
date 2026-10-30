@@ -105,6 +105,31 @@ configuration; an ad-hoc "Custom kiosk" from the console is left alone. After so
 - A server outage that long, or a user cutting the device off, also triggers this. Any configuration change (a new
   revision) applies Off again.
 
+### Configuration apps (`app.install`)
+
+`config.apply` carries no app list: the apps a configuration marks Install reach a device as `app.install` commands.
+
+- **Enrollment** queues all of them (`ConfigAppInstaller`).
+- **Check-in** (`AppReconciler`, agents that advertise `app.silentInstall`) compares the configuration's install set
+  (its id and Install version ids) with the one stored for the device in `device_state.appsRevision`. Unchanged,
+  that's the whole cost: one indexed select. When a save or Deploy's "Add to a configuration" adds an app or a new
+  version, each version added gets an `app.install` in the same response. When the device was moved to another
+  configuration, or has no set stored (enrolled after the update), its configuration's whole set is decided. Either
+  way an app is skipped when the device's command history shows it installed (an install of that version or a newer
+  one done, with no `app.uninstall` since) or in flight (pending, delivered or accepted), so enrollment's installs
+  aren't sent twice. Saves and moves wake the devices, so this happens in seconds; a missed wake waits for the next
+  regular check-in.
+- **Retries:** an install that reached the device and didn't come back done (failed, or its result was lost) is sent
+  again 15 minutes and then an hour later, three attempts in all (`AppReconcileDecision`). One the server refused (no
+  SHA-256 for the APK) is recorded once. Only attempts from the last 24 hours count, so an app that failed long ago
+  and is added again is tried afresh. The new set is stored once every app decided is installed or given up on.
+- **Upgrade:** the update that added the column stored the current set of each device on a configuration, so it sends no installs to
+  the fleet, and an app added after it installs at the next check-in, even on a device that was offline during the
+  update. Apps a configuration already had are left as they are.
+- **Install config apps** on the device page sends every app again (`POST .../syncApps`), e.g. after one was removed on
+  the device. Removing an app from a configuration doesn't uninstall it.
+- A hosted APK is hashed once per file (kept until its size or modification time changes), not once per device.
+
 ## Status UI — BUILD-NEW (Views, minSdk 24 friendly)
 Replace the `TextView` stub `MainActivity` with a real MDMesh status screen: managed state, device id,
 applied policies, kiosk on/off, last check-in, install results. `ComponentActivity` (Hilt). Drive from

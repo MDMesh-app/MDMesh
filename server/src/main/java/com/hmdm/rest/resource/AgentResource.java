@@ -44,6 +44,7 @@ import com.hmdm.util.AgentCapabilityTokens;
 import com.hmdm.util.CryptoUtil;
 import com.hmdm.util.DesiredConfigBuilder;
 import com.hmdm.util.InstallIntegrity;
+import com.hmdm.util.RolloutProgress;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import org.slf4j.Logger;
@@ -105,6 +106,7 @@ public class AgentResource {
     private AgentCommandDAO commandDAO;
     private com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller;
     private com.hmdm.rest.resource.support.ConfigReconciler configReconciler;
+    private com.hmdm.rest.resource.support.AppReconciler appReconciler;
     private com.hmdm.rest.resource.support.RolloutRequeuer rolloutRequeuer;
     private com.hmdm.rest.resource.support.InstallHashes installHashes;
     private com.hmdm.rest.resource.support.KioskLockoutAlert kioskLockoutAlert;
@@ -121,6 +123,7 @@ public class AgentResource {
                          AgentCommandDAO commandDAO,
                          com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller,
                          com.hmdm.rest.resource.support.ConfigReconciler configReconciler,
+                         com.hmdm.rest.resource.support.AppReconciler appReconciler,
                          com.hmdm.rest.resource.support.RolloutRequeuer rolloutRequeuer,
                          com.hmdm.rest.resource.support.InstallHashes installHashes,
                          com.hmdm.rest.resource.support.KioskLockoutAlert kioskLockoutAlert) {
@@ -129,6 +132,7 @@ public class AgentResource {
         this.commandDAO = commandDAO;
         this.configAppInstaller = configAppInstaller;
         this.configReconciler = configReconciler;
+        this.appReconciler = appReconciler;
         this.rolloutRequeuer = rolloutRequeuer;
         this.installHashes = installHashes;
         this.kioskLockoutAlert = kioskLockoutAlert;
@@ -190,6 +194,7 @@ public class AgentResource {
                 commandDAO.updateHardwareId(deviceId, request.getHardwareId().trim());
             }
             commandDAO.touchLastUpdate(deviceId);
+            commandDAO.recordEnrollTime(deviceId);
 
             String configurationName = null;
             if (device.getConfigurationId() != null) {
@@ -403,21 +408,29 @@ public class AgentResource {
 
         String agentVersion = request.getState() == null ? null : request.getState().getAgentVersion();
         String configAgentVersion = null;
-        if (AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, deviceTokens)) {
-            // Only capable agents pay for this read: its values are consumed solely by reconcile, which ignores
+        String appsRevision = null;
+        boolean configCapable = AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, deviceTokens);
+        if (configCapable || AgentCapabilityTokens.isAllowed(RolloutProgress.INSTALL_CAPABILITY, deviceTokens)) {
+            // Only capable agents pay for this read: its values are consumed solely by the reconcilers, which ignore
             // the others. A check-in that omitted the revision (state block absent, or invalid value) falls back
             // to the last stored value so a missing field never masquerades as drift.
             com.hmdm.persistence.domain.DeviceState stored = commandDAO.getState(deviceNumber);
-            if (appliedRevision == null) {
-                appliedRevision = stored == null ? null : stored.getAppliedConfigRevision();
+            if (configCapable) {
+                if (appliedRevision == null) {
+                    appliedRevision = stored == null ? null : stored.getAppliedConfigRevision();
+                }
+                configAgentVersion = stored == null ? null : stored.getConfigAgentVersion();
             }
-            configAgentVersion = stored == null ? null : stored.getConfigAgentVersion();
+            appsRevision = stored == null ? null : stored.getAppsRevision();
         }
 
         // Desired-state reconciliation: queue config.apply when the device drifted from its configuration (or now
         // runs a different agent version), so the command rides THIS response instead of waiting for the next cycle.
         configReconciler.reconcile(device, deviceTokens, appliedRevision, agentVersion, configAgentVersion, now,
                 receivedAt);
+        // Configuration apps: queue app.install for the apps its configuration gained (an app added, a new version, a
+        // move to another configuration) that the device doesn't have yet, so they ride this response too.
+        appReconciler.reconcile(device, deviceTokens, appsRevision, now);
         // A staged agent update whose command expired (its result was lost) or was never queued: queue it again here.
         rolloutRequeuer.requeue(device, now);
 

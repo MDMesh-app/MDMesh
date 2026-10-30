@@ -41,6 +41,21 @@ New
 - Connectivity per configuration (Configuration → Network): Always-on keeps the agent's live connection up, so
   commands reach a locked phone without waiting for its next check-in. A restart or agent update brings the
   configuration's mode back; "—" leaves each device's own mode. Needs the new agent (thanks @Przemek-Magic).
+- Audit log: commands sent from a device's page or to selected devices (wipe, lock, PIN reset, kiosk, alert) are
+  recorded with who sent them, from which address, to which devices, and the command type. The command's settings are
+  not recorded, since they can hold a password. "Install config apps" on a device is recorded too
+  (thanks @Przemek-Magic).
+
+Fixes
+- Alerts: devices enrolled by QR code show Send alert messages and the "MDMesh active" notification. The agent grants
+  itself the notification permission it was missing, and an alert is reported as failed instead of done when
+  notifications are turned off on the device. Needs agent 0.4.0; no server update needed (thanks @Przemek-Magic).
+- Device page: Enrolled shows when a device enrolled with the MDMesh agent. Devices enrolled before this update keep
+  it empty (thanks @Przemek-Magic).
+- An app added to a configuration, in the editor or with Deploy's "Add to a configuration", now installs on its devices
+  at their next check-in, even on a device that was offline during the update, and a device moved to another
+  configuration installs that configuration's apps it doesn't have, without Install config apps. Apps a configuration
+  already had before the update are not sent again (thanks @letternumber).
 
 Under the hood
 - The console has unit tests (vitest), and CI runs them on every console change.

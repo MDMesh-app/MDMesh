@@ -49,8 +49,6 @@ Fixes
   notifications are turned off on the device. Needs agent 0.4.0; no server update needed (thanks @Przemek-Magic).
 - Device page: Enrolled shows when a device enrolled with the MDMesh agent. Devices enrolled before this update keep
   it empty (thanks @Przemek-Magic).
-
-Fixes
 - An app added to a configuration, in the editor or with Deploy's "Add to a configuration", now installs on its devices
   at their next check-in, and a device moved to another configuration gets that configuration's apps, without Install
   config apps. Apps a configuration already had before the update are not sent again (thanks @letternumber).

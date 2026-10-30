@@ -5,6 +5,7 @@ import { useState, type ReactNode } from 'react';
 import { useLocation, useNavigate, type NavigateFunction } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../../App';
+import { LOCATION_HISTORY_LIMIT } from '../../api/deviceLocations';
 import { ROLES, registryOf, renderInConsole, stubApi } from '../../test/console';
 import demo from '../__fixtures__/demo';
 import { CORE_EXTENSION } from '../core';
@@ -185,6 +186,86 @@ describe('the device page without extensions', () => {
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(nudges).toHaveLength(2);
     await act(async () => nudges[1]());
+  });
+});
+
+describe('the Location tab’s time range', () => {
+  const FIXES = [
+    { lat: 52.52, lon: 13.405, capturedAt: Date.now() - 3 * 3600 * 1000 },
+    { lat: 52.5, lon: 13.4, capturedAt: Date.now() - 2 * 24 * 3600 * 1000 },
+  ];
+
+  /** The device API with `fixes` as the location history, filtered by `since`; while held, each answer waits for the test. */
+  function locationsApi(fixes: { capturedAt: number }[]) {
+    const held: (() => void)[] = [];
+    const state = { hold: false };
+    const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      const url = new URL(path, 'http://console');
+      let data = deviceApi(path, init);
+      if (url.pathname.endsWith('/locations')) {
+        if (state.hold) await new Promise<void>((resolve) => held.push(resolve));
+        data = fixes.filter((f) => f.capturedAt >= Number(url.searchParams.get('since')));
+      }
+      return Response.json({ status: 'OK', message: null, data: data ?? null });
+    });
+    vi.stubGlobal('fetch', fetch);
+    renderInConsole(<AppRoutes />, { path: '/devices/WH-1?tab=location' });
+    const sinces = () =>
+      fetch.mock.calls
+        .map(([input]) => new URL(String(input), 'http://console'))
+        .filter((u) => u.pathname.endsWith('/locations'))
+        .map((u) => Number(u.searchParams.get('since')));
+    return { held, state, sinces };
+  }
+  const range = (name: string) => within(panel()).getByRole('radio', { name });
+
+  it('asks for every fix by default, and for the last hour’s once 1h is picked', async () => {
+    const { sinces } = locationsApi(FIXES);
+    expect(await within(await screen.findByRole('tabpanel', undefined, LOAD)).findByText(/^2 fixes/, undefined, LOAD)).toBeTruthy();
+    expect(sinces().every((since) => since === 0)).toBe(true);
+    expect(range('All').getAttribute('aria-checked')).toBe('true');
+
+    const before = Date.now();
+    const last = () => sinces()[sinces().length - 1];
+    fireEvent.click(range('1h'));
+    await waitFor(() => expect(last()).toBeGreaterThan(0));
+    expect(last()).toBeGreaterThanOrEqual(before - 3600 * 1000);
+    expect(last()).toBeLessThanOrEqual(Date.now() - 3600 * 1000);
+  });
+
+  it('says a range is empty, and the rail keeps the latest fix', async () => {
+    locationsApi(FIXES);
+    await within(await screen.findByRole('tabpanel', undefined, LOAD)).findByText(/^2 fixes/, undefined, LOAD);
+    fireEvent.click(range('1h'));
+    expect(await within(panel()).findByText('No location in the last hour', undefined, LOAD)).toBeTruthy();
+    expect(within(panel()).queryByText('No location reported yet')).toBeNull();
+    expect(within(rail()).getByText('52.52000, 13.40500')).toBeTruthy();
+
+    fireEvent.click(range('7d'));
+    expect(await within(panel()).findByRole('region', { name: 'Map of the device’s locations in the last 7 days' }, LOAD)).toBeTruthy();
+  });
+
+  it('shows the range picked last when an earlier range answers after it', async () => {
+    const { held, state } = locationsApi(FIXES);
+    await within(await screen.findByRole('tabpanel', undefined, LOAD)).findByText(/^2 fixes/, undefined, LOAD);
+    state.hold = true;
+    fireEvent.click(range('7d'));
+    fireEvent.click(range('1h'));
+    await waitFor(() => expect(held).toHaveLength(2));
+    await act(async () => held[1]());
+    expect(await within(panel()).findByText('No location in the last hour')).toBeTruthy();
+    await act(async () => held[0]());
+    expect(within(panel()).getByText('No location in the last hour')).toBeTruthy();
+    expect(within(panel()).queryByRole('region', { name: /^Map of/ })).toBeNull();
+    expect(range('1h').getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('says when the server’s cap cut a range', async () => {
+    locationsApi(Array.from({ length: LOCATION_HISTORY_LIMIT }, (_, i) => ({ lat: 52, lon: 13, capturedAt: Date.now() - i * 1000 })));
+    await within(await screen.findByRole('tabpanel', undefined, LOAD)).findByText(/^newest 500 fixes/, undefined, LOAD);
+    fireEvent.click(range('24h'));
+    expect(await within(panel()).findByText(/^newest 500 in this range/, undefined, LOAD)).toBeTruthy();
   });
 });
 

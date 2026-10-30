@@ -43,6 +43,9 @@ New
   configuration's mode back; "—" leaves each device's own mode. Needs the new agent (thanks @Przemek-Magic).
 - Device page: an Apps tab lists the apps with a launcher icon from the device's latest scan, with a search, a
   system-apps filter and Export CSV for app audits, and Scan now for a role with `edit_devices` (thanks @Przemek-Magic).
+- The device page's Location tab has a time range: the last hour, 24 hours or 7 days, or All, the default. A range
+  shows its newest 500 fixes at most, and says so when it reaches that cap; All shows the newest 500 as before
+  (thanks @Oxym0r3).
 - Audit log: commands sent from a device's page or to selected devices (wipe, lock, PIN reset, kiosk, alert) are
   recorded with who sent them, from which address, to which devices, and the command type. The command's settings are
   not recorded, since they can hold a password. "Install config apps" on a device is recorded too

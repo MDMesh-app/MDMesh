@@ -72,8 +72,8 @@ class AdminPolicyComplianceActivity : Activity() {
             // Location includes background (Android 10+): on this QR path nothing else grants it while the agent is
             // Device Owner. The collector repairs it later too (LocationPermissionAccess).
             // POST_NOTIFICATIONS (Android 13+) likewise, so alerts and the "MDMesh active" notification show. Best
-            // effort: this can run before the agent reads as Device Owner (see CapabilityCollector). If it doesn't take,
-            // NotificationPermissionAccess grants it when the next alert is shown or CheckInService next starts.
+            // effort: this can run before the agent reads as Device Owner (see CapabilityCollector). If it doesn't
+            // take, NotificationPermissionAccess grants it when the next alert is shown or CheckInService next starts.
             (
                 listOf(android.Manifest.permission.READ_PHONE_STATE, android.Manifest.permission.READ_PHONE_NUMBERS) +
                     LocationPermissions.forThisDevice() +

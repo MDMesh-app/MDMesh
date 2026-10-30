@@ -38,9 +38,9 @@ New
   to the previous one. The arrow keys change tab in place, so Back then leaves the page.
 - After an update, the console shows what's new in the running version from these notes, once per version in each
   browser. It doesn't show on a browser's first visit. Settings → Server opens it again ("What's new", beside the version).
-- Connectivity per configuration: set Always-on (the agent keeps its live connection up, so Lock, Ring or Wipe reach
-  a locked phone within seconds) or Battery-saver on the configuration instead of on each device. Not managed, the
-  default, leaves each device's own setting. Needs the new agent (protocol 1.5); older agents ignore it.
+- Connectivity per configuration (Configuration → Network): Always-on keeps the agent's live connection up, so
+  commands reach a locked phone without waiting for its next check-in. A restart or agent update brings the
+  configuration's mode back; "—" leaves each device's own mode. Needs the new agent (thanks @Przemek-Magic).
 
 Under the hood
 - The console has unit tests (vitest), and CI runs them on every console change.

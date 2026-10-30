@@ -85,8 +85,8 @@ configuration; an ad-hoc "Custom kiosk" from the console is left alone. After so
   - New columns are NULL on upgrade, so revisions only change for configurations that use them, and for
     Do-not-track configurations (whose devices get one `config.apply`).
 - **1.5:** the `connectivity` section (`connectivityMode`): `adaptive` (Battery-saver, the agent's default) holds the
-  wake socket only while the screen is on or charging; `alwaysOn` holds it 24/7, so commands reach a locked device in
-  seconds instead of at the next heartbeat. Applied through the same `PowerModeStore` as `device.powerMode`. NULL is
+  wake socket only while the screen is on or charging; `alwaysOn` holds it 24/7, so commands reach a locked device
+  without waiting for the next heartbeat. Applied through the same `PowerModeStore` as `device.powerMode`. NULL is
   not managed: the section is omitted, so existing revisions don't move, and each device keeps its mode, including
   one set by `device.powerMode`. A managed mode wins over `device.powerMode`: the saved document is applied again
   after every boot and agent update (`ConfigReapplyWorker`), and the server re-sends `config.apply` when the agent

@@ -1,7 +1,7 @@
 // Pure display helpers for the device detail page. No React here.
 import { DEVICE_RESET_REVISION, type ConfigStatus } from '../api/configSync';
 import type { Outcome } from '../data/configOutcomes';
-import type { LocationFix } from '../api/deviceLocations';
+import { LOCATION_HISTORY_LIMIT, type LocationFix } from '../api/deviceLocations';
 import { formatRelative } from '../ui/RelativeTime';
 import type { StatusKind, StatusTone } from '../ui/Status';
 
@@ -120,6 +120,32 @@ export function cleanFixes(list: unknown): LocationFix[] {
     out.push({ ...(f as unknown as LocationFix), lat: f.lat, lon: f.lon, capturedAt, accuracy: accuracyOf(f.accuracy), provider: providerOf(f.provider) });
   }
   return out;
+}
+
+/** The Location tab's time ranges, in hours back from now. 0 is All: the newest fixes, however old. */
+export const LOCATION_RANGES: ReadonlyArray<{ value: number; label: string }> = [
+  { value: 1, label: '1h' },
+  { value: 24, label: '24h' },
+  { value: 168, label: '7d' },
+  { value: 0, label: 'All' },
+];
+
+/** The `since` of a range (listLocations): `hours` before `now`, or 0 for All. */
+export function locationSince(hours: number, now: number): number {
+  return hours > 0 ? now - hours * 3600 * 1000 : 0;
+}
+
+/** "the last hour", "the last 24 hours", "the last 7 days"; undefined for All. */
+export function rangePhrase(hours: number): string | undefined {
+  if (hours <= 0) return undefined;
+  if (hours === 1) return 'the last hour';
+  return hours > 24 && hours % 24 === 0 ? `the last ${hours / 24} days` : `the last ${hours} hours`;
+}
+
+/** "12 fixes", or "newest 500 in this range" when the server's cap cut the list (the range holds more). */
+export function fixesCount(count: number, hours: number): string {
+  if (count >= LOCATION_HISTORY_LIMIT) return hours > 0 ? `newest ${count} in this range` : `newest ${count} fixes`;
+  return `${count} fix${count === 1 ? '' : 'es'}`;
 }
 
 /** "6m", "2h", "just now": an age without the trailing "ago" (rail "Fix age"). */

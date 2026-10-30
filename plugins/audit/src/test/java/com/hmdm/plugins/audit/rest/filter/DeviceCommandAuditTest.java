@@ -4,6 +4,8 @@
 
 package com.hmdm.plugins.audit.rest.filter;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hmdm.plugins.audit.persistence.domain.AuditLogRecord;
 import org.json.JSONObject;
 import org.junit.Test;
@@ -72,7 +74,7 @@ public class DeviceCommandAuditTest {
     public void masksThePayloadOfACommandForOneDevice() {
         String body = "{\"type\":\"device.passcodereset\",\"payload\":\"{\\\"newPassword\\\":\\\"4711\\\"}\","
                 + "\"requiresCapability\":\"device.passcodereset\"}";
-        String stored = ResourceAuditor.stripCommandPayload(body);
+        String stored = ResourceAuditor.stripCommandPayload(body.getBytes(StandardCharsets.UTF_8));
         assertFalse(stored, stored.contains("4711"));
         JSONObject json = new JSONObject(stored);
         assertEquals("device.passcodereset", json.getString("type"));
@@ -84,7 +86,7 @@ public class DeviceCommandAuditTest {
     public void masksThePayloadOfACommandForManyDevices() {
         String body = "{\"deviceIds\":[3,5],\"command\":{\"type\":\"kiosk.enter\","
                 + "\"payload\":\"{\\\"password\\\":\\\"s3cret\\\"}\"}}";
-        String stored = ResourceAuditor.stripCommandPayload(body);
+        String stored = ResourceAuditor.stripCommandPayload(body.getBytes(StandardCharsets.UTF_8));
         assertFalse(stored, stored.contains("s3cret"));
         JSONObject json = new JSONObject(stored);
         assertEquals(2, json.getJSONArray("deviceIds").length());
@@ -94,16 +96,19 @@ public class DeviceCommandAuditTest {
 
     @Test
     public void keepsACommandWithoutPayload() {
-        JSONObject json = new JSONObject(ResourceAuditor.stripCommandPayload("{\"type\":\"device.wipe\"}"));
+        String body = "{\"type\":\"device.wipe\"}";
+        JSONObject json = new JSONObject(ResourceAuditor.stripCommandPayload(body.getBytes(StandardCharsets.UTF_8)));
         assertEquals("device.wipe", json.getString("type"));
         assertFalse(json.has("payload"));
     }
 
     @Test
-    public void doesNotStoreABodyThatIsNotJson() {
-        String stored = ResourceAuditor.stripCommandPayload("type=kiosk.enter&payload=s3cret");
-        assertFalse(stored, stored.contains("s3cret"));
-        assertTrue(stored, stored.startsWith("("));
+    public void doesNotStoreABodyThatIsNotAJsonObject() {
+        for (String body : new String[]{"type=kiosk.enter&payload=s3cret", "[\"s3cret\"]", "\"s3cret\""}) {
+            String stored = ResourceAuditor.stripCommandPayload(body.getBytes(StandardCharsets.UTF_8));
+            assertFalse(stored, stored.contains("s3cret"));
+            assertTrue(stored, stored.startsWith("("));
+        }
     }
 
     @Test
@@ -129,11 +134,51 @@ public class DeviceCommandAuditTest {
         assertFalse(record.toLogString(), record.toLogString().contains("s3cret"));
     }
 
+    @Test
+    public void auditRecordForADuplicateKeyHoldsTheTypeThatRuns() throws IOException, ServletException {
+        // The resource keeps the last of duplicate keys, so the record must name that type too
+        String body = "{\"type\":\"device.alert\",\"type\":\"device.lock\","
+                + "\"payload\":\"{\\\"password\\\":\\\"s3cret\\\"}\"}";
+        AuditLogRecord record = audit("/rest/private/agent/v1/devices/h0001/commands", body);
+
+        JsonNode stored = storedBody(record);
+        assertEquals("device.lock", stored.get("type").asText());
+        assertEquals("******", stored.get("payload").asText());
+        assertFalse(record.toLogString(), record.toLogString().contains("s3cret"));
+    }
+
+    @Test
+    public void auditRecordForManyDevicesWithADuplicateKeyKeepsTheDevices() throws IOException, ServletException {
+        String body = "{\"deviceIds\":[3,5],\"command\":{\"type\":\"kiosk.enter\",\"type\":\"kiosk.enter\","
+                + "\"payload\":\"{\\\"password\\\":\\\"s3cret\\\"}\"}}";
+        AuditLogRecord record = audit("/rest/private/agent/v1/bulk/commands", body);
+
+        JsonNode stored = storedBody(record);
+        assertEquals("[3,5]", stored.get("deviceIds").toString());
+        assertEquals("kiosk.enter", stored.get("command").get("type").asText());
+        assertFalse(record.toLogString(), record.toLogString().contains("s3cret"));
+    }
+
+    @Test
+    public void auditRecordReadsTheBodyBytesWhateverCharsetIsDeclared() throws IOException, ServletException {
+        // The resource reads JSON in the encoding its bytes are in, not the declared one
+        String body = "{\"type\":\"device.lock\",\"payload\":\"{\\\"text\\\":\\\"gęślą s3cret\\\"}\"}";
+        AuditLogRecord record = audit("/rest/private/agent/v1/devices/h0001/commands", body, "UTF-16");
+
+        assertEquals("device.lock", storedBody(record).get("type").asText());
+        assertFalse(record.toLogString(), record.toLogString().contains("s3cret"));
+    }
+
     /**
      * Runs a POST through the audit rule that matches the URI, as AuditFilter does, with a resource that checks it
      * got the body unchanged (secret included) and answers OK.
      */
     private static AuditLogRecord audit(String uri, String body) throws IOException, ServletException {
+        return audit(uri, body, null);
+    }
+
+    private static AuditLogRecord audit(String uri, String body, String characterEncoding)
+            throws IOException, ServletException {
         byte[] sent = body.getBytes(StandardCharsets.UTF_8);
         ResourceAuditInfo info = ResourceAuditInfo.findAuditInfo("POST", uri).get();
         FilterChain resource = (req, res) -> {
@@ -141,14 +186,22 @@ public class DeviceCommandAuditTest {
             ((HttpServletResponse) res).setStatus(200);
             res.getOutputStream().write("{\"status\":\"OK\"}".getBytes(StandardCharsets.UTF_8));
         };
-        ResourceAuditor auditor = info.getResourceAuditor(request(uri, sent), response(), resource, "", "X-Real-IP");
+        ResourceAuditor auditor = info.getResourceAuditor(request(uri, sent, characterEncoding), response(), resource, "", "X-Real-IP");
         auditor.doProcess();
         AuditLogRecord record = auditor.getAuditLogRecord();
         assertEquals(Integer.valueOf(0), record.getErrorCode());
         return record;
     }
 
-    private static HttpServletRequest request(String uri, byte[] body) {
+    /** The request body as the record stores it. */
+    private static JsonNode storedBody(AuditLogRecord record) throws IOException {
+        String payload = record.getPayload();
+        int start = payload.indexOf("\nBody: ") + "\nBody: ".length();
+        int end = payload.indexOf("\nUser-Agent: ");
+        return new ObjectMapper().readTree(payload.substring(start, end));
+    }
+
+    private static HttpServletRequest request(String uri, byte[] body, String characterEncoding) {
         ByteArrayInputStream in = new ByteArrayInputStream(body);
         ServletInputStream servletInputStream = new ServletInputStream() {
             @Override
@@ -170,8 +223,10 @@ public class DeviceCommandAuditTest {
                             return "192.0.2.10";
                         case "getLocalAddr":
                             return "192.0.2.1";
+                        case "getCharacterEncoding":
+                            return characterEncoding;
                         default:
-                            // No session (no signed-in user), no headers, no character encoding
+                            // No session (no signed-in user), no headers
                             return null;
                     }
                 });

@@ -21,7 +21,9 @@
 
 package com.hmdm.plugins.audit.rest.filter;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.hmdm.persistence.domain.User;
 import com.hmdm.plugins.audit.persistence.domain.AuditLogRecord;
 import com.hmdm.plugins.audit.rest.AuditResource;
@@ -55,6 +57,13 @@ class ResourceAuditor {
      * <p>A name of session attribute holding the details for current user.</p>
      */
     private static final String sessionCredentials = "credentials";
+
+    /**
+     * <p>Reads command bodies with the same defaults as the JSON provider that hands them to the resource.</p>
+     */
+    private static final ObjectMapper COMMAND_MAPPER = new ObjectMapper();
+
+    private static final String NOT_STORED = "(not valid JSON, not stored)";
 
     /**
      * <p>A key in message resource bundle referring to description of action mapped to audited request.</p>
@@ -149,7 +158,7 @@ class ResourceAuditor {
             String body = requestWrapper.getBody();
             if (body != null && body.length() > 0) {
                 if (maskCommandPayload) {
-                    body = stripCommandPayload(body);
+                    body = stripCommandPayload(requestWrapper.getRawBody());
                 } else if (needStripPassword(action)) {
                     // Since we parse JSON anyway, let's extract and log the login from the request
                     StripPasswordResponse response = stripPassword(body);
@@ -208,27 +217,35 @@ class ResourceAuditor {
      * <p>Masks the payload of an agent command request, for one device ({"type", "payload", ...}) or many
      * ({"deviceIds", "command": {"type", "payload", ...}}). A payload can carry a secret (a kiosk exit password, a
      * new screen lock PIN), so it is never stored; the command type, the device IDs and the capability are kept.
-     * A body that is not valid JSON is not stored either.</p>
+     * A body that is not a JSON object is not stored either.</p>
      *
-     * @param jsonPayload a request body.
+     * <p>The body is parsed from its raw bytes with a default Jackson mapper, as the resource's JSON provider does,
+     * so the record shows what the resource ran (for duplicate keys, the last one; the encoding comes from the
+     * bytes, not the declared charset).</p>
+     *
+     * @param rawBody a request body as the client sent it.
      * @return the request body to store in the audit log.
      */
-    static String stripCommandPayload(String jsonPayload) {
+    static String stripCommandPayload(byte[] rawBody) {
         try {
-            JSONObject jsonObject = new JSONObject(jsonPayload);
-            maskCommandPayload(jsonObject);
-            JSONObject command = jsonObject.optJSONObject("command");
-            if (command != null) {
-                maskCommandPayload(command);
+            JsonNode root = COMMAND_MAPPER.readTree(rawBody);
+            if (root == null || !root.isObject()) {
+                return NOT_STORED;
             }
-            return jsonObject.toString();
-        } catch (JSONException e) {
-            return "(not valid JSON, not stored)";
+            maskCommandPayload((ObjectNode) root);
+            JsonNode command = root.get("command");
+            if (command != null && command.isObject()) {
+                maskCommandPayload((ObjectNode) command);
+            }
+            return COMMAND_MAPPER.writeValueAsString(root);
+        } catch (IOException e) {
+            return NOT_STORED;
         }
     }
 
-    private static void maskCommandPayload(JSONObject command) {
-        if (command.has("payload") && !command.isNull("payload")) {
+    private static void maskCommandPayload(ObjectNode command) {
+        JsonNode payload = command.get("payload");
+        if (payload != null && !payload.isNull()) {
             command.put("payload", "******");
         }
     }

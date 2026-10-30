@@ -69,6 +69,11 @@ public class ServletRequestAuditWrapper extends HttpServletRequestWrapper {
         return new BufferedReader(new InputStreamReader(this.getInputStream(), charset));
     }
 
+    // The body exactly as the client sent it, for parsing it the way the resource does
+    byte[] getRawBody() {
+        return this.rawBody;
+    }
+
     //Use this method to read the request body N times
     public String getBody() {
         return this.body;

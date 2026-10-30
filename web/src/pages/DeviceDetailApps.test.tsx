@@ -61,11 +61,12 @@ describe('the Apps tab', () => {
     openApps({ history: [scan(9, 'done', APPS), scan(3, 'done', [{ pkg: 'com.old', label: 'Old' }])] });
     await within(await screen.findByRole('tabpanel', undefined, LOAD)).findByRole('table', undefined, LOAD);
     expect(appNames()).toEqual(['com.acme.nolabel', 'com.acme.odd', 'Scanner']);
-    expect(within(panel()).getByText('4 apps', { exact: false })).toBeTruthy();
+    expect(within(panel()).getByText('3 apps', { exact: false })).toBeTruthy();
     expect(within(panel()).getByText('2.1 (21)')).toBeTruthy();
 
     fireEvent.click(within(panel()).getByRole('checkbox', { name: 'Show system apps' }));
     expect(appNames()).toEqual(['com.acme.nolabel', 'com.acme.odd', 'Scanner', 'Settings']);
+    expect(within(panel()).getByText('4 apps', { exact: false })).toBeTruthy();
     fireEvent.change(within(panel()).getByRole('searchbox', { name: 'Search apps' }), { target: { value: 'android' } });
     expect(appNames()).toEqual(['Settings']);
     fireEvent.change(within(panel()).getByRole('searchbox', { name: 'Search apps' }), { target: { value: 'nothing' } });

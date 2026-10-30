@@ -102,7 +102,7 @@ const COLUMNS: ReadonlyArray<Column<AppInfo>> = [
 ];
 
 function downloadCsv(name: string, text: string) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+  const url = URL.createObjectURL(new Blob(['\uFEFF' + text], { type: 'text/csv;charset=utf-8' }));
   const link = document.createElement('a');
   link.href = url;
   link.download = name;
@@ -135,6 +135,7 @@ export function AppsTab({
   const all = useMemo(() => [...(latest?.apps ?? [])].sort(byLabel), [latest]);
   const shown = filterApps(all, query, showSystem);
   const systemHidden = !showSystem && all.some((a) => a.system);
+  const counted = showSystem ? all.length : all.filter((a) => !a.system).length;
 
   let empty: { title: string; text?: string } | null = null;
   if (!loaded) empty = { title: 'Loading the last scan…' };
@@ -159,7 +160,7 @@ export function AppsTab({
           <>
             {latest ? (
               <span className="v2-device-meta">
-                {all.length} app{all.length === 1 ? '' : 's'}
+                {counted} app{counted === 1 ? '' : 's'}
                 {latest.scannedAt ? (
                   <>
                     {' · scanned '}

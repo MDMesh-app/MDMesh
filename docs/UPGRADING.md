@@ -158,7 +158,7 @@ or add server plugins also read [v0.4.0 for forks](#v040-for-forks) below.
 - **Pages and actions follow the role**, below.
 - **Old bookmarks redirect.** The v0.3 console's `/dashboard` goes to `/`, and `/configs` to `/configurations`. The
   device page's tab is in its address now (`/devices/WH-12?tab=activity`; the tabs are `control`, `telemetry`,
-  `activity` and `location`).
+  `apps`, `activity` and `location`).
 - **What's new.** After the update, each browser shows 0.4.0's notes once, after sign-in, and Settings → Server opens
   them again. A browser that never opened the console before doesn't show them. A tab left open on the v0.3 console
   during the update is signed out when the server restarts: reload it and sign in, and the notes show.

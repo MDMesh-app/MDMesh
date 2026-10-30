@@ -132,7 +132,7 @@ public enum ResourceAuditInfo {
                       boolean maskCommandPayload, boolean checkResponse) {
         this.method = method;
         this.uri = null;
-        this.uriExactMatch = true;
+        this.uriExactMatch = false;
         this.uriPattern = uriPattern;
         this.auditLogAction = auditLogAction;
         this.payload = payload;

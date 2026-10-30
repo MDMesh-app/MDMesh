@@ -8,6 +8,12 @@ line under Unreleased.
 
 ## Unreleased
 
+New
+- Audit log: commands sent from a device's page or to selected devices (wipe, lock, PIN reset, kiosk, alert) are
+  recorded with who sent them, from which address, to which devices, and the command type. The command's settings are
+  not recorded, since they can hold a password. "Install config apps" on a device is recorded too
+  (thanks @Przemek-Magic).
+
 Fixes
 - Alerts: devices enrolled by QR code show Send alert messages and the "MDMesh active" notification. The agent grants
   itself the notification permission it was missing, and an alert is reported as failed instead of done when

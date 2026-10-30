@@ -38,6 +38,9 @@ New
   to the previous one. The arrow keys change tab in place, so Back then leaves the page.
 - After an update, the console shows what's new in the running version from these notes, once per version in each
   browser. It doesn't show on a browser's first visit. Settings → Server opens it again ("What's new", beside the version).
+- The device page's Location tab has a time range: the last hour, 24 hours or 7 days, or All, the default. A range
+  shows its newest 500 fixes at most, and says so when it reaches that cap; All shows the newest 500 as before
+  (thanks @Oxym0r3).
 
 Under the hood
 - The console has unit tests (vitest), and CI runs them on every console change.

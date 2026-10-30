@@ -87,7 +87,7 @@ public final class DesiredConfigBuilder {
      * The configuration's connectivity mode (protocol 1.5), or null when it is not managed: NULL, or a value this
      * server doesn't know. Null omits the section, so the document (and its revision) is what it was before 1.5.
      */
-    static String connectivityMode(String mode) {
+    public static String connectivityMode(String mode) {
         if (CONNECTIVITY_ADAPTIVE.equals(mode) || CONNECTIVITY_ALWAYS_ON.equals(mode)) return mode;
         return null;
     }

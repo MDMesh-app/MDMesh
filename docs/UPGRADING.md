@@ -266,8 +266,9 @@ plugin's screens to a console extension.
 
 ### v0.3.9
 
-A security release. Update every server. Devices need no new agent, and the supervisor is unchanged: quick-start and
-from-source installs apply it from **Settings → Updates**, native installs re-run the installer.
+A security release. Update every server. Devices need no new agent, and the supervisor is unchanged: quick-start
+installs apply it from **Settings → Updates**, from-source installs run `git pull && ./setup.sh`, and native installs
+`git pull && sudo ./setup.sh --native`.
 
 - **Sign-in limits.** Failed sign-ins are limited per address and per account, for the console, for API clients
   (`/rest/public/jwt/login`) and for the current-password check of a password or e-mail change. A browser or API

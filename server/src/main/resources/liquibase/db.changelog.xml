@@ -3026,4 +3026,13 @@
         <rollback>ALTER TABLE configurations DROP COLUMN extensions;</rollback>
     </changeSet>
 
+    <changeSet id="26.10.29-deviceState-appsRevision" author="lunacy" context="common">
+        <comment>Column,new: device_state#appsRevision, the configuration install set (sorted applicationVersions ids)
+            the device's apps were last reconciled to at check-in (com.hmdm.util.AppReconcileDecision). NULL on
+            upgrade: a device's first check-in records its current set without queuing anything, so the update sends
+            no installs to the fleet; apps added to its configuration after that install at the next check-in.</comment>
+        <sql>ALTER TABLE device_state ADD COLUMN appsRevision TEXT;</sql>
+        <rollback>ALTER TABLE device_state DROP COLUMN appsRevision;</rollback>
+    </changeSet>
+
 </databaseChangeLog>

@@ -142,7 +142,9 @@ public interface ConfigurationMapper {
             "disableSafeBoot=#{disableSafeBoot}, " +
             "wifiRadio=#{wifiRadio}, " +
             "kioskLockVolume=#{kioskLockVolume}, " +
-            "connectivityMode=#{connectivityMode} " +
+            "connectivityMode=#{connectivityMode}, " +
+            // Left out (null), the stored extensions stay: a client that doesn't know them can't wipe them.
+            "extensions=COALESCE(CAST(#{extensions} AS jsonb), extensions) " +
             "WHERE id=#{id}"})
     void updateConfiguration(Configuration configuration);
 

@@ -52,7 +52,7 @@ t.test('apkAsset', () => {
 });
 
 // A private repo 404s browser_download_url even with a token; only the asset API URL + octet-stream + token serves
-// the bytes (live rehearsal, brain/reviews/live-apply-rollback.md).
+// the bytes (seen in a live update against a private repo).
 t.test('assetRequest — token: asset API URL with octet-stream + Bearer; no token: browser_download_url, no auth', () => {
   const asset = { url: 'https://api.github.com/repos/o/r/releases/assets/1', browser_download_url: 'https://github.com/o/r/releases/download/v1/m.json' };
   a.deepEqual(assetRequest(asset, 'tok'), { url: asset.url,

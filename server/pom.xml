@@ -107,6 +107,15 @@
         </dependency>
 
         <dependency><groupId>com.hmdm.plugin</groupId><artifactId>push</artifactId><version>0.1.0</version><scope>runtime</scope></dependency>
+
+        <!-- A fork's plugins (plugins/fork): it lists them in plugins/fork/bundle/pom.xml, so this file stays as it is. -->
+        <dependency>
+            <groupId>com.hmdm.plugin</groupId>
+            <artifactId>fork-bundle</artifactId>
+            <version>0.1.0</version>
+            <type>pom</type>
+            <scope>runtime</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -149,43 +158,6 @@
                     </execution>
                 </executions>
             </plugin>
-
-            <!-- Copy web files from each plugin to the server project -->
-            <plugin>
-                <groupId>com.soebes.maven.plugins</groupId>
-                <artifactId>iterator-maven-plugin</artifactId>
-                <version>0.5.1</version>
-                <executions>
-                    <execution>
-                        <phase>validate</phase>
-                        <goals>
-                            <goal>iterator</goal>
-                        </goals>
-                        <configuration>
-                            <folder>../plugins/</folder>
-                            <pluginExecutors>
-                                <pluginExecutor>
-                                    <plugin>
-                                        <artifactId>maven-resources-plugin</artifactId>
-                                        <version>3.5.0</version>
-                                    </plugin>
-                                    <goal>copy-resources</goal>
-                                    <configuration>
-                                        <outputDirectory>${basedir}/target/launcher/app/components/plugins/@item@</outputDirectory>
-                                        <overwrite>true</overwrite>
-                                        <resources>
-                                            <resource>
-                                                <directory>../plugins/@item@/src/main/webapp</directory>
-                                            </resource>
-                                        </resources>
-                                    </configuration>
-                                </pluginExecutor>
-                            </pluginExecutors>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-
 
             <plugin>
                 <groupId>org.apache.tomcat.maven</groupId>

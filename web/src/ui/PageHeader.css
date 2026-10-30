@@ -1,0 +1,68 @@
+.v2 .v2-pagehead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+}
+.v2 .v2-pagehead__text {
+  flex: 1 1 360px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.v2 .v2-pagehead__titleline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+.v2 .v2-pagehead__title {
+  margin: 0;
+  font-size: var(--fs-h1);
+  font-weight: 600;
+  letter-spacing: var(--ls-h1);
+  line-height: var(--lh-h1);
+  color: var(--text);
+}
+.v2 .v2-pagehead__sub {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-lead);
+}
+.v2 .v2-pagehead__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.v2 .v2-pagehead__actions--tight {
+  gap: 8px;
+}
+
+/* breadcrumb */
+.v2 .v2-crumbs ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+.v2 .v2-crumbs li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.v2 .v2-crumbs a {
+  color: var(--secondary);
+}
+.v2 .v2-crumbs a:hover {
+  color: var(--text);
+}
+.v2 .v2-crumbs__current {
+  color: var(--text);
+}

@@ -1,0 +1,126 @@
+/* ---- attention rows ---- */
+.v2 .v2-attn {
+  width: 100%;
+  min-width: 600px;
+  border-collapse: collapse;
+}
+.v2 .v2-attn tr {
+  border-top: 1px solid var(--line-soft);
+}
+.v2 .v2-attn td {
+  padding: 12px 8px;
+  vertical-align: middle;
+}
+.v2 .v2-attn .v2-attn__device {
+  padding-left: 24px;
+}
+.v2 .v2-attn__when {
+  width: 1%;
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+  text-align: right;
+  white-space: nowrap;
+}
+.v2 .v2-attn .v2-attn__action {
+  width: 1%;
+  padding-right: 24px;
+  text-align: right;
+}
+
+/* ---- activity feed ---- */
+.v2 .v2-activity {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 6px;
+}
+.v2 .v2-activity__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 24px;
+  border-top: 1px solid var(--line-soft);
+}
+.v2 .v2-activity__icon {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-tile);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.v2 .v2-activity__icon.is-ok {
+  background: var(--ok-soft);
+  color: var(--ok-ink);
+}
+.v2 .v2-activity__icon.is-warn {
+  background: var(--warn-soft);
+  color: var(--warn-ink);
+}
+.v2 .v2-activity__icon.is-alert {
+  background: var(--alert-soft);
+  color: var(--alert-ink);
+}
+.v2 .v2-activity__icon.is-idle {
+  background: var(--idle-soft);
+  color: var(--idle-ink);
+}
+.v2 .v2-activity__text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.v2 .v2-activity__who {
+  font-weight: 600;
+  text-decoration: none;
+}
+.v2 a.v2-activity__who:hover {
+  text-decoration: underline;
+}
+.v2 .v2-activity__what {
+  color: var(--text-2);
+}
+.v2 .v2-activity__detail {
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+.v2 .v2-activity__when {
+  flex: 0 0 auto;
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+  white-space: nowrap;
+}
+
+/* ---- recent commands ---- */
+.v2 .v2-cmds {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+}
+.v2 .v2-cmds tr {
+  border-top: 1px solid var(--line-soft);
+}
+.v2 .v2-cmds td {
+  padding: 10px 8px;
+  vertical-align: middle;
+}
+.v2 .v2-cmds .v2-cmds__label {
+  padding-left: 24px;
+}
+.v2 .v2-cmds__name {
+  font-weight: 500;
+}
+.v2 .v2-cmds__detail {
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+.v2 .v2-cmds__status {
+  width: 1%;
+}
+.v2 .v2-cmds .v2-cmds__when {
+  width: 1%;
+  padding-right: 24px;
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+  text-align: right;
+  white-space: nowrap;
+}

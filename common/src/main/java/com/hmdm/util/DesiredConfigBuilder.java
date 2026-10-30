@@ -1,6 +1,8 @@
 package com.hmdm.util;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hmdm.extension.ConfigurationExtensions;
+import com.hmdm.extension.DesiredConfigContributor;
 import com.hmdm.persistence.domain.Application;
 import com.hmdm.persistence.domain.Configuration;
 import com.hmdm.persistence.domain.RequestUpdatesType;
@@ -13,13 +15,16 @@ import com.hmdm.rest.json.agent.DesiredLocation;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.AbstractMap;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.regex.Pattern;
 
 /**
  * The ONLY place a {@link Configuration} row becomes a {@code config.apply} desired-state document.
@@ -42,15 +47,27 @@ public final class DesiredConfigBuilder {
     public static final String CONNECTIVITY_ALWAYS_ON = "alwaysOn";
     private static final int ACTION_INSTALL = 1;
 
+    /** A server plugin's policy keys: {@code x.<pluginId>.<key>} ({@link DesiredConfigContributor}). */
+    public static final String CONTRIBUTED_PREFIX = "x.";
+    private static final Pattern CONTRIBUTED_KEY = Pattern.compile("[a-z][A-Za-z0-9]{0,63}");
+
     private static final ObjectMapper PLAIN = new ObjectMapper();
 
     private DesiredConfigBuilder() {}
 
-    public static DesiredConfig build(Configuration cfg, List<Application> apps) {
+    /**
+     * @param contributors server plugins' policy keys ({@link DesiredConfigContributor}), sent as
+     *                     {@code x.<pluginId>.<key>}. None, or only null values, gives the same document and revision
+     *                     as without them.
+     */
+    public static DesiredConfig build(Configuration cfg, List<Application> apps,
+                                      Collection<DesiredConfigContributor> contributors) {
         DesiredConfig d = new DesiredConfig();
         d.setConfigurationId(cfg.getId());
-        d.setPolicies(policies(cfg));
-        d.setKiosk(cfg.isKioskMode() ? kiosk(cfg, apps == null ? Collections.<Application>emptyList() : apps) : null);
+        List<Application> appList = apps == null ? Collections.<Application>emptyList() : apps;
+        Map<String, Boolean> policies = policies(cfg);
+        d.setPolicies(policies);
+        d.setKiosk(cfg.isKioskMode() ? kiosk(cfg, appList) : null);
         DesiredLocation loc = new DesiredLocation();
         loc.setMode(locationMode(cfg.getRequestUpdates()));
         d.setLocation(loc);
@@ -60,6 +77,8 @@ public final class DesiredConfigBuilder {
             c.setMode(connectivity);
             d.setConnectivity(c);
         }
+        // Last, once core's sections are built from cfg, so a contributor can't change them.
+        contribute(policies, cfg, Collections.unmodifiableList(appList), contributors);
         d.setRevision(revision(d));
         return d;
     }
@@ -114,6 +133,64 @@ public final class DesiredConfigBuilder {
     private static Boolean safeBootAllowed(Configuration cfg) {
         if (cfg.getDisableSafeBoot() != null) return !cfg.getDisableSafeBoot();
         return cfg.isKioskMode() ? Boolean.FALSE : null;
+    }
+
+    /**
+     * Adds each contributor's keys under its own {@code x.<pluginId>.} prefix: core's keys have no dot, so a plugin can
+     * never set one of them, nor another plugin's. A key that breaks the rules, a value that isn't a Boolean (a raw-typed
+     * map gets one past the compiler, and the agent would refuse the whole document), or anything the contributor
+     * throws, while it answers or while its map is read (a lazy view), is a plugin bug: IllegalStateException, naming
+     * the plugin. That includes an Error (NoClassDefFoundError, Kotlin's NotImplementedError, an AssertionError) and an
+     * undeclared checked exception, and a StackOverflowError. Only the JVM's other failures (VirtualMachineError, such
+     * as OutOfMemoryError) pass through as they are.
+     */
+    private static void contribute(Map<String, Boolean> p, Configuration cfg, List<Application> apps,
+                                   Collection<DesiredConfigContributor> contributors) {
+        if (contributors == null) return;
+        for (DesiredConfigContributor c : contributors) {
+            String id = checkedPluginId(c);
+            List<Map.Entry<?, ?>> keys = new ArrayList<Map.Entry<?, ?>>();
+            try {
+                Map<?, ?> returned = c.policies(cfg, apps);
+                if (returned == null) continue;
+                // Read here, inside the try: a lazy view computes its values only now.
+                for (Map.Entry<?, ?> e : returned.entrySet()) {
+                    keys.add(new AbstractMap.SimpleImmutableEntry<Object, Object>(e.getKey(), e.getValue()));
+                }
+            } catch (Throwable e) {
+                // A plugin that recurses (StackOverflowError) is its own bug; the JVM's other failures are not.
+                if (e instanceof VirtualMachineError && !(e instanceof StackOverflowError)) throw (VirtualMachineError) e;
+                throw new IllegalStateException("DesiredConfigContributor " + id + " failed", e);
+            }
+            for (Map.Entry<?, ?> e : keys) {
+                Object name = e.getKey();
+                if (!(name instanceof String) || !CONTRIBUTED_KEY.matcher((String) name).matches()) {
+                    throw new IllegalStateException("DesiredConfigContributor " + id + ": key \"" + name
+                            + "\" must be letters and digits starting with a lowercase letter, at most 64 characters");
+                }
+                Object value = e.getValue();
+                if (value == null) continue;
+                String key = CONTRIBUTED_PREFIX + id + "." + name;
+                if (!(value instanceof Boolean)) {
+                    throw new IllegalStateException("DesiredConfigContributor " + id + ": " + key + " is a "
+                            + value.getClass().getName() + ", not a Boolean");
+                }
+                if (p.containsKey(key)) {
+                    throw new IllegalStateException("DesiredConfigContributor " + id + ": " + key + " is contributed twice");
+                }
+                p.put(key, (Boolean) value);
+            }
+        }
+    }
+
+    /** The contributor's pluginId, or IllegalStateException when it is not lowercase kebab-case. */
+    public static String checkedPluginId(DesiredConfigContributor c) {
+        String id = c.pluginId();
+        if (!ConfigurationExtensions.isId(id)) {
+            throw new IllegalStateException("DesiredConfigContributor " + c.getClass().getName()
+                    + ": pluginId \"" + id + "\" is not lowercase kebab-case of at most 32 characters");
+        }
+        return id;
     }
 
     private static void putIfManaged(Map<String, Boolean> p, String key, Boolean v) {

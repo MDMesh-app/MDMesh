@@ -3016,6 +3016,16 @@
         <rollback>ALTER TABLE users DROP COLUMN passwordResetTokenTime;</rollback>
     </changeSet>
 
+    <changeSet id="26.10.22-configurations-extensions" author="lunacy" context="common">
+        <comment>Column,new: configurations#extensions, server plugins' and console extensions' data by namespace (an
+            extension id, or id.name), each a JSON object (com.hmdm.extension.ConfigurationExtensions). Existing rows
+            get the empty object, which changes no config.apply revision. The CHECK keeps a direct SQL write from
+            storing anything but an object, which every read of the configuration would fail on.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN extensions JSONB NOT NULL DEFAULT '{}'::jsonb
+            CONSTRAINT configurations_extensions_object CHECK (jsonb_typeof(extensions) = 'object');</sql>
+        <rollback>ALTER TABLE configurations DROP COLUMN extensions;</rollback>
+    </changeSet>
+
     <changeSet id="26.10.27-configurations-connectivityMode" author="Przemek-Magic" context="common">
         <comment>Column,new: configurations#connectivityMode (sent as connectivity.mode in config.apply, protocol 1.5):
             adaptive (battery-saver) or alwaysOn (keep the live connection up). No DEFAULT: NULL = unmanaged, so each

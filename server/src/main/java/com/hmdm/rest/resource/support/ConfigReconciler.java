@@ -43,11 +43,17 @@ public class ConfigReconciler {
 
     private final UnsecureDAO unsecureDAO;
     private final AgentCommandDAO commandDAO;
+    private final ExtensionPoints extensionPoints;
 
+    /**
+     * @param extensionPoints the server plugins' policy keys, from the plugins on for each configuration's customer
+     *                        (none without plugins)
+     */
     @Inject
-    public ConfigReconciler(UnsecureDAO unsecureDAO, AgentCommandDAO commandDAO) {
+    public ConfigReconciler(UnsecureDAO unsecureDAO, AgentCommandDAO commandDAO, ExtensionPoints extensionPoints) {
         this.unsecureDAO = unsecureDAO;
         this.commandDAO = commandDAO;
+        this.extensionPoints = extensionPoints;
     }
 
     /** The desired-state document for the device's configuration, or null when it has none. */
@@ -56,12 +62,27 @@ public class ConfigReconciler {
         Configuration cfg = unsecureDAO.getConfigurationById(device.getConfigurationId());
         if (cfg == null) return null;
         List<Application> apps = unsecureDAO.getPlainConfigurationAppsOptimized(cfg.getId());
-        return DesiredConfigBuilder.build(cfg, apps);
+        return DesiredConfigBuilder.build(cfg, apps, extensionPoints.contributors(cfg.getCustomerId()));
     }
 
+    /**
+     * The current revision, for the console's sync status; null when the device has no configuration, or when a server
+     * plugin's contributor fails on it (logged as reconcile does), so one broken plugin doesn't take down the status
+     * of every configuration.
+     */
     public String currentRevision(Device device) {
-        DesiredConfig d = currentDocument(device);
-        return d == null ? null : d.getRevision();
+        try {
+            DesiredConfig d = currentDocument(device);
+            return d == null ? null : d.getRevision();
+        } catch (IllegalStateException e) {
+            Integer cfgId = device.getConfigurationId();
+            if (shouldWarn(cfgId == null ? Integer.valueOf(-1) : cfgId, System.currentTimeMillis())) {
+                logger.warn("no current revision for configuration {}", cfgId, e);
+            } else {
+                logger.debug("no current revision for configuration {}", cfgId, e);
+            }
+            return null;
+        }
     }
 
     /**

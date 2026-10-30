@@ -27,11 +27,15 @@ import javax.inject.Singleton;
 import javax.ws.rs.*;
 import javax.ws.rs.core.MediaType;
 
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.hmdm.extension.ConfigurationExtensions;
+import com.hmdm.extension.ExtensionError;
 import com.hmdm.notification.PushService;
 import com.hmdm.persistence.*;
 import com.hmdm.persistence.domain.*;
 import com.hmdm.rest.json.LookupItem;
 import com.hmdm.rest.json.UpgradeConfigurationApplicationRequest;
+import com.hmdm.rest.resource.support.ExtensionPoints;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.util.FileUtil;
 import io.swagger.annotations.Api;
@@ -58,6 +62,7 @@ public class ConfigurationResource {
     private CustomerDAO customerDAO;
     private UserDAO userDAO;
     private String baseUrl;
+    private ExtensionPoints extensionPoints;
 
     /**
      * <p>A constructor required by Swagger.</p>
@@ -71,18 +76,21 @@ public class ConfigurationResource {
                                  PushService pushService,
                                  CustomerDAO customerDAO,
                                  UserDAO userDAO,
-                                 @Named("base.url") String baseUrl) {
+                                 @Named("base.url") String baseUrl,
+                                 ExtensionPoints extensionPoints) {
         this.configurationDAO = configurationDAO;
         this.applicationDAO = applicationDAO;
         this.pushService = pushService;
         this.customerDAO = customerDAO;
         this.userDAO = userDAO;
         this.baseUrl = baseUrl;
+        this.extensionPoints = extensionPoints;
     }
     // =================================================================================================================
     @ApiOperation(
             value = "Get configurations",
-            notes = "Gets the list of available configurations",
+            notes = "Gets the list of available configurations. A row has no files, applicationSettings, " +
+                    "applicationUsageParameters or extensions: GET /{id} returns them",
             response = Configuration.class,
             responseContainer = "List"
     )
@@ -121,7 +129,8 @@ public class ConfigurationResource {
     // =================================================================================================================
     @ApiOperation(
             value = "Search configurations",
-            notes = "Searches configurations meeting the specified filter value",
+            notes = "Searches configurations meeting the specified filter value. A row has no files, " +
+                    "applicationSettings, applicationUsageParameters or extensions: GET /{id} returns them",
             response = Configuration.class,
             responseContainer = "List"
     )
@@ -169,7 +178,10 @@ public class ConfigurationResource {
             notes = "Creates a new configuration (if id is not provided) or update existing one otherwise. " +
                     "An update replaces the configuration: every column, and the applications list, are written " +
                     "as sent, so a column left out becomes null and a missing applications list removes every app. " +
-                    "Only files and applicationSettings left out (null) are kept; an empty list clears them. " +
+                    "Only files, applicationSettings and extensions left out (null) are kept; an empty list (or " +
+                    "object) clears them. extensions are checked once the user may save (com.hmdm.extension.ConfigurationExtensions), " +
+                    "the plugins' validators on the namespaces the save changes: " +
+                    "a refusal is an ERROR whose message is the first problem's key and whose data lists them all. " +
                     "applicationUsageParameters are upserted and never removed. " +
                     "An explicit \"applications\": null is refused with HTTP 400."
     )
@@ -199,6 +211,8 @@ public class ConfigurationResource {
                                 "by user " + SecurityContext.get().getCurrentUserName());
                         return Response.PERMISSION_DENIED();
                     }
+                    Response refused = refuseExtensions(configuration, null);
+                    if (refused != null) return refused;
                     configuration.setDisableLocation(false);        // Not used but shouldn't be NULL
                     this.configurationDAO.insertConfiguration(configuration);
                     User user = SecurityContext.get().getCurrentUser().get();
@@ -213,6 +227,8 @@ public class ConfigurationResource {
                                 "by user " + SecurityContext.get().getCurrentUserName());
                         return Response.PERMISSION_DENIED();
                     }
+                    Response refused = refuseExtensions(configuration, storedExtensions(id, configuration));
+                    if (refused != null) return refused;
                     log.info("Configuration " + configuration.getName() + " updated by user "  + SecurityContext.get().getCurrentUserName());
                     this.configurationDAO.updateConfiguration(configuration);
                     this.pushService.notifyDevicesOnUpdate(configuration.getId());
@@ -226,6 +242,32 @@ public class ConfigurationResource {
             e.printStackTrace();
             return Response.INTERNAL_ERROR();
         }
+    }
+
+    /**
+     * What an update's extensions replace, for the validators to check only the namespaces it changes; read only when
+     * the save carries extensions.
+     */
+    private ObjectNode storedExtensions(Integer id, Configuration configuration) {
+        if (configuration.getExtensions() == null) return null;
+        Configuration stored = configurationDAO.getConfigurationById(id);
+        return stored == null ? null : stored.getExtensions();
+    }
+
+    /**
+     * The ERROR for a save whose extensions may not be stored (ConfigurationExtensions.check), or null. Run once the
+     * user may save, so plugins' validators only see the input of a user allowed to make it. Only the plugins on for
+     * the user's customer check it (ExtensionPoints).
+     */
+    private Response refuseExtensions(Configuration configuration, ObjectNode stored) {
+        if (configuration.getExtensions() == null) return null;
+        List<ExtensionError> problems = ConfigurationExtensions.check(configuration.getExtensions(), stored,
+                extensionPoints.validators(SecurityContext.get().getCurrentCustomerId().orElse(null)));
+        if (problems.isEmpty()) return null;
+        // The keys only: a refused namespace is the user's text, which must not reach the log as it is.
+        log.info((configuration.getId() == null ? "A new configuration" : "Configuration " + configuration.getId())
+                + " not saved: " + problems.stream().map(ExtensionError::getKey).collect(Collectors.joining(", ")));
+        return Response.ERROR(problems.get(0).getKey(), problems);
     }
 
     // =================================================================================================================

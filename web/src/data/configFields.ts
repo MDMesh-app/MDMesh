@@ -204,12 +204,10 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'adminExtras', label: 'QR admin extras', type: 'textarea', group: 'Advanced', help: "Extra admin-extras entries for Headwind's server QR. The MDMesh enrollment QR ignores them." },
 ];
 
-export const ENFORCED_FIELDS = CONFIG_FIELDS.filter((f) => f.enforced);
 /** Always-visible editor fields: metadata, enforced, and the enrollment-QR Wi-Fi. */
 export const PRIMARY_FIELDS = CONFIG_FIELDS.filter((f) => f.enforced || f.metadata || f.enrollQr);
 /** Fields only the Headwind launcher read: stored and round-tripped, shown in the collapsed section. */
 export const LEGACY_FIELDS = CONFIG_FIELDS.filter((f) => !f.enforced && !f.metadata && !f.enrollQr);
-export const ENFORCED_KEYS: ReadonlySet<string> = new Set(ENFORCED_FIELDS.map((f) => f.key));
 /** Changing any of these re-enters/exits kiosk on every device of the configuration. */
 export const KIOSK_AFFECTING_KEYS: ReadonlySet<string> = new Set([
   'kioskMode', 'mainAppId', 'kioskExit', 'kioskHome', 'kioskRecents', 'kioskNotifications', 'kioskSystemInfo',

@@ -7,36 +7,43 @@ import {
   type ReactNode,
 } from 'react';
 
+/** The theme actually applied (data-theme on <html>). */
 export type Theme = 'light' | 'dark';
-export type Density = 'comfortable' | 'compact';
+/** What the user chose: a fixed theme, or follow the OS ("Match system"). */
+export type ThemePreference = Theme | 'system';
 
 interface ThemeApi {
+  /** Resolved theme: what is on screen now. */
   theme: Theme;
-  density: Density;
+  /** Stored choice; 'system' follows prefers-color-scheme live. */
+  preference: ThemePreference;
+  /** Pin a fixed theme (same as setPreference with 'light' | 'dark'). */
   setTheme: (t: Theme) => void;
+  setPreference: (p: ThemePreference) => void;
+  /** Flip the resolved theme and pin it. */
   toggleTheme: () => void;
-  setDensity: (d: Density) => void;
 }
 
 const Ctx = createContext<ThemeApi | null>(null);
 const THEME_KEY = 'mdmesh-theme';
-const DENSITY_KEY = 'mdmesh-density';
+const DARK_QUERY = '(prefers-color-scheme: dark)';
 
-function readTheme(): Theme {
+// Storage holds 'light' | 'dark' | 'system'. Nothing stored means 'system', which is what the console always did
+// on a first visit; the pre-paint script in index.html resolves anything other than light/dark the same way.
+function readPreference(): ThemePreference {
   try {
     const s = localStorage.getItem(THEME_KEY);
-    if (s === 'light' || s === 'dark') return s;
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    return s === 'light' || s === 'dark' ? s : 'system';
   } catch {
-    return 'light';
+    return 'system';
   }
 }
 
-function readDensity(): Density {
+function systemTheme(): Theme {
   try {
-    return localStorage.getItem(DENSITY_KEY) === 'compact' ? 'compact' : 'comfortable';
+    return window.matchMedia(DARK_QUERY).matches ? 'dark' : 'light';
   } catch {
-    return 'comfortable';
+    return 'light';
   }
 }
 
@@ -46,56 +53,69 @@ function applyTheme(t: Theme) {
   if (meta) meta.setAttribute('content', t === 'dark' ? '#0f1115' : '#f6f7f9');
 }
 
-function applyDensity(d: Density) {
-  if (d === 'compact') document.documentElement.setAttribute('data-density', 'compact');
-  else document.documentElement.removeAttribute('data-density');
+// Switch with a smooth crossfade via the View Transitions API where available,
+// falling back to the CSS colour transitions otherwise. Reduced-motion skips it.
+function withTransition(run: () => void) {
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const doc = document as Document & {
+    startViewTransition?: (cb: () => void) => void;
+  };
+  if (!reduce && typeof doc.startViewTransition === 'function') {
+    const t = doc.startViewTransition(run) as unknown as
+      | { ready?: Promise<unknown>; finished?: Promise<unknown>; updateCallbackDone?: Promise<unknown> }
+      | undefined;
+    // A newer switch skips a running transition and its promises reject ("Transition was skipped"): expected.
+    const ignore = () => {};
+    t?.ready?.catch(ignore);
+    t?.finished?.catch(ignore);
+    t?.updateCallbackDone?.catch(ignore);
+  } else {
+    run();
+  }
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(readTheme);
-  const [density, setDensityState] = useState<Density>(readDensity);
+  const [preference, setPreferenceState] = useState<ThemePreference>(readPreference);
+  const [system, setSystem] = useState<Theme>(systemTheme);
+  const theme: Theme = preference === 'system' ? system : preference;
+
+  // Follow OS changes live (it only shows while the preference is 'system', but tracking is cheap).
+  useEffect(() => {
+    let mq: MediaQueryList;
+    try {
+      mq = window.matchMedia(DARK_QUERY);
+    } catch {
+      return;
+    }
+    const onChange = () => setSystem(mq.matches ? 'dark' : 'light');
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
 
   useEffect(() => {
     applyTheme(theme);
-    try {
-      localStorage.setItem(THEME_KEY, theme);
-    } catch {
-      /* ignore */
-    }
   }, [theme]);
 
   useEffect(() => {
-    applyDensity(density);
     try {
-      localStorage.setItem(DENSITY_KEY, density);
+      localStorage.setItem(THEME_KEY, preference);
     } catch {
       /* ignore */
     }
-  }, [density]);
+  }, [preference]);
 
-  // Switch with a smooth crossfade via the View Transitions API where available,
-  // falling back to the CSS colour transitions otherwise. Reduced-motion skips it.
-  const setTheme = useCallback((t: Theme) => {
-    const run = () => setThemeState(t);
-    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const doc = document as Document & {
-      startViewTransition?: (cb: () => void) => void;
-    };
-    if (!reduce && typeof doc.startViewTransition === 'function') {
-      doc.startViewTransition(run);
-    } else {
-      run();
-    }
+  const setPreference = useCallback((p: ThemePreference) => {
+    withTransition(() => setPreferenceState(p));
   }, []);
 
-  const toggleTheme = useCallback(() => {
-    setTheme(theme === 'dark' ? 'light' : 'dark');
-  }, [theme, setTheme]);
+  const setTheme = useCallback((t: Theme) => setPreference(t), [setPreference]);
 
-  const setDensity = useCallback((d: Density) => setDensityState(d), []);
+  const toggleTheme = useCallback(() => {
+    setPreference(theme === 'dark' ? 'light' : 'dark');
+  }, [theme, setPreference]);
 
   return (
-    <Ctx.Provider value={{ theme, density, setTheme, toggleTheme, setDensity }}>
+    <Ctx.Provider value={{ theme, preference, setTheme, setPreference, toggleTheme }}>
       {children}
     </Ctx.Provider>
   );

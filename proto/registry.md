@@ -30,6 +30,19 @@ Advertised only when the device has a working strategy for it (`CapabilityRegist
 | `systemUpdatePolicy` | OS update windows | 24 | Planned: not advertised yet. |
 | `factoryResetProtection` | FRP policy | 30 | setFactoryResetProtectionPolicy; does not *prevent* a wipe, it decides whether a wiped device demands a Google account. Not implemented. |
 
+A config.apply document can also carry a server plugin's keys, `x.<pluginId>.<key>` (`policies.x.netaccess.vpn`,
+from a `DesiredConfigContributor`, web/EXTENDING.md). They are not capability keys: an agent without a toggle
+for one reports it `unsupported` and applies the rest, as for any key it doesn't know. A fork that enforces one adds
+the toggle to its agent.
+
+Their values are booleans only, as every other policy: `policies` is a map of booleans on the wire, and the agent
+decodes the document strictly, so one value of another type would fail the whole document, not just the key (the
+server refuses such a value as the plugin's failure, and sends nothing). Plugin settings that aren't booleans (a
+hostname, a VPN profile) are planned as a new top-level section of the document, for example
+`"x": {"<pluginId>": {…}}`, filled by a new default method on `DesiredConfigContributor`, so existing plugins keep
+working. Old agents ignore an unknown section silently instead of reporting it `unsupported`, so that section comes
+with a protocol bump, a capability token and a per-section outcome, in the release that ships it.
+
 ### appManagement
 | key | meaning | notes |
 |-----|---------|-------|

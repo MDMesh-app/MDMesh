@@ -27,9 +27,11 @@ import java.util.List;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.swagger.annotations.ApiModel;
 import io.swagger.annotations.ApiModelProperty;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
 import static com.hmdm.persistence.domain.DesktopHeader.NO_HEADER;
 import static com.hmdm.persistence.domain.IconSize.SMALL;
@@ -126,6 +128,11 @@ public class Configuration implements CustomerData, Serializable {
     private Boolean wifiRadio;
     @ApiModelProperty("Agent connectivity: null = not managed, adaptive = battery-saver, alwaysOn = always connected (connectivity.mode)")
     private String connectivityMode;
+    @ApiModelProperty("Server plugins' and console extensions' data, by namespace (an extension id, or <id>.<name>), each "
+            + "a JSON object (com.hmdm.extension.ConfigurationExtensions). A save without it, or with null, keeps what is "
+            + "stored; with it, replaces it whole. Only one configuration's GET returns it: the lists leave it out")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private ObjectNode extensions;
     @ApiModelProperty("Flag indicating if auto-started apps should be kept in the foreground")
     private Boolean autostartForeground;
     @ApiModelProperty("Time zone settings: null for using default settings, auto for automatic time zone, or Olson time zone string")
@@ -929,6 +936,14 @@ public class Configuration implements CustomerData, Serializable {
         this.connectivityMode = connectivityMode;
     }
 
+    public ObjectNode getExtensions() {
+        return extensions;
+    }
+
+    public void setExtensions(ObjectNode extensions) {
+        this.extensions = extensions;
+    }
+
     public Configuration newCopy() {
         Configuration copy = new Configuration();
 
@@ -1016,6 +1031,7 @@ public class Configuration implements CustomerData, Serializable {
         copy.setKioskLockVolume(getKioskLockVolume());
         copy.setWifiRadio(getWifiRadio());
         copy.setConnectivityMode(getConnectivityMode());
+        copy.setExtensions(getExtensions() == null ? null : getExtensions().deepCopy());
 
         return copy;
     }

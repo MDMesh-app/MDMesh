@@ -694,6 +694,9 @@ export function DeviceDetailPage() {
   const configLocationMode = requestUpdates === 'GPS' ? 'active' : requestUpdates === 'WIFI' ? 'passive' : undefined;
   const locationMode = locationRequested ?? (hasLocationCommand ? undefined : configLocationMode);
   const powerShown = powerRequested ?? ds?.powerMode ?? undefined;
+  // The configuration's Connectivity is applied again at every config.apply, restart and agent update.
+  const connectivityMode = configuration?.connectivityMode as string | undefined;
+  const configPowerMode = connectivityMode === 'alwaysOn' || connectivityMode === 'adaptive' ? connectivityMode : undefined;
 
   /* ---- the configured kiosk ("Return to configured kiosk") ---- */
   const kiosk = useMemo(
@@ -903,6 +906,7 @@ export function DeviceDetailPage() {
                 onInstallConfigApps={() => void installConfigApps()}
                 powerMode={powerShown}
                 powerPending={!!powerRequested && ds?.powerMode !== powerRequested}
+                configPowerMode={configPowerMode}
                 locationMode={locationMode}
                 locationPending={!!locationRequested}
                 locationUnknown={!locationRequested && hasLocationCommand}

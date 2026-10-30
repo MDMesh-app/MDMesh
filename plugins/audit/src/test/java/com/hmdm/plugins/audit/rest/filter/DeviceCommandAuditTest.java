@@ -45,6 +45,21 @@ public class DeviceCommandAuditTest {
     }
 
     @Test
+    public void auditsInstallingTheConfigurationAppsOnADevice() {
+        assertEquals(Optional.of(ResourceAuditInfo.SYNC_DEVICE_APPS),
+                ResourceAuditInfo.findAuditInfo("POST", "/rest/private/agent/v1/devices/h0001/syncApps"));
+        assertFalse(ResourceAuditInfo.findAuditInfo("POST", "/rest/private/agent/v1/devices/a/b/syncApps").isPresent());
+    }
+
+    @Test
+    public void auditRecordForInstallingTheConfigurationAppsNamesTheDevice() throws IOException, ServletException {
+        AuditLogRecord record = audit("/rest/private/agent/v1/devices/h0001/syncApps", "{}");
+
+        assertEquals("plugin.audit.action.device.sync.apps", record.getAction());
+        assertTrue(record.getPayload(), record.getPayload().contains("URI: /rest/private/agent/v1/devices/h0001/syncApps"));
+    }
+
+    @Test
     public void doesNotAuditOtherRoutes() {
         // Reading the command history is not an action.
         assertFalse(ResourceAuditInfo.findAuditInfo("GET", "/rest/private/agent/v1/devices/h0001/commands").isPresent());

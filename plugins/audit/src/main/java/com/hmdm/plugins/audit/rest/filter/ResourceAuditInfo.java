@@ -65,7 +65,8 @@ public enum ResourceAuditInfo {
     DEVICE_FACTORY_RESET("PUT", "/rest/plugins/devicereset/private/reset", false, "plugin.audit.action.device.reset", false, true),
     DEVICE_LOCK("PUT", "/rest/plugins/devicereset/private/lock", true, "plugin.audit.action.device.lock", true, true),
     DEVICE_COMMAND("POST", Pattern.compile("/rest/private/agent/v1/devices/[^/]+/commands/?"), "plugin.audit.action.device.command", true, true, true),
-    BULK_DEVICE_COMMAND("POST", Pattern.compile("/rest/private/agent/v1/bulk/commands/?"), "plugin.audit.action.device.bulk.command", true, true, true);
+    BULK_DEVICE_COMMAND("POST", Pattern.compile("/rest/private/agent/v1/bulk/commands/?"), "plugin.audit.action.device.bulk.command", true, true, true),
+    SYNC_DEVICE_APPS("POST", Pattern.compile("/rest/private/agent/v1/devices/[^/]+/syncApps/?"), "plugin.audit.action.device.sync.apps", true, false, true);
 
     /**
      * <p>Method for the REST resource to track audit log for.</p>

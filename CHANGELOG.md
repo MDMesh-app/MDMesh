@@ -9,9 +9,9 @@ line under Unreleased.
 ## Unreleased
 
 New
-- Audit log: commands sent to devices (wipe, lock, PIN reset, kiosk, alerts and the rest, to one device or many) are
-  recorded with who sent them, from which address, to which devices, and the command type. The command's settings
-  are not recorded, since they can hold a password.
+- Audit log: commands sent to one device or to many, of any type (wipe, lock, PIN reset, kiosk, alert), are recorded
+  with who sent them, from which address, to which devices, and the command type. The command's settings are not
+  recorded, since they can hold a password. "Install config apps" on a device is recorded too (thanks @Przemek-Magic).
 
 ## v0.3.9 — 2026-10-27
 

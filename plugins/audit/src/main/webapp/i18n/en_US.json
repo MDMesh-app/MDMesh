@@ -31,6 +31,7 @@
   "plugin.audit.action.device.lock": "Device locked",
   "plugin.audit.action.device.command": "Device command sent",
   "plugin.audit.action.device.bulk.command": "Device command sent to many devices",
+  "plugin.audit.action.device.sync.apps": "Configuration apps sent to device",
   "plugin.audit.error": " - Error",
   "plugin.audit.tab.title": "Audit",
   "plugin.audit.all.items": "All actions",

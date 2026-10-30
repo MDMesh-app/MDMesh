@@ -82,6 +82,11 @@ class ResourceAuditor {
     private final boolean payload;
 
     /**
+     * <p>A flag indicating if the payload of an agent command must be masked in the saved request data.</p>
+     */
+    private final boolean maskCommandPayload;
+
+    /**
      * <p>A flag indicating if response is in Headwind MDM standard format and should be checked for errors.</p>
      */
     private final boolean checkResponse;
@@ -92,7 +97,8 @@ class ResourceAuditor {
      * <p>Constructs new <code>ResourceAuditor</code> instance. This implementation does nothing.</p>
      */
     ResourceAuditor(String auditLogActionKey, ServletRequest request, ServletResponse response,
-                    FilterChain chain, boolean payload, boolean checkResponse, String proxyIps, String ipHeader) throws IOException {
+                    FilterChain chain, boolean payload, boolean maskCommandPayload, boolean checkResponse,
+                    String proxyIps, String ipHeader) throws IOException {
         this.auditLogActionKey = auditLogActionKey;
         if (payload) {
             // Wrap request only if we need to log it
@@ -103,6 +109,7 @@ class ResourceAuditor {
         this.response = new ServletResponseAuditWrapper((HttpServletResponse)response);
         this.chain = chain;
         this.payload = payload;
+        this.maskCommandPayload = maskCommandPayload;
         this.checkResponse = checkResponse;
         this.remoteAddrResolver = new BaseIPFilter("", proxyIps, ipHeader);
     }
@@ -141,13 +148,13 @@ class ResourceAuditor {
                     "URI: " + requestWrapper.getRequestURI();
             String body = requestWrapper.getBody();
             if (body != null && body.length() > 0) {
-                if (needStripPassword(action)) {
+                if (maskCommandPayload) {
+                    body = stripCommandPayload(body);
+                } else if (needStripPassword(action)) {
                     // Since we parse JSON anyway, let's extract and log the login from the request
                     StripPasswordResponse response = stripPassword(body);
                     body = response.result;
                     requestedLogin = response.login;
-                } else if (needStripCommandPayload(action)) {
-                    body = stripCommandPayload(body);
                 }
                 payloadString += "\nBody: " + body;
             }
@@ -195,11 +202,6 @@ class ResourceAuditor {
                "plugin.audit.action.password.changed".equals(action) ||
                "plugin.audit.action.update.configuration".equals(action) ||
                "plugin.audit.action.update.user".equals(action);
-    }
-
-    private boolean needStripCommandPayload(String action) {
-        return "plugin.audit.action.device.command".equals(action) ||
-               "plugin.audit.action.device.bulk.command".equals(action);
     }
 
     /**

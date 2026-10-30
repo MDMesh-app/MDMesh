@@ -64,8 +64,8 @@ public enum ResourceAuditInfo {
     DEVICE_PASSWORD_RESET("PUT", "/rest/plugins/devicereset/private/password", true, "plugin.audit.action.password.reset", true, true),
     DEVICE_FACTORY_RESET("PUT", "/rest/plugins/devicereset/private/reset", false, "plugin.audit.action.device.reset", false, true),
     DEVICE_LOCK("PUT", "/rest/plugins/devicereset/private/lock", true, "plugin.audit.action.device.lock", true, true),
-    DEVICE_COMMAND("POST", Pattern.compile("/rest/private/agent/v1/devices/[^/]+/commands/?"), "plugin.audit.action.device.command", true, true),
-    BULK_DEVICE_COMMAND("POST", Pattern.compile("/rest/private/agent/v1/bulk/commands/?"), "plugin.audit.action.device.bulk.command", true, true);
+    DEVICE_COMMAND("POST", Pattern.compile("/rest/private/agent/v1/devices/[^/]+/commands/?"), "plugin.audit.action.device.command", true, true, true),
+    BULK_DEVICE_COMMAND("POST", Pattern.compile("/rest/private/agent/v1/bulk/commands/?"), "plugin.audit.action.device.bulk.command", true, true, true);
 
     /**
      * <p>Method for the REST resource to track audit log for.</p>
@@ -100,6 +100,12 @@ public enum ResourceAuditInfo {
     private final boolean payload;
 
     /**
+     * <p>A flag indicating if the request is an agent command whose payload must be masked in the saved request data,
+     * since it can hold a secret (a kiosk exit password, a new screen lock PIN).</p>
+     */
+    private final boolean maskCommandPayload;
+
+    /**
      * <p>A flag indicating if response is in Headwind MDM standard format and should be checked for errors.</p>
      */
     private final boolean checkResponse;
@@ -114,19 +120,22 @@ public enum ResourceAuditInfo {
         this.uriPattern = null;
         this.auditLogAction = auditLogAction;
         this.payload = payload;
+        this.maskCommandPayload = false;
         this.checkResponse = checkResponse;
     }
 
     /**
      * <p>Constructs new <code>ResourceAuditInfo</code> instance matching the request URI against a pattern.</p>
      */
-    ResourceAuditInfo(String method, Pattern uriPattern, String auditLogAction, boolean payload, boolean checkResponse) {
+    ResourceAuditInfo(String method, Pattern uriPattern, String auditLogAction, boolean payload,
+                      boolean maskCommandPayload, boolean checkResponse) {
         this.method = method;
         this.uri = null;
         this.uriExactMatch = true;
         this.uriPattern = uriPattern;
         this.auditLogAction = auditLogAction;
         this.payload = payload;
+        this.maskCommandPayload = maskCommandPayload;
         this.checkResponse = checkResponse;
     }
 
@@ -140,7 +149,8 @@ public enum ResourceAuditInfo {
      */
     public ResourceAuditor getResourceAuditor(ServletRequest request, ServletResponse response, FilterChain chain,
                                               String proxyIps, String ipHeader) throws IOException {
-        return new ResourceAuditor(auditLogAction, request, response, chain, payload, checkResponse, proxyIps, ipHeader);
+        return new ResourceAuditor(auditLogAction, request, response, chain, payload, maskCommandPayload, checkResponse,
+                proxyIps, ipHeader);
     }
 
     /**

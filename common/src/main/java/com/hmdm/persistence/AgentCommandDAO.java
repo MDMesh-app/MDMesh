@@ -170,10 +170,7 @@ public class AgentCommandDAO {
         deviceMapper.updateLastUpdate(deviceNumber, System.currentTimeMillis());
     }
 
-    /**
-     * Stamp the device's enrollment time (the console's "Enrolled"), keeping one already set. Only the legacy
-     * launcher sync set it before, so agent-enrolled devices had none.
-     */
+    /** Stamp the device's enrollment time (the console's "Enrolled"), keeping one already set. */
     public void recordEnrollTime(String deviceNumber) {
         deviceMapper.updateEnrollTime(deviceNumber, System.currentTimeMillis());
     }

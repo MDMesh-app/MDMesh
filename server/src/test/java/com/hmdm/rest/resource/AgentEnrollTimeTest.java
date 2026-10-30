@@ -6,22 +6,24 @@ import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentEnrollmentToken;
 import com.hmdm.persistence.domain.Configuration;
 import com.hmdm.persistence.domain.Device;
+import com.hmdm.persistence.mapper.AgentDeviceMapper;
 import com.hmdm.rest.json.Response;
 import com.hmdm.rest.json.agent.AgentEnrollRequest;
 import com.hmdm.rest.json.agent.AgentEnrollResponse;
 import com.hmdm.rest.resource.support.ConfigAppInstaller;
+import com.hmdm.testsupport.Fakes;
+import com.hmdm.testsupport.Fakes.Call;
+import com.hmdm.testsupport.Fakes.FakeMapper;
 import org.junit.Test;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-/**
- * The agent's /enroll stamps the new device's enrollment time, the console's "Enrolled". Only the legacy launcher
- * sync (off by default) set it before, so every agent-enrolled device showed none.
- */
+/** The agent's /enroll stamps the new device's enrollment time, the console's "Enrolled", once. */
 public class AgentEnrollTimeTest {
 
     private static final String TOKEN = "enroll-token";
@@ -46,11 +48,14 @@ public class AgentEnrollTimeTest {
     }
 
     private static final class FakeUnsecureDAO extends UnsecureDAO {
+        boolean creationEnabled = true;
+
         FakeUnsecureDAO() {
             super(null, null, null, null, null, null, null, null, null, null, null, null, null, null, "/tmp", 0, "x");
         }
 
         @Override public Device createNewDeviceForToken(String deviceId, int customerId, Integer configurationId) {
+            if (!creationEnabled) return null;
             Device d = new Device();
             d.setNumber(deviceId);
             d.setCustomerId(customerId);
@@ -93,16 +98,34 @@ public class AgentEnrollTimeTest {
     }
 
     @Test
-    public void a_refused_enroll_records_no_enrollment_time() {
+    public void an_enroll_refused_because_creation_is_disabled_records_no_enrollment_time() {
+        FakeUnsecureDAO unsecure = new FakeUnsecureDAO();
+        unsecure.creationEnabled = false;
+        FakeTokenDAO tokens = new FakeTokenDAO();
         FakeCommandDAO commands = new FakeCommandDAO();
-        AgentResource resource = new AgentResource(new FakeUnsecureDAO(), new FakeTokenDAO(), commands,
-                noConfigApps(), null, null, null, null);
+        AgentResource resource = new AgentResource(unsecure, tokens, commands, noConfigApps(), null, null, null, null);
         AgentEnrollRequest req = new AgentEnrollRequest();
-        req.setEnrollToken("not-a-token");
+        req.setEnrollToken(TOKEN);
 
         Response r = resource.enroll(req);
 
         assertEquals(Response.ResponseStatus.ERROR, r.getStatus());
+        assertEquals("error.agent.enrollment.disabled", r.getMessage());
         assertTrue(commands.enrollTimeRecorded.isEmpty());
+        assertFalse("the token is released for a retry", tokens.token.isUsed());
+    }
+
+    @Test
+    public void the_enrollment_time_is_set_once() {
+        FakeMapper<AgentDeviceMapper> devices = new FakeMapper<>(AgentDeviceMapper.class);
+        new AgentCommandDAO(null, devices.mapper, null, null).recordEnrollTime("dev-1");
+
+        List<Call> calls = devices.callsTo("updateEnrollTime");
+        assertEquals(1, calls.size());
+        assertEquals("dev-1", calls.get(0).args[0]);
+        // A time already there (a legacy launcher's first sync) is kept.
+        String sql = Fakes.sqlOf(AgentDeviceMapper.class, "updateEnrollTime").replaceAll("\\s+", " ").toLowerCase();
+        assertTrue(sql, sql.contains("set enrolltime = coalesce(enrolltime, #{ts})"));
+        assertTrue(sql, Fakes.whereOf(sql).contains("number = #{devicenumber}"));
     }
 }

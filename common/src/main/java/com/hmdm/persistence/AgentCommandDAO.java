@@ -175,6 +175,11 @@ public class AgentCommandDAO {
         deviceMapper.updateLastUpdate(deviceNumber, System.currentTimeMillis());
     }
 
+    /** Stamp the device's enrollment time (the console's "Enrolled"), keeping one already set. */
+    public void recordEnrollTime(String deviceNumber) {
+        deviceMapper.updateEnrollTime(deviceNumber, System.currentTimeMillis());
+    }
+
     /** Persist the reported Android version into infojson so the device list can show it. */
     public void updateAndroidVersion(String deviceNumber, String androidVersion) {
         deviceMapper.updateAndroidVersion(deviceNumber, androidVersion);

@@ -121,7 +121,7 @@ The server logs to stdout at INFO:
 - **Docker:** `docker compose logs -f server`
 - **Native:** `journalctl -u mdmesh-server -f`
 
-Audit events (sign-ins, password changes, edits) are logged by `AuditLogger`, for example
+Audit events (sign-ins, password changes, edits, commands sent to devices) are logged by `AuditLogger`, for example
 `docker compose logs server | grep AuditLogger`. They are also stored in the `plugin_audit_log` table.
 
 Tomcat's own files (`catalina.<date>.log` and the access log) are in `/usr/local/tomcat/logs` (container) or

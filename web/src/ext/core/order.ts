@@ -13,8 +13,9 @@ export const ORDER = Object.freeze({
   deviceTab: Object.freeze({
     control: 100,
     telemetry: 200,
-    activity: 300,
-    location: 400,
+    apps: 300,
+    activity: 400,
+    location: 500,
   }),
   deviceRailGroup: Object.freeze({
     status: 100,

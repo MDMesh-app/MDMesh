@@ -55,6 +55,7 @@ import {
 } from '../ui';
 import { ActionDialog, CommandsCard, ConfigPanel, RemoteActions, TEMPLATE, type KioskReturnOffer } from './DeviceDetailControl';
 import { ActivityTab, LocationTab, TelemetryTab } from './DeviceDetailTabs';
+import { AppsTab, useAppScan } from './DeviceDetailApps';
 import { ConfiguredKioskDialog, DeviceKioskDialog } from './DeviceKioskDialog';
 import { CORE_ACTION_ACCESS } from '../ext/core/access';
 import { withCoreParts } from '../ext/core/device';
@@ -595,13 +596,17 @@ export function DeviceDetailPage() {
    * runs as soon as the server has the command, before the nudge, which can take a while.
    */
   const queue = useCallback(
-    async (label: string, request: () => QueueCommandRequest, onQueued?: () => void): Promise<boolean> => {
+    async (
+      label: string,
+      request: () => QueueCommandRequest,
+      onQueued?: (cmdId: number | string | undefined) => void,
+    ): Promise<boolean> => {
       if (!number) return false;
       try {
         const res = await queueCommand(number, request());
         const cmdId = (res?.id as number | string | undefined) ?? '';
         toast.push('ok', `${label} queued`, cmdId ? `Command ${cmdId}` : '');
-        onQueued?.();
+        onQueued?.(res?.id);
         await forceSync(number).catch(() => undefined); // nudge the device
         refresh();
         return true;
@@ -644,6 +649,8 @@ export function DeviceDetailPage() {
     (c: DeviceCommand, values: Record<string, string> = {}) => queue(c.label, () => commandRequest(c, values)),
     [queue],
   );
+
+  const appScan = useAppScan(number, history, queue);
 
   function runAction(t: CommandTemplateExt) {
     if (t.key === 'kiosk-enter') {
@@ -924,6 +931,7 @@ export function DeviceDetailPage() {
           </>
         ),
         telemetry: <TelemetryTab telemetry={tele} loaded={teleLoaded} reportedAt={ds?.updatedAt} />,
+        apps: <AppsTab number={device.number} history={history} loaded={historyLoaded} scan={canEdit ? appScan : undefined} />,
         activity: (
           <ActivityTab events={events} eventsLoaded={eventsLoaded} commands={history} commandsLoaded={historyLoaded} now={now} />
         ),

@@ -41,6 +41,8 @@ New
 - Connectivity per configuration (Configuration → Network): Always-on keeps the agent's live connection up, so
   commands reach a locked phone without waiting for its next check-in. A restart or agent update brings the
   configuration's mode back; "—" leaves each device's own mode. Needs the new agent (thanks @Przemek-Magic).
+- Device page: an Apps tab lists the apps with a launcher icon from the device's latest scan, with a search, a
+  system-apps filter and Export CSV for app audits, and Scan now for a role with `edit_devices` (thanks @Przemek-Magic).
 - Audit log: commands sent from a device's page or to selected devices (wipe, lock, PIN reset, kiosk, alert) are
   recorded with who sent them, from which address, to which devices, and the command type. The command's settings are
   not recorded, since they can hold a password. "Install config apps" on a device is recorded too

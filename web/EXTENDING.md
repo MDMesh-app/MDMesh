@@ -122,7 +122,7 @@ export function NetworkPage() {
 {
   slot: 'device.tab',
   id: 'network',
-  order: ORDER.deviceTab.telemetry + 50,   // between Telemetry and Activity
+  order: ORDER.deviceTab.telemetry + 50,   // between Telemetry and Apps
   label: 'Network',
   icon: IconNetwork,
   component: lazyComponent(() => import('./NetworkTab'), 'NetworkTab'),

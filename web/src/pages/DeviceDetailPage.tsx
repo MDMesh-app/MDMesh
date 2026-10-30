@@ -77,6 +77,7 @@ import {
   fmtAge,
   isoTime,
   fmtStorage,
+  locationSince,
   makeModel,
   networkLabel,
   powerLabel,
@@ -255,6 +256,10 @@ export function DeviceDetailPage() {
   const [fixes, setFixes] = useState<LocationFix[] | null>(null);
   const [fixesError, setFixesError] = useState<string | null>(null);
   const [fixesLoading, setFixesLoading] = useState(false);
+  // The Location tab's time range, in hours (0: All). The rail shows the newest fix any load found, so a range with
+  // no fix in it doesn't blank the device's location there.
+  const [fixesRange, setFixesRange] = useState(0);
+  const [latestFix, setLatestFix] = useState<LocationFix | null>(null);
   const [configuration, setConfiguration] = useState<Configuration | null>(null);
   const [configurationError, setConfigurationError] = useState<string | null>(null);
   // The configuration's assigned apps, loaded when its kiosk mode is on (the configured kiosk is built from them).
@@ -364,6 +369,8 @@ export function DeviceDetailPage() {
     setFixes(null);
     setFixesError(null);
     setFixesLoading(false);
+    setFixesRange(0);
+    setLatestFix(null);
     setPowerRequested(null);
     setLocationRequested(null);
     setDialog(null);
@@ -463,14 +470,17 @@ export function DeviceDetailPage() {
     setFixesLoading(true);
     setFixesError(null);
     try {
-      const list = cleanFixes(await listLocations(number));
-      if (current()) setFixes(list);
+      const list = cleanFixes(await listLocations(number, locationSince(fixesRange, Date.now())));
+      if (!current()) return;
+      setFixes(list);
+      // A range runs up to now, so a non-empty answer starts with the device's newest fix.
+      if (list[0]) setLatestFix(list[0]);
     } catch (e) {
       if (current()) setFixesError(e instanceof Error ? e.message : 'Failed to load locations');
     } finally {
       if (current()) setFixesLoading(false);
     }
-  }, [number]);
+  }, [number, fixesRange]);
 
   useEffect(() => {
     void loadFixes();
@@ -807,9 +817,8 @@ export function DeviceDetailPage() {
     { key: 'conn', label: 'Connection', value: connection },
   ];
 
-  const latest = fixes?.[0];
-  const loc = latest
-    ? { lat: latest.lat, lon: latest.lon, accuracyM: latest.accuracy, provider: latest.provider, capturedAt: latest.capturedAt }
+  const loc = latestFix
+    ? { lat: latestFix.lat, lon: latestFix.lon, accuracyM: latestFix.accuracy, provider: latestFix.provider, capturedAt: latestFix.capturedAt }
     : cleanLocation(dyn.location);
   const fixIso = isoTime(loc?.capturedAt);
   const locationItems: KeyValueItem[] = loc

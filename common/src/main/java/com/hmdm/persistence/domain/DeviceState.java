@@ -25,7 +25,8 @@ public class DeviceState implements Serializable {
     private String configAgentVersion;
     /**
      * The configuration install set (sorted version ids) the device's apps were last reconciled to
-     * (AppReconcileDecision); null until its first check-in after the column was added.
+     * (AppReconcileDecision), as configurationId:ids. Seeded for enrolled devices by the update that added the column;
+     * null for a device enrolled since, until its first check-in has decided its whole set.
      */
     private String appsRevision;
 

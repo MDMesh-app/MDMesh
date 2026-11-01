@@ -23,7 +23,7 @@ kotlinx.serialization + Retrofit.
 | `:kiosk` | android-lib | COSU lock-task: `KioskController`, its real impl `LockTaskKioskController` (+ `StubKioskController`), `CrashLoopGuard`, `ExitPinGate`. |
 | `:remote` | android-lib | Remote view/control skeleton: `RemoteControlSession`, `RemoteControlTierDetector`, and the **only** Accessibility surface (`InputInjectionService`). |
 | `:oem` | android-lib | `OemAdapter` + `GenericOemAdapter` (no-op) + `KnoxAdapter` (PARKED, no Knox dep). |
-| `:app` | android-app | Hilt `Application`, `AdminReceiver`, provisioning activities, `MainActivity`, `KioskLauncherActivity` (the kiosk HOME), `CheckInService`, manifest with the minimal permission set. |
+| `:app` | android-app | Hilt `Application`, `AdminReceiver`, provisioning activities, `MainActivity`, `KioskLauncherActivity` (the kiosk HOME), `CheckInService`, `LocalApiProvider` (the [local API](#local-api-offline-wi-fi-for-the-pinned-kiosk-app)), manifest with the minimal permission set. |
 
 ### The capability-abstraction intent
 
@@ -128,3 +128,96 @@ manager, then re-run the enrollment loop.
 Production enrollment is via QR / NFC / zero-touch using the
 `GET_PROVISIONING_MODE` + `ADMIN_POLICY_COMPLIANCE` activities (already wired). The
 ADB loop above is for the dev inner loop only.
+
+## Local API (offline Wi-Fi for the pinned kiosk app)
+
+Since Android 10 an ordinary app cannot add, enable, disable or remove saved Wi-Fi networks, or switch the radio.
+A kiosk tablet needs exactly that when it has no network at all, so the server cannot be involved: the agent, as
+Device Owner, does it locally for the app it pins.
+
+It is an exported content provider that implements only `call`:
+
+| Build | Authority |
+|-------|-----------|
+| release | `com.mdmesh.agent.localapi` |
+| debug | `com.mdmesh.agent.debug.localapi` |
+
+```kotlin
+val reply = contentResolver.call(Uri.parse("content://com.mdmesh.agent.localapi"), "wifi.saved", null, null)
+```
+
+On Android 11+ the caller must declare `<queries><provider android:authorities="com.mdmesh.agent.localapi" /></queries>`
+(the debug authority too, if it talks to a debug agent), or the provider is invisible to it.
+
+Logic: `:core` `localapi/` (`LocalApi`, Android-free and unit-tested); Wi-Fi calls: `:policy` `wifi/WifiNetworks.kt`;
+provider: `:app` `localapi/LocalApiProvider.kt`.
+
+### Methods
+
+Every reply has `ok: Boolean`, `code: String`, `message: String` (never the password, never the SSID) and
+`apiVersion: Int` (1), plus:
+
+| Method | Extras | Does | Reply adds |
+|--------|--------|------|------------|
+| `describe` | — | Always answers, authorized or not. | `methods: ArrayList<String>`, `authorized: Boolean`, `reason` when not |
+| `wifi.connect` | `ssid`, `password` (may be empty for open), `security`: `open` \| `wep` \| `psk` \| `sae` | Turns the radio on if off, removes every saved network with that SSID, adds the new one, `enableNetwork(id, true)`, `reconnect()`. SAE needs Android 10. | `networkId: Int` |
+| `wifi.saved` | — | SSIDs of the saved networks, unquoted, each once. | `ssids: ArrayList<String>` |
+| `wifi.forget` | `ssid` | Removes every saved network with that SSID. | — |
+| `wifi.setAutoJoin` | `ssid`, `enabled: Boolean` | `enableNetwork(id, true)`, or `disableNetwork(id)` and leave it if Wi-Fi is on it. Credentials stay. | — |
+| `wifi.disconnect` | — | `disconnect()`. | — |
+| `wifi.setRadio` | `enabled: Boolean` | `setWifiEnabled(enabled)`. | — |
+
+| Code | Meaning |
+|------|---------|
+| `OK` | Done (for `wifi.connect`: saved and joining; the connection itself follows). |
+| `BAD_REQUEST` | A missing or mistyped extra, an SSID over 32 bytes, a password that cannot fit the security. |
+| `UNAUTHORIZED` | See `reason` below. |
+| `NOT_FOUND` | No saved network has that SSID. |
+| `REFUSED` | `WifiManager` returned false or -1. |
+| `UNSUPPORTED` | Unknown method, SAE below Android 10, or no Wi-Fi on the device. |
+| `ERROR` | Something threw; the message names only the exception class. |
+
+### Authorization
+
+Checked on every call but `describe` (which reports it in `authorized` / `reason`), all of it on the device, so it
+holds offline:
+
+1. The agent is Device Owner — else `not_device_owner`.
+2. The persisted kiosk (`KioskStateStore`) exists and is `mode == "single"` — else `no_kiosk` (launcher mode
+   included).
+3. The caller is its `pinPackage` — else `not_pinned_app`. The caller is `getCallingPackage()`, which the platform
+   verifies against the calling UID; no extra or argument is trusted for identity.
+4. The caller's installer of record is this agent — else `not_installed_by_agent`.
+
+The provider is exported with no `android:permission`: the rule above is the access control. It adds no permission
+to the agent (`ACCESS_WIFI_STATE`, `CHANGE_WIFI_STATE` and `ACCESS_FINE_LOCATION` were already declared), and the
+installer lookup needs no package visibility, since an app calling the provider is visible to the agent.
+
+Logcat (tag `LocalApi`) shows only the method and the code. Changes (`wifi.connect`, `forget`, `setAutoJoin`,
+`disconnect`, `setRadio`) are also recorded in the event log as `localApi` `<method> <code>` and reach the server on
+the next check-in.
+
+### Caveats
+
+- **Installer of record.** The app must be installed by the agent (`app.install`). An app that updates itself
+  through its own `PackageInstaller` session becomes its own installer of record and gets `not_installed_by_agent`
+  from then on. For development, `adb install -i com.mdmesh.agent.debug app.apk` records the agent as installer.
+- **Location services.** Android hides the saved-network list from every non-system app while location is off,
+  Device Owners included: `wifi.saved` is then empty, `forget` / `setAutoJoin` answer `NOT_FOUND`, and `connect`
+  cannot remove an older entry for the SSID first.
+- **`wifiRadio`.** `wifi.setRadio` can turn on a radio the configuration's `wifiRadio` Off turned off (a Device Owner
+  is exempt from `DISALLOW_CHANGE_WIFI_STATE`); the configuration turns it off again on its next re-apply.
+
+### Trying it from adb
+
+```bash
+adb shell content call --uri content://com.mdmesh.agent.debug.localapi --method describe
+# Result: Bundle[{ok=true, code=OK, authorized=false, reason=not_pinned_app, methods=[describe, wifi.connect, ...], ...}]
+
+adb shell content call --uri content://com.mdmesh.agent.debug.localapi --method wifi.saved
+# Result: Bundle[{ok=false, code=UNAUTHORIZED, reason=not_pinned_app, ...}]
+```
+
+The shell (`com.android.shell`) is never the pinned app, so every `wifi.*` method answers `UNAUTHORIZED` from adb;
+`describe` shows which check failed first. Extras are passed as `--extra key:type:value`, e.g.
+`--extra ssid:s:Home --extra enabled:b:true` (recent Android versions). `adb logcat -s LocalApi` shows each call.

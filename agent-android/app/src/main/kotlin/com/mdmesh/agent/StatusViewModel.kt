@@ -189,6 +189,8 @@ class StatusViewModel @Inject constructor(
             }
             KioskResult.Unsupported -> app.getString(R.string.kiosk_return_unsupported)
             is KioskResult.Failed -> result.reason
+            // The setup wizard hasn't finished (UserSetup): the kiosk enters by itself once it has.
+            is KioskResult.Deferred -> app.getString(R.string.kiosk_return_deferred)
         }
     }
 

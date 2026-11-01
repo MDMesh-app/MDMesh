@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
 import com.mdmesh.agent.service.WakeKeepAlive
+import com.mdmesh.core.kiosk.AndroidUserSetup
 import com.mdmesh.core.sync.CheckInWorker
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
@@ -17,6 +18,7 @@ import javax.inject.Inject
 class MdmApplication : Application(), Configuration.Provider {
 
     @Inject lateinit var workerFactory: HiltWorkerFactory
+    @Inject lateinit var userSetup: AndroidUserSetup
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
@@ -28,5 +30,6 @@ class MdmApplication : Application(), Configuration.Provider {
         CheckInWorker.schedule(this)   // periodic reconcile (WorkManager floor)
         CheckInWorker.scheduleOnProcessStart(this) // prompt check-in on every cold start (install, reboot, kill)
         WakeKeepAlive.schedule(this)   // doze-proof reconcile heartbeat
+        userSetup.resume()             // a kiosk still waiting for the setup wizard (killed process, reboot)
     }
 }

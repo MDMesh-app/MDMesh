@@ -50,6 +50,7 @@
     <string name="kiosk_return_no_exit_confirm">Lock anyway</string>
     <string name="kiosk_return_failed">Could not restore kiosk. Please try again.</string>
     <string name="kiosk_return_unsupported">Kiosk is not supported on this device.</string>
+    <string name="kiosk_return_deferred">The kiosk starts once the device\'s setup is finished.</string>
 
     <!-- Kiosk launcher -->
     <string name="kiosk_header">MDMesh Kiosk</string>

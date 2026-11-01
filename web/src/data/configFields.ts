@@ -20,7 +20,7 @@ export type FieldType =
   | 'switch' | 'tri' | 'flag' | 'time' | 'color' | 'app';
 
 export type FieldGroup =
-  | 'Identity' | 'Apps' | 'Kiosk' | 'Kiosk appearance' | 'Network' | 'Restrictions' | 'Enrollment'
+  | 'Identity' | 'Apps' | 'Kiosk' | 'Kiosk appearance' | 'Network' | 'Restrictions' | 'Security & Reset' | 'Enrollment'
   | 'Security' | 'Display' | 'Updates' | 'Advanced';
 
 export interface FieldOption {
@@ -74,9 +74,11 @@ const WIFI_RADIO_HELP = 'Needs agent 0.3.4 or later. On turns Wi-Fi on. Off turn
 const LOCK_BUTTONS_HELP = 'Block the power menu in kiosk. Volume buttons are a separate setting, Lock volume buttons (kiosk).';
 const LOCK_VOLUME_HELP = 'Applies in kiosk mode, with agent 0.3.4 or later: blocks volume changes. Android mutes the device while volume is locked, so Ring device is silent on it; the lock is lifted when kiosk ends.';
 const LOCATION_HELP = 'Do not track collects no location with agent 0.3.4 or later, and the server drops any location an older agent still reports. Last known (passive) reports the location the device already has at each check-in; GPS (fresh fix) asks for a new fix each time (more accurate, more battery).';
+const FRP_HELP = 'Needs Device Owner and Android 11 (API 30) or later, with agent 0.3.5. On makes a wiped device demand an authorized Google account at setup; the accounts below are allowed to unlock it. Off disables Factory Reset Protection. This does not prevent a wipe — it decides whether the reset device demands an account afterwards. Not managed leaves the device as it is (an earlier policy is only cleared when the configuration stops managing the field).';
+const FRP_ACCOUNTS_HELP = 'Google account ids allowed to unlock a wiped device, separated by commas or new lines (e.g. admin@acme.com). Empty keeps the platform default: the account already on the device before the reset.';
 
 export const GROUP_ORDER: FieldGroup[] = [
-  'Identity', 'Apps', 'Kiosk', 'Kiosk appearance', 'Network', 'Restrictions', 'Enrollment',
+  'Identity', 'Apps', 'Kiosk', 'Kiosk appearance', 'Network', 'Restrictions', 'Security & Reset', 'Enrollment',
   'Security', 'Display', 'Updates', 'Advanced',
 ];
 
@@ -86,6 +88,7 @@ export const GROUP_NOTES: Partial<Record<FieldGroup, string>> = {
   'Kiosk appearance': 'The look of the MDMesh kiosk launcher. Applies only while kiosk mode is on.',
   Network: 'Not managed leaves the device as it is, including a block applied earlier. Wi-Fi radio is the exception: Not managed lifts its lock.',
   Restrictions: 'Not managed leaves the device as it is, including a block applied earlier.',
+  'Security & Reset': 'Factory Reset Protection (EFRP) needs Android 11+ Device Owner devices and agent 0.3.5 or later. It does not prevent a wipe.',
   Enrollment: 'Not sent to devices. The Enroll page can load this Wi-Fi into the enrollment QR so a new device joins it during setup.',
 };
 
@@ -137,6 +140,8 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'disableFactoryReset', label: 'Factory reset', type: 'tri', group: 'Restrictions', enforced: true, segments: ALLOW_BLOCK_INVERTED, help: 'Block prevents a factory reset from Settings.' },
   { key: 'disableScreenshots', label: 'Screenshots', type: 'tri', group: 'Restrictions', enforced: true, segments: ALLOW_BLOCK_INVERTED, help: 'Block prevents screenshots and screen recording.' },
   { key: 'usbStorage', label: 'USB storage', type: 'tri', group: 'Restrictions', enforced: true, segments: ALLOW_BLOCK, help: 'Block stops USB file transfer and mounting external storage.' },
+  { key: 'factoryResetProtection', label: 'Factory Reset Protection (FRP)', type: 'tri', group: 'Security & Reset', enforced: true, segments: DEFAULT_SEGMENTS, help: FRP_HELP },
+  { key: 'factoryResetProtectionAccounts', label: 'FRP unlock accounts', type: 'textarea', group: 'Security & Reset', enforced: true, help: FRP_ACCOUNTS_HELP },
   { key: 'blockStatusBar', label: 'Lock status bar', type: 'switch', group: 'Restrictions', help: 'Headwind launcher covered the status bar.' },
   { key: 'lockVolume', label: 'Lock volume (legacy)', type: 'tri', group: 'Restrictions', help: 'Headwind launcher blocked volume changes.' },
   { key: 'allowedClasses', label: 'Allowed app classes', type: 'text', group: 'Restrictions', help: 'Headwind launcher allowlist of settings screens.' },

@@ -46,4 +46,9 @@ public class DesiredConfig {
      */
     private DesiredKiosk kiosk;
     private DesiredLocation location;
+    /**
+     * Present = ensure Enhanced Factory Reset Protection with this payload (protocol 1.5). Absent (null) = the
+     * configuration does not manage EFRP; the agent releases it only if the previously applied document had it.
+     */
+    private DesiredFactoryResetProtection factoryResetProtection;
 }

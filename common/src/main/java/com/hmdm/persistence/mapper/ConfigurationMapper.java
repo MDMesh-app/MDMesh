@@ -140,6 +140,8 @@ public interface ConfigurationMapper {
             "defaultFilePath=#{defaultFilePath}, " +
             "disableFactoryReset=#{disableFactoryReset}, " +
             "disableSafeBoot=#{disableSafeBoot}, " +
+            "factoryResetProtection=#{factoryResetProtection}, " +
+            "factoryResetProtectionAccounts=#{factoryResetProtectionAccounts}, " +
             "wifiRadio=#{wifiRadio}, " +
             "kioskLockVolume=#{kioskLockVolume} " +
             "WHERE id=#{id}"})

@@ -55,13 +55,14 @@ configuration.
 **Kiosk.** Kiosk on in the configuration enters kiosk. Kiosk off exits it only on devices that entered via a
 configuration; an ad-hoc "Enter kiosk" from the console is left alone.
 
-**The 22 enforced fields**
+**The 24 enforced fields**
 
 | Area | Fields |
 |------|--------|
 | Kiosk | `mainAppId`, `kioskMode`, `kioskExit`, `kioskHome`, `kioskRecents`, `kioskNotifications`, `kioskSystemInfo`, `kioskKeyguard`, `kioskLockButtons`, `kioskLockVolume`, `password` (exit PIN, stored as entered) |
 | Launcher look | `backgroundColor`, `textColor`, `iconSize` |
 | Device policy | `wifi`, `wifiRadio`, `bluetooth`, `usbStorage`, `disableScreenshots`, `disableFactoryReset`, `disableSafeBoot` |
+| Security & Reset | `factoryResetProtection` (EFRP on/off), `factoryResetProtectionAccounts` (allow-list) |
 | Location | `requestUpdates` (location capture mode) |
 
 `name` and `description` are metadata only. Wire shapes: `proto/payloads/config-apply.schema.json` and
@@ -81,6 +82,14 @@ configuration; an ad-hoc "Enter kiosk" from the console is left alone.
     so it's a separate opt-in. `kioskLockButtons` blocks only the power menu.
   - New columns are NULL on upgrade, so revisions only change for configurations that use them, and for
     Do-not-track configurations (whose devices get one `config.apply`).
+- **1.5 (v0.3.5):**
+  - **Enhanced Factory Reset Protection** (`factoryResetProtection` + `factoryResetProtectionAccounts`) is sent as
+    `config.apply.factoryResetProtection = { enabled, accounts }` and applied through
+    `setFactoryResetProtectionPolicy` (API 30+, Device Owner). It does not prevent a wipe: it decides whether a
+    wiped device demands an authorized Google account and which accounts may unlock it. An agent below API 30 or
+    without Device Owner reports the key `unsupported`. Clearing the field (Not managed) releases the platform
+    policy, but only on devices whose previously applied document had it. New columns are NULL on upgrade, so
+    existing revisions do not move.
 
 **Wi-Fi radio Off, in detail**
 - Off is deferred, without blocking the other keys, while Wi-Fi is the device's only network. It's retried only at

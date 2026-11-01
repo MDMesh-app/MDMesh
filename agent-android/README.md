@@ -134,3 +134,9 @@ OEM's own), and the device enrolls meanwhile. A configuration's kiosk waits for 
 wizard would leave setup unrecorded, and the wizard would come back at every boot. `config.apply` reports the kiosk
 as `deferred` until then and enters it as soon as the wizard finishes; an ad-hoc `kiosk.enter` sent meanwhile fails
 with the same reason. See `UserSetup`.
+
+Pages an OEM adds can be skipped instead. The QR's admin extras bundle may name system apps to hide, comma-separated,
+under `com.mdmesh.HIDE_PACKAGES`; the agent hides them in `ADMIN_POLICY_COMPLIANCE`, before the wizard reaches their
+pages. On a Lenovo tablet, `com.tblenovo.setup,com.aura.oobe.lenovo` removes the navigation-mode and "setup complete"
+pages and the app promoter shown after setup. Google's own pages stay. Hidden apps are not uninstalled, and
+`setApplicationHidden(admin, pkg, false)` brings one back. See `EnrollmentHiddenApps`.

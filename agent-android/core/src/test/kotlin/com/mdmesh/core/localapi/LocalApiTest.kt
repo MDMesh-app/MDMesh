@@ -68,8 +68,10 @@ class LocalApiTest {
         }
         override fun remove(networkId: Int): Boolean {
             calls += "remove:$networkId"
+            // Like WifiManager.removeNetwork: false for an id that is not (or no longer) saved.
+            val present = networks.any { it.networkId == networkId }
             if (removeAccepts) networks.removeAll { it.networkId == networkId }
-            return removeAccepts
+            return removeAccepts && present
         }
         override fun enable(networkId: Int): Boolean = enableAccepts.also { calls += "enable:$networkId" }
         override fun disable(networkId: Int): Boolean = true.also { calls += "disable:$networkId" }
@@ -284,6 +286,13 @@ class LocalApiTest {
         assertCode(LocalApiCode.OK, call(WIFI_FORGET, SSID to HOME))
         assertEquals(listOf("remove:1", "remove:3"), wifi.calls)
         assertEquals(listOf("Office"), wifi.networks.map { it.ssid })
+    }
+
+    @Test fun `forget removes a WPA2-WPA3 network once, though Android lists it once per security type`() {
+        wifi.networks += listOf(SavedWifiNetwork(5, HOME), SavedWifiNetwork(5, HOME))
+        assertCode(LocalApiCode.OK, call(WIFI_FORGET, SSID to HOME))
+        assertEquals(listOf("remove:5"), wifi.calls)
+        assertEquals(emptyList<SavedWifiNetwork>(), wifi.networks)
     }
 
     @Test fun `forget reports not found, a bad request, and a refusal`() {

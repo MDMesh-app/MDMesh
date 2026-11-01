@@ -113,7 +113,13 @@ internal class WifiBridge(
         }
     }
 
-    private fun matching(ssid: String): List<SavedWifiNetwork> = networks.saved().filter { it.ssid == ssid }
+    /**
+     * The saved networks named [ssid], each once. Android 12+ lists a WPA2/WPA3 transition network once per security
+     * type, under the same id, so without [distinctBy] `wifi.forget` removed it and then reported REFUSED for the
+     * second, already-removed copy.
+     */
+    private fun matching(ssid: String): List<SavedWifiNetwork> =
+        networks.saved().filter { it.ssid == ssid }.distinctBy { it.networkId }
 
     private companion object {
         /** An SSID is at most 32 bytes (IEEE 802.11). */

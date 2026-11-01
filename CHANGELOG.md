@@ -9,6 +9,14 @@ Unreleased.
 
 ## Unreleased
 
+Fixes
+- Kiosk: the phone's own launcher no longer shows before the kiosk app, after enrollment or at a restart. A kiosk
+  applied with its app's install starts at once and waits on its splash while the app downloads, instead of after
+  the download. In kiosk, the device's other launchers are hidden, and shown again when kiosk ends. Needs this
+  release's agent.
+- Kiosk: the MDMesh app can no longer be opened from inside a kiosk (seen through a Lenovo sidebar). Needs this
+  release's agent.
+
 ## v0.6.0 — 2026-11-27
 
 Upgrading

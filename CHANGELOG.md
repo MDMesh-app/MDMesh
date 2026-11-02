@@ -10,7 +10,7 @@ line under Unreleased.
 
 New
 - Kiosk: staff can tap Return to kiosk in the MDMesh Agent after leaving with the exit PIN, even offline.
-  Available only when the device's configuration enables kiosk. Needs the updated agent.
+  Available only when the device's configuration enables kiosk. Needs agent 0.4.0; no server update needed.
 - Audit log: commands sent from a device's page or to selected devices (wipe, lock, PIN reset, kiosk, alert) are
   recorded with who sent them, from which address, to which devices, and the command type. The command's settings are
   not recorded, since they can hold a password. "Install config apps" on a device is recorded too

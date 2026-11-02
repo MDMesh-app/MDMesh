@@ -1,6 +1,7 @@
 package com.mdmesh.agent
 
 import android.app.ActivityManager
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Bundle
@@ -28,6 +29,7 @@ import com.mdmesh.core.store.configuredKiosk
 import com.mdmesh.core.store.DeviceIdStore
 import com.mdmesh.core.store.KioskStateStore
 import com.mdmesh.core.sync.SyncStatus
+import com.mdmesh.core.telemetry.EventLog
 import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.policy.wifi.DpmHandle
 import dagger.hilt.android.AndroidEntryPoint
@@ -57,6 +59,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var configApplier: ConfigApplier
     @Inject lateinit var configStore: ConfigStateStore
     @Inject lateinit var kioskStore: KioskStateStore
+    @Inject lateinit var events: EventLog
 
     private lateinit var deviceIdValue: TextView
     private lateinit var kioskValue: TextView
@@ -114,7 +117,10 @@ class MainActivity : ComponentActivity() {
                     KioskResult.Failed("Could not restore kiosk. Please try again.")
                 }
                 val error = when (result) {
-                    KioskResult.Ok -> null
+                    KioskResult.Ok -> {
+                        events.record("kioskReturn", "returned on-device")
+                        null
+                    }
                     KioskResult.Unsupported -> "Kiosk is not supported on this device."
                     is KioskResult.Failed -> result.reason
                 }
@@ -169,13 +175,7 @@ class MainActivity : ComponentActivity() {
         root.addView(label("KIOSK"))
         kioskValue = text("…", 16f, TEXT)
         root.addView(kioskValue)
-        returnButton = Button(this, null, 0, R.style.Widget_MDMesh_KioskReturnButton).apply {
-            visibility = View.GONE
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply { topMargin = dp(RETURN_BUTTON_GAP) }
-            setOnClickListener { returnToKiosk() }
-        }
+        returnButton = kioskReturnButton()
         root.addView(returnButton)
         root.addView(spacer())
 
@@ -206,6 +206,19 @@ class MainActivity : ComponentActivity() {
             addView(root)
             layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
         }
+    }
+
+    private fun kioskReturnButton(): Button = Button(this).apply {
+        visibility = View.GONE
+        isAllCaps = false
+        backgroundTintList = ColorStateList(
+            arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf()), intArrayOf(FAINT, SIGNAL),
+        )
+        setTextColor(INK)
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin = dp(RETURN_BUTTON_GAP) }
+        setOnClickListener { returnToKiosk() }
     }
 
     private fun label(s: String): TextView =

@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.ConnectivityManager
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.provider.Settings
@@ -21,6 +22,7 @@ import com.mdmesh.core.kiosk.KioskApplier
 import com.mdmesh.core.store.DataStoreKioskStateStore
 import com.mdmesh.core.store.SharedPrefsConfigStateStore
 import com.mdmesh.core.store.configuredKiosk
+import com.mdmesh.core.telemetry.EventLog
 import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.kiosk.LockTaskKioskController
 import com.mdmesh.policy.ResolvedToggles
@@ -42,6 +44,7 @@ import java.io.File
  * Run on a disposable, offline Device Owner emulator (Wi-Fi and mobile data disabled). Exercises the real PIN UI,
  * persisted kiosk state, Settings access and return button against Android lock task, without an MDM server.
  * Saves the return screen to the app's external files directory for visual review.
+ * Manual only: CI compiles/lints this source but never runs it. Assumptions skip unsupported test environments.
  */
 @RunWith(AndroidJUnit4::class)
 class OfflineKioskReturnTest {
@@ -60,6 +63,7 @@ class OfflineKioskReturnTest {
 
     @Before
     fun setUp() = runBlocking {
+        assumeTrue("Requires an Android emulator", Build.HARDWARE == "ranchu" || Build.HARDWARE == "goldfish")
         val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         assumeTrue("Requires a disposable Device Owner emulator", dpm.isDeviceOwnerApp(context.packageName))
         store = DataStoreKioskStateStore(context)
@@ -117,9 +121,20 @@ class OfflineKioskReturnTest {
         openAgent()
         awaitCondition { node("Return to kiosk")?.isEnabled == true }
         captureScreen("offline-kiosk-return.png")
+        val returnStartedAt = System.currentTimeMillis()
         click("Return to kiosk")
         awaitCondition { locked() && store.load() == payload && node("Exit kiosk") != null }
         assertEquals(payload, config.configuredKiosk())
+        // Use the persistent event buffer's drain/restore API without discarding earlier test events.
+        val eventLog = EventLog(context)
+        val events = eventLog.drain()
+        try {
+            assertEquals(1, events.count {
+                it.type == "kioskReturn" && it.detail == "returned on-device" && it.ts >= returnStartedAt
+            })
+        } finally {
+            eventLog.restore(events)
+        }
     }
 
     @Test

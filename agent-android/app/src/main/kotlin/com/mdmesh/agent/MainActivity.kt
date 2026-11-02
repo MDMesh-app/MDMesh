@@ -96,6 +96,7 @@ class MainActivity : ComponentActivity() {
         val canReturn = isDeviceOwner() && !isLocked() && configStore.configuredKiosk() != null
         returnButton.visibility = if (canReturn) View.VISIBLE else View.GONE
         returnButton.isEnabled = canReturn && !returningToKiosk
+        returnButton.text = if (returningToKiosk) "Returning…" else "Return to kiosk"
         lifecycleScope.launch {
             val id = deviceIdStore.current()
             deviceIdValue.text = if (id.isNullOrBlank()) enrollingLabel() else id
@@ -105,7 +106,7 @@ class MainActivity : ComponentActivity() {
     private fun returnToKiosk() {
         if (returningToKiosk) return
         returningToKiosk = true
-        returnButton.isEnabled = false
+        refresh()
         lifecycleScope.launch {
             try {
                 val result = runCatching { configApplier.returnToConfiguredKiosk() }.getOrElse {
@@ -168,10 +169,11 @@ class MainActivity : ComponentActivity() {
         root.addView(label("KIOSK"))
         kioskValue = text("…", 16f, TEXT)
         root.addView(kioskValue)
-        returnButton = Button(this).apply {
-            text = "Return to kiosk"
+        returnButton = Button(this, null, 0, R.style.Widget_MDMesh_KioskReturnButton).apply {
             visibility = View.GONE
-            isAllCaps = false
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { topMargin = dp(RETURN_BUTTON_GAP) }
             setOnClickListener { returnToKiosk() }
         }
         root.addView(returnButton)
@@ -234,6 +236,7 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
+        const val RETURN_BUTTON_GAP = 12
         val INK = Color.parseColor("#0E1117")
         val TEXT = Color.parseColor("#E8EEF4")
         val MUTED = Color.parseColor("#8693A4")

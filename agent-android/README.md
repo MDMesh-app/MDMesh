@@ -46,6 +46,49 @@ to the same server without special-casing. Unknown command types degrade to
   `android:enabled="false"` and is toggled on only for an authorised control session.
 - No phone-state / device-identifier permissions — identity is server-issued.
 
+## Returning to kiosk on the device
+
+When the assigned configuration enables kiosk, staff can leave with the existing exit PIN, change Android settings
+(for example Wi-Fi or brightness), open **MDMesh Agent**, and tap **Return to kiosk**. It restores the configuration's
+complete kiosk, including its allowed apps, appearance, exit PIN and lock-task features. Both exit and return work
+without a server connection; staff do not need a console account. A failed entry can be retried.
+Existing device restrictions still apply outside kiosk; allow Wi-Fi settings in the configuration if staff
+need to change networks.
+
+The button appears only outside kiosk on a Device Owner device whose latest locally stored configuration enables
+kiosk. A newer delivered configuration takes precedence over the last fully applied one, even if an unrelated
+policy failed. Disabling kiosk in that configuration removes the return option as soon as the document arrives.
+An offline device uses the configuration it already has; changes waiting on the server take effect when delivered.
+
+The button restores the **configured** kiosk, not a custom kiosk started manually from the console. A remote
+`kiosk.exit` leaves the configuration unchanged, so local return remains available if the configuration still
+enables kiosk. To remove that option, disable kiosk in the assigned configuration and apply it to the device.
+Existing PIN checks and boot/self-update configuration re-application are unchanged.
+
+![Return to kiosk on an offline Android emulator](../docs/screenshots/agent-configured-kiosk-return.png)
+
+This is a local agent feature; the server and `/agent/v1` contract are unchanged. Existing agents gain it only after
+an agent update. A custom build must use the installed agent's signing key to update it in place (see below).
+
+To verify the offline workflow on a **disposable Device Owner emulator**, install the debug app and test APK,
+disable its Wi-Fi and mobile data, and run `OfflineKioskReturnTest`:
+
+```bash
+./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb shell dpm set-device-owner com.mdmesh.agent.debug/com.mdmesh.agent.admin.AdminReceiver
+adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb shell svc wifi disable
+adb shell svc data disable
+adb shell am instrument -w -r -e class com.mdmesh.agent.OfflineKioskReturnTest \
+  com.mdmesh.agent.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+The tests skip devices that are not Device Owner, are online, or already have a kiosk or saved/delivered configuration.
+A passing run exercises the actual PIN dialog, Android Settings, local return button and lock-task state, and saves
+a screenshot to
+`/sdcard/Android/data/com.mdmesh.agent.debug/files/offline-kiosk-return.png`.
+
 ## Build
 
 ```bash

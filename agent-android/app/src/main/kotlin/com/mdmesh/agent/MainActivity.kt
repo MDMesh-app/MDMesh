@@ -6,22 +6,34 @@ import android.graphics.Typeface
 import android.os.Bundle
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
+import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.mdmesh.agent.service.CheckInService
 import com.mdmesh.core.action.NotificationPermissionAccess
 import com.mdmesh.core.config.ServerConfigStore
+import com.mdmesh.core.config.ConfigApplier
+import com.mdmesh.core.store.ConfigStateStore
+import com.mdmesh.core.store.configuredKiosk
 import com.mdmesh.core.store.DeviceIdStore
+import com.mdmesh.core.store.KioskStateStore
 import com.mdmesh.core.sync.SyncStatus
+import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.policy.wifi.DpmHandle
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.combine
 import java.text.DateFormat
 import java.util.Date
 import javax.inject.Inject
@@ -42,13 +54,24 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var notificationPermission: NotificationPermissionAccess
     @Inject lateinit var serverConfig: ServerConfigStore
     @Inject lateinit var syncStatus: SyncStatus
+    @Inject lateinit var configApplier: ConfigApplier
+    @Inject lateinit var configStore: ConfigStateStore
+    @Inject lateinit var kioskStore: KioskStateStore
 
     private lateinit var deviceIdValue: TextView
     private lateinit var kioskValue: TextView
+    private lateinit var returnButton: Button
+    private var returningToKiosk = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(buildUi())
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                combine(configStore.configuredKioskFlow(), kioskStore.flow()) { _, _ -> Unit }
+                    .collect { refresh() }
+            }
+        }
         // Grant our own POST_NOTIFICATIONS as Device Owner BEFORE starting the foreground
         // service, so the "MDMesh active" notification is visible on Android 13+.
         notificationPermission.ensure()
@@ -70,9 +93,35 @@ class MainActivity : ComponentActivity() {
 
     private fun refresh() {
         kioskValue.text = if (isLocked()) "Locked (kiosk active)" else "Not locked"
+        val canReturn = isDeviceOwner() && !isLocked() && configStore.configuredKiosk() != null
+        returnButton.visibility = if (canReturn) View.VISIBLE else View.GONE
+        returnButton.isEnabled = canReturn && !returningToKiosk
         lifecycleScope.launch {
             val id = deviceIdStore.current()
             deviceIdValue.text = if (id.isNullOrBlank()) enrollingLabel() else id
+        }
+    }
+
+    private fun returnToKiosk() {
+        if (returningToKiosk) return
+        returningToKiosk = true
+        returnButton.isEnabled = false
+        lifecycleScope.launch {
+            try {
+                val result = runCatching { configApplier.returnToConfiguredKiosk() }.getOrElse {
+                    if (it is CancellationException) throw it
+                    KioskResult.Failed("Could not restore kiosk. Please try again.")
+                }
+                val error = when (result) {
+                    KioskResult.Ok -> null
+                    KioskResult.Unsupported -> "Kiosk is not supported on this device."
+                    is KioskResult.Failed -> result.reason
+                }
+                error?.let { Toast.makeText(this@MainActivity, it, Toast.LENGTH_LONG).show() }
+            } finally {
+                returningToKiosk = false
+                refresh()
+            }
         }
     }
 
@@ -119,6 +168,13 @@ class MainActivity : ComponentActivity() {
         root.addView(label("KIOSK"))
         kioskValue = text("…", 16f, TEXT)
         root.addView(kioskValue)
+        returnButton = Button(this).apply {
+            text = "Return to kiosk"
+            visibility = View.GONE
+            isAllCaps = false
+            setOnClickListener { returnToKiosk() }
+        }
+        root.addView(returnButton)
         root.addView(spacer())
 
         root.addView(label("AGENT VERSION"))

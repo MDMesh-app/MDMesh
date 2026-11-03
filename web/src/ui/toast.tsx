@@ -28,24 +28,23 @@ const Ctx = createContext<ToastApi | null>(null);
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const seq = useRef(0);
-  // The pending dismissals, cleared when the provider goes, so none fires after it (or a test's page) is gone.
-  const timers = useRef(new Set<number>());
+  // A dismissal that comes due after the provider is gone (or a test's page with it) does nothing. Pending timers
+  // are not cancelled instead: StrictMode's trial unmount in development would cancel a toast pushed while mounting.
+  const mounted = useRef(true);
   useEffect(() => {
-    const pending = timers.current;
+    mounted.current = true;
     return () => {
-      pending.forEach((t) => window.clearTimeout(t));
-      pending.clear();
+      mounted.current = false;
     };
   }, []);
 
   const push = useCallback((kind: ToastKind, title: string, body: string) => {
+    if (!mounted.current) return;
     const id = ++seq.current;
     setToasts((t) => [...t, { id, kind, title, body }]);
-    const timer = window.setTimeout(() => {
-      timers.current.delete(timer);
-      setToasts((t) => t.filter((x) => x.id !== id));
+    window.setTimeout(() => {
+      if (mounted.current) setToasts((t) => t.filter((x) => x.id !== id));
     }, 5000);
-    timers.current.add(timer);
   }, []);
   // One object for the provider's life: a toast coming or going re-renders no consumer, and a callback that uses the
   // toast API (the device page's sendCommand) keeps its identity.

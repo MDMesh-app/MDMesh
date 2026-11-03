@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -27,13 +28,24 @@ const Ctx = createContext<ToastApi | null>(null);
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const seq = useRef(0);
+  // The pending dismissals, cleared when the provider goes, so none fires after it (or a test's page) is gone.
+  const timers = useRef(new Set<number>());
+  useEffect(() => {
+    const pending = timers.current;
+    return () => {
+      pending.forEach((t) => window.clearTimeout(t));
+      pending.clear();
+    };
+  }, []);
 
   const push = useCallback((kind: ToastKind, title: string, body: string) => {
     const id = ++seq.current;
     setToasts((t) => [...t, { id, kind, title, body }]);
-    window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
+      timers.current.delete(timer);
       setToasts((t) => t.filter((x) => x.id !== id));
     }, 5000);
+    timers.current.add(timer);
   }, []);
   // One object for the provider's life: a toast coming or going re-renders no consumer, and a callback that uses the
   // toast API (the device page's sendCommand) keeps its identity.

@@ -137,10 +137,11 @@ On a test device you can also use `adb shell dpm set-device-owner` ([docs/DEV.md
 
 The server is a Java (Jersey) REST API with a PostgreSQL database. In the Docker install, Caddy serves the React
 console and passes API requests to the server. Caddy gets the TLS certificate, or, with a Cloudflare Tunnel,
-Cloudflare handles TLS. A native install serves the console from Tomcat, behind your own TLS proxy. Agents check in over REST and keep a WebSocket open, so the
-server can wake them when there's a command. The updater, a separate service, checks GitHub Releases and verifies
-each release's minisign signature. On quick-start installs it also applies the update, with a database backup and an
-automatic rollback. [STRUCTURE.md](STRUCTURE.md) describes the code layout.
+Cloudflare handles TLS. A native install serves the console from Tomcat, behind your own TLS proxy. Agents check in
+over REST and keep a WebSocket open, so the server can wake them when there's a command. The updater, a separate
+service, checks GitHub Releases and verifies each release's minisign signature. On quick-start installs it also
+applies the update, with a database backup and an automatic rollback. [STRUCTURE.md](STRUCTURE.md) describes the
+code layout.
 
 ## ■ Roadmap
 

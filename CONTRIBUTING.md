@@ -142,22 +142,23 @@ New here? Look for **good first issue**, or open a discussion before a large cha
 
 ## Regenerating the docs screenshots
 
-The README images in `docs/readme/` come from the real SPA against sample data. Regenerate them with
-`scripts/readme/generate.sh --build` (setup and details in [scripts/readme/README.md](scripts/readme/README.md)).
+Every image in the README comes from `docs/readme/`, and [scripts/readme/README.md](scripts/readme/README.md) is
+the one place that says how they are made. In short: `scripts/readme/generate.sh --build` builds the console and
+captures it against sample data.
 
-The page screenshots in `docs/screenshots/` come from the same harness:
+Both that generator and the full-page screenshots in `docs/screenshots/` (which the README doesn't use) render the
+real console through the harness in `scripts/shots/`. To redo the full-page ones:
 
 ```bash
 cd web && npm run build          # build the SPA first
 cd ../scripts/shots && npm install && npx playwright install chromium && node capture.mjs
 ```
 
-Output lands in `docs/screenshots/`, in the light theme (`node capture.mjs --theme dark` for dark); the harness and
-fixtures are in `scripts/shots/`. Behaviour checks for every page run against the same fixtures:
-`node scripts/shots/v2-parity/run.mjs --build` from the repo root. `--with-fixture` adds a check of every extension
-slot in a build that has the test fixture extension (`web/src/ext/__fixtures__/demo`) as a fork's folder:
-`node scripts/shots/v2-parity/run.mjs --with-fixture extensions` runs only that one. The normal build never has the
-fixture.
+They come out in the light theme (`node capture.mjs --theme dark` for dark). Behaviour checks for every page run
+against the same fixtures: `node scripts/shots/v2-parity/run.mjs --build` from the repo root. `--with-fixture` adds a
+check of every extension slot in a build that has the test fixture extension (`web/src/ext/__fixtures__/demo`) as a
+fork's folder: `node scripts/shots/v2-parity/run.mjs --with-fixture extensions` runs only that one. The normal build
+never has the fixture.
 
 ---
 

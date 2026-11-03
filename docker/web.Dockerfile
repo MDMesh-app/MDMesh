@@ -18,6 +18,8 @@ ENV VITE_AGENT_PACKAGE=$VITE_AGENT_PACKAGE \
 COPY web/package*.json ./
 RUN npm ci
 COPY web/ ./
+# The What's new dialog's notes, read at build time from the repository's CHANGELOG.md (web/vite.changelog.ts); the build fails without it.
+COPY CHANGELOG.md /CHANGELOG.md
 RUN npm run build
 
 # An exact Caddy release, not caddy:2-alpine: a Caddy release can change how docker/Caddyfile parses (v0.3.1's

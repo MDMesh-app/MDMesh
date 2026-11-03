@@ -244,6 +244,11 @@ public class UnsecureDAO {
         return this.configurationMapper.getPlainConfigurationAppsOptimized(configurationId);
     }
 
+    /** The version ids the configuration marks Install: one plain select, cheap enough for every check-in. */
+    public List<Integer> getConfigurationInstallVersionIds(Integer configurationId) {
+        return this.configurationMapper.getInstallVersionIds(configurationId);
+    }
+
     public Configuration getConfigurationById(Integer id) {
         return this.configurationMapper.getConfigurationById(id);
     }

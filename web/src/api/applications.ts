@@ -24,6 +24,8 @@ export interface Application {
   hasApkHash?: boolean;
   /** Owned by the master customer; only a super-admin can delete it. */
   commonApplication?: boolean;
+  /** Library list only: some configuration links one of its versions (the server then refuses to delete it). */
+  deletionProhibited?: boolean;
   /** Split-bundle parts as a raw JSON string `[{url,sha256,name}]` (server stores it as text);
    *  present only for multi-part bundles. Use JSON.parse to read, JSON.stringify to send. */
   parts?: string;

@@ -1,31 +1,13 @@
-import { useEffect, useState } from 'react';
-import { fetchCurrentUser, mayManageDeployment } from '../api/auth';
+import { mayManageDeployment } from '../api/auth';
 import { useAuth } from './AuthContext';
 
-// One question per signed-in user and page load: the user stored at sign-in may predate the server's answer (a
-// sign-in on an older server), so the server is asked once and the answer kept.
-const asked = new Map<number, Promise<boolean>>();
-
-/** Whether the signed-in user may apply, roll back or schedule updates (see mayManageDeployment). */
+/**
+ * Whether the signed-in user may apply, roll back, check for or schedule updates (see mayManageDeployment): the
+ * server's `deploymentAdmin`, from the sign-in answer and from AuthContext's refresh of GET /private/users/current
+ * (when the console starts and when the tab is shown again). The updater asks the server the same question and
+ * refuses everyone else; the console only hides what would be refused.
+ */
 export function useMayManageDeployment(): boolean {
   const { user } = useAuth();
-  const [fresh, setFresh] = useState<boolean | null>(null);
-  const id = user?.id;
-  useEffect(() => {
-    if (id == null) return;
-    let on = true;
-    let p = asked.get(id);
-    if (!p) {
-      p = fetchCurrentUser().then((u) => mayManageDeployment(u)).catch(() => {
-        asked.delete(id);
-        return false;
-      });
-      asked.set(id, p);
-    }
-    void p.then((v) => on && setFresh(v));
-    return () => {
-      on = false;
-    };
-  }, [id]);
-  return fresh ?? mayManageDeployment(user);
+  return mayManageDeployment(user);
 }

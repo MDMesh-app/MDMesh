@@ -141,7 +141,10 @@ public interface ConfigurationMapper {
             "disableFactoryReset=#{disableFactoryReset}, " +
             "disableSafeBoot=#{disableSafeBoot}, " +
             "wifiRadio=#{wifiRadio}, " +
-            "kioskLockVolume=#{kioskLockVolume} " +
+            "kioskLockVolume=#{kioskLockVolume}, " +
+            "connectivityMode=#{connectivityMode}, " +
+            // Left out (null), the stored extensions stay: a client that doesn't know them can't wipe them.
+            "extensions=COALESCE(CAST(#{extensions} AS jsonb), extensions) " +
             "WHERE id=#{id}"})
     void updateConfiguration(Configuration configuration);
 
@@ -203,6 +206,11 @@ public interface ConfigurationMapper {
      * @return a list of all existing applications with set parameters of usage by specified configuration.
      */
     List<Application> getPlainConfigurationAppsOptimized(@Param("id") Integer id);
+
+    /** The application version ids the configuration marks Install (action 1): its install set, one plain select. */
+    @Select("SELECT applicationVersionId FROM configurationApplications WHERE configurationId = #{id} AND action = 1 " +
+            "AND applicationVersionId IS NOT NULL")
+    List<Integer> getInstallVersionIds(@Param("id") Integer id);
 
     @Select("SELECT EXISTS( " +
             "SELECT * FROM configurationApplications ca " +

@@ -2,12 +2,14 @@ import {
   createContext,
   useCallback,
   useContext,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
 } from 'react';
+import './Toast.css';
 
-type ToastKind = 'ok' | 'err';
+export type ToastKind = 'ok' | 'err';
 
 interface Toast {
   id: number;
@@ -16,7 +18,7 @@ interface Toast {
   body: string;
 }
 
-interface ToastApi {
+export interface ToastApi {
   push: (kind: ToastKind, title: string, body: string) => void;
 }
 
@@ -33,9 +35,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       setToasts((t) => t.filter((x) => x.id !== id));
     }, 5000);
   }, []);
+  // One object for the provider's life: a toast coming or going re-renders no consumer, and a callback that uses the
+  // toast API (the device page's sendCommand) keeps its identity.
+  const api = useMemo(() => ({ push }), [push]);
 
   return (
-    <Ctx.Provider value={{ push }}>
+    <Ctx.Provider value={api}>
       {children}
       <div className="toast-wrap" aria-live="polite" aria-atomic="false">
         {toasts.map((t) => (

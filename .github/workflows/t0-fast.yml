@@ -38,12 +38,14 @@ jobs:
         with:
           filters: |
             server: pom.xml, common/**, jwt/**, notification/**, plugins/**, server/**
-            web: web/**
+            # CHANGELOG.md is built into the console (What's new) and its tests read every release's section, checked
+            # against release/changelog-section.sh.
+            web: web/**, CHANGELOG.md, release/changelog-section.sh
             agent: agent-android/**, proto/**
             supervisor: supervisor/**, docker/supervisor.Dockerfile, release/minisign.pub, scripts/supervisor-smoke.sh, .dockerignore
             # Listed explicitly: the kit's fail-closed **/Dockerfile* does not match docker/web.Dockerfile. web/**,
-            # web-entrypoint.sh, edge-peers.sh and .dockerignore are the web image build's inputs.
-            edge: docker/Caddyfile, docker/web.Dockerfile, docker/web-entrypoint.sh, docker/edge-peers.sh, web/**, .dockerignore, docker-compose*.yml, docker/dev.env, scripts/edge-check.sh
+            # web-entrypoint.sh, edge-peers.sh, CHANGELOG.md and .dockerignore are the web image build's inputs.
+            edge: docker/Caddyfile, docker/web.Dockerfile, docker/web-entrypoint.sh, docker/edge-peers.sh, web/**, CHANGELOG.md, .dockerignore, docker-compose*.yml, docker/dev.env, scripts/edge-check.sh
             # The installer scripts. Only the edge entry's cheap quickstart.sh copy check runs on these, not its image work.
             installers: quickstart.sh, setup.sh, install/**
 
@@ -95,6 +97,10 @@ jobs:
         uses: ./.github/actions/ci-kit/setup-npm
         with:
           working-directory: web
+      - if: matrix.name == 'web' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).web)
+        name: Unit tests (vitest)
+        working-directory: web
+        run: npm test
       - if: matrix.name == 'web' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).web)
         working-directory: web
         run: npm run build

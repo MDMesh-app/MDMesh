@@ -21,7 +21,9 @@
 
 package com.hmdm.guice.module;
 
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.inject.name.Names;
+import com.hmdm.persistence.JsonObjectTypeHandler;
 import org.apache.ibatis.transaction.jdbc.JdbcTransactionFactory;
 import org.mybatis.guice.MyBatisModule;
 import org.mybatis.guice.datasource.builtin.PooledDataSourceProvider;
@@ -59,6 +61,7 @@ public abstract class AbstractPersistenceModule extends MyBatisModule {
      *     <li>Configures the SQL session factory to use conection pool and JDBC transaction strategy</li>
      *     <li>Sets database connection poll size to 30</li>
      *     <li>Register the mapper classes and aliases for domain objects</li>
+ *     <li>Map {@link ObjectNode} properties to JSON columns ({@link JsonObjectTypeHandler})</li>
      * </ul>
      *
      * <p>The plugin MUST override the {@link #getMapperPackageName()} and {@link #getDomainObjectsPackageName()} to
@@ -83,6 +86,7 @@ public abstract class AbstractPersistenceModule extends MyBatisModule {
         this.bindTransactionFactoryType(JdbcTransactionFactory.class);
         this.addMapperClasses(getMapperPackageName());
         this.addSimpleAliases(getDomainObjectsPackageName());
+        this.handleType(ObjectNode.class).with(JsonObjectTypeHandler.class);
     }
 
     /**

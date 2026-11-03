@@ -1,0 +1,147 @@
+.v2 .v2-modal {
+  box-sizing: border-box;
+  width: calc(100% - 32px);
+  max-height: calc(100dvh - 48px);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-modal);
+  overflow: auto;
+}
+/* Open, the dialog is a column the panel fills, so a tall body scrolls between a header and footer that stay put
+   (not [open]-less: the closed dialog keeps the browser's display: none). */
+.v2 .v2-modal[open] {
+  display: flex;
+  flex-direction: column;
+}
+.v2 .v2-modal--sm {
+  max-width: 420px;
+}
+.v2 .v2-modal--md {
+  max-width: 540px;
+}
+.v2 .v2-modal--lg {
+  max-width: 720px;
+}
+.v2 .v2-modal--full {
+  width: 100vw;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+.v2 .v2-modal--full .v2-modal__panel {
+  min-height: 100%;
+  box-sizing: border-box;
+}
+.v2 .v2-modal--full .v2-modal__body {
+  flex: 1 1 auto;
+  align-items: center;
+}
+/* Centred by auto margins, not justify-content: center, which would push the top of a code taller than the window
+   (a landscape phone) above the scrollable area, out of reach. Auto margins shrink to 0 and the body scrolls instead. */
+.v2 .v2-modal--full .v2-modal__body > :first-child {
+  margin-top: auto;
+}
+.v2 .v2-modal--full .v2-modal__body > :last-child {
+  margin-bottom: auto;
+}
+/* ::backdrop inherits custom properties from the dialog (Chrome 122+, Firefox 120+, Safari 17.4+). */
+.v2 .v2-modal::backdrop {
+  background: var(--backdrop);
+}
+.v2 .v2-modal[open] {
+  animation: v2-modal-in 0.16s ease both;
+}
+.v2 .v2-modal__panel {
+  --modal-pad-x: 24px;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px var(--modal-pad-x);
+}
+.v2 .v2-modal__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.v2 .v2-modal__titles {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.v2 .v2-modal__title {
+  margin: 0;
+  font-size: var(--fs-title);
+  font-weight: 600;
+  line-height: 1.3;
+}
+.v2 .v2-modal__desc {
+  margin: 0;
+  color: var(--text-2);
+}
+.v2 .v2-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  /* The part that scrolls when the dialog is taller than the window. It reaches the panel's edges (its scrollbar
+     sits at the dialog's edge) and 4px past its content above and below, so focus rings (2px + 2px offset) aren't
+     clipped; the content stays where it was. */
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  margin: -4px calc(-1 * var(--modal-pad-x));
+  padding: 4px var(--modal-pad-x);
+  /* A hairline under the header once the body is scrolled: the first layer scrolls with the content and covers the
+     line (in the dialog's own surface) while the body is at its top. */
+  background:
+    linear-gradient(var(--surface), var(--surface)) top / 100% 1px no-repeat local,
+    linear-gradient(var(--line-soft), var(--line-soft)) top / 100% 1px no-repeat scroll;
+}
+/* A body that is a Tab stop (Modal.tsx, useScrollStop) draws its focus ring inside: outside it the dialog clips it. */
+.v2 .v2-modal__body:focus-visible {
+  outline-offset: -2px;
+}
+/* Focus scrolls an element into the body with its 4px of padding (and its focus ring) still showing: a dialog whose
+   first focus target is taller than the body opens at the top, not 4px down. */
+.v2 .v2-modal__body * {
+  scroll-margin-block: 4px;
+}
+.v2 .v2-modal__foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
+}
+
+@keyframes v2-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .v2 .v2-modal__panel {
+    --modal-pad-x: 16px;
+    padding: 16px;
+  }
+  .v2 .v2-modal__foot > * {
+    flex: 1 1 auto;
+  }
+}

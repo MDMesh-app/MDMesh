@@ -24,3 +24,12 @@ This product and its modifications:
   under proto/, the web admin under web/, and the agent v1 server endpoints)
   are original works. Files derived from the upstream retain their original
   Apache-2.0 headers.
+
+-------------------------------------------------------------------------
+Third-party fonts bundled with the web console (web/):
+
+  IBM Plex Sans and IBM Plex Mono, Copyright 2017-2019 IBM Corp.,
+  licensed under the SIL Open Font License, Version 1.1. Self-hosted from
+  the @fontsource/ibm-plex-sans and @fontsource/ibm-plex-mono packages; the
+  licence ships with the console at /licenses/IBM-Plex-OFL-1.1.txt
+  (web/public/licenses/IBM-Plex-OFL-1.1.txt).

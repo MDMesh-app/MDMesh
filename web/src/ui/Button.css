@@ -1,0 +1,237 @@
+/* Buttons. Board values: r10, 1px border, 14px/1.5 text, icon + 7-8px gap. See Button.tsx for the size map. */
+.v2 .v2-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-body);
+  font-weight: 400;
+  line-height: var(--lh-body);
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+.v2 .v2-btn:disabled,
+.v2 .v2-btn[aria-disabled='true'] {
+  cursor: default;
+}
+.v2 .v2-btn__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+/* ---- sizes ---- */
+.v2 .v2-btn--xs {
+  padding: 6px 12px;
+  font-size: var(--fs-sm);
+  gap: 6px;
+}
+.v2 .v2-btn--sm {
+  padding: 7px 12px;
+  font-size: var(--fs-sm);
+}
+.v2 .v2-btn--md {
+  padding: 7px 12px;
+}
+.v2 .v2-btn--lg {
+  padding: 8px 14px;
+}
+.v2 .v2-btn--xl {
+  padding: 9px 16px;
+  gap: 8px;
+}
+.v2 .v2-btn--hero {
+  padding: 10px 16px;
+  gap: 8px;
+}
+.v2 .v2-btn--auth {
+  width: 100%;
+  padding: 11px 16px;
+  font-size: var(--fs-lead);
+  gap: 8px;
+}
+.v2 .v2-btn--block {
+  display: flex;
+  width: 100%;
+}
+
+/* ---- variants ---- */
+.v2 .v2-btn--primary,
+.v2 .v2-btn--primary:hover {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--on-ink);
+  font-weight: 500;
+}
+.v2 .v2-btn--primary:not(:disabled):not([aria-disabled='true']):hover {
+  background: var(--ink-hover);
+  border-color: var(--ink-hover);
+}
+.v2 .v2-btn--auth.v2-btn--primary {
+  border-width: 0;
+}
+
+.v2 .v2-btn--secondary,
+.v2 .v2-btn--secondary:hover,
+.v2 .v2-btn--subtle,
+.v2 .v2-btn--subtle:hover {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+/* Remote-action tiles rest on the lighter card border. */
+.v2 .v2-btn--subtle,
+.v2 .v2-btn--subtle:hover {
+  border-color: var(--border);
+}
+.v2 .v2-btn--secondary .v2-btn__icon,
+.v2 .v2-btn--subtle .v2-btn__icon {
+  color: var(--text-2);
+}
+
+.v2 .v2-btn--danger,
+.v2 .v2-btn--danger:hover {
+  background: var(--surface);
+  border-color: var(--alert-line);
+  color: var(--alert-ink);
+}
+
+.v2 .v2-btn--secondary:not(:disabled):not([aria-disabled='true']):hover,
+.v2 .v2-btn--subtle:not(:disabled):not([aria-disabled='true']):hover,
+.v2 .v2-btn--danger:not(:disabled):not([aria-disabled='true']):hover {
+  background: var(--hover);
+}
+.v2 .v2-btn--danger:not(:disabled):not([aria-disabled='true']):hover {
+  background: var(--alert-soft);
+}
+
+.v2 .v2-btn--ghost,
+.v2 .v2-btn--ghost:hover {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-2);
+  padding-inline: 10px;
+}
+.v2 .v2-btn--ghost:not(:disabled):not([aria-disabled='true']):hover {
+  color: var(--ink);
+  background: var(--hover);
+}
+
+.v2 .v2-btn--strong {
+  font-weight: 500;
+}
+
+/* ---- disabled (boards: "Promote to everyone else", "Set password", pagination "Previous") ---- */
+.v2 .v2-btn--primary:disabled,
+.v2 .v2-btn--primary[aria-disabled='true'] {
+  background: var(--disabled-bg);
+  border-color: var(--disabled-bg);
+  color: var(--disabled-ink);
+}
+.v2 .v2-btn--secondary:disabled,
+.v2 .v2-btn--secondary[aria-disabled='true'],
+.v2 .v2-btn--subtle:disabled,
+.v2 .v2-btn--subtle[aria-disabled='true'],
+.v2 .v2-btn--danger:disabled,
+.v2 .v2-btn--danger[aria-disabled='true'] {
+  border-color: var(--border);
+  color: var(--faint);
+}
+.v2 .v2-btn:disabled .v2-btn__icon,
+.v2 .v2-btn[aria-disabled='true'] .v2-btn__icon {
+  color: inherit;
+}
+.v2 .v2-btn--ghost:disabled {
+  color: var(--faint);
+}
+
+/* ---- icon buttons: 30 / 32 / 34 squares ---- */
+.v2 .v2-iconbtn {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 0;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.v2 .v2-iconbtn--sm {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-seg);
+}
+.v2 .v2-iconbtn--md {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-tile);
+}
+.v2 .v2-iconbtn--lg {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-tile);
+}
+.v2 .v2-iconbtn--strong {
+  border-color: var(--border-strong);
+}
+.v2 .v2-iconbtn:not(:disabled):hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+.v2 .v2-iconbtn:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
+/* Touch: raise row icon buttons to 36px on small screens, for touch. */
+@media (max-width: 860px) {
+  .v2 .v2-iconbtn--sm,
+  .v2 .v2-iconbtn--md {
+    width: 36px;
+    height: 36px;
+  }
+}
+
+@media (forced-colors: active) {
+  .v2 .v2-btn,
+  .v2 .v2-iconbtn {
+    border: 1px solid ButtonText;
+  }
+}
+
+/* ---- LinkButton: an action styled as an underlined link ---- */
+.v2 .v2-linkbtn {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.v2 .v2-linkbtn--strong {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--ink);
+}
+.v2 .v2-linkbtn--strong:hover,
+.v2 .v2-linkbtn--quiet {
+  color: var(--text-2);
+}
+.v2 .v2-linkbtn--quiet {
+  font-weight: 500;
+}
+.v2 .v2-linkbtn--inline {
+  color: inherit;
+  text-underline-offset: 2px;
+}
+.v2 .v2-linkbtn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}

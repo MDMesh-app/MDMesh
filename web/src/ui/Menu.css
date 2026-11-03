@@ -1,0 +1,95 @@
+.v2 .v2-menu {
+  display: inline-flex;
+}
+/* The 05 rail "More actions" trigger: icon-only text button, 9×12 */
+.v2 .v2-menu__iconbtn {
+  padding-inline: 12px;
+}
+.v2 .v2-menu__popup {
+  position: fixed;
+  z-index: 70;
+  min-width: 200px;
+  max-width: min(320px, calc(100vw - 16px));
+  box-sizing: border-box;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-float);
+  animation: v2-menu-in 0.12s ease both;
+}
+.v2 .v2-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--radius-seg);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.v2 .v2-menu__item:focus-visible {
+  outline-offset: -2px;
+}
+.v2 .v2-menu__item:not(:disabled):hover,
+.v2 .v2-menu__item:not(:disabled):focus {
+  background: var(--surface-2);
+}
+.v2 .v2-menu__icon {
+  display: inline-flex;
+  color: var(--text-2);
+}
+.v2 .v2-menu__item.is-danger,
+.v2 .v2-menu__item.is-danger .v2-menu__icon {
+  color: var(--alert-ink);
+}
+.v2 .v2-menu__item.is-danger:not(:disabled):hover,
+.v2 .v2-menu__item.is-danger:not(:disabled):focus {
+  background: var(--alert-soft);
+}
+.v2 .v2-menu__item:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+.v2 .v2-menu__sep {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--line-soft);
+}
+@keyframes v2-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.v2 .v2-menu__popup.is-up {
+  animation-name: v2-menu-in-up;
+}
+@keyframes v2-menu-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (max-width: 860px) {
+  .v2 .v2-menu__item {
+    min-height: 40px;
+  }
+}

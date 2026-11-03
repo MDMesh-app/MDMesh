@@ -1,0 +1,143 @@
+/* ---- identity ---- */
+.v2 .v2-devid,
+.v2 a.v2-devid:hover {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  text-decoration: none;
+  color: var(--text);
+}
+.v2 a.v2-devid:hover .v2-devid__name {
+  text-decoration: underline;
+}
+.v2 .v2-devid__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.v2 .v2-devid__name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.v2 .v2-devid__sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 6px;
+  font-size: var(--fs-meta);
+  color: var(--secondary);
+}
+.v2 .v2-devid__num {
+  font-family: var(--font-mono);
+  color: var(--text-2);
+}
+.v2 .v2-devid__type {
+  font-weight: 500;
+  color: var(--text-2);
+}
+/* card: 15px name, both lines truncated */
+.v2 .v2-devid--card .v2-devid__name {
+  font-size: var(--fs-lead);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.v2 .v2-devid--card .v2-devid__sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* attention (01) and card (03): one line of text, parts set apart by " · " */
+.v2 .v2-devid--attention .v2-devid__sub,
+.v2 .v2-devid--card .v2-devid__sub {
+  display: block;
+}
+
+/* ---- presence ---- */
+.v2 .v2-presence {
+  display: flex;
+  min-width: 0;
+}
+.v2 .v2-presence--stack {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+.v2 .v2-presence--inline {
+  align-items: center;
+  gap: 8px;
+}
+.v2 .v2-presence__reason {
+  font-size: var(--fs-meta);
+  color: var(--secondary);
+}
+/* Cards: a long reason wraps to a second line (no tooltip to recover a truncated one on a phone); clamped at two. */
+.v2 .v2-presence--inline .v2-presence__reason {
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.v2 .v2-presence--inline .v2-spill {
+  flex: 0 0 auto;
+}
+
+/* ---- configuration + sync ---- */
+.v2 .v2-cfgsync--stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.v2 .v2-cfgsync--row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.v2 .v2-cfgsync__key {
+  flex: 0 0 auto;
+  font-size: var(--fs-small);
+  color: var(--secondary);
+}
+.v2 .v2-cfgsync__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-control);
+  font-weight: 500;
+}
+.v2 .v2-cfgsync a {
+  color: inherit;
+  text-decoration: none;
+}
+.v2 .v2-cfgsync a:hover {
+  text-decoration: underline;
+}
+
+/* ---- battery ---- */
+.v2 .v2-battery {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.v2 .v2-battery__pct {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.v2 .v2-battery--table .v2-battery__pct {
+  font-size: var(--fs-meta);
+  color: var(--text-2);
+}
+.v2 .v2-battery--card .v2-battery__pct {
+  font-size: var(--fs-sm);
+  color: var(--text);
+}
+.v2 .v2-battery__pct.is-low {
+  color: var(--alert-ink);
+}

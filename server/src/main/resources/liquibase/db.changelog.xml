@@ -3016,4 +3016,47 @@
         <rollback>ALTER TABLE users DROP COLUMN passwordResetTokenTime;</rollback>
     </changeSet>
 
+    <changeSet id="26.10.22-configurations-extensions" author="lunacy" context="common">
+        <comment>Column,new: configurations#extensions, server plugins' and console extensions' data by namespace (an
+            extension id, or id.name), each a JSON object (com.hmdm.extension.ConfigurationExtensions). Existing rows
+            get the empty object, which changes no config.apply revision. The CHECK keeps a direct SQL write from
+            storing anything but an object, which every read of the configuration would fail on.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN extensions JSONB NOT NULL DEFAULT '{}'::jsonb
+            CONSTRAINT configurations_extensions_object CHECK (jsonb_typeof(extensions) = 'object');</sql>
+        <rollback>ALTER TABLE configurations DROP COLUMN extensions;</rollback>
+    </changeSet>
+
+    <changeSet id="26.10.27-configurations-connectivityMode" author="Przemek-Magic" context="common">
+        <comment>Column,new: configurations#connectivityMode (sent as connectivity.mode in config.apply, protocol 1.5):
+            adaptive (battery-saver) or alwaysOn (keep the live connection up). No DEFAULT: NULL = unmanaged, so each
+            device keeps its own setting and existing configurations keep their revision.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN connectivityMode VARCHAR(16);</sql>
+        <rollback>ALTER TABLE configurations DROP COLUMN connectivityMode;</rollback>
+    </changeSet>
+
+    <changeSet id="26.10.29-configurationApplications-configurationId-idx" author="lunacy" context="common">
+        <comment>Index,new: configurationApplications (configurationId). Every check-in of an agent that installs apps
+            reads its configuration's install set (com.hmdm.rest.resource.support.AppReconciler); one index lookup
+            instead of a scan of every configuration's apps. IF NOT EXISTS: safe on fresh and upgraded databases.</comment>
+        <sql>CREATE INDEX IF NOT EXISTS configurationApplications_configurationId_idx ON configurationApplications (configurationId);</sql>
+        <rollback>DROP INDEX IF EXISTS configurationApplications_configurationId_idx;</rollback>
+    </changeSet>
+
+    <changeSet id="26.10.29-deviceState-appsRevision" author="lunacy" context="common">
+        <comment>Column,new: device_state#appsRevision, the configuration install set the device's apps were last
+            reconciled to at check-in: the configuration id, ':', then its action=install applicationVersions ids,
+            distinct, in numeric order, comma-separated ('5:10,12'; '5:' for none; com.hmdm.util.AppReconcileDecision
+            builds the same text). Each device on a configuration gets its current set here, so the update queues no
+            installs for apps a configuration already has, and an app added after it installs at the next check-in
+            even on a device that was offline during the update. Devices without a configuration stay NULL.</comment>
+        <sql>ALTER TABLE device_state ADD COLUMN appsRevision TEXT;
+            UPDATE device_state ds SET appsRevision = d.configurationId || ':' || COALESCE((
+                SELECT string_agg(s.v::text, ',' ORDER BY s.v) FROM (
+                    SELECT DISTINCT ca.applicationVersionId AS v FROM configurationApplications ca
+                    WHERE ca.configurationId = d.configurationId AND ca.action = 1
+                    AND ca.applicationVersionId IS NOT NULL) s), '')
+            FROM devices d WHERE d.number = ds.deviceNumber AND d.configurationId IS NOT NULL;</sql>
+        <rollback>ALTER TABLE device_state DROP COLUMN appsRevision;</rollback>
+    </changeSet>
+
 </databaseChangeLog>

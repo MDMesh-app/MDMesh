@@ -46,4 +46,9 @@ public class DesiredConfig {
      */
     private DesiredKiosk kiosk;
     private DesiredLocation location;
+    /**
+     * Present (1.5) = the configuration sets the agent's connectivity mode. Absent (null) = not managed: each device
+     * keeps the mode it has, and documents without it keep their revision.
+     */
+    private DesiredConnectivity connectivity;
 }

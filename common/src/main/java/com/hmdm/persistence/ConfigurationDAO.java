@@ -84,13 +84,26 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
         log.info("Base URL: " + baseUrl);
     }
 
+    /** The user's configurations, as list rows: without their {@code extensions} (see {@link #withoutExtensions}). */
     public List<Configuration> getAllConfigurations() {
-        return getListWithCurrentUser(currentUser -> this.mapper.getAllConfigurations(currentUser.getCustomerId(), currentUser.getId()));
+        return withoutExtensions(getListWithCurrentUser(currentUser ->
+                this.mapper.getAllConfigurations(currentUser.getCustomerId(), currentUser.getId())));
     }
 
+    /** The user's configurations matching {@code value}, as list rows: without their {@code extensions}. */
     public List<Configuration> getAllConfigurationsByValue(String value) {
-        return getListWithCurrentUser(currentUser ->
-                this.mapper.getAllConfigurationsByValue(currentUser.getCustomerId(), "%" + value + "%", currentUser.getId()));
+        return withoutExtensions(getListWithCurrentUser(currentUser ->
+                this.mapper.getAllConfigurationsByValue(currentUser.getCustomerId(), "%" + value + "%", currentUser.getId())));
+    }
+
+    /**
+     * List rows leave out {@code extensions}, up to 64 KB a row that no list reads, as they leave out files and app
+     * settings: one configuration (getConfigurationById) carries them. A row saved back as it is keeps what is stored,
+     * since a save without extensions keeps them.
+     */
+    private static List<Configuration> withoutExtensions(List<Configuration> rows) {
+        for (Configuration c : rows) c.setExtensions(null);
+        return rows;
     }
 
     public Configuration getConfigurationByName(String name) {

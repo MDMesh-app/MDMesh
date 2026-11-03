@@ -1,0 +1,82 @@
+/* Deploy dialog (DeployModal.tsx): push an app to devices now, or add it to a configuration. */
+.v2 .v2-deploy {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.v2 .v2-deploy__note {
+  margin: -6px 0 0;
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+.v2 .v2-deploy__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.v2 .v2-deploy__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.v2 .v2-deploy__search {
+  flex: 1 1 220px;
+}
+.v2 .v2-deploy__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.v2 .v2-deploy__list > li + li {
+  border-top: 1px solid var(--line-soft);
+}
+.v2 .v2-deploy__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  cursor: pointer;
+  min-width: 0;
+}
+.v2 .v2-deploy__row:hover {
+  background: var(--row-selected);
+}
+.v2 .v2-deploy__num {
+  font-weight: 500;
+  white-space: nowrap;
+}
+.v2 .v2-deploy__desc {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--secondary);
+  font-size: var(--fs-sm);
+}
+.v2 .v2-deploy__seen {
+  flex: 0 0 auto;
+  font-size: var(--fs-meta);
+  color: var(--secondary);
+}
+.v2 .v2-deploy__empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--secondary);
+}
+.v2 .v2-deploy__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+.v2 .v2-deploy__count {
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}

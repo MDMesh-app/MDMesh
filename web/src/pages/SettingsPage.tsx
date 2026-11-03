@@ -1,398 +1,317 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router';
-import { AppShell } from '../ui/AppShell';
+import { Link } from 'react-router';
 import { useAuth } from '../auth/AuthContext';
-import { useTheme } from '../ui/theme';
-import { listConfigurations, type ConfigurationSummary } from '../api/configurations';
+import type { AuthUser } from '../api/auth';
 import { API_BASE } from '../api/client';
-import { fetchAuthOptions } from '../api/auth';
-import { useMayManageDeployment } from '../auth/useMayManageDeployment';
-import { getUpdateStatus, setAutoUpdate, checkForUpdates, applyUpdate, type UpdateStatus } from '../api/updates';
-import { RolloutPanel } from '../components/RolloutPanel';
-import { orDash, fmtRelative } from '../ui/format';
+import { listConfigurations, type ConfigurationSummary } from '../api/configurations';
+import type { UpdateStatus } from '../api/updates';
+import { useTheme, type ThemePreference } from '../ui/theme';
+import { paths } from '../routes';
+import {
+  Button,
+  Card,
+  CardHeader,
+  KeyValueList,
+  PageHeader,
+  SectionLayout,
+  SectionNav,
+  Segmented,
+  Select,
+  LinkButton,
+} from '../ui';
+import { ChangePasswordModal } from './settings/ChangePasswordModal';
+import { applyRunning, useSupervisor } from '../data/useSupervisor';
+import { CORE_ACTION_ACCESS } from '../ext/core/access';
+import { CORE_SETTINGS, CoreSettingsProvider } from '../ext/core/settings';
+import { useSettingsSections, type SectionMeta } from '../ext/hosts/SettingsSections';
+import { usePermission } from '../ext/permissions';
+import { rolloutActive, useActiveRollout, useConnection, type Connection } from './settings/hooks';
+import { RolloutSection } from './settings/RolloutSection';
+import { UpdatesSection } from './settings/UpdatesSection';
+import { useWhatsNew } from '../whatsnew/WhatsNew';
+import './SettingsPage.css';
 
-const APP_VERSION = '0.1.0';
+/** Section ids, also the anchors other pages link to (ext/core/settings.tsx). */
+const S = CORE_SETTINGS;
+
+/** Per-browser default enrollment configuration (read by Enroll). The server keeps no default. */
 const DEFAULT_CONFIG_KEY = 'mdmesh-default-config';
+/** Build-time console version (Docker images set it; source and dev builds don't). */
+const CONSOLE_VERSION = (import.meta.env.VITE_APP_VERSION as string | undefined) || null;
 
-type Conn = 'checking' | 'ok' | 'down';
+const THEME_OPTIONS: ReadonlyArray<{ value: ThemePreference; label: string }> = [
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+  { value: 'system', label: 'Match system' },
+];
 
-export function SettingsPage() {
-  const navigate = useNavigate();
-  const { user, signOut } = useAuth();
-  const canUpdate = useMayManageDeployment();
-  const { theme, setTheme, density, setDensity } = useTheme();
-  const [configList, setConfigList] = useState<ConfigurationSummary[]>([]);
-  const [conn, setConn] = useState<Conn>('checking');
-  const [upd, setUpd] = useState<UpdateStatus | null>(null);
-  const [autoSaving, setAutoSaving] = useState(false);
-  const [autoErr, setAutoErr] = useState<string | null>(null);
-  const [checking, setChecking] = useState(false);
-  const [applying, setApplying] = useState(false);
-  const [updMsg, setUpdMsg] = useState<string | null>(null);
-  const [defaultConfig, setDefaultConfig] = useState<string>(() => {
+function roleLabel(u: AuthUser | null): string {
+  if (!u) return '—';
+  if (u.superAdmin || u.userRole?.superAdmin) return 'Super admin';
+  if (u.userRole?.id === 2) return 'Admin';
+  if (u.userRole?.id === 3) return 'User';
+  // A custom role keeps its name when it is plain text; the seeded names are Russian (Headwind's seed).
+  const name = u.userRole?.name?.trim();
+  if (name && /^[\x20-\x7E]+$/.test(name)) return name;
+  return u.userRole ? 'Custom role' : '—';
+}
+
+function readDefaultConfig(): string {
+  try {
+    return localStorage.getItem(DEFAULT_CONFIG_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+/** The address admins use: the API base when it is absolute (split deployments), else this page's origin. */
+function serverAddress(): string {
+  if (/^https?:\/\//i.test(API_BASE)) {
     try {
-      return localStorage.getItem(DEFAULT_CONFIG_KEY) ?? '';
+      return new URL(API_BASE).origin;
     } catch {
-      return '';
+      return API_BASE;
     }
-  });
+  }
+  return window.location.origin;
+}
+
+/** "0.3.3" when server and console agree; both when they differ (a console reload pending, or a dev build). */
+function versionLine(s: UpdateStatus | null): string | null {
+  const server = s?.current || null;
+  if (server && CONSOLE_VERSION && CONSOLE_VERSION !== server) return `server ${server} · console ${CONSOLE_VERSION}`;
+  return server ?? (CONSOLE_VERSION ? `console ${CONSOLE_VERSION}` : null);
+}
+
+function ConnectionValue({ conn, onRetry }: { conn: Connection; onRetry: () => void }) {
+  if (conn.state === 'checking') {
+    return (
+      <span className="v2-settings-conn">
+        <span className="v2-settings-conn__dot is-idle" aria-hidden="true" />
+        Checking…
+      </span>
+    );
+  }
+  if (conn.state === 'down') {
+    return (
+      <span className="v2-settings-conn">
+        <span className="v2-settings-conn__dot is-alert" aria-hidden="true" />
+        Unreachable
+        <LinkButton onClick={onRetry}>Try again</LinkButton>
+      </span>
+    );
+  }
+  return (
+    <span className="v2-settings-conn">
+      <span className="v2-settings-conn__dot is-ok" aria-hidden="true" />
+      Connected · {conn.ms} ms
+    </span>
+  );
+}
+
+/** Settings. Replaces the classic pages/SettingsPage.tsx + components/RolloutPanel.tsx. */
+export function SettingsPage() {
+  const { user, signOut } = useAuth();
+  const { preference, setPreference } = useTheme();
+  const sup = useSupervisor(5 * 60 * 1000);
+  const ro = useActiveRollout();
+  const { conn, recheck } = useConnection();
+  const [pwOpen, setPwOpen] = useState(false);
+  const [configs, setConfigs] = useState<ConfigurationSummary[] | null>(null);
+  const [configsErr, setConfigsErr] = useState(false);
+  const [defaultConfig, setDefaultConfig] = useState<string>(readDefaultConfig);
+  // Enrolling writes to devices (ext/core/access.ts).
+  const canEnroll = usePermission(CORE_ACTION_ACCESS.editDevices);
 
   useEffect(() => {
-    let cancelled = false;
-    fetchAuthOptions()
-      .then(() => !cancelled && setConn('ok'))
-      .catch(() => !cancelled && setConn('down'));
+    let on = true;
     listConfigurations()
       .then((list) => {
-        if (!cancelled)
-          setConfigList([...list].sort((a, b) => a.name.localeCompare(b.name)));
+        if (on) setConfigs([...list].sort((a, b) => a.name.localeCompare(b.name)));
       })
-      .catch(() => undefined);
-    getUpdateStatus()
-      .then((x) => !cancelled && setUpd(x))
-      .catch(() => undefined);
+      .catch(() => {
+        if (!on) return;
+        setConfigs([]);
+        setConfigsErr(true);
+      });
     return () => {
-      cancelled = true;
+      on = false;
     };
   }, []);
 
-  const checkNow = async () => {
-    setChecking(true);
-    setUpdMsg(null);
-    const x = await checkForUpdates();
-    setChecking(false);
-    if (x) setUpd(x);
-    else setUpdMsg('Could not check for updates.');
-  };
-
-  const applyNow = async () => {
-    if (
-      !window.confirm(
-        `Update to v${upd?.latest}?\n\nThe server restarts briefly. The database is backed up first `
-          + 'and the update rolls back automatically if it fails.',
-      )
-    )
-      return;
-    setApplying(true);
-    setUpdMsg(null);
-    const r = await applyUpdate();
-    setApplying(false);
-    if (!r.ok) setUpdMsg(r.error || 'Failed to start update.');
-    else setUpdMsg('Update started — watch the banner at the top for live progress.');
-  };
-
-  const scrollToRollout = () =>
-    document.getElementById('rollout-anchor')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-
-  const toggleAuto = async (next: boolean) => {
-    setAutoSaving(true);
-    setAutoErr(null);
-    const r = await setAutoUpdate(next);
-    setAutoSaving(false);
-    if (!r.ok) {
-      setAutoErr(r.error || 'Could not save');
-      return;
-    }
-    setUpd((p) => (p ? { ...p, auto: next } : p));
-  };
-
-  useEffect(() => {
+  const chooseDefault = (v: string) => {
+    setDefaultConfig(v);
     try {
-      if (defaultConfig) localStorage.setItem(DEFAULT_CONFIG_KEY, defaultConfig);
+      if (v) localStorage.setItem(DEFAULT_CONFIG_KEY, v);
       else localStorage.removeItem(DEFAULT_CONFIG_KEY);
     } catch {
-      /* ignore */
+      /* storage unavailable: the choice lasts for this visit */
     }
-  }, [defaultConfig]);
-
-  const connMeta: Record<Conn, { tone: string; label: string }> = {
-    checking: { tone: 'idle', label: 'Checking…' },
-    ok: { tone: 'ok', label: 'Connected' },
-    down: { tone: 'alert', label: 'Unreachable' },
   };
-  const cm = connMeta[conn];
+
+  const s = sup.status;
+  const apply = s?.apply;
+  const updMeta: SectionMeta = applyRunning(s)
+    ? { meta: 'Updating', metaTone: 'warn' }
+    : apply && (apply.phase === 'failed' || apply.phase === 'rolled_back')
+      ? { meta: 'Failed', metaTone: 'alert' }
+      : s?.updateAvailable
+        ? { meta: '1 ready', metaTone: 'ok' }
+        : {};
+  // Core's sections and extensions' come from the registry (ext/core/settings.tsx); the page builds core's bodies.
+  const { nav, sections } = useSettingsSections({
+    [S.updates]: updMeta,
+    [S.agentRollout]: rolloutActive(ro.rollout) ? { meta: 'Running', metaTone: 'warn' } : {},
+  });
+  const sideNav = <SectionNav items={nav} aria-label="Settings sections" />;
+
+  // A stored default whose configuration is gone shows as "No default".
+  const known = configs === null || configs.some((c) => String(c.id) === defaultConfig);
+  const version = versionLine(s);
+  // What's new again, beside the version, when this console has notes for it.
+  const whatsNew = useWhatsNew();
+  const versionValue = whatsNew?.target ? (
+    <span className="v2-settings-ver">
+      {version ? <span className="v2-mono">{version}</span> : null}
+      <LinkButton onClick={whatsNew.open}>What’s new</LinkButton>
+    </span>
+  ) : (
+    version
+  );
+
+  // Core's section bodies, which the contributions in ext/core/settings.tsx pick out.
+  const core = {
+    account: (
+      <Card id={S.account} aria-labelledby={`${S.account}-title`} padding="rows" className="v2-settings-card">
+        <CardHeader
+          title="Account"
+          titleId={`${S.account}-title`}
+          spacing={10}
+          actions={
+            <>
+              <Button onClick={() => setPwOpen(true)} disabled={!user}>
+                Change password
+              </Button>
+              <Button onClick={() => void signOut()}>Sign out</Button>
+            </>
+          }
+        />
+        <KeyValueList
+          variant="rows"
+          items={[
+            { key: 'name', label: 'Name', value: user?.name || user?.login || '—' },
+            { key: 'login', label: 'Login', value: user?.login || '—', mono: !!user?.login },
+            { key: 'email', label: 'Email', value: user?.email || '—', mono: !!user?.email },
+            { key: 'role', label: 'Role', value: roleLabel(user) },
+          ]}
+        />
+      </Card>
+    ),
+    server: (
+      <Card id={S.server} aria-labelledby={`${S.server}-title`} padding="rows" className="v2-settings-card">
+        <CardHeader title="Server" titleId={`${S.server}-title`} spacing={10} />
+        <KeyValueList
+          variant="rows"
+          items={[
+            { key: 'conn', label: 'Connection', value: <ConnectionValue conn={conn} onRetry={recheck} /> },
+            { key: 'addr', label: 'Address', value: serverAddress(), mono: true },
+            ...(versionValue ? [{ key: 'ver', label: 'Server and console', value: versionValue, mono: !whatsNew?.target }] : []),
+            ...(s
+              ? [
+                  {
+                    key: 'how',
+                    label: 'Installed with',
+                    value:
+                      s.applySupported === false
+                        ? 'Source or native installer, updated from the shell'
+                        : 'Docker, can update itself',
+                  },
+                ]
+              : []),
+          ]}
+        />
+      </Card>
+    ),
+    updates: (
+      <UpdatesSection id={S.updates} sup={sup} rolloutHref={`#${S.agentRollout}`} />
+    ),
+    agentRollout: (
+      <RolloutSection id={S.agentRollout} ro={ro} status={s} statusLoaded={sup.loaded} />
+    ),
+    enrollment: (
+      <Card id={S.enrollment} aria-labelledby={`${S.enrollment}-title`} gap={12} className="v2-settings-card">
+        <CardHeader
+          title="Enrollment"
+          titleId={`${S.enrollment}-title`}
+          actions={canEnroll ? <Link to={paths.enroll}>Enroll a device</Link> : undefined}
+        />
+        <div className="v2-settings-pref v2-settings-pref--wide">
+          <div className="v2-settings-pref__text">
+            <span id="v2-settings-default-config" className="v2-settings-pref__label">
+              Default configuration
+            </span>
+            <span id="v2-settings-default-config-help" className="v2-settings-pref__help">
+              {configsErr
+                ? 'Could not load the configurations. Reload the page to try again.'
+                : configs && configs.length === 0
+                  ? 'There are no configurations yet. Once you create one, it can be the default here.'
+                  : 'Pre-selected when you open Enroll. Saved in this browser only, so other admins keep their own.'}
+            </span>
+          </div>
+          <Select
+            className="v2-settings-pref__select"
+            aria-labelledby="v2-settings-default-config"
+            aria-describedby="v2-settings-default-config-help"
+            value={known ? defaultConfig : ''}
+            onChange={(e) => chooseDefault(e.target.value)}
+            disabled={configs === null}
+          >
+            <option value="">No default</option>
+            {(configs ?? []).map((c) => (
+              <option key={c.id} value={String(c.id)}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+      </Card>
+    ),
+    appearance: (
+      <Card id={S.appearance} aria-labelledby={`${S.appearance}-title`} padding="rows" className="v2-settings-card">
+        <CardHeader title="Appearance" titleId={`${S.appearance}-title`} spacing={10} />
+        <div className="v2-settings-pref v2-settings-pref--row">
+          <div className="v2-settings-pref__text">
+            <span id="v2-settings-theme" className="v2-settings-pref__label">
+              Theme
+            </span>
+            <span id="v2-settings-theme-help" className="v2-settings-pref__help">
+              Match system follows your computer&rsquo;s light or dark setting.
+            </span>
+          </div>
+          <Segmented
+            className="v2-settings-pref__control"
+            aria-labelledby="v2-settings-theme"
+            aria-describedby="v2-settings-theme-help"
+            options={THEME_OPTIONS}
+            value={preference}
+            onChange={(v) => setPreference(v)}
+          />
+        </div>
+      </Card>
+
+    ),
+  };
 
   return (
-    <AppShell title="Settings">
-      <div className="page-head">
-        <h1>Settings</h1>
-      </div>
+    <>
+      <PageHeader title="Settings" subtitle="Your account, the server, updates and console preferences." />
+      <CoreSettingsProvider parts={core}>
+        <SectionLayout contentMax={880} contentBasis={560} nav={sideNav}>
+          {sections}
+        </SectionLayout>
+      </CoreSettingsProvider>
 
-      <div className="settings">
-        {/* Account & session */}
-        <section className="panel">
-          <div className="panel-head">
-            <h2 className="panel-title">Account</h2>
-            <button className="btn btn-sm" onClick={() => void signOut()}>
-              Sign out
-            </button>
-          </div>
-          <div className="set-row">
-            <span className="k">Signed in as</span>
-            <span className="v">{orDash(user?.name || user?.login)}</span>
-          </div>
-          <div className="set-row">
-            <span className="k">Login</span>
-            <span className="v mono">{orDash(user?.login)}</span>
-          </div>
-          <div className="set-row">
-            <span className="k">Email</span>
-            <span className="v mono">{orDash(user?.email)}</span>
-          </div>
-          <div className="set-row">
-            <span className="k">Role</span>
-            <span className="v">{user?.superAdmin ? 'Super admin' : 'Admin'}</span>
-          </div>
-        </section>
-
-        {/* Server & connection */}
-        <section className="panel">
-          <div className="panel-head">
-            <h2 className="panel-title">Server &amp; connection</h2>
-          </div>
-          <div className="set-row">
-            <span className="k">Status</span>
-            <span className="v">
-              <span className="conn">
-                <span className={`dot dot-${cm.tone}`} />
-                {cm.label}
-              </span>
-            </span>
-          </div>
-          <div className="set-row">
-            <span className="k">API base</span>
-            <span className="v mono">{API_BASE || '(same origin)'}</span>
-          </div>
-          <div className="set-row">
-            <span className="k">Console version</span>
-            <span className="v mono">MDMesh {APP_VERSION}</span>
-          </div>
-        </section>
-
-        {/* Updates */}
-        {upd && (
-          <section className="panel">
-            <div className="panel-head">
-              <h2 className="panel-title">Updates</h2>
-            </div>
-            <div className="set-row">
-              <span className="k">Running version</span>
-              <span className="v mono">{orDash(upd.current)}</span>
-            </div>
-            <div className="set-row">
-              <span className="k">Latest available</span>
-              <span className="v mono">
-                {orDash(upd.latest)}
-                {upd.latest && upd.verified ? ' ✓' : ''}
-                {upd.channel ? ` (${upd.channel})` : ''}
-              </span>
-            </div>
-            {upd.updateAvailable && upd.release?.notes && (
-              <div className="set-row">
-                <span className="k">
-                  What&rsquo;s new
-                  <small>Release notes for v{orDash(upd.latest)}.</small>
-                </span>
-                <span className="v">
-                  <div className="whatsnew">{upd.release.notes}</div>
-                  {upd.release.url && (
-                    <a className="whatsnew-link" href={upd.release.url} target="_blank" rel="noreferrer">
-                      Full release notes ↗
-                    </a>
-                  )}
-                </span>
-              </div>
-            )}
-            {upd.updateAvailable && (
-              <div className="set-row">
-                <span className="k">
-                  Apply this release
-                  <small>
-                    {upd.applySupported === false
-                      ? 'Agent APK rolls out to devices; server + console update via the installer.'
-                      : 'Server + console update now; agent APK rolls out to devices.'}
-                  </small>
-                </span>
-                <span className="v">
-                  <div className="upd-actions">
-                    {upd.applySupported !== false && canUpdate && (
-                      <button
-                        className="btn btn-sm btn-primary"
-                        onClick={() => void applyNow()}
-                        disabled={applying || !upd.verified}
-                      >
-                        {applying ? 'Starting…' : 'Update server + console'}
-                      </button>
-                    )}
-                    <button className="btn btn-sm" onClick={scrollToRollout}>
-                      Roll out agent to devices ↓
-                    </button>
-                  </div>
-                  {upd.applySupported !== false && !canUpdate && (
-                    <p className="au-note">Only a super-admin, or the admin of a single-customer install, can update.</p>
-                  )}
-                  {upd.applySupported === false && (
-                    <p className="au-note">
-                      This deployment was installed from source — update the server/console with the
-                      command for your install. Docker (from source): <span className="mono">git pull && ./setup.sh</span> · Native:{' '}
-                      <span className="mono">git pull && sudo ./setup.sh --native</span>
-                    </p>
-                  )}
-                  {!upd.verified && (
-                    <p className="au-note" style={{ color: 'var(--err)' }}>
-                      Release signature not verified — apply is disabled.
-                    </p>
-                  )}
-                </span>
-              </div>
-            )}
-            {canUpdate && (
-            <div className="set-row">
-              <span className="k">
-                Check for updates
-                <small>
-                  {upd.checkedAt ? `Last checked ${fmtRelative(upd.checkedAt)}.` : 'Not checked yet.'}
-                </small>
-                {updMsg && <p className="au-note">{updMsg}</p>}
-              </span>
-              <span className="v">
-                <button className="btn btn-sm" onClick={() => void checkNow()} disabled={checking}>
-                  {checking ? 'Checking…' : 'Check now'}
-                </button>
-              </span>
-            </div>
-            )}
-            {upd.applySupported !== false && canUpdate && (
-            <div className="set-row auto-update-row">
-              <span className="k">
-                Automatic updates
-                <small>Apply verified releases without a prompt.</small>
-                <p className="au-note">
-                  When on, the updater applies each verified release on its own — backing up the
-                  database first and rolling back automatically if it fails. Leave off to review and
-                  click Update each time.
-                </p>
-                {autoErr && <p className="au-note" style={{ color: 'var(--err)' }}>{autoErr}</p>}
-              </span>
-              <span className="v">
-                <span className="seg">
-                  <button
-                    className={upd.auto ? 'on' : ''}
-                    onClick={() => void toggleAuto(true)}
-                    disabled={autoSaving}
-                  >
-                    On
-                  </button>
-                  <button
-                    className={!upd.auto ? 'on' : ''}
-                    onClick={() => void toggleAuto(false)}
-                    disabled={autoSaving}
-                  >
-                    Off
-                  </button>
-                </span>
-              </span>
-            </div>
-            )}
-          </section>
-        )}
-
-        {/* Staged agent-APK rollout (renders itself only when there's an apk to roll out or an active rollout) */}
-        <div id="rollout-anchor">
-          <RolloutPanel />
-        </div>
-
-        {/* Enrollment defaults */}
-        <section className="panel">
-          <div className="panel-head">
-            <h2 className="panel-title">Enrollment defaults</h2>
-            <button
-              className="btn btn-sm btn-primary"
-              onClick={() => navigate('/enroll')}
-            >
-              Enroll a device →
-            </button>
-          </div>
-          <div className="set-row">
-            <span className="k">
-              Default configuration
-              <small>Pre-selected when you enroll a new device.</small>
-            </span>
-            <span className="v">
-              <select
-                className="sel"
-                value={defaultConfig}
-                onChange={(e) => setDefaultConfig(e.target.value)}
-              >
-                <option value="">No default</option>
-                {configList.map((c) => (
-                  <option key={c.id} value={String(c.id)}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </span>
-          </div>
-          {configList.length === 0 && (
-            <div className="set-row">
-              <span className="k" style={{ fontWeight: 400 }}>
-                No configurations are assigned to devices yet.
-              </span>
-            </div>
-          )}
-        </section>
-
-        {/* Appearance */}
-        <section className="panel">
-          <div className="panel-head">
-            <h2 className="panel-title">Appearance</h2>
-          </div>
-          <div className="set-row">
-            <span className="k">
-              Theme
-              <small>Switches with a smooth crossfade.</small>
-            </span>
-            <span className="v">
-              <span className="seg">
-                <button
-                  className={theme === 'light' ? 'on' : ''}
-                  onClick={() => setTheme('light')}
-                >
-                  Light
-                </button>
-                <button
-                  className={theme === 'dark' ? 'on' : ''}
-                  onClick={() => setTheme('dark')}
-                >
-                  Dark
-                </button>
-              </span>
-            </span>
-          </div>
-          <div className="set-row">
-            <span className="k">
-              Density
-              <small>Tighten spacing across the console.</small>
-            </span>
-            <span className="v">
-              <span className="seg">
-                <button
-                  className={density === 'comfortable' ? 'on' : ''}
-                  onClick={() => setDensity('comfortable')}
-                >
-                  Comfortable
-                </button>
-                <button
-                  className={density === 'compact' ? 'on' : ''}
-                  onClick={() => setDensity('compact')}
-                >
-                  Compact
-                </button>
-              </span>
-            </span>
-          </div>
-        </section>
-      </div>
-    </AppShell>
+      <ChangePasswordModal open={pwOpen} user={user} onClose={() => setPwOpen(false)} />
+    </>
   );
 }

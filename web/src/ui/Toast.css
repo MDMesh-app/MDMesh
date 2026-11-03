@@ -1,0 +1,75 @@
+/* The boards draw no toast. ToastProvider (ui/toast.tsx) renders this stack: the sticky-bar card language (white,
+   #D6DAE1, r14, float shadow) with the outcome icon tile (20px, r6, soft fill + ink). */
+.v2 .toast-wrap {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  right: 24px;
+  bottom: 24px;
+  gap: 10px;
+  max-width: 380px;
+  font-family: var(--font-sans);
+}
+.v2 .toast {
+  display: flex;
+  align-items: flex-start;
+  animation: v2-toast-in 0.2s ease both;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card-sm);
+  box-shadow: var(--shadow-float);
+  color: var(--text);
+}
+.v2 .toast .t-ic {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-swatch);
+  margin-top: 1px;
+}
+.v2 .toast.ok .t-ic {
+  background: var(--ok-soft);
+  color: var(--ok-ink);
+}
+.v2 .toast.err .t-ic {
+  background: var(--alert-soft);
+  color: var(--alert-ink);
+}
+.v2 .toast .t-main {
+  min-width: 0;
+}
+.v2 .toast .t-title {
+  line-height: 1.35;
+  font-size: var(--fs-control);
+  font-weight: 600;
+  color: var(--text);
+}
+.v2 .toast .t-body {
+  margin-top: 2px;
+  word-break: break-word;
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+@keyframes v2-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (max-width: 640px) {
+  .v2 .toast-wrap {
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
+    max-width: none;
+  }
+}

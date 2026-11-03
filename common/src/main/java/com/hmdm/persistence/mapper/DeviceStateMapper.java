@@ -28,13 +28,17 @@ public interface DeviceStateMapper {
             "                       ELSE COALESCE(device_state.appliedConfigAt, EXCLUDED.updatedAt) END"})
     void upsert(DeviceState state);
 
-    @Select({"SELECT deviceNumber, battery, charging, locked, kioskActive, androidRelease, lastBootAt, updatedAt, agentVersion, powerMode, telemetry, appliedConfigRevision, appliedConfigAt, configAgentVersion " +
+    @Select({"SELECT deviceNumber, battery, charging, locked, kioskActive, androidRelease, lastBootAt, updatedAt, agentVersion, powerMode, telemetry, appliedConfigRevision, appliedConfigAt, configAgentVersion, appsRevision " +
             "FROM device_state WHERE deviceNumber = #{deviceNumber}"})
     DeviceState findByDeviceNumber(@Param("deviceNumber") String deviceNumber);
 
     /** Not part of {@link #upsert}: only the config reconciler moves it. */
     @Update({"UPDATE device_state SET configAgentVersion = #{version} WHERE deviceNumber = #{deviceNumber}"})
     void updateConfigAgentVersion(@Param("deviceNumber") String deviceNumber, @Param("version") String version);
+
+    /** Not part of {@link #upsert}: only the app reconciler moves it. */
+    @Update({"UPDATE device_state SET appsRevision = #{revision} WHERE deviceNumber = #{deviceNumber}"})
+    void updateAppsRevision(@Param("deviceNumber") String deviceNumber, @Param("revision") String revision);
 
     /**
      * A command came back done: when it is a config.apply, record the agent version it was queued for. Its result can

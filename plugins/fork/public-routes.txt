@@ -1,0 +1,10 @@
+# The public routes of this fork's server plugins (plugins/fork/*): one per line, a route or a prefix that covers the
+# routes below it. /rest/plugins/netaccess/public covers /rest/plugins/netaccess/public/ping/{number}; a trailing /*
+# is the same as none. Each line names one plugin's routes: /rest/plugins/<id> or below it, <id> an id no core route
+# uses. The build refuses a broader line (/*, /rest, /rest/plugins), and a route outside /rest/plugins/<id> can't be
+# declared. Lines starting with # and blank lines are skipped.
+#
+# A public route answers without a console session, so each one is a decision someone made on purpose. Core's
+# PublicRouteInventoryTest fails the build on a route of a plugin in plugins/fork (a @Path, publicResources entry or
+# servlet that isn't below a /private/ segment) until it is listed here. Core ships this file with no routes and never
+# changes it, so your lines stay yours. See web/EXTENDING.md, "Public routes".

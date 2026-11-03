@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+import { ApiError, apiClient } from './client';
 
 // Endpoint (see server: com.hmdm.rest.resource.DeviceResource#getAllDevices):
 //   POST /rest/private/devices/search   body: DeviceSearchRequest
@@ -106,4 +106,21 @@ export async function searchDevices(
     ...req,
   };
   return apiClient.post<DeviceListView>('/private/devices/search', body);
+}
+
+/** The server's answer when no accessible device has the number (Response.DEVICE_NOT_FOUND_ERROR). */
+const DEVICE_NOT_FOUND = 'error.notfound.device';
+
+/** The device with exactly this number (GET /private/devices/number/{number}, DeviceResource#getDevice), or null
+ *  when no accessible device has it. Any other failure throws, so a caller never mistakes a server error for "no
+ *  such number" and falls back to another device. */
+export async function getDeviceByNumber(number: string): Promise<DeviceView | null> {
+  try {
+    const d = await apiClient.get<DeviceView | null>(`/private/devices/number/${encodeURIComponent(number)}`);
+    return d && typeof d === 'object' && !Array.isArray(d) && d.number === number ? d : null;
+  } catch (e) {
+    // Not found, or a number the server can't route at all (one with "/" is rejected before the resource).
+    if (e instanceof ApiError && (e.message === DEVICE_NOT_FOUND || e.httpStatus === 400 || e.httpStatus === 404)) return null;
+    throw e;
+  }
 }

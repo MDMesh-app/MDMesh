@@ -1,0 +1,130 @@
+/* ---- stepper ---- */
+.v2 .v2-stepper {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: var(--fs-sm);
+}
+.v2 .v2-stepper__step {
+  display: inline-flex;
+  align-items: center;
+  white-space: pre;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+}
+.v2 .v2-stepper__step.is-done {
+  background: var(--ok-soft);
+  color: var(--ok-ink);
+}
+.v2 .v2-stepper__step.is-current {
+  background: var(--ink);
+  color: var(--on-ink);
+}
+.v2 .v2-stepper__step.is-todo {
+  background: var(--surface-2);
+  color: var(--secondary);
+}
+
+/* ---- rollout steps ---- */
+.v2 .v2-rollout {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 12px;
+}
+.v2 .v2-rollout__step {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card-sm);
+}
+.v2 .v2-rollout__step.is-active {
+  background: var(--surface);
+  border-color: var(--ink);
+}
+.v2 .v2-rollout__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.v2 .v2-rollout__name {
+  flex: 1 1 auto;
+  font-weight: 600;
+}
+.v2 .v2-rollout__state {
+  font-size: var(--fs-meta);
+}
+.v2 .v2-rollout__state.is-warn {
+  color: var(--warn-ink);
+}
+.v2 .v2-rollout__state.is-ok {
+  color: var(--ok-ink);
+}
+.v2 .v2-rollout__state.is-muted {
+  color: var(--secondary);
+}
+.v2 .v2-rollout__count {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.v2 .v2-rollout__done {
+  font-family: var(--font-mono);
+  font-size: var(--fs-stat-sm);
+  font-weight: 500;
+}
+.v2 .v2-rollout__of {
+  color: var(--secondary);
+}
+.v2 .v2-rollout__note {
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+
+/* ---- numbered steps ---- */
+.v2 .v2-numsteps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.v2 .v2-numsteps li {
+  display: flex;
+  gap: 12px;
+}
+.v2 .v2-numsteps__n {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+.v2 .v2-stepnum {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-seg);
+  background: var(--ink);
+  color: var(--on-ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: var(--fs-sm);
+}

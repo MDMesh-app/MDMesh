@@ -146,7 +146,8 @@ public class PasswordResetResource {
             user.setPasswordReset(false);
             PasswordResetTokens.clear(user);             // the link works once
             unsecureDAO.setUserNewPasswordUnsecure(user); // and ends the user's sessions
-            return Response.OK(user);
+            // No body: anyone with the token calls this, and the user object carries the new stored hash (newPassword)
+            return Response.OK();
         } catch (Exception e) {
             logger.error("Unexpected error when resetting the user password", e);
             return Response.INTERNAL_ERROR();

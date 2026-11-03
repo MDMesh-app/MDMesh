@@ -85,6 +85,23 @@ adb shell dumpsys device_policy | grep -i "Device Owner"
 If `set-device-owner` fails with "Not allowed to set the device owner because
 there are already some accounts" — remove all accounts, or factory reset.
 
+### Offline kiosk regression (manual)
+
+On a fresh disposable Android emulator, follow the [ADB enrollment loop](#adb-device-owner-dev-enrollment-loop)
+above, then run:
+
+```bash
+./gradlew :app:assembleDebugAndroidTest
+adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb shell svc wifi disable
+adb shell svc data disable
+adb shell am instrument -w -r -e class com.mdmesh.agent.OfflineKioskReturnTest \
+  com.mdmesh.agent.debug.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+CI compiles/lints `OfflineKioskReturnTest` but never executes it. The tests skip unless running on an offline
+Device Owner Android emulator with no existing kiosk or saved/delivered configuration.
+
 ### Getting OFF Device Owner (dev cycle)
 
 A Device Owner cannot simply be uninstalled. To clear it:

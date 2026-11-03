@@ -1,27 +1,41 @@
 package com.mdmesh.agent
 
 import android.app.ActivityManager
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Bundle
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
+import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.mdmesh.agent.service.CheckInService
 import com.mdmesh.core.action.NotificationPermissionAccess
 import com.mdmesh.core.config.ServerConfigStore
+import com.mdmesh.core.config.ConfigApplier
+import com.mdmesh.core.store.ConfigStateStore
+import com.mdmesh.core.store.configuredKiosk
 import com.mdmesh.core.store.DeviceIdStore
+import com.mdmesh.core.store.KioskStateStore
 import com.mdmesh.core.sync.SyncStatus
+import com.mdmesh.core.telemetry.EventLog
+import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.policy.wifi.DpmHandle
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.combine
 import java.text.DateFormat
 import java.util.Date
 import javax.inject.Inject
@@ -42,13 +56,25 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var notificationPermission: NotificationPermissionAccess
     @Inject lateinit var serverConfig: ServerConfigStore
     @Inject lateinit var syncStatus: SyncStatus
+    @Inject lateinit var configApplier: ConfigApplier
+    @Inject lateinit var configStore: ConfigStateStore
+    @Inject lateinit var kioskStore: KioskStateStore
+    @Inject lateinit var events: EventLog
 
     private lateinit var deviceIdValue: TextView
     private lateinit var kioskValue: TextView
+    private lateinit var returnButton: Button
+    private var returningToKiosk = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(buildUi())
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                combine(configStore.configuredKioskFlow(), kioskStore.flow()) { _, _ -> Unit }
+                    .collect { refresh() }
+            }
+        }
         // Grant our own POST_NOTIFICATIONS as Device Owner BEFORE starting the foreground
         // service, so the "MDMesh active" notification is visible on Android 13+.
         notificationPermission.ensure()
@@ -70,9 +96,39 @@ class MainActivity : ComponentActivity() {
 
     private fun refresh() {
         kioskValue.text = if (isLocked()) "Locked (kiosk active)" else "Not locked"
+        val canReturn = isDeviceOwner() && !isLocked() && configStore.configuredKiosk() != null
+        returnButton.visibility = if (canReturn) View.VISIBLE else View.GONE
+        returnButton.isEnabled = canReturn && !returningToKiosk
+        returnButton.text = if (returningToKiosk) "Returning…" else "Return to kiosk"
         lifecycleScope.launch {
             val id = deviceIdStore.current()
             deviceIdValue.text = if (id.isNullOrBlank()) enrollingLabel() else id
+        }
+    }
+
+    private fun returnToKiosk() {
+        if (returningToKiosk) return
+        returningToKiosk = true
+        refresh()
+        lifecycleScope.launch {
+            try {
+                val result = runCatching { configApplier.returnToConfiguredKiosk() }.getOrElse {
+                    if (it is CancellationException) throw it
+                    KioskResult.Failed("Could not restore kiosk. Please try again.")
+                }
+                val error = when (result) {
+                    KioskResult.Ok -> {
+                        events.record("kioskReturn", "returned on-device")
+                        null
+                    }
+                    KioskResult.Unsupported -> "Kiosk is not supported on this device."
+                    is KioskResult.Failed -> result.reason
+                }
+                error?.let { Toast.makeText(this@MainActivity, it, Toast.LENGTH_LONG).show() }
+            } finally {
+                returningToKiosk = false
+                refresh()
+            }
         }
     }
 
@@ -119,6 +175,8 @@ class MainActivity : ComponentActivity() {
         root.addView(label("KIOSK"))
         kioskValue = text("…", 16f, TEXT)
         root.addView(kioskValue)
+        returnButton = kioskReturnButton()
+        root.addView(returnButton)
         root.addView(spacer())
 
         root.addView(label("AGENT VERSION"))
@@ -150,6 +208,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun kioskReturnButton(): Button = Button(this).apply {
+        visibility = View.GONE
+        isAllCaps = false
+        backgroundTintList = ColorStateList(
+            arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf()), intArrayOf(FAINT, SIGNAL),
+        )
+        setTextColor(INK)
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin = dp(RETURN_BUTTON_GAP) }
+        setOnClickListener { returnToKiosk() }
+    }
+
     private fun label(s: String): TextView =
         text(s, 11f, FAINT).apply {
             letterSpacing = 0.10f
@@ -178,6 +249,7 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
+        const val RETURN_BUTTON_GAP = 12
         val INK = Color.parseColor("#0E1117")
         val TEXT = Color.parseColor("#E8EEF4")
         val MUTED = Color.parseColor("#8693A4")

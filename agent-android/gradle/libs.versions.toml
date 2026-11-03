@@ -30,6 +30,7 @@ kotlinxCoroutines = "1.8.1"
 # Testing
 junit = "4.13.2"
 androidxJunit = "1.2.1"
+androidxTestRunner = "1.6.2"
 coroutinesTest = "1.8.1"
 
 [libraries]
@@ -73,6 +74,7 @@ kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-cor
 # Testing
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxJunit" }
+androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutinesTest" }
 
 [plugins]

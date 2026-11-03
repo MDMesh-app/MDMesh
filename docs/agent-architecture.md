@@ -54,6 +54,10 @@ configuration.
 
 **Kiosk.** Kiosk on in the configuration enters kiosk. Kiosk off exits it only on devices that entered via a
 configuration; an ad-hoc "Enter kiosk" from the console is left alone.
+After a PIN exit, staff can tap **Return to kiosk** in the agent to restore the latest locally stored configured
+kiosk, even offline; the button is available only outside kiosk on Device Owner devices whose configuration enables
+it. A newer delivered kiosk-off configuration removes the option even if another policy failed; a remote
+`kiosk.exit` leaves it available while the configuration still enables kiosk.
 
 **The 22 enforced fields**
 

@@ -87,8 +87,8 @@ On a Linux host with Docker, Docker Compose v2, `openssl` and `curl`:
 bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/quickstart.sh)
 ```
 
-This pulls the released images and sets up updates from the console. To build from source instead (this also needs
-`python3`):
+This pulls the released images and sets up updates from the console. To build the images from source instead
+(`setup.sh` also uses `python3` and `curl` to check the release signature for the enrollment QR):
 
 ```bash
 git clone https://github.com/MDMesh-app/MDMesh.git && cd MDMesh

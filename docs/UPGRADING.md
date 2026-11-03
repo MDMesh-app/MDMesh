@@ -139,6 +139,9 @@ Older agents keep working across server updates ([ADR 0009](adr/0009-agent-v1-co
 server doesn't update agents; roll them out from **Settings → Agent rollout** (shown once an agent APK is
 available).
 
+Agent 0.4.0 speaks protocol 1.5: it applies a configuration's connectivity mode, which older agents ignore. It also
+works with a 0.3.9 server.
+
 ## Version notes
 
 ### v0.4.0
@@ -147,14 +150,36 @@ The console is new: every page was rebuilt. This part is for everyone who runs M
 or add server plugins also read [v0.4.0 for forks](#v040-for-forks) below.
 
 - **Updating.** As the [table](#upgrading-mdmesh) at the top says: quick start, **Settings → Updates**; from source,
-  `git pull && ./setup.sh`; native, `git pull && sudo ./setup.sh --native`. The database update is automatic: on start, the server adds one column, `configurations.extensions`, set
-  to `{}` for every existing configuration. There is nothing new to set: no new `.env` setting or server parameter,
-  no new agent, no supervisor update, and no device re-applies its configuration.
+  `git pull && ./setup.sh`; native, `git pull && sudo ./setup.sh --native`. There is nothing new to set: no new
+  `.env` setting or server parameter, and no supervisor update.
+- **The database update is automatic.** On start, the server adds:
+  - `configurations.extensions`, set to `{}` for every existing configuration;
+  - `configurations.connectivityMode`, empty for every existing configuration ("—" in the editor: each device keeps
+    its own mode);
+  - `device_state.appsRevision`, filled for each device on a configuration with the apps that configuration installs
+    now, so the update sends no app installs;
+  - an index on `configurationApplications (configurationId)`.
+
+  No device re-applies its configuration: the empty columns leave every configuration's revision as it was.
+- **New agent: 0.4.0.** It shows alerts on devices enrolled by QR code, and applies a configuration's connectivity
+  mode (Configuration → Network), which older agents ignore. Once the updater has downloaded it,
+  **Settings → Agent rollout** offers it: pick a few canary devices, then promote it to everyone else. Only devices
+  whose agent can install silently (Device Owner, enrolled by QR code) update this way. A device that takes the new
+  agent applies its configuration once more, as after every agent update.
+- **Configuration apps install at check-in.** An app added to a configuration, in the editor or with Deploy's "Add to
+  a configuration", now installs on its devices at their next check-in, without **Install config apps**, also on a
+  device that was offline. A device moved to another configuration gets that configuration's apps it doesn't have. A
+  failed install is tried up to three times (after 15 minutes, then an hour), then left to Install config apps. Apps
+  a configuration had before the update are not sent again: use Install config apps for a device still missing one.
+  It works with every agent that can install silently (Device Owner); it needs no new agent.
 - **Rolling back to 0.3.9 is safe.** A one-click rollback, and the restores in
   [Backups and restore](OPERATIONS.md#backups-and-restore), bring back the database from before the update, without
-  the column. A 0.3.9 server started on the 0.4.0 database works too: it never reads or writes the column, and a
-  configuration it creates gets the `{}` default. What a fork's plugin or extension stored there stays for the next
-  0.4.0.
+  the new columns and index. A 0.3.9 server started on the 0.4.0 database works too: it never reads or writes the new
+  columns. A configuration it creates gets the `{}` default and no connectivity mode. It doesn't send a
+  configuration's connectivity mode, so devices keep the mode they last applied. What a fork's plugin or extension
+  stored stays for the next 0.4.0. When that database (not a restored one) is updated to 0.4.0 again, apps added to a
+  configuration while 0.3.9 ran install at the next check-in. Devices already on agent 0.4.0 keep working with the
+  0.3.9 server ([ADR 0009](adr/0009-agent-v1-contract-stability.md)).
 - **Pages and actions follow the role**, below.
 - **Old bookmarks redirect.** The v0.3 console's `/dashboard` goes to `/`, and `/configs` to `/configurations`. The
   device page's tab is in its address now (`/devices/WH-12?tab=activity`; the tabs are `control`, `telemetry`,
@@ -164,7 +189,8 @@ or add server plugins also read [v0.4.0 for forks](#v040-for-forks) below.
   during the update is signed out when the server restarts: reload it and sign in, and the notes show.
 - **API changes.** `POST /rest/public/passwordReset/reset` answers OK with no data. It returned the account, with the
   new password's stored hash in `newPassword`. A configuration carries a new `extensions` object, which a save that
-  leaves it out keeps; the configuration lists leave it out.
+  leaves it out keeps; the configuration lists leave it out. It also carries `connectivityMode` (`adaptive`,
+  `alwaysOn` or null): a save that leaves it out clears it, like the other columns, and any other value gets `400`.
 
 **Pages and actions follow the role.** The console hides what the server, or the updater, would refuse for the
 signed-in role. Super-admin, Admin and User roles see every page; Observer sees Overview, Devices, Apps and Settings.

@@ -8,6 +8,8 @@ line under Unreleased.
 
 ## Unreleased
 
+## v0.4.0 — 2026-11-03
+
 The console is new and replaces the old one. Every page was rebuilt, and each page loads only when it's opened.
 - **Overview** (now at `/`): counts that open the Devices list filtered, a Needs attention list with one action per
   device (Sync now, Update agent or Open device), and sync per configuration. It refreshes while its tab is open.
@@ -83,6 +85,7 @@ Under the hood
   the account, with the new password's stored hash in `newPassword`.
 - A server plugin whose `plugins` row is `disabled` (set by hand; MDMesh never sets it) is now off for every customer:
   its private REST answers 404 and its checks and policy keys don't run. Restart the server after changing it.
+- Dependencies: react-router 8.5.1, vite 8.3.5, docker/login-action 4.7.0.
 
 ## v0.3.9 — 2026-10-27
 

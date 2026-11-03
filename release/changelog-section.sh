@@ -24,9 +24,12 @@ section() {
   n=$(printf '%s\n' "$out" | grep -cE "$re" || true)
   [ "$n" -gt 0 ] || die "no '## v$v' section in CHANGELOG.md"
   [ "$n" -eq 1 ] || die "'## v$v' appears $n times in CHANGELOG.md"
-  out=$(printf '%s\n' "$out" | awk -v re="$re" '$0 ~ re { on = 1; next } on && /^## / { exit } on' | norm)
+  # awk reads to the end (no exit): stopping early would leave printf writing to a closed pipe, and with pipefail
+  # its SIGPIPE fails the script once CHANGELOG.md outgrows the pipe buffer.
+  out=$(printf '%s\n' "$out" \
+    | awk -v re="$re" '$0 ~ re { on = 1; next } on && /^## / { on = 0; done = 1 } on && !done' | norm)
   [ -n "$out" ] || die "the '## v$v' section in CHANGELOG.md is empty"
-  if printf '%s\n' "$out" | grep -q -- '<!--'; then
+  if [[ "$out" == *'<!--'* ]]; then
     die "the '## v$v' section has an HTML comment. Drop the lines of PRs that didn't make it and remove every marker."
   fi
   printf 'v%s\n\n%s\n' "$v" "$out"

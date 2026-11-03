@@ -80,9 +80,8 @@ def build(theme):
         A(f'<line x1="{ex + 20}" y1="{yy + 9}" x2="{ex + ew - 20}" y2="{yy + 9}" stroke="{c["bborder"]}"/>')
         A(text(MONO(500), p, ex + 20, yy, 13, c['ink']))
         A(text(SANS(400), to, ex + ew - 20, yy, 13, c['sec'], anchor='end'))
-    A(text(SANS(400), 'TLS ends here. A', ex + 20, ey + eh - 72, 13, c['sec']))
-    A(text(SANS(400), 'native install uses', ex + 20, ey + eh - 52, 13, c['sec']))
-    A(text(SANS(400), 'your own TLS proxy.', ex + 20, ey + eh - 32, 13, c['sec']))
+    for k, line in enumerate(['TLS ends here, or', 'at Cloudflare in', 'tunnel mode. Native', 'uses your own proxy.']):
+        A(text(SANS(400), line, ex + 20, ey + eh - 92 + k * 20, 13, c['sec']))
 
     sx, sw = 676, 222
     box(sx, 82, sw, 156, 'Server', ['Java 17 · Jersey REST API', 'Devices, configurations', 'and commands.'], 'launcher.war', accent=c['ink'])

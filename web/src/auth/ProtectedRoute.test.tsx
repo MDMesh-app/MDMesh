@@ -4,6 +4,7 @@ import { Route, Routes } from 'react-router';
 import { describe, expect, it } from 'vitest';
 import type { AuthUser } from '../api/auth';
 import { renderInConsole, ROLES, stubApi } from '../test/console';
+import { useAuth } from './AuthContext';
 import { ProtectedRoute } from './ProtectedRoute';
 
 const KEY = 'hmdm.admin.user';
@@ -20,7 +21,8 @@ function mountCounter() {
     useEffect(() => {
       mounts.push(mounts.length + 1);
     }, []);
-    return <p>device page</p>;
+    const permissions = useAuth().user?.userRole?.permissions?.map((p) => p.name).join(',');
+    return <p data-permissions={permissions}>device page</p>;
   }
   const ui = (
     <Routes>
@@ -53,6 +55,7 @@ describe('ProtectedRoute: another tab changes the account', () => {
 
     const promoted = { ...ROLES.observer, userRole: { ...ROLES.observer.userRole, permissions: [{ name: 'configurations' }] } };
     act(() => otherTabWrites(promoted));
+    expect(screen.getByText('device page').dataset.permissions).toBe('configurations');
     expect(mounts).toHaveLength(1);
   });
 });

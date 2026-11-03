@@ -142,9 +142,9 @@ New here? Look for **good first issue**, or open a discussion before a large cha
 
 ## Regenerating the docs screenshots
 
-Every screenshot and diagram in the README comes from `docs/readme/`, and [scripts/readme/README.md](scripts/readme/README.md) is
-the one place that says how they are made. In short: `scripts/readme/generate.sh --build` builds the console and
-captures it against sample data.
+Every screenshot and diagram in the README comes from `docs/readme/`, and
+[scripts/readme/README.md](scripts/readme/README.md) is the one place that says how they are made. In short:
+`scripts/readme/generate.sh --build` builds the console and captures it against sample data.
 
 Both that generator and the full-page screenshots in `docs/screenshots/` (which the README doesn't use) render the
 real console through the harness in `scripts/shots/`. To redo the full-page ones:

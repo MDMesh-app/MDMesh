@@ -35,9 +35,9 @@ APK.
 
 - **There is no paid edition.** Kiosk mode, app installs, location and the installers are all open source under
   Apache-2.0.
-- **Updates are signed, and on quick-start installs a failed update rolls back.** The updater only offers releases whose signature verifies.
-  On quick-start installs you apply an update with one click. The updater backs up the database first and rolls
-  back by itself if the new version fails its health check.
+- **Updates are signed, and on quick-start installs a failed update rolls back.** The updater only offers releases
+  whose signature verifies. On quick-start installs you apply an update with one click. The updater backs up the
+  database first and rolls back by itself if the new version fails its health check.
 - **Older agents keep working after a server update.** The agent is a Device Owner app written in Kotlin. The server
   only sends it commands it reports it supports, and the agent protocol (`/agent/v1`) only ever adds fields. A test
   in CI checks this.
@@ -56,8 +56,8 @@ APK.
 - **Devices:** the device list shows each device's status, with search, filters and sorting. The Overview lists the
   devices that need attention, each with a button for the next step.
 - **Device page:** tabs for remote actions, telemetry (hardware, battery, storage, network), apps, activity and
-  location. The Apps tab lists the device's apps that have a launcher icon, from its latest scan, with search and a CSV
-  export.
+  location. The Apps tab lists the device's apps that have a launcher icon, from its latest scan, with search and a
+  CSV export.
 - **Configurations:** a configuration sets up to 23 device settings, from kiosk options to Wi-Fi, factory reset and
   Safe Mode. Devices apply it at their next check-in, and the device page shows the result for each setting. Apps
   added to a configuration install on its devices at their next check-in.
@@ -141,8 +141,8 @@ On a test device you can also use `adb shell dpm set-device-owner` ([docs/DEV.md
 </p>
 
 The server is a Java (Jersey) REST API with a PostgreSQL database. In the Docker install, Caddy serves the React
-console and passes API requests to the server. Caddy gets the TLS certificate. With a Cloudflare Tunnel,
-Cloudflare handles TLS instead. A native install serves the console from Tomcat, behind your own TLS proxy. Agents check in
+console and passes API requests to the server. Caddy gets the TLS certificate. With a Cloudflare Tunnel, Cloudflare
+handles TLS instead. A native install serves the console from Tomcat, behind your own TLS proxy. Agents check in
 over REST and keep a WebSocket open, so the server can wake them when there's a command. The updater, a separate
 service, checks GitHub Releases and verifies each release's minisign signature. On quick-start installs it also
 applies the update, with a database backup and an automatic rollback. [STRUCTURE.md](STRUCTURE.md) describes the

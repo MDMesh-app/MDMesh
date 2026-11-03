@@ -17,6 +17,11 @@ import com.mdmesh.core.command.handlers.AppIconsHandler
 import com.mdmesh.core.command.handlers.AppInstallHandler
 import com.mdmesh.core.command.handlers.AppScanHandler
 import com.mdmesh.core.command.handlers.AppUninstallHandler
+import com.mdmesh.core.command.handlers.AppSetHiddenHandler
+import com.mdmesh.core.apps.AppActionGuard
+import com.mdmesh.core.apps.AppVisibility
+import com.mdmesh.core.apps.AndroidAppVisibility
+import com.mdmesh.core.apps.androidAppActionGuard
 import com.mdmesh.core.command.handlers.ConfigApplyHandler
 import com.mdmesh.core.command.handlers.ConfigSyncHandler
 import com.mdmesh.core.command.handlers.DeviceAlertHandler
@@ -241,13 +246,34 @@ object AgentModule {
 
     @Provides
     @IntoSet
-    fun provideAppUninstallHandler(installManager: InstallManager): CommandHandler =
-        AppUninstallHandler(installManager)
+    fun provideAppUninstallHandler(installManager: InstallManager, guard: AppActionGuard): CommandHandler =
+        AppUninstallHandler(installManager::uninstall, guard)
+
+    @Provides
+    @IntoSet
+    fun provideAppSetHiddenHandler(visibility: AppVisibility, guard: AppActionGuard): CommandHandler =
+        AppSetHiddenHandler(visibility, guard)
 
     @Provides
     @Singleton
-    fun provideAppInventoryCollector(@ApplicationContext context: Context): AppInventoryCollector =
-        AppInventoryCollector(context)
+    fun provideAppVisibility(handle: DpmHandle): AppVisibility = AndroidAppVisibility(handle)
+
+    @Provides
+    @Singleton
+    fun provideAppActionGuard(
+        @ApplicationContext context: Context,
+        handle: DpmHandle,
+        store: KioskStateStore,
+    ): AppActionGuard = androidAppActionGuard(context, handle, store)
+
+    @Provides
+    @Singleton
+    fun provideAppInventoryCollector(
+        @ApplicationContext context: Context,
+        visibility: AppVisibility,
+        guard: AppActionGuard,
+    ): AppInventoryCollector =
+        AppInventoryCollector(context, visibility, guard)
 
     @Provides
     @IntoSet

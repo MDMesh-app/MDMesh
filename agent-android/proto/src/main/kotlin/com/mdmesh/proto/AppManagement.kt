@@ -11,6 +11,9 @@ object AppManagement {
     /** Silent PackageInstaller install/upgrade as Device Owner (gates `app.install`). */
     const val SILENT_INSTALL = "silentInstall"
 
+    const val SILENT_UNINSTALL = "silentUninstall"
+    const val SET_HIDDEN = "setHidden"
+
     /** Keys (before the `app.` prefix) advertised in `capabilities.appManagement` when Device Owner. */
-    val DEVICE_OWNER_KEYS: List<String> = listOf(SILENT_INSTALL)
+    val DEVICE_OWNER_KEYS: List<String> = listOf(SILENT_INSTALL, SILENT_UNINSTALL, SET_HIDDEN)
 }

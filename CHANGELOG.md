@@ -34,6 +34,9 @@ Heads-up
   configuration section an extension added, which the new role can't see, is dropped, and a message says so.
 
 New
+- Device Apps: scan all installed packages, including non-launchable and hidden apps. Each row offers confirmed
+  Uninstall and reversible Disable / Enable actions; the agent protects management, essential and kiosk apps.
+  Requires the updated agent. Disabling hides an app while retaining its package and data.
 - A device's open tab is in its address (`/devices/WH-12?tab=telemetry`), so a link opens that tab and Back returns
   to the previous one. The arrow keys change tab in place, so Back then leaves the page.
 - After an update, the console shows what's new in the running version from these notes, once per version in each
@@ -52,6 +55,8 @@ New
   (thanks @Przemek-Magic).
 
 Fixes
+- Device Apps refreshes after successful install, uninstall and visibility commands, using the page's existing
+  command-history poll. Delivered scans and app changes request result sync without waiting for the periodic check-in.
 - Alerts: devices enrolled by QR code show Send alert messages and the "MDMesh active" notification. The agent grants
   itself the notification permission it was missing, and an alert is reported as failed instead of done when
   notifications are turned off on the device. Needs agent 0.4.0; no server update needed (thanks @Przemek-Magic).

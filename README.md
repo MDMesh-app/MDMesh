@@ -28,13 +28,14 @@
 
 You enroll an Android device by scanning a QR code during its setup, which makes the MDMesh agent its Device Owner.
 From the web console you then install apps on it, lock it into kiosk mode, see its location and send it remote
-actions. The server and the agent update from signed releases.
+actions. On quick-start installs, the server updates from signed releases; agents update from the signed release's
+APK.
 
 ### Why MDMesh
 
 - **There is no paid edition.** Kiosk mode, app installs, location and the installers are all open source under
   Apache-2.0.
-- **Updates are signed, and a failed update rolls back.** The updater only offers releases whose signature verifies.
+- **Updates are signed, and on quick-start installs a failed update rolls back.** The updater only offers releases whose signature verifies.
   On quick-start installs you apply an update with one click. The updater backs up the database first and rolls
   back by itself if the new version fails its health check.
 - **Older agents keep working after a server update.** The agent is a Device Owner app written in Kotlin. The server
@@ -55,7 +56,8 @@ actions. The server and the agent update from signed releases.
 - **Devices:** the device list shows each device's status, with search, filters and sorting. The Overview lists the
   devices that need attention, each with a button for the next step.
 - **Device page:** tabs for remote actions, telemetry (hardware, battery, storage, network), apps, activity and
-  location. The Apps tab lists the apps on the device, with search and a CSV export.
+  location. The Apps tab lists the device's apps that have a launcher icon, from its latest scan, with search and a CSV
+  export.
 - **Configurations:** a configuration sets up to 23 device settings, from kiosk options to Wi-Fi, factory reset and
   Safe Mode. Devices apply it at their next check-in, and the device page shows the result for each setting. Apps
   added to a configuration install on its devices at their next check-in.
@@ -63,8 +65,9 @@ actions. The server and the agent update from signed releases.
   Mode is blocked in kiosk unless the configuration allows it. If the kiosk app stops, the device stays in kiosk
   and shows an "Open again" button. An exit PIN can end kiosk on the device; too many wrong PINs lock the exit for a
   while and email the administrators.
-- **Apps:** add apps from your own APK uploads, from the F-Droid catalog or by link to any HTTPS host. Every install
-  is checked against the app's SHA-256. The agent installs them without asking the device's user.
+- **Apps:** add apps from your own APK uploads, from the F-Droid catalog or by a link to the APK. Every install is
+  checked against the app's SHA-256: uploads and F-Droid apps have one already, and for a link you add it. The agent
+  installs apps without asking the device's user.
 - **Remote actions:** send an alert or a lock-screen message, ring, lock, reboot, enter or exit kiosk mode, reset the
   passcode or factory-reset a device. Passcode reset and factory reset ask you to confirm. An alert that can't show,
   because notifications are off on the device, is reported as failed.
@@ -81,14 +84,16 @@ actions. The server and the agent update from signed releases.
 
 ## ■ Quick start
 
-On a Linux host with Docker, Docker Compose v2, `openssl` and `curl`:
+On a Linux host with Docker, Docker Compose v2, `openssl` and `curl`, and either a domain in Cloudflare (for a
+Cloudflare Tunnel) or a domain pointed at the host with ports 80 and 443 open:
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/quickstart.sh)
 ```
 
 This pulls the released images and sets up updates from the console. To build the images from source instead
-(`setup.sh` also uses `python3` and `curl` to check the release signature for the enrollment QR):
+(`setup.sh` also needs `openssl`, and, if they are there, uses `python3` and `curl` to verify the latest release for
+the enrollment QR):
 
 ```bash
 git clone https://github.com/MDMesh-app/MDMesh.git && cd MDMesh
@@ -100,7 +105,7 @@ and brings the rest ([native install](DEPLOY.md#option-c--native-no-docker)). Ea
 and a temporary admin password. Then enroll a device:
 
 1. Sign in and set your own password.
-2. Go to **Enroll** and generate a QR code.
+2. Open **Enroll** and choose a configuration. The page shows its QR code.
 3. Factory-reset an Android device (Android 7.0 or later) and tap the welcome screen six times to open the QR
    scanner.
 4. Scan the code. The device enrolls as Device Owner and checks in.
@@ -136,8 +141,8 @@ On a test device you can also use `adb shell dpm set-device-owner` ([docs/DEV.md
 </p>
 
 The server is a Java (Jersey) REST API with a PostgreSQL database. In the Docker install, Caddy serves the React
-console and passes API requests to the server. Caddy gets the TLS certificate, or, with a Cloudflare Tunnel,
-Cloudflare handles TLS. A native install serves the console from Tomcat, behind your own TLS proxy. Agents check in
+console and passes API requests to the server. Caddy gets the TLS certificate. With a Cloudflare Tunnel,
+Cloudflare handles TLS instead. A native install serves the console from Tomcat, behind your own TLS proxy. Agents check in
 over REST and keep a WebSocket open, so the server can wake them when there's a command. The updater, a separate
 service, checks GitHub Releases and verifies each release's minisign signature. On quick-start installs it also
 applies the update, with a database backup and an automatic rollback. [STRUCTURE.md](STRUCTURE.md) describes the

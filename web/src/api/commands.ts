@@ -211,7 +211,7 @@ export interface DeviceState {
 export interface CommandHistoryItem {
   id: number | string; type: string; status: string;
   detail?: string | null; createdAt?: number; deliveredAt?: number; completedAt?: number;
-  /** Server-derived package name for app.install / app.uninstall; absent otherwise. Payloads are never returned. */
+  /** Server-derived package name for app.install / app.uninstall / app.setHidden; absent otherwise. Payloads are never returned. */
   subject?: string | null;
 }
 
@@ -228,8 +228,8 @@ export async function listCommandHistory(
   );
 }
 
-export async function forceSync(deviceId: number | string): Promise<void> {
-  await apiClient.post(`/private/agent/v1/devices/${deviceId}/sync`, {});
+export async function forceSync(deviceId: number | string, signal?: AbortSignal): Promise<void> {
+  await apiClient.post(`/private/agent/v1/devices/${deviceId}/sync`, {}, signal);
 }
 
 /** Queue app.install for the device's configuration apps marked action=install. */

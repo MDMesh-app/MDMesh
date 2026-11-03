@@ -20,6 +20,11 @@ public class CommandHistoryViewTest {
         return c;
     }
 
+    @Test
+    public void visibility_action_has_a_safe_package_subject() {
+        assertEquals("com.example", CommandHistoryView.subjectOf("app.setHidden", "{\"packageName\":\"com.example\",\"hidden\":true}"));
+    }
+
     @Test public void copies_lifecycle_fields() {
         CommandHistoryView v = CommandHistoryView.from(cmd("device.lock", "{}"));
         assertEquals(Integer.valueOf(7), v.getId());

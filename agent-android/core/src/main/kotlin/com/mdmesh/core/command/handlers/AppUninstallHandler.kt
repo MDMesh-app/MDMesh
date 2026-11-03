@@ -2,7 +2,7 @@ package com.mdmesh.core.command.handlers
 
 import com.mdmesh.core.command.CommandHandler
 import com.mdmesh.core.command.CommandResults
-import com.mdmesh.core.install.InstallManager
+import com.mdmesh.core.apps.AppActionGuard
 import com.mdmesh.core.install.InstallOutcome
 import com.mdmesh.proto.CommandEnvelope
 import com.mdmesh.proto.CommandResult
@@ -11,7 +11,8 @@ import kotlinx.serialization.Serializable
 
 /** `app.uninstall` — silently uninstall a package as Device Owner. Payload: `{ packageName }`. */
 class AppUninstallHandler(
-    private val installManager: InstallManager,
+    private val uninstall: suspend (String) -> InstallOutcome,
+    private val guard: AppActionGuard,
 ) : CommandHandler {
 
     override val type: String = "app.uninstall"
@@ -26,7 +27,10 @@ class AppUninstallHandler(
             ProtocolJson.json.decodeFromJsonElement(Payload.serializer(), payload)
         }.getOrElse { return CommandResults.failed(command, "bad payload: ${it.message}") }
 
-        return when (val outcome = installManager.uninstall(p.packageName)) {
+        val reason = runCatching { guard.reason(p.packageName, uninstall = true) }
+            .getOrElse { it.message ?: "Package protection check failed" }
+        if (reason != null) return CommandResults.failed(command, reason)
+        return when (val outcome = uninstall(p.packageName)) {
             InstallOutcome.Success -> CommandResults.done(command)
             is InstallOutcome.Skipped -> CommandResults.done(command, "skipped: ${outcome.reason}")
             is InstallOutcome.Failure -> CommandResults.failed(command, outcome.reason)

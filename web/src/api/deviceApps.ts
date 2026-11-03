@@ -11,6 +11,8 @@ export interface AppInfo {
   launchable?: boolean;
   versionName?: string;
   versionCode?: number;
+  hidden?: boolean;
+  protectedReason?: string;
 }
 
 /** A scan result's app list, from device-supplied JSON: entries without a package name are dropped. */
@@ -69,7 +71,7 @@ export async function getLatestScan(deviceId: number | string): Promise<ScanSnap
   const scan = hist.find((c) => c.type === 'apps.scan' && c.status === 'done' && !!c.detail);
   if (!scan?.detail) return null;
   try {
-    const apps = toApps((JSON.parse(scan.detail) as { apps?: unknown } | null)?.apps);
+    const apps = toApps((JSON.parse(scan.detail) as { apps?: unknown } | null)?.apps).filter((a) => a.launchable !== false && !a.hidden);
     return apps.length ? { apps, scannedAt: scan.completedAt } : null;
   } catch {
     return null;

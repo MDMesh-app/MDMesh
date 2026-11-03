@@ -36,7 +36,7 @@ APK.
 - **There is no paid edition.** Kiosk mode, app installs, location and the installers are all open source under
   Apache-2.0.
 - **Updates are signed, and on quick-start installs a failed update rolls back.** The updater only offers releases
-  whose signature verifies. On quick-start installs you apply an update with one click. The updater backs up the
+  whose signature verifies. You apply an update with one click. The updater backs up the
   database first and rolls back by itself if the new version fails its health check.
 - **Older agents keep working after a server update.** The agent is a Device Owner app written in Kotlin. The server
   only sends it commands it reports it supports, and the agent protocol (`/agent/v1`) only ever adds fields. A test

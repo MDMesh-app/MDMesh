@@ -164,22 +164,26 @@ or add server plugins also read [v0.4.0 for forks](#v040-for-forks) below.
 - **New agent: 0.4.0.** It shows alerts on devices enrolled by QR code, and applies a configuration's connectivity
   mode (Configuration → Network), which older agents ignore. Once the updater has downloaded it,
   **Settings → Agent rollout** offers it: pick a few canary devices, then promote it to everyone else. Only devices
-  whose agent can install silently (Device Owner, enrolled by QR code) update this way. A device that takes the new
-  agent applies its configuration once more, as after every agent update.
+  whose agent can install silently (Device Owner, which a QR-code enrollment sets up) update this way. A device that
+  takes the new agent applies its configuration once more, as after every agent update; it changes nothing unless the
+  configuration sets a connectivity mode.
 - **Configuration apps install at check-in.** An app added to a configuration, in the editor or with Deploy's "Add to
   a configuration", now installs on its devices at their next check-in, without **Install config apps**, also on a
   device that was offline. A device moved to another configuration gets that configuration's apps it doesn't have. A
   failed install is tried up to three times (after 15 minutes, then an hour), then left to Install config apps. Apps
   a configuration had before the update are not sent again: use Install config apps for a device still missing one.
-  It works with every agent that can install silently (Device Owner); it needs no new agent.
+  It needs no new agent: every agent that can install silently (Device Owner) does it.
 - **Rolling back to 0.3.9 is safe.** A one-click rollback, and the restores in
-  [Backups and restore](OPERATIONS.md#backups-and-restore), bring back the database from before the update, without
-  the new columns and index. A 0.3.9 server started on the 0.4.0 database works too: it never reads or writes the new
-  columns. A configuration it creates gets the `{}` default and no connectivity mode. It doesn't send a
-  configuration's connectivity mode, so devices keep the mode they last applied. What a fork's plugin or extension
-  stored stays for the next 0.4.0. When that database (not a restored one) is updated to 0.4.0 again, apps added to a
-  configuration while 0.3.9 ran install at the next check-in. Devices already on agent 0.4.0 keep working with the
-  0.3.9 server ([ADR 0009](adr/0009-agent-v1-contract-stability.md)).
+  [Backups and restore](OPERATIONS.md#backups-and-restore), bring back the database from before the update,
+  without the new columns and index. A 0.3.9 server started on the 0.4.0 database works too:
+  - it never reads or writes the new columns;
+  - a configuration it creates gets the `{}` default and no connectivity mode;
+  - it doesn't send a configuration's connectivity mode, so devices keep the mode they last applied;
+  - what a fork's plugin or extension stored stays for the next 0.4.0;
+  - devices already on agent 0.4.0 keep working ([ADR 0009](adr/0009-agent-v1-contract-stability.md)).
+
+  If you then update that same database to 0.4.0 again, apps added to a configuration while 0.3.9 ran install at
+  the next check-in. (A database restored from a backup has none.)
 - **Pages and actions follow the role**, below.
 - **Old bookmarks redirect.** The v0.3 console's `/dashboard` goes to `/`, and `/configs` to `/configurations`. The
   device page's tab is in its address now (`/devices/WH-12?tab=activity`; the tabs are `control`, `telemetry`,

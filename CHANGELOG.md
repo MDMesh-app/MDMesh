@@ -8,85 +8,81 @@ line under Unreleased.
 
 ## Unreleased
 
+The console is new and replaces the old one. Every page was rebuilt, and each page loads only when it's opened.
+- **Overview** (now at `/`): counts that open the Devices list filtered, a Needs attention list with one action per
+  device (Sync now, Update agent or Open device), and sync per configuration. It refreshes while its tab is open.
+- **Devices**: an Attention filter with each device's reason, sorting, pages, and Sync now and a menu on each row.
+- **Device page**: details in a column beside the tabs, a new Apps tab, and Retry apply when its configuration isn't
+  applied.
+- **Configuration editor**: its own address (`/configurations/12`), a count of changes per section, Discard and Save
+  and apply in a bar, and a prompt before you leave with unsaved changes.
+- **Apps**: the Library is a table, with a source filter and the configurations each app is used in.
+- **Settings** has Change password and a Match system theme; Density is gone for now. **Enroll** has a full-screen QR.
+- On phones the Devices list turns into cards, section lists scroll sideways and the save bar sits at the bottom.
+- Server updates show in a card in the sidebar. The fonts ship with the console: nothing loads from Google Fonts.
+
+Upgrading
+- Update the server: Settings → Updates (quick start), `git pull && ./setup.sh` (from source), or
+  `git pull && sudo ./setup.sh --native` (native). The database updates itself on start (three new columns and an
+  index), and there is nothing new to set. No device re-applies its configuration, and the update queues no app
+  installs.
+- There is a new agent, 0.4.0: roll it out from Settings → Agent rollout. Alerts on QR-enrolled devices and the
+  connectivity mode need it. Rolling back to 0.3.9 is safe:
+  [UPGRADING, v0.4.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v040).
+
 Heads-up
-- The console hides the pages a user's role can't use, which the server already refused: Configurations need the
-  `configurations` permission, Apps `applications`, Enroll `edit_devices`. Super-admin, Admin and User roles see every
-  page; Observer sees Overview, Devices, Apps and Settings. A link to a hidden page says "You don't have access to this
-  page".
-- It also hides the buttons the server, or the updater, would refuse for the role:
-  - `edit_devices`: device actions and kiosk, Sync now, the Devices list's row and bulk actions, pushing an app to
-    devices from Deploy, and Enroll. Agent rollouts also need a user not limited to some device groups.
-  - `edit_device_desc`: renaming a device.
-  - `edit_applications`: Add to library (F-Droid, Custom APK), Remove from library, and Deploy's "Add to a
-    configuration". Deploy shows when the role may push or add, with only those choices.
-  - `edit_application_versions`: setting an app's SHA-256 checksum. `edit_files`: uploading on Custom APK.
-  - `add_config`: New configuration; a link to a new one says "You don't have access to this page". `copy_config`:
-    Duplicate and Delete.
-  - Updates keep v0.3.8's rule, not a permission: Check now, Update and automatic updates in Settings → Updates, and
-    the help that speaks of Update, show only to a super-admin or the org admin of a single-customer install (the
-    updater checks it).
-  Every role still sees what it saw before, with two exceptions: without `edit_devices`, the device page's Control tab
-  loses its Remote actions card, and with it the location mode and the kiosk and "Do not track" hints it showed; and
-  Apps shows its Custom APK and F-Droid tabs only to a role that can add to the library or deploy. Without them the
-  Library is the only tab, and a link to a hidden one opens it.
-- A role change reaches a console that is already open when its tab is shown again, or when the page is loaded, with
-  no new sign-in: pages and buttons appear or go as the new role allows. For forks: an unsaved edit in a
-  configuration section an extension added, which the new role can't see, is dropped, and a message says so.
+- Apps added to a configuration now install on its devices at their next check-in, without Install config apps.
+  Apps it already had are not sent again (thanks @letternumber).
+- The console now hides the pages and buttons a user's role can't use, which the server already refused. A link to
+  a hidden page says "You don't have access to this page". What each permission shows:
+  [UPGRADING, v0.4.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v040).
+- A role change reaches an open console when its tab is shown again or the page is reloaded, with no new sign-in.
+- Old bookmarks still work: `/dashboard` opens the Overview at `/`, and `/configs` opens `/configurations`.
+- Forks: the console's page files moved, so a patch to a v0.3 page won't apply, and the console build stops on a
+  v0.3 file left in the tree. Each file's new place, its slot and what to check after the merge:
+  [UPGRADING, v0.4.0 for forks](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v040-for-forks).
 
 New
+- Connectivity per configuration (Configuration → Network): Always-on keeps the agent's live connection up, so
+  commands reach a locked phone without waiting for its next check-in. "—" leaves each device's own mode. Needs agent
+  0.4.0 (thanks @Przemek-Magic).
+- Device page, Apps tab: the apps with a launcher icon from the device's latest scan, with search, a system-apps
+  filter, Export CSV and Scan now (thanks @Przemek-Magic).
+- The Location tab has a time range: the last hour, 24 hours or 7 days, or All (the default). A range shows its
+  newest 500 fixes at most and says when it hits that cap; All shows the newest 500, as before (thanks @Oxym0r3).
+- Audit log: device commands, such as wipe, lock, PIN reset, kiosk and alert, and Install config apps, are recorded
+  with who sent them, from where and to which devices. Their settings are not, since they can hold a password
+  (thanks @Przemek-Magic).
+- **Console extensions for forks**: pages, device tabs, configuration and Settings sections, Overview cards, and list
+  columns and actions, added in `web/src/extensions/<id>/` without editing core files. The guide is
+  [EXTENDING](https://github.com/MDMesh-app/MDMesh/blob/main/web/EXTENDING.md).
+  A breaking change to their API (`@mdmesh/console`) gets one release of deprecation first.
+- **Server plugins for forks** go in `plugins/fork/<id>/`. For the customers it is on for, a plugin can check its data
+  in a configuration's new `extensions` object on save, and add `x.<plugin>.<key>` policy keys to what devices apply.
+  The device page names such a key in words (`x.netaccess.blockTethering` is "netaccess: block tethering").
+- What's new: after an update, the console shows the new version's notes once in each browser, but not on a
+  browser's first visit. Settings → Server opens them again, beside the version.
 - A device's open tab is in its address (`/devices/WH-12?tab=telemetry`), so a link opens that tab and Back returns
   to the previous one. The arrow keys change tab in place, so Back then leaves the page.
-- After an update, the console shows what's new in the running version from these notes, once per version in each
-  browser. It doesn't show on a browser's first visit. Settings → Server opens it again ("What's new", beside the version).
-- Connectivity per configuration (Configuration → Network): Always-on keeps the agent's live connection up, so
-  commands reach a locked phone without waiting for its next check-in. A restart or agent update brings the
-  configuration's mode back; "—" leaves each device's own mode. Needs the new agent (thanks @Przemek-Magic).
-- Device page: an Apps tab lists the apps with a launcher icon from the device's latest scan, with a search, a
-  system-apps filter and Export CSV for app audits, and Scan now for a role with `edit_devices` (thanks @Przemek-Magic).
-- The device page's Location tab has a time range: the last hour, 24 hours or 7 days, or All, the default. A range
-  shows its newest 500 fixes at most, and says so when it reaches that cap; All shows the newest 500 as before
-  (thanks @Oxym0r3).
-- Audit log: commands sent from a device's page or to selected devices (wipe, lock, PIN reset, kiosk, alert) are
-  recorded with who sent them, from which address, to which devices, and the command type. The command's settings are
-  not recorded, since they can hold a password. "Install config apps" on a device is recorded too
-  (thanks @Przemek-Magic).
 
 Fixes
-- Alerts: devices enrolled by QR code show Send alert messages and the "MDMesh active" notification. The agent grants
-  itself the notification permission it was missing, and an alert is reported as failed instead of done when
-  notifications are turned off on the device. Needs agent 0.4.0; no server update needed (thanks @Przemek-Magic).
-- Device page: Enrolled shows when a device enrolled with the MDMesh agent. Devices enrolled before this update keep
-  it empty (thanks @Przemek-Magic).
-- An app added to a configuration, in the editor or with Deploy's "Add to a configuration", now installs on its devices
-  at their next check-in, even on a device that was offline during the update, and a device moved to another
-  configuration installs that configuration's apps it doesn't have, without Install config apps. Apps a configuration
-  already had before the update are not sent again (thanks @letternumber).
+- Alerts show on devices enrolled by QR code, with the "MDMesh active" notification, and an alert is reported failed
+  when notifications are off on the device. Needs agent 0.4.0 (thanks @Przemek-Magic).
+- Device page: Enrolled shows when the device enrolled with the MDMesh agent. Devices enrolled before this update
+  keep it empty (thanks @Przemek-Magic).
+- Storage and Local IP show on the device page. The old console read keys the agent never sends, so both were "—".
+- Saving a configuration keeps its apps' Headwind launcher layout (screen order, key code, bottom row, long tap).
+- Enroll shows a configuration's EAP Wi-Fi security as EAP, not as WPA / WPA2.
 
 Under the hood
 - The console has unit tests (vitest), and CI runs them on every console change.
-- For forks: a console extension in `web/src/extensions/<id>/` adds sidebar items and pages, device tabs and rail
-  groups, configuration and Settings sections, Overview cards, and columns and actions on the Devices and Apps lists,
-  without editing core files. It imports only `@mdmesh/console` (extension API 1), `react` and its own files, and a
-  breaking change to `@mdmesh/console` gets one release of deprecation first. The guide is web/EXTENDING.md, and
-  docs/UPGRADING.md ("v0.4.0 for forks") says how to port a fork's page edits. Without extensions the console is as
-  before.
-- For forks: a server plugin goes in `plugins/fork/` and edits nothing outside it, its REST under `com.mdmesh` is
-  served, and its public routes are listed in `plugins/fork/public-routes.txt` (the server build's tests fail on one
-  that isn't, and on a private route its `ServletModule` doesn't put through `AuthFilter` and `PluginAccessFilter`).
-  Configurations carry an `extensions` object for plugins' and console extensions' data, which a save that leaves it out
-  keeps (the configuration lists leave it out). For the customers it is on for, a plugin can check that data on save
-  (`ConfigurationExtensionValidator`) and add its own `x.<plugin>.<key>` policy keys to config.apply
-  (`DesiredConfigContributor`). An agent without that toggle reports such a key as not supported, and the device page
-  names it by its plugin and its key in words (`x.netaccess.blockTethering` is "netaccess: block tethering").
-  Without plugins nothing changes, and no device re-applies its configuration.
-- A server plugin whose `plugins` row is `disabled` (set only by hand; MDMesh never sets it) is now off for every
-  customer: its private REST answers 404 and its checks and policy keys don't run.
-  Restart the server after changing it.
 - The server no longer packs the removed AngularJS console's plugin files.
 - The console no longer keeps the sign-in token (`authToken`) or a password-reset token in browser storage. When it
   loads, it removes the copies an older version left there.
 - Setting a password with a reset token (`POST /rest/public/passwordReset/reset`) answers OK with no data. It returned
-  the account, with the new password's stored hash in `newPassword`. The console and the scripts never read it.
+  the account, with the new password's stored hash in `newPassword`.
+- A server plugin whose `plugins` row is `disabled` (set by hand; MDMesh never sets it) is now off for every customer:
+  its private REST answers 404 and its checks and policy keys don't run. Restart the server after changing it.
 
 ## v0.3.9 — 2026-10-27
 

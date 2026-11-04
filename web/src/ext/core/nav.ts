@@ -26,5 +26,6 @@ export const CORE_NAV: readonly NavItemContribution[] = [
   },
   { slot: 'nav.item', id: 'apps', order: ORDER.navItem.apps, label: 'Apps', icon: IconApps, to: paths.apps },
   { slot: 'nav.item', id: 'enroll', order: ORDER.navItem.enroll, label: 'Enroll', icon: IconEnroll, to: paths.enroll },
+  { slot: 'nav.item', id: 'users', order: ORDER.navItem.users, label: 'Users & roles', icon: IconSettings, to: paths.users },
   { slot: 'nav.item', id: 'settings', order: ORDER.navItem.settings, label: 'Settings', icon: IconSettings, to: paths.settings },
 ];

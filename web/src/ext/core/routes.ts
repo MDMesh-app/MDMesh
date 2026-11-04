@@ -62,6 +62,13 @@ export const CORE_ROUTES: readonly RoutePageContribution[] = [
     path: paths.settings,
     component: lazyComponent(() => import('../../pages/SettingsPage'), 'SettingsPage'),
   },
+  {
+    slot: 'route.page',
+    id: 'users',
+    path: paths.users,
+    requires: CORE_PAGE_ACCESS.users,
+    component: lazyComponent(() => import('../../pages/UsersPage'), 'UsersPage'),
+  },
   ...(GALLERY_ENABLED
     ? [
         {

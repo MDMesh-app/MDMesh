@@ -9,6 +9,7 @@ export const paths = {
   apps: '/apps',
   enroll: '/enroll',
   settings: '/settings',
+  users: '/users',
   login: '/login',
   setPassword: '/set-password',
   gallery: '/_gallery',

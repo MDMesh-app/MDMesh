@@ -54,7 +54,7 @@ describe('the production registry', () => {
 
   it('keeps the ids of core’s nav items and pages (forks and links depend on them)', () => {
     expect(registry.entries('nav.item').filter((e) => e.extension.core).map((e) => e.contribution.id)).toEqual([
-      'overview', 'devices', 'configurations', 'apps', 'enroll', 'settings',
+      'overview', 'devices', 'configurations', 'apps', 'enroll', 'users', 'settings',
     ]);
     expect(registry.entries('route.page').filter((e) => e.extension.core).map((e) => e.contribution.path)).toEqual(
       expect.arrayContaining(['/', '/devices', '/devices/:id', '/configurations', '/configurations/:id', '/apps', '/enroll', '/settings']),

@@ -23,7 +23,7 @@ describe('the shell renders core and extension contributions', () => {
     expect(await screen.findByText('Demo page')).toBeTruthy();
     expect(screen.getByText('Signed in as role-1')).toBeTruthy();
     await waitFor(() =>
-      expect(navLinks()).toEqual(['Overview', 'Devices248', 'Demo', 'Configurations', 'Apps', 'Enroll', 'Settings']),
+      expect(navLinks()).toEqual(['Overview', 'Devices248', 'Demo', 'Configurations', 'Apps', 'Enroll', 'Users & roles', 'Settings']),
     );
     expect(screen.getByRole('link', { name: 'Demo' }).className).toContain('is-active');
   });
@@ -31,7 +31,7 @@ describe('the shell renders core and extension contributions', () => {
   it('renders the core sidebar unchanged without extensions: the Devices badge is its badge contribution', async () => {
     stubApi(fleet);
     renderInConsole(<AppRoutes />, { path: '/demo' });
-    await waitFor(() => expect(navLinks()).toEqual(['Overview', 'Devices248', 'Configurations', 'Apps', 'Enroll', 'Settings']));
+    await waitFor(() => expect(navLinks()).toEqual(['Overview', 'Devices248', 'Configurations', 'Apps', 'Enroll', 'Users & roles', 'Settings']));
     const devices = screen.getByRole('link', { name: /Devices/ });
     expect(devices.querySelector('.v2-navitem__label')?.textContent).toBe('Devices');
     expect(devices.querySelector('.v2-badge')?.textContent).toBe('248');

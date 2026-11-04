@@ -91,6 +91,27 @@ public class UserResourceTest {
         SecurityContext.release();
     }
 
+    @Test
+    public void managementCapabilitiesFollowTheServerRules() {
+        signIn(tenantUser);
+        assertEquals(Boolean.FALSE, ((Map<?, ?>) resource.management().getData()).get("users"));
+        signIn(orgAdmin);
+        assertEquals(Boolean.TRUE, ((Map<?, ?>) resource.management().getData()).get("users"));
+        assertEquals(Boolean.TRUE, ((Map<?, ?>) resource.management().getData()).get("roles"));
+        multiTenant = true;
+        assertEquals(Boolean.FALSE, ((Map<?, ?>) resource.management().getData()).get("roles"));
+        signIn(superAdmin);
+        assertEquals(Boolean.TRUE, ((Map<?, ?>) resource.management().getData()).get("roles"));
+    }
+
+    @Test
+    public void editingAnAccountWithoutAPasswordPreservesItsPendingReset() {
+        tenantUser.setPasswordReset(true);
+        signIn(orgAdmin);
+        assertEquals(Response.ResponseStatus.OK, resource.updateUser(edit(tenantUser, USER)).getStatus());
+        assertTrue(written.get(0).isPasswordReset());
+    }
+
     // ---- account secrets ----------------------------------------------------------------------------------------------
 
     @Test
@@ -785,6 +806,7 @@ public class UserResourceTest {
         user.setUserRole(source.getUserRole());
         user.setAuthToken(source.getAuthToken());
         user.setPasswordResetToken(source.getPasswordResetToken());
+        user.setPasswordReset(source.isPasswordReset());
         user.setTwoFactorSecret(source.getTwoFactorSecret());
         user.setAuthData(source.getAuthData());
         user.setAllDevicesAvailable(source.isAllDevicesAvailable());

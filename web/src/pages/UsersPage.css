@@ -1,0 +1,50 @@
+.users-page,
+.users-form,
+.users-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.users-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.users-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.users-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.users-scope {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  margin: 0;
+  min-width: 0;
+}
+.users-scope legend {
+  padding: 0 6px;
+  font-weight: 500;
+}
+.users-scope label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+}
+.users-choices {
+  max-height: 280px;
+  overflow: auto;
+  padding: 4px;
+}
+.users-choices small {
+  color: var(--text-2);
+}

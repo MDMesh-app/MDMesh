@@ -32,6 +32,7 @@ const EDIT_DEVICES = { permission: 'edit_devices' } as const satisfies Requireme
  * files only) Overview, Devices, Apps and Settings.
  */
 export const CORE_PAGE_ACCESS = {
+  users: { permission: 'settings' },
   configurations: { permission: 'configurations' },
   apps: { permission: 'applications' },
   enroll: EDIT_DEVICES,

@@ -8,6 +8,17 @@ line under Unreleased.
 
 ## Unreleased
 
+New
+- Users & roles: console account creation, editing, password changes and deletion; role assignment; access limited
+  to device groups and configurations; and editable roles with a permission picker. Organization admins manage
+  accounts in their organization; global role editing on multi-customer installations is reserved for super-admins.
+
+Fixes
+- Role administration now protects built-in administrator roles on direct API calls, validates permission IDs and
+  refuses deletion of assigned roles. Role changes are transactional and role descriptions are returned by the API.
+- Creating an account now saves its selected configuration access, and editing without a password preserves a
+  pending password reset. [User management](docs/USER_MANAGEMENT.md).
+
 ## v0.4.0 — 2026-11-03
 
 The console is new and replaces the old one. Every page was rebuilt, and each page loads only when it's opened.

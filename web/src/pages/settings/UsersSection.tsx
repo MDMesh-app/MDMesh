@@ -13,7 +13,7 @@ import {
   type UserRole,
   type ManagementCapabilities,
 } from '../../api/users';
-import { Button, Callout, Card, EmptyState, Modal, CardHeader, SearchInput, Table } from '../../ui';
+import { Button, Callout, Card, EmptyState, Modal, CardHeader, SearchInput, Segmented, Table, useToast } from '../../ui';
 import { UserEditor } from '../users/UserEditor';
 import { RoleEditor } from '../users/RoleEditor';
 import './UsersSection.css';
@@ -35,6 +35,7 @@ export function UsersSection({
   headingId: string;
 }) {
   const { user } = useAuth();
+  const toast = useToast();
   const [data, setData] = useState<Snapshot | null>(null);
   const [revision, setRevision] = useState(0);
   const [error, setError] = useState('');
@@ -46,7 +47,6 @@ export function UsersSection({
   const [deleting, setDeleting] = useState<{ kind: 'user' | 'role'; id: number; name: string } | null>(null);
   const [deleteError, setDeleteError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState('');
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
@@ -85,11 +85,11 @@ export function UsersSection({
     setEditingRole(null);
     setDeleting(null);
   }, [user]);
-  const saved = (message: string) => {
+  const saved = (title: string, body: string) => {
     setEditingUser(null);
     setEditingRole(null);
     setDeleting(null);
-    setNotice(message);
+    toast.push('ok', title, body);
     setRevision((r) => r + 1);
   };
   const confirmDelete = async () => {
@@ -99,7 +99,8 @@ export function UsersSection({
     try {
       if (deleting.kind === 'user') await deleteUser(deleting.id);
       else await deleteRole(deleting.id);
-      saved(`${deleting.kind === 'user' ? 'User' : 'Role'} deleted.`);
+      if (deleting.kind === 'user') saved('User deleted', `${deleting.name} can no longer sign in.`);
+      else saved('Role deleted', `${deleting.name} is no longer available.`);
     } catch (e) {
       setDeleteError(managementError(e));
     } finally {
@@ -127,11 +128,6 @@ export function UsersSection({
           ) : undefined
         }
       />
-      {notice && (
-        <Callout tone="ok" role="status">
-          {notice}
-        </Callout>
-      )}
       {error && (
         <Callout tone="alert" role="alert">
           {error} <Button onClick={() => setRevision((r) => r + 1)}>Retry</Button>
@@ -143,30 +139,21 @@ export function UsersSection({
         data && (
           <>
             <div className="users-toolbar">
-              <div className="users-actions" role="group" aria-label="Manage">
-                <Button
-                  variant={!rolesTab ? 'primary' : 'secondary'}
-                  aria-pressed={!rolesTab}
-                  onClick={() => {
-                    setTab('users');
+              {data.capabilities.roles && (
+                <Segmented<'users' | 'roles'>
+                  aria-label="Manage"
+                  value={tab}
+                  onChange={(next) => {
+                    if (next === tab) return;
+                    setTab(next);
                     setQ('');
                   }}
-                >
-                  Users
-                </Button>
-                {data.capabilities.roles && (
-                  <Button
-                    variant={rolesTab ? 'primary' : 'secondary'}
-                    aria-pressed={!!rolesTab}
-                    onClick={() => {
-                      setTab('roles');
-                      setQ('');
-                    }}
-                  >
-                    Roles
-                  </Button>
-                )}
-              </div>
+                  options={[
+                    { value: 'users', label: 'Users' },
+                    { value: 'roles', label: 'Roles' },
+                  ]}
+                />
+              )}
               <SearchInput
                 value={q}
                 onChange={setQ}
@@ -285,7 +272,7 @@ export function UsersSection({
           target={editingUser}
           roles={data.assignable}
           onClose={() => setEditingUser(null)}
-          onSaved={() => saved('User saved.')}
+          onSaved={() => saved('User saved', 'The account list is up to date.')}
         />
       )}
       {editingRole && data && (
@@ -293,7 +280,7 @@ export function UsersSection({
           target={editingRole}
           permissions={data.permissions}
           onClose={() => setEditingRole(null)}
-          onSaved={() => saved('Role saved.')}
+          onSaved={() => saved('Role saved', 'The role list is up to date.')}
         />
       )}
       <Modal

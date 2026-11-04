@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import {
   getUser,
   listAccessConfigurations,
@@ -9,7 +9,8 @@ import {
   type ManagedUser,
   type UserRole,
 } from '../../api/users';
-import { Button, Callout, Checkbox, Field, Input, Modal, PasswordInput, Select } from '../../ui';
+import { Button, Callout, Checkbox, Field, Input, Modal, PasswordInput, RuleList, Select, type Rule } from '../../ui';
+import { MIN_LENGTH } from '../settings/ChangePasswordModal';
 
 export function AccessPicker({
   label,
@@ -87,6 +88,7 @@ export function UserEditor({
   const [busy, setBusy] = useState(false);
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
+  const rulesId = useId();
   useEffect(() => {
     const controller = new AbortController();
     Promise.all([
@@ -107,11 +109,21 @@ export function UserEditor({
     return () => controller.abort();
   }, [target]);
   const update = (patch: Partial<ManagedUser>) => setDraft((d) => d && { ...d, ...patch });
+  // Change password's rules; an edit with both fields blank keeps the current password.
+  const typed = password.length > 0 || confirmation.length > 0;
+  const longEnough = password.length >= MIN_LENGTH;
+  const matches = password === confirmation;
+  const showRules = typed || target === 'new';
+  const passwordValid = showRules ? longEnough && matches : true;
+  const rules: Rule[] = [
+    { key: 'len', label: `At least ${MIN_LENGTH} characters`, met: password ? longEnough : null },
+    { key: 'match', label: 'Both passwords match', met: confirmation ? matches : null },
+  ];
   const submit = async () => {
     if (!draft || busy) return;
     setError('');
-    if (password !== confirmation) {
-      setError('The passwords do not match.');
+    if (!passwordValid) {
+      setError(longEnough ? 'The passwords do not match.' : `Use a password of at least ${MIN_LENGTH} characters.`);
       return;
     }
     setBusy(true);
@@ -138,7 +150,12 @@ export function UserEditor({
           <Button disabled={busy} onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" type="submit" form="user-form" disabled={!ready || !draft?.userRole?.id || busy}>
+          <Button
+            variant="primary"
+            type="submit"
+            form="user-form"
+            disabled={!ready || !draft?.userRole?.id || !passwordValid || busy}
+          >
             {busy ? 'Saving…' : 'Save user'}
           </Button>
         </>
@@ -218,9 +235,11 @@ export function UserEditor({
                 required={!!password}
                 autoComplete="new-password"
                 toggleLabel="Show password confirmation"
+                aria-describedby={showRules ? rulesId : undefined}
                 onChange={(e) => setConfirmation(e.target.value)}
               />
             </Field>
+            {showRules && <RuleList id={rulesId} rules={rules} />}
             <AccessPicker
               label="Device groups"
               all={draft.allDevicesAvailable}

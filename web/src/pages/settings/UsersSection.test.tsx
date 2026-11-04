@@ -1,9 +1,9 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AppRoutes } from '../App';
-import { ROLES, renderInConsole, stubApi } from '../test/console';
-import type { AuthUser } from '../api/auth';
-import type { ManagedUser, UserRole } from '../api/users';
+import { AppRoutes } from '../../App';
+import { ROLES, renderInConsole, stubApi } from '../../test/console';
+import type { AuthUser } from '../../api/auth';
+import type { ManagedUser, UserRole } from '../../api/users';
 
 beforeEach(() => {
   HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -78,13 +78,6 @@ describe('Users & roles administration', () => {
     ).toBe('#users');
   });
 
-  it('redirects the former users page to the Settings section', async () => {
-    open({ path: '/users' });
-    await screen.findByRole('region', { name: 'Users & roles' });
-    expect(await screen.findByRole('heading', { name: 'Settings' })).toBeTruthy();
-    await waitFor(() => expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalled());
-  });
-
   it('keeps Settings available without exposing administration to roles without settings', async () => {
     const fetch = open({ user: ROLES.observer });
     await screen.findByRole('heading', { name: 'Account' });
@@ -113,7 +106,7 @@ describe('Users & roles administration', () => {
   it('keeps role management out of a tenant admin’s page and never requests global roles', async () => {
     const fetch = open({ manageRoles: false });
     await screen.findByRole('table', { name: 'Users' });
-    expect(screen.queryByRole('button', { name: 'Roles' })).toBeNull();
+    expect(screen.queryByRole('radio', { name: 'Roles' })).toBeNull();
     expect(fetch.mock.calls.some(([p]) => String(p).includes('/private/roles/'))).toBe(false);
     expect(screen.queryByRole('button', { name: 'Edit myself' })).toBeNull();
   });
@@ -145,7 +138,7 @@ describe('Users & roles administration', () => {
         configurations: [{ id: 4 }],
       }),
     );
-    expect(await screen.findByText('User saved.')).toBeTruthy();
+    expect(await screen.findByText('User saved')).toBeTruthy();
   });
 
   it('preserves restricted access on an edit and never forwards account secrets or a reset flag', async () => {
@@ -177,16 +170,36 @@ describe('Users & roles administration', () => {
     const dialog = within(await screen.findByRole('dialog'));
     const login = await dialog.findByLabelText('Login');
     fireEvent.change(login, { target: { value: 'new' } });
-    fireEvent.change(dialog.getByLabelText('Password'), { target: { value: 'one' } });
-    fireEvent.change(dialog.getByLabelText('Confirm password'), { target: { value: 'two' } });
+    fireEvent.change(dialog.getByLabelText('Password'), { target: { value: 'password1' } });
+    fireEvent.change(dialog.getByLabelText('Confirm password'), { target: { value: 'password2' } });
+    expect(dialog.getByRole('button', { name: 'Save user' })).toHaveProperty('disabled', true);
     fireEvent.submit(login.closest('form')!);
     expect(await dialog.findByRole('alert')).toHaveProperty('textContent', 'The passwords do not match.');
     expect(body(fetch, '/private/users')).toBeUndefined();
   });
 
+  it('applies Change password’s minimum length to a new account’s password', async () => {
+    const fetch = open();
+    fireEvent.click(await screen.findByRole('button', { name: 'New user' }));
+    const dialog = within(await screen.findByRole('dialog'));
+    const login = await dialog.findByLabelText('Login');
+    fireEvent.change(login, { target: { value: 'new' } });
+    fireEvent.change(dialog.getByLabelText('Role'), { target: { value: '7' } });
+    fireEvent.change(dialog.getByLabelText('Password'), { target: { value: 'short' } });
+    fireEvent.change(dialog.getByLabelText('Confirm password'), { target: { value: 'short' } });
+    expect(dialog.getByText('At least 8 characters')).toBeTruthy();
+    expect(dialog.getByRole('button', { name: 'Save user' })).toHaveProperty('disabled', true);
+    fireEvent.submit(login.closest('form')!);
+    expect(await dialog.findByRole('alert')).toHaveProperty(
+      'textContent',
+      'Use a password of at least 8 characters.',
+    );
+    expect(body(fetch, '/private/users')).toBeUndefined();
+  });
+
   it('saves role permissions by ID and preserves the description', async () => {
     const fetch = open();
-    fireEvent.click(await screen.findByRole('button', { name: 'Roles' }));
+    fireEvent.click(await screen.findByRole('radio', { name: 'Roles' }));
     fireEvent.click(screen.getByRole('button', { name: 'Edit Operators' }));
     const dialog = within(await screen.findByRole('dialog'));
     fireEvent.click(dialog.getByRole('checkbox', { name: 'edit devices (edit_devices)' }));
@@ -203,7 +216,7 @@ describe('Users & roles administration', () => {
 
   it('keeps a refused role deletion open and explains that the role is still assigned', async () => {
     const fetch = open();
-    fireEvent.click(await screen.findByRole('button', { name: 'Roles' }));
+    fireEvent.click(await screen.findByRole('radio', { name: 'Roles' }));
     const original = fetch.getMockImplementation()!;
     fetch.mockImplementation((input, init) =>
       init?.method === 'DELETE'

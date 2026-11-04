@@ -20,12 +20,7 @@ function SettingsSection({ entry }: { entry: SlotEntry<SettingsSectionContributi
     <ExtensionBoundary
       entry={entry}
       frame={(callout) => (
-        <Card
-          id={anchorId}
-          aria-labelledby={headingId}
-          gap={12}
-          className={entry.extension.core ? 'v2-settings-card' : undefined}
-        >
+        <Card id={anchorId} aria-labelledby={headingId} gap={12} className={entry.extension.core ? 'v2-settings-card' : undefined}>
           <CardHeader title={entry.contribution.title} titleId={headingId} />
           {callout}
         </Card>
@@ -38,7 +33,8 @@ function SettingsSection({ entry }: { entry: SlotEntry<SettingsSectionContributi
 
 /**
  * The Settings page's sections the role may see, core's and extensions' in order, and the section nav that goes
- * with them. `coreMeta` is keyed by core section id.
+ * with them. `coreMeta` is keyed by core section id; `hiddenCoreSections` leaves out core sections the page has no
+ * body for yet (Users & roles, until the server says the account administers users).
  */
 export function useSettingsSections(
   coreMeta: Readonly<Record<string, SectionMeta>>,

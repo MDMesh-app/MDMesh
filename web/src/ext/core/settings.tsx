@@ -3,6 +3,7 @@
 // out. Core and extension sections then share one host: ordering, `requires`, the boundary and the section nav.
 import { createContext, useContext, type ReactNode } from 'react';
 import { coreComponent, type SettingsSectionContribution } from '../types';
+import { CORE_ACTION_ACCESS } from './access';
 import { ORDER } from './order';
 
 /** Section ids, also their anchors: other pages link to `/settings#updates` and `/settings#agent-rollout`. */
@@ -21,13 +22,7 @@ type CoreSection = keyof typeof CORE_SETTINGS;
 const CoreSettingsParts = createContext<Partial<Record<CoreSection, ReactNode>> | null>(null);
 
 /** The page's bodies for core's sections (pages/SettingsPage.tsx). Not part of the extension API. */
-export function CoreSettingsProvider({
-  parts,
-  children,
-}: {
-  parts: Record<CoreSection, ReactNode>;
-  children: ReactNode;
-}) {
+export function CoreSettingsProvider({ parts, children }: { parts: Record<CoreSection, ReactNode>; children: ReactNode }) {
   return <CoreSettingsParts.Provider value={parts}>{children}</CoreSettingsParts.Provider>;
 }
 
@@ -45,13 +40,13 @@ function coreSection(key: CoreSection, title: string): SettingsSectionContributi
 }
 
 /**
- * Account and preferences are visible to every role; users and roles require administration access.
- * Other section actions follow their own permissions (rollout, enroll).
+ * Every role sees them but Users & roles (the other reads need no permission, ext/core/access.ts); a section's own
+ * actions follow the role (rollout, enroll).
  * `title` is the section nav's label; each body renders its card with that heading.
  */
 export const CORE_SETTINGS_SECTIONS: readonly SettingsSectionContribution[] = [
   coreSection('account', 'Account'),
-  { ...coreSection('users', 'Users & roles'), requires: { permission: 'settings' } },
+  { ...coreSection('users', 'Users & roles'), requires: CORE_ACTION_ACCESS.manageUsers },
   coreSection('server', 'Server'),
   coreSection('updates', 'Updates'),
   coreSection('agentRollout', 'Agent rollout'),

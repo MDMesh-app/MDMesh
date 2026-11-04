@@ -9,15 +9,8 @@ line under Unreleased.
 ## Unreleased
 
 New
-- Settings → Users & roles: console account creation, editing, password changes and deletion; role assignment; access limited
-  to device groups and configurations; and editable roles with a permission picker. Organization admins manage
-  accounts in their organization; global role editing on multi-customer installations is reserved for super-admins.
-
-Fixes
-- Role administration now protects built-in administrator roles on direct API calls, validates permission IDs and
-  refuses deletion of assigned roles. Role changes are transactional and role descriptions are returned by the API.
-- Creating an account now saves its selected configuration access, and editing without a password preserves a
-  pending password reset. [User management](docs/USER_MANAGEMENT.md).
+- Settings → Users & roles: create, edit and delete console accounts, choose the devices and configurations each
+  can reach, and edit roles and their permissions (thanks @lared3294).
 
 ## v0.4.0 — 2026-11-03
 

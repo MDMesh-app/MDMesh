@@ -457,7 +457,6 @@ export declare const paths: {
     readonly apps: '/apps';
     readonly enroll: '/enroll';
     readonly settings: '/settings';
-    readonly users: '/users';
     readonly login: '/login';
     readonly setPassword: '/set-password';
     readonly gallery: '/_gallery';

@@ -1,4 +1,4 @@
-import SparkMD5 from 'spark-md5';
+import { hashPassword } from './auth';
 import { apiClient } from './client';
 
 export interface Permission {
@@ -56,7 +56,7 @@ export async function saveUser(user: ManagedUser, password: string): Promise<voi
     allConfigAvailable: user.allConfigAvailable,
     groups: user.groups.map(({ id }) => ({ id })),
     configurations: user.configurations.map(({ id }) => ({ id })),
-    ...(password ? { newPassword: SparkMD5.hash(password).toUpperCase() } : {}),
+    ...(password ? { newPassword: hashPassword(password) } : {}),
   });
 }
 export const deleteUser = (id: number) => apiClient.del<void>(`/private/users/other/${id}`);

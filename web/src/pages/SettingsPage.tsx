@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
-import { getManagementCapabilities, managementError, type ManagementCapabilities } from '../api/users';
-import { UsersSection } from './settings/UsersSection';
 import { Link } from 'react-router';
 import { useAuth } from '../auth/AuthContext';
 import type { AuthUser } from '../api/auth';
 import { API_BASE } from '../api/client';
 import { listConfigurations, type ConfigurationSummary } from '../api/configurations';
 import type { UpdateStatus } from '../api/updates';
+import { getManagementCapabilities, managementError, type ManagementCapabilities } from '../api/users';
 import { useTheme, type ThemePreference } from '../ui/theme';
 import { paths } from '../routes';
 import {
@@ -23,8 +22,9 @@ import {
   LinkButton,
 } from '../ui';
 import { ChangePasswordModal } from './settings/ChangePasswordModal';
+import { UsersSection } from './settings/UsersSection';
 import { applyRunning, useSupervisor } from '../data/useSupervisor';
-import { CORE_ACTION_ACCESS, CORE_PAGE_ACCESS } from '../ext/core/access';
+import { CORE_ACTION_ACCESS } from '../ext/core/access';
 import { CORE_SETTINGS, CoreSettingsProvider } from '../ext/core/settings';
 import { useSettingsSections, type SectionMeta } from '../ext/hosts/SettingsSections';
 import { usePermission } from '../ext/permissions';
@@ -125,7 +125,8 @@ export function SettingsPage() {
   const [defaultConfig, setDefaultConfig] = useState<string>(readDefaultConfig);
   // Enrolling writes to devices (ext/core/access.ts).
   const canEnroll = usePermission(CORE_ACTION_ACCESS.editDevices);
-  const mayAdminister = usePermission(CORE_PAGE_ACCESS.users);
+  // Users & roles shows once the server says this account administers users (ext/core/access.ts manageUsers).
+  const mayAdminister = usePermission(CORE_ACTION_ACCESS.manageUsers);
   const [management, setManagement] = useState<{
     user: AuthUser;
     capabilities: ManagementCapabilities | null;
@@ -254,9 +255,7 @@ export function SettingsPage() {
           items={[
             { key: 'conn', label: 'Connection', value: <ConnectionValue conn={conn} onRetry={recheck} /> },
             { key: 'addr', label: 'Address', value: serverAddress(), mono: true },
-            ...(versionValue
-              ? [{ key: 'ver', label: 'Server and console', value: versionValue, mono: !whatsNew?.target }]
-              : []),
+            ...(versionValue ? [{ key: 'ver', label: 'Server and console', value: versionValue, mono: !whatsNew?.target }] : []),
             ...(s
               ? [
                   {
@@ -273,8 +272,12 @@ export function SettingsPage() {
         />
       </Card>
     ),
-    updates: <UpdatesSection id={S.updates} sup={sup} rolloutHref={`#${S.agentRollout}`} />,
-    agentRollout: <RolloutSection id={S.agentRollout} ro={ro} status={s} statusLoaded={sup.loaded} />,
+    updates: (
+      <UpdatesSection id={S.updates} sup={sup} rolloutHref={`#${S.agentRollout}`} />
+    ),
+    agentRollout: (
+      <RolloutSection id={S.agentRollout} ro={ro} status={s} statusLoaded={sup.loaded} />
+    ),
     enrollment: (
       <Card id={S.enrollment} aria-labelledby={`${S.enrollment}-title`} gap={12} className="v2-settings-card">
         <CardHeader
@@ -335,6 +338,7 @@ export function SettingsPage() {
           />
         </div>
       </Card>
+
     ),
   };
 

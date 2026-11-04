@@ -9,7 +9,7 @@ passwords, and the admin must set its own password on first login.
 
 | Method | Needs | Choose it when |
 |--------|-------|----------------|
-| [A. Quick start](#option-a--one-line-no-clone-published-images) | Docker with Compose v2, `curl`, `openssl` | You want the fastest path, with one-click updates and rollback. |
+| [A. Quick start](#option-a--one-line-no-clone-published-images) | Docker with Compose v2, `curl`, `openssl` 3.0+ (or `minisign`) | You want the fastest path, with one-click updates and rollback. |
 | [B. From source](#option-b--from-source-clone--build) | Docker with Compose v2, `openssl`, `python3`, `curl`, a clone | You want to build the images yourself. |
 | [C. Native](#option-c--native-no-docker) | Debian 12/13 or Ubuntu 24.04, root, `git` | You don't want Docker, and you run your own TLS proxy. |
 
@@ -21,6 +21,10 @@ URL (`https://…`; `http://` is accepted too). See the [rules](docs/OPERATIONS.
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/quickstart.sh)
 ```
+
+It needs Docker with Compose v2, curl, and OpenSSL 3.0 or newer to check the release signature. On a host with
+OpenSSL 1.1.1 (Ubuntu 20.04, RHEL/Alma/Rocky 8, Amazon Linux 2), install `minisign` first; the quick start then uses
+it instead.
 
 This needs a published release whose GHCR packages (`mdmesh-server`, `mdmesh-web`, `mdmesh-supervisor`) are public.
 If they aren't, run `docker login ghcr.io` first ([RELEASING.md](RELEASING.md)).
@@ -35,9 +39,9 @@ release: `CURRENT_VERSION` names it, and `SERVER_VERSION`, `WEB_VERSION` and `SU
 digest (`0.4.1@sha256:…`). Updates are one click ([Upgrading](docs/UPGRADING.md#quick-start-installs)).
 
 Before using anything from the release, the quick start checks its `manifest.json` against the release signing key
-(minisign, checked with `openssl`, so no extra tool is needed). The signed manifest holds the image digests and the
-SHA-256 of the compose files, the seed and `install/lib/db.sh`, which come from the release's tag; a file that
-doesn't match stops the install. The trust root is `quickstart.sh` itself, fetched from `main` over HTTPS, which
+(minisign format, checked with `openssl` 3.0+, or with `minisign` when that is installed). The signed manifest holds
+the image digests and the SHA-256 of the compose files, the seed and `install/lib/db.sh`, which come from the
+release's tag; a file that doesn't match stops the install. The trust root is `quickstart.sh` itself, fetched from `main` over HTTPS, which
 carries a copy of `release/minisign.pub`. A fork with its own signing key sets `MDMESH_RELEASE_PUBKEY` to the key line
 of its `release/minisign.pub`.
 

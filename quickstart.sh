@@ -39,10 +39,33 @@ latest_release() {
 # with its own signing key sets MDMESH_RELEASE_PUBKEY to the key line (line 2) of its release/minisign.pub.
 MDM_RELEASE_PUBKEY_DEFAULT="RWQbf0pIhddaWnDsFknIG4X325wHR05pUxEQJmuuQRdBlQm3zi8/Eqcd"
 
+# mdm_openssl_can_verify: succeeds when this host's openssl can check a minisign signature: `pkeyutl -rawin` (Ed25519
+# over raw data, OpenSSL 3.0+; 1.1.1 has no -rawin) and BLAKE2b-512.
+mdm_openssl_can_verify() {
+  case "$(openssl pkeyutl -help 2>&1)" in *-rawin*) ;; *) return 1 ;; esac
+  openssl dgst -blake2b512 < /dev/null > /dev/null 2>&1
+}
+
+# mdm_verify_manifest PUBKEY FILE SIG: checks SIG against FILE and PUBKEY (see mdm_minisign_verify) with openssl when it
+# can (mdm_openssl_can_verify), else with minisign when it is installed. Returns 0 when the signature is valid, 1 when it
+# is not (why on stderr), 2 when this host has neither tool, so nothing was checked.
+mdm_verify_manifest() {
+  local pk=$1 file=$2 sig=$3 d rc
+  if mdm_openssl_can_verify; then mdm_minisign_verify "$pk" "$file" "$sig"; return; fi
+  command -v minisign > /dev/null 2>&1 || return 2
+  d=$(mktemp -d) || return 1
+  printf 'untrusted comment: MDMesh release key\n%s\n' "$pk" > "$d/k.pub"
+  minisign -V -q -p "$d/k.pub" -m "$file" -x "$sig" > /dev/null 2>&1; rc=$?
+  [ "$rc" = 0 ] || echo "minisign: the signature does not verify with the release key" >&2
+  rm -f -- "$d/k.pub"; rmdir -- "$d" 2>/dev/null || true
+  [ "$rc" = 0 ]
+}
+
 # mdm_minisign_verify PUBKEY FILE SIG: succeeds when SIG (a .minisig file) is a valid minisign signature of FILE by the
 # public key PUBKEY (the base64 key line of a minisign .pub file), its trusted comment included. Needs only openssl
-# (1.1.1+: Ed25519 and BLAKE2b-512), so no minisign binary on the host. Only the prehashed format ("ED", the default since
-# minisign 0.10 and what the release workflow makes) is accepted. Prints why to stderr when it fails.
+# 3.0+ (Ed25519 with -rawin, and BLAKE2b-512), so no minisign binary on the host; mdm_verify_manifest probes for that
+# first. Only the prehashed format ("ED", the default since minisign 0.10 and what the release workflow makes) is
+# accepted. Prints why to stderr when it fails.
 mdm_minisign_verify() {
   local pk=$1 file=$2 sig=$3 d tc ok=1
   d=$(mktemp -d) || return 1
@@ -63,7 +86,7 @@ mdm_minisign_verify() {
     # The file's BLAKE2b-512 is what is signed; the global signature covers the signature + the trusted comment.
     if ! openssl dgst -blake2b512 -binary "$file" > "$d/hash" 2>/dev/null \
        || ! openssl pkeyutl -verify -pubin -keyform DER -inkey "$d/pk.der" -rawin -in "$d/hash" -sigfile "$d/sig.bin" >/dev/null 2>&1; then
-      echo "the signature does not verify (or this openssl, $(openssl version 2>/dev/null), cannot check Ed25519 signatures: 1.1.1 or newer is needed)" >&2
+      echo "the signature does not verify" >&2
     elif case "$tc" in 'trusted comment: '*) false ;; *) true ;; esac; then
       echo "the signature has no trusted comment" >&2
     elif ! { cat "$d/sig.bin"; printf '%s' "${tc#trusted comment: }"; } > "$d/global" \
@@ -238,7 +261,13 @@ read -rp "Image owner (GHCR, lowercase) [${IMAGE_OWNER_DEFAULT}]: " IMAGE_OWNER;
 # resolved or doesn't verify, the quick start stops.
 if [ -n "${MDMESH_VERSION:-}" ]; then
   RELEASE=${MDMESH_VERSION#v}
-  [[ "$RELEASE" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$ ]] || { err "MDMESH_VERSION=${MDMESH_VERSION} is not a release version (X.Y.Z)."; exit 1; }
+  [[ "$RELEASE" =~ ^([0-9]+)\.([0-9]+)\.[0-9]+([-+][0-9A-Za-z.+-]+)?$ ]] || { err "MDMESH_VERSION=${MDMESH_VERSION} is not a release version (X.Y.Z)."; exit 1; }
+  if [ "$((10#${BASH_REMATCH[1]}))" -eq 0 ] && [ "$((10#${BASH_REMATCH[2]}))" -lt 4 ]; then
+    err "Releases before 0.4.0 can't be installed with this quick start: it verifies each download against the signed release,"
+    err "which those releases don't record. Run the quickstart.sh from that release's tag instead:"
+    err "  bash <(curl -fsSL https://raw.githubusercontent.com/${REPO}/v${RELEASE}/quickstart.sh)"
+    exit 1
+  fi
 else
   RELEASE=$(latest_release "$GH_REPO")
 fi
@@ -262,7 +291,14 @@ if ! curl -fsSL -m 60 "${REL_URL}/manifest.json" -o "$MANIFEST" \
   err "Could not download manifest.json and manifest.json.minisig from ${REL_URL} (is v${RELEASE} a published release with a signed manifest?)."
   exit 1
 fi
-if ! mdm_minisign_verify "${MDMESH_RELEASE_PUBKEY:-$MDM_RELEASE_PUBKEY_DEFAULT}" "$MANIFEST" "$VERIFY_DIR/manifest.json.minisig"; then
+VERIFY_RC=0
+mdm_verify_manifest "${MDMESH_RELEASE_PUBKEY:-$MDM_RELEASE_PUBKEY_DEFAULT}" "$MANIFEST" "$VERIFY_DIR/manifest.json.minisig" || VERIFY_RC=$?
+if [ "$VERIFY_RC" = 2 ]; then
+  err "Checking the release signature needs OpenSSL 3.0+ or minisign (this host: $(openssl version 2>/dev/null || echo 'no openssl'))."
+  err "Install minisign (your distribution's package, or https://github.com/jedisct1/minisign/releases) and re-run. Nothing was installed."
+  exit 1
+fi
+if [ "$VERIFY_RC" != 0 ]; then
   err "The manifest of release v${RELEASE} of ${GH_REPO} is not signed by the release key (reason above). Nothing was installed."
   if [ "$GH_REPO" != "$REPO" ] && [ -z "${MDMESH_RELEASE_PUBKEY:-}" ]; then
     err "A fork signs with its own key: run that repository's quickstart.sh, or set MDMESH_RELEASE_PUBKEY to the key line of its release/minisign.pub."
@@ -280,12 +316,13 @@ SERVER_REF=$(mdm_manifest_field "$MANIFEST" server "$MDM_IMAGE_REF_ERE" || true)
 WEB_REF=$(mdm_manifest_field "$MANIFEST" web "$MDM_IMAGE_REF_ERE" || true)
 SUPERVISOR_REF=$(mdm_manifest_field "$MANIFEST" supervisor "$MDM_IMAGE_REF_ERE" || true)
 if [ -n "$SERVER_REF" ] && [ -n "$WEB_REF" ] && [ -n "$SUPERVISOR_REF" ]; then
-  for _ref in "$SERVER_REF" "$WEB_REF" "$SUPERVISOR_REF"; do
-    case "${_ref%@*}" in
-      "ghcr.io/${IMAGE_OWNER}/mdmesh-server"|"ghcr.io/${IMAGE_OWNER}/mdmesh-web"|"ghcr.io/${IMAGE_OWNER}/mdmesh-supervisor") ;;
-      *) err "Release v${RELEASE} of ${GH_REPO} publishes its images as ${_ref%@*}, not under ghcr.io/${IMAGE_OWNER}. Re-run and enter the image owner it names."
-         exit 1 ;;
-    esac
+  # Each ref must be exactly its own image under this owner (as supervisor/lib.js imagePins and apply.sh require).
+  for _pair in "server $SERVER_REF" "web $WEB_REF" "supervisor $SUPERVISOR_REF"; do
+    _name=${_pair%% *}; _ref=${_pair#* }
+    if [ "${_ref%@*}" != "ghcr.io/${IMAGE_OWNER}/mdmesh-${_name}" ]; then
+      err "Release v${RELEASE} of ${GH_REPO} publishes its ${_name} image as ${_ref%@*}, not ghcr.io/${IMAGE_OWNER}/mdmesh-${_name}. Re-run and enter the image owner it names."
+      exit 1
+    fi
   done
   SERVER_TAG="${RELEASE}@${SERVER_REF#*@}"; WEB_TAG="${RELEASE}@${WEB_REF#*@}"; SUPERVISOR_TAG="${RELEASE}@${SUPERVISOR_REF#*@}"
 elif [ -z "$SERVER_REF$WEB_REF$SUPERVISOR_REF" ] && mdm_legacy_file_sha "$RELEASE" install/lib/db.sh >/dev/null; then

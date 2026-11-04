@@ -55,6 +55,18 @@ sed 's/9\.8\.7/9.8.8/' "$T/manifest.json" > "$T/tampered.json"
 ! mdm_minisign_verify "$(sed -n 2p "$T/x.pub")" "$T/manifest.json" "$T/manifest.json.minisig" 2>/dev/null \
   || fail "a manifest signed by another key verified"
 
+# The same through mdm_verify_manifest: openssl when it can (3.0+), else minisign, else rc 2 (neither tool; nothing checked).
+mdm_verify_manifest "$PK" "$T/manifest.json" "$T/manifest.json.minisig" || fail "mdm_verify_manifest refused a good signature"
+(
+  # shellcheck disable=SC2317  # called by mdm_verify_manifest
+  mdm_openssl_can_verify() { return 1; }   # an OpenSSL 1.1.1 host
+  mdm_verify_manifest "$PK" "$T/manifest.json" "$T/manifest.json.minisig" || fail "the minisign fallback refused a good signature"
+  rc=0; mdm_verify_manifest "$PK" "$T/tampered.json" "$T/manifest.json.minisig" 2>/dev/null || rc=$?
+  [ "$rc" = 1 ] || fail "the minisign fallback accepted a tampered manifest (rc $rc)"
+  rc=0; PATH=/nonexistent mdm_verify_manifest "$PK" "$T/manifest.json" "$T/manifest.json.minisig" || rc=$?
+  [ "$rc" = 2 ] || fail "with neither openssl 3 nor minisign, mdm_verify_manifest must return 2 (got $rc)"
+)
+
 [ "$(mdm_manifest_field "$T/manifest.json" version '[0-9A-Za-z.+-]+')" = 9.8.7 ] || fail "version not read"
 [ "$(mdm_manifest_field "$T/manifest.json" server "$MDM_IMAGE_REF_ERE")" = "ghcr.io/$O/mdmesh-server@$D1" ] || fail "server ref not read"
 [ "$(mdm_manifest_field "$T/manifest.json" web "$MDM_IMAGE_REF_ERE")" = "ghcr.io/$O/mdmesh-web@$D2" ] || fail "web ref not read"

@@ -31,6 +31,7 @@ import com.hmdm.persistence.domain.User;
 import com.hmdm.rest.json.CustomerSearchRequest;
 import com.hmdm.rest.json.PaginatedData;
 import com.hmdm.rest.json.Response;
+import com.hmdm.security.ConsoleSession;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.service.MailchimpService;
 import com.hmdm.util.PasswordUtil;
@@ -39,7 +40,6 @@ import org.slf4j.LoggerFactory;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.HttpSession;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
@@ -66,7 +66,6 @@ public class CustomerResource {
 
     private static final Logger log = LoggerFactory.getLogger(CustomerResource.class);
 
-    private static final String sessionCredentials = "credentials";
     private CustomerDAO customerDAO;
     private UnsecureDAO unsecureDAO;
     private UserDAO userDAO;
@@ -280,11 +279,6 @@ public class CustomerResource {
                 Customer customer = this.customerDAO.findById(id);
                 User orgAdmin = this.userDAO.findOrgAdmin(customer.getId());
                 if (orgAdmin != null) {
-                    HttpSession session = req.getSession( false );
-                    if ( session != null ) {
-                        session.invalidate();
-                    }
-
                     // If the org admin didn't log in, we need to generate a token for him
                     if (orgAdmin.getAuthToken() == null || orgAdmin.getAuthToken().length() == 0) {
                         User user = unsecureDAO.findByLoginOrEmail(orgAdmin.getLogin());
@@ -300,8 +294,7 @@ public class CustomerResource {
 
                     orgAdmin.setPassword(null);
 
-                    HttpSession userSession = req.getSession(true);
-                    userSession.setAttribute( sessionCredentials, orgAdmin );
+                    ConsoleSession.start(req, orgAdmin);
 
                     return Response.OK( orgAdmin );
                 } else {

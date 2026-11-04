@@ -37,6 +37,7 @@ import org.slf4j.LoggerFactory;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.User;
 import com.hmdm.rest.json.UserCredentials;
+import com.hmdm.security.jwt.JWTFilter;
 import com.hmdm.security.jwt.TokenProvider;
 
 import javax.servlet.http.HttpServletRequest;
@@ -163,6 +164,10 @@ public class JWTAuthResource {
                 user.setPassword(null);
 
                 String token = tokenProvider.createToken(user, false);
+                if (req != null) {
+                    // The audit record of this sign-in names the user (public route: no context, no session)
+                    req.setAttribute(JWTFilter.REQUEST_USER, user);
+                }
 
                 JWTToken result = new JWTToken(token);
 

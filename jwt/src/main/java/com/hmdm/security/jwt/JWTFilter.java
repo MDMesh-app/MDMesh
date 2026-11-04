@@ -52,6 +52,12 @@ public class JWTFilter implements Filter {
     private static final String AUTHORIZATION_HEADER = "Authorization";
 
     /**
+     * <p>A request attribute holding the user a valid token authenticated, for the filters that run outside this one
+     * and so after it has released the security context (the audit log names the API client's user from it).</p>
+     */
+    public static final String REQUEST_USER = JWTFilter.class.getName() + ".user";
+
+    /**
      * <p>An authentication token provider used for validating and parsing the authentication tokens provided by
      * incoming request.</p>
      */
@@ -116,6 +122,7 @@ public class JWTFilter implements Filter {
 
             // Set-up the security context
             try {
+                servletRequest.setAttribute(REQUEST_USER, dbUser);
                 SecurityContext.init(dbUser);
                 filterChain.doFilter(servletRequest, servletResponse);
             } finally {

@@ -11,6 +11,7 @@ import com.hmdm.persistence.mapper.UserMapper;
 import com.hmdm.rest.json.Response;
 import com.hmdm.security.LoginThrottle;
 import com.hmdm.security.SecurityContext;
+import com.hmdm.testsupport.FakeSessions;
 import com.hmdm.util.PasswordUtil;
 import org.junit.After;
 import org.junit.Before;
@@ -354,21 +355,62 @@ public class UserResourceTest {
     public void ownPasswordChangeEndsOtherSessionsAndKeepsThisOne() {
         signIn(tenantUser);
         User thisSession = copy(tenantUser, false);              // what AuthResource stored at sign-in
-        List<Object> sessionWrites = new ArrayList<>();
+        FakeSessions sessions = new FakeSessions();
+        sessions.existing("this-one").attributes.put("credentials", thisSession);
         User request = new User();
         request.setId(tenantUser.getId());
         request.setOldPassword(PASSWORD_MD5);
         request.setNewPassword("0123456789ABCDEF0123456789ABCDEF");
 
-        Response response = resource.updatePassword(request, request(sessionWrites, thisSession));
+        Response response = resource.updatePassword(request, sessions.request());
 
         assertEquals(Response.ResponseStatus.OK, response.getStatus());
         String newToken = written.get(0).getAuthToken();
         assertNotNull(newToken);
         assertNotEquals("every other session and JWT of the old password ends", "token-11", newToken);
         assertEquals("this session moves to the new token", newToken, thisSession.getAuthToken());
-        assertEquals(1, sessionWrites.size());
+        assertEquals(newToken, ((User) sessions.current().attributes.get("credentials")).getAuthToken());
         assertEquals(null, written.get(0).getPasswordResetToken());
+    }
+
+    @Test
+    public void ownPasswordChangeMovesThisSessionToANewId() {
+        signIn(tenantUser);
+        User thisSession = copy(tenantUser, false);
+        FakeSessions sessions = new FakeSessions();
+        FakeSessions.Session before = sessions.existing("before-the-change");
+        before.attributes.put("credentials", thisSession);
+        User request = new User();
+        request.setId(tenantUser.getId());
+        request.setOldPassword(PASSWORD_MD5);
+        request.setNewPassword("0123456789ABCDEF0123456789ABCDEF");
+
+        Response response = resource.updatePassword(request, sessions.request());
+
+        assertEquals(Response.ResponseStatus.OK, response.getStatus());
+        assertTrue("the old id ends", before.invalidated);
+        FakeSessions.Session after = sessions.current();
+        assertNotEquals("before-the-change", after.id);
+        User kept = (User) after.attributes.get("credentials");
+        assertEquals("still signed in, as the same user", tenantUser.getId(), kept.getId());
+        assertEquals("with the new token", written.get(0).getAuthToken(), kept.getAuthToken());
+    }
+
+    @Test
+    public void aWrongCurrentPasswordKeepsTheSessionId() {
+        signIn(tenantUser);
+        FakeSessions sessions = new FakeSessions();
+        FakeSessions.Session before = sessions.existing("before-the-change");
+        before.attributes.put("credentials", copy(tenantUser, false));
+        User request = new User();
+        request.setId(tenantUser.getId());
+        request.setOldPassword("0123456789ABCDEF0123456789ABCDEF");
+        request.setNewPassword("0123456789ABCDEF0123456789ABCDEF");
+
+        resource.updatePassword(request, sessions.request());
+
+        assertTrue(!before.invalidated);
+        assertEquals(0, sessions.created);
     }
 
     @Test
@@ -529,6 +571,23 @@ public class UserResourceTest {
         assertEquals(Response.ResponseStatus.OK, response.getStatus());
         assertEquals(1, sessionWrites.size());
         assertNoSecrets(json(response.getData()));
+    }
+
+    @Test
+    public void impersonationStartsAFreshSession() throws Exception {
+        signIn(orgAdmin);
+        FakeSessions sessions = new FakeSessions();
+        FakeSessions.Session admins = sessions.existing("the-admins");
+        admins.attributes.put("credentials", copy(orgAdmin, false));
+
+        Response response = resource.login(tenantUser.getId(), sessions.request(), null);
+
+        assertEquals(Response.ResponseStatus.OK, response.getStatus());
+        assertTrue(admins.invalidated);
+        FakeSessions.Session after = sessions.current();
+        assertNotEquals("the-admins", after.id);
+        assertEquals(tenantUser.getId(), ((User) after.attributes.get("credentials")).getId());
+        assertEquals(java.util.Collections.singleton("credentials"), after.attributes.keySet());
     }
 
     // ---- secrets in responses ----------------------------------------------------------------------------------------

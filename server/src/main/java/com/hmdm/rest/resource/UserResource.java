@@ -38,6 +38,7 @@ import com.hmdm.persistence.UserDAO;
 import com.hmdm.persistence.domain.User;
 import com.hmdm.persistence.domain.UserRole;
 import com.hmdm.rest.json.Response;
+import com.hmdm.security.ConsoleSession;
 import com.hmdm.security.LoginThrottle;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.security.SecurityException;
@@ -213,14 +214,15 @@ public class UserResource {
     /**
      * A password change gives the user a new authToken, which ends every session and JWT of the old password
      * (AuthFilter and JWTFilter compare it with the stored one). The session that made the change carries on: it is
-     * moved to the new token. A JWT caller signs in again.
+     * moved to the new token and to a new id. A JWT caller signs in again.
      */
     private static void keepThisSession(HttpServletRequest req, User changed) {
         HttpSession session = req == null ? null : req.getSession(false);
         Object credentials = session == null ? null : session.getAttribute(sessionCredentials);
         if (credentials instanceof User && changed.getId().equals(((User) credentials).getId())) {
             ((User) credentials).setAuthToken(changed.getAuthToken());
-            session.setAttribute(sessionCredentials, credentials);
+            // null when the session ended meanwhile: nothing to keep, and no new session is started on purpose
+            ConsoleSession.renew(req);
         }
     }
 
@@ -489,15 +491,9 @@ public class UserResource {
                 return Response.PERMISSION_DENIED();
             }
 
-            HttpSession session = req.getSession( false );
-            if ( session != null ) {
-                session.invalidate();
-            }
-
             user.setPassword(null);
 
-            HttpSession userSession = req.getSession(true);
-            userSession.setAttribute( sessionCredentials, user );
+            ConsoleSession.start(req, user);
 
             return Response.OK( user );
 

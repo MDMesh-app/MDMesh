@@ -75,6 +75,9 @@ Fixes
 - Storage and Local IP show on the device page. The old console read keys the agent never sends, so both were "—".
 - Saving a configuration keeps its apps' Headwind launcher layout (screen order, key code, bottom row, long tap).
 - Enroll shows a configuration's EAP Wi-Fi security as EAP, not as WPA / WPA2.
+- Sign-in starts a fresh session, and so does changing your own password.
+- Audit log: requests from API clients are recorded with their user, and a request is recorded however its path is
+  spelled.
 
 Under the hood
 - The console has unit tests (vitest), and CI runs them on every console change.

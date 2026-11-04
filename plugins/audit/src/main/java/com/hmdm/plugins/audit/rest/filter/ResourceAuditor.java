@@ -29,6 +29,8 @@ import com.hmdm.plugins.audit.persistence.domain.AuditLogRecord;
 import com.hmdm.plugins.audit.rest.AuditResource;
 import com.hmdm.rest.filter.BaseIPFilter;
 import com.hmdm.rest.json.Response;
+import com.hmdm.security.SecurityContext;
+import com.hmdm.security.jwt.JWTFilter;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.slf4j.Logger;
@@ -142,11 +144,7 @@ class ResourceAuditor {
      */
     AuditLogRecord getAuditLogRecord() throws IOException {
         final HttpServletRequest httpRequest = (HttpServletRequest) this.request;
-        final HttpSession session = httpRequest.getSession(false);
-        User currentUser = null;
-        if (session != null) {
-            currentUser = (User) session.getAttribute(sessionCredentials);
-        }
+        final User currentUser = actingUser(httpRequest);
 
         String action = this.auditLogActionKey;
         String payloadString = null;
@@ -203,6 +201,32 @@ class ResourceAuditor {
         logRecord.setAction(action);
 
         return logRecord;
+    }
+
+    /**
+     * <p>The user the request ran as: the one in the security context (set by JWTFilter for an API client with a
+     * bearer token, or by AuthFilter from the session; the auth filters run around this one for /rest/private/*),
+     * else the one JWTFilter put on the request (when it ran inside this filter and has already released the
+     * context), else the console session's. An API client has no session, so without the first two its actions
+     * went to customer 1 with no login.</p>
+     */
+    static User actingUser(HttpServletRequest request) {
+        SecurityContext context = SecurityContext.get();
+        if (context != null && context.getCurrentUser().isPresent()) {
+            return context.getCurrentUser().get();
+        }
+        Object tokenUser = request.getAttribute(JWTFilter.REQUEST_USER);
+        if (tokenUser instanceof User) {
+            return (User) tokenUser;
+        }
+        HttpSession session = request.getSession(false);
+        if (session != null) {
+            Object sessionUser = session.getAttribute(sessionCredentials);
+            if (sessionUser instanceof User) {
+                return (User) sessionUser;
+            }
+        }
+        return null;
     }
 
     private boolean needStripPassword(String action) {

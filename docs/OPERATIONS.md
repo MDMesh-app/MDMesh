@@ -47,9 +47,9 @@ The wizard writes `SITE_ADDRESS`, `ACME_EMAIL` and `TUNNEL_TOKEN` for the hostin
 | `POLL_INTERVAL_HOURS` | `.env` (native: always `6`) | `6` | How often to check. |
 | `GITHUB_TOKEN` | `.env`; native env → `supervisor.env` | empty | Needed for a private repo; raises rate limits. See note. |
 | `IMAGE_OWNER` | `.env` | quick start `mdmesh-app`; from source `local` | GHCR owner (lowercase). `local` means built from the clone. |
-| `SERVER_VERSION`, `WEB_VERSION` | `.env` | the installed release | Image tags, without the `v` (`0.3.2`). Updates set them. |
+| `SERVER_VERSION`, `WEB_VERSION` | `.env` | the installed release | Image tags, without the `v` (`0.3.2`), or pinned by digest (`0.4.1@sha256:…`). Updates set them to the signed digests. |
 | `CURRENT_VERSION` | `.env`; native: `supervisor.env` | `0.0.0` | Running release, compared with GitHub's latest. Updates and rollbacks set it. |
-| `SUPERVISOR_VERSION` | `.env` | quick start `latest` | Supervisor image tag. Updates never change it. |
+| `SUPERVISOR_VERSION` | `.env` | quick start: the installed release by digest | Supervisor image tag. When it is `latest` or a digest pin, each update moves it to the release's signed digest; `docker compose up -d` then starts that supervisor. Any other value is left alone. |
 | `APPLY_SUPPORTED` | `.env` (native: always `0`) | `1` with a registry `IMAGE_OWNER`, else `0` | `1` shows one-click **Update**, `0` shows manual steps. |
 | `AUTO_UPDATE` | `.env` | `0` | `1` applies releases unattended ([details](UPGRADING.md#quick-start-installs)). |
 
@@ -491,9 +491,10 @@ It never touches apt packages, your proxy or the git checkout.
 - The admin must set a new password at first sign-in. A database the server created without an installer run has an
   admin no password works for, until an installer (or `scripts/dev-seed.sh`) sets one.
 - The Headwind launcher endpoints are off by default (404). MQTT push is off; agents are woken over a WebSocket.
-- The supervisor mounts the Docker socket, so it is trusted. It acts only on minisign-verified manifests and on
-  authorized callers (the recovery token, or the session of an admin who may update: a super-admin, or the org admin
-  of a single-customer install). Apply and rollback only recreate `server` and `caddy`.
+- The supervisor mounts the Docker socket, so it is trusted. It acts only on minisign-verified manifests, runs only
+  the images they pin by digest, and answers only authorized callers (the recovery token, or the session of an admin
+  who may update: a super-admin, or the org admin of a single-customer install). Apply and rollback only recreate
+  `server` and `caddy`.
 - Setting a password ends that account's other sessions and API tokens. Password reset links work once, for 24 hours.
 - The console session cookie is `SameSite=Lax`, and `Secure` when `BASE_URL` is https.
 - Failed sign-ins are limited per address and per account ([Sign-in limits](#sign-in-limits)).

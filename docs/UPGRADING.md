@@ -27,13 +27,23 @@ exists (the Settings switch, or any failed or rolled-back update, creates it), i
 in Settings. A release that failed, or that you rolled back
 from, is never applied automatically again (`autoSkipped` in `/update/status`). **Update** still applies it by hand.
 
-Updates never touch the supervisor. To pick up its fixes:
+An update runs exactly the images its signed manifest names: from 0.4.1 the supervisor pins `SERVER_VERSION` and
+`WEB_VERSION` in `.env` to their digests (`0.4.1@sha256:…`). A release whose manifest pins no digests, or pins them
+under another owner than `IMAGE_OWNER` (a fork's install following upstream releases), is refused with that reason,
+and nothing changes.
+
+Updates never recreate the supervisor itself. To pick up its fixes after an update:
 
 ```bash
 docker compose pull && docker compose up -d
 ```
 
-This works because `SUPERVISOR_VERSION=latest`. If you pinned it, bump it by hand.
+When `SUPERVISOR_VERSION` is `latest` (quick starts before 0.4.1) this brings the newest supervisor. Once a 0.4.1 or
+newer supervisor applies an update, it pins `SUPERVISOR_VERSION` to that release's supervisor by digest, and
+`docker compose up -d` starts exactly that one. A plain version you set by hand is left alone: bump it yourself.
+
+The supervisor you run decides whether updates are pinned: a 0.4.0 supervisor still applies the 0.4.1 update by tag,
+as before. Run the command above once after that update to get the 0.4.1 supervisor, and every later update is pinned.
 
 ## From-source Docker installs
 

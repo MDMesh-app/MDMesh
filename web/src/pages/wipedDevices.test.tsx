@@ -108,6 +108,17 @@ describe('wiped devices on Devices', () => {
     expect(disabled).toEqual({ 'Lock device': true, 'Ring device': true, 'Change configuration…': false, 'Delete…': false });
   }, SLOW);
 
+  it('does not count a wiped device as a duplicate of its re-enrolled twin', async () => {
+    // WH-9 was wiped and the phone enrolled again as WH-4: one live row, so nothing to merge.
+    const twins = [
+      ...DEVICES.map((d) => (d.id === 9 ? { ...d, hardwareId: 'hw-1' } : d)),
+      { id: 4, number: 'WH-4', description: 'Re-enrolled', lastUpdate: NOW, hardwareId: 'hw-1' },
+    ] as typeof DEVICES;
+    open('/devices', null, twins);
+    await main().findByRole('link', { name: /Re-enrolled/ }, LOAD);
+    expect(main().queryByRole('button', { name: /^Duplicates/ })).toBeNull();
+  }, SLOW);
+
   it('says where a search’s wiped match is when All shows nothing', async () => {
     open('/devices');
     await main().findByRole('link', { name: /Front desk/ }, LOAD);

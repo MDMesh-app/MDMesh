@@ -266,12 +266,13 @@ export function DevicesPage() {
   const kind = useCallback((d: DeviceView): DeviceKind => kindOf.get(d.id) ?? 'phone', [kindOf]);
 
   // A hardware id shared by more than one row = the same physical device enrolled twice.
+  // A wiped row (wipedAt) is left out of All, so it neither counts as a duplicate nor makes its twin one (#137).
   const dupCount = useMemo(() => {
     const m = new Map<string, number>();
-    for (const d of devices) if (d.hardwareId) m.set(d.hardwareId, (m.get(d.hardwareId) ?? 0) + 1);
+    for (const d of devices) if (d.hardwareId && d.wipedAt == null) m.set(d.hardwareId, (m.get(d.hardwareId) ?? 0) + 1);
     return m;
   }, [devices]);
-  const dupOf = useCallback((d: DeviceView) => (d.hardwareId ? (dupCount.get(d.hardwareId) ?? 0) : 0), [dupCount]);
+  const dupOf = useCallback((d: DeviceView) => (d.hardwareId && d.wipedAt == null ? (dupCount.get(d.hardwareId) ?? 0) : 0), [dupCount]);
   const dupTotal = useMemo(() => devices.filter((d) => dupOf(d) > 1).length, [devices, dupOf]);
   useEffect(() => {
     if (dupTotal === 0 && dupOnly) setDupOnly(false);

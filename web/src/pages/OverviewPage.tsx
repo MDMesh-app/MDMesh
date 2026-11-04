@@ -126,6 +126,7 @@ export function OverviewPage() {
         now={now}
         syncCheck={syncCheck}
         hasDevices={devices.length > 0}
+        allWiped={devices.length > 0 && counts.wiped === devices.length}
       />
     ),
     byConfiguration: (
@@ -327,6 +328,7 @@ function NeedsAttention({
   now,
   syncCheck,
   hasDevices,
+  allWiped,
 }: {
   loading: boolean;
   rows: DeviceView[];
@@ -334,6 +336,8 @@ function NeedsAttention({
   now: number;
   syncCheck: SyncCheck;
   hasDevices: boolean;
+  /** Every enrolled device was wiped: none is online, so "All clear" would say the opposite. */
+  allWiped: boolean;
 }) {
   const toast = useToast();
   const [busy, setBusy] = useState<Record<string, boolean>>({});
@@ -403,6 +407,12 @@ function NeedsAttention({
     body = (
       <EmptyState bare title="No devices yet">
         Devices that are offline or whose configuration didn’t apply show up here.
+      </EmptyState>
+    );
+  else if (allWiped)
+    body = (
+      <EmptyState bare title="No active devices">
+        Every enrolled device was wiped.
       </EmptyState>
     );
   else if (items.length === 0)

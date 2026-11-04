@@ -180,7 +180,7 @@ public class AgentCommandDAO {
         deviceMapper.updateEnrollTime(deviceNumber, System.currentTimeMillis());
     }
 
-    /** Mark the device wiped (the console's "Wiped") at {@code at}, keeping a time already set. */
+    /** Mark the device wiped (the console's "Wiped") at {@code at}: the delivery time of the wipe just sent. */
     public void markWiped(String deviceNumber, long at) {
         deviceMapper.markWiped(deviceNumber, at);
     }

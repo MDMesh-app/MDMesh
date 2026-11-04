@@ -1,0 +1,66 @@
+/*
+ * MDMesh: fork of Headwind MDM. Apache-2.0.
+ */
+package com.hmdm.persistence;
+
+import com.hmdm.persistence.mapper.AgentDeviceMapper;
+import com.hmdm.persistence.mapper.RolloutMapper;
+import com.hmdm.testsupport.Fakes;
+import org.junit.Test;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
+import static org.junit.Assert.assertTrue;
+
+/**
+ * devices.wipedAt (#137): the latest wipe's delivery sets it, only that wipe's failure clears it (a late failure of an
+ * earlier wipe leaves a later wipe's mark alone), and a rollout leaves a marked device out.
+ */
+public class WipedSqlTest {
+
+    private static String squash(String sql) {
+        return sql.replaceAll("\\s+", " ");
+    }
+
+    @Test
+    public void theLatestDeliverySetsTheMark() {
+        String update = squash(Fakes.sqlOf(AgentDeviceMapper.class, "markWiped"));
+        assertTrue(update, update.contains("UPDATE devices SET wipedAt = #{ts} WHERE number = #{deviceNumber}"));
+    }
+
+    @Test
+    public void onlyTheFailureOfTheWipeThatSetTheMarkClearsIt() {
+        String where = Fakes.whereOf(Fakes.sqlOf(AgentDeviceMapper.class, "clearWipedForCommand"));
+        assertTrue(where, where.contains("where number = #{devicenumber} and wipedat is not null"));
+        assertTrue(where, where.contains("c.id = #{commandid} and c.devicenumber = #{devicenumber}"));
+        assertTrue(where, where.contains("c.type = 'device.wipe'"));
+        assertTrue(where, where.contains("c.deliveredat >= devices.wipedat"));
+    }
+
+    @Test
+    public void aCheckInClearsOnlyAMarkOlderThanTheGrace() {
+        String where = Fakes.whereOf(Fakes.sqlOf(AgentDeviceMapper.class, "clearWipedBefore"));
+        assertTrue(where, where.contains("where number = #{devicenumber} and wipedat < #{cutoff}"));
+    }
+
+    @Test
+    public void aRolloutLeavesWipedDevicesOut() {
+        String where = Fakes.whereOf(Fakes.sqlOf(RolloutMapper.class, "listCustomerDevices"));
+        assertTrue(where, where.contains("where d.customerid = #{customerid} and d.wipedat is null"));
+    }
+
+    @Test
+    public void theColumnIsAddedWithARollback() throws Exception {
+        Path p = Paths.get("src/main/resources/liquibase/db.changelog.xml");
+        if (!Files.exists(p)) p = Paths.get("server").resolve(p);
+        String xml = squash(new String(Files.readAllBytes(p), StandardCharsets.UTF_8));
+        int at = xml.indexOf("<changeSet id=\"26.11.04-devices-wipedAt\"");
+        assertTrue("changeset", at >= 0);
+        String cs = xml.substring(at, xml.indexOf("</changeSet>", at));
+        assertTrue(cs, cs.contains("<sql>ALTER TABLE devices ADD COLUMN wipedAt BIGINT;</sql>"));
+        assertTrue(cs, cs.contains("<rollback>ALTER TABLE devices DROP COLUMN wipedAt;</rollback>"));
+    }
+}

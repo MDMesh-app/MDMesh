@@ -58,14 +58,21 @@ public interface AgentDeviceMapper {
     @Update({"UPDATE devices SET enrollTime = COALESCE(enrollTime, #{ts}) WHERE number = #{deviceNumber}"})
     void updateEnrollTime(@Param("deviceNumber") String deviceNumber, @Param("ts") long ts);
 
-    /** The console's "Wiped": when a device.wipe was delivered. The first delivery's time is kept. */
-    @Update({"UPDATE devices SET wipedAt = COALESCE(wipedAt, #{ts}) WHERE number = #{deviceNumber}"})
+    /**
+     * The console's "Wiped": when the latest device.wipe was delivered. {@code ts} is also that command's deliveredAt,
+     * which is how {@link #clearWipedForCommand} tells the wipe that set the mark from an earlier one.
+     */
+    @Update({"UPDATE devices SET wipedAt = #{ts} WHERE number = #{deviceNumber}"})
     void markWiped(@Param("deviceNumber") String deviceNumber, @Param("ts") long ts);
 
-    /** Clears "Wiped" when the result just reported for {@code commandId} belongs to a device.wipe of this device. */
+    /**
+     * Clears "Wiped" when the result just reported for {@code commandId} is for the device.wipe that set the mark: one
+     * of this device's, delivered no earlier than the mark. A late or repeated failure of an earlier wipe leaves a
+     * later wipe's mark alone.
+     */
     @Update({"UPDATE devices SET wipedAt = NULL WHERE number = #{deviceNumber} AND wipedAt IS NOT NULL " +
             "AND EXISTS (SELECT 1 FROM agentCommand c WHERE c.id = #{commandId} AND c.deviceNumber = #{deviceNumber} " +
-            "AND c.type = 'device.wipe')"})
+            "AND c.type = 'device.wipe' AND c.deliveredAt >= devices.wipedAt)"})
     int clearWipedForCommand(@Param("deviceNumber") String deviceNumber, @Param("commandId") Integer commandId);
 
     /** Clears "Wiped" set before {@code cutoff}. */

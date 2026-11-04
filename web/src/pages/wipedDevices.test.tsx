@@ -22,17 +22,17 @@ const DEVICES = [
 ];
 
 /** The fleet, WH-1 and WH-9 out of sync (so the Overview offers Sync now), and `sync` as every wake's answer. */
-function api(sync: unknown) {
+function api(sync: unknown, devices: typeof DEVICES = DEVICES) {
   return (path: string, init?: RequestInit): unknown => {
     const p = new URL(path, 'http://console').pathname.replace('/rest/private', '');
     const post = init?.method === 'POST';
     if (p === '/devices/search') {
       const value = (JSON.parse(String(init?.body ?? '{}')) as { value?: string }).value ?? '';
-      const items = DEVICES.filter((d) => d.number.includes(value));
+      const items = devices.filter((d) => d.number.includes(value));
       return { devices: { items, totalItemsCount: items.length }, configurations: { 3: { id: 3, name: 'Warehouse' } } };
     }
     const byNumber = /^\/devices\/number\/([^/]+)$/.exec(p);
-    if (byNumber) return DEVICES.find((d) => d.number === decodeURIComponent(byNumber[1])) ?? null;
+    if (byNumber) return devices.find((d) => d.number === decodeURIComponent(byNumber[1])) ?? null;
     if (p === '/configurations/search') return [{ id: 3, name: 'Warehouse' }];
     if (p === '/configurations/3') return { id: 3, name: 'Warehouse', kioskMode: false };
     if (p === '/agent/v1/configurations/syncSummary') {
@@ -56,8 +56,8 @@ function Probe() {
 }
 
 /** Open `path` with `sync` as the answer to a wake (null: an older server's empty one). */
-function open(path: string, sync: unknown = null) {
-  const fetch = stubApi(api(sync));
+function open(path: string, sync: unknown = null, devices: typeof DEVICES = DEVICES) {
+  const fetch = stubApi(api(sync, devices));
   renderInConsole(
     <>
       <AppRoutes />
@@ -169,6 +169,14 @@ describe('wiped devices on the Overview', () => {
     const offline = main().getByRole('link', { name: /^Offline/ });
     expect(offline.querySelector('.v2-fleet__count')?.textContent).toBe('1');
     expect(main().getByRole('link', { name: '1 wiped' }).getAttribute('href')).toBe('/devices?status=wiped');
+  }, SLOW);
+
+  it('says so when every device was wiped, not that every device is online', async () => {
+    open('/', null, DEVICES.filter((d) => d.wipedAt != null));
+    await main().findByText('No active devices', undefined, LOAD);
+    expect(main().getAllByText('Every enrolled device was wiped.').length).toBeGreaterThan(0);
+    expect(main().queryByText(/Every device is online/)).toBeNull();
+    expect(main().queryByText('All clear')).toBeNull();
   }, SLOW);
 });
 

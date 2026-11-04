@@ -9,8 +9,8 @@ line under Unreleased.
 ## Unreleased
 
 Fixes
-- Audit log: on Docker installs, entries name the client's address, not the edge container's. The audit plugin now
-  believes the edge as the sign-in limit does (`proxy.private.networks`), so the address matches the edge's access log.
+- Audit log: on Docker installs, entries show the client's address instead of the edge container's (thanks
+  @Przemek-Magic).
 
 ## v0.4.0 — 2026-11-03
 

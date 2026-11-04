@@ -119,14 +119,8 @@ class ResourceAuditor {
      */
     ResourceAuditor(String auditLogActionKey, ServletRequest request, ServletResponse response,
                     FilterChain chain, boolean payload, boolean maskCommandPayload, boolean checkResponse,
-                    String proxyIps, String ipHeader) throws IOException {
-        this(auditLogActionKey, request, response, chain, payload, maskCommandPayload, checkResponse, proxyIps,
-                ipHeader, false);
-    }
-
-    ResourceAuditor(String auditLogActionKey, ServletRequest request, ServletResponse response,
-                    FilterChain chain, boolean payload, boolean maskCommandPayload, boolean checkResponse,
-                    String proxyIps, String ipHeader, boolean privatePeersAreProxies) throws IOException {
+                    String proxyIps, String ipHeader, List<String> trustedProxies, boolean privatePeersAreProxies)
+            throws IOException {
         this.auditLogActionKey = auditLogActionKey;
         if (payload) {
             // Wrap request only if we need to log it
@@ -140,32 +134,35 @@ class ResourceAuditor {
         this.maskCommandPayload = maskCommandPayload;
         this.checkResponse = checkResponse;
         this.remoteAddrResolver = new BaseIPFilter("", proxyIps, ipHeader);
+        this.trustedProxies = trustedProxies;
+        this.privatePeersAreProxies = privatePeersAreProxies;
+    }
+
+    /** {@code proxy.addresses} split into its addresses, parsed once by the filter. */
+    static List<String> proxyList(String proxyIps) {
         List<String> proxies = new ArrayList<>();
         for (String p : (proxyIps == null ? "" : proxyIps).split(",")) {
             if (!p.trim().isEmpty()) {
                 proxies.add(p.trim());
             }
         }
-        this.trustedProxies = Collections.unmodifiableList(proxies);
-        this.privatePeersAreProxies = privatePeersAreProxies;
+        return Collections.unmodifiableList(proxies);
     }
 
     /**
-     * <p>The client's address for the record, by the sign-in limit's rule ({@link ClientAddress#forLimiting}): the
-     * proxy's X-Forwarded-For is believed from a loopback peer, a proxy listed in {@code proxy.addresses} or, with
-     * {@code proxy.private.networks} (Docker), any private-network peer. The legacy rule alone never believed the
-     * Docker edge, so every record named the edge's container address.</p>
-     *
-     * <p>When no proxy named a client that way, the legacy rule ({@code proxy.ip.header}, X-Real-IP by default) still
-     * applies, so a proxy that sends only that header keeps working.</p>
+     * <p>The client's address for the record. A proxy on this host or listed in {@code proxy.addresses} that sends
+     * {@code proxy.ip.header} (X-Real-IP by default) is believed first, as before. Otherwise the sign-in limit's rule
+     * applies ({@link ClientAddress#forLimiting}): the last X-Forwarded-For entry from a loopback peer, a listed proxy
+     * or, with {@code proxy.private.networks} (Docker), any private-network peer. The legacy rule alone never believed
+     * the Docker edge, so every record named the edge's container address.</p>
      */
     static String clientAddress(HttpServletRequest request, BaseIPFilter legacy, List<String> trustedProxies,
                                 boolean privatePeersAreProxies) {
-        String address = ClientAddress.forLimiting(request, trustedProxies, privatePeersAreProxies);
-        if (address != null && !address.equals(request.getRemoteAddr())) {
-            return address;
+        if (legacy.isProxyNamingClient(request)) {
+            return legacy.getRemoteAddr(request);
         }
-        return legacy.getRemoteAddr(request);
+        String address = ClientAddress.forLimiting(request, trustedProxies, privatePeersAreProxies);
+        return address != null ? address : request.getRemoteAddr();
     }
 
     /**

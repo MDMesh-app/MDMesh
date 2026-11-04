@@ -41,6 +41,7 @@ import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -86,6 +87,9 @@ public class AuditFilter implements Filter {
      */
     private final String ipHeader;
 
+    /** {@code proxy.addresses}, split once. */
+    private final List<String> trustedProxies;
+
     /**
      * <p>{@code proxy.private.networks}: any private-network peer is the install's own proxy (Docker sets it), as for
      * the sign-in limit.</p>
@@ -105,6 +109,7 @@ public class AuditFilter implements Filter {
         this.backgroundTaskRunnerService = backgroundTaskRunnerService;
         this.pluginStatusCache = pluginStatusCache;
         this.proxyIps = proxyIps;
+        this.trustedProxies = ResourceAuditor.proxyList(proxyIps);
         this.privatePeersAreProxies = privatePeersAreProxies;
         if (!"".equals(ipHeader)) {
             this.ipHeader = ipHeader;
@@ -149,7 +154,7 @@ public class AuditFilter implements Filter {
                 }
 
                 resourceAuditor = auditInfo.get().getResourceAuditor(request, response, chain, proxyIps, ipHeader,
-                        privatePeersAreProxies);
+                        trustedProxies, privatePeersAreProxies);
                 resourceAuditor.doProcess();
             } else {
                 chain.doFilter(request, response);

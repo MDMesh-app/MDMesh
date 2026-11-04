@@ -68,6 +68,15 @@ public class AuditClientAddressTest {
     }
 
     @Test
+    public void aLocalProxySendingXRealIpBeatsAForwardedForTheClientSent() {
+        // nginx with only `proxy_set_header X-Real-IP $remote_addr;` passes on whatever X-Forwarded-For the client sent
+        Map<String, String> h = header("X-Real-IP", CLIENT);
+        h.put("X-Forwarded-For", "10.9.9.9");
+        HttpServletRequest r = request("127.0.0.1", "127.0.0.1", h);
+        assertEquals(CLIENT, address(r, "", false));
+    }
+
+    @Test
     public void aProxyThatNamesNoClientLeavesThePeer() {
         HttpServletRequest r = request(EDGE, SERVER, Collections.emptyMap());
         assertEquals(EDGE, address(r, "", true));

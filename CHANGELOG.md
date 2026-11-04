@@ -9,7 +9,7 @@ line under Unreleased.
 ## Unreleased
 
 New
-- Users & roles: console account creation, editing, password changes and deletion; role assignment; access limited
+- Settings → Users & roles: console account creation, editing, password changes and deletion; role assignment; access limited
   to device groups and configurations; and editable roles with a permission picker. Organization admins manage
   accounts in their organization; global role editing on multi-customer installations is reserved for super-admins.
 

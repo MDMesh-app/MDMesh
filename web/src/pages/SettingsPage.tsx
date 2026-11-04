@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { getManagementCapabilities, managementError, type ManagementCapabilities } from '../api/users';
+import { UsersSection } from './settings/UsersSection';
 import { Link } from 'react-router';
 import { useAuth } from '../auth/AuthContext';
 import type { AuthUser } from '../api/auth';
@@ -11,6 +13,7 @@ import {
   Button,
   Card,
   CardHeader,
+  Callout,
   KeyValueList,
   PageHeader,
   SectionLayout,
@@ -21,7 +24,7 @@ import {
 } from '../ui';
 import { ChangePasswordModal } from './settings/ChangePasswordModal';
 import { applyRunning, useSupervisor } from '../data/useSupervisor';
-import { CORE_ACTION_ACCESS } from '../ext/core/access';
+import { CORE_ACTION_ACCESS, CORE_PAGE_ACCESS } from '../ext/core/access';
 import { CORE_SETTINGS, CoreSettingsProvider } from '../ext/core/settings';
 import { useSettingsSections, type SectionMeta } from '../ext/hosts/SettingsSections';
 import { usePermission } from '../ext/permissions';
@@ -122,6 +125,28 @@ export function SettingsPage() {
   const [defaultConfig, setDefaultConfig] = useState<string>(readDefaultConfig);
   // Enrolling writes to devices (ext/core/access.ts).
   const canEnroll = usePermission(CORE_ACTION_ACCESS.editDevices);
+  const mayAdminister = usePermission(CORE_PAGE_ACCESS.users);
+  const [management, setManagement] = useState<{
+    user: AuthUser;
+    capabilities: ManagementCapabilities | null;
+    error: string;
+  } | null>(null);
+  const [managementRetry, setManagementRetry] = useState(0);
+  useEffect(() => {
+    if (!mayAdminister || !user) return;
+    const controller = new AbortController();
+    getManagementCapabilities(controller.signal).then(
+      (capabilities) => {
+        if (!controller.signal.aborted) setManagement({ user, capabilities, error: '' });
+      },
+      (error) => {
+        if (!controller.signal.aborted) setManagement({ user, capabilities: null, error: managementError(error) });
+      },
+    );
+    return () => controller.abort();
+  }, [mayAdminister, user, managementRetry]);
+  const administration = management?.user === user && mayAdminister ? management : null;
+  const showUsers = administration?.capabilities?.users === true || !!administration?.error;
 
   useEffect(() => {
     let on = true;
@@ -159,10 +184,13 @@ export function SettingsPage() {
         ? { meta: '1 ready', metaTone: 'ok' }
         : {};
   // Core's sections and extensions' come from the registry (ext/core/settings.tsx); the page builds core's bodies.
-  const { nav, sections } = useSettingsSections({
-    [S.updates]: updMeta,
-    [S.agentRollout]: rolloutActive(ro.rollout) ? { meta: 'Running', metaTone: 'warn' } : {},
-  });
+  const { nav, sections } = useSettingsSections(
+    {
+      [S.updates]: updMeta,
+      [S.agentRollout]: rolloutActive(ro.rollout) ? { meta: 'Running', metaTone: 'warn' } : {},
+    },
+    showUsers ? [] : [S.users],
+  );
   const sideNav = <SectionNav items={nav} aria-label="Settings sections" />;
 
   // A stored default whose configuration is gone shows as "No default".
@@ -207,6 +235,17 @@ export function SettingsPage() {
         />
       </Card>
     ),
+    users: administration?.capabilities?.users ? (
+      <UsersSection capabilities={administration.capabilities} anchorId={S.users} headingId={`${S.users}-title`} />
+    ) : administration?.error ? (
+      <Card id={S.users} aria-labelledby={`${S.users}-title`} gap={12} className="v2-settings-card">
+        <CardHeader title="Users & roles" titleId={`${S.users}-title`} />
+        <Callout tone="alert" role="alert">
+          {administration.error}
+        </Callout>
+        <Button onClick={() => setManagementRetry((r) => r + 1)}>Retry user administration</Button>
+      </Card>
+    ) : null,
     server: (
       <Card id={S.server} aria-labelledby={`${S.server}-title`} padding="rows" className="v2-settings-card">
         <CardHeader title="Server" titleId={`${S.server}-title`} spacing={10} />
@@ -215,7 +254,9 @@ export function SettingsPage() {
           items={[
             { key: 'conn', label: 'Connection', value: <ConnectionValue conn={conn} onRetry={recheck} /> },
             { key: 'addr', label: 'Address', value: serverAddress(), mono: true },
-            ...(versionValue ? [{ key: 'ver', label: 'Server and console', value: versionValue, mono: !whatsNew?.target }] : []),
+            ...(versionValue
+              ? [{ key: 'ver', label: 'Server and console', value: versionValue, mono: !whatsNew?.target }]
+              : []),
             ...(s
               ? [
                   {
@@ -232,12 +273,8 @@ export function SettingsPage() {
         />
       </Card>
     ),
-    updates: (
-      <UpdatesSection id={S.updates} sup={sup} rolloutHref={`#${S.agentRollout}`} />
-    ),
-    agentRollout: (
-      <RolloutSection id={S.agentRollout} ro={ro} status={s} statusLoaded={sup.loaded} />
-    ),
+    updates: <UpdatesSection id={S.updates} sup={sup} rolloutHref={`#${S.agentRollout}`} />,
+    agentRollout: <RolloutSection id={S.agentRollout} ro={ro} status={s} statusLoaded={sup.loaded} />,
     enrollment: (
       <Card id={S.enrollment} aria-labelledby={`${S.enrollment}-title`} gap={12} className="v2-settings-card">
         <CardHeader
@@ -298,7 +335,6 @@ export function SettingsPage() {
           />
         </div>
       </Card>
-
     ),
   };
 

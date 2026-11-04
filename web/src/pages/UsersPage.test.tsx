@@ -1,9 +1,13 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../App';
 import { ROLES, renderInConsole, stubApi } from '../test/console';
 import type { AuthUser } from '../api/auth';
 import type { ManagedUser, UserRole } from '../api/users';
+
+beforeEach(() => {
+  HTMLElement.prototype.scrollIntoView = vi.fn();
+});
 
 const permission = { id: 10, name: 'applications' };
 const role: UserRole = { id: 7, name: 'Operators', description: 'Fleet operators', permissions: [permission] };
@@ -20,10 +24,11 @@ const account: ManagedUser = {
   editable: true,
 };
 function open(
-  { user = ROLES.admin, manageUsers = true, manageRoles = true } = {} as {
+  { user = ROLES.admin, manageUsers = true, manageRoles = true, path = '/settings' } = {} as {
     user?: AuthUser;
     manageUsers?: boolean;
     manageRoles?: boolean;
+    path?: string;
   },
 ) {
   const fetch = stubApi((path) => {
@@ -48,7 +53,7 @@ function open(
         return null;
     }
   });
-  renderInConsole(<AppRoutes />, { user, path: '/users' });
+  renderInConsole(<AppRoutes />, { user, path });
   return fetch;
 }
 const body = (fetch: ReturnType<typeof open>, path: string) => {
@@ -57,17 +62,52 @@ const body = (fetch: ReturnType<typeof open>, path: string) => {
 };
 
 describe('Users & roles administration', () => {
-  it('denies a direct link for roles without settings without reading the user directory', async () => {
+  it('places administration inside Settings without adding a main navigation item', async () => {
+    open();
+    const settings = await screen.findByRole('heading', { name: 'Settings' });
+    const section = await screen.findByRole('region', { name: 'Users & roles' });
+    expect(settings).toBeTruthy();
+    expect(await within(section).findByRole('table', { name: 'Users' })).toBeTruthy();
+    expect(
+      within(screen.getByRole('navigation', { name: 'Main' })).queryByRole('link', { name: 'Users & roles' }),
+    ).toBeNull();
+    expect(
+      within(screen.getByRole('navigation', { name: 'Settings sections' }))
+        .getByRole('link', { name: 'Users & roles' })
+        .getAttribute('href'),
+    ).toBe('#users');
+  });
+
+  it('redirects the former users page to the Settings section', async () => {
+    open({ path: '/users' });
+    await screen.findByRole('region', { name: 'Users & roles' });
+    expect(await screen.findByRole('heading', { name: 'Settings' })).toBeTruthy();
+    await waitFor(() => expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalled());
+  });
+
+  it('keeps Settings available without exposing administration to roles without settings', async () => {
     const fetch = open({ user: ROLES.observer });
-    expect(await screen.findByText('You don’t have access to this page')).toBeTruthy();
+    await screen.findByRole('heading', { name: 'Account' });
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Users & roles' })).toBeNull());
     expect(fetch.mock.calls.some(([p]) => String(p).endsWith('/users/all'))).toBe(false);
+    expect(
+      within(screen.getByRole('navigation', { name: 'Settings sections' })).queryByRole('link', {
+        name: 'Users & roles',
+      }),
+    ).toBeNull();
     expect(screen.queryByRole('link', { name: 'Users & roles' })).toBeNull();
   });
 
-  it('also denies a role with settings when the server says it cannot manage accounts', async () => {
+  it('hides the section and its anchor when the server denies administration', async () => {
     const fetch = open({ manageUsers: false });
-    expect(await screen.findByText('You don’t have access to this page')).toBeTruthy();
+    await screen.findByRole('heading', { name: 'Account' });
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Users & roles' })).toBeNull());
     expect(fetch.mock.calls.some(([p]) => String(p).endsWith('/users/all'))).toBe(false);
+    expect(
+      within(screen.getByRole('navigation', { name: 'Settings sections' })).queryByRole('link', {
+        name: 'Users & roles',
+      }),
+    ).toBeNull();
   });
 
   it('keeps role management out of a tenant admin’s page and never requests global roles', async () => {

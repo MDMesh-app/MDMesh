@@ -456,7 +456,7 @@ describe('createRegistry: order', () => {
   it('puts an extension nav item between core items by ORDER', () => {
     const { registry } = createRegistry(CORE_EXTENSION, [ext('demo', [page('demo', '/demo'), nav('demo', '/demo', 250)])]);
     expect(keys(registry.entries('nav.item'))).toEqual([
-      'core/overview', 'core/devices', 'demo/demo', 'core/configurations', 'core/apps', 'core/enroll', 'core/users', 'core/settings',
+      'core/overview', 'core/devices', 'demo/demo', 'core/configurations', 'core/apps', 'core/enroll', 'core/settings',
     ]);
   });
 

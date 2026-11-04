@@ -20,7 +20,12 @@ function SettingsSection({ entry }: { entry: SlotEntry<SettingsSectionContributi
     <ExtensionBoundary
       entry={entry}
       frame={(callout) => (
-        <Card id={anchorId} aria-labelledby={headingId} gap={12} className={entry.extension.core ? 'v2-settings-card' : undefined}>
+        <Card
+          id={anchorId}
+          aria-labelledby={headingId}
+          gap={12}
+          className={entry.extension.core ? 'v2-settings-card' : undefined}
+        >
           <CardHeader title={entry.contribution.title} titleId={headingId} />
           {callout}
         </Card>
@@ -35,11 +40,16 @@ function SettingsSection({ entry }: { entry: SlotEntry<SettingsSectionContributi
  * The Settings page's sections the role may see, core's and extensions' in order, and the section nav that goes
  * with them. `coreMeta` is keyed by core section id.
  */
-export function useSettingsSections(coreMeta: Readonly<Record<string, SectionMeta>>): {
+export function useSettingsSections(
+  coreMeta: Readonly<Record<string, SectionMeta>>,
+  hiddenCoreSections: readonly string[] = [],
+): {
   nav: SectionNavItem[];
   sections: ReactNode;
 } {
-  const entries = useContributions('settings.section');
+  const entries = useContributions('settings.section').filter(
+    (entry) => !entry.extension.core || !hiddenCoreSections.includes(entry.contribution.id),
+  );
   const nav = entries.map((entry) => ({
     id: sectionAnchor(entry.extension, entry.contribution.id),
     label: entry.contribution.title,

@@ -8,6 +8,7 @@ import { ORDER } from './order';
 /** Section ids, also their anchors: other pages link to `/settings#updates` and `/settings#agent-rollout`. */
 export const CORE_SETTINGS = {
   account: 'account',
+  users: 'users',
   server: 'server',
   updates: 'updates',
   agentRollout: 'agent-rollout',
@@ -20,7 +21,13 @@ type CoreSection = keyof typeof CORE_SETTINGS;
 const CoreSettingsParts = createContext<Partial<Record<CoreSection, ReactNode>> | null>(null);
 
 /** The page's bodies for core's sections (pages/SettingsPage.tsx). Not part of the extension API. */
-export function CoreSettingsProvider({ parts, children }: { parts: Record<CoreSection, ReactNode>; children: ReactNode }) {
+export function CoreSettingsProvider({
+  parts,
+  children,
+}: {
+  parts: Record<CoreSection, ReactNode>;
+  children: ReactNode;
+}) {
   return <CoreSettingsParts.Provider value={parts}>{children}</CoreSettingsParts.Provider>;
 }
 
@@ -38,11 +45,13 @@ function coreSection(key: CoreSection, title: string): SettingsSectionContributi
 }
 
 /**
- * Every role sees them (the reads need no permission); a section's own actions follow the role (rollout, enroll).
+ * Account and preferences are visible to every role; users and roles require administration access.
+ * Other section actions follow their own permissions (rollout, enroll).
  * `title` is the section nav's label; each body renders its card with that heading.
  */
 export const CORE_SETTINGS_SECTIONS: readonly SettingsSectionContribution[] = [
   coreSection('account', 'Account'),
+  { ...coreSection('users', 'Users & roles'), requires: { permission: 'settings' } },
   coreSection('server', 'Server'),
   coreSection('updates', 'Updates'),
   coreSection('agentRollout', 'Agent rollout'),

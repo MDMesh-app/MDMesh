@@ -8,7 +8,6 @@ export const ORDER = Object.freeze({
     configurations: 300,
     apps: 400,
     enroll: 500,
-    users: 550,
     settings: 600,
   }),
   deviceTab: Object.freeze({
@@ -37,6 +36,7 @@ export const ORDER = Object.freeze({
   }),
   settingsSection: Object.freeze({
     account: 100,
+    users: 150,
     server: 200,
     updates: 300,
     agentRollout: 400,

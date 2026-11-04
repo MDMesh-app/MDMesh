@@ -76,7 +76,7 @@ describe('core pages by seeded role', () => {
       .entries('nav.item')
       .filter((e) => evaluate(user, e.requires, 'unknown') === 'allowed')
       .map((e) => e.contribution.id);
-  const everything = ['overview', 'devices', 'configurations', 'apps', 'enroll', 'users', 'settings'];
+  const everything = ['overview', 'devices', 'configurations', 'apps', 'enroll', 'settings'];
 
   it('shows super-admins and admins everything, as before', () => {
     expect(visibleNav(ROLES.superAdmin)).toEqual(everything);
@@ -84,7 +84,7 @@ describe('core pages by seeded role', () => {
   });
 
   it('shows the User role everything too (it holds configurations, applications and edit_devices)', () => {
-    expect(visibleNav(ROLES.user)).toEqual(everything.filter((id) => id !== 'users'));
+    expect(visibleNav(ROLES.user)).toEqual(everything);
   });
 
   it('hides from an Observer the pages the server refuses it', () => {

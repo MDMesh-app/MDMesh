@@ -209,7 +209,6 @@ export declare const ORDER: Readonly<{
         configurations: 300;
         apps: 400;
         enroll: 500;
-        users: 550;
         settings: 600;
     }>;
     deviceTab: Readonly<{
@@ -237,6 +236,7 @@ export declare const ORDER: Readonly<{
     }>;
     settingsSection: Readonly<{
         account: 100;
+        users: 150;
         server: 200;
         updates: 300;
         agentRollout: 400;

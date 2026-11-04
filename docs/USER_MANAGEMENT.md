@@ -1,12 +1,12 @@
 # Console users and roles
 
-Based on MDMesh v0.4.0. Open **Users & roles** in the sidebar (`/users`). This feature requires the updated
+Based on MDMesh v0.4.0. Open **Settings → Users & roles** (`/settings#users`). The former `/users` link redirects to this section. This feature requires the updated
 server and console together; it uses the existing database tables and needs no schema migration or agent update.
 
 ## Accounts
 
 Super-admins and organization admins can create, edit and delete accounts within the server's existing organization
-boundaries. A role with the `settings` permission alone does not grant account administration. The server reports
+boundaries. The section and its Settings navigation link appear only for account administrators; a role with the `settings` permission alone does not grant account administration. The server reports
 administration capabilities through `GET /rest/private/users/management`; the console does not assume an admin role ID.
 
 Create an account with a unique login, a password, a role and optionally a name and email. Leave both password fields

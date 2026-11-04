@@ -165,7 +165,8 @@ jobs:
           docker build -f docker/server.Dockerfile -t "$IMG:$VERSION" .
           docker push "$IMG:$VERSION"
           echo "SERVER_IMG=$IMG:$VERSION" >> "$GITHUB_ENV"
-          echo "SERVER_REF=$IMG@$(release/image-digest.sh "$IMG:$VERSION")" >> "$GITHUB_ENV"
+          D=$(release/image-digest.sh "$IMG:$VERSION")   # its own line, so a failed lookup fails the step
+          echo "SERVER_REF=$IMG@$D" >> "$GITHUB_ENV"
       - name: Web image (bake release QR checksum/package)
         env:
           OWNER: ${{ github.repository_owner }}
@@ -181,7 +182,8 @@ jobs:
             -t "$IMG:$VERSION" .
           docker push "$IMG:$VERSION"
           echo "WEB_IMG=$IMG:$VERSION" >> "$GITHUB_ENV"
-          echo "WEB_REF=$IMG@$(release/image-digest.sh "$IMG:$VERSION")" >> "$GITHUB_ENV"
+          D=$(release/image-digest.sh "$IMG:$VERSION")
+          echo "WEB_REF=$IMG@$D" >> "$GITHUB_ENV"
       - name: Supervisor image
         env:
           OWNER: ${{ github.repository_owner }}
@@ -192,7 +194,8 @@ jobs:
           # Publish exactly the image the smoke step tested (no rebuild).
           docker tag "$SUP_IMG" "$IMG:$VERSION"
           docker push "$IMG:$VERSION"
-          echo "SUPERVISOR_REF=$IMG@$(release/image-digest.sh "$IMG:$VERSION")" >> "$GITHUB_ENV"
+          D=$(release/image-digest.sh "$IMG:$VERSION")
+          echo "SUPERVISOR_REF=$IMG@$D" >> "$GITHUB_ENV"
       - name: Verify images are publicly pullable (guards against private GHCR packages, #3)
         env:
           OWNER: ${{ github.repository_owner }}

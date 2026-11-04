@@ -85,6 +85,12 @@ public class AgentResource {
     private static final Set<String> ALLOWED_RESULT_STATUS = new HashSet<>(Arrays.asList(
             "accepted", "done", "failed", "unsupported", "expired"));
 
+    /** The factory reset. Delivering it marks the device wiped: it erases itself before it can report. */
+    static final String WIPE_COMMAND = "device.wipe";
+    // A wiped device never checks in again under its old identity, so one that does, this long after its wipe was
+    // delivered, didn't erase itself. The grace covers a check-in the agent may still make before the reset starts.
+    static final long WIPE_GRACE_MS = 5L * 60L * 1000L;
+
     // Ingestion caps: an authenticated device is still untrusted input. These bound what a single
     // check-in (potentially every 5s in foreground mode) can write into the database.
     private static final int MAX_EVENTS_PER_CHECKIN = 100;
@@ -266,6 +272,11 @@ public class AgentResource {
         // Stamp last-seen so the admin UI shows the device online.
         commandDAO.touchLastUpdate(deviceNumber);
 
+        if (device.getWipedAt() != null && receivedAt - device.getWipedAt() > WIPE_GRACE_MS
+                && commandDAO.clearWipedBefore(deviceNumber, receivedAt - WIPE_GRACE_MS)) {
+            logger.info("Device {} checked in after its wipe was delivered, so it wasn't wiped: unmarked", deviceNumber);
+        }
+
         // Backfill the stable hardware id for already-enrolled devices (set once / when it changes).
         if (request.getHardwareId() != null && !request.getHardwareId().trim().isEmpty()
                 && !request.getHardwareId().trim().equals(device.getHardwareId())) {
@@ -389,6 +400,10 @@ public class AgentResource {
                 if ("done".equals(status)) {
                     // A completed config.apply records which agent version applied it (config resync baseline).
                     commandDAO.recordConfigApplyDone(deviceNumber, commandId);
+                } else if (device.getWipedAt() != null && ("failed".equals(status) || "unsupported".equals(status))
+                        && commandDAO.clearWipedForCommand(deviceNumber, commandId)) {
+                    logger.info("Device {} reported its wipe (command {}) {}: no longer marked wiped",
+                            deviceNumber, commandId, status);
                 }
             }
         }
@@ -455,6 +470,10 @@ public class AgentResource {
             // Atomically claim it so a concurrent check-in can't deliver the same command twice.
             if (commandDAO.claimForDelivery(stored.getId(), now)) {
                 commands.add(toWire(stored));
+                if (WIPE_COMMAND.equals(stored.getType())) {
+                    commandDAO.markWiped(deviceNumber, now);
+                    logger.info("Device {} received its wipe (command {}): marked wiped", deviceNumber, stored.getId());
+                }
             }
         }
 

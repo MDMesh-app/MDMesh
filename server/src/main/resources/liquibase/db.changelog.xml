@@ -3059,4 +3059,13 @@
         <rollback>ALTER TABLE device_state DROP COLUMN appsRevision;</rollback>
     </changeSet>
 
+    <changeSet id="26.11.04-devices-wipedAt" author="Przemek-Magic" context="common">
+        <comment>Column,new: devices#wipedAt, epoch millis: when a device.wipe command was delivered to the device. The
+            device erases itself before it can report, so this is what tells a wiped device from one that is switched
+            off. Cleared when the device reports the wipe failed, or checks in again later. NULL = not wiped; existing
+            devices stay NULL.</comment>
+        <sql>ALTER TABLE devices ADD COLUMN wipedAt BIGINT;</sql>
+        <rollback>ALTER TABLE devices DROP COLUMN wipedAt;</rollback>
+    </changeSet>
+
 </databaseChangeLog>

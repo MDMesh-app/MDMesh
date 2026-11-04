@@ -6,7 +6,7 @@ import type { ConfigurationLookup, DeviceView } from '../api/devices';
 import type { DeviceEvent } from '../api/events';
 import type { ActiveRollout } from '../api/rollout';
 import { isApplyTerminal, type UpdateStatus } from '../api/updates';
-import { isOnline } from '../data/presence';
+import { isOnline, notConnected } from '../data/presence';
 import { CORE_ACTION_ACCESS } from '../ext/core/access';
 import { CoreOverviewProvider } from '../ext/core/overview';
 import { OverviewRows, OverviewStats } from '../ext/hosts/OverviewCards';
@@ -71,6 +71,8 @@ interface Counts {
   online: number;
   attention: number;
   offline: number;
+  /** Not in the fleet bar: a wiped device no longer reports (#137). */
+  wiped: number;
 }
 
 /** Re-render on an interval so online/attention/offline decay while the page is open (classic: 30 s). */
@@ -92,23 +94,20 @@ export function OverviewPage() {
   const { devices, issues, syncCheck } = data;
 
   const counts = useMemo<Counts>(() => {
-    let online = 0,
-      attention = 0,
-      offline = 0;
-    for (const d of devices) {
-      const b = bucketOf(d, issues, now);
-      if (b === 'online') online++;
-      else if (b === 'attention') attention++;
-      else offline++;
-    }
-    return { online, attention, offline };
+    const c: Counts = { online: 0, attention: 0, offline: 0, wiped: 0 };
+    for (const d of devices) c[bucketOf(d, issues, now)]++;
+    return c;
   }, [devices, issues, now]);
 
-  // Not online: configuration problems first, then the longest silent (classic order).
+  // Attention or offline (a wiped device is neither): configuration problems first, then the longest silent (classic
+  // order).
   const needsAttention = useMemo(
     () =>
       devices
-        .filter((d) => bucketOf(d, issues, now) !== 'online')
+        .filter((d) => {
+          const b = bucketOf(d, issues, now);
+          return b === 'attention' || b === 'offline';
+        })
         .sort((a, b) => Number(!!issues[b.id]) - Number(!!issues[a.id]) || (a.lastUpdate ?? 0) - (b.lastUpdate ?? 0)),
     [devices, issues, now],
   );
@@ -177,6 +176,15 @@ export function OverviewPage() {
                 · status of the first <Num>{devices.length}</Num>
               </>
             ) : null}
+            {/* Beside the total, not in the bar and legend: a wiped device is enrolled but no longer reports. */}
+            {counts.wiped > 0 ? (
+              <>
+                {' · '}
+                <Link to={`${paths.devices}?status=wiped`}>
+                  <Num>{counts.wiped}</Num> wiped
+                </Link>
+              </>
+            ) : null}
           </>
         }
         legend={[
@@ -207,8 +215,10 @@ export function OverviewPage() {
 /** "Most of the fleet is healthy. 14 devices need attention, mostly for an out-of-date agent." from real counts. */
 function Subtitle({ data, counts, now }: { data: OverviewData; counts: Counts; now: number }) {
   const { devices, issues, syncCheck } = data;
-  const shown = devices.length;
-  if (shown === 0) return <>No devices enrolled yet. Enroll one to see it here.</>;
+  // Wiped devices are left out: they no longer report, so they are neither healthy nor offline.
+  const shown = devices.length - counts.wiped;
+  if (devices.length === 0) return <>No devices enrolled yet. Enroll one to see it here.</>;
+  if (shown === 0) return <>Every enrolled device was wiped.</>;
 
   if (counts.attention === 0 && counts.offline === 0) {
     if (syncCheck === 'complete') return <>Every device is online and in sync.</>;
@@ -333,8 +343,9 @@ function NeedsAttention({
   async function syncNow(d: DeviceView) {
     setBusy((b) => ({ ...b, [d.number]: true }));
     try {
-      await forceSync(d.number);
-      toast.push('ok', 'Sync requested', `${d.number} checks in now and picks up its configuration.`);
+      const { connected } = await forceSync(d.number);
+      if (connected === false) toast.push('warn', ...notConnected(d.number, 'sync'));
+      else toast.push('ok', 'Sync requested', `${d.number} checks in now and picks up its configuration.`);
     } catch (e) {
       toast.push('err', 'Sync failed', e instanceof Error ? e.message : '');
     } finally {

@@ -27,7 +27,7 @@ const NOT_REPORTED: SyncVerdict = { tone: 'idle', label: 'Not reported yet' };
 export interface FleetSync {
   /** Known sync state, or undefined while unknown. */
   syncOf: (d: DeviceView) => SyncVerdict | undefined;
-  /** Online / attention (online with a configuration problem) / offline. */
+  /** Online / attention (online with a configuration problem) / offline / wiped. */
   presenceOf: (d: DeviceView, now: number) => Presence;
   /** How complete the attention picture is: 'partial' when some online suspect device is still unknown. */
   check: SyncCheck;
@@ -116,7 +116,7 @@ export function useFleetSync(devices: DeviceView[], loading: boolean, visible: D
 
   const presenceOf = useCallback(
     (d: DeviceView, now: number): Presence => {
-      return presenceFor(d.lastUpdate, isConfigIssue(syncOf(d)), now);
+      return presenceFor(d.lastUpdate, isConfigIssue(syncOf(d)), now, d.wipedAt);
     },
     [syncOf],
   );
@@ -124,7 +124,7 @@ export function useFleetSync(devices: DeviceView[], loading: boolean, visible: D
   const check: SyncCheck = useMemo(() => {
     if (loading || summary === 'pending') return 'pending';
     if (summary === 'failed') return 'failed';
-    const unknown = devices.some((d) => isOnline(d.lastUpdate) && syncOf(d) === undefined);
+    const unknown = devices.some((d) => d.wipedAt == null && isOnline(d.lastUpdate) && syncOf(d) === undefined);
     return unknown ? 'partial' : 'complete';
   }, [devices, loading, summary, syncOf]);
 

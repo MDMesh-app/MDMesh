@@ -57,6 +57,7 @@ import {
 } from '../ui';
 import { ChangeConfigurationModal, DeleteDevicesModal, RunActionModal } from '../ui/BulkModals';
 import { ISSUE_ORDER, ISSUE_REASON, issueKind, type IssueKind, type Presence } from '../data/fleetHealth';
+import { notConnected } from '../data/presence';
 import { useFleetSync } from '../data/useFleetSync';
 import { ISSUE_CHIP, syncKind, syncLabel } from './devicesStatus';
 import './DevicesPage.css';
@@ -96,7 +97,7 @@ const VIEW_DEFAULT_SORT: Record<View, Sort> = {
   table: { key: 'lastSeen', dir: 'descending' },
   cards: { key: 'attention', dir: 'ascending' },
 };
-const PRESENCE_RANK: Record<Presence, number> = { attention: 0, online: 1, offline: 2 };
+const PRESENCE_RANK: Record<Presence, number> = { attention: 0, online: 1, offline: 2, wiped: 3 };
 const isCoreSort = (key: string): key is SortKey => Object.prototype.hasOwnProperty.call(SORT_LABEL, key);
 
 function readStorage(key: string): string | null {
@@ -154,10 +155,12 @@ export function DevicesPage() {
 
   // ---- filters ----
   const [q, setQ] = useState('');
-  // ?status=online|attention|offline; the Overview legend links here with it.
+  // ?status=online|attention|offline|wiped; the Overview legend (and its wiped count) links here with it.
   const urlStatus = params.get('status');
   const status: StatusFilter =
-    urlStatus === 'online' || urlStatus === 'attention' || urlStatus === 'offline' ? urlStatus : 'all';
+    urlStatus === 'online' || urlStatus === 'attention' || urlStatus === 'offline' || urlStatus === 'wiped'
+      ? urlStatus
+      : 'all';
   const setStatus = (v: StatusFilter) =>
     setParams(
       (p) => {
@@ -304,10 +307,12 @@ export function DevicesPage() {
   const presence = useCallback((d: DeviceView) => presenceOf(d, now), [presenceOf, now]);
 
   const counts = useMemo(() => {
-    const c = { online: 0, attention: 0, offline: 0 };
+    const c = { online: 0, attention: 0, offline: 0, wiped: 0 };
     for (const d of devices) c[presence(d)]++;
     return c;
   }, [devices, presence]);
+  // What "All" shows: a wiped device erased itself and no longer reports, so it shows under Wiped only (#137).
+  const active = devices.length - counts.wiped;
 
   const issues = useMemo(() => {
     const m: Partial<Record<IssueKind, number>> = {};
@@ -322,7 +327,7 @@ export function DevicesPage() {
   const filtered = useMemo(
     () =>
       baseFiltered.filter((d) => {
-        if (status !== 'all' && presence(d) !== status) return false;
+        if (status === 'all' ? presence(d) === 'wiped' : presence(d) !== status) return false;
         if (issue && issueKind(syncOf(d)) !== issue) return false;
         return true;
       }),
@@ -436,8 +441,9 @@ export function DevicesPage() {
     });
   const clearSel = () => setSelected(new Set());
   // Selecting is for the bulk actions, so a role without any gets no checkboxes, and a role refresh that takes the
-  // last one away drops the selection, so a row click opens the device again.
-  const canSelect = bulkActions.length > 0;
+  // last one away drops the selection, so a row click opens the device again. Wiped devices take no bulk action
+  // (#137), and they show under Wiped only, so that view has no checkboxes either and no other view holds one.
+  const canSelect = bulkActions.length > 0 && status !== 'wiped';
   useEffect(() => {
     if (!canSelect) setSelected((prev) => (prev.size === 0 ? prev : new Set()));
   }, [canSelect]);
@@ -455,8 +461,9 @@ export function DevicesPage() {
   async function syncNow(d: DeviceView) {
     setSyncing((s) => new Set(s).add(d.id));
     try {
-      await forceSync(d.number);
-      toast.push('ok', 'Sync requested', d.number);
+      const { connected } = await forceSync(d.number);
+      if (connected === false) toast.push('warn', ...notConnected(d.number, 'sync'));
+      else toast.push('ok', 'Sync requested', d.number);
       refresh(d);
     } catch (e) {
       toast.push('err', 'Sync failed', errText(e));
@@ -496,10 +503,12 @@ export function DevicesPage() {
 
   const rowActions = (d: DeviceView, size: 'sm' | 'md') => {
     const items = rowMenu.items(d);
+    // A wiped device erased itself: there is nothing to wake (core's Lock and Ring are greyed out too).
+    const wiped = presence(d) === 'wiped';
     return (
       <div className={cx('v2-devices-actions', size === 'sm' && 'v2-devices-actions--card')}>
         {canEdit ? (
-          <IconButton label={`Sync ${d.number} now`} size={size} disabled={syncing.has(d.id)} onClick={() => void syncNow(d)}>
+          <IconButton label={`Sync ${d.number} now`} size={size} disabled={syncing.has(d.id) || wiped} onClick={() => void syncNow(d)}>
             <IconSync size={size === 'sm' ? 14 : 15} />
           </IconButton>
         ) : null}
@@ -512,9 +521,10 @@ export function DevicesPage() {
   const statusOf = (d: DeviceView) => {
     const p = presence(d);
     const k = issueKind(syncOf(d));
-    let reason: string | undefined;
+    let reason: ReactNode;
     if (p === 'attention' && k) reason = ISSUE_REASON[k];
     else if (p === 'offline' && !d.lastUpdate) reason = 'Never checked in';
+    else if (p === 'wiped') reason = <RelativeTime value={d.wipedAt} prefix="Wiped " />;
     return { p, reason };
   };
 
@@ -591,13 +601,13 @@ export function DevicesPage() {
   const attentionText = `${counts.attention}${partial ? '+' : ''}`;
   const mono = (v: number | string) => <span className="v2-mono">{v}</span>;
   let subtitle: ReactNode;
-  if (!(loading && devices.length === 0) && !error && devices.length > 0) {
+  if (!(loading && devices.length === 0) && !error && active > 0) {
     subtitle = (
       <>
         {/* A capped list (over 1000) counts only the loaded devices: say so next to the server total. */}
         {total > devices.length ? <>{mono(total)} devices; </> : null}
         {mono(counts.online)} of {total > devices.length ? 'the first ' : ''}
-        {mono(devices.length)} online now
+        {mono(active)} online now
         {attentionKnown && counts.attention > 0 ? <>, {mono(attentionText)} need attention</> : null}
         {counts.offline > 0 ? <>, {mono(counts.offline)} haven’t checked in</> : null}.
       </>
@@ -700,7 +710,9 @@ export function DevicesPage() {
           ? 'The configuration sync state could not be loaded, so devices that need attention can’t be found.'
           : status === 'attention' && check === 'pending'
             ? 'Still checking which devices need attention…'
-            : undefined}
+            : status === 'all' && baseFiltered.some((d) => presence(d) === 'wiped')
+              ? 'Wiped devices show under Wiped.'
+              : undefined}
       </EmptyState>
     );
 
@@ -887,10 +899,14 @@ export function DevicesPage() {
             setIssue(null);
           }}
           options={[
-            { value: 'all', label: 'All', count: devices.length },
+            { value: 'all', label: 'All', count: active },
             { value: 'online', label: 'Online', count: counts.online },
             { value: 'attention', label: 'Attention', count: attentionKnown ? attentionText : '–' },
             { value: 'offline', label: 'Offline', count: counts.offline },
+            // Only once there is one (or a link asks for it), like Duplicates.
+            ...(counts.wiped > 0 || status === 'wiped'
+              ? [{ value: 'wiped' as const, label: 'Wiped', count: counts.wiped }]
+              : []),
           ]}
         />
         {view === 'cards' ? (

@@ -1,0 +1,194 @@
+// Wiped devices (#137): out of the Devices list's default view, its counts and its bulk actions, listed under Wiped;
+// neither offline nor needing attention on the Overview; a notice and no commands on the device page. And what a sync
+// says when the device has no live connection. Rendered through the real routes, against a stubbed API.
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { useLocation } from 'react-router';
+import { describe, expect, it } from 'vitest';
+import { AppRoutes } from '../App';
+import { renderInConsole, stubApi } from '../test/console';
+
+// The pages answer after several requests, which a loaded machine stretches: generous waits for the data, and test
+// timeouts to match (a test that times out keeps clicking in the next one's page).
+const LOAD = { timeout: 10_000 };
+const SLOW = 20_000;
+const NOW = Date.now();
+const HOUR = 3600_000;
+const DEVICES = [
+  { id: 1, number: 'WH-1', description: 'Front desk', configurationId: 3, lastUpdate: NOW },
+  { id: 2, number: 'WH-2', description: 'Back office', lastUpdate: NOW - 2 * HOUR },
+  { id: 3, number: 'WH-3', description: 'Dock', lastUpdate: NOW },
+  // Wiped a minute ago: by its last check-in alone it would show online for nine more minutes.
+  { id: 9, number: 'WH-9', description: 'Old scanner', configurationId: 3, lastUpdate: NOW - 60_000, wipedAt: NOW - 60_000 },
+];
+
+/** The fleet, WH-1 and WH-9 out of sync (so the Overview offers Sync now), and `sync` as every wake's answer. */
+function api(sync: unknown) {
+  return (path: string, init?: RequestInit): unknown => {
+    const p = new URL(path, 'http://console').pathname.replace('/rest/private', '');
+    const post = init?.method === 'POST';
+    if (p === '/devices/search') {
+      const value = (JSON.parse(String(init?.body ?? '{}')) as { value?: string }).value ?? '';
+      const items = DEVICES.filter((d) => d.number.includes(value));
+      return { devices: { items, totalItemsCount: items.length }, configurations: { 3: { id: 3, name: 'Warehouse' } } };
+    }
+    const byNumber = /^\/devices\/number\/([^/]+)$/.exec(p);
+    if (byNumber) return DEVICES.find((d) => d.number === decodeURIComponent(byNumber[1])) ?? null;
+    if (p === '/configurations/search') return [{ id: 3, name: 'Warehouse' }];
+    if (p === '/configurations/3') return { id: 3, name: 'Warehouse', kioskMode: false };
+    if (p === '/agent/v1/configurations/syncSummary') {
+      return [{ configurationId: 3, total: 2, inSync: 0, outOfSync: 2, unsupported: 0, neverSeen: 0, deferred: 0 }];
+    }
+    if (p.endsWith('/configStatus')) {
+      return { configurationId: 3, currentRevision: 'b', appliedRevision: 'a', inSync: false, supported: true, lastCommand: { id: 5, status: 'done' } };
+    }
+    if (p.endsWith('/sync') && post) return sync;
+    if (p.endsWith('/commands') || p.endsWith('/events') || p.endsWith('/locations')) return post ? { id: 42 } : [];
+    return null;
+  };
+}
+
+let here = '';
+/** Where the console is. */
+function Probe() {
+  const location = useLocation();
+  here = location.pathname + location.search;
+  return null;
+}
+
+/** Open `path` with `sync` as the answer to a wake (null: an older server's empty one). */
+function open(path: string, sync: unknown = null) {
+  const fetch = stubApi(api(sync));
+  renderInConsole(
+    <>
+      <AppRoutes />
+      <Probe />
+    </>,
+    { path },
+  );
+  return fetch;
+}
+
+const main = () => within(screen.getByRole('main'));
+const table = () => within(main().getByRole('table', { name: 'Devices' }));
+const statusFilter = () => within(main().getByRole('radiogroup', { name: 'Status' }));
+const toastOf = (text: string) => screen.getByText(text).closest('.toast');
+const posts = (fetch: ReturnType<typeof stubApi>, suffix: string) =>
+  fetch.mock.calls.filter(([input, init]) => String(input).endsWith(suffix) && init?.method === 'POST');
+
+describe('wiped devices on Devices', () => {
+  it('leaves them out of All, its counts and the bulk actions, and lists them under Wiped', async () => {
+    open('/devices');
+    await main().findByRole('link', { name: /Front desk/ }, LOAD);
+    await waitFor(
+      () =>
+        expect(statusFilter().getAllByRole('radio').map((r) => r.textContent)).toEqual([
+          'All 3', 'Online 1', 'Attention 1', 'Offline 1', 'Wiped 1',
+        ]),
+      LOAD,
+    );
+    expect(table().queryByRole('link', { name: /Old scanner/ })).toBeNull();
+    expect(document.querySelector('.v2-pagehead')?.textContent).toContain('1 of 3 online now');
+
+    // Select all takes the devices All shows, not the wiped one.
+    fireEvent.click(main().getByRole('checkbox', { name: 'Select all on this page' }));
+    expect((await screen.findByRole('region', { name: 'Selection' })).textContent).toContain('3 selected');
+
+    fireEvent.click(statusFilter().getByRole('radio', { name: /^Wiped/ }));
+    await waitFor(() => expect(here).toBe('/devices?status=wiped'), LOAD);
+    expect(table().getAllByRole('link').map((l) => l.textContent)).toEqual([expect.stringContaining('Old scanner')]);
+    expect(table().getByText('Wiped 1m ago')).toBeTruthy();
+    // No checkboxes, so no bulk bar: the selection made under All is gone too.
+    expect(main().queryByRole('checkbox')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Selection' })).toBeNull();
+    // Commands are greyed out; Delete stays.
+    expect(table().getByRole('button', { name: 'Sync WH-9 now' }).hasAttribute('disabled')).toBe(true);
+    fireEvent.click(table().getByRole('button', { name: 'More actions for WH-9' }));
+    const menu = within(await screen.findByRole('menu'));
+    const disabled = Object.fromEntries(menu.getAllByRole('menuitem').map((m) => [m.textContent, m.hasAttribute('disabled')]));
+    expect(disabled).toEqual({ 'Lock device': true, 'Ring device': true, 'Change configuration…': false, 'Delete…': false });
+  }, SLOW);
+
+  it('says where a search’s wiped match is when All shows nothing', async () => {
+    open('/devices');
+    await main().findByRole('link', { name: /Front desk/ }, LOAD);
+    fireEvent.change(main().getByRole('searchbox', { name: 'Search devices' }), { target: { value: 'WH-9' } });
+    expect(await main().findByText('Wiped devices show under Wiped.', undefined, LOAD)).toBeTruthy();
+  }, SLOW);
+});
+
+describe('what a sync says', () => {
+  it.each([
+    ['a device without a live connection', { connected: false }, 'WH-3 isn’t connected right now', 'warn'],
+    ['a connected device', { connected: true }, 'Sync requested', 'ok'],
+    ['an older server, which does not say', null, 'Sync requested', 'ok'],
+  ])('on the Devices list, for %s', async (_, answer, title, kind) => {
+    open('/devices', answer);
+    fireEvent.click(await main().findByRole('button', { name: 'Sync WH-3 now' }, LOAD));
+    expect(await screen.findByText(title, undefined, LOAD)).toBeTruthy();
+    expect(toastOf(title)?.classList.contains(kind)).toBe(true);
+    if (kind === 'warn') expect(screen.getByText('It syncs at its next check-in.')).toBeTruthy();
+  }, SLOW);
+
+  it('after a command from the row menu, says when the device will get it', async () => {
+    open('/devices', { connected: false });
+    fireEvent.click(await main().findByRole('button', { name: 'More actions for WH-3' }, LOAD));
+    fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Lock device' }));
+    expect(await screen.findByText('Lock device queued', undefined, LOAD)).toBeTruthy();
+    expect(await screen.findByText('WH-3 isn’t connected right now', undefined, LOAD)).toBeTruthy();
+    expect(screen.getByText('It gets the command at its next check-in.')).toBeTruthy();
+  }, SLOW);
+
+  it('on the Overview’s Sync now', async () => {
+    open('/', { connected: false });
+    fireEvent.click(await main().findByRole('button', { name: 'Sync now: Front desk' }, LOAD));
+    expect(await screen.findByText('WH-1 isn’t connected right now', undefined, LOAD)).toBeTruthy();
+    expect(screen.queryByText('Sync requested')).toBeNull();
+  }, SLOW);
+
+  it(
+    'on the device page’s Sync now',
+    async () => {
+      open('/devices/WH-1', { connected: false });
+      const actions = within(await screen.findByRole('toolbar', { name: 'Quick actions' }, LOAD));
+      await waitFor(() => expect(actions.getByRole('button', { name: 'Sync now' }).hasAttribute('disabled')).toBe(false), LOAD);
+      fireEvent.click(actions.getByRole('button', { name: 'Sync now' }));
+      expect(await screen.findByText('WH-1 isn’t connected right now', undefined, LOAD)).toBeTruthy();
+      expect(toastOf('WH-1 isn’t connected right now')?.classList.contains('warn')).toBe(true);
+    },
+    SLOW,
+  );
+});
+
+describe('wiped devices on the Overview', () => {
+  it('counts them beside the total, not as offline, and never lists them as needing attention', async () => {
+    open('/');
+    const list = within(await main().findByRole('table', { name: 'Devices that need attention' }, LOAD));
+    await list.findByText(/Front desk/, undefined, LOAD);
+    expect(list.getByText(/Back office/)).toBeTruthy();
+    expect(list.queryByText(/Old scanner/)).toBeNull();
+    const offline = main().getByRole('link', { name: /^Offline/ });
+    expect(offline.querySelector('.v2-fleet__count')?.textContent).toBe('1');
+    expect(main().getByRole('link', { name: '1 wiped' }).getAttribute('href')).toBe('/devices?status=wiped');
+  }, SLOW);
+});
+
+describe('a wiped device’s page', () => {
+  it(
+    'says it was wiped and greys out the commands',
+    async () => {
+      const fetch = open('/devices/WH-9');
+      const actions = within(await screen.findByRole('toolbar', { name: 'Quick actions' }, LOAD));
+      expect(within(screen.getByRole('complementary', { name: 'Device' })).getByText('Wiped')).toBeTruthy();
+      const notice = main().getByText(/The device erased itself/).closest('.v2-callout');
+      expect(notice?.textContent).toMatch(
+        /^Wiped .+\. The device erased itself, so it no longer reports\. Delete it from Devices, or keep it for its history\.$/,
+      );
+      expect(within(notice as HTMLElement).getByRole('link', { name: 'Devices' }).getAttribute('href')).toBe('/devices?status=wiped');
+      for (const name of ['Sync now', 'Lock', 'More actions']) {
+        expect(actions.getByRole('button', { name }).hasAttribute('disabled')).toBe(true);
+      }
+      expect(posts(fetch, '/sync')).toHaveLength(0);
+    },
+    SLOW,
+  );
+});

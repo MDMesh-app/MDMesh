@@ -180,6 +180,21 @@ public class AgentCommandDAO {
         deviceMapper.updateEnrollTime(deviceNumber, System.currentTimeMillis());
     }
 
+    /** Mark the device wiped (the console's "Wiped") at {@code at}, keeping a time already set. */
+    public void markWiped(String deviceNumber, long at) {
+        deviceMapper.markWiped(deviceNumber, at);
+    }
+
+    /** Unmark a wiped device whose device.wipe {@code commandId} just came back failed or unsupported. */
+    public boolean clearWipedForCommand(String deviceNumber, Integer commandId) {
+        return deviceMapper.clearWipedForCommand(deviceNumber, commandId) > 0;
+    }
+
+    /** Unmark a device marked wiped before {@code cutoff}: it is still checking in. */
+    public boolean clearWipedBefore(String deviceNumber, long cutoff) {
+        return deviceMapper.clearWipedBefore(deviceNumber, cutoff) > 0;
+    }
+
     /** Persist the reported Android version into infojson so the device list can show it. */
     public void updateAndroidVersion(String deviceNumber, String androidVersion) {
         deviceMapper.updateAndroidVersion(deviceNumber, androidVersion);

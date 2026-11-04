@@ -1,17 +1,20 @@
 // Overview wording on top of the shared fleet health rules (web/src/data/fleetHealth.ts): the attention row's text,
 // tone and action, and the subtitle's "mostly for …" phrase.
 import type { DeviceView } from '../../api/devices';
-import { ISSUE_REASON, ISSUE_TONE, issueKind, presenceOf, type IssueKind, type SyncVerdict } from '../../data/fleetHealth';
+import { ISSUE_REASON, ISSUE_TONE, issueKind, presenceOf, type IssueKind, type Presence, type SyncVerdict } from '../../data/fleetHealth';
 import type { StatusTone } from '../../ui';
 
-export type Bucket = 'online' | 'attention' | 'offline';
+export type Bucket = Presence;
 
 /** A device's configuration issue (summarizeStatus output that isConfigIssue accepted). */
 export type ConfigIssue = SyncVerdict;
 
-/** Offline first (recency of last check-in); a still-reporting device whose configuration didn't apply is attention. */
+/**
+ * Wiped first (it no longer reports, so it is neither offline nor needs attention), then offline (recency of last
+ * check-in); a still-reporting device whose configuration didn't apply is attention.
+ */
 export function bucketOf(d: DeviceView, issues: Record<number, ConfigIssue>, now?: number): Bucket {
-  return presenceOf(d.lastUpdate, !!issues[d.id], now);
+  return presenceOf(d.lastUpdate, !!issues[d.id], now, d.wipedAt);
 }
 
 export type RowAction = 'sync' | 'agent' | 'open';

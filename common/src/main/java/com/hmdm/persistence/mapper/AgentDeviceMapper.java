@@ -58,6 +58,20 @@ public interface AgentDeviceMapper {
     @Update({"UPDATE devices SET enrollTime = COALESCE(enrollTime, #{ts}) WHERE number = #{deviceNumber}"})
     void updateEnrollTime(@Param("deviceNumber") String deviceNumber, @Param("ts") long ts);
 
+    /** The console's "Wiped": when a device.wipe was delivered. The first delivery's time is kept. */
+    @Update({"UPDATE devices SET wipedAt = COALESCE(wipedAt, #{ts}) WHERE number = #{deviceNumber}"})
+    void markWiped(@Param("deviceNumber") String deviceNumber, @Param("ts") long ts);
+
+    /** Clears "Wiped" when the result just reported for {@code commandId} belongs to a device.wipe of this device. */
+    @Update({"UPDATE devices SET wipedAt = NULL WHERE number = #{deviceNumber} AND wipedAt IS NOT NULL " +
+            "AND EXISTS (SELECT 1 FROM agentCommand c WHERE c.id = #{commandId} AND c.deviceNumber = #{deviceNumber} " +
+            "AND c.type = 'device.wipe')"})
+    int clearWipedForCommand(@Param("deviceNumber") String deviceNumber, @Param("commandId") Integer commandId);
+
+    /** Clears "Wiped" set before {@code cutoff}. */
+    @Update({"UPDATE devices SET wipedAt = NULL WHERE number = #{deviceNumber} AND wipedAt < #{cutoff}"})
+    int clearWipedBefore(@Param("deviceNumber") String deviceNumber, @Param("cutoff") long cutoff);
+
     @Update({"UPDATE devices SET hardwareid = #{hardwareId} WHERE number = #{deviceNumber}"})
     void updateHardwareId(@Param("deviceNumber") String deviceNumber,
                           @Param("hardwareId") String hardwareId);

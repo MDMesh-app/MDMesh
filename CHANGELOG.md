@@ -8,6 +8,21 @@ line under Unreleased.
 
 ## Unreleased
 
+Upgrading
+- The database adds one column (`devices.wipedAt`) on start. Devices wiped before the update aren't marked.
+
+New
+- A wiped device shows as **Wiped**, no longer Online for ten minutes and then Offline like a phone that is switched
+  off. The server marks it when it delivers the factory reset, since the device erases itself before it can report,
+  and unmarks it if the device reports the wipe failed or keeps checking in. Wiped devices are left out of the Devices
+  list's All view, its counts and bulk actions, the Overview's counts and attention list, and agent rollouts; the
+  Devices list's Wiped filter shows them, and the device page says when the device was wiped.
+- Sync now, and a command sent from the console, say when the device isn't connected: it syncs, or gets the command,
+  at its next check-in. Until now the console said "Sync requested" either way.
+
+Under the hood
+- Console extension API, additive: `DeviceView.wipedAt`, the `wiped` status kind and a `warn` toast kind.
+
 ## v0.4.0 — 2026-11-03
 
 The console is new and replaces the old one. Every page was rebuilt, and each page loads only when it's opened.

@@ -547,7 +547,9 @@ public class AgentAdminResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Force sync", notes = "Wake the device now so it pulls pending commands + reports state.")
+    @ApiOperation(value = "Force sync", notes = "Wake the device now so it pulls pending commands + reports state. " +
+            "Answers {connected}: false when the device has no live connection, so the wake can't reach it and it " +
+            "syncs at its next check-in.")
     @POST
     @Path("/devices/{deviceId}/sync")
     @Produces(MediaType.APPLICATION_JSON)
@@ -566,7 +568,9 @@ public class AgentAdminResource {
         if (!deviceDAO.isAccessibleToUser(device)) {
             return Response.PERMISSION_DENIED();
         }
+        // The wake is dropped without a live socket: say so, so the console doesn't report a sync that can't happen.
+        boolean connected = wakeHub.isOnline(deviceId);
         wakeHub.wake(deviceId, "commands");
-        return Response.OK();
+        return Response.OK(java.util.Collections.singletonMap("connected", connected));
     }
 }

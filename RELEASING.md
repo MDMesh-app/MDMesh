@@ -77,13 +77,21 @@ changelog check again when it starts and just before it publishes, and fails if 
 commit it checked out.
 
 `.github/workflows/release.yml` then: runs the agent unit tests + builds the **signed** release APK,
-builds & pushes the **server**, **web**, and **supervisor** images to GHCR as `:VERSION`, builds a
-**minisign-signed manifest**, and publishes a **GitHub Release** with `mdmesh-agent.apk`, `manifest.json`,
-and `manifest.json.minisig`. The fleet auto-updater consumes that signed manifest to apply/roll-out updates.
+builds & pushes the **server**, **web**, and **supervisor** images to GHCR as `:VERSION`, reads back each image's
+digest (`release/image-digest.sh`), builds a **minisign-signed manifest**, and publishes a **GitHub Release** with
+`mdmesh-agent.apk`, `manifest.json`, and `manifest.json.minisig`. The fleet auto-updater consumes that signed manifest
+to apply/roll-out updates.
+
+The manifest (`release/build-manifest.sh`) keeps `components.serverImage`/`webImage` (the `:VERSION` tags, which
+supervisors before 0.4.1 read) and adds `components.images`, the three images as `repo@sha256:…`, and `files`, the
+SHA-256 of each file the quick start downloads from the tag. A 0.4.1+ supervisor and the quick start run exactly those
+digests and refuse a manifest without them, so a fork that publishes its own releases must use this workflow (or write
+the same fields). `scripts/release-manifest-check.sh` (T0) checks the manifest against what its readers expect.
 
 `:latest` moves **last**: only after the anonymous-pull check, the manifest signing and the GitHub Release
 have all succeeded does the final step retag each image's `:latest` to the release's `:VERSION` (same
-digest, registry-side, no rebuild), then verify all three digests. A failure anywhere earlier leaves
+digest, registry-side, no rebuild), then verify all three digests. It first checks that each `:VERSION` is still the
+digest the signed manifest pins. A failure anywhere earlier leaves
 `:latest` — and so every quick-start install — on the previous release.
 
 **If a changelog check fails**, re-tag. In the `gate` job or at the start of the `release` job nothing was built or
@@ -183,9 +191,13 @@ The release job runs in the `release` environment, so the repo settings decide w
 
 ## How a deployment trusts a release
 The updater fetches the GitHub Release, verifies `manifest.json` against the baked
-`release/minisign.pub`, then checks each artifact's SHA-256 against the manifest. A release published
-without the private minisign key fails verification and is refused — so a hijacked repo/account alone
-can't push code to the fleet.
+`release/minisign.pub`, then checks each artifact's SHA-256 against the manifest and pulls the server and web
+images by the digests it pins. A release published without the private minisign key fails verification and is
+refused, so a hijacked repo/account or a moved image tag alone can't push code to the fleet.
+
+The quick start verifies the same signature with `openssl` against a copy of the key line in `quickstart.sh` (T0
+fails if it differs from `release/minisign.pub`), then the image digests and the downloaded files' SHA-256. **If you
+ever rotate the minisign key, update that copy in the same PR.**
 
 ## Verifying a published release
 
@@ -202,4 +214,5 @@ aapt2 dump badging "$d/mdmesh-agent.apk" | grep -o "versionCode='[0-9]*'"
 for img in mdmesh-server mdmesh-web mdmesh-supervisor; do   # :V and :latest print the same digest
   for t in "$V" latest; do docker buildx imagetools inspect --format "$img:$t {{.Manifest.Digest}}{{println}}" "ghcr.io/mdmesh-app/$img:$t"; done
 done
+python3 -c 'import json,sys; print(*json.load(open(sys.argv[1]))["components"]["images"].values(), sep="\n")' "$d/manifest.json"   # = those digests
 ```

@@ -13,7 +13,6 @@ set -euo pipefail
 unset CDPATH
 
 REPO="MDMesh-app/MDMesh"
-BRANCH="main"   # where the compose + seed come from only when the release can't be resolved (see below)
 IMAGE_OWNER_DEFAULT="mdmesh-app"
 
 say()  { printf '\033[1;36m%s\033[0m\n' "$*"; }
@@ -30,6 +29,87 @@ latest_release() {
         | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)"$/\1/') || true
   if [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$ ]]; then printf '%s\n' "${tag#v}"; fi
 }
+
+# >>> release verification >>>
+# What the quick start trusts, and why. It installs only a published release whose manifest.json carries a valid minisign
+# signature by the release key below, a copy of release/minisign.pub's key line (CI fails if the two differ). The signed
+# manifest pins the server, web and supervisor images by digest and every file downloaded below by SHA-256, so a release
+# asset, a tag or a raw file changed by anyone without the private signing key is refused. The trust root is this script
+# itself, served from main over HTTPS, with the key in it: whoever can change main could change the key too. A fork
+# with its own signing key sets MDMESH_RELEASE_PUBKEY to the key line (line 2) of its release/minisign.pub.
+MDM_RELEASE_PUBKEY_DEFAULT="RWQbf0pIhddaWnDsFknIG4X325wHR05pUxEQJmuuQRdBlQm3zi8/Eqcd"
+
+# mdm_minisign_verify PUBKEY FILE SIG: succeeds when SIG (a .minisig file) is a valid minisign signature of FILE by the
+# public key PUBKEY (the base64 key line of a minisign .pub file), its trusted comment included. Needs only openssl
+# (1.1.1+: Ed25519 and BLAKE2b-512), so no minisign binary on the host. Only the prehashed format ("ED", the default since
+# minisign 0.10 and what the release workflow makes) is accepted. Prints why to stderr when it fails.
+mdm_minisign_verify() {
+  local pk=$1 file=$2 sig=$3 d tc ok=1
+  d=$(mktemp -d) || return 1
+  # Ed25519 public key as DER (SubjectPublicKeyInfo): the fixed 12-byte prefix, then the 32 key bytes.
+  if ! printf '%s' "$pk" | openssl base64 -d -A > "$d/pk" 2>/dev/null || [ "$(wc -c < "$d/pk")" -ne 42 ] \
+     || [ "$(head -c 2 "$d/pk")" != Ed ]; then
+    echo "the release public key is not a minisign Ed25519 key" >&2
+  elif ! sed -n 2p "$sig" | openssl base64 -d -A > "$d/sig" 2>/dev/null || [ "$(wc -c < "$d/sig")" -ne 74 ]; then
+    echo "the signature file is not a minisign signature" >&2
+  elif [ "$(head -c 2 "$d/sig")" != ED ]; then
+    echo "the signature is not in minisign's prehashed format (ED)" >&2
+  elif ! { head -c 10 "$d/pk" | tail -c 8 > "$d/kid.pk"; head -c 10 "$d/sig" | tail -c 8 > "$d/kid.sig"; cmp -s "$d/kid.pk" "$d/kid.sig"; }; then
+    echo "the manifest is signed by another key than the release key" >&2
+  else
+    printf '\x30\x2a\x30\x05\x06\x03\x2b\x65\x70\x03\x21\x00' > "$d/pk.der"; tail -c 32 "$d/pk" >> "$d/pk.der"
+    tail -c 64 "$d/sig" > "$d/sig.bin"
+    tc=$(sed -n 3p "$sig")
+    # The file's BLAKE2b-512 is what is signed; the global signature covers the signature + the trusted comment.
+    if ! openssl dgst -blake2b512 -binary "$file" > "$d/hash" 2>/dev/null \
+       || ! openssl pkeyutl -verify -pubin -keyform DER -inkey "$d/pk.der" -rawin -in "$d/hash" -sigfile "$d/sig.bin" >/dev/null 2>&1; then
+      echo "the signature does not verify (or this openssl, $(openssl version 2>/dev/null), cannot check Ed25519 signatures: 1.1.1 or newer is needed)" >&2
+    elif case "$tc" in 'trusted comment: '*) false ;; *) true ;; esac; then
+      echo "the signature has no trusted comment" >&2
+    elif ! { cat "$d/sig.bin"; printf '%s' "${tc#trusted comment: }"; } > "$d/global" \
+       || ! sed -n 4p "$sig" | openssl base64 -d -A > "$d/global.sig" 2>/dev/null \
+       || ! openssl pkeyutl -verify -pubin -keyform DER -inkey "$d/pk.der" -rawin -in "$d/global" -sigfile "$d/global.sig" >/dev/null 2>&1; then
+      echo "the signature's trusted comment does not verify" >&2
+    else
+      ok=0
+    fi
+  fi
+  rm -f -- "$d/pk" "$d/pk.der" "$d/sig" "$d/sig.bin" "$d/kid.pk" "$d/kid.sig" "$d/hash" "$d/global" "$d/global.sig"
+  rmdir -- "$d" 2>/dev/null || true
+  return "$ok"
+}
+
+# mdm_manifest_field FILE KEY VALUE_ERE: the value of the one line `"KEY": "VALUE"` in the manifest FILE (written by
+# release/build-manifest.sh with one key per line) whose value matches VALUE_ERE in full. Fails, printing nothing, when no
+# line or more than one matches. Read only from a manifest whose signature verified.
+mdm_manifest_field() {
+  local hits
+  hits=$(LC_ALL=C grep -E "^[[:space:]]*\"${2//./\\.}\": \"(${3})\",?\$" "$1" || true)
+  [ -n "$hits" ] && [ "$(printf '%s\n' "$hits" | wc -l)" -eq 1 ] || return 1
+  printf '%s\n' "$hits" | sed -E 's/^[[:space:]]*"[^"]*": "([^"]*)",?$/\1/'
+}
+MDM_SHA256_ERE='[0123456789abcdef]{64}'
+MDM_IMAGE_REF_ERE='[abcdefghijklmnopqrstuvwxyz0123456789._/-]+@sha256:[0123456789abcdef]{64}'
+
+# The files downloaded from the release's tag, as named in the manifest's "files" (release/build-manifest.sh).
+MDM_QUICKSTART_FILES="docker-compose.release.yml docker-compose.domain.yml install/sql/hmdm_init.en.sql install/sql/post_seed.sql install/lib/db.sh"
+
+# mdm_legacy_file_sha VERSION FILE: the SHA-256 of FILE at the tag of a release published before the manifest recorded
+# them (v0.4.0), taken from that tag in git. Fails for any other release. Remove once the latest release has "files".
+mdm_legacy_file_sha() {
+  case "$1 $2" in
+    "0.4.0 docker-compose.release.yml")   echo 855fcf6fcba18bacb135c8d8c5617ddeaf16f4127ff83c619d671083838d4122 ;;
+    "0.4.0 docker-compose.domain.yml")    echo 25f31714054e1adfcb7491c2dcce33398f40e4235b9ed0268797ebc460015b07 ;;
+    "0.4.0 install/sql/hmdm_init.en.sql") echo 25fd5c6b9ad6eedaf747548285070a24559adc2bf4d27da0e78f363d3834eba4 ;;
+    "0.4.0 install/sql/post_seed.sql")    echo fc25c4a5355d1114cd3fbc1c84d3ded147e86e647fbd288048af3bcb0fbc73fe ;;
+    "0.4.0 install/lib/db.sh")            echo 80c792957d6a8d5d31639344faee766bba1d0d965c7d1c29668884bbfa55a005 ;;
+    *) return 1 ;;
+  esac
+}
+
+# mdm_sha256 FILE: its SHA-256 in lowercase hex.
+mdm_sha256() { openssl dgst -sha256 -r "$1" | cut -d' ' -f1; }
+# <<< release verification <<<
 
 # The BASE_URL rule of install/lib/url.sh (see there for what it accepts and why it is an allowlist). A verbatim copy
 # of the functions between the markers, not a download: this script runs from main but fetches install/lib from the
@@ -149,25 +229,75 @@ done
 read -rp "Pull releases from GitHub repo [${REPO}]: " GH_REPO;       GH_REPO="${GH_REPO:-$REPO}"
 read -rp "Image owner (GHCR, lowercase) [${IMAGE_OWNER_DEFAULT}]: " IMAGE_OWNER; IMAGE_OWNER="${IMAGE_OWNER:-$IMAGE_OWNER_DEFAULT}"
 
-# Pin the release being installed: server + web images and CURRENT_VERSION name the same version, so the console
-# doesn't report the running release as an update (it would with CURRENT_VERSION=0.0.0), a rollback has a real tag to
-# return to, and a `:latest` tag that moves mid-release can't hand us a mismatched server/web pair. The supervisor
-# stays on `:latest`: apply never bumps it, so `docker compose pull` is how it gets its own fixes. If the release
-# can't be resolved, fall back to `:latest` + CURRENT_VERSION=0.0.0 (the old behaviour): the stack still comes up, the
-# console shows "Update available" until the first apply pins the versions. The compose file + seed come from the same
-# release's tag in the repo it was resolved from, so they match the pinned images; `main` only in the fallback.
-RELEASE=$(latest_release "$GH_REPO")
-if [ -n "$RELEASE" ]; then
-  IMAGE_TAG="$RELEASE"; CURRENT_VERSION="$RELEASE"
-  RAW="https://raw.githubusercontent.com/${GH_REPO}/v${RELEASE}"
-  say "Installing release v${RELEASE} of ${GH_REPO}."
+# Install exactly one published release, verified before anything is downloaded from it: its signed manifest (see "What
+# the quick start trusts" above) names the image digests and the SHA-256 of each file fetched from its tag. The server,
+# web and supervisor images are pinned by digest (SERVER_VERSION=<version>@sha256:…: compose runs repo:tag@digest, which
+# docker pulls by digest), and CURRENT_VERSION names the same release, so the console doesn't report it as an update, a
+# rollback has a real version to return to, and a tag moved later can't change what runs. Each update the supervisor
+# applies moves the pins to the next signed release. Nothing falls back to main or :latest: if the release can't be
+# resolved or doesn't verify, the quick start stops.
+if [ -n "${MDMESH_VERSION:-}" ]; then
+  RELEASE=${MDMESH_VERSION#v}
+  [[ "$RELEASE" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$ ]] || { err "MDMESH_VERSION=${MDMESH_VERSION} is not a release version (X.Y.Z)."; exit 1; }
 else
-  IMAGE_TAG="latest"; CURRENT_VERSION="0.0.0"
-  RAW="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
-  warn "Could not resolve the latest release of ${GH_REPO} (GitHub API unreachable or rate-limited?) — using the :latest"
-  warn "images and the ${BRANCH} compose. The console will show \"Update available\" until the first update pins the"
-  warn "version (see DEPLOY.md)."
+  RELEASE=$(latest_release "$GH_REPO")
 fi
+if [ -z "$RELEASE" ]; then
+  err "Could not resolve the latest release of ${GH_REPO} (GitHub API unreachable or rate-limited, or no release yet)."
+  err "The quick start installs only a published, signed release. Try again in a few minutes, or name the release:"
+  err "  MDMESH_VERSION=X.Y.Z bash <(curl -fsSL https://raw.githubusercontent.com/${REPO}/main/quickstart.sh)"
+  exit 1
+fi
+say "Verifying release v${RELEASE} of ${GH_REPO}…"
+VERIFY_DIR=$(mktemp -d)
+cleanup_verify() {
+  rm -f -- "$VERIFY_DIR/manifest.json" "$VERIFY_DIR/manifest.json.minisig" "$VERIFY_DIR"/dl.*
+  rmdir -- "$VERIFY_DIR" 2>/dev/null || true
+}
+trap cleanup_verify EXIT
+MANIFEST="$VERIFY_DIR/manifest.json"
+REL_URL="https://github.com/${GH_REPO}/releases/download/v${RELEASE}"
+if ! curl -fsSL -m 60 "${REL_URL}/manifest.json" -o "$MANIFEST" \
+   || ! curl -fsSL -m 60 "${REL_URL}/manifest.json.minisig" -o "$VERIFY_DIR/manifest.json.minisig"; then
+  err "Could not download manifest.json and manifest.json.minisig from ${REL_URL} (is v${RELEASE} a published release with a signed manifest?)."
+  exit 1
+fi
+if ! mdm_minisign_verify "${MDMESH_RELEASE_PUBKEY:-$MDM_RELEASE_PUBKEY_DEFAULT}" "$MANIFEST" "$VERIFY_DIR/manifest.json.minisig"; then
+  err "The manifest of release v${RELEASE} of ${GH_REPO} is not signed by the release key (reason above). Nothing was installed."
+  if [ "$GH_REPO" != "$REPO" ] && [ -z "${MDMESH_RELEASE_PUBKEY:-}" ]; then
+    err "A fork signs with its own key: run that repository's quickstart.sh, or set MDMESH_RELEASE_PUBKEY to the key line of its release/minisign.pub."
+  fi
+  exit 1
+fi
+# Bind the signed manifest to this release: an older release's manifest is signed too.
+MANIFEST_VERSION=$(mdm_manifest_field "$MANIFEST" version '[0-9A-Za-z.+-]+' || true)
+if [ "$MANIFEST_VERSION" != "$RELEASE" ]; then
+  err "The signed manifest is for version ${MANIFEST_VERSION:-(none)}, not v${RELEASE}. Nothing was installed."; exit 1
+fi
+# The image digests: all three, under the owner chosen above. A release from before they were recorded (v0.4.0 only, see
+# mdm_legacy_file_sha) runs its :X.Y.Z tags and the :latest supervisor, as the quick start did before.
+SERVER_REF=$(mdm_manifest_field "$MANIFEST" server "$MDM_IMAGE_REF_ERE" || true)
+WEB_REF=$(mdm_manifest_field "$MANIFEST" web "$MDM_IMAGE_REF_ERE" || true)
+SUPERVISOR_REF=$(mdm_manifest_field "$MANIFEST" supervisor "$MDM_IMAGE_REF_ERE" || true)
+if [ -n "$SERVER_REF" ] && [ -n "$WEB_REF" ] && [ -n "$SUPERVISOR_REF" ]; then
+  for _ref in "$SERVER_REF" "$WEB_REF" "$SUPERVISOR_REF"; do
+    case "${_ref%@*}" in
+      "ghcr.io/${IMAGE_OWNER}/mdmesh-server"|"ghcr.io/${IMAGE_OWNER}/mdmesh-web"|"ghcr.io/${IMAGE_OWNER}/mdmesh-supervisor") ;;
+      *) err "Release v${RELEASE} of ${GH_REPO} publishes its images as ${_ref%@*}, not under ghcr.io/${IMAGE_OWNER}. Re-run and enter the image owner it names."
+         exit 1 ;;
+    esac
+  done
+  SERVER_TAG="${RELEASE}@${SERVER_REF#*@}"; WEB_TAG="${RELEASE}@${WEB_REF#*@}"; SUPERVISOR_TAG="${RELEASE}@${SUPERVISOR_REF#*@}"
+elif [ -z "$SERVER_REF$WEB_REF$SUPERVISOR_REF" ] && mdm_legacy_file_sha "$RELEASE" install/lib/db.sh >/dev/null; then
+  warn "Release v${RELEASE} predates image digests in its manifest: running its :${RELEASE} tags (the next update pins them)."
+  SERVER_TAG="$RELEASE"; WEB_TAG="$RELEASE"; SUPERVISOR_TAG="latest"
+else
+  err "The signed manifest of v${RELEASE} does not pin the server, web and supervisor images by digest, so the quick start can't install it."
+  err "(A fork publishing with an older release workflow: update its release/ scripts and .github/workflows/release.yml.)"
+  exit 1
+fi
+RAW="https://raw.githubusercontent.com/${GH_REPO}/v${RELEASE}"
+say "Installing release v${RELEASE} of ${GH_REPO}."
 
 DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
 
@@ -189,18 +319,35 @@ fi
 mdm_check_base_url BASE_URL || { err "Check the hostname you entered (the name only, e.g. mdm.example.com), then re-run."; exit 1; }
 
 say "Downloading the pull-only compose + seed…"
-curl -fsSL "${RAW}/docker-compose.release.yml" -o docker-compose.yml
-curl -fsSL "${RAW}/docker-compose.domain.yml"  -o docker-compose.domain.yml
-mkdir -p install/sql
-curl -fsSL "${RAW}/install/sql/hmdm_init.en.sql" -o install/sql/hmdm_init.en.sql
-curl -fsSL "${RAW}/install/sql/post_seed.sql"    -o install/sql/post_seed.sql
-mkdir -p install/lib
-curl -fsSL "${RAW}/install/lib/db.sh"             -o install/lib/db.sh
+# Every file is downloaded to a temporary name and checked against its SHA-256 in the signed manifest (or, for v0.4.0,
+# the hash recorded above); only when all of them match are they moved into place. db.sh is sourced below, so nothing
+# unverified ever runs.
+HAS_FILES=0
+grep -q '^  "files": {$' "$MANIFEST" && HAS_FILES=1
+n=0
+for f in $MDM_QUICKSTART_FILES; do
+  n=$((n + 1))
+  if [ "$HAS_FILES" = 1 ]; then want=$(mdm_manifest_field "$MANIFEST" "$f" "$MDM_SHA256_ERE" || true)
+  else want=$(mdm_legacy_file_sha "$RELEASE" "$f" || true); fi
+  [ -n "$want" ] || { err "The signed manifest of v${RELEASE} has no SHA-256 for ${f}, so it can't be verified. Nothing was installed."; exit 1; }
+  curl -fsSL -m 120 "${RAW}/${f}" -o "$VERIFY_DIR/dl.$n" || { err "Could not download ${RAW}/${f}. Nothing was installed."; exit 1; }
+  got=$(mdm_sha256 "$VERIFY_DIR/dl.$n")
+  if [ "$got" != "$want" ]; then
+    err "${f} from ${RAW} does not match the signed release (SHA-256 ${got}, expected ${want}). Nothing was installed."; exit 1
+  fi
+done
+n=0
+for f in $MDM_QUICKSTART_FILES; do
+  n=$((n + 1))
+  dest=$f; [ "$f" = docker-compose.release.yml ] && dest=docker-compose.yml
+  mkdir -p -- "$(dirname -- "$dest")"
+  mv -f -- "$VERIFY_DIR/dl.$n" "$dest"
+done
 # Shared seed rules with setup.sh / the native installer (seed gate, verified seed, post-seed repairs).
 # Version coupling: this script runs from main, but db.sh (like the compose file and the seed) comes from the release
-# tag being installed, so it matches the images (from ${BRANCH} only when the release can't be resolved; see RAW).
-# Call only db.sh functions, with only the arguments and output, that the latest published release already has; a
-# db.sh change becomes usable here once a release ships it. (install/lib/db.sh states the same rule for its side.)
+# tag being installed, so it matches the images. Call only db.sh functions, with only the arguments and output, that the
+# latest published release already has; a db.sh change becomes usable here once a release ships it. (install/lib/db.sh
+# states the same rule for its side.)
 # shellcheck source=install/lib/db.sh
 . ./install/lib/db.sh
 
@@ -215,13 +362,13 @@ SITE_ADDRESS=${SITE_ADDRESS}
 ACME_EMAIL=${ACME_EMAIL}
 TUNNEL_TOKEN=${TUNNEL_TOKEN}
 IMAGE_OWNER=${IMAGE_OWNER}
-SERVER_VERSION=${IMAGE_TAG}
-WEB_VERSION=${IMAGE_TAG}
-SUPERVISOR_VERSION=latest
+SERVER_VERSION=${SERVER_TAG}
+WEB_VERSION=${WEB_TAG}
+SUPERVISOR_VERSION=${SUPERVISOR_TAG}
 GITHUB_REPO=${GH_REPO}
 UPDATE_CHANNEL=stable
 POLL_INTERVAL_HOURS=6
-CURRENT_VERSION=${CURRENT_VERSION}
+CURRENT_VERSION=${RELEASE}
 GITHUB_TOKEN=
 AUTO_UPDATE=0
 COMPOSE_PROJECT_NAME=mdmesh
@@ -235,7 +382,7 @@ chmod 600 .env
 say "Wrote .env (secrets generated). docker compose reads COMPOSE_FILE/PROFILES from it."
 
 say "Pulling images…"
-docker compose pull || { err "Could not pull the :${IMAGE_TAG} images from ghcr.io/${IMAGE_OWNER}. Has a release been published? (to cut one, see RELEASING.md)"; exit 1; }
+docker compose pull || { err "Could not pull the v${RELEASE} images from ghcr.io/${IMAGE_OWNER} (pinned by digest in .env). Has a release been published? (to cut one, see RELEASING.md)"; exit 1; }
 # The init marker the wait below reads is on the server's data volume, and the server writes it only when it is absent.
 # The entrypoint removes the previous start's marker only in images after v0.3.1, and this script (served from main) may
 # be installing v0.3.1 or older, so a re-run over an existing volume would read the last run's result. Remove it here:

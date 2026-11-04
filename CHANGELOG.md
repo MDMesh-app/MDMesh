@@ -8,6 +8,9 @@ line under Unreleased.
 
 ## Unreleased
 
+- Updates and the quick start run exactly the images the signed release names, pinned by digest; the quick start
+  also checks each file it downloads and stops instead of falling back to `main`.
+
 ## v0.4.0 — 2026-11-03
 
 The console is new and replaces the old one. Every page was rebuilt, and each page loads only when it's opened.

@@ -31,12 +31,19 @@ generates secrets, pulls and starts the stack, seeds the database, and prints th
 password.
 
 Run every `docker compose` command from `./mdmesh`, where `.env` lives. The install is pinned to the latest
-release: `SERVER_VERSION`, `WEB_VERSION` and `CURRENT_VERSION` all name it, and the compose file and seed come from
-its tag. Updates are one click ([Upgrading](docs/UPGRADING.md#quick-start-installs)).
+release: `CURRENT_VERSION` names it, and `SERVER_VERSION`, `WEB_VERSION` and `SUPERVISOR_VERSION` name its images by
+digest (`0.4.1@sha256:…`). Updates are one click ([Upgrading](docs/UPGRADING.md#quick-start-installs)).
 
-If the GitHub API can't be reached, the quick start falls back to the `:latest` images and the `main` compose file,
-with `CURRENT_VERSION=0.0.0`. It still works, but the console shows "Update available" until the first update.
-To stop that, set `SERVER_VERSION`, `WEB_VERSION` and `CURRENT_VERSION` to the running release by hand.
+Before using anything from the release, the quick start checks its `manifest.json` against the release signing key
+(minisign, checked with `openssl`, so no extra tool is needed). The signed manifest holds the image digests and the
+SHA-256 of the compose files, the seed and `install/lib/db.sh`, which come from the release's tag; a file that
+doesn't match stops the install. The trust root is `quickstart.sh` itself, fetched from `main` over HTTPS, which
+carries a copy of `release/minisign.pub`. A fork with its own signing key sets `MDMESH_RELEASE_PUBKEY` to the key line
+of its `release/minisign.pub`.
+
+If the latest release can't be looked up (GitHub API unreachable or rate-limited), the quick start stops and says so;
+it no longer falls back to `main` and `:latest`. Run it again later, or name the release:
+`MDMESH_VERSION=X.Y.Z bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/quickstart.sh)`.
 
 ## Option B — from source (clone + build)
 

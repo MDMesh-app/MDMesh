@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -27,12 +28,22 @@ const Ctx = createContext<ToastApi | null>(null);
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const seq = useRef(0);
+  // A dismissal that comes due after the provider is gone (or a test's page with it) does nothing. Pending timers
+  // are not cancelled instead: StrictMode's trial unmount in development would cancel a toast pushed while mounting.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const push = useCallback((kind: ToastKind, title: string, body: string) => {
+    if (!mounted.current) return;
     const id = ++seq.current;
     setToasts((t) => [...t, { id, kind, title, body }]);
     window.setTimeout(() => {
-      setToasts((t) => t.filter((x) => x.id !== id));
+      if (mounted.current) setToasts((t) => t.filter((x) => x.id !== id));
     }, 5000);
   }, []);
   // One object for the provider's life: a toast coming or going re-renders no consumer, and a callback that uses the

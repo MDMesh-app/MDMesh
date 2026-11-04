@@ -197,15 +197,16 @@ describe('the Location tab’s time range', () => {
 
   /** The device API with `fixes` as the location history, filtered by `since`; while held, each answer waits for the test. */
   function locationsApi(fixes: { capturedAt: number }[]) {
-    const held: (() => void)[] = [];
+    const held: { since: number; answer: () => void }[] = [];
     const state = { hold: false };
     const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       const url = new URL(path, 'http://console');
       let data = deviceApi(path, init);
       if (url.pathname.endsWith('/locations')) {
-        if (state.hold) await new Promise<void>((resolve) => held.push(resolve));
-        data = fixes.filter((f) => f.capturedAt >= Number(url.searchParams.get('since')));
+        const since = Number(url.searchParams.get('since'));
+        if (state.hold) await new Promise<void>((answer) => held.push({ since, answer }));
+        data = fixes.filter((f) => f.capturedAt >= since);
       }
       return Response.json({ status: 'OK', message: null, data: data ?? null });
     });
@@ -252,10 +253,15 @@ describe('the Location tab’s time range', () => {
     state.hold = true;
     fireEvent.click(range('7d'));
     fireEvent.click(range('1h'));
-    await waitFor(() => expect(held).toHaveLength(2));
-    await act(async () => held[1]());
+    // By range, not by count: the device's state arriving late reloads the range shown then, so a third may be held.
+    const lastHour = (h: { since: number }) => h.since > Date.now() - 2 * 3600 * 1000;
+    await waitFor(() => {
+      expect(held.some(lastHour)).toBe(true);
+      expect(held.some((h) => !lastHour(h))).toBe(true);
+    });
+    await act(async () => held.filter(lastHour).forEach((h) => h.answer()));
     expect(await within(panel()).findByText('No location in the last hour')).toBeTruthy();
-    await act(async () => held[0]());
+    await act(async () => held.filter((h) => !lastHour(h)).forEach((h) => h.answer()));
     expect(within(panel()).getByText('No location in the last hour')).toBeTruthy();
     expect(within(panel()).queryByRole('region', { name: /^Map of/ })).toBeNull();
     expect(range('1h').getAttribute('aria-checked')).toBe('true');

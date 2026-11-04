@@ -16,7 +16,7 @@
 # failure. Emits `PHASE <name>` / `ERR <msg>` / `OK <version>` lines on stdout — server.js parses these
 # to drive /update/status. It NEVER touches `supervisor` or `postgres` (no self-destruct, no data loss).
 #
-# Sequence: check the pins → backup → pull (+ digest checks) → recreate → healthcheck → done (+ pin the supervisor).
+# Sequence: check the pins + compose → backup → pull (+ digest check) → recreate → healthcheck → done (+ pin the supervisor).
 # A failed pull or digest check → rollback of .env only (no container changed yet). A later failure → rollback (restore
 # versions, stop the server, restore the DB, recreate the old images, re-health-check) → rolled_back, or failed
 # (non-zero, with ERR lines saying what state it is in) if the rollback itself can't recover.
@@ -133,6 +133,23 @@ SERVER_PIN="${VERSION}@${SERVER_REF#*@}"   # SERVER_VERSION / WEB_VERSION / SUPE
 WEB_PIN="${VERSION}@${WEB_REF#*@}"
 SUPERVISOR_PIN="${VERSION}@${SUPERVISOR_REF#*@}"
 
+# compose must resolve server + caddy to exactly the pinned refs (a compose file whose image lines don't follow
+# IMAGE_OWNER/SERVER_VERSION/WEB_VERSION would run something else). Checked before the backup, with the pins passed in
+# the environment (compose prefers it over .env), so a mismatch changes nothing: no dump, no new /backups/latest.
+if ! IMAGES_NOW="$(SERVER_VERSION="$SERVER_PIN" WEB_VERSION="$WEB_PIN" dc config --images server caddy)"; then
+  errln "could not read the compose configuration (docker compose config failed, see the log above). Nothing was changed."
+  phase failed
+  exit 1
+fi
+for want in "${SERVER_REF%@*}:${SERVER_PIN}" "${WEB_REF%@*}:${WEB_PIN}"; do
+  # A here-string, not a pipe: under pipefail, grep -q exiting at the first match can fail the writer with SIGPIPE.
+  if ! grep -qxF -- "$want" <<< "$IMAGES_NOW"; then
+    errln "this install's compose file does not resolve to the signed image ${want} (it resolves to: $(printf '%s' "$IMAGES_NOW" | tr '\n' ' ')). Its image lines must be ghcr.io/\${IMAGE_OWNER}/mdmesh-server:\${SERVER_VERSION} and ghcr.io/\${IMAGE_OWNER}/mdmesh-web:\${WEB_VERSION}, as in docker-compose.release.yml. Nothing was changed."
+    phase failed
+    exit 1
+  fi
+done
+
 OLD_SERVER="$(get_env SERVER_VERSION)"
 OLD_WEB="$(get_env WEB_VERSION)"
 OLD_CURRENT="$(get_env CURRENT_VERSION)"
@@ -186,21 +203,6 @@ phase pull
 set_env SERVER_VERSION "$SERVER_PIN"
 set_env WEB_VERSION "$WEB_PIN"
 set_env CURRENT_VERSION "$VERSION"
-# compose must resolve server + caddy to exactly the pinned refs (a compose file whose image lines don't follow
-# IMAGE_OWNER/SERVER_VERSION/WEB_VERSION would run something else).
-if ! IMAGES_NOW="$(dc config --images server caddy)"; then
-  errln "could not read the compose configuration (docker compose config failed, see the log above)"
-  rollback env-only
-  exit 1
-fi
-for want in "${SERVER_REF%@*}:${SERVER_PIN}" "${WEB_REF%@*}:${WEB_PIN}"; do
-  # A here-string, not a pipe: under pipefail, grep -q exiting at the first match can fail the writer with SIGPIPE.
-  if ! grep -qxF -- "$want" <<< "$IMAGES_NOW"; then
-    errln "this install's compose file does not resolve to the signed image ${want} (it resolves to: $(printf '%s' "$IMAGES_NOW" | tr '\n' ' ')). Its image lines must be ghcr.io/\${IMAGE_OWNER}/mdmesh-server:\${SERVER_VERSION} and ghcr.io/\${IMAGE_OWNER}/mdmesh-web:\${WEB_VERSION}, as in docker-compose.release.yml."
-    rollback env-only
-    exit 1
-  fi
-done
 if ! dc pull --quiet server caddy; then   # --quiet: no per-layer progress; errors still print
   errln "image pull failed"
   rollback env-only

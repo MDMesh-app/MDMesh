@@ -772,7 +772,8 @@ case "$*" in
   "compose config --images "*)
     # What compose resolves the image lines of docker-compose.release.yml to, from the .env in the project (cwd).
     if [ -n "\${STUB_CONFIG_IMAGES:-}" ]; then printf '%s\n' "$STUB_CONFIG_IMAGES"; exit 0; fi
-    v() { grep -E "^$1=" .env | head -1 | cut -d= -f2-; }
+    # Like compose: the environment wins over .env.
+    v() { if [ -n "\${!1:-}" ]; then printf '%s' "\${!1}"; else grep -E "^$1=" .env | head -1 | cut -d= -f2-; fi; }
     o=$(v IMAGE_OWNER); o=\${o:-mdmesh-app}
     echo "ghcr.io/$o/mdmesh-server:$(v SERVER_VERSION)"; echo "ghcr.io/$o/mdmesh-web:$(v WEB_VERSION)";;
   "image inspect "*)
@@ -1306,7 +1307,7 @@ t.test('apply.sh pins server + web by digest (.env <version>@sha256:…), checks
     a.match(d.envFile(), /^SUPERVISOR_VERSION=0\.0\.2@sha256:c{64}$/m, ':latest becomes the release\'s signed supervisor');
     const calls = d.calls();
     const at = (re) => idx(calls, re);
-    a.ok(at(/^compose config --images server caddy$/) > -1 && at(/^compose config --images/) < at(/^compose pull /), calls.join('\n'));
+    a.ok(at(/^compose config --images server caddy$/) > -1 && at(/^compose config --images/) < at(/ pg_dump /), calls.join('\n'));
     a.ok(at(new RegExp('^image inspect .* ' + PIN.server.replace(/[.]/g, '\\.') + '$')) > at(/^compose pull /), calls.join('\n'));
     a.ok(at(new RegExp('^image inspect .* ' + PIN.web.replace(/[.]/g, '\\.') + '$')) < at(/^compose up /), calls.join('\n'));
     a.equal(calls.filter((c) => /supervisor/.test(c) && /^compose (pull|up)/.test(c)).length, 0, 'the supervisor is never recreated');
@@ -1356,13 +1357,28 @@ t.test('apply.sh refuses refs that are missing, malformed or under another owner
   } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
 });
 
-t.test('apply.sh: a compose file that does not resolve to the pinned refs, or a pulled image without the signed digest, '
-  + 'resets .env only (no container changed)', () => {
+t.test('apply.sh: a compose file that does not resolve to the pinned refs is refused before the backup; a pulled image '
+  + 'without the signed digest resets .env only (no container changed)', () => {
   const fs = require('fs');
-  const knobs = [
+  // The compose check runs before the backup: a mismatch changes nothing at all.
+  for (const [knob, want] of [
     [{ STUB_CONFIG_IMAGES: 'ghcr.io/mdmesh-app/mdmesh-server:0.0.2\nghcr.io/mdmesh-app/mdmesh-web:0.0.2' },
-      /^ERR this install's compose file does not resolve to the signed image ghcr\.io\/mdmesh-app\/mdmesh-server:0\.0\.2@sha256:a{64}/m],
-    [{ STUB_FAIL_RE: '^compose config ' }, /^ERR could not read the compose configuration/m],
+      /^ERR this install's compose file does not resolve to the signed image ghcr\.io\/mdmesh-app\/mdmesh-server:0\.0\.2@sha256:a{64}.*Nothing was changed\.$/m],
+    [{ STUB_FAIL_RE: '^compose config ' }, /^ERR could not read the compose configuration/m]]) {
+    const ENV = 'SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nSUPERVISOR_VERSION=latest\nCURRENT_VERSION=0.0.1\n';
+    const d = makeDeploy(ENV);
+    try {
+      const r = runScript('apply.sh', applyArgs('0.0.2'), { ...d.env, ...knob });
+      a.equal(r.code, 1, r.all);
+      a.match(r.err, want);
+      a.match(r.out, /^PHASE failed$/m);
+      a.doesNotMatch(r.out, /PHASE backup/);
+      a.deepEqual(d.calls(), ['compose config --images server caddy'], 'no dump, no pull');
+      a.equal(require('fs').readdirSync(d.backups).length, 0, 'no backup, /backups/latest untouched');
+      a.equal(d.envFile(), ENV);
+    } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  }
+  const knobs = [
     [{ STUB_REPO_DIGESTS: 'ghcr.io/mdmesh-app/mdmesh-server@sha256:' + 'e'.repeat(64) },
       /^ERR the pulled image does not carry the signed digest ghcr\.io\/mdmesh-app\/mdmesh-server@sha256:a{64}, so it is not used$/m],
   ];

@@ -151,8 +151,19 @@ public enum ResourceAuditInfo {
      */
     public ResourceAuditor getResourceAuditor(ServletRequest request, ServletResponse response, FilterChain chain,
                                               String proxyIps, String ipHeader) throws IOException {
+        return getResourceAuditor(request, response, chain, proxyIps, ipHeader, false);
+    }
+
+    /**
+     * <p>Gets the auditor for the specified request/response chain.</p>
+     *
+     * @param privatePeersAreProxies {@code proxy.private.networks}: any private-network peer is the install's proxy.
+     */
+    public ResourceAuditor getResourceAuditor(ServletRequest request, ServletResponse response, FilterChain chain,
+                                              String proxyIps, String ipHeader, boolean privatePeersAreProxies)
+            throws IOException {
         return new ResourceAuditor(auditLogAction, request, response, chain, payload, maskCommandPayload, checkResponse,
-                proxyIps, ipHeader);
+                proxyIps, ipHeader, privatePeersAreProxies);
     }
 
     /**

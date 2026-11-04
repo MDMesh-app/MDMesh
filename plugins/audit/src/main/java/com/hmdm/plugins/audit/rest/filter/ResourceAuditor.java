@@ -31,6 +31,7 @@ import com.hmdm.rest.filter.BaseIPFilter;
 import com.hmdm.rest.json.Response;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.security.jwt.JWTFilter;
+import com.hmdm.util.ClientAddress;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.slf4j.Logger;
@@ -44,7 +45,10 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Enumeration;
+import java.util.List;
 
 /**
  * <p>An auditor for a single request-response chain.</p>
@@ -104,12 +108,25 @@ class ResourceAuditor {
 
     private final BaseIPFilter remoteAddrResolver;
 
+    /** {@code proxy.addresses}, split: the proxies on other hosts whose X-Forwarded-For is believed. */
+    private final List<String> trustedProxies;
+
+    /** {@code proxy.private.networks}: any private-network peer is the install's proxy (Docker). */
+    private final boolean privatePeersAreProxies;
+
     /**
      * <p>Constructs new <code>ResourceAuditor</code> instance. This implementation does nothing.</p>
      */
     ResourceAuditor(String auditLogActionKey, ServletRequest request, ServletResponse response,
                     FilterChain chain, boolean payload, boolean maskCommandPayload, boolean checkResponse,
                     String proxyIps, String ipHeader) throws IOException {
+        this(auditLogActionKey, request, response, chain, payload, maskCommandPayload, checkResponse, proxyIps,
+                ipHeader, false);
+    }
+
+    ResourceAuditor(String auditLogActionKey, ServletRequest request, ServletResponse response,
+                    FilterChain chain, boolean payload, boolean maskCommandPayload, boolean checkResponse,
+                    String proxyIps, String ipHeader, boolean privatePeersAreProxies) throws IOException {
         this.auditLogActionKey = auditLogActionKey;
         if (payload) {
             // Wrap request only if we need to log it
@@ -123,6 +140,32 @@ class ResourceAuditor {
         this.maskCommandPayload = maskCommandPayload;
         this.checkResponse = checkResponse;
         this.remoteAddrResolver = new BaseIPFilter("", proxyIps, ipHeader);
+        List<String> proxies = new ArrayList<>();
+        for (String p : (proxyIps == null ? "" : proxyIps).split(",")) {
+            if (!p.trim().isEmpty()) {
+                proxies.add(p.trim());
+            }
+        }
+        this.trustedProxies = Collections.unmodifiableList(proxies);
+        this.privatePeersAreProxies = privatePeersAreProxies;
+    }
+
+    /**
+     * <p>The client's address for the record, by the sign-in limit's rule ({@link ClientAddress#forLimiting}): the
+     * proxy's X-Forwarded-For is believed from a loopback peer, a proxy listed in {@code proxy.addresses} or, with
+     * {@code proxy.private.networks} (Docker), any private-network peer. The legacy rule alone never believed the
+     * Docker edge, so every record named the edge's container address.</p>
+     *
+     * <p>When no proxy named a client that way, the legacy rule ({@code proxy.ip.header}, X-Real-IP by default) still
+     * applies, so a proxy that sends only that header keeps working.</p>
+     */
+    static String clientAddress(HttpServletRequest request, BaseIPFilter legacy, List<String> trustedProxies,
+                                boolean privatePeersAreProxies) {
+        String address = ClientAddress.forLimiting(request, trustedProxies, privatePeersAreProxies);
+        if (address != null && !address.equals(request.getRemoteAddr())) {
+            return address;
+        }
+        return legacy.getRemoteAddr(request);
     }
 
     /**
@@ -170,7 +213,7 @@ class ResourceAuditor {
 
         AuditLogRecord logRecord = new AuditLogRecord();
         logRecord.setCreateTime(System.currentTimeMillis());
-        logRecord.setIpAddress(remoteAddrResolver.getRemoteAddr(httpRequest));
+        logRecord.setIpAddress(clientAddress(httpRequest, remoteAddrResolver, trustedProxies, privatePeersAreProxies));
         if (currentUser != null) {
             logRecord.setCustomerId(currentUser.getCustomerId());
             logRecord.setLogin(currentUser.getLogin());

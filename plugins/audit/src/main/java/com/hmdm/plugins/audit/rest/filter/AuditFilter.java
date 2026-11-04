@@ -27,6 +27,7 @@ import com.hmdm.plugin.service.PluginStatusCache;
 import com.hmdm.plugins.audit.AuditPluginConfigurationImpl;
 import com.hmdm.plugins.audit.persistence.AuditDAO;
 import com.hmdm.plugins.audit.persistence.domain.AuditLogRecord;
+import com.hmdm.security.LoginThrottle;
 import com.hmdm.util.BackgroundTaskRunnerService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -86,17 +87,25 @@ public class AuditFilter implements Filter {
     private final String ipHeader;
 
     /**
+     * <p>{@code proxy.private.networks}: any private-network peer is the install's own proxy (Docker sets it), as for
+     * the sign-in limit.</p>
+     */
+    private final boolean privatePeersAreProxies;
+
+    /**
      * <p>Constructs new <code>AuditFilter</code> instance. This implementation does nothing.</p>
      */
     @Inject
     public AuditFilter(AuditDAO auditDAO, BackgroundTaskRunnerService backgroundTaskRunnerService,
                        PluginStatusCache pluginStatusCache,
                        @Named("proxy.addresses") String proxyIps,
-                       @Named("proxy.ip.header") String ipHeader) {
+                       @Named("proxy.ip.header") String ipHeader,
+                       @Named(LoginThrottle.PRIVATE_PEERS_ARE_PROXIES) boolean privatePeersAreProxies) {
         this.auditDAO = auditDAO;
         this.backgroundTaskRunnerService = backgroundTaskRunnerService;
         this.pluginStatusCache = pluginStatusCache;
         this.proxyIps = proxyIps;
+        this.privatePeersAreProxies = privatePeersAreProxies;
         if (!"".equals(ipHeader)) {
             this.ipHeader = ipHeader;
         } else {
@@ -139,7 +148,8 @@ public class AuditFilter implements Filter {
                     logger.trace("Will audit request {}", requestURI.substring(context.length()));
                 }
 
-                resourceAuditor = auditInfo.get().getResourceAuditor(request, response, chain, proxyIps, ipHeader);
+                resourceAuditor = auditInfo.get().getResourceAuditor(request, response, chain, proxyIps, ipHeader,
+                        privatePeersAreProxies);
                 resourceAuditor.doProcess();
             } else {
                 chain.doFilter(request, response);

@@ -1362,6 +1362,7 @@ t.test('apply.sh: a compose file that does not resolve to the pinned refs, or a 
   const knobs = [
     [{ STUB_CONFIG_IMAGES: 'ghcr.io/mdmesh-app/mdmesh-server:0.0.2\nghcr.io/mdmesh-app/mdmesh-web:0.0.2' },
       /^ERR this install's compose file does not resolve to the signed image ghcr\.io\/mdmesh-app\/mdmesh-server:0\.0\.2@sha256:a{64}/m],
+    [{ STUB_FAIL_RE: '^compose config ' }, /^ERR could not read the compose configuration/m],
     [{ STUB_REPO_DIGESTS: 'ghcr.io/mdmesh-app/mdmesh-server@sha256:' + 'e'.repeat(64) },
       /^ERR the pulled image does not carry the signed digest ghcr\.io\/mdmesh-app\/mdmesh-server@sha256:a{64}, so it is not used$/m],
   ];

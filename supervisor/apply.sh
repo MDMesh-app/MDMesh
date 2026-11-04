@@ -188,9 +188,14 @@ set_env WEB_VERSION "$WEB_PIN"
 set_env CURRENT_VERSION "$VERSION"
 # compose must resolve server + caddy to exactly the pinned refs (a compose file whose image lines don't follow
 # IMAGE_OWNER/SERVER_VERSION/WEB_VERSION would run something else).
-IMAGES_NOW="$(dc config --images server caddy 2>/dev/null)"
+if ! IMAGES_NOW="$(dc config --images server caddy)"; then
+  errln "could not read the compose configuration (docker compose config failed, see the log above)"
+  rollback env-only
+  exit 1
+fi
 for want in "${SERVER_REF%@*}:${SERVER_PIN}" "${WEB_REF%@*}:${WEB_PIN}"; do
-  if ! printf '%s\n' "$IMAGES_NOW" | grep -qxF -- "$want"; then
+  # A here-string, not a pipe: under pipefail, grep -q exiting at the first match can fail the writer with SIGPIPE.
+  if ! grep -qxF -- "$want" <<< "$IMAGES_NOW"; then
     errln "this install's compose file does not resolve to the signed image ${want} (it resolves to: $(printf '%s' "$IMAGES_NOW" | tr '\n' ' ')). Its image lines must be ghcr.io/\${IMAGE_OWNER}/mdmesh-server:\${SERVER_VERSION} and ghcr.io/\${IMAGE_OWNER}/mdmesh-web:\${WEB_VERSION}, as in docker-compose.release.yml."
     rollback env-only
     exit 1
@@ -203,7 +208,8 @@ if ! dc pull --quiet server caddy; then   # --quiet: no per-layer progress; erro
 fi
 # Pulled by digest, so docker checked the content against it; confirm the local images carry exactly the signed digests.
 for ref in "$SERVER_REF" "$WEB_REF"; do
-  if ! docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$ref" 2>/dev/null | grep -qxF -- "$ref"; then
+  digests="$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$ref" 2>/dev/null)" || digests=""
+  if ! grep -qxF -- "$ref" <<< "$digests"; then
     errln "the pulled image does not carry the signed digest ${ref}, so it is not used"
     rollback env-only
     exit 1

@@ -82,7 +82,7 @@ updates:
           - "androidx.hilt*"
           - "androidx.core*"
           - "com.squareup.okhttp3*"
-          # datastore 1.2+ needs Kotlin 2.2+ metadata.
+          # datastore 1.3 pulls in Kotlin 2.2 metadata, which the current compiler cannot read.
           - "androidx.datastore*"
           # detekt 1.23.x is built against Kotlin 2.0 and its Gradle plugin refuses a newer Kotlin, so it has to move
           # with Kotlin (in the migration: detekt 2.x, whose plugin id is dev.detekt) or T0's agent step breaks.

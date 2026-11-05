@@ -43,7 +43,7 @@ import com.mdmesh.policy.wifi.DpmHandle
  *  - **Non-throwing** — any [DevicePolicyManager] exception becomes
  *    [PolicyOutcome.Failed]; nothing crosses the boundary as an exception.
  *
- * Partly ported from Headwind's `Utils.java`, minus the reflection/AsyncTask.
+ * Partly ported from Headwind's `Utils.java`.
  */
 class PolicyManager(
     private val handle: DpmHandle,

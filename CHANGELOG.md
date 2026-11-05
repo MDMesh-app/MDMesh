@@ -8,6 +8,9 @@ line under Unreleased.
 
 ## Unreleased
 
+Fixes
+- Agent rollout no longer remains active or offers the same agent again when every device was a successful canary.
+
 ## v0.4.0 — 2026-11-03
 
 The console is new and replaces the old one. Every page was rebuilt, and each page loads only when it's opened.

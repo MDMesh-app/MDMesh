@@ -130,6 +130,15 @@ public final class RolloutProgress {
         return c;
     }
 
+    /**
+     * True when a non-empty cohort has no update-capable device left to update. Devices that cannot
+     * silently install an APK do not keep an otherwise completed rollout actionable.
+     */
+    public static boolean isComplete(Counts counts) {
+        return counts != null && counts.getTotal() > 0
+                && counts.getUpdated() + counts.getIneligible() == counts.getTotal();
+    }
+
     /** Serializable count bucket (Jackson reads the getters). */
     public static final class Counts {
         private int total;

@@ -29,6 +29,14 @@ export interface ActiveRollout {
   progress: RolloutProgress;
 }
 
+/** Current-device progress against a mirrored agent target, including after a rollout finishes. */
+export interface RolloutTargetSummary {
+  targetVersion: string;
+  progress: RolloutCounts;
+  /** Every update-capable enrolled device is current; an empty fleet is not complete. */
+  complete: boolean;
+}
+
 export interface CreateRolloutRequest {
   targetVersion: string;
   packageName: string;
@@ -43,6 +51,10 @@ const BASE = '/private/agent/v1/rollout';
 /** The current canary/fleet rollout for this customer, or null if none is active. */
 export async function getActiveRollout(): Promise<ActiveRollout | null> {
   return apiClient.get<ActiveRollout | null>(`${BASE}/active`);
+}
+
+export async function getRolloutTargetSummary(targetVersion: string): Promise<RolloutTargetSummary> {
+  return apiClient.get<RolloutTargetSummary>(`${BASE}/summary?targetVersion=${encodeURIComponent(targetVersion)}`);
 }
 
 /** Start a canary-stage rollout. Throws ApiError (e.g. a rollout is already active). */

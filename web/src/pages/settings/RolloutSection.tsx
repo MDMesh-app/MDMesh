@@ -3,9 +3,11 @@ import { searchDevices, type DeviceView } from '../../api/devices';
 import {
   cancelRollout,
   createRollout,
+  getRolloutTargetSummary,
   promoteRollout,
   type ActiveRollout,
   type RolloutCounts,
+  type RolloutTargetSummary,
 } from '../../api/rollout';
 import type { UpdateStatus } from '../../api/updates';
 import {
@@ -283,10 +285,23 @@ export function RolloutSection({
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [picking, setPicking] = useState(false);
   const [pickErr, setPickErr] = useState<string | null>(null);
+  const [summary, setSummary] = useState<RolloutTargetSummary | null>(null);
+  const summaryRequest = useRef(0);
   const items = useMemo(() => (active ? steps(active) : []), [active]);
   // Starting, promoting and stopping a rollout queue commands on the whole fleet (ext/core/access.ts): a role without
   // edit_devices, or a user limited to some device groups, sees the rollout without its buttons.
   const canEdit = usePermission(CORE_ACTION_ACCESS.rollout);
+
+  useEffect(() => {
+    const request = ++summaryRequest.current;
+    if (!apk?.available) {
+      setSummary(null);
+      return;
+    }
+    void getRolloutTargetSummary(apk.version)
+      .then((next) => { if (request === summaryRequest.current) setSummary(next); })
+      .catch(() => { if (request === summaryRequest.current) setSummary(null); });
+  }, [apk?.available, apk?.version]);
 
   const start = async (numbers: string[]) => {
     if (!apk) return;
@@ -422,6 +437,10 @@ export function RolloutSection({
         </>
       ) : !loaded || (!statusLoaded && !loadError) ? (
         <p className="v2-settings-muted">Checking for a rollout…</p>
+      ) : apk?.available && summary?.complete ? (
+        <p className="v2-settings-muted">
+          Agent <span className="v2-mono">{apk.version}</span> is current on every device that can update itself.
+        </p>
       ) : apk?.available ? (
         <div className="v2-settings-start">
           <div className="v2-settings-start__text">

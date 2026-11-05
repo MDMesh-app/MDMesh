@@ -46,6 +46,7 @@ import java.util.Set;
 import java.util.function.Supplier;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -63,6 +64,8 @@ public class AgentDeviceAccessTest {
     private final List<String> sideEffects = new ArrayList<>();
     private boolean allDevices;
     private boolean active;
+    private boolean activeCanary;
+    private String rolloutDeviceVersion = "1";
     private FakeMapper<DeviceMapper> deviceMapper;
     private AgentAdminResource resource;
     private RolloutResource rollouts;
@@ -143,7 +146,7 @@ public class AgentDeviceAccessTest {
             @Override public AgentRollout findActiveByCustomer(int c) {
                 if (!active) return null;
                 AgentRollout r = findById(77);
-                r.setStage("fleet");
+                r.setStage(activeCanary ? "canary" : "fleet");
                 return r;
             }
             @Override public void insertRollout(AgentRollout r) { r.setId(77); sideEffects.add("rollout created"); }
@@ -158,12 +161,16 @@ public class AgentDeviceAccessTest {
                 return r;
             }
             @Override public void updateStage(int id, String stage) { sideEffects.add("stage " + stage); }
-            @Override public List<String> listCanaryNumbers(int id) { return new ArrayList<>(); }
+            @Override public List<String> listCanaryNumbers(int id) {
+                return activeCanary ? Arrays.asList(VISIBLE, HIDDEN) : new ArrayList<String>();
+            }
             @Override public List<RolloutDeviceRow> listCustomerDevices(int c) {
                 List<RolloutDeviceRow> rows = new ArrayList<>();
                 for (String n : Arrays.asList(VISIBLE, HIDDEN)) {
                     RolloutDeviceRow r = new RolloutDeviceRow();
                     r.setDeviceNumber(n);
+                    r.setAgentVersion(rolloutDeviceVersion);
+                    r.setCapabilitiesJson("{\"appManagement\":[\"silentInstall\"]}");
                     rows.add(r);
                 }
                 return rows;
@@ -428,6 +435,34 @@ public class AgentDeviceAccessTest {
         login(true);
         progress = (Map<String, Object>) ((Map<String, Object>) rollouts.active().getData()).get("progress");
         assertEquals(2, ((com.hmdm.util.RolloutProgress.Counts) progress.get("fleet")).getTotal());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void rolloutTargetSummaryReportsWhetherEveryEligibleDeviceIsCurrent() {
+        login(true);
+        Map<String, Object> pending = (Map<String, Object>) rollouts.summary("2").getData();
+        assertFalse((Boolean) pending.get("complete"));
+        assertEquals(2, ((com.hmdm.util.RolloutProgress.Counts) pending.get("progress")).getOutstanding());
+
+        rolloutDeviceVersion = "2";
+        Map<String, Object> current = (Map<String, Object>) rollouts.summary("2").getData();
+        assertTrue((Boolean) current.get("complete"));
+        assertEquals(2, ((com.hmdm.util.RolloutProgress.Counts) current.get("progress")).getUpdated());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void settledCanaryCoveringTheWholeFleetCompletesDuringStatusRefresh() {
+        login(true);
+        active = true;
+        activeCanary = true;
+        rolloutDeviceVersion = "2";
+
+        Map<String, Object> view = (Map<String, Object>) rollouts.active().getData();
+
+        assertEquals("done", view.get("stage"));
+        assertTrue(sideEffects.toString(), sideEffects.contains("stage done"));
     }
 
     @Test

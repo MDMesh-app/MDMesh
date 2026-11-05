@@ -44,6 +44,7 @@ import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
+import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.MediaType;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -65,6 +66,7 @@ import java.util.Set;
 public class RolloutResource {
 
     private static final Logger logger = LoggerFactory.getLogger(RolloutResource.class);
+    private static final String AGENT_PACKAGE = "com.mdmesh.agent";
 
     private RolloutDAO rolloutDAO;
     private DeviceDAO deviceDAO;
@@ -263,7 +265,37 @@ public class RolloutResource {
         Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
         if (!customerId.isPresent()) return Response.PERMISSION_DENIED();
         AgentRollout r = rolloutDAO.findActiveByCustomer(customerId.get());
+        completeCanaryWhenItIsTheWholeFleet(r);
         return Response.OK(r == null ? null : buildView(r));
+    }
+
+    /**
+     * Summarize visible devices against a supervisor-mirrored agent version even after a rollout
+     * is done. This lets the console avoid offering the same APK again when all update-capable
+     * devices already report it.
+     */
+    @GET
+    @Path("/summary")
+    @Produces(MediaType.APPLICATION_JSON)
+    @ApiOperation(value = "Rollout target summary", notes = "Counts devices current, pending, outstanding, or ineligible for an agent version.")
+    public Response summary(@QueryParam("targetVersion") String targetVersion) {
+        Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
+        if (!customerId.isPresent()) return Response.PERMISSION_DENIED();
+        if (isBlank(targetVersion)) return Response.ERROR("error.rollout.invalid");
+
+        Set<String> accessible = deviceDAO.getDeviceNumbersAccessibleToUser();
+        List<RolloutDeviceRow> rows = new ArrayList<>();
+        for (RolloutDeviceRow row : rolloutDAO.listCustomerDevices(customerId.get())) {
+            if (accessible.contains(row.getDeviceNumber())) rows.add(row);
+        }
+        RolloutProgress.Counts counts = RolloutProgress.counts(targetVersion, rows,
+                rolloutDAO.listPendingInstallNumbers(customerId.get(), AGENT_PACKAGE));
+
+        Map<String, Object> view = new LinkedHashMap<>();
+        view.put("targetVersion", targetVersion);
+        view.put("progress", counts);
+        view.put("complete", RolloutProgress.isComplete(counts));
+        return Response.OK(view);
     }
 
     // ---- helpers ----------------------------------------------------------------------------------------------------
@@ -289,6 +321,26 @@ public class RolloutResource {
             }
         }
         return n;
+    }
+
+    /**
+     * A canary containing every customer device has nobody left to promote. Once that cohort has
+     * settled, close it during the normal rollout-status refresh instead of leaving an active
+     * rollout with a meaningless promotion action.
+     */
+    private void completeCanaryWhenItIsTheWholeFleet(AgentRollout r) {
+        if (r == null || !"canary".equals(r.getStage())) return;
+        List<RolloutDeviceRow> rows = rolloutDAO.listCustomerDevices(r.getCustomerId());
+        Set<String> canary = new HashSet<>(rolloutDAO.listCanaryNumbers(r.getId()));
+        if (!filter(rows, canary, false).isEmpty()) return;
+
+        Set<String> pending = rolloutDAO.listPendingInstallNumbers(r.getCustomerId(), r.getPackageName());
+        RolloutProgress.Counts progress = RolloutProgress.counts(r.getTargetVersion(), filter(rows, canary, true), pending);
+        if (!RolloutProgress.isComplete(progress)) return;
+
+        rolloutDAO.updateStage(r.getId(), "done");
+        r.setStage("done");
+        logger.info("Rollout {} completed in canary stage: every device was a settled canary", r.getId());
     }
 
     /** @return false when the device already had it in flight (e.g. its check-in re-queued it a moment ago). */

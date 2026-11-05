@@ -91,6 +91,20 @@ public class RolloutProgressTest {
     public void emptyCohortIsZero() {
         RolloutProgress.Counts c = RolloutProgress.counts("1.2.0", Collections.emptyList(), null);
         assertEquals(0, c.getTotal());
+        assertFalse(RolloutProgress.isComplete(c));
+    }
+
+    @Test
+    public void completionRequiresEveryUpdateCapableDeviceToBeCurrent() {
+        RolloutProgress.Counts current = RolloutProgress.counts("1.2.0", Arrays.asList(
+                row("a", "1.2.0", CAPS_OK),
+                row("b", "1.1.0", CAPS_NONE)), Collections.<String>emptySet());
+        assertTrue(RolloutProgress.isComplete(current));
+
+        RolloutProgress.Counts outstanding = RolloutProgress.counts("1.2.0", Arrays.asList(
+                row("a", "1.2.0", CAPS_OK),
+                row("b", "1.1.0", CAPS_OK)), Collections.<String>emptySet());
+        assertFalse(RolloutProgress.isComplete(outstanding));
     }
 
     private static AgentCommand install(String num, String payload) {

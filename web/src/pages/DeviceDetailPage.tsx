@@ -946,7 +946,7 @@ export function DeviceDetailPage() {
             />
           </>
         ),
-        telemetry: <TelemetryTab telemetry={tele} loaded={teleLoaded} reportedAt={ds?.updatedAt} />,
+        telemetry: <TelemetryTab telemetry={tele} loaded={teleLoaded} reportedAt={ds?.updatedAt} agentVersion={ds?.agentVersion} />,
         apps: <AppsTab number={device.number} history={history} loaded={historyLoaded} scan={canEdit ? appScan : undefined} />,
         activity: (
           <ActivityTab events={events} eventsLoaded={eventsLoaded} commands={history} commandsLoaded={historyLoaded} now={now} />

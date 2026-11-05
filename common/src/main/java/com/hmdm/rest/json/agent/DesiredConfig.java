@@ -51,4 +51,10 @@ public class DesiredConfig {
      * keeps the mode it has, and documents without it keep their revision.
      */
     private DesiredConnectivity connectivity;
+    /**
+     * Present (1.6) = the configuration sets how the device installs OS updates. Absent (null) = Default: the device
+     * decides (an agent that set a policy for an earlier document clears it), and documents without it keep their
+     * revision.
+     */
+    private DesiredSystemUpdate systemUpdate;
 }

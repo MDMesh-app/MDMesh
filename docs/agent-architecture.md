@@ -57,7 +57,7 @@ configuration; an ad-hoc "Custom kiosk" from the console is left alone. After so
 "Return to configured kiosk" sends `kiosk.enter` with the configuration's own kiosk block (the same payload
 `config.apply` carries), so the device is back in exactly that kiosk without waiting for a configuration change.
 
-**The 23 enforced fields**
+**The 26 enforced fields**
 
 | Area | Fields |
 |------|--------|
@@ -66,6 +66,7 @@ configuration; an ad-hoc "Custom kiosk" from the console is left alone. After so
 | Device policy | `wifi`, `wifiRadio`, `bluetooth`, `usbStorage`, `disableScreenshots`, `disableFactoryReset`, `disableSafeBoot` |
 | Location | `requestUpdates` (location capture mode) |
 | Connectivity | `connectivityMode` (live-connection mode, 1.5) |
+| System updates | `systemUpdateType`, `systemUpdateFrom`, `systemUpdateTo` (OS update policy, 1.6) |
 
 `name` and `description` are metadata only. Wire shapes: `proto/payloads/config-apply.schema.json` and
 `proto/payloads/config-apply-result.schema.json`.
@@ -92,6 +93,13 @@ configuration; an ad-hoc "Custom kiosk" from the console is left alone. After so
   after every boot and agent update (`ConfigReapplyWorker`), and the server re-sends `config.apply` when the agent
   version changes, so a device-level mode lasts only until then. Switching a configuration from `alwaysOn` back to
   not managed leaves its devices on `alwaysOn`; set `adaptive` to switch them back. Older agents ignore it.
+- **1.6:** the `systemUpdate` section, from the Headwind-era System updates columns, applied with
+  `setSystemUpdatePolicy`: Immediately (1) = `automatic`, Scheduled (2) = `windowed` between `systemUpdateFrom` and
+  `systemUpdateTo` (HH:MM, device local time, may cross midnight; sent as minutes), Postponed (3) = `postpone` (up to
+  30 days; security updates still install). Default (0) is not managed: the section is omitted, so revisions of
+  Default configurations don't move, and an agent that set a policy for an earlier document clears it. A Scheduled
+  type without two different valid times is refused on save. The agent also reports a waiting OS update
+  (`getPendingSystemUpdate`) in telemetry. Older agents ignore the section.
 
 **Wi-Fi radio Off, in detail**
 - Off is deferred, without blocking the other keys, while Wi-Fi is the device's only network. It's retried only at

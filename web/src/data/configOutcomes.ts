@@ -43,6 +43,7 @@ export function outcomeKeyLabel(key: string): string {
   if (k === 'kiosk') return 'Kiosk mode';
   if (k === 'location') return 'Location reporting';
   if (k === 'connectivity') return 'Connectivity';
+  if (k === 'systemUpdate') return 'System updates';
   if (k === 'apps' || k === 'applications') return 'Apps';
   const plugin = key.startsWith('policies.') ? PLUGIN_KEY.exec(k) : null;
   if (plugin) return `${plugin[1]}: ${words(plugin[2])}`;

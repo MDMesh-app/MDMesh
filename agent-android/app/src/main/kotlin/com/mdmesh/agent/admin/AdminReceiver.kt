@@ -51,7 +51,7 @@ class AdminReceiver : DeviceAdminReceiver() {
         // periodic cycle.
         CheckInWorker.schedule(context)
 
-        val token = extrasToken(intent)
+        val token = extrasString(intent, EXTRA_ENROLL_TOKEN)
         if (token.isNullOrBlank()) {
             // On Android 12+ the token reaches AdminPolicyComplianceActivity instead, which starts the service once
             // it is saved; starting it here would only race that save.
@@ -81,6 +81,15 @@ class AdminReceiver : DeviceAdminReceiver() {
     override fun onLockTaskModeExiting(context: Context, intent: Intent) {
         super.onLockTaskModeExiting(context, intent)
         setCreateWindowsRestriction(context, restrict = false)
+    }
+
+    /**
+     * An OS update became pending, or stopped being pending (API 26+): check in now, so the console sees it in the
+     * telemetry (`pendingSystemUpdateAt`) instead of at the next periodic check-in.
+     */
+    override fun onSystemUpdatePending(context: Context, intent: Intent, receivedTime: Long) {
+        super.onSystemUpdatePending(context, intent, receivedTime)
+        CheckInWorker.scheduleNow(context)
     }
 
     /**
@@ -154,8 +163,6 @@ class AdminReceiver : DeviceAdminReceiver() {
             }
         }
     }
-
-    private fun extrasToken(intent: Intent): String? = extrasString(intent, EXTRA_ENROLL_TOKEN)
 
     @Suppress("DEPRECATION") // typed getParcelableExtra is API 33+; we support minSdk 24
     private fun extrasString(intent: Intent, key: String): String? {

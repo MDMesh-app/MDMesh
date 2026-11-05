@@ -184,8 +184,9 @@ public class ConfigurationResource {
                     "the plugins' validators on the namespaces the save changes: " +
                     "a refusal is an ERROR whose message is the first problem's key and whose data lists them all. " +
                     "applicationUsageParameters are upserted and never removed. " +
-                    "An explicit \"applications\": null, and a connectivityMode other than adaptive, alwaysOn or null, " +
-                    "are refused with HTTP 400."
+                    "An explicit \"applications\": null, a connectivityMode other than adaptive, alwaysOn or null, " +
+                    "a systemUpdateType other than 0 to 3, and a Scheduled (2) one without systemUpdateFrom and " +
+                    "systemUpdateTo as two different HH:MM times, are refused with HTTP 400."
     )
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
@@ -205,6 +206,11 @@ public class ConfigurationResource {
                 && DesiredConfigBuilder.connectivityMode(configuration.getConnectivityMode()) == null) {
             // An unknown mode would be stored and sent as not managed; a long one used to fail with a 500.
             throw new BadRequestException("connectivityMode must be adaptive, alwaysOn or null");
+        }
+        String systemUpdateError = systemUpdateError(configuration);
+        if (systemUpdateError != null) {
+            // Devices apply it now (config.apply systemUpdate, 1.6): a window they can't use would be sent as Default.
+            throw new BadRequestException(systemUpdateError);
         }
         try {
             Configuration dbConfiguration = this.configurationDAO.getConfigurationByName(configuration.getName());
@@ -443,5 +449,18 @@ public class ConfigurationResource {
 
         }
         return configuration;
+    }
+
+    /** Why the configuration's system update setting can't be saved, or null when it can. */
+    static String systemUpdateError(Configuration configuration) {
+        int type = configuration.getSystemUpdateType();
+        if (type < DesiredConfigBuilder.SYSTEM_UPDATE_DEFAULT || type > DesiredConfigBuilder.SYSTEM_UPDATE_POSTPONED) {
+            return "systemUpdateType must be 0 (Default), 1 (Immediately), 2 (Scheduled) or 3 (Postponed)";
+        }
+        if (type == DesiredConfigBuilder.SYSTEM_UPDATE_SCHEDULED && DesiredConfigBuilder.systemUpdate(type,
+                configuration.getSystemUpdateFrom(), configuration.getSystemUpdateTo()) == null) {
+            return "a Scheduled systemUpdateType needs systemUpdateFrom and systemUpdateTo as two different HH:MM times";
+        }
+        return null;
     }
 }

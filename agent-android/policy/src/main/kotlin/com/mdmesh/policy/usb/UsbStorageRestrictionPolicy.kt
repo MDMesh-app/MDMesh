@@ -2,8 +2,9 @@
  * Headwind MDM: Open Source Android MDM Software
  * https://h-mdm.com
  *
- * Based on lockUsbStorage in hmdm-android Utils.java and changed for MDMesh:
- * rewritten in Kotlin as a policy strategy; the pre-Lollipop path is removed.
+ * Based on lockUsbStorage in hmdm-android Utils.java and changed for MDMesh: rewritten in
+ * Kotlin as a policy strategy; the legacy Settings fallback, used below Lollipop or
+ * without Device Owner, is removed.
  *
  * Copyright (C) 2019 Headwind Solutions LLC (http://h-sms.com)
  * Modifications Copyright (C) 2026 the MDMesh contributors

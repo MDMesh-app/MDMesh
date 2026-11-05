@@ -2,8 +2,9 @@
  * Headwind MDM: Open Source Android MDM Software
  * https://h-mdm.com
  *
- * Ported from hmdm-android Utils.java and changed for MDMesh: rewritten in Kotlin,
- * restructured around DpmHandle and PolicyOutcome.
+ * Based on the system-update and user-restriction calls in hmdm-android Utils.java and
+ * changed for MDMesh: rewritten in Kotlin around DpmHandle and PolicyOutcome; permission
+ * policy, status bar and keyguard calls added.
  *
  * Copyright (C) 2019 Headwind Solutions LLC (http://h-sms.com)
  * Modifications Copyright (C) 2026 the MDMesh contributors
@@ -42,7 +43,7 @@ import com.mdmesh.policy.wifi.DpmHandle
  *  - **Non-throwing** — any [DevicePolicyManager] exception becomes
  *    [PolicyOutcome.Failed]; nothing crosses the boundary as an exception.
  *
- * Ported from Headwind's `Utils.java` DPM table, minus the reflection/AsyncTask.
+ * Partly ported from Headwind's `Utils.java`, minus the reflection/AsyncTask.
  */
 class PolicyManager(
     private val handle: DpmHandle,

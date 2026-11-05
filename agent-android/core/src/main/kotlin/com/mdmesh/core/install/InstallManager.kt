@@ -2,8 +2,9 @@
  * Headwind MDM: Open Source Android MDM Software
  * https://h-mdm.com
  *
- * Ported from hmdm-android InstallUtils.java and changed for MDMesh: rewritten in
- * Kotlin with coroutines and OkHttp, multi-part installs and download checks added.
+ * Ported from hmdm-android InstallUtils.java and XapkUtils.java and changed for MDMesh:
+ * rewritten in Kotlin with coroutines and OkHttp, split parts sent by the server rather
+ * than unpacked from an XAPK, and SHA-256 checks added.
  *
  * Copyright (C) 2019 Headwind Solutions LLC (http://h-sms.com)
  * Modifications Copyright (C) 2026 the MDMesh contributors

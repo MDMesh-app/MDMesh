@@ -17,6 +17,7 @@ Upstream attribution (retained per Apache-2.0 section 4d):
   Headwind MDM: Open Source Android Mobile Device Management Software
   Project website: https://h-mdm.com
   (c) 2019 Headwind Solutions LLC (http://www.h-sms.com)
+  Copyright 2018 Vsevolod Mayorov
 
   "Headwind" and "Headwind MDM" are names/marks of the upstream project and
   are NOT used as the name of this product (Apache-2.0 section 6).
@@ -26,9 +27,10 @@ This product and its modifications:
 
   (c) 2026 the MDMesh contributors.
 
-  New components (the protocol under proto/, the web admin under web/, and
-  the agent v1 server endpoints) are original works. Files derived from the
-  upstream retain their original Apache-2.0 headers.
+  New components (the protocol under proto/ and the web admin under web/)
+  are original works. The agent v1 server endpoints were written for MDMesh,
+  though some carry the upstream header. Files derived from the upstream
+  retain their original Apache-2.0 headers.
 
   The Kotlin device agent under agent-android/ is new, but parts of it are
   ported from the Headwind MDM Android agent under Apache-2.0: app install

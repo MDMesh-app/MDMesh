@@ -22,7 +22,8 @@ progressively replace it with our own code so we own the project.
 
 Build a proprietary product on the Apache-2.0 base via a **strangler** approach: retain the
 community backend as a foundation and replace modules with our own (closeable) code over time.
-New components (Kotlin agent, `proto/`, React `web/`, agent v1 endpoints) are original works.
+New components (`proto/`, React `web/`, agent v1 endpoints) are original works. The Kotlin agent is new, but
+parts of it are ported from the Headwind Android agent; those files carry the upstream header and say what changed.
 
 **Obligations we will honor:**
 1. Keep upstream Apache license headers on retained/derived files; new files carry our header.

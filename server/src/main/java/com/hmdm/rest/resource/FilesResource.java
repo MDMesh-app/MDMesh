@@ -173,6 +173,10 @@ public class FilesResource {
                 return Response.FILE_USED();
             } else if (this.iconDAO.isFileUsed(file.getId())) {
                 return Response.FILE_USED();
+            } else if (this.configurationDAO != null && this.configurationDAO.isBackgroundImageFileUsed(file.getId())) {
+                // A kiosk image is hash-pinned in desired state. It must be explicitly replaced from the
+                // configuration editor, never deleted behind an active configuration's back.
+                return Response.FILE_USED();
             }
 
             if (!file.isExternal()) {
@@ -328,6 +332,11 @@ public class FilesResource {
             if (dbFile == null) {
                 logger.warn("Refused to update file {}: no such file", uploadedFile.getId());
                 return Response.PERMISSION_DENIED();
+            }
+            if (configurationDAO != null && configurationDAO.isBackgroundImageFileUsed(dbFile.getId())) {
+                // The configuration stores the digest of these exact bytes. Replacing or renaming it would make an
+                // already-issued desired-state descriptor stale; create a new image and select it instead.
+                return Response.FILE_USED();
             }
             if (uploadedFile.isExternal() != dbFile.isExternal()) {
                 logger.warn("Refused to update file {}: the external flag cannot change", uploadedFile.getId());

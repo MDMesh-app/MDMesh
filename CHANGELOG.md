@@ -8,6 +8,9 @@ line under Unreleased.
 
 ## Unreleased
 
+New
+- Kiosk configurations can use one server-managed background image. The agent downloads it privately, verifies it by SHA-256, and keeps the configured color as a fallback.
+
 Under the hood
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
 

@@ -26,6 +26,14 @@ class KioskLauncherExitTest {
             .replace(Regex("\"(?:\\\\.|[^\"\\\\\n])*\""), blank)
     }
 
+    private fun backgroundStoreSource(): String {
+        val root = generateSequence(File("").absoluteFile) { it.parentFile }
+            .first { File(it, "settings.gradle.kts").isFile }
+        val file = File(root, "core/src/main/kotlin/com/mdmesh/core/kiosk/KioskBackgroundImageStore.kt")
+        assertTrue("missing $file", file.isFile)
+        return file.readText()
+    }
+
     /** The text of `fun name(...) { ... }`, by brace matching. */
     private fun body(src: String, name: String): IntRange {
         val start = Regex("\\bfun\\s+$name\\s*\\(").find(src)?.range?.first ?: error("no fun $name")
@@ -90,5 +98,51 @@ class KioskLauncherExitTest {
         assertEquals("stopLockTask outside doExit/stopLockTaskSafely", emptyList<Int>(), stops)
         // One definition + the no-kiosk branch of applyState.
         assertEquals("stopLockTaskSafely callers changed; check none is a crash path", 2, callers)
+    }
+
+    @Test
+    fun `an unchanged kiosk state does not clear a rendered background`() {
+        val src = launcherSource()
+        val apply = src.substring(body(src, "applyState"))
+        val unchanged = Regex(
+            "if\\s*\\(\\s*p\\s*!=\\s*null\\s*&&\\s*p\\s*==\\s*previous\\s*\\)\\s*return",
+        )
+            .find(apply)?.range?.first ?: error("applyState must preserve an unchanged kiosk surface")
+        val clears = apply.indexOf("backgroundImageFile = null")
+        val message = "applyState must return before it clears the cached background for the same state"
+        assertTrue(message, clears > unchanged)
+    }
+
+    @Test
+    fun `background completion only renders the current state and preserves a crash hold`() {
+        val src = launcherSource()
+        val fetch = src.substring(body(src, "fetchBackgroundImage"))
+        assertTrue(
+            "background completion must reject a changed kiosk payload",
+            "if (active != p) return@launch" in fetch,
+        )
+        assertTrue(
+            "background completion must redraw the hold screen instead of relaunching",
+            "if (holding) hold(p)" in fetch,
+        )
+        assertTrue("background completion must not call show while held", "|| holding" !in fetch)
+    }
+
+    @Test
+    fun `background download retries once after a transient failure`() {
+        val src = launcherSource()
+        val obtain = src.substring(body(src, "obtainBackgroundImage"))
+        assertTrue("background download must make an initial attempt", "backgroundImages.obtain(requested)" in obtain)
+        assertTrue("background download must defer a bounded retry", "delay(BACKGROUND_RETRY_MS)" in obtain)
+    }
+
+    @Test
+    fun `overlapping image downloads use distinct temporary files`() {
+        val src = backgroundStoreSource()
+        assertTrue("background staging must use a unique temporary file", "File.createTempFile" in src)
+        assertTrue(
+            "background staging must not use one hash-named shared download",
+            ".\${request.hash}.download" !in src,
+        )
     }
 }

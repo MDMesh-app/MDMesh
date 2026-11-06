@@ -143,6 +143,8 @@ public interface ConfigurationMapper {
             "wifiRadio=#{wifiRadio}, " +
             "kioskLockVolume=#{kioskLockVolume}, " +
             "connectivityMode=#{connectivityMode}, " +
+            "backgroundImageFileId=#{backgroundImageFileId}, " +
+            "backgroundImageSha256=#{backgroundImageSha256}, " +
             // Left out (null), the stored extensions stay: a client that doesn't know them can't wipe them.
             "extensions=COALESCE(CAST(#{extensions} AS jsonb), extensions) " +
             "WHERE id=#{id}"})
@@ -150,6 +152,9 @@ public interface ConfigurationMapper {
 
     @Delete({"DELETE FROM configurations WHERE id=#{id}"})
     void removeConfigurationById(@Param("id") Integer id);
+
+    @Select("SELECT COUNT(*) FROM configurations WHERE backgroundImageFileId = #{fileId}")
+    long countBackgroundImageFileReferences(@Param("fileId") int fileId);
 
     @Select({"SELECT * " +
             "FROM configurations " +

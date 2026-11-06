@@ -2,6 +2,7 @@ package com.mdmesh.agent
 
 import android.app.ActivityManager
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Bundle
@@ -26,6 +27,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.flow.distinctUntilChanged
 import com.mdmesh.agent.service.CheckInService
 import com.mdmesh.core.kiosk.KioskApplier
+import com.mdmesh.core.kiosk.KioskBackgroundImageStore
 import com.mdmesh.core.store.KioskStateStore
 import com.mdmesh.core.sync.CheckInWorker
 import com.mdmesh.core.telemetry.EventSink
@@ -35,6 +37,8 @@ import com.mdmesh.kiosk.KioskController
 import com.mdmesh.kiosk.KioskReturnPolicy
 import com.mdmesh.proto.KioskApplyPayload
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -65,9 +69,14 @@ class KioskLauncherActivity : ComponentActivity() {
     @Inject lateinit var events: EventSink
     @Inject lateinit var crashGuard: CrashLoopGuard
     @Inject lateinit var pinGate: ExitPinGate
+    @Inject lateinit var backgroundImages: KioskBackgroundImageStore
 
     /** Last applied non-null kiosk state, so [onResume] can recover a bounced single-app pin. */
     private var active: KioskApplyPayload? = null
+    /** Validated private image for [active], or null while the color-only fallback is shown. */
+    private var backgroundImageFile: java.io.File? = null
+    /** Current optional-image fetch; cancelled when a newer kiosk configuration arrives. */
+    private var backgroundFetch: Job? = null
 
     private val returns by lazy { KioskReturnPolicy(crashGuard) }
 
@@ -106,20 +115,49 @@ class KioskLauncherActivity : ComponentActivity() {
 
     private fun applyState(p: KioskApplyPayload?) {
         val previous = active
+        // repeatOnLifecycle re-subscribes after the screen wakes, and StateFlow immediately emits its current value.
+        // Rebuilding an unchanged launcher clears the already-rendered cached image, briefly exposing the color
+        // fallback before the image is decoded again. The existing surface is still the desired state.
+        if (p != null && p == previous) return
         active = p
+        backgroundFetch?.cancel()
+        backgroundFetch = null
+        backgroundImageFile = null
         if (p == null) {
             holding = false
             stopLockTaskSafely()
             setContentView(idleView())
-            return
+        } else {
+            // Pin first: a held device (a loop that tripped just before a reboot) is still in kiosk.
+            startLockTaskSafely()
+            if (returns.onApplied(changed = previous != null && previous != p) == KioskReturnPolicy.Action.HOLD) {
+                hold(p)
+            } else {
+                show(p)
+                fetchBackgroundImage(p)
+            }
         }
-        // Pin first: a held device (a loop that tripped just before a reboot) is still in kiosk.
-        startLockTaskSafely()
-        if (returns.onApplied(changed = previous != null && previous != p) == KioskReturnPolicy.Action.HOLD) {
-            hold(p)
-            return
+    }
+
+    private fun fetchBackgroundImage(p: KioskApplyPayload) {
+        val requested = p.theme.backgroundImage ?: return
+        backgroundFetch = lifecycleScope.launch {
+            val file = obtainBackgroundImage(requested) ?: return@launch
+            // A newer configuration may have arrived while this download was in flight. Compare
+            // the full payload: a matching image alone does not make its app grid current.
+            if (active != p) return@launch
+            backgroundImageFile = file
+            // Do not reopen a pinned app, or clear a crash-loop hold, merely because its optional
+            // splash background arrived.
+            if (holding) hold(p) else if (p.mode == "launcher") show(p)
         }
-        show(p)
+    }
+
+    /** One bounded retry lets a transient network failure recover without keeping a retry loop alive. */
+    private suspend fun obtainBackgroundImage(requested: com.mdmesh.proto.KioskBackgroundImageDto): java.io.File? {
+        backgroundImages.obtain(requested)?.let { return it }
+        delay(BACKGROUND_RETRY_MS)
+        return backgroundImages.obtain(requested)
     }
 
     private fun show(p: KioskApplyPayload) {
@@ -402,7 +440,26 @@ class KioskLauncherActivity : ComponentActivity() {
         android.widget.FrameLayout(this).apply {
             setBackgroundColor(bg)
             layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
+            backgroundImageFile?.let { file ->
+                decodeBackground(file)?.let { bitmap ->
+                    addView(ImageView(this@KioskLauncherActivity).apply {
+                        setImageBitmap(bitmap)
+                        scaleType = ImageView.ScaleType.CENTER_CROP
+                        layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
+                    })
+                }
+            }
         }
+
+    /** Decode only enough pixels for the current screen; source dimensions were bounded before caching. */
+    private fun decodeBackground(file: java.io.File): android.graphics.Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.path, bounds)
+        var sample = 1
+        val target = maxOf(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
+        while (bounds.outWidth / sample > target * 2 || bounds.outHeight / sample > target * 2) sample *= 2
+        return BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })
+    }
 
     private fun centeredText(s: String, sizeSp: Float, color: Int, bold: Boolean = false): TextView =
         text(s, sizeSp, color, bold).apply { gravity = Gravity.CENTER }
@@ -427,6 +484,7 @@ class KioskLauncherActivity : ComponentActivity() {
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     private companion object {
+        const val BACKGROUND_RETRY_MS = 10_000L
         const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         const val GESTURE_TAPS = 7
         const val GESTURE_WINDOW_MS = 3_000L

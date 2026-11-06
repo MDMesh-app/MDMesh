@@ -1,9 +1,13 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { configure, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../../App';
 import { ROLES, renderInConsole, stubApi } from '../../test/console';
 import type { AuthUser } from '../../api/auth';
 import type { ManagedUser, UserRole } from '../../api/users';
+
+// Whichever test runs first loads the lazy Settings page and renders it cold, which on a busy machine outlasts the
+// default 1 s wait and can reach the default 5 s test limit (see the describe below).
+configure({ asyncUtilTimeout: 10_000 });
 
 beforeEach(() => {
   HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -24,11 +28,12 @@ const account: ManagedUser = {
   editable: true,
 };
 function open(
-  { user = ROLES.admin, manageUsers = true, manageRoles = true, path = '/settings' } = {} as {
+  { user = ROLES.admin, manageUsers = true, manageRoles = true, path = '/settings', others = [account] } = {} as {
     user?: AuthUser;
     manageUsers?: boolean;
     manageRoles?: boolean;
     path?: string;
+    others?: ManagedUser[];
   },
 ) {
   const fetch = stubApi((path) => {
@@ -36,7 +41,7 @@ function open(
       case '/users/management':
         return { users: manageUsers, roles: manageRoles };
       case '/users/all':
-        return [{ ...account, id: user.id, login: 'myself' }, account];
+        return [{ ...account, id: user.id, login: 'myself' }, ...others];
       case '/users/roles':
         return [role];
       case '/users/8':
@@ -61,7 +66,7 @@ const body = (fetch: ReturnType<typeof open>, path: string) => {
   return call ? JSON.parse(String(call[1]?.body)) : undefined;
 };
 
-describe('Users & roles administration', () => {
+describe('Users & roles administration', { timeout: 30_000 }, () => {
   it('places administration inside Settings without adding a main navigation item', async () => {
     open();
     const settings = await screen.findByRole('heading', { name: 'Settings' });
@@ -109,6 +114,14 @@ describe('Users & roles administration', () => {
     expect(screen.queryByRole('radio', { name: 'Roles' })).toBeNull();
     expect(fetch.mock.calls.some(([p]) => String(p).includes('/private/roles/'))).toBe(false);
     expect(screen.queryByRole('button', { name: 'Edit myself' })).toBeNull();
+  });
+
+  it('offers Edit but not Delete on another super-admin account', async () => {
+    const root = { ...account, id: 12, login: 'root', userRole: { ...role, superAdmin: true } };
+    open({ user: ROLES.superAdmin, others: [account, root] });
+    expect(await screen.findByRole('button', { name: 'Edit root' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Delete root' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Delete operator' })).toBeTruthy();
   });
 
   it('creates an account with a wire-compatible hashed password and the selected access scopes', async () => {

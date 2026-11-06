@@ -32,7 +32,7 @@ import { CORE_ACTION_ACCESS } from '../ext/core/access';
 import { usePermission } from '../ext/permissions';
 import { paths } from '../routes';
 import { CopyConfigModal, DeleteConfigModal, NewConfigChooser } from './configurations/modals';
-import { syncLine } from './configurations/sync';
+import { devicesBlockingDelete, syncLine } from './configurations/sync';
 import type { ConfigWatch } from './configurations/watch';
 import './ConfigurationsPage.css';
 
@@ -346,7 +346,8 @@ export function ConfigurationsPage() {
       />
       <DeleteConfigModal
         target={deleting}
-        deviceCount={deleting?.id != null ? sync[deleting.id]?.total : undefined}
+        deviceCount={devicesBlockingDelete(deleting?.id != null ? sync[deleting.id] : undefined)}
+        wipedCount={deleting?.id != null ? sync[deleting.id]?.wiped : undefined}
         onClose={() => setDeleting(null)}
         onDeleted={() => {
           setDeleting(null);

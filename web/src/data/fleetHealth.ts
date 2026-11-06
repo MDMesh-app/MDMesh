@@ -66,9 +66,12 @@ export function presenceOf(lastUpdate: number | undefined, hasIssue: boolean, no
   return hasIssue ? 'attention' : 'online';
 }
 
-/** A configuration whose devices are all in sync: nothing out of sync, unsupported, never seen or deferred. */
+/**
+ * A configuration whose devices are all in sync: nothing out of sync, unsupported, never seen or deferred. A row with
+ * only wiped devices has no live device to vouch for, so it isn't clean.
+ */
 export function isCleanSummary(s: ConfigSyncSummary): boolean {
-  return s.outOfSync === 0 && s.unsupported === 0 && s.neverSeen === 0 && (s.deferred ?? 0) === 0;
+  return s.total > 0 && s.outOfSync === 0 && s.unsupported === 0 && s.neverSeen === 0 && (s.deferred ?? 0) === 0;
 }
 
 /**

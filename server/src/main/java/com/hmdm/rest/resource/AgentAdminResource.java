@@ -426,6 +426,10 @@ public class AgentAdminResource {
             if (!accessible.contains(row.getDeviceNumber())) continue;
             Integer cfgId = row.getConfigurationId();
             ConfigSyncSummary s = out.computeIfAbsent(cfgId, id -> { ConfigSyncSummary x = new ConfigSyncSummary(); x.setConfigurationId(id); return x; });
+            if (row.isWiped()) {
+                s.setWiped(s.getWiped() + 1);
+                continue;
+            }
             s.setTotal(s.getTotal() + 1);
             // containsKey/put, not computeIfAbsent: a configuration whose plugin fails has a null revision, which
             // computeIfAbsent wouldn't keep, so the document would be rebuilt (and fail again) for every device on it.

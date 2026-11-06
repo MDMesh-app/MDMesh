@@ -53,6 +53,7 @@ import {
 import { applyPhaseLabel, lastCheckError } from '../data/updateStatus';
 import { EVENT_VERBS, parseCommandResult } from '../data/deviceActivity';
 import type { SyncCheck } from '../data/fleetHealth';
+import { wipedOnlyLine } from './configurations/sync';
 import { bucketOf, reasonFor, topReason, type ConfigIssue } from './overview/attention';
 import { useOverviewData, type ActivityItem, type OverviewData } from './overview/useOverviewData';
 import './OverviewPage.css';
@@ -482,14 +483,14 @@ function ByConfiguration({
       const s = sums.get(id);
       const name = configurations[String(id)]?.name ?? `Configuration ${id}`;
       const to = paths.configuration(id);
-      if (!s) {
+      if (!s || s.total === 0) {
         return {
           key: String(id),
           name,
           to,
           count: byId.get(id) ?? 0,
           segments: [],
-          note: summary ? 'Sync not reported' : 'Sync status unavailable',
+          note: wipedOnlyLine(s) ?? (summary ? 'Sync not reported' : 'Sync status unavailable'),
           tone: 'muted',
         };
       }

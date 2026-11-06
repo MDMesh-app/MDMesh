@@ -16,13 +16,14 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Scanner;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
  * devices.wipedAt (#137): the latest wipe's delivery sets it, only that wipe's failure clears it (a late failure of an
- * earlier wipe leaves a later wipe's mark alone), a rollout and the sync summary leave a marked device out, and a
- * check-in reads the mark.
+ * earlier wipe leaves a later wipe's mark alone), a rollout leaves a marked device out, the sync summary gets it marked,
+ * and a check-in reads the mark.
  */
 public class WipedSqlTest {
 
@@ -58,10 +59,13 @@ public class WipedSqlTest {
     }
 
     @Test
-    public void theSyncSummaryLeavesWipedDevicesOut() {
-        String where = Fakes.whereOf(Fakes.sqlOf(AgentDeviceMapper.class, "listDevicesForSync"));
-        assertTrue(where, where.contains(
-                "where d.customerid = #{customerid} and d.configurationid is not null and d.wipedat is null"));
+    public void theSyncSummaryGetsWipedDevicesMarked() {
+        // Not filtered: ConfigurationMapper.countDevices counts them, so a configuration with only wiped devices has to
+        // reach the console for it to warn before a delete that will fail.
+        String sql = squash(Fakes.sqlOf(AgentDeviceMapper.class, "listDevicesForSync")).toLowerCase();
+        String where = Fakes.whereOf(sql);
+        assertTrue(sql, sql.contains("d.wipedat is not null as wiped"));
+        assertFalse(where, where.contains("wipedat"));
     }
 
     @Test

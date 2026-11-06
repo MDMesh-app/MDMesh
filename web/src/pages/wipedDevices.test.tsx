@@ -191,6 +191,73 @@ describe('wiped devices on the Overview', () => {
   }, SLOW);
 });
 
+describe('a configuration with only wiped devices', () => {
+  const WIPED_ONLY = [{ configurationId: 3, total: 0, inSync: 0, outOfSync: 0, unsupported: 0, neverSeen: 0, deferred: 0, wiped: 1 }];
+  const WHOLE = /1 device still uses this configuration, so the server will refuse to delete it/;
+  const FILTER = /That includes 1 wiped device, listed under the Wiped filter on Devices/;
+
+  /** The fleet's answers, with `summary` as the sync summary and the one wiped device as the whole fleet. */
+  function openWith(path: string, summary: unknown) {
+    const base = api(null, DEVICES.filter((d) => d.wipedAt != null));
+    stubApi((p, init) => {
+      if (p.includes('/configurations/syncSummary')) return summary;
+      return p.includes('/configurations/applications/') ? [] : base(p, init);
+    });
+    renderInConsole(<AppRoutes />, { path });
+  }
+
+  it('says so on its card, and Delete warns before the server refuses', async () => {
+    openWith('/configurations', WIPED_ONLY);
+    await main().findByText('Used only by 1 wiped device', undefined, LOAD);
+    expect(main().queryByText('Not used by any device yet')).toBeNull();
+    fireEvent.click(main().getByRole('button', { name: 'More for Warehouse' }));
+    fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Delete…' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog.textContent).toMatch(WHOLE);
+    expect(dialog.textContent).toMatch(FILTER);
+  }, SLOW);
+
+  it('says so in the editor, links to the wiped device, and Delete warns there too', async () => {
+    openWith('/configurations/3', WIPED_ONLY);
+    const link = await main().findByRole('link', { name: '1 wiped device' }, LOAD);
+    expect(link.getAttribute('href')).toBe('/devices?status=wiped&config=3');
+    expect(link.parentElement?.textContent).toMatch(/^Used only by 1 wiped device\.$/);
+    expect(main().queryByText(/Not used by any device yet/)).toBeNull();
+    fireEvent.change(main().getByRole('textbox', { name: /Description/ }), { target: { value: 'Old scanners' } });
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Unsaved changes' }).textContent).toMatch(/Used only by 1 wiped device\./), LOAD);
+    expect(screen.queryByText(/No device uses this configuration yet/)).toBeNull();
+    fireEvent.click(await main().findByRole('button', { name: 'Delete…' }, LOAD));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog.textContent).toMatch(WHOLE);
+    expect(dialog.textContent).toMatch(FILTER);
+  }, SLOW);
+
+  it('counts wiped devices alongside live ones in the Delete warning', async () => {
+    openWith('/configurations', [{ ...WIPED_ONLY[0], total: 2, inSync: 2 }]);
+    await main().findByText('All 2 in sync', undefined, LOAD);
+    fireEvent.click(main().getByRole('button', { name: 'More for Warehouse' }));
+    fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Delete…' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog.textContent).toMatch(/3 devices still use this configuration/);
+    expect(dialog.textContent).toMatch(FILTER);
+  }, SLOW);
+
+  it('leaves the Delete dialog without a warning when nothing uses it, and on an older server', async () => {
+    openWith('/configurations', []);
+    await main().findByText('Not used by any device yet', undefined, LOAD);
+    fireEvent.click(main().getByRole('button', { name: 'More for Warehouse' }));
+    fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Delete…' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog.textContent).not.toMatch(/refuse/);
+  }, SLOW);
+
+  it('is not "All in sync" on the Overview', async () => {
+    openWith('/', WIPED_ONLY);
+    await main().findByText('Used only by 1 wiped device', undefined, LOAD);
+    expect(main().queryByText('All in sync')).toBeNull();
+  }, SLOW);
+});
+
 describe('a wiped device’s page', () => {
   it(
     'says it was wiped and greys out the commands',

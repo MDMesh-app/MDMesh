@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ConfigSyncSummary } from '../api/configSync';
 import type { DeviceView } from '../api/devices';
-import { presenceOf, suspectDevices } from './fleetHealth';
+import { isCleanSummary, presenceOf, suspectDevices } from './fleetHealth';
 import { ONLINE_WINDOW_MS } from './presence';
 
 const NOW = 1_800_000_000_000;
@@ -24,6 +24,17 @@ describe('presenceOf', () => {
     expect(presenceOf(QUIET, false, NOW, wipedAt)).toBe('wiped');
     expect(presenceOf(undefined, false, NOW, wipedAt)).toBe('wiped');
     expect(presenceOf(RECENT, false, NOW, undefined)).toBe('online');
+  });
+});
+
+describe('isCleanSummary', () => {
+  const row = (extra: Partial<ConfigSyncSummary>): ConfigSyncSummary => ({
+    configurationId: 3, total: 0, inSync: 0, outOfSync: 0, unsupported: 0, neverSeen: 0, ...extra,
+  });
+
+  it('needs a live device: a row with only wiped devices vouches for nothing', () => {
+    expect(isCleanSummary(row({ wiped: 1 }))).toBe(false);
+    expect(isCleanSummary(row({ total: 1, inSync: 1, wiped: 1 }))).toBe(true);
   });
 });
 

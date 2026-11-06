@@ -8,6 +8,7 @@ import com.hmdm.persistence.domain.User;
 import com.hmdm.persistence.domain.UserRole;
 import com.hmdm.persistence.domain.UserRolePermission;
 import com.hmdm.persistence.mapper.UserMapper;
+import com.hmdm.rest.json.LookupItem;
 import com.hmdm.rest.json.Response;
 import com.hmdm.security.LoginThrottle;
 import com.hmdm.security.SecurityContext;
@@ -49,6 +50,7 @@ public class UserResourceTest {
     private final Map<Integer, User> users = new LinkedHashMap<>();
     private final List<String> writes = new ArrayList<>();
     private final List<User> written = new ArrayList<>();
+    private final List<String> accessWrites = new ArrayList<>();
 
     private UserResource resource;
     private LoginThrottle throttle;
@@ -168,6 +170,35 @@ public class UserResourceTest {
         assertEquals(Response.ResponseStatus.OK, response.getStatus());
         assertEquals("insert", writes.get(0));
         assertEquals(TENANT, written.get(0).getCustomerId());
+    }
+
+    @Test
+    public void aNewRestrictedAccountGetsTheSelectedGroupsAndConfigurations() {
+        signIn(orgAdmin);
+        User request = newUser("newop", USER);
+        request.setAllDevicesAvailable(false);
+        request.setAllConfigAvailable(false);
+        request.setGroups(java.util.Collections.singletonList(new LookupItem(9, "Warehouse")));
+        request.setConfigurations(java.util.Collections.singletonList(new LookupItem(4, "Kiosk")));
+
+        assertEquals(Response.ResponseStatus.OK, resource.updateUser(request).getStatus());
+
+        assertEquals(java.util.Arrays.asList("insertUserDeviceGroupsAccess:[9]", "insertUserConfigurationAccess:[4]"),
+                accessWrites);
+    }
+
+    @Test
+    public void aNewUnrestrictedAccountGetsNoAccessLists() {
+        signIn(orgAdmin);
+        User request = newUser("newop", USER);
+        request.setAllDevicesAvailable(true);
+        request.setAllConfigAvailable(true);
+        request.setGroups(java.util.Collections.singletonList(new LookupItem(9, "Warehouse")));
+        request.setConfigurations(java.util.Collections.singletonList(new LookupItem(4, "Kiosk")));
+
+        assertEquals(Response.ResponseStatus.OK, resource.updateUser(request).getStatus());
+
+        assertTrue(accessWrites.isEmpty());
     }
 
     // ---- PUT /private/users: target of an update ---------------------------------------------------------------------
@@ -888,8 +919,10 @@ public class UserResourceTest {
                             return null;
                         case "removeDeviceGroupsAccessByUserId":
                         case "removeConfigurationAccessByUserId":
+                            return null;
                         case "insertUserDeviceGroupsAccess":
                         case "insertUserConfigurationAccess":
+                            accessWrites.add(method.getName() + ":" + args[1]);
                             return null;
                         case "toString":
                             return "FakeUserMapper";

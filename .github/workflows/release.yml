@@ -165,6 +165,8 @@ jobs:
           docker build -f docker/server.Dockerfile -t "$IMG:$VERSION" .
           docker push "$IMG:$VERSION"
           echo "SERVER_IMG=$IMG:$VERSION" >> "$GITHUB_ENV"
+          D=$(release/image-digest.sh "$IMG:$VERSION")   # its own line, so a failed lookup fails the step
+          echo "SERVER_REF=$IMG@$D" >> "$GITHUB_ENV"
       - name: Web image (bake release QR checksum/package)
         env:
           OWNER: ${{ github.repository_owner }}
@@ -180,6 +182,8 @@ jobs:
             -t "$IMG:$VERSION" .
           docker push "$IMG:$VERSION"
           echo "WEB_IMG=$IMG:$VERSION" >> "$GITHUB_ENV"
+          D=$(release/image-digest.sh "$IMG:$VERSION")
+          echo "WEB_REF=$IMG@$D" >> "$GITHUB_ENV"
       - name: Supervisor image
         env:
           OWNER: ${{ github.repository_owner }}
@@ -190,6 +194,8 @@ jobs:
           # Publish exactly the image the smoke step tested (no rebuild).
           docker tag "$SUP_IMG" "$IMG:$VERSION"
           docker push "$IMG:$VERSION"
+          D=$(release/image-digest.sh "$IMG:$VERSION")
+          echo "SUPERVISOR_REF=$IMG@$D" >> "$GITHUB_ENV"
       - name: Verify images are publicly pullable (guards against private GHCR packages, #3)
         env:
           OWNER: ${{ github.repository_owner }}
@@ -213,6 +219,9 @@ jobs:
           fi
 
       # --- Manifest: build + sign ---
+      # The manifest pins the three images by the digests read back from GHCR right after each push (*_REF above), and
+      # the quick start's downloads by SHA-256 (release/build-manifest.sh). A 0.5.0+ supervisor and the quick start run
+      # exactly those digests; the :VERSION tags stay in it for older supervisors.
       - name: Build + sign manifest
         env:
           MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
@@ -223,7 +232,8 @@ jobs:
         run: |
           sudo apt-get update -y && sudo apt-get install -y minisign
           release/build-manifest.sh "$VERSION" stable \
-            "$SERVER_IMG" "$WEB_IMG" mdmesh-agent.apk "$CODE" "$CK" "$PROTO"
+            "$SERVER_IMG" "$WEB_IMG" mdmesh-agent.apk "$CODE" "$CK" "$PROTO" \
+            "$SERVER_REF" "$WEB_REF" "$SUPERVISOR_REF"
           release/sign-manifest.sh manifest.json
 
       # --- Publish ---
@@ -268,6 +278,10 @@ jobs:
           for img in $IMGS; do
             d=$(digest "ghcr.io/${O}/${img}:${VERSION}") || d=""
             [ -n "$d" ] || { echo "::error::cannot resolve ghcr.io/${O}/${img}:${VERSION}; no :latest was moved"; exit 1; }
+            # :VERSION must still be the digest the signed manifest pins (nothing re-pushed it since).
+            signed=$(python3 -c 'import json,sys; print(json.load(open("manifest.json"))["components"]["images"][sys.argv[1]])' "${img#mdmesh-}")
+            [ "$signed" = "ghcr.io/${O}/${img}@${d}" ] \
+              || { echo "::error::ghcr.io/${O}/${img}:${VERSION} is ${d}, but the signed manifest pins ${signed}; no :latest was moved"; exit 1; }
             want[$img]=$d
           done
           for img in $IMGS; do

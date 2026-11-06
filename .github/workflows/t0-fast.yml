@@ -45,9 +45,10 @@ jobs:
             supervisor: supervisor/**, docker/supervisor.Dockerfile, release/minisign.pub, scripts/supervisor-smoke.sh, .dockerignore
             # Listed explicitly: the kit's fail-closed **/Dockerfile* does not match docker/web.Dockerfile. web/**,
             # web-entrypoint.sh, edge-peers.sh, CHANGELOG.md and .dockerignore are the web image build's inputs.
-            edge: docker/Caddyfile, docker/web.Dockerfile, docker/web-entrypoint.sh, docker/edge-peers.sh, web/**, CHANGELOG.md, .dockerignore, docker-compose*.yml, docker/dev.env, scripts/edge-check.sh
-            # The installer scripts. Only the edge entry's cheap quickstart.sh copy check runs on these, not its image work.
-            installers: quickstart.sh, setup.sh, install/**
+            edge: docker/Caddyfile, docker/web.Dockerfile, docker/web-entrypoint.sh, docker/edge-peers.sh, web/**, CHANGELOG.md, .dockerignore, docker-compose*.yml, docker/dev.env, scripts/edge-check.sh, supervisor/apply.sh
+            # The installer scripts, and the signed manifest they and the supervisor read. Only the edge entry's cheap
+            # quickstart.sh checks run on these, not its image work.
+            installers: quickstart.sh, setup.sh, install/**, release/**, supervisor/lib.js, scripts/release-manifest-check.sh
 
   build:
     name: ${{ matrix.name }}
@@ -156,6 +157,13 @@ jobs:
             exit 1
           fi
           echo "quickstart.sh's url.sh functions are identical to install/lib/url.sh's"
+      # The signed manifest's contract: release/build-manifest.sh writes it; quickstart.sh's own verification functions
+      # (signature, image digests, file hashes) and supervisor/lib.js read it; its key copy matches release/minisign.pub.
+      - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).installers)
+        name: Release manifest contract (build-manifest.sh, quickstart.sh, supervisor)
+        run: |
+          command -v minisign >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq minisign; }
+          scripts/release-manifest-check.sh
       - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).edge)
         name: Caddyfile modes + compose overlays
         run: scripts/edge-check.sh

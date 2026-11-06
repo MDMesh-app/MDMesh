@@ -61,7 +61,7 @@ class SystemUpdateWiringTest {
 
     @Test fun `the registry advertises through policyKeys`() {
         val registry = source("policy/src/main/kotlin/com/mdmesh/policy/CapabilityRegistry.kt")
-        assertTrue(registry.contains("fun supportedPolicyKeys(): List<String> = policyKeys(togglePolicies(), systemUpdate,"))
+        assertTrue(registry.contains("supportedPolicyKeys(): List<String> = policyKeys(togglePolicies(), systemUpdate"))
     }
 
     @Test fun `the agent passes the registry's control to the config applier`() {

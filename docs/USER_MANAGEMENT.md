@@ -1,5 +1,7 @@
 # Console users and roles
 
+<sub>[← README](../README.md) · [Deploy](../DEPLOY.md) · [Upgrading](UPGRADING.md) · [Operations](OPERATIONS.md) · **Users and roles** · [Structure](../STRUCTURE.md) · [Contributing](../CONTRIBUTING.md) · [Releasing](../RELEASING.md)</sub>
+
 Open **Settings → Users & roles** (`/settings#users`). The section needs the server and console from the same
 release; it uses the existing database tables and needs no schema migration or agent update.
 

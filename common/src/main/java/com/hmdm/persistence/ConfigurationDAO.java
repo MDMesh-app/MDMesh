@@ -116,6 +116,11 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
         return c != null;
     }
 
+    /** True when an uploaded file is the managed background image of at least one configuration. */
+    public boolean isBackgroundImageFileUsed(int fileId) {
+        return this.mapper.countBackgroundImageFileReferences(fileId) > 0;
+    }
+
     public void insertConfiguration(Configuration config) {
         insertRecord(config, configuration -> {
             this.mapper.insertConfiguration(configuration);

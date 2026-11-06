@@ -9,7 +9,7 @@ import {
   type Configuration,
 } from '../api/configurations';
 import { ApiError } from '../api/client';
-import { listApplications, type Application } from '../api/applications';
+import { commitUpload, listApplications, uploadRawFile, type Application } from '../api/applications';
 import { getSyncSummary, type ConfigSyncSummary } from '../api/configSync';
 import {
   CONFIG_FIELDS,
@@ -374,6 +374,8 @@ function Editor({
   // Discards so far: the apps table files its rows again by their restored state.
   const [discards, setDiscards] = useState(0);
   const nameRef = useRef<HTMLInputElement>(null);
+  const backgroundImageRef = useRef<HTMLInputElement>(null);
+  const [backgroundUploading, setBackgroundUploading] = useState(false);
   const ids = useId();
 
   // The assigned apps: the configuration's own, or the template's for a copy. Until they arrive, saving is blocked
@@ -598,6 +600,60 @@ function Editor({
     );
   };
 
+  async function uploadBackgroundImage(file: File) {
+    if (!file.type.startsWith('image/')) {
+      toast.push('err', 'Image not selected', 'Choose an image file such as PNG, JPEG, or WebP.');
+      return;
+    }
+    setBackgroundUploading(true);
+    try {
+      const temporary = await uploadRawFile(file);
+      const saved = await commitUpload(temporary.serverPath);
+      if (saved.id == null) throw new Error('The server did not return the uploaded image identity.');
+      // URL and checksum are server-canonicalized on save. Clearing the old values avoids a stale preview payload.
+      setDraft((d) => ({ ...d, backgroundImageFileId: saved.id, backgroundImageUrl: undefined, backgroundImageSha256: undefined }));
+      toast.push('ok', 'Background image uploaded', 'Save and apply the configuration to use it in kiosk.');
+    } catch (e) {
+      toast.push('err', 'Image upload failed', e instanceof Error ? e.message : 'The server could not save the image.');
+    } finally {
+      setBackgroundUploading(false);
+    }
+  }
+
+  const backgroundImageRow = kioskOn ? (
+    <FieldRow
+      id={`${ids}-backgroundImage`}
+      label="Background image"
+      help="One server-managed image for the kiosk launcher. It is checksum-verified and stored privately on the device; the background color remains the fallback."
+      adornment={changed.has('backgroundImageFileId') && !readOnly ? <ChangedChip /> : undefined}
+      disabled={readOnly}
+    >
+      {() => (
+        <div className="v2-cfged-calloutline">
+          <input
+            ref={backgroundImageRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            hidden
+            onChange={(e) => {
+              const file = e.currentTarget.files?.[0];
+              e.currentTarget.value = '';
+              if (file) void uploadBackgroundImage(file);
+            }}
+          />
+          <Button size="sm" onClick={() => backgroundImageRef.current?.click()} disabled={readOnly || backgroundUploading}>
+            {backgroundUploading ? 'Uploading…' : draft.backgroundImageFileId != null ? 'Replace image' : 'Choose image'}
+          </Button>
+          {draft.backgroundImageFileId != null ? (
+            <Button size="sm" onClick={() => setDraft((d) => ({ ...d, backgroundImageFileId: null, backgroundImageUrl: undefined, backgroundImageSha256: undefined }))} disabled={readOnly || backgroundUploading}>
+              Remove
+            </Button>
+          ) : null}
+        </div>
+      )}
+    </FieldRow>
+  ) : null;
+
   const renderItems = (items: Item[]) =>
     items.map((it) => {
       if (typeof it === 'string') return row(it);
@@ -615,6 +671,7 @@ function Editor({
     <Card as="section" id={id} padding="rows" aria-labelledby={`${ids}-${id}-h`}>
       <CardHeader titleId={`${ids}-${id}-h`} title={title} subtitle={SECTION_SUB[id]} spacing={12} />
       {renderItems(LAYOUT[id])}
+      {id === 'kiosk' ? backgroundImageRow : null}
     </Card>
   );
 

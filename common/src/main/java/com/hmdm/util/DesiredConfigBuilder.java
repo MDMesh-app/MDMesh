@@ -9,6 +9,7 @@ import com.hmdm.persistence.domain.RequestUpdatesType;
 import com.hmdm.rest.json.agent.DesiredConfig;
 import com.hmdm.rest.json.agent.DesiredConnectivity;
 import com.hmdm.rest.json.agent.DesiredKiosk;
+import com.hmdm.rest.json.agent.DesiredKioskBackgroundImage;
 import com.hmdm.rest.json.agent.DesiredKioskFeatures;
 import com.hmdm.rest.json.agent.DesiredKioskTheme;
 import com.hmdm.rest.json.agent.DesiredLocation;
@@ -244,6 +245,15 @@ public final class DesiredConfigBuilder {
         DesiredKioskTheme t = new DesiredKioskTheme();
         t.setBackgroundColor(cfg.getBackgroundColor()); t.setTextColor(cfg.getTextColor());
         t.setIconSize(cfg.getIconSize() == null ? null : cfg.getIconSize().name());
+        // A legacy raw backgroundImageUrl is intentionally not emitted. Only a managed uploaded file,
+        // whose checksum was computed by the server, can become agent desired state.
+        if (cfg.getBackgroundImageFileId() != null && cfg.getBackgroundImageUrl() != null
+                && cfg.getBackgroundImageSha256() != null) {
+            DesiredKioskBackgroundImage image = new DesiredKioskBackgroundImage();
+            image.setUrl(cfg.getBackgroundImageUrl());
+            image.setSha256(cfg.getBackgroundImageSha256());
+            t.setBackgroundImage(image);
+        }
         k.setTheme(t);
         return k;
     }

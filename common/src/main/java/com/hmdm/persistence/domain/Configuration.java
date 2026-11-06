@@ -200,6 +200,10 @@ public class Configuration implements CustomerData, Serializable {
     private String textColor;
     @ApiModelProperty("An URL for background image to use when running MDM application")
     private String backgroundImageUrl;
+    @ApiModelProperty("Server-owned uploaded file used as the kiosk background image")
+    private Integer backgroundImageFileId;
+    @ApiModelProperty(hidden = true)
+    private String backgroundImageSha256;
     @ApiModelProperty("A size of the icons to use when running MDM application")
     private IconSize iconSize = SMALL;
     @ApiModelProperty("A type of desktop header to use when running MDM application")
@@ -325,6 +329,22 @@ public class Configuration implements CustomerData, Serializable {
 
     public void setBackgroundImageUrl(String backgroundImageUrl) {
         this.backgroundImageUrl = backgroundImageUrl;
+    }
+
+    public Integer getBackgroundImageFileId() {
+        return backgroundImageFileId;
+    }
+
+    public void setBackgroundImageFileId(Integer backgroundImageFileId) {
+        this.backgroundImageFileId = backgroundImageFileId;
+    }
+
+    public String getBackgroundImageSha256() {
+        return backgroundImageSha256;
+    }
+
+    public void setBackgroundImageSha256(String backgroundImageSha256) {
+        this.backgroundImageSha256 = backgroundImageSha256;
     }
 
     public IconSize getIconSize() {
@@ -1020,6 +1040,8 @@ public class Configuration implements CustomerData, Serializable {
         copy.setBackgroundColor(getBackgroundColor());
         copy.setTextColor(getTextColor());
         copy.setBackgroundImageUrl(getBackgroundImageUrl());
+        copy.setBackgroundImageFileId(getBackgroundImageFileId());
+        copy.setBackgroundImageSha256(getBackgroundImageSha256());
         copy.setIconSize(getIconSize());
         copy.setDesktopHeader(getDesktopHeader());
         copy.setDesktopHeaderTemplate(getDesktopHeaderTemplate());

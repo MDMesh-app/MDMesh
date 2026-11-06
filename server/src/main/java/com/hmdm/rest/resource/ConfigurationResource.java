@@ -36,6 +36,7 @@ import com.hmdm.persistence.domain.*;
 import com.hmdm.rest.json.LookupItem;
 import com.hmdm.rest.json.UpgradeConfigurationApplicationRequest;
 import com.hmdm.rest.resource.support.ExtensionPoints;
+import com.hmdm.rest.resource.support.KioskBackgroundImageAssets;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.util.DesiredConfigBuilder;
 import com.hmdm.util.FileUtil;
@@ -64,6 +65,7 @@ public class ConfigurationResource {
     private UserDAO userDAO;
     private String baseUrl;
     private ExtensionPoints extensionPoints;
+    private KioskBackgroundImageAssets backgroundImages;
 
     /**
      * <p>A constructor required by Swagger.</p>
@@ -78,7 +80,8 @@ public class ConfigurationResource {
                                  CustomerDAO customerDAO,
                                  UserDAO userDAO,
                                  @Named("base.url") String baseUrl,
-                                 ExtensionPoints extensionPoints) {
+                                 ExtensionPoints extensionPoints,
+                                 KioskBackgroundImageAssets backgroundImages) {
         this.configurationDAO = configurationDAO;
         this.applicationDAO = applicationDAO;
         this.pushService = pushService;
@@ -86,6 +89,14 @@ public class ConfigurationResource {
         this.userDAO = userDAO;
         this.baseUrl = baseUrl;
         this.extensionPoints = extensionPoints;
+        this.backgroundImages = backgroundImages;
+    }
+
+    /** Compatibility constructor for focused resource tests which do not exercise managed images. */
+    public ConfigurationResource(ConfigurationDAO configurationDAO, ApplicationDAO applicationDAO,
+                                 PushService pushService, CustomerDAO customerDAO, UserDAO userDAO,
+                                 String baseUrl, ExtensionPoints extensionPoints) {
+        this(configurationDAO, applicationDAO, pushService, customerDAO, userDAO, baseUrl, extensionPoints, null);
     }
     // =================================================================================================================
     @ApiOperation(
@@ -205,6 +216,13 @@ public class ConfigurationResource {
                 && DesiredConfigBuilder.connectivityMode(configuration.getConnectivityMode()) == null) {
             // An unknown mode would be stored and sent as not managed; a long one used to fail with a 500.
             throw new BadRequestException("connectivityMode must be adaptive, alwaysOn or null");
+        }
+        if (backgroundImages != null) {
+            try {
+                backgroundImages.canonicalize(configuration);
+            } catch (IllegalArgumentException e) {
+                throw new BadRequestException(e.getMessage());
+            }
         }
         try {
             Configuration dbConfiguration = this.configurationDAO.getConfigurationByName(configuration.getName());

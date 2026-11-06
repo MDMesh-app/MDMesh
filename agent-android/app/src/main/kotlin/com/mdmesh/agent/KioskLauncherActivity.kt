@@ -2,6 +2,7 @@ package com.mdmesh.agent
 
 import android.app.ActivityManager
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Bundle
@@ -26,6 +27,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.flow.distinctUntilChanged
 import com.mdmesh.agent.service.CheckInService
 import com.mdmesh.core.kiosk.KioskApplier
+import com.mdmesh.core.kiosk.KioskBackgroundImageStore
 import com.mdmesh.core.store.KioskStateStore
 import com.mdmesh.core.sync.CheckInWorker
 import com.mdmesh.core.telemetry.EventSink
@@ -65,9 +67,12 @@ class KioskLauncherActivity : ComponentActivity() {
     @Inject lateinit var events: EventSink
     @Inject lateinit var crashGuard: CrashLoopGuard
     @Inject lateinit var pinGate: ExitPinGate
+    @Inject lateinit var backgroundImages: KioskBackgroundImageStore
 
     /** Last applied non-null kiosk state, so [onResume] can recover a bounced single-app pin. */
     private var active: KioskApplyPayload? = null
+    /** Validated private image for [active], or null while the color-only fallback is shown. */
+    private var backgroundImageFile: java.io.File? = null
 
     private val returns by lazy { KioskReturnPolicy(crashGuard) }
 
@@ -107,6 +112,7 @@ class KioskLauncherActivity : ComponentActivity() {
     private fun applyState(p: KioskApplyPayload?) {
         val previous = active
         active = p
+        backgroundImageFile = null
         if (p == null) {
             holding = false
             stopLockTaskSafely()
@@ -120,6 +126,19 @@ class KioskLauncherActivity : ComponentActivity() {
             return
         }
         show(p)
+        fetchBackgroundImage(p)
+    }
+
+    private fun fetchBackgroundImage(p: KioskApplyPayload) {
+        val requested = p.theme.backgroundImage ?: return
+        lifecycleScope.launch {
+            val file = backgroundImages.obtain(requested) ?: return@launch
+            // A newer configuration may have arrived while this download was in flight.
+            if (active?.theme?.backgroundImage != requested) return@launch
+            backgroundImageFile = file
+            // Do not reopen a pinned app merely because its optional splash background arrived.
+            if (p.mode == "launcher" || holding) show(p)
+        }
     }
 
     private fun show(p: KioskApplyPayload) {
@@ -402,7 +421,26 @@ class KioskLauncherActivity : ComponentActivity() {
         android.widget.FrameLayout(this).apply {
             setBackgroundColor(bg)
             layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
+            backgroundImageFile?.let { file ->
+                decodeBackground(file)?.let { bitmap ->
+                    addView(ImageView(this@KioskLauncherActivity).apply {
+                        setImageBitmap(bitmap)
+                        scaleType = ImageView.ScaleType.CENTER_CROP
+                        layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
+                    })
+                }
+            }
         }
+
+    /** Decode only enough pixels for the current screen; source dimensions were bounded before caching. */
+    private fun decodeBackground(file: java.io.File): android.graphics.Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.path, bounds)
+        var sample = 1
+        val target = maxOf(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
+        while (bounds.outWidth / sample > target * 2 || bounds.outHeight / sample > target * 2) sample *= 2
+        return BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })
+    }
 
     private fun centeredText(s: String, sizeSp: Float, color: Int, bold: Boolean = false): TextView =
         text(s, sizeSp, color, bold).apply { gravity = Gravity.CENTER }

@@ -211,7 +211,7 @@ export const LEGACY_FIELDS = CONFIG_FIELDS.filter((f) => !f.enforced && !f.metad
 /** Changing any of these re-enters/exits kiosk on every device of the configuration. */
 export const KIOSK_AFFECTING_KEYS: ReadonlySet<string> = new Set([
   'kioskMode', 'mainAppId', 'kioskExit', 'kioskHome', 'kioskRecents', 'kioskNotifications', 'kioskSystemInfo',
-  'kioskKeyguard', 'kioskLockButtons', 'kioskLockVolume', 'password', 'backgroundColor', 'textColor', 'iconSize', 'applications',
+  'kioskKeyguard', 'kioskLockButtons', 'kioskLockVolume', 'password', 'backgroundColor', 'backgroundImageFileId', 'textColor', 'iconSize', 'applications',
 ]);
 
 /**

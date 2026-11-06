@@ -277,4 +277,15 @@ describe('a wiped device’s page', () => {
     },
     SLOW,
   );
+
+  it(
+    'offers no Scan now on its Apps tab',
+    async () => {
+      const fetch = open('/devices/WH-9?tab=apps');
+      expect(await screen.findByText('No recent scan', undefined, LOAD)).toBeTruthy();
+      expect(within(screen.getByRole('tabpanel')).queryByRole('button', { name: 'Scan now' })).toBeNull();
+      expect(posts(fetch, '/commands')).toHaveLength(0);
+    },
+    SLOW,
+  );
 });

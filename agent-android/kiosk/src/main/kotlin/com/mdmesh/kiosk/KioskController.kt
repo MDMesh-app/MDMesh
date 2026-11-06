@@ -32,7 +32,7 @@ sealed interface KioskResult {
  * Controls COSU (Corporate-Owned Single-Use) lock-task ("kiosk") mode via the
  * native [android.app.admin.DevicePolicyManager] lock-task APIs.
  *
- * Headwind's real COSU engine is closed-source ("Pro"); this is a clean-room
+ * Headwind's real COSU engine is closed-source ("Pro"); this is an independent
  * implementation built on the public framework APIs (`setLockTaskPackages`,
  * `setLockTaskFeatures`, `addPersistentPreferredActivity`). See the module README
  * for how `:app` wires the kiosk activity manifest hooks.

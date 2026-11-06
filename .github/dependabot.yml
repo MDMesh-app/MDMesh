@@ -43,6 +43,14 @@ updates:
       # Lifted by the JDK move, or porting PluginList (plugins/platform) to the new API.
       - dependency-name: "io.github.classgraph:classgraph"
         versions: ["[5,)"]
+      # Jakarta Mail 2.x moves the API to the jakarta.mail package (EmailService is javax.mail); 1.6.x carries the
+      # CVE fix we need. Lifted by porting EmailService, or with the jakarta migration above.
+      - dependency-name: "com.sun.mail:jakarta.mail"
+        versions: ["[2,)"]
+      # MyBatis 3.6.0 changes how type handlers are chosen, with known regressions fixed for 3.6.1, and our tests
+      # don't run against a database. 3.6.1+ still comes through, to be checked against a real database first.
+      - dependency-name: "org.mybatis:mybatis"
+        versions: ["[3.6,3.6.1)"]
   - package-ecosystem: npm
     directory: "/web"
     schedule: { interval: weekly, day: monday }
@@ -74,6 +82,8 @@ updates:
           - "androidx.hilt*"
           - "androidx.core*"
           - "com.squareup.okhttp3*"
+          # datastore 1.3 pulls in Kotlin 2.2 metadata, which the current compiler cannot read.
+          - "androidx.datastore*"
           # detekt 1.23.x is built against Kotlin 2.0 and its Gradle plugin refuses a newer Kotlin, so it has to move
           # with Kotlin (in the migration: detekt 2.x, whose plugin id is dev.detekt) or T0's agent step breaks.
           - "io.gitlab.arturbosch.detekt*"

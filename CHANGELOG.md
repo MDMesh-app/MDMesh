@@ -24,6 +24,7 @@ New
 Under the hood
 - Agent protocol 1.6, additive: the config.apply `systemUpdate` section and outcome, the `systemUpdatePolicy` policy
   capability, and telemetry `security.pendingSystemUpdateAt` and `security.pendingSystemUpdateSecurityPatch`.
+- NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
 
 ## v0.4.0 — 2026-11-03
 

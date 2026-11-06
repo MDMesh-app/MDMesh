@@ -26,8 +26,8 @@ OSS only has an overlay hack; the COSU engine is stubbed in `ProUtils`. We build
   the device). Keep the overlay lock screen only as a secondary "remote lock" UI, not for app-blocking.
 
 ## Policy — TAKE Headwind's catalog (highest-value artifact)
-Port `Utils.java`'s DevicePolicyManager catalog into a typed Kotlin policy layer behind the
-existing capability-abstraction (`:policy`): user restrictions (`DISALLOW_*`), `setCameraDisabled`,
+Use `Utils.java`'s DevicePolicyManager catalog as a checklist for a typed Kotlin policy layer behind the
+existing capability-abstraction (`:policy`), porting some calls and adding others: user restrictions (`DISALLOW_*`), `setCameraDisabled`,
 `setScreenCaptureDisabled`, `setStatusBarDisabled`, `setKeyguardDisabled`, wifi/bluetooth/usb,
 `setPermissionPolicy(AUTO_GRANT)`, `setSystemUpdatePolicy`, suspend/hide packages, `setUninstallBlocked`.
 Keep the SDK-guard discipline; drop reflection hacks. Each policy advertises a capability key and is

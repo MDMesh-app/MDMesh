@@ -16,6 +16,9 @@ New
   and rollouts; the Devices list's Wiped filter shows it (thanks @Przemek-Magic).
 - Sync now and console commands say when the device isn't connected and will get it at its next check-in.
 
+Under the hood
+- NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
+
 ## v0.4.0 — 2026-11-03
 
 The console is new and replaces the old one. Every page was rebuilt, and each page loads only when it's opened.

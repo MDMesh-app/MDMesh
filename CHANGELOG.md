@@ -8,6 +8,9 @@ line under Unreleased.
 
 ## Unreleased
 
+Under the hood
+- NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
+
 ## v0.4.0 — 2026-11-03
 
 The console is new and replaces the old one. Every page was rebuilt, and each page loads only when it's opened.

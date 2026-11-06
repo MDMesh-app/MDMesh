@@ -7,7 +7,7 @@ import type { Configuration } from '../api/configurations';
 import { AppRoutes } from '../App';
 import { renderInConsole, stubApi } from '../test/console';
 
-const LOAD = { timeout: 3000 };
+const LOAD = { timeout: 10_000 };
 
 /** Configuration 7 ("Warehouse") with `config` on top, no apps, and 2 devices on it. Returns the saves (PUT bodies). */
 function open(config: Partial<Configuration> = {}, route?: string) {

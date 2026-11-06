@@ -63,7 +63,7 @@ const DIGEST_REF = /^([a-z0-9][a-z0-9._-]*(?:\/[a-z0-9][a-z0-9._-]*)+)@(sha256:[
 const PINNED_IMAGES = ['server', 'web', 'supervisor'];
 
 /** The images a verified manifest deploys, pinned by digest, for an install that pulls from ghcr.io/<imageOwner>
- *  (IMAGE_OWNER in .env; compose's default is mdmesh-app). The manifest's components.images holds, from 0.4.1 on,
+ *  (IMAGE_OWNER in .env; compose's default is mdmesh-app). The manifest's components.images holds, from 0.5.0 on,
  *  `ghcr.io/<owner>/mdmesh-<name>@sha256:…` for server, web and supervisor (release/build-manifest.sh). Returns
  *  { server, web, supervisor } (the three refs) or { error } saying why the release cannot be applied: a manifest
  *  from release tooling without digests, a malformed ref, or images published under another owner than the one this

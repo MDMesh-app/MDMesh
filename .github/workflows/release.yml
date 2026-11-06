@@ -220,7 +220,7 @@ jobs:
 
       # --- Manifest: build + sign ---
       # The manifest pins the three images by the digests read back from GHCR right after each push (*_REF above), and
-      # the quick start's downloads by SHA-256 (release/build-manifest.sh). A 0.4.1+ supervisor and the quick start run
+      # the quick start's downloads by SHA-256 (release/build-manifest.sh). A 0.5.0+ supervisor and the quick start run
       # exactly those digests; the :VERSION tags stay in it for older supervisors.
       - name: Build + sign manifest
         env:

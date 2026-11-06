@@ -8,8 +8,8 @@
 # missing, malformed or under another owner than IMAGE_OWNER is refused before anything changes.
 #
 # This is the copy baked into the RUNNING supervisor image (server.js runs its own /app/apply.sh), so an update is
-# applied by the supervisor already installed, never by the release being installed: a supervisor before 0.4.1 applies
-# by tag as it always did, and pinning starts once a 0.4.1+ supervisor runs.
+# applied by the supervisor already installed, never by the release being installed: a supervisor before 0.5.0 applies
+# by tag as it always did, and pinning starts once a 0.5.0+ supervisor runs.
 #
 # Runs inside the supervisor container (project mounted at /project, docker.sock mounted). Applies a VERIFIED
 # update to the `server` + `caddy` services with a pre-update DB backup and AUTOMATIC ROLLBACK on any

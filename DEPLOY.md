@@ -36,7 +36,7 @@ password.
 
 Run every `docker compose` command from `./mdmesh`, where `.env` lives. The install is pinned to the latest
 release: `CURRENT_VERSION` names it, and `SERVER_VERSION`, `WEB_VERSION` and `SUPERVISOR_VERSION` name its images by
-digest (`0.4.1@sha256:…`). Updates are one click ([Upgrading](docs/UPGRADING.md#quick-start-installs)).
+digest (`0.5.0@sha256:…`). Updates are one click ([Upgrading](docs/UPGRADING.md#quick-start-installs)).
 
 Before using anything from the release, the quick start checks its `manifest.json` against the release signing key
 (minisign format, checked with `openssl` 3.0+, or with `minisign` when that is installed). The signed manifest holds

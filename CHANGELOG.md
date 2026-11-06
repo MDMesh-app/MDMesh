@@ -8,6 +8,12 @@ line under Unreleased.
 
 ## Unreleased
 
+Upgrading
+- Quick start: run `docker compose pull && docker compose up -d` once after this update. Updates never touch the
+  supervisor, and one from before 0.5.0 keeps applying updates by tag. From source, or with `SUPERVISOR_VERSION` set by
+  hand: [UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050).
+
+New
 - Updates and the quick start run exactly the images the signed release names, pinned by digest; the quick start
   also checks each file it downloads, stops instead of falling back to `main`, and needs OpenSSL 3.0+ or `minisign`.
 

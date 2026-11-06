@@ -84,7 +84,7 @@ node -e '
     web: `ghcr.io/${o}/mdmesh-web@${process.argv[5]}`, supervisor: `ghcr.io/${o}/mdmesh-supervisor@${process.argv[6]}` };
   const got = imagePins(m, o);
   if (JSON.stringify(got) !== JSON.stringify(want)) { console.error("imagePins:", got); process.exit(1); }
-  // What a supervisor before 0.4.1 reads (imageTags, apkAsset) is still there, in the same shape.
+  // What a supervisor before 0.5.0 reads (imageTags, apkAsset) is still there, in the same shape.
   const t = imageTags(m);
   if (t.version !== "9.8.7" || t.serverImage !== `ghcr.io/${o}/mdmesh-server:9.8.7` || t.webImage !== `ghcr.io/${o}/mdmesh-web:9.8.7`) process.exit(2);
   if (!apkAsset({ assets: [{ name: "agent.apk", browser_download_url: "https://x/agent.apk" }] }, m)) process.exit(3);

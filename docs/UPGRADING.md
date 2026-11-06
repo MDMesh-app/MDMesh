@@ -27,8 +27,8 @@ exists (the Settings switch, or any failed or rolled-back update, creates it), i
 in Settings. A release that failed, or that you rolled back
 from, is never applied automatically again (`autoSkipped` in `/update/status`). **Update** still applies it by hand.
 
-An update runs exactly the images its signed manifest names: from 0.4.1 the supervisor pins `SERVER_VERSION` and
-`WEB_VERSION` in `.env` to their digests (`0.4.1@sha256:…`). A release whose manifest pins no digests, or pins them
+An update runs exactly the images its signed manifest names: from 0.5.0 the supervisor pins `SERVER_VERSION` and
+`WEB_VERSION` in `.env` to their digests (`0.5.0@sha256:…`). A release whose manifest pins no digests, or pins them
 under another owner than `IMAGE_OWNER` (a fork's install following upstream releases), is refused with that reason,
 and nothing changes.
 
@@ -38,12 +38,13 @@ Updates never recreate the supervisor itself. To pick up its fixes after an upda
 docker compose pull && docker compose up -d
 ```
 
-When `SUPERVISOR_VERSION` is `latest` (quick starts before 0.4.1) this brings the newest supervisor. Once a 0.4.1 or
+When `SUPERVISOR_VERSION` is `latest` (quick starts before 0.5.0) this brings the newest supervisor. Once a 0.5.0 or
 newer supervisor applies an update, it pins `SUPERVISOR_VERSION` to that release's supervisor by digest, and
 `docker compose up -d` starts exactly that one. A plain version you set by hand is left alone: bump it yourself.
 
-The supervisor you run decides whether updates are pinned: a 0.4.0 supervisor still applies the 0.4.1 update by tag,
-as before. Run the command above once after that update to get the 0.4.1 supervisor, and every later update is pinned.
+The supervisor you run decides whether updates are pinned: one from before 0.5.0 still applies the 0.5.0 update by
+tag, as before. Run the command above once after that update to get the 0.5.0 supervisor, and every later update is
+pinned. If you set `SUPERVISOR_VERSION` yourself, see [v0.5.0](#v050).
 
 ## From-source Docker installs
 
@@ -153,6 +154,25 @@ Agent 0.4.0 speaks protocol 1.5: it applies a configuration's connectivity mode,
 works with a 0.3.9 server.
 
 ## Version notes
+
+### v0.5.0
+
+- **Update the supervisor once, or updates stay unpinned.** Updates now run the images the signed release names, by
+  digest ([how](#quick-start-installs)). The supervisor you run does that, and updates never touch it, so one from
+  before 0.5.0 applies 0.5.0 by tag and goes on doing so for every later release, without a message.
+  - **Quick start:** apply 0.5.0 (**Settings → Updates**, or automatic updates), then run
+    `docker compose pull && docker compose up -d` in the install directory. The quick start set
+    `SUPERVISOR_VERSION=latest`; if you set a version in `.env` yourself, change it to `0.5.0` first.
+  - **From source with a registry `IMAGE_OWNER`:** `git pull && ./setup.sh`, also after applying 0.5.0 from the
+    console. setup.sh builds the supervisor and ties `SUPERVISOR_VERSION` to the checkout's release, so
+    `docker compose pull` alone keeps the old one.
+  - **Nothing to do:** a new 0.5.0 quick start is pinned from the start, and from-source installs with
+    `IMAGE_OWNER=local` and native installs don't update from release images.
+- **Forks.** Once a 0.5.0 supervisor runs, it refuses a release whose manifest has no digests, and one that pins them
+  under another owner than `IMAGE_OWNER`, with that reason, and nothing changes. A fork that publishes its own releases
+  must use the current release workflow ([RELEASING.md](../RELEASING.md)). An install that follows upstream releases
+  with its own `IMAGE_OWNER` sets `GITHUB_REPO` to the repository that publishes its images, or `IMAGE_OWNER` to
+  `mdmesh-app`.
 
 ### v0.4.0
 

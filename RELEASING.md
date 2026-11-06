@@ -83,8 +83,8 @@ digest (`release/image-digest.sh`), builds a **minisign-signed manifest**, and p
 to apply/roll-out updates.
 
 The manifest (`release/build-manifest.sh`) keeps `components.serverImage`/`webImage` (the `:VERSION` tags, which
-supervisors before 0.4.1 read) and adds `components.images`, the three images as `repo@sha256:…`, and `files`, the
-SHA-256 of each file the quick start downloads from the tag. A 0.4.1+ supervisor and the quick start run exactly those
+supervisors before 0.5.0 read) and adds `components.images`, the three images as `repo@sha256:…`, and `files`, the
+SHA-256 of each file the quick start downloads from the tag. A 0.5.0+ supervisor and the quick start run exactly those
 digests and refuse a manifest without them, so a fork that publishes its own releases must use this workflow (or write
 the same fields). `scripts/release-manifest-check.sh` (T0) checks the manifest against what its readers expect.
 

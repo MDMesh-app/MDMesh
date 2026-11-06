@@ -47,7 +47,7 @@ The wizard writes `SITE_ADDRESS`, `ACME_EMAIL` and `TUNNEL_TOKEN` for the hostin
 | `POLL_INTERVAL_HOURS` | `.env` (native: always `6`) | `6` | How often to check. |
 | `GITHUB_TOKEN` | `.env`; native env → `supervisor.env` | empty | Needed for a private repo; raises rate limits. See note. |
 | `IMAGE_OWNER` | `.env` | quick start `mdmesh-app`; from source `local` | GHCR owner (lowercase). `local` means built from the clone. |
-| `SERVER_VERSION`, `WEB_VERSION` | `.env` | the installed release | Image tags, without the `v` (`0.3.2`), or pinned by digest (`0.4.1@sha256:…`). Updates set them to the signed digests. |
+| `SERVER_VERSION`, `WEB_VERSION` | `.env` | the installed release | Image tags, without the `v` (`0.3.2`), or pinned by digest (`0.5.0@sha256:…`). Updates set them to the signed digests. |
 | `CURRENT_VERSION` | `.env`; native: `supervisor.env` | `0.0.0` | Running release, compared with GitHub's latest. Updates and rollbacks set it. |
 | `SUPERVISOR_VERSION` | `.env` | quick start: the installed release by digest | Supervisor image tag. When it is `latest` or a digest pin, each update moves it to the release's signed digest; `docker compose up -d` then starts that supervisor. Any other value is left alone. |
 | `APPLY_SUPPORTED` | `.env` (native: always `0`) | `1` with a registry `IMAGE_OWNER`, else `0` | `1` shows one-click **Update**, `0` shows manual steps. |

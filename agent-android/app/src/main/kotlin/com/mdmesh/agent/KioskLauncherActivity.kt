@@ -111,6 +111,10 @@ class KioskLauncherActivity : ComponentActivity() {
 
     private fun applyState(p: KioskApplyPayload?) {
         val previous = active
+        // repeatOnLifecycle re-subscribes after the screen wakes, and StateFlow immediately emits its current value.
+        // Rebuilding an unchanged launcher clears the already-rendered cached image, briefly exposing the color
+        // fallback before the image is decoded again. The existing surface is still the desired state.
+        if (p != null && p == previous) return
         active = p
         backgroundImageFile = null
         if (p == null) {

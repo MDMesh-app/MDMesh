@@ -63,6 +63,7 @@ public class AgentDeviceAccessTest {
     private final List<String> sideEffects = new ArrayList<>();
     private boolean allDevices;
     private boolean active;
+    private boolean socketOpen;
     private FakeMapper<DeviceMapper> deviceMapper;
     private AgentAdminResource resource;
     private RolloutResource rollouts;
@@ -131,6 +132,7 @@ public class AgentDeviceAccessTest {
         };
         AgentWakeHub wakeHub = new AgentWakeHub(commandDAO) {
             @Override public void wake(String n, String kind) { sideEffects.add("wake " + n); }
+            @Override public boolean isOnline(String n) { return socketOpen; }
         };
         ConfigAppInstaller installer = new ConfigAppInstaller(unsecureDAO, commandDAO, wakeHub, null) {
             @Override public int enqueueConfigApps(Device d) { sideEffects.add("syncApps " + d.getNumber()); return 1; }
@@ -264,6 +266,17 @@ public class AgentDeviceAccessTest {
         routes.put("locations", () -> resource.listLocations(number, null));
         routes.put("forceSync", () -> resource.forceSync(number));
         return routes;
+    }
+
+    @Test
+    public void forceSyncSaysWhetherTheWakeCanReachTheDevice() {
+        for (boolean open : new boolean[]{true, false}) {
+            socketOpen = open;
+            Response r = resource.forceSync(VISIBLE);
+            assertEquals(Response.ResponseStatus.OK, r.getStatus());
+            assertEquals(Collections.singletonMap("connected", open), r.getData());
+        }
+        assertEquals("the wake goes out either way", Arrays.asList("wake " + VISIBLE, "wake " + VISIBLE), sideEffects);
     }
 
     @Test

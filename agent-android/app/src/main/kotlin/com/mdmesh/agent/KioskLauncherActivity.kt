@@ -121,16 +121,16 @@ class KioskLauncherActivity : ComponentActivity() {
             holding = false
             stopLockTaskSafely()
             setContentView(idleView())
-            return
+        } else {
+            // Pin first: a held device (a loop that tripped just before a reboot) is still in kiosk.
+            startLockTaskSafely()
+            if (returns.onApplied(changed = previous != null && previous != p) == KioskReturnPolicy.Action.HOLD) {
+                hold(p)
+            } else {
+                show(p)
+                fetchBackgroundImage(p)
+            }
         }
-        // Pin first: a held device (a loop that tripped just before a reboot) is still in kiosk.
-        startLockTaskSafely()
-        if (returns.onApplied(changed = previous != null && previous != p) == KioskReturnPolicy.Action.HOLD) {
-            hold(p)
-            return
-        }
-        show(p)
-        fetchBackgroundImage(p)
     }
 
     private fun fetchBackgroundImage(p: KioskApplyPayload) {

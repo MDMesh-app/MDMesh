@@ -25,47 +25,61 @@ class KioskBackgroundImageStore @Inject constructor(
     @DownloadHttpClient private val http: OkHttpClient,
 ) {
     suspend fun obtain(image: KioskBackgroundImageDto): File? = withContext(Dispatchers.IO) {
-        val url = image.url.trim()
-        val hash = image.sha256.trim().lowercase()
-        if (!url.startsWith("https://", ignoreCase = true) || !HASH.matches(hash)) return@withContext null
+        val request = validRequest(image) ?: return@withContext null
 
         val dir = File(context.filesDir, "kiosk-background").also { it.mkdirs() }
-        val target = File(dir, "$hash.image")
+        val target = File(dir, "${request.hash}.image")
         if (validImage(target)) return@withContext target
         target.delete()
+        download(request, target)
+    }
 
-        val temporary = File(dir, ".$hash.download")
+    private fun validRequest(image: KioskBackgroundImageDto): BackgroundRequest? {
+        val url = image.url.trim()
+        val hash = image.sha256.trim().lowercase()
+        return if (url.startsWith("https://", ignoreCase = true) && HASH.matches(hash)) {
+            BackgroundRequest(url, hash)
+        } else {
+            null
+        }
+    }
+
+    private fun download(request: BackgroundRequest, target: File): File? {
+        val temporary = File(target.parentFile, ".${request.hash}.download")
         temporary.delete()
-        try {
-            http.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
-                if (!response.isSuccessful) return@withContext null
-                val body = response.body ?: return@withContext null
-                val digest = MessageDigest.getInstance("SHA-256")
-                body.byteStream().use { input ->
-                    FileOutputStream(temporary).use { output ->
-                        val buffer = ByteArray(BUFFER_BYTES)
-                        var total = 0L
-                        while (true) {
-                            val read = input.read(buffer)
-                            if (read < 0) break
-                            total += read
-                            if (total > MAX_BYTES) return@withContext null
-                            digest.update(buffer, 0, read)
-                            output.write(buffer, 0, read)
-                        }
-                    }
+        return try {
+            val digest = http.newCall(Request.Builder().url(request.url).get().build()).execute().use { response ->
+                response.body?.takeIf { response.isSuccessful }?.let { body ->
+                    copyAndDigest(body.byteStream(), temporary)
                 }
-                if (digest.digest().joinToString("") { "%02x".format(it) } != hash || !validImage(temporary)) {
-                    return@withContext null
-                }
-                if (!temporary.renameTo(target)) return@withContext null
-                target
             }
+            if (digest == request.hash && validImage(temporary) && temporary.renameTo(target)) target else null
         } catch (_: Exception) {
             null
         } finally {
             temporary.delete()
         }
+    }
+
+    private fun copyAndDigest(input: java.io.InputStream, outputFile: File): String? = input.use { source ->
+        FileOutputStream(outputFile).use { output ->
+            val digest = MessageDigest.getInstance("SHA-256")
+            if (copyBounded(source, output, digest)) digest.digest().joinToString("") { "%02x".format(it) } else null
+        }
+    }
+
+    private fun copyBounded(input: java.io.InputStream, output: FileOutputStream, digest: MessageDigest): Boolean {
+        val buffer = ByteArray(BUFFER_BYTES)
+        var total = 0L
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            total += read
+            if (total > MAX_BYTES) return false
+            digest.update(buffer, 0, read)
+            output.write(buffer, 0, read)
+        }
+        return true
     }
 
     private fun validImage(file: File): Boolean {
@@ -77,6 +91,7 @@ class KioskBackgroundImageStore @Inject constructor(
     }
 
     private companion object {
+        data class BackgroundRequest(val url: String, val hash: String)
         val HASH = Regex("[0-9a-f]{64}")
         const val BUFFER_BYTES = 64 * 1024
         const val MAX_BYTES = 10L * 1024 * 1024

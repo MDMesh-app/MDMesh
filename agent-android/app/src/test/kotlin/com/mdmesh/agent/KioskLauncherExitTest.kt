@@ -96,9 +96,12 @@ class KioskLauncherExitTest {
     fun `an unchanged kiosk state does not clear a rendered background`() {
         val src = launcherSource()
         val apply = src.substring(body(src, "applyState"))
-        val unchanged = Regex("if\\s*\\(\\s*p\\s*!=\\s*null\\s*&&\\s*p\\s*==\\s*previous\\s*\\)\\s*return")
+        val unchanged = Regex(
+            "if\\s*\\(\\s*p\\s*!=\\s*null\\s*&&\\s*p\\s*==\\s*previous\\s*\\)\\s*return",
+        )
             .find(apply)?.range?.first ?: error("applyState must preserve an unchanged kiosk surface")
         val clears = apply.indexOf("backgroundImageFile = null")
-        assertTrue("applyState must return before it clears the cached background for the same state", clears > unchanged)
+        val message = "applyState must return before it clears the cached background for the same state"
+        assertTrue(message, clears > unchanged)
     }
 }

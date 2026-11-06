@@ -304,6 +304,9 @@ function appsSignature(c: Configuration): string {
 function changedKeys(before: Configuration, after: Configuration): Set<string> {
   const out = new Set<string>();
   for (const f of CONFIG_FIELDS) if (norm(before[f.key]) !== norm(after[f.key])) out.add(f.key);
+  // The background image picker is a managed asset control rather than a generic CONFIG_FIELDS control.
+  // Its identity must still participate in the editor's dirty state and save/apply flow.
+  if (norm(before.backgroundImageFileId) !== norm(after.backgroundImageFileId)) out.add('backgroundImageFileId');
   if (appsSignature(before) !== appsSignature(after)) out.add('applications');
   return out;
 }
@@ -428,6 +431,7 @@ function Editor({
     let n = 0;
     for (const k of changed) {
       if (k === 'applications') n += sec === 'apps' ? 1 : 0;
+      else if (k === 'backgroundImageFileId') n += sec === 'kiosk' ? 1 : 0;
       else if (FIELD[k] && sectionOf(FIELD[k]) === sec) n++;
     }
     return readOnly ? 0 : n;

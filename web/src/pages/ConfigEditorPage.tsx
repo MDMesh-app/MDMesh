@@ -25,6 +25,8 @@ import {
   hasDefaultPin,
   hasNoPin,
   isLocked,
+  SYSTEM_UPDATE_WINDOWED,
+  systemUpdateProblem,
 } from '../data/configurationRules';
 import { kioskAffectingChanges } from '../data/kioskChanges';
 import {
@@ -217,6 +219,8 @@ type SectionId = 'identity' | 'apps' | 'kiosk' | 'network' | 'security' | 'enrol
 
 const FIELD: Record<string, FieldDef> = Object.fromEntries(CONFIG_FIELDS.map((f) => [f.key, f]));
 const LEGACY_KEYS: ReadonlySet<string> = new Set(LEGACY_FIELDS.map((f) => f.key));
+/** Used only by System updates "Install in a daily window": their rows are off otherwise, as kiosk-only ones are. */
+const WINDOW_KEYS: ReadonlySet<string> = new Set(['systemUpdateFrom', 'systemUpdateTo']);
 
 /** Which nav section a field's change counts towards. */
 function sectionOf(f: FieldDef): SectionId {
@@ -230,6 +234,7 @@ function sectionOf(f: FieldDef): SectionId {
     case 'Kiosk appearance':
       return 'kiosk';
     case 'Network':
+    case 'Updates': // System updates sit next to Connectivity.
       return 'network';
     case 'Restrictions':
     case 'Security':
@@ -263,7 +268,10 @@ const LAYOUT: Record<'kiosk' | 'network' | 'security' | 'enrollment', Item[]> = 
     'textColor',
     'iconSize',
   ],
-  network: ['wifi', 'wifiRadio', 'bluetooth', 'requestUpdates', 'connectivityMode'],
+  network: [
+    'wifi', 'wifiRadio', 'bluetooth', 'requestUpdates', 'connectivityMode',
+    'systemUpdateType', 'systemUpdateFrom', 'systemUpdateTo',
+  ],
   security: ['usbStorage', 'disableScreenshots', 'disableFactoryReset', 'disableSafeBoot'],
   enrollment: ['wifiSSID', 'wifiPassword', 'wifiSecurityType'],
 };
@@ -282,7 +290,7 @@ const HELP: Record<string, string> = {
 
 const SECTION_SUB = {
   kiosk: 'Lock the screen to the apps marked “Show in kiosk”.',
-  network: `Radios, location reporting and connectivity. ${GROUP_NOTES.Network ?? ''}`.trim(),
+  network: `Radios, location reporting, connectivity and system updates. ${GROUP_NOTES.Network ?? ''}`.trim(),
   security: `What people on the device can change. ${GROUP_NOTES.Restrictions ?? ''}`.trim(),
   enrollment: GROUP_NOTES.Enrollment ?? '',
 };
@@ -329,6 +337,13 @@ function focusSection(anchor: string) {
   section?.querySelector<HTMLElement>(FOCUSABLE)?.focus({ preventScroll: true });
 }
 
+/** Scroll to the field row a save stopped at (its label's id), and put the cursor in its control. */
+function focusField(labelId: string) {
+  const control = document.querySelector<HTMLElement>(`[aria-labelledby="${labelId}"]`);
+  control?.scrollIntoView?.({ block: 'center' });
+  control?.focus({ preventScroll: true });
+}
+
 // ---- editor ------------------------------------------------------------------------------------------------------
 
 function Editor({
@@ -370,6 +385,8 @@ function Editor({
   const mayAdd = usePermission(CORE_ACTION_ACCESS.addConfig);
   const canSave = mayEdit && (!isNew || mayAdd);
   const [nameError, setNameError] = useState<string | null>(null);
+  // Set by a save: from then on a system update setting the server would refuse shows under its row while it is edited.
+  const [updateChecked, setUpdateChecked] = useState(false);
   const [advanced, setAdvanced] = useState(false);
   // Discards so far: the apps table files its rows again by their restored state.
   const [discards, setDiscards] = useState(0);
@@ -407,6 +424,10 @@ function Editor({
   const changed = useMemo(() => changedKeys(baseline, draft), [baseline, draft]);
 
   const kioskOn = draft.kioskMode === true;
+  const windowed = draft.systemUpdateType === SYSTEM_UPDATE_WINDOWED;
+  // A new configuration has nothing stored to compare with, a copy included: the server checks all of it.
+  const updateRowProblem = () => systemUpdateProblem(draft, isNew ? undefined : baseline);
+  const updateProblem = updateChecked && !readOnly ? updateRowProblem() : null;
   const allowed: ConfigApp[] = (draft.applications as ConfigApp[] | undefined) ?? [];
   const allowedIds = useMemo(() => new Set(allowed.map((a) => a.id)), [allowed]);
   // Only an installed app that is shown in kiosk can be the main app.
@@ -440,7 +461,7 @@ function Editor({
       meta: kioskChanged ? changedLabel(kioskChanged) : defaultPin ? 'Default PIN' : noPin ? 'No PIN' : '',
       metaTone: !kioskChanged && (defaultPin || noPin) ? 'warn' : 'default',
     },
-    network: { meta: changedLabel(changedIn('network')) },
+    network: updateProblem ? { meta: '1 problem', metaTone: 'alert' } : { meta: changedLabel(changedIn('network')) },
     security: { meta: changedLabel(changedIn('security')) },
     enrollment: { meta: changedLabel(changedIn('enrollment')) },
     headwind: { meta: hwChanged ? changedLabel(hwChanged) : String(LEGACY_FIELDS.length) },
@@ -494,7 +515,16 @@ function Editor({
       toast.push('err', 'Still loading', 'The assigned apps are still loading — try again in a moment.');
       return;
     }
+    // A setting the server would refuse (HTTP 400): shown under its row from now on, as it is edited.
+    const update = updateRowProblem();
+    setUpdateChecked(true);
     const invalid = host.validate();
+    if (update) {
+      const problems = 1 + (invalid?.problems ?? 0);
+      toast.push('err', `Fix ${plural(problems, 'problem')} before saving`, `${FIELD.systemUpdateType.label}: ${update.message}`);
+      focusField(`${ids}-${update.key}`);
+      return;
+    }
     if (invalid) {
       toast.push('err', `Fix ${plural(invalid.problems, 'problem')} before saving`, `${invalid.title}: ${invalid.message}`);
       focusSection(invalid.anchor);
@@ -541,6 +571,7 @@ function Editor({
     setDraft(baseline);
     setDiscards((n) => n + 1);
     setNameError(null);
+    setUpdateChecked(false);
     host.reset();
   }
 
@@ -558,10 +589,11 @@ function Editor({
   const row = (key: string, opts: { divider?: boolean } = {}) => {
     const def = FIELD[key];
     if (!def) return null;
-    const off = def.kioskOnly === true && !kioskOn;
+    const off = (def.kioskOnly === true && !kioskOn) || (WINDOW_KEYS.has(key) && !windowed);
     const help = HELP[key] ?? def.help;
     // The PIN callout asks for a new PIN, which a disabled row (kiosk off) cannot take; the nav still flags it.
     const showPinWarn = key === 'password' && pinWarn != null && (readOnly || !off);
+    const problem = updateProblem?.key === key ? updateProblem.message : null;
     return (
       <FieldRow
         key={key}
@@ -577,6 +609,10 @@ function Editor({
             <Callout tone="warn" icon={<IconWarning size={16} />}>
               {pinWarn}
             </Callout>
+          ) : problem ? (
+            <span role="alert" className="v2-field__error">
+              {problem}
+            </span>
           ) : undefined
         }
       >
@@ -591,7 +627,7 @@ function Editor({
             helpId={helpId}
             apps={apps}
             assigned={allowed}
-            tone={showPinWarn ? 'warn' : undefined}
+            tone={showPinWarn ? 'warn' : problem ? 'invalid' : undefined}
           />
         )}
       </FieldRow>

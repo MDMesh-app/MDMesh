@@ -42,6 +42,44 @@ export const NEW_CONFIG_DEFAULTS: Partial<Configuration> = {
   useDefaultDesignSettings: true,
 };
 
+/** systemUpdateType "Install in a daily window": OS updates install between systemUpdateFrom and systemUpdateTo. */
+export const SYSTEM_UPDATE_WINDOWED = 2;
+const HH_MM = /^([01]\d|2[0-3]):[0-5]\d$/;
+const hhmm = (v: unknown) => typeof v === 'string' && HH_MM.test(v.trim());
+
+const SYSTEM_UPDATE_TYPES: readonly unknown[] = [0, 1, SYSTEM_UPDATE_WINDOWED, 3];
+const timeOf = (v: unknown) => String(v ?? '').trim();
+
+/**
+ * Why the server would refuse the configuration's system update setting (HTTP 400), as it checks it: the type is one
+ * of 0..3 and, with a daily window, both times are 24-hour HH:MM and differ (the window may cross midnight). The field
+ * to point at, or null. Against `stored` (an existing configuration) only a save that changes the setting is refused,
+ * so a row saved before the check can still get an unrelated edit; a blank time and null are the same.
+ */
+export function systemUpdateProblem(
+  c: Configuration,
+  stored?: Configuration,
+): { key: 'systemUpdateType' | 'systemUpdateFrom' | 'systemUpdateTo'; message: string } | null {
+  if (
+    stored &&
+    c.systemUpdateType === stored.systemUpdateType &&
+    timeOf(c.systemUpdateFrom) === timeOf(stored.systemUpdateFrom) &&
+    timeOf(c.systemUpdateTo) === timeOf(stored.systemUpdateTo)
+  ) {
+    return null;
+  }
+  if (!SYSTEM_UPDATE_TYPES.includes(c.systemUpdateType ?? 0)) {
+    return { key: 'systemUpdateType', message: 'Choose how devices install system updates.' };
+  }
+  if (c.systemUpdateType !== SYSTEM_UPDATE_WINDOWED) return null;
+  if (!hhmm(c.systemUpdateFrom)) return { key: 'systemUpdateFrom', message: 'Set the time the daily window starts.' };
+  if (!hhmm(c.systemUpdateTo)) return { key: 'systemUpdateTo', message: 'Set the time the daily window ends.' };
+  if (String(c.systemUpdateFrom).trim() === String(c.systemUpdateTo).trim()) {
+    return { key: 'systemUpdateTo', message: 'Pick an end time different from the start.' };
+  }
+  return null;
+}
+
 /**
  * A fresh editable draft, optionally seeded from a base config. The list endpoint carries no `applications`, so a
  * caller that wants the base's apps passes them in `baseApps` (otherwise the copy starts with whatever `base` has).

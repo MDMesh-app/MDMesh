@@ -11,6 +11,8 @@ import com.mdmesh.policy.safeboot.SafeBootPolicy
 import com.mdmesh.policy.safeboot.SafeBootPolicyFactory
 import com.mdmesh.policy.screenshots.ScreenshotsPolicy
 import com.mdmesh.policy.screenshots.ScreenshotsPolicyFactory
+import com.mdmesh.policy.systemupdate.DpmSystemUpdatePlatform
+import com.mdmesh.policy.systemupdate.SystemUpdateControl
 import com.mdmesh.policy.usb.UsbStoragePolicy
 import com.mdmesh.policy.usb.UsbStoragePolicyFactory
 import com.mdmesh.policy.wifi.DpmHandle
@@ -84,13 +86,22 @@ class CapabilityRegistry(
     fun togglePolicies(): ResolvedToggles = toggles.current()
 
     /**
+     * `systemUpdatePolicy` (1.6). Not a toggle: only the config.apply `systemUpdate` section sets it, so it is not in
+     * [toggles]. Its support is checked on every call, as theirs is.
+     */
+    val systemUpdate: SystemUpdateControl = SystemUpdateControl(DpmSystemUpdatePlatform(handle)) {
+        handle.dpm.isDeviceOwnerApp(handle.admin.packageName)
+    }
+
+    /**
      * The set of policy keys with a working strategy on this device — derived from the
      * registered strategies, so it can never drift from what can actually be applied.
      * A key whose check threw on this read stays advertised if it resolved before (so the
-     * server keeps sending it and the agent keeps retrying); see [ResolvedToggles.advertisedKeys].
+     * server keeps sending it and the agent keeps retrying); see [ResolvedToggles.advertisedKeys]
+     * and [SystemUpdateControl.advertisedKeys].
      * Each entry corresponds to a row in `proto/registry.md` § policy.
      */
-    fun supportedPolicyKeys(): List<String> = togglePolicies().advertisedKeys
+    fun supportedPolicyKeys(): List<String> = policyKeys(togglePolicies(), systemUpdate, probeLog)
 
     /** Convenience: resolve the live [DeviceControl] facade for this device. */
     fun deviceControl(): DeviceControl? {
@@ -98,8 +109,12 @@ class CapabilityRegistry(
         return DefaultDeviceControl(wifi)
     }
 
-    private companion object {
-        const val TAG = "CapabilityRegistry"
+    internal companion object {
+        private const val TAG = "CapabilityRegistry"
+
+        /** Every advertised policy key: the toggles', then the controls' that aren't toggles. */
+        fun policyKeys(toggles: ResolvedToggles, systemUpdate: SystemUpdateControl, log: ProbeErrorLog?): List<String> =
+            toggles.advertisedKeys + systemUpdate.advertisedKeys(log)
     }
 }
 

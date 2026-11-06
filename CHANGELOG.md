@@ -8,7 +8,22 @@ line under Unreleased.
 
 ## Unreleased
 
+Upgrading
+- Check each configuration's System updates before rolling out agent 0.5.0: the setting now reaches devices. Immediately
+  (now Install automatically) makes Android install any update already waiting at once, with its restart, so those
+  devices can start installing when the new agent arrives. Configurations on Device default don't change.
+- A daily window with blank, equal or invalid times is sent as Device default. Other edits to that configuration still
+  save; changing System updates or its times needs a valid window.
+
+New
+- System updates now apply to devices: install automatically, in a daily window, or postpone (device makers or carriers
+  might exempt important security updates). Android installs an update your device maker offers; MDMesh can't make it
+  download one now. Needs agent 0.5.0.
+- The device page's Telemetry shows an OS update waiting on the device, if its updater reports one.
+
 Under the hood
+- Agent protocol 1.6, additive: the config.apply `systemUpdate` section and outcome, the `systemUpdatePolicy` policy
+  capability, and telemetry `security.pendingSystemUpdateAt` and `security.pendingSystemUpdateSecurityPatch`.
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
 
 ## v0.4.0 — 2026-11-03

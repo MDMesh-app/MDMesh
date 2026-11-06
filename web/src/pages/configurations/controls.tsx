@@ -108,7 +108,11 @@ export function FieldControl({ def, value, stored, onChange, disabled, labelId, 
           disabled={disabled}
           onChange={(e) => onChange(e.target.value === '' ? null : numeric ? Number(e.target.value) : e.target.value)}
         >
-          <option value="">—</option>
+          {def.primitive ? null : <option value="">—</option>}
+          {/* A stored value the console has no choice for stays what it is, not the first option. */}
+          {value != null && def.primitive && !def.options?.some((o) => String(o.value) === String(value)) ? (
+            <option value={String(value)}>Unknown ({String(value)})</option>
+          ) : null}
           {def.options?.map((o) => (
             <option key={String(o.value)} value={String(o.value)}>
               {o.label}
@@ -151,6 +155,7 @@ export function FieldControl({ def, value, stored, onChange, disabled, labelId, 
           className="v2-cfged-ctl"
           type="time"
           size="sm"
+          tone={tone}
           value={value == null ? '' : String(value)}
           disabled={disabled}
           onChange={(e) => onChange(e.target.value || null)}

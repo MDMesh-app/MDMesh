@@ -2,6 +2,7 @@
 import { DEVICE_RESET_REVISION, type ConfigStatus } from '../api/configSync';
 import type { Outcome } from '../data/configOutcomes';
 import { LOCATION_HISTORY_LIMIT, type LocationFix } from '../api/deviceLocations';
+import { fmtDateTime } from '../ui/format';
 import { formatRelative } from '../ui/RelativeTime';
 import type { StatusKind, StatusTone } from '../ui/Status';
 
@@ -84,6 +85,19 @@ export function validTime(v: unknown): number | undefined {
 export function isoTime(v: unknown): string | undefined {
   const t = validTime(v);
   return t === undefined ? undefined : new Date(t).toISOString();
+}
+
+/**
+ * An OS update waiting on the device, from telemetry security.pendingSystemUpdateAt (when the device learned of it) and
+ * pendingSystemUpdateSecurityPatch: "Waiting since <date> (security patch)", "None reported" when no time came, and
+ * undefined (a dash) for a time that isn't a date.
+ */
+export function pendingUpdateLabel(security: Record<string, unknown>): string | undefined {
+  const at = validTime(security.pendingSystemUpdateAt);
+  if (at === undefined) return security.pendingSystemUpdateAt == null ? 'None reported' : undefined;
+  const patch = security.pendingSystemUpdateSecurityPatch;
+  const kind = patch === true ? ' (security patch)' : patch === false ? ' (not a security patch)' : '';
+  return `Waiting since ${fmtDateTime(at)}${kind}`;
 }
 
 /** A location as the page shows it: numbers checked, provider a string, time a valid date. */

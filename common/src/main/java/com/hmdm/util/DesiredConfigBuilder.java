@@ -12,6 +12,7 @@ import com.hmdm.rest.json.agent.DesiredKiosk;
 import com.hmdm.rest.json.agent.DesiredKioskFeatures;
 import com.hmdm.rest.json.agent.DesiredKioskTheme;
 import com.hmdm.rest.json.agent.DesiredLocation;
+import com.hmdm.rest.json.agent.DesiredSystemUpdate;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -24,6 +25,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -44,6 +46,12 @@ public final class DesiredConfigBuilder {
     public static final String KEY_LOCATION = "location";
     public static final String CONNECTIVITY_ADAPTIVE = "adaptive";
     public static final String CONNECTIVITY_ALWAYS_ON = "alwaysOn";
+    /** {@code configurations.systemUpdateType}, the Headwind-era values: 0 Default, 1 Immediately, 2 Scheduled, 3 Postponed. */
+    public static final int SYSTEM_UPDATE_DEFAULT = 0;
+    public static final int SYSTEM_UPDATE_IMMEDIATELY = 1;
+    public static final int SYSTEM_UPDATE_SCHEDULED = 2;
+    public static final int SYSTEM_UPDATE_POSTPONED = 3;
+    private static final Pattern HH_MM = Pattern.compile("([01][0-9]|2[0-3]):([0-5][0-9])");
     /** {@code configurationApplications.action} meaning "install this app". */
     public static final int ACTION_INSTALL = 1;
 
@@ -77,6 +85,7 @@ public final class DesiredConfigBuilder {
             c.setMode(connectivity);
             d.setConnectivity(c);
         }
+        d.setSystemUpdate(systemUpdate(cfg.getSystemUpdateType(), cfg.getSystemUpdateFrom(), cfg.getSystemUpdateTo()));
         // Last, once core's sections are built from cfg, so a contributor can't change them.
         contribute(policies, cfg, Collections.unmodifiableList(appList), contributors);
         d.setRevision(revision(d));
@@ -90,6 +99,40 @@ public final class DesiredConfigBuilder {
     public static String connectivityMode(String mode) {
         if (CONNECTIVITY_ADAPTIVE.equals(mode) || CONNECTIVITY_ALWAYS_ON.equals(mode)) return mode;
         return null;
+    }
+
+    /**
+     * The configuration's system update policy (protocol 1.6), from the Headwind-era columns: Immediately = automatic,
+     * Scheduled = windowed between systemUpdateFrom and systemUpdateTo (HH:MM, device local time, may cross midnight),
+     * Postponed = postpone. Null for Default (the section is left out, so the document and its revision are what they
+     * were before 1.6), and for a type or window this server doesn't accept, which ConfigurationResource refuses on a
+     * save that changes it: a value saved before then is sent as Default rather than guessed at.
+     */
+    public static DesiredSystemUpdate systemUpdate(int type, String from, String to) {
+        DesiredSystemUpdate s = new DesiredSystemUpdate();
+        if (type == SYSTEM_UPDATE_IMMEDIATELY) {
+            s.setPolicy("automatic");
+        } else if (type == SYSTEM_UPDATE_POSTPONED) {
+            s.setPolicy("postpone");
+        } else if (type == SYSTEM_UPDATE_SCHEDULED) {
+            Integer start = minutesOfDay(from);
+            Integer end = minutesOfDay(to);
+            if (start == null || end == null || start.equals(end)) return null;
+            s.setPolicy("windowed");
+            s.setWindowStart(start);
+            s.setWindowEnd(end);
+        } else {
+            return null;
+        }
+        return s;
+    }
+
+    /** Minutes after midnight for a 24-hour {@code HH:MM} (00:00 to 23:59), else null. */
+    public static Integer minutesOfDay(String hhmm) {
+        if (hhmm == null) return null;
+        Matcher m = HH_MM.matcher(hhmm.trim());
+        if (!m.matches()) return null;
+        return Integer.parseInt(m.group(1)) * 60 + Integer.parseInt(m.group(2));
     }
 
     /**

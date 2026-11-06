@@ -8,6 +8,6 @@
   "properties": {
     "revision": { "type": "string" },
     "outcomes": { "type": "object", "additionalProperties": { "type": "string", "pattern": "^(applied|unsupported|deferred: .*|failed(: .*)?)$" },
-                  "description": "keys: policies.<key>, kiosk, location, connectivity (1.5; unsupported for a mode the agent doesn't know)" }
+                  "description": "keys: policies.<key>, kiosk, location, connectivity (1.5; unsupported for a mode the agent doesn't know), systemUpdate (1.6; unsupported for a policy or window the agent can't set, or without Device Owner; present when the section is, or when clearing a policy for a document without it fails)" }
   }
 }

@@ -2,6 +2,7 @@ package com.mdmesh.core.store
 
 import com.mdmesh.proto.ConfigApplyPayload
 import com.mdmesh.proto.ConfigConnectivity
+import com.mdmesh.proto.ConfigSystemUpdate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -36,5 +37,13 @@ class ConfigStateStoreTest {
         }
         val unmanaged = ConfigApplyPayload(revision = "r4")
         assertNull(ConfigStateCodec.decode(ConfigStateCodec.encode(unmanaged))?.connectivity)
+    }
+
+    @Test
+    fun `codec keeps systemUpdate, which tells the next document to clear it`() {
+        val windowed = ConfigSystemUpdate(ConfigSystemUpdate.WINDOWED, windowStart = 1320, windowEnd = 240)
+        val doc = ConfigApplyPayload(revision = "r5", systemUpdate = windowed)
+        assertEquals(windowed, ConfigStateCodec.decode(ConfigStateCodec.encode(doc))?.systemUpdate)
+        assertNull(ConfigStateCodec.decode(ConfigStateCodec.encode(ConfigApplyPayload(revision = "r6")))?.systemUpdate)
     }
 }

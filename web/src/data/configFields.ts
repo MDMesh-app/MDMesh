@@ -48,6 +48,8 @@ export interface FieldDef {
   /** Configuration metadata (name, description): always shown, never sent to devices, not "Enforced". */
   metadata?: boolean;
   options?: FieldOption[];
+  /** enum: a Java primitive (the server saves null as 0), so the select offers no "—" (unset) choice. */
+  primitive?: boolean;
   /** tri: the segments in display order. Default: Not managed / On / Off. */
   segments?: TriSegment[];
   /** flag: [label for off/null, label for true]; renders two segments instead of a checkbox. */
@@ -74,6 +76,7 @@ const WIFI_RADIO_HELP = 'Needs agent 0.3.4 or later. On turns Wi-Fi on. Off turn
 const LOCK_BUTTONS_HELP = 'Block the power menu in kiosk. Volume buttons are a separate setting, Lock volume buttons (kiosk).';
 const LOCK_VOLUME_HELP = 'Applies in kiosk mode, with agent 0.3.4 or later: blocks volume changes. Android mutes the device while volume is locked, so Ring device is silent on it; the lock is lifted when kiosk ends.';
 const CONNECTIVITY_HELP = 'Needs agent 0.4.0 or later; older agents ignore it. Battery-saver holds the live connection only while the screen is on or the device is charging, so a command sent to a locked phone on battery waits for the next heartbeat (about 10 minutes, longer in deep Doze) or for the screen to come on. Always-on keeps the connection up 24/7, so commands such as Lock, Ring or Wipe reach a locked phone without waiting for the heartbeat, at a battery cost. The mode set here is applied again when the configuration changes, the device restarts or the agent updates, so a mode set on a device page lasts only until then. To keep a lost device on Always-on, set its configuration to Always-on (or move the device to one that is). To switch devices back, choose Battery-saver; — (not managed) leaves each device as it is.';
+const SYSTEM_UPDATE_HELP = 'Needs agent 0.5.0 or later; older agents ignore it. How the device installs Android system updates its maker offers. Device default leaves it to the device and clears a policy set here before. Install automatically installs an update as soon as it is available, and installs any update already waiting straight away, restarting the device. A configuration already on it (Immediately in earlier versions) does this when the new agent rolls out, so check it first. Install in a daily window installs it only between the two times below, for up to 30 days per update; after that the update is left for manual install. Postpone holds an update back for up to 30 days, once per update, then prompts the user to install it. Device makers or carriers might exempt important security updates from Postpone, so don\'t rely on it either way.';
 const LOCATION_HELP = 'Do not track collects no location with agent 0.3.4 or later, and the server drops any location an older agent still reports. Last known (passive) reports the location the device already has at each check-in; GPS (fresh fix) asks for a new fix each time (more accurate, more battery).';
 
 export const GROUP_ORDER: FieldGroup[] = [
@@ -85,7 +88,7 @@ export const GROUP_ORDER: FieldGroup[] = [
 export const GROUP_NOTES: Partial<Record<FieldGroup, string>> = {
   Kiosk: 'Everything below kiosk mode applies only while kiosk mode is on.',
   'Kiosk appearance': 'The look of the MDMesh kiosk launcher. Applies only while kiosk mode is on.',
-  Network: 'Not managed leaves the device as it is, including a block applied earlier. Wi-Fi radio is the exception: Not managed lifts its lock.',
+  Network: 'Not managed leaves the device as it is, including a block applied earlier. Two exceptions: Not managed on Wi-Fi radio lifts its lock, and Device default on System updates clears a policy set here.',
   Restrictions: 'Not managed leaves the device as it is, including a block applied earlier.',
   Enrollment: 'Not sent to devices. The Enroll page can load this Wi-Fi into the enrollment QR so a new device joins it during setup.',
 };
@@ -184,11 +187,12 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'displayStatus', label: 'Show status bar', type: 'switch', group: 'Display', help: 'Headwind launcher status strip (battery, time).' },
 
   // ── Updates ───────────────────────────────────────────────────────────────
-  { key: 'systemUpdateType', label: 'System updates', type: 'enum', group: 'Updates', help: 'When the Headwind launcher let Android OS updates install.', options: [
-    { value: 0, label: 'Default' }, { value: 1, label: 'Immediately' }, { value: 2, label: 'Scheduled' }, { value: 3, label: 'Postponed' },
+  // System updates keep the Headwind-era values (0..3, "HH:MM"): the server and the Headwind launcher read the same.
+  { key: 'systemUpdateType', label: 'System updates', type: 'enum', group: 'Updates', enforced: true, primitive: true, help: SYSTEM_UPDATE_HELP, options: [
+    { value: 0, label: 'Device default' }, { value: 1, label: 'Install automatically' }, { value: 2, label: 'Install in a daily window' }, { value: 3, label: 'Postpone (up to 30 days)' },
   ] },
-  { key: 'systemUpdateFrom', label: 'System update from', type: 'time', group: 'Updates', help: 'Start of the system-update window (HH:MM, when Scheduled).' },
-  { key: 'systemUpdateTo', label: 'System update to', type: 'time', group: 'Updates', help: 'End of the system-update window (HH:MM, when Scheduled).' },
+  { key: 'systemUpdateFrom', label: 'Window from', type: 'time', group: 'Updates', enforced: true, help: 'Used with Install in a daily window. Device local time.' },
+  { key: 'systemUpdateTo', label: 'Window to', type: 'time', group: 'Updates', enforced: true, help: 'Device local time. The window may cross midnight, for example 22:00 to 04:00.' },
   { key: 'scheduleAppUpdate', label: 'Schedule app updates', type: 'switch', group: 'Updates', help: 'Headwind launcher installed app updates only within a time window.' },
   { key: 'appUpdateFrom', label: 'App update from', type: 'time', group: 'Updates', help: 'Start of the app-update window (HH:MM).' },
   { key: 'appUpdateTo', label: 'App update to', type: 'time', group: 'Updates', help: 'End of the app-update window (HH:MM).' },

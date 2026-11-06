@@ -184,9 +184,10 @@ public class ConfigurationResource {
                     "the plugins' validators on the namespaces the save changes: " +
                     "a refusal is an ERROR whose message is the first problem's key and whose data lists them all. " +
                     "applicationUsageParameters are upserted and never removed. " +
-                    "An explicit \"applications\": null, a connectivityMode other than adaptive, alwaysOn or null, " +
-                    "a systemUpdateType other than 0 to 3, and a Scheduled (2) one without systemUpdateFrom and " +
-                    "systemUpdateTo as two different HH:MM times, are refused with HTTP 400."
+                    "An explicit \"applications\": null and a connectivityMode other than adaptive, alwaysOn or " +
+                    "null are refused with HTTP 400. So, on a save that changes systemUpdateType, systemUpdateFrom " +
+                    "or systemUpdateTo (or creates the configuration), are a systemUpdateType other than 0 to 3 and " +
+                    "a Scheduled (2) one without systemUpdateFrom and systemUpdateTo as two different HH:MM times."
     )
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
@@ -207,11 +208,8 @@ public class ConfigurationResource {
             // An unknown mode would be stored and sent as not managed; a long one used to fail with a 500.
             throw new BadRequestException("connectivityMode must be adaptive, alwaysOn or null");
         }
+        // Devices apply it now (config.apply systemUpdate, 1.6): a window they can't use would be sent as Default.
         String systemUpdateError = systemUpdateError(configuration);
-        if (systemUpdateError != null) {
-            // Devices apply it now (config.apply systemUpdate, 1.6): a window they can't use would be sent as Default.
-            throw new BadRequestException(systemUpdateError);
-        }
         try {
             Configuration dbConfiguration = this.configurationDAO.getConfigurationByName(configuration.getName());
             final Integer id = configuration.getId();
@@ -224,6 +222,7 @@ public class ConfigurationResource {
                                 "by user " + SecurityContext.get().getCurrentUserName());
                         return Response.PERMISSION_DENIED();
                     }
+                    if (systemUpdateError != null) throw new BadRequestException(systemUpdateError);
                     Response refused = refuseExtensions(configuration, null);
                     if (refused != null) return refused;
                     configuration.setDisableLocation(false);        // Not used but shouldn't be NULL
@@ -240,6 +239,12 @@ public class ConfigurationResource {
                                 "by user " + SecurityContext.get().getCurrentUserName());
                         return Response.PERMISSION_DENIED();
                     }
+                    // Like the plugins' validators, only what the save changes: a row saved before this check
+                    // can still get an unrelated edit.
+                    if (systemUpdateError != null
+                            && systemUpdateChanges(configuration, configurationDAO.getConfigurationById(id))) {
+                        throw new BadRequestException(systemUpdateError);
+                    }
                     Response refused = refuseExtensions(configuration, storedExtensions(id, configuration));
                     if (refused != null) return refused;
                     log.info("Configuration " + configuration.getName() + " updated by user "  + SecurityContext.get().getCurrentUserName());
@@ -250,6 +255,8 @@ public class ConfigurationResource {
 
                 return Response.OK(configuration);
             }
+        } catch (BadRequestException e) {
+            throw e;
         } catch (Exception e) {
             log.error("Unexpected error when saving the configuration", e);
             e.printStackTrace();
@@ -462,5 +469,17 @@ public class ConfigurationResource {
             return "a Scheduled systemUpdateType needs systemUpdateFrom and systemUpdateTo as two different HH:MM times";
         }
         return null;
+    }
+
+    /** Whether the save changes the stored system update setting. A blank time and null are the same. */
+    static boolean systemUpdateChanges(Configuration configuration, Configuration stored) {
+        return stored == null
+                || configuration.getSystemUpdateType() != stored.getSystemUpdateType()
+                || !timeOf(configuration.getSystemUpdateFrom()).equals(timeOf(stored.getSystemUpdateFrom()))
+                || !timeOf(configuration.getSystemUpdateTo()).equals(timeOf(stored.getSystemUpdateTo()));
+    }
+
+    private static String timeOf(String time) {
+        return time == null ? "" : time.trim();
     }
 }

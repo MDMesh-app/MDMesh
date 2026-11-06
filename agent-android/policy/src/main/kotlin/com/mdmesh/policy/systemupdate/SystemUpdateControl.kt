@@ -94,7 +94,7 @@ class SystemUpdateControl(
 
         private fun window(start: Int?, end: Int?): SystemUpdateInstall.Windowed? = when {
             start == null || end == null -> null
-            // Equal times are no window, rather than guessed as none or a whole day.
+            // Android takes equal times as the whole day, which no one setting a window means.
             start !in 0 until MINUTES_PER_DAY || end !in 0 until MINUTES_PER_DAY || start == end -> null
             else -> SystemUpdateInstall.Windowed(start, end)
         }
@@ -104,13 +104,17 @@ class SystemUpdateControl(
 /** [SystemUpdatePlatform] over `DevicePolicyManager.setSystemUpdatePolicy`. */
 class DpmSystemUpdatePlatform(private val handle: DpmHandle) : SystemUpdatePlatform {
     override fun set(install: SystemUpdateInstall?) {
-        val policy = when (install) {
+        handle.dpm.setSystemUpdatePolicy(handle.admin, policyFor(install))
+    }
+
+    internal companion object {
+        /** The platform policy for [install]; null clears it. */
+        fun policyFor(install: SystemUpdateInstall?): SystemUpdatePolicy? = when (install) {
             null -> null
             SystemUpdateInstall.Automatic -> SystemUpdatePolicy.createAutomaticInstallPolicy()
             is SystemUpdateInstall.Windowed ->
                 SystemUpdatePolicy.createWindowedInstallPolicy(install.start, install.end)
             SystemUpdateInstall.Postpone -> SystemUpdatePolicy.createPostponeInstallPolicy()
         }
-        handle.dpm.setSystemUpdatePolicy(handle.admin, policy)
     }
 }

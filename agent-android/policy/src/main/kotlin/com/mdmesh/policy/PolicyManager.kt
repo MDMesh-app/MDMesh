@@ -1,7 +1,6 @@
 package com.mdmesh.policy
 
 import android.app.admin.DevicePolicyManager
-import android.app.admin.SystemUpdatePolicy
 import android.os.Build
 import com.mdmesh.policy.wifi.DpmHandle
 
@@ -45,22 +44,6 @@ class PolicyManager(
             )
             PolicyOutcome.Applied
         }.getOrElse { PolicyOutcome.Failed(it.message ?: "setPermissionAutoGrant failed") }
-    }
-
-    /**
-     * Install system updates automatically as soon as they are available
-     * ([SystemUpdatePolicy.createAutomaticInstallPolicy]). API 23+.
-     */
-    fun setSystemUpdateAutomatic(): PolicyOutcome {
-        if (!isDeviceOwner()) return PolicyOutcome.Unsupported
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return PolicyOutcome.Unsupported
-        return runCatching {
-            dpm.setSystemUpdatePolicy(
-                handle.admin,
-                SystemUpdatePolicy.createAutomaticInstallPolicy(),
-            )
-            PolicyOutcome.Applied
-        }.getOrElse { PolicyOutcome.Failed(it.message ?: "setSystemUpdateAutomatic failed") }
     }
 
     /**

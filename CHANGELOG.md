@@ -9,18 +9,17 @@ line under Unreleased.
 ## Unreleased
 
 Upgrading
-- A configuration whose System updates is set to install automatically, in a daily window or postponed (a
-  Headwind-era setting the agent didn't apply until now) takes effect: its devices get one configuration apply after
-  the update, and apply it with agent 0.5.0. Configurations on Device default don't change.
+- Check each configuration's System updates before rolling out agent 0.5.0: the setting now reaches devices. Immediately
+  (now Install automatically) makes Android install any update already waiting at once, with its restart, so those
+  devices can start installing when the new agent arrives. Configurations on Device default don't change.
+- A daily window with blank, equal or invalid times is sent as Device default. Other edits to that configuration still
+  save; changing System updates or its times needs a valid window.
 
 New
-- System updates are applied (configuration editor, Network): Install automatically, Install in a daily window
-  (Window from and Window to, the device's local time, may cross midnight) or Postpone (up to 30 days; Android still
-  installs security updates). Device default leaves it to the device and clears a policy set before. This sets when
-  an update the phone's maker offers is installed; it doesn't make the phone download one now. A daily window without
-  two different times can't be saved. Needs agent 0.5.0.
-- The device page's Telemetry shows an OS update waiting on the device, when its updater reports one, and whether it's
-  a security patch.
+- System updates now apply to devices: install automatically, in a daily window, or postpone (device makers or carriers
+  might exempt important security updates). Android installs an update your device maker offers; MDMesh can't make it
+  download one now. Needs agent 0.5.0.
+- The device page's Telemetry shows an OS update waiting on the device, if its updater reports one.
 
 Under the hood
 - Agent protocol 1.6, additive: the config.apply `systemUpdate` section and outcome, the `systemUpdatePolicy` policy

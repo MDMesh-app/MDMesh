@@ -96,10 +96,11 @@ configuration; an ad-hoc "Custom kiosk" from the console is left alone. After so
 - **1.6:** the `systemUpdate` section, from the Headwind-era System updates columns, applied with
   `setSystemUpdatePolicy`: Immediately (1) = `automatic`, Scheduled (2) = `windowed` between `systemUpdateFrom` and
   `systemUpdateTo` (HH:MM, device local time, may cross midnight; sent as minutes), Postponed (3) = `postpone` (up to
-  30 days; security updates still install). Default (0) is not managed: the section is omitted, so revisions of
-  Default configurations don't move, and an agent that set a policy for an earlier document clears it. A Scheduled
-  type without two different valid times is refused on save. The agent also reports a waiting OS update
-  (`getPendingSystemUpdate`) in telemetry. Older agents ignore the section.
+  30 days; device makers or carriers might exempt important security updates). Default (0) is not managed: the
+  section is omitted, so revisions of Default configurations don't move, and an agent that set a policy for an
+  earlier document clears it. A save that changes these fields to a Scheduled type without two different valid times
+  is refused; a row saved earlier without them can still be edited, and is sent as Default. The agent also reports a
+  waiting OS update (`getPendingSystemUpdate`) in telemetry. Older agents ignore the section.
 
 **Wi-Fi radio Off, in detail**
 - Off is deferred, without blocking the other keys, while Wi-Fi is the device's only network. It's retried only at

@@ -101,8 +101,7 @@ class CapabilityRegistry(
      * and [SystemUpdateControl.advertisedKeys].
      * Each entry corresponds to a row in `proto/registry.md` § policy.
      */
-    fun supportedPolicyKeys(): List<String> =
-        togglePolicies().advertisedKeys + systemUpdate.advertisedKeys(probeLog)
+    fun supportedPolicyKeys(): List<String> = policyKeys(togglePolicies(), systemUpdate, probeLog)
 
     /** Convenience: resolve the live [DeviceControl] facade for this device. */
     fun deviceControl(): DeviceControl? {
@@ -110,8 +109,12 @@ class CapabilityRegistry(
         return DefaultDeviceControl(wifi)
     }
 
-    private companion object {
-        const val TAG = "CapabilityRegistry"
+    internal companion object {
+        private const val TAG = "CapabilityRegistry"
+
+        /** Every advertised policy key: the toggles', then the controls' that aren't toggles. */
+        fun policyKeys(toggles: ResolvedToggles, systemUpdate: SystemUpdateControl, log: ProbeErrorLog?): List<String> =
+            toggles.advertisedKeys + systemUpdate.advertisedKeys(log)
     }
 }
 

@@ -385,7 +385,7 @@ function Editor({
   const mayAdd = usePermission(CORE_ACTION_ACCESS.addConfig);
   const canSave = mayEdit && (!isNew || mayAdd);
   const [nameError, setNameError] = useState<string | null>(null);
-  // Set by a save: from then on a system update window the server would refuse shows under its row while it is edited.
+  // Set by a save: from then on a system update setting the server would refuse shows under its row while it is edited.
   const [updateChecked, setUpdateChecked] = useState(false);
   const [advanced, setAdvanced] = useState(false);
   // Discards so far: the apps table files its rows again by their restored state.
@@ -425,7 +425,9 @@ function Editor({
 
   const kioskOn = draft.kioskMode === true;
   const windowed = draft.systemUpdateType === SYSTEM_UPDATE_WINDOWED;
-  const updateProblem = updateChecked && !readOnly ? systemUpdateProblem(draft) : null;
+  // A new configuration has nothing stored to compare with, a copy included: the server checks all of it.
+  const updateRowProblem = () => systemUpdateProblem(draft, isNew ? undefined : baseline);
+  const updateProblem = updateChecked && !readOnly ? updateRowProblem() : null;
   const allowed: ConfigApp[] = (draft.applications as ConfigApp[] | undefined) ?? [];
   const allowedIds = useMemo(() => new Set(allowed.map((a) => a.id)), [allowed]);
   // Only an installed app that is shown in kiosk can be the main app.
@@ -513,8 +515,8 @@ function Editor({
       toast.push('err', 'Still loading', 'The assigned apps are still loading — try again in a moment.');
       return;
     }
-    // A daily window the server would refuse (HTTP 400): shown under its row from now on, as it is edited.
-    const update = systemUpdateProblem(draft);
+    // A setting the server would refuse (HTTP 400): shown under its row from now on, as it is edited.
+    const update = updateRowProblem();
     setUpdateChecked(true);
     const invalid = host.validate();
     if (update) {

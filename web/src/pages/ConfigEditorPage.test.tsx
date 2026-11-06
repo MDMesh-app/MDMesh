@@ -10,7 +10,7 @@ import { renderInConsole, stubApi } from '../test/console';
 const LOAD = { timeout: 3000 };
 
 /** Configuration 7 ("Warehouse") with `config` on top, no apps, and 2 devices on it. Returns the saves (PUT bodies). */
-function open(config: Partial<Configuration> = {}) {
+function open(config: Partial<Configuration> = {}, route?: string) {
   const stored: Configuration = { id: 7, name: 'Warehouse', kioskMode: false, systemUpdateType: 0, extensions: {}, ...config };
   const puts: Record<string, unknown>[] = [];
   stubApi((path, init) => {
@@ -29,7 +29,7 @@ function open(config: Partial<Configuration> = {}) {
     }
     return null;
   });
-  renderInConsole(<AppRoutes />, { path: `/configurations/${stored.id}` });
+  renderInConsole(<AppRoutes />, { path: route ?? `/configurations/${stored.id}` });
   return puts;
 }
 
@@ -138,13 +138,66 @@ describe('configuration editor: System updates', () => {
     expect(puts[0]).toMatchObject({ systemUpdateType: 2, systemUpdateFrom: '22:00', systemUpdateTo: '06:00' });
   });
 
-  it('refuses a stored daily window the server would refuse, whatever else the save changes', async () => {
-    const puts = open({ systemUpdateType: 2, systemUpdateFrom: '25:00', systemUpdateTo: '04:00' });
-    await updates();
+  const editDescription = () => {
     const description = screen.getByText('Description').closest('.v2-field')!.querySelector('textarea')!;
     fireEvent.change(description, { target: { value: 'Back room' } });
+  };
+
+  it.each([
+    ['blank', '', ''],
+    ['equal', '22:00', '22:00'],
+    ['malformed', '25:00', '04:00'],
+  ])('lets an unrelated edit through on a stored daily window with %s times', async (_label, from, to) => {
+    const puts = open({ systemUpdateType: 2, systemUpdateFrom: from, systemUpdateTo: to });
+    await updates();
+    editDescription();
     await save();
-    await waitFor(() => expect(toastText()).toContain('System updates: Set the time the daily window starts.'));
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0]).toMatchObject({ systemUpdateType: 2, systemUpdateFrom: from, systemUpdateTo: to, description: 'Back room' });
+  });
+
+  it.each([
+    ['a daily window with blank times', { systemUpdateType: 2, systemUpdateFrom: '', systemUpdateTo: '' }, 'Set the time the daily window starts.'],
+    ['an unknown type', { systemUpdateType: 5 }, 'Choose how devices install system updates.'],
+  ])('checks a new configuration copied from one with %s: nothing is stored to compare with', async (_label, config, message) => {
+    const puts = open(config, '/configurations/new?from=7');
+    await updates();
+    const create = screen.getByRole<HTMLButtonElement>('button', { name: 'Create configuration' });
+    await waitFor(() => expect(create.disabled).toBe(false));
+    fireEvent.click(create);
+    await waitFor(() => expect(toastText()).toContain(`System updates: ${message}`));
     expect(puts).toHaveLength(0);
+  });
+
+  it('checks a stored daily window once the save changes it', async () => {
+    const puts = open({ systemUpdateType: 2, systemUpdateFrom: '', systemUpdateTo: '' });
+    await updates();
+    fireEvent.change(from(), { target: { value: '22:00' } });
+    await save();
+    await waitFor(() => expect(toastText()).toContain('System updates: Set the time the daily window ends.'));
+    expect(puts).toHaveLength(0);
+  });
+
+  it('shows a stored type it has no choice for as unknown, and keeps it on an unrelated edit', async () => {
+    const puts = open({ systemUpdateType: 5 });
+    const select = await updates();
+    expect(select.value).toBe('5');
+    expect(select.selectedOptions[0].textContent).toBe('Unknown (5)');
+
+    editDescription();
+    await save();
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0]).toMatchObject({ systemUpdateType: 5, description: 'Back room' });
+  });
+
+  it('can replace a stored type it has no choice for', async () => {
+    const puts = open({ systemUpdateType: 5 });
+    const select = await updates();
+    fireEvent.change(select, { target: { value: '0' } });
+    expect(select.value).toBe('0');
+    expect([...select.options].map((o) => o.textContent)).not.toContain('Unknown (5)');
+    await save();
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0]).toMatchObject({ systemUpdateType: 0 });
   });
 });

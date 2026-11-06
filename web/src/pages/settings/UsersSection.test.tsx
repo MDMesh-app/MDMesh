@@ -1,13 +1,9 @@
-import { configure, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../../App';
 import { ROLES, renderInConsole, stubApi } from '../../test/console';
 import type { AuthUser } from '../../api/auth';
 import type { ManagedUser, UserRole } from '../../api/users';
-
-// Whichever test runs first loads the lazy Settings page and renders it cold, which on a busy machine outlasts the
-// default 1 s wait and can reach the default 5 s test limit (see the describe below).
-configure({ asyncUtilTimeout: 10_000 });
 
 beforeEach(() => {
   HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -66,7 +62,7 @@ const body = (fetch: ReturnType<typeof open>, path: string) => {
   return call ? JSON.parse(String(call[1]?.body)) : undefined;
 };
 
-describe('Users & roles administration', { timeout: 30_000 }, () => {
+describe('Users & roles administration', () => {
   it('places administration inside Settings without adding a main navigation item', async () => {
     open();
     const settings = await screen.findByRole('heading', { name: 'Settings' });

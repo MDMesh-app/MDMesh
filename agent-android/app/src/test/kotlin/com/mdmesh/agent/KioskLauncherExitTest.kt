@@ -91,4 +91,16 @@ class KioskLauncherExitTest {
         // One definition + the no-kiosk branch of applyState.
         assertEquals("stopLockTaskSafely callers changed; check none is a crash path", 2, callers)
     }
+
+    @Test
+    fun `on-device exit requests an immediate check-in after releasing kiosk policy`() {
+        val src = launcherSource()
+        val exit = body(src, "doExit")
+        val text = src.substring(exit)
+        val release = text.indexOf("applier.exit(")
+        val checkIn = text.indexOf("CheckInWorker.scheduleNow(applicationContext)")
+        assertTrue("doExit must release kiosk policy", release >= 0)
+        assertTrue("doExit must request an immediate check-in", checkIn >= 0)
+        assertTrue("doExit must request check-in after releasing kiosk policy", checkIn > release)
+    }
 }

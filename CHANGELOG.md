@@ -8,6 +8,9 @@ line under Unreleased.
 
 ## Unreleased
 
+Fixes
+- When someone exits kiosk on the phone, the agent checks in immediately so the console shows that kiosk is off without waiting for the regular heartbeat.
+
 ## v0.4.0 — 2026-11-03
 
 The console is new and replaces the old one. Every page was rebuilt, and each page loads only when it's opened.

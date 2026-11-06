@@ -2,7 +2,7 @@
  * Headwind MDM: Open Source Android MDM Software
  * https://h-mdm.com
  *
- * Based on the system-update and user-restriction calls in hmdm-android Utils.java and
+ * Based on the user-restriction calls in hmdm-android Utils.java and
  * changed for MDMesh: rewritten in Kotlin around DpmHandle and PolicyOutcome; permission
  * policy, status bar and keyguard calls added.
  *
@@ -30,8 +30,8 @@ import com.mdmesh.policy.wifi.DpmHandle
 
 /**
  * The Device-Owner-only policy helpers that don't fit the simple on/off
- * [TogglePolicy] shape — permission auto-grant, automatic system updates, status
- * bar / keyguard lockdown, and arbitrary `DISALLOW_*` restrictions.
+ * [TogglePolicy] shape — permission auto-grant, status bar / keyguard lockdown,
+ * and arbitrary `DISALLOW_*` restrictions.
  *
  * These are the levers the enroll baseline and `:core` command handlers reach for
  * directly (a [TogglePolicy] is routed generically by key; these are called by

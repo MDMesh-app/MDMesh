@@ -174,21 +174,21 @@ t.test('envValue — reads KEY=value from .env text the way apply.sh get_env doe
 });
 
 t.test('imagePins — the three digest-pinned refs, under the owner this install pulls from, or why not', () => {
-  const m = (images, version = '0.4.1') => ({ version, components: { serverImage: 'ghcr.io/mdmesh-app/mdmesh-server:' + version, images } });
+  const m = (images, version = '0.5.0') => ({ version, components: { serverImage: 'ghcr.io/mdmesh-app/mdmesh-server:' + version, images } });
   a.deepEqual(imagePins(m(PIN), 'mdmesh-app'), PIN);
   a.deepEqual(imagePins(m(PIN), null), PIN, 'no IMAGE_OWNER in .env: compose\'s default owner');
   // A release from tooling before digest pinning (tags only): refused, saying so.
-  a.match(imagePins(m(undefined), 'mdmesh-app').error, /^the signed release 0\.4\.1 names its images by tag only, without digests/);
-  a.match(imagePins({ version: '0.4.1' }, 'mdmesh-app').error, /by tag only/);
+  a.match(imagePins(m(undefined), 'mdmesh-app').error, /^the signed release 0\.5\.0 names its images by tag only, without digests/);
+  a.match(imagePins({ version: '0.5.0' }, 'mdmesh-app').error, /by tag only/);
   a.match(imagePins(m([PIN.server]), 'mdmesh-app').error, /by tag only/);
   // Each ref must be repo@sha256:<64 lowercase hex>.
-  for (const bad of ['ghcr.io/mdmesh-app/mdmesh-web:0.4.1', 'ghcr.io/mdmesh-app/mdmesh-web@sha256:' + 'B'.repeat(64),
+  for (const bad of ['ghcr.io/mdmesh-app/mdmesh-web:0.5.0', 'ghcr.io/mdmesh-app/mdmesh-web@sha256:' + 'B'.repeat(64),
     'ghcr.io/mdmesh-app/mdmesh-web@sha256:' + 'b'.repeat(63), 'mdmesh-web@sha256:' + 'b'.repeat(64), 7, null]) {
     a.equal(imagePins(m({ ...PIN, web: bad }), 'mdmesh-app').error,
-      'the signed release 0.4.1 has no valid digest for its web image, so it cannot be applied', String(bad));
+      'the signed release 0.5.0 has no valid digest for its web image, so it cannot be applied', String(bad));
   }
   // A fork's install (its own IMAGE_OWNER) following upstream releases, or upstream images in a fork's manifest.
-  a.equal(imagePins(m(PIN), 'forkco').error, 'the signed release 0.4.1 pins its server image at ghcr.io/mdmesh-app/mdmesh-server, '
+  a.equal(imagePins(m(PIN), 'forkco').error, 'the signed release 0.5.0 pins its server image at ghcr.io/mdmesh-app/mdmesh-server, '
     + 'but this install pulls ghcr.io/forkco/mdmesh-server (IMAGE_OWNER=forkco in .env). Set GITHUB_REPO to the repository '
     + 'that publishes forkco\'s images, or IMAGE_OWNER to the owner this release names, then run docker compose up -d');
   a.match(imagePins(m({ ...PIN, supervisor: 'ghcr.io/other/mdmesh-supervisor@sha256:' + 'c'.repeat(64) }), 'mdmesh-app').error,
@@ -1364,6 +1364,8 @@ t.test('apply.sh: a compose file that does not resolve to the pinned refs is ref
   for (const [knob, want] of [
     [{ STUB_CONFIG_IMAGES: 'ghcr.io/mdmesh-app/mdmesh-server:0.0.2\nghcr.io/mdmesh-app/mdmesh-web:0.0.2' },
       /^ERR this install's compose file does not resolve to the signed image ghcr\.io\/mdmesh-app\/mdmesh-server:0\.0\.2@sha256:a{64}.*Nothing was changed\.$/m],
+    [{ STUB_CONFIG_IMAGES: 'ghcr.io/mdmesh-app/mdmesh-server:0.0.2@sha256:' + 'a'.repeat(64) + '\nghcr.io/mdmesh-app/mdmesh-web:0.0.2' },
+      /^ERR this install's compose file does not resolve to the signed image ghcr\.io\/mdmesh-app\/mdmesh-web:0\.0\.2@sha256:b{64}.*Nothing was changed\.$/m],
     [{ STUB_FAIL_RE: '^compose config ' }, /^ERR could not read the compose configuration/m]]) {
     const ENV = 'SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nSUPERVISOR_VERSION=latest\nCURRENT_VERSION=0.0.1\n';
     const d = makeDeploy(ENV);
@@ -1381,6 +1383,14 @@ t.test('apply.sh: a compose file that does not resolve to the pinned refs is ref
   const knobs = [
     [{ STUB_REPO_DIGESTS: 'ghcr.io/mdmesh-app/mdmesh-server@sha256:' + 'e'.repeat(64) },
       /^ERR the pulled image does not carry the signed digest ghcr\.io\/mdmesh-app\/mdmesh-server@sha256:a{64}, so it is not used$/m],
+    // The server image is right and the web image isn't.
+    [{ STUB_REPO_DIGESTS: PIN.server },
+      /^ERR the pulled image does not carry the signed digest ghcr\.io\/mdmesh-app\/mdmesh-web@sha256:b{64}, so it is not used$/m],
+    // docker image inspect fails: no image with that digest here.
+    [{ STUB_FAIL_RE: '^image inspect ' },
+      /^ERR the pulled image does not carry the signed digest ghcr\.io\/mdmesh-app\/mdmesh-server@sha256:a{64}, so it is not used$/m],
+    [{ STUB_FAIL_RE: '^image inspect .*mdmesh-web@' },
+      /^ERR the pulled image does not carry the signed digest ghcr\.io\/mdmesh-app\/mdmesh-web@sha256:b{64}, so it is not used$/m],
   ];
   for (const [knob, want] of knobs) {
     const d = makeDeploy('SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nSUPERVISOR_VERSION=latest\nCURRENT_VERSION=0.0.1\n');

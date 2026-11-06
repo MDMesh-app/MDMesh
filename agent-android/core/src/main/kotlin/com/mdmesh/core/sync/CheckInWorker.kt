@@ -101,5 +101,26 @@ class CheckInWorker @AssistedInject constructor(
                 request,
             )
         }
+
+        /**
+         * Queue a check-in after any current immediate run finishes. This is for state changes
+         * that occur while a check-in can already be sending its earlier snapshot: replacing the
+         * work could interrupt enrollment, while [scheduleNow] would otherwise drop this update.
+         */
+        fun scheduleAfterCurrent(context: Context) {
+            val request = OneTimeWorkRequestBuilder<CheckInWorker>()
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .build(),
+                )
+                .build()
+
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                "$UNIQUE_NAME-now",
+                ExistingWorkPolicy.APPEND_OR_REPLACE,
+                request,
+            )
+        }
     }
 }

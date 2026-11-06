@@ -226,7 +226,7 @@ class KioskLauncherActivity : ComponentActivity() {
         lifecycleScope.launch {
             applier.exit(handBackHome = true, force = true)
             // The launcher has already left lock task; publish that state without waiting for the periodic check-in.
-            CheckInWorker.scheduleNow(applicationContext)
+            CheckInWorker.scheduleAfterCurrent(applicationContext)
             finish()
         }
     }

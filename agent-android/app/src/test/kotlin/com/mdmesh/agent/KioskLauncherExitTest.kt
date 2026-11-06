@@ -26,6 +26,14 @@ class KioskLauncherExitTest {
             .replace(Regex("\"(?:\\\\.|[^\"\\\\\n])*\""), blank)
     }
 
+    private fun checkInWorkerSource(): String {
+        val root = generateSequence(File("").absoluteFile) { it.parentFile }
+            .first { File(it, "settings.gradle.kts").isFile }
+        val file = File(root, "core/src/main/kotlin/com/mdmesh/core/sync/CheckInWorker.kt")
+        assertTrue("missing $file", file.isFile)
+        return file.readText()
+    }
+
     /** The text of `fun name(...) { ... }`, by brace matching. */
     private fun body(src: String, name: String): IntRange {
         val start = Regex("\\bfun\\s+$name\\s*\\(").find(src)?.range?.first ?: error("no fun $name")
@@ -98,9 +106,18 @@ class KioskLauncherExitTest {
         val exit = body(src, "doExit")
         val text = src.substring(exit)
         val release = text.indexOf("applier.exit(")
-        val checkIn = text.indexOf("CheckInWorker.scheduleNow(applicationContext)")
+        val checkIn = text.indexOf("CheckInWorker.scheduleAfterCurrent(applicationContext)")
         assertTrue("doExit must release kiosk policy", release >= 0)
         assertTrue("doExit must request an immediate check-in", checkIn >= 0)
         assertTrue("doExit must request check-in after releasing kiosk policy", checkIn > release)
+    }
+
+    @Test
+    fun `exit check-in follows rather than discards an in-flight check-in`() {
+        val src = checkInWorkerSource()
+        val queued = body(src, "scheduleAfterCurrent")
+        val text = src.substring(queued)
+        assertTrue("follow-up check-in must append after active work", "ExistingWorkPolicy.APPEND_OR_REPLACE" in text)
+        assertTrue("follow-up check-in must share the immediate check-in chain", "\"\$UNIQUE_NAME-now\"" in text)
     }
 }

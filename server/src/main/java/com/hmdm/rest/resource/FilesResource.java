@@ -274,6 +274,10 @@ public class FilesResource {
                     return Response.ERROR("error.file.save");
                 }
             } catch (FileExistsException e) {
+                Response existing = reuseIdenticalHostedFile(customer, uploadedFile);
+                if (existing != null) {
+                    return existing;
+                }
                 logger.warn("File {} already exists", uploadedFile.getFilePath());
                 return Response.FILE_EXISTS();
             } catch (UnsafePathException e) {
@@ -285,6 +289,34 @@ public class FilesResource {
                 return Response.INTERNAL_ERROR();
             }
         }).orElse(Response.PERMISSION_DENIED());
+    }
+
+    /**
+     * A retry of an interrupted client flow can reach commit after the same bytes were already hosted. Reuse that
+     * customer-owned record only when the content is exactly identical; matching a filename alone would risk binding
+     * a configuration to an older, different image.
+     */
+    private Response reuseIdenticalHostedFile(Customer customer, UploadedFile attempted) {
+        UploadedFile existing = uploadedFileDAO.getByPath(customer.getId(), attempted.getFilePath());
+        if (existing == null || existing.isExternal()) {
+            return null;
+        }
+        try {
+            File hosted = FileUtil.resolveFile(customer, filesDirectory, null, existing.getFilePath());
+            File upload = new File(attempted.getTmpPath());
+            if (!hosted.isFile() || !upload.isFile() || !FileUtils.contentEquals(hosted, upload)) {
+                return null;
+            }
+            if (!upload.delete()) {
+                logger.warn("Could not remove duplicate temporary upload {}", upload);
+            }
+            existing.setUrl(existing.getUrl(baseUrl, customer));
+            logger.info("Reused identical hosted file {} (id={})", existing.getFilePath(), existing.getId());
+            return Response.OK(existing);
+        } catch (IOException | UnsafePathException e) {
+            logger.warn("Could not compare existing file {} with upload: {}", attempted.getFilePath(), e.getMessage());
+            return null;
+        }
     }
 
     /** Shown when a file path would leave the customer's files directory. */

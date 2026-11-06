@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { searchDevices, type DeviceView } from '../../api/devices';
 import {
   cancelRollout,
@@ -292,16 +292,22 @@ export function RolloutSection({
   // edit_devices, or a user limited to some device groups, sees the rollout without its buttons.
   const canEdit = usePermission(CORE_ACTION_ACCESS.rollout);
 
-  useEffect(() => {
+  const refreshSummary = useCallback(() => {
     const request = ++summaryRequest.current;
     if (!apk?.available) {
       setSummary(null);
       return;
     }
-    void getRolloutTargetSummary(apk.version)
+    return getRolloutTargetSummary(apk.version)
       .then((next) => { if (request === summaryRequest.current) setSummary(next); })
       .catch(() => { if (request === summaryRequest.current) setSummary(null); });
   }, [apk?.available, apk?.version]);
+
+  // A rollout can finish during Settings' normal polling. Its target summary must be refreshed
+  // when that active rollout disappears, otherwise the old incomplete summary offers it again.
+  useEffect(() => {
+    void refreshSummary();
+  }, [refreshSummary, active?.id]);
 
   const start = async (numbers: string[]) => {
     if (!apk) return;

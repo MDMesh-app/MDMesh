@@ -15,7 +15,8 @@ Upgrading
 
 New
 - Updates and the quick start run exactly the images the signed release names, pinned by digest; the quick start
-  also checks each file it downloads, stops instead of falling back to `main`, and needs OpenSSL 3.0+ or `minisign`.
+  also checks each file it downloads, stops instead of falling back to `main`, and needs OpenSSL 3.0+, or an older
+  OpenSSL and `minisign`.
 
 ## v0.4.0 — 2026-11-03
 

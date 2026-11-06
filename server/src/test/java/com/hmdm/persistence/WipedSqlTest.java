@@ -4,20 +4,25 @@
 package com.hmdm.persistence;
 
 import com.hmdm.persistence.mapper.AgentDeviceMapper;
+import com.hmdm.persistence.mapper.DeviceMapper;
 import com.hmdm.persistence.mapper.RolloutMapper;
 import com.hmdm.testsupport.Fakes;
 import org.junit.Test;
 
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Scanner;
 
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 /**
  * devices.wipedAt (#137): the latest wipe's delivery sets it, only that wipe's failure clears it (a late failure of an
- * earlier wipe leaves a later wipe's mark alone), and a rollout leaves a marked device out.
+ * earlier wipe leaves a later wipe's mark alone), a rollout and the sync summary leave a marked device out, and a
+ * check-in reads the mark.
  */
 public class WipedSqlTest {
 
@@ -50,6 +55,35 @@ public class WipedSqlTest {
     public void aRolloutLeavesWipedDevicesOut() {
         String where = Fakes.whereOf(Fakes.sqlOf(RolloutMapper.class, "listCustomerDevices"));
         assertTrue(where, where.contains("where d.customerid = #{customerid} and d.wipedat is null"));
+    }
+
+    @Test
+    public void theSyncSummaryLeavesWipedDevicesOut() {
+        String where = Fakes.whereOf(Fakes.sqlOf(AgentDeviceMapper.class, "listDevicesForSync"));
+        assertTrue(where, where.contains(
+                "where d.customerid = #{customerid} and d.configurationid is not null and d.wipedat is null"));
+    }
+
+    @Test
+    public void aCheckInReadsTheMark() throws Exception {
+        // AgentResource.checkIn loads the device through getDeviceByNumber: without the column it always sees null,
+        // and neither way of removing the mark runs.
+        String xml;
+        try (InputStream in = DeviceMapper.class.getResourceAsStream("DeviceMapper.xml")) {
+            assertNotNull("DeviceMapper.xml on the classpath", in);
+            xml = squash(new Scanner(in, "UTF-8").useDelimiter("\\A").next());
+        }
+        String select = xml.substring(xml.indexOf("<select id=\"getDeviceByNumber\""));
+        select = select.substring(0, select.indexOf("</select>"));
+        assertTrue(select, select.contains("resultMap=\"deviceResult\""));
+        assertTrue(select, select.contains("<include refid=\"deviceWithGroupsSelect\"/>"));
+
+        String columns = xml.substring(xml.indexOf("<sql id=\"deviceWithGroupsSelect\">"));
+        columns = columns.substring(0, columns.indexOf(" FROM devices"));
+        assertTrue(columns, columns.contains("devices.wipedAt"));
+        String map = xml.substring(xml.indexOf("<resultMap id=\"deviceResult\""));
+        map = map.substring(0, map.indexOf("</resultMap>"));
+        assertTrue(map, map.contains("<result property=\"wipedAt\" column=\"wipedAt\"/>"));
     }
 
     @Test

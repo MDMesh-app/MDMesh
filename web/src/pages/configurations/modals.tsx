@@ -227,11 +227,13 @@ FIELD_LABEL.applications = 'Apps';
 export function KioskConfirmModal({
   keys,
   count,
+  saveDisabled = false,
   onCancel,
   onConfirm,
 }: {
   keys: string[] | null;
   count: number | null;
+  saveDisabled?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -245,7 +247,7 @@ export function KioskConfirmModal({
           <Button size="lg" onClick={onCancel}>
             Keep editing
           </Button>
-          <Button size="lg" variant="primary" onClick={onConfirm}>
+          <Button size="lg" variant="primary" onClick={onConfirm} disabled={saveDisabled}>
             Save and apply
           </Button>
         </>

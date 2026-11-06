@@ -45,8 +45,10 @@ class KioskBackgroundImageStore @Inject constructor(
     }
 
     private fun download(request: BackgroundRequest, target: File): File? {
-        val temporary = File(target.parentFile, ".${request.hash}.download")
-        temporary.delete()
+        // Each request gets a private staging name. Launchers can overlap while Android recreates
+        // an activity or a configuration is reapplied; a shared temporary file lets one request
+        // truncate or delete another's verified bytes.
+        val temporary = File.createTempFile(".${request.hash}.", ".download", target.parentFile)
         return try {
             val digest = http.newCall(Request.Builder().url(request.url).get().build()).execute().use { response ->
                 response.body?.takeIf { response.isSuccessful }?.let { body ->

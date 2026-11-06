@@ -37,6 +37,8 @@ import com.mdmesh.kiosk.KioskController
 import com.mdmesh.kiosk.KioskReturnPolicy
 import com.mdmesh.proto.KioskApplyPayload
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -73,6 +75,8 @@ class KioskLauncherActivity : ComponentActivity() {
     private var active: KioskApplyPayload? = null
     /** Validated private image for [active], or null while the color-only fallback is shown. */
     private var backgroundImageFile: java.io.File? = null
+    /** Current optional-image fetch; cancelled when a newer kiosk configuration arrives. */
+    private var backgroundFetch: Job? = null
 
     private val returns by lazy { KioskReturnPolicy(crashGuard) }
 
@@ -116,6 +120,8 @@ class KioskLauncherActivity : ComponentActivity() {
         // fallback before the image is decoded again. The existing surface is still the desired state.
         if (p != null && p == previous) return
         active = p
+        backgroundFetch?.cancel()
+        backgroundFetch = null
         backgroundImageFile = null
         if (p == null) {
             holding = false
@@ -135,14 +141,23 @@ class KioskLauncherActivity : ComponentActivity() {
 
     private fun fetchBackgroundImage(p: KioskApplyPayload) {
         val requested = p.theme.backgroundImage ?: return
-        lifecycleScope.launch {
-            val file = backgroundImages.obtain(requested) ?: return@launch
-            // A newer configuration may have arrived while this download was in flight.
-            if (active?.theme?.backgroundImage != requested) return@launch
+        backgroundFetch = lifecycleScope.launch {
+            val file = obtainBackgroundImage(requested) ?: return@launch
+            // A newer configuration may have arrived while this download was in flight. Compare
+            // the full payload: a matching image alone does not make its app grid current.
+            if (active != p) return@launch
             backgroundImageFile = file
-            // Do not reopen a pinned app merely because its optional splash background arrived.
-            if (p.mode == "launcher" || holding) show(p)
+            // Do not reopen a pinned app, or clear a crash-loop hold, merely because its optional
+            // splash background arrived.
+            if (holding) hold(p) else if (p.mode == "launcher") show(p)
         }
+    }
+
+    /** One bounded retry lets a transient network failure recover without keeping a retry loop alive. */
+    private suspend fun obtainBackgroundImage(requested: com.mdmesh.proto.KioskBackgroundImageDto): java.io.File? {
+        backgroundImages.obtain(requested)?.let { return it }
+        delay(BACKGROUND_RETRY_MS)
+        return backgroundImages.obtain(requested)
     }
 
     private fun show(p: KioskApplyPayload) {
@@ -469,6 +484,7 @@ class KioskLauncherActivity : ComponentActivity() {
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     private companion object {
+        const val BACKGROUND_RETRY_MS = 10_000L
         const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         const val GESTURE_TAPS = 7
         const val GESTURE_WINDOW_MS = 3_000L

@@ -490,6 +490,10 @@ function Editor({
     updateApps(id, (list) => list.map((a) => (a.id === id ? { ...a, showIcon } : a)));
 
   function requestSave() {
+    if (backgroundUploading) {
+      toast.push('err', 'Image still uploading', 'Wait for the selected background image to finish uploading before saving.');
+      return;
+    }
     if (!String(draft.name ?? '').trim()) {
       setNameError('Give the configuration a name.');
       toast.push('err', 'Name required', 'Give the configuration a name.');
@@ -515,6 +519,7 @@ function Editor({
   }
 
   async function doSave() {
+    if (backgroundUploading) return;
     setBusy(true);
     try {
       // The whole configuration goes back (the server replaces every column and list), with the name as validated.
@@ -713,7 +718,7 @@ function Editor({
   // Duplicate = the server copy (PUT /configurations/copy), the same path as the list's Duplicate: it copies every
   // setting, the apps, configuration files and app settings of the saved configuration.
   const actions = isNew ? (
-    <Button size="lg" variant="primary" onClick={requestSave} disabled={busy || !appsReady}>
+    <Button size="lg" variant="primary" onClick={requestSave} disabled={busy || !appsReady || backgroundUploading}>
       {busy ? 'Creating…' : 'Create configuration'}
     </Button>
   ) : !canCopy ? null : readOnly ? (
@@ -955,7 +960,7 @@ function Editor({
             saveLabel={isNew ? 'Create configuration' : 'Save and apply'}
             busy={busy}
             busyLabel={isNew ? 'Creating…' : 'Saving…'}
-            saveDisabled={!appsReady}
+            saveDisabled={!appsReady || backgroundUploading}
           />
         )}
       </SectionLayout>
@@ -970,8 +975,10 @@ function Editor({
       <KioskConfirmModal
         keys={confirmKeys}
         count={deviceCount}
+        saveDisabled={backgroundUploading}
         onCancel={() => setConfirmKeys(null)}
         onConfirm={() => {
+          if (backgroundUploading) return;
           setConfirmKeys(null);
           void doSave();
         }}

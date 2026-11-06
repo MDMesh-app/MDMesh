@@ -12,6 +12,8 @@ Upgrading
 - The database adds one column (`devices.wipedAt`) on start. Devices wiped before the update aren't marked.
 
 New
+- Kiosk configurations can use one server-managed background image. The agent downloads it privately, verifies it by
+  SHA-256, and keeps the configured color as a fallback.
 - Settings → Users & roles: create, edit and delete console accounts, choose the devices and configurations each
   can reach, and edit roles and their permissions (thanks @lared3294).
 - A wiped device shows as **Wiped** instead of Online and then Offline, and is left out of the counts, Needs attention

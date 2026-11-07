@@ -6,6 +6,7 @@ import android.content.Context
 import android.os.Bundle
 import android.util.Log
 import android.os.PersistableBundle
+import com.mdmesh.agent.MdmApplication
 import com.mdmesh.agent.admin.AdminReceiver
 import com.mdmesh.agent.service.CheckInService
 import com.mdmesh.core.action.ResetPasswordTokenStore
@@ -84,6 +85,9 @@ class AdminPolicyComplianceActivity : Activity() {
         val dpm = ctx.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         val admin = AdminReceiver.componentName(ctx)
         val hide = { p: String -> dpm.setApplicationHidden(admin, p, true); dpm.isApplicationHidden(admin, p) }
+        // Before anything is hidden: the setup wizard may crash over a hidden app's pages, and must not leave a dialog.
+        val quiet = { (application as MdmApplication).userSetup.quietUntilComplete(admin) }
+        quiet()
         val missed = EnrollmentHiddenApps.hideAll(packages, hide)
         Log.i(TAG, "hid ${packages.size - missed.size} of ${packages.size} apps at enrollment")
         if (missed.isEmpty()) return
@@ -91,6 +95,7 @@ class AdminPolicyComplianceActivity : Activity() {
             var left = missed
             repeat(HIDE_RETRIES) {
                 delay(HIDE_RETRY_MS)
+                quiet()
                 left = EnrollmentHiddenApps.hideAll(left, hide)
                 if (left.isEmpty()) return@launch
             }

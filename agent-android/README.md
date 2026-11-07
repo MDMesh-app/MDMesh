@@ -138,5 +138,10 @@ with the same reason. See `UserSetup`.
 Pages an OEM adds can be skipped instead. The QR's admin extras bundle may name system apps to hide, comma-separated,
 under `com.mdmesh.HIDE_PACKAGES`; the agent hides them in `ADMIN_POLICY_COMPLIANCE`, before the wizard reaches their
 pages. On a Lenovo tablet, `com.tblenovo.setup,com.aura.oobe.lenovo` removes the navigation-mode and "setup complete"
-pages and the app promoter shown after setup. Google's own pages stay. Hidden apps are not uninstalled, and
+pages and the app promoter shown after setup. Hidden apps are not uninstalled, and
 `setApplicationHidden(admin, pkg, false)` brings one back. See `EnrollmentHiddenApps`.
+
+Hiding an OEM's setup app can make the setup wizard crash when it next loads that app's part of its script. Closed,
+the wizard restarts on its short provisioned path and finishes, skipping the remaining pages, Google's included. So
+that no "has stopped" dialog waits for the person enrolling, the agent sets `DISALLOW_SYSTEM_ERROR_DIALOGS` before
+it hides anything and lifts it as soon as setup completes (`AndroidUserSetup.quietUntilComplete`).

@@ -131,19 +131,7 @@ class MainActivity : ComponentActivity() {
         root.addView(label("KIOSK"))
         kioskValue = text("…", 16f, TEXT)
         root.addView(kioskValue)
-        startKioskButton = Button(this).apply {
-            text = "Start configured kiosk"
-            contentDescription = "Start configured kiosk without reapplying device settings"
-            setOnClickListener { startConfiguredKiosk() }
-        }
-        root.addView(startKioskButton)
-        root.addView(
-            text(
-                "Restores kiosk mode only. Other configuration settings are not reapplied.",
-                12f,
-                MUTED,
-            ).apply { setPadding(0, dp(4), 0, 0) },
-        )
+        addStartKioskControl(root)
         root.addView(spacer())
 
         root.addView(label("AGENT VERSION"))
@@ -175,6 +163,22 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun addStartKioskControl(root: LinearLayout) {
+        startKioskButton = Button(this).apply {
+            text = "Start configured kiosk"
+            contentDescription = "Start configured kiosk without reapplying device settings"
+            setOnClickListener { startConfiguredKiosk() }
+        }
+        root.addView(startKioskButton)
+        root.addView(
+            text(
+                "Restores kiosk mode only. Other configuration settings are not reapplied.",
+                12f,
+                MUTED,
+            ).apply { setPadding(0, dp(4), 0, 0) },
+        )
+    }
+
     /**
      * Re-enter the kiosk payload in the last fully applied configuration, without invoking
      * ConfigApplier. An administrator's temporary changes to managed settings therefore remain
@@ -199,7 +203,11 @@ class MainActivity : ComponentActivity() {
                     refresh()
                 }
                 is KioskResult.Failed -> {
-                    Toast.makeText(this@MainActivity, "Could not start kiosk: ${result.reason}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Could not start kiosk: ${result.reason}",
+                        Toast.LENGTH_LONG,
+                    ).show()
                     refresh()
                 }
             }

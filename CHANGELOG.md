@@ -8,6 +8,10 @@ line under Unreleased.
 
 ## Unreleased
 
+Fixes
+- Audit log: on Docker installs, entries show the client's address instead of the edge container's (thanks
+  @Przemek-Magic).
+
 Under the hood
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
 

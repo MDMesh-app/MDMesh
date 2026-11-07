@@ -3068,4 +3068,12 @@
         <rollback>ALTER TABLE devices DROP COLUMN wipedAt;</rollback>
     </changeSet>
 
+    <changeSet id="26.11.07-deviceState-kioskGeneration" author="mdmesh" context="common">
+        <comment>Columns,new: device_state kiosk command generation and durable local configured-start evidence</comment>
+        <sql>ALTER TABLE device_state ADD COLUMN kioskGeneration BIGINT NOT NULL DEFAULT 0;
+            ALTER TABLE device_state ADD COLUMN configuredKioskStartGeneration BIGINT;</sql>
+        <rollback>ALTER TABLE device_state DROP COLUMN configuredKioskStartGeneration;
+            ALTER TABLE device_state DROP COLUMN kioskGeneration;</rollback>
+    </changeSet>
+
 </databaseChangeLog>

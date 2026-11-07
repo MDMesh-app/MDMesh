@@ -206,6 +206,9 @@ export interface DeviceState {
   agentVersion?: string | null;
   powerMode?: string | null;
   appliedConfigRevision?: string | null;
+  /** Server-owned order for kiosk commands and a locally reported configured start. */
+  kioskGeneration?: number | null;
+  configuredKioskStartGeneration?: number | null;
 }
 
 export interface CommandHistoryItem {

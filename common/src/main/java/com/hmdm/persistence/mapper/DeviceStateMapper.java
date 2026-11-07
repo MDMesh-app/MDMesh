@@ -28,9 +28,21 @@ public interface DeviceStateMapper {
             "                       ELSE COALESCE(device_state.appliedConfigAt, EXCLUDED.updatedAt) END"})
     void upsert(DeviceState state);
 
-    @Select({"SELECT deviceNumber, battery, charging, locked, kioskActive, androidRelease, lastBootAt, updatedAt, agentVersion, powerMode, telemetry, appliedConfigRevision, appliedConfigAt, configAgentVersion, appsRevision " +
+    @Select({"SELECT deviceNumber, battery, charging, locked, kioskActive, androidRelease, lastBootAt, updatedAt, agentVersion, powerMode, telemetry, appliedConfigRevision, appliedConfigAt, configAgentVersion, appsRevision, kioskGeneration, configuredKioskStartGeneration " +
             "FROM device_state WHERE deviceNumber = #{deviceNumber}"})
     DeviceState findByDeviceNumber(@Param("deviceNumber") String deviceNumber);
+
+    /** Advance the server-owned kiosk order and invalidate any older local-start evidence. */
+    @Update({"INSERT INTO device_state (deviceNumber, updatedAt, kioskGeneration) VALUES (#{deviceNumber}, #{now}, 1) " +
+            "ON CONFLICT (deviceNumber) DO UPDATE SET kioskGeneration = device_state.kioskGeneration + 1, " +
+            "configuredKioskStartGeneration = NULL"})
+    void advanceKioskGeneration(@Param("deviceNumber") String deviceNumber, @Param("now") long now);
+
+    /** Persist a local configured start at the current server-owned kiosk generation. */
+    @Update({"INSERT INTO device_state (deviceNumber, updatedAt, kioskGeneration, configuredKioskStartGeneration) " +
+            "VALUES (#{deviceNumber}, #{now}, 0, 0) " +
+            "ON CONFLICT (deviceNumber) DO UPDATE SET configuredKioskStartGeneration = device_state.kioskGeneration"})
+    void recordConfiguredKioskStart(@Param("deviceNumber") String deviceNumber, @Param("now") long now);
 
     /** Not part of {@link #upsert}: only the config reconciler moves it. */
     @Update({"UPDATE device_state SET configAgentVersion = #{version} WHERE deviceNumber = #{deviceNumber}"})

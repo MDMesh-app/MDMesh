@@ -118,6 +118,8 @@ export interface DeviceState {
     agentVersion?: string | null;
     powerMode?: string | null;
     appliedConfigRevision?: string | null;
+    kioskGeneration?: number | null;
+    configuredKioskStartGeneration?: number | null;
 }
 
 // ---- api/configSync ----

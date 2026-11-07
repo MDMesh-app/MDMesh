@@ -358,7 +358,13 @@ public class AgentResource {
                 if (detail != null && detail.length() > MAX_EVENT_DETAIL_CHARS) {
                     detail = detail.substring(0, MAX_EVENT_DETAIL_CHARS);
                 }
-                commandDAO.insertEvent(deviceNumber, e.getType(), ts, detail);
+                if ("configuredKioskStart".equals(e.getType())) {
+                    // Timeline keeps the device timestamp. The durable proof is instead ordered by the server-owned
+                    // kiosk generation, so a device clock cannot reorder it against a later kiosk command.
+                    commandDAO.recordConfiguredKioskStart(deviceNumber, ts, detail);
+                } else {
+                    commandDAO.insertEvent(deviceNumber, e.getType(), ts, detail);
+                }
                 kioskLockoutAlert.onEvent(device, e.getType(), detail);
             }
         }

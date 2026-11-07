@@ -734,9 +734,10 @@ export function DeviceDetailPage() {
   );
   const kioskState = configuredKioskState({
     history,
-    events,
     kioskActive: ds?.kioskActive,
     inSync: cfgStatus?.inSync,
+    kioskGeneration: ds?.kioskGeneration,
+    configuredKioskStartGeneration: ds?.configuredKioskStartGeneration,
     configuredIds,
   });
   const cfgStart = configName ?? 'Its configuration';

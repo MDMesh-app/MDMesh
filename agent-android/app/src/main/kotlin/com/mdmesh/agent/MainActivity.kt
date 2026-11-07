@@ -185,19 +185,20 @@ class MainActivity : ComponentActivity() {
      * intact; only the kiosk launcher and lock-task restrictions are restored.
      */
     private fun startConfiguredKiosk() {
-        val payload = configState.load()?.kiosk
-        if (payload == null) {
+        if (configState.load()?.kiosk == null) {
             Toast.makeText(this, "No kiosk is configured for this device", Toast.LENGTH_SHORT).show()
             refresh()
             return
         }
         startKioskButton.isEnabled = false
         lifecycleScope.launch {
-            when (val result = kioskApplier.enter(payload)) {
-                KioskResult.Ok -> {
-                    events.record("configuredKioskStart", "entered configured kiosk on-device")
-                    CheckInWorker.scheduleNow(applicationContext)
-                }
+            val starter = ConfiguredKioskStarter(
+                enter = kioskApplier::enter,
+                recordStart = { events.record("configuredKioskStart", "entered configured kiosk on-device") },
+                requestCheckIn = { CheckInWorker.scheduleNow(applicationContext) },
+            )
+            when (val result = starter.start(configState.load()?.kiosk)) {
+                KioskResult.Ok -> Unit
                 KioskResult.Unsupported -> {
                     Toast.makeText(this@MainActivity, "Kiosk requires Device Owner", Toast.LENGTH_LONG).show()
                     refresh()
@@ -207,6 +208,14 @@ class MainActivity : ComponentActivity() {
                         this@MainActivity,
                         "Could not start kiosk: ${result.reason}",
                         Toast.LENGTH_LONG,
+                    ).show()
+                    refresh()
+                }
+                null -> {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "No kiosk is configured for this device",
+                        Toast.LENGTH_SHORT,
                     ).show()
                     refresh()
                 }

@@ -33,6 +33,7 @@ import com.hmdm.persistence.mapper.DeviceEventMapper;
 import com.hmdm.persistence.mapper.DeviceStateMapper;
 
 import java.util.List;
+import org.mybatis.guice.transactional.Transactional;
 
 /**
  * <p>DAO for the opaque agent v1 command queue and the device capability column. The server never
@@ -55,8 +56,12 @@ public class AgentCommandDAO {
         this.eventMapper = eventMapper;
     }
 
+    @Transactional
     public void insert(AgentCommand command) {
         mapper.insert(command);
+        if (changesKiosk(command.getType())) {
+            stateMapper.advanceKioskGeneration(command.getDeviceNumber(), System.currentTimeMillis());
+        }
     }
 
     public List<AgentCommand> listPending(String deviceNumber) {
@@ -139,6 +144,17 @@ public class AgentCommandDAO {
         e.setTs(ts);
         e.setDetail(detail);
         eventMapper.insert(e);
+    }
+
+    /** Store the audit event and durable current-generation evidence together. */
+    @Transactional
+    public void recordConfiguredKioskStart(String deviceNumber, Long deviceTs, String detail) {
+        insertEvent(deviceNumber, "configuredKioskStart", deviceTs, detail);
+        stateMapper.recordConfiguredKioskStart(deviceNumber, System.currentTimeMillis());
+    }
+
+    private static boolean changesKiosk(String type) {
+        return "kiosk.enter".equals(type) || "kiosk.exit".equals(type) || "config.apply".equals(type);
     }
 
     /** Event timeline for a device, newest first, at/after {@code since}. */

@@ -18,6 +18,10 @@ public class DeviceState implements Serializable {
     private String telemetry;
     private String appliedConfigRevision;
     private Long appliedConfigAt;
+    /** Server-owned sequence for kiosk-changing commands queued for this device. */
+    private Long kioskGeneration;
+    /** Generation at which the agent last reported a local configured-kiosk start. */
+    private Long configuredKioskStartGeneration;
     /**
      * Agent versionName a completed config.apply was queued for (or the first one seen). While the device reports a
      * different version, config.apply is re-sent until one comes back done.
@@ -56,6 +60,10 @@ public class DeviceState implements Serializable {
     public void setAppliedConfigRevision(String v) { this.appliedConfigRevision = v; }
     public Long getAppliedConfigAt() { return appliedConfigAt; }
     public void setAppliedConfigAt(Long v) { this.appliedConfigAt = v; }
+    public Long getKioskGeneration() { return kioskGeneration; }
+    public void setKioskGeneration(Long v) { this.kioskGeneration = v; }
+    public Long getConfiguredKioskStartGeneration() { return configuredKioskStartGeneration; }
+    public void setConfiguredKioskStartGeneration(Long v) { this.configuredKioskStartGeneration = v; }
     public String getConfigAgentVersion() { return configAgentVersion; }
     public void setConfigAgentVersion(String v) { this.configAgentVersion = v; }
     public String getAppsRevision() { return appsRevision; }

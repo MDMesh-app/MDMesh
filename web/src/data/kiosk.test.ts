@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CommandHistoryItem } from '../api/commands';
-import type { DeviceEvent } from '../api/events';
 import { configuredKioskState } from './kiosk';
 
-const start = (ts: number): DeviceEvent => ({ id: ts, type: 'configuredKioskStart', ts });
 const command = (type: string, createdAt: number): CommandHistoryItem => ({
   id: createdAt,
   type,
@@ -12,31 +10,36 @@ const command = (type: string, createdAt: number): CommandHistoryItem => ({
 });
 
 describe('configuredKioskState', () => {
-  const state = (events: DeviceEvent[], history: CommandHistoryItem[] = [], kioskActive = true, inSync = true) =>
-    configuredKioskState({ events, history, kioskActive, inSync, configuredIds: new Set() });
+  const state = (generation: number | null, startGeneration: number | null, history: CommandHistoryItem[] = [], kioskActive = true, inSync = true) =>
+    configuredKioskState({ history, kioskActive, inSync, kioskGeneration: generation, configuredKioskStartGeneration: startGeneration, configuredIds: new Set() });
 
-  it('recognizes a newer on-device configured start once telemetry and configuration agree', () => {
-    expect(state([start(200)], [command('kiosk.exit', 100)])).toBe('active');
+  it('recognizes a local configured start at the current server-owned generation', () => {
+    expect(state(2, 2, [command('kiosk.exit', 100)])).toBe('active');
   });
 
   it('keeps recognizing a configured kiosk command sent by this console', () => {
     expect(
       configuredKioskState({
-        events: [],
         history: [command('kiosk.enter', 200)],
         kioskActive: true,
         inSync: true,
+        kioskGeneration: null,
+        configuredKioskStartGeneration: null,
         configuredIds: new Set(['200']),
       }),
     ).toBe('active');
   });
 
-  it('keeps Return available when a newer custom kiosk command replaces the local configured kiosk', () => {
-    expect(state([start(100)], [command('kiosk.enter', 200)])).toBe('ready');
+  it('keeps Return available when a newer custom kiosk command advances the generation', () => {
+    expect(state(3, 2, [command('kiosk.enter', 200)])).toBe('ready');
   });
 
   it('keeps Return available while kiosk telemetry or configuration reconciliation disagrees', () => {
-    expect(state([start(200)], [], false)).toBe('ready');
-    expect(state([start(200)], [], true, false)).toBe('ready');
+    expect(state(2, 2, [], false)).toBe('ready');
+    expect(state(2, 2, [], true, false)).toBe('ready');
+  });
+
+  it('does not depend on device event timestamps or the event-page limit', () => {
+    expect(state(42, 42)).toBe('active');
   });
 });

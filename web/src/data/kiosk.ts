@@ -2,7 +2,6 @@
 // console, and the kiosk a configuration defines), the configuration's launcher theme, and the app-icon cache.
 import type { CommandHistoryItem } from '../api/commands';
 import type { ConfigApp, Configuration } from '../api/configurations';
-import type { DeviceEvent } from '../api/events';
 import { parseOutcomes } from '../api/configSync';
 import { CONFIG_FIELDS } from './configFields';
 
@@ -180,27 +179,27 @@ export type ConfiguredKioskState =
  */
 export function configuredKioskState({
   history,
-  events,
   kioskActive,
   inSync,
+  kioskGeneration,
+  configuredKioskStartGeneration,
   configuredIds,
 }: {
   history: CommandHistoryItem[];
-  events: DeviceEvent[];
   kioskActive: boolean | undefined;
   /** The device runs the configuration's current revision (configStatus.inSync). */
   inSync: boolean | undefined;
+  /** Server-owned generations; unlike activity events, these are not paged or device-clock based. */
+  kioskGeneration: number | null | undefined;
+  configuredKioskStartGeneration: number | null | undefined;
   configuredIds: ReadonlySet<string>;
 }): ConfiguredKioskState {
   const last = lastKioskCommand(history);
-  const lastCommandAt = last == null ? 0 : Math.max(last.createdAt ?? 0, last.deliveredAt ?? 0, last.completedAt ?? 0);
-  const localStartAt = events
-    .filter((event) => event.type === 'configuredKioskStart')
-    .reduce((newest, event) => Math.max(newest, event.ts), 0);
-  // A local start uses the configuration last applied on the device. It represents the configuration currently shown
-  // by the console only while that revision remains in sync. A newer console kiosk command wins, especially Custom
-  // kiosk, which must keep Return to configured kiosk available.
-  if (localStartAt > lastCommandAt && kioskActive === true && inSync === true) return 'active';
+  // The server advances kioskGeneration whenever it queues a kiosk-changing command. A local start records the
+  // current generation on receipt, so this cannot be confused by device clock skew or disappear from a paged event
+  // timeline. A later Custom kiosk or exit advances the generation and makes Return available again.
+  if (kioskGeneration != null && configuredKioskStartGeneration === kioskGeneration
+      && kioskActive === true && inSync === true) return 'active';
   if (!last) return 'ready';
   const fromConfig = last.type === 'config.apply';
   const configured = fromConfig || (last.type === 'kiosk.enter' && configuredIds.has(String(last.id)));

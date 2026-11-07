@@ -11,16 +11,32 @@ export interface SyncLine {
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
+/** How many wiped devices a configuration has when they are all it has, else 0. */
+export function wipedOnly(s: ConfigSyncSummary | undefined): number {
+  return s && s.total === 0 ? (s.wiped ?? 0) : 0;
+}
+
+/** "Used only by 2 wiped devices", or null when that isn't the case. */
+export function wipedOnlyLine(s: ConfigSyncSummary | undefined): string | null {
+  const n = wipedOnly(s);
+  return n > 0 ? `Used only by ${plural(n, 'wiped device')}` : null;
+}
+
+/** Every device the server counts when it refuses a delete, wiped ones too (undefined = unknown). */
+export function devicesBlockingDelete(s: ConfigSyncSummary | undefined): number | undefined {
+  return s ? s.total + (s.wiped ?? 0) : undefined;
+}
+
 /**
  * The sync bar and line under a configuration card. The summary's four counts are disjoint
- * (in sync + out of sync + agent too old + never reported = total). Out of sync reads "applying", as on the classic
+ * (in sync + out of sync + agent too old + never reported = total), wiped devices aside. Out of sync reads "applying", as on the classic
  * SyncBar; a "failed" split needs data the server doesn't send.
  */
 export function syncLine(s: ConfigSyncSummary | undefined, unavailable: boolean): SyncLine {
   if (!s || s.total === 0) {
     return {
       segments: [],
-      text: unavailable && !s ? 'Sync status unavailable' : 'Not used by any device yet',
+      text: wipedOnlyLine(s) ?? (unavailable && !s ? 'Sync status unavailable' : 'Not used by any device yet'),
       tone: 'idle',
     };
   }

@@ -114,7 +114,7 @@ const SIZES: ButtonSize[] = ['xs', 'sm', 'md', 'lg', 'xl', 'hero'];
 const BADGE_TONES: BadgeTone[] = ['outline', 'neutral', 'count', 'ok', 'warn', 'alert', 'idle', 'ink', 'quiet'];
 const BADGE_SIZES: BadgeSize[] = ['xs', 'sm', 'md', 'lg'];
 const STATUSES = [
-  'online', 'attention', 'offline', 'inSync', 'applying', 'applyFailed', 'agentTooOld', 'notReported',
+  'online', 'attention', 'offline', 'wiped', 'inSync', 'applying', 'applyFailed', 'agentTooOld', 'notReported',
   'noConfiguration', 'applied', 'failed', 'notSupported', 'done', 'pending', 'expired',
 ] as const satisfies ReadonlyArray<StatusKind>;
 const KINDS: DeviceKind[] = ['kiosk', 'signage', 'tablet', 'phone', 'scanner'];

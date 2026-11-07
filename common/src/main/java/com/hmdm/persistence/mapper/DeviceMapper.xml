@@ -27,6 +27,7 @@
         SELECT devices.id AS deviceId, devices.number, devices.description, devices.lastUpdate,
                devices.configurationId, devices.info, devices.imei, devices.phone, devices.customerId,
                devices.custom1, devices.custom2, devices.custom3, devices.oldNumber, devices.hardwareid,
+               devices.wipedAt,
                groups.id AS groupId, groups.name AS groupName,
                configurations.name as configName
         FROM devices
@@ -52,6 +53,7 @@
         <result property="kioskMode" column="kioskMode"/>
         <result property="androidVersion" column="androidVersion"/>
         <result property="enrollTime" column="enrollTime"/>
+        <result property="wipedAt" column="wipedAt"/>
         <result property="serial" column="serial"/>
         <result property="statusCode" column="statusCode"/>
         <result property="publicIp" column="publicIp"/>
@@ -255,7 +257,7 @@
     <select id="getAllDevices" parameterType="DeviceSearchRequest" resultMap="deviceResult">
         SELECT devices.id AS deviceId, devices.number, devices.description, devices.lastUpdate,
                devices.configurationId, devices.info, devices.imei, devices.phone, devices.customerId,
-               devices.enrollTime, devices.publicIp,
+               devices.enrollTime, devices.publicIp, devices.wipedAt,
                (devices.infojson ->> 'mdmMode')::BOOLEAN AS mdmMode,
                (devices.infojson ->> 'kioskMode')::BOOLEAN AS kioskMode,
                devices.infojson ->> 'androidVersion' AS androidVersion,

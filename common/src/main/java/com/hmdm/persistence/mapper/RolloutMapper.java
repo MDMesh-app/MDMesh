@@ -57,8 +57,10 @@ public interface RolloutMapper {
     @Select({"SELECT deviceNumber FROM agentRolloutCanary WHERE rolloutId = #{rolloutId}"})
     List<String> listCanaryNumbers(@Param("rolloutId") int rolloutId);
 
+    /** The customer's devices a rollout counts. Not wiped ones: they never check in again, so they'd never finish. */
     @Select({"SELECT d.number AS deviceNumber, s.agentVersion AS agentVersion, d.agentCapabilities AS capabilitiesJson " +
-            "FROM devices d LEFT JOIN device_state s ON s.deviceNumber = d.number WHERE d.customerId = #{customerId}"})
+            "FROM devices d LEFT JOIN device_state s ON s.deviceNumber = d.number WHERE d.customerId = #{customerId} " +
+            "AND d.wipedAt IS NULL"})
     List<RolloutDeviceRow> listCustomerDevices(@Param("customerId") int customerId);
 
     @Select({"SELECT c.* FROM agentCommand c JOIN devices d ON d.number = c.deviceNumber " +

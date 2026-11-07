@@ -58,6 +58,27 @@ public interface AgentDeviceMapper {
     @Update({"UPDATE devices SET enrollTime = COALESCE(enrollTime, #{ts}) WHERE number = #{deviceNumber}"})
     void updateEnrollTime(@Param("deviceNumber") String deviceNumber, @Param("ts") long ts);
 
+    /**
+     * The console's "Wiped": when the latest device.wipe was delivered. {@code ts} is also that command's deliveredAt,
+     * which is how {@link #clearWipedForCommand} tells the wipe that set the mark from an earlier one.
+     */
+    @Update({"UPDATE devices SET wipedAt = #{ts} WHERE number = #{deviceNumber}"})
+    void markWiped(@Param("deviceNumber") String deviceNumber, @Param("ts") long ts);
+
+    /**
+     * Clears "Wiped" when the result just reported for {@code commandId} is for the device.wipe that set the mark: one
+     * of this device's, delivered no earlier than the mark. A late or repeated failure of an earlier wipe leaves a
+     * later wipe's mark alone.
+     */
+    @Update({"UPDATE devices SET wipedAt = NULL WHERE number = #{deviceNumber} AND wipedAt IS NOT NULL " +
+            "AND EXISTS (SELECT 1 FROM agentCommand c WHERE c.id = #{commandId} AND c.deviceNumber = #{deviceNumber} " +
+            "AND c.type = 'device.wipe' AND c.deliveredAt >= devices.wipedAt)"})
+    int clearWipedForCommand(@Param("deviceNumber") String deviceNumber, @Param("commandId") Integer commandId);
+
+    /** Clears "Wiped" set before {@code cutoff}. */
+    @Update({"UPDATE devices SET wipedAt = NULL WHERE number = #{deviceNumber} AND wipedAt < #{cutoff}"})
+    int clearWipedBefore(@Param("deviceNumber") String deviceNumber, @Param("cutoff") long cutoff);
+
     @Update({"UPDATE devices SET hardwareid = #{hardwareId} WHERE number = #{deviceNumber}"})
     void updateHardwareId(@Param("deviceNumber") String deviceNumber,
                           @Param("hardwareId") String hardwareId);
@@ -95,10 +116,12 @@ public interface AgentDeviceMapper {
     /**
      * One row per device of the customer with its configuration + last applied revision (LEFT JOIN: never-reported
      * devices included), and whether its latest config.apply result has a deferred outcome (one lookup per device on
-     * the agentCommand (deviceNumber, type, id) index).
+     * the agentCommand (deviceNumber, type, id) index). A wiped device stays in, marked: it can never report a new
+     * revision, but it still blocks deleting its configuration (ConfigurationMapper.countDevices), so the summary counts
+     * it apart.
      */
     @Select({"SELECT d.number AS deviceNumber, d.configurationId AS configurationId, d.agentCapabilities AS capabilitiesJson, " +
-            "s.appliedConfigRevision AS appliedConfigRevision, " +
+            "s.appliedConfigRevision AS appliedConfigRevision, d.wipedAt IS NOT NULL AS wiped, " +
             "COALESCE((SELECT c.detail LIKE '%\"deferred:%' FROM agentCommand c " +
             "          WHERE c.deviceNumber = d.number AND c.type = 'config.apply' ORDER BY c.id DESC LIMIT 1), false) " +
             "AS lastApplyDeferred " +

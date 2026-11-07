@@ -17,7 +17,7 @@ New
 - A wiped device shows as **Wiped** instead of Online and then Offline, and is left out of the counts, Needs attention
   and rollouts; the Devices list's Wiped filter shows it (thanks @Przemek-Magic).
 - Sync now and console commands say when the device isn't connected and will get it at its next check-in.
-- Kiosk: after an administrator exits kiosk on the device, the agent status screen can start the saved configured kiosk again without reapplying other device settings. Needs the next agent release.
+- Kiosk: after an administrator exits kiosk on the device, the agent status screen can start the saved configured kiosk again without reapplying other device settings; the console recognizes the return. Needs the next agent release.
 
 Fixes
 - Audit log: on Docker installs, entries show the client's address instead of the edge container's (thanks

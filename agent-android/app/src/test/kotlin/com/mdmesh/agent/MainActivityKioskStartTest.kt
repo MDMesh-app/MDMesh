@@ -51,7 +51,7 @@ class MainActivityKioskStartTest {
     @Test
     fun `successful local kiosk start is reported promptly`() {
         val method = body(source(), "startConfiguredKiosk")
-        assertTrue(method.contains("events.record(\"kioskStart\""))
+        assertTrue(method.contains("events.record(\"configuredKioskStart\""))
         assertTrue(method.contains("CheckInWorker.scheduleNow(applicationContext)"))
     }
 }

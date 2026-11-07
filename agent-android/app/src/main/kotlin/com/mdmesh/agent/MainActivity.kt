@@ -195,7 +195,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             when (val result = kioskApplier.enter(payload)) {
                 KioskResult.Ok -> {
-                    events.record("kioskStart", "entered configured kiosk on-device")
+                    events.record("configuredKioskStart", "entered configured kiosk on-device")
                     CheckInWorker.scheduleNow(applicationContext)
                 }
                 KioskResult.Unsupported -> {

@@ -139,7 +139,7 @@ class MainActivity : ComponentActivity() {
         root.addView(startKioskButton)
         root.addView(
             text(
-                "Restores kiosk only. It does not reapply Wi-Fi, Bluetooth, location, or other device settings.",
+                "Restores kiosk mode only. Other configuration settings are not reapplied.",
                 12f,
                 MUTED,
             ).apply { setPadding(0, dp(4), 0, 0) },

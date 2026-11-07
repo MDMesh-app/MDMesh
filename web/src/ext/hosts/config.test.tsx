@@ -15,7 +15,6 @@ import { ORDER } from '../core/order';
 import { createRegistry, type Registry } from '../registry';
 import { configSection, defineExtension, lazyComponent, type ConfigSectionProps, type Contribution } from '../types';
 
-const LOAD = { timeout: 3000 };
 
 /** An ERROR envelope, as Response.ERROR(key, data) answers. */
 class Refusal {
@@ -81,7 +80,7 @@ function open(
 const ext = (id: string, contributions: Contribution[], extra: { requires?: { serverPlugin: string } } = {}) =>
   defineExtension({ id, apiVersion: 1, title: id[0].toUpperCase() + id.slice(1), contributions, ...extra });
 
-const demoLabel = () => screen.findByLabelText('Demo label', undefined, LOAD) as Promise<HTMLInputElement>;
+const demoLabel = () => screen.findByLabelText('Demo label') as Promise<HTMLInputElement>;
 const saveBar = () => screen.queryByRole('region', { name: 'Unsaved changes' });
 const navLabels = () =>
   within(screen.getByRole('navigation', { name: 'Sections' }))
@@ -116,7 +115,7 @@ function recordToasts() {
 }
 
 async function typeDescription(text: string) {
-  const area = (await screen.findByText('Description', undefined, LOAD)).closest('.v2-field')?.querySelector('textarea');
+  const area = (await screen.findByText('Description')).closest('.v2-field')?.querySelector('textarea');
   if (!area) throw new Error('no description field');
   fireEvent.change(area, { target: { value: text } });
 }
@@ -139,7 +138,7 @@ describe('configuration sections: the host', () => {
 
   it('with no extension, shows core’s sections only, as before', async () => {
     open({}, { registry: registryOf() });
-    await screen.findByText('Description', undefined, LOAD);
+    await screen.findByText('Description');
     expect(navLabels().map((l) => l?.replace(/\d.*$/, '').trim())).toEqual([
       'Identity', 'Apps', 'Kiosk', 'Network', 'Security', 'Enrollment', 'Headwind only',
     ]);
@@ -151,7 +150,7 @@ describe('configuration sections: the host', () => {
       [],
     );
     open({}, { registry });
-    await screen.findByText('Description', undefined, LOAD);
+    await screen.findByText('Description');
     expect(document.getElementById('kiosk')).toBeNull();
     expect(navLabels().join()).not.toContain('Kiosk');
   });
@@ -205,7 +204,7 @@ describe('configuration sections: changes', () => {
       }),
     ]);
     open({ config: { extensions: { reorder: { a: 1, b: 2 } } } }, { registry: registryOf(reorder) });
-    fireEvent.click(await screen.findByRole('button', { name: 'Rewrite' }, LOAD));
+    fireEvent.click(await screen.findByRole('button', { name: 'Rewrite' }));
     expect(saveBar()).toBeNull();
   });
 
@@ -316,7 +315,7 @@ describe('configuration sections: problems', () => {
     ]);
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const { puts } = open({ config: { extensions: { fragile: { kept: true } } } }, { registry: registryOf(demo, fragile) });
-    fireEvent.click(await screen.findByRole('button', { name: 'Break' }, LOAD));
+    fireEvent.click(await screen.findByRole('button', { name: 'Break' }));
     const card = document.getElementById('x-fragile-fragile')!;
     expect(within(card).getByRole('alert').textContent).toContain(
       'The “Fragile” extension ran into a problem. Changes made here aren’t saved.',
@@ -366,7 +365,7 @@ describe('configuration sections: problems', () => {
     try {
       // Configuration A: the namespace is not stored, so the section gets the defaults.
       open({}, { registry });
-      fireEvent.click(await screen.findByRole('button', { name: 'Add host' }, LOAD));
+      fireEvent.click(await screen.findByRole('button', { name: 'Add host' }));
       expect(thrown.some((e) => e instanceof TypeError)).toBe(true);
       expect(screen.getByText('Hosts: none')).toBeTruthy();
       expect(saveBar()).toBeNull();
@@ -374,7 +373,7 @@ describe('configuration sections: problems', () => {
 
       // Configuration B, in the same session, has none either.
       const { puts } = open({ config: { id: 8, name: 'Office' } }, { registry });
-      expect(await screen.findByText('Hosts: none', undefined, LOAD)).toBeTruthy();
+      expect(await screen.findByText('Hosts: none')).toBeTruthy();
       await typeDescription('Front room');
       await save();
       await waitFor(() => expect(puts).toHaveLength(1));
@@ -404,7 +403,7 @@ describe('configuration sections: problems', () => {
       const c = document.getElementById('x-tagger-tagger')!;
       expect(within(c).getByRole('alert').textContent).toContain('The “Tagger” extension ran into a problem.');
       return c;
-    }, LOAD);
+    });
     expect(within(card).queryByText('Tagged')).toBeNull();
     await typeDescription('Back room');
     await save();
@@ -439,7 +438,7 @@ describe('configuration sections: problems', () => {
     window.addEventListener('error', onError);
     try {
       const { puts } = open({}, { registry: registryOf(hosts) });
-      fireEvent.click(await screen.findByRole('button', { name: 'Add h1' }, LOAD));
+      fireEvent.click(await screen.findByRole('button', { name: 'Add h1' }));
       expect(screen.getByText('Hosts: h1')).toBeTruthy();
       fireEvent.click(screen.getByRole('button', { name: 'Push h2' }));
       expect(thrown.some((e) => e instanceof TypeError)).toBe(true);
@@ -453,7 +452,7 @@ describe('configuration sections: problems', () => {
 
   it('keeps a stored value it cannot read, and says so', async () => {
     const { puts } = open({ config: { extensions: { demo: ['not', 'an', 'object'] } } });
-    await screen.findByText('Description', undefined, LOAD);
+    await screen.findByText('Description');
     const card = document.getElementById('x-demo-demo')!;
     expect(within(card).getByRole('alert').textContent).toContain('can’t be read here, so saving keeps them as they are');
     expect(screen.queryByLabelText('Demo label')).toBeNull();
@@ -489,7 +488,7 @@ describe('configuration sections: new configurations', () => {
 
   it('says a template’s unreadable value stops the new configuration, whose namespaces the server all checks', async () => {
     open({ config: { extensions: { demo: ['not', 'an', 'object'] } } }, { path: '/configurations/new?from=7' });
-    await screen.findByText('Description', undefined, LOAD);
+    await screen.findByText('Description');
     expect(within(document.getElementById('x-demo-demo')!).getByRole('alert').textContent).toBe(
       'The template’s “Demo” settings can’t be read here, and the server won’t create a configuration with them. ' +
         'Duplicate the template instead.',
@@ -502,7 +501,7 @@ describe('configuration sections: new configurations', () => {
       userRole: { ...ROLES.admin.userRole!, permissions: ROLES.admin.userRole!.permissions!.filter((p) => p.name !== 'copy_config') },
     };
     open({ config: { extensions: { demo: ['not', 'an', 'object'] } } }, { path: '/configurations/new?from=7', user: noCopy });
-    await screen.findByText('Description', undefined, LOAD);
+    await screen.findByText('Description');
     expect(within(document.getElementById('x-demo-demo')!).getByRole('alert').textContent).toBe(
       'The template’s “Demo” settings can’t be read here, and the server won’t create a configuration with them. ' +
         'Someone whose role may duplicate configurations can duplicate the template instead.',
@@ -540,7 +539,7 @@ describe('configuration sections: edge cases', () => {
     ]);
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const { puts } = open({}, { registry: registryOf(flaky) });
-    fireEvent.click(await screen.findByRole('button', { name: 'Break' }, LOAD));
+    fireEvent.click(await screen.findByRole('button', { name: 'Break' }));
     const card = document.getElementById('x-flaky-flaky')!;
     expect(within(card).getByRole('alert')).toBeTruthy();
     expect(saveBar()).toBeNull();
@@ -569,7 +568,7 @@ describe('configuration sections: edge cases', () => {
       }),
     ]);
     open({}, { registry: registryOf(bump) });
-    fireEvent.click(await screen.findByRole('button', { name: 'Bump' }, LOAD));
+    fireEvent.click(await screen.findByRole('button', { name: 'Bump' }));
     expect(within(saveBar()!).getByText('1 unsaved change')).toBeTruthy();
     expect(navEntry('Bump').textContent).toContain('1 changed');
   });
@@ -589,7 +588,7 @@ describe('configuration sections: edge cases', () => {
     ]);
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { puts } = open({}, { registry: registryOf(lister) });
-    fireEvent.click(await screen.findByRole('button', { name: 'List' }, LOAD));
+    fireEvent.click(await screen.findByRole('button', { name: 'List' }));
     expect(saveBar()).toBeNull();
     expect(logged.mock.calls.some(([m]) => String(m).includes('not a plain JSON object'))).toBe(true);
     await typeDescription('Back room');
@@ -628,7 +627,7 @@ describe('configuration sections: edge cases', () => {
     const withVpn = { ...ROLES.admin, userRole: { ...ROLES.admin.userRole!, permissions: [...ROLES.admin.userRole!.permissions!, { name: 'plugin_vpn_edit' }] } };
     let current: AuthUser = withVpn;
     const { puts } = open({ ...kept, currentUser: () => current }, { registry: registryOf(demo, vpn), user: withVpn });
-    fireEvent.click(await screen.findByRole('button', { name: 'Turn on' }, LOAD));
+    fireEvent.click(await screen.findByRole('button', { name: 'Turn on' }));
     expect(within(saveBar()!).getByText('1 unsaved change')).toBeTruthy();
 
     const toasts = recordToasts();
@@ -643,7 +642,7 @@ describe('configuration sections: edge cases', () => {
       // The role gets the permission back: the section shows its stored value, so the edit really left the draft.
       current = withVpn;
       act(() => void document.dispatchEvent(new Event('visibilitychange')));
-      expect(await screen.findByText('VPN is off', undefined, LOAD)).toBeTruthy();
+      expect(await screen.findByText('VPN is off')).toBeTruthy();
       expect(saveBar()).toBeNull();
       expect(dropped()).toHaveLength(1);
     } finally {
@@ -676,7 +675,7 @@ describe('configuration sections: edge cases', () => {
     let current: AuthUser = withFlaky;
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const { puts } = open({ currentUser: () => current }, { registry: registryOf(flaky), user: withFlaky });
-    fireEvent.click(await screen.findByRole('button', { name: 'Break' }, LOAD));
+    fireEvent.click(await screen.findByRole('button', { name: 'Break' }));
     const callout = within(document.getElementById('x-flaky-flaky')!).getByRole('alert');
     expect(callout.textContent).toContain('Changes made here aren’t saved.');
     expect(saveBar()).toBeNull();
@@ -690,7 +689,7 @@ describe('configuration sections: edge cases', () => {
     explode = false;
     current = withFlaky;
     act(() => void document.dispatchEvent(new Event('visibilitychange')));
-    expect(await screen.findByRole('button', { name: 'Break' }, LOAD)).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Break' })).toBeTruthy();
     expect(saveBar()).toBeNull();
     await typeDescription('Back room');
     await save();
@@ -740,7 +739,7 @@ describe('configuration sections: who sees and edits them', () => {
       { requires: { serverPlugin: 'netaccess' } },
     );
     open({ plugins: ['netaccess'] }, { registry: registryOf(netaccess) });
-    expect(await screen.findByText('VPN body', undefined, LOAD)).toBeTruthy();
+    expect(await screen.findByText('VPN body')).toBeTruthy();
   });
 
   it('makes the section read only on a built-in template', async () => {

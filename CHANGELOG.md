@@ -17,6 +17,7 @@ New
 - A wiped device shows as **Wiped** instead of Online and then Offline, and is left out of the counts, Needs attention
   and rollouts; the Devices list's Wiped filter shows it (thanks @Przemek-Magic).
 - Sync now and console commands say when the device isn't connected and will get it at its next check-in.
+- Kiosk: after an administrator exits kiosk on the device, the agent status screen can start the saved configured kiosk again without reapplying other device settings. Needs the next agent release.
 
 Fixes
 - Audit log: on Docker installs, entries show the client's address instead of the edge container's (thanks
@@ -189,7 +190,6 @@ Upgrading
 - Update the server, then roll out agent 0.3.7 from Settings → Agent rollout, to one device first.
 - Until devices have agent 0.3.7, set Safe Mode to Block on configurations whose devices you put into kiosk with Enter
   kiosk.
-
 Fixes
 - Kiosk: Safe Mode is blocked whenever a device is in kiosk, including kiosks started with Enter kiosk on the device
   page, unless the configuration's Safe Mode setting is Allow. The block is lifted once nothing asks for it: when such

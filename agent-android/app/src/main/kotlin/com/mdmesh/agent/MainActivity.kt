@@ -7,9 +7,11 @@ import android.os.Bundle
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.ViewGroup
+import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.core.content.ContextCompat
@@ -17,8 +19,13 @@ import androidx.lifecycle.lifecycleScope
 import com.mdmesh.agent.service.CheckInService
 import com.mdmesh.core.action.NotificationPermissionAccess
 import com.mdmesh.core.config.ServerConfigStore
+import com.mdmesh.core.kiosk.KioskApplier
 import com.mdmesh.core.store.DeviceIdStore
+import com.mdmesh.core.store.ConfigStateStore
+import com.mdmesh.core.sync.CheckInWorker
 import com.mdmesh.core.sync.SyncStatus
+import com.mdmesh.core.telemetry.EventSink
+import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.policy.wifi.DpmHandle
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
@@ -42,9 +49,13 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var notificationPermission: NotificationPermissionAccess
     @Inject lateinit var serverConfig: ServerConfigStore
     @Inject lateinit var syncStatus: SyncStatus
+    @Inject lateinit var configState: ConfigStateStore
+    @Inject lateinit var kioskApplier: KioskApplier
+    @Inject lateinit var events: EventSink
 
     private lateinit var deviceIdValue: TextView
     private lateinit var kioskValue: TextView
+    private lateinit var startKioskButton: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -70,6 +81,7 @@ class MainActivity : ComponentActivity() {
 
     private fun refresh() {
         kioskValue.text = if (isLocked()) "Locked (kiosk active)" else "Not locked"
+        startKioskButton.isEnabled = isDeviceOwner() && configState.load()?.kiosk != null && !isLocked()
         lifecycleScope.launch {
             val id = deviceIdStore.current()
             deviceIdValue.text = if (id.isNullOrBlank()) enrollingLabel() else id
@@ -119,6 +131,19 @@ class MainActivity : ComponentActivity() {
         root.addView(label("KIOSK"))
         kioskValue = text("…", 16f, TEXT)
         root.addView(kioskValue)
+        startKioskButton = Button(this).apply {
+            text = "Start configured kiosk"
+            contentDescription = "Start configured kiosk without reapplying device settings"
+            setOnClickListener { startConfiguredKiosk() }
+        }
+        root.addView(startKioskButton)
+        root.addView(
+            text(
+                "Restores kiosk only. It does not reapply Wi-Fi, Bluetooth, location, or other device settings.",
+                12f,
+                MUTED,
+            ).apply { setPadding(0, dp(4), 0, 0) },
+        )
         root.addView(spacer())
 
         root.addView(label("AGENT VERSION"))
@@ -147,6 +172,37 @@ class MainActivity : ComponentActivity() {
             setBackgroundColor(INK)
             addView(root)
             layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
+        }
+    }
+
+    /**
+     * Re-enter the kiosk payload in the last fully applied configuration, without invoking
+     * ConfigApplier. An administrator's temporary changes to managed settings therefore remain
+     * intact; only the kiosk launcher and lock-task restrictions are restored.
+     */
+    private fun startConfiguredKiosk() {
+        val payload = configState.load()?.kiosk
+        if (payload == null) {
+            Toast.makeText(this, "No kiosk is configured for this device", Toast.LENGTH_SHORT).show()
+            refresh()
+            return
+        }
+        startKioskButton.isEnabled = false
+        lifecycleScope.launch {
+            when (val result = kioskApplier.enter(payload)) {
+                KioskResult.Ok -> {
+                    events.record("kioskStart", "entered configured kiosk on-device")
+                    CheckInWorker.scheduleNow(applicationContext)
+                }
+                KioskResult.Unsupported -> {
+                    Toast.makeText(this@MainActivity, "Kiosk requires Device Owner", Toast.LENGTH_LONG).show()
+                    refresh()
+                }
+                is KioskResult.Failed -> {
+                    Toast.makeText(this@MainActivity, "Could not start kiosk: ${result.reason}", Toast.LENGTH_LONG).show()
+                    refresh()
+                }
+            }
         }
     }
 

@@ -10,8 +10,14 @@ line under Unreleased.
 
 Upgrading
 - The database adds one column (`devices.wipedAt`) on start. Devices wiped before the update aren't marked.
+- The database adds two columns to enrollment tokens on start (`maxUses`, `useCount`). Existing codes stay
+  single-use.
 
 New
+- Enroll: one code can set up a batch. Choose Devices (one, or up to 10, 25 or 100) and Valid for (24 hours to 30
+  days); a code for several devices works for anyone who has it until it expires or its devices are used up. The
+  default is still one device for 24 hours, the code to send to one person. The API takes `maxUses` and `validHours`
+  on `POST /private/agent/v1/token`.
 - Settings → Users & roles: create, edit and delete console accounts, choose the devices and configurations each
   can reach, and edit roles and their permissions (thanks @lared3294).
 - A wiped device shows as **Wiped** instead of Online and then Offline, and is left out of the counts, Needs attention

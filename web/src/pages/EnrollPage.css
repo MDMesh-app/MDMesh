@@ -14,6 +14,18 @@
 }
 
 /* ---- card 1: Wi-Fi ---- */
+.v2 .v2-enroll__limits {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: start;
+}
+@media (max-width: 520px) {
+  .v2 .v2-enroll__limits {
+    grid-template-columns: 1fr;
+  }
+}
+
 .v2 .v2-enroll__wifi {
   display: flex;
   flex-direction: column;

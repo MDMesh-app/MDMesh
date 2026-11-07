@@ -27,7 +27,7 @@ import com.hmdm.persistence.domain.AgentEnrollmentToken;
 import com.hmdm.persistence.mapper.AgentEnrollmentTokenMapper;
 
 /**
- * <p>DAO for the agent v1 single-use enrollment tokens.</p>
+ * <p>DAO for the agent v1 enrollment tokens.</p>
  */
 @Singleton
 public class AgentEnrollmentTokenDAO {
@@ -47,12 +47,12 @@ public class AgentEnrollmentTokenDAO {
         return mapper.findByToken(token);
     }
 
-    /** Atomic single-use claim; true = this caller owns the token. */
+    /** Atomically claims one use of the token; true = this caller owns that use. */
     public boolean claim(Integer id) {
         return mapper.claim(id, System.currentTimeMillis()) == 1;
     }
 
-    /** Un-burn a claimed token after a server-side enrollment failure. */
+    /** Gives back the use a claim took, after a server-side enrollment failure. */
     public void release(Integer id) {
         mapper.release(id);
     }

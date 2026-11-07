@@ -309,5 +309,19 @@ DELETED=$(curl -s -b "$CJ" -X DELETE "$BASE/rest/private/users/other/$OID" | fie
 chk "observer user deleted" "$DELETED" "OK"
 if [ "$DELETED" = OK ]; then LIVE_OID=""; LIVE_OLOGIN=""; fi
 
+# Last, since it enrolls two more devices: nothing above counts devices after this.
+echo "== a token for two devices enrolls two, then refuses a third =="
+enroll_with(){ curl -s -X POST -H 'Content-Type: application/json' -d "{\"enrollToken\":\"$1\",\"agent\":{\"version\":\"0.1.0\",\"package\":\"com.mdmesh.agent\"},\"device\":{\"androidSdkInt\":34,\"isDeviceOwner\":true},\"capabilities\":{\"policy\":[],\"appManagement\":[],\"remoteControl\":{\"tier\":\"none\"},\"oem\":{\"vendor\":\"samsung\",\"knox\":false}}}" "$BASE/rest/public/agent/v1/enroll"; }
+TOK2=$(curl -s -b "$CJ" -X POST -H 'Content-Type: application/json' -d '{"maxUses":2,"validHours":1}' \
+  "$BASE/rest/private/agent/v1/token" | field "str(d['data']['maxUses'])+':'+d['data']['token']")
+chk "two-device token minted" "${TOK2%%:*}" "2"
+TOK2=${TOK2#*:}
+chk "two-device token: 1st enroll OK" "$(enroll_with "$TOK2" | field "d['status']")" "OK"
+chk "two-device token: 2nd enroll OK" "$(enroll_with "$TOK2" | field "d['status']")" "OK"
+chk "two-device token: 3rd enroll refused" "$(enroll_with "$TOK2" | field "d['message']")" "error.agent.token.used"
+chk "single-use token: 2nd enroll refused" "$(enroll_with "$TOK" | field "d['message']")" "error.agent.token.used"
+chk "token for more than 1000 devices refused" "$(curl -s -b "$CJ" -X POST -H 'Content-Type: application/json' \
+  -d '{"maxUses":1001}' "$BASE/rest/private/agent/v1/token" | field "d['message']")" "error.agent.token.maxUses"
+
 echo "===== RESULT: PASS=$PASS FAIL=$FAIL ====="
 [ "$FAIL" -eq 0 ]

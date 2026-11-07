@@ -144,4 +144,8 @@ pages and the app promoter shown after setup. Hidden apps are not uninstalled, a
 Hiding an OEM's setup app can make the setup wizard crash when it next loads that app's part of its script. Closed,
 the wizard restarts on its short provisioned path and finishes, skipping the remaining pages, Google's included. So
 that no "has stopped" dialog waits for the person enrolling, the agent sets `DISALLOW_SYSTEM_ERROR_DIALOGS` before
-it hides anything and lifts it as soon as setup completes (`AndroidUserSetup.quietUntilComplete`).
+it hides anything and lifts it as soon as setup completes (`AndroidUserSetup.quietUntilComplete`). Each crash only
+closes the wizard's top page, though, and it reopens its history back to the QR scanner. So the agent then restarts
+the wizard from scratch, opening its entry in a new task that replaces its own, which sends it down its short path to
+its exit, repeated a few times while setup is not complete (`SetupWizardRestart`). Never by hiding the wizard's
+package: Android then treats it as uninstalled and deletes the Wi-Fi networks it saved, the setup Wi-Fi included.

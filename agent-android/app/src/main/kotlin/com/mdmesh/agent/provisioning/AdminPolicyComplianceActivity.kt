@@ -12,6 +12,7 @@ import com.mdmesh.agent.service.CheckInService
 import com.mdmesh.core.action.ResetPasswordTokenStore
 import com.mdmesh.core.config.ServerConfigStore
 import com.mdmesh.core.kiosk.EnrollmentHiddenApps
+import com.mdmesh.core.kiosk.SetupWizardRestart
 import com.mdmesh.core.location.LocationPermissions
 import com.mdmesh.core.store.AgentDataStores
 import com.mdmesh.core.sync.CheckInWorker
@@ -85,9 +86,15 @@ class AdminPolicyComplianceActivity : Activity() {
         val dpm = ctx.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         val admin = AdminReceiver.componentName(ctx)
         val hide = { p: String -> dpm.setApplicationHidden(admin, p, true); dpm.isApplicationHidden(admin, p) }
+        val userSetup = (application as MdmApplication).userSetup
         // Before anything is hidden: the setup wizard may crash over a hidden app's pages, and must not leave a dialog.
-        val quiet = { (application as MdmApplication).userSetup.quietUntilComplete(admin) }
+        val quiet = { userSetup.quietUntilComplete(admin) }
         quiet()
+        // Then started fresh, it ends on its short path, without the hidden app's pages or a tap (SetupWizardRestart).
+        val restart = SetupWizardRestart(ctx, userSetup)
+        restart.wizard()?.let { wizard ->
+            CoroutineScope(Dispatchers.IO).launch { restart.untilComplete(wizard) }
+        }
         val missed = EnrollmentHiddenApps.hideAll(packages, hide)
         Log.i(TAG, "hid ${packages.size - missed.size} of ${packages.size} apps at enrollment")
         if (missed.isEmpty()) return

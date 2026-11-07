@@ -48,6 +48,8 @@ interface Minted {
   expiresAt?: number;
   /** The devices it enrolls, as the server says (1 from a server whose tokens are all single-use). */
   maxUses: number;
+  /** The server applied the chosen devices and validity; false: it predates them, and made a single-use 24 h code. */
+  limitsApplied: boolean;
 }
 
 /**
@@ -247,8 +249,9 @@ export function EnrollPage() {
     try {
       const res = await mintEnrollToken(Number.isFinite(n) && n > 0 ? n : undefined, { maxUses, validHours: hours });
       if (seq !== mintSeq.current) return;
+      const applied = typeof res.maxUses === 'number';
       const devices = typeof res.maxUses === 'number' ? res.maxUses : 1;
-      if (res.token) setToken({ value: res.token, expiresAt: res.expiresAt, maxUses: devices });
+      if (res.token) setToken({ value: res.token, expiresAt: res.expiresAt, maxUses: devices, limitsApplied: applied });
       else setTokError('The server did not return a token.');
     } catch (err) {
       if (seq === mintSeq.current) setTokError(tokenError(err));
@@ -281,6 +284,17 @@ export function EnrollPage() {
   const newCode = () => void generate(cfgId, true, uses, validHours);
 
   const givesName = selected?.name ?? (cfgId ? `Configuration #${cfgId}` : SERVER_SETTING);
+  // What the code does, not what was asked: an older server ignores both choices and makes a single-use 24 h code.
+  const limitsIgnored = !!token && !token.limitsApplied && (uses !== 1 || validHours !== 24);
+  let devicesHelp: string;
+  if (limitsIgnored) {
+    devicesHelp =
+      'This server makes single-use codes, valid for 24 hours, whatever is chosen here. Update it to set up a batch with one code.';
+  } else if (uses === 1) {
+    devicesHelp = 'One device, then the code stops working: the one to send a customer.';
+  } else {
+    devicesHelp = `Anyone with this code can enroll up to ${uses} devices until it expires. Share it only with whoever sets them up.`;
+  }
   const ssid = wifiSsid.trim();
   const wifiInCode = wifiOn && !!ssid;
   const expired = !!token?.expiresAt && token.expiresAt <= now;
@@ -346,14 +360,7 @@ export function EnrollPage() {
       </Field>
 
       <div className="v2-enroll__limits">
-        <Field
-          label="Devices"
-          help={
-            uses === 1
-              ? 'One device, then the code stops working: the one to send a customer.'
-              : `Anyone with this code can enroll up to ${uses} devices until it expires. Share it only with whoever sets them up.`
-          }
-        >
+        <Field label="Devices" help={devicesHelp}>
           <Select value={String(uses)} onChange={(e) => setUses(Number(e.target.value))}>
             {USES_OPTIONS.map((n) => (
               <option key={n} value={String(n)}>

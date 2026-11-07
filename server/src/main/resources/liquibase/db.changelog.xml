@@ -3068,4 +3068,19 @@
         <rollback>ALTER TABLE devices DROP COLUMN wipedAt;</rollback>
     </changeSet>
 
+    <changeSet id="26.11.07-agentEnrollmentToken-maxUses" author="nexi-space" context="common">
+        <comment>Columns,new: agentEnrollmentToken#maxUses, #useCount: a token enrolls up to maxUses devices, and
+            useCount counts those enrolled; used turns true with the last. Existing tokens get maxUses 1 (single use,
+            as before) and useCount 1 when already used.</comment>
+        <sql>
+            ALTER TABLE agentEnrollmentToken ADD COLUMN maxUses INT NOT NULL DEFAULT 1;
+            ALTER TABLE agentEnrollmentToken ADD COLUMN useCount INT NOT NULL DEFAULT 0;
+            UPDATE agentEnrollmentToken SET useCount = 1 WHERE used = true;
+        </sql>
+        <rollback>
+            ALTER TABLE agentEnrollmentToken DROP COLUMN useCount;
+            ALTER TABLE agentEnrollmentToken DROP COLUMN maxUses;
+        </rollback>
+    </changeSet>
+
 </databaseChangeLog>

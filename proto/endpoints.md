@@ -32,7 +32,7 @@ Request (`agent-enroll-request.schema.json`):
 ```json
 {
   "protocolVersion": "1.0",
-  "enrollToken": "<single-use server-issued token>",
+  "enrollToken": "<server-issued enrollment token>",
   "agent": { "version": "0.1.0", "package": "com.mdmesh.agent" },
   "device": { "androidSdkInt": 34, "androidRelease": "14", "manufacturer": "samsung", "model": "SM-X510", "isDeviceOwner": true },
   "capabilities": { "policy": ["wifi","camera"], "appManagement": [], "remoteControl": {"tier":"none"}, "oem": {"vendor":"samsung","knox":false} }
@@ -87,9 +87,11 @@ result that arrives later still counts. Agents must keep this property: never se
 
 ## Auth posture (v1)
 
-- `/enroll` is gated by the single-use `enrollToken` (minted by an authenticated admin via a
-  private endpoint; carried into the device through the QR provisioning bundle). No global shared
-  secret baked into the APK (ADR 0002 / 0005).
+- `/enroll` is gated by the `enrollToken` (minted by an authenticated admin via a private
+  endpoint; carried into the device through the QR provisioning bundle). Each token enrolls up to
+  its `maxUses` devices (1 by default: single use) before it expires (24 h by default, 30 days at
+  most); every enroll uses one, atomically. No global shared secret baked into the APK (ADR 0002 /
+  0005).
 - `/checkin` is authenticated by a per-device secret (`Authorization: Bearer <deviceSecret>`),
   minted at `/enroll`, stored server-side only as a SHA-256 hash, verified before any state
   change. Bare `deviceId` is not sufficient — this prevents IDOR / device spoofing.

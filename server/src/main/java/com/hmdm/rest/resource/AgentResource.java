@@ -145,7 +145,7 @@ public class AgentResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Enroll an agent", notes = "Validates a single-use token and registers the device.")
+    @ApiOperation(value = "Enroll an agent", notes = "Validates an enrollment token, uses one of its uses, and registers the device.")
     @POST
     @Path("/enroll")
     @Consumes(MediaType.APPLICATION_JSON)

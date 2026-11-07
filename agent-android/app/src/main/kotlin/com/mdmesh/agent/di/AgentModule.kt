@@ -366,7 +366,8 @@ object AgentModule {
     /** One instance: the kiosk's wait for the setup wizard and its resumption at app start share one observer. */
     @Provides
     @Singleton
-    fun provideUserSetup(@ApplicationContext context: Context): AndroidUserSetup = AndroidUserSetup(context)
+    fun provideUserSetup(@ApplicationContext context: Context, configStore: ConfigStateStore): AndroidUserSetup =
+        AndroidUserSetup(context, configStore)
 
     @Provides
     @Singleton

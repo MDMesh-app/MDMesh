@@ -5,6 +5,8 @@ import android.database.ContentObserver
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import com.mdmesh.core.store.ConfigStateStore
+import com.mdmesh.core.sync.CheckInWorker
 import com.mdmesh.core.sync.ConfigReapplyWorker
 
 /**
@@ -41,8 +43,10 @@ interface UserSetup {
  * [UserSetup] from `Settings.Secure.USER_SETUP_COMPLETE` (hidden, but `@Readable`, so any app may read it). The wait
  * is remembered in preferences, so a process killed before setup finishes picks it up again in [resume], which the
  * application calls at every start.
+ *
+ * @param configStore marked stale once a waiting kiosk is released, so the server sends the configuration again.
  */
-class AndroidUserSetup(context: Context) : UserSetup {
+class AndroidUserSetup(context: Context, private val configStore: ConfigStateStore) : UserSetup {
     private val context = context.applicationContext
     private val prefs = this.context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private var observer: ContentObserver? = null // guarded by this
@@ -82,7 +86,12 @@ class AndroidUserSetup(context: Context) : UserSetup {
             observer = null
         }
         prefs.edit().remove(KEY_WAITING).apply()
+        // The configuration's result went to the server while setup ran, its kiosk "deferred", and the console shows
+        // that until another result arrives. Stale, the next check-in has the server send the configuration again, and
+        // that result has the kiosk entered. The re-apply enters it now, network or not.
+        configStore.markStale()
         ConfigReapplyWorker.scheduleNow(context)
+        CheckInWorker.scheduleNow(context)
     }
 
     private companion object {

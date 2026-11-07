@@ -323,5 +323,13 @@ chk "single-use token: 2nd enroll refused" "$(enroll_with "$TOK" | field "d['mes
 chk "token for more than 1000 devices refused" "$(curl -s -b "$CJ" -X POST -H 'Content-Type: application/json' \
   -d '{"maxUses":1001}' "$BASE/rest/private/agent/v1/token" | field "d['message']")" "error.agent.token.maxUses"
 
+# The device count holds when enrolls race: claim() is one UPDATE, so of 8 at once exactly 3 get a 3-device token.
+TOK3=$(curl -s -b "$CJ" -X POST -H 'Content-Type: application/json' -d '{"maxUses":3,"validHours":1}' \
+  "$BASE/rest/private/agent/v1/token" | field "d['data']['token']")
+PAR="$(mktemp -d)"
+for i in 1 2 3 4 5 6 7 8; do (enroll_with "$TOK3" | field "d['status']" > "$PAR/$i") & done; wait
+chk "three-device token: 8 enrolls at once, 3 succeed" "$(cat "$PAR"/* | grep -c '^OK$')" "3"
+rm -rf "$PAR"
+
 echo "===== RESULT: PASS=$PASS FAIL=$FAIL ====="
 [ "$FAIL" -eq 0 ]

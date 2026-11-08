@@ -86,7 +86,7 @@ export const GROUP_NOTES: Partial<Record<FieldGroup, string>> = {
   Kiosk: 'Everything below kiosk mode applies only while kiosk mode is on.',
   'Kiosk appearance': 'The look of the MDMesh kiosk launcher. Applies only while kiosk mode is on.',
   Network: 'Not managed leaves the device as it is, including a block applied earlier. Wi-Fi radio is the exception: Not managed lifts its lock.',
-  Restrictions: 'Not managed leaves the device as it is, including a block applied earlier.',
+  Restrictions: 'Not managed normally leaves the device as it is, including a block applied earlier. Camera is an exception on an agent with the accompanying update: it restores access after an MDMesh camera block.',
   Enrollment: 'Not sent to devices. The Enroll page can load this Wi-Fi into the enrollment QR so a new device joins it during setup.',
 };
 
@@ -141,7 +141,7 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'disableFactoryReset', label: 'Factory reset', type: 'tri', group: 'Restrictions', enforced: true, segments: ALLOW_BLOCK_INVERTED, help: 'Block prevents a factory reset from Settings.' },
   { key: 'disableScreenshots', label: 'Screenshots', type: 'tri', group: 'Restrictions', enforced: true, segments: ALLOW_BLOCK_INVERTED, help: 'Block prevents screenshots and screen recording.' },
   { key: 'usbStorage', label: 'USB storage', type: 'tri', group: 'Restrictions', enforced: true, segments: ALLOW_BLOCK, help: 'Block stops USB file transfer and mounting external storage.' },
-  { key: 'camera', label: 'Camera', type: 'tri', group: 'Restrictions', enforced: true, segments: ALLOW_BLOCK, help: 'Block prevents every app from using camera hardware. It does not hide camera apps, install one, or remove photos. Not managed restores access after MDMesh previously blocked it.' },
+  { key: 'camera', label: 'Camera', type: 'tri', group: 'Restrictions', enforced: true, segments: ALLOW_BLOCK, help: 'Block prevents every app from using camera hardware. It does not hide camera apps, install one, or remove photos. With the accompanying agent update, Not managed restores access after MDMesh previously blocked it. On older agents, choose Allow to lift a prior block.' },
   { key: 'blockStatusBar', label: 'Lock status bar', type: 'switch', group: 'Restrictions', help: 'Headwind launcher covered the status bar.' },
   { key: 'lockVolume', label: 'Lock volume (legacy)', type: 'tri', group: 'Restrictions', help: 'Headwind launcher blocked volume changes.' },
   { key: 'allowedClasses', label: 'Allowed app classes', type: 'text', group: 'Restrictions', help: 'Headwind launcher allowlist of settings screens.' },

@@ -13,7 +13,8 @@ Upgrading
 
 New
 - Configurations can now explicitly allow or block device camera access, or leave it unmanaged. Blocking camera access
-  affects every app, including apps allowed in kiosk; removing MDMesh management restores access.
+  affects every app, including apps allowed in kiosk. With the accompanying agent update, removing MDMesh management
+  restores access; on older agents, choose Allow to lift a prior block.
 - Settings → Users & roles: create, edit and delete console accounts, choose the devices and configurations each
   can reach, and edit roles and their permissions (thanks @lared3294).
 - A wiped device shows as **Wiped** instead of Online and then Offline, and is left out of the counts, Needs attention

@@ -23,6 +23,8 @@ export class ApiError extends Error {
     message: string,
     readonly status: ResponseStatus,
     readonly httpStatus: number,
+    /** The error envelope's `data`, when it has any (a refused configuration save lists its problems there). */
+    readonly data?: unknown,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -127,6 +129,7 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
       envelope.message ?? 'The server returned an error',
       envelope.status,
       res.status,
+      envelope.data ?? undefined,
     );
   }
   return envelope.data;

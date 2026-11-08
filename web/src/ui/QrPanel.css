@@ -1,0 +1,41 @@
+.v2 .v2-qr {
+  /* Wide enough to scan from a phone held at arm's length; the SVG code stays sharp at any size. */
+  flex: 1 1 320px;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.v2 .v2-qr__frame {
+  width: 100%;
+  aspect-ratio: 1;
+  box-sizing: border-box;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card-sm);
+  background: #ffffff; /* always light: scanners need dark modules on a light ground */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.v2 .v2-qr__code {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.v2 .v2-qr__actions {
+  display: flex;
+  gap: 8px;
+}
+.v2 .v2-qr__actions > * {
+  flex: 1 1 0;
+}
+.v2 .v2-qr__frame--full {
+  width: min(80vh, 88vw);
+  max-width: none;
+}
+.v2 .v2-qr__note {
+  margin: 0;
+  color: var(--text-2);
+  text-align: center;
+}

@@ -26,8 +26,8 @@ OSS only has an overlay hack; the COSU engine is stubbed in `ProUtils`. We build
   the device). Keep the overlay lock screen only as a secondary "remote lock" UI, not for app-blocking.
 
 ## Policy — TAKE Headwind's catalog (highest-value artifact)
-Port `Utils.java`'s DevicePolicyManager catalog into a typed Kotlin policy layer behind the
-existing capability-abstraction (`:policy`): user restrictions (`DISALLOW_*`), `setCameraDisabled`,
+Use `Utils.java`'s DevicePolicyManager catalog as a checklist for a typed Kotlin policy layer behind the
+existing capability-abstraction (`:policy`), porting some calls and adding others: user restrictions (`DISALLOW_*`), `setCameraDisabled`,
 `setScreenCaptureDisabled`, `setStatusBarDisabled`, `setKeyguardDisabled`, wifi/bluetooth/usb,
 `setPermissionPolicy(AUTO_GRANT)`, `setSystemUpdatePolicy`, suspend/hide packages, `setUninstallBlocked`.
 Keep the SDK-guard discipline; drop reflection hacks. Each policy advertises a capability key and is
@@ -53,13 +53,15 @@ configuration.
   with the same kiosk payload doesn't relaunch the launcher.
 
 **Kiosk.** Kiosk on in the configuration enters kiosk. Kiosk off exits it only on devices that entered via a
-configuration; an ad-hoc "Enter kiosk" from the console is left alone.
+configuration; an ad-hoc "Custom kiosk" from the console is left alone. After someone leaves the kiosk, the console's
+"Return to configured kiosk" sends `kiosk.enter` with the configuration's own kiosk block (the same payload
+`config.apply` carries), so the device is back in exactly that kiosk without waiting for a configuration change.
 After a PIN exit, staff can tap **Return to kiosk** in the agent to restore the latest locally stored configured
 kiosk, even offline; the button is available only outside kiosk on Device Owner devices whose configuration enables
 it. A newer delivered kiosk-off configuration removes the option even if another policy failed; a remote
 `kiosk.exit` leaves it available while the configuration still enables kiosk.
 
-**The 22 enforced fields**
+**The 23 enforced fields**
 
 | Area | Fields |
 |------|--------|
@@ -67,6 +69,7 @@ it. A newer delivered kiosk-off configuration removes the option even if another
 | Launcher look | `backgroundColor`, `textColor`, `iconSize` |
 | Device policy | `wifi`, `wifiRadio`, `bluetooth`, `usbStorage`, `disableScreenshots`, `disableFactoryReset`, `disableSafeBoot` |
 | Location | `requestUpdates` (location capture mode) |
+| Connectivity | `connectivityMode` (live-connection mode, 1.5) |
 
 `name` and `description` are metadata only. Wire shapes: `proto/payloads/config-apply.schema.json` and
 `proto/payloads/config-apply-result.schema.json`.
@@ -85,6 +88,14 @@ it. A newer delivered kiosk-off configuration removes the option even if another
     so it's a separate opt-in. `kioskLockButtons` blocks only the power menu.
   - New columns are NULL on upgrade, so revisions only change for configurations that use them, and for
     Do-not-track configurations (whose devices get one `config.apply`).
+- **1.5:** the `connectivity` section (`connectivityMode`): `adaptive` (Battery-saver, the agent's default) holds the
+  wake socket only while the screen is on or charging; `alwaysOn` holds it 24/7, so commands reach a locked device
+  without waiting for the next heartbeat. Applied through the same `PowerModeStore` as `device.powerMode`. NULL is
+  not managed: the section is omitted, so existing revisions don't move, and each device keeps its mode, including
+  one set by `device.powerMode`. A managed mode wins over `device.powerMode`: the saved document is applied again
+  after every boot and agent update (`ConfigReapplyWorker`), and the server re-sends `config.apply` when the agent
+  version changes, so a device-level mode lasts only until then. Switching a configuration from `alwaysOn` back to
+  not managed leaves its devices on `alwaysOn`; set `adaptive` to switch them back. Older agents ignore it.
 
 **Wi-Fi radio Off, in detail**
 - Off is deferred, without blocking the other keys, while Wi-Fi is the device's only network. It's retried only at
@@ -97,6 +108,31 @@ it. A newer delivered kiosk-off configuration removes the option even if another
   `config.apply` after its normal backoff and the console shows the deferral.
 - A server outage that long, or a user cutting the device off, also triggers this. Any configuration change (a new
   revision) applies Off again.
+
+### Configuration apps (`app.install`)
+
+`config.apply` carries no app list: the apps a configuration marks Install reach a device as `app.install` commands.
+
+- **Enrollment** queues all of them (`ConfigAppInstaller`).
+- **Check-in** (`AppReconciler`, agents that advertise `app.silentInstall`) compares the configuration's install set
+  (its id and Install version ids) with the one stored for the device in `device_state.appsRevision`. Unchanged,
+  that's the whole cost: one indexed select. When a save or Deploy's "Add to a configuration" adds an app or a new
+  version, each version added gets an `app.install` in the same response. When the device was moved to another
+  configuration, or has no set stored (enrolled after the update), its configuration's whole set is decided. Either
+  way an app is skipped when the device's command history shows it installed (an install of that version or a newer
+  one done, with no `app.uninstall` since) or in flight (pending, delivered or accepted), so enrollment's installs
+  aren't sent twice. Saves and moves wake the devices, so this happens in seconds; a missed wake waits for the next
+  regular check-in.
+- **Retries:** an install that reached the device and didn't come back done (failed, or its result was lost) is sent
+  again 15 minutes and then an hour later, three attempts in all (`AppReconcileDecision`). One the server refused (no
+  SHA-256 for the APK) is recorded once. Only attempts from the last 24 hours count, so an app that failed long ago
+  and is added again is tried afresh. The new set is stored once every app decided is installed or given up on.
+- **Upgrade:** the update that added the column stored the current set of each device on a configuration, so it sends no installs to
+  the fleet, and an app added after it installs at the next check-in, even on a device that was offline during the
+  update. Apps a configuration already had are left as they are.
+- **Install config apps** on the device page sends every app again (`POST .../syncApps`), e.g. after one was removed on
+  the device. Removing an app from a configuration doesn't uninstall it.
+- A hosted APK is hashed once per file (kept until its size or modification time changes), not once per device.
 
 ## Status UI — BUILD-NEW (Views, minSdk 24 friendly)
 Replace the `TextView` stub `MainActivity` with a real MDMesh status screen: managed state, device id,

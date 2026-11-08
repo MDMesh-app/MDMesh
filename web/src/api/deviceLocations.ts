@@ -3,6 +3,9 @@ import { apiClient } from './client';
 // Device location breadcrumb trail — GET /private/agent/v1/devices/{n}/locations?since=
 // Each fix is stored server-side from the agent's telemetry (see device_location table).
 
+/** The most fixes one request returns, newest first (the server's cap, AgentAdminResource.listLocations). */
+export const LOCATION_HISTORY_LIMIT = 500;
+
 export interface LocationFix {
   id?: number;
   deviceNumber?: string;

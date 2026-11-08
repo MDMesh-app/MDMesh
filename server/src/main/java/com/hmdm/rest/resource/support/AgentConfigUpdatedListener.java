@@ -14,8 +14,9 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Configuration saved → nudge its agent-v1 devices to check in now. Reconciliation itself happens in the
- * check-in (single code path); this only shortens the wait from the 15-min floor to seconds.
+ * Configuration saved → nudge its agent-v1 devices to check in now. Reconciliation itself (config.apply, and an
+ * app.install for each app the configuration gained) happens in the check-in (single code path); this only shortens
+ * the wait from the 15-min floor to seconds.
  */
 public class AgentConfigUpdatedListener implements EventListener<ConfigurationUpdatedEvent> {
     private static final Logger logger = LoggerFactory.getLogger(AgentConfigUpdatedListener.class);

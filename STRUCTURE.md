@@ -31,7 +31,7 @@ cooperating planes plus shared protocol and docs.
 |-------|------|------|--------|
 | 1. Control plane | `server/` + `common/ jwt/ notification/ plugins/` | JDK 17, Jersey/JAX-RS, Guice, MyBatis, PostgreSQL, Liquibase | Forked from Headwind + extended; REST-only (legacy AngularJS UI removed) |
 | 2. Admin frontend | `web/` | React 19, Vite, TypeScript | New, from scratch — the console |
-| 3. Device agent | `agent-android/` | Kotlin, coroutines, Hilt, Room, WorkManager, kotlinx.serialization | New, from scratch |
+| 3. Device agent | `agent-android/` | Kotlin, coroutines, Hilt, Room, WorkManager, kotlinx.serialization | New, with parts ported from the Headwind agent (see [NOTICE](NOTICE)) |
 | 4. Remote control | `agent-android/remote/` + server signaling | MediaProjection + AccessibilityService, WebRTC, coturn | Stubbed |
 
 ## Two load-bearing architecture patterns

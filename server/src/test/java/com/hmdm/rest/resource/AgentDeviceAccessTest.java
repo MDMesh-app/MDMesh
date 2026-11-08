@@ -1,6 +1,8 @@
 package com.hmdm.rest.resource;
 
 import com.google.inject.Guice;
+import com.hmdm.extension.ConfigurationExtensionValidator;
+import com.hmdm.extension.DesiredConfigContributor;
 import com.hmdm.notification.AgentWakeHub;
 import com.hmdm.persistence.AgentCommandDAO;
 import com.hmdm.persistence.AgentEnrollmentTokenDAO;
@@ -9,6 +11,7 @@ import com.hmdm.persistence.domain.AgentEnrollmentToken;
 import com.hmdm.persistence.RolloutDAO;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentCommand;
+import com.hmdm.persistence.domain.Application;
 import com.hmdm.persistence.domain.AgentRollout;
 import com.hmdm.persistence.domain.Configuration;
 import com.hmdm.persistence.domain.Device;
@@ -60,9 +63,15 @@ public class AgentDeviceAccessTest {
     private final List<String> sideEffects = new ArrayList<>();
     private boolean allDevices;
     private boolean active;
+    private boolean socketOpen;
     private FakeMapper<DeviceMapper> deviceMapper;
     private AgentAdminResource resource;
     private RolloutResource rollouts;
+    private Map<Class<?>, Object> deps;
+    private int configurationReads;
+    private final Set<String> wiped = new HashSet<>();
+    private String appliedRevision = "rev";
+    private int revisionReads;
 
     private static Device device(int id, String number) {
         Device d = new Device();
@@ -93,12 +102,14 @@ public class AgentDeviceAccessTest {
                 return devices.values().stream().filter(d -> d.getId().equals(id)).findFirst().orElse(null);
             }
             @Override public Configuration getConfigurationById(Integer id) {
+                configurationReads++;
                 if (id == null || (id != OWN_CONFIG && id != OTHER_OWN_CONFIG)) return null;
                 Configuration c = new Configuration();
                 c.setId(id);
                 c.setCustomerId(CUSTOMER);
                 return c;
             }
+            @Override public List<Application> getPlainConfigurationAppsOptimized(Integer id) { return new ArrayList<>(); }
         };
         AgentCommandDAO commandDAO = new AgentCommandDAO(null, null, null, null) {
             @Override public void insert(AgentCommand c) { sideEffects.add("insert " + c.getDeviceNumber()); }
@@ -115,8 +126,9 @@ public class AgentDeviceAccessTest {
                     r.setDeviceNumber(n);
                     r.setConfigurationId(5);
                     r.setCapabilitiesJson("{\"device\":[\"configApply\"]}");
-                    r.setAppliedConfigRevision("rev");
+                    r.setAppliedConfigRevision(appliedRevision);
                     r.setLastApplyDeferred(true);
+                    r.setWiped(wiped.contains(n));
                     rows.add(r);
                 }
                 return rows;
@@ -124,12 +136,13 @@ public class AgentDeviceAccessTest {
         };
         AgentWakeHub wakeHub = new AgentWakeHub(commandDAO) {
             @Override public void wake(String n, String kind) { sideEffects.add("wake " + n); }
+            @Override public boolean isOnline(String n) { return socketOpen; }
         };
         ConfigAppInstaller installer = new ConfigAppInstaller(unsecureDAO, commandDAO, wakeHub, null) {
             @Override public int enqueueConfigApps(Device d) { sideEffects.add("syncApps " + d.getNumber()); return 1; }
         };
-        ConfigReconciler reconciler = new ConfigReconciler(unsecureDAO, commandDAO) {
-            @Override public String currentRevision(Device d) { return "rev"; }
+        ConfigReconciler reconciler = new ConfigReconciler(unsecureDAO, commandDAO, Fakes.noExtensionPoints()) {
+            @Override public String currentRevision(Device d) { revisionReads++; return "rev"; }
         };
 
         RolloutDAO rolloutDAO = new RolloutDAO(null) {
@@ -167,7 +180,7 @@ public class AgentDeviceAccessTest {
             @Override public boolean enqueue(AgentRollout r, String n, long now) { sideEffects.add("rollout " + n); return true; }
         };
 
-        Map<Class<?>, Object> deps = new HashMap<>();
+        deps = new HashMap<>();
         deps.put(DeviceDAO.class, deviceDAO);
         deps.put(AgentEnrollmentTokenDAO.class, new AgentEnrollmentTokenDAO(null) {
             @Override public void insert(AgentEnrollmentToken t) { sideEffects.add("token " + t.getConfigurationId()); }
@@ -260,6 +273,17 @@ public class AgentDeviceAccessTest {
     }
 
     @Test
+    public void forceSyncSaysWhetherTheWakeCanReachTheDevice() {
+        for (boolean open : new boolean[]{true, false}) {
+            socketOpen = open;
+            Response r = resource.forceSync(VISIBLE);
+            assertEquals(Response.ResponseStatus.OK, r.getStatus());
+            assertEquals(Collections.singletonMap("connected", open), r.getData());
+        }
+        assertEquals("the wake goes out either way", Arrays.asList("wake " + VISIBLE, "wake " + VISIBLE), sideEffects);
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     public void configApplyIsServerOwnedAndRejectedBeforeAnythingIsQueued() {
         // The server queues config.apply from the device's configuration, at most one open per device. An admin one
@@ -338,6 +362,85 @@ public class AgentDeviceAccessTest {
         ConfigSyncSummary s = ((List<ConfigSyncSummary>) resource.getSyncSummary().getData()).get(0);
         assertEquals(1, s.getInSync());
         assertEquals("in sync, but the latest config.apply deferred something", 1, s.getDeferred());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void syncSummaryKeepsAWipedDeviceOutOfTheCountsThatAddUpToTotal() {
+        login(true);
+        wiped.add(HIDDEN);
+        appliedRevision = "old";
+        ConfigSyncSummary s = ((List<ConfigSyncSummary>) resource.getSyncSummary().getData()).get(0);
+        assertEquals("the live device only", 1, s.getTotal());
+        assertEquals(1, s.getOutOfSync());
+        assertEquals(1, s.getInSync() + s.getOutOfSync() + s.getUnsupported() + s.getNeverSeen());
+        assertEquals(1, s.getWiped());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void syncSummaryStillListsAConfigurationWithOnlyWipedDevices() {
+        wiped.add(VISIBLE);
+        List<ConfigSyncSummary> rows = (List<ConfigSyncSummary>) resource.getSyncSummary().getData();
+        assertEquals("its delete would be refused, so the console has to hear about it", 1, rows.size());
+        ConfigSyncSummary s = rows.get(0);
+        assertEquals(5, s.getConfigurationId());
+        assertEquals(1, s.getWiped());
+        assertEquals(0, s.getTotal());
+        assertEquals(0, s.getInSync() + s.getOutOfSync() + s.getUnsupported() + s.getNeverSeen());
+        assertEquals("nothing to compare a wiped device with", 0, revisionReads);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void syncSummaryDoesNotCountAWipedDeviceTheUserCannotSee() {
+        wiped.add(HIDDEN);
+        ConfigSyncSummary s = ((List<ConfigSyncSummary>) resource.getSyncSummary().getData()).get(0);
+        assertEquals(0, s.getWiped());
+        assertEquals(1, s.getTotal());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void syncSummaryCountsADeviceNormallyOnceItIsNoLongerWiped() {
+        wiped.add(VISIBLE);
+        resource.getSyncSummary();
+        wiped.clear();
+        appliedRevision = "old";
+        ConfigSyncSummary s = ((List<ConfigSyncSummary>) resource.getSyncSummary().getData()).get(0);
+        assertEquals(0, s.getWiped());
+        assertEquals(1, s.getTotal());
+        assertEquals("true until it re-applies", 1, s.getOutOfSync());
+    }
+
+    /**
+     * A configuration whose plugin contributor fails has no current revision (null). The summary still works it out
+     * once per configuration per poll, not once per device: the failure, and its stack trace, aren't repeated for
+     * every device on it.
+     */
+    @Test
+    public void syncSummaryWorksOutAFailingConfigurationsRevisionOncePerPoll() throws Exception {
+        final int[] runs = {0};
+        DesiredConfigContributor broken = new DesiredConfigContributor() {
+            @Override public String pluginId() { return "broken"; }
+            @Override public Map<String, Boolean> policies(Configuration c, List<Application> apps) {
+                runs[0]++;
+                throw new IllegalArgumentException("broken plugin");
+            }
+        };
+        deps.put(ConfigReconciler.class, new ConfigReconciler((UnsecureDAO) deps.get(UnsecureDAO.class),
+                (AgentCommandDAO) deps.get(AgentCommandDAO.class),
+                Fakes.extensionPoints(Collections.<ConfigurationExtensionValidator>emptySet(), Collections.singleton(broken))));
+        resource = construct(AgentAdminResource.class, deps);
+        login(true);
+        configurationReads = 0;
+
+        @SuppressWarnings("unchecked")
+        List<ConfigSyncSummary> rows = (List<ConfigSyncSummary>) resource.getSyncSummary().getData();
+        assertEquals(2, rows.get(0).getTotal());
+        assertEquals("both devices are out of sync", 2, rows.get(0).getOutOfSync());
+        assertEquals(1, runs[0]);
+        assertEquals(1, configurationReads);
     }
 
     @Test

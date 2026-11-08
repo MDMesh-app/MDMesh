@@ -14,6 +14,8 @@ export interface ConfigSyncSummary {
   configurationId: number; total: number; inSync: number; outOfSync: number; unsupported: number; neverSeen: number;
   /** Of inSync: devices whose latest config.apply deferred some settings (absent on older servers). */
   deferred?: number;
+  /** Wiped devices still on this configuration: outside total, but they block deleting it (absent on older servers). */
+  wiped?: number;
 }
 
 /** Shape of `lastCommand.detail` for config.apply (proto/payloads/config-apply-result.schema.json). */
@@ -41,7 +43,7 @@ export const DEVICE_RESET_LABEL = 'Reset by device (Wi-Fi turned back on)';
 /** In sync, but the agent skipped some settings on purpose (e.g. Wi-Fi radio Off while Wi-Fi is the only network). */
 export const SOME_DEFERRED_LABEL = 'In sync (some settings deferred)';
 
-/** One-line verdict for badges. Pure so it can be unit-tested once Vitest lands (Phase 6.1). */
+/** One-line verdict for badges. Pure, so it can be unit-tested. */
 export function summarizeStatus(s: ConfigStatus | null): { tone: 'ok' | 'warn' | 'alert' | 'idle'; label: string } {
   if (!s || s.configurationId == null) return { tone: 'idle', label: 'No configuration' };
   if (!s.supported) return { tone: 'warn', label: 'Agent too old' };

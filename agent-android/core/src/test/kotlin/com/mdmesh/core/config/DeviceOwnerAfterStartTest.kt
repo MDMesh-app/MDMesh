@@ -81,7 +81,7 @@ class DeviceOwnerAfterStartTest {
         runTest {
             val dpm = FakeDpm()
             val toggles = resolver(dpm)
-            val applier = ConfigApplier(toggles::current, kiosk(), {}, InMemoryConfigStateStore())
+            val applier = ConfigApplier(toggles::current, kiosk(), {}, InMemoryConfigStateStore(), setPowerMode = {})
 
             dpm.deviceOwner = true // provisioning completes after the process built its singletons
             val r = applier.apply(blockBoth)
@@ -124,7 +124,7 @@ class DeviceOwnerAfterStartTest {
     fun `a document saved while not Device Owner is applied by the re-apply once Device Owner`() = runTest {
         val dpm = FakeDpm()
         val store = InMemoryConfigStateStore()
-        val applier = ConfigApplier(resolver(dpm)::current, kiosk(), {}, store)
+        val applier = ConfigApplier(resolver(dpm)::current, kiosk(), {}, store, setPowerMode = {})
 
         val before = applier.apply(blockBoth)
         assertEquals(ConfigOutcome.UNSUPPORTED, before.outcomes["policies.screenshots"])
@@ -142,7 +142,7 @@ class DeviceOwnerAfterStartTest {
     fun `config apply and policy apply use the same policy instance`() = runTest {
         val dpm = FakeDpm()
         val toggles = resolver(dpm)
-        val applier = ConfigApplier(toggles::current, kiosk(), {}, InMemoryConfigStateStore())
+        val applier = ConfigApplier(toggles::current, kiosk(), {}, InMemoryConfigStateStore(), setPowerMode = {})
         val handler = PolicyApplyHandler(toggles::current)
         dpm.deviceOwner = true
 

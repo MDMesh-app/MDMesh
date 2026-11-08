@@ -2,12 +2,16 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
 } from 'react';
+import './Toast.css';
 
-type ToastKind = 'ok' | 'err';
+/** `warn`: it went through, but not as asked (a sync that waits for the device's next check-in). */
+export type ToastKind = 'ok' | 'warn' | 'err';
 
 interface Toast {
   id: number;
@@ -16,7 +20,7 @@ interface Toast {
   body: string;
 }
 
-interface ToastApi {
+export interface ToastApi {
   push: (kind: ToastKind, title: string, body: string) => void;
 }
 
@@ -25,23 +29,36 @@ const Ctx = createContext<ToastApi | null>(null);
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const seq = useRef(0);
+  // A dismissal that comes due after the provider is gone (or a test's page with it) does nothing. Pending timers
+  // are not cancelled instead: StrictMode's trial unmount in development would cancel a toast pushed while mounting.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const push = useCallback((kind: ToastKind, title: string, body: string) => {
+    if (!mounted.current) return;
     const id = ++seq.current;
     setToasts((t) => [...t, { id, kind, title, body }]);
     window.setTimeout(() => {
-      setToasts((t) => t.filter((x) => x.id !== id));
+      if (mounted.current) setToasts((t) => t.filter((x) => x.id !== id));
     }, 5000);
   }, []);
+  // One object for the provider's life: a toast coming or going re-renders no consumer, and a callback that uses the
+  // toast API (the device page's sendCommand) keeps its identity.
+  const api = useMemo(() => ({ push }), [push]);
 
   return (
-    <Ctx.Provider value={{ push }}>
+    <Ctx.Provider value={api}>
       {children}
       <div className="toast-wrap" aria-live="polite" aria-atomic="false">
         {toasts.map((t) => (
           <div key={t.id} className={`toast ${t.kind}`} role="status">
             <span className="t-ic" aria-hidden="true">
-              {t.kind === 'ok' ? <CheckMark /> : <CrossMark />}
+              {t.kind === 'ok' ? <CheckMark /> : t.kind === 'warn' ? <BangMark /> : <CrossMark />}
             </span>
             <div className="t-main">
               <div className="t-title">{t.title}</div>
@@ -66,6 +83,14 @@ function CrossMark() {
   return (
     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
       <path d="M6 6l12 12M18 6 6 18" />
+    </svg>
+  );
+}
+
+function BangMark() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+      <path d="M12 5v9M12 19.5v.01" />
     </svg>
   );
 }

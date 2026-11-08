@@ -1,0 +1,113 @@
+/* Configuration modals: copy, delete, new-configuration chooser, kiosk confirm, app picker. */
+.v2 .v2-configs-modalform {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.v2 .v2-configs-modalform__lead,
+.v2 .v2-configs-modalnote {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-control);
+}
+.v2 .v2-configs-modalform__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
+}
+
+/* chooser: option rows in the card language */
+.v2 .v2-configs-chooser {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.v2 .v2-configs-chooser__opt {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.v2 .v2-configs-chooser__opt:hover {
+  background: var(--surface-sunken);
+  border-color: var(--ink);
+}
+.v2 .v2-configs-chooser__name {
+  font-weight: 600;
+}
+.v2 .v2-configs-chooser__sub {
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+
+/* app picker */
+.v2 .v2-configs-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.v2 .v2-configs-picker__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.v2 .v2-configs-picker__search {
+  flex: 1 1 240px;
+}
+.v2 .v2-configs-picker__list {
+  display: flex;
+  flex-direction: column;
+  max-height: min(420px, 50dvh);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.v2 .v2-configs-picker__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line-soft);
+  cursor: pointer;
+}
+.v2 .v2-configs-picker__row:first-child {
+  border-top: 0;
+}
+.v2 .v2-configs-picker__row.is-on {
+  background: var(--row-selected);
+}
+.v2 .v2-configs-picker__meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.v2 .v2-configs-picker__name {
+  font-weight: 500;
+}
+.v2 .v2-configs-picker__pkg,
+.v2 .v2-configs-picker__ver {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  color: var(--secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v2 .v2-configs-picker__ver {
+  flex: 0 0 auto;
+}

@@ -82,7 +82,7 @@ class OfflineKioskReturnTest {
         applier = KioskApplier(controller, store, AndroidKioskHomeSwitch(context, home), home) {
             controller.isLocked(context)
         }
-        configApplier = ConfigApplier({ ResolvedToggles(emptyMap()) }, applier, {}, config)
+        configApplier = ConfigApplier({ ResolvedToggles(emptyMap()) }, applier, {}, config, setPowerMode = {})
     }
 
     @After

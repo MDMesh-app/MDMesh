@@ -1,0 +1,136 @@
+/* ---- status mark: circle / diamond / square / hollow ring ---- */
+.v2 .v2-sdot {
+  display: inline-block;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  border: 1.5px solid currentColor;
+}
+.v2 .v2-sdot--s6 {
+  width: 6px;
+  height: 6px;
+  border-width: 0;
+}
+.v2 .v2-sdot--s7 {
+  width: 7px;
+  height: 7px;
+}
+.v2 .v2-sdot--s8 {
+  width: 8px;
+  height: 8px;
+}
+.v2 .v2-sdot--circle {
+  border-radius: 50%;
+}
+.v2 .v2-sdot--ring {
+  border-radius: 50%;
+  background: transparent !important;
+}
+.v2 .v2-sdot--square {
+  border-radius: 1px;
+}
+.v2 .v2-sdot--diamond {
+  border-radius: 1px;
+  transform: rotate(45deg);
+}
+.v2 .v2-sdot--ok {
+  color: var(--online);
+  background: var(--online);
+}
+.v2 .v2-sdot--warn {
+  color: var(--warn);
+  background: var(--warn);
+}
+.v2 .v2-sdot--alert {
+  color: var(--alert);
+  background: var(--alert);
+}
+.v2 .v2-sdot--idle {
+  color: var(--muted);
+  background: var(--offline);
+}
+/* A 6px sync dot has no ring, so the idle fill must carry it alone (board: #B6BDC7). */
+.v2 .v2-sdot--idle.v2-sdot--s6 {
+  background: var(--offline);
+}
+
+/* ---- pill ---- */
+.v2 .v2-spill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 10px;
+  box-sizing: border-box;
+  border: 1px solid;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  line-height: var(--lh-body);
+  white-space: nowrap;
+}
+.v2 .v2-spill--nodot {
+  padding: 1px 10px;
+}
+.v2 .v2-spill--ok {
+  background: var(--ok-soft);
+  border-color: var(--ok-line);
+  color: var(--ok-ink);
+}
+.v2 .v2-spill--warn {
+  background: var(--warn-soft);
+  border-color: var(--warn-line);
+  color: var(--warn-ink);
+}
+.v2 .v2-spill--alert {
+  background: var(--alert-soft);
+  border-color: var(--alert-line);
+  color: var(--alert-ink);
+}
+.v2 .v2-spill--idle {
+  background: var(--idle-soft);
+  border-color: var(--idle-line);
+  color: var(--idle-ink);
+}
+
+/* ---- inline status text ---- */
+.v2 .v2-stext {
+  display: inline-flex;
+  align-items: center;
+  line-height: var(--lh-body);
+}
+.v2 .v2-stext--sync {
+  gap: 6px;
+  font-size: var(--fs-meta);
+  white-space: nowrap;
+}
+.v2 .v2-stext--reason {
+  gap: 8px;
+  font-size: var(--fs-control);
+}
+.v2 .v2-stext--meta {
+  gap: 8px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.v2 .v2-stext--ok {
+  color: var(--ok-ink);
+}
+.v2 .v2-stext--warn {
+  color: var(--warn-ink);
+}
+.v2 .v2-stext--alert {
+  color: var(--alert-ink);
+}
+.v2 .v2-stext--idle {
+  color: var(--idle-ink);
+}
+
+@media (forced-colors: active) {
+  .v2 .v2-sdot {
+    forced-color-adjust: none;
+    color: CanvasText;
+    background: CanvasText;
+  }
+  .v2 .v2-sdot--ring {
+    background: transparent;
+  }
+}

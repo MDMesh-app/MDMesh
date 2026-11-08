@@ -1,0 +1,125 @@
+/* Enroll. Two numbered cards side by side, wrapping under each other when narrow. */
+.v2 .v2-enroll {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 20px;
+}
+/* Board bases are content-box (360 / 520 + 24px side padding + 1px borders); cards here are border-box. */
+.v2 .v2-enroll__choose {
+  flex: 1 1 410px;
+}
+.v2 .v2-enroll__device {
+  flex: 2 1 570px;
+}
+
+/* ---- card 1: Wi-Fi ---- */
+.v2 .v2-enroll__wifi {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
+}
+.v2 .v2-enroll__wifirow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.v2 .v2-enroll__wifitext {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.v2 .v2-enroll__wifilabel {
+  font-weight: 500;
+}
+.v2 .v2-enroll__help {
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+.v2 .v2-enroll__wifigrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+  gap: 12px;
+}
+.v2 .v2-enroll__wide {
+  grid-column: 1 / -1;
+}
+/* ---- card 2 ---- */
+.v2 .v2-enroll__panel {
+  min-width: 0;
+}
+.v2 .v2-enroll__panel:focus-visible {
+  outline-offset: 4px;
+}
+.v2 .v2-enroll__cols {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 24px;
+}
+.v2 .v2-enroll__info {
+  flex: 2 1 260px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.v2 .v2-enroll__gives {
+  font-weight: 500;
+}
+.v2 .v2-enroll__expired {
+  color: var(--alert-ink);
+  font-weight: 500;
+}
+/* Waiting / expired: no code to scan, so the frame takes the page fill (and the theme's text colours). */
+.v2 .v2-qr__frame.v2-enroll__qrwait {
+  background: var(--app);
+  color: var(--secondary);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+.v2 .v2-enroll__token {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.v2 .v2-enroll__tokenwait {
+  margin: 0;
+  color: var(--secondary);
+}
+.v2 .v2-enroll__note {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+.v2 .v2-enroll__note .v2-mono {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* Server / Agent line under a rule */
+.v2 .v2-enroll__foot {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 24px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-soft);
+  font-size: var(--fs-sm);
+}
+.v2 .v2-enroll__foot > div {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.v2 .v2-enroll__foot dt {
+  color: var(--secondary);
+}
+.v2 .v2-enroll__foot dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -35,6 +36,7 @@ public class JWTTwoFactorTest {
     private static final String PASSWORD_MD5 = "5F4DCC3B5AA765D61D8327DEB882CF99";
     private static final int PLAIN_CUSTOMER = 1;
     private static final int TWO_FACTOR_CUSTOMER = 2;
+    private static final int OTHER_CUSTOMER = 5;
 
     private final Map<String, User> users = new HashMap<>();
     private TokenProvider tokenProvider;
@@ -72,6 +74,7 @@ public class JWTTwoFactorTest {
         };
         users.put("plain", user(1, "plain", PLAIN_CUSTOMER));
         users.put("guarded", user(2, "guarded", TWO_FACTOR_CUSTOMER));
+        users.put("tenant", user(3, "tenant", OTHER_CUSTOMER));
     }
 
     @After
@@ -149,6 +152,29 @@ public class JWTTwoFactorTest {
                 .getStatus());
     }
 
+    @Test
+    public void aTokenSignInLeavesItsUserOnTheRequest() {
+        // The audit record of the sign-in names this user and its customer
+        Map<String, Object> attributes = new HashMap<>();
+        assertEquals(200, loginRecording("tenant", PASSWORD_MD5, attributes).getStatus());
+
+        User recorded = (User) attributes.get(JWTFilter.REQUEST_USER);
+        assertNotNull(recorded);
+        assertEquals("tenant", recorded.getLogin());
+        assertEquals(Integer.valueOf(3), recorded.getId());
+        assertEquals(OTHER_CUSTOMER, recorded.getCustomerId());
+        assertNull(recorded.getPassword());
+    }
+
+    @Test
+    public void aRefusedTokenSignInLeavesNoUserOnTheRequest() {
+        Map<String, Object> attributes = new HashMap<>();
+        assertEquals(401, loginRecording("tenant", "0123456789ABCDEF0123456789ABCDEF", attributes).getStatus());
+        assertEquals(403, loginRecording("guarded", PASSWORD_MD5, attributes).getStatus());
+
+        assertNull(attributes.get(JWTFilter.REQUEST_USER));
+    }
+
     // ---- JWTFilter on /rest/private/* --------------------------------------------------------------------------------
 
     @Test
@@ -211,6 +237,35 @@ public class JWTTwoFactorTest {
         credentials.setLogin(login);
         credentials.setPassword(passwordMd5);
         return resource.login(credentials, peer == null ? null : request(peer, cookie));
+    }
+
+    private Response loginRecording(String login, String passwordMd5, Map<String, Object> attributes) {
+        HttpServletRequest request = (HttpServletRequest) Proxy.newProxyInstance(
+                HttpServletRequest.class.getClassLoader(), new Class<?>[]{HttpServletRequest.class}, (p, m, a) -> {
+                    switch (m.getName()) {
+                        case "getRemoteAddr":
+                            return "192.0.2.10";
+                        case "getHeaders":
+                            return Collections.emptyEnumeration();
+                        case "setAttribute":
+                            attributes.put((String) a[0], a[1]);
+                            return null;
+                        case "getAttribute":
+                            return attributes.get((String) a[0]);
+                        default:
+                            return null;
+                    }
+                });
+        BackgroundTaskRunnerService taskRunner = new BackgroundTaskRunnerService() {
+            @Override
+            public void submitTask(Runnable task) {
+            }
+        };
+        JWTAuthResource resource = new JWTAuthResource(tokenProvider, unsecureDAO, null, taskRunner, throttle);
+        UserCredentials credentials = new UserCredentials();
+        credentials.setLogin(login);
+        credentials.setPassword(passwordMd5);
+        return resource.login(credentials, request);
     }
 
     private static final class FilterResult {

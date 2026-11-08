@@ -12,6 +12,7 @@ import com.hmdm.persistence.mapper.UserMapper;
 import com.hmdm.rest.json.CustomerSearchRequest;
 import com.hmdm.rest.json.Response;
 import com.hmdm.security.SecurityContext;
+import com.hmdm.testsupport.FakeSessions;
 import com.hmdm.testsupport.Fakes;
 import org.junit.After;
 import org.junit.Before;
@@ -139,6 +140,30 @@ public class CustomerResourceTest {
 
         assertEquals(Response.ResponseStatus.OK, response.getStatus());
         assertEquals(java.util.Collections.singletonList(admin), sessionWrites);
+    }
+
+    @Test
+    public void customerImpersonationStartsAFreshSession() throws Exception {
+        SecurityContext.init(Fakes.superAdmin(1, 1));
+        com.hmdm.persistence.domain.User admin = new com.hmdm.persistence.domain.User();
+        admin.setId(20);
+        admin.setLogin("tenant");
+        admin.setCustomerId(2);
+        admin.setAuthToken("token");
+        com.hmdm.persistence.domain.UserRole role = new com.hmdm.persistence.domain.UserRole();
+        role.setId(2);
+        admin.setUserRole(role);
+        users.answer("findAll", a -> java.util.Collections.singletonList(admin));
+        FakeSessions sessions = new FakeSessions();
+        FakeSessions.Session superAdmins = sessions.existing("the-super-admins");
+        superAdmins.attributes.put("credentials", Fakes.superAdmin(1, 1));
+
+        Response response = resource.impersonateCustomer(2, sessions.request(), null);
+
+        assertEquals(Response.ResponseStatus.OK, response.getStatus());
+        assertTrue(superAdmins.invalidated);
+        assertTrue(!"the-super-admins".equals(sessions.current().id));
+        assertEquals(admin, sessions.current().attributes.get("credentials"));
     }
 
     // ---- helpers -----------------------------------------------------------------------------------------------------

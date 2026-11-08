@@ -1,0 +1,309 @@
+/* Configuration editor. */
+.v2 .v2-cfged-h2 {
+  margin: 0;
+  font-size: var(--fs-h2);
+  font-weight: 600;
+}
+.v2 .v2-cfged-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.v2 .v2-cfged-devlink {
+  font-weight: 600;
+}
+.v2 .v2-cfged-calloutline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+/* Identity: Name and Description side by side */
+.v2 .v2-cfged-identity {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 16px;
+}
+.v2 .v2-cfged-labelline {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+/* Sub-group heading row inside a section card */
+.v2 .v2-cfged-eyebrow {
+  padding: 16px 0 6px;
+  border-top: 1px solid var(--line-soft);
+}
+
+/* Controls in setting rows */
+.v2 .v2-cfged-ctl {
+  min-width: 0;
+}
+.v2 .v2-cfged-ctl--wide {
+  width: min(320px, 100%);
+}
+.v2 .v2-cfged-ctl--num {
+  width: 120px;
+}
+.v2 .v2-cfged-row--wide .v2-fieldrow__control {
+  flex: 1 1 320px;
+}
+.v2 .v2-cfged-row--wide .v2-cfged-ctl--wide {
+  width: 100%;
+}
+.v2 .v2-cfged-secret {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+.v2 .v2-cfged-secret__input {
+  width: 200px;
+  min-width: 0;
+}
+/* board: mono, 0.2em tracking, sized for ~10 characters */
+.v2 .v2-cfged-secret__input--pin {
+  width: 114px;
+  letter-spacing: 0.2em;
+}
+.v2 .v2-cfged-more {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Apps: main app row and the app table */
+.v2 .v2-cfged-mainrow {
+  padding: 14px 0;
+}
+.v2 .v2-cfged-mainrow .v2-fieldrow__text {
+  flex-basis: 280px;
+}
+.v2 .v2-cfged-mainrow .v2-fieldrow__control {
+  flex: 0 1 320px;
+}
+.v2 .v2-cfged-appselect {
+  width: 100%;
+  min-width: 0;
+}
+.v2 .v2-cfged-mainrow .v2-cfged-appselect {
+  padding: 8px 10px;
+}
+.v2 .v2-fieldrow__control .v2-cfged-appselect {
+  max-width: 320px;
+}
+/* Search, On devices filter and sort over a long app list */
+.v2 .v2-cfged-appsbar {
+  /* containing block for its visually hidden result count */
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line-soft);
+}
+.v2 .v2-cfged-appsbar__search {
+  flex: 1 1 220px;
+  max-width: 320px;
+}
+.v2 .v2-cfged-apps {
+  /* containing block for the visually hidden labels, so they scroll with the table instead of widening the page */
+  position: relative;
+  overflow-x: auto;
+  border-top: 1px solid var(--line-soft);
+}
+.v2 .v2-cfged-apps__table {
+  width: 100%;
+  min-width: 600px;
+  border-collapse: collapse;
+}
+.v2 .v2-cfged-apps__table th {
+  padding: 10px 8px 6px;
+  text-align: left;
+  font-size: var(--fs-small);
+  font-weight: 500;
+  color: var(--secondary);
+}
+.v2 .v2-cfged-apps__table td {
+  padding: 10px 8px;
+  vertical-align: middle;
+}
+.v2 .v2-cfged-apps__table tbody tr {
+  border-top: 1px solid var(--line-soft);
+}
+.v2 .v2-cfged-apps__table :is(th, td):first-child {
+  padding-left: 0;
+}
+.v2 .v2-cfged-apps__table :is(th, td).v2-cfged-apps__rm {
+  width: 1%;
+  padding-right: 0;
+}
+.v2 .v2-cfged-apps__empty {
+  color: var(--secondary);
+  font-size: var(--fs-sm);
+}
+.v2 .v2-cfged-app {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.v2 .v2-cfged-app__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.v2 .v2-cfged-app__name {
+  font-weight: 500;
+}
+.v2 .v2-cfged-app__ver {
+  font-family: var(--font-mono);
+  font-size: var(--fs-meta);
+  font-weight: 400;
+  color: var(--secondary);
+}
+.v2 .v2-cfged-app__pkg {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  color: var(--secondary);
+  overflow-wrap: anywhere;
+}
+.v2 .v2-cfged-app__kiosk {
+  gap: 8px;
+  white-space: nowrap;
+}
+.v2 .v2-cfged-app__kiosk.is-on {
+  color: var(--text);
+}
+.v2 .v2-cfged-app__kiosk.is-hidden {
+  color: var(--secondary);
+}
+/* disabled (not installed / removed): faint is allowed on disabled controls */
+.v2 .v2-cfged-app__kiosk.is-off {
+  color: var(--faint);
+}
+.v2 .v2-cfged-apps__note {
+  margin: 0;
+  padding: 10px 0 12px;
+  border-top: 1px solid var(--line-soft);
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+
+/* Headwind launcher only: dashed card, collapsed by default */
+.v2 .v2-cfged-hw__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  padding: 16px 24px;
+}
+.v2 .v2-cfged-hw__text {
+  flex: 1 1 320px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.v2 .v2-cfged-hw__count {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  color: var(--secondary);
+}
+.v2 .v2-cfged-hw__sub {
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+.v2 .v2-cfged-hw__body {
+  padding: 0 24px 8px;
+}
+.v2 .v2-cfged-hw__note {
+  margin: 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--line-soft);
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+.v2 .v2-cfged-chev {
+  transition: transform 0.15s ease;
+}
+.v2 .v2-cfged-chev.is-open {
+  transform: rotate(180deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .v2 .v2-cfged-chev {
+    transition: none;
+  }
+}
+
+.v2 .v2-cfged-libnote {
+  padding-bottom: 12px;
+}
+
+/* Narrow screens: each assigned app is a stacked row (name and Remove, then its On devices select and Show in
+   kiosk), so the controls stay on screen instead of scrolling inside a 600 px table. */
+@media (max-width: 640px) {
+  .v2 .v2-cfged-appsbar__search {
+    flex-basis: 100%;
+    max-width: none;
+  }
+  .v2 .v2-cfged-apps__table {
+    min-width: 0;
+  }
+  .v2 .v2-cfged-apps__table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .v2 .v2-cfged-apps__table tbody {
+    display: block;
+  }
+  .v2 .v2-cfged-apps__table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'app rm'
+      'action kiosk';
+    align-items: center;
+    gap: 8px 12px;
+    padding: 10px 0;
+  }
+  .v2 .v2-cfged-apps__table tbody td {
+    display: block;
+    padding: 0;
+  }
+  .v2 .v2-cfged-apps__table td.v2-cfged-apps__empty {
+    grid-column: 1 / -1;
+  }
+  .v2 .v2-cfged-apps__app {
+    grid-area: app;
+  }
+  .v2 .v2-cfged-apps__action {
+    grid-area: action;
+    min-width: 0;
+  }
+  /* the header row is hidden, so the first app row needs no line of its own under the card's divider */
+  .v2 .v2-cfged-apps__table tbody tr:first-child {
+    border-top: 0;
+  }
+  .v2 .v2-cfged-apps__kiosk {
+    grid-area: kiosk;
+    justify-self: end;
+  }
+  .v2 .v2-cfged-apps__table td.v2-cfged-apps__rm {
+    grid-area: rm;
+    justify-self: end;
+    width: auto;
+  }
+}

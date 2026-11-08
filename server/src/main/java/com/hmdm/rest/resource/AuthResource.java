@@ -29,6 +29,7 @@ import com.hmdm.persistence.domain.Settings;
 import com.hmdm.rest.filter.AuthFilter;
 import com.hmdm.rest.json.AuthOptionsResponse;
 import com.hmdm.rest.json.Response;
+import com.hmdm.security.ConsoleSession;
 import com.hmdm.security.LoginThrottle;
 import com.hmdm.rest.json.UserCredentials;
 import com.hmdm.persistence.domain.User;
@@ -153,8 +154,8 @@ public class AuthResource {
                 this.customerDAO.recordLastLoginTime(user.getCustomerId(), System.currentTimeMillis());
             });
 
-            HttpSession userSession = req.getSession();
-            userSession.setAttribute(AuthFilter.sessionCredentials, user );
+            // A new session id at sign-in: the one the browser had before is never the signed-in one.
+            HttpSession userSession = ConsoleSession.start(req, user);
 
             boolean secondFactorPending = false;
             Settings settings = settingsDAO.getSettings(user.getCustomerId());

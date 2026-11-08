@@ -86,7 +86,7 @@ public class AgentEnrollTimeTest {
     public void enroll_records_the_new_devices_enrollment_time() {
         FakeCommandDAO commands = new FakeCommandDAO();
         AgentResource resource = new AgentResource(new FakeUnsecureDAO(), new FakeTokenDAO(), commands,
-                noConfigApps(), null, null, null, null);
+                noConfigApps(), null, null, null, null, null);
         AgentEnrollRequest req = new AgentEnrollRequest();
         req.setEnrollToken(TOKEN);
 
@@ -103,7 +103,7 @@ public class AgentEnrollTimeTest {
         unsecure.creationEnabled = false;
         FakeTokenDAO tokens = new FakeTokenDAO();
         FakeCommandDAO commands = new FakeCommandDAO();
-        AgentResource resource = new AgentResource(unsecure, tokens, commands, noConfigApps(), null, null, null, null);
+        AgentResource resource = new AgentResource(unsecure, tokens, commands, noConfigApps(), null, null, null, null, null);
         AgentEnrollRequest req = new AgentEnrollRequest();
         req.setEnrollToken(TOKEN);
 

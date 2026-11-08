@@ -1,6 +1,7 @@
 package com.hmdm;
 
 import com.google.inject.Injector;
+import com.hmdm.plugin.PluginList;
 import io.swagger.jaxrs.config.BeanConfig;
 import io.swagger.jaxrs.listing.ApiListingResource;
 import io.swagger.jaxrs.listing.SwaggerSerializers;
@@ -27,7 +28,8 @@ public class HMDMApplication extends ResourceConfig {
      */
     @Inject
     public HMDMApplication(final ServiceLocator serviceLocator) {
-        packages("com.hmdm");
+        // Resources and providers: core's, and a fork plugin's (web/EXTENDING.md); the plugin scan's packages.
+        packages(PluginList.PACKAGES.toArray(new String[0]));
         register(MultiPartFeature.class);
         register(new ContainerLifecycleListener() {
             public void onStartup(Container container) {
@@ -42,7 +44,7 @@ public class HMDMApplication extends ResourceConfig {
                 beanConfig.setVersion("0.0.2");
                 beanConfig.setSchemes(new String[]{"http"});
                 beanConfig.setBasePath(servletContainer.getServletContext().getContextPath() + "/rest");
-                beanConfig.setResourcePackage("com.hmdm");
+                beanConfig.setResourcePackage(swaggerResourcePackage());
                 beanConfig.setScan(true);
                 beanConfig.setPrettyPrint(true);
 
@@ -58,6 +60,14 @@ public class HMDMApplication extends ResourceConfig {
         register(ApiListingResource.class);
         register(SwaggerSerializers.class);
 
+    }
+
+    /**
+     * <p>{@link PluginList#PACKAGES} as Swagger's {@code BeanConfig.setResourcePackage} takes them,
+     * comma-separated.</p>
+     */
+    static String swaggerResourcePackage() {
+        return String.join(",", PluginList.PACKAGES);
     }
 
 }

@@ -24,7 +24,6 @@ package com.hmdm.plugin.rest;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import com.hmdm.plugin.persistence.PluginDAO;
-import com.hmdm.plugin.service.PluginStatusCache;
 import com.hmdm.rest.json.Response;
 import com.hmdm.security.SecurityContext;
 import org.slf4j.Logger;
@@ -53,8 +52,6 @@ public class PluginResource {
      */
     private PluginDAO pluginDAO;
 
-    private PluginStatusCache pluginStatusCache;
-
     /**
      * <p>A constructor required by Swagger.</p>
      */
@@ -65,9 +62,8 @@ public class PluginResource {
      * <p>Constructs new <code>PluginResource</code> instance. This implementation does nothing.</p>
      */
     @Inject
-    public PluginResource(PluginDAO pluginDAO, PluginStatusCache pluginStatusCache) {
+    public PluginResource(PluginDAO pluginDAO) {
         this.pluginDAO = pluginDAO;
-        this.pluginStatusCache = pluginStatusCache;
     }
 
     /**
@@ -139,8 +135,8 @@ public class PluginResource {
                 return Response.PERMISSION_DENIED();
             }
             
+            // The DAO drops the customer's cached plugin state once the write is done.
             this.pluginDAO.saveDisabledPlugins(pluginIds);
-            this.pluginStatusCache.setCustomerDisabledPlugins(SecurityContext.get().getCurrentUser().get().getCustomerId(), pluginIds);
             return Response.OK();
         } catch (Exception e) {
             logger.error("Unexpected error when disabling plugins", e);

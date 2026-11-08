@@ -3,6 +3,7 @@
  */
 package com.hmdm.rest.resource;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.User;
 import com.hmdm.persistence.domain.UserRole;
@@ -12,6 +13,7 @@ import com.hmdm.rest.json.Response;
 import com.hmdm.service.EmailService;
 import com.hmdm.testsupport.Fakes;
 import com.hmdm.util.PasswordResetTokens;
+import com.hmdm.util.PasswordUtil;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -19,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
@@ -26,7 +29,9 @@ import static org.junit.Assert.assertTrue;
 
 /**
  * POST /public/passwordReset/reset and GET /public/passwordReset/recover/{username}: a reset link is good for a day
- * and for one change, setting the password ends the user's sessions, and asking for a link ends none.
+ * and for one change, setting the password ends the user's sessions, and asking for a link ends none. The reset is
+ * public (whoever holds a token calls it), so its answer says only that the password was set and never echoes the
+ * account: the stored password hash travelled in {@code newPassword}.
  */
 public class PasswordResetResourceTest {
 
@@ -106,6 +111,42 @@ public class PasswordResetResourceTest {
         assertNotEquals("the sessions and JWTs of the old password end", "session-token", stored.getAuthToken());
         assertNull(stored.getPasswordResetToken());
         assertNull(stored.getPasswordResetTokenTime());
+    }
+
+    @Test
+    public void aResetAnswersOkWithNoUserData() throws Exception {
+        issue(System.currentTimeMillis());
+
+        Response response = resource.updatePassword(reset(stored.getPasswordResetToken()));
+
+        assertEquals(Response.ResponseStatus.OK, response.getStatus());
+        assertNull("no account in the answer", response.getData());
+        String json = new ObjectMapper().writeValueAsString(response);
+        for (String leak : new String[]{"newPassword", "operator@example.com", "\"login\"", "old-hash",
+                "session-token", stored.getPassword(), stored.getAuthToken()}) {
+            assertFalse(leak + " in " + json, json.contains(leak));
+        }
+    }
+
+    @Test
+    public void aResetStoresTheNewPassword() {
+        issue(System.currentTimeMillis());
+
+        resource.updatePassword(reset(stored.getPasswordResetToken()));
+
+        assertTrue(PasswordUtil.passwordMatch(NEW_MD5, stored.getPassword()));
+        assertFalse(stored.isPasswordReset());
+    }
+
+    @Test
+    public void anUnknownTokenIsRefusedAndWritesNothing() {
+        issue(System.currentTimeMillis());
+
+        Response response = resource.updatePassword(reset("other"));
+
+        assertEquals(Response.ResponseStatus.ERROR, response.getStatus());
+        assertEquals("error.user.not.found", response.getMessage());
+        assertTrue(users.callsTo("setNewPassword").isEmpty());
     }
 
     @Test

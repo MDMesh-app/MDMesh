@@ -16,5 +16,5 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["vite.config.ts"]
+  "include": ["vite.config.ts", "vite.changelog.ts", "vite.changelog.test.ts", "check-v03-files.ts", "check-v03-files.test.ts"]
 }

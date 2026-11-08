@@ -8,9 +8,11 @@ import com.hmdm.persistence.domain.User;
 import com.hmdm.persistence.domain.UserRole;
 import com.hmdm.persistence.domain.UserRolePermission;
 import com.hmdm.persistence.mapper.UserMapper;
+import com.hmdm.rest.json.LookupItem;
 import com.hmdm.rest.json.Response;
 import com.hmdm.security.LoginThrottle;
 import com.hmdm.security.SecurityContext;
+import com.hmdm.testsupport.FakeSessions;
 import com.hmdm.util.PasswordUtil;
 import org.junit.After;
 import org.junit.Before;
@@ -48,6 +50,7 @@ public class UserResourceTest {
     private final Map<Integer, User> users = new LinkedHashMap<>();
     private final List<String> writes = new ArrayList<>();
     private final List<User> written = new ArrayList<>();
+    private final List<String> accessWrites = new ArrayList<>();
 
     private UserResource resource;
     private LoginThrottle throttle;
@@ -88,6 +91,27 @@ public class UserResourceTest {
     @After
     public void tearDown() {
         SecurityContext.release();
+    }
+
+    @Test
+    public void managementCapabilitiesFollowTheServerRules() {
+        signIn(tenantUser);
+        assertEquals(Boolean.FALSE, ((Map<?, ?>) resource.management().getData()).get("users"));
+        signIn(orgAdmin);
+        assertEquals(Boolean.TRUE, ((Map<?, ?>) resource.management().getData()).get("users"));
+        assertEquals(Boolean.TRUE, ((Map<?, ?>) resource.management().getData()).get("roles"));
+        multiTenant = true;
+        assertEquals(Boolean.FALSE, ((Map<?, ?>) resource.management().getData()).get("roles"));
+        signIn(superAdmin);
+        assertEquals(Boolean.TRUE, ((Map<?, ?>) resource.management().getData()).get("roles"));
+    }
+
+    @Test
+    public void editingAnAccountWithoutAPasswordPreservesItsPendingReset() {
+        tenantUser.setPasswordReset(true);
+        signIn(orgAdmin);
+        assertEquals(Response.ResponseStatus.OK, resource.updateUser(edit(tenantUser, USER)).getStatus());
+        assertTrue(written.get(0).isPasswordReset());
     }
 
     // ---- account secrets ----------------------------------------------------------------------------------------------
@@ -146,6 +170,35 @@ public class UserResourceTest {
         assertEquals(Response.ResponseStatus.OK, response.getStatus());
         assertEquals("insert", writes.get(0));
         assertEquals(TENANT, written.get(0).getCustomerId());
+    }
+
+    @Test
+    public void aNewRestrictedAccountGetsTheSelectedGroupsAndConfigurations() {
+        signIn(orgAdmin);
+        User request = newUser("newop", USER);
+        request.setAllDevicesAvailable(false);
+        request.setAllConfigAvailable(false);
+        request.setGroups(java.util.Collections.singletonList(new LookupItem(9, "Warehouse")));
+        request.setConfigurations(java.util.Collections.singletonList(new LookupItem(4, "Kiosk")));
+
+        assertEquals(Response.ResponseStatus.OK, resource.updateUser(request).getStatus());
+
+        assertEquals(java.util.Arrays.asList("insertUserDeviceGroupsAccess:[9]", "insertUserConfigurationAccess:[4]"),
+                accessWrites);
+    }
+
+    @Test
+    public void aNewUnrestrictedAccountGetsNoAccessLists() {
+        signIn(orgAdmin);
+        User request = newUser("newop", USER);
+        request.setAllDevicesAvailable(true);
+        request.setAllConfigAvailable(true);
+        request.setGroups(java.util.Collections.singletonList(new LookupItem(9, "Warehouse")));
+        request.setConfigurations(java.util.Collections.singletonList(new LookupItem(4, "Kiosk")));
+
+        assertEquals(Response.ResponseStatus.OK, resource.updateUser(request).getStatus());
+
+        assertTrue(accessWrites.isEmpty());
     }
 
     // ---- PUT /private/users: target of an update ---------------------------------------------------------------------
@@ -354,21 +407,62 @@ public class UserResourceTest {
     public void ownPasswordChangeEndsOtherSessionsAndKeepsThisOne() {
         signIn(tenantUser);
         User thisSession = copy(tenantUser, false);              // what AuthResource stored at sign-in
-        List<Object> sessionWrites = new ArrayList<>();
+        FakeSessions sessions = new FakeSessions();
+        sessions.existing("this-one").attributes.put("credentials", thisSession);
         User request = new User();
         request.setId(tenantUser.getId());
         request.setOldPassword(PASSWORD_MD5);
         request.setNewPassword("0123456789ABCDEF0123456789ABCDEF");
 
-        Response response = resource.updatePassword(request, request(sessionWrites, thisSession));
+        Response response = resource.updatePassword(request, sessions.request());
 
         assertEquals(Response.ResponseStatus.OK, response.getStatus());
         String newToken = written.get(0).getAuthToken();
         assertNotNull(newToken);
         assertNotEquals("every other session and JWT of the old password ends", "token-11", newToken);
         assertEquals("this session moves to the new token", newToken, thisSession.getAuthToken());
-        assertEquals(1, sessionWrites.size());
+        assertEquals(newToken, ((User) sessions.current().attributes.get("credentials")).getAuthToken());
         assertEquals(null, written.get(0).getPasswordResetToken());
+    }
+
+    @Test
+    public void ownPasswordChangeMovesThisSessionToANewId() {
+        signIn(tenantUser);
+        User thisSession = copy(tenantUser, false);
+        FakeSessions sessions = new FakeSessions();
+        FakeSessions.Session before = sessions.existing("before-the-change");
+        before.attributes.put("credentials", thisSession);
+        User request = new User();
+        request.setId(tenantUser.getId());
+        request.setOldPassword(PASSWORD_MD5);
+        request.setNewPassword("0123456789ABCDEF0123456789ABCDEF");
+
+        Response response = resource.updatePassword(request, sessions.request());
+
+        assertEquals(Response.ResponseStatus.OK, response.getStatus());
+        assertTrue("the old id ends", before.invalidated);
+        FakeSessions.Session after = sessions.current();
+        assertNotEquals("before-the-change", after.id);
+        User kept = (User) after.attributes.get("credentials");
+        assertEquals("still signed in, as the same user", tenantUser.getId(), kept.getId());
+        assertEquals("with the new token", written.get(0).getAuthToken(), kept.getAuthToken());
+    }
+
+    @Test
+    public void aWrongCurrentPasswordKeepsTheSessionId() {
+        signIn(tenantUser);
+        FakeSessions sessions = new FakeSessions();
+        FakeSessions.Session before = sessions.existing("before-the-change");
+        before.attributes.put("credentials", copy(tenantUser, false));
+        User request = new User();
+        request.setId(tenantUser.getId());
+        request.setOldPassword("0123456789ABCDEF0123456789ABCDEF");
+        request.setNewPassword("0123456789ABCDEF0123456789ABCDEF");
+
+        resource.updatePassword(request, sessions.request());
+
+        assertTrue(!before.invalidated);
+        assertEquals(0, sessions.created);
     }
 
     @Test
@@ -529,6 +623,23 @@ public class UserResourceTest {
         assertEquals(Response.ResponseStatus.OK, response.getStatus());
         assertEquals(1, sessionWrites.size());
         assertNoSecrets(json(response.getData()));
+    }
+
+    @Test
+    public void impersonationStartsAFreshSession() throws Exception {
+        signIn(orgAdmin);
+        FakeSessions sessions = new FakeSessions();
+        FakeSessions.Session admins = sessions.existing("the-admins");
+        admins.attributes.put("credentials", copy(orgAdmin, false));
+
+        Response response = resource.login(tenantUser.getId(), sessions.request(), null);
+
+        assertEquals(Response.ResponseStatus.OK, response.getStatus());
+        assertTrue(admins.invalidated);
+        FakeSessions.Session after = sessions.current();
+        assertNotEquals("the-admins", after.id);
+        assertEquals(tenantUser.getId(), ((User) after.attributes.get("credentials")).getId());
+        assertEquals(java.util.Collections.singleton("credentials"), after.attributes.keySet());
     }
 
     // ---- secrets in responses ----------------------------------------------------------------------------------------
@@ -726,6 +837,7 @@ public class UserResourceTest {
         user.setUserRole(source.getUserRole());
         user.setAuthToken(source.getAuthToken());
         user.setPasswordResetToken(source.getPasswordResetToken());
+        user.setPasswordReset(source.isPasswordReset());
         user.setTwoFactorSecret(source.getTwoFactorSecret());
         user.setAuthData(source.getAuthData());
         user.setAllDevicesAvailable(source.isAllDevicesAvailable());
@@ -807,8 +919,10 @@ public class UserResourceTest {
                             return null;
                         case "removeDeviceGroupsAccessByUserId":
                         case "removeConfigurationAccessByUserId":
+                            return null;
                         case "insertUserDeviceGroupsAccess":
                         case "insertUserConfigurationAccess":
+                            accessWrites.add(method.getName() + ":" + args[1]);
                             return null;
                         case "toString":
                             return "FakeUserMapper";

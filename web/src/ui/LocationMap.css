@@ -1,0 +1,8 @@
+/* Location breadcrumb map (LocationMap.tsx). z-index 0 keeps Leaflet's panes under the sticky page chrome. */
+.v2 .v2-locmap {
+  height: clamp(280px, 50vh, 460px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  z-index: 0;
+}

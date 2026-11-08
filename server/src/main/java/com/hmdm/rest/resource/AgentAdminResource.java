@@ -181,8 +181,10 @@ public class AgentAdminResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Sync configuration apps", notes = "Queues app.install commands for the device's "
-            + "configuration apps marked action=install. Use after enrolling an older device or editing a configuration.")
+    @ApiOperation(value = "Sync configuration apps", notes = "Queues app.install commands for every one of the device's "
+            + "configuration apps marked action=install. Apps added to its configuration, and a move to another "
+            + "configuration, install at the next check-in without this; use it to send apps again, e.g. after one "
+            + "was removed on the device or gave up after failing.")
     @POST
     @Path("/devices/{deviceId}/syncApps")
     @Produces(MediaType.APPLICATION_JSON)
@@ -424,11 +426,18 @@ public class AgentAdminResource {
             if (!accessible.contains(row.getDeviceNumber())) continue;
             Integer cfgId = row.getConfigurationId();
             ConfigSyncSummary s = out.computeIfAbsent(cfgId, id -> { ConfigSyncSummary x = new ConfigSyncSummary(); x.setConfigurationId(id); return x; });
+            if (row.isWiped()) {
+                s.setWiped(s.getWiped() + 1);
+                continue;
+            }
             s.setTotal(s.getTotal() + 1);
-            String current = revisionByConfig.computeIfAbsent(cfgId, id -> {
-                Device probe = new Device(); probe.setConfigurationId(id); probe.setCustomerId(customerId.get());
-                return configReconciler.currentRevision(probe);
-            });
+            // containsKey/put, not computeIfAbsent: a configuration whose plugin fails has a null revision, which
+            // computeIfAbsent wouldn't keep, so the document would be rebuilt (and fail again) for every device on it.
+            if (!revisionByConfig.containsKey(cfgId)) {
+                Device probe = new Device(); probe.setConfigurationId(cfgId); probe.setCustomerId(customerId.get());
+                revisionByConfig.put(cfgId, configReconciler.currentRevision(probe));
+            }
+            String current = revisionByConfig.get(cfgId);
             Set<String> tokens = AgentCapabilityTokens.flatten(row.getCapabilitiesJson());
             boolean supported = AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, tokens);
             if (!supported) {
@@ -542,7 +551,9 @@ public class AgentAdminResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Force sync", notes = "Wake the device now so it pulls pending commands + reports state.")
+    @ApiOperation(value = "Force sync", notes = "Wake the device now so it pulls pending commands + reports state. " +
+            "Answers {connected}: false when the device has no live connection, so the wake can't reach it and it " +
+            "syncs at its next check-in.")
     @POST
     @Path("/devices/{deviceId}/sync")
     @Produces(MediaType.APPLICATION_JSON)
@@ -561,7 +572,9 @@ public class AgentAdminResource {
         if (!deviceDAO.isAccessibleToUser(device)) {
             return Response.PERMISSION_DENIED();
         }
+        // The wake is dropped without a live socket: say so, so the console doesn't report a sync that can't happen.
+        boolean connected = wakeHub.isOnline(deviceId);
         wakeHub.wake(deviceId, "commands");
-        return Response.OK();
+        return Response.OK(java.util.Collections.singletonMap("connected", connected));
     }
 }

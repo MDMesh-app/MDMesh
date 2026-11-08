@@ -24,8 +24,10 @@ package com.hmdm.plugins.audit.rest.filter;
 import javax.servlet.FilterChain;
 import javax.servlet.ServletRequest;
 import javax.servlet.ServletResponse;
-import java.awt.image.ImagingOpException;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -150,8 +152,21 @@ public enum ResourceAuditInfo {
      */
     public ResourceAuditor getResourceAuditor(ServletRequest request, ServletResponse response, FilterChain chain,
                                               String proxyIps, String ipHeader) throws IOException {
+        return getResourceAuditor(request, response, chain, proxyIps, ipHeader, ResourceAuditor.proxyList(proxyIps),
+                false);
+    }
+
+    /**
+     * <p>Gets the auditor for the specified request/response chain.</p>
+     *
+     * @param trustedProxies         {@code proxy.addresses}, split ({@link ResourceAuditor#proxyList}).
+     * @param privatePeersAreProxies {@code proxy.private.networks}: any private-network peer is the install's proxy.
+     */
+    public ResourceAuditor getResourceAuditor(ServletRequest request, ServletResponse response, FilterChain chain,
+                                              String proxyIps, String ipHeader, List<String> trustedProxies,
+                                              boolean privatePeersAreProxies) throws IOException {
         return new ResourceAuditor(auditLogAction, request, response, chain, payload, maskCommandPayload, checkResponse,
-                proxyIps, ipHeader);
+                proxyIps, ipHeader, trustedProxies, privatePeersAreProxies);
     }
 
     /**
@@ -181,8 +196,64 @@ public enum ResourceAuditInfo {
      * @return the details for audit process to apply to processed request.
      */
     public static Optional<ResourceAuditInfo> findAuditInfo(String requestMethod, String requestUri) {
+        final String path = routedPath(requestUri);
         return Stream.of(ResourceAuditInfo.values())
-                .filter(info -> info.matches(requestMethod, requestUri))
+                .filter(info -> info.matches(requestMethod, path))
                 .findAny();
+    }
+
+    /**
+     * <p>The raw request path (below the context path) reduced to the one spelling the rules are written in, so that
+     * every spelling Jersey routes to an audited method matches its rule: path parameters ({@code ;x=y}) dropped,
+     * percent-escapes decoded (UTF-8, a {@code +} stays a {@code +}), and a trailing {@code /} dropped (Jersey routes
+     * {@code /rest/public/auth/login/} to the login method). Jersey itself doesn't route a percent-escaped literal,
+     * and AmbiguousPathFilter refuses path parameters, encoded separators and dot segments before any filter runs;
+     * this reads them the way the resource would anyway, so a rule never depends on those staying true. Matching
+     * more spellings than Jersey routes only records an extra (failed) attempt.</p>
+     *
+     * @param requestUri the raw request URI below the context path, without the query string.
+     * @return the path the audit rules are matched against.
+     */
+    static String routedPath(String requestUri) {
+        if (requestUri == null) {
+            return "";
+        }
+        StringBuilder out = new StringBuilder(requestUri.length());
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        boolean inParameter = false;
+        for (int i = 0; i < requestUri.length(); i++) {
+            char c = requestUri.charAt(i);
+            if (c == '/') {
+                inParameter = false;
+            } else if (c == ';') {
+                inParameter = true;
+            }
+            if (inParameter) {
+                continue;
+            }
+            if (c == '%' && i + 2 < requestUri.length()) {
+                int hi = Character.digit(requestUri.charAt(i + 1), 16);
+                int lo = Character.digit(requestUri.charAt(i + 2), 16);
+                if (hi >= 0 && lo >= 0) {
+                    bytes.write((hi << 4) + lo);
+                    i += 2;
+                    continue;
+                }
+            }
+            flush(bytes, out);
+            out.append(c);
+        }
+        flush(bytes, out);
+        while (out.length() > 1 && out.charAt(out.length() - 1) == '/') {
+            out.setLength(out.length() - 1);
+        }
+        return out.toString();
+    }
+
+    private static void flush(ByteArrayOutputStream bytes, StringBuilder out) {
+        if (bytes.size() > 0) {
+            out.append(new String(bytes.toByteArray(), StandardCharsets.UTF_8));
+            bytes.reset();
+        }
     }
 }

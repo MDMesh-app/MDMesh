@@ -1,6 +1,7 @@
 package com.mdmesh.core.store
 
 import com.mdmesh.proto.ConfigApplyPayload
+import com.mdmesh.proto.ConfigConnectivity
 import com.mdmesh.proto.KioskApplyPayload
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -41,5 +42,15 @@ class ConfigStateStoreTest {
         val doc = ConfigApplyPayload(revision = "r2", configurationId = 1)
         assertEquals(doc, ConfigStateCodec.decode(ConfigStateCodec.encode(doc)))
         assertNull(ConfigStateCodec.decode("{not json"))
+    }
+
+    @Test
+    fun `codec keeps connectivity, which the boot re-apply sets again`() {
+        for (mode in listOf("alwaysOn", "adaptive")) {
+            val doc = ConfigApplyPayload(revision = "r3", connectivity = ConfigConnectivity(mode))
+            assertEquals(mode, ConfigStateCodec.decode(ConfigStateCodec.encode(doc))?.connectivity?.mode)
+        }
+        val unmanaged = ConfigApplyPayload(revision = "r4")
+        assertNull(ConfigStateCodec.decode(ConfigStateCodec.encode(unmanaged))?.connectivity)
     }
 }

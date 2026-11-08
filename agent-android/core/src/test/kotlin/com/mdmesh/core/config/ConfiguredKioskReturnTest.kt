@@ -58,14 +58,14 @@ class ConfiguredKioskReturnTest {
     @Test fun `return restores the complete saved configuration without applying other sections`() = runTest {
         config.save(ConfigApplyPayload(revision = "saved", kiosk = payload))
         // No server or policy resolution is needed to return, including after the applier is recreated.
-        val applier = ConfigApplier({ error("Must not reapply policies") }, kiosk(), {}, config)
+        val applier = ConfigApplier({ error("Must not reapply policies") }, kiosk(), {}, config, setPowerMode = {})
         assertEquals(KioskResult.Ok, applier.returnToConfiguredKiosk())
         assertEquals(payload, active.load())
     }
 
     @Test fun `no configured kiosk never falls back to a manual or default kiosk`() = runTest {
         active.save(payload)
-        val applier = ConfigApplier(fixedToggles(), kiosk(), {}, config)
+        val applier = ConfigApplier(fixedToggles(), kiosk(), {}, config, setPowerMode = {})
         assertTrue(applier.returnToConfiguredKiosk() is KioskResult.Failed)
         config.save(ConfigApplyPayload(revision = "off"))
         assertTrue(applier.returnToConfiguredKiosk() is KioskResult.Failed)
@@ -76,7 +76,8 @@ class ConfiguredKioskReturnTest {
         config.save(ConfigApplyPayload(revision = "old", kiosk = payload))
         val replacement = payload.copy(password = "new-pin", pinPackage = "com.example.new")
         config.delivered = ConfigApplyPayload(revision = "new", kiosk = replacement)
-        assertEquals(KioskResult.Ok, ConfigApplier(fixedToggles(), kiosk(), {}, config).returnToConfiguredKiosk())
+        val applier = ConfigApplier(fixedToggles(), kiosk(), {}, config, setPowerMode = {})
+        assertEquals(KioskResult.Ok, applier.returnToConfiguredKiosk())
         assertEquals(replacement, active.load())
     }
 
@@ -87,7 +88,7 @@ class ConfiguredKioskReturnTest {
             override fun isSupported() = true
             override fun setEnabled(enabled: Boolean) = PolicyOutcome.Failed("test failure")
         }
-        val applier = ConfigApplier(fixedToggles("wifi" to broken), kiosk(), {}, config)
+        val applier = ConfigApplier(fixedToggles("wifi" to broken), kiosk(), {}, config, setPowerMode = {})
         val result = applier.apply(ConfigApplyPayload(revision = "off", policies = mapOf("wifi" to true)))
         assertFalse(ConfigApplier.succeeded(result))
         assertEquals("old", config.revision())
@@ -97,7 +98,7 @@ class ConfiguredKioskReturnTest {
 
     @Test fun `failed entry preserves the configuration for a local retry`() = runTest {
         config.save(ConfigApplyPayload(revision = "saved", kiosk = payload))
-        val applier = ConfigApplier(fixedToggles(), kiosk(), {}, config)
+        val applier = ConfigApplier(fixedToggles(), kiosk(), {}, config, setPowerMode = {})
         controller.enterResult = KioskResult.Failed("test failure")
         assertTrue(applier.returnToConfiguredKiosk() is KioskResult.Failed)
         assertNull(active.load())
@@ -116,7 +117,7 @@ class ConfiguredKioskReturnTest {
                 active.save(payload)
             }
         }
-        val applier = ConfigApplier(fixedToggles(), kiosk(blocking), {}, config)
+        val applier = ConfigApplier(fixedToggles(), kiosk(blocking), {}, config, setPowerMode = {})
         val returning = launch { assertEquals(KioskResult.Ok, applier.returnToConfiguredKiosk()) }
         entered.await()
         val disabling = launch { applier.apply(ConfigApplyPayload(revision = "off")) }

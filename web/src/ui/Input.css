@@ -1,0 +1,161 @@
+/* Text inputs, selects, textareas. Board: 9×12, r10, 1px #D6DAE1, white, 14px. The resting border uses
+   --input-border, which reaches 3:1 against the surface, as a control's border must. */
+.v2 .v2-input {
+  box-sizing: border-box;
+  min-width: 0;
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-body);
+  font-weight: 400;
+  line-height: var(--lh-body);
+  transition: border-color 0.12s ease;
+}
+.v2 .v2-input--sm {
+  padding: 8px 12px;
+}
+.v2 .v2-input--md {
+  padding: 9px 12px;
+}
+.v2 .v2-input--lg {
+  padding: 10px 12px;
+}
+.v2 .v2-input--mono {
+  font-family: var(--font-mono);
+}
+.v2 .v2-textarea {
+  resize: vertical;
+}
+.v2 .v2-input:focus-visible {
+  border-color: var(--ink);
+}
+.v2 .v2-input[readonly] {
+  background: var(--app);
+  border-color: var(--border);
+}
+.v2 .v2-input:disabled {
+  background: var(--app);
+  border-color: var(--border);
+  color: var(--secondary);
+}
+.v2 .v2-input.is-invalid {
+  border-color: var(--alert);
+}
+.v2 .v2-input.is-warn {
+  border-color: var(--warn);
+}
+
+.v2 .v2-select {
+  cursor: pointer;
+}
+.v2 .v2-select--xs {
+  padding: 6px 8px;
+  border-radius: var(--radius-tile);
+}
+.v2 .v2-select--sm {
+  padding: 8px 10px;
+}
+.v2 .v2-select--md {
+  padding: 9px 12px;
+}
+.v2 .v2-select--lg {
+  padding: 10px 12px;
+}
+
+/* Labelled toolbar select: "Type  All ▾" */
+.v2 .v2-lselect {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 0 12px;
+  box-sizing: border-box;
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+  cursor: pointer;
+}
+.v2 .v2-lselect:focus-within {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.v2 .v2-lselect__select {
+  padding: 7px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  outline: none;
+  cursor: pointer;
+}
+
+/* Search: icon + borderless input inside a bordered box; the ring goes on the box. */
+.v2 .v2-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  min-width: 0;
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--secondary);
+}
+.v2 .v2-search > svg {
+  flex: 0 0 auto;
+}
+.v2 .v2-search:focus-within {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.v2 .v2-search__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 9px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  outline: none;
+}
+.v2 .v2-search__input::-webkit-search-cancel-button {
+  cursor: pointer;
+}
+
+/* Checkbox */
+.v2 .v2-check {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: 0 0 auto;
+  accent-color: var(--ink);
+  cursor: pointer;
+}
+.v2 .v2-check--17 {
+  width: 17px;
+  height: 17px;
+}
+.v2 .v2-check:disabled {
+  cursor: default;
+}
+.v2 .v2-checklabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.v2 .v2-checklabel.is-disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
+@media (forced-colors: active) {
+  .v2 .v2-input,
+  .v2 .v2-search,
+  .v2 .v2-lselect {
+    border-color: CanvasText;
+  }
+}

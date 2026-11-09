@@ -100,8 +100,9 @@ adb shell am instrument -w -r -e class com.mdmesh.agent.OfflineKioskReturnTest \
   com.mdmesh.agent.debug.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-CI compiles/lints `OfflineKioskReturnTest` but never executes it. The tests skip unless running on an offline
-Device Owner Android emulator with no existing kiosk or saved/delivered configuration.
+CI neither compiles nor runs `OfflineKioskReturnTest`: build it with the first command above after changing the
+classes it uses. The tests skip unless running on an offline Device Owner Android emulator with no existing kiosk or
+saved/delivered configuration.
 
 ### Getting OFF Device Owner (dev cycle)
 

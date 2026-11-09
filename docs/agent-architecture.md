@@ -58,7 +58,8 @@ configuration; an ad-hoc "Custom kiosk" from the console is left alone. After so
 `config.apply` carries), so the device is back in exactly that kiosk without waiting for a configuration change.
 After a PIN exit, staff can tap **Return to kiosk** in the agent to restore the latest locally stored configured
 kiosk, even offline; the button is available only outside kiosk on Device Owner devices whose configuration enables
-it. A newer delivered kiosk-off configuration removes the option even if another policy failed; a remote
+it. It asks first, says so when that kiosk has no exit on the device, enters only the kiosk that was confirmed, and
+finishes the entry even if the screen goes away (a rotation); once in kiosk it queues a check-in. A newer delivered kiosk-off configuration removes the option even if another policy failed; a remote
 `kiosk.exit` leaves it available while the configuration still enables kiosk.
 
 **The 23 enforced fields**

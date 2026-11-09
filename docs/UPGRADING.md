@@ -144,6 +144,13 @@ works with a 0.3.9 server.
 
 ## Version notes
 
+### v0.5.0
+
+- **Return to kiosk on the device (agent 0.5.0):** after someone leaves a kiosk with the exit PIN, the MDMesh Agent
+  offers **Return to kiosk**, offline too, while the device's configuration enables kiosk. A console **Exit kiosk**
+  (`kiosk.exit`) leaves that option on the device; to remove it, turn kiosk off in the configuration. Older agents
+  don't show it.
+
 ### v0.4.0
 
 The console is new: every page was rebuilt. This part is for everyone who runs MDMesh. Forks that change the console

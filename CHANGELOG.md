@@ -12,8 +12,9 @@ Upgrading
 - The database adds one column (`devices.wipedAt`) on start. Devices wiped before the update aren't marked.
 
 New
-- Kiosk: staff can tap Return to kiosk in the MDMesh Agent after leaving with the exit PIN, even offline.
-  Available only when the device's configuration enables kiosk. Needs the next agent release; no server update needed.
+- Kiosk: staff can tap Return to kiosk in the MDMesh Agent after leaving with the exit PIN, even offline. It shows
+  only when the device's configuration enables kiosk, asks first (and warns when that kiosk has no exit on the
+  device), and tells the server at once when online. Needs agent 0.5.0; no server update needed (thanks @tisign).
 - Settings → Users & roles: create, edit and delete console accounts, choose the devices and configurations each
   can reach, and edit roles and their permissions (thanks @lared3294).
 - A wiped device shows as **Wiped** instead of Online and then Offline, and is left out of the counts, Needs attention

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifyOutcome, outcomeKeyLabel } from './configOutcomes';
+import { classifyOutcome, outcomeKeyLabel, unsupportedOutcomeReason } from './configOutcomes';
 
 describe('outcomeKeyLabel', () => {
   it('names core’s keys after their configuration fields', () => {
@@ -36,5 +36,14 @@ describe('outcomeKeyLabel', () => {
   it('shows any other unknown key as it is', () => {
     expect(outcomeKeyLabel('policies.somethingNew')).toBe('policies.somethingNew');
     expect(outcomeKeyLabel('policies.x.netaccess')).toBe('policies.x.netaccess');
+  });
+
+  it('distinguishes an old Android release from an agent that lacks Location-services support', () => {
+    expect(unsupportedOutcomeReason('policies.locationServices', { androidSdkInt: 28, isDeviceOwner: true }))
+      .toBe('Requires Android 11 or later (this device is API 28).');
+    expect(unsupportedOutcomeReason('policies.locationServices', { androidSdkInt: 34, isDeviceOwner: true }))
+      .toBe('Requires an agent that supports Location services.');
+    expect(unsupportedOutcomeReason('policies.locationServices', { androidSdkInt: 34, isDeviceOwner: false }))
+      .toBe('Requires Device Owner mode.');
   });
 });

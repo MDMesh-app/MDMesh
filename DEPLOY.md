@@ -131,8 +131,9 @@ Sign in as **admin** with the temporary password the installer printed, then set
 One prebuilt agent APK works for every deployment. The server URL travels in the enrollment QR
 (`com.mdmesh.SERVER_URL`), not in the APK. The latest verified release's APK is served at `/files/agent.apk`; if it
 isn't, host one there yourself. Generate the QR on the console's **Enroll** page. It holds your `BASE_URL`, the APK
-location and an enrollment token: single-use and valid for 24 hours by default, or for up to 1000 devices and 30
-days, to set up a batch.
+location and an enrollment token: single-use and valid for 24 hours by default, or, to set up a batch, for up to 100
+devices and 30 days (the API allows up to 1000 devices). **Stop all codes** on the same page ends every code that
+still works.
 
 ## Updates, recovery and logs
 

@@ -90,7 +90,9 @@ result that arrives later still counts. Agents must keep this property: never se
 - `/enroll` is gated by the `enrollToken` (minted by an authenticated admin via a private
   endpoint; carried into the device through the QR provisioning bundle). Each token enrolls up to
   its `maxUses` devices (1 by default: single use) before it expires (24 h by default, 30 days at
-  most); every enroll uses one, atomically. No global shared secret baked into the APK (ADR 0002 /
+  most); every enroll uses one, atomically. An admin can stop every token of the customer at once
+  (`POST /private/agent/v1/token/revoke-all`); a stopped token is answered `error.agent.token.used`.
+  Tokens are stored as their SHA-256 hash. No global shared secret baked into the APK (ADR 0002 /
   0005).
 - `/checkin` is authenticated by a per-device secret (`Authorization: Bearer <deviceSecret>`),
   minted at `/enroll`, stored server-side only as a SHA-256 hash, verified before any state

@@ -66,11 +66,15 @@ public class AgentDeviceAccessTest {
     private boolean active;
     private boolean activeCanary;
     private String rolloutDeviceVersion = "1";
+    private boolean socketOpen;
     private FakeMapper<DeviceMapper> deviceMapper;
     private AgentAdminResource resource;
     private RolloutResource rollouts;
     private Map<Class<?>, Object> deps;
     private int configurationReads;
+    private final Set<String> wiped = new HashSet<>();
+    private String appliedRevision = "rev";
+    private int revisionReads;
 
     private static Device device(int id, String number) {
         Device d = new Device();
@@ -125,8 +129,9 @@ public class AgentDeviceAccessTest {
                     r.setDeviceNumber(n);
                     r.setConfigurationId(5);
                     r.setCapabilitiesJson("{\"device\":[\"configApply\"]}");
-                    r.setAppliedConfigRevision("rev");
+                    r.setAppliedConfigRevision(appliedRevision);
                     r.setLastApplyDeferred(true);
+                    r.setWiped(wiped.contains(n));
                     rows.add(r);
                 }
                 return rows;
@@ -134,12 +139,13 @@ public class AgentDeviceAccessTest {
         };
         AgentWakeHub wakeHub = new AgentWakeHub(commandDAO) {
             @Override public void wake(String n, String kind) { sideEffects.add("wake " + n); }
+            @Override public boolean isOnline(String n) { return socketOpen; }
         };
         ConfigAppInstaller installer = new ConfigAppInstaller(unsecureDAO, commandDAO, wakeHub, null) {
             @Override public int enqueueConfigApps(Device d) { sideEffects.add("syncApps " + d.getNumber()); return 1; }
         };
         ConfigReconciler reconciler = new ConfigReconciler(unsecureDAO, commandDAO, Fakes.noExtensionPoints()) {
-            @Override public String currentRevision(Device d) { return "rev"; }
+            @Override public String currentRevision(Device d) { revisionReads++; return "rev"; }
         };
 
         RolloutDAO rolloutDAO = new RolloutDAO(null) {
@@ -274,6 +280,17 @@ public class AgentDeviceAccessTest {
     }
 
     @Test
+    public void forceSyncSaysWhetherTheWakeCanReachTheDevice() {
+        for (boolean open : new boolean[]{true, false}) {
+            socketOpen = open;
+            Response r = resource.forceSync(VISIBLE);
+            assertEquals(Response.ResponseStatus.OK, r.getStatus());
+            assertEquals(Collections.singletonMap("connected", open), r.getData());
+        }
+        assertEquals("the wake goes out either way", Arrays.asList("wake " + VISIBLE, "wake " + VISIBLE), sideEffects);
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     public void configApplyIsServerOwnedAndRejectedBeforeAnythingIsQueued() {
         // The server queues config.apply from the device's configuration, at most one open per device. An admin one
@@ -352,6 +369,55 @@ public class AgentDeviceAccessTest {
         ConfigSyncSummary s = ((List<ConfigSyncSummary>) resource.getSyncSummary().getData()).get(0);
         assertEquals(1, s.getInSync());
         assertEquals("in sync, but the latest config.apply deferred something", 1, s.getDeferred());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void syncSummaryKeepsAWipedDeviceOutOfTheCountsThatAddUpToTotal() {
+        login(true);
+        wiped.add(HIDDEN);
+        appliedRevision = "old";
+        ConfigSyncSummary s = ((List<ConfigSyncSummary>) resource.getSyncSummary().getData()).get(0);
+        assertEquals("the live device only", 1, s.getTotal());
+        assertEquals(1, s.getOutOfSync());
+        assertEquals(1, s.getInSync() + s.getOutOfSync() + s.getUnsupported() + s.getNeverSeen());
+        assertEquals(1, s.getWiped());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void syncSummaryStillListsAConfigurationWithOnlyWipedDevices() {
+        wiped.add(VISIBLE);
+        List<ConfigSyncSummary> rows = (List<ConfigSyncSummary>) resource.getSyncSummary().getData();
+        assertEquals("its delete would be refused, so the console has to hear about it", 1, rows.size());
+        ConfigSyncSummary s = rows.get(0);
+        assertEquals(5, s.getConfigurationId());
+        assertEquals(1, s.getWiped());
+        assertEquals(0, s.getTotal());
+        assertEquals(0, s.getInSync() + s.getOutOfSync() + s.getUnsupported() + s.getNeverSeen());
+        assertEquals("nothing to compare a wiped device with", 0, revisionReads);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void syncSummaryDoesNotCountAWipedDeviceTheUserCannotSee() {
+        wiped.add(HIDDEN);
+        ConfigSyncSummary s = ((List<ConfigSyncSummary>) resource.getSyncSummary().getData()).get(0);
+        assertEquals(0, s.getWiped());
+        assertEquals(1, s.getTotal());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void syncSummaryCountsADeviceNormallyOnceItIsNoLongerWiped() {
+        wiped.add(VISIBLE);
+        resource.getSyncSummary();
+        wiped.clear();
+        appliedRevision = "old";
+        ConfigSyncSummary s = ((List<ConfigSyncSummary>) resource.getSyncSummary().getData()).get(0);
+        assertEquals(0, s.getWiped());
+        assertEquals(1, s.getTotal());
+        assertEquals("true until it re-applies", 1, s.getOutOfSync());
     }
 
     /**

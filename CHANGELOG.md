@@ -8,8 +8,24 @@ line under Unreleased.
 
 ## Unreleased
 
+Upgrading
+- The database adds one column (`devices.wipedAt`) on start. Devices wiped before the update aren't marked.
+
+New
+- Settings → Users & roles: create, edit and delete console accounts, choose the devices and configurations each
+  can reach, and edit roles and their permissions (thanks @lared3294).
+- A wiped device shows as **Wiped** instead of Online and then Offline, and is left out of the counts, Needs attention
+  and rollouts; the Devices list's Wiped filter shows it (thanks @Przemek-Magic).
+- Sync now and console commands say when the device isn't connected and will get it at its next check-in.
+
 Fixes
-- Agent rollout no longer remains active or offers the same agent again when every device was a successful canary.
+- Audit log: on Docker installs, entries show the client's address instead of the edge container's (thanks
+  @Przemek-Magic).
+- Agent rollout: when every device is in the canary, the rollout finishes once they've updated instead of staying
+  open, and Settings stops offering the same agent again (thanks @letternumber).
+
+Under the hood
+- NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
 
 ## v0.4.0 — 2026-11-03
 

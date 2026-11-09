@@ -209,7 +209,8 @@ Your proxy must also set the headers itself and not pass on what the device sent
   from Cloudflare. Otherwise a client that bypasses Cloudflare can set it.
 - Overwrite `X-Real-IP` the same way. Code inherited from Headwind reads it from a proxy on the same host (or one
   listed in `proxy.addresses`): the IP allowlists `ui.allowed.address` and `device.allowed.address`, and the audit log.
-  An allowlist blocks a request whose `X-Real-IP` isn't an IP address.
+  An allowlist blocks a request whose `X-Real-IP` isn't an IP address. When the proxy sends no `X-Real-IP`, the audit
+  log takes the last `X-Forwarded-For` entry, as the sign-in limit does.
 - Behind a load balancer, have nginx take the client's address from it first (`set_real_ip_from <balancer address>;`
   and `real_ip_header X-Forwarded-For;`), so `$remote_addr` below is the client, not the balancer.
 

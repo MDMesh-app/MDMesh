@@ -26,6 +26,8 @@ export default defineConfig(({ mode }) => {
     test: {
       environment: 'jsdom',
       setupFiles: ['./src/test/setup.ts'],
+      // Several cold waits in one test (asyncUtilTimeout, src/test/setup.ts) have to fit in it, on a busy machine too.
+      testTimeout: 30_000,
       // Vitest 5's on-disk transform cache keeps an import.meta.glob expanded as it was, so a newly added
       // extensions/<id>/ folder would skip the manifest guard (ext/load.test.ts) until the cache is cleared.
       fsModuleCache: false,

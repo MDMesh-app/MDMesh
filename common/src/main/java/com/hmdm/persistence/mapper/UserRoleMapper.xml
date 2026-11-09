@@ -54,6 +54,7 @@
     <select id="findAll" resultMap="userRoleFull">
         SELECT userRoles.id     AS user_role_id,
                userRoles.name   AS user_role_name,
+               userRoles.description AS user_role_description,
                userRoles.superadmin   AS user_role_super_admin,
                permissions.id AS permission_id,
                permissions.name AS permission_name,
@@ -67,6 +68,7 @@
     <select id="findByName" resultMap="userRoleFull">
         SELECT userRoles.id     AS user_role_id,
         userRoles.name   AS user_role_name,
+               userRoles.description AS user_role_description,
         userRoles.superadmin   AS user_role_super_admin,
         permissions.id AS permission_id,
         permissions.name AS permission_name,
@@ -80,6 +82,7 @@
     <select id="findById" resultMap="userRoleFull">
         SELECT userRoles.id     AS user_role_id,
         userRoles.name   AS user_role_name,
+               userRoles.description AS user_role_description,
         userRoles.superadmin   AS user_role_super_admin,
         permissions.id AS permission_id,
         permissions.name AS permission_name,

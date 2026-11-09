@@ -8,7 +8,6 @@ import { AppRoutes } from '../../App';
 import { renderInConsole } from '../../test/console';
 import { APP_CONTROLS_THRESHOLD } from './AssignedApps';
 
-const LOAD = { timeout: 3000 };
 
 /** [id, name, pkg, action] — 6 Install, 2 Do not install, 2 Remove; stored in this (unsorted) order. */
 const TEN: Array<[number, string, string, number]> = [
@@ -74,7 +73,7 @@ const sortBy = (label: string) =>
 const actionOf = (name: string) => screen.getByRole<HTMLSelectElement>('combobox', { name: `What happens to ${name}` });
 const saveBar = () => screen.queryByRole('region', { name: 'Unsaved changes' });
 const live = () => document.querySelector('.v2-cfged-appsbar [aria-live="polite"]')!;
-const loaded = () => screen.findByRole('combobox', { name: 'What happens to Chrome' }, LOAD);
+const loaded = () => screen.findByRole('combobox', { name: 'What happens to Chrome' });
 
 async function save() {
   const button = within(saveBar()!).getByRole<HTMLButtonElement>('button', { name: 'Save and apply' });
@@ -184,8 +183,8 @@ describe('assigned apps: search, filter and sort', () => {
     await loaded();
     pick(/^Remove/);
     fireEvent.click(screen.getByRole('button', { name: 'Add apps' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Add apps' }, LOAD);
-    fireEvent.click(await within(dialog).findByRole('checkbox', { name: /Agenda/ }, LOAD));
+    const dialog = await screen.findByRole('dialog', { name: 'Add apps' });
+    fireEvent.click(await within(dialog).findByRole('checkbox', { name: /Agenda/ }));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Add 1' }));
     await waitFor(() => expect(names()).toEqual(['Agenda', 'Barcode Reader', 'Wallet']));
     pick(/^Install/);
@@ -236,8 +235,8 @@ describe('assigned apps: search, filter and sort', () => {
     fireEvent.change(actionOf('Microsoft Teams'), { target: { value: '2' } });
     // Past it again: no search or filter left from before, and the filter sees the state changed meanwhile.
     fireEvent.click(screen.getByRole('button', { name: 'Add apps' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Add apps' }, LOAD);
-    fireEvent.click(await within(dialog).findByRole('checkbox', { name: /Agenda/ }, LOAD));
+    const dialog = await screen.findByRole('dialog', { name: 'Add apps' });
+    fireEvent.click(await within(dialog).findByRole('checkbox', { name: /Agenda/ }));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Add 1' }));
     await waitFor(() => expect(screen.queryByRole('radiogroup', { name: 'On devices' })).toBeTruthy());
     expect(search().value).toBe('');

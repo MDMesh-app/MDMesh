@@ -7,7 +7,6 @@ import type { CommandHistoryItem } from '../api/commands';
 import { AppRoutes } from '../App';
 import { ROLES, renderInConsole, stubApi } from '../test/console';
 
-const LOAD = { timeout: 3000 };
 const DEVICE = { id: 7, number: 'WH-1', description: 'Front desk', configurationId: 3, lastUpdate: Date.now() };
 
 const scan = (id: number, status: string, apps?: unknown, detail?: string): CommandHistoryItem => ({
@@ -59,7 +58,7 @@ const appNames = () =>
 describe('the Apps tab', () => {
   it('lists the latest scan by name, user apps first, a missing or odd label as its package', async () => {
     openApps({ history: [scan(9, 'done', APPS), scan(3, 'done', [{ pkg: 'com.old', label: 'Old' }])] });
-    await within(await screen.findByRole('tabpanel', undefined, LOAD)).findByRole('table', undefined, LOAD);
+    await within(await screen.findByRole('tabpanel')).findByRole('table');
     expect(appNames()).toEqual(['com.acme.nolabel', 'com.acme.odd', 'Scanner']);
     expect(within(panel()).getByText('3 apps', { exact: false })).toBeTruthy();
     expect(within(panel()).getByText('2.1 (21)')).toBeTruthy();
@@ -75,30 +74,30 @@ describe('the Apps tab', () => {
 
   it('says there is no recent scan rather than never scanned, and offers Scan now to a role with edit_devices', async () => {
     openApps({ history: [scan(5, 'pending'), scan(4, 'failed', undefined, 'Result too large')] });
-    expect(await screen.findByText('No recent scan', undefined, LOAD)).toBeTruthy();
+    expect(await screen.findByText('No recent scan')).toBeTruthy();
     expect(within(panel()).getByRole('button', { name: 'Scan now' })).toBeTruthy();
     expect((within(panel()).getByRole('button', { name: 'Export CSV' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('shows the list without Scan now to a role without edit_devices', async () => {
     openApps({ user: ROLES.observer, history: [scan(9, 'done', APPS)] });
-    await within(await screen.findByRole('tabpanel', undefined, LOAD)).findByRole('table', undefined, LOAD);
+    await within(await screen.findByRole('tabpanel')).findByRole('table');
     expect(within(panel()).queryByRole('button', { name: 'Scan now' })).toBeNull();
     expect((within(panel()).getByRole('button', { name: 'Export CSV' }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('Scan now queues apps.scan and shows its result from the history', async () => {
     const fetch = openApps({ answer: scan(42, 'done', [{ pkg: 'com.fresh', label: 'Fresh' }]) });
-    fireEvent.click(await screen.findByRole('button', { name: 'Scan now' }, LOAD));
-    await waitFor(() => expect(appNames()).toEqual(['Fresh']), LOAD);
+    fireEvent.click(await screen.findByRole('button', { name: 'Scan now' }));
+    await waitFor(() => expect(appNames()).toEqual(['Fresh']));
     const posts = fetch.mock.calls.filter(([input, init]) => String(input).endsWith(`/devices/${DEVICE.number}/commands`) && init?.method === 'POST');
     expect(posts.map(([, init]) => JSON.parse(String(init?.body)))).toEqual([{ type: 'apps.scan' }]);
   });
 
   it('Scan now shows why the device gave no list', async () => {
     openApps({ answer: scan(42, 'failed', undefined, 'Scan refused') });
-    fireEvent.click(await screen.findByRole('button', { name: 'Scan now' }, LOAD));
-    expect((await within(panel()).findByRole('alert', undefined, LOAD)).textContent).toBe('Scan refused');
+    fireEvent.click(await screen.findByRole('button', { name: 'Scan now' }));
+    expect((await within(panel()).findByRole('alert')).textContent).toBe('Scan refused');
     expect(within(panel()).getByRole('button', { name: 'Scan now' })).toBeTruthy();
   });
 });

@@ -10,7 +10,8 @@ import {
 } from 'react';
 import './Toast.css';
 
-export type ToastKind = 'ok' | 'err';
+/** `warn`: it went through, but not as asked (a sync that waits for the device's next check-in). */
+export type ToastKind = 'ok' | 'warn' | 'err';
 
 interface Toast {
   id: number;
@@ -57,7 +58,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         {toasts.map((t) => (
           <div key={t.id} className={`toast ${t.kind}`} role="status">
             <span className="t-ic" aria-hidden="true">
-              {t.kind === 'ok' ? <CheckMark /> : <CrossMark />}
+              {t.kind === 'ok' ? <CheckMark /> : t.kind === 'warn' ? <BangMark /> : <CrossMark />}
             </span>
             <div className="t-main">
               <div className="t-title">{t.title}</div>
@@ -82,6 +83,14 @@ function CrossMark() {
   return (
     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
       <path d="M6 6l12 12M18 6 6 18" />
+    </svg>
+  );
+}
+
+function BangMark() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+      <path d="M12 5v9M12 19.5v.01" />
     </svg>
   );
 }

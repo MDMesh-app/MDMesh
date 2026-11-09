@@ -36,6 +36,10 @@
   background: var(--ok-soft);
   color: var(--ok-ink);
 }
+.v2 .toast.warn .t-ic {
+  background: var(--warn-soft);
+  color: var(--warn-ink);
+}
 .v2 .toast.err .t-ic {
   background: var(--alert-soft);
   color: var(--alert-ink);

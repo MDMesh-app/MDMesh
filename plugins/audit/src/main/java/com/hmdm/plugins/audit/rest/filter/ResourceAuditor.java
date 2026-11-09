@@ -31,6 +31,7 @@ import com.hmdm.rest.filter.BaseIPFilter;
 import com.hmdm.rest.json.Response;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.security.jwt.JWTFilter;
+import com.hmdm.util.ClientAddress;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.slf4j.Logger;
@@ -44,7 +45,10 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Enumeration;
+import java.util.List;
 
 /**
  * <p>An auditor for a single request-response chain.</p>
@@ -104,12 +108,19 @@ class ResourceAuditor {
 
     private final BaseIPFilter remoteAddrResolver;
 
+    /** {@code proxy.addresses}, split: the proxies on other hosts whose X-Forwarded-For is believed. */
+    private final List<String> trustedProxies;
+
+    /** {@code proxy.private.networks}: any private-network peer is the install's proxy (Docker). */
+    private final boolean privatePeersAreProxies;
+
     /**
      * <p>Constructs new <code>ResourceAuditor</code> instance. This implementation does nothing.</p>
      */
     ResourceAuditor(String auditLogActionKey, ServletRequest request, ServletResponse response,
                     FilterChain chain, boolean payload, boolean maskCommandPayload, boolean checkResponse,
-                    String proxyIps, String ipHeader) throws IOException {
+                    String proxyIps, String ipHeader, List<String> trustedProxies, boolean privatePeersAreProxies)
+            throws IOException {
         this.auditLogActionKey = auditLogActionKey;
         if (payload) {
             // Wrap request only if we need to log it
@@ -123,6 +134,35 @@ class ResourceAuditor {
         this.maskCommandPayload = maskCommandPayload;
         this.checkResponse = checkResponse;
         this.remoteAddrResolver = new BaseIPFilter("", proxyIps, ipHeader);
+        this.trustedProxies = trustedProxies;
+        this.privatePeersAreProxies = privatePeersAreProxies;
+    }
+
+    /** {@code proxy.addresses} split into its addresses, parsed once by the filter. */
+    static List<String> proxyList(String proxyIps) {
+        List<String> proxies = new ArrayList<>();
+        for (String p : (proxyIps == null ? "" : proxyIps).split(",")) {
+            if (!p.trim().isEmpty()) {
+                proxies.add(p.trim());
+            }
+        }
+        return Collections.unmodifiableList(proxies);
+    }
+
+    /**
+     * <p>The client's address for the record. A proxy on this host or listed in {@code proxy.addresses} that sends
+     * {@code proxy.ip.header} (X-Real-IP by default) is believed first, as before. Otherwise the sign-in limit's rule
+     * applies ({@link ClientAddress#forLimiting}): the last X-Forwarded-For entry from a loopback peer, a listed proxy
+     * or, with {@code proxy.private.networks} (Docker), any private-network peer. The legacy rule alone never believed
+     * the Docker edge, so every record named the edge's container address.</p>
+     */
+    static String clientAddress(HttpServletRequest request, BaseIPFilter legacy, List<String> trustedProxies,
+                                boolean privatePeersAreProxies) {
+        if (legacy.isProxyNamingClient(request)) {
+            return legacy.getRemoteAddr(request);
+        }
+        String address = ClientAddress.forLimiting(request, trustedProxies, privatePeersAreProxies);
+        return address != null ? address : request.getRemoteAddr();
     }
 
     /**
@@ -170,7 +210,7 @@ class ResourceAuditor {
 
         AuditLogRecord logRecord = new AuditLogRecord();
         logRecord.setCreateTime(System.currentTimeMillis());
-        logRecord.setIpAddress(remoteAddrResolver.getRemoteAddr(httpRequest));
+        logRecord.setIpAddress(clientAddress(httpRequest, remoteAddrResolver, trustedProxies, privatePeersAreProxies));
         if (currentUser != null) {
             logRecord.setCustomerId(currentUser.getCustomerId());
             logRecord.setLogin(currentUser.getLogin());

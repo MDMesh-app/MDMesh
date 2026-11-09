@@ -2,7 +2,8 @@ import { useEffect, useId, useState, type FormEvent } from 'react';
 import { changeOwnPassword, isTooManyAttempts, TOO_MANY_MESSAGE, type AuthUser } from '../../api/auth';
 import { Button, Callout, Field, IconAlert, Modal, PasswordInput, RuleList, useToast, type Rule } from '../../ui';
 
-const MIN_LENGTH = 8;
+/** Also the account editor's minimum (Settings → Users & roles). */
+export const MIN_LENGTH = 8;
 
 /**
  * Change your own password (new with the redesign: the v0.3 console had no such form). `PUT /private/users/current` checks

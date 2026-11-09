@@ -82,7 +82,7 @@ const settle = () => waitFor(() => expect(screen.getByRole('main')).toBeTruthy()
 describe('What’s new: when it opens by itself', () => {
   it('opens once after an upgrade (this browser used the console before), and not again', async () => {
     visit('/devices', { before: SIGNED_IN });
-    const d = await screen.findByRole('dialog', { name: 'What’s new in 0.4.0' }, { timeout: 3000 });
+    const d = await screen.findByRole('dialog', { name: 'What’s new in 0.4.0' });
     expect(within(d).getByText('Released 2026-11-04.')).toBeTruthy();
     expect(localStorage.getItem(seenKey('0.4.0'))).toBe('seen');
     fireEvent.click(within(d).getByRole('button', { name: 'Done' }));
@@ -97,7 +97,7 @@ describe('What’s new: when it opens by itself', () => {
 
   it('opens after an upgrade from a version that already had it', async () => {
     visit('/', { before: { [seenKey('0.3.7')]: 'seen' }, user: ROLES.admin });
-    expect(await screen.findByRole('dialog', { name: 'What’s new in 0.4.0' }, { timeout: 3000 })).toBeTruthy();
+    expect(await screen.findByRole('dialog', { name: 'What’s new in 0.4.0' })).toBeTruthy();
   });
 
   it('stays closed on a version this browser has seen', async () => {
@@ -135,18 +135,18 @@ describe('What’s new: when it opens by itself', () => {
           ? new Response(JSON.stringify({ status: 'OK', message: null, data: ROLES.superAdmin }))
           : undefined,
     });
-    expect(await screen.findByRole('button', { name: 'Sign in' }, { timeout: 3000 })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Sign in' })).toBeTruthy();
     expect(localStorage.getItem(seenKey('0.4.0'))).toBeNull();
     fireEvent.change(screen.getByLabelText('Login'), { target: { value: 'admin' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'pw' } });
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
-    expect(await screen.findByRole('dialog', { name: 'What’s new in 0.4.0' }, { timeout: 3000 })).toBeTruthy();
+    expect(await screen.findByRole('dialog', { name: 'What’s new in 0.4.0' })).toBeTruthy();
     expect(localStorage.getItem(seenKey('0.4.0'))).toBe('seen');
   });
 
   it('counts the v0.3 density key as history, but not the theme key this console writes itself', async () => {
     visit('/', { before: { 'mdmesh-density': 'compact' } });
-    expect(await screen.findByRole('dialog', { name: 'What’s new in 0.4.0' }, { timeout: 3000 })).toBeTruthy();
+    expect(await screen.findByRole('dialog', { name: 'What’s new in 0.4.0' })).toBeTruthy();
     cleanup();
     localStorage.clear();
     // A browser whose first visit (the sign-in page, say) was this console's: only the theme key, so still a first visit.
@@ -169,7 +169,7 @@ describe('What’s new: when it opens by itself', () => {
             : undefined,
     });
     // The shell mounts from the stored sign-in, the session is refused, and the sign-in page replaces it.
-    expect(await screen.findByRole('button', { name: 'Sign in' }, { timeout: 3000 })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Sign in' })).toBeTruthy();
     expect(dialog()).toBeNull();
     expect(localStorage.getItem(seenKey('0.4.0'))).toBeNull();
 
@@ -177,7 +177,7 @@ describe('What’s new: when it opens by itself', () => {
     fireEvent.change(screen.getByLabelText('Login'), { target: { value: 'admin' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'pw' } });
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
-    expect(await screen.findByRole('dialog', { name: 'What’s new in 0.4.0' }, { timeout: 3000 })).toBeTruthy();
+    expect(await screen.findByRole('dialog', { name: 'What’s new in 0.4.0' })).toBeTruthy();
     expect(localStorage.getItem(seenKey('0.4.0'))).toBe('seen');
   });
 
@@ -199,10 +199,10 @@ describe('What’s new: when it opens by itself', () => {
       // A later answer (Check now) reports another version this console has notes for.
       override: (path) => (path.startsWith('/update/check') ? new Response(JSON.stringify(status('0.4.0'))) : undefined),
     });
-    const first = await screen.findByRole('dialog', { name: 'What’s new in 0.3.7' }, { timeout: 3000 });
+    const first = await screen.findByRole('dialog', { name: 'What’s new in 0.3.7' });
     fireEvent.click(within(first).getByRole('button', { name: 'Done' }));
     await waitFor(() => expect(dialog()).toBeNull());
-    fireEvent.click(await screen.findByRole('button', { name: 'Check now' }, { timeout: 3000 }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Check now' }));
     // Settings' link follows the new version; the dialog stays closed, and 0.4.0 is still unseen for the next load.
     const link = await screen.findByRole('button', { name: 'What’s new' });
     await waitFor(() => expect(link.closest('dd')?.textContent).toContain('0.4.0'));
@@ -223,8 +223,8 @@ describe('What’s new: when it opens by itself', () => {
     await settle();
     expect(dialog()).toBeNull();
     expect(localStorage.getItem(seenKey('0.3.6'))).toBeNull();
-    fireEvent.click(await screen.findByRole('button', { name: 'Check now' }, { timeout: 3000 }));
-    expect(await screen.findByRole('dialog', { name: 'What’s new in 0.4.0' }, { timeout: 3000 })).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: 'Check now' }));
+    expect(await screen.findByRole('dialog', { name: 'What’s new in 0.4.0' })).toBeTruthy();
   });
 
   it.each(['/login', '/set-password'])('never opens over %s', async (path) => {
@@ -238,7 +238,7 @@ describe('What’s new: when it opens by itself', () => {
 describe('What’s new: the dialog', () => {
   it('opens again from Settings, beside the version, and gives focus back to the link', async () => {
     visit('/settings', { before: { ...SIGNED_IN, [seenKey('0.4.0')]: 'seen' } });
-    const link = await screen.findByRole('button', { name: 'What’s new' }, { timeout: 3000 });
+    const link = await screen.findByRole('button', { name: 'What’s new' });
     expect(link.closest('dd')?.textContent).toContain('0.4.0');
     link.focus();
     fireEvent.click(link);
@@ -267,8 +267,8 @@ describe('What’s new: the dialog', () => {
 
   it('has no link in Settings for a version without notes', async () => {
     visit('/settings', { before: SIGNED_IN, current: '0.9.9' });
-    const server = await screen.findByRole('region', { name: 'Server' }, { timeout: 3000 });
-    await within(server).findByText('0.9.9', undefined, { timeout: 3000 });
+    const server = await screen.findByRole('region', { name: 'Server' });
+    await within(server).findByText('0.9.9');
     expect(screen.queryByRole('button', { name: 'What’s new' })).toBeNull();
   });
 
@@ -277,10 +277,10 @@ describe('What’s new: the dialog', () => {
     Object.defineProperty(Element.prototype, 'scrollIntoView', { configurable: true, value: () => {} });
     try {
       visit('/', { before: SIGNED_IN });
-      const d = await screen.findByRole('dialog', { name: 'What’s new in 0.4.0' }, { timeout: 3000 });
+      const d = await screen.findByRole('dialog', { name: 'What’s new in 0.4.0' });
       fireEvent.click(within(d).getByRole('link', { name: 'Updates' }));
       await waitFor(() => expect(dialog()).toBeNull());
-      expect(await screen.findByRole('heading', { name: 'Settings', level: 1 }, { timeout: 3000 })).toBeTruthy();
+      expect(await screen.findByRole('heading', { name: 'Settings', level: 1 })).toBeTruthy();
     } finally {
       delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
     }

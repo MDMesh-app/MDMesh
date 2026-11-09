@@ -134,6 +134,7 @@ public class UserDAO extends AbstractDAO<User> {
      * @param user
      */
 
+    @Transactional
     public void insert(User user) {
         this.mapper.insert(user);
         if (!user.isAllDevicesAvailable()) {
@@ -141,6 +142,10 @@ public class UserDAO extends AbstractDAO<User> {
             if (groups != null && !groups.isEmpty()) {
                 this.mapper.insertUserDeviceGroupsAccess(user.getId(), groups.stream().map(LookupItem::getId).collect(Collectors.toList()));
             }
+        }
+        if (!user.isAllConfigAvailable() && user.getConfigurations() != null && !user.getConfigurations().isEmpty()) {
+            this.mapper.insertUserConfigurationAccess(user.getId(),
+                    user.getConfigurations().stream().map(LookupItem::getId).collect(Collectors.toList()));
         }
     }
 
@@ -156,6 +161,7 @@ public class UserDAO extends AbstractDAO<User> {
         updateUserMainDetails(user, true);
     }
 
+    @Transactional
     public void updateUserMainDetails(User user, boolean updateAccess) {
         updateRecord(user, u -> {
             this.mapper.updateUserMainDetails(u);

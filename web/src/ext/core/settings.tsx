@@ -3,11 +3,13 @@
 // out. Core and extension sections then share one host: ordering, `requires`, the boundary and the section nav.
 import { createContext, useContext, type ReactNode } from 'react';
 import { coreComponent, type SettingsSectionContribution } from '../types';
+import { CORE_ACTION_ACCESS } from './access';
 import { ORDER } from './order';
 
 /** Section ids, also their anchors: other pages link to `/settings#updates` and `/settings#agent-rollout`. */
 export const CORE_SETTINGS = {
   account: 'account',
+  users: 'users',
   server: 'server',
   updates: 'updates',
   agentRollout: 'agent-rollout',
@@ -38,11 +40,13 @@ function coreSection(key: CoreSection, title: string): SettingsSectionContributi
 }
 
 /**
- * Every role sees them (the reads need no permission); a section's own actions follow the role (rollout, enroll).
+ * Every role sees them but Users & roles (the other reads need no permission, ext/core/access.ts); a section's own
+ * actions follow the role (rollout, enroll).
  * `title` is the section nav's label; each body renders its card with that heading.
  */
 export const CORE_SETTINGS_SECTIONS: readonly SettingsSectionContribution[] = [
   coreSection('account', 'Account'),
+  { ...coreSection('users', 'Users & roles'), requires: CORE_ACTION_ACCESS.manageUsers },
   coreSection('server', 'Server'),
   coreSection('updates', 'Updates'),
   coreSection('agentRollout', 'Agent rollout'),

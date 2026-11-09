@@ -5,12 +5,14 @@ import type { AuthUser } from '../api/auth';
 import { API_BASE } from '../api/client';
 import { listConfigurations, type ConfigurationSummary } from '../api/configurations';
 import type { UpdateStatus } from '../api/updates';
+import { getManagementCapabilities, managementError, type ManagementCapabilities } from '../api/users';
 import { useTheme, type ThemePreference } from '../ui/theme';
 import { paths } from '../routes';
 import {
   Button,
   Card,
   CardHeader,
+  Callout,
   KeyValueList,
   PageHeader,
   SectionLayout,
@@ -20,6 +22,7 @@ import {
   LinkButton,
 } from '../ui';
 import { ChangePasswordModal } from './settings/ChangePasswordModal';
+import { UsersSection } from './settings/UsersSection';
 import { applyRunning, useSupervisor } from '../data/useSupervisor';
 import { CORE_ACTION_ACCESS } from '../ext/core/access';
 import { CORE_SETTINGS, CoreSettingsProvider } from '../ext/core/settings';
@@ -122,6 +125,29 @@ export function SettingsPage() {
   const [defaultConfig, setDefaultConfig] = useState<string>(readDefaultConfig);
   // Enrolling writes to devices (ext/core/access.ts).
   const canEnroll = usePermission(CORE_ACTION_ACCESS.editDevices);
+  // Users & roles shows once the server says this account administers users (ext/core/access.ts manageUsers).
+  const mayAdminister = usePermission(CORE_ACTION_ACCESS.manageUsers);
+  const [management, setManagement] = useState<{
+    user: AuthUser;
+    capabilities: ManagementCapabilities | null;
+    error: string;
+  } | null>(null);
+  const [managementRetry, setManagementRetry] = useState(0);
+  useEffect(() => {
+    if (!mayAdminister || !user) return;
+    const controller = new AbortController();
+    getManagementCapabilities(controller.signal).then(
+      (capabilities) => {
+        if (!controller.signal.aborted) setManagement({ user, capabilities, error: '' });
+      },
+      (error) => {
+        if (!controller.signal.aborted) setManagement({ user, capabilities: null, error: managementError(error) });
+      },
+    );
+    return () => controller.abort();
+  }, [mayAdminister, user, managementRetry]);
+  const administration = management?.user === user && mayAdminister ? management : null;
+  const showUsers = administration?.capabilities?.users === true || !!administration?.error;
 
   useEffect(() => {
     let on = true;
@@ -159,10 +185,13 @@ export function SettingsPage() {
         ? { meta: '1 ready', metaTone: 'ok' }
         : {};
   // Core's sections and extensions' come from the registry (ext/core/settings.tsx); the page builds core's bodies.
-  const { nav, sections } = useSettingsSections({
-    [S.updates]: updMeta,
-    [S.agentRollout]: rolloutActive(ro.rollout) ? { meta: 'Running', metaTone: 'warn' } : {},
-  });
+  const { nav, sections } = useSettingsSections(
+    {
+      [S.updates]: updMeta,
+      [S.agentRollout]: rolloutActive(ro.rollout) ? { meta: 'Running', metaTone: 'warn' } : {},
+    },
+    showUsers ? [] : [S.users],
+  );
   const sideNav = <SectionNav items={nav} aria-label="Settings sections" />;
 
   // A stored default whose configuration is gone shows as "No default".
@@ -207,6 +236,17 @@ export function SettingsPage() {
         />
       </Card>
     ),
+    users: administration?.capabilities?.users ? (
+      <UsersSection capabilities={administration.capabilities} anchorId={S.users} headingId={`${S.users}-title`} />
+    ) : administration?.error ? (
+      <Card id={S.users} aria-labelledby={`${S.users}-title`} gap={12} className="v2-settings-card">
+        <CardHeader title="Users & roles" titleId={`${S.users}-title`} />
+        <Callout tone="alert" role="alert">
+          {administration.error}
+        </Callout>
+        <Button onClick={() => setManagementRetry((r) => r + 1)}>Retry user administration</Button>
+      </Card>
+    ) : null,
     server: (
       <Card id={S.server} aria-labelledby={`${S.server}-title`} padding="rows" className="v2-settings-card">
         <CardHeader title="Server" titleId={`${S.server}-title`} spacing={10} />

@@ -77,9 +77,6 @@ async function asInBrowser(fn: () => Promise<void>) {
   }
 }
 
-// The page answers after several polled requests, which a loaded machine can stretch past the 1 s default: the waits
-// for the page's data get longer, and nothing else.
-const LOAD = { timeout: 3000 };
 
 const tabNames = () => screen.getAllByRole('tab').map((t) => t.textContent);
 const selectedTab = () => screen.getAllByRole('tab').find((t) => t.getAttribute('aria-selected') === 'true')?.textContent;
@@ -147,15 +144,15 @@ function commandsExtension(commands: DeviceCommand[], values?: Record<string, st
 describe('the device page without extensions', () => {
   it('shows core’s tabs and rail groups as before, the first tab open and no ?tab in the URL', async () => {
     openDevice();
-    await screen.findByRole('tab', { name: 'Control' }, LOAD);
-    await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Apps', 'Activity1', 'Location']), LOAD);
+    await screen.findByRole('tab', { name: 'Control' });
+    await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Apps', 'Activity1', 'Location']));
     expect(selectedTab()).toBe('Control');
     expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Network', 'Management']);
     // Only the last group is marked last.
     expect(Array.from(rail().querySelectorAll('.v2-kvgroup.is-last')).map((g) => g.textContent)).toEqual([
       expect.stringContaining('Management'),
     ]);
-    expect(await within(panel()).findByText('Recent commands', undefined, LOAD)).toBeTruthy();
+    expect(await within(panel()).findByText('Recent commands')).toBeTruthy();
     expect(here).toBe('/devices/WH-1');
   });
 
@@ -174,7 +171,7 @@ describe('the device page without extensions', () => {
       }),
     );
     renderInConsole(<AppRoutes />, { path: '/devices/WH-1' });
-    fireEvent.click(await within(await screen.findByRole('tabpanel', undefined, LOAD)).findByRole('radio', { name: 'Always-on' }, LOAD));
+    fireEvent.click(await within(await screen.findByRole('tabpanel')).findByRole('radio', { name: 'Always-on' }));
     expect(await within(panel()).findByText('Waiting for the device')).toBeTruthy();
     expect(nudges).toHaveLength(1);
     await act(async () => nudges[0]());
@@ -223,7 +220,7 @@ describe('the Location tab’s time range', () => {
 
   it('asks for every fix by default, and for the last hour’s once 1h is picked', async () => {
     const { sinces } = locationsApi(FIXES);
-    expect(await within(await screen.findByRole('tabpanel', undefined, LOAD)).findByText(/^2 fixes/, undefined, LOAD)).toBeTruthy();
+    expect(await within(await screen.findByRole('tabpanel')).findByText(/^2 fixes/)).toBeTruthy();
     expect(sinces().every((since) => since === 0)).toBe(true);
     expect(range('All').getAttribute('aria-checked')).toBe('true');
 
@@ -237,19 +234,19 @@ describe('the Location tab’s time range', () => {
 
   it('says a range is empty, and the rail keeps the latest fix', async () => {
     locationsApi(FIXES);
-    await within(await screen.findByRole('tabpanel', undefined, LOAD)).findByText(/^2 fixes/, undefined, LOAD);
+    await within(await screen.findByRole('tabpanel')).findByText(/^2 fixes/);
     fireEvent.click(range('1h'));
-    expect(await within(panel()).findByText('No location in the last hour', undefined, LOAD)).toBeTruthy();
+    expect(await within(panel()).findByText('No location in the last hour')).toBeTruthy();
     expect(within(panel()).queryByText('No location reported yet')).toBeNull();
     expect(within(rail()).getByText('52.52000, 13.40500')).toBeTruthy();
 
     fireEvent.click(range('7d'));
-    expect(await within(panel()).findByRole('region', { name: 'Map of the device’s locations in the last 7 days' }, LOAD)).toBeTruthy();
+    expect(await within(panel()).findByRole('region', { name: 'Map of the device’s locations in the last 7 days' })).toBeTruthy();
   });
 
   it('shows the range picked last when an earlier range answers after it', async () => {
     const { held, state } = locationsApi(FIXES);
-    await within(await screen.findByRole('tabpanel', undefined, LOAD)).findByText(/^2 fixes/, undefined, LOAD);
+    await within(await screen.findByRole('tabpanel')).findByText(/^2 fixes/);
     state.hold = true;
     fireEvent.click(range('7d'));
     fireEvent.click(range('1h'));
@@ -269,9 +266,9 @@ describe('the Location tab’s time range', () => {
 
   it('says when the server’s cap cut a range', async () => {
     locationsApi(Array.from({ length: LOCATION_HISTORY_LIMIT }, (_, i) => ({ lat: 52, lon: 13, capturedAt: Date.now() - i * 1000 })));
-    await within(await screen.findByRole('tabpanel', undefined, LOAD)).findByText(/^newest 500 fixes/, undefined, LOAD);
+    await within(await screen.findByRole('tabpanel')).findByText(/^newest 500 fixes/);
     fireEvent.click(range('24h'));
-    expect(await within(panel()).findByText(/^newest 500 in this range/, undefined, LOAD)).toBeTruthy();
+    expect(await within(panel()).findByText(/^newest 500 in this range/)).toBeTruthy();
   });
 });
 
@@ -280,7 +277,7 @@ describe('core fills the slots like any extension', () => {
     const dropped = (c: Contribution) => (c.slot === 'device.tab' || c.slot === 'device.railGroup') && c.id === 'location';
     const { registry } = createRegistry({ ...CORE_EXTENSION, contributions: CORE_EXTENSION.contributions.filter((c) => !dropped(c)) }, []);
     openDevice({ registry });
-    await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Apps', 'Activity1']), LOAD);
+    await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Apps', 'Activity1']));
     expect(railTitles()).toEqual(['Status', 'Hardware', 'Network', 'Management']);
   });
 });
@@ -288,22 +285,22 @@ describe('core fills the slots like any extension', () => {
 describe('extension tabs and rail groups', () => {
   it('orders them among core’s by ORDER', async () => {
     openDevice({ registry: registryOf(demo) });
-    await screen.findByRole('tab', { name: 'Demo' }, LOAD);
-    await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Demo', 'Apps', 'Activity1', 'Location', 'Demo admin']), LOAD);
+    await screen.findByRole('tab', { name: 'Demo' });
+    await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Demo', 'Apps', 'Activity1', 'Location', 'Demo admin']));
     expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Network', 'Demo', 'Management']);
     expect(within(rail()).getByText('Demo agent').closest('div, li, dl')?.textContent).toContain('0.3.7');
   });
 
   it('hides a tab the role may not use', async () => {
     openDevice({ registry: registryOf(demo), user: ROLES.user });
-    await screen.findByRole('tab', { name: 'Demo' }, LOAD);
+    await screen.findByRole('tab', { name: 'Demo' });
     expect(tabNames()).not.toContain('Demo admin');
   });
 
   it('opens a tab the role may not use as the first tab, replacing the URL rather than adding to history', async () => {
     openDevice({ registry: registryOf(demo), user: ROLES.user, path: ['/devices', '/devices/WH-1?tab=demo-admin'] });
-    await screen.findByRole('tab', { name: 'Demo' }, LOAD);
-    await waitFor(() => expect(here).toBe('/devices/WH-1'), LOAD);
+    await screen.findByRole('tab', { name: 'Demo' });
+    await waitFor(() => expect(here).toBe('/devices/WH-1'));
     expect(selectedTab()).toBe('Control');
     await act(() => go(-1));
     await waitFor(() => expect(here).toBe('/devices'));
@@ -315,10 +312,10 @@ describe('extension tabs and rail groups', () => {
       throw new Error('boom');
     };
     openDevice({ registry: registryOf(ext('boom', [tab('boom', Boom, { label: 'Boom' })])), path: '/devices/WH-1?tab=boom' });
-    expect(await within(await screen.findByRole('tabpanel', undefined, LOAD)).findByText(/The “Boom” extension ran into a problem/)).toBeTruthy();
+    expect(await within(await screen.findByRole('tabpanel')).findByText(/The “Boom” extension ran into a problem/)).toBeTruthy();
     expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Network', 'Management']);
     fireEvent.click(screen.getByRole('tab', { name: 'Telemetry' }));
-    expect(await within(panel()).findByText('TC52', undefined, LOAD)).toBeTruthy();
+    expect(await within(panel()).findByText('TC52')).toBeTruthy();
     expect(screen.queryByText(/ran into a problem/)).toBeNull();
   });
 
@@ -328,7 +325,7 @@ describe('extension tabs and rail groups', () => {
       throw new Error('no icon');
     };
     openDevice({ registry: registryOf(ext('iconic', [tab('iconic', () => 'Iconic body', { label: 'Iconic', icon: BadIcon } as Partial<Contribution>)])) });
-    await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Apps', 'Activity1', 'Location', 'Iconic']), LOAD);
+    await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Apps', 'Activity1', 'Location', 'Iconic']));
     expect(screen.getByRole('tab', { name: 'Iconic' }).querySelector('svg')).toBeNull();
     expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Network', 'Management']);
   });
@@ -355,8 +352,8 @@ describe('extension tabs and rail groups', () => {
       { slot: 'device.railGroup', id: 'bad-value', order: 2, title: 'Bad value', items: () => [{ label: 'x', value: {} as string }] },
     ]);
     openDevice({ registry: registryOf(broken) });
-    await screen.findByRole('tab', { name: 'Counted' }, LOAD);
-    await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Apps', 'Activity1', 'Location', 'Counted', 'Odd']), LOAD);
+    await screen.findByRole('tab', { name: 'Counted' });
+    await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Apps', 'Activity1', 'Location', 'Counted', 'Odd']));
     expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Network', 'Management']);
     expect(within(rail()).getByRole('alert').textContent).toMatch(/The “Broken” extension ran into a problem/);
   });
@@ -365,9 +362,9 @@ describe('extension tabs and rail groups', () => {
 describe('the open tab lives in the URL', () => {
   it('opens a deep link, and Back and Forward move between tabs', async () => {
     openDevice({ path: '/devices/WH-1?tab=telemetry' });
-    await screen.findByRole('tab', { name: 'Telemetry' }, LOAD);
+    await screen.findByRole('tab', { name: 'Telemetry' });
     expect(selectedTab()).toBe('Telemetry');
-    expect(await within(panel()).findByText('TC52', undefined, LOAD)).toBeTruthy();
+    expect(await within(panel()).findByText('TC52')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('tab', { name: /Activity/ }));
     expect(here).toBe('/devices/WH-1?tab=activity');
@@ -385,7 +382,7 @@ describe('the open tab lives in the URL', () => {
 
   it('moves between tabs with the arrow keys, Home and End in place, so Back leaves the page', async () => {
     openDevice({ path: ['/devices', '/devices/WH-1'] });
-    fireEvent.keyDown(await screen.findByRole('tab', { name: 'Control' }, LOAD), { key: 'ArrowRight' });
+    fireEvent.keyDown(await screen.findByRole('tab', { name: 'Control' }), { key: 'ArrowRight' });
     await waitFor(() => expect(here).toBe('/devices/WH-1?tab=telemetry'));
     fireEvent.keyDown(screen.getByRole('tab', { name: 'Telemetry' }), { key: 'ArrowRight' });
     await waitFor(() => expect(here).toBe('/devices/WH-1?tab=apps'));
@@ -398,9 +395,9 @@ describe('the open tab lives in the URL', () => {
 
   it('shows a clicked tab at once, before the router renders the navigation', async () => {
     openDevice({ path: '/devices/WH-1?tab=telemetry' });
-    await screen.findByRole('tab', { name: 'Telemetry' }, LOAD);
+    await screen.findByRole('tab', { name: 'Telemetry' });
     // The Activity tab's label carries its count, which comes with the events: wait for them before the click.
-    await waitFor(() => expect(tabNames()).toContain('Activity1'), LOAD);
+    await waitFor(() => expect(tabNames()).toContain('Activity1'));
     await asInBrowser(async () => {
       screen.getByRole('tab', { name: /Activity/ }).click();
       // React renders a click's own updates before the next task; the router's transition comes after.
@@ -414,20 +411,20 @@ describe('the open tab lives in the URL', () => {
 
   it('follows the URL when Back comes before a click’s navigation has rendered', async () => {
     openDevice({ path: '/devices/WH-1?tab=telemetry' });
-    await screen.findByRole('tab', { name: 'Telemetry' }, LOAD);
+    await screen.findByRole('tab', { name: 'Telemetry' });
     await asInBrowser(async () => {
       screen.getByRole('tab', { name: /Activity/ }).click();
       void go(-1);
       await waitFor(() => expect(here).toBe('/devices/WH-1?tab=telemetry'));
       await waitFor(() => expect(selectedTab()).toBe('Telemetry'));
     });
-    expect(await within(panel()).findByText('TC52', undefined, LOAD)).toBeTruthy();
+    expect(await within(panel()).findByText('TC52')).toBeTruthy();
   });
 
   it('opens Activity from the Control tab’s "All activity" link, as a history entry', async () => {
     openDevice();
     // "All activity" shows before the events answer; the Activity tab's count comes with them.
-    await waitFor(() => expect(tabNames()).toContain('Activity1'), LOAD);
+    await waitFor(() => expect(tabNames()).toContain('Activity1'));
     fireEvent.click(screen.getByRole('button', { name: 'All activity' }));
     expect(here).toBe('/devices/WH-1?tab=activity');
     expect(selectedTab()).toBe('Activity1');
@@ -435,8 +432,8 @@ describe('the open tab lives in the URL', () => {
 
   it('keeps the rest of the query and the hash when the tab changes', async () => {
     openDevice({ path: ['/devices', '/devices/WH-1?tab=nope&from=list#x'] });
-    await waitFor(() => expect(here).toBe('/devices/WH-1?from=list#x'), LOAD);
-    fireEvent.click(await screen.findByRole('tab', { name: 'Telemetry' }, LOAD));
+    await waitFor(() => expect(here).toBe('/devices/WH-1?from=list#x'));
+    fireEvent.click(await screen.findByRole('tab', { name: 'Telemetry' }));
     await waitFor(() => expect(here).toBe('/devices/WH-1?from=list&tab=telemetry#x'));
     fireEvent.click(screen.getByRole('tab', { name: 'Control' }));
     await waitFor(() => expect(here).toBe('/devices/WH-1?from=list#x'));
@@ -444,8 +441,8 @@ describe('the open tab lives in the URL', () => {
 
   it('opens an unknown tab as the first one, replacing the URL', async () => {
     openDevice({ path: ['/devices', '/devices/WH-1?tab=nope'] });
-    await screen.findByRole('tab', { name: 'Control' }, LOAD);
-    await waitFor(() => expect(here).toBe('/devices/WH-1'), LOAD);
+    await screen.findByRole('tab', { name: 'Control' });
+    await waitFor(() => expect(here).toBe('/devices/WH-1'));
     expect(selectedTab()).toBe('Control');
     await act(() => go(-1));
     await waitFor(() => expect(here).toBe('/devices'));
@@ -453,8 +450,8 @@ describe('the open tab lives in the URL', () => {
 
   it('keeps the query and the hash when an old id link moves to the device’s number', async () => {
     openDevice({ path: `/devices/${DEVICE.id}?tab=telemetry#x` });
-    await waitFor(() => expect(here).toBe('/devices/WH-1?tab=telemetry#x'), LOAD);
-    expect(await within(await screen.findByRole('tabpanel', undefined, LOAD)).findByText('TC52', undefined, LOAD)).toBeTruthy();
+    await waitFor(() => expect(here).toBe('/devices/WH-1?tab=telemetry#x'));
+    expect(await within(await screen.findByRole('tabpanel')).findByText('TC52')).toBeTruthy();
   });
 
   it('waits for the active server plugins before deciding on a plugin tab', async () => {
@@ -466,32 +463,32 @@ describe('the open tab lives in the URL', () => {
       </>,
       { registry: registryOf(plugExtension(1000)), path: '/devices/WH-1?tab=plug' },
     );
-    await screen.findByRole('tab', { name: 'Control' }, LOAD);
+    await screen.findByRole('tab', { name: 'Control' });
     expect(here).toBe('/devices/WH-1?tab=plug'); // not sent to the first tab meanwhile
     expect(screen.queryByRole('tabpanel')).toBeNull();
     // The strip stays in the Tab order meanwhile, through its first tab.
     expect(screen.getAllByRole('tab').filter((t) => t.tabIndex === 0).map((t) => t.textContent)).toEqual(['Control']);
     await answer(['plug']);
-    expect(await within(await screen.findByRole('tabpanel', undefined, LOAD)).findByText('Plug tab body')).toBeTruthy();
+    expect(await within(await screen.findByRole('tabpanel')).findByText('Plug tab body')).toBeTruthy();
     expect(selectedTab()).toBe('Plug');
   });
 
   it('opens no tab while a plugin tab ahead of the first waits, so the open tab does not change under the user', async () => {
     const answer = holdPlugins();
     renderInConsole(<AppRoutes />, { registry: registryOf(plugExtension(ORDER.deviceTab.control - 50)), path: '/devices/WH-1' });
-    await screen.findByRole('tab', { name: 'Control' }, LOAD);
+    await screen.findByRole('tab', { name: 'Control' });
     expect(screen.queryByRole('tabpanel')).toBeNull();
     await answer(['plug']);
-    expect(await within(await screen.findByRole('tabpanel', undefined, LOAD)).findByText('Plug tab body')).toBeTruthy();
+    expect(await within(await screen.findByRole('tabpanel')).findByText('Plug tab body')).toBeTruthy();
     expect(tabNames()[0]).toBe('Plug');
   });
 
   it('opens the first tab once the plugin list leaves out the tab ahead of it', async () => {
     const answer = holdPlugins();
     renderInConsole(<AppRoutes />, { registry: registryOf(plugExtension(ORDER.deviceTab.control - 50)), path: '/devices/WH-1' });
-    await screen.findByRole('tab', { name: 'Control' }, LOAD);
+    await screen.findByRole('tab', { name: 'Control' });
     await answer([]);
-    expect(await within(await screen.findByRole('tabpanel', undefined, LOAD)).findByText('Recent commands', undefined, LOAD)).toBeTruthy();
+    expect(await within(await screen.findByRole('tabpanel')).findByText('Recent commands')).toBeTruthy();
     expect(selectedTab()).toBe('Control');
   });
 });
@@ -499,12 +496,12 @@ describe('the open tab lives in the URL', () => {
 describe('useDevice()', () => {
   it('hands a tab the device, its telemetry, state, configuration and status', async () => {
     openDevice({ registry: registryOf(demo), path: '/devices/WH-1?tab=demo' });
-    const body = within(await screen.findByRole('tabpanel', undefined, LOAD));
-    expect(await body.findByText('Device WH-1', undefined, LOAD)).toBeTruthy();
-    expect(await body.findByText('TC52', undefined, LOAD)).toBeTruthy();
-    expect(await body.findByText('0.3.7', undefined, LOAD)).toBeTruthy();
-    expect(await body.findByText('Warehouse', undefined, LOAD)).toBeTruthy();
-    expect(await body.findByText('true', undefined, LOAD)).toBeTruthy();
+    const body = within(await screen.findByRole('tabpanel'));
+    expect(await body.findByText('Device WH-1')).toBeTruthy();
+    expect(await body.findByText('TC52')).toBeTruthy();
+    expect(await body.findByText('0.3.7')).toBeTruthy();
+    expect(await body.findByText('Warehouse')).toBeTruthy();
+    expect(await body.findByText('true')).toBeTruthy();
   });
 
   it('hands a tab only the public fields: core’s own parts cannot be reached from it', async () => {
@@ -514,7 +511,7 @@ describe('useDevice()', () => {
       return 'Peeked';
     };
     openDevice({ registry: registryOf(ext('peek', [tab('peek', Peek, { label: 'Peek' })])), path: '/devices/WH-1?tab=peek' });
-    await within(await screen.findByRole('tabpanel', undefined, LOAD)).findByText('Peeked');
+    await within(await screen.findByRole('tabpanel')).findByText('Peeked');
     expect(Object.getOwnPropertySymbols(seen)).toEqual([]);
     // Every contribution shares this one object, so none may swap a function out from under the others.
     expect(Object.isFrozen(seen)).toBe(true);
@@ -525,17 +522,17 @@ describe('useDevice()', () => {
 
   it('refresh() polls again now', async () => {
     const { fetch } = openDevice({ registry: registryOf(demo), path: '/devices/WH-1?tab=demo' });
-    const body = within(await screen.findByRole('tabpanel', undefined, LOAD));
-    await body.findByText('TC52', undefined, LOAD);
+    const body = within(await screen.findByRole('tabpanel'));
+    await body.findByText('TC52');
     const before = calls(fetch, '/telemetry').length;
     fireEvent.click(body.getByRole('button', { name: 'Refresh now' }));
-    await waitFor(() => expect(calls(fetch, '/telemetry').length).toBe(before + 1), LOAD);
+    await waitFor(() => expect(calls(fetch, '/telemetry').length).toBe(before + 1));
   });
 
   it('sendCommand() queues the command as the page does: toast, nudge, refresh, and says it was queued', async () => {
     const { fetch } = openDevice({ registry: registryOf(demo), path: '/devices/WH-1?tab=demo' });
-    const body = within(await screen.findByRole('tabpanel', undefined, LOAD));
-    await body.findByText('TC52', undefined, LOAD);
+    const body = within(await screen.findByRole('tabpanel'));
+    await body.findByText('TC52');
     const polls = calls(fetch, '/telemetry').length;
     fireEvent.click(body.getByRole('button', { name: 'Ring from demo' }));
     expect(await screen.findByText('Demo ring queued')).toBeTruthy();
@@ -543,7 +540,7 @@ describe('useDevice()', () => {
     const [queued] = calls(fetch, `/devices/${DEVICE.number}/commands`, 'POST');
     expect(JSON.parse(String(queued[1]?.body))).toEqual({ type: 'device.ring', requiresCapability: 'device.ring' });
     expect(calls(fetch, `/devices/${DEVICE.number}/sync`, 'POST')).toHaveLength(1);
-    await waitFor(() => expect(calls(fetch, '/telemetry').length).toBeGreaterThan(polls), LOAD);
+    await waitFor(() => expect(calls(fetch, '/telemetry').length).toBeGreaterThan(polls));
   });
 
   it('sendCommand() toasts a failure and resolves to false', async () => {
@@ -559,8 +556,8 @@ describe('useDevice()', () => {
       }),
     );
     renderInConsole(<AppRoutes />, { registry: registryOf(demo), path: '/devices/WH-1?tab=demo' });
-    const body = within(await screen.findByRole('tabpanel', undefined, LOAD));
-    await body.findByText('TC52', undefined, LOAD);
+    const body = within(await screen.findByRole('tabpanel'));
+    await body.findByText('TC52');
     fireEvent.click(body.getByRole('button', { name: 'Ring from demo' }));
     expect(await screen.findByText('Demo ring failed')).toBeTruthy();
     expect(await body.findByText('Ring not queued')).toBeTruthy();
@@ -569,7 +566,7 @@ describe('useDevice()', () => {
   it('sendCommand() builds the request from the values when the command has build and no request', async () => {
     const note: DeviceCommand = { label: 'Note', build: (v) => ({ type: 'device.note', payload: JSON.stringify(v) }) };
     const { fetch } = openDevice({ registry: registryOf(commandsExtension([note], { text: 'hi' })), path: '/devices/WH-1?tab=commands' });
-    fireEvent.click(await within(await screen.findByRole('tabpanel', undefined, LOAD)).findByRole('button', { name: 'Send' }));
+    fireEvent.click(await within(await screen.findByRole('tabpanel')).findByRole('button', { name: 'Send' }));
     expect(await screen.findByText('Sent 1')).toBeTruthy();
     const [queued] = calls(fetch, `/devices/${DEVICE.number}/commands`, 'POST');
     expect(JSON.parse(String(queued[1]?.body))).toEqual({ type: 'device.note', payload: '{"text":"hi"}' });
@@ -586,14 +583,14 @@ describe('useDevice()', () => {
       path.endsWith('/configurations/3') ? { id: 3, name: 'Warehouse', kioskMode: false, requestUpdates: 'WIFI' } : deviceApi(path, init),
     );
     renderInConsole(<AppRoutes />, { registry: registryOf(commandsExtension(posing)), path: '/devices/WH-1?tab=commands' });
-    fireEvent.click(await within(await screen.findByRole('tabpanel', undefined, LOAD)).findByRole('button', { name: 'Send' }));
+    fireEvent.click(await within(await screen.findByRole('tabpanel')).findByRole('button', { name: 'Send' }));
     expect(await screen.findByText('Sent 2')).toBeTruthy();
     fireEvent.click(screen.getByRole('tab', { name: 'Control' }));
-    await within(panel()).findByText('Recent commands', undefined, LOAD);
+    await within(panel()).findByText('Recent commands');
     expect(within(panel()).queryByText('Waiting for the device')).toBeNull();
     expect(within(panel()).queryByText('Sent')).toBeNull();
     // The page's own location command does mark it, on the same configuration.
-    await waitFor(() => expect(within(panel()).getByRole('radio', { name: 'Accurate' }).hasAttribute('disabled')).toBe(false), LOAD);
+    await waitFor(() => expect(within(panel()).getByRole('radio', { name: 'Accurate' }).hasAttribute('disabled')).toBe(false));
     fireEvent.click(within(panel()).getByRole('radio', { name: 'Accurate' }));
     expect(await within(panel()).findByText('Sent')).toBeTruthy();
   });
@@ -605,7 +602,7 @@ describe('useDevice()', () => {
       registry: registryOf(commandsExtension([ring as unknown as DeviceCommand])),
       path: '/devices/WH-1?tab=commands',
     });
-    fireEvent.click(await within(await screen.findByRole('tabpanel', undefined, LOAD)).findByRole('button', { name: 'Send' }));
+    fireEvent.click(await within(await screen.findByRole('tabpanel')).findByRole('button', { name: 'Send' }));
     expect(await screen.findByText('Sent 1')).toBeTruthy();
     const [queued] = calls(fetch, `/devices/${DEVICE.number}/commands`, 'POST');
     expect(JSON.parse(String(queued[1]?.body))).toEqual({ type: 'device.ring', requiresCapability: 'device.ring' });
@@ -624,7 +621,7 @@ describe('useDevice()', () => {
     );
     const ring: DeviceCommand = { label: 'Ring', request: { type: 'device.ring', requiresCapability: 'device.ring' } };
     renderInConsole(<AppRoutes />, { registry: registryOf(commandsExtension([ring])), path: '/devices/WH-1?tab=commands' });
-    fireEvent.click(await within(await screen.findByRole('tabpanel', undefined, LOAD)).findByRole('button', { name: 'Send' }));
+    fireEvent.click(await within(await screen.findByRole('tabpanel')).findByRole('button', { name: 'Send' }));
     fireEvent.click(screen.getByRole('tab', { name: 'Control' }));
     expect((await within(panel()).findByRole('button', { name: /Lock now/ })).hasAttribute('disabled')).toBe(false);
     expect(screen.getByRole('button', { name: 'Sync now' }).hasAttribute('disabled')).toBe(false);
@@ -645,7 +642,7 @@ describe('useDevice()', () => {
       );
     }
     openDevice({ registry: registryOf(ext('stable', [tab('stable', Stable, { label: 'Stable' })])), path: '/devices/WH-1?tab=stable' });
-    fireEvent.click(await within(await screen.findByRole('tabpanel', undefined, LOAD)).findByRole('button', { name: 'Ring' }));
+    fireEvent.click(await within(await screen.findByRole('tabpanel')).findByRole('button', { name: 'Ring' }));
     expect(await screen.findByText('Ring queued')).toBeTruthy();
     expect(seen.size).toBe(2);
   });

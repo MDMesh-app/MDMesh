@@ -140,6 +140,7 @@ location and a single-use token.
   [docs/UPGRADING.md, Recovery and rollback](docs/UPGRADING.md#recovery-and-rollback).
 - **Server logs** and a temporary DEBUG log: [docs/OPERATIONS.md, Server logs](docs/OPERATIONS.md#server-logs).
 - **Settings**: [configuration reference](docs/OPERATIONS.md#configuration-reference).
+- **Console accounts and roles**: [docs/USER_MANAGEMENT.md](docs/USER_MANAGEMENT.md).
 - [Health checks](docs/OPERATIONS.md#health-checks), [backups](docs/OPERATIONS.md#backups-and-restore),
   [moving to a new BASE_URL](docs/OPERATIONS.md#moving-to-a-new-base_url),
   [uninstalling](docs/OPERATIONS.md#uninstalling) and [security](docs/OPERATIONS.md#security-notes).

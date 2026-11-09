@@ -37,4 +37,9 @@ describe('outcomeKeyLabel', () => {
     expect(outcomeKeyLabel('policies.somethingNew')).toBe('policies.somethingNew');
     expect(outcomeKeyLabel('policies.x.netaccess')).toBe('policies.x.netaccess');
   });
+
+  it('labels a managed app permission and reports an app that does not request it', () => {
+    expect(classifyOutcome('appPermissions.org.example.maps.android.permission.CAMERA', 'not-requested'))
+      .toMatchObject({ label: 'org.example.maps: camera', text: 'Not requested by this app', kind: 'unsupported' });
+  });
 });

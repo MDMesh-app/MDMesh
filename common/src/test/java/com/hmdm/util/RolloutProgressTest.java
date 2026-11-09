@@ -107,6 +107,15 @@ public class RolloutProgressTest {
         assertFalse(RolloutProgress.isComplete(outstanding));
     }
 
+    @Test
+    public void aCohortWithNoDeviceThatCanUpdateItselfIsNotComplete() {
+        RolloutProgress.Counts blocked = RolloutProgress.counts("1.2.0", Arrays.asList(
+                row("a", "1.1.0", CAPS_NONE),
+                row("b", "1.1.0", CAPS_NONE)), Collections.<String>emptySet());
+        assertEquals(2, blocked.getIneligible());
+        assertFalse(RolloutProgress.isComplete(blocked));
+    }
+
     private static AgentCommand install(String num, String payload) {
         AgentCommand c = new AgentCommand();
         c.setDeviceNumber(num);

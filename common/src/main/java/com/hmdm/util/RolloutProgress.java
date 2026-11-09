@@ -131,11 +131,12 @@ public final class RolloutProgress {
     }
 
     /**
-     * True when a non-empty cohort has no update-capable device left to update. Devices that cannot
-     * silently install an APK do not keep an otherwise completed rollout actionable.
+     * True when a cohort has at least one update-capable device and none of them is left to update. Devices that
+     * cannot silently install an APK do not keep an otherwise completed rollout actionable, but a cohort of only
+     * such devices is blocked, not complete: none of them is on the target.
      */
     public static boolean isComplete(Counts counts) {
-        return counts != null && counts.getTotal() > 0
+        return counts != null && counts.getTotal() - counts.getIneligible() > 0
                 && counts.getUpdated() + counts.getIneligible() == counts.getTotal();
     }
 

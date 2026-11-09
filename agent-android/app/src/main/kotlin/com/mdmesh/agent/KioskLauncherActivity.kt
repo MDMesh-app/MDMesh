@@ -225,6 +225,8 @@ class KioskLauncherActivity : ComponentActivity() {
         // then hands off to the OEM launcher. Forced: the admin PIN was entered, the user must get out.
         lifecycleScope.launch {
             applier.exit(handBackHome = true, force = true)
+            // The launcher has already left lock task; publish that state without waiting for the periodic check-in.
+            CheckInWorker.scheduleAfterCurrent(applicationContext)
             finish()
         }
     }

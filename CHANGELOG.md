@@ -21,6 +21,8 @@ New
 - Sync now and console commands say when the device isn't connected and will get it at its next check-in.
 
 Fixes
+- Saving a configuration preserves its existing legacy launcher wallpaper unless an administrator explicitly replaces
+  or removes it.
 - Audit log: on Docker installs, entries show the client's address instead of the edge container's (thanks
   @Przemek-Magic).
 

@@ -59,13 +59,14 @@ public class KioskBackgroundImageAssetsTest {
     @After public void tearDown() { SecurityContext.release(); }
 
     @Test
-    public void canonicalizesTheHostedCustomerFileRatherThanTheBrowsersUrlOrHash() {
+    public void replaceCanonicalizesTheHostedCustomerFileRatherThanTheBrowsersUrlOrHash() {
         Configuration configuration = new Configuration();
+        configuration.setBackgroundImageAction("replace");
         configuration.setBackgroundImageFileId(42);
         configuration.setBackgroundImageUrl("https://attacker.example/other.png");
         configuration.setBackgroundImageSha256("not-a-hash");
 
-        assets.canonicalize(configuration);
+        assets.apply(configuration, null);
 
         assertEquals("https://mdm.example/files/acme/wallpaper.png", configuration.getBackgroundImageUrl());
         assertEquals("de7030234493a8bea844dbe1d8676e68a2c1a4b014c721f0425a22b6df66faec",
@@ -73,14 +74,42 @@ public class KioskBackgroundImageAssetsTest {
     }
 
     @Test
-    public void aNullSelectionClearsLegacyUrlAndHash() {
+    public void anOrdinarySaveKeepsTheStoredLegacyUrlAndHash() {
+        Configuration stored = new Configuration();
+        stored.setBackgroundImageUrl("https://legacy.example/image.png");
+        stored.setBackgroundImageSha256("legacy-hash");
+
         Configuration configuration = new Configuration();
+        configuration.setBackgroundImageUrl("https://attacker.example/replaced.png");
+        configuration.setBackgroundImageSha256("attacker-hash");
+
+        assets.apply(configuration, stored);
+
+        assertEquals("https://legacy.example/image.png", configuration.getBackgroundImageUrl());
+        assertEquals("legacy-hash", configuration.getBackgroundImageSha256());
+        assertNull(configuration.getBackgroundImageFileId());
+    }
+
+    @Test
+    public void anExplicitRemoveClearsLegacyUrlManagedFileAndHash() {
+        Configuration configuration = new Configuration();
+        configuration.setBackgroundImageAction("remove");
         configuration.setBackgroundImageUrl("https://legacy.example/image.png");
+        configuration.setBackgroundImageFileId(42);
         configuration.setBackgroundImageSha256("stale");
 
-        assets.canonicalize(configuration);
+        assets.apply(configuration, null);
 
         assertNull(configuration.getBackgroundImageUrl());
+        assertNull(configuration.getBackgroundImageFileId());
         assertNull(configuration.getBackgroundImageSha256());
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void replacingWithoutAnUploadedFileIsRejected() {
+        Configuration configuration = new Configuration();
+        configuration.setBackgroundImageAction("replace");
+
+        assets.apply(configuration, null);
     }
 }

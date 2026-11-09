@@ -306,7 +306,8 @@ function changedKeys(before: Configuration, after: Configuration): Set<string> {
   for (const f of CONFIG_FIELDS) if (norm(before[f.key]) !== norm(after[f.key])) out.add(f.key);
   // The background image picker is a managed asset control rather than a generic CONFIG_FIELDS control.
   // Its identity must still participate in the editor's dirty state and save/apply flow.
-  if (norm(before.backgroundImageFileId) !== norm(after.backgroundImageFileId)) out.add('backgroundImageFileId');
+  if (norm(before.backgroundImageFileId) !== norm(after.backgroundImageFileId)
+    || norm(after.backgroundImageAction) !== null) out.add('backgroundImageFileId');
   if (appsSignature(before) !== appsSignature(after)) out.add('applications');
   return out;
 }
@@ -620,7 +621,13 @@ function Editor({
       const saved = await commitUpload(temporary.serverPath);
       if (saved.id == null) throw new Error('The server did not return the uploaded image identity.');
       // URL and checksum are server-canonicalized on save. Clearing the old values avoids a stale preview payload.
-      setDraft((d) => ({ ...d, backgroundImageFileId: saved.id, backgroundImageUrl: undefined, backgroundImageSha256: undefined }));
+      setDraft((d) => ({
+        ...d,
+        backgroundImageAction: 'replace',
+        backgroundImageFileId: saved.id,
+        backgroundImageUrl: undefined,
+        backgroundImageSha256: undefined,
+      }));
       toast.push('ok', 'Background image uploaded', 'Save and apply the configuration to use it in kiosk.');
     } catch (e) {
       toast.push('err', 'Image upload failed', e instanceof Error ? e.message : 'The server could not save the image.');
@@ -633,7 +640,7 @@ function Editor({
     <FieldRow
       id={`${ids}-backgroundImage`}
       label="Background image"
-      help="One server-managed image for the kiosk launcher. It is checksum-verified and stored privately on the device; the background color remains the fallback."
+      help="One server-managed image for the kiosk launcher. It is checksum-verified and stored privately on the device; the background color remains the fallback. Existing legacy launcher wallpapers stay unchanged until you replace or remove them."
       adornment={changed.has('backgroundImageFileId') && !readOnly ? <ChangedChip /> : undefined}
       disabled={readOnly}
     >
@@ -651,10 +658,16 @@ function Editor({
             }}
           />
           <Button size="sm" onClick={() => backgroundImageRef.current?.click()} disabled={readOnly || backgroundUploading}>
-            {backgroundUploading ? 'Uploading…' : draft.backgroundImageFileId != null ? 'Replace image' : 'Choose image'}
+            {backgroundUploading ? 'Uploading…' : draft.backgroundImageFileId != null || draft.backgroundImageUrl ? 'Replace image' : 'Choose image'}
           </Button>
-          {draft.backgroundImageFileId != null ? (
-            <Button size="sm" onClick={() => setDraft((d) => ({ ...d, backgroundImageFileId: null, backgroundImageUrl: undefined, backgroundImageSha256: undefined }))} disabled={readOnly || backgroundUploading}>
+          {draft.backgroundImageFileId != null || draft.backgroundImageUrl ? (
+            <Button size="sm" onClick={() => setDraft((d) => ({
+              ...d,
+              backgroundImageAction: 'remove',
+              backgroundImageFileId: null,
+              backgroundImageUrl: undefined,
+              backgroundImageSha256: undefined,
+            }))} disabled={readOnly || backgroundUploading}>
               Remove
             </Button>
           ) : null}

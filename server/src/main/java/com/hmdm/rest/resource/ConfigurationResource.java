@@ -196,7 +196,8 @@ public class ConfigurationResource {
                     "a refusal is an ERROR whose message is the first problem's key and whose data lists them all. " +
                     "applicationUsageParameters are upserted and never removed. " +
                     "An explicit \"applications\": null, and a connectivityMode other than adaptive, alwaysOn or null, " +
-                    "are refused with HTTP 400."
+                    "are refused with HTTP 400. backgroundImageAction is keep (the default), replace, or remove; " +
+                    "ordinary saves preserve a stored legacy launcher wallpaper."
     )
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
@@ -217,13 +218,6 @@ public class ConfigurationResource {
             // An unknown mode would be stored and sent as not managed; a long one used to fail with a 500.
             throw new BadRequestException("connectivityMode must be adaptive, alwaysOn or null");
         }
-        if (backgroundImages != null) {
-            try {
-                backgroundImages.canonicalize(configuration);
-            } catch (IllegalArgumentException e) {
-                throw new BadRequestException(e.getMessage());
-            }
-        }
         try {
             Configuration dbConfiguration = this.configurationDAO.getConfigurationByName(configuration.getName());
             final Integer id = configuration.getId();
@@ -236,6 +230,7 @@ public class ConfigurationResource {
                                 "by user " + SecurityContext.get().getCurrentUserName());
                         return Response.PERMISSION_DENIED();
                     }
+                    canonicalizeBackgroundImage(configuration, null);
                     Response refused = refuseExtensions(configuration, null);
                     if (refused != null) return refused;
                     configuration.setDisableLocation(false);        // Not used but shouldn't be NULL
@@ -252,6 +247,7 @@ public class ConfigurationResource {
                                 "by user " + SecurityContext.get().getCurrentUserName());
                         return Response.PERMISSION_DENIED();
                     }
+                    canonicalizeBackgroundImage(configuration, configurationDAO.getConfigurationById(id));
                     Response refused = refuseExtensions(configuration, storedExtensions(id, configuration));
                     if (refused != null) return refused;
                     log.info("Configuration " + configuration.getName() + " updated by user "  + SecurityContext.get().getCurrentUserName());
@@ -262,10 +258,21 @@ public class ConfigurationResource {
 
                 return Response.OK(configuration);
             }
+        } catch (BadRequestException e) {
+            throw e;
         } catch (Exception e) {
             log.error("Unexpected error when saving the configuration", e);
             e.printStackTrace();
             return Response.INTERNAL_ERROR();
+        }
+    }
+
+    private void canonicalizeBackgroundImage(Configuration configuration, Configuration stored) {
+        if (backgroundImages == null) return;
+        try {
+            backgroundImages.apply(configuration, stored);
+        } catch (IllegalArgumentException e) {
+            throw new BadRequestException(e.getMessage());
         }
     }
 

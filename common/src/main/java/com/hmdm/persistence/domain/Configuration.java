@@ -204,6 +204,13 @@ public class Configuration implements CustomerData, Serializable {
     private Integer backgroundImageFileId;
     @ApiModelProperty(hidden = true)
     private String backgroundImageSha256;
+    /**
+     * Console-only instruction for saving a managed kiosk background image. This is deliberately not persisted:
+     * omitted means keep the stored image, while replace and remove are explicit user actions.
+     */
+    @ApiModelProperty(value = "How to update the managed kiosk background image: keep, replace, or remove",
+            allowableValues = "keep,replace,remove")
+    private String backgroundImageAction;
     @ApiModelProperty("A size of the icons to use when running MDM application")
     private IconSize iconSize = SMALL;
     @ApiModelProperty("A type of desktop header to use when running MDM application")
@@ -345,6 +352,14 @@ public class Configuration implements CustomerData, Serializable {
 
     public void setBackgroundImageSha256(String backgroundImageSha256) {
         this.backgroundImageSha256 = backgroundImageSha256;
+    }
+
+    public String getBackgroundImageAction() {
+        return backgroundImageAction;
+    }
+
+    public void setBackgroundImageAction(String backgroundImageAction) {
+        this.backgroundImageAction = backgroundImageAction;
     }
 
     public IconSize getIconSize() {

@@ -216,7 +216,13 @@ class DevicePolicyEffectTest {
         )
         put("cameraDisabled", dpm.getCameraDisabled(handle.admin))
         put("screenCaptureDisabled", dpm.getScreenCaptureDisabled(handle.admin))
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) put("locationEnabled", location.isLocationEnabled)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            put("locationEnabled", location.isLocationEnabled)
+            put(
+                restrictionKey(UserRestrictions.DISALLOW_CONFIG_LOCATION),
+                restrictionActive(UserRestrictions.DISALLOW_CONFIG_LOCATION),
+            )
+        }
     }
 
     /** Restores the pre-test state through the same public strategies the agent uses. */
@@ -230,7 +236,15 @@ class DevicePolicyEffectTest {
                 ?.setEnabled(state.getValue(restrictionKey(UserRestrictions.DISALLOW_SAFE_BOOT)).not())
             toggles[CameraPolicy.CAPABILITY_KEY]?.setEnabled(state.getValue("cameraDisabled").not())
             toggles[ScreenshotsPolicy.CAPABILITY_KEY]?.setEnabled(state.getValue("screenCaptureDisabled").not())
-            state["locationEnabled"]?.let { toggles[LocationServicesPolicy.CAPABILITY_KEY]?.setEnabled(it) }
+            state["locationEnabled"]?.let { enabled ->
+                val locationPolicy = toggles[LocationServicesPolicy.CAPABILITY_KEY] ?: return@let
+                locationPolicy.setEnabled(enabled)
+                // setEnabled deliberately locks the setting. Restore the pre-test lock state too, otherwise every
+                // instrumentation test leaves Settings unable to change Location even when it began unlocked.
+                if (!state.getValue(restrictionKey(UserRestrictions.DISALLOW_CONFIG_LOCATION))) {
+                    locationPolicy.release()
+                }
+            }
         }
     }
 

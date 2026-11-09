@@ -60,6 +60,9 @@ export function cloneForNew(base: Configuration | null, baseApps?: ConfigApp[]):
   const c: Configuration = { ...base, name: `${base.name} copy` };
   delete c.id;
   delete c.qrCodeKey;
+  // The server treats an omitted action as an older client's "keep the stored value" request. A new
+  // configuration has no stored value, so a copied policy needs an explicit action to retain its meaning.
+  c.locationServicesAction = locationServicesAction(c.locationServices);
   c.applications = (baseApps ?? base.applications ?? []).map((a) => ({ ...a }));
   return c;
 }

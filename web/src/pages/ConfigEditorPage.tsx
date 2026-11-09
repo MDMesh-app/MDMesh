@@ -301,10 +301,22 @@ function appsSignature(c: Configuration): string {
     .join(',');
 }
 
+const RUNTIME_PERMISSIONS = [
+  ['android.permission.ACCESS_FINE_LOCATION', 'Location'],
+  ['android.permission.CAMERA', 'Camera'],
+  ['android.permission.RECORD_AUDIO', 'Microphone'],
+  ['android.permission.READ_CONTACTS', 'Contacts'],
+] as const;
+
+function appPermissionsSignature(c: Configuration): string {
+  return JSON.stringify(c.managedAppPermissions ?? []);
+}
+
 function changedKeys(before: Configuration, after: Configuration): Set<string> {
   const out = new Set<string>();
   for (const f of CONFIG_FIELDS) if (norm(before[f.key]) !== norm(after[f.key])) out.add(f.key);
   if (appsSignature(before) !== appsSignature(after)) out.add('applications');
+  if (appPermissionsSignature(before) !== appPermissionsSignature(after)) out.add('managedAppPermissions');
   return out;
 }
 
@@ -482,6 +494,15 @@ function Editor({
   // A hidden app cannot remain the kiosk's pinned main app: updateApps clears the stale selection.
   const setAppKioskVisibility = (id: number, showIcon: boolean) =>
     updateApps(id, (list) => list.map((a) => (a.id === id ? { ...a, showIcon } : a)));
+  const setAppPermission = (applicationId: number, permission: string, state: string) => setDraft((d) => {
+    const rules = Array.isArray(d.managedAppPermissions) ? d.managedAppPermissions as Array<Record<string, unknown>> : [];
+    const without = rules.filter((r) => !(r.applicationId === applicationId && r.permission === permission));
+    return { ...d, managedAppPermissions: state === 'default' ? without : [...without, { applicationId, permission, state }] };
+  });
+  const appPermissionState = (applicationId: number, permission: string): string => {
+    const rules = Array.isArray(draft.managedAppPermissions) ? draft.managedAppPermissions as Array<Record<string, unknown>> : [];
+    return String(rules.find((r) => r.applicationId === applicationId && r.permission === permission)?.state ?? 'default');
+  };
 
   function requestSave() {
     if (!String(draft.name ?? '').trim()) {
@@ -794,6 +815,29 @@ function Editor({
           onRemove={removeApp}
           resetKey={discards}
         />
+        {allowed.filter((app) => (app.action ?? 1) === 1).length > 0 ? (
+          <div className="v2-cfged-apps__note">
+            <strong>Runtime permissions</strong>
+            <p>Default removes MDMesh’s explicit override; the device-wide Android permission policy then applies. A device reports a configured permission it does not request as not requested.</p>
+            {allowed.filter((app) => (app.action ?? 1) === 1).map((app) => (
+              <div key={`permissions-${app.id}`}>
+                <strong>{app.name ?? app.pkg}</strong>
+                {RUNTIME_PERMISSIONS.map(([permission, label]) => (
+                  <label key={permission} style={{ display: 'block' }}>
+                    {label}{' '}
+                    <select
+                      value={appPermissionState(app.id, permission)}
+                      disabled={readOnly}
+                      onChange={(e) => setAppPermission(app.id, permission, e.target.value)}
+                    >
+                      <option value="default">Default</option><option value="grant">Grant</option><option value="deny">Deny</option>
+                    </select>
+                  </label>
+                ))}
+              </div>
+            ))}
+          </div>
+        ) : null}
         <p className="v2-cfged-apps__note">
           “Do not install” keeps an app listed without installing it. “Remove” takes the app out of this configuration;
           it is not uninstalled from devices yet.

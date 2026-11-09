@@ -191,6 +191,29 @@ public class AgentAdminResource {
     }
 
     // =================================================================================================================
+    @ApiOperation(value = "Stop all enrollment codes", notes = "Stops every enrollment token of the current customer "
+            + "that has not expired, including codes for a batch already printed or shared, so none enrolls another "
+            + "device. Devices already enrolled are not affected. Returns {\"revoked\": n}, the tokens stopped.")
+    @POST
+    @Path("/token/revoke-all")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response revokeAllTokens() {
+        if (!canEditDevices("stop enrollment codes")) {
+            return Response.PERMISSION_DENIED();
+        }
+        Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
+        if (!customerId.isPresent()) {
+            return Response.PERMISSION_DENIED();
+        }
+        int revoked = tokenDAO.revokeAll(customerId.get());
+        logger.info("Agent enrollment tokens stopped for customer {} by user {}: {}", customerId.get(),
+                SecurityContext.get().getCurrentUser().map(u -> u.getLogin()).orElse("?"), revoked);
+        Map<String, Object> result = new HashMap<>();
+        result.put("revoked", revoked);
+        return Response.OK(result);
+    }
+
+    // =================================================================================================================
     @ApiOperation(value = "Sync configuration apps", notes = "Queues app.install commands for every one of the device's "
             + "configuration apps marked action=install. Apps added to its configuration, and a move to another "
             + "configuration, install at the next check-in without this; use it to send apps again, e.g. after one "

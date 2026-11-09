@@ -3083,4 +3083,26 @@
         </rollback>
     </changeSet>
 
+    <changeSet id="26.11.08-agentEnrollmentToken-revokedAt-hash" author="lunacy" context="common">
+        <comment>Column,new: agentEnrollmentToken#revokedAt (an admin stopped every code: the claim refuses a token
+            with it set). The token column now holds the uppercase hex SHA-256 of the token, as devices' secrets
+            are stored: existing tokens are hashed in place, so a code already printed or in a QR keeps working.
+            sha256() needs PostgreSQL 11+; on an older server the existing tokens are marked used instead (each is a
+            24 h single-use code, made again on the Enroll page). The rollback keeps the hashes: an older server
+            finds none of them, so a code made before the downgrade stops working, which fails safe.</comment>
+        <sql splitStatements="false">
+            ALTER TABLE agentEnrollmentToken ADD COLUMN revokedAt BIGINT;
+            DO $$
+            BEGIN
+                IF current_setting('server_version_num')::int &gt;= 110000 THEN
+                    EXECUTE $q$UPDATE agentEnrollmentToken
+                        SET token = upper(encode(sha256(convert_to(token, 'UTF8')), 'hex'))$q$;
+                ELSE
+                    EXECUTE $q$UPDATE agentEnrollmentToken SET token = 'unhashed-' || id, used = true$q$;
+                END IF;
+            END $$;
+        </sql>
+        <rollback>ALTER TABLE agentEnrollmentToken DROP COLUMN revokedAt;</rollback>
+    </changeSet>
+
 </databaseChangeLog>

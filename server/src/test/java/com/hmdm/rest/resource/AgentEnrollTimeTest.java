@@ -40,9 +40,9 @@ public class AgentEnrollTimeTest {
         }
 
         @Override public AgentEnrollmentToken findByToken(String t) { return TOKEN.equals(t) ? token : null; }
-        /** As AgentEnrollmentTokenMapper.claim: one use if any is left, and used with the last. */
+        /** As AgentEnrollmentTokenMapper.claim: one use if any is left and it isn't stopped, and used with the last. */
         @Override public boolean claim(Integer id) {
-            if (token.isUsed() || token.getUseCount() >= maxUses()) return false;
+            if (token.isUsed() || token.getUseCount() >= maxUses() || token.getRevokedAt() != null) return false;
             token.setUseCount(token.getUseCount() + 1);
             token.setUsed(token.getUseCount() >= maxUses());
             return true;

@@ -52,7 +52,7 @@ public interface AgentEnrollmentTokenMapper {
      * row before the update).
      */
     @Update({"UPDATE agentEnrollmentToken SET useCount = useCount + 1, used = (useCount + 1 >= maxUses) " +
-            "WHERE id = #{id} AND used = false AND useCount < maxUses " +
+            "WHERE id = #{id} AND used = false AND useCount < maxUses AND revokedAt IS NULL " +
             "AND (expiresAt IS NULL OR expiresAt > #{now})"})
     int claim(@Param("id") Integer id, @Param("now") long now);
 
@@ -62,4 +62,13 @@ public interface AgentEnrollmentTokenMapper {
      */
     @Update({"UPDATE agentEnrollmentToken SET useCount = GREATEST(useCount - 1, 0), used = false WHERE id = #{id}"})
     void release(@Param("id") Integer id);
+
+    /**
+     * Stop every token of the customer that has not expired. Used-up tokens are included: {@link #release} can give
+     * a use back to one, and the claim's {@code revokedAt IS NULL} keeps it stopped. One UPDATE: a claim that races
+     * it either took its use before (that device enrolls) or finds the row stopped.
+     */
+    @Update({"UPDATE agentEnrollmentToken SET revokedAt = #{now} " +
+            "WHERE customerId = #{customerId} AND revokedAt IS NULL AND (expiresAt IS NULL OR expiresAt > #{now})"})
+    int revokeAll(@Param("customerId") int customerId, @Param("now") long now);
 }

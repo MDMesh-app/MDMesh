@@ -25,6 +25,7 @@ import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import com.hmdm.persistence.domain.AgentEnrollmentToken;
 import com.hmdm.persistence.mapper.AgentEnrollmentTokenMapper;
+import com.hmdm.util.CryptoUtil;
 
 /**
  * <p>DAO for the agent v1 enrollment tokens.</p>
@@ -39,12 +40,43 @@ public class AgentEnrollmentTokenDAO {
         this.mapper = mapper;
     }
 
+    /**
+     * Stores the token with only the SHA-256 hash of its value, as device secrets are stored: a database or backup
+     * that leaks holds no code that enrolls. {@code token.getToken()} is the plaintext before and after the call
+     * (the mint returns it once).
+     */
     public void insert(AgentEnrollmentToken token) {
-        mapper.insert(token);
+        String plaintext = token.getToken();
+        token.setToken(hash(plaintext));
+        try {
+            mapper.insert(token);
+        } finally {
+            token.setToken(plaintext);
+        }
     }
 
+    /** The stored token whose value is {@code token} (looked up by its hash), or null. */
     public AgentEnrollmentToken findByToken(String token) {
-        return mapper.findByToken(token);
+        if (token == null) {
+            return null;
+        }
+        return mapper.findByToken(hash(token));
+    }
+
+    /**
+     * Stops every token of the customer that has not expired, used up or not: a use given back by
+     * {@link #release} cannot bring a stopped token back, since {@link #claim} refuses one with {@code revokedAt}
+     * set whatever its count.
+     *
+     * @return how many tokens were stopped.
+     */
+    public int revokeAll(int customerId) {
+        return mapper.revokeAll(customerId, System.currentTimeMillis());
+    }
+
+    /** What the token column holds for a token value: uppercase hex SHA-256, as {@link CryptoUtil#getSHA256String}. */
+    static String hash(String token) {
+        return CryptoUtil.getSHA256String(token);
     }
 
     /** Atomically claims one use of the token; true = this caller owns that use. */

@@ -29,7 +29,7 @@ import java.io.Serializable;
  * <p>An enrollment token for the from-scratch Android agent v1 protocol. Minted by an authenticated
  * admin and carried into the device through the QR provisioning bundle. It enrolls up to
  * {@link #getMaxUses()} devices (one by default) before it expires; {@link #isUsed()} turns true once
- * the last of them has enrolled.</p>
+ * the last of them has enrolled, and it stops early when an admin stops all codes ({@link #getRevokedAt()}).</p>
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class AgentEnrollmentToken implements Serializable {
@@ -37,6 +37,7 @@ public class AgentEnrollmentToken implements Serializable {
     private static final long serialVersionUID = 1L;
 
     private Integer id;
+    /** The token's value in a mint response; stored as its SHA-256 hash (AgentEnrollmentTokenDAO). */
     private String token;
     private int customerId;
     private boolean used;
@@ -48,6 +49,8 @@ public class AgentEnrollmentToken implements Serializable {
     private Integer maxUses;
     /** How many devices have enrolled with it so far. */
     private int useCount;
+    /** When the token was stopped (revoke-all), or NULL. A stopped token enrolls nothing more. */
+    private Long revokedAt;
     /** Mint request only: how long the token is valid, in hours (EnrollmentTokenLimits). Not stored. */
     private Integer validHours;
 
@@ -124,6 +127,14 @@ public class AgentEnrollmentToken implements Serializable {
 
     public void setUseCount(int useCount) {
         this.useCount = useCount;
+    }
+
+    public Long getRevokedAt() {
+        return revokedAt;
+    }
+
+    public void setRevokedAt(Long revokedAt) {
+        this.revokedAt = revokedAt;
     }
 
     public Integer getValidHours() {

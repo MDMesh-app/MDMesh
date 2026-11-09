@@ -16,6 +16,8 @@ export interface RolloutProgress {
   targetVersion: string;
   canary: RolloutCounts;
   fleet: RolloutCounts | null; // null until the rollout is promoted to fleet
+  /** Devices outside the canary that the user can see; 0 means a promote would reach nobody. */
+  others?: number;
 }
 
 export interface ActiveRollout {

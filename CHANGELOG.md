@@ -22,7 +22,8 @@ Fixes
 - Audit log: on Docker installs, entries show the client's address instead of the edge container's (thanks
   @Przemek-Magic).
 - Agent rollout: when every device is in the canary, the rollout finishes once they've updated instead of staying
-  open, and Settings stops offering the same agent again (thanks @letternumber).
+  open, and Settings stops offering the same agent again. If one can't update, it offers Finish instead of Promote
+  (thanks @letternumber).
 
 Under the hood
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.

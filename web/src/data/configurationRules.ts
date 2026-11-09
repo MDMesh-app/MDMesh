@@ -25,6 +25,15 @@ export const hasDefaultPin = (c: Configuration) => c.defaultKioskPin === true;
  */
 export const hasNoPin = (c: Configuration) => c.kioskMode === true && !c.password;
 
+/**
+ * The API uses an explicit action for Location services so a console which predates the field cannot silently
+ * change a saved policy to "Not managed" when it round-trips a configuration. The action is intentionally separate
+ * from the persisted Boolean: only a user selection sends on, off, or notManaged; an omitted action means keep.
+ */
+export function locationServicesAction(value: unknown): 'on' | 'off' | 'notManaged' {
+  return value === true ? 'on' : value === false ? 'off' : 'notManaged';
+}
+
 // The configurations INSERT sets every column explicitly, so NOT-NULL columns
 // can't fall back to their DB defaults — a blank config must supply them or the
 // insert fails (e.g. "null value in column pushoptions"). customerId is set

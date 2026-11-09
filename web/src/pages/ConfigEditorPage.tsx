@@ -25,6 +25,7 @@ import {
   hasDefaultPin,
   hasNoPin,
   isLocked,
+  locationServicesAction,
 } from '../data/configurationRules';
 import { kioskAffectingChanges } from '../data/kioskChanges';
 import {
@@ -402,7 +403,12 @@ function Editor({
     };
   }, [appsSource, appsAttempt]);
 
-  const set = useCallback((key: string, value: unknown) => setDraft((d) => ({ ...d, [key]: value })), []);
+  const set = useCallback((key: string, value: unknown) => setDraft((d) => {
+    if (key === 'locationServices') {
+      return { ...d, locationServices: value, locationServicesAction: locationServicesAction(value) };
+    }
+    return { ...d, [key]: value };
+  }), []);
 
   const changed = useMemo(() => changedKeys(baseline, draft), [baseline, draft]);
 

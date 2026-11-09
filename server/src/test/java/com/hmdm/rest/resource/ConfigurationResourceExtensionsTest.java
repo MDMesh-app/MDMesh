@@ -120,6 +120,33 @@ public class ConfigurationResourceExtensionsTest {
     }
 
     @Test
+    public void anOlderClientSaveKeepsTheStoredLocationServicesPolicy() {
+        dao.stored.setLocationServices(Boolean.TRUE);
+        Configuration submitted = configuration(3, null);
+        submitted.setLocationServices(null); // What a client released before this field looks like.
+
+        Response r = resource.updateConfiguration(submitted);
+
+        assertEquals(Response.ResponseStatus.OK, r.getStatus());
+        assertEquals(Boolean.TRUE, dao.updated.get(0).getLocationServices());
+    }
+
+    @Test
+    public void anExplicitLocationServicesActionControlsTheStoredPolicy() {
+        Configuration off = configuration(3, null);
+        off.setLocationServices(Boolean.TRUE); // Browser values are not authoritative; the action is.
+        off.setLocationServicesAction("off");
+        assertEquals(Response.ResponseStatus.OK, resource.updateConfiguration(off).getStatus());
+        assertEquals(Boolean.FALSE, dao.updated.get(0).getLocationServices());
+
+        Configuration notManaged = configuration(3, null);
+        notManaged.setLocationServices(Boolean.TRUE);
+        notManaged.setLocationServicesAction("notManaged");
+        assertEquals(Response.ResponseStatus.OK, resource.updateConfiguration(notManaged).getStatus());
+        assertNull(dao.updated.get(1).getLocationServices());
+    }
+
+    @Test
     public void aSaveWithExtensionsStoresThemAsSent() {
         Response r = resource.updateConfiguration(configuration(3, "{\"netaccess.vpn\":{\"port\":443},\"other\":{}}"));
         assertEquals(Response.ResponseStatus.OK, r.getStatus());

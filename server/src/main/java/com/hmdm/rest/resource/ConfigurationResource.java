@@ -48,6 +48,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Api(tags = {"Configuration"}, authorizations = {@Authorization("Bearer Token")})
@@ -206,6 +208,7 @@ public class ConfigurationResource {
             // An unknown mode would be stored and sent as not managed; a long one used to fail with a 500.
             throw new BadRequestException("connectivityMode must be adaptive, alwaysOn or null");
         }
+        validateManagedAppPermissions(configuration);
         try {
             Configuration dbConfiguration = this.configurationDAO.getConfigurationByName(configuration.getName());
             final Integer id = configuration.getId();
@@ -248,6 +251,22 @@ public class ConfigurationResource {
             log.error("Unexpected error when saving the configuration", e);
             e.printStackTrace();
             return Response.INTERNAL_ERROR();
+        }
+    }
+
+    private static void validateManagedAppPermissions(Configuration configuration) {
+        if (configuration.getManagedAppPermissions() == null) return; // older console: preserve stored rules
+        Set<Integer> eligibleApps = configuration.getApplications().stream()
+                .filter(app -> app != null && app.getId() != null && app.getAction() == DesiredConfigBuilder.ACTION_INSTALL)
+                .map(Application::getId).collect(Collectors.toSet());
+        Set<String> seen = new HashSet<String>();
+        for (ManagedAppPermission rule : configuration.getManagedAppPermissions()) {
+            if (rule == null || !eligibleApps.contains(rule.getApplicationId())
+                    || rule.getPermission() == null || !rule.getPermission().matches("android\\.permission\\.[A-Z0-9_]+")
+                    || !("grant".equals(rule.getState()) || "deny".equals(rule.getState()))
+                    || !seen.add(rule.getApplicationId() + "\\u0000" + rule.getPermission())) {
+                throw new BadRequestException("managedAppPermissions must be unique runtime permissions for installed configuration apps");
+            }
         }
     }
 

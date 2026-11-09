@@ -3075,4 +3075,15 @@
         <rollback>ALTER TABLE configurations DROP COLUMN camera;</rollback>
     </changeSet>
 
+    <changeSet id="26.11.09-configurationAppPermissions" author="letter-number" context="common">
+        <comment>Configuration-owned explicit runtime permission overrides. Absence is Default; the modern agent
+            releases a prior override when its configuration's desired document no longer lists it.</comment>
+        <sql>CREATE TABLE configurationAppPermissions (
+            configurationId INTEGER NOT NULL REFERENCES configurations(id) ON DELETE CASCADE,
+            applicationId INTEGER NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+            permission TEXT NOT NULL,
+            state VARCHAR(8) NOT NULL CHECK (state IN ('grant', 'deny')),
+            PRIMARY KEY (configurationId, applicationId, permission));</sql>
+        <rollback>DROP TABLE configurationAppPermissions;</rollback>
+    </changeSet>
 </databaseChangeLog>

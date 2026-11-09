@@ -12,6 +12,8 @@ import com.hmdm.rest.json.agent.DesiredKiosk;
 import com.hmdm.rest.json.agent.DesiredKioskFeatures;
 import com.hmdm.rest.json.agent.DesiredKioskTheme;
 import com.hmdm.rest.json.agent.DesiredLocation;
+import com.hmdm.rest.json.agent.DesiredAppPermissions;
+import com.hmdm.persistence.domain.ManagedAppPermission;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -77,10 +79,32 @@ public final class DesiredConfigBuilder {
             c.setMode(connectivity);
             d.setConnectivity(c);
         }
+        d.setAppPermissions(appPermissions(cfg, appList));
         // Last, once core's sections are built from cfg, so a contributor can't change them.
         contribute(policies, cfg, Collections.unmodifiableList(appList), contributors);
         d.setRevision(revision(d));
         return d;
+    }
+
+    private static List<DesiredAppPermissions> appPermissions(Configuration cfg, List<Application> apps) {
+        if (cfg.getManagedAppPermissions() == null) return null;
+        Map<Integer, Application> installed = new TreeMap<Integer, Application>();
+        for (Application app : apps) if (app != null && app.getId() != null && app.getAction() == ACTION_INSTALL
+                && app.getPkg() != null && !app.getPkg().trim().isEmpty()) installed.put(app.getId(), app);
+        Map<String, Map<String, String>> byPackage = new TreeMap<String, Map<String, String>>();
+        for (ManagedAppPermission rule : cfg.getManagedAppPermissions()) {
+            if (rule == null || !("grant".equals(rule.getState()) || "deny".equals(rule.getState()))
+                    || rule.getPermission() == null || !rule.getPermission().startsWith("android.permission.")) continue;
+            Application app = installed.get(rule.getApplicationId());
+            if (app != null) byPackage.computeIfAbsent(app.getPkg().trim(), k -> new TreeMap<String, String>())
+                    .put(rule.getPermission(), rule.getState());
+        }
+        List<DesiredAppPermissions> result = new ArrayList<DesiredAppPermissions>();
+        for (Map.Entry<String, Map<String, String>> entry : byPackage.entrySet()) {
+            DesiredAppPermissions value = new DesiredAppPermissions();
+            value.setPackageName(entry.getKey()); value.setPermissions(entry.getValue()); result.add(value);
+        }
+        return result;
     }
 
     /**

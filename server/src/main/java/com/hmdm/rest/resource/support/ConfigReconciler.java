@@ -61,6 +61,7 @@ public class ConfigReconciler {
         if (device == null || device.getConfigurationId() == null) return null;
         Configuration cfg = unsecureDAO.getConfigurationById(device.getConfigurationId());
         if (cfg == null) return null;
+        cfg.setManagedAppPermissions(unsecureDAO.getManagedAppPermissions(cfg.getId()));
         List<Application> apps = unsecureDAO.getPlainConfigurationAppsOptimized(cfg.getId());
         return DesiredConfigBuilder.build(cfg, apps, extensionPoints.contributors(cfg.getCustomerId()));
     }

@@ -218,6 +218,9 @@ public class Configuration implements CustomerData, Serializable {
     @ApiModelProperty("A list of settings for applications set for configuration")
     private List<ApplicationSetting> applicationSettings;
 
+    /** Explicit managed runtime permissions. Null on an update preserves rules for older console clients. */
+    private List<ManagedAppPermission> managedAppPermissions;
+
     @ApiModelProperty("A list of files to be used on devices")
     private List<ConfigurationFile> files;
 
@@ -674,6 +677,9 @@ public class Configuration implements CustomerData, Serializable {
     public void setApplicationSettings(List<ApplicationSetting> applicationSettings) {
         this.applicationSettings = applicationSettings;
     }
+
+    public List<ManagedAppPermission> getManagedAppPermissions() { return managedAppPermissions; }
+    public void setManagedAppPermissions(List<ManagedAppPermission> managedAppPermissions) { this.managedAppPermissions = managedAppPermissions; }
 
     public List<ConfigurationApplicationParameters> getApplicationUsageParameters() {
         return applicationUsageParameters;

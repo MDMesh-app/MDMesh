@@ -31,3 +31,12 @@ export async function mintEnrollToken(
     ...(limits.validHours ? { validHours: limits.validHours } : {}),
   });
 }
+
+/**
+ * Stop every enrollment code of this account that still works, those for a batch already printed or shared
+ * included: POST /rest/private/agent/v1/token/revoke-all -> { revoked }. Devices already enrolled are not affected.
+ * A server that predates it answers 404.
+ */
+export async function revokeAllEnrollTokens(): Promise<{ revoked?: number }> {
+  return (await apiClient.post<{ revoked?: number } | undefined>('/private/agent/v1/token/revoke-all', {})) ?? {};
+}

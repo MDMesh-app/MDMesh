@@ -135,3 +135,14 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
+
+/* Stop all codes: a quiet row at the end of card 2. */
+.v2 .v2-enroll__stop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
+}

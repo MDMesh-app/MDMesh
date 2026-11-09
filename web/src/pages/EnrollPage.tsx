@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ApiError } from '../api/client';
 import { getConfigurations, type Configuration } from '../api/configurations';
-import { mintEnrollToken } from '../api/enroll';
+import { mintEnrollToken, revokeAllEnrollTokens } from '../api/enroll';
 import { getUpdateStatus, type UpdateStatus } from '../api/updates';
 import { agentApkUrl, buildProvisioningPayload, serverBaseUrl, type WifiSecurity } from '../enroll/provisioning';
 import {
@@ -26,6 +26,7 @@ import {
   useToast,
   type KeyValueItem,
   LinkButton,
+  Modal,
 } from '../ui';
 // Not from the barrel: QrPanel pulls in `qrcode`, which stays in this page's chunk.
 import { QrPanel } from '../ui/QrPanel';
@@ -67,6 +68,32 @@ const VALID_OPTIONS: { hours: number; label: string }[] = [
 
 function usesText(n: number): string {
   return n === 1 ? 'One device, then it stops working' : `Up to ${n} devices, then it stops working`;
+}
+
+/** Codes for a batch this page replaced that may still work: how many, and when the last of them expires. */
+interface Replaced {
+  count: number;
+  until?: number;
+}
+
+/** What to say about the codes this page replaced. */
+function replacedText(r: Replaced): string {
+  if (r.count === 1) {
+    return `The code for a batch you replaced still works ${r.until ? `until ${fmtExpiry(r.until)}` : 'until it expires'}, for anyone who has it.`;
+  }
+  return `The ${r.count} codes for a batch you replaced still work ${r.until ? `until ${fmtExpiry(r.until)}` : 'until they expire'}, for anyone who has them.`;
+}
+
+/** Why stopping the codes failed, in words. */
+function revokeError(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.httpStatus === 404 || err.httpStatus === 405)
+      return "This server can't stop codes. Update it, or wait for the codes to expire.";
+    if (err.message === 'error.permission.denied')
+      return "Your account can't stop codes: it needs permission to edit devices.";
+    return err.message || "Couldn't stop the codes.";
+  }
+  return "Couldn't stop the codes.";
 }
 
 function readDefault(): string {
@@ -169,6 +196,12 @@ export function EnrollPage() {
   const [tokError, setTokError] = useState<string | null>(null);
   const mintSeq = useRef(0);
   const minted = useRef(false);
+  /** The code last shown, to tell whether a new one replaces a code for a batch that still works. */
+  const shown = useRef<Minted | null>(null);
+  const [replaced, setReplaced] = useState<Replaced | null>(null);
+  const [stopOpen, setStopOpen] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const [stopError, setStopError] = useState<string | null>(null);
   const now = useNow(30_000, token?.expiresAt);
 
   const [update, setUpdate] = useState<UpdateStatus | null>(null);
@@ -243,6 +276,16 @@ export function EnrollPage() {
   const generate = useCallback(async (id: string, keep: boolean, maxUses: number, hours: number) => {
     const seq = ++mintSeq.current;
     const n = Number(id);
+    // A new code doesn't stop the one it replaces. For a batch that one keeps working for anyone who has it: say so,
+    // and offer to stop it (a single-use code is less of a worry, and the page never showed it to anyone else).
+    const prev = shown.current;
+    shown.current = null;
+    if (prev && prev.maxUses > 1 && !(prev.expiresAt && prev.expiresAt <= Date.now())) {
+      setReplaced((r) => ({
+        count: (r?.count ?? 0) + 1,
+        until: Math.max(r?.until ?? 0, prev.expiresAt ?? 0) || undefined,
+      }));
+    }
     setBusy(true);
     setTokError(null);
     if (!keep) setToken(null);
@@ -251,8 +294,11 @@ export function EnrollPage() {
       if (seq !== mintSeq.current) return;
       const applied = typeof res.maxUses === 'number';
       const devices = typeof res.maxUses === 'number' ? res.maxUses : 1;
-      if (res.token) setToken({ value: res.token, expiresAt: res.expiresAt, maxUses: devices, limitsApplied: applied });
-      else setTokError('The server did not return a token.');
+      if (res.token) {
+        const next = { value: res.token, expiresAt: res.expiresAt, maxUses: devices, limitsApplied: applied };
+        shown.current = next;
+        setToken(next);
+      } else setTokError('The server did not return a token.');
     } catch (err) {
       if (seq === mintSeq.current) setTokError(tokenError(err));
     } finally {
@@ -283,6 +329,33 @@ export function EnrollPage() {
 
   const newCode = () => void generate(cfgId, true, uses, validHours);
 
+  /** Stop every code that still works, then make a new one for the current choices (the shown one stopped too). */
+  const stopAll = async () => {
+    setStopping(true);
+    setStopError(null);
+    try {
+      const res = await revokeAllEnrollTokens();
+      shown.current = null;
+      setReplaced(null);
+      setStopOpen(false);
+      const n = typeof res.revoked === 'number' ? res.revoked : null;
+      toast.push(
+        'ok',
+        'Codes stopped',
+        n === null ? 'Every enrollment code stopped working. A new code is ready.' : `${n} code${n === 1 ? '' : 's'} stopped working. A new code is ready.`,
+      );
+      void generate(cfgId, false, uses, validHours);
+    } catch (err) {
+      setStopError(revokeError(err));
+    } finally {
+      setStopping(false);
+    }
+  };
+  const openStop = () => {
+    setStopError(null);
+    setStopOpen(true);
+  };
+
   const givesName = selected?.name ?? (cfgId ? `Configuration #${cfgId}` : SERVER_SETTING);
   // What the code does, not what was asked: an older server ignores both choices and makes a single-use 24 h code.
   const limitsIgnored = !!token && !token.limitsApplied && (uses !== 1 || validHours !== 24);
@@ -293,7 +366,7 @@ export function EnrollPage() {
   } else if (uses === 1) {
     devicesHelp = 'One device, then the code stops working: the one to send a customer.';
   } else {
-    devicesHelp = `Anyone with this code can enroll up to ${uses} devices until it expires. Share it only with whoever sets them up.`;
+    devicesHelp = `Anyone with this code can enroll up to ${uses} devices until it expires, or until you stop all codes. Share it only with whoever sets them up.`;
   }
   const ssid = wifiSsid.trim();
   const wifiInCode = wifiOn && !!ssid;
@@ -502,6 +575,14 @@ export function EnrollPage() {
           This code has expired. Make a new one before you enroll a device.
         </Callout>
       ) : null}
+      {replaced && !(replaced.until && replaced.until <= now) ? (
+        <Callout tone="warn" icon={<IconWarning size={16} />} role="status">
+          {replacedText(replaced)}{' '}
+          <LinkButton tone="inline" onClick={openStop}>
+            Stop all codes
+          </LinkButton>
+        </Callout>
+      ) : null}
       <TabPanel idBase={METHOD_TABS} tabKey={method} className="v2-enroll__panel">
         {method === 'qr' ? (
           <div className="v2-enroll__cols">
@@ -540,6 +621,14 @@ export function EnrollPage() {
           </div>
         )}
       </TabPanel>
+      <div className="v2-enroll__stop">
+        <span className="v2-enroll__help">
+          A code shared further than meant? Stop every code that still works; enrolled devices stay enrolled.
+        </span>
+        <Button size="sm" variant="danger" onClick={openStop}>
+          Stop all codes
+        </Button>
+      </div>
       {!RELEASE_BUILD ? (
         <Callout tone="warn" icon={<IconWarning size={16} />}>
           No verified agent release was found when this console was built, so the code expects the debug build of
@@ -571,6 +660,32 @@ export function EnrollPage() {
       <PageHeader title="Enroll a device" subtitle="Set up a new or factory-reset Android device so MDMesh manages it." />
       {/* QR first on phones: the person is usually holding the device to scan. */}
       <div className="v2-enroll">{mobile ? [enrollCard, chooseCard] : [chooseCard, enrollCard]}</div>
+      <Modal
+        open={stopOpen}
+        size="sm"
+        role="alertdialog"
+        title="Stop all enrollment codes?"
+        description="Every code that still works stops now: this one, codes you replaced, and codes other admins made, printed or shared ones too. Devices already enrolled stay enrolled. A new code is made for your choices."
+        onClose={() => {
+          if (!stopping) setStopOpen(false);
+        }}
+        footer={
+          <>
+            <Button size="lg" disabled={stopping} onClick={() => setStopOpen(false)}>
+              Cancel
+            </Button>
+            <Button size="lg" variant="danger" disabled={stopping} onClick={() => void stopAll()}>
+              {stopping ? 'Stopping…' : 'Stop all codes'}
+            </Button>
+          </>
+        }
+      >
+        {stopError ? (
+          <Callout tone="alert" role="alert">
+            {stopError}
+          </Callout>
+        ) : null}
+      </Modal>
     </>
   );
 }

@@ -13,6 +13,7 @@ import com.mdmesh.proto.ConfigApplyPayload
 import com.mdmesh.proto.ConfigApplyResult
 import com.mdmesh.proto.ConfigOutcome
 import com.mdmesh.proto.DeviceAction
+import com.mdmesh.proto.KioskApplyPayload
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -47,10 +48,15 @@ class ConfigApplier(
     /**
      * Staff can restore the assigned kiosk locally, including offline. Read the current document under the same
      * lock as config.apply so an older button click cannot restore a kiosk a newer configuration disabled.
+     * [expected], when given, is the kiosk the person confirmed (its exit, above all): a different one delivered
+     * since is refused rather than entered unseen.
      */
-    suspend fun returnToConfiguredKiosk(): KioskResult = mutex.withLock {
+    suspend fun returnToConfiguredKiosk(expected: KioskApplyPayload? = null): KioskResult = mutex.withLock {
         val payload = store.configuredKiosk()
             ?: return@withLock KioskResult.Failed("The device configuration does not enable kiosk.")
+        if (expected != null && payload != expected) {
+            return@withLock KioskResult.Failed("The kiosk settings just changed. Check them and try again.")
+        }
         kiosk.enter(payload)
     }
 

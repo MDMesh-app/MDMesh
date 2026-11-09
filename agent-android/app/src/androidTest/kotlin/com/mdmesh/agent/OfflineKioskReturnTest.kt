@@ -44,7 +44,8 @@ import java.io.File
  * Run on a disposable, offline Device Owner emulator (Wi-Fi and mobile data disabled). Exercises the real PIN UI,
  * persisted kiosk state, Settings access and return button against Android lock task, without an MDM server.
  * Saves the return screen to the app's external files directory for visual review.
- * Manual only: CI compiles/lints this source but never runs it. Assumptions skip unsupported test environments.
+ * Manual only: CI neither compiles nor runs it (`./gradlew :app:assembleDebugAndroidTest` builds it), so a change to
+ * the classes it uses can break it unnoticed until someone runs it. Assumptions skip unsupported test environments.
  */
 @RunWith(AndroidJUnit4::class)
 class OfflineKioskReturnTest {
@@ -122,6 +123,9 @@ class OfflineKioskReturnTest {
         awaitCondition { node("Return to kiosk")?.isEnabled == true }
         captureScreen("offline-kiosk-return.png")
         val returnStartedAt = System.currentTimeMillis()
+        click("Return to kiosk")
+        // It asks first (this kiosk has an exit PIN, so the dialog names it); its button has the same label.
+        awaitCondition { node("Return to kiosk?") != null }
         click("Return to kiosk")
         awaitCondition { locked() && store.load() == payload && node("Exit kiosk") != null }
         assertEquals(payload, config.configuredKiosk())

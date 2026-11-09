@@ -96,6 +96,21 @@ class ConfiguredKioskReturnTest {
         assertEquals(0, controller.enters)
     }
 
+    @Test fun `a kiosk changed since it was confirmed is refused, the confirmed one entered`() = runTest {
+        config.save(ConfigApplyPayload(revision = "saved", kiosk = payload))
+        val applier = ConfigApplier(fixedToggles(), kiosk(), {}, config, setPowerMode = {})
+        // Confirmed with an exit PIN; a configuration without one arrived before the tap went through.
+        val noExit = payload.copy(password = null, exitMode = "remote")
+        config.delivered = ConfigApplyPayload(revision = "new", kiosk = noExit)
+        assertTrue(applier.returnToConfiguredKiosk(expected = payload) is KioskResult.Failed)
+        assertEquals(0, controller.enters)
+        assertNull(active.load())
+
+        config.delivered = ConfigApplyPayload(revision = "newer", kiosk = payload)
+        assertEquals(KioskResult.Ok, applier.returnToConfiguredKiosk(expected = payload))
+        assertEquals(payload, active.load())
+    }
+
     @Test fun `failed entry preserves the configuration for a local retry`() = runTest {
         config.save(ConfigApplyPayload(revision = "saved", kiosk = payload))
         val applier = ConfigApplier(fixedToggles(), kiosk(), {}, config, setPowerMode = {})

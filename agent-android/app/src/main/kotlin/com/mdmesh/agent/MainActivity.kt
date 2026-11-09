@@ -1,6 +1,7 @@
 package com.mdmesh.agent
 
 import android.app.ActivityManager
+import android.app.AlertDialog
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
@@ -28,13 +29,17 @@ import com.mdmesh.core.store.ConfigStateStore
 import com.mdmesh.core.store.configuredKiosk
 import com.mdmesh.core.store.DeviceIdStore
 import com.mdmesh.core.store.KioskStateStore
+import com.mdmesh.core.sync.CheckInWorker
 import com.mdmesh.core.sync.SyncStatus
 import com.mdmesh.core.telemetry.EventLog
 import com.mdmesh.kiosk.KioskResult
+import com.mdmesh.proto.KioskApplyPayload
 import com.mdmesh.policy.wifi.DpmHandle
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.combine
 import java.text.DateFormat
 import java.util.Date
@@ -65,6 +70,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var kioskValue: TextView
     private lateinit var returnButton: Button
     private var returningToKiosk = false
+    private var confirmDialog: AlertDialog? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -94,6 +100,12 @@ class MainActivity : ComponentActivity() {
         refresh()
     }
 
+    override fun onDestroy() {
+        confirmDialog?.dismiss()
+        confirmDialog = null
+        super.onDestroy()
+    }
+
     private fun refresh() {
         kioskValue.text = if (isLocked()) "Locked (kiosk active)" else "Not locked"
         val canReturn = isDeviceOwner() && !isLocked() && configStore.configuredKiosk() != null
@@ -106,29 +118,53 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun returnToKiosk() {
+    /** Ask first: returning locks the device, and some kiosks have no exit on the device at all. */
+    private fun confirmReturnToKiosk() {
+        if (returningToKiosk || confirmDialog != null) return
+        val kiosk = configStore.configuredKiosk() ?: return refresh()
+        val prompt = KioskReturnPrompt.of(kiosk)
+        confirmDialog = AlertDialog.Builder(this)
+            .setTitle(prompt.title)
+            .setMessage(prompt.message)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton(prompt.confirm) { _, _ -> returnToKiosk(kiosk) }
+            .setOnDismissListener { confirmDialog = null }
+            .show()
+    }
+
+    private fun returnToKiosk(confirmed: KioskApplyPayload) {
         if (returningToKiosk) return
         returningToKiosk = true
         refresh()
         lifecycleScope.launch {
             try {
-                val result = runCatching { configApplier.returnToConfiguredKiosk() }.getOrElse {
-                    if (it is CancellationException) throw it
-                    KioskResult.Failed("Could not restore kiosk. Please try again.")
-                }
-                val error = when (result) {
-                    KioskResult.Ok -> {
-                        events.record("kioskReturn", "returned on-device")
-                        null
-                    }
-                    KioskResult.Unsupported -> "Kiosk is not supported on this device."
-                    is KioskResult.Failed -> result.reason
-                }
+                // Not cancelled with the activity (a rotation, say): stopping mid-entry could leave a partial kiosk,
+                // HOME claimed and the allowlist set with nothing saved. The entry, its event and the check-in finish.
+                val error = withContext(NonCancellable) { enterConfiguredKiosk(confirmed) }
                 error?.let { Toast.makeText(this@MainActivity, it, Toast.LENGTH_LONG).show() }
             } finally {
                 returningToKiosk = false
                 refresh()
             }
+        }
+    }
+
+    /** Enters the confirmed kiosk; null when it worked, else what to tell the person. */
+    private suspend fun enterConfiguredKiosk(confirmed: KioskApplyPayload): String? {
+        val result = runCatching { configApplier.returnToConfiguredKiosk(expected = confirmed) }.getOrElse {
+            if (it is CancellationException) throw it
+            KioskResult.Failed("Could not restore kiosk. Please try again.")
+        }
+        return when (result) {
+            KioskResult.Ok -> {
+                events.record("kioskReturn", "returned on-device")
+                // Tell the server now, so the console shows the device in kiosk without waiting for the next
+                // heartbeat. After any check-in already running: that one may carry the state from before.
+                CheckInWorker.scheduleAfterCurrent(applicationContext)
+                null
+            }
+            KioskResult.Unsupported -> "Kiosk is not supported on this device."
+            is KioskResult.Failed -> result.reason
         }
     }
 
@@ -218,7 +254,7 @@ class MainActivity : ComponentActivity() {
         layoutParams = LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
         ).apply { topMargin = dp(RETURN_BUTTON_GAP) }
-        setOnClickListener { returnToKiosk() }
+        setOnClickListener { confirmReturnToKiosk() }
     }
 
     private fun label(s: String): TextView =

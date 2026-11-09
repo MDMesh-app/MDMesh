@@ -6,6 +6,9 @@ import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.policy.PolicyOutcome
 import com.mdmesh.policy.ReleasablePolicy
 import com.mdmesh.policy.ResolvedToggles
+import com.mdmesh.policy.AppRuntimePermissions
+import com.mdmesh.policy.AppPermissionOutcome
+import com.mdmesh.policy.UnsupportedAppRuntimePermissions
 import com.mdmesh.policy.safeboot.SafeBootPolicy
 import com.mdmesh.policy.wifi.WifiRadioPolicy
 import com.mdmesh.proto.ConfigApplyPayload
@@ -40,6 +43,7 @@ class ConfigApplier(
     private val setLocationMode: (String) -> Unit,
     private val store: ConfigStateStore,
     private val setPowerMode: (String) -> Unit,
+    private val appPermissions: AppRuntimePermissions = UnsupportedAppRuntimePermissions,
 ) {
     private val mutex = Mutex()
 
@@ -78,6 +82,7 @@ class ConfigApplier(
     private fun manages(doc: ConfigApplyPayload, outcomeKey: String): Boolean = when {
         outcomeKey == KIOSK -> doc.kiosk != null
         outcomeKey.startsWith(POLICIES) -> outcomeKey.removePrefix(POLICIES) in doc.policies
+        outcomeKey.startsWith(APP_PERMISSIONS) -> appPermissionKeys(doc).contains(outcomeKey)
         else -> true
     }
 
@@ -130,9 +135,51 @@ class ConfigApplier(
                     .getOrElse { ConfigOutcome.failed(it.message ?: "connectivity mode") }
             }
         }
+        applyAppPermissions(doc, previous, unreleased, outcomes)
         val result = ConfigApplyResult(doc.revision, outcomes)
         if (persist && succeeded(result)) store.save(doc)
         return result
+    }
+
+    /** Applies desired app rules; an explicit empty section releases rules in the prior desired document. */
+    private fun applyAppPermissions(
+        doc: ConfigApplyPayload,
+        previous: List<ConfigApplyPayload>,
+        unreleased: Set<String>,
+        outcomes: MutableMap<String, String>,
+    ) {
+        val desired = doc.appPermissions ?: return
+        val desiredRules = desired.flatMap { entry -> entry.permissions.map { (permission, state) ->
+            AppPermissionRule(entry.packageName, permission, state)
+        } }
+        desiredRules.forEach { rule ->
+            outcomes[rule.key] = appPermissionOutcome(appPermissions.set(rule.packageName, rule.permission, rule.state))
+        }
+        val priorRules = previous.flatMap { it.appPermissions.orEmpty() }.flatMap { entry ->
+            entry.permissions.keys.map { AppPermissionRule(entry.packageName, it, AppRuntimePermissions.DEFAULT) }
+        } + unreleased.filter { it.startsWith(APP_PERMISSIONS) && it !in appPermissionKeys(doc) }
+            .mapNotNull(::ruleFromKey)
+        val desiredKeys = desiredRules.map { it.key }.toSet()
+        priorRules.distinctBy { it.key }.filter { it.key !in desiredKeys }.forEach { rule ->
+            appPermissionOutcome(appPermissions.release(rule.packageName, rule.permission))
+                .takeIf(ConfigOutcome::isFailed)
+                ?.let { outcomes[rule.key] = it }
+        }
+    }
+
+    private fun appPermissionKeys(doc: ConfigApplyPayload): Set<String> = doc.appPermissions.orEmpty().flatMap { entry ->
+        entry.permissions.keys.map { appPermissionKey(entry.packageName, it) }
+    }.toSet()
+
+    private fun appPermissionOutcome(outcome: AppPermissionOutcome): String = when (outcome) {
+        AppPermissionOutcome.Applied -> ConfigOutcome.APPLIED
+        AppPermissionOutcome.Unsupported -> ConfigOutcome.UNSUPPORTED
+        AppPermissionOutcome.NotRequested -> NOT_REQUESTED
+        is AppPermissionOutcome.Failed -> ConfigOutcome.failed(outcome.reason)
+    }
+
+    private data class AppPermissionRule(val packageName: String, val permission: String, val state: String) {
+        val key: String get() = appPermissionKey(packageName, permission)
     }
 
     /**
@@ -213,7 +260,18 @@ class ConfigApplier(
         private const val POLICIES = "policies."
         private const val KIOSK = "kiosk"
         private const val CONNECTIVITY = "connectivity"
+        private const val APP_PERMISSIONS = "appPermissions."
+        private const val NOT_REQUESTED = "not-requested"
         private val POWER_MODES = setOf(DeviceAction.POWER_ADAPTIVE, DeviceAction.POWER_ALWAYS_ON)
+
+        private fun appPermissionKey(packageName: String, permission: String): String =
+            "$APP_PERMISSIONS$packageName.$permission"
+
+        private fun ruleFromKey(key: String): AppPermissionRule? {
+            val parts = key.removePrefix(APP_PERMISSIONS).split(".android.permission.", limit = 2)
+            if (parts.size != 2 || parts[0].isBlank() || parts[1].isBlank()) return null
+            return AppPermissionRule(parts[0], "android.permission.${parts[1]}", AppRuntimePermissions.DEFAULT)
+        }
 
         /** Never a real revision (config.apply requires a non-blank one). */
         private const val NO_REVISION = ""

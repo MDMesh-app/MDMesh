@@ -11,6 +11,8 @@ import com.mdmesh.core.testing.fixedToggles
 import com.mdmesh.kiosk.KioskController
 import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.policy.PolicyOutcome
+import com.mdmesh.policy.AppRuntimePermissions
+import com.mdmesh.policy.AppPermissionOutcome
 import com.mdmesh.policy.ReleasablePolicy
 import com.mdmesh.policy.ResolvedToggles
 import com.mdmesh.policy.TogglePolicy
@@ -20,6 +22,7 @@ import com.mdmesh.policy.wifi.WifiRadioPolicy
 import com.mdmesh.proto.ConfigApplyPayload
 import com.mdmesh.proto.ConfigConnectivity
 import com.mdmesh.proto.ConfigLocation
+import com.mdmesh.proto.ConfigAppPermissions
 import com.mdmesh.proto.ConfigOutcome
 import com.mdmesh.proto.KioskApplyPayload
 import kotlinx.coroutines.test.runTest
@@ -60,7 +63,48 @@ class ConfigApplierTest {
         kiosk: KioskApplier,
         setLocationMode: (String) -> Unit,
         store: ConfigStateStore,
-    ) = ConfigApplier(toggles, kiosk, setLocationMode, store, setPowerMode = {})
+        appPermissions: AppRuntimePermissions = object : AppRuntimePermissions {
+            override fun set(packageName: String, permission: String, state: String) = AppPermissionOutcome.Unsupported
+        },
+    ) = ConfigApplier(toggles, kiosk, setLocationMode, store, setPowerMode = {}, appPermissions = appPermissions)
+
+    @Test fun `app permissions apply explicit rules and release rules removed by an explicit section`() = runTest {
+        val calls = mutableListOf<Triple<String, String, String>>()
+        val permissions = object : AppRuntimePermissions {
+            override fun set(packageName: String, permission: String, state: String): AppPermissionOutcome {
+                calls += Triple(packageName, permission, state)
+                return AppPermissionOutcome.Applied
+            }
+        }
+        val store = InMemoryConfigStateStore()
+        val a = applier(fixedToggles(), kiosk(FakeController()), {}, store, permissions)
+        a.apply(ConfigApplyPayload(revision = "p1", appPermissions = listOf(ConfigAppPermissions(
+            "org.example.maps", mapOf("android.permission.CAMERA" to "deny"),
+        ))))
+        val released = a.apply(ConfigApplyPayload(revision = "p2", appPermissions = emptyList()))
+        assertEquals(listOf(
+            Triple("org.example.maps", "android.permission.CAMERA", "deny"),
+            Triple("org.example.maps", "android.permission.CAMERA", AppRuntimePermissions.DEFAULT),
+        ), calls)
+        assertTrue(released.outcomes.isEmpty())
+    }
+
+    @Test fun `an omitted app permissions section leaves a prior override alone for old server compatibility`() = runTest {
+        val calls = mutableListOf<Triple<String, String, String>>()
+        val permissions = object : AppRuntimePermissions {
+            override fun set(packageName: String, permission: String, state: String): AppPermissionOutcome {
+                calls += Triple(packageName, permission, state)
+                return AppPermissionOutcome.Applied
+            }
+        }
+        val store = InMemoryConfigStateStore()
+        val a = applier(fixedToggles(), kiosk(FakeController()), {}, store, permissions)
+        a.apply(ConfigApplyPayload(revision = "p1", appPermissions = listOf(ConfigAppPermissions(
+            "org.example.maps", mapOf("android.permission.CAMERA" to "grant"),
+        ))))
+        a.apply(ConfigApplyPayload(revision = "p2"))
+        assertEquals(1, calls.size)
+    }
 
     @Test fun `applies present policies only and persists on full success`() = runTest {
         val wifi = FakeToggle("wifi", PolicyOutcome.Applied); val bt = FakeToggle("bluetooth", PolicyOutcome.Applied)

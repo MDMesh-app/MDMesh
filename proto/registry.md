@@ -50,6 +50,7 @@ with a protocol bump, a capability token and a per-section outcome, in the relea
 | `silentUninstall` | silent uninstall | Planned: not advertised yet. |
 | `splitApk` | split/.xapk install | Planned key: not advertised; `app.install` already takes split `parts`. |
 | `fdroidCatalog` | can pull from an F-Droid repo | Planned: not advertised yet. |
+| `runtimePermissions` | per-app runtime permission grant, denial, and release | Device Owner and API 23+. The optional `config.apply.appPermissions` section is sent only to agents advertising `app.runtimePermissions`; omission is legacy/no management and an empty array releases MDMesh overrides. |
 
 ### remoteControl
 Advertised as an object (`tier`, `screenCapture`, `inputInjection`, `transport`). See README. The agent

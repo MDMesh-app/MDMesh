@@ -48,6 +48,7 @@ import java.util.function.Supplier;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -66,6 +67,10 @@ public class AgentDeviceAccessTest {
     private boolean active;
     private boolean activeCanary;
     private String rolloutDeviceVersion = "1";
+    private String rolloutDeviceCaps = "{\"appManagement\":[\"silentInstall\"]}";
+    /** Non-null: another request moved the rollout to this stage right after the resource first read it. */
+    private String racedStage;
+    private int activeReads;
     private boolean socketOpen;
     private FakeMapper<DeviceMapper> deviceMapper;
     private AgentAdminResource resource;
@@ -152,7 +157,10 @@ public class AgentDeviceAccessTest {
             @Override public AgentRollout findActiveByCustomer(int c) {
                 if (!active) return null;
                 AgentRollout r = findById(77);
-                r.setStage(activeCanary ? "canary" : "fleet");
+                String stage = activeCanary ? "canary" : "fleet";
+                if (racedStage != null && activeReads++ > 0) stage = racedStage;
+                if (!"canary".equals(stage) && !"fleet".equals(stage)) return null;
+                r.setStage(stage);
                 return r;
             }
             @Override public void insertRollout(AgentRollout r) { r.setId(77); sideEffects.add("rollout created"); }
@@ -166,7 +174,16 @@ public class AgentDeviceAccessTest {
                 r.setPackageName("com.example.agent");
                 return r;
             }
-            @Override public void updateStage(int id, String stage) { sideEffects.add("stage " + stage); }
+            @Override public boolean moveStage(int id, String from, String to) {
+                if (racedStage != null && !racedStage.equals(from)) return false;
+                sideEffects.add("stage " + to);
+                return true;
+            }
+            @Override public boolean cancelActive(int id) {
+                if ("done".equals(racedStage) || "cancelled".equals(racedStage)) return false;
+                sideEffects.add("stage cancelled");
+                return true;
+            }
             @Override public List<String> listCanaryNumbers(int id) {
                 return activeCanary ? Arrays.asList(VISIBLE, HIDDEN) : new ArrayList<String>();
             }
@@ -176,7 +193,7 @@ public class AgentDeviceAccessTest {
                     RolloutDeviceRow r = new RolloutDeviceRow();
                     r.setDeviceNumber(n);
                     r.setAgentVersion(rolloutDeviceVersion);
-                    r.setCapabilitiesJson("{\"appManagement\":[\"silentInstall\"]}");
+                    r.setCapabilitiesJson(rolloutDeviceCaps);
                     rows.add(r);
                 }
                 return rows;
@@ -529,6 +546,66 @@ public class AgentDeviceAccessTest {
 
         assertEquals("done", view.get("stage"));
         assertTrue(sideEffects.toString(), sideEffects.contains("stage done"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void aWholeFleetCanaryOfDevicesThatCannotUpdateThemselvesStaysBlocked() {
+        login(true);
+        active = true;
+        activeCanary = true;
+        rolloutDeviceCaps = "{}";
+
+        Map<String, Object> view = (Map<String, Object>) rollouts.active().getData();
+
+        assertEquals("canary", view.get("stage"));
+        assertFalse(sideEffects.toString(), sideEffects.contains("stage done"));
+        assertFalse((Boolean) ((Map<String, Object>) rollouts.summary("2").getData()).get("complete"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void completingTheCanaryNeverOverwritesACancelThatGotThereFirst() {
+        login(true);
+        active = true;
+        activeCanary = true;
+        rolloutDeviceVersion = "2";
+        racedStage = "cancelled";
+
+        assertNull(rollouts.active().getData());
+        assertFalse(sideEffects.toString(), sideEffects.contains("stage done"));
+    }
+
+    @Test
+    public void promoteCannotReopenARolloutThatFinishedMeanwhile() {
+        login(true);
+        racedStage = "done";
+
+        assertEquals("error.rollout.stage", rollouts.promote(77).getMessage());
+        assertEquals(Collections.emptyList(), sideEffects);
+    }
+
+    @Test
+    public void cancelLeavesAFinishedRolloutDone() {
+        login(true);
+        racedStage = "done";
+
+        assertEquals(Response.ResponseStatus.OK, rollouts.cancel(77).getStatus());
+        assertEquals(Collections.emptyList(), sideEffects);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void theViewSaysHowManyDevicesAPromoteWouldReach() {
+        login(true);
+        active = true;
+        activeCanary = true; // both devices are canaries
+        Map<String, Object> progress = (Map<String, Object>) ((Map<String, Object>) rollouts.active().getData()).get("progress");
+        assertEquals(0, progress.get("others"));
+
+        activeCanary = false;
+        progress = (Map<String, Object>) ((Map<String, Object>) rollouts.active().getData()).get("progress");
+        assertEquals(2, progress.get("others"));
     }
 
     @Test

@@ -227,7 +227,8 @@ public class RolloutResource {
         if (r == null || !customerId.get().equals(r.getCustomerId())) return Response.PERMISSION_DENIED();
         if (!"canary".equals(r.getStage())) return Response.ERROR("error.rollout.stage");
 
-        rolloutDAO.updateStage(r.getId(), "fleet");
+        // Compare-and-set: a cancel, or the whole-fleet canary completing, may have moved it since the read above.
+        if (!rolloutDAO.moveStage(r.getId(), "canary", "fleet")) return Response.ERROR("error.rollout.stage");
         r.setStage("fleet");
 
         int cust = customerId.get();
@@ -252,7 +253,7 @@ public class RolloutResource {
         if (!customerId.isPresent()) return Response.PERMISSION_DENIED();
         AgentRollout r = rolloutDAO.findById(id);
         if (r == null || !customerId.get().equals(r.getCustomerId())) return Response.PERMISSION_DENIED();
-        rolloutDAO.updateStage(r.getId(), "cancelled");
+        rolloutDAO.cancelActive(r.getId()); // a rollout that already finished keeps "done"
         return Response.OK();
     }
 
@@ -264,8 +265,7 @@ public class RolloutResource {
     public Response active() {
         Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
         if (!customerId.isPresent()) return Response.PERMISSION_DENIED();
-        AgentRollout r = rolloutDAO.findActiveByCustomer(customerId.get());
-        completeCanaryWhenItIsTheWholeFleet(r);
+        AgentRollout r = completeCanaryWhenItIsTheWholeFleet(rolloutDAO.findActiveByCustomer(customerId.get()));
         return Response.OK(r == null ? null : buildView(r));
     }
 
@@ -327,20 +327,30 @@ public class RolloutResource {
      * A canary containing every customer device has nobody left to promote. Once that cohort has
      * settled, close it during the normal rollout-status refresh instead of leaving an active
      * rollout with a meaningless promotion action.
+     *
+     * <p>This writes from a GET that any user who can read the rollout makes, while promote and cancel need
+     * edit_devices and whole-fleet reach. That is deliberate: the move to done follows from the devices' own reports,
+     * changes no device, and is a compare-and-set from canary, so it never overrides a cancel or promote.
+     *
+     * @return the rollout to show: {@code r}, done when it just completed, or what is active now when another
+     *         request moved it first
      */
-    private void completeCanaryWhenItIsTheWholeFleet(AgentRollout r) {
-        if (r == null || !"canary".equals(r.getStage())) return;
+    private AgentRollout completeCanaryWhenItIsTheWholeFleet(AgentRollout r) {
+        if (r == null || !"canary".equals(r.getStage())) return r;
         List<RolloutDeviceRow> rows = rolloutDAO.listCustomerDevices(r.getCustomerId());
         Set<String> canary = new HashSet<>(rolloutDAO.listCanaryNumbers(r.getId()));
-        if (!filter(rows, canary, false).isEmpty()) return;
+        if (!filter(rows, canary, false).isEmpty()) return r;
 
         Set<String> pending = rolloutDAO.listPendingInstallNumbers(r.getCustomerId(), r.getPackageName());
         RolloutProgress.Counts progress = RolloutProgress.counts(r.getTargetVersion(), filter(rows, canary, true), pending);
-        if (!RolloutProgress.isComplete(progress)) return;
+        if (!RolloutProgress.isComplete(progress)) return r;
 
-        rolloutDAO.updateStage(r.getId(), "done");
+        if (!rolloutDAO.moveStage(r.getId(), "canary", "done")) {
+            return rolloutDAO.findActiveByCustomer(r.getCustomerId());
+        }
         r.setStage("done");
         logger.info("Rollout {} completed in canary stage: every device was a settled canary", r.getId());
+        return r;
     }
 
     /** @return false when the device already had it in flight (e.g. its check-in re-queued it a moment ago). */
@@ -369,6 +379,8 @@ public class RolloutResource {
         progress.put("targetVersion", r.getTargetVersion());
         progress.put("canary", RolloutProgress.counts(r.getTargetVersion(), canaryRows, pending));
         progress.put("fleet", fleetStarted ? RolloutProgress.counts(r.getTargetVersion(), fleetRows, pending) : null);
+        // Devices outside the canary: 0 means a promote would reach nobody, so the console offers Finish instead.
+        progress.put("others", fleetRows.size());
 
         Map<String, Object> view = new LinkedHashMap<>();
         view.put("id", r.getId());

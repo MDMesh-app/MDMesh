@@ -51,8 +51,16 @@ public interface RolloutMapper {
     @Select({"SELECT * FROM agentRollout WHERE id = #{id}"})
     AgentRollout findById(@Param("id") int id);
 
-    @Update({"UPDATE agentRollout SET stage = #{stage}, updatedAt = #{updatedAt} WHERE id = #{id}"})
-    void updateStage(@Param("id") int id, @Param("stage") String stage, @Param("updatedAt") long updatedAt);
+    /** Moves the rollout to {@code to} only while it is still in {@code from}, so a concurrent promote, cancel or
+     *  completion that got there first is never overwritten. @return rows changed, 0 or 1. */
+    @Update({"UPDATE agentRollout SET stage = #{to}, updatedAt = #{updatedAt} WHERE id = #{id} AND stage = #{from}"})
+    int moveStage(@Param("id") int id, @Param("from") String from, @Param("to") String to,
+                  @Param("updatedAt") long updatedAt);
+
+    /** Cancels the rollout while it is still running; a done or cancelled one keeps its stage. @return rows changed. */
+    @Update({"UPDATE agentRollout SET stage = 'cancelled', updatedAt = #{updatedAt} " +
+            "WHERE id = #{id} AND stage IN ('canary','fleet')"})
+    int cancelActive(@Param("id") int id, @Param("updatedAt") long updatedAt);
 
     @Select({"SELECT deviceNumber FROM agentRolloutCanary WHERE rolloutId = #{rolloutId}"})
     List<String> listCanaryNumbers(@Param("rolloutId") int rolloutId);

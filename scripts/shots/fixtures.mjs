@@ -237,7 +237,7 @@ export function configurationsFixtures(fx) {
     type: 0, pushOptions: 'mqttWorker', appPermissions: 'GRANTALL', downloadUpdates: 'UNLIMITED',
     desktopHeader: 'NO_HEADER', defaultFilePath: '/', systemUpdateType: 0, useDefaultDesignSettings: true,
     kioskMode: false, password: '', defaultKioskPin: false, iconSize: 'SMALL', requestUpdates: 'DONOTTRACK',
-    wifi: null, wifiRadio: null, bluetooth: null, usbStorage: null, disableScreenshots: null,
+    wifi: null, wifiRadio: null, bluetooth: null, camera: null, usbStorage: null, disableScreenshots: null,
     disableFactoryReset: null, disableSafeBoot: null, mainAppId: null, baseUrl: 'https://mdm.acme.example',
   };
   const full = {

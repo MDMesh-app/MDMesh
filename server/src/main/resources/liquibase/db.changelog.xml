@@ -3068,4 +3068,11 @@
         <rollback>ALTER TABLE devices DROP COLUMN wipedAt;</rollback>
     </changeSet>
 
+    <changeSet id="26.11.08-configurations-camera" author="letter-number" context="common">
+        <comment>Column,new: configurations#camera — null = not managed, true = allow and false = block,
+            sent as policies.camera. No DEFAULT preserves existing configurations and avoids a fleet-wide change.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN camera BOOLEAN;</sql>
+        <rollback>ALTER TABLE configurations DROP COLUMN camera;</rollback>
+    </changeSet>
+
 </databaseChangeLog>

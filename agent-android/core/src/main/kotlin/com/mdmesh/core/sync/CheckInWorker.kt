@@ -85,13 +85,7 @@ class CheckInWorker @AssistedInject constructor(
          *  A plain one-time job (no expedited) keeps it safe on minSdk 24 — WorkManager runs it
          *  promptly once the network constraint is met. */
         fun scheduleNow(context: Context) {
-            val request = OneTimeWorkRequestBuilder<CheckInWorker>()
-                .setConstraints(
-                    Constraints.Builder()
-                        .setRequiredNetworkType(NetworkType.CONNECTED)
-                        .build(),
-                )
-                .build()
+            val request = immediateRequest()
 
             // KEEP, not REPLACE: replacing cancels an in-flight run, which can kill an enroll
             // AFTER the single-use token was POSTed but before credentials were persisted.
@@ -101,5 +95,30 @@ class CheckInWorker @AssistedInject constructor(
                 request,
             )
         }
+
+        /**
+         * Queue a check-in after any current immediate run finishes. This is for state changes
+         * that occur while a check-in can already be sending its earlier snapshot: [scheduleNow]
+         * would drop this update. It never cancels a running check-in (that could interrupt
+         * enrollment); it only replaces a chain that already failed or was cancelled.
+         */
+        fun scheduleAfterCurrent(context: Context) {
+            val request = immediateRequest()
+
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                "$UNIQUE_NAME-now",
+                ExistingWorkPolicy.APPEND_OR_REPLACE,
+                request,
+            )
+        }
+
+        /** A one-time check-in that waits for a network; shared by [scheduleNow] and [scheduleAfterCurrent]. */
+        private fun immediateRequest() = OneTimeWorkRequestBuilder<CheckInWorker>()
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build(),
+            )
+            .build()
     }
 }

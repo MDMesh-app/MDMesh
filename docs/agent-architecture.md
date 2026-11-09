@@ -57,13 +57,13 @@ configuration; an ad-hoc "Custom kiosk" from the console is left alone. After so
 "Return to configured kiosk" sends `kiosk.enter` with the configuration's own kiosk block (the same payload
 `config.apply` carries), so the device is back in exactly that kiosk without waiting for a configuration change.
 
-**The 23 enforced fields**
+**The 24 enforced fields**
 
 | Area | Fields |
 |------|--------|
 | Kiosk | `mainAppId`, `kioskMode`, `kioskExit`, `kioskHome`, `kioskRecents`, `kioskNotifications`, `kioskSystemInfo`, `kioskKeyguard`, `kioskLockButtons`, `kioskLockVolume`, `password` (exit PIN, stored as entered) |
 | Launcher look | `backgroundColor`, `textColor`, `iconSize` |
-| Device policy | `wifi`, `wifiRadio`, `bluetooth`, `usbStorage`, `disableScreenshots`, `disableFactoryReset`, `disableSafeBoot` |
+| Device policy | `wifi`, `wifiRadio`, `bluetooth`, `camera`, `usbStorage`, `disableScreenshots`, `disableFactoryReset`, `disableSafeBoot` |
 | Location | `requestUpdates` (location capture mode) |
 | Connectivity | `connectivityMode` (live-connection mode, 1.5) |
 

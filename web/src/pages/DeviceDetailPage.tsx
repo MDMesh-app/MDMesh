@@ -732,7 +732,14 @@ export function DeviceDetailPage() {
     () => (configuration && cfgApps ? configuredKiosk(configuration, cfgApps) : null),
     [configuration, cfgApps],
   );
-  const kioskState = configuredKioskState({ history, kioskActive: ds?.kioskActive, inSync: cfgStatus?.inSync, configuredIds });
+  const kioskState = configuredKioskState({
+    history,
+    kioskActive: ds?.kioskActive,
+    inSync: cfgStatus?.inSync,
+    kioskGeneration: ds?.kioskGeneration,
+    kioskReturnGeneration: ds?.kioskReturnGeneration,
+    configuredIds,
+  });
   const cfgStart = configName ?? 'Its configuration';
   const cfgMid = configName ?? 'its configuration';
   const openReturn = () => setReturnOpen(true);

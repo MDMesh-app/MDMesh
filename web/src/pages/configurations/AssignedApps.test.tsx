@@ -82,6 +82,22 @@ async function save() {
 }
 
 describe('assigned apps: search, filter and sort', () => {
+  it('keeps an app permission disclosure inside that app’s table row', async () => {
+    const chrome = assigned(TEN.slice(0, 1));
+    chrome[0].requestedPermissions = 'android.permission.CAMERA';
+    open(chrome);
+    await loaded();
+
+    const row = screen.getByText('Chrome', { selector: '.v2-cfged-app__name' }).closest('tr')!;
+    expect(table().tBodies[0].rows).toHaveLength(1);
+    expect(row.querySelector('.v2-cfged-app__text .v2-cfged-permission-app')).toBeTruthy();
+    expect(within(row).getByText('Permissions · 1 available')).toBeTruthy();
+
+    fireEvent.click(within(row).getByText('Permissions · 1 available'));
+    expect(within(row).getByText('Camera')).toBeTruthy();
+    expect(table().tBodies[0].rows).toHaveLength(1);
+  });
+
   it('shows no controls for a list of the threshold or fewer, in stored order', async () => {
     open(assigned(TEN.slice(0, APP_CONTROLS_THRESHOLD)));
     await loaded();

@@ -1,6 +1,6 @@
 # Managed App Runtime Permissions
 
-**Status**: Proposed design — no implementation in this branch
+**Status**: Implemented on `feat/managed-app-permissions`; awaiting final live validation and PR preparation
 **Created**: 2026-11-09
 **Scope**: A modern replacement for the inherited `appPermissions` configuration field. It does not revive the
 Headwind `/sync` behavior.
@@ -33,10 +33,12 @@ managed applications: for example, let a maps app use Location while denying a g
 - The current `config.apply` document has only Boolean `policies`; per-app permission state needs a new optional
   structured section. It must be an additive agent-v1 extension and capability-gated.
 
-## Recommended First Release
+## Implemented First Release
 
-Only configured applications with `action=install` are eligible. The console offers only permissions that the agent
-reports the installed package requested. For each eligible package/permission pair, the administrator chooses:
+Only configured applications with `action=install` are eligible. The console initially derives a curated candidate
+list from the selected locally hosted APK; the agent checks the installed package before applying each rule and reports
+the outcome. APK declarations are therefore candidates, not a claim that every device can apply the permission. For
+each eligible package/permission pair, the administrator chooses:
 
 | State | Agent action | Meaning |
 | --- | --- | --- |
@@ -44,12 +46,13 @@ reports the installed package requested. For each eligible package/permission pa
 | Grant | `PERMISSION_GRANT_STATE_GRANTED` | Explicitly grant the requested runtime permission. |
 | Deny | `PERMISSION_GRANT_STATE_DENIED` | Explicitly deny the requested runtime permission. |
 
-The first UI should use a curated, readable list of dangerous runtime permissions—Location, Camera, Microphone,
-Contacts, Calendar, Phone, SMS, and media/files—while retaining exact Android permission names in the contract.
+The UI uses a curated, readable list of dangerous runtime permissions—Location, Camera, Microphone, Contacts,
+Calendar, Phone, SMS, media/files, notifications, and nearby-device permissions—while retaining exact Android
+permission names in the contract. It deliberately excludes special app access such as `MANAGE_EXTERNAL_STORAGE`.
 Do not offer a blanket "grant all" or "deny all" action, because it cannot explain the app's declared permissions
 or the effect of future APK updates.
 
-## Proposed Wire Contract
+## Implemented Wire Contract
 
 Add an optional `appPermissions` section to `config.apply`:
 
@@ -110,19 +113,18 @@ must distinguish *requested*, *configured*, and *Android currently granted* stat
   manifest; never automatically grant them because an old rule had a similarly named group.
 - **Per-device exceptions.** They should compose with the separate profile/override design, not be invented here.
 
-## Test Plan Before Implementation
+## Verification
 
-1. Kotlin unit tests: Device Owner/API guards; requested/unrequested permissions; Grant, Deny and Default; release
-   after a rule/package disappears; failed DPM call retried on the next apply.
-2. Kotlin protocol/golden tests: absent field compatibility, strict decoding of malformed entries, capability
-   advertisement, and complete result keys.
-3. Java tests: configuration validation; desired-state canonical JSON/revision; capability-gated check-in; migration
-   and delete/reassignment cleanup.
-4. Console tests: picker only shows eligible application rows; accurate Default wording; changed/save/apply state;
-   unsupported-device and not-requested outcomes.
-5. Live test on the debug S8 and a current Android device: install an app requesting Camera/Location, deny then grant
-   one permission, verify the Android behavior and server result, then remove the rule and verify the documented
-   auto-grant-baseline behavior.
+1. Kotlin unit and protocol tests cover Device Owner/API guards, requested/unrequested permissions, Grant/Deny/Default,
+   release behavior, absent-section compatibility, strict decoding, capability advertisement, and result keys.
+2. Java tests cover configuration validation, desired-state canonicalization/revision, capability-gated check-in, and
+   persistence cleanup.
+3. Console tests cover candidate filtering and, specifically, keep the expandable disclosure inside its app row rather
+   than creating a separate table row. Typecheck and production builds pass.
+4. Live S8 validation passed for Samsung Camera: Deny blocked Camera as administrator, Grant restored use, and Default
+   released the explicit MDMesh restriction. A final representative media/files validation on File Manager remains.
+5. A future current-Android debug-agent test must validate Android-13+-only permission candidates and provide the
+   device-effective PackageManager inventory deferred below.
 
 ## Decision
 

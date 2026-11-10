@@ -72,9 +72,15 @@
 
         <!-- Custom kiosk launcher. NOT a permanent HOME — the HOME claim lives on the alias below,
              which is toggled on only while in kiosk, so the device uses its normal OEM launcher the
-             rest of the time. -->
+             rest of the time.
+             configChanges="uiMode": a system light/dark switch must not recreate the kiosk HOME. A recreate
+             draws the idle screen first (a visible flash) and replays the saved kiosk, which in single-app
+             mode reopens the pinned app. Lock task survives either way (it belongs to the task). The launcher
+             draws in the admin's kiosk colours, not the theme, so there is nothing to redraw; dialogs opened
+             after the switch pick up the new mode. -->
         <activity
             android:name=".KioskLauncherActivity"
+            android:configChanges="uiMode"
             android:exported="true"
             android:launchMode="singleInstance"
             android:excludeFromRecents="true"

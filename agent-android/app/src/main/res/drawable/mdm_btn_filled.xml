@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Primary button: ink fill, 10dp corners. 40dp visible inside a 48dp touch target. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:insetTop="4dp"
+    android:insetBottom="4dp">
+    <ripple android:color="@color/mdm_ripple_on_ink">
+        <item>
+            <shape android:shape="rectangle">
+                <corners android:radius="@dimen/mdm_radius_sm" />
+                <solid android:color="@color/mdm_btn_filled_bg" />
+            </shape>
+        </item>
+    </ripple>
+</inset>

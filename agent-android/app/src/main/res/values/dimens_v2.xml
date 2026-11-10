@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v2 radii and sizes (web/src/tokens.css). -->
+<resources>
+    <dimen name="mdm_radius_sm">10dp</dimen>   <!-- -radius-sm: buttons, fields, callouts -->
+    <dimen name="mdm_radius_lg">16dp</dimen>   <!-- -radius-lg: cards, dialogs -->
+    <dimen name="mdm_touch_target">48dp</dimen>
+    <dimen name="mdm_dialog_padding">24dp</dimen>
+    <dimen name="mdm_dialog_inset">16dp</dimen>
+    <!-- Scrim behind dialogs: -backdrop alpha (0.35 light, 0.6 dark). -->
+    <item name="mdm_dim_amount" format="float" type="dimen">0.35</item>
+</resources>

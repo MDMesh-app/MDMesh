@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Text field: surface, 10dp corners, 1dp input border; 2dp ink when focused. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_enabled="false">
+        <shape android:shape="rectangle">
+            <corners android:radius="@dimen/mdm_radius_sm" />
+            <solid android:color="@color/mdm_surface_2" />
+            <stroke android:width="1dp" android:color="@color/mdm_border" />
+        </shape>
+    </item>
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <corners android:radius="@dimen/mdm_radius_sm" />
+            <solid android:color="@color/mdm_surface" />
+            <stroke android:width="2dp" android:color="@color/mdm_ink" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="@dimen/mdm_radius_sm" />
+            <solid android:color="@color/mdm_surface" />
+            <stroke android:width="1dp" android:color="@color/mdm_input_border" />
+        </shape>
+    </item>
+</selector>

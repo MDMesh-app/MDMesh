@@ -1,4 +1,46 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    App theme: AppCompat DayNight (follows the system light/dark setting), coloured from the v2 tokens in
+    colors_v2.xml (values/ = light, values-night/ = dark). No Material Components: dialogs, buttons and fields
+    are hand-styled below. Status and navigation bars are left at the AppCompat defaults for now.
+-->
 <resources>
-    <style name="Theme.MdmAgent" parent="Theme.AppCompat.DayNight.NoActionBar" />
+
+    <style name="Theme.MdmAgent" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/mdm_ink</item>
+        <item name="colorAccent">@color/mdm_ink</item>
+        <item name="colorControlNormal">@color/mdm_input_border</item>
+        <item name="colorControlActivated">@color/mdm_ink</item>
+        <item name="colorControlHighlight">@color/mdm_ripple</item>
+        <item name="colorError">@color/mdm_alert_ink</item>
+        <item name="android:textColorHighlight">@color/mdm_selection</item>
+        <item name="alertDialogTheme">@style/ThemeOverlay.MdmAgent.Dialog</item>
+    </style>
+
+    <!-- AlertDialog (androidx.appcompat): v2 Modal. Surface, 16dp corners, title 18/600, message text-2,
+         Cancel as a ghost button and the confirm as the filled ink button. -->
+    <style name="ThemeOverlay.MdmAgent.Dialog" parent="Theme.AppCompat.DayNight.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/mdm_dialog_bg</item>
+        <item name="android:backgroundDimAmount">@dimen/mdm_dim_amount</item>
+        <item name="android:windowTitleStyle">@style/MdmAgent.DialogTitle</item>
+        <!-- The message uses ?android:textColorPrimary (TextAppearance.AppCompat.Subhead): v2 text-2. -->
+        <item name="android:textColorPrimary">@color/mdm_text_2</item>
+        <item name="android:textColorSecondary">@color/mdm_secondary</item>
+        <item name="android:textColorHint">@color/mdm_secondary</item>
+        <item name="android:textColorHighlight">@color/mdm_selection</item>
+        <item name="colorPrimary">@color/mdm_ink</item>
+        <item name="colorAccent">@color/mdm_ink</item>
+        <item name="colorControlNormal">@color/mdm_input_border</item>
+        <item name="colorControlActivated">@color/mdm_ink</item>
+        <item name="colorControlHighlight">@color/mdm_ripple</item>
+        <item name="colorError">@color/mdm_alert_ink</item>
+        <item name="dialogPreferredPadding">@dimen/mdm_dialog_padding</item>
+        <item name="buttonBarStyle">@style/Widget.MdmAgent.ButtonBar</item>
+        <item name="buttonBarPositiveButtonStyle">@style/Widget.MdmAgent.Button.Dialog.Positive</item>
+        <item name="buttonBarNegativeButtonStyle">@style/Widget.MdmAgent.Button.Dialog.Negative</item>
+        <item name="buttonBarNeutralButtonStyle">@style/Widget.MdmAgent.Button.Dialog.Negative</item>
+        <item name="android:editTextStyle">@style/Widget.MdmAgent.EditText</item>
+        <item name="editTextStyle">@style/Widget.MdmAgent.EditText</item>
+    </style>
+
 </resources>

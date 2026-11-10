@@ -22,6 +22,10 @@ android {
         versionName = (project.findProperty("versionName") as String?) ?: "0.1.15"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // The agent is English-only (app/src/main/res/values). Drop the libraries' translations (AppCompat's
+        // action-bar and search strings, which no agent screen shows): about -105 KB in the release APK.
+        resourceConfigurations += "en"
     }
 
     signingConfigs {

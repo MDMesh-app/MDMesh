@@ -26,6 +26,9 @@ Fixes
   @Przemek-Magic).
 - Kiosk: after someone leaves kiosk on the device with the exit PIN, the agent checks in right away, so the console
   shows kiosk off without waiting for the next heartbeat. Needs agent 0.5.0 (thanks @letternumber).
+- Agent rollout: when every device is in the canary, the rollout finishes once they've updated instead of staying
+  open, and Settings stops offering the same agent again. If one can't update, it offers Finish instead of Promote
+  (thanks @letternumber).
 
 Under the hood
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.

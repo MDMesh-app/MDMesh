@@ -155,7 +155,7 @@
 }
 .v2 .v2-cfged-app {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   min-width: 0;
 }

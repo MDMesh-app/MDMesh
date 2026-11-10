@@ -6,6 +6,8 @@ import android.content.Context
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+import com.mdmesh.core.R
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -27,8 +29,14 @@ class AlertNotifier @Inject constructor(
         permission.ensure()
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // Creating an existing channel only updates its name; its importance stays whatever it has (or the user
+            // set), so the id and IMPORTANCE_HIGH here must not change.
             nm.createNotificationChannel(
-                NotificationChannel(CHANNEL, "MDMesh alerts", NotificationManager.IMPORTANCE_HIGH),
+                NotificationChannel(
+                    CHANNEL,
+                    context.getString(R.string.alert_notification_channel),
+                    NotificationManager.IMPORTANCE_HIGH,
+                ),
             )
         }
         // Without POST_NOTIFICATIONS (Android 13+), or with notifications or this channel turned off, notify() is
@@ -39,7 +47,8 @@ class AlertNotifier @Inject constructor(
             return false
         }
         val n = NotificationCompat.Builder(context, CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setSmallIcon(R.drawable.ic_stat_alert)
+            .setColor(ContextCompat.getColor(context, R.color.mdm_notification_alert))
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Admin alert accent (setColor): v2 light -alert-ink (web/src/tokens.css), as the app's mdm_alert_ink. One
+         value: the notification is built once, and the system adjusts the accent for contrast in a dark shade. -->
+    <color name="mdm_notification_alert">#A92F2F</color>
+</resources>

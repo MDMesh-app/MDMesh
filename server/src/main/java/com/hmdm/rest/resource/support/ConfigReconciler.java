@@ -61,15 +61,17 @@ public class ConfigReconciler {
         if (device == null || device.getConfigurationId() == null) return null;
         Configuration cfg = unsecureDAO.getConfigurationById(device.getConfigurationId());
         if (cfg == null) return null;
+        // Null means a legacy server did not understand the section; an empty list deliberately means release every
+        // explicit app-permission override the agent applied previously.
         cfg.setManagedAppPermissions(unsecureDAO.getManagedAppPermissions(cfg.getId()));
         List<Application> apps = unsecureDAO.getPlainConfigurationAppsOptimized(cfg.getId());
         return DesiredConfigBuilder.build(cfg, apps, extensionPoints.contributors(cfg.getCustomerId()));
     }
 
     /** A capability-specific document has its own revision: an older agent must never acknowledge rules it cannot apply. */
-    private DesiredConfig currentDocument(Device device, Set<String> deviceTokens) {
+    DesiredConfig currentDocument(Device device, Set<String> deviceTokens) {
         DesiredConfig doc = currentDocument(device);
-        if (doc != null && !AgentCapabilityTokens.isAllowed("app.runtimePermissions", deviceTokens)
+        if (doc != null && !AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.APP_PERMISSIONS_CAPABILITY, deviceTokens)
                 && doc.getAppPermissions() != null) {
             doc.setAppPermissions(null);
             doc.setRevision(DesiredConfigBuilder.revision(doc));

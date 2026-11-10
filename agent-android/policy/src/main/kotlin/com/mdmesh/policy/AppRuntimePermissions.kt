@@ -51,8 +51,8 @@ class DeviceOwnerAppRuntimePermissions(
                 .requestedPermissions.orEmpty().contains(permission)
         } catch (_: NameNotFoundException) {
             return AppPermissionOutcome.NotInstalled
-        } catch (_: Exception) {
-            return AppPermissionOutcome.NotRequested
+        } catch (e: Exception) {
+            return AppPermissionOutcome.Failed(e.message ?: "package lookup failed")
         }
         if (!requested) return AppPermissionOutcome.NotRequested
         val grantState = when (state) {

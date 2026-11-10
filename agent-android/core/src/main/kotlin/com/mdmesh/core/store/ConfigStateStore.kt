@@ -62,7 +62,16 @@ class SharedPrefsConfigStateStore(context: Context) : ConfigStateStore {
     }
     override fun load(): ConfigApplyPayload? = ConfigStateCodec.decode(prefs.getString(KEY_DOC, null))
     override fun revision(): String? = prefs.getString(KEY_REV, null)
-    override fun clear() { prefs.edit().remove(KEY_DOC).remove(KEY_REV).apply() }
+    override fun clear() {
+        prefs.edit()
+            .remove(KEY_DOC)
+            .remove(KEY_REV)
+            .remove(KEY_DELIVERED)
+            .remove(KEY_UNRELEASED)
+            .remove(KEY_APP_PERMISSIONS)
+            .remove(KEY_HOLD_ENDED)
+            .apply()
+    }
     override fun markStale() { prefs.edit().putString(KEY_REV, ConfigStateStore.STALE_REVISION).commit() }
     override var delivered: ConfigApplyPayload?
         get() = ConfigStateCodec.decode(prefs.getString(KEY_DELIVERED, null))
@@ -88,7 +97,14 @@ class InMemoryConfigStateStore : ConfigStateStore {
     override fun save(doc: ConfigApplyPayload) { this.doc = doc; rev = doc.revision }
     override fun load(): ConfigApplyPayload? = doc
     override fun revision(): String? = rev
-    override fun clear() { doc = null; rev = null }
+    override fun clear() {
+        doc = null
+        rev = null
+        delivered = null
+        unreleased = emptySet()
+        activeAppPermissions = emptyList()
+        holdEndedFor = null
+    }
     override fun markStale() { rev = ConfigStateStore.STALE_REVISION }
     override var delivered: ConfigApplyPayload? = null
     override var unreleased: Set<String> = emptySet()

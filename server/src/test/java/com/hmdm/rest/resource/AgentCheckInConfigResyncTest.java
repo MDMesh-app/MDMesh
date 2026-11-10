@@ -9,6 +9,7 @@ import com.hmdm.persistence.domain.Application;
 import com.hmdm.persistence.domain.Configuration;
 import com.hmdm.persistence.domain.Device;
 import com.hmdm.persistence.domain.DeviceState;
+import com.hmdm.persistence.domain.ManagedAppPermission;
 import com.hmdm.rest.json.Response;
 import com.hmdm.rest.json.agent.AgentCapabilities;
 import com.hmdm.rest.json.agent.AgentCheckInRequest;
@@ -45,7 +46,7 @@ public class AgentCheckInConfigResyncTest {
     private static final List<DesiredConfigContributor> NO_CONTRIBUTORS = Collections.emptyList();
     private static final String NUMBER = "d1";
     private static final String SECRET = "sek";
-    private static final String CAPS = "{\"device\":[\"configApply\"],\"policy\":[\"safeBoot\"]}";
+    private static final String CAPS = "{\"device\":[\"configApply\"],\"policy\":[\"safeBoot\"],\"appManagement\":[\"runtimePermissions\"]}";
 
     private static final class FakeUnsecureDAO extends UnsecureDAO {
         Device device;
@@ -60,6 +61,9 @@ public class AgentCheckInConfigResyncTest {
         @Override public Configuration getConfigurationById(Integer id) { return configuration; }
         @Override public List<Application> getPlainConfigurationAppsOptimized(Integer configurationId) {
             return apps;
+        }
+        @Override public List<ManagedAppPermission> getManagedAppPermissions(Integer configurationId) {
+            return Collections.emptyList();
         }
     }
 
@@ -192,6 +196,7 @@ public class AgentCheckInConfigResyncTest {
         Configuration cfg = new Configuration();
         cfg.setId(3);
         cfg.setDisableSafeBoot(true);
+        cfg.setManagedAppPermissions(Collections.<ManagedAppPermission>emptyList());
         unsecureDAO.configuration = cfg;
         revision = DesiredConfigBuilder.build(cfg, Collections.<Application>emptyList(), NO_CONTRIBUTORS).getRevision();
 

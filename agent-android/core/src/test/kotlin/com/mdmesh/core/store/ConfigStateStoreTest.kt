@@ -1,6 +1,7 @@
 package com.mdmesh.core.store
 
 import com.mdmesh.proto.ConfigApplyPayload
+import com.mdmesh.proto.ConfigAppPermissions
 import com.mdmesh.proto.ConfigConnectivity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -19,6 +20,9 @@ class ConfigStateStoreTest {
         assertEquals(mapOf("wifi" to true), s.load()?.policies)
         s.clear()
         assertNull(s.revision())
+        assertNull(s.delivered)
+        assertEquals(emptyList<ConfigAppPermissions>(), s.activeAppPermissions)
+        assertEquals(emptySet<String>(), s.unreleased)
     }
 
     @Test

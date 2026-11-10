@@ -23,10 +23,26 @@ import java.io.ByteArrayOutputStream
  */
 class AppInventoryCollector(private val context: Context) {
 
-    /** Every installed package's requested Android permissions, for configuration compatibility reporting. */
-    fun permissionInventory(): List<AppPermissionInventory> = context.packageManager.getInstalledPackages(PackageManager.GET_PERMISSIONS)
-        .map { AppPermissionInventory(it.packageName, it.requestedPermissions.orEmpty().filter { p -> p.startsWith("android.permission.") }.sorted()) }
-        .sortedBy { it.pkg }
+    /**
+     * Requested runtime permissions for installed packages, for configuration compatibility reporting.
+     *
+     * A check-in must remain small and useful: normal/signature permissions cannot be managed through
+     * DevicePolicyManager, so do not report them (or packages with no controllable permissions).
+     */
+    fun permissionInventory(): List<AppPermissionInventory> {
+        val pm = context.packageManager
+        return pm.getInstalledPackages(PackageManager.GET_PERMISSIONS).mapNotNull { info ->
+            val requested = info.requestedPermissions.orEmpty().filter { permission ->
+                isRuntimePermission(pm, permission)
+            }.sorted()
+            requested.takeIf { it.isNotEmpty() }?.let { AppPermissionInventory(info.packageName, it) }
+        }.sortedBy { it.pkg }
+    }
+
+    private fun isRuntimePermission(pm: PackageManager, permission: String): Boolean = runCatching {
+        val protection = pm.getPermissionInfo(permission, 0).protectionLevel
+        protection and android.content.pm.PermissionInfo.PROTECTION_DANGEROUS != 0
+    }.getOrDefault(false)
 
     @Suppress("DEPRECATION") // PackageInfoFlags overloads are API 33+; we support minSdk 24
     fun scan(): List<AppInfo> {

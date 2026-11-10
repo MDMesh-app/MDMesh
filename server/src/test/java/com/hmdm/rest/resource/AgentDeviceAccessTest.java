@@ -109,6 +109,9 @@ public class AgentDeviceAccessTest {
                 c.setCustomerId(CUSTOMER);
                 return c;
             }
+            @Override public List<com.hmdm.persistence.domain.ManagedAppPermission> getManagedAppPermissions(Integer id) {
+                return Collections.emptyList();
+            }
             @Override public List<Application> getPlainConfigurationAppsOptimized(Integer id) { return new ArrayList<>(); }
         };
         AgentCommandDAO commandDAO = new AgentCommandDAO(null, null, null, null) {

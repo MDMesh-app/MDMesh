@@ -41,6 +41,8 @@ import java.util.regex.Pattern;
 public final class DesiredConfigBuilder {
     public static final String COMMAND_TYPE = "config.apply";
     public static final String CAPABILITY = "device.configApply";
+    /** Agent support token for the optional per-app runtime permission document section. */
+    public static final String APP_PERMISSIONS_CAPABILITY = "app.runtimePermissions";
     public static final String POLICY_PREFIX = "policies.";
     public static final String KEY_KIOSK = "kiosk";
     public static final String KEY_LOCATION = "location";

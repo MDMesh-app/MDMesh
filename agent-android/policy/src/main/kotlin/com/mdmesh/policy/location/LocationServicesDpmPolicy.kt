@@ -21,14 +21,18 @@ internal class LocationServicesDpmPolicy(
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
             handle.dpm.isDeviceOwnerApp(handle.admin.packageName)
 
-    override fun setEnabled(enabled: Boolean): PolicyOutcome = runCatching {
-        // setLocationEnabled is API 30; isSupported() gates this strategy and keeps it off Android 10 and earlier.
-        handle.dpm.setLocationEnabled(handle.admin, enabled)
-        // Device Owner may change the global switch despite this restriction. Apply it only after a successful
-        // state change, so both On and Off keep the setting managed without locking the user out after a failure.
-        handle.dpm.addUserRestriction(handle.admin, UserRestrictions.DISALLOW_CONFIG_LOCATION)
-        PolicyOutcome.Applied
-    }.getOrElse { PolicyOutcome.Failed(it.message ?: "location services setEnabled failed") }
+    override fun setEnabled(enabled: Boolean): PolicyOutcome {
+        // Keep the API guard in this call path as well as isSupported(): Android lint does not infer that callers
+        // resolved this strategy through the factory, and the guard is the last safety net for a direct caller.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return PolicyOutcome.Unsupported
+        return runCatching {
+            handle.dpm.setLocationEnabled(handle.admin, enabled)
+            // Device Owner may change the global switch despite this restriction. Apply it only after a successful
+            // state change, so both On and Off keep the setting managed without locking the user out after a failure.
+            handle.dpm.addUserRestriction(handle.admin, UserRestrictions.DISALLOW_CONFIG_LOCATION)
+            PolicyOutcome.Applied
+        }.getOrElse { PolicyOutcome.Failed(it.message ?: "location services setEnabled failed") }
+    }
 
     override fun release(): PolicyOutcome = runCatching {
         handle.dpm.clearUserRestriction(handle.admin, UserRestrictions.DISALLOW_CONFIG_LOCATION)

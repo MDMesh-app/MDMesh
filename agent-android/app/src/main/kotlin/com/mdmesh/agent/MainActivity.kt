@@ -1,7 +1,6 @@
 package com.mdmesh.agent
 
 import android.app.ActivityManager
-import android.app.AlertDialog
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
@@ -17,11 +16,14 @@ import android.widget.TextView
 import android.widget.Toast
 import android.content.Intent
 import androidx.activity.ComponentActivity
+import androidx.annotation.StringRes
+import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.mdmesh.agent.service.CheckInService
+import com.mdmesh.agent.ui.markConfirmDanger
 import com.mdmesh.core.action.NotificationPermissionAccess
 import com.mdmesh.core.config.ServerConfigStore
 import com.mdmesh.core.config.ConfigApplier
@@ -107,11 +109,11 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun refresh() {
-        kioskValue.text = if (isLocked()) "Locked (kiosk active)" else "Not locked"
+        kioskValue.setText(if (isLocked()) R.string.status_kiosk_locked else R.string.status_kiosk_not_locked)
         val canReturn = isDeviceOwner() && !isLocked() && configStore.configuredKiosk() != null
         returnButton.visibility = if (canReturn) View.VISIBLE else View.GONE
         returnButton.isEnabled = canReturn && !returningToKiosk
-        returnButton.text = if (returningToKiosk) "Returning…" else "Return to kiosk"
+        returnButton.setText(if (returningToKiosk) R.string.kiosk_return_busy else R.string.kiosk_return_action)
         lifecycleScope.launch {
             val id = deviceIdStore.current()
             deviceIdValue.text = if (id.isNullOrBlank()) enrollingLabel() else id
@@ -126,10 +128,11 @@ class MainActivity : ComponentActivity() {
         confirmDialog = AlertDialog.Builder(this)
             .setTitle(prompt.title)
             .setMessage(prompt.message)
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(R.string.action_cancel, null)
             .setPositiveButton(prompt.confirm) { _, _ -> returnToKiosk(kiosk) }
             .setOnDismissListener { confirmDialog = null }
             .show()
+            .also { if (prompt.danger) it.markConfirmDanger() }
     }
 
     private fun returnToKiosk(confirmed: KioskApplyPayload) {
@@ -153,7 +156,7 @@ class MainActivity : ComponentActivity() {
     private suspend fun enterConfiguredKiosk(confirmed: KioskApplyPayload): String? {
         val result = runCatching { configApplier.returnToConfiguredKiosk(expected = confirmed) }.getOrElse {
             if (it is CancellationException) throw it
-            KioskResult.Failed("Could not restore kiosk. Please try again.")
+            KioskResult.Failed(getString(R.string.kiosk_return_failed))
         }
         return when (result) {
             KioskResult.Ok -> {
@@ -163,16 +166,16 @@ class MainActivity : ComponentActivity() {
                 CheckInWorker.scheduleAfterCurrent(applicationContext)
                 null
             }
-            KioskResult.Unsupported -> "Kiosk is not supported on this device."
+            KioskResult.Unsupported -> getString(R.string.kiosk_return_unsupported)
             is KioskResult.Failed -> result.reason
         }
     }
 
     /** "Enrolling…" plus the last sync error (if any), so a stuck enrollment is diagnosable on-device. */
     private fun enrollingLabel(): String {
-        val failure = syncStatus.lastError.value ?: return "Enrolling…"
+        val failure = syncStatus.lastError.value ?: return getString(R.string.status_enrolling)
         val at = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(failure.atMillis))
-        return "Enrolling… (last error: ${failure.message} at $at)"
+        return getString(R.string.status_enrolling_error, failure.message, at)
     }
 
     private fun isLocked(): Boolean {
@@ -190,35 +193,35 @@ class MainActivity : ComponentActivity() {
             setPadding(dp(28), dp(40), dp(28), dp(40))
             layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
         }
-        root.addView(text("MDMesh", 30f, SIGNAL, bold = true))
-        root.addView(text("Device agent", 14f, MUTED).apply { setPadding(0, dp(2), 0, dp(20)) })
+        root.addView(text(getString(R.string.brand_name), 30f, SIGNAL, bold = true))
+        root.addView(text(getString(R.string.status_subtitle), 14f, MUTED).apply { setPadding(0, dp(2), 0, dp(20)) })
 
-        root.addView(label("MANAGEMENT"))
+        root.addView(label(R.string.status_label_management))
         root.addView(
             text(
-                if (isDeviceOwner()) "Device Owner — active" else "Not managed",
+                getString(if (isDeviceOwner()) R.string.status_device_owner_active else R.string.status_not_managed),
                 16f,
                 if (isDeviceOwner()) OK else ALERT,
             ),
         )
         root.addView(spacer())
 
-        root.addView(label("DEVICE ID"))
-        deviceIdValue = text("…", 14f, TEXT, mono = true)
+        root.addView(label(R.string.status_label_device_id))
+        deviceIdValue = text(ELLIPSIS, 14f, TEXT, mono = true)
         root.addView(deviceIdValue)
         root.addView(spacer())
 
-        root.addView(label("KIOSK"))
-        kioskValue = text("…", 16f, TEXT)
+        root.addView(label(R.string.status_label_kiosk))
+        kioskValue = text(ELLIPSIS, 16f, TEXT)
         root.addView(kioskValue)
         returnButton = kioskReturnButton()
         root.addView(returnButton)
         root.addView(spacer())
 
-        root.addView(label("AGENT VERSION"))
+        root.addView(label(R.string.status_label_agent_version))
         root.addView(
             text(
-                "${com.mdmesh.agent.BuildConfig.VERSION_NAME} (build ${com.mdmesh.agent.BuildConfig.VERSION_CODE})",
+                getString(R.string.status_agent_version, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE),
                 15f,
                 TEXT,
                 mono = true,
@@ -226,12 +229,12 @@ class MainActivity : ComponentActivity() {
         )
         root.addView(spacer())
 
-        root.addView(label("SERVER"))
+        root.addView(label(R.string.status_label_server))
         root.addView(text(serverConfig.baseUrl(), 13f, MUTED, mono = true))
         root.addView(spacer())
 
         root.addView(
-            text("Managed by MDMesh", 12f, MUTED).apply {
+            text(getString(R.string.status_managed_by), 12f, MUTED).apply {
                 gravity = Gravity.CENTER
                 setPadding(0, dp(24), 0, 0)
             },
@@ -257,8 +260,10 @@ class MainActivity : ComponentActivity() {
         setOnClickListener { confirmReturnToKiosk() }
     }
 
-    private fun label(s: String): TextView =
-        text(s, 11f, FAINT).apply {
+    /** A section label, shown in caps (the resource is sentence case, so TalkBack reads words, not letters). */
+    private fun label(@StringRes s: Int): TextView =
+        text(getString(s), 11f, FAINT).apply {
+            isAllCaps = true
             letterSpacing = 0.10f
             setPadding(0, 0, 0, dp(4))
         }
@@ -286,6 +291,7 @@ class MainActivity : ComponentActivity() {
     private companion object {
         const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         const val RETURN_BUTTON_GAP = 12
+        const val ELLIPSIS = "…"
         val INK = Color.parseColor("#0E1117")
         val TEXT = Color.parseColor("#E8EEF4")
         val MUTED = Color.parseColor("#8693A4")

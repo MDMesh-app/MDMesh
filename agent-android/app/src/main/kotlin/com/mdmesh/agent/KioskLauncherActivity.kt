@@ -169,16 +169,18 @@ class KioskLauncherActivity : ComponentActivity() {
         // No PIN, no on-device exit (the affordance isn't shown either): kiosk then ends only from the console.
         if (!pinGate.isAvailable(p.password)) return
         pinGate.remainingLockMs()?.let { showExitLocked(it); return }
-        val input = EditText(this).apply {
+        val builder = AlertDialog.Builder(this)
+        // Built from the dialog's themed context, so the field takes the dialog theme's v2 field style.
+        val input = EditText(builder.context).apply {
             inputType = android.text.InputType.TYPE_CLASS_TEXT or
                 android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-            hint = "Exit PIN"
+            setHint(R.string.kiosk_exit_pin_hint)
         }
-        AlertDialog.Builder(this)
-            .setTitle("Exit kiosk")
-            .setView(input)
-            .setPositiveButton("Exit") { _, _ -> onPinEntered(input.text.toString()) }
-            .setNegativeButton("Cancel", null)
+        builder
+            .setTitle(R.string.kiosk_exit_title)
+            .setView(dialogField(input))
+            .setPositiveButton(R.string.kiosk_exit_confirm) { _, _ -> onPinEntered(input.text.toString()) }
+            .setNegativeButton(R.string.action_cancel, null)
             .show()
     }
 
@@ -190,14 +192,15 @@ class KioskLauncherActivity : ComponentActivity() {
         val pin = active?.password
         when (val outcome = pinGate.attempt(entered, pin)) {
             ExitPinGate.Outcome.Open -> doExit()
-            is ExitPinGate.Outcome.Wrong -> Toast.makeText(this, "Wrong PIN", Toast.LENGTH_SHORT).show()
+            is ExitPinGate.Outcome.Wrong ->
+                Toast.makeText(this, R.string.kiosk_exit_wrong_pin, Toast.LENGTH_SHORT).show()
             is ExitPinGate.Outcome.Locked -> {
                 if (outcome.started) reportLockout(outcome)
                 showExitLocked(outcome.remainingMs)
             }
             // The attempt couldn't be saved, so it wasn't checked (or the PIN was removed meanwhile).
             ExitPinGate.Outcome.Unavailable ->
-                Toast.makeText(this, "Exit unavailable right now", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, R.string.kiosk_exit_unavailable, Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -212,9 +215,9 @@ class KioskLauncherActivity : ComponentActivity() {
 
     private fun showExitLocked(remainingMs: Long) {
         AlertDialog.Builder(this)
-            .setTitle("Exit locked")
-            .setMessage("Too many wrong PINs. Try again in ${ExitPinGate.describe(remainingMs)}.")
-            .setPositiveButton("OK", null)
+            .setTitle(R.string.kiosk_exit_locked_title)
+            .setMessage(getString(R.string.kiosk_exit_locked_message, ExitPinGate.describe(remainingMs)))
+            .setPositiveButton(R.string.action_ok, null)
             .show()
     }
 
@@ -237,7 +240,7 @@ class KioskLauncherActivity : ComponentActivity() {
         val bg = parseColor(p.theme.backgroundColor, INK)
         val fg = parseColor(p.theme.textColor, TEXT)
         return frame(bg).apply {
-            addView(centeredText("Loading…", 18f, fg))
+            addView(centeredText(getString(R.string.kiosk_loading), 18f, fg))
             addExitAffordance(p, this)
         }
     }
@@ -269,11 +272,11 @@ class KioskLauncherActivity : ComponentActivity() {
             setPadding(dp(24), dp(28), dp(24), dp(12))
             layoutParams = ViewGroup.LayoutParams(MATCH, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
-        column.addView(text("MDMesh Kiosk", 20f, fg, bold = true))
+        column.addView(text(getString(R.string.kiosk_header), 20f, fg, bold = true))
         if (rendered == 0) {
             column.addView(
                 text(
-                    "No available apps. Add installed app packages to this kiosk's allowed list.",
+                    getString(R.string.kiosk_empty),
                     14f,
                     MUTED,
                 ).apply { setPadding(0, dp(10), 0, 0) },
@@ -329,8 +332,8 @@ class KioskLauncherActivity : ComponentActivity() {
             gravity = Gravity.CENTER
             layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
         }
-        col.addView(centeredText("MDMesh", 28f, SIGNAL, bold = true))
-        col.addView(centeredText("Managed device", 14f, MUTED))
+        col.addView(centeredText(getString(R.string.brand_name), 28f, SIGNAL, bold = true))
+        col.addView(centeredText(getString(R.string.kiosk_idle_subtitle), 14f, MUTED))
         addView(col)
     }
 
@@ -343,17 +346,17 @@ class KioskLauncherActivity : ComponentActivity() {
             setPadding(dp(28), 0, dp(28), 0)
             layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
         }
-        col.addView(centeredText("App closed", 22f, fg, bold = true))
+        col.addView(centeredText(getString(R.string.kiosk_hold_title), 22f, fg, bold = true))
         col.addView(
             centeredText(
-                "The app closed several times in a row, so it wasn't opened again.",
+                getString(R.string.kiosk_hold_message),
                 14f,
                 MUTED,
             ).apply { setPadding(0, dp(12), 0, dp(24)) },
         )
         col.addView(
             Button(this).apply {
-                text = "Open again"
+                setText(R.string.kiosk_hold_retry)
                 setOnClickListener {
                     returns.retry()
                     show(p)
@@ -372,7 +375,7 @@ class KioskLauncherActivity : ComponentActivity() {
         when (p.exitMode) {
             "visible" -> {
                 val btn = Button(this).apply {
-                    text = "Exit kiosk"
+                    setText(R.string.kiosk_exit_button)
                     setOnClickListener { promptExit(p) }
                 }
                 parent.addView(
@@ -399,6 +402,13 @@ class KioskLauncherActivity : ComponentActivity() {
     }
 
     // --- View helpers ------------------------------------------------------------------------
+
+    /** A dialog's custom field, inset like the dialog's text (AlertDialog adds no padding around a custom view). */
+    private fun dialogField(field: View): View = android.widget.FrameLayout(field.context).apply {
+        val side = resources.getDimensionPixelSize(R.dimen.mdm_dialog_padding)
+        setPaddingRelative(side, dp(DIALOG_FIELD_TOP), side, 0)
+        addView(field, android.widget.FrameLayout.LayoutParams(MATCH, ViewGroup.LayoutParams.WRAP_CONTENT))
+    }
 
     private fun frame(bg: Int): android.widget.FrameLayout =
         android.widget.FrameLayout(this).apply {
@@ -432,6 +442,7 @@ class KioskLauncherActivity : ComponentActivity() {
         const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         const val GESTURE_TAPS = 7
         const val GESTURE_WINDOW_MS = 3_000L
+        const val DIALOG_FIELD_TOP = 8
         val INK = Color.parseColor("#0E1117")
         val TEXT = Color.parseColor("#E8EEF4")
         val MUTED = Color.parseColor("#8693A4")

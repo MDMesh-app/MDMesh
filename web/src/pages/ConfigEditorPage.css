@@ -198,6 +198,55 @@
   color: var(--secondary);
 }
 
+.v2 .v2-cfged-permissions {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-soft);
+}
+.v2 .v2-cfged-permissions h3 {
+  margin: 0;
+  font-size: var(--fs-body);
+}
+.v2 .v2-cfged-permissions > p {
+  margin: 5px 0 10px;
+  color: var(--secondary);
+  font-size: var(--fs-small);
+}
+.v2 .v2-cfged-permission-app {
+  border-top: 1px solid var(--line-soft);
+}
+.v2 .v2-cfged-permission-app:last-child {
+  border-bottom: 1px solid var(--line-soft);
+}
+.v2 .v2-cfged-permission-app summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 2px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.v2 .v2-cfged-permission-app__summary,
+.v2 .v2-cfged-permission-app__empty {
+  color: var(--secondary);
+  font-size: var(--fs-small);
+  font-weight: 400;
+}
+.v2 .v2-cfged-permission-app__empty {
+  margin: 0;
+  padding: 0 0 10px;
+}
+.v2 .v2-cfged-permission-app__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 2px;
+}
+.v2 .v2-cfged-permission-app__row select {
+  min-width: 108px;
+}
+
 /* Headwind launcher only: dashed card, collapsed by default */
 .v2 .v2-cfged-hw__head {
   display: flex;

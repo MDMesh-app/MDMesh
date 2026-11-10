@@ -410,7 +410,7 @@ public class ConfigurationResource {
             log.error("Unauthorized attempt to access configuration applications");
             return Response.PERMISSION_DENIED();
         }
-        return Response.OK(this.configurationDAO.getConfigurationApplications(id));
+        return Response.OK(this.applicationDAO.populateRequestedPermissions(this.configurationDAO.getConfigurationApplications(id)));
     }
 
     // =================================================================================================================

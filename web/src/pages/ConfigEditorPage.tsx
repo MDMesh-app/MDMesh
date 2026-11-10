@@ -301,12 +301,40 @@ function appsSignature(c: Configuration): string {
     .join(',');
 }
 
-const RUNTIME_PERMISSIONS = [
-  ['android.permission.ACCESS_FINE_LOCATION', 'Location'],
-  ['android.permission.CAMERA', 'Camera'],
-  ['android.permission.RECORD_AUDIO', 'Microphone'],
-  ['android.permission.READ_CONTACTS', 'Contacts'],
-] as const;
+const RUNTIME_PERMISSION_LABELS: Record<string, string> = {
+  'android.permission.ACCESS_COARSE_LOCATION': 'Approximate location',
+  'android.permission.ACCESS_FINE_LOCATION': 'Precise location',
+  'android.permission.ACCESS_BACKGROUND_LOCATION': 'Background location',
+  'android.permission.CAMERA': 'Camera',
+  'android.permission.RECORD_AUDIO': 'Microphone',
+  'android.permission.READ_CONTACTS': 'Read contacts',
+  'android.permission.WRITE_CONTACTS': 'Edit contacts',
+  'android.permission.READ_CALENDAR': 'Read calendar',
+  'android.permission.WRITE_CALENDAR': 'Edit calendar',
+  'android.permission.READ_PHONE_STATE': 'Phone state',
+  'android.permission.CALL_PHONE': 'Make calls',
+  'android.permission.READ_CALL_LOG': 'Read call log',
+  'android.permission.WRITE_CALL_LOG': 'Edit call log',
+  'android.permission.READ_SMS': 'Read SMS',
+  'android.permission.SEND_SMS': 'Send SMS',
+  'android.permission.RECEIVE_SMS': 'Receive SMS',
+  'android.permission.READ_EXTERNAL_STORAGE': 'Read files and media',
+  'android.permission.WRITE_EXTERNAL_STORAGE': 'Edit files and media',
+  'android.permission.READ_MEDIA_IMAGES': 'Photos',
+  'android.permission.READ_MEDIA_VIDEO': 'Videos',
+  'android.permission.READ_MEDIA_AUDIO': 'Music and audio',
+  'android.permission.ACTIVITY_RECOGNITION': 'Physical activity',
+  'android.permission.BODY_SENSORS': 'Body sensors',
+  'android.permission.POST_NOTIFICATIONS': 'Notifications',
+  'android.permission.BLUETOOTH_SCAN': 'Find nearby devices',
+  'android.permission.BLUETOOTH_CONNECT': 'Connect nearby devices',
+  'android.permission.NEARBY_WIFI_DEVICES': 'Nearby Wi-Fi devices',
+};
+
+const declaredRuntimePermissions = (app: ConfigApp): string[] => {
+  if (typeof app.requestedPermissions !== 'string') return [];
+  return [...new Set(app.requestedPermissions.split(',').map((p) => p.trim()).filter((p) => p in RUNTIME_PERMISSION_LABELS))];
+};
 
 function appPermissionsSignature(c: Configuration): string {
   return JSON.stringify(c.managedAppPermissions ?? []);
@@ -816,27 +844,46 @@ function Editor({
           resetKey={discards}
         />
         {allowed.filter((app) => (app.action ?? 1) === 1).length > 0 ? (
-          <div className="v2-cfged-apps__note">
-            <strong>Runtime permissions</strong>
-            <p>Default removes MDMesh’s explicit override; the device-wide Android permission policy then applies. A device reports a configured permission it does not request as not requested.</p>
-            {allowed.filter((app) => (app.action ?? 1) === 1).map((app) => (
-              <div key={`permissions-${app.id}`}>
-                <strong>{app.name ?? app.pkg}</strong>
-                {RUNTIME_PERMISSIONS.map(([permission, label]) => (
-                  <label key={permission} style={{ display: 'block' }}>
-                    {label}{' '}
-                    <select
-                      value={appPermissionState(app.id, permission)}
-                      disabled={readOnly}
-                      onChange={(e) => setAppPermission(app.id, permission, e.target.value)}
-                    >
-                      <option value="default">Default</option><option value="grant">Grant</option><option value="deny">Deny</option>
-                    </select>
-                  </label>
-                ))}
-              </div>
-            ))}
-          </div>
+          <section className="v2-cfged-permissions" aria-label="Runtime permissions">
+            <h3>Runtime permissions</h3>
+            <p>Default removes MDMesh’s explicit override; Android’s normal permission state then applies. Only permissions declared by the selected APK are shown.</p>
+            {allowed.filter((app) => (app.action ?? 1) === 1).map((app) => {
+              const declared = declaredRuntimePermissions(app);
+              const configured = (Array.isArray(draft.managedAppPermissions) ? draft.managedAppPermissions : [])
+                .filter((rule): rule is Record<string, unknown> => !!rule && typeof rule === 'object')
+                .filter((rule) => rule.applicationId === app.id && typeof rule.permission === 'string')
+                .map((rule) => String(rule.permission))
+                .filter((permission) => permission in RUNTIME_PERMISSION_LABELS);
+              const permissions = [...new Set([...declared, ...configured])];
+              const summary = permissions.filter((permission) => appPermissionState(app.id, permission) !== 'default')
+                .map((permission) => `${RUNTIME_PERMISSION_LABELS[permission]}: ${appPermissionState(app.id, permission)}`)
+                .join(', ');
+              return (
+                <details className="v2-cfged-permission-app" key={`permissions-${app.id}`}>
+                  <summary>
+                    <span>{app.name ?? app.pkg}</span>
+                    <span className="v2-cfged-permission-app__summary">{summary || `${permissions.length} available`}</span>
+                  </summary>
+                  {app.requestedPermissions == null ? (
+                    <p className="v2-cfged-permission-app__empty">Permission inventory is unavailable because this app has no locally stored APK. Device inventory will cover system and preinstalled apps later.</p>
+                  ) : permissions.length === 0 ? (
+                    <p className="v2-cfged-permission-app__empty">This APK declares no manageable runtime permissions.</p>
+                  ) : permissions.map((permission) => (
+                    <label className="v2-cfged-permission-app__row" key={permission}>
+                      <span>{RUNTIME_PERMISSION_LABELS[permission]}</span>
+                      <select
+                        value={appPermissionState(app.id, permission)}
+                        disabled={readOnly}
+                        onChange={(e) => setAppPermission(app.id, permission, e.target.value)}
+                      >
+                        <option value="default">Default</option><option value="grant">Grant</option><option value="deny">Deny</option>
+                      </select>
+                    </label>
+                  ))}
+                </details>
+              );
+            })}
+          </section>
         ) : null}
         <p className="v2-cfged-apps__note">
           “Do not install” keeps an app listed without installing it. “Remove” takes the app out of this configuration;

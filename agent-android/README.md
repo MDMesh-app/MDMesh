@@ -1,4 +1,4 @@
-# MDM Agent (Android)
+# MDMesh agent (Android)
 
 A new, self-hosted **custom DPC** (Device Owner) Android MDM agent, with some parts ported from
 Headwind MDM's agent (see [NOTICE](../NOTICE)).

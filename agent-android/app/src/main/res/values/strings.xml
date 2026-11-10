@@ -2,7 +2,7 @@
 <resources>
     <!-- Launcher, Settings > Apps, device-admin list. Only the label: package, signing and component names
          don't depend on it (see AppIdentityTest). -->
-    <string name="app_name">MDM Agent</string>
+    <string name="app_name" translatable="false">MDMesh</string>
     <string name="device_admin_description">Lets this organisation manage the device: apply policies, manage apps, and run remote support.</string>
     <string name="checkin_notification_channel">Device management</string>
     <string name="checkin_notification_title">Device management active</string>

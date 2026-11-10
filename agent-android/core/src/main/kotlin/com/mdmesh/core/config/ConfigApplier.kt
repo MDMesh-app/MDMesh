@@ -37,6 +37,7 @@ import kotlinx.coroutines.sync.withLock
  * @param setPowerMode sets the live-connection mode for the `connectivity` section (1.5), as `device.powerMode` does.
  *   Only called with a mode this agent knows; another one is reported unsupported.
  */
+@Suppress("TooManyFunctions") // Coordinator for independently releasable desired-state sections.
 class ConfigApplier(
     private val toggles: () -> ResolvedToggles,
     private val kiosk: KioskApplier,
@@ -155,9 +156,8 @@ class ConfigApplier(
         desiredRules.forEach { rule ->
             outcomes[rule.key] = appPermissionOutcome(appPermissions.set(rule.packageName, rule.permission, rule.state))
         }
-        val priorRules = (store.activeAppPermissions + previous.flatMap { it.appPermissions.orEmpty() }).flatMap { entry ->
-            entry.permissions.keys.map { AppPermissionRule(entry.packageName, it, AppRuntimePermissions.DEFAULT) }
-        } + unreleased.filter { it.startsWith(APP_PERMISSIONS) && it !in appPermissionKeys(doc) }
+        val priorRules = priorAppPermissionRules(previous) +
+            unreleased.filter { it.startsWith(APP_PERMISSIONS) && it !in appPermissionKeys(doc) }
             .mapNotNull(::ruleFromKey)
         val desiredKeys = desiredRules.map { it.key }.toSet()
         priorRules.distinctBy { it.key }.filter { it.key !in desiredKeys }.forEach { rule ->
@@ -165,14 +165,25 @@ class ConfigApplier(
                 .takeIf(ConfigOutcome::isFailed)
                 ?.let { outcomes[rule.key] = it }
         }
-        if (outcomes.none { (key, outcome) -> key.startsWith(APP_PERMISSIONS) && ConfigOutcome.isFailed(outcome) }) {
+        if (outcomes.none { (key, outcome) ->
+                key.startsWith(APP_PERMISSIONS) && ConfigOutcome.isFailed(outcome)
+            }
+        ) {
             store.activeAppPermissions = desired
         }
     }
 
-    private fun appPermissionKeys(doc: ConfigApplyPayload): Set<String> = doc.appPermissions.orEmpty().flatMap { entry ->
-        entry.permissions.keys.map { appPermissionKey(entry.packageName, it) }
-    }.toSet()
+    private fun priorAppPermissionRules(previous: List<ConfigApplyPayload>): List<AppPermissionRule> =
+        (store.activeAppPermissions + previous.flatMap { it.appPermissions.orEmpty() }).flatMap { entry ->
+            entry.permissions.keys.map { permission ->
+                AppPermissionRule(entry.packageName, permission, AppRuntimePermissions.DEFAULT)
+            }
+        }
+
+    private fun appPermissionKeys(doc: ConfigApplyPayload): Set<String> =
+        doc.appPermissions.orEmpty().flatMap { entry ->
+            entry.permissions.keys.map { permission -> appPermissionKey(entry.packageName, permission) }
+        }.toSet()
 
     private fun appPermissionOutcome(outcome: AppPermissionOutcome): String = when (outcome) {
         AppPermissionOutcome.Applied -> ConfigOutcome.APPLIED

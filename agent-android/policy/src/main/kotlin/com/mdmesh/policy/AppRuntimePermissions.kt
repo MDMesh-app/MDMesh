@@ -41,6 +41,7 @@ class DeviceOwnerAppRuntimePermissions(
     private val context: Context,
     private val handle: DpmHandle,
 ) : AppRuntimePermissions {
+    @Suppress("ReturnCount") // Each distinct platform result is part of the agent/server contract.
     override fun set(packageName: String, permission: String, state: String): AppPermissionOutcome {
         if (!handle.dpm.isDeviceOwnerApp(handle.admin.packageName) || Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
             return AppPermissionOutcome.Unsupported
@@ -51,7 +52,7 @@ class DeviceOwnerAppRuntimePermissions(
                 .requestedPermissions.orEmpty().contains(permission)
         } catch (_: NameNotFoundException) {
             return AppPermissionOutcome.NotInstalled
-        } catch (e: Exception) {
+        } catch (e: SecurityException) {
             return AppPermissionOutcome.Failed(e.message ?: "package lookup failed")
         }
         if (!requested) return AppPermissionOutcome.NotRequested

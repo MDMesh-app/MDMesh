@@ -81,13 +81,18 @@ class SharedPrefsConfigStateStore(context: Context) : ConfigStateStore {
         set(v) { prefs.edit().putStringSet(KEY_UNRELEASED, v.toSet()).commit() }
     override var activeAppPermissions: List<ConfigAppPermissions>
         get() = ConfigStateCodec.decode(prefs.getString(KEY_APP_PERMISSIONS, null))?.appPermissions.orEmpty()
-        set(v) { prefs.edit().putString(KEY_APP_PERMISSIONS, ConfigStateCodec.encode(ConfigApplyPayload(revision = "", appPermissions = v))).commit() }
+        set(v) {
+            val state = ConfigApplyPayload(revision = "", appPermissions = v)
+            prefs.edit().putString(KEY_APP_PERMISSIONS, ConfigStateCodec.encode(state)).commit()
+        }
     override var holdEndedFor: String?
         get() = prefs.getString(KEY_HOLD_ENDED, null)
         set(v) { prefs.edit().putString(KEY_HOLD_ENDED, v).commit() }
     private companion object {
         const val KEY_DOC = "doc"; const val KEY_REV = "revision"; const val KEY_DELIVERED = "deliveredDoc"
-        const val KEY_UNRELEASED = "unreleased"; const val KEY_APP_PERMISSIONS = "appPermissions"; const val KEY_HOLD_ENDED = "holdEndedFor"
+        const val KEY_UNRELEASED = "unreleased"
+        const val KEY_APP_PERMISSIONS = "appPermissions"
+        const val KEY_HOLD_ENDED = "holdEndedFor"
     }
 }
 

@@ -89,7 +89,8 @@ class ConfigApplierTest {
         assertTrue(released.outcomes.isEmpty())
     }
 
-    @Test fun `an omitted app permissions section leaves a prior override alone for old server compatibility`() = runTest {
+    @Test
+    fun `an omitted app permissions section leaves a prior override alone for old server compatibility`() = runTest {
         val calls = mutableListOf<Triple<String, String, String>>()
         val permissions = object : AppRuntimePermissions {
             override fun set(packageName: String, permission: String, state: String): AppPermissionOutcome {
@@ -114,7 +115,10 @@ class ConfigApplierTest {
             }
         }
         val a = applier(fixedToggles(), kiosk(FakeController()), {}, InMemoryConfigStateStore(), permissions)
-        a.apply(ConfigApplyPayload(revision = "p1", appPermissions = listOf(ConfigAppPermissions("org.example", mapOf("android.permission.CAMERA" to "deny")))))
+        a.apply(ConfigApplyPayload(
+            revision = "p1",
+            appPermissions = listOf(ConfigAppPermissions("org.example", mapOf("android.permission.CAMERA" to "deny"))),
+        ))
         a.apply(ConfigApplyPayload(revision = "p2"))
         a.apply(ConfigApplyPayload(revision = "p3", appPermissions = emptyList()))
         assertEquals(listOf(
@@ -128,9 +132,11 @@ class ConfigApplierTest {
             override fun set(packageName: String, permission: String, state: String) = AppPermissionOutcome.NotInstalled
         }
         val store = InMemoryConfigStateStore()
-        val result = applier(fixedToggles(), kiosk(FakeController()), {}, store, permissions).apply(
-            ConfigApplyPayload(revision = "p1", appPermissions = listOf(ConfigAppPermissions("org.example", mapOf("android.permission.CAMERA" to "deny")))),
+        val payload = ConfigApplyPayload(
+            revision = "p1",
+            appPermissions = listOf(ConfigAppPermissions("org.example", mapOf("android.permission.CAMERA" to "deny"))),
         )
+        val result = applier(fixedToggles(), kiosk(FakeController()), {}, store, permissions).apply(payload)
         assertTrue(ConfigOutcome.isFailed(result.outcomes["appPermissions.org.example.android.permission.CAMERA"]!!))
         assertNull(store.revision())
     }

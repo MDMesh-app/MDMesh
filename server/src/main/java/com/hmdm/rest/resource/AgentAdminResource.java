@@ -41,6 +41,7 @@ import com.hmdm.rest.resource.support.ConfigReconciler;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.util.AgentCapabilityTokens;
 import com.hmdm.util.DesiredConfigBuilder;
+import com.hmdm.util.EnrollmentTokenLimits;
 import com.hmdm.util.InstallIntegrity;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -78,9 +79,6 @@ import java.util.UUID;
 public class AgentAdminResource {
 
     private static final Logger logger = LoggerFactory.getLogger(AgentAdminResource.class);
-
-    /** Default lifetime of a freshly-minted enrollment token (24h). */
-    private static final long DEFAULT_TOKEN_TTL_MILLIS = 24L * 60L * 60L * 1000L;
 
     private AgentEnrollmentTokenDAO tokenDAO;
     private AgentCommandDAO commandDAO;
@@ -133,8 +131,10 @@ public class AgentAdminResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Mint enrollment token", notes = "Creates a single-use enrollment token for the current customer. "
-            + "An optional configurationId binds the enrolled device to that configuration.")
+    @ApiOperation(value = "Mint enrollment token", notes = "Creates an enrollment token for the current customer. "
+            + "An optional configurationId binds the enrolled devices to that configuration. An optional maxUses (1 to "
+            + "1000, default 1: single use) lets one token enroll that many devices, and an optional validHours (1 to "
+            + "720, default 24) sets how long it is valid.")
     @POST
     @Path("/token")
     @Consumes(MediaType.APPLICATION_JSON)
@@ -165,19 +165,52 @@ public class AgentAdminResource {
             }
         }
 
+        // How many devices, and for how long: one, for a day, unless the request says otherwise.
+        Integer maxUses = body == null ? null : body.getMaxUses();
+        Integer validHours = body == null ? null : body.getValidHours();
+        String limitsProblem = EnrollmentTokenLimits.problem(maxUses, validHours);
+        if (limitsProblem != null) {
+            return Response.ERROR(limitsProblem);
+        }
+
         long now = System.currentTimeMillis();
         AgentEnrollmentToken token = new AgentEnrollmentToken();
         token.setToken(UUID.randomUUID().toString());
         token.setCustomerId(customerId.get());
         token.setConfigurationId(configurationId);
         token.setUsed(false);
+        token.setMaxUses(EnrollmentTokenLimits.uses(maxUses));
+        token.setUseCount(0);
         token.setCreatedAt(now);
-        token.setExpiresAt(now + DEFAULT_TOKEN_TTL_MILLIS);
+        token.setExpiresAt(now + EnrollmentTokenLimits.validMillis(validHours));
         tokenDAO.insert(token);
 
-        logger.info("Agent enrollment token {} minted for customer {} (configuration {})",
-                token.getId(), customerId.get(), configurationId);
+        logger.info("Agent enrollment token {} minted for customer {} (configuration {}, {} device(s))",
+                token.getId(), customerId.get(), configurationId, token.getMaxUses());
         return Response.OK(token);
+    }
+
+    // =================================================================================================================
+    @ApiOperation(value = "Stop all enrollment codes", notes = "Stops every enrollment token of the current customer "
+            + "that has not expired, including codes for a batch already printed or shared, so none enrolls another "
+            + "device. Devices already enrolled are not affected. Returns {\"revoked\": n}, the tokens stopped.")
+    @POST
+    @Path("/token/revoke-all")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response revokeAllTokens() {
+        if (!canEditDevices("stop enrollment codes")) {
+            return Response.PERMISSION_DENIED();
+        }
+        Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
+        if (!customerId.isPresent()) {
+            return Response.PERMISSION_DENIED();
+        }
+        int revoked = tokenDAO.revokeAll(customerId.get());
+        logger.info("Agent enrollment tokens stopped for customer {} by user {}: {}", customerId.get(),
+                SecurityContext.get().getCurrentUser().map(u -> u.getLogin()).orElse("?"), revoked);
+        Map<String, Object> result = new HashMap<>();
+        result.put("revoked", revoked);
+        return Response.OK(result);
     }
 
     // =================================================================================================================

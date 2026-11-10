@@ -26,9 +26,10 @@ import static org.junit.Assert.assertTrue;
 /** The agent's /enroll stamps the new device's enrollment time, the console's "Enrolled", once. */
 public class AgentEnrollTimeTest {
 
-    private static final String TOKEN = "enroll-token";
+    static final String TOKEN = "enroll-token";
 
-    private static final class FakeTokenDAO extends AgentEnrollmentTokenDAO {
+    /** Package-visible: AgentEnrollTokenUsesTest enrolls through the same fakes. */
+    static final class FakeTokenDAO extends AgentEnrollmentTokenDAO {
         final AgentEnrollmentToken token = new AgentEnrollmentToken();
 
         FakeTokenDAO() {
@@ -39,15 +40,22 @@ public class AgentEnrollTimeTest {
         }
 
         @Override public AgentEnrollmentToken findByToken(String t) { return TOKEN.equals(t) ? token : null; }
+        /** As AgentEnrollmentTokenMapper.claim: one use if any is left and it isn't stopped, and used with the last. */
         @Override public boolean claim(Integer id) {
-            if (token.isUsed()) return false;
-            token.setUsed(true);
+            if (token.isUsed() || token.getUseCount() >= maxUses() || token.getRevokedAt() != null) return false;
+            token.setUseCount(token.getUseCount() + 1);
+            token.setUsed(token.getUseCount() >= maxUses());
             return true;
         }
-        @Override public void release(Integer id) { token.setUsed(false); }
+        /** As AgentEnrollmentTokenMapper.release: the use back, and not used. */
+        @Override public void release(Integer id) {
+            token.setUseCount(Math.max(token.getUseCount() - 1, 0));
+            token.setUsed(false);
+        }
+        private int maxUses() { return token.getMaxUses() == null ? 1 : token.getMaxUses(); }
     }
 
-    private static final class FakeUnsecureDAO extends UnsecureDAO {
+    static final class FakeUnsecureDAO extends UnsecureDAO {
         boolean creationEnabled = true;
 
         FakeUnsecureDAO() {
@@ -64,7 +72,7 @@ public class AgentEnrollTimeTest {
         @Override public Configuration getConfigurationById(Integer id) { return null; }
     }
 
-    private static final class FakeCommandDAO extends AgentCommandDAO {
+    static final class FakeCommandDAO extends AgentCommandDAO {
         final List<String> enrollTimeRecorded = new ArrayList<>();
 
         FakeCommandDAO() { super(null, null, null, null); }
@@ -76,7 +84,7 @@ public class AgentEnrollTimeTest {
         @Override public void recordEnrollTime(String n) { enrollTimeRecorded.add(n); }
     }
 
-    private static ConfigAppInstaller noConfigApps() {
+    static ConfigAppInstaller noConfigApps() {
         return new ConfigAppInstaller(null, null, null, null) {
             @Override public int enqueueConfigApps(Device device) { return 0; }
         };

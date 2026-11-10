@@ -52,7 +52,7 @@ Fixes
 
 Under the hood
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
-- Agent: the APK carries English resources only (about 100 KB smaller), and its screen text lives in string
+- Agent: the APK carries English resources only (about 90 KB smaller), and its screen text lives in string
   resources.
 
 ## v0.4.0 — 2026-11-03

@@ -75,9 +75,11 @@
              rest of the time.
              configChanges="uiMode": a system light/dark switch must not recreate the kiosk HOME. A recreate
              draws the idle screen first (a visible flash) and replays the saved kiosk, which in single-app
-             mode reopens the pinned app. Lock task survives either way (it belongs to the task). The launcher
-             draws in the admin's kiosk colours, not the theme, so there is nothing to redraw; dialogs opened
-             after the switch pick up the new mode. -->
+             mode reopens the pinned app. Lock task survives either way (it belongs to the task). The launcher's
+             screens draw in the admin's kiosk colours, not the theme, and dialogs opened after the switch pick up
+             the new mode. Not redrawn: the plain "Exit kiosk" and "Open again" buttons keep the theme's button
+             colours from the mode they were drawn in (on API 24-28 the mode the activity started in) until they
+             get their own colours; their background and text come from the same mode, so they stay legible. -->
         <activity
             android:name=".KioskLauncherActivity"
             android:configChanges="uiMode"

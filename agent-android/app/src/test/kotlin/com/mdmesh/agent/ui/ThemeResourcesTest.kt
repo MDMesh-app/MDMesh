@@ -62,6 +62,7 @@ class ThemeResourcesTest {
             "mdm_ink" to "mdm_surface", // ghost and outlined button label
             "mdm_alert_ink" to "mdm_surface", // danger button label
             "mdm_disabled_ink" to "mdm_disabled_bg", // disabled filled button
+            "mdm_disabled_ink" to "mdm_surface", // disabled ghost and danger label on the dialog
             "mdm_ok_ink" to "mdm_ok_soft",
             "mdm_warn_ink" to "mdm_warn_soft",
             "mdm_alert_ink" to "mdm_alert_soft",

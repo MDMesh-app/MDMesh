@@ -150,6 +150,8 @@ works with a 0.3.9 server.
   offers **Return to kiosk**, offline too, while the device's configuration enables kiosk. A console **Exit kiosk**
   (`kiosk.exit`) leaves that option on the device; to remove it, turn kiosk off in the configuration. Older agents
   don't show it.
+- **The agent is called MDMesh on devices (agent 0.5.0):** it was MDM Agent. It's the same app, so it updates in
+  place and keeps Device Owner. Update staff instructions that name it.
 
 ### v0.4.0
 

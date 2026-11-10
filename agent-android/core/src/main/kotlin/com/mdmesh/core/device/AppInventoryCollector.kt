@@ -3,6 +3,7 @@ package com.mdmesh.core.device
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
@@ -10,6 +11,7 @@ import android.os.Build
 import android.util.Base64
 import com.mdmesh.proto.AppIcon
 import com.mdmesh.proto.AppInfo
+import com.mdmesh.proto.AppPermissionInventory
 import java.io.ByteArrayOutputStream
 
 /**
@@ -20,6 +22,11 @@ import java.io.ByteArrayOutputStream
  * list appears fast and icons are pulled (and client-cached) lazily.
  */
 class AppInventoryCollector(private val context: Context) {
+
+    /** Every installed package's requested Android permissions, for configuration compatibility reporting. */
+    fun permissionInventory(): List<AppPermissionInventory> = context.packageManager.getInstalledPackages(PackageManager.GET_PERMISSIONS)
+        .map { AppPermissionInventory(it.packageName, it.requestedPermissions.orEmpty().filter { p -> p.startsWith("android.permission.") }.sorted()) }
+        .sortedBy { it.pkg }
 
     @Suppress("DEPRECATION") // PackageInfoFlags overloads are API 33+; we support minSdk 24
     fun scan(): List<AppInfo> {

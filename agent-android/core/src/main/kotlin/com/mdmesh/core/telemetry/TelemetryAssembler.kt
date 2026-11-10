@@ -5,6 +5,7 @@ import com.mdmesh.proto.HardwareInfo
 import com.mdmesh.proto.IdentityInfo
 import com.mdmesh.proto.SecurityPosture
 import com.mdmesh.proto.TelemetrySnapshot
+import com.mdmesh.proto.AppPermissionInventory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -18,6 +19,7 @@ class TelemetryAssembler(
     private val identity: () -> IdentityInfo,
     private val dynamic: () -> DynamicState,
     private val security: () -> SecurityPosture,
+    private val applications: () -> List<AppPermissionInventory> = { emptyList() },
 ) : TelemetrySource {
     // A GPS fix can take seconds: collect off the caller's thread (the check-in service calls from Main).
     override suspend fun snapshot(): TelemetrySnapshot = withContext(Dispatchers.IO) {
@@ -26,6 +28,7 @@ class TelemetryAssembler(
             hardware = runCatching { hardware() }.getOrNull(),
             identity = runCatching { identity() }.getOrNull(),
             security = runCatching { security() }.getOrNull(),
+            applications = runCatching { applications() }.getOrDefault(emptyList()),
         )
     }
 }

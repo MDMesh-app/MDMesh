@@ -10,6 +10,14 @@ data class TelemetrySnapshot(
     val hardware: HardwareInfo? = null,
     val identity: IdentityInfo? = null,
     val security: SecurityPosture? = null,
+    /** Installed-package permission declarations; absent on agents before this additive telemetry field. */
+    val applications: List<AppPermissionInventory> = emptyList(),
+)
+
+@Serializable
+data class AppPermissionInventory(
+    val pkg: String,
+    val requestedPermissions: List<String>,
 )
 
 @Serializable

@@ -149,6 +149,7 @@ export interface ConfigApp {
     remove?: boolean;
     system?: boolean;
     usedVersionId?: number;
+    requestedPermissions?: string | null;
     screenOrder?: number | null;
     keyCode?: number | null;
     bottom?: boolean | null;

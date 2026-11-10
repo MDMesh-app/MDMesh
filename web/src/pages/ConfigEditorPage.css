@@ -210,7 +210,9 @@
 .v2 .v2-cfged-permission-app summary {
   padding: 2px 0 8px;
   cursor: pointer;
-  font-weight: 600;
+  color: var(--secondary);
+  font-size: var(--fs-small);
+  font-weight: 400;
 }
 .v2 .v2-cfged-permission-app > p {
   margin: 0 0 8px;

@@ -246,15 +246,15 @@ function AppRow({
       <td className="v2-cfged-apps__app">
         <div className="v2-cfged-app">
           <AppTile name={name} size={32} />
-          <span className="v2-cfged-app__text">
+          <div className="v2-cfged-app__text">
             <span className="v2-cfged-app__name">
               {name}
               {a.version ? <span className="v2-cfged-app__ver"> {a.version}</span> : null}
             </span>
             {a.pkg ? <span className="v2-cfged-app__pkg">{a.pkg}</span> : null}
-          </span>
+            {details ? <div className="v2-cfged-app__details">{details}</div> : null}
+          </div>
         </div>
-        {details ? <div className="v2-cfged-app__details">{details}</div> : null}
       </td>
       <td className="v2-cfged-apps__action">
         <Select

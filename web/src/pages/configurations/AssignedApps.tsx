@@ -1,7 +1,7 @@
 // The configuration editor's assigned-apps table, with search, an "On devices" filter and a sort once the list is
 // long. The controls only choose which rows show and in what order: every edit goes to the editor's draft by app id,
 // so what is saved, the changed count and the leave guard never depend on them.
-import { useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import type { ConfigApp } from '../../api/configurations';
 import {
   AppTile,
@@ -46,6 +46,8 @@ export interface AssignedAppsProps {
   onAction: (id: number, action: number) => void;
   onKioskVisibility: (id: number, shown: boolean) => void;
   onRemove: (id: number) => void;
+  /** Optional controls that belong directly below an installed app's row. */
+  renderAppDetails?: (app: ConfigApp) => ReactNode;
   /** Changes when the editor discards its edits: the rows are filed again by their restored state. */
   resetKey: number;
 }
@@ -59,6 +61,7 @@ export function AssignedApps({
   onAction,
   onKioskVisibility,
   onRemove,
+  renderAppDetails,
   resetKey,
 }: AssignedAppsProps) {
   const [q, setQ] = useState('');
@@ -214,6 +217,7 @@ export function AssignedApps({
                   onAction={onAction}
                   onKioskVisibility={onKioskVisibility}
                   onRemove={onRemove}
+                  details={renderAppDetails?.(a)}
                 />
               ))
             )}
@@ -231,12 +235,15 @@ function AppRow({
   onAction,
   onKioskVisibility,
   onRemove,
-}: { app: ConfigApp } & Pick<AssignedAppsProps, 'readOnly' | 'kioskColumn' | 'onAction' | 'onKioskVisibility' | 'onRemove'>) {
+  details,
+}: { app: ConfigApp; details?: ReactNode } & Pick<AssignedAppsProps, 'readOnly' | 'kioskColumn' | 'onAction' | 'onKioskVisibility' | 'onRemove'>) {
   const name = nameOf(a);
   const action = actionOf(a);
   const shown = a.showIcon !== false;
   const kioskText = action !== 1 ? (action === 2 ? 'Removed' : 'Not installed') : shown ? 'Shown' : 'Hidden';
+  const cols = kioskColumn ? 4 : 3;
   return (
+    <>
     <tr>
       <td className="v2-cfged-apps__app">
         <div className="v2-cfged-app">
@@ -288,5 +295,7 @@ function AppRow({
         )}
       </td>
     </tr>
+    {details ? <tr className="v2-cfged-apps__details"><td colSpan={cols}>{details}</td></tr> : null}
+    </>
   );
 }

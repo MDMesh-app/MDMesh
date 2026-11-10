@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { searchDevices, type DeviceView } from '../../api/devices';
 import {
   cancelRollout,
   createRollout,
+  getRolloutTargetSummary,
   promoteRollout,
   type ActiveRollout,
   type RolloutCounts,
+  type RolloutTargetSummary,
 } from '../../api/rollout';
 import type { UpdateStatus } from '../../api/updates';
 import {
@@ -29,6 +31,8 @@ import { rolloutActive, type RolloutState } from './hooks';
 const AGENT_PACKAGE = (import.meta.env.VITE_AGENT_PACKAGE as string) || 'com.mdmesh.agent';
 /** Devices fetched per search in the canary picker (classic: one page of 200). */
 const PICKER_PAGE = 200;
+/** How often "current on every device" is checked again, so a device enrolled meanwhile brings the offer back. */
+export const SUMMARY_POLL_MS = 30000;
 
 /** Server error keys (RolloutResource) in words. Anything else is shown as the server sent it. */
 const ROLLOUT_ERRORS: Record<string, string> = {
@@ -66,7 +70,10 @@ function promoteHint(c: RolloutCounts): string {
   return `Available once all ${n} canary devices have updated.`;
 }
 
-function steps(r: ActiveRollout): RolloutStep[] {
+/** A canary-stage rollout whose canary is every device: there is nobody to promote to, so it can only be finished. */
+const wholeFleetCanary = (r: ActiveRollout) => r.stage === 'canary' && r.progress.others === 0;
+
+function steps(r: ActiveRollout, wholeFleet: boolean): RolloutStep[] {
   const c = r.progress.canary;
   const f = r.progress.fleet;
   const canaryOk = cohortDone(c) || r.stage === 'fleet';
@@ -98,6 +105,18 @@ function steps(r: ActiveRollout): RolloutStep[] {
       busy: f.pending,
       total: fe,
       note: f.total === 0 ? 'No other devices.' : cohortNote(f),
+    });
+  } else if (wholeFleet) {
+    out.push({
+      key: 'fleet',
+      step: 'Step 2',
+      name: 'Everyone else',
+      state: 'Not needed',
+      stateTone: 'muted',
+      done: 0,
+      total: 0,
+      ofLabel: 'other devices',
+      note: 'Every device is in the canary.',
     });
   } else {
     out.push({
@@ -283,10 +302,43 @@ export function RolloutSection({
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [picking, setPicking] = useState(false);
   const [pickErr, setPickErr] = useState<string | null>(null);
-  const items = useMemo(() => (active ? steps(active) : []), [active]);
+  const [summary, setSummary] = useState<RolloutTargetSummary | null>(null);
+  const summaryRequest = useRef(0);
   // Starting, promoting and stopping a rollout queue commands on the whole fleet (ext/core/access.ts): a role without
   // edit_devices, or a user limited to some device groups, sees the rollout without its buttons.
   const canEdit = usePermission(CORE_ACTION_ACCESS.rollout);
+  // A canary of every device can only be finished. Whole-fleet reach comes with canEdit, so for an editor `others`
+  // counts the whole fleet; a user limited to some groups may simply not see the other devices.
+  const wholeFleet = canEdit && !!active && wholeFleetCanary(active);
+  const items = useMemo(() => (active ? steps(active, wholeFleet) : []), [active, wholeFleet]);
+
+  const refreshSummary = useCallback(() => {
+    const request = ++summaryRequest.current;
+    if (!apk?.available) {
+      setSummary(null);
+      return;
+    }
+    return getRolloutTargetSummary(apk.version)
+      .then((next) => { if (request === summaryRequest.current) setSummary(next); })
+      .catch(() => { if (request === summaryRequest.current) setSummary(null); });
+  }, [apk?.available, apk?.version]);
+
+  // A rollout can finish during Settings' normal polling. Its target summary must be refreshed
+  // when that active rollout disappears, otherwise the old incomplete summary offers it again.
+  useEffect(() => {
+    void refreshSummary();
+  }, [refreshSummary, active?.id]);
+
+  // Nothing polls while no rollout runs, so check "current on every device" again now and then: a device enrolled
+  // since, on an older agent, brings the start-rollout offer back without a reload.
+  const current = !active && !!summary?.complete;
+  useEffect(() => {
+    if (!current) return;
+    const t = setInterval(() => {
+      if (document.visibilityState !== 'hidden') void refreshSummary();
+    }, SUMMARY_POLL_MS);
+    return () => clearInterval(t);
+  }, [current, refreshSummary]);
 
   const start = async (numbers: string[]) => {
     if (!apk) return;
@@ -346,6 +398,8 @@ export function RolloutSection({
 
   const titleId = `${id}-title`;
   const fleet = active?.stage === 'fleet';
+  // Finish, not Cancel or Promote: the fleet stage, or a canary of every device.
+  const finishing = fleet || wholeFleet;
   const remaining = active
     ? (() => {
         const c = fleet ? active.progress.fleet : active.progress.canary;
@@ -369,7 +423,7 @@ export function RolloutSection({
             </>
           }
           actions={
-            !canEdit ? undefined : fleet ? (
+            !canEdit ? undefined : finishing ? (
               <Button onClick={() => setConfirm('cancel')} disabled={busy}>
                 Finish rollout
               </Button>
@@ -398,7 +452,13 @@ export function RolloutSection({
       {active ? (
         <>
           <RolloutSteps steps={items} />
-          {!fleet ? (
+          {finishing && !fleet ? (
+            <p className="v2-settings-promote__hint">
+              {remaining === 0
+                ? 'Every device is in the canary, so there is no one to promote to. Finish the rollout to close it.'
+                : 'Every device is in the canary. The rollout closes once they’ve updated; if one can’t, finish it.'}
+            </p>
+          ) : !fleet ? (
             <div className="v2-settings-promote">
               {canEdit ? (
                 <Button
@@ -422,6 +482,10 @@ export function RolloutSection({
         </>
       ) : !loaded || (!statusLoaded && !loadError) ? (
         <p className="v2-settings-muted">Checking for a rollout…</p>
+      ) : apk?.available && summary?.complete ? (
+        <p className="v2-settings-muted">
+          Agent <span className="v2-mono">{apk.version}</span> is current on every device that can update itself.
+        </p>
       ) : apk?.available ? (
         <div className="v2-settings-start">
           <div className="v2-settings-start__text">
@@ -490,14 +554,14 @@ export function RolloutSection({
         onClose={() => !busy && setConfirm(null)}
         role="alertdialog"
         size="sm"
-        title={fleet ? 'Finish this rollout?' : 'Cancel this rollout?'}
+        title={finishing ? 'Finish this rollout?' : 'Cancel this rollout?'}
         footer={
           <>
             <Button size="lg" onClick={() => setConfirm(null)} disabled={busy}>
               Keep it running
             </Button>
-            <Button variant={fleet ? 'primary' : 'danger'} size="lg" onClick={() => void stop()} disabled={busy}>
-              {busy ? 'Stopping…' : fleet ? 'Finish rollout' : 'Cancel rollout'}
+            <Button variant={finishing ? 'primary' : 'danger'} size="lg" onClick={() => void stop()} disabled={busy}>
+              {busy ? 'Stopping…' : finishing ? 'Finish rollout' : 'Cancel rollout'}
             </Button>
           </>
         }

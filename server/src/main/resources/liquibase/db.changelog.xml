@@ -3068,6 +3068,13 @@
         <rollback>ALTER TABLE devices DROP COLUMN wipedAt;</rollback>
     </changeSet>
 
+    <changeSet id="26.11.08-configurations-camera" author="letter-number" context="common">
+        <comment>Column,new: configurations#camera — null = not managed, true = allow and false = block,
+            sent as policies.camera. No DEFAULT preserves existing configurations and avoids a fleet-wide change.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN camera BOOLEAN;</sql>
+        <rollback>ALTER TABLE configurations DROP COLUMN camera;</rollback>
+    </changeSet>
+
     <changeSet id="26.11.07-agentEnrollmentToken-maxUses" author="nexi-space" context="common">
         <comment>Columns,new: agentEnrollmentToken#maxUses, #useCount: a token enrolls up to maxUses devices, and
             useCount counts those enrolled; used turns true with the last. Existing tokens get maxUses 1 (single use,

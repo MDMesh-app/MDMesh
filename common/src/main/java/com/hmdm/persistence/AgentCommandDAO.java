@@ -59,9 +59,6 @@ public class AgentCommandDAO {
     @Transactional
     public void insert(AgentCommand command) {
         mapper.insert(command);
-        if (changesKiosk(command.getType())) {
-            stateMapper.advanceKioskGeneration(command.getDeviceNumber(), System.currentTimeMillis());
-        }
     }
 
     public List<AgentCommand> listPending(String deviceNumber) {
@@ -86,6 +83,20 @@ public class AgentCommandDAO {
     /** Atomically claim a pending command for delivery. Returns true iff this caller claimed it. */
     public boolean claimForDelivery(Integer commandId, Long deliveredAt) {
         return mapper.claimForDelivery(commandId, deliveredAt) == 1;
+    }
+
+    /**
+     * Atomically claim a command for delivery and advance kiosk ordering only once the command is handed to the
+     * device. A queued command has not changed device state yet: a buffered on-device kioskReturn sent in the same
+     * check-in must remain evidence for the prior generation.
+     */
+    @Transactional
+    public boolean claimForDelivery(AgentCommand command, Long deliveredAt) {
+        boolean claimed = claimForDelivery(command.getId(), deliveredAt);
+        if (claimed && changesKiosk(command.getType())) {
+            stateMapper.advanceKioskGeneration(command.getDeviceNumber(), deliveredAt);
+        }
+        return claimed;
     }
 
     /**

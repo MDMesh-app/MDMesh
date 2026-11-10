@@ -17,20 +17,31 @@ import static org.junit.Assert.assertEquals;
 public class AgentCommandKioskGenerationTest {
 
     @Test
-    public void kioskChangingCommandsAdvanceAndInvalidateTheServerOwnedGeneration() {
+    public void kioskChangingCommandsAdvanceOnlyWhenDelivered() {
         List<String> calls = new ArrayList<>();
         AgentCommandDAO dao = dao(calls);
 
-        dao.insert(command("kiosk.enter"));
-        dao.insert(command("kiosk.exit"));
-        dao.insert(command("config.apply"));
-        dao.insert(command("ring"));
+        AgentCommand enter = command("kiosk.enter");
+        AgentCommand exit = command("kiosk.exit");
+        AgentCommand apply = command("config.apply");
+        AgentCommand ring = command("ring");
+        dao.insert(enter);
+        dao.insert(exit);
+        dao.insert(apply);
+        dao.insert(ring);
 
         assertEquals(java.util.Arrays.asList(
-                "command.insert:kiosk.enter", "state.advance:d",
-                "command.insert:kiosk.exit", "state.advance:d",
-                "command.insert:config.apply", "state.advance:d",
-                "command.insert:ring"), calls);
+                "command.insert:kiosk.enter", "command.insert:kiosk.exit",
+                "command.insert:config.apply", "command.insert:ring"), calls);
+
+        dao.claimForDelivery(enter, 1L);
+        dao.claimForDelivery(exit, 2L);
+        dao.claimForDelivery(apply, 3L);
+        dao.claimForDelivery(ring, 4L);
+        assertEquals(java.util.Arrays.asList(
+                "command.insert:kiosk.enter", "command.insert:kiosk.exit",
+                "command.insert:config.apply", "command.insert:ring",
+                "state.advance:d", "state.advance:d", "state.advance:d"), calls);
     }
 
     @Test
@@ -41,6 +52,21 @@ public class AgentCommandKioskGenerationTest {
         dao.recordKioskReturn("d", 123L, "returned on-device");
 
         assertEquals(java.util.Arrays.asList("event.insert:kioskReturn", "state.return:d"), calls);
+    }
+
+    @Test
+    public void bufferedReturnPrecedesTheCustomKioskDeliveryThatInvalidatesIt() {
+        List<String> calls = new ArrayList<>();
+        AgentCommandDAO dao = dao(calls);
+        AgentCommand custom = command("kiosk.enter");
+
+        // An admin can queue Custom kiosk while an offline device has an earlier kioskReturn buffered.
+        dao.insert(custom);
+        dao.recordKioskReturn("d", 123L, "returned on-device");
+        dao.claimForDelivery(custom, 456L);
+
+        assertEquals(java.util.Arrays.asList(
+                "command.insert:kiosk.enter", "event.insert:kioskReturn", "state.return:d", "state.advance:d"), calls);
     }
 
     private static AgentCommand command(String type) {
@@ -55,6 +81,7 @@ public class AgentCommandKioskGenerationTest {
         AgentCommandMapper commands = (AgentCommandMapper) Proxy.newProxyInstance(
                 AgentCommandMapper.class.getClassLoader(), new Class[]{AgentCommandMapper.class}, (p, m, a) -> {
                     if ("insert".equals(m.getName())) calls.add("command.insert:" + ((AgentCommand) a[0]).getType());
+                    if ("claimForDelivery".equals(m.getName())) return 1;
                     return defaultValue(m.getReturnType());
                 });
         DeviceStateMapper states = (DeviceStateMapper) Proxy.newProxyInstance(

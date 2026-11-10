@@ -484,7 +484,7 @@ public class AgentResource {
                 continue;
             }
             // Atomically claim it so a concurrent check-in can't deliver the same command twice.
-            if (commandDAO.claimForDelivery(stored.getId(), now)) {
+            if (commandDAO.claimForDelivery(stored, now)) {
                 commands.add(toWire(stored));
                 if (WIPE_COMMAND.equals(stored.getType())) {
                     commandDAO.markWiped(deviceNumber, now);

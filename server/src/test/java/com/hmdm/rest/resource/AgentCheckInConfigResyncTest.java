@@ -129,6 +129,9 @@ public class AgentCheckInConfigResyncTest {
             c.setDeliveredAt(at);
             return true;
         }
+        @Override public boolean claimForDelivery(AgentCommand command, Long at) {
+            return claimForDelivery(command.getId(), at);
+        }
         @Override public void markResultWithTime(String n, Integer id, String status, String detail, Long at) {
             AgentCommand c = commands.get(id - 1);
             // status NOT IN ('done','failed','unsupported'): a device result overwrites only an open or expired row

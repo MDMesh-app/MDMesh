@@ -134,14 +134,14 @@ CUR_REV=$(curl -s -b "$CJ" "$BASE/rest/private/agent/v1/devices/$DID/configStatu
 chk "current revision is 64 hex" "$(printf '%s' "$CUR_REV" | grep -cE '^[0-9a-f]{64}$')" "1"
 # capable agent, stale revision -> command delivered in the same response
 C_DS=$(curl -s -X POST -H "Authorization: Bearer $SEC" -H 'Content-Type: application/json' \
-  -d "{\"deviceId\":\"$DID\",\"capabilities\":{\"policy\":[\"wifi\"],\"device\":[\"configApply\"]},\"state\":{\"battery\":77,\"charging\":true,\"locked\":false,\"kioskActive\":false,\"androidRelease\":\"14\",\"lastBootAt\":1000,\"appliedConfigRevision\":\"0000\"}}" \
+  -d "{\"deviceId\":\"$DID\",\"capabilities\":{\"policy\":[\"wifi\"],\"device\":[\"configApply\"],\"appManagement\":[\"runtimePermissions\"]},\"state\":{\"battery\":77,\"charging\":true,\"locked\":false,\"kioskActive\":false,\"androidRelease\":\"14\",\"lastBootAt\":1000,\"appliedConfigRevision\":\"0000\"}}" \
   "$BASE/rest/public/agent/v1/checkin")
 chk "config.apply delivered on drift" "$(echo "$C_DS" | field "[c['type'] for c in d['data']['commands']].count('config.apply')")" "1"
 chk "config.apply carries current revision" "$(echo "$C_DS" | field "[c['payload']['revision'] for c in d['data']['commands'] if c['type']=='config.apply'][0]")" "$CUR_REV"
 DS_CMD=$(echo "$C_DS" | field "[c['commandId'] for c in d['data']['commands'] if c['type']=='config.apply'][0]")
 # The agent checks in again without a result (it restarted mid-apply, or never got the response): the delivered
 # config.apply is ended and the same revision is sent again at once, once. A second one in a row gets the backoff.
-CI_NORESULT="{\"deviceId\":\"$DID\",\"capabilities\":{\"policy\":[\"wifi\"],\"device\":[\"configApply\"]}}"
+CI_NORESULT="{\"deviceId\":\"$DID\",\"capabilities\":{\"policy\":[\"wifi\"],\"device\":[\"configApply\"],\"appManagement\":[\"runtimePermissions\"]}}"
 ABANDONED="no result: the agent checked in again without finishing it"
 hist_row(){ curl -s -b "$CJ" "$BASE/rest/private/agent/v1/devices/$DID/commands?since=0" | field "[str(c['status'])+':'+str(c.get('detail')) for c in d['data'] if str(c['id'])=='$1'][0]"; }
 C_RE=$(curl -s -X POST -H "Authorization: Bearer $SEC" -H 'Content-Type: application/json' -d "$CI_NORESULT" "$BASE/rest/public/agent/v1/checkin")
@@ -152,7 +152,7 @@ chk "abandoned again: backoff, no re-send" "$(curl -s -X POST -H "Authorization:
 chk "the re-send is ended too" "$(hist_row "$DS_RE")" "expired:$ABANDONED"
 # The first command's result turns up after all (ack done, revision applied) -> it replaces the server's guess; in sync
 curl -s -X POST -H "Authorization: Bearer $SEC" -H 'Content-Type: application/json' \
-  -d "{\"deviceId\":\"$DID\",\"capabilities\":{\"policy\":[\"wifi\"],\"device\":[\"configApply\"]},\"results\":[{\"commandId\":\"$DS_CMD\",\"status\":\"done\",\"detail\":\"{\\\"revision\\\":\\\"$CUR_REV\\\",\\\"outcomes\\\":{\\\"policies.wifi\\\":\\\"applied\\\"}}\",\"completedAt\":\"2026-01-01T00:00:00Z\"}],\"state\":{\"battery\":77,\"charging\":true,\"locked\":false,\"kioskActive\":false,\"androidRelease\":\"14\",\"lastBootAt\":1000,\"appliedConfigRevision\":\"$CUR_REV\"}}" \
+  -d "{\"deviceId\":\"$DID\",\"capabilities\":{\"policy\":[\"wifi\"],\"device\":[\"configApply\"],\"appManagement\":[\"runtimePermissions\"]},\"results\":[{\"commandId\":\"$DS_CMD\",\"status\":\"done\",\"detail\":\"{\\\"revision\\\":\\\"$CUR_REV\\\",\\\"outcomes\\\":{\\\"policies.wifi\\\":\\\"applied\\\"}}\",\"completedAt\":\"2026-01-01T00:00:00Z\"}],\"state\":{\"battery\":77,\"charging\":true,\"locked\":false,\"kioskActive\":false,\"androidRelease\":\"14\",\"lastBootAt\":1000,\"appliedConfigRevision\":\"$CUR_REV\"}}" \
   "$BASE/rest/public/agent/v1/checkin" >/dev/null
 chk "a late result overwrites the abandoned row" "$(hist_row "$DS_CMD" | cut -d: -f1)" "done"
 chk "configStatus inSync after ack" "$(curl -s -b "$CJ" "$BASE/rest/private/agent/v1/devices/$DID/configStatus" | field "d['data']['inSync']")" "True"
@@ -190,7 +190,7 @@ chk "PUT configuration kioskMode=true + mainAppId=version id" \
   "$(curl -s -b "$CJ" -X PUT -H 'Content-Type: application/json' -d "$(kcfg_body "$KCFG" true)" "$BASE/rest/private/configurations" | field "str(d['status'])+':'+str(d['data']['kioskMode'])+':'+str(d['data']['mainAppId'])")" "OK:True:$KVID"
 # Capable agent, stale revision (it last applied the shared configuration's revision).
 C_K=$(curl -s -X POST -H "Authorization: Bearer $SEC" -H 'Content-Type: application/json' \
-  -d "{\"deviceId\":\"$DID\",\"capabilities\":{\"policy\":[\"wifi\"],\"device\":[\"configApply\"]},\"state\":{\"battery\":77,\"charging\":true,\"locked\":false,\"kioskActive\":false,\"androidRelease\":\"14\",\"lastBootAt\":1000,\"appliedConfigRevision\":\"$CUR_REV\"}}" \
+  -d "{\"deviceId\":\"$DID\",\"capabilities\":{\"policy\":[\"wifi\"],\"device\":[\"configApply\"],\"appManagement\":[\"runtimePermissions\"]},\"state\":{\"battery\":77,\"charging\":true,\"locked\":false,\"kioskActive\":false,\"androidRelease\":\"14\",\"lastBootAt\":1000,\"appliedConfigRevision\":\"$CUR_REV\"}}" \
   "$BASE/rest/public/agent/v1/checkin")
 KPAY="[c['payload'] for c in d['data']['commands'] if c['type']=='config.apply'][0]"
 chk "kiosk config.apply delivered" "$(echo "$C_K" | field "[c['type'] for c in d['data']['commands']].count('config.apply')")" "1"

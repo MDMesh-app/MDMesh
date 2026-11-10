@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Exit kiosk dialog body (ExitPinDialog), under the title and message. Inflated from the dialog's themed context,
+    so the field takes the v2 field style. Full text keyboard: the console stores the PIN as entered (D6).
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="@dimen/mdm_dialog_padding"
+    android:paddingTop="8dp"
+    android:paddingEnd="@dimen/mdm_dialog_padding">
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+        <EditText
+            android:id="@+id/exit_pin_field"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/kiosk_exit_pin_hint"
+            android:imeOptions="actionDone|flagNoExtractUi"
+            android:importantForAutofill="no"
+            android:inputType="textPassword"
+            android:maxLines="1"
+            android:paddingStart="12dp"
+            android:paddingEnd="52dp"
+            tools:targetApi="o" />
+
+        <ImageButton
+            android:id="@+id/exit_pin_toggle"
+            android:layout_width="@dimen/mdm_touch_target"
+            android:layout_height="@dimen/mdm_touch_target"
+            android:layout_gravity="end|center_vertical"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/kiosk_exit_pin_show"
+            android:src="@drawable/ic_v2_eye" />
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/exit_pin_error"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:accessibilityLiveRegion="polite"
+        android:paddingTop="6dp"
+        android:textAppearance="@style/TextAppearance.MdmAgent.BodySmall"
+        android:textColor="@color/mdm_alert_ink"
+        android:visibility="gone" />
+</LinearLayout>

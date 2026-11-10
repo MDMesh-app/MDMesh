@@ -10,13 +10,11 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
-import android.widget.EditText
 import android.widget.GridLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
@@ -25,6 +23,8 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.flow.distinctUntilChanged
 import com.mdmesh.agent.service.CheckInService
+import com.mdmesh.agent.ui.ExitPinDialog
+import com.mdmesh.agent.ui.ExitPinUiState
 import com.mdmesh.core.kiosk.KioskApplier
 import com.mdmesh.core.store.KioskStateStore
 import com.mdmesh.core.sync.CheckInWorker
@@ -169,38 +169,27 @@ class KioskLauncherActivity : ComponentActivity() {
         // No PIN, no on-device exit (the affordance isn't shown either): kiosk then ends only from the console.
         if (!pinGate.isAvailable(p.password)) return
         pinGate.remainingLockMs()?.let { showExitLocked(it); return }
-        val builder = AlertDialog.Builder(this)
-        // Built from the dialog's themed context, so the field takes the dialog theme's v2 field style.
-        val input = EditText(builder.context).apply {
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or
-                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setHint(R.string.kiosk_exit_pin_hint)
-        }
-        builder
-            .setTitle(R.string.kiosk_exit_title)
-            .setView(dialogField(input))
-            .setPositiveButton(R.string.kiosk_exit_confirm) { _, _ -> onPinEntered(input.text.toString()) }
-            .setNegativeButton(R.string.action_cancel, null)
-            .show()
+        ExitPinDialog.show(this, ::onPinEntered)
     }
 
     /**
      * The one place a PIN is checked, and the only caller of [doExit]. It checks against the kiosk applied now, not
      * the one the prompt was opened for: a PIN changed or removed meanwhile must not still open the exit.
+     * [dialog] only shows the result: it closes on Open and Locked, and shows Wrong and Unavailable under the field.
      */
-    private fun onPinEntered(entered: String) {
+    private fun onPinEntered(entered: String, dialog: ExitPinDialog) {
         val pin = active?.password
-        when (val outcome = pinGate.attempt(entered, pin)) {
+        val outcome = pinGate.attempt(entered, pin)
+        dialog.render(ExitPinUiState.of(outcome))
+        when (outcome) {
             ExitPinGate.Outcome.Open -> doExit()
-            is ExitPinGate.Outcome.Wrong ->
-                Toast.makeText(this, R.string.kiosk_exit_wrong_pin, Toast.LENGTH_SHORT).show()
             is ExitPinGate.Outcome.Locked -> {
                 if (outcome.started) reportLockout(outcome)
                 showExitLocked(outcome.remainingMs)
             }
-            // The attempt couldn't be saved, so it wasn't checked (or the PIN was removed meanwhile).
-            ExitPinGate.Outcome.Unavailable ->
-                Toast.makeText(this, R.string.kiosk_exit_unavailable, Toast.LENGTH_SHORT).show()
+            // Shown in the dialog. Unavailable: the attempt couldn't be saved, so it wasn't checked (or the PIN was
+            // removed meanwhile).
+            is ExitPinGate.Outcome.Wrong, ExitPinGate.Outcome.Unavailable -> Unit
         }
     }
 
@@ -215,6 +204,7 @@ class KioskLauncherActivity : ComponentActivity() {
 
     private fun showExitLocked(remainingMs: Long) {
         AlertDialog.Builder(this)
+            .setIcon(R.drawable.ic_v2_lock)
             .setTitle(R.string.kiosk_exit_locked_title)
             .setMessage(getString(R.string.kiosk_exit_locked_message, ExitPinGate.describe(remainingMs)))
             .setPositiveButton(R.string.action_ok, null)
@@ -403,13 +393,6 @@ class KioskLauncherActivity : ComponentActivity() {
 
     // --- View helpers ------------------------------------------------------------------------
 
-    /** A dialog's custom field, inset like the dialog's text (AlertDialog adds no padding around a custom view). */
-    private fun dialogField(field: View): View = android.widget.FrameLayout(field.context).apply {
-        val side = resources.getDimensionPixelSize(R.dimen.mdm_dialog_padding)
-        setPaddingRelative(side, dp(DIALOG_FIELD_TOP), side, 0)
-        addView(field, android.widget.FrameLayout.LayoutParams(MATCH, ViewGroup.LayoutParams.WRAP_CONTENT))
-    }
-
     private fun frame(bg: Int): android.widget.FrameLayout =
         android.widget.FrameLayout(this).apply {
             setBackgroundColor(bg)
@@ -442,7 +425,6 @@ class KioskLauncherActivity : ComponentActivity() {
         const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         const val GESTURE_TAPS = 7
         const val GESTURE_WINDOW_MS = 3_000L
-        const val DIALOG_FIELD_TOP = 8
         val INK = Color.parseColor("#0E1117")
         val TEXT = Color.parseColor("#E8EEF4")
         val MUTED = Color.parseColor("#8693A4")

@@ -53,10 +53,17 @@
     <!-- Kiosk exit -->
     <string name="kiosk_exit_button">Exit kiosk</string>
     <string name="kiosk_exit_title">Exit kiosk</string>
+    <string name="kiosk_exit_message">Enter the exit PIN to leave the kiosk.</string>
     <string name="kiosk_exit_pin_hint">Exit PIN</string>
+    <string name="kiosk_exit_pin_show">Show PIN</string>
+    <string name="kiosk_exit_pin_hide">Hide PIN</string>
     <string name="kiosk_exit_confirm">Exit</string>
-    <string name="kiosk_exit_wrong_pin">Wrong PIN</string>
-    <string name="kiosk_exit_unavailable">Exit unavailable right now</string>
+    <!-- Under the PIN field; %d = wrong PINs left before the exit locks (1 or 2). -->
+    <plurals name="kiosk_exit_wrong_pin">
+        <item quantity="one">Wrong PIN. %d more wrong PIN locks the exit.</item>
+        <item quantity="other">Wrong PIN. %d more wrong PINs lock the exit.</item>
+    </plurals>
+    <string name="kiosk_exit_unavailable">Exit isn\'t available right now. Try again.</string>
     <string name="kiosk_exit_locked_title">Exit locked</string>
     <!-- %1$s = how long, from ExitPinGate.describe ("5 minutes"). -->
     <string name="kiosk_exit_locked_message">Too many wrong PINs. Try again in %1$s.</string>

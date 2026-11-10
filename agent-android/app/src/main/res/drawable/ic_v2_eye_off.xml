@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v2 IconEyeOff (web/src/ui/icons.tsx): "Hide PIN". -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="16"
+    android:viewportHeight="16">
+    <path
+        android:pathData="M1.5,8s2.4,-4.5 6.5,-4.5S14.5,8 14.5,8 12.1,12.5 8,12.5 1.5,8 1.5,8z"
+        android:strokeWidth="1.5"
+        android:strokeColor="@color/mdm_secondary"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M10,8a2,2 0,1 1,-4 0a2,2 0,1 1,4 0z"
+        android:strokeWidth="1.5"
+        android:strokeColor="@color/mdm_secondary"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M2.5,2.5l11,11"
+        android:strokeWidth="1.5"
+        android:strokeColor="@color/mdm_secondary"
+        android:strokeLineCap="round" />
+</vector>

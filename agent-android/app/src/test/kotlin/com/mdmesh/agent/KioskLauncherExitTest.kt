@@ -80,6 +80,17 @@ class KioskLauncherExitTest {
     }
 
     @Test
+    fun `PIN results show in the dialog, not in toasts`() {
+        // A Toast vanishes after two seconds and can't be read by everyone; the dialog keeps the error under the
+        // field (ExitPinUiState).
+        val src = launcherSource()
+        val toasts = Regex("\\bToast\\b").findAll(src).map { lineOf(src, it.range.first) }.toList()
+        assertEquals("KioskLauncherActivity.kt lines using Toast", emptyList<Int>(), toasts)
+        val check = src.substring(body(src, "onPinEntered"))
+        assertTrue("onPinEntered must render the outcome", "dialog.render(ExitPinUiState.of(outcome))" in check)
+    }
+
+    @Test
     fun `the launcher never compares PINs itself`() {
         // An `==` on the entered text or the password skips the lockout (and isn't constant-time).
         val compare = Regex("toString\\(\\)\\s*[!=]=|[!=]=\\s*\\w*\\.?password\\b|\\bpassword\\s*[!=]=")

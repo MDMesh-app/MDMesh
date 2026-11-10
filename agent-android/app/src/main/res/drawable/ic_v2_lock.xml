@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v2 IconLock (web/src/ui/icons.tsx) in alert ink: the Exit locked dialog. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="16"
+    android:viewportHeight="16">
+    <path
+        android:pathData="M3,7h10v7H3zM5.5,7V5a2.5,2.5 0,0 1,5 0v2"
+        android:strokeWidth="1.6"
+        android:strokeColor="@color/mdm_alert_ink"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

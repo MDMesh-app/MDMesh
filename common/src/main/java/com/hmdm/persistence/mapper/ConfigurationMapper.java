@@ -105,6 +105,7 @@ public interface ConfigurationMapper {
             "showWifi=#{showWifi}, " +
             "gps=#{gps}, " +
             "bluetooth=#{bluetooth}, " +
+            "camera=#{camera}, " +
             "wifi=#{wifi}, " +
             "mobileData=#{mobileData}, " +
             "usbStorage=#{usbStorage}, " +

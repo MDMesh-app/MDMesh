@@ -9,9 +9,12 @@ line under Unreleased.
 ## Unreleased
 
 Upgrading
-- The database adds one column (`devices.wipedAt`) on start. Devices wiped before the update aren't marked.
+- The database adds two columns (`devices.wipedAt`, `configurations.camera`) on start. Devices wiped before the
+  update aren't marked.
 
 New
+- Configurations can allow or block the camera. Block covers every app, kiosk apps too. Not managed after Block
+  gives the camera back on agent 0.5.0; on older agents, choose Allow to lift a block (thanks @letternumber).
 - Kiosk: staff can tap Return to kiosk in the MDMesh Agent after leaving with the exit PIN, even offline. It shows
   only when the device's configuration enables kiosk, asks first (and warns when that kiosk has no exit on the
   device), and tells the server at once when online. Needs agent 0.5.0; no server update needed (thanks @tisign).
@@ -24,6 +27,11 @@ New
 Fixes
 - Audit log: on Docker installs, entries show the client's address instead of the edge container's (thanks
   @Przemek-Magic).
+- Kiosk: after someone leaves kiosk on the device with the exit PIN, the agent checks in right away, so the console
+  shows kiosk off without waiting for the next heartbeat. Needs agent 0.5.0 (thanks @letternumber).
+- Agent rollout: when every device is in the canary, the rollout finishes once they've updated instead of staying
+  open, and Settings stops offering the same agent again. If one can't update, it offers Finish instead of Promote
+  (thanks @letternumber).
 
 Under the hood
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.

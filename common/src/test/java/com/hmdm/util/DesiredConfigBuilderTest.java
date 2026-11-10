@@ -204,6 +204,17 @@ public class DesiredConfigBuilderTest {
     }
 
     @Test
+    public void camera_is_a_direct_allow_block_policy_and_null_is_unmanaged() {
+        Configuration c = policiesConfig();
+        c.setCamera(false);
+        assertEquals(Boolean.FALSE, build(c, Collections.emptyList()).getPolicies().get("camera"));
+        c.setCamera(true);
+        assertEquals(Boolean.TRUE, build(c, Collections.emptyList()).getPolicies().get("camera"));
+        c.setCamera(null);
+        assertFalse(build(c, Collections.emptyList()).getPolicies().containsKey("camera"));
+    }
+
+    @Test
     public void factory_reset_alone_changes_the_revision() {
         // The whole point of the persisted column: toggling it must re-apply, so it must move the revision.
         DesiredConfig blocked = build(policiesConfig(), Collections.emptyList());

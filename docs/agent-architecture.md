@@ -62,13 +62,13 @@ it. It asks first, says so when that kiosk has no exit on the device, enters onl
 finishes the entry even if the screen goes away (a rotation); once in kiosk it queues a check-in. A newer delivered kiosk-off configuration removes the option even if another policy failed; a remote
 `kiosk.exit` leaves it available while the configuration still enables kiosk.
 
-**The 23 enforced fields**
+**The 24 enforced fields**
 
 | Area | Fields |
 |------|--------|
 | Kiosk | `mainAppId`, `kioskMode`, `kioskExit`, `kioskHome`, `kioskRecents`, `kioskNotifications`, `kioskSystemInfo`, `kioskKeyguard`, `kioskLockButtons`, `kioskLockVolume`, `password` (exit PIN, stored as entered) |
 | Launcher look | `backgroundColor`, `textColor`, `iconSize` |
-| Device policy | `wifi`, `wifiRadio`, `bluetooth`, `usbStorage`, `disableScreenshots`, `disableFactoryReset`, `disableSafeBoot` |
+| Device policy | `wifi`, `wifiRadio`, `bluetooth`, `camera`, `usbStorage`, `disableScreenshots`, `disableFactoryReset`, `disableSafeBoot` |
 | Location | `requestUpdates` (location capture mode) |
 | Connectivity | `connectivityMode` (live-connection mode, 1.5) |
 

@@ -1,6 +1,6 @@
 # Managed App Runtime Permissions
 
-**Status**: Implemented on `feat/managed-app-permissions`; awaiting final live validation and PR preparation
+**Status**: Implemented on `feat/managed-app-permissions`; PR review follow-up committed locally, awaiting push and final live validation
 **Created**: 2026-11-09
 **Scope**: A modern replacement for the inherited `appPermissions` configuration field. It does not revive the
 Headwind `/sync` behavior.
@@ -70,18 +70,25 @@ Add an optional `appPermissions` section to `config.apply`:
 }
 ```
 
-- Omitted section: no application permission state is managed by this configuration.
+- An explicit empty section releases every explicit override the agent recorded for this configuration.
+- An omitted section from an older server preserves the agent's durable active-rule record. This avoids treating an
+  old server's unknown/absent field as an instruction to release working restrictions; a later explicit empty
+  section remains the intentional release signal.
 - A package omitted from a later document: release every override MDMesh recorded for that package to `DEFAULT`.
 - A permission omitted from a listed package: release that override to `DEFAULT`.
 - The agent validates package names, exact permission names, and states. It queries `PackageManager` and reports a
   final non-error outcome such as `not-requested` when an installed package does not request a configured permission.
+  A package that is not installed is retryable rather than successful, so its rule is still applied after the normal
+  configuration-app install succeeds.
 - Add capability token `app.runtimePermissions`. The server sends the section only to agents advertising both
   `device.configApply` and `app.runtimePermissions`; older agents continue to receive the rest of their configuration.
 - Add result keys such as `appPermissions.<package>.<permission>` to the existing outcome map. Failed release/apply
   results remain retryable through `ConfigStateStore`, just like current policy release failures.
 
-This is additive-only: older agents ignore the unknown optional section, and the server capability gate avoids
-claiming the configuration is applied on devices that cannot honor it.
+This is additive-only: older agents receive a capability-specific document with the section removed and a distinct
+revision, so neither side can claim those rules were applied. Agents that support the section report requested
+dangerous runtime permissions for installed packages in telemetry. That inventory is a device/API-specific
+declaration list, not a claim that Android has currently granted each permission.
 
 ## Persistence And Server Shape
 
@@ -122,9 +129,11 @@ must distinguish *requested*, *configured*, and *Android currently granted* stat
 3. Console tests cover candidate filtering and, specifically, keep the expandable disclosure inside its app row rather
    than creating a separate table row. Typecheck and production builds pass.
 4. Live S8 validation passed for Samsung Camera: Deny blocked Camera as administrator, Grant restored use, and Default
-   released the explicit MDMesh restriction. A final representative media/files validation on File Manager remains.
-5. A future current-Android debug-agent test must validate Android-13+-only permission candidates and provide the
-   device-effective PackageManager inventory deferred below.
+   released the explicit MDMesh restriction. A representative media/files Deny → Default validation on File Manager
+   also passed; app-specific handling after denial may return directly to launcher rather than opening Settings.
+5. Kotlin coverage verifies old-server omission, explicit-empty release, reset clearing, and retryable not-installed
+   packages. Java coverage verifies capability-specific desired documents/revisions. The additive device inventory
+   has Android unit coverage through telemetry assembly; it still needs a live current-Android device check.
 
 ## Decision
 

@@ -3,6 +3,7 @@ package com.mdmesh.policy
 import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.pm.PackageManager
+import android.content.pm.PackageManager.NameNotFoundException
 import android.os.Build
 import com.mdmesh.policy.wifi.DpmHandle
 
@@ -24,6 +25,8 @@ sealed interface AppPermissionOutcome {
     data object Applied : AppPermissionOutcome
     data object Unsupported : AppPermissionOutcome
     data object NotRequested : AppPermissionOutcome
+    /** The configured app has not been installed yet; config.apply must be retried after app.install. */
+    data object NotInstalled : AppPermissionOutcome
     data class Failed(val reason: String) : AppPermissionOutcome
 }
 
@@ -42,11 +45,15 @@ class DeviceOwnerAppRuntimePermissions(
         if (!handle.dpm.isDeviceOwnerApp(handle.admin.packageName) || Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
             return AppPermissionOutcome.Unsupported
         }
-        val requested = runCatching {
+        val requested = try {
             @Suppress("DEPRECATION")
             context.packageManager.getPackageInfo(packageName, PackageManager.GET_PERMISSIONS)
                 .requestedPermissions.orEmpty().contains(permission)
-        }.getOrElse { return AppPermissionOutcome.NotRequested }
+        } catch (_: NameNotFoundException) {
+            return AppPermissionOutcome.NotInstalled
+        } catch (_: Exception) {
+            return AppPermissionOutcome.NotRequested
+        }
         if (!requested) return AppPermissionOutcome.NotRequested
         val grantState = when (state) {
             AppRuntimePermissions.GRANT -> DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED

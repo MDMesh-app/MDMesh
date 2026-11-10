@@ -476,10 +476,16 @@ function Editor({
       const assigned = (d.applications as ConfigApp[] | undefined) ?? [];
       const target = assigned.find((a) => a.id === id);
       const applications = next(assigned);
+      // Permission rules are valid only for applications this configuration installs. Drop them at the same time as
+      // the application assignment/action changes, rather than leaving an invisible rule for the server to reject.
+      const installed = new Set(applications.filter((app) => (app.action ?? 1) === 1).map((app) => app.id));
+      const managedAppPermissions = Array.isArray(d.managedAppPermissions)
+        ? d.managedAppPermissions.filter((rule) => !!rule && typeof rule === 'object' && installed.has(Number((rule as Record<string, unknown>).applicationId)))
+        : d.managedAppPermissions;
       const after = applications.find((a) => a.id === id);
       const stillMain = after != null && (after.action ?? 1) === 1 && after.showIcon !== false;
       const mainAppId = !stillMain && target?.usedVersionId != null && target.usedVersionId === d.mainAppId ? null : d.mainAppId;
-      return { ...d, applications, mainAppId };
+      return { ...d, applications, managedAppPermissions, mainAppId };
     });
   }
   const removeApp = (id: number) => updateApps(id, (list) => list.filter((a) => a.id !== id));

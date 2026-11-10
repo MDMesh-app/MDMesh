@@ -66,6 +66,17 @@ public class ConfigReconciler {
         return DesiredConfigBuilder.build(cfg, apps, extensionPoints.contributors(cfg.getCustomerId()));
     }
 
+    /** A capability-specific document has its own revision: an older agent must never acknowledge rules it cannot apply. */
+    private DesiredConfig currentDocument(Device device, Set<String> deviceTokens) {
+        DesiredConfig doc = currentDocument(device);
+        if (doc != null && !AgentCapabilityTokens.isAllowed("app.runtimePermissions", deviceTokens)
+                && doc.getAppPermissions() != null) {
+            doc.setAppPermissions(null);
+            doc.setRevision(DesiredConfigBuilder.revision(doc));
+        }
+        return doc;
+    }
+
     /**
      * The current revision, for the console's sync status; null when the device has no configuration, or when a server
      * plugin's contributor fails on it (logged as reconcile does), so one broken plugin doesn't take down the status
@@ -99,7 +110,7 @@ public class ConfigReconciler {
             // Cost short-circuit only: an old agent without the capability pays nothing (no config/app
             // query at all). ConfigReconcileDecision.decide still re-checks this same gate below.
             if (!AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, deviceTokens)) return false;
-            DesiredConfig doc = currentDocument(device);
+            DesiredConfig doc = currentDocument(device, deviceTokens);
             if (doc == null) return false;
             String number = device.getNumber();
             if (configAgentVersion == null && agentVersion != null) {

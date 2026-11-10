@@ -155,7 +155,7 @@ class ConfigApplier(
         desiredRules.forEach { rule ->
             outcomes[rule.key] = appPermissionOutcome(appPermissions.set(rule.packageName, rule.permission, rule.state))
         }
-        val priorRules = previous.flatMap { it.appPermissions.orEmpty() }.flatMap { entry ->
+        val priorRules = (store.activeAppPermissions + previous.flatMap { it.appPermissions.orEmpty() }).flatMap { entry ->
             entry.permissions.keys.map { AppPermissionRule(entry.packageName, it, AppRuntimePermissions.DEFAULT) }
         } + unreleased.filter { it.startsWith(APP_PERMISSIONS) && it !in appPermissionKeys(doc) }
             .mapNotNull(::ruleFromKey)
@@ -164,6 +164,9 @@ class ConfigApplier(
             appPermissionOutcome(appPermissions.release(rule.packageName, rule.permission))
                 .takeIf(ConfigOutcome::isFailed)
                 ?.let { outcomes[rule.key] = it }
+        }
+        if (outcomes.none { (key, outcome) -> key.startsWith(APP_PERMISSIONS) && ConfigOutcome.isFailed(outcome) }) {
+            store.activeAppPermissions = desired
         }
     }
 
@@ -175,6 +178,7 @@ class ConfigApplier(
         AppPermissionOutcome.Applied -> ConfigOutcome.APPLIED
         AppPermissionOutcome.Unsupported -> ConfigOutcome.UNSUPPORTED
         AppPermissionOutcome.NotRequested -> NOT_REQUESTED
+        AppPermissionOutcome.NotInstalled -> ConfigOutcome.failed("app not installed")
         is AppPermissionOutcome.Failed -> ConfigOutcome.failed(outcome.reason)
     }
 

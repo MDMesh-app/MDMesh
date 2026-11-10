@@ -2,6 +2,7 @@ package com.mdmesh.core.store
 
 import android.content.Context
 import com.mdmesh.proto.ConfigApplyPayload
+import com.mdmesh.proto.ConfigAppPermissions
 import com.mdmesh.proto.ProtocolJson
 
 /**
@@ -31,6 +32,8 @@ interface ConfigStateStore {
 
     /** Result keys (`policies.<key>`, `kiosk`) whose release or kiosk exit failed: the next document retries them. */
     var unreleased: Set<String>
+    /** Active app-permission rules survive documents from an older server that omit the optional section. */
+    var activeAppPermissions: List<ConfigAppPermissions>
 
     /**
      * The revision for which a Wi-Fi radio self-heal hold was last ended (a changed configuration ends it). Kept apart
@@ -67,12 +70,15 @@ class SharedPrefsConfigStateStore(context: Context) : ConfigStateStore {
     override var unreleased: Set<String>
         get() = prefs.getStringSet(KEY_UNRELEASED, null)?.toSet().orEmpty()
         set(v) { prefs.edit().putStringSet(KEY_UNRELEASED, v.toSet()).commit() }
+    override var activeAppPermissions: List<ConfigAppPermissions>
+        get() = ConfigStateCodec.decode(prefs.getString(KEY_APP_PERMISSIONS, null))?.appPermissions.orEmpty()
+        set(v) { prefs.edit().putString(KEY_APP_PERMISSIONS, ConfigStateCodec.encode(ConfigApplyPayload(revision = "", appPermissions = v))).commit() }
     override var holdEndedFor: String?
         get() = prefs.getString(KEY_HOLD_ENDED, null)
         set(v) { prefs.edit().putString(KEY_HOLD_ENDED, v).commit() }
     private companion object {
         const val KEY_DOC = "doc"; const val KEY_REV = "revision"; const val KEY_DELIVERED = "deliveredDoc"
-        const val KEY_UNRELEASED = "unreleased"; const val KEY_HOLD_ENDED = "holdEndedFor"
+        const val KEY_UNRELEASED = "unreleased"; const val KEY_APP_PERMISSIONS = "appPermissions"; const val KEY_HOLD_ENDED = "holdEndedFor"
     }
 }
 
@@ -86,5 +92,6 @@ class InMemoryConfigStateStore : ConfigStateStore {
     override fun markStale() { rev = ConfigStateStore.STALE_REVISION }
     override var delivered: ConfigApplyPayload? = null
     override var unreleased: Set<String> = emptySet()
+    override var activeAppPermissions: List<ConfigAppPermissions> = emptyList()
     override var holdEndedFor: String? = null
 }

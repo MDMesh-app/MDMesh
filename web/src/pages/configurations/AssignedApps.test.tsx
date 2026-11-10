@@ -27,7 +27,7 @@ const assigned = (list = TEN): ConfigApp[] =>
   list.map(([id, name, pkg, action]) => ({ id, name, pkg, version: '1.0', action, showIcon: true, usedVersionId: 100 + id, remove: false }));
 
 /** Configuration 7 with `apps` assigned, and one more app in the library (Agenda) to add. */
-function open(apps = assigned()) {
+function open(apps = assigned(), configuration: Record<string, unknown> = {}) {
   const puts: Record<string, unknown>[] = [];
   const answer = (path: string, init?: RequestInit): unknown => {
     const p = new URL(path, 'http://console').pathname.replace('/rest', '');
@@ -36,7 +36,7 @@ function open(apps = assigned()) {
       puts.push(body);
       return body;
     }
-    if (p === '/private/configurations/7') return { id: 7, name: 'Warehouse', kioskMode: false, extensions: {} };
+    if (p === '/private/configurations/7') return { id: 7, name: 'Warehouse', kioskMode: false, extensions: {}, ...configuration };
     if (p === '/private/configurations/applications/7') return apps.map((a) => ({ ...a, selected: true }));
     if (p.startsWith('/private/applications/search')) {
       return [{ id: 11, name: 'Agenda', pkg: 'com.acme.agenda', version: '2.0', type: 'app', latestVersion: 111 }];
@@ -96,6 +96,25 @@ describe('assigned apps: search, filter and sort', () => {
     fireEvent.click(within(row).getByText('Permissions · 1 available'));
     expect(within(row).getByText('Camera')).toBeTruthy();
     expect(table().tBodies[0].rows).toHaveLength(1);
+  });
+
+  it('drops permission rules when an app is removed or no longer installed', async () => {
+    const chrome = assigned(TEN.slice(0, 1));
+    const rule = { applicationId: 1, permission: 'android.permission.CAMERA', state: 'deny' };
+    const first = open(chrome, { managedAppPermissions: [rule] });
+    await loaded();
+    fireEvent.change(actionOf('Chrome'), { target: { value: '0' } });
+    await save();
+    await waitFor(() => expect(first.puts).toHaveLength(1));
+    expect(first.puts[0].managedAppPermissions).toEqual([]);
+    cleanup();
+
+    const second = open(chrome, { managedAppPermissions: [rule] });
+    await loaded();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Chrome' }));
+    await save();
+    await waitFor(() => expect(second.puts).toHaveLength(1));
+    expect(second.puts[0].managedAppPermissions).toEqual([]);
   });
 
   it('shows no controls for a list of the threshold or fewer, in stored order', async () => {

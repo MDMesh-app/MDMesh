@@ -6,6 +6,7 @@ import com.mdmesh.kiosk.ExitPinGate
 import com.mdmesh.kiosk.ExitPinGate.Outcome
 import com.mdmesh.kiosk.InMemoryPinAttemptStore
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -13,6 +14,13 @@ import javax.xml.parsers.DocumentBuilderFactory
 
 /** Each ExitPinGate outcome maps to one Exit kiosk dialog state; the gate itself is tested in :kiosk. */
 class ExitPinUiStateTest {
+
+    @Test fun `an empty field is never submitted, so it never uses up a try`() {
+        assertFalse(ExitPinDialog.isSubmittable(null))
+        assertFalse(ExitPinDialog.isSubmittable(""))
+        assertTrue(ExitPinDialog.isSubmittable("1"))
+        assertTrue(ExitPinDialog.isSubmittable(" "))
+    }
 
     @Test fun `right PIN closes the dialog`() {
         assertEquals(ExitPinUiState.Close, ExitPinUiState.of(Outcome.Open))

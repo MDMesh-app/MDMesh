@@ -58,7 +58,9 @@ class ExitPinDialog private constructor(
     }
 
     private fun wire(onSubmit: (entered: String, dialog: ExitPinDialog) -> Unit) {
-        val submit = { onSubmit(field.text.toString(), this) }
+        // An empty field is never a try: after a wrong PIN the field is cleared and the dialog stays open, so a second
+        // tap on Exit (or Done, then Exit) would otherwise use up tries without anything being typed.
+        val submit = { if (isSubmittable(field.text)) onSubmit(field.text.toString(), this) }
         // Replaces the default click, which would close the dialog on any answer.
         dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setOnClickListener { submit() }
         field.setOnEditorActionListener { _, action, _ ->
@@ -76,6 +78,9 @@ class ExitPinDialog private constructor(
     }
 
     companion object {
+        /** Whether the field's text is worth handing to the PIN check: an empty string can never match a PIN. */
+        internal fun isSubmittable(text: CharSequence?): Boolean = !text.isNullOrEmpty()
+
         /** Show the dialog on [context] (an activity, never the application context: the theme matters). */
         fun show(context: Context, onSubmit: (entered: String, dialog: ExitPinDialog) -> Unit): ExitPinDialog {
             val builder = AlertDialog.Builder(context)

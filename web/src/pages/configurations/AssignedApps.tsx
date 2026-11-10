@@ -46,7 +46,7 @@ export interface AssignedAppsProps {
   onAction: (id: number, action: number) => void;
   onKioskVisibility: (id: number, shown: boolean) => void;
   onRemove: (id: number) => void;
-  /** Optional controls that belong directly below an installed app's row. */
+  /** Optional controls rendered within an installed app's App cell. */
   renderAppDetails?: (app: ConfigApp) => ReactNode;
   /** Changes when the editor discards its edits: the rows are filed again by their restored state. */
   resetKey: number;
@@ -241,9 +241,7 @@ function AppRow({
   const action = actionOf(a);
   const shown = a.showIcon !== false;
   const kioskText = action !== 1 ? (action === 2 ? 'Removed' : 'Not installed') : shown ? 'Shown' : 'Hidden';
-  const cols = kioskColumn ? 4 : 3;
   return (
-    <>
     <tr>
       <td className="v2-cfged-apps__app">
         <div className="v2-cfged-app">
@@ -256,6 +254,7 @@ function AppRow({
             {a.pkg ? <span className="v2-cfged-app__pkg">{a.pkg}</span> : null}
           </span>
         </div>
+        {details ? <div className="v2-cfged-app__details">{details}</div> : null}
       </td>
       <td className="v2-cfged-apps__action">
         <Select
@@ -295,7 +294,5 @@ function AppRow({
         )}
       </td>
     </tr>
-    {details ? <tr className="v2-cfged-apps__details"><td colSpan={cols}>{details}</td></tr> : null}
-    </>
   );
 }

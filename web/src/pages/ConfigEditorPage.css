@@ -198,12 +198,11 @@
   color: var(--secondary);
 }
 
-.v2 .v2-cfged-apps__details td {
-  padding: 0 12px 10px 52px;
-  border-top: 0;
+.v2 .v2-cfged-app__details {
+  margin: 8px 0 0 40px;
 }
 .v2 .v2-cfged-permission-app {
-  max-width: 420px;
+  max-width: 440px;
 }
 .v2 .v2-cfged-permission-app summary {
   padding: 2px 0 8px;

@@ -819,7 +819,7 @@ function Editor({
             return (
               <details className="v2-cfged-permission-app">
                 <summary>Manage runtime permissions</summary>
-                <p>Default removes MDMesh’s explicit override; Android’s normal permission state then applies.</p>
+                <p>APK candidates only. Each device applies what its Android version and installed app support. Default removes MDMesh’s explicit override.</p>
                 {permissions.map((permission) => (
                   <label className="v2-cfged-permission-app__row" key={permission}>
                     <span>{managedAppPermissionLabel(permission)}</span>

@@ -17,8 +17,8 @@ Upgrading
 
 Heads-up
 - The agent is now called **MDMesh** on the device (was MDM Agent): in the app drawer, Settings → Apps, the
-  device admin list and the device's Apps tab in the console. It's the same app, so it updates in place. Needs agent
-  0.5.0.
+  device admin list and the device's Apps tab in the console. Its icon is new too: a white square on dark (was a white
+  shield on blue). It's the same app, so it updates in place. Needs agent 0.5.0.
 
 New
 - Configurations can allow or block the camera. Block covers every app, kiosk apps too. Not managed after Block
@@ -42,6 +42,8 @@ New
   the console's look, the same on every phone. Needs agent 0.5.0.
 - Agent: Exit kiosk is easier to use. A wrong PIN shows in the dialog, which stays open and says how many tries are
   left before the exit locks; the PIN can be shown while typing. Needs agent 0.5.0.
+- Agent: its notifications have sharp MDMesh status bar icons, and its app icon follows themed icons on Android 13
+  and later. Needs agent 0.5.0.
 
 Fixes
 - Audit log: on Docker installs, entries show the client's address instead of the edge container's (thanks

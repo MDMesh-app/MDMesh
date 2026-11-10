@@ -106,6 +106,35 @@ class ConfigApplierTest {
         assertEquals(1, calls.size)
     }
 
+    @Test fun `an explicit empty section releases rules after an older-server omission`() = runTest {
+        val calls = mutableListOf<Triple<String, String, String>>()
+        val permissions = object : AppRuntimePermissions {
+            override fun set(packageName: String, permission: String, state: String): AppPermissionOutcome {
+                calls += Triple(packageName, permission, state); return AppPermissionOutcome.Applied
+            }
+        }
+        val a = applier(fixedToggles(), kiosk(FakeController()), {}, InMemoryConfigStateStore(), permissions)
+        a.apply(ConfigApplyPayload(revision = "p1", appPermissions = listOf(ConfigAppPermissions("org.example", mapOf("android.permission.CAMERA" to "deny")))))
+        a.apply(ConfigApplyPayload(revision = "p2"))
+        a.apply(ConfigApplyPayload(revision = "p3", appPermissions = emptyList()))
+        assertEquals(listOf(
+            Triple("org.example", "android.permission.CAMERA", "deny"),
+            Triple("org.example", "android.permission.CAMERA", AppRuntimePermissions.DEFAULT),
+        ), calls)
+    }
+
+    @Test fun `a permission whose app is not installed keeps configuration retryable`() = runTest {
+        val permissions = object : AppRuntimePermissions {
+            override fun set(packageName: String, permission: String, state: String) = AppPermissionOutcome.NotInstalled
+        }
+        val store = InMemoryConfigStateStore()
+        val result = applier(fixedToggles(), kiosk(FakeController()), {}, store, permissions).apply(
+            ConfigApplyPayload(revision = "p1", appPermissions = listOf(ConfigAppPermissions("org.example", mapOf("android.permission.CAMERA" to "deny")))),
+        )
+        assertTrue(ConfigOutcome.isFailed(result.outcomes["appPermissions.org.example.android.permission.CAMERA"]!!))
+        assertNull(store.revision())
+    }
+
     @Test fun `applies present policies only and persists on full success`() = runTest {
         val wifi = FakeToggle("wifi", PolicyOutcome.Applied); val bt = FakeToggle("bluetooth", PolicyOutcome.Applied)
         val store = InMemoryConfigStateStore(); var loc: String? = null

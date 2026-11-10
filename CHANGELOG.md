@@ -15,10 +15,15 @@ Upgrading
   the tokens hashed. Existing codes stay single-use and keep working; on PostgreSQL older than 11 they stop
   instead, so make a new code on the Enroll page. After a downgrade, codes made on this version don't work.
 
+Heads-up
+- The agent is now called **MDMesh** on the device (was MDM Agent): in the app drawer, Settings → Apps, the
+  device admin list and the device's Apps tab in the console. It's the same app, so it updates in place. Needs agent
+  0.5.0.
+
 New
 - Configurations can allow or block the camera. Block covers every app, kiosk apps too. Not managed after Block
   gives the camera back on agent 0.5.0; on older agents, choose Allow to lift a block (thanks @letternumber).
-- Kiosk: staff can tap Return to kiosk in the MDMesh Agent after leaving with the exit PIN, even offline. It shows
+- Kiosk: staff can tap Return to kiosk in the MDMesh app after leaving with the exit PIN, even offline. It shows
   only when the device's configuration enables kiosk, asks first (and warns when that kiosk has no exit on the
   device), and tells the server at once when online. Needs agent 0.5.0; no server update needed (thanks @tisign).
 - Enroll: one code can set up a batch. Choose Devices (one, or up to 10, 25 or 100) and Valid for (24 hours to 30
@@ -33,6 +38,8 @@ New
 - A wiped device shows as **Wiped** instead of Online and then Offline, and is left out of the counts, Needs attention
   and rollouts; the Devices list's Wiped filter shows it (thanks @Przemek-Magic).
 - Sync now and console commands say when the device isn't connected and will get it at its next check-in.
+- Agent: its dialogs (Return to kiosk, Exit kiosk, Exit locked) follow the device's light or dark setting and use
+  the console's look, the same on every phone. Needs agent 0.5.0.
 
 Fixes
 - Audit log: on Docker installs, entries show the client's address instead of the edge container's (thanks
@@ -45,6 +52,8 @@ Fixes
 
 Under the hood
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
+- Agent: the APK carries English resources only (about 100 KB smaller), and its screen text lives in string
+  resources.
 
 ## v0.4.0 — 2026-11-03
 

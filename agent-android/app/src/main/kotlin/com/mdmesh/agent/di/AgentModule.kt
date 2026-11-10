@@ -355,6 +355,7 @@ object AgentModule {
 
     @Provides
     @Singleton
+    @Suppress("LongParameterList") // Hilt's explicit configuration-section bindings make this wiring auditable.
     fun provideConfigApplier(
         registry: CapabilityRegistry,
         kiosk: KioskApplier,

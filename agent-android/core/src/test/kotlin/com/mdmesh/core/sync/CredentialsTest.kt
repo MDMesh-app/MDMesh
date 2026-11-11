@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CredentialsTest {
@@ -31,5 +32,24 @@ class CredentialsTest {
         stored = "dev-1" to "sek"
         checkIns.tryEmit(Unit)
         assertEquals(Credentials("dev-1", "sek"), got.await())
+    }
+
+    @Test
+    fun `one wait at a time, however often the service is started`() = runTest {
+        val checkIns = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+        var stored: Pair<String?, String?> = null to null
+        val ready = mutableListOf<Credentials>()
+        val watch = CredentialsWatch()
+        val scope = this
+        assertTrue(watch.startIfIdle(scope, checkIns, { stored }) { ready += it })
+        testScheduler.advanceUntilIdle()
+        repeat(5) { assertFalse(watch.startIfIdle(scope, checkIns, { stored }) { ready += it }) }
+
+        stored = "dev-1" to "sek"
+        checkIns.tryEmit(Unit)
+        testScheduler.advanceUntilIdle()
+        assertEquals(listOf(Credentials("dev-1", "sek")), ready)
+        assertTrue("a new wait once that one is done", watch.startIfIdle(scope, checkIns, { stored }) { ready += it })
+        testScheduler.advanceUntilIdle()
     }
 }

@@ -1,6 +1,7 @@
 package com.mdmesh.core.sync
 
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onSubscription
@@ -19,5 +20,23 @@ data class Credentials(val deviceId: String, val secret: String) {
                 .map { read() }
                 .first { (id, secret) -> !id.isNullOrBlank() && !secret.isNullOrBlank() }
                 .let { (id, secret) -> Credentials(id!!, secret!!) }
+    }
+}
+
+/** Waits for credentials ([Credentials.await]) at most once at a time. */
+class CredentialsWatch {
+    private var job: kotlinx.coroutines.Job? = null
+
+    /** Starts a wait in [scope] unless one is already running; returns whether it started one. */
+    @Synchronized
+    fun startIfIdle(
+        scope: kotlinx.coroutines.CoroutineScope,
+        checkIns: SharedFlow<Unit>,
+        read: suspend () -> Pair<String?, String?>,
+        onReady: (Credentials) -> Unit,
+    ): Boolean {
+        if (job?.isActive == true) return false
+        job = scope.launch { onReady(Credentials.await(checkIns, read)) }
+        return true
     }
 }

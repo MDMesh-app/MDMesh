@@ -48,4 +48,27 @@ class ServerUrlsTest {
         assertNull(ServerUrls.normalize("https://mdm example.org"))
         assertNull(ServerUrls.normalize("not a url"))
     }
+
+    @Test
+    fun `provisioning stores a valid address normalised`() {
+        assertEquals("https://mdm.example.org", ServerUrls.toStore(" https://mdm.example.org/ ", null))
+        assertEquals("https://new.example.org", ServerUrls.toStore("https://new.example.org", "https://old.example.org"))
+    }
+
+    @Test
+    fun `nothing provided keeps what is stored`() {
+        assertNull(ServerUrls.toStore(null, "https://mdm.example.org"))
+        assertNull(ServerUrls.toStore("  ", null))
+    }
+
+    @Test
+    fun `a broken address never replaces a valid one`() {
+        assertNull(ServerUrls.toStore("mdm example", "https://mdm.example.org"))
+    }
+
+    @Test
+    fun `a broken address is kept as given when nothing valid is stored, so it fails naming it`() {
+        assertEquals("mdm example", ServerUrls.toStore(" mdm example ", null))
+        assertEquals("mdm example", ServerUrls.toStore("mdm example", "also broken"))
+    }
 }

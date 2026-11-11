@@ -32,20 +32,18 @@ class ServerConfigStore @Inject constructor(@ApplicationContext context: Context
     }
 
     /**
-     * Persist the provisioned server URL, normalised. Absent/blank input is a no-op, and so is an address that isn't
-     * one (logged): a valid address saved earlier in provisioning is never replaced by a broken one.
+     * Persist the provisioned server URL ([ServerUrls.toStore]): normalised when valid; absent/blank input is a no-op.
+     * An address that isn't one never replaces a valid one saved earlier in provisioning, but with nothing valid saved it
+     * is kept as given, so the device says the QR's address is wrong instead of trying the baked default host.
      *
-     * @return whether it was saved
+     * @return whether a valid address was saved
      */
     fun save(url: String?): Boolean {
-        if (url.isNullOrBlank()) return false
-        val normalized = ServerUrls.normalize(url)
-        if (normalized == null) {
-            Log.w(TAG, "provisioned server address is not an http(s) address; not saved")
-            return false
-        }
+        val value = ServerUrls.toStore(url, prefs.getString(KEY, null)) ?: return false
+        val valid = ServerUrls.normalize(value) == value
+        if (!valid) Log.w(TAG, "provisioned server address is not an http(s) address")
         // commit(): provisioning reads it back from another component right after (and the process may end).
-        return prefs.edit().putString(KEY, normalized).commit()
+        return prefs.edit().putString(KEY, value).commit() && valid
     }
 
     private companion object {

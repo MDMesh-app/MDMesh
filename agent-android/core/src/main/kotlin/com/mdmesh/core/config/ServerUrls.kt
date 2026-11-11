@@ -24,6 +24,17 @@ object ServerUrls {
         return origin(url)
     }
 
+    /**
+     * What to store when provisioning hands over [provided], given what is [stored]; null: keep what is stored.
+     * A valid address is stored normalised. An invalid one never replaces a valid one, but is kept as given when there
+     * is nothing valid yet, so requests fail naming it instead of quietly going to the baked default host.
+     */
+    fun toStore(provided: String?, stored: String?): String? {
+        if (provided.isNullOrBlank()) return null
+        normalize(provided)?.let { return it }
+        return if (normalize(stored) == null) provided.trim() else null
+    }
+
     private fun origin(url: HttpUrl): String {
         val defaultPort = HttpUrl.defaultPort(url.scheme)
         val host = if (':' in url.host) "[${url.host}]" else url.host // IPv6 literal

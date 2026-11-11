@@ -111,11 +111,11 @@ class KioskLauncherActivity : ComponentActivity() {
 
     /**
      * configChanges (uiMode) keeps this activity through a dark-mode switch; the open exit dialog is rebuilt so it
-     * takes the new colours, the same way it's rebuilt after a recreation.
+     * takes the new colours, the same way it's rebuilt after a recreation, keeping what was typed into the PIN.
      */
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        dialogs.onConfigurationChanged { tag -> active?.let { reopenExitDialog(tag, it) } }
+        dialogs.onConfigurationChanged(newConfig) { tag, typed -> active?.let { reopenExitDialog(tag, it, typed) } }
     }
 
     override fun onDestroy() {
@@ -159,11 +159,12 @@ class KioskLauncherActivity : ComponentActivity() {
     /**
      * Reopen the exit dialog a rotation closed. Rebuilt from the current kiosk and [pinGate], never from saved state:
      * the PIN check and the lockout stay where they are ([ExitPinGate] persists them), an expired lockout isn't shown,
-     * and a kiosk whose exit PIN was removed meanwhile gets no PIN prompt.
+     * and a kiosk whose exit PIN was removed meanwhile gets no PIN prompt. [typed] is the PIN being typed when an
+     * in-place rebuild (a config change) replaced the dialog; it only ever passes through memory.
      */
-    private fun reopenExitDialog(tag: String, p: KioskApplyPayload) {
+    private fun reopenExitDialog(tag: String, p: KioskApplyPayload, typed: CharSequence? = null) {
         when (tag) {
-            KioskExitDialogs.PIN -> promptExit(p)
+            KioskExitDialogs.PIN -> promptExit(p, typed)
             KioskExitDialogs.LOCKED -> pinGate.remainingLockMs()?.let(::showExitLocked)
         }
     }
@@ -214,11 +215,11 @@ class KioskLauncherActivity : ComponentActivity() {
 
     // --- Exit flow ---------------------------------------------------------------------------
 
-    private fun promptExit(p: KioskApplyPayload) {
+    private fun promptExit(p: KioskApplyPayload, typed: CharSequence? = null) {
         // No PIN, no on-device exit (the affordance isn't shown either): kiosk then ends only from the console.
         if (!pinGate.isAvailable(p.password)) return
         pinGate.remainingLockMs()?.let { showExitLocked(it); return }
-        dialogs.show(KioskExitDialogs.PIN, ExitPinDialog.create(this, ::onPinEntered).dialog)
+        dialogs.show(KioskExitDialogs.PIN, ExitPinDialog.create(this, typed, ::onPinEntered).dialog)
     }
 
     /**

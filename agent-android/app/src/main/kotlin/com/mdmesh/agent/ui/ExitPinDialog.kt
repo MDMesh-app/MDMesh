@@ -155,7 +155,12 @@ class ExitPinDialog private constructor(
         internal fun isSubmittable(text: CharSequence?): Boolean = !text.isNullOrEmpty()
 
         /** Build (not show) the dialog on [context]: an activity, never the application context (the theme). */
-        fun create(context: Context, onSubmit: (entered: String, dialog: ExitPinDialog) -> Unit): ExitPinDialog {
+        fun create(
+            context: Context,
+            /** Text typed into the dialog this one replaces after a config change (memory only). */
+            typed: CharSequence? = null,
+            onSubmit: (entered: String, dialog: ExitPinDialog) -> Unit,
+        ): ExitPinDialog {
             var pin: ExitPinDialog? = null
             val spec = MdmDialog.Spec(
                 title = context.getString(R.string.kiosk_exit_title),
@@ -176,6 +181,10 @@ class ExitPinDialog private constructor(
             )
             pin = dialog
             dialog.wire(onSubmit)
+            typed?.let {
+                dialog.field.setText(it)
+                dialog.field.setSelection(dialog.field.length())
+            }
             return dialog
         }
 

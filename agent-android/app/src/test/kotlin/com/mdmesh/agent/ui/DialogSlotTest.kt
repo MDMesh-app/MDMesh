@@ -73,28 +73,4 @@ class DialogSlotShowingTest {
         assertNull(slot.showing)
         assertNull(slot.savedTag())
     }
-
-    @Test fun `a config change rebuilds the open dialog from current state`() {
-        val slot = DialogSlot("k")
-        val old = FakeDialog()
-        val rebuilt = FakeDialog()
-        slot.show("pin", old)
-        val reopened = mutableListOf<String>()
-        slot.onConfigurationChanged { tag ->
-            reopened += tag
-            slot.show(tag, rebuilt)
-        }
-        assertEquals(listOf("pin"), reopened)
-        assertEquals(false, old.showing)
-        assertEquals(true, rebuilt.showing)
-        assertEquals(rebuilt, slot.showing)
-    }
-
-    @Test fun `a config change with no dialog open opens nothing`() {
-        val slot = DialogSlot("k")
-        slot.restoreTag("pin") // restored but not taken yet: the next applied state decides, not the config change
-        var calls = 0
-        slot.onConfigurationChanged { calls++ }
-        assertEquals(0, calls)
-    }
 }

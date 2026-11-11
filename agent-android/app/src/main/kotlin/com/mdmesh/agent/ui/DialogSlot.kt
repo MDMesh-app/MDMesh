@@ -1,5 +1,6 @@
 package com.mdmesh.agent.ui
 
+import android.content.res.Configuration
 import android.os.Bundle
 
 /** A dialog [DialogSlot] can show. Showing it takes a [DialogSlot.Key], which only a DialogSlot has. */
@@ -10,6 +11,12 @@ interface SlotDialog {
 
     /** Called once the dialog is gone, however it was closed. */
     fun setOnDismiss(listener: () -> Unit)
+
+    /** The configuration the dialog was built for, or null when it doesn't depend on one. */
+    val builtFor: Configuration? get() = null
+
+    /** Text typed into the dialog, handed to its rebuild after a config change. Never written to saved state. */
+    fun typedText(): CharSequence? = null
 }
 
 /**
@@ -27,7 +34,10 @@ interface SlotDialog {
  */
 class DialogSlot(private val key: String) {
 
-    /** Proof that a DialogSlot is the caller of [SlotDialog.show]. Sealed: nothing outside this file makes one. */
+    /**
+     * Proof that a DialogSlot is the caller of [SlotDialog.show]. Sealed, so only this package of this module could
+     * declare another; the one instance is private here, so code elsewhere can't show a dialog outside a slot.
+     */
     sealed interface Key
 
     private data object Token : Key
@@ -55,15 +65,19 @@ class DialogSlot(private val key: String) {
     }
 
     /**
-     * The activity's configuration changed without a recreation: close the open dialog and let [reopen] build and
-     * show it again (through [show]) from current state, as after a recreation. What was typed isn't carried over:
-     * a PIN stays in no object but the dialog that shows it, and these changes (dark mode, font or display size)
-     * are made in Settings, not while someone is typing here.
+     * The activity's configuration changed without a recreation (it declares `configChanges`). If the change alters
+     * how the open dialog looks (dark mode, font size, display size or the window's size), close it and let [reopen]
+     * build and show it again (through [show]) from current state, as after a recreation, with what was typed in
+     * it: kept in memory for this hand-over only, never in saved state. Other changes (a desk or car dock switching
+     * the UI mode type) leave it open as it is.
      */
-    fun onConfigurationChanged(reopen: (tag: String) -> Unit) {
-        val tag = current?.first ?: return
+    fun onConfigurationChanged(newConfig: Configuration, reopen: (tag: String, typed: CharSequence?) -> Unit) {
+        val (tag, dialog) = current ?: return
+        val old = dialog.builtFor
+        if (old != null && !changesLook(old, newConfig)) return
+        val typed = dialog.typedText()?.toString()
         dismiss()
-        reopen(tag)
+        reopen(tag, typed)
     }
 
     fun save(outState: Bundle) {
@@ -86,5 +100,15 @@ class DialogSlot(private val key: String) {
 
     internal fun restoreTag(tag: String?) {
         restored = tag
+    }
+
+    private companion object {
+        /** Whether a dialog built for [old] looks different in [new]: colours, text size, density or space. */
+        fun changesLook(old: Configuration, new: Configuration): Boolean =
+            (old.uiMode and Configuration.UI_MODE_NIGHT_MASK) != (new.uiMode and Configuration.UI_MODE_NIGHT_MASK) ||
+                old.fontScale != new.fontScale ||
+                old.densityDpi != new.densityDpi ||
+                old.screenWidthDp != new.screenWidthDp ||
+                old.screenHeightDp != new.screenHeightDp
     }
 }

@@ -1,6 +1,7 @@
 package com.mdmesh.agent.ui
 
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Rect
 import android.util.TypedValue
 import android.view.LayoutInflater
@@ -8,6 +9,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
@@ -35,6 +37,11 @@ class MdmDialog private constructor(
     /** The inflated [Spec.body], if any. */
     val body: View?,
 ) : SlotDialog {
+
+    override val builtFor: Configuration = Configuration(alert.context.resources.configuration)
+
+    /** The body's text field, if it has one (the exit PIN). */
+    override fun typedText(): CharSequence? = body?.let(::firstEditText)?.text
 
     /** What the dialog shows, text already resolved. [body] is a layout shown under the message. */
     data class Spec(
@@ -144,6 +151,12 @@ class MdmDialog private constructor(
             val caps = Rect().also { title.paint.getTextBounds(CAP_SAMPLE, 0, CAP_SAMPLE.length, it) }.height()
             (icon.layoutParams as ViewGroup.MarginLayoutParams).topMargin =
                 iconTopFor(baseline, caps, drawable.intrinsicHeight)
+        }
+
+        private fun firstEditText(view: View): EditText? = when (view) {
+            is EditText -> view
+            is ViewGroup -> (0 until view.childCount).firstNotNullOfOrNull { firstEditText(view.getChildAt(it)) }
+            else -> null
         }
 
         /**

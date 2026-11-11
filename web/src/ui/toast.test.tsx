@@ -226,4 +226,38 @@ describe('ToastProvider', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss all' }));
     expect(toastTitles()).toEqual([]);
   });
+
+  it('a toast waiting behind "N more" does not expire before it is shown', () => {
+    vi.useFakeTimers();
+    const { api } = renderProvider();
+    act(() => api.push('err', 'Oldest', ''));
+    for (const t of ['A', 'B', 'C']) act(() => api.push('ok', t, ''));
+    expect(toastTitles()).toEqual(['A', 'B', 'C']);
+    // 5 s on the ok toasts go and the failure comes into view; its 30 s start only now.
+    act(() => vi.advanceTimersByTime(5000));
+    expect(toastTitles()).toEqual(['Oldest']);
+    act(() => vi.advanceTimersByTime(29_000));
+    expect(toastTitles()).toEqual(['Oldest']);
+    act(() => vi.advanceTimersByTime(1000));
+    expect(toastTitles()).toEqual([]);
+  });
+
+  it('a new toast never pushes the focused one out of view', () => {
+    const { api } = renderProvider();
+    for (const t of ['One', 'Two', 'Three']) act(() => api.push('err', t, ''));
+    const one = screen.getAllByRole('button', { name: 'Dismiss' })[0];
+    act(() => one.focus());
+    act(() => api.push('err', 'Four', ''));
+    expect(toastTitles()).toContain('One');
+    expect(document.activeElement).toBe(one);
+    expect(stack().textContent).toContain('1 more');
+  });
+
+  it('a repeat of the focused message keeps keyboard focus on it', () => {
+    const { api } = renderProvider();
+    act(() => api.push('err', 'Name required', ''));
+    act(() => screen.getByRole('button', { name: 'Dismiss' }).focus());
+    act(() => api.push('err', 'Name required', ''));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Dismiss' }));
+  });
 });

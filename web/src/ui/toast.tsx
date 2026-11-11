@@ -70,11 +70,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     return !!wrap && (wrap.matches(':hover') || wrap.contains(document.activeElement));
   }, []);
 
+  // Each shown toast's running timer, by a token: a toast that goes out of view (behind "N more") drops its token, so
+  // its timer does nothing, and it gets the full time again when it shows.
+  const running = useRef(new Map<number, object>());
   const expire = useCallback(
-    (id: number, ms: number) => {
+    (id: number, ms: number, token: object) => {
       window.setTimeout(() => {
-        if (!mounted.current) return;
-        if (held()) expire(id, HOLD_RECHECK_MS);
+        if (!mounted.current || running.current.get(id) !== token) return;
+        if (held()) expire(id, HOLD_RECHECK_MS, token);
         else setToasts((t) => t.filter((x) => x.id !== id));
       }, ms);
     },
@@ -141,17 +144,42 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       }, ANNOUNCE_MS);
       setToasts((t) => {
         const same = t.find((x) => x.kind === kind && x.title === title && x.body === body);
+        // The repeat of a toast whose Dismiss has keyboard focus takes the focus with it.
+        const focusedToast = wrapRef.current?.contains(document.activeElement)
+          ? Number(document.activeElement?.closest<HTMLElement>('[data-toast]')?.dataset.toast)
+          : NaN;
+        if (same && same.id === focusedToast) focusAfter.current = id;
         // A repeat replaces the toast at the newest end, with its count.
         return [...t.filter((x) => x !== same), { id, kind, title, body, count: (same?.count ?? 0) + 1 }];
       });
-      expire(id, TOAST_MS[kind]);
     },
-    [expire],
+    [],
   );
   const api = useMemo(() => ({ push }), [push]);
 
   const narrow = useMediaQuery(NARROW_QUERY);
-  const shown = toasts.slice(-(narrow ? VISIBLE_NARROW : VISIBLE));
+  const cap = narrow ? VISIBLE_NARROW : VISIBLE;
+  // The toast whose button has focus stays in view whatever arrives after it (else its button, and focus, would go).
+  const [focusedId, setFocusedId] = useState<number | null>(null);
+  const focusedToast = focusedId === null ? undefined : toasts.find((t) => t.id === focusedId);
+  const shown =
+    focusedToast && !toasts.slice(-cap).includes(focusedToast)
+      ? [focusedToast, ...toasts.filter((t) => t !== focusedToast).slice(-(cap - 1))]
+      : toasts.slice(-cap);
+  // A toast's time runs only while it shows: one waiting behind "N more" can't expire unread.
+  const shownIds = shown.map((t) => `${t.id}:${t.kind}`).join(',');
+  useEffect(() => {
+    const ids = new Set(shown.map((t) => t.id));
+    for (const id of [...running.current.keys()]) if (!ids.has(id)) running.current.delete(id);
+    for (const t of shown) {
+      if (running.current.has(t.id)) continue;
+      const token = {};
+      running.current.set(t.id, token);
+      expire(t.id, TOAST_MS[t.kind], token);
+    }
+    // shownIds stands for `shown`, which is a new array every render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shownIds, expire]);
   const more = toasts.length - shown.length;
   const render = (t: Toast) => (
     <div key={t.id} data-toast={t.id} className={`toast ${t.kind}`}>
@@ -190,6 +218,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         ref={wrapRef}
         className="toast-wrap"
         aria-label="Notifications"
+        onFocus={(e) => {
+          const id = Number((e.target as HTMLElement).closest<HTMLElement>('[data-toast]')?.dataset.toast);
+          setFocusedId(Number.isNaN(id) ? null : id);
+        }}
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocusedId(null);
+        }}
         onKeyDown={(e) => {
           if (e.key !== 'Escape') return;
           const id = Number((e.target as HTMLElement).closest<HTMLElement>('[data-toast]')?.dataset.toast);

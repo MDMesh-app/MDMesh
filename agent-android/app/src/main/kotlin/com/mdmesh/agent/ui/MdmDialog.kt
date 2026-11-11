@@ -82,6 +82,21 @@ class MdmDialog private constructor(
 
     override fun setOnDismiss(listener: () -> Unit) = alert.setOnDismissListener { listener() }
 
+    /** The body's idle timer, if it has one (the exit PIN sets it). */
+    internal var idle: IdleTimer? = null
+
+    /** A body's close-after-no-input timer, with its deadline in SystemClock.uptimeMillis. */
+    internal interface IdleTimer {
+        fun deadline(): Long?
+        fun keep(deadline: Long)
+    }
+
+    override fun idleDeadline(): Long? = idle?.deadline()
+
+    override fun keepIdleDeadline(uptimeMs: Long) {
+        idle?.keep(uptimeMs)
+    }
+
     /** [block] runs each time the dialog is shown (focus a field, say). */
     fun setOnShown(block: () -> Unit) = alert.setOnShowListener { block() }
 

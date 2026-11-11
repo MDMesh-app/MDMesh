@@ -17,6 +17,12 @@ interface SlotDialog {
 
     /** Text typed into the dialog, handed to its rebuild after a config change. Never written to saved state. */
     fun typedText(): CharSequence? = null
+
+    /** When the dialog closes itself for lack of input (SystemClock.uptimeMillis), or null for never. */
+    fun idleDeadline(): Long? = null
+
+    /** A rebuild keeps the deadline of the dialog it replaces ([idleDeadline]), set before [show]. */
+    fun keepIdleDeadline(uptimeMs: Long) = Unit
 }
 
 /**
@@ -45,6 +51,9 @@ class DialogSlot(private val key: String) {
     private data object Token : Key
 
     private var current: Pair<String, SlotDialog>? = null
+
+    /** The idle deadline of a dialog being rebuilt, handed to its replacement in [show]. */
+    private var carriedDeadline: Long? = null
     private var restored: String? = null
 
     /** The dialog showing now, if any. */
@@ -57,6 +66,7 @@ class DialogSlot(private val key: String) {
         current = entry
         // Identity check: the old dialog's (asynchronous) dismiss must not clear the new one.
         dialog.setOnDismiss { if (current === entry) current = null }
+        carriedDeadline?.let(dialog::keepIdleDeadline)
         dialog.show(Token)
     }
 
@@ -85,8 +95,15 @@ class DialogSlot(private val key: String) {
         val old = dialog.builtFor
         if (old != null && !changesLook(old, newConfig)) return
         val typed = dialog.typedText()?.toString()
+        val deadline = dialog.idleDeadline()
         dismiss()
-        reopen(tag, typed)
+        // The rebuilt dialog closes when the old one would have: a look change doesn't buy an abandoned PIN time.
+        carriedDeadline = deadline
+        try {
+            reopen(tag, typed)
+        } finally {
+            carriedDeadline = null
+        }
     }
 
     fun save(outState: Bundle) {

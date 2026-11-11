@@ -1,6 +1,7 @@
 package com.mdmesh.agent.ui
 
 import android.content.Context
+import android.os.SystemClock
 import android.graphics.Typeface
 import android.text.Editable
 import android.text.InputFilter
@@ -125,7 +126,16 @@ class ExitPinDialog private constructor(
         // Keyboard and focus in the field as the dialog opens; from then on a minute without input closes it.
         dialog.setOnShown {
             field.requestFocus()
-            restartIdle()
+            // A rebuild keeps the deadline of the prompt it replaces; a new prompt starts the minute.
+            val kept = keptDeadline
+            keptDeadline = null
+            if (kept == null) restartIdle() else idleUntil(kept)
+        }
+        dialog.idle = object : MdmDialog.IdleTimer {
+            override fun deadline(): Long? = idleDeadline
+            override fun keep(deadline: Long) {
+                keptDeadline = deadline
+            }
         }
         // Nothing to select, copy, share, translate or autofill: no selection or insertion toolbar at all.
         field.isLongClickable = false
@@ -173,9 +183,19 @@ class ExitPinDialog private constructor(
         return recommended.coerceAtLeast(IDLE_TIMEOUT_MS)
     }
 
-    private fun restartIdle() {
+    /** When [idle] runs (SystemClock.uptimeMillis); null until the prompt is shown. */
+    private var idleDeadline: Long? = null
+
+    /** The deadline handed over from the prompt this one replaces, for the first show. */
+    private var keptDeadline: Long? = null
+
+    /** One idle mechanism: the timer runs to a deadline, which a rebuild hands to the new prompt. */
+    private fun restartIdle() = idleUntil(SystemClock.uptimeMillis() + idleTimeoutMs())
+
+    private fun idleUntil(deadline: Long) {
+        idleDeadline = deadline
         field.removeCallbacks(idle)
-        field.postDelayed(idle, idleTimeoutMs())
+        field.postDelayed(idle, (deadline - SystemClock.uptimeMillis()).coerceAtLeast(0L))
     }
 
     /** What a key or editor action in the PIN field does. */

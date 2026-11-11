@@ -5,6 +5,12 @@ import android.content.res.Configuration
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertSame
+import android.os.Looper
+import java.time.Duration
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.shadows.ShadowDialog
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -65,5 +71,18 @@ class DialogRebuildTest {
         val calls = rebuild(desk)
         assertEquals(0, calls.size)
         assertSame(before, DialogHost.showing())
+    }
+
+    /** N3: a rebuild keeps the prompt's idle deadline, so an abandoned PIN never outlives the minute. */
+    @Test fun `a rebuild keeps the idle deadline`() {
+        openPin()
+        DialogHost.idle()
+        DialogHost.field(DialogHost.showing()).setText("48")
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(40))
+        val night = changed { uiMode = mode(uiMode, Configuration.UI_MODE_NIGHT_MASK, Configuration.UI_MODE_NIGHT_YES) }
+        rebuild(night)
+        assertTrue("rebuilt", ShadowDialog.getLatestDialog()?.isShowing == true)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(25))
+        assertFalse("closed a minute after the last input", ShadowDialog.getLatestDialog()?.isShowing == true)
     }
 }

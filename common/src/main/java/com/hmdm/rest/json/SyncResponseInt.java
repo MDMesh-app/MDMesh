@@ -139,6 +139,8 @@ public interface SyncResponseInt {
 
     String getNewServerUrl();
 
+    String getDns();
+
     Boolean getLockSafeSettings();
 
     Boolean getPermissive();

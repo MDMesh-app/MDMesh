@@ -17,6 +17,7 @@ import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.Application;
 import com.hmdm.persistence.domain.ApplicationVersion;
+import com.hmdm.persistence.domain.Configuration;
 import com.hmdm.persistence.domain.Device;
 import com.hmdm.util.DesiredConfigBuilder;
 import com.hmdm.util.RolloutProgress;
@@ -57,8 +58,9 @@ public class ConfigAppInstaller {
     /**
      * Queue an {@code app.install} for every action=install app of the device's configuration
      * that has a real hosted APK URL. An app whose SHA-256 is unknown (hosted elsewhere, none stored) is recorded as
-     * a failed command saying so instead of being sent. Returns the number queued. Never throws — callers treat
-     * this as best-effort (enrollment must not fail because an app list is dirty).
+     * a failed command saying so instead of being sent. Also queues the fork's string-valued DNS policy when the
+     * configuration sets one. Returns the number queued. Never throws — callers treat this as best-effort
+     * (enrollment must not fail because an app list is dirty).
      */
     public int enqueueConfigApps(Device device) {
         if (device == null || device.getConfigurationId() == null) {
@@ -74,6 +76,9 @@ public class ConfigAppInstaller {
                     queued++;
                 }
             }
+            if (enqueueDnsPolicy(device, now)) {
+                queued++;
+            }
             if (queued > 0) {
                 wakeHub.wake(device.getNumber(), "commands");
             }
@@ -81,6 +86,28 @@ public class ConfigAppInstaller {
             logger.warn("Failed to queue configuration apps for device {}", device.getNumber(), e);
         }
         return queued;
+    }
+
+    /**
+     * Queue the configuration's private-DNS host as a {@code policy.apply} command. DNS is a string-valued policy,
+     * so it is not part of the boolean {@code policies} map of the desired-config document (fork feature).
+     */
+    private boolean enqueueDnsPolicy(Device device, long now) {
+        Configuration cfg = unsecureDAO.getConfigurationById(device.getConfigurationId());
+        if (cfg == null || cfg.getDns() == null || cfg.getDns().trim().isEmpty()) {
+            return false;
+        }
+        String payload = "{\"policy\":\"dns\",\"value\":\""
+                + cfg.getDns().trim().replace("\"", "\\\"") + "\"}";
+        AgentCommand cmd = new AgentCommand();
+        cmd.setDeviceNumber(device.getNumber());
+        cmd.setType("policy.apply");
+        cmd.setPayload(payload);
+        cmd.setRequiresCapability("policy.dns");
+        cmd.setStatus("pending");
+        cmd.setCreatedAt(now);
+        commandDAO.insert(cmd);
+        return true;
     }
 
     /**

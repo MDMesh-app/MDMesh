@@ -100,6 +100,7 @@ public interface ConfigurationMapper {
             "timeZone=#{timeZone}, " +
             "allowedClasses=#{allowedClasses}, " +
             "newServerUrl=#{newServerUrl}, " +
+            "dns=#{dns}, " +
             "lockSafeSettings=#{lockSafeSettings}, " +
             "permissive=#{permissive}, " +
             "kioskExit=#{kioskExit}, " +

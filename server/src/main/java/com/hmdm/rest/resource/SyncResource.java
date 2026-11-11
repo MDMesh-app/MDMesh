@@ -395,6 +395,7 @@ public class SyncResource {
         data.setTimeZone(configuration.getTimeZone());
         data.setAllowedClasses(configuration.getAllowedClasses());
         data.setNewServerUrl(configuration.getNewServerUrl());
+        data.setDns(configuration.getDns());
         data.setLockSafeSettings(configuration.getLockSafeSettings());
         data.setPermissive(configuration.getPermissive());
         data.setKioskExit(configuration.getKioskExit());

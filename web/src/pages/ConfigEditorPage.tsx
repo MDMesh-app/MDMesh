@@ -25,6 +25,7 @@ import {
   hasDefaultPin,
   hasNoPin,
   isLocked,
+  locationServicesAction,
 } from '../data/configurationRules';
 import { kioskAffectingChanges } from '../data/kioskChanges';
 import {
@@ -263,7 +264,7 @@ const LAYOUT: Record<'kiosk' | 'network' | 'security' | 'enrollment', Item[]> = 
     'textColor',
     'iconSize',
   ],
-  network: ['wifi', 'wifiRadio', 'bluetooth', 'requestUpdates', 'connectivityMode'],
+  network: ['wifi', 'wifiRadio', 'bluetooth', 'locationServices', 'requestUpdates', 'connectivityMode'],
   security: ['camera', 'usbStorage', 'disableScreenshots', 'disableFactoryReset', 'disableSafeBoot'],
   enrollment: ['wifiSSID', 'wifiPassword', 'wifiSecurityType'],
 };
@@ -402,7 +403,12 @@ function Editor({
     };
   }, [appsSource, appsAttempt]);
 
-  const set = useCallback((key: string, value: unknown) => setDraft((d) => ({ ...d, [key]: value })), []);
+  const set = useCallback((key: string, value: unknown) => setDraft((d) => {
+    if (key === 'locationServices') {
+      return { ...d, locationServices: value, locationServicesAction: locationServicesAction(value) };
+    }
+    return { ...d, [key]: value };
+  }), []);
 
   const changed = useMemo(() => changedKeys(baseline, draft), [baseline, draft]);
 

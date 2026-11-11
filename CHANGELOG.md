@@ -38,7 +38,11 @@ New
 - Kiosk: a configuration can show a background image behind the kiosk launcher. Choose it in the Kiosk section: a
   PNG, JPEG or WebP image, at most 10 MB and 16 megapixels. Devices download it only over HTTPS (with an `http://`
   server address they keep the background color), check it by its SHA-256, and keep the color if it can't be shown.
-  Needs agent 0.5.0 (thanks @letternumber).
+  The editor shows the current image (size, upload date, short SHA-256) with Replace and Remove, and previews the
+  launcher over it on a phone and a tablet in both orientations, with the text contrast it reaches; the launcher dims
+  the image just enough for text to stay at 4.5:1. Photos are turned upright and scaled to at most 3840 px before
+  upload, and their location, camera details and other metadata are removed before devices get them. The device page
+  names the image its configuration sets. Needs agent 0.5.0 (thanks @letternumber).
 - Configurations can Grant or Deny an app's runtime permissions (camera, location, microphone, contacts, SMS and
   more), under each installed app in the editor; Default removes MDMesh's override. The choices come from the APK
   uploaded to the server. Needs agent 0.5.0 on a Device Owner device: a device on an older agent applies the rest of
@@ -66,6 +70,10 @@ Fixes
   (thanks @letternumber).
 
 Under the hood
+- The kiosk background image's address is built from the server's current address each time a configuration is sent,
+  so moving the server to HTTPS or another domain needs no new pick of the image. The adaptive scrim is documented in
+  `docs/kiosk-background-scrim.md`, with test vectors (`proto/vectors/kiosk-scrim.json`) the console and the agent
+  both pass. `GET /private/configurations/backgroundImage/{fileId}` describes an image as devices will get it.
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
 
 ## v0.4.0 — 2026-11-03

@@ -112,14 +112,23 @@ finishes the entry even if the screen goes away (a rotation); once in kiosk it q
 
 **Kiosk background image.** A configuration's managed image is an uploaded file (`backgroundImageFileId`). On
 save the server refuses anything but a PNG, JPEG or WebP of at most 10 MB and 16 megapixels (read from the header),
-and stores the file's URL in `backgroundImageUrl` and its SHA-256 in `backgroundImageSha256`; the browser's values
-are never used. `kiosk.theme.backgroundImage` is `{url, sha256}`, sent only when all three are set. Agent 0.5.0
+removes its metadata without decoding it (`KioskImageMetadata`: EXIF, GPS, XMP, IPTC, comments, thumbnails and data
+after the image go; only the EXIF orientation stays, as a minimal EXIF block; an image that had some is hosted again
+as a cleaned copy, the original file is never rewritten), and stores its SHA-256 in `backgroundImageSha256` (of the
+cleaned file) and a URL in `backgroundImageUrl`; the browser's values are never used. The console already uploads
+images upright and at most 3840 px along the long edge (`normalizeKioskImage`), and the commit of such an upload is
+cleaned before it is hosted. `kiosk.theme.backgroundImage` is `{url, sha256}`, sent only for a managed image; its URL
+is built from the server's current `base.url` each time the document is built (`KioskBackgroundImageUrls`), so a move
+to HTTPS or another domain reaches devices as a new revision; the stored URL is only the fallback. Agent 0.5.0
 downloads it over HTTPS only (no redirect to HTTP), up to 10 MB, checks the SHA-256 and the 16-megapixel bound before
 caching it in private storage (only the current image is kept), and draws it behind the launcher grid, the splash
 and the hold screen; on any failure it keeps the background color, and tries again the next time the launcher comes
 to the foreground. With an `http://` server address devices keep the color. Older agents ignore the key (their
 kiosk is re-applied once when the image changes the revision). `backgroundImageUrl` is also the Headwind launcher's
-wallpaper: a save that sends another URL there stores it as that wallpaper and drops the managed image.
+wallpaper: a save that sends another URL there stores it as that wallpaper and drops the managed image. The text over
+the image is kept at 4.5:1 by an adaptive scrim, the same function in the console's preview and on the agent:
+[kiosk-background-scrim.md](kiosk-background-scrim.md). The console's device page names the image the device's
+configuration sets (`configStatus.kioskBackgroundImage`); what the device shows isn't reported yet.
 
 **Wi-Fi radio Off, in detail**
 - Off is deferred, without blocking the other keys, while Wi-Fi is the device's only network. It's retried only at

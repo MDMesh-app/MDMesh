@@ -26,6 +26,7 @@ import java.util.List;
 import com.hmdm.persistence.domain.ApplicationSetting;
 import com.hmdm.persistence.domain.ConfigurationApplicationParameters;
 import com.hmdm.persistence.domain.ConfigurationFile;
+import com.hmdm.persistence.domain.ManagedAppPermission;
 import org.apache.ibatis.annotations.*;
 import com.hmdm.persistence.domain.Application;
 import com.hmdm.persistence.domain.Configuration;
@@ -179,6 +180,16 @@ public interface ConfigurationMapper {
 
     @Delete({"DELETE FROM configurationApplicationSettings WHERE extRefId = #{id}"})
     void removeConfigurationApplicationSettingsById(@Param("id") Integer id);
+
+    @Select("SELECT applicationId, permission, state FROM configurationAppPermissions WHERE configurationId=#{id} ORDER BY applicationId, permission")
+    List<ManagedAppPermission> getManagedAppPermissions(@Param("id") Integer id);
+
+    @Insert({"<script>INSERT INTO configurationAppPermissions(configurationId, applicationId, permission, state) VALUES ",
+            "<foreach item='item' collection='rules' separator=','>(#{id}, #{item.applicationId}, #{item.permission}, #{item.state})</foreach></script>"})
+    void insertManagedAppPermissions(@Param("id") Integer id, @Param("rules") List<ManagedAppPermission> rules);
+
+    @Delete("DELETE FROM configurationAppPermissions WHERE configurationId=#{id}")
+    void removeManagedAppPermissions(@Param("id") Integer id);
 
     /**
      * <p>Gets the list of all existing applications in context of applications usage by specified configuration.</p>

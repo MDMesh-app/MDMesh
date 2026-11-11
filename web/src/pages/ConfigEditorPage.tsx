@@ -10,6 +10,14 @@ import {
 } from '../api/configurations';
 import { ApiError } from '../api/client';
 import { commitUpload, listApplications, uploadRawFile, type Application } from '../api/applications';
+import {
+  KIOSK_IMAGE_AGENT,
+  KIOSK_IMAGE_TYPES,
+  kioskImageContentId,
+  kioskImageErrorText,
+  kioskImageProblem,
+  kioskImageUploadName,
+} from '../data/kioskBackground';
 import { getSyncSummary, type ConfigSyncSummary } from '../api/configSync';
 import {
   CONFIG_FIELDS,
@@ -611,13 +619,16 @@ function Editor({
   };
 
   async function uploadBackgroundImage(file: File) {
-    if (!file.type.startsWith('image/')) {
-      toast.push('err', 'Image not selected', 'Choose an image file such as PNG, JPEG, or WebP.');
+    const problem = kioskImageProblem(file);
+    if (problem) {
+      toast.push('err', 'Image not used', problem);
       return;
     }
     setBackgroundUploading(true);
     try {
-      const temporary = await uploadRawFile(file);
+      // Hosted under a name from its content: an edited image with the same file name doesn't clash with the old one.
+      const name = kioskImageUploadName(file.name, await kioskImageContentId(file));
+      const temporary = await uploadRawFile(new File([file], name, { type: file.type }));
       const saved = await commitUpload(temporary.serverPath);
       if (saved.id == null) throw new Error('The server did not return the uploaded image identity.');
       // URL and checksum are server-canonicalized on save. Clearing the old values avoids a stale preview payload.
@@ -630,7 +641,7 @@ function Editor({
       }));
       toast.push('ok', 'Background image uploaded', 'Save and apply the configuration to use it in kiosk.');
     } catch (e) {
-      toast.push('err', 'Image upload failed', e instanceof Error ? e.message : 'The server could not save the image.');
+      toast.push('err', 'Image upload failed', kioskImageErrorText(e));
     } finally {
       setBackgroundUploading(false);
     }
@@ -640,7 +651,7 @@ function Editor({
     <FieldRow
       id={`${ids}-backgroundImage`}
       label="Background image"
-      help="One server-managed image for the kiosk launcher. It is checksum-verified and stored privately on the device; the background color remains the fallback. Existing legacy launcher wallpapers stay unchanged until you replace or remove them."
+      help={`Needs agent ${KIOSK_IMAGE_AGENT}. A PNG, JPEG or WebP image, at most 10 MB and 16 megapixels, shown behind the kiosk launcher; the background color stays the fallback. Devices download it only when the server address is HTTPS, and check it by its SHA-256. It is hosted in Files, where anyone with its link can open it, so don't use a confidential image. Remove also clears the legacy Background image URL.`}
       adornment={changed.has('backgroundImageFileId') && !readOnly ? <ChangedChip /> : undefined}
       disabled={readOnly}
     >
@@ -649,7 +660,7 @@ function Editor({
           <input
             ref={backgroundImageRef}
             type="file"
-            accept="image/png,image/jpeg,image/webp"
+            accept={KIOSK_IMAGE_TYPES.join(',')}
             hidden
             onChange={(e) => {
               const file = e.currentTarget.files?.[0];

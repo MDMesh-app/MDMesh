@@ -176,7 +176,7 @@ export const CONFIG_FIELDS: FieldDef[] = [
     { value: 0, label: 'No lock (auto)' }, { value: 1, label: 'Portrait' }, { value: 2, label: 'Landscape' },
   ] },
   { key: 'useDefaultDesignSettings', label: 'Default launcher design', type: 'switch', group: 'Display', help: 'Headwind launcher ignored its custom colors. The MDMesh kiosk always uses Kiosk appearance.' },
-  { key: 'backgroundImageUrl', label: 'Background image URL', type: 'text', group: 'Display', help: 'Headwind launcher wallpaper.' },
+  { key: 'backgroundImageUrl', label: 'Background image URL', type: 'text', group: 'Display', help: 'Headwind launcher wallpaper. With a kiosk background image, this shows its address; another URL here replaces that image.' },
   { key: 'desktopHeader', label: 'Launcher header', type: 'enum', group: 'Display', help: 'Header line above the Headwind launcher.', options: [
     { value: 'NO_HEADER', label: 'None' }, { value: 'DEVICE_ID', label: 'Device ID' }, { value: 'DESCRIPTION', label: 'Description' },
     { value: 'CUSTOM1', label: 'Custom 1' }, { value: 'CUSTOM2', label: 'Custom 2' }, { value: 'CUSTOM3', label: 'Custom 3' }, { value: 'TEMPLATE', label: 'Template' },

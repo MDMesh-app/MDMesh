@@ -222,6 +222,7 @@ export function NewConfigChooser({
 
 const FIELD_LABEL: Record<string, string> = Object.fromEntries(CONFIG_FIELDS.map((f) => [f.key, f.label]));
 FIELD_LABEL.applications = 'Apps';
+FIELD_LABEL.backgroundImageFileId = 'Background image';
 
 /** Kiosk-change confirmation (classic KioskChangeConfirm). `count` null = unknown: still confirm, without a number. */
 export function KioskConfirmModal({

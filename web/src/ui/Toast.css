@@ -77,3 +77,22 @@
     max-width: none;
   }
 }
+/* Dismiss: a 28px target (24px minimum, 2.5.8) in the toast's corner. */
+.v2 .toast .t-close {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin: -4px -6px -4px auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-seg);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.v2 .toast .t-close:hover {
+  background: var(--hover);
+  color: var(--ink);
+}

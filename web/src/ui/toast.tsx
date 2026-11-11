@@ -26,6 +26,11 @@ export interface ToastApi {
 
 const Ctx = createContext<ToastApi | null>(null);
 
+/** How long a success or warning toast stays; a failure stays until dismissed. */
+const TOAST_MS = 5000;
+/** After the pointer or focus leaves the stack, how long a toast that came due meanwhile stays. */
+const RELEASE_MS = 2000;
+
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const seq = useRef(0);
@@ -39,24 +44,66 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const push = useCallback((kind: ToastKind, title: string, body: string) => {
-    if (!mounted.current) return;
-    const id = ++seq.current;
-    setToasts((t) => [...t, { id, kind, title, body }]);
-    window.setTimeout(() => {
-      if (mounted.current) setToasts((t) => t.filter((x) => x.id !== id));
-    }, 5000);
+  const dismiss = useCallback((id: number) => {
+    if (mounted.current) setToasts((t) => t.filter((x) => x.id !== id));
   }, []);
-  // One object for the provider's life: a toast coming or going re-renders no consumer, and a callback that uses the
-  // toast API (the device page's sendCommand) keeps its identity.
+
+  // Pointer over the stack or focus in it holds every dismissal (2.2.1): one that comes due meanwhile waits until
+  // the pointer and focus leave, then goes after a short grace.
+  const held = useRef({ hover: false, focus: false });
+  const due = useRef(new Set<number>());
+  const release = useCallback(() => {
+    if (held.current.hover || held.current.focus || !due.current.size) return;
+    const ids = [...due.current];
+    due.current.clear();
+    window.setTimeout(() => {
+      if (mounted.current) setToasts((t) => t.filter((x) => !ids.includes(x.id)));
+    }, RELEASE_MS);
+  }, []);
+
+  const push = useCallback(
+    (kind: ToastKind, title: string, body: string) => {
+      if (!mounted.current) return;
+      const id = ++seq.current;
+      setToasts((t) => [...t, { id, kind, title, body }]);
+      // A failure stays until it is dismissed: it may be the only place the reason is shown.
+      if (kind === 'err') return;
+      window.setTimeout(() => {
+        if (!mounted.current) return;
+        if (held.current.hover || held.current.focus) due.current.add(id);
+        else dismiss(id);
+      }, TOAST_MS);
+    },
+    [dismiss],
+  );
   const api = useMemo(() => ({ push }), [push]);
 
   return (
     <Ctx.Provider value={api}>
       {children}
-      <div className="toast-wrap" aria-live="polite" aria-atomic="false">
+      <div
+        className="toast-wrap"
+        aria-live="polite"
+        aria-atomic="false"
+        onPointerEnter={() => {
+          held.current.hover = true;
+        }}
+        onPointerLeave={() => {
+          held.current.hover = false;
+          release();
+        }}
+        onFocus={() => {
+          held.current.focus = true;
+        }}
+        onBlur={(e) => {
+          if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+          held.current.focus = false;
+          release();
+        }}
+      >
         {toasts.map((t) => (
-          <div key={t.id} className={`toast ${t.kind}`} role="status">
+          // A failure is an alert (announced at once); the rest are polite status messages (4.1.3).
+          <div key={t.id} className={`toast ${t.kind}`} role={t.kind === 'err' ? 'alert' : 'status'}>
             <span className="t-ic" aria-hidden="true">
               {t.kind === 'ok' ? <CheckMark /> : t.kind === 'warn' ? <BangMark /> : <CrossMark />}
             </span>
@@ -64,6 +111,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               <div className="t-title">{t.title}</div>
               {t.body && <div className="t-body">{t.body}</div>}
             </div>
+            <button type="button" className="t-close" aria-label={`Dismiss: ${t.title}`} onClick={() => dismiss(t.id)}>
+              <CrossMark />
+            </button>
           </div>
         ))}
       </div>

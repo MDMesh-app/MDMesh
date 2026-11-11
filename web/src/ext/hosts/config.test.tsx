@@ -94,7 +94,12 @@ async function save() {
   await waitFor(() => expect(button().disabled).toBe(false));
   fireEvent.click(button());
 }
-const toastText = () => screen.getAllByRole('status').map((t) => t.textContent).join(' | ');
+// Toasts: failures are alerts, the rest status messages.
+const toastText = () =>
+  [...screen.queryAllByRole('status'), ...screen.queryAllByRole('alert')]
+    .filter((t) => t.classList.contains('toast'))
+    .map((t) => t.textContent)
+    .join(' | ');
 /**
  * Every toast shown from now on, kept after its 5 s timer removes it, so a test that counts them doesn't depend on
  * how fast it runs. Stop it with `stop()`.
@@ -105,7 +110,8 @@ function recordToasts() {
     for (const r of records) {
       for (const node of r.addedNodes) {
         if (!(node instanceof HTMLElement)) continue;
-        const toasts = node.matches('[role="status"]') ? [node] : [...node.querySelectorAll('[role="status"]')];
+        const sel = '.toast'; // status or alert
+        const toasts = node.matches(sel) ? [node] : [...node.querySelectorAll(sel)];
         for (const t of toasts) shown.push(t.textContent ?? '');
       }
     }

@@ -29,8 +29,9 @@ import com.mdmesh.agent.R
  * (or the keyboard's Done) hands the text to `onSubmit` (the launcher's `onPinEntered`), which renders the result
  * back with [render]. A wrong PIN keeps the dialog open; it closes only on [ExitPinUiState.Close] or Cancel.
  *
- * The typed PIN is never saved with the activity's state: after a rotation the launcher reopens the dialog empty
- * (an in-place rebuild hands it over in memory). It goes with the dialog when the screen goes off (the launcher
+ * The typed PIN is never saved with the activity's state: after a recreation (a locale change, process death) the
+ * launcher reopens the dialog empty; an in-place rebuild (rotation, dark mode, font or display size) hands it over
+ * in memory, with the idle deadline. It goes with the dialog when the screen goes off (the launcher
  * stops), after [IDLE_TIMEOUT_MS] without input (or the user's longer accessibility "Time to take action"), and once
  * a PIN is accepted: the prompt then settles, and a second "done" for the same press does nothing. Shown or not,
  * the PIN can't be copied, shared, autofilled or content-captured.

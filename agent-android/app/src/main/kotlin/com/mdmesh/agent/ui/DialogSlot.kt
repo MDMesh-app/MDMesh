@@ -33,9 +33,10 @@ interface SlotDialog {
  *   shows stale facts (an expired lockout, a kiosk changed meanwhile) and nothing typed (a PIN) is written into
  *   the saved state.
  * - **A config change the activity handles itself** (what it declares in `configChanges`; the kiosk launcher:
- *   uiMode and the keyboard set): through [onConfigurationChanged] the open dialog is rebuilt the same way when
- *   the change alters how it looks (dark mode), with what was typed carried over in memory, and left as it is
- *   otherwise (a keyboard or scanner connecting, a dock).
+ *   dark mode, rotation, window size, font size, display size and the keyboard set): through
+ *   [onConfigurationChanged] the open dialog is rebuilt the same way when the change alters how it looks, with what
+ *   was typed and its idle deadline carried over in memory, and left as it is otherwise (a keyboard or scanner
+ *   connecting, a dock).
  *
  * Call [save] from `onSaveInstanceState`, [restore] from `onCreate`, [onConfigurationChanged] from the activity's
  * own, and [dismiss] from `onDestroy` (a dialog left showing on a destroyed activity leaks its window).
@@ -83,9 +84,9 @@ class DialogSlot(private val key: String) {
 
     /**
      * The activity's configuration changed without a recreation: only what it declares in `configChanges` arrives
-     * here (the kiosk launcher: uiMode, keyboard, keyboardHidden, navigation; everything else recreates it and goes
-     * through [restore]). If the change alters how the open dialog looks (dark mode; font size, density or window
-     * size too, should an activity declare those), close it and let [reopen]
+     * here (the kiosk launcher: uiMode, orientation, screen size and layout, font scale, density and the keyboard
+     * set; anything else, a locale say, recreates it and goes through [restore]). If the change alters how the open
+     * dialog looks (dark mode, font size, density or window size), close it and let [reopen]
      * build and show it again (through [show]) from current state, as after a recreation, with what was typed in
      * it: kept in memory for this hand-over only, never in saved state. Other changes (a desk or car dock switching
      * the UI mode type) leave it open as it is.

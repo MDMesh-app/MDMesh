@@ -7,13 +7,16 @@ import com.mdmesh.core.store.DeviceIdentity
 import com.mdmesh.core.store.EnrollTokenProvider
 import com.mdmesh.core.telemetry.EventSink
 import com.mdmesh.proto.AgentEnrollRequest
+import com.mdmesh.proto.AgentEnrollResponse
 import com.mdmesh.proto.EventType
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerializationException
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import retrofit2.HttpException
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -34,8 +37,7 @@ class EnrollmentManager @Inject constructor(
     private val tokenProvider: EnrollTokenProvider,
     private val capabilitySource: CapabilitySource,
     private val eventSink: EventSink,
-    private val hardwareIdSource: HardwareIdSource = HardwareIdSource { null },
-    private val serverAddress: ServerAddress = ServerAddress { "" },
+    private val environment: EnrollmentEnvironment = EnrollmentEnvironment(),
 ) {
 
     private val mutex = Mutex()
@@ -49,52 +51,10 @@ class EnrollmentManager @Inject constructor(
         }
     }
 
-    /** The server's host for messages; the address itself when it isn't one. */
-    private fun host(): String? = runCatching {
-        val raw = serverAddress.baseUrl()
-        raw.toHttpUrlOrNull()?.host ?: raw
-    }.getOrNull()
-
     private suspend fun enroll(): String {
         val token = tokenProvider.token()?.takeIf { it.isNotBlank() }
             ?: throw EnrollmentException(EnrollmentFailure.NO_CODE)
-
-        // Stored BEFORE the request: if its response is lost (Wi-Fi drop, the process ends), every retry, even after a
-        // restart, sends the same id and the server answers with the device this enrollment already created instead
-        // of "code already used". Without it (not stored), the enroll still works, just not resumably.
-        val attempt = try {
-            tokenProvider.enrollAttempt(token)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            null
-        }
-
-        // deviceId is unknown pre-enrollment; the server ignores it and issues one.
-        val matrix = capabilitySource.matrix(deviceId = "")
-        val response = try {
-            api.enroll(
-                AgentEnrollRequest(
-                    enrollToken = token,
-                    agent = matrix.agent,
-                    device = matrix.device,
-                    capabilities = matrix.capabilities,
-                    hardwareId = runCatching { hardwareIdSource.get() }.getOrNull(),
-                    enrollAttempt = attempt,
-                ),
-            )
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            // Network, TLS, HTTP and parse failures: retried by the caller; said in words the person holding the
-            // device can act on (it's what the agent's screen shows while it isn't enrolled).
-            throw EnrollmentException(EnrollmentFailure.forException(e, host()), e)
-        }
-
-        val data = response.data
-        if (!response.isOk || data == null) {
-            throw EnrollmentException(EnrollmentFailure.forServer(response.message))
-        }
+        val data = post(token, storedAttempt(token))
         // The POST above already burned the single-use token server-side, so persistence must
         // survive cancellation (e.g. WorkManager REPLACE/stop) or the credentials are lost forever.
         withContext(NonCancellable) {
@@ -106,6 +66,67 @@ class EnrollmentManager @Inject constructor(
         }
         return data.deviceId
     }
+
+    /**
+     * The attempt id for [token], stored BEFORE the request: if its response is lost (Wi-Fi drop, the process ends),
+     * every retry, even after a restart, sends the same id and the server answers with the device this enrollment
+     * already created instead of "code already used". When it can't be stored (a storage error), the enroll still
+     * works, just not resumably.
+     */
+    private suspend fun storedAttempt(token: String): String? = try {
+        tokenProvider.enrollAttempt(token)
+    } catch (ignored: IOException) {
+        null
+    }
+
+    /** POSTs the enrollment; the server's answer, or an [EnrollmentException] that says why there is none. */
+    private suspend fun post(token: String, attempt: String?): AgentEnrollResponse {
+        // deviceId is unknown pre-enrollment; the server ignores it and issues one.
+        val matrix = capabilitySource.matrix(deviceId = "")
+        val request = AgentEnrollRequest(
+            enrollToken = token,
+            agent = matrix.agent,
+            device = matrix.device,
+            capabilities = matrix.capabilities,
+            hardwareId = runCatching { environment.hardwareIdSource.get() }.getOrNull(),
+            enrollAttempt = attempt,
+        )
+        val response = runCatching { api.enroll(request) }.getOrElse { throw asEnrollmentFailure(it) }
+        val data = response.data
+        if (!response.isOk || data == null) {
+            throw EnrollmentException(EnrollmentFailure.forServer(response.message))
+        }
+        return data
+    }
+
+    /**
+     * Network, TLS, HTTP and parse failures become an [EnrollmentException] in words the person holding the device can
+     * act on (it's what the agent's screen shows while it isn't enrolled); the caller retries them. Anything else,
+     * cancellation first of all, passes through unchanged.
+     */
+    private fun asEnrollmentFailure(t: Throwable): Throwable = when (t) {
+        is IOException, is HttpException, is SerializationException ->
+            EnrollmentException(EnrollmentFailure.forException(t, host()), t)
+        else -> t
+    }
+
+    /** The server's host for messages; the address itself when it isn't one. */
+    private fun host(): String? = runCatching {
+        val raw = environment.serverAddress.baseUrl()
+        raw.toHttpUrlOrNull()?.host ?: raw
+    }.getOrNull()
+}
+
+/**
+ * What enrollment reads about this device and its server besides the token: the stable hardware id it reports and the
+ * server address its messages name. Grouped so tests that don't care can leave both out.
+ */
+class EnrollmentEnvironment @Inject constructor(
+    val hardwareIdSource: HardwareIdSource,
+    val serverAddress: ServerAddress,
+) {
+    /** Tests: no hardware id, no address. */
+    constructor() : this(HardwareIdSource { null }, ServerAddress { "" })
 }
 
 /**

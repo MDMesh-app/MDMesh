@@ -31,7 +31,9 @@ class EnrollmentFailureTest {
         assertTrue(used, used.contains("Make a new code"))
         assertTrue(used.endsWith("(error.agent.token.used)"))
         assertTrue(EnrollmentFailure.forServer("error.agent.token.expired").contains("expired"))
-        assertTrue(EnrollmentFailure.forServer("error.agent.token.invalid").contains("doesn't know this enrollment code"))
+        assertTrue(
+            EnrollmentFailure.forServer("error.agent.token.invalid").contains("doesn't know this enrollment code"),
+        )
         assertTrue(EnrollmentFailure.forServer("error.agent.enrollment.disabled").contains("default configuration"))
         assertTrue(EnrollmentFailure.forServer("error.agent.enrollment.failed").contains("Trying again"))
         assertTrue(EnrollmentFailure.forServer(null).startsWith("The server refused enrollment."))
@@ -64,12 +66,20 @@ class EnrollmentFailureTest {
             UnknownHostException("mdm.acme.test") to "Can't find the server mdm.acme.test.",
             SocketTimeoutException("timeout") to "The server mdm.acme.test didn't answer in time.",
             ConnectException("refused") to "Can't connect to the server mdm.acme.test",
-            InvalidServerAddressException("mdm.acme.test/x") to "The server address in the QR code (\"mdm.acme.test/x\")",
+            InvalidServerAddressException("mdm.acme.test/x") to
+                "The server address in the QR code (\"mdm.acme.test/x\")",
             UnknownServiceException("CLEARTEXT communication to mdm.acme.test not permitted") to "uses http://",
             SSLPeerUnverifiedException("Hostname mdm.acme.test not verified") to "certificate is for a different name",
             SSLHandshakeException("java.security.cert.CertPathValidatorException: Trust anchor for certification " +
                 "path not found.") to "doesn't trust the server mdm.acme.test's certificate",
             http(404) to "isn't an MDMesh server (HTTP 404)",
+            http(403) to "The server mdm.acme.test refused the request (HTTP 403). Trying again automatically.",
+            java.net.NoRouteToHostException("no route") to "Can't connect to the server mdm.acme.test",
+            javax.net.ssl.SSLException("Hostname mdm.acme.test not verified") to "certificate is for a different name",
+            javax.net.ssl.SSLException("Connection reset by peer") to
+                "If this Wi-Fi asks you to sign in, sign in first",
+            UnknownServiceException("protocol not supported") to
+                "Enrollment didn't go through (UnknownServiceException",
             http(502) to "has a problem (HTTP 502)",
             SerializationException("Unexpected JSON token") to "didn't come from an MDMesh server",
             IllegalStateException("boom") to "Enrollment didn't go through (IllegalStateException: boom)",
@@ -89,6 +99,23 @@ class EnrollmentFailureTest {
         // Noon UTC: the same calendar day in the test machine's time zone.
         val message = EnrollmentFailure.forException(t, "mdm.acme.test", now = 1_699_963_200_000L)
         assertTrue(message, message.contains("This device's date (2023-11-14) may be wrong"))
+    }
+
+    @Test
+    fun `a certificate not yet valid also points at the device clock`() {
+        val t = SSLHandshakeException("handshake").apply {
+            initCause(CertPathValidatorException("timestamp", java.security.cert.CertificateNotYetValidException("x")))
+        }
+        val message = EnrollmentFailure.forException(t, "mdm.acme.test", now = 1_699_963_200_000L)
+        assertTrue(message, message.contains("This device's date (2023-11-14) may be wrong"))
+    }
+
+    @Test
+    fun `the date check wins over a trust failure in the same chain`() {
+        val t = SSLHandshakeException("Trust anchor for certification path not found.").apply {
+            initCause(CertPathValidatorException("timestamp", CertificateExpiredException("expired")))
+        }
+        assertTrue(EnrollmentFailure.forException(t, "h", now = 0L).contains("may be wrong"))
     }
 
     @Test

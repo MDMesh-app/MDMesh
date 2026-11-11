@@ -170,9 +170,7 @@ class AdminReceiver : DeviceAdminReceiver() {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
             runCatching {
                 val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager
-                    ?: return
-                if (!dpm.isDeviceOwnerApp(context.packageName)) return
-                dpm.setOrganizationId(ORGANIZATION_ID)
+                if (dpm != null && dpm.isDeviceOwnerApp(context.packageName)) dpm.setOrganizationId(ORGANIZATION_ID)
             }
         }
 

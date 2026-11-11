@@ -16,7 +16,7 @@ object EnrollAttempts {
     fun bindingOf(token: String): String = hex(MessageDigest.getInstance("SHA-256").digest(token.toByteArray()))
 
     /** 128 random bits as 32 hex characters (matches the server's `[A-Za-z0-9_-]{16,128}`). */
-    fun newId(random: SecureRandom = SecureRandom()): String = ByteArray(16).also(random::nextBytes).let(::hex)
+    fun newId(random: SecureRandom = SecureRandom()): String = ByteArray(ID_BYTES).also(random::nextBytes).let(::hex)
 
     /**
      * The attempt id to send with [token]: the stored one when it was made for this token, else a new one (a new
@@ -29,5 +29,9 @@ object EnrollAttempts {
         return newId() to true
     }
 
-    private fun hex(bytes: ByteArray): String = bytes.joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    private fun hex(bytes: ByteArray): String = bytes.joinToString("") { "%02x".format(it.toInt() and BYTE_MASK) }
+
+    /** 128 bits. */
+    private const val ID_BYTES = 16
+    private const val BYTE_MASK = 0xff
 }

@@ -16,12 +16,10 @@ object ServerUrls {
      * A missing scheme means https (the agent speaks HTTPS; Android blocks cleartext for it).
      */
     fun normalize(raw: String?): String? {
-        val s = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-        if (s.any { it.isWhitespace() }) return null
-        val withScheme = if ("://" in s) s else "https://$s"
-        val url = withScheme.toHttpUrlOrNull() ?: return null
-        if (url.host.isEmpty()) return null
-        return origin(url)
+        val s = raw?.trim().orEmpty()
+        if (s.isEmpty() || s.any { it.isWhitespace() }) return null
+        val url = (if ("://" in s) s else "https://$s").toHttpUrlOrNull()
+        return url?.takeIf { it.host.isNotEmpty() }?.let(::origin)
     }
 
     /**
@@ -30,9 +28,13 @@ object ServerUrls {
      * is nothing valid yet, so requests fail naming it instead of quietly going to the baked default host.
      */
     fun toStore(provided: String?, stored: String?): String? {
-        if (provided.isNullOrBlank()) return null
-        normalize(provided)?.let { return it }
-        return if (normalize(stored) == null) provided.trim() else null
+        val normalized = normalize(provided)
+        return when {
+            provided.isNullOrBlank() -> null
+            normalized != null -> normalized
+            normalize(stored) == null -> provided.trim()
+            else -> null
+        }
     }
 
     /**
@@ -43,9 +45,12 @@ object ServerUrls {
      */
     fun effective(stored: String?, legacy: Boolean, fallback: String): String {
         val baked = normalize(fallback) ?: fallback.trim().trimEnd('/')
-        val value = stored?.takeIf { it.isNotBlank() } ?: return baked
-        if (legacy && value.toHttpUrlOrNull() == null) return baked
-        return normalize(value) ?: value.trim().trimEnd('/')
+        val value = stored?.takeIf { it.isNotBlank() }
+        return when {
+            value == null -> baked
+            legacy && value.toHttpUrlOrNull() == null -> baked
+            else -> normalize(value) ?: value.trim().trimEnd('/')
+        }
     }
 
     private fun origin(url: HttpUrl): String {

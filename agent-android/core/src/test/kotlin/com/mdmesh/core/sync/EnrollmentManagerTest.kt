@@ -6,6 +6,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -60,6 +61,33 @@ class EnrollmentManagerTest {
         assertEquals(2, api.enrollRequests.size)
         assertEquals(api.enrollRequests[0].enrollAttempt, api.enrollRequests[1].enrollAttempt)
         assertEquals("sek-1", identity.secret())
+    }
+
+    @Test
+    fun `an unexpected failure is not dressed up as an enrollment problem`() = runTest {
+        val api = FakeMdmApi().apply { enrollThrows = IllegalStateException("bug") }
+        try {
+            manager(FakeIdentity(), api).ensureEnrolled()
+            fail("expected IllegalStateException")
+        } catch (e: IllegalStateException) {
+            assertEquals("bug", e.message)
+        }
+    }
+
+    @Test
+    fun `an HTTP error and an unreadable answer are enrollment problems`() = runTest {
+        val notFound = retrofit2.HttpException(
+            retrofit2.Response.error<Any>(404, "".toResponseBody()),
+        )
+        for (failure in listOf(notFound, kotlinx.serialization.SerializationException("html"))) {
+            val api = FakeMdmApi().apply { enrollThrows = failure }
+            try {
+                manager(FakeIdentity(), api).ensureEnrolled()
+                fail("expected EnrollmentException")
+            } catch (e: EnrollmentException) {
+                assertTrue(e.cause === failure)
+            }
+        }
     }
 
     @Test
@@ -144,7 +172,10 @@ class EnrollmentManagerTest {
         val api = FakeMdmApi().apply { enrollThrows = java.net.UnknownHostException("mdm.acme.test") }
         val manager = EnrollmentManager(
             api, FakeIdentity(), FakeTokenProvider("tok-123"), FakeCapabilitySource(), NoopEventSink,
-            serverAddress = { "https://mdm.acme.test" },
+            environment = EnrollmentEnvironment(
+                HardwareIdSource { null },
+                com.mdmesh.core.config.ServerAddress { "https://mdm.acme.test" },
+            ),
         )
         try {
             manager.ensureEnrolled()

@@ -33,8 +33,8 @@ class ServerConfigStore @Inject constructor(@ApplicationContext context: Context
 
     /**
      * Persist the provisioned server URL ([ServerUrls.toStore]): normalised when valid; absent/blank input is a no-op.
-     * An address that isn't one never replaces a valid one saved earlier in provisioning, but with nothing valid saved it
-     * is kept as given, so the device says the QR's address is wrong instead of trying the baked default host.
+     * An address that isn't one never replaces a valid one saved earlier in provisioning, but with nothing valid
+     * saved it is kept as given, so the device says the QR's address is wrong instead of trying the baked default host.
      *
      * @return whether a valid address was saved
      */

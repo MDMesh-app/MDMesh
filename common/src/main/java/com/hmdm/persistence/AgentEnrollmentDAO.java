@@ -164,12 +164,12 @@ public class AgentEnrollmentDAO {
     /**
      * The device's credential for a resumed enrollment: the same secret its first answer carried (derived, see
      * {@link #deriveSecret}), so a late duplicate of a request, or a retry, never replaces a secret the agent may have
-     * saved. Only when it doesn't match what is stored (hash.secret changed in between) is the derived one stored.
+     * saved. Only when it doesn't match what is stored (the enrollment key changed in between) is the derived one
+     * stored.
      *
      * @return the outcome, or null when the attempt no longer owns the device (it checked in meanwhile)
      */
-    private Outcome resume(String deviceNumber, String attemptHash, String attempt) {
-        String secret = deriveSecret(deviceNumber, attempt);
+    private Outcome resume(String deviceNumber, String attemptHash, String secret) {
         String hash = CryptoUtil.getSHA256String(secret);
         if (hash.equals(deviceMapper.getDeviceSecretHash(deviceNumber))
                 || deviceMapper.reissueSecret(deviceNumber, attemptHash, hash) > 0) {
@@ -187,10 +187,10 @@ public class AgentEnrollmentDAO {
      * keeps neither the attempt id nor the secret, only hashes. If the key is rotated during an enrollment's retry
      * window, the resume stores the newly derived secret (see {@link #resume}).
      */
-    String deriveSecret(String deviceNumber, String attempt) {
+    static String deriveSecret(byte[] key, String deviceNumber, String attempt) {
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(enrollmentKey.bytes(), "HmacSHA256"));
+            mac.init(new SecretKeySpec(key, "HmacSHA256"));
             // Domain separation: the label names this use and its version; "\n" can't occur in either value.
             byte[] digest = mac.doFinal(("mdmesh-enroll-secret-v1\n" + deviceNumber + "\n" + attempt)
                     .getBytes(StandardCharsets.UTF_8));
@@ -230,6 +230,9 @@ public class AgentEnrollmentDAO {
                           String capabilitiesJson, String hardwareId, String attempt, boolean resumeOnly) {
         long now = System.currentTimeMillis();
         String attemptHash = attemptHash(tokenId, attempt);
+        // Before any lock: on first use the key is made on a connection of its own, which must not be awaited while
+        // this transaction holds the token's row or the customer's lock.
+        byte[] key = attemptHash == null ? null : enrollmentKey.bytes();
         // Enrolls of one token run one after another; a request that waits longer than this fails retryably.
         tokenMapper.setEnrollLockTimeout(lockTimeoutMs + "ms");
         AgentEnrollmentToken locked = tokenMapper.lockForEnroll(tokenId);
@@ -242,7 +245,7 @@ public class AgentEnrollmentDAO {
             // Under the lock, so a retry that waited for the first request sees what it committed.
             String resumable = deviceMapper.findEnrollRetry(attemptHash, now - RETRY_WINDOW_MS);
             if (resumable != null) {
-                Outcome resumed = resume(resumable, attemptHash, validAttempt(attempt));
+                Outcome resumed = resume(resumable, attemptHash, deriveSecret(key, resumable, validAttempt(attempt)));
                 if (resumed != null) {
                     return resumed;
                 }
@@ -266,7 +269,7 @@ public class AgentEnrollmentDAO {
             throw new CreationRefusedException();
         }
         // Derived from the attempt when there is one, so every answer to this attempt carries the same secret.
-        String secret = attemptHash == null ? randomSecret() : deriveSecret(deviceNumber, validAttempt(attempt));
+        String secret = attemptHash == null ? randomSecret() : deriveSecret(key, deviceNumber, validAttempt(attempt));
         if (deviceMapper.completeEnrollment(deviceNumber, CryptoUtil.getSHA256String(secret), capabilitiesJson,
                 hardwareId, attemptHash, now) != 1) {
             throw new IllegalStateException("device " + deviceNumber + " not found to complete its enrollment");

@@ -6,17 +6,21 @@ package com.hmdm.persistence;
 
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
-import com.hmdm.persistence.mapper.AgentEnrollmentKeyMapper;
 import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 
 import java.security.SecureRandom;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 
 /**
  * <p>The server-only key that agent enrollment secrets are derived with ({@link AgentEnrollmentDAO}): 32 random bytes
  * made with {@link SecureRandom} on first use and kept in the database (table {@code agentEnrollmentKey}, one row), so
  * every server instance and every restart derive the same secret for one enrollment attempt. It is in no setting,
- * file, API answer or log; it is in the database and its backups.</p>
+ * file, API answer or log (not even MyBatis's DEBUG statement log: it is read and written with plain JDBC); it is in
+ * the database and its backups.</p>
  *
  * <p>Read and created on a session of its own (auto-commit), outside any enrollment transaction: a key is never kept
  * in memory that a rolled-back transaction took out of the database. Several first uses at once keep exactly one key
@@ -54,19 +58,36 @@ public class AgentEnrollmentKey {
     }
 
     private byte[] load() {
+        // Plain JDBC on the session's connection, not a MyBatis statement: MyBatis logs statement parameters and
+        // result rows at DEBUG/TRACE, and the key must not reach any log at any level.
         try (SqlSession session = sessions.openSession(true)) {
-            AgentEnrollmentKeyMapper mapper = session.getMapper(AgentEnrollmentKeyMapper.class);
-            String hex = mapper.get();
+            Connection connection = session.getConnection();
+            String hex = read(connection);
             if (hex == null) {
                 byte[] fresh = new byte[KEY_BYTES];
                 RANDOM.nextBytes(fresh);
-                mapper.insertIfAbsent(toHex(fresh), System.currentTimeMillis());
-                hex = mapper.get(); // ours, or the one a concurrent first use stored first
+                try (PreparedStatement insert = connection.prepareStatement(
+                        "INSERT INTO agentEnrollmentKey (id, keyHex, createdAt) VALUES (1, ?, ?) "
+                                + "ON CONFLICT (id) DO NOTHING")) {
+                    insert.setString(1, toHex(fresh));
+                    insert.setLong(2, System.currentTimeMillis());
+                    insert.executeUpdate();
+                }
+                hex = read(connection); // ours, or the one a concurrent first use stored first
             }
             if (hex == null || !hex.matches("[0-9a-f]{" + (KEY_BYTES * 2) + "}")) {
                 throw new IllegalStateException("the enrollment key in the database is missing or malformed");
             }
             return fromHex(hex);
+        } catch (SQLException e) {
+            throw new IllegalStateException("the enrollment key could not be read (SQL state " + e.getSQLState() + ")");
+        }
+    }
+
+    private static String read(Connection connection) throws SQLException {
+        try (PreparedStatement select = connection.prepareStatement("SELECT keyHex FROM agentEnrollmentKey WHERE id = 1");
+             ResultSet row = select.executeQuery()) {
+            return row.next() ? row.getString(1) : null;
         }
     }
 

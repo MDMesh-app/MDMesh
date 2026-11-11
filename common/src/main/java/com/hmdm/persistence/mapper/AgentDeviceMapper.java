@@ -74,8 +74,9 @@ public interface AgentDeviceMapper {
     String findEnrollRetry(@Param("attemptHash") String attemptHash, @Param("since") long since);
 
     /**
-     * New secret for a retried enrollment; only while the attempt still owns the device (no check-in yet). Last-seen is
-     * left at the enrollment time: the device has not checked in.
+     * The secret of a resumed enrollment, stored when it differs from the stored one (the enrollment key changed in the
+     * window); only while the attempt still owns the device (no check-in yet). Last-seen is left at the enrollment time:
+     * the device has not checked in.
      */
     @Update({"UPDATE devices SET agentSecretHash = #{secretHash} " +
             "WHERE number = #{deviceNumber} AND agentEnrollAttemptHash = #{attemptHash} AND agentSecretHash IS NOT NULL"})

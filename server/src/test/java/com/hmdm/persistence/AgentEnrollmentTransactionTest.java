@@ -9,7 +9,6 @@ import com.google.inject.Injector;
 import com.google.inject.name.Names;
 import com.hmdm.persistence.domain.Device;
 import com.hmdm.persistence.mapper.AgentDeviceMapper;
-import com.hmdm.persistence.mapper.AgentEnrollmentKeyMapper;
 import com.hmdm.persistence.mapper.AgentEnrollmentTokenMapper;
 import com.hmdm.util.CryptoUtil;
 import org.apache.ibatis.annotations.Insert;
@@ -210,7 +209,6 @@ public class AgentEnrollmentTransactionTest {
                 bindTransactionFactoryType(JdbcTransactionFactory.class);
                 addMapperClass(AgentEnrollmentTokenMapper.class);
                 addMapperClass(AgentDeviceMapper.class);
-                addMapperClass(AgentEnrollmentKeyMapper.class);
                 addMapperClass(TestDeviceMapper.class);
                 bind(ConsoleAdd.class);
                 bind(AgentEnrollmentDAO.DeviceFactory.class).to(TestDeviceFactory.class);
@@ -862,5 +860,33 @@ public class AgentEnrollmentTransactionTest {
         StringBuilder sb = new StringBuilder();
         for (byte b : bytes) sb.append(String.format("%02x", b & 0xff));
         return sb.toString();
+    }
+
+    @Test
+    public void the_enrollment_key_never_reaches_a_log_even_with_everything_at_trace() throws Exception {
+        // As with the documented temporary DEBUG config, and finer: every logger at TRACE while the key is made.
+        org.apache.log4j.Logger root = org.apache.log4j.Logger.getRootLogger();
+        org.apache.log4j.Level before = root.getLevel();
+        StringBuilder logged = new StringBuilder();
+        org.apache.log4j.AppenderSkeleton capture = new org.apache.log4j.AppenderSkeleton() {
+            @Override protected void append(org.apache.log4j.spi.LoggingEvent e) {
+                logged.append(e.getRenderedMessage()).append('\n');
+            }
+            @Override public void close() { }
+            @Override public boolean requiresLayout() { return false; }
+        };
+        root.addAppender(capture);
+        root.setLevel(org.apache.log4j.Level.ALL);
+        String key;
+        try {
+            Injector fresh = injectorFor();
+            key = hex(fresh.getInstance(AgentEnrollmentKey.class).bytes()); // made now: the table is empty
+            enroll(token(1), 1, "attempt-0123456789abcdef");
+        } finally {
+            root.setLevel(before);
+            root.removeAppender(capture);
+        }
+        assertTrue("the run logged something (the capture works)", logged.length() > 0);
+        assertTrue("the key is not in any log line", !logged.toString().contains(key));
     }
 }

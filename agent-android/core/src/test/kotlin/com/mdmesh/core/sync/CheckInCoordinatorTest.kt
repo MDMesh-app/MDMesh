@@ -17,10 +17,12 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
+import kotlin.coroutines.EmptyCoroutineContext
 
 class CheckInCoordinatorTest {
 
@@ -36,6 +38,16 @@ class CheckInCoordinatorTest {
         override suspend fun handle(command: CommandEnvelope): CommandResult = awaitCancellation()
     }
 
+    /** Remembers the thread its command ran on. */
+    private class ThreadProbeHandler : CommandHandler {
+        override val type: String = "test.thread"
+        @Volatile var ranOn: Thread? = null
+        override suspend fun handle(command: CommandEnvelope): CommandResult {
+            ranOn = Thread.currentThread()
+            return CommandResults.done(command)
+        }
+    }
+
     /** Stands in for SharedPreferences: what a new process would read back. */
     private class FakeBackup : PendingResults.Backup {
         var raw: String? = null
@@ -49,6 +61,8 @@ class CheckInCoordinatorTest {
         identityId: String = "dev-1",
         syncStatus: SyncStatus = SyncStatus(),
         installIntegrity: InstallIntegrityPolicy = InstallIntegrityPolicy(),
+        probe: ThreadProbeHandler = ThreadProbeHandler(),
+        realDispatcher: Boolean = false,
     ): CheckInCoordinator {
         val identity = FakeIdentity(initialId = identityId, initialSecret = "sek-1")
         val eventSink = object : com.mdmesh.core.telemetry.EventSink {
@@ -62,14 +76,17 @@ class CheckInCoordinatorTest {
             enrollment = enrollment,
             identity = identity,
             capabilitySource = FakeCapabilitySource(),
-            dispatcher = CommandDispatcher(listOf(TestHandler(), HangingHandler())),
+            dispatcher = CommandDispatcher(listOf(TestHandler(), HangingHandler(), probe)),
             pending = pending,
             stateSource = { null },
             telemetrySource = { null },
             eventSink = eventSink,
             syncStatus = syncStatus,
             installIntegrity = installIntegrity,
-        )
+        ).also {
+            // Virtual-time tests stay on the test dispatcher; the production default is checked on its own below.
+            if (!realDispatcher) it.cycleContext = EmptyCoroutineContext
+        }
     }
 
     private fun command(id: String) =
@@ -96,6 +113,27 @@ class CheckInCoordinatorTest {
         assertEquals(1, buffered.size)
         assertEquals("c1", buffered.first().commandId)
         assertEquals(CommandStatus.DONE, buffered.first().status)
+    }
+
+    @Test
+    fun `the cycle and its commands run off the caller's thread`() = runTest {
+        // The foreground service calls runOnce from the main thread, which the kiosk HOME shares: an apps.scan,
+        // apps.icons or APK hash there must not block it.
+        val api = FakeMdmApi().apply {
+            checkInResponse = ResponseEnvelope(
+                status = "OK",
+                data = AgentCheckInResponse(commands = listOf(command("c1").copy(type = "test.thread"))),
+            )
+        }
+        val probe = ThreadProbeHandler()
+        val caller = Thread.currentThread()
+
+        coordinator(api, PendingResults(), probe = probe, realDispatcher = true).runOnce()
+
+        val ranOn = probe.ranOn
+        assertNotNull("the command ran", ranOn)
+        assertNotSame("command ran on the caller's thread", caller, ranOn)
+        assertEquals(1, api.checkInRequests.size)
     }
 
     @Test

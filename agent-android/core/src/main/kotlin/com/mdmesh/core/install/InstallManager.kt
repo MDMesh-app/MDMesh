@@ -329,7 +329,8 @@ class InstallManager @Inject constructor(
         }
     }
 
-    private fun sha256Of(file: File): String {
+    /** Reads the whole APK (can be hundreds of MB), so never on the caller's thread. */
+    private suspend fun sha256Of(file: File): String = withContext(Dispatchers.IO) {
         val digest = MessageDigest.getInstance("SHA-256")
         FileInputStream(file).use { stream: InputStream ->
             val buffer = ByteArray(64 * 1024)
@@ -339,7 +340,7 @@ class InstallManager @Inject constructor(
                 digest.update(buffer, 0, read)
             }
         }
-        return digest.digest().joinToString("") { "%02x".format(it) }
+        digest.digest().joinToString("") { "%02x".format(it) }
     }
 
     private fun statusName(status: Int): String = when (status) {

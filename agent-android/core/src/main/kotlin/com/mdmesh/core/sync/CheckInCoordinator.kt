@@ -10,11 +10,15 @@ import com.mdmesh.core.telemetry.EventSink
 import com.mdmesh.core.telemetry.TelemetrySource
 import com.mdmesh.proto.AgentCheckInRequest
 import com.mdmesh.proto.EventType
+import androidx.annotation.VisibleForTesting
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.CoroutineContext
 
 /**
  * One full check-in cycle — the source of truth of the sync loop:
@@ -51,12 +55,22 @@ class CheckInCoordinator @Inject constructor(
 
     private val mutex = Mutex()
 
-    suspend fun runOnce(): Unit = mutex.withLock {
-        try {
-            cycle()
-        } catch (t: Throwable) {
-            if (t !is CancellationException) syncStatus.recordFailure(t)
-            throw t
+    /**
+     * Where the cycle runs: never the caller's thread. The foreground service calls [runOnce] from its main-thread
+     * scope, and the kiosk HOME shares that thread, so an APK hash, an apps.scan/apps.icons or a multi-MB result
+     * batch there would freeze it (and risk an ANR). Tests that drive virtual time replace it.
+     */
+    @VisibleForTesting
+    internal var cycleContext: CoroutineContext = Dispatchers.IO
+
+    suspend fun runOnce(): Unit = withContext(cycleContext) {
+        mutex.withLock {
+            try {
+                cycle()
+            } catch (t: Throwable) {
+                if (t !is CancellationException) syncStatus.recordFailure(t)
+                throw t
+            }
         }
     }
 

@@ -187,7 +187,6 @@ type TelemetrySnapshot
 type ToastApi
 type ToastKind
 token --alert
-token --alert-control
 token --alert-ink
 token --alert-line
 token --alert-soft

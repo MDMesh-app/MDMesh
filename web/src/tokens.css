@@ -19,12 +19,12 @@
   --seg-selected: #ffffff; /* raised segment / tab / active section-nav item */
 
   /* ---- lines ---- */
-  --border: #d9dde3; /* card and panel border, sidebar rule (decorative; same value as the Android agent) */
+  --border: #e7e9ee; /* card and panel border, subtle buttons, sidebar rule (decorative) */
   --border-strong: #d6dae1; /* buttons, outline tags, select chrome in toolbars */
   --line-soft: #eef0f3; /* row dividers inside cards, bar tracks */
   --input-border: #838b99; /* text inputs, selects, textareas: 3:1 on white, --app and --surface-2 (#d6dae1 was under) */
-  --control-border: var(--input-border); /* secondary, icon and password-toggle buttons, colour picker: 3:1 (1.4.11) */
-  --alert-control: #c86e6e; /* danger button border: 3:1 on white and --app (matches the Android agent) */
+  --control-border: var(--input-border); /* 3:1 edges (1.4.11): icon-only buttons, password toggle, colour picker,
+                                           the ring on a selected segment, tab, nav item or section */
 
   /* ---- ink + text ---- */
   --ink: #15181d; /* primary button, active text, focus ring, toggle on */
@@ -160,11 +160,10 @@
   --hover: #1b1f28;
   --seg-selected: #2b313d; /* lighter than the track, so the selected segment still reads as raised */
 
-  --border: #2e3440;
+  --border: #272c37;
   --border-strong: #39404e;
   --line-soft: #21262f;
   --input-border: #727b8b; /* 3:1 on --surface, --app, --surface-2 and a raised segment */
-  --alert-control: #9a5257; /* danger button border: 3:1 on --surface and --app */
 
   --ink: #f2f4f8;
   --on-ink: #15181d;

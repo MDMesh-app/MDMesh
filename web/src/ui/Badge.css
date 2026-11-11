@@ -97,26 +97,12 @@
   text-decoration: none;
 }
 
-/* Chip: a Badge you can press (link or button). Keeps its tone colour on hover. Its edge is the tone's dot colour
-   (3:1 on the card), since a control's boundary must reach 3:1 (1.4.11); the soft line alone is about 1.3:1. */
+/* Chip: a Badge you can press (link or button). Keeps its tone colour on hover. A labelled button, so it keeps the
+   soft tone line (see the text-button note in Button.css). */
 .v2 .v2-chip {
   font-family: inherit;
   line-height: var(--lh-body);
   cursor: pointer;
-}
-.v2 .v2-chip.v2-badge--ok {
-  border-color: var(--online);
-}
-.v2 .v2-chip.v2-badge--warn {
-  border-color: var(--warn);
-}
-.v2 .v2-chip.v2-badge--alert {
-  border-color: var(--alert);
-}
-.v2 .v2-chip.v2-badge--idle,
-.v2 .v2-chip.v2-badge--outline,
-.v2 .v2-chip.v2-badge--neutral {
-  border-color: var(--control-border);
 }
 .v2 .v2-chip.v2-badge--ok,
 .v2 .v2-chip.v2-badge--ok:hover {

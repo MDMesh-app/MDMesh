@@ -16,6 +16,8 @@ const EXIT_SP = 14;
 export const LABEL_LINES = 2;
 const LABEL_GAP = 8;
 const CELL_PAD_H = 8;
+/** Space kept between neighbouring label plates: a row plate is at most the cell width less this. */
+export const PLATE_GAP = 8;
 const CELL_PAD_V = 12;
 const ICON_SIDE_SPACE = 24;
 const LABEL_MIN = 80;
@@ -61,6 +63,22 @@ export interface LauncherLayout {
   exit: { button: Box; size: number } | null;
   /** What kioskLegibility protects: the header, each label, and the Exit button. */
   elements: LegibilityElement[];
+}
+
+/**
+ * The label plates of one grid row, horizontally: one width for the row, the widest text line plus padding but at most
+ * the cell width less PLATE_GAP; each centred under its icon (`centres`), then moved inward to stay within the grid's
+ * content edges: `x = min(max(centre - w / 2, contentLeft), contentRight - w)`.
+ */
+export function rowPlates(
+  centres: readonly number[],
+  textWidths: readonly number[],
+  cellW: number,
+  contentLeft: number,
+  contentRight: number,
+): { x: number; w: number }[] {
+  const w = Math.min(Math.max(0, ...textWidths) + 2 * PLATE_PAD_X, cellW - PLATE_GAP);
+  return centres.map((c) => ({ x: Math.min(Math.max(c - w / 2, contentLeft), contentRight - w), w }));
 }
 
 /**
@@ -128,7 +146,9 @@ export function launcherLayout(
   };
   const headerPlate = { x: header.x - PLATE_PAD_X, y: header.y - PLATE_PAD_Y, w: header.w + 2 * PLATE_PAD_X, h: header.h + 2 * PLATE_PAD_Y };
 
-  const labelW = cellW - 2 * CELL_PAD_H;
+  // The plate is at most the cell less the gap, and the text box is the plate less its padding.
+  const plateMax = cellW - PLATE_GAP;
+  const labelW = Math.min(cellW - 2 * CELL_PAD_H, plateMax - 2 * PLATE_PAD_X);
   const labelLine = lineHeight(LABEL_SP);
   const measureLabel = (s: string) => measure(s, LABEL_SP, 400);
   const laid = apps.map((name) => {
@@ -151,21 +171,28 @@ export function launcherLayout(
         h: rowH,
         name: a.name,
         icon: { x: x + Math.floor((cellW - icon) / 2), y: rowY + CELL_PAD_V, w: icon, h: icon },
-        label: { x: x + CELL_PAD_H, y: rowY + CELL_PAD_V + icon + LABEL_GAP, w: labelW, h: a.lines.length * labelLine },
+        label: { x: x + (cellW - labelW) / 2, y: rowY + CELL_PAD_V + icon + LABEL_GAP, w: labelW, h: a.lines.length * labelLine },
         lines: a.lines,
         lineWidth: a.lineWidth,
       });
     });
     rowY += rowH;
   }
-  // One width per grid row: the widest label line plus padding, capped at the cell width; centred on each cell.
+  // One width per grid row (docs/kiosk-background-scrim.md, Plate geometry): the widest label line plus padding, at
+  // most the cell width less the gap; each centred under its icon, kept inside the grid's content edges.
+  const contentLeft = cellLeft(0);
+  const contentRight = cellLeft(columns - 1) + cellW;
   const labelPlates: Box[] = [];
   for (let r = 0; r * columns < cells.length; r++) {
     const row = cells.slice(r * columns, (r + 1) * columns);
-    const width = Math.min(Math.max(...row.map((c) => c.lineWidth)) + 2 * PLATE_PAD_X, cellW);
-    for (const c of row) {
-      labelPlates.push({ x: c.x + cellW / 2 - width / 2, y: c.label.y - PLATE_PAD_Y, w: width, h: c.label.h + 2 * PLATE_PAD_Y });
-    }
+    const boxes = rowPlates(
+      row.map((c) => c.icon.x + c.icon.w / 2),
+      row.map((c) => c.lineWidth),
+      cellW,
+      contentLeft,
+      contentRight,
+    );
+    boxes.forEach((b, k) => labelPlates.push({ x: b.x, y: row[k].label.y - PLATE_PAD_Y, w: b.w, h: row[k].label.h + 2 * PLATE_PAD_Y }));
   }
 
   let exit: LauncherLayout['exit'] = null;

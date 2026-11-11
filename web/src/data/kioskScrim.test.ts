@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { rowPlates } from './kioskLauncherLayout';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
@@ -17,6 +18,7 @@ import {
   kioskColours,
   kioskLegibility,
   parseColor,
+  placement,
   toHex,
   worstRatio,
   type ImageCells,
@@ -32,6 +34,23 @@ interface Vectors {
   textMin: number;
   controlMin: number;
   busySpan: number;
+  geometry: {
+    image: { width: number; height: number };
+    window: { w: number; h: number };
+    mode: 'fill' | 'fit';
+    focal: { x: number; y: number };
+    expected: { x: number; y: number; w: number; h: number; scale: number };
+  }[];
+  blends: { over: string; px: string; step: number; expected: string }[];
+  rowPlates: {
+    name: string;
+    centres: number[];
+    textWidths: number[];
+    cellWidth: number;
+    contentLeft: number;
+    contentRight: number;
+    expected: { x: number; w: number }[];
+  }[];
   cellsOnLongEdge: number;
   parsing: { input: string; expected: string | null }[];
   palette: {
@@ -43,8 +62,10 @@ interface Vectors {
     name: string;
     backgroundColor: string | null;
     textColor: string | null;
-    image: { width: number; height: number; cellSize: number; cols: number; rows: number; cells: [string, string][] };
+    image: { width: number; height: number; cellSize: number; cols: number; rows: number; cells?: [string, string][]; pixels?: string[] };
     window: { w: number; h: number };
+    mode?: 'fill' | 'fit';
+    focal?: { x: number; y: number };
     elements: { id: string; kind: 'text' | 'secondary' | 'control'; row?: string; box: Box }[];
     expected: {
       background: string;
@@ -61,7 +82,7 @@ const VECTORS = JSON.parse(
 
 describe('kiosk legibility vectors (shared with the agent)', () => {
   it('uses the same constants', () => {
-    expect(VECTORS.version).toBe(3.1);
+    expect(VECTORS.version).toBe(3.2);
     expect(VECTORS.steps).toBe(SCRIM_STEPS);
     expect(VECTORS.dimMaxStep).toBe(DIM_MAX_STEP);
     expect(VECTORS.textMin).toBe(TEXT_MIN);
@@ -86,13 +107,19 @@ describe('kiosk legibility vectors (shared with the agent)', () => {
     const colours = kioskColours(v.backgroundColor, v.textColor);
     expect(toHex(colours.background)).toBe(v.expected.background);
     expect(cellGrid(v.image.width, v.image.height)).toEqual({ cellSize: v.image.cellSize, cols: v.image.cols, rows: v.image.rows });
-    const cells: ImageCells = {
-      ...v.image,
-      min: v.image.cells.map((c) => parseColor(c[0])!),
-      max: v.image.cells.map((c) => parseColor(c[1])!),
-    };
+    const cells: ImageCells = v.image.cells
+      ? { ...v.image, min: v.image.cells.map((c) => parseColor(c[0])!), max: v.image.cells.map((c) => parseColor(c[1])!) }
+      : imageCells(
+          v.image.pixels!.flatMap((p) => {
+            const n = parseInt(p.slice(1), 16);
+            return [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
+          }),
+          v.image.width,
+          v.image.height,
+          colours.background,
+        );
     const elements: LegibilityElement[] = v.elements.map((e) => ({ id: e.id, kind: e.kind, row: e.row, box: e.box }));
-    const out = kioskLegibility(cells, v.window, colours, elements);
+    const out = kioskLegibility(cells, v.window, colours, elements, { mode: v.mode ?? 'fill', focal: v.focal });
     expect(out.dim).toBe(v.expected.dim);
     for (const [id, want] of Object.entries(v.expected.plates)) {
       const got = out.plates[id];
@@ -101,6 +128,37 @@ describe('kiosk legibility vectors (shared with the agent)', () => {
       expect(got.ratio).toBeCloseTo(want.ratio, 2);
       if (want.ratioWithoutPlate != null) expect(got.ratioWithoutPlate).toBeCloseTo(want.ratioWithoutPlate, 2);
     }
+  });
+});
+
+describe('geometry and blending vectors (3.2)', () => {
+  it.each(VECTORS.geometry.map((g) => [`${g.image.width}x${g.image.height} in ${g.window.w}x${g.window.h} ${g.mode} @${g.focal.x},${g.focal.y}`, g] as const))(
+    '%s',
+    (_, g) => {
+      const p = placement(g.image.width, g.image.height, g.window.w, g.window.h, g.mode, g.focal);
+      expect(p.x).toBeCloseTo(g.expected.x, 6);
+      expect(p.y).toBeCloseTo(g.expected.y, 6);
+      expect(p.w).toBeCloseTo(g.expected.w, 6);
+      expect(p.h).toBeCloseTo(g.expected.h, 6);
+      expect(p.scale).toBeCloseTo(g.expected.scale, 9);
+    },
+  );
+
+  it.each(VECTORS.rowPlates.map((r) => [r.name, r] as const))('row plates %s', (_, r) => {
+    const got = rowPlates(r.centres, r.textWidths, r.cellWidth, r.contentLeft, r.contentRight);
+    expect(got.length).toBe(r.expected.length);
+    got.forEach((g, i) => {
+      expect(g.x).toBeCloseTo(r.expected[i].x, 9);
+      expect(g.w).toBeCloseTo(r.expected[i].w, 9);
+    });
+    // In a real grid (icons a cell apart) neighbouring plates are at least 8 dp apart.
+    if (r.name.startsWith('seven')) {
+      for (let i = 1; i < got.length; i++) expect(got[i].x - (got[i - 1].x + got[i - 1].w)).toBeGreaterThanOrEqual(8 - 1e-9);
+    }
+  });
+
+  it.each(VECTORS.blends.map((b) => [`${b.over} over ${b.px} at ${b.step}`, b] as const))('blend %s', (_, b) => {
+    expect(toHex(blendStep(parseColor(b.over)!, parseColor(b.px)!, b.step))).toBe(b.expected);
   });
 });
 
@@ -165,7 +223,7 @@ describe('kiosk legibility building blocks', () => {
       max: Array.from({ length: 384 }, (_, i) => (Math.floor(i / 24) << 8) | i % 24),
     };
     // 5 dp per px; the box covers px x 4..12, y 10..12.4: cells 3..12 x 9..13 with the margin.
-    const { lo, hi } = boxBounds(cells, { w: 120, h: 80 }, { x: 20, y: 50, w: 40, h: 12 });
+    const { lo, hi } = boxBounds(cells, { w: 120, h: 80 }, { x: 20, y: 50, w: 40, h: 12 }, 0);
     expect(lo).toBe((9 << 8) | 3);
     expect(hi).toBe((13 << 8) | 12);
   });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LABEL_LINES, PLATE_PAD_X, PLATE_PAD_Y, launcherLayout, wrapLines, type Measure } from './kioskLauncherLayout';
+import { LABEL_LINES, PLATE_GAP, PLATE_PAD_X, PLATE_PAD_Y, launcherLayout, rowPlates, wrapLines, type Measure } from './kioskLauncherLayout';
 
 /** Half the size per character: 7 dp per character at 14 sp. */
 const measure: Measure = (text, size) => text.length * (size / 2);
@@ -18,6 +18,14 @@ describe('wrapLines (TextView, maxLines, END ellipsize)', () => {
     const a = wrapLines('Signage Player Pro', 64, LABEL_LINES, m14);
     const b = wrapLines('Signage Player Pro', 64, LABEL_LINES, m14);
     expect(a).toEqual(b);
+  });
+});
+
+describe('rowPlates', () => {
+  it('centres under the icon, capped at the cell less the gap, clamped to the content edges', () => {
+    expect(rowPlates([50, 130], [20, 30], 80, 10, 170)).toEqual([{ x: 27, w: 46 }, { x: 107, w: 46 }]);
+    // Too wide: capped at 72; the first is clamped right to the content edge, the last left.
+    expect(rowPlates([40, 120], [200, 10], 80, 10, 170)).toEqual([{ x: 10, w: 72 }, { x: 84, w: 72 }]);
   });
 });
 
@@ -60,19 +68,37 @@ describe('launcherLayout (agent KioskRenderer)', () => {
     });
   });
 
-  it('gives every label of a grid row one plate width: the widest line, capped at the cell', () => {
+  it('gives every label of a grid row one plate width: the widest line, at most the cell less 8 dp', () => {
     const l = launcherLayout({ w: 360, h: 780 }, apps, { iconSize: 'SMALL', exitVisible: false }, measure);
     const row0 = l.labelPlates.slice(0, 4);
     expect(new Set(row0.map((p) => p.w)).size).toBe(1);
-    expect(row0[0].w).toBeLessThanOrEqual(86);
+    expect(row0[0].w).toBeLessThanOrEqual(86 - PLATE_GAP);
     expect(l.labelPlates[4].w).toBe(7 * 7 + 2 * PLATE_PAD_X);
     for (let i = 0; i < l.cells.length; i++) {
       const c = l.cells[i];
       const p = l.labelPlates[i];
-      expect(p.x + p.w / 2).toBeCloseTo(c.x + c.w / 2, 6);
+      expect(p.x + p.w / 2).toBeCloseTo(c.icon.x + c.icon.w / 2, 6);
       expect(p.y).toBe(c.label.y - PLATE_PAD_Y);
       expect(p.h).toBe(c.label.h + 2 * PLATE_PAD_Y);
+      // The text box is the plate less its padding.
+      expect(c.label.w).toBe(86 - PLATE_GAP - 2 * PLATE_PAD_X);
     }
+  });
+
+  it('keeps at least 8 dp between neighbouring plates in a 7-column landscape row with one long label', () => {
+    const row = ['Scanner', 'Notes', 'Inventory management tool', 'Maps', 'Mail', 'Docs', 'Chat'];
+    const l = launcherLayout({ w: 640, h: 360 }, row, { iconSize: 'SMALL', exitVisible: false }, measure);
+    expect(l.columns).toBe(7);
+    const plates = l.labelPlates.slice(0, 7);
+    expect(new Set(plates.map((p) => p.w)).size).toBe(1);
+    for (let i = 1; i < 7; i++) expect(plates[i].x - (plates[i - 1].x + plates[i - 1].w)).toBeGreaterThanOrEqual(PLATE_GAP - 1e-9);
+    const left = l.cells[0].x;
+    const right = l.cells[6].x + l.cells[6].w;
+    for (const p of plates) {
+      expect(p.x).toBeGreaterThanOrEqual(left);
+      expect(p.x + p.w).toBeLessThanOrEqual(right);
+    }
+    expect(l.cells[2].lines.length).toBe(2);
   });
 
   it('groups the labels of each grid row, for one plate step per row', () => {

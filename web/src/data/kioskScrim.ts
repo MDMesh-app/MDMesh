@@ -210,32 +210,93 @@ export function imageCells(rgba: ArrayLike<number>, iw: number, ih: number, back
   };
 }
 
-/** The per-channel bounds of the pixels under `box` (dp in a w x h window): its cells through the crop, plus one. */
-export function boxBounds(cells: ImageCells, window: { w: number; h: number }, box: Box): { lo: number; hi: number } {
-  const crop = centreCrop(cells.width, cells.height, window.w, window.h);
-  const k = crop.w / window.w;
+/** How the image fills the window: `fill` (cropped, the default) or `fit` (whole, letterboxed). */
+export type FitMode = 'fill' | 'fit';
+/** A point of the (oriented) image, 0..1 on each axis: what a `fill` crop keeps in view. */
+export interface FocalPoint {
+  x: number;
+  y: number;
+}
+export const DEFAULT_FOCAL: FocalPoint = { x: 0.5, y: 0.5 };
+
+export interface Placement {
+  /** The image's rectangle in the window, in dp (beyond the window in `fill`). */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** dp per image pixel. */
+  scale: number;
+}
+
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+/**
+ * Where an `iw` x `ih` image goes in a `W` x `H` window. `fill`: scaled to cover, the crop as close to centred on the
+ * focal point as the image allows. `fit`: scaled to fit whole, centred; the focal point is ignored.
+ */
+export function placement(iw: number, ih: number, W: number, H: number, mode: FitMode = 'fill', focal: FocalPoint = DEFAULT_FOCAL): Placement {
+  if (mode === 'fit') {
+    const scale = Math.min(W / iw, H / ih);
+    const w = iw * scale;
+    const h = ih * scale;
+    return { x: (W - w) / 2, y: (H - h) / 2, w, h, scale };
+  }
+  const scale = Math.max(W / iw, H / ih);
+  const cw = W / scale;
+  const ch = H / scale;
+  const cx = clamp(focal.x * iw - cw / 2, 0, iw - cw);
+  const cy = clamp(focal.y * ih - ch / 2, 0, ih - ch);
+  return { x: -cx * scale, y: -cy * scale, w: iw * scale, h: ih * scale, scale };
+}
+
+export interface ImageFit {
+  mode?: FitMode;
+  focal?: FocalPoint;
+}
+
+/**
+ * The per-channel bounds of the pixels under `box` (dp in a w x h window): its cells through the placement, plus a
+ * one-cell margin, and the background colour where the box shows letterbox (`fit`).
+ */
+export function boxBounds(
+  cells: ImageCells,
+  window: { w: number; h: number },
+  box: Box,
+  background: number,
+  fit: ImageFit = {},
+): { lo: number; hi: number } {
+  const p = placement(cells.width, cells.height, window.w, window.h, fit.mode ?? 'fill', fit.focal ?? DEFAULT_FOCAL);
   const cs = cells.cellSize;
-  const x0 = crop.x + box.x * k;
-  const x1 = crop.x + (box.x + box.w) * k;
-  const y0 = crop.y + box.y * k;
-  const y1 = crop.y + (box.y + box.h) * k;
-  const i0 = Math.max(0, Math.floor(x0 / cs) - 1);
-  const i1 = Math.min(cells.cols - 1, Math.ceil(x1 / cs));
-  const j0 = Math.max(0, Math.floor(y0 / cs) - 1);
-  const j1 = Math.min(cells.rows - 1, Math.ceil(y1 / cs));
+  const x0 = Math.max(0, (box.x - p.x) / p.scale);
+  const x1 = Math.min(cells.width, (box.x + box.w - p.x) / p.scale);
+  const y0 = Math.max(0, (box.y - p.y) / p.scale);
+  const y1 = Math.min(cells.height, (box.y + box.h - p.y) / p.scale);
   const lo = [255, 255, 255];
   const hi = [0, 0, 0];
-  for (let j = j0; j <= j1; j++) {
-    for (let i = i0; i <= i1; i++) {
-      const mn = cells.min[j * cells.cols + i];
-      const mx = cells.max[j * cells.cols + i];
-      for (let c = 0; c < 3; c++) {
-        const shift = 16 - 8 * c;
-        lo[c] = Math.min(lo[c], (mn >> shift) & 255);
-        hi[c] = Math.max(hi[c], (mx >> shift) & 255);
-      }
+  let any = false;
+  const take = (mn: number, mx: number) => {
+    for (let c = 0; c < 3; c++) {
+      const shift = 16 - 8 * c;
+      lo[c] = Math.min(lo[c], (mn >> shift) & 255);
+      hi[c] = Math.max(hi[c], (mx >> shift) & 255);
     }
+    any = true;
+  };
+  if (x1 > x0 && y1 > y0) {
+    const i0 = Math.max(0, Math.floor(x0 / cs) - 1);
+    const i1 = Math.min(cells.cols - 1, Math.ceil(x1 / cs));
+    const j0 = Math.max(0, Math.floor(y0 / cs) - 1);
+    const j1 = Math.min(cells.rows - 1, Math.ceil(y1 / cs));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) take(cells.min[j * cells.cols + i], cells.max[j * cells.cols + i]);
   }
+  // Letterbox: the part of the box inside the window but outside the image shows the background colour.
+  const bx0 = Math.max(0, box.x);
+  const bx1 = Math.min(window.w, box.x + box.w);
+  const by0 = Math.max(0, box.y);
+  const by1 = Math.min(window.h, box.y + box.h);
+  if (bx1 > bx0 && by1 > by0 && (bx0 < p.x || bx1 > p.x + p.w || by0 < p.y || by1 > p.y + p.h)) take(background, background);
+  if (!any) return { lo: background, hi: background };
   return { lo: (lo[0] << 16) | (lo[1] << 8) | lo[2], hi: (hi[0] << 16) | (hi[1] << 8) | hi[2] };
 }
 
@@ -271,10 +332,11 @@ export function kioskLegibility(
   window: { w: number; h: number },
   colours: KioskColours,
   elements: readonly LegibilityElement[],
+  fit: ImageFit = {},
 ): Legibility {
   const bg = colours.background;
   const colourOf = (kind: LegibilityElement['kind']) => (kind === 'secondary' ? colours.secondary : colours.text);
-  const bounds = elements.map((e) => boxBounds(cells, window, e.box));
+  const bounds = elements.map((e) => boxBounds(cells, window, e.box, bg, fit));
   const controls = bounds.filter((_, i) => elements[i].kind === 'control');
   let dim = 0;
   if (controls.length) {

@@ -116,7 +116,7 @@ installer never calls `sudo`, so on a root-only host (a Proxmox LXC container, a
 The only prerequisite is `git`; the rest comes from apt. Two runtimes the distros don't all ship are downloaded into
 `/opt/mdmesh-runtime`, at pinned versions checked against SHA-256s:
 
-- **Node 24**, unless one is already on `PATH`. Your system Node is left alone.
+- **Node 24**, unless a Node 24 that the `mdmesh` service account can run is already on `PATH`. Your system Node is left alone.
 - **JDK 17**, unless one is found under `/usr/lib/jvm` or `/opt`, or at `JAVA17_HOME`, or apt has `openjdk-17-jdk`.
   Where apt has none (Debian 13), the installer downloads Temurin 17.
 

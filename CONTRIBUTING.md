@@ -78,7 +78,8 @@ stack.
 | **T2** | `t2-native.yml` | The [native rig](docs/DEV.md#t2-native-rig-native-install--upgrade): fresh install, upgrade, killed upgrade, on Debian 12, Debian 13 and Ubuntu 24.04 | PRs that touch the installers or the rig; nightly; by hand; before every release ([RELEASING.md](RELEASING.md)) |
 
 The exact triggers are the path filters in each workflow under `.github/workflows/` (the `paths` job in T0/T1,
-`on.pull_request.paths` in T2). In T0 and T1, a change under `.github/`, to a compose file, a lockfile or a `Dockerfile*` runs everything.
+`on.pull_request.paths` in T2). In T0 and T1, a change under `.github/`, to a compose file, a lockfile, a `package.json`, a `tsconfig*.json` or a
+file named `Dockerfile*` runs everything (`docker/*.Dockerfile` goes through each plane's own filter).
 New Kotlin must pass detekt; old findings are in `agent-android/config/detekt/baseline.xml`. A failed T1 uploads its
 logs as the `t1-e2e-logs` artifact, and a red T1 on `main` opens a tracking issue.
 
@@ -117,7 +118,8 @@ Dependabot opens grouped PRs every Monday ([`.github/dependabot.yml`](.github/de
   moves in one PR, a few months after the next even line becomes LTS.
 - **Base images float**, so rebuilds pick up patches. The edge's `caddy` image is pinned, so the Caddyfile parser only
   changes through a Dependabot PR that T0's `edge` check has passed.
-- **Vendored CI actions** (`.github/actions/ci-kit/`) change only by re-running ci-kit's `scripts/vendor.sh`.
+- **Vendored CI actions** (`.github/actions/ci-kit/`) change only by re-running `scripts/vendor.sh` in the
+  upstream ci-kit repository (see `.github/actions/ci-kit/VENDORED.txt`).
 
 ---
 

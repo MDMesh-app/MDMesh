@@ -19,8 +19,8 @@
    section with any HTML comment left. Sum up the Dependabot bumps in Under the hood. Preview it with
    `release/changelog-section.sh X.Y.Z`.
 3. **Review and CI.** The PR's code review, green CI, and the native install matrix on the release branch, all nine
-   jobs (T2; see "T2 native rig" in [docs/DEV.md](docs/DEV.md)). Pull requests run T2 only when the installers
-   change, so this is what catches a server change that breaks a native upgrade:
+   matrix jobs, 3 distros × 3 scenarios (T2; see "T2 native rig" in [docs/DEV.md](docs/DEV.md)). Pull requests run
+   T2 only when the installers change, so this is what catches a server change that breaks a native upgrade:
    `gh workflow run t2-native.yml --ref release/vX.Y.Z`
 4. **The owner's phone check** of the release branch, and the owner's go.
 5. **Squash-merge** the release PR as `vX.Y.Z (#N)`.

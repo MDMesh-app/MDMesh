@@ -58,7 +58,7 @@ APK.
 - **Device page:** tabs for remote actions, telemetry (hardware, battery, storage, network), apps, activity and
   location. The Apps tab lists the device's apps that have a launcher icon, from its latest scan, with search and a
   CSV export.
-- **Configurations:** a configuration sets up to 23 device settings, from kiosk options to Wi-Fi, factory reset and
+- **Configurations:** a configuration sets up to 25 device settings, from kiosk options to Wi-Fi, factory reset and
   Safe Mode. Devices apply it at their next check-in, and the device page shows the result for each setting. Apps
   added to a configuration install on its devices at their next check-in.
 - **Kiosk mode:** locks a device to one app or to a grid of chosen apps, in the colours the configuration sets. Safe

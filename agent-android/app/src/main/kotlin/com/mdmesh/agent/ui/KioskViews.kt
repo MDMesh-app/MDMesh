@@ -9,6 +9,7 @@ import android.graphics.drawable.InsetDrawable
 import android.graphics.drawable.LayerDrawable
 import android.graphics.drawable.RippleDrawable
 import android.graphics.drawable.StateListDrawable
+import android.text.Layout
 import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
@@ -62,6 +63,8 @@ class KioskViews(private val context: Context, val palette: KioskPalette, privat
     fun text(s: CharSequence, sizeSp: Float, color: Int, medium: Boolean = false, plate: Plate = Plate.OWN): TextView =
         TextView(context).apply {
             text = s
+            // No hyphens: line breaks then match the console's preview (Android 6 to 12 hyphenate by default).
+            hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NONE
             setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
             setTextColor(color)
             if (medium) typeface = Typeface.create(MEDIUM, Typeface.NORMAL)

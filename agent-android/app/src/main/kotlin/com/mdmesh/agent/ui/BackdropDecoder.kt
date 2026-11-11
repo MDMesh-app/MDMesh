@@ -69,12 +69,7 @@ class BackdropCells(val width: Int, val height: Int, private val mins: IntArray,
         val y = r.y
         val w = r.w
         val h = r.h
-        val scale = maxOf(windowW / width, windowH / height)
-        val cw = minOf(width.toDouble(), windowW / scale)
-        val ch = minOf(height.toDouble(), windowH / scale)
-        val cx = (width - cw) / 2
-        val cy = (height - ch) / 2
-        val k = cw / windowW
+        val (cx, cy, k) = crop(windowW, windowH)
         val i0 = maxOf(0, floor((cx + x * k) / cellSize).toInt() - 1)
         val i1 = minOf(cols - 1, ceil((cx + (x + w) * k) / cellSize).toInt())
         val j0 = maxOf(0, floor((cy + y * k) / cellSize).toInt() - 1)
@@ -82,6 +77,12 @@ class BackdropCells(val width: Int, val height: Int, private val mins: IntArray,
         var box = ColourBox.EMPTY
         for (j in j0..j1) for (i in i0..i1) box += ColourBox(mins[j * cols + i], maxs[j * cols + i])
         return box
+    }
+
+    /** Where the image sits in a [windowW] x [windowH] window ([BackdropGeometry]). */
+    fun crop(windowW: Double, windowH: Double): Triple<Double, Double, Double> {
+        val p = BackdropGeometry.place(width to height, windowW to windowH)
+        return Triple(p.left, p.top, p.perUnit)
     }
 
     /** Row [j]'s cells as (min, max). */
@@ -195,18 +196,22 @@ object BackdropDecoder {
         val opaqueFormat = bounds.outMimeType == "image/jpeg"
         val options = BitmapFactory.Options().apply {
             inSampleSize = sample
-            inPreferredConfig = if (opaqueFormat) Bitmap.Config.RGB_565 else Bitmap.Config.ARGB_8888
+            // 8 bits a channel: the legibility cells are worked out from these exact sRGB values (RGB_565 would round
+            // by more than the rule's one-level allowance). The drawn copy may be RGB_565 after that.
+            inPreferredConfig = Bitmap.Config.ARGB_8888
             inMutable = false
         }
         val sampled = BitmapFactory.decodeFile(file.path, options) ?: return null
         val upright = orientation.apply(sampled)
-        val cropped = cropTo(upright, width, height, outW / extraSample, outH / extraSample)
-        val bitmap = if (limits.lowMemory && cropped.config != Bitmap.Config.RGB_565 && !cropped.hasAlpha()) {
-            cropped.copy(Bitmap.Config.RGB_565, false)?.also { cropped.recycle() } ?: cropped
+        val full = cropTo(upright, width, height, outW / extraSample, outH / extraSample)
+        val info = infoOf(full, r.background)
+        // Drawn at 2 bytes a pixel when it has no transparency and is a JPEG, or memory is short.
+        val bitmap = if ((opaqueFormat || limits.lowMemory) && !full.hasAlpha()) {
+            full.copy(Bitmap.Config.RGB_565, false)?.also { full.recycle() } ?: full
         } else {
-            cropped
+            full
         }
-        return Decoded.Ready(bitmap, infoOf(bitmap, r.background))
+        return Decoded.Ready(bitmap, info)
     }
 
     /** The window's size, scaled down so the long edge is at most [maxEdge]. */
@@ -219,9 +224,9 @@ object BackdropDecoder {
 
     /** The part of an [iw] x [ih] image a [w] x [h] window shows with CENTER_CROP, in image pixels. */
     fun cropSize(iw: Int, ih: Int, w: Int, h: Int): Pair<Int, Int> {
-        val scale = maxOf(w / iw.toFloat(), h / ih.toFloat())
-        val cw = minOf(iw, (w / scale).roundToInt()).coerceAtLeast(1)
-        val ch = minOf(ih, (h / scale).roundToInt()).coerceAtLeast(1)
+        val p = BackdropGeometry.place(iw to ih, w.toDouble() to h.toDouble())
+        val cw = minOf(iw, (w * p.perUnit).roundToInt()).coerceAtLeast(1)
+        val ch = minOf(ih, (h * p.perUnit).roundToInt()).coerceAtLeast(1)
         return cw to ch
     }
 
@@ -235,8 +240,11 @@ object BackdropDecoder {
     /** The centre of [src] with the window's aspect, scaled to [outW] x [outH]; [src] is recycled if replaced. */
     private fun cropTo(src: Bitmap, w: Int, h: Int, outW: Int, outH: Int): Bitmap {
         val (cw, ch) = cropSize(src.width, src.height, w, h)
+        val at = BackdropGeometry.place(src.width to src.height, w.toDouble() to h.toDouble())
+        val left = at.left.roundToInt().coerceIn(0, src.width - cw)
+        val top = at.top.roundToInt().coerceIn(0, src.height - ch)
         val m = Matrix().apply { setScale(maxOf(1, outW) / cw.toFloat(), maxOf(1, outH) / ch.toFloat()) }
-        val out = Bitmap.createBitmap(src, (src.width - cw) / 2, (src.height - ch) / 2, cw, ch, m, true)
+        val out = Bitmap.createBitmap(src, left, top, cw, ch, m, true)
         if (out !== src) src.recycle()
         return out
     }

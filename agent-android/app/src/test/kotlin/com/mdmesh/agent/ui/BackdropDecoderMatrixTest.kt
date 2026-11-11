@@ -85,6 +85,20 @@ open class BackdropDecoderMatrixTest {
         assertEquals("transparency kept", Bitmap.Config.ARGB_8888, alpha.bitmap.config)
     }
 
+    @Test fun cellsComeFromEightBitColoursEvenWhenDrawnAt565() {
+        val odd = Color.rgb(0x13, 0x57, 0x9B) // 565 would round every channel
+        val src = Bitmap.createBitmap(64, 32, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(odd)
+            setHasAlpha(false) // an opaque PNG
+        }
+        val file = File(app.cacheDir, "fixture-odd.png")
+        file.outputStream().use { src.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        val d = decode(file, w = 64, h = 32, limits = DecodeLimits.LOW_MEMORY) as Decoded.Ready
+        assertEquals("drawn at 2 bytes a pixel", Bitmap.Config.RGB_565, d.bitmap.config)
+        val all = d.info.cells.bounds(64.0, 32.0, BackdropCells.Region(0.0, 0.0, 64.0, 32.0))
+        assertEquals(ColourBox(odd, odd), all)
+    }
+
     @Test fun exifOrientationIsApplied() {
         // Stored 96 x 64 landscape, shown upright 64 x 96: a portrait window's crop takes all of it.
         val d = decode(fixture("rotated.jpg"), w = 64, h = 96) as Decoded.Ready

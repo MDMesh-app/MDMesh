@@ -131,6 +131,9 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
             if (configuration.getApplicationSettings() != null && !configuration.getApplicationSettings().isEmpty()) {
                 this.mapper.insertConfigurationApplicationSettings(configuration.getId(), configuration.getApplicationSettings());
             }
+            if (configuration.getManagedAppPermissions() != null && !configuration.getManagedAppPermissions().isEmpty()) {
+                this.mapper.insertManagedAppPermissions(configuration.getId(), configuration.getManagedAppPermissions());
+            }
             if (configuration.getApplicationUsageParameters() != null && !configuration.getApplicationUsageParameters().isEmpty()) {
                 this.mapper.saveConfigurationApplicationUsageParameters(configuration.getId(), configuration.getApplicationUsageParameters());
             }
@@ -167,6 +170,12 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
                         this.mapper.removeConfigurationApplicationSettingsById(configuration.getId());
                         if (!configuration.getApplicationSettings().isEmpty()) {
                             this.mapper.insertConfigurationApplicationSettings(configuration.getId(), configuration.getApplicationSettings());
+                        }
+                    }
+                    if (configuration.getManagedAppPermissions() != null) {
+                        this.mapper.removeManagedAppPermissions(configuration.getId());
+                        if (!configuration.getManagedAppPermissions().isEmpty()) {
+                            this.mapper.insertManagedAppPermissions(configuration.getId(), configuration.getManagedAppPermissions());
                         }
                     }
                     if (configuration.getApplicationUsageParameters() != null && !configuration.getApplicationUsageParameters().isEmpty()) {
@@ -266,6 +275,7 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
         if (configuration != null) {
             final List<ApplicationSetting> appSettings = this.applicationSettingDAO.getApplicationSettingsByConfigurationId(id);
             configuration.setApplicationSettings(appSettings);
+            configuration.setManagedAppPermissions(this.mapper.getManagedAppPermissions(id));
 
             final List<ConfigurationApplicationParameters> applicationParameters = this.mapper.getApplicationParameters(id);
             configuration.setApplicationUsageParameters(applicationParameters);

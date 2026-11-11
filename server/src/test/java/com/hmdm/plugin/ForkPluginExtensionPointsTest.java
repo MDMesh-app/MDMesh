@@ -18,6 +18,7 @@ import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.Application;
 import com.hmdm.persistence.domain.Configuration;
 import com.hmdm.persistence.domain.Device;
+import com.hmdm.persistence.domain.ManagedAppPermission;
 import com.hmdm.plugin.persistence.domain.DisabledPlugin;
 import com.hmdm.plugin.persistence.domain.Plugin;
 import com.hmdm.plugin.persistence.mapper.PluginMapper;
@@ -98,6 +99,7 @@ public class ForkPluginExtensionPointsTest {
 
         @Override public Configuration getConfigurationById(Integer id) { return configuration; }
         @Override public List<Application> getPlainConfigurationAppsOptimized(Integer id) { return new ArrayList<>(); }
+        @Override public List<ManagedAppPermission> getManagedAppPermissions(Integer id) { return Collections.emptyList(); }
     }
 
     private static Configuration configuration(int customerId, String extensions) throws Exception {
@@ -152,6 +154,7 @@ public class ForkPluginExtensionPointsTest {
     }
 
     private static String coreRevision(Configuration c) {
+        c.setManagedAppPermissions(Collections.<ManagedAppPermission>emptyList());
         return DesiredConfigBuilder.build(c, new ArrayList<Application>(), Collections.<DesiredConfigContributor>emptyList())
                 .getRevision();
     }

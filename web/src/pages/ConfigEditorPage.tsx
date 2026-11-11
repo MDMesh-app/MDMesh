@@ -36,6 +36,7 @@ import {
   locationServicesAction,
 } from '../data/configurationRules';
 import { kioskAffectingChanges } from '../data/kioskChanges';
+import { manageableAppPermissions, managedAppPermissionLabel } from '../data/managedAppPermissions';
 import {
   Badge,
   Breadcrumb,
@@ -310,6 +311,15 @@ function appsSignature(c: Configuration): string {
     .join(',');
 }
 
+/** Order-free: setting a permission back to what it was is no change, wherever the rule moved in the list. */
+function appPermissionsSignature(c: Configuration): string {
+  const rules = Array.isArray(c.managedAppPermissions) ? (c.managedAppPermissions as Array<Record<string, unknown>>) : [];
+  return rules
+    .map((r) => `${String(r?.applicationId)} ${String(r?.permission)} ${String(r?.state)}`)
+    .sort()
+    .join(',');
+}
+
 function changedKeys(before: Configuration, after: Configuration): Set<string> {
   const out = new Set<string>();
   for (const f of CONFIG_FIELDS) if (norm(before[f.key]) !== norm(after[f.key])) out.add(f.key);
@@ -318,6 +328,7 @@ function changedKeys(before: Configuration, after: Configuration): Set<string> {
   if (norm(before.backgroundImageFileId) !== norm(after.backgroundImageFileId)
     || norm(after.backgroundImageAction) !== null) out.add('backgroundImageFileId');
   if (appsSignature(before) !== appsSignature(after)) out.add('applications');
+  if (appPermissionsSignature(before) !== appPermissionsSignature(after)) out.add('managedAppPermissions');
   return out;
 }
 
@@ -491,10 +502,16 @@ function Editor({
       const assigned = (d.applications as ConfigApp[] | undefined) ?? [];
       const target = assigned.find((a) => a.id === id);
       const applications = next(assigned);
+      // Permission rules are valid only for applications this configuration installs. Drop them at the same time as
+      // the application assignment/action changes, rather than leaving an invisible rule for the server to reject.
+      const installed = new Set(applications.filter((app) => (app.action ?? 1) === 1).map((app) => app.id));
+      const managedAppPermissions = Array.isArray(d.managedAppPermissions)
+        ? d.managedAppPermissions.filter((rule) => !!rule && typeof rule === 'object' && installed.has(Number((rule as Record<string, unknown>).applicationId)))
+        : d.managedAppPermissions;
       const after = applications.find((a) => a.id === id);
       const stillMain = after != null && (after.action ?? 1) === 1 && after.showIcon !== false;
       const mainAppId = !stillMain && target?.usedVersionId != null && target.usedVersionId === d.mainAppId ? null : d.mainAppId;
-      return { ...d, applications, mainAppId };
+      return { ...d, applications, managedAppPermissions, mainAppId };
     });
   }
   const removeApp = (id: number) => updateApps(id, (list) => list.filter((a) => a.id !== id));
@@ -503,6 +520,15 @@ function Editor({
   // A hidden app cannot remain the kiosk's pinned main app: updateApps clears the stale selection.
   const setAppKioskVisibility = (id: number, showIcon: boolean) =>
     updateApps(id, (list) => list.map((a) => (a.id === id ? { ...a, showIcon } : a)));
+  const setAppPermission = (applicationId: number, permission: string, state: string) => setDraft((d) => {
+    const rules = Array.isArray(d.managedAppPermissions) ? d.managedAppPermissions as Array<Record<string, unknown>> : [];
+    const without = rules.filter((r) => !(r.applicationId === applicationId && r.permission === permission));
+    return { ...d, managedAppPermissions: state === 'default' ? without : [...without, { applicationId, permission, state }] };
+  });
+  const appPermissionState = (applicationId: number, permission: string): string => {
+    const rules = Array.isArray(draft.managedAppPermissions) ? draft.managedAppPermissions as Array<Record<string, unknown>> : [];
+    return String(rules.find((r) => r.applicationId === applicationId && r.permission === permission)?.state ?? 'default');
+  };
 
   function requestSave() {
     if (backgroundUploading) {
@@ -889,6 +915,29 @@ function Editor({
           onKioskVisibility={setAppKioskVisibility}
           onRemove={removeApp}
           resetKey={discards}
+          renderAppDetails={(app) => {
+            if ((app.action ?? 1) !== 1) return null;
+            const configured = (Array.isArray(draft.managedAppPermissions) ? draft.managedAppPermissions : [])
+              .filter((rule): rule is Record<string, unknown> => !!rule && typeof rule === 'object')
+              .filter((rule) => rule.applicationId === app.id && typeof rule.permission === 'string')
+              .map((rule) => String(rule.permission));
+            const permissions = manageableAppPermissions(app.requestedPermissions, configured);
+            if (permissions.length === 0) return null;
+            return (
+              <details className="v2-cfged-permission-app">
+                <summary>Permissions · {permissions.length} available</summary>
+                <p>APK candidates only. Each device applies what its Android version and installed app support. Default removes MDMesh’s explicit override.</p>
+                {permissions.map((permission) => (
+                  <label className="v2-cfged-permission-app__row" key={permission}>
+                    <span>{managedAppPermissionLabel(permission)}</span>
+                    <select value={appPermissionState(app.id, permission)} disabled={readOnly} onChange={(e) => setAppPermission(app.id, permission, e.target.value)}>
+                      <option value="default">Default</option><option value="grant">Grant</option><option value="deny">Deny</option>
+                    </select>
+                  </label>
+                ))}
+              </details>
+            );
+          }}
         />
         <p className="v2-cfged-apps__note">
           “Do not install” keeps an app listed without installing it. “Remove” takes the app out of this configuration;

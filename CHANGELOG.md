@@ -11,7 +11,8 @@ line under Unreleased.
 Upgrading
 - The database adds columns on start: `devices.wipedAt`; `configurations.camera`, `configurations.locationServices`,
   `configurations.backgroundImageFileId` and `configurations.backgroundImageSha256`; `device_state.kioskGeneration` and
-  `device_state.kioskReturnGeneration`. Devices wiped before the update aren't marked.
+  `device_state.kioskReturnGeneration`; `applicationVersions.requestedPermissions`; and the
+  `configurationAppPermissions` table. Devices wiped before the update aren't marked.
 - The database adds three columns to enrollment tokens on start (`maxUses`, `useCount`, `revokedAt`) and stores
   the tokens hashed. Existing codes stay single-use and keep working; on PostgreSQL older than 11 they stop
   instead, so make a new code on the Enroll page. After a downgrade, codes made on this version don't work.
@@ -38,6 +39,10 @@ New
   PNG, JPEG or WebP image, at most 10 MB and 16 megapixels. Devices download it only over HTTPS (with an `http://`
   server address they keep the background color), check it by its SHA-256, and keep the color if it can't be shown.
   Needs agent 0.5.0 (thanks @letternumber).
+- Configurations can Grant or Deny an app's runtime permissions (camera, location, microphone, contacts, SMS and
+  more), under each installed app in the editor; Default removes MDMesh's override. The choices come from the APK
+  uploaded to the server. Needs agent 0.5.0 on a Device Owner device: a device on an older agent applies the rest of
+  the configuration and shows as out of sync while the configuration has a rule (thanks @letternumber).
 - Settings → Users & roles: create, edit and delete console accounts, choose the devices and configurations each
   can reach, and edit roles and their permissions (thanks @lared3294).
 - A wiped device shows as **Wiped** instead of Online and then Offline, and is left out of the counts, Needs attention

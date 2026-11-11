@@ -78,6 +78,9 @@ public class ApplicationVersion implements Serializable {
     @ApiModelProperty(hidden = true)
     private String arch;
 
+    /** Comma-separated APK-manifest permissions. Null means the server has no local APK inventory for this version. */
+    private String requestedPermissions;
+
     /**
      * <p>A path to uploaded file to link this application to when adding an application.</p>
      */
@@ -109,6 +112,7 @@ public class ApplicationVersion implements Serializable {
         }
         this.parts = application.getParts();
         this.apkHash = InstallIntegrity.toApkHash(application.getSha256());
+        this.requestedPermissions = application.getRequestedPermissions();
     }
 
     public Integer getId() {
@@ -237,6 +241,14 @@ public class ApplicationVersion implements Serializable {
 
     public void setArch(String arch) {
         this.arch = arch;
+    }
+
+    public String getRequestedPermissions() {
+        return requestedPermissions;
+    }
+
+    public void setRequestedPermissions(String requestedPermissions) {
+        this.requestedPermissions = requestedPermissions;
     }
 
     @Override

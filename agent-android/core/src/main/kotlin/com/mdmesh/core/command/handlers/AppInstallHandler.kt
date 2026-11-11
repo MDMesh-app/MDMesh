@@ -18,9 +18,14 @@ import kotlinx.serialization.Serializable
  * A hex `sha256` that is present is always verified; it is required only while the server says it sends one with
  * every install ([com.mdmesh.core.install.InstallIntegrityPolicy]). Version gating, downgrade-blocking and the
  * install itself are delegated to [InstallManager].
+ *
+ * @param afterInstall called with the package after a successful install or update, before the result is reported:
+ *   the configuration's permission rules for it are applied then (ConfigApplier.applyAfterInstall). Its failure never
+ *   fails the install.
  */
 class AppInstallHandler(
     private val installManager: InstallManager,
+    private val afterInstall: suspend (packageName: String) -> Unit = {},
 ) : CommandHandler {
 
     override val type: String = "app.install"
@@ -62,7 +67,12 @@ class AppInstallHandler(
             ),
         )
         return when (outcome) {
-            InstallOutcome.Success -> CommandResults.done(command)
+            InstallOutcome.Success -> {
+                // The install succeeded whatever the follow-up does; the server's re-send applies the rules later.
+                runCatching { afterInstall(p.packageName) }
+                    .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }
+                CommandResults.done(command)
+            }
             is InstallOutcome.Skipped -> CommandResults.done(command, "skipped: ${outcome.reason}")
             is InstallOutcome.Failure -> CommandResults.failed(command, outcome.reason)
         }

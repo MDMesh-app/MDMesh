@@ -3140,4 +3140,23 @@
             ALTER TABLE configurations DROP COLUMN backgroundImageFileId;</rollback>
     </changeSet>
 
+    <changeSet id="26.11.09-configurationAppPermissions" author="letter-number" context="common">
+        <comment>Configuration-owned explicit runtime permission overrides. Absence is Default; the modern agent
+            releases a prior override when its configuration's desired document no longer lists it.</comment>
+        <sql>CREATE TABLE configurationAppPermissions (
+            configurationId INTEGER NOT NULL REFERENCES configurations(id) ON DELETE CASCADE,
+            applicationId INTEGER NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+            permission TEXT NOT NULL,
+            state VARCHAR(8) NOT NULL CHECK (state IN ('grant', 'deny')),
+            PRIMARY KEY (configurationId, applicationId, permission));</sql>
+        <rollback>DROP TABLE configurationAppPermissions;</rollback>
+    </changeSet>
+
+    <changeSet id="26.11.10-applicationVersions-requestedPermissions" author="letter-number" context="common">
+        <comment>APK manifest permissions cached per application version. NULL means the server has no local APK to
+            inspect; an empty string means the APK declared no Android permissions relevant to runtime controls.</comment>
+        <sql>ALTER TABLE applicationVersions ADD COLUMN requestedPermissions TEXT;</sql>
+        <rollback>ALTER TABLE applicationVersions DROP COLUMN requestedPermissions;</rollback>
+    </changeSet>
+
 </databaseChangeLog>

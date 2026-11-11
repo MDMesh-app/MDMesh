@@ -117,6 +117,9 @@ public class AgentDeviceAccessTest {
                 c.setCustomerId(CUSTOMER);
                 return c;
             }
+            @Override public List<com.hmdm.persistence.domain.ManagedAppPermission> getManagedAppPermissions(Integer id) {
+                return Collections.emptyList();
+            }
             @Override public List<Application> getPlainConfigurationAppsOptimized(Integer id) { return new ArrayList<>(); }
         };
         AgentCommandDAO commandDAO = new AgentCommandDAO(null, null, null, null) {
@@ -150,7 +153,12 @@ public class AgentDeviceAccessTest {
             @Override public int enqueueConfigApps(Device d) { sideEffects.add("syncApps " + d.getNumber()); return 1; }
         };
         ConfigReconciler reconciler = new ConfigReconciler(unsecureDAO, commandDAO, Fakes.noExtensionPoints()) {
-            @Override public String currentRevision(Device d) { revisionReads++; return "rev"; }
+            @Override public com.hmdm.rest.json.agent.DesiredConfig statusDocument(Device d) {
+                revisionReads++;
+                com.hmdm.rest.json.agent.DesiredConfig doc = new com.hmdm.rest.json.agent.DesiredConfig();
+                doc.setRevision("rev");
+                return doc;
+            }
         };
 
         RolloutDAO rolloutDAO = new RolloutDAO(null) {

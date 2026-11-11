@@ -241,6 +241,9 @@ public class Configuration implements CustomerData, Serializable {
     @ApiModelProperty("A list of settings for applications set for configuration")
     private List<ApplicationSetting> applicationSettings;
 
+    /** Explicit managed runtime permissions. Null on an update preserves rules for older console clients. */
+    private List<ManagedAppPermission> managedAppPermissions;
+
     @ApiModelProperty("A list of files to be used on devices")
     private List<ConfigurationFile> files;
 
@@ -722,6 +725,9 @@ public class Configuration implements CustomerData, Serializable {
         this.applicationSettings = applicationSettings;
     }
 
+    public List<ManagedAppPermission> getManagedAppPermissions() { return managedAppPermissions; }
+    public void setManagedAppPermissions(List<ManagedAppPermission> managedAppPermissions) { this.managedAppPermissions = managedAppPermissions; }
+
     public List<ConfigurationApplicationParameters> getApplicationUsageParameters() {
         return applicationUsageParameters;
     }
@@ -1024,6 +1030,9 @@ public class Configuration implements CustomerData, Serializable {
         copy.setName(getName());
         copy.setApplications(getApplications());
         copy.setApplicationSettings(getApplicationSettings());
+        // Same applications, so the same app ids: a copy keeps the app permission rules.
+        copy.setManagedAppPermissions(getManagedAppPermissions() == null ? null
+                : new java.util.ArrayList<ManagedAppPermission>(getManagedAppPermissions()));
         copy.setApplicationUsageParameters(getApplicationUsageParameters());
         copy.setFiles(getFiles());
         copy.setPassword(getPassword());

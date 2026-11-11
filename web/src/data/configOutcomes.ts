@@ -39,6 +39,12 @@ function words(key: string): string {
  * `policies.x.netaccess.blockTethering` → "netaccess: block tethering".
  */
 export function outcomeKeyLabel(key: string): string {
+  if (key.startsWith('appPermissions.')) {
+    const rest = key.slice('appPermissions.'.length);
+    const split = rest.indexOf('.android.permission.');
+    if (split > 0) return `${rest.slice(0, split)}: ${words(rest.slice(split + '.android.permission.'.length)).toLowerCase()}`;
+    return `App permission: ${rest}`;
+  }
   const k = key.startsWith('policies.') ? key.slice('policies.'.length) : key;
   if (k === 'kiosk') return 'Kiosk mode';
   if (k === 'location') return 'Location reporting';
@@ -89,6 +95,7 @@ export function classifyOutcome(key: string, raw: string): Outcome {
   };
   if (raw === 'applied') return { key, label, kind: 'applied', text: 'Applied' };
   if (raw === 'unsupported') return { key, label, kind: 'unsupported', text: 'Not supported' };
+  if (raw === 'not-requested') return { key, label, kind: 'unsupported', text: 'Not requested by this app' };
   if (raw.startsWith('deferred')) return { key, label, kind: 'deferred', text: 'Deferred', reason: reasonOf('deferred') };
   if (raw.startsWith('failed')) return { key, label, kind: 'failed', text: 'Failed', reason: reasonOf('failed') };
   return { key, label, kind: 'failed', text: raw };

@@ -72,6 +72,8 @@ import com.mdmesh.oem.GenericOemAdapter
 import com.mdmesh.oem.KnoxAdapter
 import com.mdmesh.oem.OemAdapter
 import com.mdmesh.policy.CapabilityRegistry
+import com.mdmesh.policy.AppRuntimePermissions
+import com.mdmesh.policy.DeviceOwnerAppRuntimePermissions
 import com.mdmesh.policy.wifi.AndroidWifiRadio
 import com.mdmesh.policy.wifi.DpmHandle
 import com.mdmesh.policy.wifi.SharedPrefsWifiRadioOffState
@@ -236,8 +238,8 @@ object AgentModule {
 
     @Provides
     @IntoSet
-    fun provideAppInstallHandler(installManager: InstallManager): CommandHandler =
-        AppInstallHandler(installManager)
+    fun provideAppInstallHandler(installManager: InstallManager, applier: ConfigApplier): CommandHandler =
+        AppInstallHandler(installManager) { pkg -> applier.applyAfterInstall(pkg) }
 
     @Provides
     @IntoSet
@@ -351,13 +353,21 @@ object AgentModule {
 
     @Provides
     @Singleton
+    @Suppress("LongParameterList") // Hilt's explicit configuration-section bindings make this wiring auditable.
     fun provideConfigApplier(
         registry: CapabilityRegistry,
         kiosk: KioskApplier,
         location: LocationModeStore,
         store: ConfigStateStore,
         power: PowerModeStore,
-    ): ConfigApplier = ConfigApplier(registry::togglePolicies, kiosk, location::set, store, setPowerMode = power::set)
+        appPermissions: AppRuntimePermissions,
+    ): ConfigApplier = ConfigApplier(registry::togglePolicies, kiosk, location::set, store,
+        setPowerMode = power::set, appPermissions = appPermissions)
+
+    @Provides
+    @Singleton
+    fun provideAppRuntimePermissions(@ApplicationContext context: Context, handle: DpmHandle): AppRuntimePermissions =
+        DeviceOwnerAppRuntimePermissions(context, handle)
 
     @Provides
     @IntoSet

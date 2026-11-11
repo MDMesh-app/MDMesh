@@ -45,7 +45,14 @@ object Heartbeat {
             try {
                 if (withTimeoutOrNull(DEADLINE_MS) { job.join() } == null) {
                     onLate()
-                    release = keepAwake(WAKELOCK_TIMEOUT_MS) // before finish(): no gap without a wakelock
+                    // Before finish(): no gap without a wakelock. A failure to take one is reported, never thrown
+                    // into the agent's scope (it would end the process).
+                    release = try {
+                        keepAwake(WAKELOCK_TIMEOUT_MS)
+                    } catch (e: Exception) {
+                        onError(e)
+                        null
+                    }
                 }
             } finally {
                 finish()
@@ -55,10 +62,13 @@ object Heartbeat {
         return job
     }
 
-    /** The heartbeat's work: the Wi-Fi self-heal, then a check-in unless one is already running. */
+    /**
+     * The heartbeat's work: the Wi-Fi self-heal, then a check-in. If one is already running it hands the request to
+     * it and waits for the trailing check-in that serves it, so that check-in also runs under the heartbeat's wakelock.
+     */
     suspend fun checkIn(coordinator: CheckInCoordinator, log: (String) -> Unit, selfHeal: suspend () -> Unit) {
         selfHeal()
         // Never queue behind a running cycle (an install holds it for minutes): it checks in once more when it ends.
-        if (!coordinator.runIfIdle()) log("check-in already running; heartbeat check-in skipped")
+        if (!coordinator.runOrHandOff()) log("check-in already running; handed to it")
     }
 }

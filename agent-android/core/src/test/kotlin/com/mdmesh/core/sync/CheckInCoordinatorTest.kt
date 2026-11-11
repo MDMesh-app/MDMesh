@@ -12,6 +12,8 @@ import com.mdmesh.core.net.ResponseEnvelope
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
@@ -42,7 +44,7 @@ class CheckInCoordinatorTest {
     }
 
     /** Runs until its gate opens, like an install waiting on the platform. */
-    private class GateHandler(val gate: CompletableDeferred<Unit> = CompletableDeferred()) : CommandHandler {
+    private class GateHandler(@Volatile var gate: CompletableDeferred<Unit> = CompletableDeferred()) : CommandHandler {
         override val type: String = "test.gate"
         override suspend fun handle(command: CommandEnvelope): CommandResult {
             gate.await()
@@ -51,7 +53,7 @@ class CheckInCoordinatorTest {
     }
 
     /** Remembers the thread its command ran on. */
-    private class ThreadProbeHandler : CommandHandler {
+    private open class ThreadProbeHandler : CommandHandler {
         override val type: String = "test.thread"
         @Volatile var ranOn: Thread? = null
         override suspend fun handle(command: CommandEnvelope): CommandResult {
@@ -156,6 +158,7 @@ class CheckInCoordinatorTest {
         override fun put(vararg changes: Pair<String, String?>) {
             for ((key, value) in changes) if (value == null) values.remove(key) else values[key] = value
         }
+        override fun flush() {}
     }
 
     @Test
@@ -236,23 +239,7 @@ class CheckInCoordinatorTest {
     }
 
     @Test
-    fun `runIfIdle skips while a cycle is in flight`() = runTest {
-        val api = FakeMdmApi().apply { checkInGate = CompletableDeferred() }
-        val coordinator = coordinator(api, PendingResults())
-
-        val first = launch { coordinator.runOnce() }
-        testScheduler.advanceUntilIdle()
-        assertFalse("must not queue behind the running cycle", coordinator.runIfIdle())
-        assertEquals(1, api.checkInRequests.size)
-
-        api.checkInGate!!.complete(Unit)
-        first.join() // plus the one trailing check-in the skipped call asked for
-        assertTrue(coordinator.runIfIdle())
-        assertEquals(3, api.checkInRequests.size)
-    }
-
-    @Test
-    fun `a skipped runIfIdle makes the running cycle check in once more, with its results`() = runTest {
+    fun `a turned-away request is handed to the running cycle and returns once served`() = runTest {
         val gate = GateHandler()
         val api = FakeMdmApi().apply {
             checkInResponse = ResponseEnvelope(
@@ -262,19 +249,98 @@ class CheckInCoordinatorTest {
         }
         val coordinator = coordinator(api, PendingResults(), gate = gate)
 
-        val first = launch { coordinator.runOnce() } // an install is running in it
+        val running = launch { coordinator.runOnce() } // an install is running in it
         testScheduler.advanceUntilIdle()
-        repeat(3) { assertFalse(coordinator.runIfIdle()) } // heartbeats while it runs
+        val heartbeats = (1..3).map { async { coordinator.runOrHandOff() } }
+        testScheduler.advanceUntilIdle()
+        assertEquals("no cycle of their own while one runs", 1, api.checkInRequests.size)
+        assertTrue("they wait to be served", heartbeats.none { it.isCompleted })
+
         api.checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse())
         gate.gate.complete(Unit)
-        first.join()
-
-        assertEquals("one trailing check-in, however many were skipped", 2, api.checkInRequests.size)
-        assertEquals(listOf("c1"), api.checkInRequests.last().results.map { it.commandId })
+        running.join()
+        assertEquals(listOf(false, false, false), heartbeats.awaitAll())
+        assertEquals("one trailing check-in serves them all", 2, api.checkInRequests.size)
+        assertEquals("it carries the install's result", listOf("c1"),
+            api.checkInRequests.last().results.map { it.commandId })
     }
 
     @Test
-    fun `without a skipped runIfIdle there is no extra check-in`() = runTest {
+    fun `an idle coordinator runs the request itself`() = runTest {
+        val api = FakeMdmApi()
+        assertTrue(coordinator(api, PendingResults()).runOrHandOff())
+        assertEquals(1, api.checkInRequests.size)
+    }
+
+    @Test
+    fun `a request turned away during the trailing cycle gets one more`() = runTest {
+        val gate = GateHandler()
+        val api = FakeMdmApi().apply {
+            checkInResponse = ResponseEnvelope(
+                status = "OK",
+                data = AgentCheckInResponse(commands = listOf(command("c1").copy(type = "test.gate"))),
+            )
+        }
+        val coordinator = coordinator(api, PendingResults(), gate = gate)
+        val running = launch { coordinator.runOnce() }
+        testScheduler.advanceUntilIdle()
+        val first = async { coordinator.runOrHandOff() }
+        testScheduler.advanceUntilIdle()
+
+        api.checkInResponse = ResponseEnvelope(
+            status = "OK",
+            data = AgentCheckInResponse(commands = listOf(command("c2").copy(type = "test.gate"))),
+        )
+        val firstGate = gate.gate
+        gate.gate = CompletableDeferred()
+        firstGate.complete(Unit) // the trailing cycle starts, and gets a second install
+        testScheduler.advanceUntilIdle()
+        val second = async { coordinator.runOrHandOff() }
+        testScheduler.advanceUntilIdle()
+
+        api.checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse())
+        gate.gate.complete(Unit)
+        running.join()
+        assertEquals(listOf(false, false), listOf(first.await(), second.await()))
+        assertEquals(3, api.checkInRequests.size)
+        assertEquals(listOf("c2"), api.checkInRequests.last().results.map { it.commandId })
+    }
+
+    @Test
+    fun `trailing cycles are bounded`() = runTest {
+        // Every cycle gets a command, and every command brings another request: the holder still lets go.
+        lateinit var coordinator: CheckInCoordinator
+        val waiters = mutableListOf<kotlinx.coroutines.Deferred<Boolean>>()
+        val api = FakeMdmApi().apply {
+            checkInResponse = ResponseEnvelope(
+                status = "OK",
+                data = AgentCheckInResponse(commands = listOf(command("c").copy(type = "test.thread"))),
+            )
+        }
+        val probe = object : ThreadProbeHandler() {
+            var next = 0
+            override suspend fun handle(command: CommandEnvelope): CommandResult {
+                // A new command id each time: the dispatcher never runs the same command twice.
+                api.checkInResponse = ResponseEnvelope(
+                    status = "OK",
+                    data = AgentCheckInResponse(commands = listOf(command("c${++next}").copy(type = "test.thread"))),
+                )
+                waiters += async { coordinator.runOrHandOff() }
+                repeat(5) { kotlinx.coroutines.yield() } // let it start, switch dispatchers and be turned away
+                return CommandResults.done(command)
+            }
+        }
+        coordinator = coordinator(api, PendingResults(), probe = probe)
+        coordinator.runOnce()
+        testScheduler.advanceUntilIdle()
+
+        assertEquals("one cycle plus at most three trailing", 1 + CheckInCoordinator.MAX_TRAILING_CYCLES,
+            api.checkInRequests.size)
+        assertTrue("every waiter returned", waiters.all { it.isCompleted })
+    }
+
+    @Test
+    fun `without a turned-away request there is no extra check-in`() = runTest {
         val api = FakeMdmApi()
         val coordinator = coordinator(api, PendingResults())
         coordinator.runOnce()

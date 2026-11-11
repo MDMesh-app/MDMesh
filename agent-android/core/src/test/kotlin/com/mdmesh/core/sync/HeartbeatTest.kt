@@ -99,7 +99,22 @@ class HeartbeatTest {
     }
 
     @Test
-    fun `the heartbeat check-in never waits behind a running one`() = runTest {
+    fun `a wakelock that can't be taken is reported, and the broadcast is still released`() {
+        val failing = Heartbeat.launch(
+            scope = scope,
+            onError = { error = it },
+            onLate = { late = true },
+            finish = { finishes++ },
+            keepAwake = { throw SecurityException("no WAKE_LOCK") },
+        ) { delay(5 * 60_000L) }
+        scope.advanceUntilIdle()
+        assertEquals(1, finishes)
+        assertEquals("no WAKE_LOCK", error?.message)
+        assertTrue(failing.isCompleted)
+    }
+
+    @Test
+    fun `the heartbeat hands its check-in to a running one and waits for it`() = runTest {
         val api = FakeMdmApi().apply { checkInGate = CompletableDeferred() }
         val identity = FakeIdentity(initialId = "dev-1", initialSecret = "sek-1")
         val coordinator = CheckInCoordinator(
@@ -122,11 +137,14 @@ class HeartbeatTest {
         var healed = false
         val heartbeat = launch { Heartbeat.checkIn(coordinator, { logs += it }) { healed = true } }
         advanceUntilIdle()
-
-        assertTrue("returned at once instead of queueing", heartbeat.isCompleted)
         assertTrue(healed)
-        assertEquals(listOf("check-in already running; heartbeat check-in skipped"), logs)
+        assertEquals("no cycle of its own", 1, api.checkInRequests.size)
+        assertFalse("waits (under the heartbeat's wakelock) for the check-in that serves it", heartbeat.isCompleted)
+
         api.checkInGate!!.complete(Unit)
         running.join()
+        heartbeat.join()
+        assertEquals(2, api.checkInRequests.size)
+        assertEquals(listOf("check-in already running; handed to it"), logs)
     }
 }

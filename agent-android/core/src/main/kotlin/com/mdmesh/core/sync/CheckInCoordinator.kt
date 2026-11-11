@@ -12,8 +12,10 @@ import com.mdmesh.core.telemetry.TelemetrySource
 import com.mdmesh.proto.AgentCheckInRequest
 import com.mdmesh.proto.EventType
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -61,42 +63,81 @@ class CheckInCoordinator @Inject constructor(
 
     private val mutex = Mutex()
 
-    /** A [runIfIdle] found the lock busy: the holder runs one more cycle before releasing it. */
-    @Volatile private var rerunRequested = false
+    // Hand-offs, guarded by handOffLock. While a holder is open, a runOrHandOff() that finds the lock busy leaves a
+    // request instead of waiting for the lock; the holder serves it with one more cycle before it lets go.
+    private val handOffLock = Any()
+    private var holderOpen = false
+    private var handOff: CompletableDeferred<Unit>? = null
 
     suspend fun runOnce(): Unit = withContext(ioDispatcher) {
-        mutex.withLock { cycles() }
+        mutex.withLock { holderCycles() }
     }
 
     /**
-     * Like [runOnce], unless a cycle is already in flight: then it returns false at once instead of waiting, and the
-     * running cycle checks in once more when it ends. For the heartbeat, which must not queue behind a long cycle (an
-     * install holds it for minutes), yet the install's result should still reach the server right after it.
+     * A check-in without queueing behind one already running. Idle: runs the cycle itself and returns true. Busy:
+     * hands the request to the running cycle, which checks in once more when it ends, and returns false once that
+     * trailing check-in is done. For the heartbeat: a long cycle (an install holds it for minutes) must not hold its
+     * broadcast, yet the install's result should reach the server right after it, under the heartbeat's wakelock.
      */
-    suspend fun runIfIdle(): Boolean = withContext(ioDispatcher) {
-        if (!mutex.tryLock()) {
-            rerunRequested = true
-            return@withContext false
+    suspend fun runOrHandOff(): Boolean = withContext(ioDispatcher) {
+        var ranItself: Boolean? = null
+        while (ranItself == null) {
+            if (mutex.tryLock()) {
+                try {
+                    holderCycles()
+                } finally {
+                    mutex.unlock()
+                }
+                ranItself = true
+                continue
+            }
+            val served = synchronized(handOffLock) {
+                if (holderOpen) handOff ?: CompletableDeferred<Unit>().also { handOff = it } else null
+            }
+            if (served != null) {
+                served.await()
+                ranItself = false
+            } else {
+                delay(HAND_OFF_RETRY_MS) // the holder is just opening or just letting go: look again in a moment
+            }
         }
+        ranItself == true
+    }
+
+    /**
+     * Caller holds the lock. One cycle, then one trailing cycle per batch of hand-offs that arrived meanwhile (several
+     * requests share one), at most [MAX_TRAILING_CYCLES]; requests past that are let go unserved, as are the waiters
+     * of a cycle that failed or was cancelled. The next trigger covers them.
+     */
+    private suspend fun holderCycles() {
+        synchronized(handOffLock) { holderOpen = true }
         try {
-            cycles()
-        } finally {
-            mutex.unlock()
-        }
-        true
-    }
-
-    /**
-     * Caller holds the lock. One cycle, plus at most one trailing cycle when a [runIfIdle] was turned away meanwhile
-     * (several requests coalesce into that one). A request that lands after the check below is served by the next
-     * holder's cycle instead.
-     */
-    private suspend fun cycles() {
-        rerunRequested = false
-        recordedCycle()
-        if (rerunRequested) {
-            rerunRequested = false
             recordedCycle()
+            var trailing = 0
+            while (true) {
+                val served = synchronized(handOffLock) {
+                    val request = handOff
+                    handOff = null
+                    if (request == null || trailing >= MAX_TRAILING_CYCLES) holderOpen = false
+                    request
+                } ?: return
+                if (trailing >= MAX_TRAILING_CYCLES) {
+                    served.complete(Unit)
+                    return
+                }
+                trailing++
+                try {
+                    recordedCycle()
+                } finally {
+                    served.complete(Unit)
+                }
+            }
+        } finally {
+            synchronized(handOffLock) {
+                holderOpen = false
+                handOff?.complete(Unit)
+                handOff = null
+            }
         }
     }
 
@@ -107,6 +148,12 @@ class CheckInCoordinator @Inject constructor(
             if (t !is CancellationException) syncStatus.recordFailure(t)
             throw t
         }
+    }
+
+    companion object {
+        /** Trailing cycles one holder runs for hand-offs before it lets go. */
+        const val MAX_TRAILING_CYCLES = 3
+        private const val HAND_OFF_RETRY_MS = 10L
     }
 
     private suspend fun cycle() {

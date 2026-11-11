@@ -9,7 +9,7 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -33,6 +33,7 @@ import com.mdmesh.core.store.KioskStateStore
 import com.mdmesh.core.sync.CheckInWorker
 import com.mdmesh.core.telemetry.EventSink
 import com.mdmesh.kiosk.CrashLoopGuard
+import com.mdmesh.kiosk.Boot
 import com.mdmesh.kiosk.ExitPinGate
 import com.mdmesh.kiosk.HoldStore
 import com.mdmesh.kiosk.KioskController
@@ -129,8 +130,13 @@ class KioskLauncherActivity : ComponentActivity() {
         // observe the persisted state and re-render (enter → grid/pin, exit → unpin + idle) without
         // waiting for the user to touch the screen.
         lifecycleScope.launch {
-            // First finish an exit that a process death cut off, so the half-exited kiosk isn't applied again.
-            val finished = withContext(NonCancellable) { applier.resumeInterruptedExit() }
+            // First settle an exit that a process death cut off, so a half-exited kiosk isn't applied as it is.
+            // Guarded: a failing step must not crash HOME on every start (the entry then settles in kiosk).
+            val finished = withContext(NonCancellable) {
+                runCatching { applier.resumeInterruptedExit() }
+                    .onFailure { Log.w(TAG, "settling an interrupted kiosk exit failed", it) }
+                    .getOrDefault(false)
+            }
             if (finished) CheckInWorker.scheduleAfterCurrent(applicationContext)
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 store.flow().distinctUntilChanged().collect(::applyState)
@@ -360,8 +366,7 @@ class KioskLauncherActivity : ComponentActivity() {
     }
 
     /** Which boot this is: a saved crash-loop hold belongs to the boot it started in. */
-    private fun bootCount(): Long =
-        runCatching { Settings.Global.getInt(contentResolver, Settings.Global.BOOT_COUNT, 0).toLong() }.getOrDefault(0L)
+    private fun bootCount(): Long = Boot.count(this)
 
     private fun startLockTaskSafely() {
         runCatching {
@@ -448,5 +453,9 @@ class KioskLauncherActivity : ComponentActivity() {
             }
             finish()
         }
+    }
+
+    private companion object {
+        const val TAG = "KioskLauncher"
     }
 }

@@ -63,6 +63,7 @@ import com.mdmesh.core.telemetry.TelemetrySource
 import com.mdmesh.proto.AppManagement
 import com.mdmesh.proto.DeviceAction
 import com.mdmesh.kiosk.CrashLoopGuard
+import com.mdmesh.kiosk.Boot
 import com.mdmesh.kiosk.HoldStore
 import com.mdmesh.kiosk.SharedPrefsHoldStore
 import com.mdmesh.kiosk.ExitPinGate
@@ -290,6 +291,7 @@ object AgentModule {
             // An exit cut off midway is never finished while the configuration says kiosk on.
             desiredKioskOn = { configStore.configuredKiosk() != null },
             io = Dispatchers.IO,
+            bootId = { Boot.count(context) },
             isLockTaskActive = { kiosk.isLocked(context) },
         )
     }

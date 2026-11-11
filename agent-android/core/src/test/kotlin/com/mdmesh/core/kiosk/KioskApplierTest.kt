@@ -471,4 +471,58 @@ class KioskApplierTest {
         }
         assertEquals("journal-io", readOn)
     }
+
+    // --- Review 3 (S3): one try per entry, failures settle in kiosk ---
+
+    private class ThrowingExit : KioskController by FakeController(KioskResult.Ok) {
+        var exits = 0
+        override fun exit(): KioskResult { exits++; error("dpm") }
+    }
+
+    @Test fun `an entry a start already tried is settled in kiosk, not tried again`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+        j.saved = ExitJournal.Pending(true, true, ExitJournal.fingerprint(kioskA), attempts = 1)
+        val c = FakeController(KioskResult.Ok)
+        assertFalse(applier(c, store, j = j, configuredOn = false).resumeInterruptedExit())
+        assertFalse(c.exited)
+        assertEquals(listOf(listOf("com.a")), c.enters)
+        assertEquals(kioskA, store.load())
+        assertNull(j.saved)
+    }
+
+    @Test fun `a step that throws while running marks the entry, which settles in kiosk`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+        val throwing = ThrowingExit()
+        val a = KioskApplier(throwing, store, FakeHome(), home, journal = j, desiredKioskOn = { false }) { false }
+        assertTrue(runCatching { a.exit(force = true) }.isFailure)
+        assertTrue("entry kept, marked", j.saved?.failed == true)
+        val c = FakeController(KioskResult.Ok)
+        assertFalse(applier(c, store, j = j, configuredOn = false).resumeInterruptedExit())
+        assertFalse(c.exited)
+        assertEquals(listOf(listOf("com.a")), c.enters)
+        assertNull(j.saved)
+    }
+
+    @Test fun `a start counts its attempt before the first step`() = runTest {
+        val begun = mutableListOf<ExitJournal.Pending>()
+        val j = object : ExitJournal {
+            var saved: ExitJournal.Pending? = ExitJournal.Pending(true, true, ExitJournal.fingerprint(kioskA))
+            override fun pending() = saved
+            override fun begin(p: ExitJournal.Pending) { begun += p; saved = p }
+            override fun end() { saved = null }
+        }
+        val store = InMemoryKioskStateStore(); store.save(kioskA)
+        assertTrue(applier(store = store, j = j, configuredOn = false).resumeInterruptedExit())
+        assertEquals(1, begun.first().attempts)
+    }
+
+    @Test fun `an entry records the boot it was written in`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+        val begun = mutableListOf<ExitJournal.Pending>()
+        val recording = object : ExitJournal by j { override fun begin(p: ExitJournal.Pending) { begun += p } }
+        KioskApplier(FakeController(KioskResult.Ok), store, FakeHome(), home, journal = recording, bootId = { 7L }) {
+            false
+        }.exit(force = true)
+        assertEquals(7L, begun.single().boot)
+    }
 }

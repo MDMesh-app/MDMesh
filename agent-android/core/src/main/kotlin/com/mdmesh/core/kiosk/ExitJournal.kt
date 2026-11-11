@@ -14,8 +14,19 @@ import java.security.MessageDigest
  */
 interface ExitJournal {
 
-    /** An exit that began and hasn't finished: its options and the [fingerprint] of the kiosk it was exiting. */
-    data class Pending(val handBackHome: Boolean, val force: Boolean, val kiosk: String)
+    /**
+     * An exit that began and hasn't finished: its options, the [fingerprint] of the kiosk it was exiting, the [boot]
+     * it was written in, how many times a start already tried to finish it ([attempts]), and whether a step threw in
+     * a live process ([failed]).
+     */
+    data class Pending(
+        val handBackHome: Boolean,
+        val force: Boolean,
+        val kiosk: String,
+        val boot: Long = 0L,
+        val attempts: Int = 0,
+        val failed: Boolean = false,
+    )
 
     fun pending(): Pending?
 
@@ -68,6 +79,9 @@ interface ExitJournal {
         fun decide(pending: Pending?, saved: KioskApplyPayload?, configuredOn: () -> Boolean): Resume = when {
             pending == null -> Resume.NONE
             !pending.kiosk.matches(HEX) -> Resume.DISCARD
+            // A start already tried and didn't get through, or a step threw while the agent ran: never try the exit
+            // again (no crash loop, no exit finished days later); settle in kiosk.
+            pending.failed || pending.attempts > 0 -> if (saved != null) Resume.ROLL_BACK else Resume.DISCARD
             configuredOn() ->
                 if (saved != null && pending.kiosk == fingerprint(saved)) Resume.ROLL_BACK else Resume.DISCARD
             saved == null -> Resume.FINISH // got past clearing the state: only HOME is left to release
@@ -98,12 +112,16 @@ class SharedPrefsExitJournal(context: Context) : ExitJournal {
                 handBackHome = prefs.getBoolean(KEY_HOME, true),
                 force = prefs.getBoolean(KEY_FORCE, false),
                 kiosk = runCatching { prefs.getString(KEY_KIOSK, null) }.getOrNull().orEmpty(),
+                boot = runCatching { prefs.getLong(KEY_BOOT, 0L) }.getOrDefault(0L),
+                attempts = runCatching { prefs.getInt(KEY_ATTEMPTS, 0) }.getOrDefault(1), // unreadable: tried
+                failed = runCatching { prefs.getBoolean(KEY_FAILED, false) }.getOrDefault(true),
             )
         }
 
     override fun begin(p: ExitJournal.Pending) {
         prefs.edit().putBoolean(KEY_PENDING, true).putBoolean(KEY_HOME, p.handBackHome)
-            .putBoolean(KEY_FORCE, p.force).putString(KEY_KIOSK, p.kiosk).commit()
+            .putBoolean(KEY_FORCE, p.force).putString(KEY_KIOSK, p.kiosk).putLong(KEY_BOOT, p.boot)
+            .putInt(KEY_ATTEMPTS, p.attempts).putBoolean(KEY_FAILED, p.failed).commit()
     }
 
     override fun end() {
@@ -116,5 +134,8 @@ class SharedPrefsExitJournal(context: Context) : ExitJournal {
         const val KEY_HOME = "hand_back_home"
         const val KEY_FORCE = "force"
         const val KEY_KIOSK = "kiosk"
+        const val KEY_BOOT = "boot"
+        const val KEY_ATTEMPTS = "attempts"
+        const val KEY_FAILED = "failed"
     }
 }

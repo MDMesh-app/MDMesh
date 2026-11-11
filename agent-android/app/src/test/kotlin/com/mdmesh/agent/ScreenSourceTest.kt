@@ -1,6 +1,7 @@
 package com.mdmesh.agent
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
@@ -35,5 +36,11 @@ class ScreenSourceTest {
         // Screens swap inside KioskRenderer's root: a setContentView per state drew a blank frame in between.
         val launcher = sequenceOf(File(main, "KioskLauncherActivity.kt"), File(main, "ui/KioskRenderer.kt"))
         assertEquals(1, hits(launcher, Regex("""\bsetContentView\(""")).size)
+    }
+
+    @Test fun `the launcher's start-time exit resume is guarded`() {
+        // A failing step must not crash the kiosk HOME on every start.
+        val src = File(main, "KioskLauncherActivity.kt").readText()
+        assertTrue(Regex("""runCatching\s*\{\s*applier\.resumeInterruptedExit\(\)""").containsMatchIn(src))
     }
 }

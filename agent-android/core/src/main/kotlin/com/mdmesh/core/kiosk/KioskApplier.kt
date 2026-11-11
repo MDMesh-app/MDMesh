@@ -12,6 +12,7 @@ import android.util.Log
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.withLock
 
@@ -56,6 +57,8 @@ class KioskApplier(
      * main thread. The default runs it in place, for tests that drive the applier on a test scheduler.
      */
     private val io: CoroutineDispatcher = Dispatchers.Unconfined,
+    /** Which boot this is (Settings.Global.BOOT_COUNT): written into a journal entry, for the logs. */
+    private val bootId: () -> Long = { 0L },
     /** Whether lock task is active now ([KioskController.isLocked]). Last, so a trailing lambda can only be this. */
     private val isLockTaskActive: () -> Boolean,
 ) {
@@ -147,9 +150,26 @@ class KioskApplier(
         exitLocked(handBackHome, force)
     }
 
-    private suspend fun exitLocked(handBackHome: Boolean, force: Boolean): KioskResult {
-        val entry = ExitJournal.Pending(handBackHome, force, ExitJournal.fingerprint(store.load()))
+    private suspend fun exitLocked(
+        handBackHome: Boolean,
+        force: Boolean,
+        /** A start finishing a cut-off exit: its entry, its attempt counted. */
+        resumed: ExitJournal.Pending? = null,
+    ): KioskResult {
+        val entry = resumed
+            ?: ExitJournal.Pending(handBackHome, force, ExitJournal.fingerprint(store.load()), boot = bootId())
         withContext(io) { journal.begin(entry) }
+        var completed = false
+        try {
+            return exitSteps(handBackHome, force).also { completed = true }
+        } finally {
+            // A step threw with the agent running (not a process death): the entry stays, marked, and the next start
+            // settles it in kiosk instead of finishing it later.
+            if (!completed) withContext(NonCancellable + io) { journal.begin(entry.copy(failed = true)) }
+        }
+    }
+
+    private suspend fun exitSteps(handBackHome: Boolean, force: Boolean): KioskResult {
         val r = kiosk.exit()
         if (r != KioskResult.Ok && !force) {
             withContext(io) { journal.end() } // refused: nothing changed, nothing to finish later
@@ -184,8 +204,9 @@ class KioskApplier(
         return when (ExitJournal.decide(pending, saved, desiredKioskOn)) {
             ExitJournal.Resume.NONE -> false
             ExitJournal.Resume.FINISH -> {
-                val p = checkNotNull(pending)
-                exitLocked(p.handBackHome, p.force)
+                // The attempt is counted before the first step: if this start dies or throws too, the next one
+                // settles in kiosk rather than trying again.
+                exitLocked(pending.handBackHome, pending.force, pending.copy(attempts = pending.attempts + 1))
                 true
             }
             ExitJournal.Resume.ROLL_BACK -> {

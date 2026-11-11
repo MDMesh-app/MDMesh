@@ -22,27 +22,48 @@ import kotlin.random.Random
 @OptIn(ExperimentalCoroutinesApi::class)
 class TransportManagerTest {
 
+    /**
+     * Behaves like OkHttp 4.12's RealWebSocket: a close the server starts reaches the listener as `onClosing` only,
+     * and `onClosed` follows only once the client answers with its own `close()`.
+     */
     private class FakeSocket(private val request: Request, val listener: WebSocketListener) : WebSocket {
-        /** Closed by the agent, or dead on its own (failed / closed by the server). */
+        /** Closed or cancelled by the agent, or dead on its own (failed). */
         var cancelled = false
+        var closedByAgentWith: Int? = null
+        private var serverClosing: Pair<Int, String>? = null
         override fun request() = request
         override fun queueSize() = 0L
         override fun send(text: String) = true
         override fun send(bytes: ByteString) = true
-        override fun close(code: Int, reason: String?) = true.also { cancelled = true }
+        override fun close(code: Int, reason: String?): Boolean {
+            if (cancelled) return false
+            cancelled = true
+            closedByAgentWith = code
+            serverClosing?.let { (c, r) -> listener.onClosed(this, c, r) }
+            return true
+        }
         override fun cancel() { cancelled = true }
 
         fun open() = listener.onOpen(this, Response.Builder()
             .request(request).protocol(Protocol.HTTP_1_1).code(101).message("Switching Protocols").build())
         fun fail() { cancelled = true; listener.onFailure(this, IOException("reset"), null) }
-        fun closed() { cancelled = true; listener.onClosed(this, 1000, "replaced") }
+        /** The server sends a close frame. */
+        fun serverClose(code: Int, reason: String = "") {
+            serverClosing = code to reason
+            listener.onClosing(this, code, reason)
+        }
         fun wake() = listener.onMessage(this, """{"wake":"commands"}""")
     }
 
     private class FakeSockets : WebSocket.Factory {
         val opened = mutableListOf<FakeSocket>()
+        /** Like OkHttp when its dispatcher rejects the call: onFailure on the calling thread, before returning. */
+        var failSynchronously = false
         override fun newWebSocket(request: Request, listener: WebSocketListener): WebSocket =
-            FakeSocket(request, listener).also { opened += it }
+            FakeSocket(request, listener).also {
+                opened += it
+                if (failSynchronously) it.fail()
+            }
         val live get() = opened.filterNot { it.cancelled }
     }
 
@@ -50,10 +71,11 @@ class TransportManagerTest {
     private val sockets = FakeSockets()
     private val wakes = mutableListOf<WakeSignal>()
     private val logs = mutableListOf<String>()
+    private var baseUrl: () -> String = { "https://mdm.example" }
     private val checkInSucceeded = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     private val transport = TransportManager(
         sockets = sockets,
-        baseUrl = { "https://mdm.example" },
+        baseUrl = { baseUrl() },
         scope = scope,
         clock = { scope.currentTime },
         jitter = { it }, // the bound itself: deterministic
@@ -109,8 +131,8 @@ class TransportManagerTest {
         // The cancelled socket's callbacks arrive after the new one is up.
         old.open()
         old.wake()
+        old.serverClose(1000, "replaced")
         old.fail()
-        old.closed()
         scope.advanceTimeBy(10 * 60_000L); scope.runCurrent()
 
         assertEquals("no reconnect from a superseded socket", 2, sockets.opened.size)
@@ -121,8 +143,8 @@ class TransportManagerTest {
     @Test
     fun `one dead socket schedules one reconnect even when it reports twice`() {
         start()
+        sockets.opened[0].serverClose(1000)
         sockets.opened[0].fail()
-        sockets.opened[0].closed()
         scope.advanceTimeBy(10 * 60_000L); scope.runCurrent()
         assertEquals(2, sockets.opened.size)
     }
@@ -227,12 +249,132 @@ class TransportManagerTest {
     }
 
     @Test
-    fun `full jitter stays between the minimum and the bound`() {
+    fun `full jitter stays between half a second and the bound`() {
         val random = Random(42)
         val bound = 64_000L
         val picks = (1..1_000).map { TransportManager.fullJitter(bound, random) }
-        assertTrue(picks.all { it in TransportManager.MIN_BACKOFF_MS..bound })
+        assertTrue(picks.all { it in 500L..bound })
         assertTrue("spread, not lock-step", picks.toSet().size > 900)
-        assertEquals(TransportManager.MIN_BACKOFF_MS, TransportManager.fullJitter(1_000L))
+    }
+
+    /** The wait the last backoff chose, from its log line. */
+    private fun lastRetryMs(): Long =
+        Regex("retry in (\\d+)ms").find(logs.last { "retry in" in it })!!.groupValues[1].toLong()
+
+    @Test
+    fun `a close from the server is answered and backs off at once`() {
+        start()
+        val socket = sockets.opened[0]
+        socket.open()
+        socket.serverClose(1000, "replaced")
+
+        assertEquals("answered with our own close", 1000, socket.closedByAgentWith)
+        assertEquals("Backoff", transport.stateName)
+        advance(10 * 60_000L)
+        assertEquals("one reconnect, not one per callback", 2, sockets.opened.size)
+    }
+
+    @Test
+    fun `an accept-then-close server makes the backoff grow`() {
+        start()
+        val waits = mutableListOf<Long>()
+        repeat(5) {
+            sockets.opened.last().open()
+            advance(500)
+            sockets.opened.last().serverClose(1000)
+            waits += lastRetryMs()
+            advance(10 * 60_000L)
+        }
+        assertEquals(listOf(1_000L, 2_000, 4_000, 8_000, 16_000), waits)
+    }
+
+    @Test
+    fun `an unauthorized close never resets the backoff and waits at least a minute`() {
+        // A device deleted in the console: the server accepts, then closes with 1008 "unauthorized".
+        start()
+        val waits = mutableListOf<Long>()
+        repeat(3) {
+            sockets.opened.last().open()
+            advance(TransportManager.STABLE_SESSION_MS + 1)
+            sockets.opened.last().serverClose(1008, "unauthorized")
+            waits += lastRetryMs()
+            advance(10 * 60_000L)
+        }
+        assertTrue(waits.toString(), waits.first() >= 60_000L)
+        assertEquals(listOf(64_000L, 128_000, 256_000), waits)
+    }
+
+    @Test
+    fun `a session the server replaced does not reset the backoff`() {
+        start()
+        repeat(3) { sockets.opened.last().fail(); advance(10 * 60_000L) }
+        sockets.opened.last().open()
+        advance(TransportManager.STABLE_SESSION_MS + 1)
+        sockets.opened.last().serverClose(1000, "replaced")
+        assertEquals(8_000L, lastRetryMs())
+    }
+
+    @Test
+    fun `a server shutting down after a stable session is retried soon`() {
+        start()
+        repeat(3) { sockets.opened.last().fail(); advance(10 * 60_000L) }
+        sockets.opened.last().open()
+        advance(TransportManager.STABLE_SESSION_MS + 1)
+        sockets.opened.last().serverClose(1001, "going away")
+        assertEquals(1_000L, lastRetryMs())
+    }
+
+    @Test
+    fun `a check-in that came through the socket does not cut the backoff`() {
+        // open -> server wakes -> check-in succeeds -> the socket is cut: retrying "because the server is up" would
+        // dial, get woken, check in and be cut again, forever.
+        scope.runCurrent() // the check-in listener is subscribed
+        start()
+        sockets.opened[0].open()
+        sockets.opened[0].wake()
+        sockets.opened[0].fail()
+        checkInSucceeded.tryEmit(Unit)
+        scope.runCurrent()
+
+        assertEquals("Backoff", transport.stateName)
+        assertEquals(1, sockets.opened.size)
+    }
+
+    @Test
+    fun `the first retry is spread too`() {
+        val random = Random(7)
+        val picks = (1..1_000).map { TransportManager.fullJitter(TransportManager.backoffBound(0), random) }
+        assertTrue(picks.toString(), picks.all { it in 500L..1_500L })
+        assertTrue("not lock-step", picks.toSet().size > 500)
+    }
+
+    @Test
+    fun `a socket that fails while being created still backs off`() {
+        sockets.failSynchronously = true
+        start()
+        assertEquals("Backoff", transport.stateName)
+        sockets.failSynchronously = false
+        advance(10 * 60_000L)
+        assertEquals("Connecting", transport.stateName)
+    }
+
+    @Test
+    fun `a stop after a stable session starts the next one with a short backoff`() {
+        start()
+        repeat(3) { sockets.opened.last().fail(); advance(10 * 60_000L) }
+        sockets.opened.last().open()
+        advance(TransportManager.STABLE_SESSION_MS + 1)
+        transport.stop() // screen off
+        start() // screen on
+        sockets.opened.last().fail()
+        assertEquals(1_000L, lastRetryMs())
+    }
+
+    @Test
+    fun `a malformed server address backs off instead of crashing`() {
+        baseUrl = { "not a url" }
+        start()
+        assertEquals("Backoff", transport.stateName)
+        assertTrue(sockets.opened.isEmpty())
     }
 }

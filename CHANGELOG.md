@@ -15,6 +15,12 @@ Upgrading
   the tokens hashed. Existing codes stay single-use and keep working; on PostgreSQL older than 11 they stop
   instead, so make a new code on the Enroll page. After a downgrade, codes made on this version don't work.
 
+Heads-up
+- Agent 0.5.0: when the server has been unreachable for a while, a device's instant connection can take up to 5
+  minutes to come back (it was up to 1 minute), so Sync now may say the device isn't connected a little longer. It
+  comes back right away when the device's network returns or its next check-in gets through, and devices retry at
+  random times so they don't all reconnect at once after a server restart. Check-ins are not affected.
+
 New
 - Configurations can allow or block the camera. Block covers every app, kiosk apps too. Not managed after Block
   gives the camera back on agent 0.5.0; on older agents, choose Allow to lift a block (thanks @letternumber).
@@ -52,14 +58,13 @@ Fixes
   is stopped during a check-in. Needs agent 0.5.0.
 - Agent: the 10-minute heartbeat no longer waits behind an install or another check-in that is still running, which
   could get the agent stopped by Android. Needs agent 0.5.0.
+- Agent: a device deleted in the console no longer reconnects to the server about once a minute forever; it waits
+  longer each time, up to 5 minutes. Needs agent 0.5.0.
 - Agent: APK downloads left behind when the agent was stopped during an install are removed at the next install.
   Needs agent 0.5.0.
 - Agent: the device timeline no longer shows a network change each time the agent's service starts. Needs agent 0.5.0.
 
 Under the hood
-- Agent: when the server can't be reached, the agent retries its connection at random intervals of up to 5 minutes
-  instead of every minute, so devices don't all reconnect at once after a server restart, and it retries right away
-  when the network comes back or a check-in reaches the server.
 - Agent: the manifest's comments now match the permissions it declares.
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
 

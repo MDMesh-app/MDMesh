@@ -4,12 +4,10 @@ import android.os.SystemClock
 import android.util.Log
 import com.mdmesh.core.config.ServerConfigStore
 import com.mdmesh.core.di.ApiHttpClient
-import com.mdmesh.core.di.IoDispatcher
+import com.mdmesh.core.di.AgentScope
 import com.mdmesh.core.sync.SyncStatus
-import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
@@ -54,7 +52,7 @@ class TransportManager internal constructor(
     @Inject constructor(
         @ApiHttpClient okHttpClient: OkHttpClient,
         serverConfig: ServerConfigStore,
-        @IoDispatcher io: CoroutineDispatcher,
+        @AgentScope scope: CoroutineScope,
         syncStatus: SyncStatus,
     ) : this(
         // Keepalive ping kept just under typical proxy idle timeouts (~100s) to hold the socket open
@@ -62,7 +60,7 @@ class TransportManager internal constructor(
         // entirely, so this cost only applies while the socket is intentionally held hot.)
         sockets = okHttpClient.newBuilder().pingInterval(50, TimeUnit.SECONDS).build(),
         baseUrl = serverConfig::baseUrl,
-        scope = CoroutineScope(SupervisorJob() + io),
+        scope = scope,
         clock = SystemClock::elapsedRealtime,
         log = { Log.i(TAG, it) },
         serverReachable = syncStatus.successes,
@@ -70,21 +68,25 @@ class TransportManager internal constructor(
 
     init {
         // A server outage can push the backoff to its 5-minute cap; the next successful check-in (heartbeat or
-        // worker) brings the socket back within that cycle instead.
-        scope.launch { serverReachable.collect { retryNow("server reachable") } }
+        // worker) brings the socket back within that cycle instead. Only when the socket never opened, though: if it
+        // opened and was then cut, the server was reachable all along, and the check-in may even be the one this
+        // socket's own wake started (open -> wake -> check-in -> cut -> retry -> open ... would defeat the backoff).
+        scope.launch { serverReachable.collect { retryNow("server reachable", onlyIfNeverOpened = true) } }
     }
 
     internal sealed class State(val name: String) {
         object Stopped : State("Stopped")
-        class Connecting(val gen: Int, val socket: WebSocket) : State("Connecting")
+        /** [socket] is null only while it is being created. */
+        class Connecting(val gen: Int) : State("Connecting") { var socket: WebSocket? = null }
         class Connected(val gen: Int, val socket: WebSocket, val since: Long) : State("Connected")
-        class Backoff(val gen: Int, val delayMs: Long, val job: Job) : State("Backoff")
+        /** [afterOpen]: the dropped socket had opened, so the server was reachable. */
+        class Backoff(val gen: Int, val delayMs: Long, val job: Job, val afterOpen: Boolean) : State("Backoff")
     }
 
     // All guarded by `this`.
     private var state: State = State.Stopped
     private var generation = 0
-    /** Drops since the last stable session; sets the backoff bound. Kept across stop/start. */
+    /** Drops since the last stable session; sets the backoff bound. Kept across stop/start unless that ended one. */
     private var failures = 0
     private var deviceId: String = ""
     private var secret: String = ""
@@ -105,8 +107,11 @@ class TransportManager internal constructor(
     @Synchronized
     fun stop() {
         when (val s = state) {
-            is State.Connecting -> s.socket.cancel()
-            is State.Connected -> s.socket.cancel()
+            is State.Connecting -> s.socket?.cancel()
+            is State.Connected -> {
+                if (clock() - s.since >= STABLE_SESSION_MS) failures = 0 // a healthy session, ended by us
+                s.socket.cancel()
+            }
             is State.Backoff -> s.job.cancel()
             State.Stopped -> return
         }
@@ -121,22 +126,36 @@ class TransportManager internal constructor(
      * blocks WebSockets) each hint costs one attempt, not a fresh run of short backoffs.
      */
     @Synchronized
-    private fun retryNow(reason: String) {
+    private fun retryNow(reason: String, onlyIfNeverOpened: Boolean = false) {
         val s = state as? State.Backoff ?: return
+        if (onlyIfNeverOpened && s.afterOpen) return
         s.job.cancel()
         log("$reason, retrying now")
         connect()
     }
 
-    /** Caller holds the lock. */
+    /**
+     * Caller holds the lock. The state is Connecting before the socket exists: OkHttp may report a failure on this
+     * thread before `newWebSocket` returns (the lock is re-entrant), and that must find the attempt it belongs to.
+     */
     private fun connect() {
         val gen = ++generation
-        val request = Request.Builder()
-            .url("${baseUrl()}/agent/ws/$deviceId")
-            // Secret goes in the handshake header, never the URL (query strings leak into logs).
-            .addHeader("Authorization", "Bearer $secret")
-            .build()
-        moveTo(State.Connecting(gen, sockets.newWebSocket(request, Listener(gen))), gen)
+        val connecting = State.Connecting(gen)
+        moveTo(connecting, gen)
+        val socket = try {
+            val request = Request.Builder()
+                .url("${baseUrl()}/agent/ws/$deviceId")
+                // Secret goes in the handshake header, never the URL (query strings leak into logs).
+                .addHeader("Authorization", "Bearer $secret")
+                .build()
+            sockets.newWebSocket(request, Listener(gen))
+        } catch (e: Exception) {
+            // A bad provisioned address, say. Runs on OkHttp/connectivity threads too, where a throw would crash.
+            log("connect failed: ${e.javaClass.simpleName}")
+            dropped(gen, code = null)
+            return
+        }
+        if (state === connecting) connecting.socket = socket else socket.cancel() // already failed meanwhile
     }
 
     @Synchronized
@@ -158,17 +177,27 @@ class TransportManager internal constructor(
         }
     }
 
-    /** The socket failed, or the server closed it: back off, then reconnect. */
+    /**
+     * The socket failed ([code] null) or the server closed it with [code]: back off, then reconnect.
+     *
+     * The backoff resets only after a stable session (open ≥30s) that ended in a network failure or a server
+     * shutdown (1001). Resetting on open let a connection that dies right after the handshake pin the retry at its
+     * minimum. Any other close the server chose (1008 unauthorized for a device deleted in the console, 1000 when
+     * another connection for this device replaced the session) is the server saying "not this socket", so it never
+     * resets, and 1008 waits at least a minute.
+     */
     @Synchronized
-    private fun dropped(gen: Int) {
+    private fun dropped(gen: Int, code: Int?) {
         val since = when (val s = state) {
             is State.Connecting -> if (s.gen == gen) null else return
             is State.Connected -> if (s.gen == gen) s.since else return
             else -> return // stopped, or this socket already reported and its reconnect is pending
         }
-        // Reset the backoff only after a stable session (open ≥30s): resetting on open let a connection that dies
-        // right after the handshake pin the retry delay at its minimum.
-        if (since != null && clock() - since >= STABLE_SESSION_MS) failures = 0
+        val stable = since != null && clock() - since >= STABLE_SESSION_MS
+        when (code) {
+            null, CLOSE_GOING_AWAY -> if (stable) failures = 0
+            CLOSE_POLICY -> failures = maxOf(failures, POLICY_MIN_FAILURES)
+        }
         val delayMs = jitter(backoffBound(failures))
         failures++
         val next = ++generation
@@ -176,7 +205,8 @@ class TransportManager internal constructor(
             delay(delayMs)
             backoffElapsed(next)
         }
-        moveTo(State.Backoff(next, delayMs, job), next)
+        val why = if (code == null) "" else " close=$code"
+        moveTo(State.Backoff(next, delayMs, job, afterOpen = since != null), next, why)
     }
 
     @Synchronized
@@ -186,39 +216,55 @@ class TransportManager internal constructor(
     }
 
     /** Caller holds the lock. Logs no device id, URL or secret. */
-    private fun moveTo(next: State, gen: Int) {
+    private fun moveTo(next: State, gen: Int, why: String = "") {
         val from = state
         state = next
         val extra = if (next is State.Backoff) " retry in ${next.delayMs}ms failures=$failures" else ""
-        log("${from.name} -> ${next.name} gen=$gen$extra")
+        log("${from.name} -> ${next.name} gen=$gen$why$extra")
     }
 
     private inner class Listener(private val gen: Int) : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) = opened(gen, webSocket)
         override fun onMessage(webSocket: WebSocket, text: String) = received(gen, webSocket, text)
-        override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) = dropped(gen)
+        override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) = dropped(gen, code = null)
 
-        // A server-initiated clean close is a failure for backoff purposes too — otherwise
-        // an accept-then-close server drives a reconnect every second, forever.
-        override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = dropped(gen)
+        // OkHttp reports a close the server starts as onClosing only; onClosed follows once we answer. So answer at
+        // once and back off now: waiting for a failed ping left a dead socket "Connected" for up to 100s (wakes
+        // lost) and then counted it as a stable session.
+        override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+            dropped(gen, code)
+            webSocket.close(CLOSE_NORMAL, null)
+        }
+
+        // Normally stale by now (onClosing already moved on); covers a close we started ourselves.
+        override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = dropped(gen, code)
     }
 
     internal companion object {
         const val TAG = "TransportManager"
         const val STABLE_SESSION_MS = 30_000L
         const val MIN_BACKOFF_MS = 1_000L
+        const val CLOSE_NORMAL = 1000
+        const val CLOSE_GOING_AWAY = 1001
+        const val CLOSE_POLICY = 1008
+        /** A 1008 close starts at a 64s bound: a deleted device must not dial every second. */
+        const val POLICY_MIN_FAILURES = 6
         /** A server outage costs an always-on device about a dozen dials an hour instead of sixty. */
         const val MAX_BACKOFF_MS = 5 * 60_000L
 
-        /** 1s, 2s, 4s … doubling per failure, capped at [MAX_BACKOFF_MS]. */
+        /** 1s, 2s, 4s … doubling per failure, capped at [MAX_BACKOFF_MS]: the bound [fullJitter] picks under. */
         fun backoffBound(failures: Int): Long =
             minOf(MAX_BACKOFF_MS, MIN_BACKOFF_MS shl minOf(failures, 20))
 
         /**
-         * "Full jitter": anywhere from the minimum up to [bound], so a fleet that lost its sockets together (a server
-         * restart) does not reconnect in lock-step.
+         * "Full jitter": anywhere from half a second up to [bound] (1.5s for the first retry), so a fleet that lost
+         * its sockets together (a server restart closes them all at once) does not reconnect in lock-step, not even
+         * on the first try.
          */
-        fun fullJitter(bound: Long, random: Random = Random.Default): Long =
-            if (bound <= MIN_BACKOFF_MS) MIN_BACKOFF_MS else random.nextLong(MIN_BACKOFF_MS, bound + 1)
+        fun fullJitter(bound: Long, random: Random = Random.Default): Long {
+            val low = MIN_BACKOFF_MS / 2
+            val high = if (bound <= MIN_BACKOFF_MS) MIN_BACKOFF_MS + low else bound
+            return random.nextLong(low, high + 1)
+        }
     }
 }

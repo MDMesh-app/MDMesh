@@ -210,8 +210,21 @@ public class Configuration implements CustomerData, Serializable {
     private String backgroundColor;
     @ApiModelProperty("A text color to use when running MDM application")
     private String textColor;
-    @ApiModelProperty("An URL for background image to use when running MDM application")
+    @ApiModelProperty("The Headwind launcher wallpaper URL; with a kiosk background image, the URL the server set "
+            + "for its uploaded file. Another URL drops that image (see backgroundImageAction)")
     private String backgroundImageUrl;
+    @ApiModelProperty("Uploaded file used as the kiosk background image (PNG, JPEG or WebP, at most 10 MB and "
+            + "16 megapixels; needs agent 0.5.0)")
+    private Integer backgroundImageFileId;
+    @ApiModelProperty(hidden = true)
+    private String backgroundImageSha256;
+    /**
+     * Console-only instruction for saving a managed kiosk background image. This is deliberately not persisted:
+     * omitted means keep the stored image, while replace and remove are explicit user actions.
+     */
+    @ApiModelProperty(value = "How to update the managed kiosk background image: keep, replace, or remove",
+            allowableValues = "keep,replace,remove")
+    private String backgroundImageAction;
     @ApiModelProperty("A size of the icons to use when running MDM application")
     private IconSize iconSize = SMALL;
     @ApiModelProperty("A type of desktop header to use when running MDM application")
@@ -337,6 +350,30 @@ public class Configuration implements CustomerData, Serializable {
 
     public void setBackgroundImageUrl(String backgroundImageUrl) {
         this.backgroundImageUrl = backgroundImageUrl;
+    }
+
+    public Integer getBackgroundImageFileId() {
+        return backgroundImageFileId;
+    }
+
+    public void setBackgroundImageFileId(Integer backgroundImageFileId) {
+        this.backgroundImageFileId = backgroundImageFileId;
+    }
+
+    public String getBackgroundImageSha256() {
+        return backgroundImageSha256;
+    }
+
+    public void setBackgroundImageSha256(String backgroundImageSha256) {
+        this.backgroundImageSha256 = backgroundImageSha256;
+    }
+
+    public String getBackgroundImageAction() {
+        return backgroundImageAction;
+    }
+
+    public void setBackgroundImageAction(String backgroundImageAction) {
+        this.backgroundImageAction = backgroundImageAction;
     }
 
     public IconSize getIconSize() {
@@ -1057,6 +1094,8 @@ public class Configuration implements CustomerData, Serializable {
         copy.setBackgroundColor(getBackgroundColor());
         copy.setTextColor(getTextColor());
         copy.setBackgroundImageUrl(getBackgroundImageUrl());
+        copy.setBackgroundImageFileId(getBackgroundImageFileId());
+        copy.setBackgroundImageSha256(getBackgroundImageSha256());
         copy.setIconSize(getIconSize());
         copy.setDesktopHeader(getDesktopHeader());
         copy.setDesktopHeaderTemplate(getDesktopHeaderTemplate());

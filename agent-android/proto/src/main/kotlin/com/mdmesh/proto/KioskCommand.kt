@@ -46,4 +46,13 @@ data class KioskThemeDto(
     val backgroundColor: String? = null,
     val textColor: String? = null,
     val iconSize: String? = null,
+    /** A server-hosted, SHA-256-pinned image for the launcher background. */
+    val backgroundImage: KioskBackgroundImageDto? = null,
+)
+
+/** Optional kiosk image. Old agents ignore this additive key; new agents fall back to color on any failure. */
+@Serializable
+data class KioskBackgroundImageDto(
+    val url: String,
+    val sha256: String,
 )

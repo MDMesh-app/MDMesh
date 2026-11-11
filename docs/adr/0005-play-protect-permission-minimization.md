@@ -2,11 +2,17 @@
 
 **Status:** Accepted (2026-06-21)
 
-**Amended (2026-11-11):** the agent as built does not fully follow this. Since the first public release (v0.1,
-2026-06-25) the sideloaded `:app` requests `QUERY_ALL_PACKAGES` (a Device Owner agent manages arbitrary packages; a
-Play build would have to scope it), and `READ_PHONE_STATE` / `READ_PHONE_NUMBERS` for telemetry (never identity, see
-ADR 0003). `:app` always includes `:remote`, so the accessibility service is in every APK, shipped disabled. The
-manifest (`agent-android/app/src/main/AndroidManifest.xml`) is the current position.
+**Amended (2026-11-11):** the agent as built is the policy, and it requests more than this record allows. MDMesh is
+a sideloaded Device Owner agent, not a Play app, so these are deliberate:
+- `QUERY_ALL_PACKAGES`: the device's app inventory (the console's Apps tab and CSV export) and managing arbitrary
+  packages (installs, version checks, uninstall). A Play-distributed build would have to scope it to `<queries>`.
+- `READ_PHONE_STATE` (and `READ_PHONE_NUMBERS`): telemetry. As Device Owner the agent can read the IMEI and serial
+  number (and the phone numbers), which it reports for the device page. They are never used as identity, which stays
+  server-issued (ADR 0003).
+- `:remote` is always bundled into `:app`, so its accessibility service is in every APK; it ships
+  `android:enabled="false"` and is turned on only for an authorised control session.
+
+The manifest (`agent-android/app/src/main/AndroidManifest.xml`) is the current position.
 
 ## Context
 

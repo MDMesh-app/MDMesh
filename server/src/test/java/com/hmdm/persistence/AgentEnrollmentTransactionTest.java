@@ -54,7 +54,9 @@ import static org.junit.Assert.fail;
  *   -Dsurefire.failIfNoSpecifiedTests=false
  * docker stop mdmesh-enroll-it
  * </pre>
- * <p>Each run works in its own schema (dropped afterwards), with the columns these statements use.</p>
+ * <p>Each run works in its own schema (dropped afterwards), with the columns these statements use. CI (t0-fast.yml, the
+ * server entry) runs it against a postgres service and sets MDMESH_TEST_PG_REQUIRED, so there it fails rather than
+ * skips without a database.</p>
  */
 public class AgentEnrollmentTransactionTest {
 
@@ -121,7 +123,11 @@ public class AgentEnrollmentTransactionTest {
 
     @Before
     public void setUp() throws Exception {
-        Assume.assumeTrue("set MDMESH_TEST_PG_URL to run against PostgreSQL", URL != null && !URL.isEmpty());
+        boolean configured = URL != null && !URL.isEmpty();
+        if (!configured && "true".equals(System.getenv("MDMESH_TEST_PG_REQUIRED"))) {
+            fail("MDMESH_TEST_PG_REQUIRED is set but MDMESH_TEST_PG_URL is not: CI must run this test, not skip it");
+        }
+        Assume.assumeTrue("set MDMESH_TEST_PG_URL to run against PostgreSQL", configured);
         Hooks.reset();
         schema = "enroll_it_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         sql("CREATE SCHEMA " + schema,

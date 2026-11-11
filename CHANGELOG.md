@@ -11,22 +11,46 @@ line under Unreleased.
 Upgrading
 - The database adds two columns (`devices.wipedAt`, `configurations.camera`) and the
   `configurationAppPermissions` table on start. Devices wiped before the update aren't marked.
+- The database adds three columns to enrollment tokens on start (`maxUses`, `useCount`, `revokedAt`) and stores
+  the tokens hashed. Existing codes stay single-use and keep working; on PostgreSQL older than 11 they stop
+  instead, so make a new code on the Enroll page. After a downgrade, codes made on this version don't work.
+- Quick start: run `docker compose pull && docker compose up -d` once after this update. Updates never touch the
+  supervisor, and one from before 0.5.0 keeps applying updates by tag. From source, or with `SUPERVISOR_VERSION` set by
+  hand: [UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050).
 
 New
 - Configurations can allow or block the camera. Block covers every app, kiosk apps too. Not managed after Block
   gives the camera back on agent 0.5.0; on older agents, choose Allow to lift a block (thanks @letternumber).
+- Kiosk: staff can tap Return to kiosk in the MDMesh Agent after leaving with the exit PIN, even offline. It shows
+  only when the device's configuration enables kiosk, asks first (and warns when that kiosk has no exit on the
+  device), and tells the server at once when online. Needs agent 0.5.0; no server update needed (thanks @tisign).
+- Enroll: one code can set up a batch. Choose Devices (one, or up to 10, 25 or 100) and Valid for (24 hours to 30
+  days); a code for several devices works for anyone who has it until it expires or its devices are used up. The
+  default is still one device for 24 hours, the code to send to one person. **Stop all codes** ends every code that
+  still works, and making a new code says when the one it replaces still works. Codes are stored hashed, making and
+  stopping them is in the audit log, and the server log names the code each device enrolled with. The API takes
+  `maxUses` and `validHours` on `POST /private/agent/v1/token`, and `POST /private/agent/v1/token/revoke-all`
+  (thanks @alessfi).
 - Configurations can explicitly Grant or Deny selected runtime permissions for installed managed apps; Default releases MDMesh's override.
 - Settings → Users & roles: create, edit and delete console accounts, choose the devices and configurations each
   can reach, and edit roles and their permissions (thanks @lared3294).
 - A wiped device shows as **Wiped** instead of Online and then Offline, and is left out of the counts, Needs attention
   and rollouts; the Devices list's Wiped filter shows it (thanks @Przemek-Magic).
 - Sync now and console commands say when the device isn't connected and will get it at its next check-in.
+- Updates and the quick start run exactly the images the signed release names, pinned by digest; the quick start
+  also checks each file it downloads, stops instead of falling back to `main`, and needs OpenSSL 3.0+, or an older
+  OpenSSL and `minisign`.
 
 Fixes
+- The console recognizes an on-device Return to kiosk and does not offer the same action again; a later kiosk exit,
+  custom kiosk, or configuration apply makes it available again.
 - Audit log: on Docker installs, entries show the client's address instead of the edge container's (thanks
   @Przemek-Magic).
 - Kiosk: after someone leaves kiosk on the device with the exit PIN, the agent checks in right away, so the console
   shows kiosk off without waiting for the next heartbeat. Needs agent 0.5.0 (thanks @letternumber).
+- Agent rollout: when every device is in the canary, the rollout finishes once they've updated instead of staying
+  open, and Settings stops offering the same agent again. If one can't update, it offers Finish instead of Promote
+  (thanks @letternumber).
 
 Under the hood
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.

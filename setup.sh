@@ -242,6 +242,11 @@ if [ -n "$REPO_VERSION" ]; then
   setenv SERVER_VERSION "$SERVER_VERSION"; setenv WEB_VERSION "$WEB_VERSION"; setenv SUPERVISOR_VERSION "$SUPERVISOR_VERSION"
   export SERVER_VERSION WEB_VERSION SUPERVISOR_VERSION
 else
+  # A one-click update pins the images by digest (SERVER_VERSION=<version>@sha256:…, supervisor/apply.sh). `up --build`
+  # tags what it builds with these values, and a digest can't be a build tag, so the kept values lose it.
+  for _v in SERVER_VERSION WEB_VERSION SUPERVISOR_VERSION; do
+    case "${!_v:-}" in *@*) printf -v "$_v" '%s' "${!_v%%@*}"; setenv "$_v" "${!_v}"; export "${_v?}" ;; esac
+  done
   if [ -z "${CURRENT_VERSION:-}" ]; then
     if [ -n "$(mdm_version_core "${SERVER_VERSION:-}")" ]; then CURRENT_VERSION=$SERVER_VERSION; else CURRENT_VERSION=0.0.0; fi
   fi

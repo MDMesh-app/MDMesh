@@ -94,9 +94,11 @@ git clone https://github.com/MDMesh-app/MDMesh.git && cd MDMesh
 
 `--update` looks up the release tags, checks the newest release's signed manifest (as the quick start does, with the
 clone's `release/minisign.pub`) and that the commit it names is the one the tag points to, then fetches and checks
-out that commit and runs that release's setup.sh. A newest tag whose release isn't published yet is skipped, saying
-so. It stops on a manifest that doesn't verify (or, from before 0.5.0, names no commit) and on local changes. Run the
-same command to update later; the clone stays on a release tag, so don't `git pull`.
+out that commit and runs that release's setup.sh. A newest tag whose release isn't published yet (GitHub answers 404)
+is skipped, saying so; it never goes below the release the clone is on, and tries at most the 5 newest tags. If GitHub
+can't be reached (a timeout, DNS, TLS or a server error, each retried twice), it stops and changes nothing. It also
+stops on a manifest that doesn't verify (or, from before 0.5.0, names no commit) and on local changes. Run the same
+command to update later; the clone stays on a release tag, so don't `git pull`.
 
 Installs from 0.4.x have no `--update` yet: update to 0.5.0 the old way once, `git pull && ./setup.sh` (native:
 `git pull && sudo ./setup.sh --native`), then use `./setup.sh --update` from then on.

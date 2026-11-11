@@ -43,12 +43,16 @@ mdm_answers_load() { local _mdm_x=$-; set +x; _mdm_answers_load; case "$_mdm_x" 
 _mdm_private_file() {
   local r
   command -v find >/dev/null 2>&1 || return 1
-  r=$(find "$1" -prune \( -user "$(id -u)" -o -user 0 \) ! -perm -040 ! -perm -020 ! -perm -010 ! -perm -004 \
+  r=$(find "$1" -prune \( -user "$EUID" -o -user 0 \) ! -perm -040 ! -perm -020 ! -perm -010 ! -perm -004 \
         ! -perm -002 ! -perm -001 -print 2>/dev/null) || return 1
   [ "$r" = "$1" ]
 }
 _mdm_answers_load() {
   local f=${MDMESH_ANSWERS-} line key val n=0 seen=" " v
+  # Secrets leave the environment first, before this starts any program (find, wc): they stay shell variables, so
+  # mdm_answer still reads them, but no child sees them.
+  # shellcheck disable=SC2163  # the variable named by $key
+  for key in $_MDM_SECRET_KEYS; do [ -z "${!key+x}" ] || export -n "$key"; done
   if [ -n "$f" ]; then
     case "$f" in /*) ;; *) _mdm_answer_fail "MDMESH_ANSWERS must be an absolute path (e.g. \$PWD/answers.env)." ;; esac
     { [ -f "$f" ] && [ -r "$f" ]; } || _mdm_answer_fail "MDMESH_ANSWERS: $f is not a readable file."
@@ -74,9 +78,6 @@ _mdm_answers_load() {
       if [ -z "${!key+x}" ]; then printf -v "$key" '%s' "$val"; _MDM_ANS_FROM_FILE="$_MDM_ANS_FROM_FILE$key "; fi
     done < "$f"
   fi
-  # Secrets leave the environment now: they stay shell variables, so mdm_answer still reads them, but no child sees them.
-  # shellcheck disable=SC2163  # the variable named by $key
-  for key in $_MDM_SECRET_KEYS; do [ -z "${!key+x}" ] || export -n "$key"; done
   for key in MDMESH_NONINTERACTIVE MDMESH_DRY_RUN; do
     v=${!key-}
     case "$v" in ''|0|1) ;; *) _mdm_answer_fail "$key must be 1 or 0." ;; esac

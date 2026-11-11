@@ -374,6 +374,21 @@ dry quickstart.sh MDMESH_RELEASE_PUBKEY=RWQexample
 [ "$(plan_field release-pubkey)" = "(custom) [MDMESH_RELEASE_PUBKEY]" ] || { fail "the plan does not show MDMESH_RELEASE_PUBKEY"; show; }
 ok
 
+# A PATH line earlier in .env does not switch off the read-only check (it uses no external command).
+printf 'PATH=/nonexistent\nUID=1\n' > "$WORK/case.env"
+RC=0; out=$(env -i bash -c ". '$REPO/install/lib/dotenv.sh'; mdm_load_env \"\$1\"" _ "$WORK/case.env" 2>&1) || RC=$?
+{ [ "$RC" != 0 ] && printf '%s' "$out" | grep -q 'line 2: UID is a read-only shell variable'; } || fail "dotenv: the read-only check depends on PATH: $out"
+ok
+# quickstart.sh's repo and image-owner questions refuse a wrong answer and ask again (a real run on stdin; it stops when
+# the release lookup reaches the curl stub, naming the repo it accepted).
+mkdir -p "$WORK/qs2"
+(cd "$WORK/qs2" && printf '%s\n' 1 'bad repo!' me/fork Bad myowner | env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" \
+  STUB_LOG="$WORK/children.log" STUB_DOCKER_OK=1 bash "$REPO/quickstart.sh" > "$WORK/out/o" 2> "$WORK/out/e") || true
+{ grep -qF 'That answer must be owner/name' "$WORK/out/e" && grep -qF 'That answer must be a GHCR owner in lowercase' "$WORK/out/e" \
+  && grep -qF 'Could not resolve the latest release of me/fork' "$WORK/out/e"; } \
+  || { fail "quickstart.sh does not refuse a wrong repo or image owner and ask again"; show; }
+ok
+
 # The answers file's own rules, and the native installer's older variable names.
 dry quickstart.sh MDMESH_ANSWERS=answers.env
 { [ "$RC" != 0 ] && grep -q 'absolute path' "$WORK/out/e"; } || fail "a relative MDMESH_ANSWERS is not refused"

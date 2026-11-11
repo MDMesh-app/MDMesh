@@ -50,6 +50,8 @@ ACCEPT=(
   'SMTP_PASSWORD="p\$ss\"w\\rd"'
   'K=a}'
   'K=Ünïcødé'
+  'LC_ALL=C'
+  $'# a comment with a Windows line ending\r'
 
 )
 REFUSE=(

@@ -29,18 +29,27 @@ fail() { FAILS=$((FAILS + 1)); printf 'FAIL: %s\n' "$*" >&2; }
 ok() { CHECKS=$((CHECKS + 1)); }
 G=(git -c user.name=t -c user.email=t@example.com -c init.defaultBranch=main -c advice.detachedHead=false)
 
-# Stubs: curl serves https://github.com/test/repo/releases/download/<tag>/<name> from $REL_DIR/<tag>/<name>; docker
-# (and anything else that could install) fails.
+# Stubs: curl serves https://github.com/test/repo/releases/download/<tag>/<name> from $REL_DIR/<tag>/<name>, answering
+# -w '%{http_code}' (404 for a missing file); CURL_FAULT=<tag>:28 makes it time out for that tag (curl exit 28, code
+# 000), <tag>:503 answer HTTP 503; CURL_FLAKY=N makes its first N calls time out. docker (and anything else that could
+# install) fails.
 mkdir -p "$WORK/stubs"
 cat > "$WORK/stubs/curl" <<'EOF'
 #!/bin/sh
 env >> "$WORK_ENV_LOG"
-out=''; url=''
-while [ $# -gt 0 ]; do case "$1" in -o) out=$2; shift ;; https://*) url=$1 ;; esac; shift; done
-case "$url" in https://github.com/test/repo/releases/download/*) ;; *) exit 22 ;; esac
-f="$REL_DIR/${url#https://github.com/test/repo/releases/download/}"
-[ -f "$f" ] && [ -n "$out" ] || exit 22
-cp "$f" "$out"
+out=''; url=''; w=''
+while [ $# -gt 0 ]; do case "$1" in -o) out=$2; shift ;; -w) w=$2; shift ;; https://*) url=$1 ;; esac; shift; done
+code() { [ -z "$w" ] || printf '%s' "$1"; }
+case "$url" in https://github.com/test/repo/releases/download/*) ;; *) code 000; exit 6 ;; esac
+rel=${url#https://github.com/test/repo/releases/download/}
+if [ -n "${CURL_FLAKY:-}" ]; then
+  n=$(cat "$WORK_ENV_LOG.flaky" 2>/dev/null || echo 0); echo $((n + 1)) > "$WORK_ENV_LOG.flaky"
+  [ "$n" -ge "$CURL_FLAKY" ] || { code 000; exit 28; }
+fi
+case "${CURL_FAULT:-}" in "${rel%%/*}":28) code 000; exit 28 ;; "${rel%%/*}":503) code 503; exit 0 ;; esac
+f="$REL_DIR/$rel"
+if [ -f "$f" ] && [ -n "$out" ]; then cp "$f" "$out"; code 200; exit 0; fi
+code 404; exit 0
 EOF
 # shellcheck disable=SC2016  # the stub's own variable
 for c in docker apt-get systemctl mvn; do printf '#!/bin/sh\nenv >> "$WORK_ENV_LOG"\nexit 99\n' > "$WORK/stubs/$c"; done
@@ -59,8 +68,9 @@ cp -- "$WORK/k.pub" "$O/release/minisign.pub"
   && echo 2 > note && "${G[@]}" commit -qam rc && "${G[@]}" tag v9.2.0-rc1 \
   && echo 3 > note && "${G[@]}" commit -qam ahead )
 c900=$(git -C "$O" rev-parse 'v9.0.0^{commit}'); c910=$(git -C "$O" rev-parse v9.1.0); cmain=$(git -C "$O" rev-parse main)
-# A second origin whose newest tag, v9.1.1, has no published release yet.
+# A second origin whose newest tag, v9.1.1, has no published release yet; a third with six such tags.
 "${G[@]}" clone -q "$O" "$WORK/origin2"; "${G[@]}" -C "$WORK/origin2" tag v9.1.1 "$cmain"
+"${G[@]}" clone -q "$O" "$WORK/origin3"; for i in 0 1 2 3 4 5; do "${G[@]}" -C "$WORK/origin3" tag "v9.3.$i" "$cmain"; done
 
 # manifest DIR TAG VERSION COMMIT KEY: a signed manifest for TAG in DIR/TAG/ (no commit when COMMIT is empty).
 manifest() {
@@ -96,7 +106,7 @@ clone() {
 upd() {
   local name=$1 rel=$2; shift 2
   local envs=(); while [ "$#" -gt 0 ] && [ "$1" != -- ]; do envs+=("$1"); shift; done; [ "$#" = 0 ] || shift
-  RC=0; : > "$WORK/env.log"
+  RC=0; : > "$WORK/env.log"; rm -f -- "$WORK/env.log.flaky"
   (cd "$WORK/$name" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" GITHUB_REPO=test/repo REL_DIR="$R/$rel" WORK_ENV_LOG="$WORK/env.log" \
     "${envs[@]}" bash ./setup.sh --update "$@" < /dev/null > "$WORK/out" 2>&1) || RC=$?
 }
@@ -138,11 +148,39 @@ upd tok ok MDMESH_TUNNEL_TOKEN=c0ffee0token0c0ffee MDMESH_MODE=tunnel MDMESH_HOS
 { head_is tok "$c910" && [ -s "$WORK/env.log" ] && ! grep -q c0ffee0token0c0ffee "$WORK/env.log" "$WORK/out"; } \
   || { fail "the tunnel token reached a program --update ran, or the output"; show; }
 ok
-# A newest tag whose release isn't published yet: skipped, saying so, for the newest that is.
-clone fallback '' "$WORK/origin2"
+# A newest tag whose release isn't published yet (HTTP 404): skipped, saying so, for the newest that is.
+clone fallback v9.0.0 "$WORK/origin2"
 upd fallback ok
-{ head_is fallback "$c910" && grep -q 'v9.1.1 has no published signed manifest yet' "$WORK/out"; } \
+{ head_is fallback "$c910" && grep -q 'v9.1.1: no published release yet' "$WORK/out"; } \
   || { fail "a newest tag without a published release is not skipped for the newest signed one"; show; }
+ok
+# A network failure is not "not published": a timeout or a 5xx stops, saying GitHub could not be reached, and never
+# falls back (nor tells you to update the old way). Tags skipped before it are listed first.
+for f in "v9.1.0:28|curl exit 28" "v9.1.0:503|HTTP 503"; do
+  clone "net-${f%%:*}-${f#*:}" v9.0.0 "$WORK/origin2"
+  upd "net-${f%%:*}-${f#*:}" ok CURL_FAULT="${f%%|*}" --
+  { [ "$RC" != 0 ] && head_is "net-${f%%:*}-${f#*:}" "$c900" && grep -qF "Could not reach GitHub" "$WORK/out" \
+    && grep -qF "${f#*|}" "$WORK/out" && ! grep -q 'old way' "$WORK/out" \
+    && [ "$(grep -n 'v9.1.1: no published release yet' "$WORK/out" | cut -d: -f1)" -lt "$(grep -n 'Could not reach GitHub' "$WORK/out" | cut -d: -f1)" ]; } \
+    || { fail "a ${f#*|} is not reported as a network failure after the skipped tags"; show; }
+  ok
+done
+# A flaky link: retried, then it works.
+clone flaky v9.0.0
+upd flaky ok CURL_FLAKY=2 --
+head_is flaky "$c910" || { fail "--update does not retry a timeout"; show; }
+ok
+# The walk stops at the release this clone is on: nothing newer published yet is said so, nothing older is tried.
+clone older v9.1.0 "$WORK/origin2"; : > "$WORK/older/.env"
+upd older nosig
+{ [ "$RC" != 0 ] && head_is older "$c910" && grep -q 'No release newer than this clone' "$WORK/out"; } \
+  || { fail "--update walks below the release the clone is on"; show; }
+ok
+# ... and gives up after the 5 newest tags.
+clone capped v9.0.0 "$WORK/origin3"
+upd capped ok
+{ [ "$RC" != 0 ] && head_is capped "$c900" && grep -q 'None of the 5 newest release tags' "$WORK/out" && ! grep -q 'v9.1.0' "$WORK/out"; } \
+  || { fail "--update does not stop after the 5 newest tags"; show; }
 ok
 # From a detached release checkout with an install: forward to the newest, no git pull involved.
 clone detached v9.0.0; : > "$WORK/detached/.env"
@@ -164,7 +202,7 @@ ok
 clone dirty; echo x >> "$WORK/dirty/note"
 expect_refused dirty ok "a clone with local changes" "commit or stash them"
 # Releases that don't verify.
-for c in nosig:"has a published, signed manifest" otherkey:"is not signed by the release key" \
+for c in nosig:"is published yet" otherkey:"is not signed by the release key" \
          tampered:"is not signed by the release key" replay:"is not that release's" \
          wrongcommit:"its signed manifest names commit" nobind:"records no commit"; do
   clone "bad-${c%%:*}"

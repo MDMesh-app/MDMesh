@@ -20,7 +20,8 @@ unset CDPATH
 umask 077
 export PATH="/usr/sbin:/sbin:$PATH"   # useradd/userdel/pg tools live here; not every root shell has it
 # -P resolves symbolic links so REPO is the real checkout.
-cd -P -- "$(dirname -- "$0")/.."
+# (No dirname: no program may start before the answers are loaded, the tunnel token would be in its environment.)
+case "$0" in */*) cd -P -- "${0%/*}/.." ;; *) cd -P -- .. ;; esac
 REPO="$PWD"   # repo root — used for absolute paths inside subshells (e.g. exploding the WAR)
 # Shared DB provisioning rules (seed gate, verified seed, post-seed repairs) — same file setup.sh uses.
 # shellcheck source=lib/db.sh

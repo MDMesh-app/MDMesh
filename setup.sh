@@ -24,7 +24,9 @@ set -euo pipefail
 # CDPATH's directories, not the current one — silently building or reading from a same-named directory elsewhere. Unset
 # it for this script and its children.
 unset CDPATH
-cd -P -- "$(dirname -- "$0")"
+# The script's directory without running dirname: no program may start before the answers are loaded (the tunnel token
+# would be in its environment).
+case "$0" in */*) cd -P -- "${0%/*}" ;; esac
 
 say()  { printf '\033[1;36m%s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m%s\033[0m\n' "$*"; }
@@ -77,14 +79,36 @@ mdm_answers_load
 # this clone's release/minisign.pub): the signature, the version (the tag), and the commit, which must be the one the tag
 # points to; the clone is then checked out at that commit (a detached HEAD), so the code that runs is the signed one.
 # Manifests from before 0.5.0 record no commit and are refused. A newest tag whose release has no published manifest yet
-# (still publishing, or failed) is skipped, saying so; a manifest that is there but does not verify stops the update.
+# (HTTP 404: still publishing, or failed) is skipped, saying so; the walk stops below the release this clone is on, and
+# after the 5 newest tags. Any other download failure (a timeout, DNS, TLS, a 5xx; each retried twice) stops the update:
+# that is GitHub out of reach, not a release missing. A manifest that is there but does not verify stops it too.
 # MDMESH_DRY_RUN=1 does all the checking, then stops before anything is fetched or checked out. Updates come from
 # --update, never from `git pull`.
 _upd_dir=''
 _upd_clean() { [ -z "$_upd_dir" ] || { rm -f -- "$_upd_dir/manifest.json" "$_upd_dir/manifest.json.minisig"; rmdir -- "$_upd_dir" 2>/dev/null || true; }; }
 _upd_stop() { _upd_clean; err "$@"; err "Nothing was changed."; exit 1; }
+# _upd_get URL FILE: downloads URL to FILE. 0 when done, 4 on HTTP 404 (not published), 1 on anything else (a timeout,
+# DNS, TLS, a 5xx: retried twice, with short timeouts), with the reason in _upd_why.
+_upd_get() {
+  local code rc n
+  for n in 1 2 3; do
+    rc=0; code=$(curl -sSL --connect-timeout 10 -m 30 -o "$2" -w '%{http_code}' "$1" 2>/dev/null) || rc=$?
+    if [ "$rc" = 0 ]; then
+      case "$code" in
+        200) return 0 ;;
+        404) return 4 ;;
+        408|429|5??) _upd_why="HTTP $code" ;;
+        *) _upd_why="HTTP ${code:-000}"; return 1 ;;
+      esac
+    else
+      _upd_why="curl exit $rc: a timeout, DNS or TLS failure"
+    fi
+    [ "$n" = 3 ] || sleep "$n"
+  done
+  return 1
+}
 update_to_release() {
-  local repo gerr refs list ver t sha tag='' tgt='' newest='' skipped='' cur rc mcommit dry=${MDMESH_DRY_RUN:-0} have=0
+  local repo gerr refs list ver t sha tag='' tgt='' skipped='' cur curver rc mcommit dry=${MDMESH_DRY_RUN:-0} have=0 walked=0 f
   command -v git >/dev/null || _upd_stop "--update needs git."
   gerr=$(git rev-parse --is-inside-work-tree 2>&1) || _upd_stop "--update needs a git clone of MDMesh, and git refuses this directory: ${gerr}"
   if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
@@ -108,12 +132,24 @@ update_to_release() {
       t = $2; sub(/^refs\/tags\//, "", t); p = sub(/\^\{\}$/, "", t); if (p || !(t in c)) c[t] = $1 }
     END { for (t in c) print substr(t, 2), t, c[t] }' | sort -t. -k1,1nr -k2,2nr -k3,3nr)
   [ -n "$list" ] || _upd_stop "origin has no release tag (vX.Y.Z)."
+  curver=$(mdm_repo_version .)   # the release this clone is on, or the nearest one before it ("" when none)
   _upd_dir=$(mktemp -d) || _upd_stop "Could not make a temporary directory."
   while read -r ver t sha; do
-    [ -n "$newest" ] || newest=$t
+    if [ -n "$skipped" ]; then
+      [ "$walked" -lt 5 ] || _upd_stop "None of the 5 newest release tags has a published release yet (skipped:${skipped}). Try again later."
+      if [ -n "$curver" ] && mdm_version_gt "$curver" "$ver"; then
+        _upd_stop "No release newer than this clone's v${curver} is published yet (skipped:${skipped}). Try again later."
+      fi
+    fi
+    walked=$((walked + 1))
     rm -f -- "$_upd_dir/manifest.json" "$_upd_dir/manifest.json.minisig"
-    if ! curl -fsSL -m 60 "https://github.com/${repo}/releases/download/${t}/manifest.json" -o "$_upd_dir/manifest.json" \
-       || ! curl -fsSL -m 60 "https://github.com/${repo}/releases/download/${t}/manifest.json.minisig" -o "$_upd_dir/manifest.json.minisig"; then
+    for f in manifest.json manifest.json.minisig; do
+      rc=0; _upd_get "https://github.com/${repo}/releases/download/${t}/${f}" "$_upd_dir/$f" || rc=$?
+      [ "$rc" != 1 ] || _upd_stop "Could not reach GitHub for the ${f} of ${t} (${_upd_why}). Check this host's network and re-run."
+      [ "$rc" = 0 ] || break
+    done
+    if [ "$rc" = 4 ]; then
+      warn "${t}: no published release yet (HTTP 404 for its ${f}; it may still be publishing, or it failed). Trying the next."
       skipped="$skipped $t"; continue
     fi
     say "Verifying release ${t} of ${repo}…"
@@ -128,10 +164,8 @@ update_to_release() {
     tag=$t; tgt=$sha
     break
   done <<< "$list"
-  [ -n "$tag" ] || _upd_stop "No release tag of origin has a published, signed manifest (tried:${skipped}). A release may still be publishing: try again later."
-  if [ "$tag" != "$newest" ]; then
-    warn "${newest} has no published signed manifest yet (its release may still be publishing, or it failed): using ${tag}, the newest release that has one."
-  fi
+  [ -n "$tag" ] || _upd_stop "No release tag of origin has a published, signed manifest (skipped:${skipped}). A release may still be publishing: try again later."
+  [ -z "$skipped" ] || warn "Using ${tag}, the newest release that is published."
   _upd_clean
   cur=$(git rev-parse HEAD)
   git cat-file -e "${tgt}^{commit}" 2>/dev/null && have=1
@@ -263,7 +297,12 @@ if [ "$REUSE_ENV" = 1 ]; then
   # first init), so a fresh DB_PASSWORD would brick the stack; a fresh HASH_SECRET would likewise
   # invalidate every enrolled device's token. --reset opts out (see the header for when that's safe).
   say "Existing .env found — reusing it (secrets + hosting mode kept; use --reset to start over)."
-  chmod go= .env   # it holds the secrets: owner-only, also when an older version or a hand edit left it looser
+  # It holds the secrets: owner-only, also when an older version or a hand edit left it looser. (Not ours to change when
+  # another user owns it: say so instead.)
+  if [ -O .env ]; then chmod go= .env
+  elif [ -n "$(find .env -prune \( -perm -040 -o -perm -004 \) -print 2>/dev/null)" ]; then
+    warn ".env is readable by other users, and owned by another one: run chmod 600 .env as its owner."
+  fi
   mdm_load_env .env
   version_preflight "${CURRENT_VERSION:-${SERVER_VERSION:-}}"
   _env_base_url=${BASE_URL:-}
@@ -334,6 +373,9 @@ else
 
   # Owner-only from the start: written to a new mode-600 file (mktemp), then renamed over .env, so no other user can
   # read the secrets at any moment, and a --reset over a looser old .env does not keep its mode.
+  # A failed write or an interrupt removes it (it holds the new secrets).
+  _envtmp=''
+  trap '[ -z "$_envtmp" ] || rm -f -- "$_envtmp"' EXIT; trap 'exit 130' INT; trap 'exit 143' TERM
   _envtmp=$(mktemp .env.new.XXXXXX)
   cat > "$_envtmp" <<EOF
 DB_NAME=mdmesh
@@ -365,7 +407,10 @@ SMTP_HOST=
 SMTP_PORT=25
 SMTP_FROM=mdm@${HOST}
 EOF
-  mv -f -- "$_envtmp" .env
+  # --reset as root (sudo) over someone's .env keeps it theirs, so their later re-runs can still read it.
+  if [ "$EUID" = 0 ] && [ -f .env ]; then chown --reference=.env -- "$_envtmp"; fi
+  mv -fT -- "$_envtmp" .env
+  _envtmp=''; trap - INT TERM
   say "Wrote .env (secrets generated)."
 fi
 

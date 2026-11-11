@@ -21,12 +21,11 @@ mdm_load_env() { local _mdm_le_x=$-; set +x; _mdm_load_env "$1"; case "$_mdm_le_
 
 # shellcheck disable=SC1003  # '\' is a backslash, on purpose
 _mdm_load_env() {
-  local LC_ALL=C _mdm_le_file=$1 _mdm_le_line _mdm_le_n=0 _mdm_le_i _mdm_le_len _mdm_le_c _mdm_le_d _mdm_le_key \
+  local _mdm_le_file=$1 _mdm_le_line _mdm_le_n=0 _mdm_le_i _mdm_le_len _mdm_le_c _mdm_le_d _mdm_le_key \
     _mdm_le_val _mdm_le_start _mdm_le_colon _mdm_le_j
   local _mdm_le_az=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_ _mdm_le_09=0123456789
   while IFS= read -r _mdm_le_line || [ -n "$_mdm_le_line" ]; do
     _mdm_le_n=$((_mdm_le_n + 1))
-    case "$_mdm_le_line" in *$'\r'*) _mdm_le_fail "$_mdm_le_n" "it has a carriage return (a Windows line ending)" ;; esac
     _mdm_le_len=${#_mdm_le_line}; _mdm_le_i=0
     # Leading blanks; then a blank or comment line is skipped.
     while [ "$_mdm_le_i" -lt "$_mdm_le_len" ]; do
@@ -34,6 +33,7 @@ _mdm_load_env() {
     done
     [ "$_mdm_le_i" -lt "$_mdm_le_len" ] || continue
     [ "${_mdm_le_line:_mdm_le_i:1}" != '#' ] || continue
+    case "$_mdm_le_line" in *$'\r'*) _mdm_le_fail "$_mdm_le_n" "it has a carriage return (a Windows line ending)" ;; esac
     # An "export " prefix.
     case "${_mdm_le_line:_mdm_le_i}" in
       'export '*|'export'$'\t'*)
@@ -48,7 +48,7 @@ _mdm_load_env() {
       [ "${_mdm_le_line:_mdm_le_i:1}" = '=' ] || _mdm_le_fail "$_mdm_le_n" "it is not a NAME=value assignment"
       _mdm_le_key=${_mdm_le_line:_mdm_le_j:_mdm_le_i-_mdm_le_j}
       case "$_mdm_le_key" in _mdm_le_*) _mdm_le_fail "$_mdm_le_n" "the name $_mdm_le_key is reserved for the .env reader" ;; esac
-      if declare -p "$_mdm_le_key" 2>/dev/null | grep -q '^declare -[a-zA-Z]*r'; then
+      if [[ $(declare -p "$_mdm_le_key" 2>/dev/null) =~ ^declare\ -[^\ ]*r ]]; then
         _mdm_le_fail "$_mdm_le_n" "$_mdm_le_key is a read-only shell variable"
       fi
       _mdm_le_i=$((_mdm_le_i + 1)); _mdm_le_start=$_mdm_le_i; _mdm_le_val=''; _mdm_le_colon=0
@@ -69,7 +69,7 @@ _mdm_load_env() {
               _mdm_le_c=${_mdm_le_line:_mdm_le_i:1}
               case "$_mdm_le_c" in
                 '"') _mdm_le_i=$((_mdm_le_i + 1)); break ;;
-                '$'|'`') _mdm_le_fail "$_mdm_le_n" "the value has a \$ or \` expansion (escape it as \\\$ or \\\`, or use '…')" ;;
+                '$'|'`') _mdm_le_fail "$_mdm_le_n" "the value has a \$ or a \` (the shell would expand it: escape it as \\\$ or \\\`, or use '…')" ;;
                 '\')
                   _mdm_le_d=${_mdm_le_line:_mdm_le_i+1:1}
                   case "$_mdm_le_d" in
@@ -85,7 +85,7 @@ _mdm_load_env() {
             _mdm_le_d=${_mdm_le_line:_mdm_le_i+1:1}
             [ -n "$_mdm_le_d" ] || _mdm_le_fail "$_mdm_le_n" "it ends in a backslash, which continues it on the next line"
             _mdm_le_val+=$_mdm_le_d; _mdm_le_i=$((_mdm_le_i + 2)); _mdm_le_colon=0 ;;
-          '$'|'`') _mdm_le_fail "$_mdm_le_n" "the value has a \$ or \` expansion (escape it as \\\$ or \\\`, or use '…')" ;;
+          '$'|'`') _mdm_le_fail "$_mdm_le_n" "the value has a \$ or a \` (the shell would expand it: escape it as \\\$ or \\\`, or use '…')" ;;
           ';'|'&'|'|'|'<'|'>'|'('|')') _mdm_le_fail "$_mdm_le_n" "the value has an unquoted ; & | < > ( or ) (quote the value)" ;;
           '~')
             if [ "$_mdm_le_i" = "$_mdm_le_start" ] || [ "$_mdm_le_colon" = 1 ]; then

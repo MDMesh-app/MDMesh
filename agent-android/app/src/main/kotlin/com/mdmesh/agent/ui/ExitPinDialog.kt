@@ -27,7 +27,8 @@ import com.mdmesh.agent.R
  * back with [render]. A wrong PIN keeps the dialog open; it closes only on [ExitPinUiState.Close] or Cancel.
  *
  * The typed PIN is never saved with the activity's state: after a rotation the launcher reopens the dialog empty
- * (an in-place rebuild hands it over in memory). Shown or not, it can't be copied, shared or autofilled.
+ * (an in-place rebuild hands it over in memory). It goes with the dialog when the screen goes off (the launcher
+ * stops) or after [IDLE_TIMEOUT_MS] without input. Shown or not, it can't be copied, shared or autofilled.
  * The wrong-PIN count and lockout live in ExitPinGate's persisted store, so neither resets with the dialog.
  */
 class ExitPinDialog private constructor(
@@ -97,8 +98,11 @@ class ExitPinDialog private constructor(
                 }
             }
         })
-        // Keyboard and focus in the field as the dialog opens.
-        dialog.setOnShown { field.requestFocus() }
+        // Keyboard and focus in the field as the dialog opens; from then on a minute without input closes it.
+        dialog.setOnShown {
+            field.requestFocus()
+            restartIdle()
+        }
         // Nothing to select, copy, share, translate or autofill: no selection or insertion toolbar at all.
         field.isLongClickable = false
         field.customSelectionActionModeCallback = NoActionMode
@@ -109,7 +113,10 @@ class ExitPinDialog private constructor(
         //   the first press submits, repeats and the release are swallowed.
         // - The soft keyboard's Done is an editor action without a key event: it submits.
         // - A scanner that types its Enter as text: the newline never reaches the PIN, and a trailing one submits.
-        field.setOnKeyListener { _, keyCode, event -> act(keyAction(keyCode, event.action, event.repeatCount)) }
+        field.setOnKeyListener { _, keyCode, event ->
+            restartIdle()
+            act(keyAction(keyCode, event.action, event.repeatCount))
+        }
         field.setOnEditorActionListener { _, actionId, event ->
             act(if (event == null && actionId == EditorInfo.IME_ACTION_DONE) Input.SUBMIT else Input.IGNORE)
         }
@@ -120,10 +127,19 @@ class ExitPinDialog private constructor(
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
             override fun afterTextChanged(s: Editable?) {
+                restartIdle()
                 // Typing again clears the error; clearing the field for a retry happens before the error is shown.
                 if (error.visibility == View.VISIBLE && !s.isNullOrEmpty()) showError(null)
             }
         })
+    }
+
+    /** Closes the prompt (and with it whatever was typed) a while after the last input. */
+    private val idle = Runnable { dialog.dismiss() }
+
+    private fun restartIdle() {
+        field.removeCallbacks(idle)
+        field.postDelayed(idle, IDLE_TIMEOUT_MS)
     }
 
     /** What a key or editor action in the PIN field does. */
@@ -166,6 +182,14 @@ class ExitPinDialog private constructor(
     }
 
     companion object {
+        /**
+         * An open prompt with no key or text input for this long closes, taking what was typed with it. A PIN is
+         * typed in seconds; a minute covers looking it up or a short interruption, and an abandoned prompt is gone
+         * long before anyone else is likely at the device, also where the kiosk keeps the screen on (no screen-off
+         * to clear it, see KioskLauncherActivity.onStop).
+         */
+        const val IDLE_TIMEOUT_MS = 60_000L
+
         /** A hardware key in the field: Enter submits on its first press; its repeats and release do nothing. */
         internal fun keyAction(keyCode: Int, action: Int, repeatCount: Int): Input = when {
             keyCode != KeyEvent.KEYCODE_ENTER && keyCode != KeyEvent.KEYCODE_NUMPAD_ENTER -> Input.IGNORE

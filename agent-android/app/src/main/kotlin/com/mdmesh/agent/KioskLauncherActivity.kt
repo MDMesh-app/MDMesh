@@ -118,6 +118,15 @@ class KioskLauncherActivity : ComponentActivity() {
         dialogs.onConfigurationChanged(newConfig) { tag, typed -> active?.let { reopenExitDialog(tag, it, typed) } }
     }
 
+    /**
+     * The launcher left the screen: screen off, the pinned or a grid app in front. A PIN prompt closes, typed PIN
+     * and Show PIN with it, so nobody finds it half typed; not for a config change, which rebuilds it.
+     */
+    override fun onStop() {
+        if (!isChangingConfigurations) dialogs.dismiss(KioskExitDialogs.PIN)
+        super.onStop()
+    }
+
     override fun onDestroy() {
         dialogs.dismiss()
         super.onDestroy()
@@ -142,6 +151,9 @@ class KioskLauncherActivity : ComponentActivity() {
         val restored = dialogs.takeRestored()
         val previous = active
         active = p
+        // The kiosk an exit dialog was opened for is gone or replaced (a remote exit or re-entry, also one that
+        // arrived while the launcher was stopped): close it rather than leave it on a kiosk it wasn't for.
+        if (previous != null && previous != p) dialogs.dismiss()
         if (p == null) {
             dialogs.dismiss()
             holding = false
@@ -219,7 +231,11 @@ class KioskLauncherActivity : ComponentActivity() {
         // No PIN, no on-device exit (the affordance isn't shown either): kiosk then ends only from the console.
         if (!pinGate.isAvailable(p.password)) return
         pinGate.remainingLockMs()?.let { showExitLocked(it); return }
-        dialogs.show(KioskExitDialogs.PIN, ExitPinDialog.create(this, typed, ::onPinEntered).dialog)
+        val prompt = ExitPinDialog.create(this, typed, ::onPinEntered)
+        // "N more wrong PINs lock the exit" comes from the gate's saved count, so a rebuilt or reopened prompt says
+        // it too, not only the one the last wrong PIN was typed into.
+        pinGate.attemptsLeft()?.let { prompt.render(ExitPinUiState.triesLeft(it)) }
+        dialogs.show(KioskExitDialogs.PIN, prompt.dialog)
     }
 
     /**

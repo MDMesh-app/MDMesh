@@ -58,6 +58,11 @@ class DialogSlot(private val key: String) {
         dialog.show(Token)
     }
 
+    /** Close the dialog showing under [tag], if that's the one showing. */
+    fun dismiss(tag: String) {
+        if (current?.first == tag) dismiss()
+    }
+
     fun dismiss() {
         val open = current ?: return
         current = null

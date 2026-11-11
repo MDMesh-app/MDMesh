@@ -20,11 +20,14 @@ sealed interface ExitPinUiState {
     data class Error(val message: UiText, val clearField: Boolean) : ExitPinUiState
 
     companion object {
+        /** The tries-left warning, shown again from the gate's state when the prompt is (re)opened. */
+        fun triesLeft(attemptsLeft: Int) =
+            Error(UiText.Plural(R.plurals.kiosk_exit_wrong_pin, attemptsLeft), clearField = false)
+
         fun of(outcome: ExitPinGate.Outcome): ExitPinUiState = when (outcome) {
             ExitPinGate.Outcome.Open -> Close
             is ExitPinGate.Outcome.Locked -> Close
-            is ExitPinGate.Outcome.Wrong ->
-                Error(UiText.Plural(R.plurals.kiosk_exit_wrong_pin, outcome.attemptsLeft), clearField = true)
+            is ExitPinGate.Outcome.Wrong -> triesLeft(outcome.attemptsLeft).copy(clearField = true)
             // Not counted and not checked: keep what was typed, so trying again is one tap.
             ExitPinGate.Outcome.Unavailable -> Error(UiText.Res(R.string.kiosk_exit_unavailable), clearField = false)
         }

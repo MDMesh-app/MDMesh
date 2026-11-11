@@ -102,6 +102,47 @@ class TextPlate(
     }
 }
 
+/**
+ * Works a launcher root's plates out again whenever what is under them may have moved: after any layout (rotation,
+ * new apps, a restored scroll position) and any scroll it [follow]s (drag, fling, programmatic), or when told
+ * ([changed]: a new image or look). At most once a frame, in the frame's pre-draw, so they always match what is drawn.
+ * The views are scanned once per layout; a scroll frame only moves positions (no tree walk, few allocations).
+ */
+class PlateFrames(private val root: ViewGroup, private val update: (TextPlates.Scan) -> Unit) {
+    private var scan: TextPlates.Scan? = null
+    private var dirty = false
+
+    init {
+        root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> viewsChanged() }
+        root.viewTreeObserver.addOnPreDrawListener {
+            if (dirty) {
+                dirty = false
+                update(scan ?: TextPlates.scan(root).also { scan = it })
+            }
+            true
+        }
+    }
+
+    /** Before the next frame; several calls in one frame cost one update. */
+    fun changed() {
+        if (!dirty) {
+            dirty = true
+            root.postInvalidateOnAnimation()
+        }
+    }
+
+    /** The views under the root were replaced or laid out again: scan them again too. */
+    fun viewsChanged() {
+        scan = null
+        changed()
+    }
+
+    /** [scroller] moves text over the (fixed) image. */
+    fun follow(scroller: View) {
+        scroller.setOnScrollChangeListener { _, _, _, _, _ -> changed() }
+    }
+}
+
 /** Works out every [TextPlate] under a launcher root: row widths first, then each plate's opacity. */
 object TextPlates {
 
@@ -112,93 +153,143 @@ object TextPlates {
     data class Painted(val dim: Int, val statusBar: Int)
 
     /**
-     * [root] is laid out over the image described by [info] (null: no image, no plates), drawn by the root's
-     * [BackdropDrawable] in [palette] and [placement]. Places the row plates, works out the dim from the controls,
-     * then every plate's opacity (`docs/kiosk-background-scrim.md`). Null without an image.
+     * What a layout pass found under a launcher root: the plated texts, the controls, and the grid rows (by layout
+     * position, which scrolling doesn't change). Made once per layout ([scan]); every scroll frame reuses it.
      */
-    fun update(root: ViewGroup, info: BackdropInfo?, palette: KioskPalette, placement: Placement): Painted? {
+    class Scan internal constructor(
+        val plates: List<Pair<TextView, TextPlate>>,
+        val controls: List<View>,
+        val rows: List<List<Pair<TextView, TextPlate>>>,
+    ) {
+        internal val origin = IntArray(2)
+        internal val at = IntArray(2)
+        internal val rect = RectF()
+    }
+
+    /** After a layout: finds the plated texts and controls under [root] and places the row plates ([LabelRows]). */
+    fun scan(root: ViewGroup): Scan {
         val plates = mutableListOf<Pair<TextView, TextPlate>>()
         val controls = mutableListOf<View>()
         collect(root, plates, controls)
-        layOutRows(root, rows(plates))
-        if (info == null || root.width == 0 || root.height == 0) {
-            plates.forEach { it.second.step = 0 }
-            return null
+        // A row: the labels of cells with the same top in the same grid (layout coordinates, not the window's).
+        val rows = plates.filter { it.second.inRow && it.first.isShown }
+            .groupBy { (view, _) -> (view.parent as View).let { it.parent to it.top } }
+            .values.toList()
+        val scan = Scan(plates, controls, rows)
+        layOutRows(root, scan)
+        return scan
+    }
+
+    /**
+     * [root] is drawn over the image described by [info] (null: no image, no plates) by the root's
+     * [BackdropDrawable] in [palette] and [placement]. Works out the dim from the controls, then every plate's
+     * opacity, from where each one is now (scrolled or not); `docs/kiosk-background-scrim.md`. Null without an
+     * image. An image decoded over another background colour (a recolour; a new decode is on its way) is only
+     * trusted where it has no transparency; otherwise every plate is solid and the dim at its cap until then.
+     */
+    fun update(
+        root: ViewGroup,
+        scan: Scan,
+        info: BackdropInfo?,
+        palette: KioskPalette,
+        placement: Placement,
+    ): Painted? =
+        when {
+            info == null || root.width == 0 || root.height == 0 -> {
+                scan.plates.forEach { it.second.step = 0 }
+                null
+            }
+            !info.validFor(palette.background) -> provisional(root, scan, palette)
+            else -> measured(root, scan, info, palette, placement)
         }
+
+    /** Until an image with transparency is decoded over the new colour: every plate solid, the dim at its cap. */
+    private fun provisional(root: ViewGroup, scan: Scan, palette: KioskPalette): Painted {
+        scan.plates.forEach { it.second.step = KioskScrim.STEPS }
+        (root.background as? BackdropDrawable)?.dim = LegibilityV3.DIM_MAX_STEP
+        return Painted(LegibilityV3.DIM_MAX_STEP, palette.background)
+    }
+
+    private fun measured(
+        root: ViewGroup,
+        scan: Scan,
+        info: BackdropInfo,
+        palette: KioskPalette,
+        placement: Placement,
+    ): Painted {
+        root.getLocationInWindow(scan.origin)
         val w = root.width.toDouble()
         val h = root.height.toDouble()
         val image = BackdropGeometry.rect(info.cells.width, info.cells.height, w, h, placement)
-        fun bounds(r: RectF): ColourBox {
-            val region = BackdropCells.Region(
-                r.left.toDouble(), r.top.toDouble(), r.width().toDouble(), r.height().toDouble(),
-            )
+        /** The bounds under [r], given in [v]'s coordinates. */
+        fun bounds(v: View, r: RectF): ColourBox {
+            v.getLocationInWindow(scan.at)
+            val x = (scan.at[0] - scan.origin[0] + r.left).toDouble()
+            val y = (scan.at[1] - scan.origin[1] + r.top).toDouble()
+            val region = BackdropCells.Region(x, y, r.width().toDouble(), r.height().toDouble())
             return info.cells.bounds(image, w, h, region, palette.background)
         }
         val rule = BackdropRules.current
-        val controlBounds = controls.filter { it.isShown }
-            .map { bounds(inRoot(root, it, RectF(0f, 0f, it.width.toFloat(), it.height.toFloat()))) }
-        val dim = rule.dimStep(palette, controlBounds)
-        if (rule is LegibilityV3 && rule.controlsShort(palette, controlBounds, dim)) {
-            Log.w(TAG, "kiosk background: the Exit button stays under 3:1 even at the 30% dim")
-        }
+        val dim = dim(rule, palette, scan.controls.filter { it.isShown }.map { bounds(it, scan.rect.whole(it)) })
         (root.background as? BackdropDrawable)?.dim = dim
-        val rect = RectF()
-        for ((view, plate) in plates) {
-            plate.plateRect(rect)
-            plate.step = if (rect.isEmpty || !view.isShown) {
+        for ((view, plate) in scan.plates) {
+            plate.plateRect(scan.rect)
+            plate.step = if (scan.rect.isEmpty || !view.isShown) {
                 0
             } else {
-                rule.plateStep(view.currentTextColor, palette.background, bounds(inRoot(root, view, rect)), dim)
+                rule.plateStep(view.currentTextColor, palette.background, bounds(view, scan.rect), dim)
             }
         }
         // The labels of a grid row are plated alike: the row's step for each of them.
-        rows(plates).forEach { row ->
+        for (row in scan.rows) {
             val shared = rule.rowStep(row.map { it.second.step })
             row.forEach { it.second.step = shared }
         }
-        val bar = bounds(RectF(0f, 0f, root.width.toFloat(), maxOf(1, root.paddingTop).toFloat()))
+        // Under the status bar: the strip as tall as the top inset.
+        scan.rect.set(0f, 0f, root.width.toFloat(), maxOf(1, root.paddingTop).toFloat())
+        val bar = bounds(root, scan.rect)
         val barMiddle = KioskScrim.blend(bar.min, bar.max, KioskScrim.STEPS / 2)
-        val barColour = KioskScrim.blend(palette.background, barMiddle, dim)
-        return Painted(dim, barColour)
+        return Painted(dim, KioskScrim.blend(palette.background, barMiddle, dim))
     }
 
-    /** [r] (in [v]'s coordinates) moved into [root]'s. */
-    private fun inRoot(root: View, v: View, r: RectF): RectF {
+    private fun dim(rule: BackdropRule, palette: KioskPalette, controls: List<ColourBox>): Int {
+        val dim = rule.dimStep(palette, controls)
+        if (rule is LegibilityV3 && rule.controlsShort(palette, controls, dim)) {
+            Log.w(TAG, "kiosk background: the Exit button stays under 3:1 even at the 30% dim")
+        }
+        return dim
+    }
+
+    private fun RectF.whole(v: View): RectF = apply { set(0f, 0f, v.width.toFloat(), v.height.toFloat()) }
+
+    /** [v]'s left edge in [root]'s coordinates. */
+    private fun leftIn(root: View, v: View): Float {
         val origin = IntArray(2).also(root::getLocationInWindow)
         val at = IntArray(2).also(v::getLocationInWindow)
-        r.offset((at[0] - origin[0]).toFloat(), (at[1] - origin[1]).toFloat())
-        return r
-    }
-
-    /** The shown grid labels, by row (labels of a row share their top). */
-    private fun rows(plates: List<Pair<TextView, TextPlate>>): Collection<List<Pair<TextView, TextPlate>>> {
-        val at = IntArray(2)
-        return plates.filter { it.second.inRow && it.first.isShown }
-            .groupBy { at.also(it.first::getLocationInWindow)[1] }
-            .values
+        return (at[0] - origin[0]).toFloat()
     }
 
     /**
      * Each grid row's plates by [LabelRows] (in dp, as the spec): one width, centred under the icons (the cells'
-     * centres), kept inside the grid's content edges (its first cell's start, its last cell's end).
+     * centres), kept inside the grid's content edges (its first cell's start, its last cell's end). Horizontal only,
+     * so scrolling doesn't move them within their views.
      */
-    private fun layOutRows(root: View, rows: Collection<List<Pair<TextView, TextPlate>>>) {
+    private fun layOutRows(root: View, scan: Scan) {
         val density = root.resources.displayMetrics.density.toDouble()
-        for (row in rows) {
+        for (row in scan.rows) {
             val cells = row.map { it.first.parent as View }
             val grid = cells.first().parent as? ViewGroup ?: continue
             val all = (0 until grid.childCount).map(grid::getChildAt).filter { it.visibility == View.VISIBLE }
-            val gridX = inRoot(root, grid, RectF()).left
+            val gridX = leftIn(root, grid)
             val left = (gridX + all.minOf { it.left }) / density
             val right = (gridX + all.maxOf { it.right }) / density
-            val cellX = cells.map { inRoot(root, it, RectF()).left }
-            val centres = cells.mapIndexed { i, c -> (cellX[i] + c.width / 2f) / density }
-            val plates = LabelRows.plates(
-                centres, row.map { it.second.textWidth() / density }, cells.first().width / density, left, right,
-            )
+            val centres = cells.map { (leftIn(root, it) + it.width / 2f) / density }
+            // The text's width rounded up to whole pixels, as a single plate's.
+            val widths = row.map { ceil(it.second.textWidth()) / density }
+            val plates = LabelRows.plates(centres, widths, cells.first().width / density, left, right)
             row.forEachIndexed { i, (view, plate) ->
-                val viewX = inRoot(root, view, RectF()).left
-                plate.rowPlate = (plates[i].x * density - viewX).toFloat() to (plates[i].w * density).toFloat()
+                val x = (plates[i].x * density - leftIn(root, view)).toFloat()
+                plate.rowPlate = x to (plates[i].w * density).toFloat()
             }
         }
     }

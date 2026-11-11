@@ -33,8 +33,10 @@ class KioskApplierTest {
         val safeMode = mutableListOf<Boolean>()
         var safeModeResult: KioskResult = KioskResult.Ok
         override fun setSafeModeBlocked(blocked: Boolean): KioskResult { safeMode += blocked; return safeModeResult }
+        /** Every enter call's lock-task feature flags, in order. */
+        val featureFlags = mutableListOf<Int>()
         override fun enter(homeComponent: ComponentName, allowedPackages: List<String>, features: Int): KioskResult {
-            entered = allowedPackages; enters += allowedPackages
+            entered = allowedPackages; enters += allowedPackages; featureFlags += features
             return if (allowedPackages == failFor) KioskResult.Failed("dpm") else enterResult
         }
         override fun exit(): KioskResult { exited = true; return exitResult }
@@ -116,6 +118,20 @@ class KioskApplierTest {
         }
         assertEquals("entered once", 1, c.enters.size)
         assertEquals("no relaunch", emptyList<String>(), h.log)
+    }
+
+    @Test fun `new lock-task features for the same apps enter again with the new flags, lock task on`() = runTest {
+        val p = KioskApplyPayload(mode = "single", pinPackage = "com.a", allowedPackages = listOf("com.a"))
+        val c = FakeController(KioskResult.Ok); val store = InMemoryKioskStateStore()
+        var locked = false
+        val a = KioskApplier(c, store, FakeHome(), home) { locked }
+        a.enter(p)
+        locked = true
+        val next = p.copy(features = p.features.copy(home = true, notifications = true, systemInfo = true))
+        a.enter(next)
+        assertEquals("entered again", 2, c.enters.size)
+        org.junit.Assert.assertNotEquals("with the new flags", c.featureFlags[0], c.featureFlags[1])
+        assertEquals(next, store.load())
     }
 
     @Test fun `enter unsupported reverts the home claim and persists nothing`() = runTest {

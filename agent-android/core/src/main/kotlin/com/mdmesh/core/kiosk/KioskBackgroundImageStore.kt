@@ -113,22 +113,22 @@ class KioskBackgroundImageStore internal constructor(
             val request = validRequest(image) ?: return@withContext Obtained.Invalid
             runCatching { block(request) }.getOrElse {
                 if (it is CancellationException) throw it
-                failed(request.hash)
+                failed(request)
             }
         }
 
     private fun obtainOrRetry(request: BackgroundRequest): Obtained {
         val dir = dir()
         val target = File(dir, "${request.hash}.image")
-        val wait = (notBefore[request.hash] ?: 0L) - clocks.elapsed()
+        val wait = (notBefore[request.source] ?: 0L) - clocks.elapsed()
         return when {
             failures.isInvalid(request.hash) -> Obtained.Invalid
-            !dir.isDirectory && !dir.mkdirs() -> failed(request.hash)
+            !dir.isDirectory && !dir.mkdirs() -> failed(request)
             cachedAndIntact(target, request.hash) -> ready(dir, target, request.hash)
             wait > 0 -> Obtained.Retry(wait)
             else -> {
                 target.delete()
-                download(request, target)?.let { ready(dir, it, request.hash) } ?: failed(request.hash)
+                download(request, target)?.let { ready(dir, it, request.hash) } ?: failed(request)
             }
         }
     }
@@ -143,7 +143,7 @@ class KioskBackgroundImageStore internal constructor(
     }
 
     private fun ready(dir: File, file: File, hash: String): Obtained {
-        notBefore.remove(hash)
+        notBefore.keys.removeAll { it.startsWith(hash) }
         failures.succeeded(hash)
         checked[file.name] = file.length() to file.lastModified()
         // Only the current image is kept: an older one (up to 10 MB each) would stay in private storage forever.
@@ -151,13 +151,18 @@ class KioskBackgroundImageStore internal constructor(
         return Obtained.Ready(file)
     }
 
-    /** Remembers one more failure for [hash] and when to try it next. A different hash starts afresh. */
-    private fun failed(hash: String): Obtained {
-        val count = failures.failures(hash) + 1
+    /**
+     * Remembers one more failure for [request]'s image at its URL, and when to try that again. Another image, or the
+     * same one at another URL (a server that moved), starts afresh: one dead address never holds back a live one,
+     * whichever of the launcher or the prefetch worker asks.
+     */
+    private fun failed(request: BackgroundRequest): Obtained {
+        val key = request.source
+        val count = failures.failures(key) + 1
         val base = min(FIRST_RETRY_MS * (1L shl min(count - 1, MAX_DOUBLINGS)), MAX_RETRY_MS)
         val wait = (base * (1 + JITTER * clocks.jitter())).roundToLong()
-        failures.failed(hash, count)
-        notBefore[hash] = clocks.elapsed() + wait
+        failures.failed(key, count)
+        notBefore[key] = clocks.elapsed() + wait
         return Obtained.Retry(wait)
     }
 
@@ -182,12 +187,12 @@ class KioskBackgroundImageStore internal constructor(
     }
 
     /**
-     * What survives a restart: the failures in a row for the latest failing hash, the hashes that never decode, and
-     * the last hash that was ready.
+     * What survives a restart: the failures in a row for the latest failing source (an image hash at a URL), the
+     * hashes that never decode, and the last hash that was ready.
      */
     interface FailureMemory {
-        fun failures(hash: String): Int
-        fun failed(hash: String, count: Int)
+        fun failures(source: String): Int
+        fun failed(source: String, count: Int)
         fun succeeded(hash: String)
         fun isInvalid(hash: String): Boolean
         fun markInvalid(hash: String)
@@ -197,11 +202,11 @@ class KioskBackgroundImageStore internal constructor(
     private class PrefsFailureMemory(context: Context) : FailureMemory {
         private val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-        override fun failures(hash: String): Int =
-            if (prefs.getString(KEY_HASH, null) == hash) prefs.getInt(KEY_COUNT, 0) else 0
+        override fun failures(source: String): Int =
+            if (prefs.getString(KEY_HASH, null) == source) prefs.getInt(KEY_COUNT, 0) else 0
 
-        override fun failed(hash: String, count: Int) {
-            prefs.edit().putString(KEY_HASH, hash).putInt(KEY_COUNT, count).apply()
+        override fun failed(source: String, count: Int) {
+            prefs.edit().putString(KEY_HASH, source).putInt(KEY_COUNT, count).apply()
         }
 
         override fun succeeded(hash: String) {
@@ -235,7 +240,10 @@ class KioskBackgroundImageStore internal constructor(
     }
 
     internal companion object {
-        data class BackgroundRequest(val url: String, val hash: String)
+        data class BackgroundRequest(val url: String, val hash: String) {
+            /** What a backoff is for: this image at this address. */
+            val source: String get() = "$hash $url"
+        }
 
         const val DIR = "kiosk-background"
         private const val PREFS = "mdm_kiosk_background"

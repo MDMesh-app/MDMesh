@@ -160,7 +160,9 @@ class KioskLauncherActivity : ComponentActivity() {
             }
             if (finished) CheckInWorker.scheduleAfterCurrent(applicationContext)
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                store.flow().distinctUntilChanged().collect(::applyState)
+                // An image's equality leaves out its URL (it's the same image); a new URL must still get here, or
+                // an image not yet downloaded is fetched from where the server no longer is.
+                store.flow().distinctUntilChanged { a, b -> a == b && imageUrl(a) == imageUrl(b) }.collect(::applyState)
             }
         }
     }
@@ -305,6 +307,8 @@ class KioskLauncherActivity : ComponentActivity() {
         }
         if (restyled && p != null) restyle(p)
     }
+
+    private fun imageUrl(p: KioskApplyPayload?): String? = p?.theme?.backgroundImage?.url
 
     private fun restyledOnly(previous: KioskApplyPayload?, p: KioskApplyPayload?): Boolean =
         previous != null && p != null && p != previous && p.sameKioskAs(previous)

@@ -1,5 +1,13 @@
 package com.mdmesh.proto
 
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -75,5 +83,46 @@ class KioskPayloadTest {
         assertEquals(false, k.sameKioskAs(k.copy(allowedPackages = listOf("com.a", "com.b"))))
         assertEquals(false, k.sameKioskAs(k.copy(exitMode = "remote")))
         assertEquals(false, k.sameKioskAs(null))
+    }
+
+    private fun decode(o: JsonObject) = ProtocolJson.json.decodeFromJsonElement(KioskApplyPayload.serializer(), o)
+
+    /** [v] changed: a flipped flag, a longer string or list, or a value where there was none. */
+    private fun changed(v: JsonElement?): JsonElement = when {
+        v == null || v is JsonNull -> JsonPrimitive("x")
+        v is JsonArray -> JsonArray(v + JsonPrimitive("com.other"))
+        v is JsonPrimitive && v.booleanOrNull != null -> JsonPrimitive(!v.boolean)
+        v is JsonPrimitive -> JsonPrimitive(v.content + "x")
+        else -> error("unexpected $v")
+    }
+
+    /**
+     * Every field but `theme`, and every lock-task feature, is the kiosk's identity: changing any one of them is a
+     * re-entry. Walks the serialized payload, so a field added later is covered without touching this test.
+     */
+    @Test fun `every non-theme field and every lock-task feature is identity`() {
+        val base = KioskApplyPayload(
+            mode = "single", pinPackage = "com.a", allowedPackages = listOf("com.a"), password = "1234",
+        )
+        val json = ProtocolJson.json.encodeToJsonElement(KioskApplyPayload.serializer(), base).jsonObject
+        val descriptor = KioskApplyPayload.serializer().descriptor
+        val names = (0 until descriptor.elementsCount).map(descriptor::getElementName)
+        check("features" in names && "theme" in names)
+        val features = json["features"]?.jsonObject ?: JsonObject(emptyMap())
+        val featureNames = descriptor.getElementDescriptor(names.indexOf("features")).let { f ->
+            (0 until f.elementsCount).map(f::getElementName)
+        }
+        val mutants = names.filter { it != "theme" && it != "features" }
+            .map { it to JsonObject(json + (it to changed(json[it]))) } +
+            featureNames.map { f ->
+                val flipped = JsonPrimitive(!((features[f] as? JsonPrimitive)?.booleanOrNull ?: false))
+                "features.$f" to JsonObject(json + ("features" to JsonObject(features + (f to flipped))))
+            }
+        check(mutants.size >= 5 + 7) { "fields and features covered: ${mutants.size}" }
+        for ((name, mutant) in mutants) {
+            org.junit.Assert.assertFalse("$name is identity", base.sameKioskAs(decode(mutant)))
+        }
+        val restyled = JsonObject(json + ("theme" to JsonObject(mapOf("backgroundColor" to JsonPrimitive("#FFFFFF")))))
+        assertEquals("theme is appearance", true, base.sameKioskAs(decode(restyled)))
     }
 }

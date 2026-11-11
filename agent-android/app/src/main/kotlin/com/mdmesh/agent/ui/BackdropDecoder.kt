@@ -34,10 +34,15 @@ data class DecodeLimits(val maxEdge: Int, val lowMemory: Boolean) {
 
 /** What the launcher keeps of a decoded backdrop besides the bitmap: its [cells], composited over [background]. */
 class BackdropInfo(
-    /** The kiosk background the image was composited over; a different one needs a new decode. */
+    /** The kiosk background the image was composited over. */
     val background: Int,
     val cells: BackdropCells,
-)
+    /** No pixel has any transparency: the cells are the same over any background colour. */
+    val opaque: Boolean,
+) {
+    /** The cells hold for a kiosk in [background]: its own, or any for an opaque image (most photos). */
+    fun validFor(background: Int): Boolean = opaque || background == this.background
+}
 
 /**
  * The image as square cells, each with the per-channel minimum and maximum of its pixels (composited over the
@@ -148,8 +153,9 @@ sealed interface Decoded {
 /**
  * Decodes a cached backdrop with BitmapFactory only (API 24 and up, no ImageDecoder paths): JPEG, PNG and WebP
  * (lossy, lossless, with transparency). Never a HARDWARE bitmap (it is drawn into software canvases and read back
- * for the samples), never larger than [DecodeLimits] allow, upright by its EXIF orientation, cropped to exactly the
- * part of the image the window shows (centre crop), so a rotation decodes again for the new shape.
+ * for the cells), never larger than [DecodeLimits] allow, upright by a JPEG's EXIF orientation. The whole image, at a
+ * power-of-two sample: fill or fit, the focal point and the window's shape (a rotation) are placed when drawn
+ * ([BackdropGeometry]), from the same bitmap.
  */
 object BackdropDecoder {
 
@@ -222,12 +228,19 @@ object BackdropDecoder {
 
     private fun infoOf(bitmap: Bitmap, background: Int): BackdropInfo {
         val w = bitmap.width
+        var opaque = true
         val cells = BackdropCells.of(w, bitmap.height) { y, into ->
             bitmap.getPixels(into, 0, w, 0, y, w, 1)
-            for (i in into.indices) into[i] = KioskScrim.over(into[i], background)
+            for (i in into.indices) {
+                if (into[i] ushr ALPHA_SHIFT != OPAQUE_ALPHA) opaque = false
+                into[i] = KioskScrim.over(into[i], background)
+            }
         }
-        return BackdropInfo(background, cells)
+        return BackdropInfo(background, cells, opaque)
     }
+
+    private const val ALPHA_SHIFT = 24
+    private const val OPAQUE_ALPHA = 0xFF
 
     /** Rotation (and mirroring) from a JPEG's EXIF orientation ([JpegOrientation]); none for other formats. */
     private fun exifOrientation(file: File, mime: String?): Orientation =

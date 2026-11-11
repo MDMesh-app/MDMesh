@@ -151,6 +151,16 @@ class KioskBackdropStressTest : KioskHarness() {
         assertTrue("still no new decode", backdrop()!!.bitmap === before.bitmap)
     }
 
+    @Test fun aRecolourKeepsTheImageWithoutANewDecode() {
+        cache()
+        launch(withImage(grid))
+        val before = backdrop()!!
+        saveKiosk(withImage(grid).let { k -> k.copy(theme = k.theme.copy(backgroundColor = "#FFFFFF")) })
+        settle()
+        assertTrue("still the image, no flash of the plain colour", backdrop() != null)
+        assertTrue("an opaque image needs no new decode", backdrop()!!.bitmap === before.bitmap)
+    }
+
     @Test fun aNewUrlForTheSameImageChangesNothing() {
         cache()
         launch(withImage(single))

@@ -34,8 +34,8 @@ class KioskBackgroundImageStoreTest {
         var entry: Pair<String, Int>? = null
         val invalid = mutableSetOf<String>()
         var good: String? = null
-        override fun failures(hash: String) = entry?.takeIf { it.first == hash }?.second ?: 0
-        override fun failed(hash: String, count: Int) { entry = hash to count }
+        override fun failures(source: String) = entry?.takeIf { it.first == source }?.second ?: 0
+        override fun failed(source: String, count: Int) { entry = source to count }
         override fun succeeded(hash: String) { entry = null; good = hash }
         override fun isInvalid(hash: String) = hash in invalid
         override fun markInvalid(hash: String) { invalid += hash }
@@ -148,7 +148,7 @@ class KioskBackgroundImageStoreTest {
         obtain(store())
         obtain(store()) // a restart: the in-memory wait is gone, the count is not
         assertEquals(2, fetches)
-        assertEquals(2, memory.failures(hash))
+        assertEquals(2, memory.failures("$hash ${image.url}"))
     }
 
     @Test fun `a corrupt or truncated cached copy is dropped and downloaded again`() {
@@ -213,5 +213,21 @@ class KioskBackgroundImageStoreTest {
         val other = KioskBackgroundImageDto(image.url, sha("other".toByteArray()))
         assertTrue(runBlocking { s.obtain(other) } is Obtained.Retry)
         assertEquals(File(dir, "$hash.image"), runBlocking { s.lastGood() })
+    }
+
+    @Test fun `a failing old URL never holds back the image's new URL`() {
+        val urlsTried = mutableListOf<String>()
+        val s = KioskBackgroundImageStore(
+            dir = { File(temp.root, "kiosk-background").also { dir = it } },
+            fetch = { url -> urlsTried += url; if (url.contains("new")) ByteArrayInputStream(bytes) else null },
+            bounds = { f -> if (f.length() > 0) 100 to 100 else null },
+            failures = memory,
+            clocks = KioskBackgroundImageStore.Clocks(elapsed = { nowMs }, wallNow = { wallMs }, jitter = { 0.0 }),
+        )
+        val old = image.copy(url = "https://old.example/kiosk.png")
+        runBlocking { s.obtain(old) } // the launcher, trying the dead URL just now
+        val moved = image.copy(url = "https://new.example/kiosk.png")
+        assertTrue("the new URL is tried at once", runBlocking { s.obtain(moved) } is Obtained.Ready)
+        assertEquals("https://new.example/kiosk.png", urlsTried.last())
     }
 }

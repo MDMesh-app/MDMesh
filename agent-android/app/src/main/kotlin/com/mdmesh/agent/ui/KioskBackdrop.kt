@@ -11,6 +11,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -35,7 +37,11 @@ class KioskBackdrop(
     private data class Key(val sha256: String, val screenLong: Int, val background: Int)
 
     private var wanted: Key? = null
+    private var wantedUrl: String? = null
     private var shown: Key? = null
+
+    /** What is shown has no transparency: it holds over any background colour, a recolour needs no new decode. */
+    private var shownOpaque = false
 
     /** The last good image stands in (for a different key): replaced when the wanted one is ready. */
     private var standIn: Key? = null
@@ -52,14 +58,26 @@ class KioskBackdrop(
         if (image == null) return clear()
         val key = Key(image.sha256.trim().lowercase(), screenLong, background)
         val same = wanted == key
+        // A new URL for the same image (a server that moved): fetch from there from now on.
+        val moved = image.url != wantedUrl
         wanted = key
-        // Busy fetching or decoding this image: let it finish. Only waiting for a retry: look again now (a cached
-        // image shows at once; the store's backoff still stops a re-download).
+        wantedUrl = image.url
+        // Shown already (an opaque image serves any colour). Or busy fetching or decoding this image: let it finish.
+        // Only waiting for a retry: look again now (a cached image shows at once; the store's backoff still stops a
+        // re-download).
+        val showing = shown?.let { covers(it, key) } == true
         val busy = job?.isActive == true && !waiting
-        if (same && (shown == key || busy)) return
-        job?.cancel()
-        job = scope.launch { load(image, key) }
+        val inHand = showing || (same && busy && !moved)
+        if (!inHand) {
+            job?.cancel()
+            job = scope.launch { load(image, key) }
+        }
     }
+
+    /** [shown] is a decode that serves [key]: the same image and screen, over its colour or any (opaque). */
+    private fun covers(shown: Key, key: Key): Boolean =
+        shown.sha256 == key.sha256 && shown.screenLong == key.screenLong &&
+            (shown.background == key.background || shownOpaque)
 
     /** No image: back to the plain colour. */
     fun clear() {
@@ -109,15 +127,22 @@ class KioskBackdrop(
 
     private fun show(key: Key, decoded: Decoded.Ready) {
         shown = key
+        shownOpaque = decoded.info.opaque
         standIn = null
         onReady(decoded.bitmap, decoded.info)
     }
 
-    private suspend fun decode(file: File, key: Key): Decoded = withContext(decoding) {
-        BackdropDecoder.decode(file, key.screenLong, key.background, limits)
+    /**
+     * One decode at a time, in the whole process: a decode can't be interrupted, so a superseded one (a quick
+     * recolour) finishes before the next starts, rather than two full-size bitmaps at once.
+     */
+    private suspend fun decode(file: File, key: Key): Decoded = decodes.withLock {
+        withContext(decoding) { BackdropDecoder.decode(file, key.screenLong, key.background, limits) }
     }
 
     private companion object {
+        val decodes = Mutex()
+
         const val MIN_WAIT_MS = 1_000L
         const val MAX_WAIT_MS = 6L * 60 * 60 * 1000
     }

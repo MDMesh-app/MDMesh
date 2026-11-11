@@ -44,18 +44,19 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
             field = next
             val s = screen ?: return
             onImage = activity.paintKioskBackground(root, s, backdropBitmap, backdropInfo, next)
-            updatePlates()
+            plates.changed()
         }
     private var grid: GridViews? = null
 
     private class GridViews(val views: KioskViews, val cells: AppGridLayout, val empty: View)
 
+    /** Plates follow the text wherever it is drawn: after any layout and any scroll, at most once a frame. */
+    private val plates = PlateFrames(root, ::updatePlates)
+
     init {
         activity.setContentView(root)
         // Android 15 draws edge to edge: the kiosk background runs under the bars, the content stays clear of them.
         SystemBars.fit(activity, root, KioskPalette.DEFAULT.background)
-        // Plates follow the text: widths and opacities are worked out again after every layout.
-        root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updatePlates() }
     }
 
     fun render(next: KioskScreen) {
@@ -88,20 +89,21 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
             build(s)
         } else {
             onImage = activity.paintKioskBackground(root, s, bitmap, info, placement)
-            updatePlates()
+            plates.changed()
         }
     }
 
     /** Everything that follows the layout: row plates, the dim, plate opacities, the bar icons. */
-    private fun updatePlates() {
+    private fun updatePlates(scan: TextPlates.Scan) {
         val s = screen ?: return
-        val painted = TextPlates.update(root, backdropInfo.takeIf { onImage }, s.palette, placement) ?: return
+        val painted = TextPlates.update(root, scan, backdropInfo.takeIf { onImage }, s.palette, placement) ?: return
         activity.updateSystemBarIcons(painted.statusBar)
     }
 
     private fun build(s: KioskScreen) {
         onImage = activity.paintKioskBackground(root, s, backdropBitmap, backdropInfo, placement)
         root.removeAllViews()
+        plates.viewsChanged()
         grid = null
         val v = KioskViews(activity, s.palette, onImage = backdropBitmap != null && s != KioskScreen.Idle)
         when (s) {
@@ -145,6 +147,8 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
         return ScrollView(activity).apply {
             layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
             addView(column)
+            // The image stays put while the grid scrolls over it.
+            plates.follow(this)
         }
     }
 

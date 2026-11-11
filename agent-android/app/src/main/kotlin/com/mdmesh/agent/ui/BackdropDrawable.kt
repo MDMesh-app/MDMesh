@@ -85,7 +85,9 @@ internal fun Activity.paintKioskBackground(
 ): Boolean {
     val palette = screen.palette
     colorSystemBars(palette.background)
-    val usable = info?.takeIf { screen != KioskScreen.Idle && it.background == palette.background }
+    // An image decoded over another colour is still drawn (no flash of the plain colour on a recolour); the plates
+    // treat it conservatively until its new decode ([TextPlates.update]).
+    val usable = info?.takeIf { screen != KioskScreen.Idle }
     if (bitmap == null || usable == null) {
         root.background = ColorDrawable(palette.background)
         updateSystemBarIcons(palette.background)

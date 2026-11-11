@@ -74,3 +74,5 @@ describe('locationServicesAction', () => {
     expect(locationServicesAction(true)).toBe('on');
     expect(locationServicesAction(false)).toBe('off');
     expect(locationServicesAction(null)).toBe('notManaged');
+  });
+});

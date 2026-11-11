@@ -61,7 +61,8 @@ export function useArrivals(since: number | undefined): ArrivalsWatch {
   const [watching, setWatching] = useState(true);
   const [unsupported, setUnsupported] = useState(false);
   const [round, setRound] = useState(0);
-  const [now, setNow] = useState(() => Date.now());
+  /** Server time of the last answer (devices' times are the server's too). */
+  const [now, setNow] = useState(0);
 
   useEffect(() => {
     if (since == null || unsupported) return;
@@ -78,10 +79,11 @@ export function useArrivals(since: number | undefined): ArrivalsWatch {
       }
       running = true;
       try {
-        const list = await listEnrolledSince(since, PAGE, ctrl.signal);
+        const res = await listEnrolledSince(since, PAGE, ctrl.signal);
         if (on) {
-          setDevices(list);
-          setNow(Date.now());
+          setDevices(res.devices);
+          // The server's clock, so the 10-minute "hasn't checked in" rule holds whatever the browser's clock says.
+          setNow(res.serverTime);
         }
       } catch (e) {
         if (e instanceof ApiError && (e.httpStatus === 404 || e.httpStatus === 405)) {

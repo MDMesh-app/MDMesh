@@ -17,7 +17,7 @@ function api(devices: () => unknown[]) {
     if (p === '/agent/v1/devices/enrolled') {
       const q = new URL(path, 'http://console').searchParams;
       expect(q.get('since')).toBe(String(CREATED));
-      return devices();
+      return { serverTime: Date.now(), devices: devices() };
     }
     return null;
   };

@@ -542,4 +542,24 @@ public class AgentEnrollmentTransactionTest {
         assertEquals("nothing kept", 0, devices());
         assertEquals("no use spent", 0, uses(tokenId));
     }
+
+    @Test
+    public void devices_enrolled_since_are_filtered_by_access_before_the_limit() throws Exception {
+        int customerId = customer(0);
+        sql("INSERT INTO " + schema + ".users (id, customerId, allDevicesAvailable) VALUES (7, " + customerId
+                + ", false)", "INSERT INTO " + schema + ".userDeviceGroupsAccess (userId, groupId) VALUES (7, 1)");
+        sql("INSERT INTO " + schema + ".devices (number, customerId, enrollTime, lastUpdate) VALUES ('mine', "
+                + customerId + ", 1000, 1000)");
+        sql("INSERT INTO " + schema + ".deviceGroups (deviceId, groupId) SELECT id, 1 FROM " + schema
+                + ".devices WHERE number = 'mine'");
+        for (int i = 0; i < 30; i++) {
+            sql("INSERT INTO " + schema + ".devices (number, customerId, enrollTime, lastUpdate) VALUES ('other-" + i
+                    + "', " + customerId + ", " + (2000 + i) + ", 0)");
+        }
+        List<Device> mine = deviceMapper.listEnrolledSince(customerId, 7, false, 0, 25);
+        assertEquals(1, mine.size());
+        assertEquals("mine", mine.get(0).getNumber());
+        assertEquals("a super admin sees them all, still bounded", 25,
+                deviceMapper.listEnrolledSince(customerId, 7, true, 0, 25).size());
+    }
 }

@@ -53,14 +53,24 @@ export interface EnrolledDevice {
   lastUpdate?: number;
 }
 
+/** The answer of GET /private/agent/v1/devices/enrolled: the devices, and the server's clock when it answered. */
+export interface EnrolledSince {
+  devices: EnrolledDevice[];
+  /** Server time, ms: what the devices' times are compared with (never the browser's clock). */
+  serverTime: number;
+}
+
 /**
  * The devices (this user may see) enrolled at or after `since` (server time), newest first, at most `limit`. A server
  * that predates it answers 404.
  */
-export async function listEnrolledSince(since: number, limit = 25, signal?: AbortSignal): Promise<EnrolledDevice[]> {
-  const list = await apiClient.get<EnrolledDevice[] | null>(
+export async function listEnrolledSince(since: number, limit = 25, signal?: AbortSignal): Promise<EnrolledSince> {
+  const res = await apiClient.get<Partial<EnrolledSince> | null>(
     `/private/agent/v1/devices/enrolled?since=${encodeURIComponent(String(since))}&limit=${limit}`,
     signal,
   );
-  return Array.isArray(list) ? list : [];
+  return {
+    devices: Array.isArray(res?.devices) ? res.devices : [],
+    serverTime: typeof res?.serverTime === 'number' ? res.serverTime : Date.now(),
+  };
 }

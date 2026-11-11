@@ -103,12 +103,18 @@ public interface AgentDeviceMapper {
     boolean hasSeveralCustomers();
 
     /**
-     * The customer's devices enrolled at or after {@code since}, newest first, at most {@code limit} (the Enroll page).
-     * Uses the (customerId, enrollTime) index.
+     * The customer's devices enrolled at or after {@code since} that the user may see, newest first, at most
+     * {@code limit} (the Enroll page). Access is filtered here, before the LIMIT, with the console's rule
+     * ({@link DeviceMapper#USER_DEVICE_ACCESS}; a super admin sees all). Uses the (customerId, enrollTime) index.
      */
-    @Select({"SELECT id, number, description, customerId, enrollTime, lastUpdate FROM devices " +
-            "WHERE customerId = #{customerId} AND enrollTime >= #{since} ORDER BY enrollTime DESC LIMIT #{limit}"})
+    @Select({"SELECT devices.id, devices.number, devices.description, devices.customerId, devices.enrollTime, " +
+            "devices.lastUpdate FROM devices INNER JOIN users ON users.id = #{userId} " +
+            "WHERE devices.customerId = #{customerId} AND devices.enrollTime >= #{since} " +
+            "AND (#{superAdmin} OR " + DeviceMapper.USER_DEVICE_ACCESS + ") " +
+            "ORDER BY devices.enrollTime DESC LIMIT #{limit}"})
     List<com.hmdm.persistence.domain.Device> listEnrolledSince(@Param("customerId") int customerId,
+                                                              @Param("userId") int userId,
+                                                              @Param("superAdmin") boolean superAdmin,
                                                               @Param("since") long since,
                                                               @Param("limit") int limit);
 

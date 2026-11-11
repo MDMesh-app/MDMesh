@@ -425,21 +425,30 @@ public class AgentAdminResource {
 
     // =================================================================================================================
     @ApiOperation(value = "Devices enrolled since", notes = "The devices of the customer the user may access that "
-            + "enrolled at or after `since` (server time, ms), newest first, at most `limit` (1 to 50, default 25). "
-            + "The Enroll page polls it while a code is shown.")
+            + "enrolled at or after `since` (server time, ms), newest first, at most `limit` (1 to 50, default 25), with "
+            + "the server's time: {serverTime, devices}. The Enroll page polls it while a code is shown.")
     @GET
     @Path("/devices/enrolled")
     @Produces(MediaType.APPLICATION_JSON)
     public Response listEnrolledSince(@QueryParam("since") Long since, @QueryParam("limit") Integer limit) {
         Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
         if (!customerId.isPresent()) return Response.PERMISSION_DENIED();
-        long from = since == null ? System.currentTimeMillis() : since;
+        Optional<com.hmdm.persistence.domain.User> user = SecurityContext.get().getCurrentUser();
+        if (!user.isPresent()) return Response.PERMISSION_DENIED();
+        long now = System.currentTimeMillis();
+        long from = since == null ? now : since;
         int max = limit == null ? 25 : Math.max(1, Math.min(limit, MAX_ENROLLED_SINCE));
+        // Access is filtered in the query, before its LIMIT, so a user limited to some groups still gets theirs.
         List<EnrolledDeviceView> out = new ArrayList<>();
-        for (Device d : commandDAO.listEnrolledSince(customerId.get(), from, max)) {
-            if (deviceDAO.isAccessibleToUser(d)) out.add(new EnrolledDeviceView(d));
+        for (Device d : commandDAO.listEnrolledSince(customerId.get(), user.get().getId(), user.get().isSuperAdmin(),
+                from, max)) {
+            out.add(new EnrolledDeviceView(d));
         }
-        return Response.OK(out);
+        // The server's clock with the list: the page compares it with these server times, never the browser's clock.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("serverTime", now);
+        body.put("devices", out);
+        return Response.OK(body);
     }
 
     // =================================================================================================================

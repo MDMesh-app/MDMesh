@@ -94,10 +94,9 @@ async function save() {
   await waitFor(() => expect(button().disabled).toBe(false));
   fireEvent.click(button());
 }
-// Toasts: failures are alerts, the rest status messages.
+// Toasts, failures and the rest alike, from the Notifications region.
 const toastText = () =>
-  [...screen.queryAllByRole('status'), ...screen.queryAllByRole('alert')]
-    .filter((t) => t.classList.contains('toast'))
+  Array.from(screen.getByRole('region', { name: 'Notifications' }).querySelectorAll('.toast'))
     .map((t) => t.textContent)
     .join(' | ');
 /**

@@ -47,6 +47,8 @@ export function StickySaveBar({
     const apply = () => {
       const h = ref.current?.offsetHeight ?? 0;
       root.style.scrollPaddingBottom = `${h + 32}px`;
+      // Toasts stack above the bar, never over Save (ui/Toast.css).
+      root.style.setProperty('--v2-savebar-offset', `${h + 16}px`);
     };
     apply();
     const ro = new ResizeObserver(apply);
@@ -54,6 +56,7 @@ export function StickySaveBar({
     return () => {
       ro.disconnect();
       root.style.scrollPaddingBottom = prev;
+      root.style.removeProperty('--v2-savebar-offset');
     };
   }, [visible]);
 

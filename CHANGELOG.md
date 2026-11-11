@@ -9,8 +9,8 @@ line under Unreleased.
 ## Unreleased
 
 Upgrading
-- The database adds two columns (`devices.wipedAt`, `configurations.camera`) on start. Devices wiped before the
-  update aren't marked.
+- The database adds three columns (`devices.wipedAt`, `configurations.camera`, `configurations.locationServices`) on
+  start. Devices wiped before the update aren't marked.
 - The database adds three columns to enrollment tokens on start (`maxUses`, `useCount`, `revokedAt`) and stores
   the tokens hashed. Existing codes stay single-use and keep working; on PostgreSQL older than 11 they stop
   instead, so make a new code on the Enroll page. After a downgrade, codes made on this version don't work.
@@ -31,6 +31,8 @@ New
   stopping them is in the audit log, and the server log names the code each device enrolled with. The API takes
   `maxUses` and `validHours` on `POST /private/agent/v1/token`, and `POST /private/agent/v1/token/revoke-all`
   (thanks @alessfi).
+- Configuration → Network can manage Android Location services independently of MDMesh location reporting on Android
+  11+ Device Owner devices. Needs agent 0.5.0 (thanks @letternumber).
 - Settings → Users & roles: create, edit and delete console accounts, choose the devices and configurations each
   can reach, and edit roles and their permissions (thanks @lared3294).
 - A wiped device shows as **Wiped** instead of Online and then Offline, and is left out of the counts, Needs attention

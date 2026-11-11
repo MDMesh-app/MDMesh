@@ -55,6 +55,6 @@ class ConfigCommandTest {
         assertEquals(DeviceAction.POWER_ALWAYS_ON, p.connectivity?.mode)
         val absent = ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), """{"revision":"r"}""")
         assertNull(absent.connectivity)
-        assertEquals("1.5", ProtocolJson.PROTOCOL_VERSION)
+        assertEquals("1.6", ProtocolJson.PROTOCOL_VERSION)
     }
 }

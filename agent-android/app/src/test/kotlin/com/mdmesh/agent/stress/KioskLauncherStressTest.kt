@@ -198,7 +198,6 @@ class KioskLauncherStressTest : KioskHarness() {
     }
 
     /** Right PIN, then the activity is destroyed before the exit finished (rotation on polish, system kill). */
-    @Ignore("F6: fixed in the next commits")
     @Test fun exitFinishesEvenIfActivityDestroyedRightAfterPin() {
         launch(grid)
         tapExitKiosk()

@@ -37,6 +37,7 @@ import com.mdmesh.core.command.handlers.KioskExitHandler
 import com.mdmesh.core.kiosk.AndroidKioskHomeSwitch
 import com.mdmesh.core.kiosk.ConfiguredSafeModeSetting
 import com.mdmesh.core.kiosk.KioskApplier
+import com.mdmesh.core.kiosk.SharedPrefsExitJournal
 import com.mdmesh.core.command.handlers.PolicyApplyHandler
 import com.mdmesh.core.device.AppInventoryCollector
 import com.mdmesh.core.device.HardwareIdCollector
@@ -283,6 +284,7 @@ object AgentModule {
         return KioskApplier(
             kiosk, store, AndroidKioskHomeSwitch(context, home), home,
             safeMode = ConfiguredSafeModeSetting(configStore),
+            journal = SharedPrefsExitJournal(context),
             isLockTaskActive = { kiosk.isLocked(context) },
         )
     }

@@ -40,6 +40,8 @@ import com.mdmesh.kiosk.KioskReturnPolicy
 import com.mdmesh.proto.KioskApplyPayload
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.NonCancellable
 import javax.inject.Inject
 
 /**
@@ -122,6 +124,9 @@ class KioskLauncherActivity : ComponentActivity() {
         // observe the persisted state and re-render (enter → grid/pin, exit → unpin + idle) without
         // waiting for the user to touch the screen.
         lifecycleScope.launch {
+            // First finish an exit that a process death cut off, so the half-exited kiosk isn't applied again.
+            val finished = withContext(NonCancellable) { applier.resumeInterruptedExit() }
+            if (finished) CheckInWorker.scheduleAfterCurrent(applicationContext)
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 store.flow().distinctUntilChanged().collect(::applyState)
             }
@@ -415,10 +420,15 @@ class KioskLauncherActivity : ComponentActivity() {
         events.record("kioskExit", "exited on-device")
         // Same exit as the remote kiosk.exit: releases the lock-task policy, the volume lock and the HOME claim,
         // then hands off to the OEM launcher. Forced: the admin PIN was entered, the user must get out.
+        // NonCancellable: the launcher may be destroyed meanwhile (a recreate, the system); the exit still finishes,
+        // or it would stop between its steps. A process death mid-exit is finished at the next start (ExitJournal).
         lifecycleScope.launch {
-            applier.exit(handBackHome = true, force = true)
-            // The launcher has already left lock task; publish that state without waiting for the periodic check-in.
-            CheckInWorker.scheduleAfterCurrent(applicationContext)
+            withContext(NonCancellable) {
+                applier.exit(handBackHome = true, force = true)
+                // The launcher has already left lock task; publish that state without waiting for the periodic
+                // check-in.
+                CheckInWorker.scheduleAfterCurrent(applicationContext)
+            }
             finish()
         }
     }

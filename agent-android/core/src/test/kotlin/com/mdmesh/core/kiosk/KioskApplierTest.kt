@@ -274,4 +274,48 @@ class KioskApplierTest {
         assertFalse(a.isPersisted())
         assertEquals(listOf("claim:false", "oem"), h.log)
     }
+
+    // --- An interrupted exit is completed on the next start (F6) ---
+
+    private class MemJournal : ExitJournal {
+        var saved: ExitJournal.Pending? = null
+        override fun pending() = saved
+        override fun begin(p: ExitJournal.Pending) { saved = p }
+        override fun end() { saved = null }
+    }
+
+    @Test fun `an exit ends its journal entry`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(KioskApplyPayload())
+        KioskApplier(FakeController(KioskResult.Ok), store, FakeHome(), home, journal = j) { true }.exit(force = true)
+        assertNull(j.saved)
+        assertNull(store.load())
+    }
+
+    @Test fun `a refused, unforced exit leaves nothing to resume`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(KioskApplyPayload())
+        val refusing = FakeController(KioskResult.Ok, exitResult = KioskResult.Failed("dpm"))
+        KioskApplier(refusing, store, FakeHome(), home, journal = j) { true }.exit()
+        assertNull(j.saved)
+        assertNotNull(store.load())
+    }
+
+    @Test fun `an exit cut off after it began is completed by the next start`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(KioskApplyPayload())
+        j.saved = ExitJournal.Pending(handBackHome = true, force = true) // begun, then the process died
+        val h = FakeHome()
+        val resumed = KioskApplier(FakeController(KioskResult.Ok), store, h, home, journal = j) { false }
+            .resumeInterruptedExit()
+        assertTrue(resumed)
+        assertNull("kiosk state cleared", store.load())
+        assertEquals(listOf("claim:false", "oem"), h.log)
+        assertNull(j.saved)
+    }
+
+    @Test fun `nothing pending, nothing done`() = runTest {
+        val store = InMemoryKioskStateStore(); val p = KioskApplyPayload(); store.save(p); val h = FakeHome()
+        assertFalse(KioskApplier(FakeController(KioskResult.Ok), store, h, home, journal = MemJournal()) { true }
+            .resumeInterruptedExit())
+        assertEquals(p, store.load())
+        assertTrue(h.log.isEmpty())
+    }
 }

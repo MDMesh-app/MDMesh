@@ -27,6 +27,9 @@ import kotlinx.coroutines.sync.withLock
  * (`kiosk.enter`/`kiosk.exit`, `config.apply` and its boot re-apply, the launcher's exits, agent start). Otherwise
  * the boot-time release could read "no kiosk", then clear the volume lock a concurrent enter had just set.
  */
+// Its collaborators are the kiosk's moving parts (controller, state, HOME, Safe Mode, exit journal, lock state); its
+// functions are the serialized kiosk operations. Splitting either would split the one mutex that orders them.
+@Suppress("LongParameterList", "TooManyFunctions")
 class KioskApplier(
     private val kiosk: KioskController,
     private val store: KioskStateStore,
@@ -37,6 +40,8 @@ class KioskApplier(
      * default is for tests only: an applier built without it would treat an explicit Block as not managed.
      */
     private val safeMode: SafeModeSetting = SafeModeSetting.NotManaged,
+    /** Remembers an exit in progress, so one cut off by process death is finished on the next start. */
+    private val journal: ExitJournal = ExitJournal.None,
     /** Whether lock task is active now ([KioskController.isLocked]). Last, so a trailing lambda can only be this. */
     private val isLockTaskActive: () -> Boolean,
 ) {
@@ -125,8 +130,12 @@ class KioskApplier(
     }
 
     private suspend fun exitLocked(handBackHome: Boolean, force: Boolean): KioskResult {
+        journal.begin(ExitJournal.Pending(handBackHome, force))
         val r = kiosk.exit()
-        if (r != KioskResult.Ok && !force) return r
+        if (r != KioskResult.Ok && !force) {
+            journal.end() // refused: nothing changed, nothing to finish later
+            return r
+        }
         kiosk.setVolumeLocked(false) // best effort: lift the kiosk's volume lock (and its mute)
         store.save(null)
         safeModeSetter.set(inKiosk = false) // best effort, like the volume lock
@@ -134,7 +143,19 @@ class KioskApplier(
             home.setClaimEnabled(false)
             home.showOemHome()
         }
+        journal.end()
         return r
+    }
+
+    /**
+     * At start (the kiosk launcher, the boot re-apply): finish an exit that began but was cut off (process death
+     * between its steps), with the options it was started with. True when one was finished. Repeating a step is
+     * harmless: each one is idempotent.
+     */
+    suspend fun resumeInterruptedExit(): Boolean = mutex.withLock {
+        val pending = journal.pending() ?: return@withLock false
+        exitLocked(pending.handBackHome, pending.force)
+        true
     }
 
     /** At agent start: drop a volume lock left behind (e.g. by an interrupted exit) unless the kiosk wants it. */

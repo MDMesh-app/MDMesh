@@ -47,6 +47,12 @@ New
   agent 0.5.0.
 - Agent: its notifications have sharp MDMesh status bar icons, and its app icon follows themed icons on Android 13
   and later. Needs agent 0.5.0.
+- Agent: the MDMesh status screen follows the device's light or dark setting and uses the console's look: a device
+  card, a Kiosk card with Return to kiosk, and a callout that stays on screen when a return fails (it was a
+  short-lived message). Needs agent 0.5.0.
+- Kiosk: the launcher grid has pressed highlights, two-line app names and as many columns as fit, also after
+  rotating; its empty, loading, "App closed" and idle screens and the Exit kiosk button use the kiosk's own colours
+  and stay readable on any background. Needs agent 0.5.0.
 
 Fixes
 - Audit log: on Docker installs, entries show the client's address instead of the edge container's (thanks
@@ -58,6 +64,8 @@ Fixes
 - Agent rollout: when every device is in the canary, the rollout finishes once they've updated instead of staying
   open, and Settings stops offering the same agent again. If one can't update, it offers Finish instead of Promote
   (thanks @letternumber).
+- Kiosk: a single-app kiosk reopens its app once when it is closed, instead of starting it twice, and rotating the
+  device or changing the font or display size no longer restarts the kiosk screen. Needs agent 0.5.0.
 
 Under the hood
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.

@@ -159,8 +159,8 @@ printed.
 setup.sh (B) asks only when it writes a new `.env`; a re-run reuses its `.env` and ignores these answers.
 
 - `MDMESH_ANSWERS=/full/path/answers.env` reads answers from a file of `KEY=VALUE` lines (`#` comments allowed;
-  never run as a script). A variable set in the environment wins over the file. Keep the file mode 600 when it holds
-  the tunnel token.
+  never run as a script). A variable set in the environment wins over the file. A file holding the tunnel token must
+  belong to you with mode 600, or the installer refuses to read it.
 - `MDMESH_NONINTERACTIVE=1` never asks: a missing answer with a default takes it, and any other stops the installer,
   naming its variable. Use it whenever there is no terminal to answer on. The native installer also needs
   `MDMESH_ASSUME_YES=1` (or `-y`).
@@ -173,13 +173,17 @@ A quick start on your own domain, with no questions: set these, then run the Opt
 export MDMESH_MODE=domain MDMESH_HOST=mdm.example.com MDMESH_ACME_EMAIL=ops@example.com MDMESH_NONINTERACTIVE=1
 ```
 
-With Cloudflare Tunnel, put the token in an answers file rather than on the command line:
+With Cloudflare Tunnel, keep the token out of `export` and the command line, where shell history and other users
+(through the process list) can see it. Put it in a private answers file with an editor:
 
 ```bash
-umask 077
-printf '%s\n' MDMESH_MODE=tunnel MDMESH_HOST=mdm.example.com 'MDMESH_TUNNEL_TOKEN=<your token>' > answers.env
+touch answers.env && chmod 600 answers.env
+nano answers.env    # MDMESH_MODE=tunnel, MDMESH_HOST=mdm.example.com and MDMESH_TUNNEL_TOKEN=<your token>, one per line
 export MDMESH_ANSWERS="$PWD/answers.env" MDMESH_NONINTERACTIVE=1
 ```
+
+The installer never prints the token (nor with `bash -x`), and no program it starts sees it in its arguments or
+environment. Delete the file once the install is done.
 
 Native, from a clone: `sudo MDMESH_ASSUME_YES=1 MDMESH_BASE_URL=https://mdm.example.com ./setup.sh --native`.
 

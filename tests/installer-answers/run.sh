@@ -36,11 +36,12 @@ mkdir -p "$WORK/src/install" "$WORK/qs" "$WORK/out"
 cp -- "$REPO/setup.sh" "$WORK/src/"
 cp -R -- "$REPO/install/lib" "$WORK/src/install/"
 cp -- "$REPO/install/install-native.sh" "$WORK/src/install/"
-# Stubs, first on PATH, for every command that could install or start something: called at all, they record it and fail.
+# Stubs, first on PATH, for every command that could install or start something: called at all, they record it (their
+# arguments and environment, in $STUB_LOG or else stubs.called) and fail.
 mkdir -p "$WORK/stubs"
 for c in docker curl wget apt-get systemctl useradd mvn git; do
-  # shellcheck disable=SC2016  # $0 and $* belong to the stub
-  printf '#!/bin/sh\necho "$0 $*" >> "%s/stubs.called"\nexit 99\n' "$WORK" > "$WORK/stubs/$c"
+  # shellcheck disable=SC2016  # $0, $* and $STUB_LOG belong to the stub
+  printf '#!/bin/sh\nl=${STUB_LOG:-%s/stubs.called}\n{ echo "$0 $*"; env; } >> "$l"\nexit 99\n' "$WORK" > "$WORK/stubs/$c"
   chmod +x "$WORK/stubs/$c"
 done
 
@@ -158,7 +159,7 @@ dry() {
     install-native.sh) script="$WORK/src/install/install-native.sh" ;;
   esac
   RC=0
-  (cd "$WORK/qs" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" MDMESH_DRY_RUN=1 "$@" bash "$script" < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || RC=$?
+  (cd "$WORK/qs" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" MDMESH_DRY_RUN=1 "$@" bash ${XTRACE:+-x} "$script" < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || RC=$?
 }
 show() { sed 's/^/    | /' "$WORK/out/o" "$WORK/out/e" >&2; }
 # plan_field ID: "<value> <source>" from the plan line of ID.
@@ -203,10 +204,30 @@ for inst in $(installer_ids); do
     dry "$inst" "${full[@]}"
     { [ "$RC" = 0 ] && ! grep -q '\[ask\]' "$WORK/out/o"; } || { fail "$tag: a dry run with every answer (interactive) asks something"; show; }
     ok
-    # The same answers from an answers file: the same plan.
-    printf '# answers\n' > "$WORK/answers.env"; printf '%s\n' "${full[@]}" >> "$WORK/answers.env"
+    # The same, traced (bash -x): no secret in the trace either.
+    XTRACE=1 dry "$inst" MDMESH_NONINTERACTIVE=1 "${full[@]}"
+    [ "$RC" = 0 ] || { fail "$tag: a traced dry run failed"; show; }
+    for s in $(secrets_of "$inst"); do
+      if grep -qF -- "$s" "$WORK/out/o" "$WORK/out/e"; then fail "$tag: a secret was printed by xtrace (bash -x)"; fi
+    done
+    ok
+    # The same answers from an answers file (private: it holds the secret, if any): the same plan, traced or not.
+    printf '# answers\n' > "$WORK/answers.env"; printf '%s\n' "${full[@]}" >> "$WORK/answers.env"; chmod 600 "$WORK/answers.env"
     dry "$inst" MDMESH_NONINTERACTIVE=1 MDMESH_ANSWERS="$WORK/answers.env"
     { [ "$RC" = 0 ] && cmp -s "$WORK/out/o" "$WORK/out/full.plan"; } || { fail "$tag: answers from MDMESH_ANSWERS give another plan"; show; }
+    XTRACE=1 dry "$inst" MDMESH_NONINTERACTIVE=1 MDMESH_ANSWERS="$WORK/answers.env"
+    for s in $(secrets_of "$inst"); do
+      if grep -qF -- "$s" "$WORK/out/o" "$WORK/out/e"; then fail "$tag: a secret in MDMESH_ANSWERS was printed by xtrace"; fi
+    done
+    if grep -q '^MDMESH_TUNNEL_TOKEN=' "$WORK/answers.env"; then
+      # Readable by others: refused before it is read, saying how to fix it.
+      chmod 644 "$WORK/answers.env"
+      dry "$inst" MDMESH_NONINTERACTIVE=1 MDMESH_ANSWERS="$WORK/answers.env"
+      { [ "$RC" != 0 ] && grep -qF 'chmod 600' "$WORK/out/e"; } || { fail "$tag: an answers file with a secret, readable by others, is not refused"; show; }
+      for s in $(secrets_of "$inst"); do
+        if grep -qF -- "$s" "$WORK/out/o" "$WORK/out/e"; then fail "$tag: refusing the answers file printed the secret"; fi
+      done
+    fi
     ok
 
     # Only the required answers, non-interactive: every other question takes its default, as the contract says.
@@ -258,6 +279,25 @@ for inst in $(installer_ids); do
     ok
   done
 done
+
+# Secrets in a real (not dry) run: neither the arguments nor the environment of any child process holds the token. The
+# runs stop at the first stub (docker), before anything else; the stubs log their arguments and environment.
+token=$(opt tunnel-token '.examples.valid[0]')
+for inst in quickstart.sh setup.sh; do
+  : > "$WORK/children.log"
+  dry "$inst" MDMESH_DRY_RUN=0 STUB_LOG="$WORK/children.log" MDMESH_NONINTERACTIVE=1 MDMESH_MODE=tunnel \
+    MDMESH_HOST=mdm.example.com MDMESH_TUNNEL_TOKEN="$token"
+  [ -s "$WORK/children.log" ] || { fail "$inst: the real run called no stub (the child-process check did not run)"; show; }
+  if grep -qF -- "$token" "$WORK/children.log" "$WORK/out/o" "$WORK/out/e"; then
+    fail "$inst: the tunnel token reached a child process's arguments or environment, or the output"
+  fi
+  ok
+done
+# A line holding a bare token in the answers file is refused without echoing it.
+printf '%s\n' "$token" > "$WORK/answers.env"; chmod 600 "$WORK/answers.env"
+dry quickstart.sh MDMESH_ANSWERS="$WORK/answers.env"
+{ [ "$RC" != 0 ] && ! grep -qF -- "${token%=}" "$WORK/out/o" "$WORK/out/e"; } || { fail "a bare token line in MDMESH_ANSWERS is echoed (or accepted)"; show; }
+ok
 
 # The answers file's own rules, and the native installer's older variable names.
 dry quickstart.sh MDMESH_ANSWERS=answers.env

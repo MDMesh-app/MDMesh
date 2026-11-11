@@ -15,32 +15,55 @@
 # checks or changes anything on this host.
 #
 # The answers file is never sourced: each line is a comment (#…), blank, or KEY=VALUE with a known KEY (see
-# _MDM_ANSWER_KEYS) and the VALUE taken literally (one pair of surrounding '…' or "…" is removed). Secrets (the tunnel
-# token) are never printed.
+# _MDM_ANSWER_KEYS) and the VALUE taken literally (one pair of surrounding '…' or "…" is removed).
+#
+# Secrets (the tunnel token, _MDM_SECRET_KEYS) never reach anything another user or a log could see: they are never
+# printed (not in the plan, a "Using" line, or an error about the value), xtrace (set -x) is off while these functions
+# hold them, they are never put on a command line, their environment variable is removed (unset) once read so that no
+# child process inherits it, and an answers file holding one is read only when it is owned by the user running the
+# installer and nobody else can read or write it (chmod 600).
 
 # >>> answers.sh functions (quickstart.sh keeps a verbatim copy) >>>
 # The keys an answers file may set: every answer and setting in install/options.json (CI checks the two match).
 _MDM_ANSWER_KEYS=" MDMESH_MODE MDMESH_REPO MDMESH_IMAGE_OWNER MDMESH_HOST MDMESH_TUNNEL_TOKEN MDMESH_ACME_EMAIL MDMESH_BASE_URL MDMESH_HTTP_PORT MDMESH_REPLACE_DATA MDMESH_ASSUME_YES MDMESH_DIR MDMESH_VERSION MDMESH_RELEASE_PUBKEY MDMESH_NONINTERACTIVE MDMESH_DRY_RUN "
+_MDM_SECRET_KEYS=" MDMESH_TUNNEL_TOKEN "
 _MDM_ANS_GIVEN=" "       # ids of the questions answered in advance
 _MDM_ANS_FROM_FILE=" "   # keys set from the answers file
 _mdm_answer_fail() { printf 'MDMesh installer: %s\n' "$*" >&2; exit 1; }
 
 # mdm_answers_load: reads the answers file MDMESH_ANSWERS names, if any (keys already in the environment are left
-# alone), then checks MDMESH_NONINTERACTIVE and MDMESH_DRY_RUN. Stops the installer on any error.
-mdm_answers_load() {
+# alone), then checks MDMESH_NONINTERACTIVE and MDMESH_DRY_RUN. Stops the installer on any error. xtrace stays off
+# while it runs (the file may hold a secret).
+mdm_answers_load() { local _mdm_x=$-; set +x; _mdm_answers_load; case "$_mdm_x" in *x*) set -x ;; esac; }
+# _mdm_private_file FILE: FILE is owned by this user and nobody else may read, write or run it.
+_mdm_private_file() {
+  [ -O "$1" ] || return 1
+  [ -z "$(find "$1" -prune \( -perm -040 -o -perm -020 -o -perm -010 -o -perm -004 -o -perm -002 -o -perm -001 \) -print 2>/dev/null)" ]
+}
+_mdm_answers_load() {
   local f=${MDMESH_ANSWERS-} line key val n=0 seen=" " v
   if [ -n "$f" ]; then
     case "$f" in /*) ;; *) _mdm_answer_fail "MDMESH_ANSWERS must be an absolute path (e.g. \$PWD/answers.env)." ;; esac
     { [ -f "$f" ] && [ -r "$f" ]; } || _mdm_answer_fail "MDMESH_ANSWERS: $f is not a readable file."
     [ "$(wc -c < "$f")" -le 65536 ] || _mdm_answer_fail "MDMESH_ANSWERS: $f is larger than 64 KiB."
+    # A file with a secret in it is read only when it is private (before any line of it is read).
+    for key in $_MDM_SECRET_KEYS; do
+      if grep -q "^$key=" "$f" && ! _mdm_private_file "$f"; then
+        _mdm_answer_fail "MDMESH_ANSWERS: $f holds $key, a secret, so it must be owned by you and private to you: chmod 600 $f. It was not read."
+      fi
+    done
     while IFS= read -r line || [ -n "$line" ]; do
       n=$((n + 1)); line=${line%$'\r'}
       case "$line" in ''|'#'*) continue ;; *=*) ;; *) _mdm_answer_fail "$f, line $n: expected KEY=VALUE." ;; esac
       key=${line%%=*}; val=${line#*=}
       case "$_MDM_ANSWER_KEYS" in
         *" $key "*) ;;
-        *) case "$key" in *[![:print:]]*) key=$(printf '%q' "$key") ;; esac
-           _mdm_answer_fail "$f, line $n: unknown key $key (the keys are in install/options.json)." ;;
+        *) # Named only when it looks like a variable name: a line holding a bare token (abc…=) must not be echoed.
+           case "$key" in
+             ''|*[!ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_]*) key='' ;;
+             *) [ "${#key}" -le 64 ] || key='' ;;
+           esac
+           _mdm_answer_fail "$f, line $n: unknown key${key:+ $key} (the keys are in install/options.json)." ;;
       esac
       case "$seen" in *" $key "*) _mdm_answer_fail "$f, line $n: $key is set twice." ;; esac
       seen="$seen$key "
@@ -123,7 +146,9 @@ _mdm_answer_rule_has_default() { case "$1" in github-repo|image-owner|port|email
 # the value is invalid, or when ENV and ALIAS are both set to different values. An empty value answers the GitHub repo,
 # image owner and Let's Encrypt email questions (the default, as Enter at the prompt); for a base URL, the HTTP port,
 # Keep/Erase and the confirmation it counts as not set, as it always did for the native installer.
-mdm_answer() {
+# For a secret, xtrace is off throughout, ENV (and ALIAS) is then unset, and VAR is not exported: no child process sees it.
+mdm_answer() { local _mdm_x=$-; set +x; _mdm_answer "$@"; case "$_mdm_x" in *x*) set -x ;; esac; }
+_mdm_answer() {
   local id=$1 var=$2 rule=$3 env=$4 alias=${5-} k src=''
   k=${1//-/_}
   printf -v "_MDM_ANS_ENV_$k" '%s' "$env"; printf -v "_MDM_ANS_RULE_$k" '%s' "$rule"; printf -v "_MDM_ANS_VAR_$k" '%s' "$var"
@@ -147,6 +172,11 @@ mdm_answer() {
     _mdm_answer_fail "$src $_MDM_WHY."
   fi
   printf -v "$var" '%s' "$_MDM_V"
+  _MDM_V=''
+  # shellcheck disable=SC2163  # $var names the variable to un-export
+  case "$_MDM_SECRET_KEYS" in
+    *" $env "*) unset "$env"; [ -z "$alias" ] || unset "$alias"; export -n "$var" ;;
+  esac
   printf -v "_MDM_ANS_SHOW_$k" '%s' "$_MDM_SHOW"; printf -v "_MDM_ANS_SRC_$k" '%s' "$src"
   _MDM_ANS_GIVEN="$_MDM_ANS_GIVEN$id "
 }

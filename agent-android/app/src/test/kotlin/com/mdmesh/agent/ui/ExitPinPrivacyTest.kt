@@ -78,6 +78,9 @@ class ExitPinPrivacyTest {
         if (android.os.Build.VERSION.SDK_INT >= 26) {
             assertEquals(View.IMPORTANT_FOR_AUTOFILL_NO, field.importantForAutofill)
         }
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            assertFalse("content capture sees the PIN", field.isImportantForContentCapture)
+        }
         assertTrue(field.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING != 0)
         assertTrue(field.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS != 0)
         assertFalse(ReflectionHelpers.callInstanceMethod<Boolean>(field as TextView, "isSuggestionsEnabled"))

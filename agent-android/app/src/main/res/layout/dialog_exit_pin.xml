@@ -9,8 +9,9 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:importantForAutofill="noExcludeDescendants"
+    android:importantForContentCapture="noExcludeDescendants"
     android:orientation="vertical"
-    tools:targetApi="o"
+    tools:targetApi="r"
     android:paddingTop="@dimen/mdm_dialog_title_gap">
 
     <FrameLayout

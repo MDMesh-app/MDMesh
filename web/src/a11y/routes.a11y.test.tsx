@@ -55,6 +55,8 @@ describe('axe: every signed-in route', () => {
     await screen.findByRole('heading', { level: 1, name: heading });
     // Let the page's data settle (lists, counts) before the scan.
     await waitFor(() => expect(document.querySelector('[aria-busy="true"]')).toBeNull());
+    // 2.4.2: every page names itself in the tab.
+    await waitFor(() => expect(document.title).toMatch(/^.+ · MDMesh$/));
     expect(await violations()).toEqual([]);
   });
 });
@@ -64,6 +66,15 @@ describe('axe: signed-out pages', () => {
     stubApi(api);
     renderInConsole(<AppRoutes />, { user: null, path: '/login' });
     await screen.findByRole('heading', { level: 1, name: 'Sign in' });
+    await waitFor(() => expect(document.title).toBe('Sign in · MDMesh'));
+    expect(await violations()).toEqual([]);
+  });
+
+  it('a device that is not there still has a heading and a title', async () => {
+    stubApi(api);
+    renderInConsole(<AppRoutes />, { user: ROLES.superAdmin, path: '/devices/NOPE' });
+    await screen.findByRole('heading', { level: 1, name: 'Device NOPE' });
+    await waitFor(() => expect(document.title).toBe('Device NOPE · MDMesh'));
     expect(await violations()).toEqual([]);
   });
 

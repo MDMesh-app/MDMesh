@@ -69,6 +69,8 @@ class CheckInCoordinatorTest {
         override fun write(raw: String?) { this.raw = raw }
     }
 
+    // A test factory: every parameter past the first two is an optional override with a working default.
+    @Suppress("LongParameterList")
     private fun TestScope.coordinator(
         api: FakeMdmApi,
         pending: PendingResults,
@@ -158,7 +160,7 @@ class CheckInCoordinatorTest {
         override fun put(vararg changes: Pair<String, String?>) {
             for ((key, value) in changes) if (value == null) values.remove(key) else values[key] = value
         }
-        override fun flush() {}
+        override fun flush() = Unit
     }
 
     @Test

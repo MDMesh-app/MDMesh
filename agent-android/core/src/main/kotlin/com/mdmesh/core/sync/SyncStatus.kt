@@ -33,7 +33,8 @@ class SyncStatus @Inject constructor(private val lastCheckIn: LastCheckIn) {
     /** Wall clock of the last successful check-in; null when none yet. */
     val lastSuccessAtMs: Long? get() = lastCheckIn.okAtMs
 
-    private val _successes = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    private val _successes =
+        MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     /** Emits on each successful check-in (no replay): the server is reachable right now. */
     val successes: SharedFlow<Unit> = _successes
 

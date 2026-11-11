@@ -50,10 +50,12 @@ class KeepAliveReceiver : BroadcastReceiver() {
         val pending = goAsync()
         Heartbeat.launch(
             scope = scope,
-            onError = { Log.w(TAG, "heartbeat check-in failed", it) }, // transient — the next heartbeat retries
-            onLate = { Log.i(TAG, "heartbeat still running at its deadline; broadcast released, the check-in goes on") },
-            finish = { pending.finish() },
-            keepAwake = { timeoutMs -> wakeLock(context, timeoutMs) },
+            hooks = Heartbeat.Hooks(
+                onError = { Log.w(TAG, "heartbeat check-in failed", it) }, // transient — the next heartbeat retries
+                onLate = { Log.i(TAG, "heartbeat still running at its deadline; broadcast released, it goes on") },
+                finish = { pending.finish() },
+                keepAwake = { timeoutMs -> wakeLock(context, timeoutMs) },
+            ),
         ) {
             Heartbeat.checkIn(coordinator, { Log.i(TAG, it) }) {
                 try {

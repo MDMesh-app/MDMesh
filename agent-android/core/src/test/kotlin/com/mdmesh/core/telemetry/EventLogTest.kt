@@ -20,7 +20,7 @@ class EventLogTest {
         override fun put(vararg changes: Pair<String, String?>) {
             for ((key, value) in changes) if (value == null) values.remove(key) else values[key] = value
         }
-        override fun flush() {}
+        override fun flush() = Unit
     }
 
     @Test fun encodeDecodeRoundTrip() {

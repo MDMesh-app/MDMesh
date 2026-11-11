@@ -99,13 +99,14 @@ class CheckInService : LifecycleService() {
         }
         ContextCompat.registerReceiver(this, powerReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         // Best effort: the system caps callbacks per app (API 30+ throws past it); the backoff still retries.
-        runCatching { connectivity().registerDefaultNetworkCallback(networkCallback) }
+        runCatching { connectivity.registerDefaultNetworkCallback(networkCallback) }
             .onFailure { Log.w(TAG, "network callback not registered", it) }
         // An APK a dead process left behind would otherwise wait for the next install.
         lifecycleScope.launch { installManager.sweepLeftoverDownloads() }
     }
 
-    private fun connectivity() = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+    private val connectivity: ConnectivityManager
+        get() = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
@@ -226,7 +227,7 @@ class CheckInService : LifecycleService() {
 
     override fun onDestroy() {
         runCatching { unregisterReceiver(powerReceiver) }
-        runCatching { connectivity().unregisterNetworkCallback(networkCallback) }
+        runCatching { connectivity.unregisterNetworkCallback(networkCallback) }
         transport.stop()
         super.onDestroy()
     }

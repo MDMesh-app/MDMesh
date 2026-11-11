@@ -41,6 +41,7 @@ import javax.inject.Singleton
  * the batch — they become `failed`/`unsupported`/`expired` results.
  */
 @Singleton
+@Suppress("LongParameterList") // A DI root: each parameter is one injected collaborator of the sync loop.
 class CheckInCoordinator @Inject constructor(
     private val api: MdmApi,
     private val enrollment: EnrollmentManager,
@@ -263,7 +264,7 @@ enum class CheckInOutcome {
     RAN,
     /** It handed the request to the running cycle, which checked in for it. */
     SERVED,
-    /** It handed the request over, but no check-in ran for it (that cycle failed first, was cancelled, or hit its cap). */
+    /** It handed the request over, but no check-in ran for it (that cycle failed, was cancelled or hit its cap). */
     NOT_SERVED,
 }
 

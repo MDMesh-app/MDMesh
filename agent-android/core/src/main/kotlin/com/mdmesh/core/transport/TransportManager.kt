@@ -41,14 +41,23 @@ class TransportManager internal constructor(
     private val sockets: WebSocket.Factory,
     private val baseUrl: () -> String,
     private val scope: CoroutineScope,
-    /** Monotonic milliseconds, for the stable-session rule. */
-    private val clock: () -> Long,
-    /** Picks each backoff's wait within its bound (see [fullJitter]). */
-    private val random: Random = Random.Default,
-    private val log: (String) -> Unit = {},
+    private val env: Env,
     /** Emits when a check-in reached the server: proof it is up, so a pending backoff is cut short. */
     serverReachable: Flow<Unit> = emptyFlow(),
 ) {
+    /** The clock, randomness and log the channel uses: real ones in production, controlled ones in tests. */
+    internal class Env(
+        /** Monotonic milliseconds, for the session-length rules. */
+        val clock: () -> Long,
+        /** Picks each backoff's wait within its bound (see [fullJitter]). */
+        val random: Random = Random.Default,
+        val log: (String) -> Unit = {},
+    )
+
+    private val clock get() = env.clock
+    private val random get() = env.random
+    private val log get() = env.log
+
     @Inject constructor(
         @ApiHttpClient okHttpClient: OkHttpClient,
         serverConfig: ServerConfigStore,
@@ -61,8 +70,7 @@ class TransportManager internal constructor(
         sockets = okHttpClient.newBuilder().pingInterval(50, TimeUnit.SECONDS).build(),
         baseUrl = serverConfig::baseUrl,
         scope = scope,
-        clock = SystemClock::elapsedRealtime,
-        log = { Log.i(TAG, it) },
+        env = Env(clock = SystemClock::elapsedRealtime, log = { Log.i(TAG, it) }),
         serverReachable = syncStatus.successes,
     )
 
@@ -150,8 +158,9 @@ class TransportManager internal constructor(
                 .addHeader("Authorization", "Bearer $secret")
                 .build()
             sockets.newWebSocket(request, Listener(gen))
-        } catch (e: Exception) {
-            // A bad provisioned address, say. Runs on OkHttp/connectivity threads too, where a throw would crash.
+        } catch (e: IllegalArgumentException) {
+            // A bad provisioned address (OkHttp rejects the URL). Runs on OkHttp/connectivity threads too, where a
+            // throw would crash.
             log("connect failed: ${e.javaClass.simpleName}")
             dropped(gen, code = null)
             return
@@ -170,11 +179,13 @@ class TransportManager internal constructor(
     private fun received(gen: Int, socket: WebSocket, text: String) {
         val s = state
         if (s !is State.Connected || s.gen != gen) return socket.cancel() // superseded
-        val signal = WakeSignal.parse(text) ?: return
-        val cb = onWake ?: return
-        scope.launch {
-            runCatching { cb(signal) }
-                .onFailure { Log.w(TAG, "wake handler failed", it) }
+        val signal = WakeSignal.parse(text)
+        val cb = onWake
+        if (signal != null && cb != null) {
+            scope.launch {
+                runCatching { cb(signal) }
+                    .onFailure { Log.w(TAG, "wake handler failed", it) }
+            }
         }
     }
 
@@ -190,11 +201,11 @@ class TransportManager internal constructor(
      */
     @Synchronized
     private fun dropped(gen: Int, code: Int?) {
-        val since = when (val s = state) {
-            is State.Connecting -> if (s.gen == gen) null else return
-            is State.Connected -> if (s.gen == gen) s.since else return
-            else -> return // stopped, or this socket already reported and its reconnect is pending
-        }
+        val s = state
+        // Not ours when stopped, superseded, or this socket already reported and its reconnect is pending.
+        val ours = (s is State.Connecting && s.gen == gen) || (s is State.Connected && s.gen == gen)
+        if (!ours) return
+        val since = (s as? State.Connected)?.since
         val lasted = if (since == null) 0L else clock() - since
         val stable = lasted >= STABLE_SESSION_MS
         // After a long healthy session the old failure count says nothing about now (it may still sit at the cap
@@ -266,12 +277,15 @@ class TransportManager internal constructor(
         /** A session this long proves the channel healthy, whatever ended it (twice the backoff cap). */
         const val LONG_SESSION_MS = 10 * 60_000L
 
-        /** For a 1008 close: anywhere in the upper half of [bound], so a deleted device never retries within seconds. */
+        /** Far past the cap already; keeps the shift from overflowing. */
+        private const val MAX_DOUBLINGS = 20
+
+        /** For a 1008 close: anywhere in the upper half of [bound], so a deleted device never retries in seconds. */
         fun policyJitter(bound: Long, random: Random = Random.Default): Long = random.nextLong(bound / 2, bound + 1)
 
         /** 1s, 2s, 4s … doubling per failure, capped at [MAX_BACKOFF_MS]: the bound [fullJitter] picks under. */
         fun backoffBound(failures: Int): Long =
-            minOf(MAX_BACKOFF_MS, MIN_BACKOFF_MS shl minOf(failures, 20))
+            minOf(MAX_BACKOFF_MS, MIN_BACKOFF_MS shl minOf(failures, MAX_DOUBLINGS))
 
         /**
          * "Full jitter": anywhere from half a second up to [bound] (1.5s for the first retry), so a fleet that lost

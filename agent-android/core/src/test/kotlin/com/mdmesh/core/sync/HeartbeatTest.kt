@@ -29,14 +29,16 @@ class HeartbeatTest {
 
     private fun beat(work: suspend () -> Unit) = Heartbeat.launch(
         scope = scope,
-        onError = { error = it },
-        onLate = { late = true },
-        finish = { finishes++; finishedAt = scope.currentTime; wakeLock += "finish@${scope.currentTime}" },
-        keepAwake = { timeout ->
-            wakeLock += "acquire($timeout)@${scope.currentTime}"
-            val release = { wakeLock += "release@${scope.currentTime}"; Unit }
-            release
-        },
+        hooks = Heartbeat.Hooks(
+            onError = { error = it },
+            onLate = { late = true },
+            finish = { finishes++; finishedAt = scope.currentTime; wakeLock += "finish@${scope.currentTime}" },
+            keepAwake = { timeout ->
+                wakeLock += "acquire($timeout)@${scope.currentTime}"
+                val release = { wakeLock += "release@${scope.currentTime}"; Unit }
+                release
+            },
+        ),
         work = work,
     )
 
@@ -102,10 +104,12 @@ class HeartbeatTest {
     fun `a wakelock that can't be taken is reported, and the broadcast is still released`() {
         val failing = Heartbeat.launch(
             scope = scope,
-            onError = { error = it },
-            onLate = { late = true },
-            finish = { finishes++ },
-            keepAwake = { throw SecurityException("no WAKE_LOCK") },
+            hooks = Heartbeat.Hooks(
+                onError = { error = it },
+                onLate = { late = true },
+                finish = { finishes++ },
+                keepAwake = { throw SecurityException("no WAKE_LOCK") },
+            ),
         ) { delay(5 * 60_000L) }
         scope.advanceUntilIdle()
         assertEquals(1, finishes)
@@ -117,7 +121,9 @@ class HeartbeatTest {
         val identity = FakeIdentity(initialId = "dev-1", initialSecret = "sek-1")
         return CheckInCoordinator(
             api = api,
-            enrollment = EnrollmentManager(api, identity, FakeTokenProvider("t"), FakeCapabilitySource(), NoopEventSink),
+            enrollment = EnrollmentManager(
+                api, identity, FakeTokenProvider("t"), FakeCapabilitySource(), NoopEventSink,
+            ),
             identity = identity,
             capabilitySource = FakeCapabilitySource(),
             dispatcher = CommandDispatcher(emptyList()),

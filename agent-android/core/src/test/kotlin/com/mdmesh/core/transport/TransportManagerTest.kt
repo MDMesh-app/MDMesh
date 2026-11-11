@@ -79,9 +79,11 @@ class TransportManagerTest {
         sockets = sockets,
         baseUrl = { baseUrl() },
         scope = scope,
-        clock = { scope.currentTime },
-        random = Random(1), // the real jitter, seeded: tests assert bounds, not exact waits
-        log = { logs += it },
+        env = TransportManager.Env(
+            clock = { scope.currentTime },
+            random = Random(1), // the real jitter, seeded: tests assert bounds, not exact waits
+            log = { logs += it },
+        ),
         serverReachable = checkInSucceeded,
     )
 
@@ -242,7 +244,8 @@ class TransportManagerTest {
         assertEquals(4, logs.size)
         assertEquals("Stopped -> Connecting gen=1", logs[0])
         assertEquals("Connecting -> Connected gen=1", logs[1])
-        assertTrue(logs[2], Regex("Connected -> Backoff gen=2 retry in \\d+ms bound=1000ms failures=1").matches(logs[2]))
+        val backoff = Regex("Connected -> Backoff gen=2 retry in \\d+ms bound=1000ms failures=1")
+        assertTrue(logs[2], backoff.matches(logs[2]))
         assertEquals("Backoff -> Stopped gen=3", logs[3])
         assertTrue(logs.none { "dev-1" in it || "sek" in it || "mdm.example" in it })
     }

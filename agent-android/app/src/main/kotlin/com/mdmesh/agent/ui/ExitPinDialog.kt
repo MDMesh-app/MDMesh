@@ -5,6 +5,7 @@ import android.graphics.Typeface
 import android.text.Editable
 import android.text.TextWatcher
 import android.text.method.PasswordTransformationMethod
+import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
@@ -91,8 +92,12 @@ class ExitPinDialog private constructor(
         })
         // Keyboard and focus in the field as the dialog opens.
         dialog.alert.setOnShowListener { field.requestFocus() }
-        field.setOnEditorActionListener { _, action, _ ->
-            (action == EditorInfo.IME_ACTION_DONE).also { if (it) submit() }
+        field.setOnEditorActionListener { _, actionId, event ->
+            when (editorAction(actionId, event?.action, event?.keyCode)) {
+                EditorAction.SUBMIT -> true.also { submit() }
+                EditorAction.CONSUME -> true
+                EditorAction.IGNORE -> false
+            }
         }
         toggle.setOnClickListener { toggleShown() }
         field.addTextChangedListener(object : TextWatcher {
@@ -105,7 +110,24 @@ class ExitPinDialog private constructor(
         })
     }
 
+    /** What a key or IME action in the PIN field does. */
+    internal enum class EditorAction { SUBMIT, CONSUME, IGNORE }
+
     companion object {
+        /**
+         * The soft keyboard's Done submits, and so does Enter on a hardware keyboard or a scanner, which arrives as
+         * IME_NULL with its key event: on the press, once; the release is swallowed so it can't count again.
+         */
+        internal fun editorAction(actionId: Int, keyAction: Int?, keyCode: Int?): EditorAction {
+            val enter = keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+            return when {
+                actionId == EditorInfo.IME_ACTION_DONE -> EditorAction.SUBMIT
+                actionId != EditorInfo.IME_NULL || !enter -> EditorAction.IGNORE
+                keyAction == KeyEvent.ACTION_DOWN -> EditorAction.SUBMIT
+                else -> EditorAction.CONSUME
+            }
+        }
+
         /** Whether the field's text is worth handing to the PIN check: an empty string can never match a PIN. */
         internal fun isSubmittable(text: CharSequence?): Boolean = !text.isNullOrEmpty()
 

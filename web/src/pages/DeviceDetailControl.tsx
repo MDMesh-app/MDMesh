@@ -42,7 +42,7 @@ import {
 } from '../ui';
 import { capitalise, commandStatus, configNeedsPanel, fmtWhen, isoTime, shortRevision } from './deviceDetailFormat';
 import type { DeviceView } from '../api/devices';
-import { classifyOutcome, outcomeSummary, type Outcome } from '../data/configOutcomes';
+import { classifyOutcome, outcomeSummary, unsupportedOutcomeReason, type Outcome } from '../data/configOutcomes';
 import { commandDetail, commandName, commandTime } from '../data/deviceActivity';
 import { parseOutcomes } from '../api/configSync';
 import { fmtDateTime } from '../ui/format';
@@ -99,6 +99,7 @@ export function ConfigPanel({
   status,
   configName,
   isDeviceOwner,
+  androidSdkInt,
   busy,
   onRetry,
   now,
@@ -107,6 +108,8 @@ export function ConfigPanel({
   configName: string | undefined;
   /** Telemetry security.isDeviceOwner (undefined when not reported). */
   isDeviceOwner: boolean | undefined;
+  /** Telemetry hardware.sdkInt; used only to explain version-gated policy outcomes. */
+  androidSdkInt: number | undefined;
   busy: boolean;
   /** Sends the configuration again ("Retry apply"); left out for a role that may not, which then sees no button. */
   onRetry?: () => void;
@@ -115,10 +118,12 @@ export function ConfigPanel({
   const titleId = useId();
   const verdict = summarizeStatus(status);
   const parsed = parseOutcomes(status?.lastCommand?.detail);
-  const outcomes = useMemo(
-    () => Object.entries(parsed?.outcomes ?? {}).map(([k, v]) => classifyOutcome(k, String(v))),
-    [parsed],
-  );
+  const outcomes = useMemo(() => Object.entries(parsed?.outcomes ?? {}).map(([k, v]) => {
+    const outcome = classifyOutcome(k, String(v));
+    return outcome.kind === 'unsupported'
+      ? { ...outcome, reason: unsupportedOutcomeReason(outcome.key, { androidSdkInt, isDeviceOwner }) }
+      : outcome;
+  }), [parsed, androidSdkInt, isDeviceOwner]);
   const cfgId = status?.configurationId ?? null;
   const name = configName ?? 'Its configuration';
   const strongName = <strong>{name}</strong>;

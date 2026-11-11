@@ -1,6 +1,6 @@
 # Managed App Runtime Permissions
 
-**Status**: Implemented in v0.5.0 (protocol 1.6)
+**Status**: Implemented in v0.5.0 (protocol 1.7)
 **Created**: 2026-11-09
 **Scope**: A modern replacement for the inherited `appPermissions` configuration field. It does not revive the
 Headwind `/sync` behavior.
@@ -87,7 +87,7 @@ Add an optional `appPermissions` section to `config.apply`:
 - Add result keys such as `appPermissions.<package>.<permission>` to the existing outcome map. Failed release/apply
   results remain retryable through `ConfigStateStore`, just like current policy release failures.
 
-This is additive-only (protocol 1.6): older agents receive a capability-specific document with the section removed
+This is additive-only (protocol 1.7): older agents receive a capability-specific document with the section removed
 and a distinct revision. The console compares such a device with that revision when the configuration has no rules
 (it is in sync), and with the full document's when it has some, so a device that can't enforce the rules never shows
 as in sync. A device-reported permission inventory is future work.

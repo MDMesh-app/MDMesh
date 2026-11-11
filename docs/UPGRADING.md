@@ -153,8 +153,9 @@ available).
 Agent 0.4.0 speaks protocol 1.5: it applies a configuration's connectivity mode, which older agents ignore. It also
 works with a 0.3.9 server.
 
-Agent 0.5.0 speaks protocol 1.6: it applies a configuration's app permissions, which older agents can't (their devices
-show as out of sync while a configuration has a rule). It also works with a 0.4.0 server, which sends no rules.
+Agent 0.5.0 speaks protocol 1.7: it applies a configuration's Location services setting (1.6) and app permissions
+(1.7). Older agents report Location services unsupported, and can't apply app permissions (their devices show as
+out of sync while a configuration has a rule). It also works with a 0.4.0 server, which sends neither.
 
 ## Version notes
 

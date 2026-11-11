@@ -17,6 +17,8 @@ Upgrading
 - The database adds a column to devices (`agentEnrollAttemptHash`) on start. Nothing to do.
 
 New
+- Enroll: devices that enroll while the page is open show under the code, with a link, first as getting their
+  configuration and then Online, so you see the device you just set up arrive without going to Devices.
 - Configurations can allow or block the camera. Block covers every app, kiosk apps too. Not managed after Block
   gives the camera back on agent 0.5.0; on older agents, choose Allow to lift a block (thanks @letternumber).
 - Kiosk: staff can tap Return to kiosk in the MDMesh Agent after leaving with the exit PIN, even offline. It shows

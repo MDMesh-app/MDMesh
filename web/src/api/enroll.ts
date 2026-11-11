@@ -8,6 +8,8 @@ import { apiClient } from './client';
 export interface EnrollTokenResponse {
   token?: string;
   expiresAt?: number;
+  /** When the server made it (server clock, ms). */
+  createdAt?: number;
   /** How many devices the token enrolls; absent from a server that predates it, whose tokens are single-use. */
   maxUses?: number;
   [key: string]: unknown;

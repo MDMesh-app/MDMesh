@@ -3,6 +3,8 @@ import { ApiError } from '../api/client';
 import { getConfigurations, type Configuration } from '../api/configurations';
 import { mintEnrollToken, revokeAllEnrollTokens } from '../api/enroll';
 import { getUpdateStatus, type UpdateStatus } from '../api/updates';
+import { Link } from 'react-router';
+import { useArrivals, type ArrivalState } from '../enroll/arrivals';
 import { addressProblem, wifiProblem } from '../enroll/checks';
 import { agentApkUrl, buildProvisioningPayload, serverBaseUrl, type WifiSecurity } from '../enroll/provisioning';
 import {
@@ -29,6 +31,7 @@ import {
   LinkButton,
   Modal,
 } from '../ui';
+import { paths } from '../routes';
 // Not from the barrel: QrPanel pulls in `qrcode`, which stays in this page's chunk.
 import { QrPanel } from '../ui/QrPanel';
 import './EnrollPage.css';
@@ -48,6 +51,8 @@ type Method = 'qr' | 'token';
 interface Minted {
   value: string;
   expiresAt?: number;
+  /** When the server made it (server clock). */
+  createdAt?: number;
   /** The devices it enrolls, as the server says (1 from a server whose tokens are all single-use). */
   maxUses: number;
   /** The server applied the chosen devices and validity; false: it predates them, and made a single-use 24 h code. */
@@ -164,9 +169,15 @@ function qrSteps(wifiInCode: boolean): ReactNode[] {
     wifiInCode
       ? 'Scan this code when the camera opens.'
       : 'Scan this code when the camera opens. Connect to Wi-Fi if the device asks.',
-    'Wait a few minutes while the agent installs. The device then appears under Devices.',
+    'Wait a few minutes while the agent installs. The device then appears below, and under Devices.',
   ];
 }
+
+const ARRIVAL_LABEL: Record<ArrivalState, string> = {
+  settingUp: 'Enrolled, getting its configuration…',
+  online: 'Online',
+  offline: 'Enrolled, but not heard from since',
+};
 
 /** Enroll. Classic: pages/EnrollPage.tsx. */
 export function EnrollPage() {
@@ -204,6 +215,9 @@ export function EnrollPage() {
   const [stopping, setStopping] = useState(false);
   const [stopError, setStopError] = useState<string | null>(null);
   const now = useNow(30_000, token?.expiresAt);
+  /** Server time of the first code made on this visit: devices enrolled since then show up on the page. */
+  const [since, setSince] = useState<number | undefined>(undefined);
+  const arrivals = useArrivals(since);
 
   const [update, setUpdate] = useState<UpdateStatus | null>(null);
 
@@ -296,9 +310,11 @@ export function EnrollPage() {
       const applied = typeof res.maxUses === 'number';
       const devices = typeof res.maxUses === 'number' ? res.maxUses : 1;
       if (res.token) {
-        const next = { value: res.token, expiresAt: res.expiresAt, maxUses: devices, limitsApplied: applied };
+        const createdAt = typeof res.createdAt === 'number' ? res.createdAt : undefined;
+        const next = { value: res.token, expiresAt: res.expiresAt, createdAt, maxUses: devices, limitsApplied: applied };
         shown.current = next;
         setToken(next);
+        if (createdAt != null) setSince((s) => s ?? createdAt);
       } else setTokError('The server did not return a token.');
     } catch (err) {
       if (seq === mintSeq.current) setTokError(tokenError(err));
@@ -641,6 +657,23 @@ export function EnrollPage() {
           </div>
         )}
       </TabPanel>
+      {since != null ? (
+        <div className="v2-enroll__arrivals" role="status" aria-live="polite">
+          <span className="v2-enroll__wifilabel">Enrolled while this page is open</span>
+          {arrivals.length === 0 ? (
+            <span className="v2-enroll__help">No device yet. A device shows here within seconds of enrolling.</span>
+          ) : (
+            <ul className="v2-enroll__arrivallist">
+              {arrivals.map((a) => (
+                <li key={a.number}>
+                  <Link to={paths.device(a.number)}>{a.name}</Link>
+                  <span className={`v2-enroll__arrival v2-enroll__arrival--${a.state}`}>{ARRIVAL_LABEL[a.state]}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
       <div className="v2-enroll__stop">
         <span className="v2-enroll__help">
           A code shared further than meant? Stop every code that still works; enrolled devices stay enrolled.

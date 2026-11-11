@@ -17,6 +17,7 @@ import {
   kioskImageErrorText,
   kioskImageProblem,
   kioskImageUploadName,
+  normalizeKioskImage,
 } from '../data/kioskBackground';
 import { getSyncSummary, type ConfigSyncSummary } from '../api/configSync';
 import {
@@ -650,14 +651,27 @@ function Editor({
     );
   };
 
-  async function uploadBackgroundImage(file: File) {
-    const problem = kioskImageProblem(file);
-    if (problem) {
-      toast.push('err', 'Image not used', problem);
+  async function uploadBackgroundImage(picked: File) {
+    const typeProblem = kioskImageProblem({ type: picked.type, size: 0 });
+    if (typeProblem) {
+      toast.push('err', 'Image not used', typeProblem);
       return;
     }
     setBackgroundUploading(true);
     try {
+      // Upright and at most 3840 px along its long edge; the server removes whatever metadata is left.
+      let file: File;
+      try {
+        file = (await normalizeKioskImage(picked)).file;
+      } catch (e) {
+        toast.push('err', 'Image not used', e instanceof Error ? e.message : 'The image could not be read.');
+        return;
+      }
+      const problem = kioskImageProblem(file);
+      if (problem) {
+        toast.push('err', 'Image not used', problem);
+        return;
+      }
       // Hosted under a name from its content: an edited image with the same file name doesn't clash with the old one.
       const name = kioskImageUploadName(file.name, await kioskImageContentId(file));
       const temporary = await uploadRawFile(new File([file], name, { type: file.type }));

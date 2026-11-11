@@ -967,6 +967,9 @@ public class Configuration implements CustomerData, Serializable {
         copy.setName(getName());
         copy.setApplications(getApplications());
         copy.setApplicationSettings(getApplicationSettings());
+        // Same applications, so the same app ids: a copy keeps the app permission rules.
+        copy.setManagedAppPermissions(getManagedAppPermissions() == null ? null
+                : new java.util.ArrayList<ManagedAppPermission>(getManagedAppPermissions()));
         copy.setApplicationUsageParameters(getApplicationUsageParameters());
         copy.setFiles(getFiles());
         copy.setPassword(getPassword());

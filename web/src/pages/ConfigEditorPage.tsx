@@ -78,6 +78,7 @@ import { KioskBackgroundField, hostedPath, useKioskBackgroundInfo } from './conf
 import { KioskBackgroundPreview } from './configurations/KioskPreview';
 import { kioskColours, type FitMode } from '../data/kioskScrim';
 import { KioskPlacement } from './configurations/KioskPlacement';
+import { KioskGallery } from './configurations/KioskGallery';
 import { AppSelect, FieldControl, LongHelp } from './configurations/controls';
 import { AppPickerModal, CopyConfigModal, DeleteConfigModal, KioskConfirmModal } from './configurations/modals';
 import { devicesBlockingDelete, plural, usedByLine, wipedOnly, wipedOnlyLine } from './configurations/sync';
@@ -406,6 +407,8 @@ function Editor({
   const [discards, setDiscards] = useState(0);
   const nameRef = useRef<HTMLInputElement>(null);
   const [backgroundUploading, setBackgroundUploading] = useState(false);
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const mayDeleteFiles = usePermission(CORE_ACTION_ACCESS.uploadFile);
   const ids = useId();
 
   // The assigned apps: the configuration's own, or the template's for a copy. Until they arrive, saving is blocked
@@ -760,10 +763,30 @@ function Editor({
             backgroundImageUrl: undefined,
             backgroundImageSha256: undefined,
           }))}
+          onBrowse={() => setGalleryOpen(true)}
           labelId={labelId}
         />
       )}
     </FieldRow>
+  ) : null;
+  const gallery = kioskOn ? (
+    <KioskGallery
+      open={galleryOpen}
+      onClose={() => setGalleryOpen(false)}
+      currentFileId={backgroundFileId}
+      canDelete={mayDeleteFiles}
+      onChoose={(item) => {
+        setDraft((d) => ({
+          ...d,
+          backgroundImageAction: 'replace',
+          backgroundImageFileId: item.fileId,
+          backgroundImageUrl: undefined,
+          backgroundImageSha256: undefined,
+        }));
+        setGalleryOpen(false);
+        toast.push('ok', 'Background image chosen', `${item.name}. Save and apply the configuration to use it in kiosk.`);
+      }}
+    />
   ) : null;
 
   const renderItems = (items: Item[]) =>
@@ -784,6 +807,7 @@ function Editor({
       <CardHeader titleId={`${ids}-${id}-h`} title={title} subtitle={SECTION_SUB[id]} spacing={12} />
       {renderItems(LAYOUT[id])}
       {id === 'kiosk' ? backgroundImageRow : null}
+      {id === 'kiosk' ? gallery : null}
     </Card>
   );
 

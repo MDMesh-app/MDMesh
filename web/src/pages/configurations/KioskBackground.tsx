@@ -62,6 +62,7 @@ export function KioskBackgroundField({
   uploading,
   onFile,
   onRemove,
+  onBrowse,
   labelId,
 }: {
   /** The managed image (draft): an uploaded file id. */
@@ -74,6 +75,8 @@ export function KioskBackgroundField({
   uploading: boolean;
   onFile: (file: File) => void;
   onRemove: () => void;
+  /** Opens "Uploaded images"; left out, the button isn't shown. */
+  onBrowse?: () => void;
   labelId?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -112,6 +115,11 @@ export function KioskBackgroundField({
         <Button size="sm" onClick={() => inputRef.current?.click()} disabled={readOnly || uploading}>
           {uploading ? 'Uploading…' : has ? 'Replace image' : 'Choose image'}
         </Button>
+        {onBrowse ? (
+          <Button size="sm" onClick={onBrowse} disabled={readOnly || uploading}>
+            Choose from uploaded
+          </Button>
+        ) : null}
         {has ? (
           <Button size="sm" onClick={onRemove} disabled={readOnly || uploading}>
             Remove

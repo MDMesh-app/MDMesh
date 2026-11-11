@@ -99,6 +99,10 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
             iconPx = v.dp(s.iconSize.dp)
             setPadding(0, v.dp(SPACE_24), 0, v.dp(bottom))
             addView(v.inGutter(v.text(activity.getString(R.string.kiosk_header), TITLE_SP, v.palette.text, true), 0))
+            s.missingApp?.let { pkg ->
+                val notice = v.emptyNotice(activity.getString(R.string.kiosk_app_missing, pkg))
+                addView(v.inGutter(notice, v.dp(SPACE_16)))
+            }
             addView(v.inGutter(empty, v.dp(SPACE_16)))
             addView(cells)
         }

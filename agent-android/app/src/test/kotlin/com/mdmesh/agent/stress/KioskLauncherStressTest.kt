@@ -11,7 +11,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Ignore
 import org.junit.Test
 import org.robolectric.Robolectric
 
@@ -86,7 +85,6 @@ class KioskLauncherStressTest : KioskHarness() {
     }
 
     /** Pinned app uninstalled: HOME falls back to the grid; returns to it must not turn into "App closed". */
-    @Ignore("F8: fixed in the next commits")
     @Test fun pinnedAppGoneDoesNotClaimItCrashed() {
         launch(single)
         uninstall(pinned)
@@ -100,6 +98,26 @@ class KioskLauncherStressTest : KioskHarness() {
         coverAndReturn()
         assertEquals(ActivityManager.LOCK_TASK_MODE_LOCKED, lockTaskState())
         assertNotNull(findText(decor, s(R.string.kiosk_header)))
+    }
+
+    /** F8: the grid says plainly that the kiosk app isn't installed. */
+    @Test fun pinnedAppGoneSaysItIsNotInstalled() {
+        launch(single)
+        uninstall(pinned)
+        coverAndReturn()
+        assertNotNull("'not installed' notice", findText(decor, app.getString(R.string.kiosk_app_missing, pinned)))
+    }
+
+    /** F8: reinstalled, the kiosk app opens again at the next return, without counting the missing time. */
+    @Test fun pinnedAppReinstalledResumesTheKiosk() {
+        launch(single)
+        uninstall(pinned)
+        bounce(5)
+        install(pinned)
+        drainStarts()
+        coverAndReturn()
+        assertEquals("the reinstalled app opens", 1, pinnedStarts())
+        assertFalse(holdShowing())
     }
 
     // --- Remote changes while the exit dialog is open ------------------------------------------------------------

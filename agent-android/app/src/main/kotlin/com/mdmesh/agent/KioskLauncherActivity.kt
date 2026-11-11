@@ -106,7 +106,12 @@ class KioskLauncherActivity : ComponentActivity() {
         override fun onReceive(context: Context, intent: Intent) {
             val pkg = intent.data?.schemeSpecificPart ?: return
             val p = active ?: return
-            if (KioskAppLoader.affects(screen, pkg)) showGrid(p)
+            val missing = (screen as? KioskScreen.Grid)?.missingApp
+            when {
+                // The single-app kiosk's missing app is back: the kiosk resumes with it.
+                missing != null && pkg == missing && pinnedLaunchable(p) -> show(p)
+                KioskAppLoader.affects(screen, pkg) -> showGrid(p)
+            }
         }
     }
 
@@ -203,13 +208,23 @@ class KioskLauncherActivity : ComponentActivity() {
      */
     private fun onReturnedToFront() {
         val p = active ?: return
-        if (p.mode == "single") {
-            when (returns.onReturned()) {
+        if (p.mode != "single") return
+        when {
+            returns.held -> hold(p)
+            // Not installed (or disabled): nothing was opened, so nothing closed or crashed; the grid says why.
+            !pinnedLaunchable(p) -> showGrid(p)
+            // The app wasn't open (it was missing, and is back): open it, without counting a return.
+            screen !is KioskScreen.Splash -> launchPinned(p)
+            else -> when (returns.onReturned()) {
                 KioskReturnPolicy.Action.HOLD -> hold(p)
                 KioskReturnPolicy.Action.REOPEN -> launchPinned(p)
             }
         }
     }
+
+    /** The single-app kiosk's app is installed and enabled (PackageManager has a launch intent for it). */
+    private fun pinnedLaunchable(p: KioskApplyPayload): Boolean =
+        p.pinPackage?.let { packageManager.getLaunchIntentForPackage(it) } != null
 
     private fun applyState(p: KioskApplyPayload?) {
         // Taken first, whatever is shown next: a dialog from before a recreation comes back on this state or never.
@@ -287,7 +302,9 @@ class KioskLauncherActivity : ComponentActivity() {
     private fun showGrid(p: KioskApplyPayload): LauncherScreen {
         val packages = p.allowedPackages.distinct()
         val known = (screen as? KioskScreen.Grid)?.takeIf { it.packages == packages }?.apps
-        val grid = KioskScreen.Grid(palette(p), exitFor(p), IconSize.of(p.theme.iconSize), packages, known)
+        // Single-app kiosk whose app can't be opened: the grid says so (and its other apps stay usable).
+        val missing = p.pinPackage?.takeIf { p.mode == "single" && !pinnedLaunchable(p) }
+        val grid = KioskScreen.Grid(palette(p), exitFor(p), IconSize.of(p.theme.iconSize), packages, known, missing)
         render(grid)
         load {
             val loaded = apps.load(packages)

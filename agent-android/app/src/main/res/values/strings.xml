@@ -56,6 +56,8 @@
     <!-- Splash while the single kiosk app opens; %1$s = the app's name. -->
     <string name="kiosk_opening">Opening %1$s…</string>
     <string name="kiosk_empty">No apps to show. Add installed apps to this kiosk\'s allowed list in the console.</string>
+    <!-- Single-app kiosk whose app isn't installed or is disabled; %1$s = its package name. -->
+    <string name="kiosk_app_missing">%1$s isn\'t installed on this device. The kiosk opens it as soon as it is.</string>
     <string name="kiosk_idle_subtitle">Managed device</string>
     <string name="kiosk_hold_title">App closed</string>
     <string name="kiosk_hold_message">The app closed several times in a row, so it wasn\'t opened again.</string>

@@ -31,6 +31,8 @@ sealed interface KioskScreen {
         val iconSize: IconSize,
         val packages: List<String>,
         val apps: List<KioskApp>?,
+        /** A single-app kiosk's app that isn't installed (or is disabled): shown as a notice above the grid. */
+        val missingApp: String? = null,
     ) : KioskScreen
 
     /** The pinned app closed too often: "App closed" and Open again. */

@@ -1,51 +1,20 @@
 package com.mdmesh.agent
 
-import android.app.ActivityManager
-import android.content.res.ColorStateList
-import android.graphics.Color
-import android.graphics.Typeface
-import android.os.Bundle
-import android.util.TypedValue
-import android.view.Gravity
-import android.view.View
-import android.view.ViewGroup
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import android.widget.Toast
 import android.content.Intent
+import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.annotation.StringRes
+import androidx.activity.viewModels
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import com.mdmesh.agent.service.CheckInService
 import com.mdmesh.agent.ui.DialogSlot
 import com.mdmesh.agent.ui.MdmDialog
-import com.mdmesh.agent.ui.SystemBars
+import com.mdmesh.agent.ui.StatusScreen
 import com.mdmesh.core.action.NotificationPermissionAccess
-import com.mdmesh.core.config.ServerConfigStore
-import com.mdmesh.core.config.ConfigApplier
-import com.mdmesh.core.store.ConfigStateStore
-import com.mdmesh.core.store.configuredKiosk
-import com.mdmesh.core.store.DeviceIdStore
-import com.mdmesh.core.store.KioskStateStore
-import com.mdmesh.core.sync.CheckInWorker
-import com.mdmesh.core.sync.SyncStatus
-import com.mdmesh.core.telemetry.EventLog
-import com.mdmesh.kiosk.KioskResult
-import com.mdmesh.proto.KioskApplyPayload
-import com.mdmesh.policy.wifi.DpmHandle
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.flow.combine
-import java.text.DateFormat
-import java.util.Date
 import javax.inject.Inject
 
 /**
@@ -55,36 +24,25 @@ import javax.inject.Inject
  *
  * Shows the real managed state — Device-Owner status, server-issued device id, kiosk state,
  * and the server URL — so a person looking at the device can see it's managed by MDMesh.
+ * The state lives in [StatusViewModel] (one [com.mdmesh.agent.ui.StatusUiState]); [StatusScreen] draws it.
  */
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    @Inject lateinit var deviceIdStore: DeviceIdStore
-    @Inject lateinit var dpmHandle: DpmHandle
     @Inject lateinit var notificationPermission: NotificationPermissionAccess
-    @Inject lateinit var serverConfig: ServerConfigStore
-    @Inject lateinit var syncStatus: SyncStatus
-    @Inject lateinit var configApplier: ConfigApplier
-    @Inject lateinit var configStore: ConfigStateStore
-    @Inject lateinit var kioskStore: KioskStateStore
-    @Inject lateinit var events: EventLog
 
-    private lateinit var deviceIdValue: TextView
-    private lateinit var kioskValue: TextView
-    private lateinit var returnButton: Button
-    private var returningToKiosk = false
+    private val model: StatusViewModel by viewModels()
     /** The Return to kiosk confirmation; reopened after a rotation. */
     private val dialogs = DialogSlot("dialog")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val ui = buildUi()
-        setContentView(ui)
-        SystemBars.fit(this, ui, INK)
+        setContentView(R.layout.activity_status)
+        val screen = StatusScreen(this, onReturn = ::confirmReturnToKiosk)
+        screen.render(model.state.value)
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                combine(configStore.configuredKioskFlow(), kioskStore.flow()) { _, _ -> Unit }
-                    .collect { refresh() }
+                model.state.collect(screen::render)
             }
         }
         // Grant our own POST_NOTIFICATIONS as Device Owner BEFORE starting the foreground
@@ -98,10 +56,9 @@ class MainActivity : ComponentActivity() {
         // Start the near-real-time command channel (foreground poll loop). Starting from the
         // launcher activity keeps us in the foreground-start allowance on Android 12+.
         ContextCompat.startForegroundService(this, Intent(this, CheckInService::class.java))
-        refresh()
         // Reopen the confirmation a rotation closed, if returning is still possible (the button says so).
         dialogs.restore(savedInstanceState)
-        if (dialogs.takeRestored() == DIALOG_RETURN && returnButton.isEnabled) confirmReturnToKiosk()
+        if (dialogs.takeRestored() == DIALOG_RETURN && model.state.value.kiosk.returnEnabled) confirmReturnToKiosk()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -111,7 +68,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        refresh()
+        model.refresh()
     }
 
     override fun onDestroy() {
@@ -119,22 +76,10 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    private fun refresh() {
-        kioskValue.setText(if (isLocked()) R.string.status_kiosk_locked else R.string.status_kiosk_not_locked)
-        val canReturn = isDeviceOwner() && !isLocked() && configStore.configuredKiosk() != null
-        returnButton.visibility = if (canReturn) View.VISIBLE else View.GONE
-        returnButton.isEnabled = canReturn && !returningToKiosk
-        returnButton.setText(if (returningToKiosk) R.string.kiosk_return_busy else R.string.kiosk_return_action)
-        lifecycleScope.launch {
-            val id = deviceIdStore.current()
-            deviceIdValue.text = if (id.isNullOrBlank()) enrollingLabel() else id
-        }
-    }
-
     /** Ask first: returning locks the device, and some kiosks have no exit on the device at all. */
     private fun confirmReturnToKiosk() {
-        if (returningToKiosk || dialogs.showing != null) return
-        val kiosk = configStore.configuredKiosk() ?: return refresh()
+        if (model.state.value.kiosk.returning || dialogs.showing != null) return
+        val kiosk = model.configuredKiosk() ?: return model.refresh()
         val prompt = KioskReturnPrompt.of(kiosk)
         val spec = MdmDialog.Spec(
             title = getString(prompt.title),
@@ -147,175 +92,12 @@ class MainActivity : ComponentActivity() {
         )
         val dialog = MdmDialog.create(this, spec) {
             it.dismiss()
-            returnToKiosk(kiosk)
+            model.returnToKiosk(kiosk)
         }
         dialogs.show(DIALOG_RETURN, dialog)
     }
 
-    private fun returnToKiosk(confirmed: KioskApplyPayload) {
-        if (returningToKiosk) return
-        returningToKiosk = true
-        refresh()
-        lifecycleScope.launch {
-            try {
-                // Not cancelled with the activity (a rotation, say): stopping mid-entry could leave a partial kiosk,
-                // HOME claimed and the allowlist set with nothing saved. The entry, its event and the check-in finish.
-                val error = withContext(NonCancellable) { enterConfiguredKiosk(confirmed) }
-                error?.let { Toast.makeText(this@MainActivity, it, Toast.LENGTH_LONG).show() }
-            } finally {
-                returningToKiosk = false
-                refresh()
-            }
-        }
-    }
-
-    /** Enters the confirmed kiosk; null when it worked, else what to tell the person. */
-    private suspend fun enterConfiguredKiosk(confirmed: KioskApplyPayload): String? {
-        val result = runCatching { configApplier.returnToConfiguredKiosk(expected = confirmed) }.getOrElse {
-            if (it is CancellationException) throw it
-            KioskResult.Failed(getString(R.string.kiosk_return_failed))
-        }
-        return when (result) {
-            KioskResult.Ok -> {
-                events.record("kioskReturn", "returned on-device")
-                // Tell the server now, so the console shows the device in kiosk without waiting for the next
-                // heartbeat. After any check-in already running: that one may carry the state from before.
-                CheckInWorker.scheduleAfterCurrent(applicationContext)
-                null
-            }
-            KioskResult.Unsupported -> getString(R.string.kiosk_return_unsupported)
-            is KioskResult.Failed -> result.reason
-        }
-    }
-
-    /** "Enrolling…" plus the last sync error (if any), so a stuck enrollment is diagnosable on-device. */
-    private fun enrollingLabel(): String {
-        val failure = syncStatus.lastError.value ?: return getString(R.string.status_enrolling)
-        val at = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(failure.atMillis))
-        return getString(R.string.status_enrolling_error, failure.message, at)
-    }
-
-    private fun isLocked(): Boolean {
-        val am = getSystemService(ACTIVITY_SERVICE) as ActivityManager
-        return am.lockTaskModeState == ActivityManager.LOCK_TASK_MODE_LOCKED
-    }
-
-    private fun isDeviceOwner(): Boolean =
-        dpmHandle.dpm.isDeviceOwnerApp(packageName)
-
-    private fun buildUi(): ScrollView {
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(INK)
-            setPadding(dp(28), dp(40), dp(28), dp(40))
-            layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
-        }
-        root.addView(text(getString(R.string.brand_name), 30f, SIGNAL, bold = true))
-        root.addView(text(getString(R.string.status_subtitle), 14f, MUTED).apply { setPadding(0, dp(2), 0, dp(20)) })
-
-        root.addView(label(R.string.status_label_management))
-        root.addView(
-            text(
-                getString(if (isDeviceOwner()) R.string.status_device_owner_active else R.string.status_not_managed),
-                16f,
-                if (isDeviceOwner()) OK else ALERT,
-            ),
-        )
-        root.addView(spacer())
-
-        root.addView(label(R.string.status_label_device_id))
-        deviceIdValue = text(ELLIPSIS, 14f, TEXT, mono = true)
-        root.addView(deviceIdValue)
-        root.addView(spacer())
-
-        root.addView(label(R.string.status_label_kiosk))
-        kioskValue = text(ELLIPSIS, 16f, TEXT)
-        root.addView(kioskValue)
-        returnButton = kioskReturnButton()
-        root.addView(returnButton)
-        root.addView(spacer())
-
-        root.addView(label(R.string.status_label_agent_version))
-        root.addView(
-            text(
-                getString(R.string.status_agent_version, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE),
-                15f,
-                TEXT,
-                mono = true,
-            ),
-        )
-        root.addView(spacer())
-
-        root.addView(label(R.string.status_label_server))
-        root.addView(text(serverConfig.baseUrl(), 13f, MUTED, mono = true))
-        root.addView(spacer())
-
-        root.addView(
-            text(getString(R.string.status_managed_by), 12f, MUTED).apply {
-                gravity = Gravity.CENTER
-                setPadding(0, dp(24), 0, 0)
-            },
-        )
-
-        return ScrollView(this).apply {
-            setBackgroundColor(INK)
-            addView(root)
-            layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
-        }
-    }
-
-    private fun kioskReturnButton(): Button = Button(this).apply {
-        visibility = View.GONE
-        isAllCaps = false
-        backgroundTintList = ColorStateList(
-            arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf()), intArrayOf(FAINT, SIGNAL),
-        )
-        setTextColor(INK)
-        layoutParams = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-        ).apply { topMargin = dp(RETURN_BUTTON_GAP) }
-        setOnClickListener { confirmReturnToKiosk() }
-    }
-
-    /** A section label, shown in caps (the resource is sentence case, so TalkBack reads words, not letters). */
-    private fun label(@StringRes s: Int): TextView =
-        text(getString(s), 11f, FAINT).apply {
-            isAllCaps = true
-            letterSpacing = 0.10f
-            setPadding(0, 0, 0, dp(4))
-        }
-
-    private fun spacer(): TextView = TextView(this).apply {
-        height = dp(16)
-    }
-
-    private fun text(
-        s: String,
-        sizeSp: Float,
-        color: Int,
-        bold: Boolean = false,
-        mono: Boolean = false,
-    ): TextView = TextView(this).apply {
-        text = s
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
-        setTextColor(color)
-        if (bold) setTypeface(typeface, Typeface.BOLD)
-        if (mono) typeface = Typeface.MONOSPACE
-    }
-
-    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
-
     private companion object {
-        const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
-        const val RETURN_BUTTON_GAP = 12
-        const val ELLIPSIS = "…"
         const val DIALOG_RETURN = "return"
-        val INK = Color.parseColor("#0E1117")
-        val TEXT = Color.parseColor("#E8EEF4")
-        val MUTED = Color.parseColor("#8693A4")
-        val FAINT = Color.parseColor("#5C6675")
-        val SIGNAL = Color.parseColor("#F4B942")
-        val OK = Color.parseColor("#3FD08A")
-        val ALERT = Color.parseColor("#F2545B")
     }
 }

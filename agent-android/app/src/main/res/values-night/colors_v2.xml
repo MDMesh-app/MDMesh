@@ -16,6 +16,7 @@
     <color name="mdm_disabled_ink">#9AA3B0</color>
     <color name="mdm_ok_ink">#4FD194</color>
     <color name="mdm_ok_soft">#13261D</color>
+    <color name="mdm_ok_wash">#121F19</color>
     <color name="mdm_ok_line">#1F4A35</color>
     <color name="mdm_warn_ink">#F0B265</color>
     <color name="mdm_warn_soft">#2A2015</color>

@@ -13,22 +13,28 @@
     <string name="action_cancel">Cancel</string>
     <string name="action_ok">OK</string>
 
-    <!-- Status screen (MainActivity). Section labels are shown in caps. -->
+    <!-- Status screen (MainActivity). Eyebrow labels are shown in caps (the text stays sentence case for TalkBack). -->
     <string name="status_subtitle">Device agent</string>
-    <string name="status_label_management">Management</string>
+    <string name="status_placeholder" translatable="false">…</string>
     <string name="status_label_device_id">Device ID</string>
     <string name="status_label_kiosk">Kiosk</string>
     <string name="status_label_agent_version">Agent version</string>
     <string name="status_label_server">Server</string>
-    <string name="status_device_owner_active">Device Owner — active</string>
-    <string name="status_not_managed">Not managed</string>
-    <string name="status_kiosk_locked">Locked (kiosk active)</string>
-    <string name="status_kiosk_not_locked">Not locked</string>
-    <string name="status_agent_version">%1$s (build %2$d)</string>
     <string name="status_managed_by">Managed by MDMesh</string>
+    <string name="status_device_owner_active">Device Owner is active.</string>
+    <string name="status_not_managed">Not managed</string>
+    <string name="status_not_managed_body">MDMesh isn\'t the Device Owner, so it can\'t manage this device.</string>
+    <string name="status_kiosk_on">Active</string>
+    <string name="status_kiosk_off">Off</string>
+    <string name="status_kiosk_body_locked">This device is locked to the kiosk.</string>
+    <string name="status_kiosk_body_ready">A kiosk is set up for this device but isn\'t running.</string>
+    <string name="status_kiosk_body_off">No kiosk is running on this device.</string>
+    <string name="status_agent_version">%1$s (build %2$d)</string>
     <string name="status_enrolling">Enrolling…</string>
+    <string name="status_enrolling_error_title">Enrolment hasn\'t finished</string>
     <!-- %1$s = the last sync error, %2$s = its time. -->
-    <string name="status_enrolling_error">Enrolling… (last error: %1$s at %2$s)</string>
+    <string name="status_enrolling_error">Last error: %1$s at %2$s</string>
+    <string name="kiosk_return_failed_title">Couldn\'t return to the kiosk</string>
 
     <!-- Return to kiosk (MainActivity + KioskReturnPrompt). OfflineKioskReturnTest finds these by text. -->
     <string name="kiosk_return_action">Return to kiosk</string>
@@ -44,7 +50,9 @@
     <!-- Kiosk launcher -->
     <string name="kiosk_header">MDMesh Kiosk</string>
     <string name="kiosk_loading">Loading…</string>
-    <string name="kiosk_empty">No available apps. Add installed app packages to this kiosk\'s allowed list.</string>
+    <!-- Splash while the single kiosk app opens; %1$s = the app's name. -->
+    <string name="kiosk_opening">Opening %1$s…</string>
+    <string name="kiosk_empty">No apps to show. Add installed apps to this kiosk\'s allowed list in the console.</string>
     <string name="kiosk_idle_subtitle">Managed device</string>
     <string name="kiosk_hold_title">App closed</string>
     <string name="kiosk_hold_message">The app closed several times in a row, so it wasn\'t opened again.</string>

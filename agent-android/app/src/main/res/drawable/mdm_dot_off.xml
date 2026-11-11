@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Status dot in the pill (v2 online-dot style), 8dp. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+    <size android:width="8dp" android:height="8dp" />
+    <solid android:color="@color/mdm_secondary" />
+</shape>

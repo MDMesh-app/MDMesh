@@ -20,6 +20,7 @@
     <color name="mdm_disabled_ink">#586073</color>     <!-- -disabled-ink -->
     <color name="mdm_ok_ink">#0E7A47</color>
     <color name="mdm_ok_soft">#E6F6EE</color>
+    <color name="mdm_ok_wash">#F7FCF9</color>         <!-- -ok-wash: ok callout fill -->
     <color name="mdm_ok_line">#BFE8D2</color>
     <color name="mdm_warn_ink">#8F5410</color>
     <color name="mdm_warn_soft">#FCF1E3</color>

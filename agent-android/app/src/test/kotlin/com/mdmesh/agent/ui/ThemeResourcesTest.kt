@@ -63,7 +63,9 @@ class ThemeResourcesTest {
             "mdm_alert_ink" to "mdm_surface", // danger button label
             "mdm_disabled_ink" to "mdm_disabled_bg", // disabled filled button
             "mdm_disabled_ink" to "mdm_surface", // disabled ghost and danger label on the dialog
-            "mdm_ok_ink" to "mdm_ok_soft",
+            "mdm_ok_ink" to "mdm_ok_soft", // kiosk "Active" pill
+            "mdm_ok_ink" to "mdm_ok_wash", // managed callout
+            "mdm_secondary" to "mdm_surface_2", // kiosk "Off" pill
             "mdm_warn_ink" to "mdm_warn_soft",
             "mdm_alert_ink" to "mdm_alert_soft",
         )

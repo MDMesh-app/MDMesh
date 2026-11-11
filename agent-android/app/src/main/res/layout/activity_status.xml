@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Status screen (MainActivity), v2 look on the DayNight theme: wordmark, a device card (managed callout, device
+    ID, agent version, server) and a kiosk card (status pill, Return to kiosk, failure callout).
+    The screen colour is the window background (StatusScreen), so it fills behind the system bars on API 35 too
+    and isn't drawn twice.
+    OfflineKioskReturnTest finds "Kiosk" (the card title) and "Return to kiosk" by text.
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/status_scroll"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:id="@+id/status_column"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:orientation="vertical"
+        android:paddingStart="@dimen/mdm_gutter"
+        android:paddingEnd="@dimen/mdm_gutter"
+        android:paddingTop="@dimen/mdm_space_24"
+        android:paddingBottom="@dimen/mdm_space_24">
+
+        <!-- Wordmark: ink square + "MDM" 700 + "esh" 500 secondary (Wordmark.kt). -->
+        <LinearLayout
+            android:id="@+id/status_wordmark"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <View
+                android:id="@+id/status_wordmark_mark"
+                android:layout_width="10dp"
+                android:layout_height="10dp"
+                android:importantForAccessibility="no" />
+
+            <TextView
+                android:id="@+id/status_wordmark_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="20sp"
+                tools:text="MDMesh" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/mdm_space_4"
+            android:text="@string/status_subtitle"
+            android:textAppearance="@style/TextAppearance.MdmAgent.BodySmall" />
+
+        <!-- Device card -->
+        <LinearLayout
+            style="@style/Widget.MdmAgent.Card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/mdm_space_24">
+
+            <include
+                android:id="@+id/status_management"
+                layout="@layout/view_callout" />
+
+            <View style="@style/Widget.MdmAgent.Divider" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/status_label_device_id"
+                android:textAppearance="@style/TextAppearance.MdmAgent.Eyebrow" />
+
+            <TextView
+                android:id="@+id/status_device_id"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/mdm_space_4"
+                android:text="@string/status_placeholder"
+                android:textAppearance="@style/TextAppearance.MdmAgent.Mono"
+                android:textIsSelectable="true" />
+
+            <include
+                android:id="@+id/status_enroll_error"
+                layout="@layout/view_callout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/mdm_space_12"
+                android:visibility="gone" />
+
+            <View style="@style/Widget.MdmAgent.Divider" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/status_label_agent_version"
+                android:textAppearance="@style/TextAppearance.MdmAgent.Eyebrow" />
+
+            <TextView
+                android:id="@+id/status_version"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/mdm_space_4"
+                android:textAppearance="@style/TextAppearance.MdmAgent.Mono"
+                tools:text="0.5.0 (build 500)" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/mdm_space_16"
+                android:text="@string/status_label_server"
+                android:textAppearance="@style/TextAppearance.MdmAgent.Eyebrow" />
+
+            <TextView
+                android:id="@+id/status_server"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/mdm_space_4"
+                android:textAppearance="@style/TextAppearance.MdmAgent.Mono"
+                android:textIsSelectable="true"
+                tools:text="https://mdm.example.com/" />
+        </LinearLayout>
+
+        <!-- Kiosk card -->
+        <LinearLayout
+            style="@style/Widget.MdmAgent.Card"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/mdm_space_16">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="@dimen/mdm_space_12"
+                    android:layout_weight="1"
+                    android:text="@string/status_label_kiosk"
+                    android:textAppearance="@style/TextAppearance.MdmAgent.TitleMedium" />
+
+                <TextView
+                    android:id="@+id/status_kiosk_pill"
+                    style="@style/Widget.MdmAgent.Pill"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    tools:text="Off" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/status_kiosk_body"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/mdm_space_4"
+                android:textAppearance="@style/TextAppearance.MdmAgent.BodyMedium"
+                tools:text="@string/status_kiosk_body_off" />
+
+            <!-- 48dp target, 40dp visible: the 4dp inset makes the visible gap 12dp. -->
+            <Button
+                android:id="@+id/status_return"
+                style="@style/Widget.MdmAgent.Button"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/mdm_space_8"
+                android:text="@string/kiosk_return_action"
+                android:visibility="gone" />
+
+            <include
+                android:id="@+id/status_return_error"
+                layout="@layout/view_callout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/mdm_space_8"
+                android:visibility="gone" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

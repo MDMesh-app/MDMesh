@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v2 Callout, ok (managed): 10dp corners, soft fill, 1dp line (web/src/ui/Card.css .v2-callout ok tone). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <corners android:radius="@dimen/mdm_radius_sm" />
+    <solid android:color="@color/mdm_ok_wash" />
+    <stroke android:width="1dp" android:color="@color/mdm_ok_line" />
+</shape>

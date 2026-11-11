@@ -23,7 +23,6 @@ package com.hmdm.persistence.mapper;
 
 import com.hmdm.persistence.domain.DeviceLocation;
 import com.hmdm.persistence.domain.DeviceSyncRow;
-import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -45,17 +44,13 @@ public interface AgentDeviceMapper {
     @Select({"SELECT agentCapabilities FROM devices WHERE number = #{deviceNumber}"})
     String getDeviceCapabilities(@Param("deviceNumber") String deviceNumber);
 
-    @Update({"UPDATE devices SET agentSecretHash = #{secretHash} WHERE number = #{deviceNumber}"})
-    void updateDeviceSecretHash(@Param("deviceNumber") String deviceNumber,
-                                @Param("secretHash") String secretHash);
-
     @Select({"SELECT agentSecretHash FROM devices WHERE number = #{deviceNumber}"})
     String getDeviceSecretHash(@Param("deviceNumber") String deviceNumber);
 
     /**
-     * Completes an agent enrollment in ONE statement: the secret hash that lets the device authenticate, its
-     * capabilities, its hardware id (an absent one keeps what is there), last-seen and the enrollment time (kept when
-     * already set). Either all of it is stored or none, so a device is never left without a secret.
+     * Completes an agent enrollment, inside its transaction ({@link com.hmdm.persistence.AgentEnrollmentDAO}): the
+     * secret hash that lets the device authenticate, its capabilities, its hardware id (an absent one keeps what is
+     * there), last-seen and the enrollment time (kept when already set), and the attempt that may resume it.
      *
      * @return rows updated: 1, or 0 when the device row is gone
      */
@@ -71,11 +66,11 @@ public interface AgentDeviceMapper {
                            @Param("ts") long ts);
 
     /**
-     * The device an enroll attempt created, while that enrollment can still be retried: the device has not checked
-     * in since ({@link #markCheckedIn} clears the hash) and enrolled at or after {@code since}.
+     * The device an enroll attempt created, while that enrollment can still be retried: completed (it has a secret),
+     * not checked in since ({@link #markCheckedIn} clears the hash) and enrolled at or after {@code since}.
      */
     @Select({"SELECT number FROM devices WHERE agentEnrollAttemptHash = #{attemptHash} AND enrollTime >= #{since} " +
-            "LIMIT 1"})
+            "AND agentSecretHash IS NOT NULL LIMIT 1"})
     String findEnrollRetry(@Param("attemptHash") String attemptHash, @Param("since") long since);
 
     /**
@@ -83,23 +78,25 @@ public interface AgentDeviceMapper {
      * left at the enrollment time: the device has not checked in.
      */
     @Update({"UPDATE devices SET agentSecretHash = #{secretHash} " +
-            "WHERE number = #{deviceNumber} AND agentEnrollAttemptHash = #{attemptHash}"})
+            "WHERE number = #{deviceNumber} AND agentEnrollAttemptHash = #{attemptHash} AND agentSecretHash IS NOT NULL"})
     int reissueSecret(@Param("deviceNumber") String deviceNumber,
                       @Param("attemptHash") String attemptHash,
                       @Param("secretHash") String secretHash);
 
     /**
-     * Ties a device that an enrollment just created to its attempt, before the enrollment completes, so a retry that
-     * arrives meanwhile is told to wait instead of taking another use of the code.
+     * Locks the customer's row until the transaction ends and returns its device limit (0: none), or null when there is
+     * no such customer. Enrollments of one customer then count its devices one after another, whatever code each uses.
      */
-    @Update({"UPDATE devices SET agentEnrollAttemptHash = #{attemptHash} " +
-            "WHERE number = #{deviceNumber} AND agentSecretHash IS NULL"})
-    int markEnrollAttempt(@Param("deviceNumber") String deviceNumber, @Param("attemptHash") String attemptHash);
+    @Select({"SELECT deviceLimit FROM customers WHERE id = #{customerId} FOR UPDATE"})
+    Integer lockCustomerDeviceLimit(@Param("customerId") int customerId);
 
-    /** Whether an enrollment with this attempt has created its device and not completed yet. */
-    @Select({"SELECT EXISTS (SELECT 1 FROM devices " +
-            "WHERE agentEnrollAttemptHash = #{attemptHash} AND agentSecretHash IS NULL)"})
-    boolean isEnrollInProgress(@Param("attemptHash") String attemptHash);
+    /** The customer's devices, as on-demand creation counts them (UnsecureDAO.createNewDeviceOnDemand). */
+    @Select({"SELECT COUNT(*) FROM devices WHERE customerId = #{customerId}"})
+    long countCustomerDevices(@Param("customerId") int customerId);
+
+    /** Whether the install has customers beyond the first: device limits apply only then, as for on-demand creation. */
+    @Select({"SELECT EXISTS (SELECT 1 FROM customers WHERE id > 1)"})
+    boolean hasSeveralCustomers();
 
     /**
      * An authenticated check-in: last-seen, and the device has its credentials, so its enrollment can no longer be
@@ -107,17 +104,6 @@ public interface AgentDeviceMapper {
      */
     @Update({"UPDATE devices SET lastUpdate = #{ts}, agentEnrollAttemptHash = NULL WHERE number = #{deviceNumber}"})
     void markCheckedIn(@Param("deviceNumber") String deviceNumber, @Param("ts") long ts);
-
-    /**
-     * Removes a device an agent enrollment created but could not complete. Only while it has no secret: a device that
-     * can authenticate is never deleted by this. Its group links cascade.
-     */
-    @Delete({"DELETE FROM devices WHERE number = #{deviceNumber} AND agentSecretHash IS NULL"})
-    int deleteUnenrolledDevice(@Param("deviceNumber") String deviceNumber);
-
-    /** The console's "Enrolled". Set once: a time already there is kept. */
-    @Update({"UPDATE devices SET enrollTime = COALESCE(enrollTime, #{ts}) WHERE number = #{deviceNumber}"})
-    void updateEnrollTime(@Param("deviceNumber") String deviceNumber, @Param("ts") long ts);
 
     /**
      * The console's "Wiped": when the latest device.wipe was delivered. {@code ts} is also that command's deliveredAt,

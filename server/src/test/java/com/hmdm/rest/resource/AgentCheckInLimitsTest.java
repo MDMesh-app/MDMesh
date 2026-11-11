@@ -106,7 +106,7 @@ public class AgentCheckInLimitsTest {
         resource = new AgentResource(new FakeUnsecureDAO(), null, commands,
                 new ConfigAppInstaller(null, null, null, null), reconciler, new AppReconciler(null, null, null, null),
                 new NoopRequeuer(),
-                new InstallHashes(null, null), new KioskLockoutAlert(null, null, null));
+                new InstallHashes(null, null), new KioskLockoutAlert(null, null, null), null);
     }
 
     private Response checkin(AgentCheckInRequest req) {

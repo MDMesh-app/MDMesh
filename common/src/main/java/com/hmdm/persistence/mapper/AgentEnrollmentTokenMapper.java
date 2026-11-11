@@ -57,16 +57,22 @@ public interface AgentEnrollmentTokenMapper {
     int claim(@Param("id") Integer id, @Param("now") long now);
 
     /**
-     * Give back the use a claim took, after a SERVER-side enrollment failure (device creation
-     * rejected), so a fixable condition doesn't permanently burn it.
+     * For the rest of the current transaction, wait at most 15 s for a lock: an enroll that can't get its token's lock
+     * in that time fails (retryably) instead of holding a request thread.
      */
-    @Update({"UPDATE agentEnrollmentToken SET useCount = GREATEST(useCount - 1, 0), used = false WHERE id = #{id}"})
-    void release(@Param("id") Integer id);
+    @Update({"SET LOCAL lock_timeout = '15s'"})
+    void setEnrollLockTimeout();
 
     /**
-     * Stop every token of the customer that has not expired. Used-up tokens are included: {@link #release} can give
-     * a use back to one, and the claim's {@code revokedAt IS NULL} keeps it stopped. One UPDATE: a claim that races
-     * it either took its use before (that device enrolls) or finds the row stopped.
+     * Locks the token row until the transaction ends, so enrollments with one token run one after another (a retry
+     * waits for the request it retries). Null when the token is gone.
+     */
+    @Select({"SELECT id FROM agentEnrollmentToken WHERE id = #{id} FOR UPDATE"})
+    Integer lockForEnroll(@Param("id") Integer id);
+
+    /**
+     * Stop every token of the customer that has not expired, used-up ones included. One UPDATE: a claim that races it
+     * either took its use before (that device enrolls) or finds the row stopped.
      */
     @Update({"UPDATE agentEnrollmentToken SET revokedAt = #{now} " +
             "WHERE customerId = #{customerId} AND revokedAt IS NULL AND (expiresAt IS NULL OR expiresAt > #{now})"})

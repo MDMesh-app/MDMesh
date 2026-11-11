@@ -358,5 +358,16 @@ chk "retry: the lost secret no longer checks in" "$(rcheckin "$OLDSEC")" "ERROR"
 chk "retry: the new secret checks in" "$(rcheckin "$RSEC")" "OK"
 chk "retry: closed after the first check-in" "$(enroll_attempt "$TOK6" "$ATT" | field "d['message']")" "error.agent.token.used"
 
+# Retries of one attempt sent at once (an agent that timed out while the server was slow): one transaction per
+# enrollment, locked on the code, so they all get the same device and the single-use code is used once (enrolls one).
+echo "== concurrent retries of one enrollment get one device =="
+TOK7=$(curl -s -b "$CJ" -X POST "$BASE/rest/private/agent/v1/token" | field "d['data']['token']")
+ATT7="e2eConcurrent$(date +%s%N)"
+PAR7="$(mktemp -d)"
+for i in 1 2 3 4 5 6; do (enroll_attempt "$TOK7" "$ATT7" | field "str(d['status'])+':'+str((d.get('data') or {}).get('deviceId'))" > "$PAR7/$i") & done; wait
+chk "concurrent retries: all answered OK" "$(cut -d: -f1 "$PAR7"/* | sort -u)" "OK"
+chk "concurrent retries: one device" "$(cut -d: -f2- "$PAR7"/* | sort -u | wc -l | tr -d ' ')" "1"
+rm -rf "$PAR7"
+
 echo "===== RESULT: PASS=$PASS FAIL=$FAIL ====="
 [ "$FAIL" -eq 0 ]

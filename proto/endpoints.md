@@ -46,16 +46,23 @@ The server mints a per-device secret, stores only its SHA-256 hash, and returns 
 **once** here. The agent persists it and presents it on every `/checkin`.
 
 `enrollAttempt` (optional, protocol 1.6): a random id (16-128 of `A-Z a-z 0-9 _ -`) the agent generates and stores
-before its first enroll request, and sends again on every retry of that enrollment. When a response is lost, the
-retry returns the device the first request created, with a new secret (the first is replaced), instead of
-`error.agent.token.used` or a second device from a batch code. This works until that device's first check-in and for
-24 hours, and not for a stopped token. The server keeps only SHA-256(token id ":" attempt). Older servers ignore the
-field.
+before its first enroll request, sends again on every retry of that enrollment, and deletes once it has stored the
+credentials. When a response is lost, the retry returns the device the first request created, with a new secret (the
+first is replaced), instead of `error.agent.token.used` or a second device from a batch code. This works until that
+device's first check-in and for 24 hours, and not for a stopped token. The server keeps only SHA-256(token id ":"
+attempt). Older servers ignore the field.
+
+Each enrollment is one database transaction that first locks its token's row (and its customer's row), so enrollments
+with one token run one after another: a retry sent while its first request still runs waits for it, then resumes it.
+
 Errors: `Response.ERROR("error.agent.token.invalid")`, `...token.used`, `...token.expired` and
-`...enrollment.disabled` are final for that token: retrying cannot succeed. `...enrollment.failed` means the server
-failed before the enrollment completed; it kept nothing (no device, the token's use given back), so the agent retries.
-`...enrollment.inProgress` answers a retry (same `enrollAttempt`) that arrives while the first request still runs; the
-agent retries and then gets the device.
+`...enrollment.disabled` are final for that token: retrying cannot succeed. These are retryable, and the agent keeps
+trying:
+- `...enrollment.failed`: the server failed and rolled the enrollment back (no device kept, no use spent);
+- `...enrollment.inProgress`: another enrollment with the same token held its lock longer than 15 s (on a slow
+  database, typically the request this one retries); the next retry resumes it;
+- `...enrollment.deviceLimit`: on an install with several customers, the token's customer has as many devices as its
+  limit allows; the device enrolls once there is room.
 
 ## POST /checkin
 

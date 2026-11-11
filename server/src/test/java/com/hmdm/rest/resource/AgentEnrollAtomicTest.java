@@ -5,110 +5,97 @@ package com.hmdm.rest.resource;
 
 import com.hmdm.persistence.mapper.AgentDeviceMapper;
 import com.hmdm.rest.json.Response;
-import com.hmdm.rest.json.agent.AgentEnrollRequest;
 import com.hmdm.rest.json.agent.AgentEnrollResponse;
 import com.hmdm.testsupport.Fakes;
+import com.hmdm.util.CryptoUtil;
 import org.junit.Test;
 
-import static com.hmdm.rest.resource.AgentEnrollTimeTest.TOKEN;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
- * An enrollment either completes (the device has its secret) or leaves nothing behind: no device that can never
- * authenticate, and the code's use given back so the agent's retry works.
+ * What the endpoint answers for each way an enrollment ends. That a failed one keeps nothing (its transaction rolls
+ * back) is AgentEnrollmentTransactionIT's, against PostgreSQL.
  */
 public class AgentEnrollAtomicTest {
 
-    private final AgentEnrollTimeTest.FakeTokenDAO tokens = new AgentEnrollTimeTest.FakeTokenDAO();
-    private final AgentEnrollTimeTest.FakeCommandDAO commands = new AgentEnrollTimeTest.FakeCommandDAO();
-    private final AgentEnrollTimeTest.FakeUnsecureDAO unsecure = new AgentEnrollTimeTest.FakeUnsecureDAO();
-    private final AgentResource resource = new AgentResource(unsecure, tokens,
-            commands, AgentEnrollTimeTest.noConfigApps(), null, null, null, null, null);
+    private static final String[] FINAL_MARKERS = {"token.used", "token.invalid", "token.expired", "enrollment.disabled"};
 
-    private Response enroll() {
-        AgentEnrollRequest req = new AgentEnrollRequest();
-        req.setEnrollToken(TOKEN);
-        req.setHardwareId("  hw-1 ");
-        return resource.enroll(req);
+    @Test
+    public void a_completed_enrollment_stores_the_hash_of_the_secret_it_returns() {
+        EnrollFixture f = new EnrollFixture();
+
+        AgentEnrollResponse data = (AgentEnrollResponse) f.enroll(null).getData();
+
+        assertEquals(1, f.completed.size());
+        assertEquals(data.getDeviceId(), f.completed.get(0));
+        assertEquals(CryptoUtil.getSHA256String(data.getDeviceSecret()), f.secretHashes.get(data.getDeviceId()));
     }
 
     @Test
-    public void a_completed_enrollment_stores_the_secret_hash_of_the_secret_it_returns() {
-        Response r = enroll();
+    public void config_apps_are_queued_after_the_enrollment_and_cannot_undo_it() {
+        EnrollFixture f = new EnrollFixture();
+        AgentEnrollResponse data = (AgentEnrollResponse) f.enroll(null).getData();
+        assertEquals(java.util.Collections.singletonList(data.getDeviceId()), f.configAppsQueuedFor);
 
-        assertEquals(Response.ResponseStatus.OK, r.getStatus());
-        AgentEnrollResponse data = (AgentEnrollResponse) r.getData();
-        assertEquals(1, commands.completed.size());
-        assertEquals(data.getDeviceId(), commands.completed.get(0));
-        assertEquals(com.hmdm.util.CryptoUtil.getSHA256String(data.getDeviceSecret()),
-                commands.secretHashes.get(data.getDeviceId()));
-        assertTrue(commands.deleted.isEmpty());
-        assertTrue("the use is kept", tokens.token.isUsed());
+        EnrollFixture failing = new EnrollFixture();
+        failing.configAppsThrow = true;
+        assertEquals(Response.ResponseStatus.OK, failing.enroll(null).getStatus());
     }
 
     @Test
-    public void a_failure_while_completing_deletes_the_new_device_and_gives_the_use_back() {
-        commands.completion = "throw";
+    public void a_database_failure_is_answered_with_an_error_the_agent_retries() {
+        for (String completion : new String[]{"throw", "none"}) {
+            EnrollFixture f = new EnrollFixture();
+            f.completion = completion;
 
-        Response r = enroll();
+            String message = f.enroll(null).getMessage();
 
-        assertEquals(Response.ResponseStatus.ERROR, r.getStatus());
-        assertEquals("error.agent.enrollment.failed", r.getMessage());
-        assertEquals("the device without a secret is removed", 1, commands.deleted.size());
-        assertFalse("the use is given back for the retry", tokens.token.isUsed());
-        assertEquals(0, tokens.token.getUseCount());
-    }
-
-    @Test
-    public void a_device_that_vanished_before_completing_is_not_left_half_enrolled() {
-        commands.completion = "none";
-
-        Response r = enroll();
-
-        assertEquals("error.agent.enrollment.failed", r.getMessage());
-        assertEquals(1, commands.deleted.size());
-        assertFalse(tokens.token.isUsed());
-    }
-
-    @Test
-    public void a_failure_reading_the_new_device_back_still_removes_it() {
-        unsecure.failAfterInsert = true;
-
-        Response r = enroll();
-
-        assertEquals("error.agent.enrollment.failed", r.getMessage());
-        assertEquals("the row inserted before the failure is removed", unsecure.inserted, commands.deleted);
-        assertFalse(tokens.token.isUsed());
-    }
-
-    @Test
-    public void the_retryable_error_is_not_one_agents_treat_as_final() {
-        // Agents since 0.2 stop retrying on these markers (CheckInWorker.TERMINAL_ENROLL_MARKERS).
-        commands.completion = "throw";
-        String message = enroll().getMessage();
-        for (String terminal : new String[]{"token.used", "token.invalid", "token.expired", "enrollment.disabled"}) {
-            assertFalse(message, message.contains(terminal));
+            assertEquals(completion, "error.agent.enrollment.failed", message);
+            for (String terminal : FINAL_MARKERS) assertFalse(message, message.contains(terminal));
         }
     }
 
     @Test
-    public void completing_is_one_statement_that_sets_everything_a_device_needs() {
+    public void a_lock_held_too_long_by_another_enrollment_with_the_code_is_retried() {
+        EnrollFixture f = new EnrollFixture();
+        f.lockTimesOut = true;
+
+        String message = f.enroll("Zq3v8yK1mN0pR5tW7xA2bC").getMessage();
+
+        assertEquals("error.agent.enrollment.inProgress", message);
+        for (String terminal : FINAL_MARKERS) assertFalse(message, message.contains(terminal));
+        assertTrue(f.created.isEmpty());
+    }
+
+    @Test
+    public void a_customer_at_its_device_limit_gets_a_named_error_the_agent_retries() {
+        EnrollFixture f = new EnrollFixture();
+        f.atDeviceLimit = true;
+
+        String message = f.enroll("Zq3v8yK1mN0pR5tW7xA2bC").getMessage();
+
+        assertEquals("error.agent.enrollment.deviceLimit", message);
+        for (String terminal : FINAL_MARKERS) assertFalse(message, message.contains(terminal));
+        assertTrue(f.created.isEmpty());
+    }
+
+    @Test
+    public void the_device_limit_is_counted_under_the_customers_row_lock() {
+        String lock = Fakes.sqlOf(AgentDeviceMapper.class, "lockCustomerDeviceLimit").replaceAll("\\s+", " ")
+                .toLowerCase();
+        assertTrue(lock, lock.contains("from customers where id = #{customerid} for update"));
+    }
+
+    @Test
+    public void completing_sets_everything_a_device_needs_in_one_statement() {
         String sql = Fakes.sqlOf(AgentDeviceMapper.class, "completeEnrollment").replaceAll("\\s+", " ").toLowerCase();
         assertTrue(sql, sql.startsWith("update devices set"));
         assertTrue(sql, sql.contains("agentsecrethash = #{secrethash}"));
         assertTrue(sql, sql.contains("agentcapabilities = #{capabilitiesjson}"));
         assertTrue(sql, sql.contains("hardwareid = coalesce(#{hardwareid}, hardwareid)"));
         assertTrue(sql, sql.contains("lastupdate = #{ts}"));
-    }
-
-    @Test
-    public void only_a_device_without_a_secret_is_deleted() {
-        String sql = Fakes.sqlOf(AgentDeviceMapper.class, "deleteUnenrolledDevice").replaceAll("\\s+", " ").toLowerCase();
-        assertTrue(sql, sql.startsWith("delete from devices"));
-        String where = Fakes.whereOf(sql);
-        assertTrue(where, where.contains("number = #{devicenumber}"));
-        assertTrue(where, where.contains("agentsecrethash is null"));
+        assertTrue(sql, sql.contains("agentenrollattempthash = #{attempthash}"));
     }
 }

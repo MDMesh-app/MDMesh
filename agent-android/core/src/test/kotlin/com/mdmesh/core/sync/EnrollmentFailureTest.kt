@@ -39,10 +39,21 @@ class EnrollmentFailureTest {
     }
 
     @Test
+    fun `a customer at its device limit is told plainly`() {
+        val message = EnrollmentFailure.forServer("error.agent.enrollment.deviceLimit")
+        assertTrue(message, message.startsWith("This organisation has reached its device limit."))
+        assertTrue(message, message.contains("Ask your admin"))
+    }
+
+    @Test
     fun `the retryable server errors don't read as final`() {
-        for (key in listOf("error.agent.enrollment.failed", "error.agent.enrollment.inProgress")) {
+        for (key in listOf(
+            "error.agent.enrollment.failed",
+            "error.agent.enrollment.inProgress",
+            "error.agent.enrollment.deviceLimit",
+        )) {
             val message = EnrollmentFailure.forServer(key)
-            assertTrue(message, message.contains("Trying again"))
+            assertTrue(message, message.contains("Trying again") || message.contains("by itself"))
             finalMarkers.forEach { assertFalse(message, message.contains(it)) }
         }
     }

@@ -158,10 +158,6 @@ public class AgentCommandDAO {
         return deviceMapper.getDeviceCapabilities(deviceNumber);
     }
 
-    public void updateDeviceSecretHash(String deviceNumber, String secretHash) {
-        deviceMapper.updateDeviceSecretHash(deviceNumber, secretHash);
-    }
-
     public void updateHardwareId(String deviceNumber, String hardwareId) {
         deviceMapper.updateHardwareId(deviceNumber, hardwareId);
     }
@@ -171,55 +167,11 @@ public class AgentCommandDAO {
     }
 
     /**
-     * Completes an agent enrollment atomically (see {@link AgentDeviceMapper#completeEnrollment}).
-     *
-     * @return false when the device row no longer exists
-     */
-    public boolean completeEnrollment(String deviceNumber, String secretHash, String capabilitiesJson,
-                                      String hardwareId, String attemptHash) {
-        return deviceMapper.completeEnrollment(deviceNumber, secretHash, capabilitiesJson, hardwareId, attemptHash,
-                System.currentTimeMillis()) > 0;
-    }
-
-    /** How long after an enrollment the agent may retry it (a lost response); a check-in closes it sooner. */
-    public static final long ENROLL_RETRY_WINDOW_MS = 24L * 60L * 60L * 1000L;
-
-    /** The device a still-retryable enroll attempt created, or null. */
-    public String findEnrollRetry(String attemptHash) {
-        return deviceMapper.findEnrollRetry(attemptHash, System.currentTimeMillis() - ENROLL_RETRY_WINDOW_MS);
-    }
-
-    /** Replace the secret of a device whose enroll attempt is being retried; false when the attempt no longer owns it. */
-    public boolean reissueSecret(String deviceNumber, String attemptHash, String secretHash) {
-        return deviceMapper.reissueSecret(deviceNumber, attemptHash, secretHash) > 0;
-    }
-
-    /** Ties a just-created device to its enroll attempt while the enrollment runs. */
-    public void markEnrollAttempt(String deviceNumber, String attemptHash) {
-        deviceMapper.markEnrollAttempt(deviceNumber, attemptHash);
-    }
-
-    /** Whether an enrollment with this attempt is still running (its device exists, without a secret). */
-    public boolean isEnrollInProgress(String attemptHash) {
-        return deviceMapper.isEnrollInProgress(attemptHash);
-    }
-
-    /** Deletes a device whose agent enrollment did not complete; never one that has a secret. */
-    public void deleteUnenrolledDevice(String deviceNumber) {
-        deviceMapper.deleteUnenrolledDevice(deviceNumber);
-    }
-
-    /**
      * Stamp the device's last-seen time at an authenticated check-in (drives the admin UI's online/offline state). The
      * device has its credentials then, so this also closes its enrollment's retry window.
      */
     public void touchLastUpdate(String deviceNumber) {
         deviceMapper.markCheckedIn(deviceNumber, System.currentTimeMillis());
-    }
-
-    /** Stamp the device's enrollment time (the console's "Enrolled"), keeping one already set. */
-    public void recordEnrollTime(String deviceNumber) {
-        deviceMapper.updateEnrollTime(deviceNumber, System.currentTimeMillis());
     }
 
     /** Mark the device wiped (the console's "Wiped") at {@code at}: the delivery time of the wipe just sent. */

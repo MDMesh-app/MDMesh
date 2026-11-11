@@ -52,11 +52,16 @@ Fixes
   0.5.0.
 - Enroll: the server log says why it refused a device's enrollment (unknown, expired, used up or stopped code), so
   "my code doesn't work" can be answered from the log.
-- Enroll: when the network drops just as a device enrolls, it no longer stays on "Enrolling…" with a code that reads
-  as already used, or takes a second device's place on a batch code. Its retry gets the device it already created. Needs
-  agent 0.5.0 and this server; older agents enroll as before.
-- Enroll: a server error part-way through an enrollment no longer leaves a device in the list that can never check
-  in, or uses up the enrollment code. Nothing is kept and the agent tries again.
+- Enroll: when the network drops just as a device enrolls, or the agent gives up waiting and tries again while the
+  server is still enrolling it, it no longer stays on "Enrolling…" with a code that reads as already used, or takes a
+  second device's place on a batch code. Its retry gets the device it already created. Needs agent 0.5.0 and this
+  server; older agents enroll as before.
+- Enroll: each enrollment is now one database transaction. A server error, restart or lost database connection part-way
+  through no longer leaves a device in the list that can never check in, or uses up the enrollment code: nothing is
+  kept and the agent tries again.
+- Enroll: on an install with several customers, enrolling with a code now respects the customer's device limit, as
+  other ways of adding devices already did. A device over the limit isn't added and says the organisation has
+  reached its device limit; it enrolls by itself once there is room (agent 0.5.0; older agents just keep trying).
 - Audit log: on Docker installs, entries show the client's address instead of the edge container's (thanks
   @Przemek-Magic).
 - Kiosk: after someone leaves kiosk on the device with the exit PIN, the agent checks in right away, so the console

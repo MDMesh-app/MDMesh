@@ -82,7 +82,14 @@ class KioskApplier(
         // Already in this kiosk: no re-entry or relaunch, but re-assert the volume lock and the Safe Mode block (either
         // may have failed before).
         val current = store.load()
-        if (!reassert && current == p && isLockTaskActive()) return applySafeMode(applyVolume(p, KioskResult.Ok))
+        if (!reassert && current == p && isLockTaskActive()) {
+            // The same kiosk, its image perhaps at a new URL (same SHA-256): keep the URL for later downloads.
+            if (current.theme.backgroundImage?.url != p.theme.backgroundImage?.url) {
+                store.save(p)
+                onEntered(p)
+            }
+            return applySafeMode(applyVolume(p, KioskResult.Ok))
+        }
         home.setClaimEnabled(true)
         return when (val r = lockTo(p)) {
             KioskResult.Ok -> {

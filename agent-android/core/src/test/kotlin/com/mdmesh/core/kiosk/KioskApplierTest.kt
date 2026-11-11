@@ -6,6 +6,8 @@ import com.mdmesh.core.store.KioskStateStore
 import com.mdmesh.kiosk.KioskController
 import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.proto.KioskApplyPayload
+import com.mdmesh.proto.KioskBackgroundImageDto
+import com.mdmesh.proto.KioskThemeDto
 import com.mdmesh.proto.KioskFeaturesDto
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -72,6 +74,27 @@ class KioskApplierTest {
         c.failFor = listOf("com.b")
         a.enter(KioskApplyPayload(mode = "single", pinPackage = "com.b", allowedPackages = listOf("com.b")))
         assertEquals("a failed entry hands nothing on", 1, handed.size)
+    }
+    @Test fun `the same kiosk with its image at a new URL is not entered again, but the URL is kept`() = runTest {
+        val sha = "a".repeat(64)
+        val p = KioskApplyPayload(
+            mode = "single", pinPackage = "com.a", allowedPackages = listOf("com.a"),
+            theme = KioskThemeDto(backgroundImage = KioskBackgroundImageDto("https://old.example/1.png", sha)),
+        )
+        val image = KioskBackgroundImageDto("https://new.example/1.png", sha)
+        val moved = p.copy(theme = KioskThemeDto(backgroundImage = image))
+        val c = FakeController(KioskResult.Ok); val h = FakeHome(); val store = InMemoryKioskStateStore()
+        val handed = mutableListOf<KioskApplyPayload>()
+        var locked = false
+        val a = KioskApplier(c, store, h, home, onEntered = { handed += it }) { locked }
+        a.enter(p)
+        locked = true
+        h.log.clear()
+        a.enter(moved)
+        assertEquals("not re-entered", 1, c.enters.size)
+        assertEquals("no relaunch", emptyList<String>(), h.log)
+        assertEquals("https://new.example/1.png", store.load()?.theme?.backgroundImage?.url)
+        assertEquals("prefetch from the new URL", "https://new.example/1.png", handed.last().theme.backgroundImage?.url)
     }
     @Test fun `enter unsupported reverts the home claim and persists nothing`() = runTest {
         val h = FakeHome(); val store = InMemoryKioskStateStore()

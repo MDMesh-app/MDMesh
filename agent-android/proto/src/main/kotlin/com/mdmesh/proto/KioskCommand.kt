@@ -50,9 +50,19 @@ data class KioskThemeDto(
     val backgroundImage: KioskBackgroundImageDto? = null,
 )
 
-/** Optional kiosk image. Old agents ignore this additive key; new agents fall back to color on any failure. */
+/**
+ * Optional kiosk image. Old agents ignore this additive key; new agents fall back to color on any failure.
+ *
+ * Two are the same image when their SHA-256 is (in any case): the [url] is only where to fetch it, and a server
+ * that moves (a new base URL) must cause no re-download, no re-entry into the kiosk and no flash of the colour.
+ */
 @Serializable
 data class KioskBackgroundImageDto(
     val url: String,
     val sha256: String,
-)
+) {
+    override fun equals(other: Any?): Boolean =
+        other is KioskBackgroundImageDto && sha256.trim().equals(other.sha256.trim(), ignoreCase = true)
+
+    override fun hashCode(): Int = sha256.trim().lowercase().hashCode()
+}

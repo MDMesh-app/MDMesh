@@ -33,4 +33,14 @@ class KioskPayloadTest {
         assertEquals("gesture", p.exitMode)
         assertEquals(emptyList<String>(), p.allowedPackages)
     }
+
+    @Test fun `background images are the same image by sha256 alone`() {
+        val a = KioskBackgroundImageDto("https://old.example/f/1.png", "ABCDEF" + "0".repeat(58))
+        val b = KioskBackgroundImageDto("https://new.example/f/1.png", "abcdef" + "0".repeat(58))
+        assertEquals(a, b)
+        assertEquals(a.hashCode(), b.hashCode())
+        org.junit.Assert.assertNotEquals(a, b.copy(sha256 = "1".repeat(64)))
+        val k = KioskApplyPayload(theme = KioskThemeDto(backgroundImage = a))
+        assertEquals(k, k.copy(theme = KioskThemeDto(backgroundImage = b)))
+    }
 }

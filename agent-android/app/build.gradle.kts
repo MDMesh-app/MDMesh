@@ -128,6 +128,10 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
+    // ATF's view builder loads MaterialButton, so Material comes along (test classpath only); Espresso isn't used.
+    testImplementation(libs.accessibility.test.framework) {
+        exclude(group = "androidx.test.espresso")
+    }
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.test.runner)
 }

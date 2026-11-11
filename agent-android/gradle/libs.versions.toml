@@ -34,6 +34,8 @@ androidxTestRunner = "1.6.2"
 # Robolectric: dialog behaviour on the real framework code, API 24-35, on the JVM (no screenshots)
 robolectric = "4.14.1"
 androidxTestCore = "1.6.1"
+# Google's Accessibility Test Framework: the ATF checks on every screen, under Robolectric (test only)
+accessibilityTestFramework = "4.1.1"
 coroutinesTest = "1.8.1"
 
 [libraries]
@@ -80,6 +82,7 @@ androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "a
 androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 androidx-test-core = { group = "androidx.test", name = "core-ktx", version.ref = "androidxTestCore" }
+accessibility-test-framework = { group = "com.google.android.apps.common.testing.accessibility.framework", name = "accessibility-test-framework", version.ref = "accessibilityTestFramework" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutinesTest" }
 
 [plugins]

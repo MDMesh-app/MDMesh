@@ -111,9 +111,16 @@ class KioskLauncherActivity : ComponentActivity() {
             val pkg = intent.data?.schemeSpecificPart ?: return
             val p = active ?: return
             val missing = (screen as? KioskScreen.Grid)?.missingApp
+            val pinnedOnSplash = p.mode == "single" && pkg == p.pinPackage && screen is KioskScreen.Splash
+            val removed = intent.action == Intent.ACTION_PACKAGE_REMOVED
             when {
                 // The single-app kiosk's missing app is back: the kiosk resumes with it.
                 missing != null && pkg == missing && pinnedLaunchable(p) -> show(p)
+                // The pinned app was updated (or reinstalled) while HOME showed its splash, its start may have failed
+                // mid-update: open it again, uncounted. Removed for good: the grid says it isn't installed.
+                pinnedOnSplash && !removed && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) ->
+                    launchPinned(p)
+                pinnedOnSplash && removed && !intent.getBooleanExtra(Intent.EXTRA_REPLACING, false) -> showGrid(p)
                 KioskAppLoader.affects(screen, pkg) -> showGrid(p)
             }
         }
@@ -233,7 +240,14 @@ class KioskLauncherActivity : ComponentActivity() {
 
     /** The single-app kiosk's app is installed and enabled (PackageManager has a launch intent for it). */
     private fun pinnedLaunchable(p: KioskApplyPayload): Boolean =
-        p.pinPackage?.let { packageManager.getLaunchIntentForPackage(it) } != null
+        p.pinPackage?.let(::launchIntentFor) != null
+
+    /**
+     * How [pkg] is opened: its launcher entry, else its Leanback (TV) entry. The kiosk configuration names no
+     * explicit activity, so these are all there is to try.
+     */
+    private fun launchIntentFor(pkg: String): Intent? =
+        packageManager.getLaunchIntentForPackage(pkg) ?: packageManager.getLeanbackLaunchIntentForPackage(pkg)
 
     private fun applyState(p: KioskApplyPayload?) {
         // Taken first, whatever is shown next: a dialog from before a recreation comes back on this state or never.
@@ -294,7 +308,7 @@ class KioskLauncherActivity : ComponentActivity() {
     private fun launchPinned(p: KioskApplyPayload): LauncherScreen {
         val pkg = p.pinPackage
         // Resolved here, not in the background: the app opens in the same step that decided to open it.
-        val intent = pkg?.let { packageManager.getLaunchIntentForPackage(it) }
+        val intent = pkg?.let(::launchIntentFor)
         if (pkg == null || intent == null) {
             return showGrid(p) // unknown package → fall back to the grid
         }
@@ -354,7 +368,7 @@ class KioskLauncherActivity : ComponentActivity() {
     /** What the launcher's views can do. The exit goes through [promptExit] and the PIN check, as always. */
     private inner class Actions : KioskRenderer.Actions {
         override fun openApp(packageName: String) {
-            runCatching { packageManager.getLaunchIntentForPackage(packageName)?.let { startActivity(it) } }
+            runCatching { launchIntentFor(packageName)?.let { startActivity(it) } }
         }
 
         override fun openAgain() {

@@ -9,13 +9,13 @@ describe('the demo extension, as its own tests see it', () => {
   it('adds its sidebar item and its page', async () => {
     stubApi();
     renderConsole({ extensions: [demo], path: '/demo' });
-    expect(await screen.findByText('Demo page', undefined, { timeout: 3000 })).toBeTruthy();
+    expect(await screen.findByText('Demo page')).toBeTruthy();
     expect(within(screen.getByRole('navigation', { name: 'Main' })).getByRole('link', { name: 'Demo' })).toBeTruthy();
   });
 
   it('hides its admin page from a role without the settings permission', async () => {
     stubApi();
     renderConsole({ extensions: [demo], path: '/demo/admin', user: ROLES.user });
-    expect(await screen.findByText('You don’t have access to this page', undefined, { timeout: 3000 })).toBeTruthy();
+    expect(await screen.findByText('You don’t have access to this page')).toBeTruthy();
   });
 });

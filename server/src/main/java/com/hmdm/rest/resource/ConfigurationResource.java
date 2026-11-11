@@ -187,7 +187,9 @@ public class ConfigurationResource {
                     "An explicit \"applications\": null and a connectivityMode other than adaptive, alwaysOn or " +
                     "null are refused with HTTP 400. So, on a save that changes systemUpdateType, systemUpdateFrom " +
                     "or systemUpdateTo (or creates the configuration), are a systemUpdateType other than 0 to 3 and " +
-                    "a Scheduled (2) one without systemUpdateFrom and systemUpdateTo as two different HH:MM times."
+                    "a Scheduled (2) one without systemUpdateFrom and systemUpdateTo as two different HH:MM times. " +
+                    "locationServicesAction is keep (the default), on, off, or notManaged; " +
+                    "ordinary saves preserve the stored Location-services policy."
     )
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
@@ -208,7 +210,7 @@ public class ConfigurationResource {
             // An unknown mode would be stored and sent as not managed; a long one used to fail with a 500.
             throw new BadRequestException("connectivityMode must be adaptive, alwaysOn or null");
         }
-        // Devices apply it now (config.apply systemUpdate, 1.6): a window they can't use would be sent as Default.
+        // Devices apply it now (config.apply systemUpdate, 1.7): a window they can't use would be sent as Default.
         String systemUpdateError = systemUpdateError(configuration);
         try {
             Configuration dbConfiguration = this.configurationDAO.getConfigurationByName(configuration.getName());
@@ -223,6 +225,7 @@ public class ConfigurationResource {
                         return Response.PERMISSION_DENIED();
                     }
                     if (systemUpdateError != null) throw new BadRequestException(systemUpdateError);
+                    applyLocationServicesUpdate(configuration, null);
                     Response refused = refuseExtensions(configuration, null);
                     if (refused != null) return refused;
                     configuration.setDisableLocation(false);        // Not used but shouldn't be NULL
@@ -245,6 +248,7 @@ public class ConfigurationResource {
                             && systemUpdateChanges(configuration, configurationDAO.getConfigurationById(id))) {
                         throw new BadRequestException(systemUpdateError);
                     }
+                    applyLocationServicesUpdate(configuration, configurationDAO.getConfigurationById(id));
                     Response refused = refuseExtensions(configuration, storedExtensions(id, configuration));
                     if (refused != null) return refused;
                     log.info("Configuration " + configuration.getName() + " updated by user "  + SecurityContext.get().getCurrentUserName());
@@ -262,6 +266,29 @@ public class ConfigurationResource {
             e.printStackTrace();
             return Response.INTERNAL_ERROR();
         }
+    }
+
+    private static void applyLocationServicesUpdate(Configuration configuration, Configuration stored) {
+        String action = configuration.getLocationServicesAction();
+        if (action == null || "keep".equals(action)) {
+            // Keep protects a stored policy from a client that doesn't know the field. A new configuration has none
+            // stored, so it gets the value it was sent with (an API client, or a console copy without the action).
+            if (stored != null) configuration.setLocationServices(stored.getLocationServices());
+            return;
+        }
+        if ("on".equals(action)) {
+            configuration.setLocationServices(true);
+            return;
+        }
+        if ("off".equals(action)) {
+            configuration.setLocationServices(false);
+            return;
+        }
+        if ("notManaged".equals(action)) {
+            configuration.setLocationServices(null);
+            return;
+        }
+        throw new BadRequestException("locationServicesAction must be keep, on, off, or notManaged");
     }
 
     /**

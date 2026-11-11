@@ -33,6 +33,7 @@ import com.hmdm.persistence.mapper.DeviceEventMapper;
 import com.hmdm.persistence.mapper.DeviceStateMapper;
 
 import java.util.List;
+import org.mybatis.guice.transactional.Transactional;
 
 /**
  * <p>DAO for the opaque agent v1 command queue and the device capability column. The server never
@@ -55,6 +56,7 @@ public class AgentCommandDAO {
         this.eventMapper = eventMapper;
     }
 
+    @Transactional
     public void insert(AgentCommand command) {
         mapper.insert(command);
     }
@@ -81,6 +83,20 @@ public class AgentCommandDAO {
     /** Atomically claim a pending command for delivery. Returns true iff this caller claimed it. */
     public boolean claimForDelivery(Integer commandId, Long deliveredAt) {
         return mapper.claimForDelivery(commandId, deliveredAt) == 1;
+    }
+
+    /**
+     * Atomically claim a command for delivery and advance kiosk ordering only once the command is handed to the
+     * device. A queued command has not changed device state yet: a buffered on-device kioskReturn sent in the same
+     * check-in must remain evidence for the prior generation.
+     */
+    @Transactional
+    public boolean claimForDelivery(AgentCommand command, Long deliveredAt) {
+        boolean claimed = claimForDelivery(command.getId(), deliveredAt);
+        if (claimed && changesKiosk(command.getType())) {
+            stateMapper.advanceKioskGeneration(command.getDeviceNumber(), deliveredAt);
+        }
+        return claimed;
     }
 
     /**
@@ -141,6 +157,17 @@ public class AgentCommandDAO {
         eventMapper.insert(e);
     }
 
+    /** Store the audit event and durable current-generation evidence together. */
+    @Transactional
+    public void recordKioskReturn(String deviceNumber, Long deviceTs, String detail) {
+        insertEvent(deviceNumber, "kioskReturn", deviceTs, detail);
+        stateMapper.recordKioskReturn(deviceNumber, System.currentTimeMillis());
+    }
+
+    private static boolean changesKiosk(String type) {
+        return "kiosk.enter".equals(type) || "kiosk.exit".equals(type) || "config.apply".equals(type);
+    }
+
     /** Event timeline for a device, newest first, at/after {@code since}. */
     public List<DeviceEvent> listEvents(String deviceNumber, long since, int limit) {
         return eventMapper.list(deviceNumber, since, limit);
@@ -178,6 +205,21 @@ public class AgentCommandDAO {
     /** Stamp the device's enrollment time (the console's "Enrolled"), keeping one already set. */
     public void recordEnrollTime(String deviceNumber) {
         deviceMapper.updateEnrollTime(deviceNumber, System.currentTimeMillis());
+    }
+
+    /** Mark the device wiped (the console's "Wiped") at {@code at}: the delivery time of the wipe just sent. */
+    public void markWiped(String deviceNumber, long at) {
+        deviceMapper.markWiped(deviceNumber, at);
+    }
+
+    /** Unmark a wiped device whose device.wipe {@code commandId} just came back failed or unsupported. */
+    public boolean clearWipedForCommand(String deviceNumber, Integer commandId) {
+        return deviceMapper.clearWipedForCommand(deviceNumber, commandId) > 0;
+    }
+
+    /** Unmark a device marked wiped before {@code cutoff}: it is still checking in. */
+    public boolean clearWipedBefore(String deviceNumber, long cutoff) {
+        return deviceMapper.clearWipedBefore(deviceNumber, cutoff) > 0;
     }
 
     /** Persist the reported Android version into infojson so the device list can show it. */

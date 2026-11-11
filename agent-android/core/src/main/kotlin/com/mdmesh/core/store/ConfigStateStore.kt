@@ -1,8 +1,15 @@
 package com.mdmesh.core.store
 
 import android.content.Context
+import android.content.SharedPreferences
 import com.mdmesh.proto.ConfigApplyPayload
+import com.mdmesh.proto.KioskApplyPayload
 import com.mdmesh.proto.ProtocolJson
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 /**
  * Last desired-state document the agent fully applied (see ConfigApplier). Its revision is reported in every
@@ -14,6 +21,9 @@ interface ConfigStateStore {
     fun load(): ConfigApplyPayload?
     fun revision(): String?
     fun clear()
+
+    /** Observe the latest delivered configuration's kiosk, falling back to saved state on older installations. */
+    fun configuredKioskFlow(): Flow<KioskApplyPayload?>
 
     /**
      * Keep the document (for the boot re-apply) but report [STALE_REVISION], so the server sees drift and re-sends
@@ -48,6 +58,9 @@ interface ConfigStateStore {
     }
 }
 
+/** A newer document with kiosk disabled must win even if an unrelated section failed to apply. */
+fun ConfigStateStore.configuredKiosk(): KioskApplyPayload? = (delivered ?: load())?.kiosk
+
 object ConfigStateCodec {
     fun encode(doc: ConfigApplyPayload): String = ProtocolJson.json.encodeToString(ConfigApplyPayload.serializer(), doc)
     fun decode(raw: String?): ConfigApplyPayload? = raw?.let {
@@ -57,6 +70,14 @@ object ConfigStateCodec {
 
 class SharedPrefsConfigStateStore(context: Context) : ConfigStateStore {
     private val prefs = context.getSharedPreferences("mdm_config", Context.MODE_PRIVATE)
+    override fun configuredKioskFlow(): Flow<KioskApplyPayload?> = callbackFlow {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == null || key == KEY_DOC || key == KEY_DELIVERED) trySend(configuredKiosk())
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        trySend(configuredKiosk())
+        awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }.distinctUntilChanged()
     override fun save(doc: ConfigApplyPayload) {
         prefs.edit().putString(KEY_DOC, ConfigStateCodec.encode(doc)).putString(KEY_REV, doc.revision).apply()
     }
@@ -82,12 +103,17 @@ class SharedPrefsConfigStateStore(context: Context) : ConfigStateStore {
 class InMemoryConfigStateStore : ConfigStateStore {
     private var doc: ConfigApplyPayload? = null
     private var rev: String? = null
-    override fun save(doc: ConfigApplyPayload) { this.doc = doc; rev = doc.revision }
+    private val configuredKioskState = MutableStateFlow<KioskApplyPayload?>(null)
+    override fun configuredKioskFlow(): Flow<KioskApplyPayload?> = configuredKioskState
+    override fun save(doc: ConfigApplyPayload) {
+        this.doc = doc; rev = doc.revision; configuredKioskState.value = configuredKiosk()
+    }
     override fun load(): ConfigApplyPayload? = doc
     override fun revision(): String? = rev
-    override fun clear() { doc = null; rev = null }
+    override fun clear() { doc = null; rev = null; configuredKioskState.value = configuredKiosk() }
     override fun markStale() { rev = ConfigStateStore.STALE_REVISION }
     override var delivered: ConfigApplyPayload? = null
+        set(value) { field = value; configuredKioskState.value = configuredKiosk() }
     override var unreleased: Set<String> = emptySet()
     override var holdEndedFor: String? = null
 }

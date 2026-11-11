@@ -102,10 +102,10 @@ public final class DesiredConfigBuilder {
     }
 
     /**
-     * The configuration's system update policy (protocol 1.6), from the Headwind-era columns: Immediately = automatic,
+     * The configuration's system update policy (protocol 1.7), from the Headwind-era columns: Immediately = automatic,
      * Scheduled = windowed between systemUpdateFrom and systemUpdateTo (HH:MM, device local time, may cross midnight),
      * Postponed = postpone. Null for Default (the section is left out, so the document and its revision are what they
-     * were before 1.6), and for a type or window this server doesn't accept, which ConfigurationResource refuses on a
+     * were before 1.7), and for a type or window this server doesn't accept, which ConfigurationResource refuses on a
      * save that changes it: a value saved before then is sent as Default rather than guessed at.
      */
     public static DesiredSystemUpdate systemUpdate(int type, String from, String to) {
@@ -156,7 +156,9 @@ public final class DesiredConfigBuilder {
         // wifi = lock/allow the Wi-Fi settings only; wifiRadio (1.4) switches the radio itself.
         putIfManaged(p, "wifi", cfg.getWifi());
         putIfManaged(p, "wifiRadio", cfg.getWifiRadio());
+        putIfManaged(p, "locationServices", cfg.getLocationServices());
         putIfManaged(p, "bluetooth", cfg.getBluetooth());
+        putIfManaged(p, "camera", cfg.getCamera());
         putIfManaged(p, "usbStorage", cfg.getUsbStorage());
         putIfManaged(p, "screenshots", cfg.getDisableScreenshots() == null ? null : !cfg.getDisableScreenshots());
         putIfManaged(p, "factoryReset", cfg.getDisableFactoryReset() == null ? null : !cfg.getDisableFactoryReset());

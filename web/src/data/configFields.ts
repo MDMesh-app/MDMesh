@@ -78,6 +78,7 @@ const LOCK_VOLUME_HELP = 'Applies in kiosk mode, with agent 0.3.4 or later: bloc
 const CONNECTIVITY_HELP = 'Needs agent 0.4.0 or later; older agents ignore it. Battery-saver holds the live connection only while the screen is on or the device is charging, so a command sent to a locked phone on battery waits for the next heartbeat (about 10 minutes, longer in deep Doze) or for the screen to come on. Always-on keeps the connection up 24/7, so commands such as Lock, Ring or Wipe reach a locked phone without waiting for the heartbeat, at a battery cost. The mode set here is applied again when the configuration changes, the device restarts or the agent updates, so a mode set on a device page lasts only until then. To keep a lost device on Always-on, set its configuration to Always-on (or move the device to one that is). To switch devices back, choose Battery-saver; — (not managed) leaves each device as it is.';
 const SYSTEM_UPDATE_HELP = 'Needs agent 0.5.0 or later; older agents ignore it. How the device installs Android system updates its maker offers. Device default leaves it to the device and clears a policy set here before. Install automatically installs an update as soon as it is available, and installs any update already waiting straight away, restarting the device. A configuration already on it (Immediately in earlier versions) does this when the new agent rolls out, so check it first. Install in a daily window installs it only between the two times below, for up to 30 days per update; after that the update is left for manual install. Postpone holds an update back for up to 30 days, once per update, then prompts the user to install it. Device makers or carriers might exempt important security updates from Postpone, so don\'t rely on it either way.';
 const LOCATION_HELP = 'Do not track collects no location with agent 0.3.4 or later, and the server drops any location an older agent still reports. Last known (passive) reports the location the device already has at each check-in; GPS (fresh fix) asks for a new fix each time (more accurate, more battery).';
+const LOCATION_SERVICES_HELP = 'Needs agent support on Android 11 or later. On turns Android Location services on; Off turns them off. While managed, the user cannot change the setting. Not managed restores the user setting control but leaves Location services in their current state. This is separate from Location reporting, which controls what MDMesh collects.';
 
 export const GROUP_ORDER: FieldGroup[] = [
   'Identity', 'Apps', 'Kiosk', 'Kiosk appearance', 'Network', 'Restrictions', 'Enrollment',
@@ -88,8 +89,8 @@ export const GROUP_ORDER: FieldGroup[] = [
 export const GROUP_NOTES: Partial<Record<FieldGroup, string>> = {
   Kiosk: 'Everything below kiosk mode applies only while kiosk mode is on.',
   'Kiosk appearance': 'The look of the MDMesh kiosk launcher. Applies only while kiosk mode is on.',
-  Network: 'Not managed leaves the device as it is, including a block applied earlier. Two exceptions: Not managed on Wi-Fi radio lifts its lock, and Device default on System updates clears a policy set here.',
-  Restrictions: 'Not managed leaves the device as it is, including a block applied earlier.',
+  Network: 'Not managed leaves the device as it is, including a block applied earlier. The exceptions: Not managed on Wi-Fi radio or Location services lifts its lock, and Device default on System updates clears a policy set here.',
+  Restrictions: 'Not managed normally leaves the device as it is, including a block applied earlier. Camera is an exception on agent 0.5.0 or later: it restores access after an MDMesh camera block.',
   Enrollment: 'Not sent to devices. The Enroll page can load this Wi-Fi into the enrollment QR so a new device joins it during setup.',
 };
 
@@ -128,6 +129,7 @@ export const CONFIG_FIELDS: FieldDef[] = [
   // ── Network ───────────────────────────────────────────────────────────────
   { key: 'wifi', label: 'Wi-Fi settings', type: 'tri', group: 'Network', enforced: true, segments: ALLOW_BLOCK, help: WIFI_HELP },
   { key: 'wifiRadio', label: 'Wi-Fi radio', type: 'tri', group: 'Network', enforced: true, segments: DEFAULT_SEGMENTS, help: WIFI_RADIO_HELP },
+  { key: 'locationServices', label: 'Location services', type: 'tri', group: 'Network', enforced: true, segments: DEFAULT_SEGMENTS, help: LOCATION_SERVICES_HELP },
   { key: 'bluetooth', label: 'Bluetooth', type: 'tri', group: 'Network', enforced: true, segments: ALLOW_BLOCK, help: 'Block turns Bluetooth off and stops users turning it on. Allow lifts the block (it does not turn Bluetooth on).' },
   { key: 'requestUpdates', label: 'Location reporting', type: 'enum', group: 'Network', enforced: true, help: LOCATION_HELP, options: [
     { value: 'DONOTTRACK', label: 'Do not track' }, { value: 'WIFI', label: 'Last known (passive)' }, { value: 'GPS', label: 'GPS (fresh fix)' },
@@ -144,6 +146,7 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'disableFactoryReset', label: 'Factory reset', type: 'tri', group: 'Restrictions', enforced: true, segments: ALLOW_BLOCK_INVERTED, help: 'Block prevents a factory reset from Settings.' },
   { key: 'disableScreenshots', label: 'Screenshots', type: 'tri', group: 'Restrictions', enforced: true, segments: ALLOW_BLOCK_INVERTED, help: 'Block prevents screenshots and screen recording.' },
   { key: 'usbStorage', label: 'USB storage', type: 'tri', group: 'Restrictions', enforced: true, segments: ALLOW_BLOCK, help: 'Block stops USB file transfer and mounting external storage.' },
+  { key: 'camera', label: 'Camera', type: 'tri', group: 'Restrictions', enforced: true, segments: ALLOW_BLOCK, help: 'Block prevents every app from using camera hardware. It does not hide camera apps, install one, or remove photos. On agent 0.5.0 or later, Not managed restores access after MDMesh blocked it. On older agents, choose Allow to lift a block.' },
   { key: 'blockStatusBar', label: 'Lock status bar', type: 'switch', group: 'Restrictions', help: 'Headwind launcher covered the status bar.' },
   { key: 'lockVolume', label: 'Lock volume (legacy)', type: 'tri', group: 'Restrictions', help: 'Headwind launcher blocked volume changes.' },
   { key: 'allowedClasses', label: 'Allowed app classes', type: 'text', group: 'Restrictions', help: 'Headwind launcher allowlist of settings screens.' },

@@ -115,12 +115,15 @@ function CopyForm({
 export function DeleteConfigModal({
   target,
   deviceCount,
+  wipedCount = 0,
   onClose,
   onDeleted,
 }: {
   target: Configuration | null;
-  /** Devices using it, from the sync summary (undefined = unknown). */
+  /** Devices using it, wiped ones included, from the sync summary (undefined = unknown). */
   deviceCount?: number;
+  /** Of deviceCount: the wiped ones, which the Devices list only shows under its Wiped filter. */
+  wipedCount?: number;
   onClose: () => void;
   onDeleted: (c: Configuration) => void;
 }) {
@@ -166,6 +169,7 @@ export function DeleteConfigModal({
         <p className="v2-configs-modalnote">
           {plural(deviceCount, 'device')} still {deviceCount === 1 ? 'uses' : 'use'} this configuration, so the server
           will refuse to delete it. Move {deviceCount === 1 ? 'it' : 'them'} to another configuration first.
+          {wipedCount > 0 ? ` That includes ${plural(wipedCount, 'wiped device')}, listed under the Wiped filter on Devices.` : null}
         </p>
       ) : null}
     </Modal>

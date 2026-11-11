@@ -3,6 +3,8 @@ package com.mdmesh.agent.policy
 import android.app.admin.DevicePolicyManager
 import android.app.admin.SystemUpdatePolicy
 import android.content.Context
+import android.location.LocationManager
+import android.os.Build
 import android.os.Bundle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -14,6 +16,7 @@ import com.mdmesh.policy.UserRestrictions
 import com.mdmesh.policy.camera.CameraPolicy
 import com.mdmesh.policy.factoryreset.FactoryResetPolicy
 import com.mdmesh.policy.factoryreset.FactoryResetPolicyFactory
+import com.mdmesh.policy.location.LocationServicesPolicy
 import com.mdmesh.policy.safeboot.SafeBootPolicy
 import com.mdmesh.policy.safeboot.SafeBootPolicyFactory
 import com.mdmesh.policy.screenshots.ScreenshotsPolicy
@@ -59,6 +62,7 @@ class DevicePolicyEffectTest {
     private lateinit var context: Context
     private lateinit var dpm: DevicePolicyManager
     private lateinit var handle: DpmHandle
+    private lateinit var location: LocationManager
 
     /** Pre-test device state, restored unconditionally so a failure cannot brick the device's UX. */
     private lateinit var original: Map<String, Boolean>
@@ -75,6 +79,7 @@ class DevicePolicyEffectTest {
     fun setUp() {
         context = InstrumentationRegistry.getInstrumentation().targetContext
         dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        location = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
         handle = DpmHandle(dpm, AdminReceiver.componentName(context))
 
         assumeTrue(doProvisioningHint, dpm.isDeviceOwnerApp(context.packageName))
@@ -112,6 +117,12 @@ class DevicePolicyEffectTest {
             "a Device Owner must advertise the other DO-gated toggles too",
             "camera" in toggles && "screenshots" in toggles,
         )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            assertTrue(
+                "Android 11+ Device Owners must advertise location-services control",
+                LocationServicesPolicy.CAPABILITY_KEY in toggles,
+            )
+        }
     }
 
     @Test
@@ -189,6 +200,21 @@ class DevicePolicyEffectTest {
         )
     }
 
+    @Test
+    fun locationServicesFalseDisablesLocationAndTrueRestoresIt() {
+        assumeTrue("Location services policy needs Android 11/API 30", Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+        val toggle = toggleFor(LocationServicesPolicy.CAPABILITY_KEY)
+        assertTogglesDeviceState(
+            toggle = toggle,
+            describe = LocationServicesPolicy.CAPABILITY_KEY,
+            isBlockedOnDevice = { !location.isLocationEnabled },
+        )
+        assertTrue(
+            "a managed Location-services setting must remain locked after either On or Off",
+            restrictionActive(UserRestrictions.DISALLOW_CONFIG_LOCATION),
+        )
+    }
+
     /**
      * The polarity contract, asserted against the platform rather than a fake: `setEnabled(false)`
      * must leave the device *blocked*, `setEnabled(true)` must leave it *usable*. An inversion here
@@ -228,6 +254,13 @@ class DevicePolicyEffectTest {
         )
         put("cameraDisabled", dpm.getCameraDisabled(handle.admin))
         put("screenCaptureDisabled", dpm.getScreenCaptureDisabled(handle.admin))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            put("locationEnabled", location.isLocationEnabled)
+            put(
+                restrictionKey(UserRestrictions.DISALLOW_CONFIG_LOCATION),
+                restrictionActive(UserRestrictions.DISALLOW_CONFIG_LOCATION),
+            )
+        }
     }
 
     /** Restores the pre-test state through the same public strategies the agent uses. */
@@ -241,6 +274,15 @@ class DevicePolicyEffectTest {
                 ?.setEnabled(state.getValue(restrictionKey(UserRestrictions.DISALLOW_SAFE_BOOT)).not())
             toggles[CameraPolicy.CAPABILITY_KEY]?.setEnabled(state.getValue("cameraDisabled").not())
             toggles[ScreenshotsPolicy.CAPABILITY_KEY]?.setEnabled(state.getValue("screenCaptureDisabled").not())
+            state["locationEnabled"]?.let { enabled ->
+                val locationPolicy = toggles[LocationServicesPolicy.CAPABILITY_KEY] ?: return@let
+                locationPolicy.setEnabled(enabled)
+                // setEnabled deliberately locks the setting. Restore the pre-test lock state too, otherwise every
+                // instrumentation test leaves Settings unable to change Location even when it began unlocked.
+                if (!state.getValue(restrictionKey(UserRestrictions.DISALLOW_CONFIG_LOCATION))) {
+                    locationPolicy.release()
+                }
+            }
         }
     }
 

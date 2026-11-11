@@ -46,7 +46,9 @@ import java.util.Set;
 import java.util.function.Supplier;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -63,11 +65,21 @@ public class AgentDeviceAccessTest {
     private final List<String> sideEffects = new ArrayList<>();
     private boolean allDevices;
     private boolean active;
+    private boolean activeCanary;
+    private String rolloutDeviceVersion = "1";
+    private String rolloutDeviceCaps = "{\"appManagement\":[\"silentInstall\"]}";
+    /** Non-null: another request moved the rollout to this stage right after the resource first read it. */
+    private String racedStage;
+    private int activeReads;
+    private boolean socketOpen;
     private FakeMapper<DeviceMapper> deviceMapper;
     private AgentAdminResource resource;
     private RolloutResource rollouts;
     private Map<Class<?>, Object> deps;
     private int configurationReads;
+    private final Set<String> wiped = new HashSet<>();
+    private String appliedRevision = "rev";
+    private int revisionReads;
 
     private static Device device(int id, String number) {
         Device d = new Device();
@@ -122,8 +134,9 @@ public class AgentDeviceAccessTest {
                     r.setDeviceNumber(n);
                     r.setConfigurationId(5);
                     r.setCapabilitiesJson("{\"device\":[\"configApply\"]}");
-                    r.setAppliedConfigRevision("rev");
+                    r.setAppliedConfigRevision(appliedRevision);
                     r.setLastApplyDeferred(true);
+                    r.setWiped(wiped.contains(n));
                     rows.add(r);
                 }
                 return rows;
@@ -131,19 +144,23 @@ public class AgentDeviceAccessTest {
         };
         AgentWakeHub wakeHub = new AgentWakeHub(commandDAO) {
             @Override public void wake(String n, String kind) { sideEffects.add("wake " + n); }
+            @Override public boolean isOnline(String n) { return socketOpen; }
         };
         ConfigAppInstaller installer = new ConfigAppInstaller(unsecureDAO, commandDAO, wakeHub, null) {
             @Override public int enqueueConfigApps(Device d) { sideEffects.add("syncApps " + d.getNumber()); return 1; }
         };
         ConfigReconciler reconciler = new ConfigReconciler(unsecureDAO, commandDAO, Fakes.noExtensionPoints()) {
-            @Override public String currentRevision(Device d) { return "rev"; }
+            @Override public String currentRevision(Device d) { revisionReads++; return "rev"; }
         };
 
         RolloutDAO rolloutDAO = new RolloutDAO(null) {
             @Override public AgentRollout findActiveByCustomer(int c) {
                 if (!active) return null;
                 AgentRollout r = findById(77);
-                r.setStage("fleet");
+                String stage = activeCanary ? "canary" : "fleet";
+                if (racedStage != null && activeReads++ > 0) stage = racedStage;
+                if (!"canary".equals(stage) && !"fleet".equals(stage)) return null;
+                r.setStage(stage);
                 return r;
             }
             @Override public void insertRollout(AgentRollout r) { r.setId(77); sideEffects.add("rollout created"); }
@@ -157,13 +174,26 @@ public class AgentDeviceAccessTest {
                 r.setPackageName("com.example.agent");
                 return r;
             }
-            @Override public void updateStage(int id, String stage) { sideEffects.add("stage " + stage); }
-            @Override public List<String> listCanaryNumbers(int id) { return new ArrayList<>(); }
+            @Override public boolean moveStage(int id, String from, String to) {
+                if (racedStage != null && !racedStage.equals(from)) return false;
+                sideEffects.add("stage " + to);
+                return true;
+            }
+            @Override public boolean cancelActive(int id) {
+                if ("done".equals(racedStage) || "cancelled".equals(racedStage)) return false;
+                sideEffects.add("stage cancelled");
+                return true;
+            }
+            @Override public List<String> listCanaryNumbers(int id) {
+                return activeCanary ? Arrays.asList(VISIBLE, HIDDEN) : new ArrayList<String>();
+            }
             @Override public List<RolloutDeviceRow> listCustomerDevices(int c) {
                 List<RolloutDeviceRow> rows = new ArrayList<>();
                 for (String n : Arrays.asList(VISIBLE, HIDDEN)) {
                     RolloutDeviceRow r = new RolloutDeviceRow();
                     r.setDeviceNumber(n);
+                    r.setAgentVersion(rolloutDeviceVersion);
+                    r.setCapabilitiesJson(rolloutDeviceCaps);
                     rows.add(r);
                 }
                 return rows;
@@ -267,6 +297,17 @@ public class AgentDeviceAccessTest {
     }
 
     @Test
+    public void forceSyncSaysWhetherTheWakeCanReachTheDevice() {
+        for (boolean open : new boolean[]{true, false}) {
+            socketOpen = open;
+            Response r = resource.forceSync(VISIBLE);
+            assertEquals(Response.ResponseStatus.OK, r.getStatus());
+            assertEquals(Collections.singletonMap("connected", open), r.getData());
+        }
+        assertEquals("the wake goes out either way", Arrays.asList("wake " + VISIBLE, "wake " + VISIBLE), sideEffects);
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     public void configApplyIsServerOwnedAndRejectedBeforeAnythingIsQueued() {
         // The server queues config.apply from the device's configuration, at most one open per device. An admin one
@@ -345,6 +386,55 @@ public class AgentDeviceAccessTest {
         ConfigSyncSummary s = ((List<ConfigSyncSummary>) resource.getSyncSummary().getData()).get(0);
         assertEquals(1, s.getInSync());
         assertEquals("in sync, but the latest config.apply deferred something", 1, s.getDeferred());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void syncSummaryKeepsAWipedDeviceOutOfTheCountsThatAddUpToTotal() {
+        login(true);
+        wiped.add(HIDDEN);
+        appliedRevision = "old";
+        ConfigSyncSummary s = ((List<ConfigSyncSummary>) resource.getSyncSummary().getData()).get(0);
+        assertEquals("the live device only", 1, s.getTotal());
+        assertEquals(1, s.getOutOfSync());
+        assertEquals(1, s.getInSync() + s.getOutOfSync() + s.getUnsupported() + s.getNeverSeen());
+        assertEquals(1, s.getWiped());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void syncSummaryStillListsAConfigurationWithOnlyWipedDevices() {
+        wiped.add(VISIBLE);
+        List<ConfigSyncSummary> rows = (List<ConfigSyncSummary>) resource.getSyncSummary().getData();
+        assertEquals("its delete would be refused, so the console has to hear about it", 1, rows.size());
+        ConfigSyncSummary s = rows.get(0);
+        assertEquals(5, s.getConfigurationId());
+        assertEquals(1, s.getWiped());
+        assertEquals(0, s.getTotal());
+        assertEquals(0, s.getInSync() + s.getOutOfSync() + s.getUnsupported() + s.getNeverSeen());
+        assertEquals("nothing to compare a wiped device with", 0, revisionReads);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void syncSummaryDoesNotCountAWipedDeviceTheUserCannotSee() {
+        wiped.add(HIDDEN);
+        ConfigSyncSummary s = ((List<ConfigSyncSummary>) resource.getSyncSummary().getData()).get(0);
+        assertEquals(0, s.getWiped());
+        assertEquals(1, s.getTotal());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void syncSummaryCountsADeviceNormallyOnceItIsNoLongerWiped() {
+        wiped.add(VISIBLE);
+        resource.getSyncSummary();
+        wiped.clear();
+        appliedRevision = "old";
+        ConfigSyncSummary s = ((List<ConfigSyncSummary>) resource.getSyncSummary().getData()).get(0);
+        assertEquals(0, s.getWiped());
+        assertEquals(1, s.getTotal());
+        assertEquals("true until it re-applies", 1, s.getOutOfSync());
     }
 
     /**
@@ -428,6 +518,94 @@ public class AgentDeviceAccessTest {
         login(true);
         progress = (Map<String, Object>) ((Map<String, Object>) rollouts.active().getData()).get("progress");
         assertEquals(2, ((com.hmdm.util.RolloutProgress.Counts) progress.get("fleet")).getTotal());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void rolloutTargetSummaryReportsWhetherEveryEligibleDeviceIsCurrent() {
+        login(true);
+        Map<String, Object> pending = (Map<String, Object>) rollouts.summary("2").getData();
+        assertFalse((Boolean) pending.get("complete"));
+        assertEquals(2, ((com.hmdm.util.RolloutProgress.Counts) pending.get("progress")).getOutstanding());
+
+        rolloutDeviceVersion = "2";
+        Map<String, Object> current = (Map<String, Object>) rollouts.summary("2").getData();
+        assertTrue((Boolean) current.get("complete"));
+        assertEquals(2, ((com.hmdm.util.RolloutProgress.Counts) current.get("progress")).getUpdated());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void settledCanaryCoveringTheWholeFleetCompletesDuringStatusRefresh() {
+        login(true);
+        active = true;
+        activeCanary = true;
+        rolloutDeviceVersion = "2";
+
+        Map<String, Object> view = (Map<String, Object>) rollouts.active().getData();
+
+        assertEquals("done", view.get("stage"));
+        assertTrue(sideEffects.toString(), sideEffects.contains("stage done"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void aWholeFleetCanaryOfDevicesThatCannotUpdateThemselvesStaysBlocked() {
+        login(true);
+        active = true;
+        activeCanary = true;
+        rolloutDeviceCaps = "{}";
+
+        Map<String, Object> view = (Map<String, Object>) rollouts.active().getData();
+
+        assertEquals("canary", view.get("stage"));
+        assertFalse(sideEffects.toString(), sideEffects.contains("stage done"));
+        assertFalse((Boolean) ((Map<String, Object>) rollouts.summary("2").getData()).get("complete"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void completingTheCanaryNeverOverwritesACancelThatGotThereFirst() {
+        login(true);
+        active = true;
+        activeCanary = true;
+        rolloutDeviceVersion = "2";
+        racedStage = "cancelled";
+
+        assertNull(rollouts.active().getData());
+        assertFalse(sideEffects.toString(), sideEffects.contains("stage done"));
+    }
+
+    @Test
+    public void promoteCannotReopenARolloutThatFinishedMeanwhile() {
+        login(true);
+        racedStage = "done";
+
+        assertEquals("error.rollout.stage", rollouts.promote(77).getMessage());
+        assertEquals(Collections.emptyList(), sideEffects);
+    }
+
+    @Test
+    public void cancelLeavesAFinishedRolloutDone() {
+        login(true);
+        racedStage = "done";
+
+        assertEquals(Response.ResponseStatus.OK, rollouts.cancel(77).getStatus());
+        assertEquals(Collections.emptyList(), sideEffects);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void theViewSaysHowManyDevicesAPromoteWouldReach() {
+        login(true);
+        active = true;
+        activeCanary = true; // both devices are canaries
+        Map<String, Object> progress = (Map<String, Object>) ((Map<String, Object>) rollouts.active().getData()).get("progress");
+        assertEquals(0, progress.get("others"));
+
+        activeCanary = false;
+        progress = (Map<String, Object>) ((Map<String, Object>) rollouts.active().getData()).get("progress");
+        assertEquals(2, progress.get("others"));
     }
 
     @Test

@@ -27,7 +27,7 @@ fun interface SystemUpdatePlatform {
 }
 
 /**
- * `systemUpdatePolicy` (protocol 1.6): how the device installs OS updates, set by the config.apply `systemUpdate`
+ * `systemUpdatePolicy` (protocol 1.7): how the device installs OS updates, set by the config.apply `systemUpdate`
  * section. Not a toggle, so not routed by `policy.apply` or `policies`: [apply] sets what a section asks for, and
  * [release] clears it once a configuration stops managing it.
  *

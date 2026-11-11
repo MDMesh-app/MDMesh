@@ -206,6 +206,9 @@ export interface DeviceState {
   agentVersion?: string | null;
   powerMode?: string | null;
   appliedConfigRevision?: string | null;
+  /** Server-owned kiosk-command sequence and the generation of the latest on-device kiosk return. */
+  kioskGeneration?: number | null;
+  kioskReturnGeneration?: number | null;
 }
 
 export interface CommandHistoryItem {
@@ -228,8 +231,13 @@ export async function listCommandHistory(
   );
 }
 
-export async function forceSync(deviceId: number | string): Promise<void> {
-  await apiClient.post(`/private/agent/v1/devices/${deviceId}/sync`, {});
+/**
+ * Wake the device to check in now. `connected` is false when it has no live connection, so the wake goes nowhere
+ * and it picks its commands up at its next check-in; undefined when the server does not say (an older one).
+ */
+export async function forceSync(deviceId: number | string): Promise<{ connected?: boolean }> {
+  const res = await apiClient.post<{ connected?: unknown } | null>(`/private/agent/v1/devices/${deviceId}/sync`, {});
+  return typeof res?.connected === 'boolean' ? { connected: res.connected } : {};
 }
 
 /** Queue app.install for the device's configuration apps marked action=install. */

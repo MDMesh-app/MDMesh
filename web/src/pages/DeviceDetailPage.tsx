@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router';
+import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import {
   getDeviceByNumber,
   searchDevices,
@@ -71,6 +71,7 @@ import {
   rememberConfiguredKiosk,
 } from '../data/kiosk';
 import { ISSUE_REASON, issueKind, presenceOf } from '../data/fleetHealth';
+import { notConnected } from '../data/presence';
 import {
   DASH,
   cleanFixes,
@@ -584,9 +585,10 @@ export function DeviceDetailPage() {
     if (!number) return;
     setBusy(true);
     try {
-      await forceSync(number);
+      const { connected } = await forceSync(number);
       refresh();
-      toast.push('ok', 'Sync requested', '');
+      if (connected === false) toast.push('warn', ...notConnected(number, 'sync'));
+      else toast.push('ok', 'Sync requested', '');
     } catch (e) {
       toast.push('err', 'Sync failed', e instanceof Error ? e.message : '');
     } finally {
@@ -624,7 +626,8 @@ export function DeviceDetailPage() {
         const cmdId = (res?.id as number | string | undefined) ?? '';
         toast.push('ok', `${label} queued`, cmdId ? `Command ${cmdId}` : '');
         onQueued?.(res?.id);
-        await forceSync(number).catch(() => undefined); // nudge the device
+        const nudge = await forceSync(number).catch(() => undefined); // nudge the device
+        if (nudge?.connected === false) toast.push('warn', ...notConnected(number, 'command'));
         refresh();
         return true;
       } catch (e) {
@@ -692,7 +695,9 @@ export function DeviceDetailPage() {
   // Last contact: the device row's lastUpdate (loaded once) or the polled state report, whichever is newer, so a
   // device that keeps reporting doesn't turn Offline while the page stays open.
   const lastSeen = Math.max(validTime(device?.lastUpdate) ?? 0, validTime(ds?.updatedAt) ?? 0) || undefined;
-  const presence = device ? presenceOf(lastSeen, issue !== null, now) : 'offline';
+  const presence = device ? presenceOf(lastSeen, issue !== null, now, device.wipedAt) : 'offline';
+  // It erased itself, so no command reaches it: the page's own ones are greyed out (extensions' tabs decide theirs).
+  const wiped = presence === 'wiped';
 
   const kind = deriveDeviceKind({
     ...kindInputFromTelemetry(tele),
@@ -727,7 +732,14 @@ export function DeviceDetailPage() {
     () => (configuration && cfgApps ? configuredKiosk(configuration, cfgApps) : null),
     [configuration, cfgApps],
   );
-  const kioskState = configuredKioskState({ history, kioskActive: ds?.kioskActive, inSync: cfgStatus?.inSync, configuredIds });
+  const kioskState = configuredKioskState({
+    history,
+    kioskActive: ds?.kioskActive,
+    inSync: cfgStatus?.inSync,
+    kioskGeneration: ds?.kioskGeneration,
+    kioskReturnGeneration: ds?.kioskReturnGeneration,
+    configuredIds,
+  });
   const cfgStart = configName ?? 'Its configuration';
   const cfgMid = configName ?? 'its configuration';
   const openReturn = () => setReturnOpen(true);
@@ -781,7 +793,10 @@ export function DeviceDetailPage() {
     }
     void forceSync(number) // nudge the device
       .catch(() => undefined)
-      .then(refresh);
+      .then((nudge) => {
+        if (nudge?.connected === false) toast.push('warn', ...notConnected(number, 'command'));
+        refresh();
+      });
   }
 
   /* ---- states without a device ---- */
@@ -915,14 +930,15 @@ export function DeviceDetailPage() {
                 status={cfgStatus}
                 configName={configName}
                 isDeviceOwner={deviceOwner}
+                androidSdkInt={teleNum(hw.sdkInt)}
                 busy={busy}
-                onRetry={canEdit ? () => void syncNow() : undefined}
+                onRetry={canEdit && !wiped ? () => void syncNow() : undefined}
                 now={now}
               />
             ) : null}
             {canEdit ? (
               <RemoteActions
-                busy={busy}
+                busy={busy || wiped}
                 onAction={runAction}
                 onEnterKiosk={() => setKioskOpen(true)}
                 kioskReturn={kioskReturn}
@@ -947,7 +963,7 @@ export function DeviceDetailPage() {
           </>
         ),
         telemetry: <TelemetryTab telemetry={tele} loaded={teleLoaded} reportedAt={ds?.updatedAt} agentVersion={ds?.agentVersion} />,
-        apps: <AppsTab number={device.number} history={history} loaded={historyLoaded} scan={canEdit ? appScan : undefined} />,
+        apps: <AppsTab number={device.number} history={history} loaded={historyLoaded} scan={canEdit && !wiped ? appScan : undefined} />,
         activity: (
           <ActivityTab events={events} eventsLoaded={eventsLoaded} commands={history} commandsLoaded={historyLoaded} now={now} />
         ),
@@ -977,6 +993,14 @@ export function DeviceDetailPage() {
   return (
     <DeviceProvider value={deviceValue}>
       <Breadcrumb items={[{ label: 'Devices', to: paths.devices }, { label: device.number, mono: true }]} />
+
+      {device.wipedAt != null ? (
+        <Callout tone="info">
+          Wiped <time dateTime={isoTime(device.wipedAt)}>{fmtDateTime(device.wipedAt)}</time>. The device erased itself, so
+          it no longer reports. Delete it from <Link to={`${paths.devices}?status=wiped`}>Devices</Link>, or keep it for its
+          history.
+        </Callout>
+      ) : null}
 
       <div className="v2-device-cols">
         <aside aria-label="Device" className="v2-card v2-card--pad-rail v2-device-rail">
@@ -1024,20 +1048,26 @@ export function DeviceDetailPage() {
                   variant="primary"
                   size="xl"
                   icon={<IconSync />}
-                  disabled={busy}
+                  disabled={busy || wiped}
                   className="v2-device-head__sync"
                   onClick={() => void syncNow()}
                 >
                   Sync now
                 </Button>
-                <Button size="xl" icon={<IconLock />} disabled={busy} title={TEMPLATE.lock.description} onClick={() => runAction(TEMPLATE.lock)}>
+                <Button
+                  size="xl"
+                  icon={<IconLock />}
+                  disabled={busy || wiped}
+                  title={TEMPLATE.lock.description}
+                  onClick={() => runAction(TEMPLATE.lock)}
+                >
                   Lock
                 </Button>
                 <Menu
                   trigger="button"
                   buttonSize="xl"
                   label="More actions"
-                  disabled={busy}
+                  disabled={busy || wiped}
                   items={[
                     { key: 'ring', label: 'Ring', icon: <IconRing />, onSelect: () => runAction(TEMPLATE.ring) },
                     { key: 'alert', label: 'Send alert…', icon: <IconAlert />, onSelect: () => runAction(TEMPLATE.alert) },

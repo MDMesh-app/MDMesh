@@ -5,6 +5,7 @@
 #      FROM (read from docker/web.Dockerfile, so CI and production cannot disagree). validate, not adapt: adapt
 #      accepts values (e.g. a bad TRUSTED_PROXIES) that only fail when the config is provisioned.
 #   2. `docker compose config -q` for every compose file / overlay / profile combination the installers use.
+#   2b. A digest pin comes out of `docker compose config --images` whole, as supervisor/apply.sh requires of it.
 #   3. /healthz and /healthz/supervisor (with or without a trailing slash), served by that caddy against stub upstreams:
 #      503 + reason while the upstream is down or failing (not the SPA's or the recovery page's catch-all 200), 200 "ok"
 #      once it answers.
@@ -92,6 +93,20 @@ for combo in "${COMBOS[@]}"; do
     fail "compose $combo"
     printf '%s\n' "$out" | tail -5 | sed 's/^/         /'
   fi
+done
+
+echo "Pinned images (docker compose config --images, as supervisor/apply.sh asks it):"
+PIN="0.0.0@sha256:$(printf 'a%.0s' {1..64})"
+for file in docker-compose.yml docker-compose.release.yml; do
+  if ! out="$(IMAGE_OWNER=example SERVER_VERSION="$PIN" WEB_VERSION="$PIN" \
+    docker compose --env-file "$ENVF" -f "$file" config --images server caddy 2>&1)"; then
+    fail "compose -f $file config --images"
+    printf '%s\n' "$out" | tail -5 | sed 's/^/         /'
+    continue
+  fi
+  for want in "ghcr.io/example/mdmesh-server:$PIN" "ghcr.io/example/mdmesh-web:$PIN"; do
+    if grep -qxF -- "$want" <<<"$out"; then pass "$file: ${want%%:*}"; else fail "$file: no line $want in: $out"; fi
+  done
 done
 
 # --- 3. Health routes, run under the same caddy image. /healthz and /healthz/supervisor, with or without a trailing

@@ -118,6 +118,8 @@ export interface DeviceState {
     agentVersion?: string | null;
     powerMode?: string | null;
     appliedConfigRevision?: string | null;
+    kioskGeneration?: number | null;
+    kioskReturnGeneration?: number | null;
 }
 
 // ---- api/configSync ----
@@ -191,6 +193,7 @@ export interface DeviceView {
         id: number;
         name: string;
     }[];
+    wipedAt?: number;
 }
 
 // ---- api/telemetry ----
@@ -236,6 +239,7 @@ export declare const ORDER: Readonly<{
     }>;
     settingsSection: Readonly<{
         account: 100;
+        users: 150;
         server: 200;
         updates: 300;
         agentRollout: 400;
@@ -853,7 +857,7 @@ export declare function StatCell({ label, value, of, notes }: StatCellProps): im
 // ---- ui/Status ----
 export type StatusTone = 'ok' | 'warn' | 'alert' | 'idle';
 export type StatusShape = 'circle' | 'diamond' | 'square' | 'ring';
-export type StatusKind = 'online' | 'attention' | 'offline' | 'inSync' | 'applying' | 'applyFailed' | 'agentTooOld' | 'notReported' | 'noConfiguration' | 'applied' | 'failed' | 'notSupported' | 'done' | 'pending' | 'expired';
+export type StatusKind = 'online' | 'attention' | 'offline' | 'wiped' | 'inSync' | 'applying' | 'applyFailed' | 'agentTooOld' | 'notReported' | 'noConfiguration' | 'applied' | 'failed' | 'notSupported' | 'done' | 'pending' | 'expired';
 export interface StatusDotProps {
     tone: StatusTone;
     shape?: StatusShape;
@@ -1030,7 +1034,7 @@ export declare const IconLibrary: ({ size, ...rest }: IconProps) => import("reac
 export declare const IconAndroid: ({ size, ...rest }: IconProps) => import("react").JSX.Element;
 
 // ---- ui/toast ----
-export type ToastKind = 'ok' | 'err';
+export type ToastKind = 'ok' | 'warn' | 'err';
 export interface ToastApi {
     push: (kind: ToastKind, title: string, body: string) => void;
 }

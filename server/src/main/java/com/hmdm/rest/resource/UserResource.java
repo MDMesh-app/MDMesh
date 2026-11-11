@@ -95,6 +95,20 @@ public class UserResource {
         this.loginThrottle = loginThrottle;
     }
 
+    /** Capabilities are computed by the server; the console never guesses the configured org-admin role ID. */
+    @GET
+    @Path("/management")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response management() {
+        return SecurityContext.get().getCurrentUser().map(u -> {
+            boolean admin = u.isSuperAdmin() || userDAO.isOrgAdmin(u);
+            java.util.Map<String, Boolean> capabilities = new java.util.LinkedHashMap<>();
+            capabilities.put("users", admin);
+            capabilities.put("roles", u.isSuperAdmin() || (admin && unsecureDAO.isSingleCustomer()));
+            return Response.OK(capabilities);
+        }).orElse(Response.PERMISSION_DENIED());
+    }
+
     // =================================================================================================================
     @ApiOperation(
             value = "Get user details",
@@ -240,6 +254,14 @@ public class UserResource {
                 logger.warn("Failed to update user {}: must be org admin or superadmin", user.getLogin());
                 return Response.PERMISSION_DENIED();
             }
+            if (user.getLogin() == null || user.getLogin().trim().isEmpty()) {
+                return Response.ERROR("error.user.login");
+            }
+            user.setLogin(user.getLogin().trim());
+            if ((user.getId() == null || (user.getNewPassword() != null && !user.getNewPassword().isEmpty())) &&
+                    (user.getNewPassword() == null || !user.getNewPassword().matches("(?i)[0-9a-f]{32}"))) {
+                return Response.ERROR("error.password.empty");
+            }
             try {
                 if (!this.userDAO.canGrantRole(user.getUserRole())) {
                     logger.warn("Failed to update user {}: role not allowed for {}", user.getLogin(), u.getLogin());
@@ -257,6 +279,7 @@ public class UserResource {
                         return Response.ERROR("error.user.not.found");
                     }
                     user.setCustomerId(target.getCustomerId());
+                    user.setPasswordReset(target.isPasswordReset());
                 }
                 String userEmail = user.getEmail();
                 if (userEmail != null && !userEmail.equals("")) {

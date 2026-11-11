@@ -62,7 +62,7 @@ class ConfigCommandTest {
         .systemUpdate
 
     @Test
-    fun `systemUpdate decodes each policy and is absent by default (protocol 1_6)`() {
+    fun `systemUpdate decodes each policy and is absent by default (protocol 1_7)`() {
         assertEquals(ConfigSystemUpdate(ConfigSystemUpdate.AUTOMATIC), systemUpdate("""{"policy":"automatic"}"""))
         assertEquals(
             ConfigSystemUpdate(ConfigSystemUpdate.WINDOWED, windowStart = 1320, windowEnd = 240),
@@ -71,7 +71,7 @@ class ConfigCommandTest {
         assertEquals(ConfigSystemUpdate(ConfigSystemUpdate.POSTPONE), systemUpdate("""{"policy":"postpone"}"""))
         val absent = ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), """{"revision":"r"}""")
         assertNull(absent.systemUpdate)
-        assertEquals("1.6", ProtocolJson.PROTOCOL_VERSION)
+        assertEquals("1.7", ProtocolJson.PROTOCOL_VERSION)
     }
 
     @Test

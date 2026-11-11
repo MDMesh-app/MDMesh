@@ -4,6 +4,7 @@
 import { isValidElement, useCallback, useMemo, useState, type ReactNode } from 'react';
 import { bulkQueueCommand, forceSync, isBulkForbidden, queueCommand } from '../../api/commands';
 import type { DeviceView } from '../../api/devices';
+import { notConnected } from '../../data/presence';
 import { Button } from '../../ui/Button';
 import type { MenuEntry, MenuItem } from '../../ui/Menu';
 import type { Column, SortDir } from '../../ui/Table';
@@ -263,7 +264,8 @@ export function useDeviceActionHelpers(refresh: () => void): DeviceActionHelpers
           const [device] = devices;
           await queueCommand(device.number, request);
           toast.push('ok', `${label} queued`, device.number);
-          await forceSync(device.number).catch(() => undefined); // nudge, as on the device page
+          const nudge = await forceSync(device.number).catch(() => undefined); // nudge, as on the device page
+          if (nudge?.connected === false) toast.push('warn', ...notConnected(device.number, 'command'));
         } else {
           const res = await bulkQueueCommand(
             devices.map((d) => d.id),

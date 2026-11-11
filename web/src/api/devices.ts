@@ -51,6 +51,9 @@ export interface DeviceView {
   oldNumber?: string;
   launcherPkg?: string;
   groups?: { id: number; name: string }[];
+  /** When the server delivered a factory reset (device.wipe) to it, ms since epoch; absent when it was not wiped.
+   *  The device erases itself before it can report, so it never checks in again under this record. */
+  wipedAt?: number;
 }
 
 /** Configuration lookup entry — see ConfigurationView. */

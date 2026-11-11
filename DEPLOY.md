@@ -9,7 +9,7 @@ passwords, and the admin must set its own password on first login.
 
 | Method | Needs | Choose it when |
 |--------|-------|----------------|
-| [A. Quick start](#option-a--one-line-no-clone-published-images) | Docker with Compose v2, `curl`, `openssl` | You want the fastest path, with one-click updates and rollback. |
+| [A. Quick start](#option-a--one-line-no-clone-published-images) | Docker with Compose v2, `curl`, `openssl` 3.0+ (or an older `openssl` and `minisign`) | You want the fastest path, with one-click updates and rollback. |
 | [B. From source](#option-b--from-source-clone--build) | Docker with Compose v2, `openssl`, `python3`, `curl`, a clone | You want to build the images yourself. |
 | [C. Native](#option-c--native-no-docker) | Debian 12/13 or Ubuntu 24.04, root, `git` | You don't want Docker, and you run your own TLS proxy. |
 
@@ -22,6 +22,10 @@ URL (`https://…`; `http://` is accepted too). See the [rules](docs/OPERATIONS.
 bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/quickstart.sh)
 ```
 
+It needs Docker with Compose v2, curl, and OpenSSL 3.0 or newer to check the release signature. On a host with
+OpenSSL 1.1.1 (Ubuntu 20.04, RHEL/Alma/Rocky 8, Amazon Linux 2), install `minisign` first; the quick start then uses
+it instead.
+
 This needs a published release whose GHCR packages (`mdmesh-server`, `mdmesh-web`, `mdmesh-supervisor`) are public.
 If they aren't, run `docker login ghcr.io` first ([RELEASING.md](RELEASING.md)).
 
@@ -31,12 +35,19 @@ generates secrets, pulls and starts the stack, seeds the database, and prints th
 password.
 
 Run every `docker compose` command from `./mdmesh`, where `.env` lives. The install is pinned to the latest
-release: `SERVER_VERSION`, `WEB_VERSION` and `CURRENT_VERSION` all name it, and the compose file and seed come from
-its tag. Updates are one click ([Upgrading](docs/UPGRADING.md#quick-start-installs)).
+release: `CURRENT_VERSION` names it, and `SERVER_VERSION`, `WEB_VERSION` and `SUPERVISOR_VERSION` name its images by
+digest (`0.5.0@sha256:…`). Updates are one click ([Upgrading](docs/UPGRADING.md#quick-start-installs)).
 
-If the GitHub API can't be reached, the quick start falls back to the `:latest` images and the `main` compose file,
-with `CURRENT_VERSION=0.0.0`. It still works, but the console shows "Update available" until the first update.
-To stop that, set `SERVER_VERSION`, `WEB_VERSION` and `CURRENT_VERSION` to the running release by hand.
+Before using anything from the release, the quick start checks its `manifest.json` against the release signing key
+(minisign format, checked with `openssl` 3.0+, or with `minisign` when that is installed). The signed manifest holds
+the image digests and the SHA-256 of the compose files, the seed and `install/lib/db.sh`, which come from the
+release's tag; a file that doesn't match stops the install. The trust root is `quickstart.sh` itself, fetched from `main` over HTTPS, which
+carries a copy of `release/minisign.pub`. A fork with its own signing key sets `MDMESH_RELEASE_PUBKEY` to the key line
+of its `release/minisign.pub`.
+
+If the latest release can't be looked up (GitHub API unreachable or rate-limited), the quick start stops and says so;
+it no longer falls back to `main` and `:latest`. Run it again later, or name the release:
+`MDMESH_VERSION=X.Y.Z bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/quickstart.sh)`.
 
 ## Option B — from source (clone + build)
 
@@ -131,7 +142,9 @@ Sign in as **admin** with the temporary password the installer printed, then set
 One prebuilt agent APK works for every deployment. The server URL travels in the enrollment QR
 (`com.mdmesh.SERVER_URL`), not in the APK. The latest verified release's APK is served at `/files/agent.apk`; if it
 isn't, host one there yourself. Generate the QR on the console's **Enroll** page. It holds your `BASE_URL`, the APK
-location and a single-use token.
+location and an enrollment token: single-use and valid for 24 hours by default, or, to set up a batch, for up to 100
+devices and 30 days (the API allows up to 1000 devices). **Stop all codes** on the same page ends every code that
+still works.
 
 ## Updates, recovery and logs
 
@@ -140,6 +153,7 @@ location and a single-use token.
   [docs/UPGRADING.md, Recovery and rollback](docs/UPGRADING.md#recovery-and-rollback).
 - **Server logs** and a temporary DEBUG log: [docs/OPERATIONS.md, Server logs](docs/OPERATIONS.md#server-logs).
 - **Settings**: [configuration reference](docs/OPERATIONS.md#configuration-reference).
+- **Console accounts and roles**: [docs/USER_MANAGEMENT.md](docs/USER_MANAGEMENT.md).
 - [Health checks](docs/OPERATIONS.md#health-checks), [backups](docs/OPERATIONS.md#backups-and-restore),
   [moving to a new BASE_URL](docs/OPERATIONS.md#moving-to-a-new-base_url),
   [uninstalling](docs/OPERATIONS.md#uninstalling) and [security](docs/OPERATIONS.md#security-notes).

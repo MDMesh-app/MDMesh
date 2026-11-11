@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Configuration } from '../api/configurations';
-import { systemUpdateProblem } from './configurationRules';
+import { locationServicesAction, systemUpdateProblem } from './configurationRules';
 
 const cfg = (c: Partial<Configuration>) => ({ name: 'Warehouse', ...c }) as Configuration;
 const keyOf = (c: Partial<Configuration>) => systemUpdateProblem(cfg(c))?.key ?? null;
@@ -68,3 +68,9 @@ describe('the system update setting, as the server checks it', () => {
     expect(check({ systemUpdateType: 0 }, blank)).toBeNull();
   });
 });
+
+describe('locationServicesAction', () => {
+  it('marks every explicit editor selection so the server can distinguish it from an older client omission', () => {
+    expect(locationServicesAction(true)).toBe('on');
+    expect(locationServicesAction(false)).toBe('off');
+    expect(locationServicesAction(null)).toBe('notManaged');

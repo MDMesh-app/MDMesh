@@ -27,6 +27,7 @@ import {
   isLocked,
   SYSTEM_UPDATE_WINDOWED,
   systemUpdateProblem,
+  locationServicesAction,
 } from '../data/configurationRules';
 import { kioskAffectingChanges } from '../data/kioskChanges';
 import {
@@ -68,7 +69,7 @@ import { paths } from '../routes';
 import { AssignedApps } from './configurations/AssignedApps';
 import { AppSelect, FieldControl, LongHelp } from './configurations/controls';
 import { AppPickerModal, CopyConfigModal, DeleteConfigModal, KioskConfirmModal } from './configurations/modals';
-import { plural, usedByLine } from './configurations/sync';
+import { devicesBlockingDelete, plural, usedByLine, wipedOnly, wipedOnlyLine } from './configurations/sync';
 import { WATCH_MS, type ConfigWatch } from './configurations/watch';
 import './ConfigEditorPage.css';
 
@@ -269,10 +270,10 @@ const LAYOUT: Record<'kiosk' | 'network' | 'security' | 'enrollment', Item[]> = 
     'iconSize',
   ],
   network: [
-    'wifi', 'wifiRadio', 'bluetooth', 'requestUpdates', 'connectivityMode',
+    'wifi', 'wifiRadio', 'bluetooth', 'locationServices', 'requestUpdates', 'connectivityMode',
     'systemUpdateType', 'systemUpdateFrom', 'systemUpdateTo',
   ],
-  security: ['usbStorage', 'disableScreenshots', 'disableFactoryReset', 'disableSafeBoot'],
+  security: ['camera', 'usbStorage', 'disableScreenshots', 'disableFactoryReset', 'disableSafeBoot'],
   enrollment: ['wifiSSID', 'wifiPassword', 'wifiSecurityType'],
 };
 for (const [sec, items] of Object.entries(LAYOUT) as Array<[keyof typeof LAYOUT, Item[]]>) {
@@ -419,7 +420,12 @@ function Editor({
     };
   }, [appsSource, appsAttempt]);
 
-  const set = useCallback((key: string, value: unknown) => setDraft((d) => ({ ...d, [key]: value })), []);
+  const set = useCallback((key: string, value: unknown) => setDraft((d) => {
+    if (key === 'locationServices') {
+      return { ...d, locationServices: value, locationServicesAction: locationServicesAction(value) };
+    }
+    return { ...d, [key]: value };
+  }), []);
 
   const changed = useMemo(() => changedKeys(baseline, draft), [baseline, draft]);
 
@@ -673,6 +679,16 @@ function Editor({
         {usedBy.rest}
       </>
     );
+  else if (wipedOnly(syncRow) > 0 && initial.id != null)
+    subtitle = (
+      <>
+        Used only by{' '}
+        <Link to={`${paths.devices}?status=wiped&config=${initial.id}`} className="v2-cfged-devlink">
+          {plural(wipedOnly(syncRow), 'wiped device')}
+        </Link>
+        .
+      </>
+    );
   else if (syncKnown) subtitle = 'Not used by any device yet.';
 
   // Duplicate = the server copy (PUT /configurations/copy), the same path as the list's Duplicate: it copies every
@@ -706,6 +722,7 @@ function Editor({
     message = 'Kiosk settings change on the devices that use this configuration, at their next check-in.';
   else if (isNew) message = 'This configuration is not saved yet.';
   else if (syncRow && syncRow.total > 0) message = syncMessage(syncRow);
+  else if (wipedOnly(syncRow) > 0) message = `${wipedOnlyLine(syncRow)}.`;
   else if (syncKnown) message = 'No device uses this configuration yet.';
 
   // ---- sections ----
@@ -952,7 +969,8 @@ function Editor({
       />
       <DeleteConfigModal
         target={deleting ? initial : null}
-        deviceCount={syncRow?.total}
+        deviceCount={devicesBlockingDelete(syncRow)}
+        wipedCount={syncRow?.wiped}
         onClose={() => setDeleting(false)}
         onDeleted={() => {
           setDeleting(false);

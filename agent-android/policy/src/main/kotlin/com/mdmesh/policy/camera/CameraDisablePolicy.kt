@@ -2,6 +2,7 @@ package com.mdmesh.policy.camera
 
 import android.os.Build
 import com.mdmesh.policy.PolicyOutcome
+import com.mdmesh.policy.ReleasablePolicy
 import com.mdmesh.policy.wifi.DpmHandle
 
 /**
@@ -15,7 +16,7 @@ import com.mdmesh.policy.wifi.DpmHandle
  */
 internal class CameraDisablePolicy(
     private val handle: DpmHandle,
-) : CameraPolicy {
+) : CameraPolicy, ReleasablePolicy {
 
     override val capabilityKey: String = CameraPolicy.CAPABILITY_KEY
 
@@ -28,4 +29,6 @@ internal class CameraDisablePolicy(
         handle.dpm.setCameraDisabled(handle.admin, !enabled)
         PolicyOutcome.Applied
     }.getOrElse { PolicyOutcome.Failed(it.message ?: "camera setEnabled failed") }
+
+    override fun release(): PolicyOutcome = setEnabled(true)
 }

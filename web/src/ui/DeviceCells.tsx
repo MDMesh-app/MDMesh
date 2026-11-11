@@ -71,8 +71,8 @@ export function DeviceIdentity({ name, number, kind, model, dupCount, to, varian
 }
 
 export interface PresenceStatusProps {
-  status: 'online' | 'attention' | 'offline';
-  /** Why ("Kiosk running", "Battery low, not charging", "Last seen on Wi-Fi “WH-North”"). */
+  status: 'online' | 'attention' | 'offline' | 'wiped';
+  /** Why ("Kiosk running", "Battery low, not charging", "Last seen on Wi-Fi “WH-North”", "Wiped 2h ago"). */
   reason?: ReactNode;
   /** `stack` (table: pill over a 12.5px reason) or `inline` (card: side by side, reason wraps to 2 lines). */
   layout?: 'stack' | 'inline';

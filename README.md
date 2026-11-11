@@ -84,8 +84,8 @@ APK.
 
 ## ■ Quick start
 
-On a Linux host with Docker, Docker Compose v2, `openssl` and `curl`, and either a domain in Cloudflare (for a
-Cloudflare Tunnel) or a domain pointed at the host with ports 80 and 443 open:
+On a Linux host with Docker, Docker Compose v2, `curl`, `openssl` 3.0+ (or an older `openssl` and `minisign`), and
+either a domain in Cloudflare (for a Cloudflare Tunnel) or a domain pointed at the host with ports 80 and 443 open:
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/quickstart.sh)
@@ -169,4 +169,4 @@ MDMesh is licensed under the **[Apache License 2.0](LICENSE)**. It is a fork of 
 by Headwind Solutions LLC, also Apache-2.0 ([why and how: ADR-0008](docs/adr/0008-licensing-and-rebrand.md)).
 Trademarks and brand names belong to their owners.
 
-<div align="center"><sub><a href="DEPLOY.md">Install</a> · <a href="docs/UPGRADING.md">Upgrading</a> · <a href="docs/OPERATIONS.md">Operations</a> · <a href="STRUCTURE.md">Structure</a> · <a href="docs/DEV.md">Development</a> · <a href="docs/agent-architecture.md">Agent internals</a> · <a href="RELEASING.md">Releasing</a></sub></div>
+<div align="center"><sub><a href="DEPLOY.md">Install</a> · <a href="docs/UPGRADING.md">Upgrading</a> · <a href="docs/OPERATIONS.md">Operations</a> · <a href="docs/USER_MANAGEMENT.md">Users and roles</a> · <a href="STRUCTURE.md">Structure</a> · <a href="docs/DEV.md">Development</a> · <a href="docs/agent-architecture.md">Agent internals</a> · <a href="RELEASING.md">Releasing</a></sub></div>

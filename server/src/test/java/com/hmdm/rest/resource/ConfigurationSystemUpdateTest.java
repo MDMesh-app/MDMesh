@@ -26,7 +26,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
- * Devices apply the configuration's system update setting (config.apply systemUpdate, protocol 1.6), so a save that
+ * Devices apply the configuration's system update setting (config.apply systemUpdate, protocol 1.7), so a save that
  * changes it is refused when the type is unknown or a Scheduled window isn't two different HH:MM times: such a window
  * would reach the device as Default. A row already stored that way can still get an unrelated edit.
  */

@@ -52,7 +52,10 @@ export function withCoreAppsParts(helpers: RowActionHelpers, parts: CoreAppsPart
 
 const editDevices = CORE_ACTION_ACCESS.editDevices;
 
-/** A command sent straight from the menu, as before: no confirmation. Its toasts say "Lock device queued". */
+/**
+ * A command sent straight from the menu, as before: no confirmation. Its toasts say "Lock device queued". Greyed out
+ * for a wiped device: it erased itself, so nothing would run it.
+ */
 function command(id: 'lock' | 'ring', label: string): ListRowActionContribution {
   const request = ACTION_TEMPLATES.find((t) => t.key === id)?.request;
   return {
@@ -62,7 +65,14 @@ function command(id: 'lock' | 'ring', label: string): ListRowActionContribution 
     order: ORDER.devicesRowAction[id],
     requires: editDevices,
     item: (device, helpers) =>
-      request ? { key: id, label, onSelect: () => void helpers.sendCommand([device], { label, request }) } : null,
+      request
+        ? {
+            key: id,
+            label,
+            disabled: device.wipedAt != null,
+            onSelect: () => void helpers.sendCommand([device], { label, request }),
+          }
+        : null,
   };
 }
 

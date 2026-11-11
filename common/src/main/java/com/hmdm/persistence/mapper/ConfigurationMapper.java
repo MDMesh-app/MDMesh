@@ -105,6 +105,7 @@ public interface ConfigurationMapper {
             "showWifi=#{showWifi}, " +
             "gps=#{gps}, " +
             "bluetooth=#{bluetooth}, " +
+            "camera=#{camera}, " +
             "wifi=#{wifi}, " +
             "mobileData=#{mobileData}, " +
             "usbStorage=#{usbStorage}, " +
@@ -141,6 +142,7 @@ public interface ConfigurationMapper {
             "disableFactoryReset=#{disableFactoryReset}, " +
             "disableSafeBoot=#{disableSafeBoot}, " +
             "wifiRadio=#{wifiRadio}, " +
+            "locationServices=#{locationServices}, " +
             "kioskLockVolume=#{kioskLockVolume}, " +
             "connectivityMode=#{connectivityMode}, " +
             // Left out (null), the stored extensions stay: a client that doesn't know them can't wipe them.

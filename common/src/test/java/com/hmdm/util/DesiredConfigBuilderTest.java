@@ -204,6 +204,17 @@ public class DesiredConfigBuilderTest {
     }
 
     @Test
+    public void camera_is_a_direct_allow_block_policy_and_null_is_unmanaged() {
+        Configuration c = policiesConfig();
+        c.setCamera(false);
+        assertEquals(Boolean.FALSE, build(c, Collections.emptyList()).getPolicies().get("camera"));
+        c.setCamera(true);
+        assertEquals(Boolean.TRUE, build(c, Collections.emptyList()).getPolicies().get("camera"));
+        c.setCamera(null);
+        assertFalse(build(c, Collections.emptyList()).getPolicies().containsKey("camera"));
+    }
+
+    @Test
     public void factory_reset_alone_changes_the_revision() {
         // The whole point of the persisted column: toggling it must re-apply, so it must move the revision.
         DesiredConfig blocked = build(policiesConfig(), Collections.emptyList());
@@ -280,6 +291,22 @@ public class DesiredConfigBuilderTest {
     }
 
     @Test
+    public void location_services_is_its_own_tri_state_policy_not_location_reporting() {
+        Configuration legacy = policiesConfig();
+        legacy.setRequestUpdates(RequestUpdatesType.GPS);
+        assertFalse("null locationServices = services not managed", build(legacy, Collections.emptyList())
+                .getPolicies().containsKey("locationServices"));
+        assertEquals("GPS reporting stays active", "active", build(legacy, Collections.emptyList()).getLocation().getMode());
+
+        Configuration off = policiesConfig(); off.setLocationServices(false);
+        assertEquals(Boolean.FALSE, build(off, Collections.emptyList()).getPolicies().get("locationServices"));
+        assertEquals("telemetry mode is independent", "off", build(off, Collections.emptyList()).getLocation().getMode());
+
+        Configuration on = policiesConfig(); on.setLocationServices(true);
+        assertEquals(Boolean.TRUE, build(on, Collections.emptyList()).getPolicies().get("locationServices"));
+    }
+
+    @Test
     public void connectivity_is_sent_only_when_managed_and_null_keeps_the_revision() {
         // Existing configurations upgrade with a NULL column (protocol 1.5): no section, and no revision moves.
         DesiredConfig unmanaged = build(policiesConfig(), Collections.emptyList());
@@ -305,7 +332,7 @@ public class DesiredConfigBuilderTest {
 
     @Test
     public void system_update_is_sent_only_when_set_and_default_keeps_the_revision() {
-        // Existing configurations upgrade with systemUpdateType 0 (Default, protocol 1.6): no section, no revision moves.
+        // Existing configurations upgrade with systemUpdateType 0 (Default, protocol 1.7): no section, no revision moves.
         DesiredConfig byDefault = build(policiesConfig(), Collections.emptyList());
         assertNull("Default = not managed", byDefault.getSystemUpdate());
         assertFalse(DesiredConfigBuilder.canonicalJson(byDefault).contains("systemUpdate"));

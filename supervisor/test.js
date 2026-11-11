@@ -1,8 +1,14 @@
 const t = require('node:test');
 const a = require('node:assert');
 const { semverGt, pickRelease, shapeStatus, imageTags, nextPhase, isTerminal, apkAsset, sha256Matches, recoveryPage, isPublishTemp,
-  assetRequest, fetchAsset, envValue, applyLine, applyRefusal, deploymentAdminVerdict,
+  assetRequest, fetchAsset, envValue, applyLine, applyRefusal, imagePins, deploymentAdminVerdict,
   legacyDeploymentAdmin } = require('./lib');
+
+// The digest-pinned refs server.js passes apply.sh after the signed manifest verified (components.images).
+const PIN = { server: 'ghcr.io/mdmesh-app/mdmesh-server@sha256:' + 'a'.repeat(64),
+  web: 'ghcr.io/mdmesh-app/mdmesh-web@sha256:' + 'b'.repeat(64),
+  supervisor: 'ghcr.io/mdmesh-app/mdmesh-supervisor@sha256:' + 'c'.repeat(64) };
+const applyArgs = (v, pins = PIN) => [v, pins.server, pins.web, pins.supervisor];
 
 t.test('semverGt', () => {
   a.equal(semverGt('1.2.4', '1.2.3'), true);
@@ -167,8 +173,32 @@ t.test('envValue — reads KEY=value from .env text the way apply.sh get_env doe
   a.equal(envValue(null, 'CURRENT_VERSION'), null);
 });
 
+t.test('imagePins — the three digest-pinned refs, under the owner this install pulls from, or why not', () => {
+  const m = (images, version = '0.5.0') => ({ version, components: { serverImage: 'ghcr.io/mdmesh-app/mdmesh-server:' + version, images } });
+  a.deepEqual(imagePins(m(PIN), 'mdmesh-app'), PIN);
+  a.deepEqual(imagePins(m(PIN), null), PIN, 'no IMAGE_OWNER in .env: compose\'s default owner');
+  // A release from tooling before digest pinning (tags only): refused, saying so.
+  a.match(imagePins(m(undefined), 'mdmesh-app').error, /^the signed release 0\.5\.0 names its images by tag only, without digests/);
+  a.match(imagePins({ version: '0.5.0' }, 'mdmesh-app').error, /by tag only/);
+  a.match(imagePins(m([PIN.server]), 'mdmesh-app').error, /by tag only/);
+  // Each ref must be repo@sha256:<64 lowercase hex>.
+  for (const bad of ['ghcr.io/mdmesh-app/mdmesh-web:0.5.0', 'ghcr.io/mdmesh-app/mdmesh-web@sha256:' + 'B'.repeat(64),
+    'ghcr.io/mdmesh-app/mdmesh-web@sha256:' + 'b'.repeat(63), 'mdmesh-web@sha256:' + 'b'.repeat(64), 7, null]) {
+    a.equal(imagePins(m({ ...PIN, web: bad }), 'mdmesh-app').error,
+      'the signed release 0.5.0 has no valid digest for its web image, so it cannot be applied', String(bad));
+  }
+  // A fork's install (its own IMAGE_OWNER) following upstream releases, or upstream images in a fork's manifest.
+  a.equal(imagePins(m(PIN), 'forkco').error, 'the signed release 0.5.0 pins its server image at ghcr.io/mdmesh-app/mdmesh-server, '
+    + 'but this install pulls ghcr.io/forkco/mdmesh-server (IMAGE_OWNER=forkco in .env). Set GITHUB_REPO to the repository '
+    + 'that publishes forkco\'s images, or IMAGE_OWNER to the owner this release names, then run docker compose up -d');
+  a.match(imagePins(m({ ...PIN, supervisor: 'ghcr.io/other/mdmesh-supervisor@sha256:' + 'c'.repeat(64) }), 'mdmesh-app').error,
+    /pins its supervisor image at ghcr\.io\/other\/mdmesh-supervisor/);
+  a.match(imagePins(m({ ...PIN, web: 'ghcr.io/mdmesh-app/mdmesh-server@sha256:' + 'b'.repeat(64) }), 'mdmesh-app').error,
+    /pins its web image at ghcr\.io\/mdmesh-app\/mdmesh-server/, 'each image must be its own repository');
+});
+
 t.test('applyRefusal — the Update guard says what is actually true', () => {
-  const m = (v) => ({ version: v });
+  const m = (v) => ({ version: v, components: { images: PIN } });
   a.equal(applyRefusal({ manifest: m('0.0.3'), current: '0.0.2', skipVersion: null }), null, 'a newer verified release applies');
   a.equal(applyRefusal({ manifest: m('0.0.3'), current: '0.0.2', skipVersion: '0.0.3' }), null, 'the auto skip never blocks a manual Update');
   a.equal(applyRefusal({ manifest: null, current: '0.0.2' }), 'no verified update available');
@@ -185,6 +215,11 @@ t.test('applyRefusal — the Update guard says what is actually true', () => {
     'the verified release version "nightly" is not a release version (X.Y.Z), so it cannot be applied');
   a.equal(applyRefusal({ manifest: m('0.0.4'), current: 'latest', skipVersion: null }),
     'the running version "latest" is not a release version (X.Y.Z), so it cannot be compared: update by hand');
+  // A newer release must pin its images by digest under this install's owner (imagePins); the version checks come first.
+  a.match(applyRefusal({ manifest: { version: '0.0.5' }, current: '0.0.4' }), /names its images by tag only/);
+  a.match(applyRefusal({ manifest: m('0.0.5'), current: '0.0.4', imageOwner: 'forkco' }), /this install pulls ghcr\.io\/forkco/);
+  a.equal(applyRefusal({ manifest: m('0.0.5'), current: '0.0.4', imageOwner: 'mdmesh-app' }), null);
+  a.equal(applyRefusal({ manifest: { version: '0.0.4' }, current: '0.0.4' }), 'already running 0.0.4');
 });
 
 t.test('sha256Matches — the APK publish gate', () => {
@@ -488,7 +523,10 @@ globalThis.fetch = (u, o) => {
 async function fakeGitHub(dir, opts) {
   const fs = require('fs'), path = require('path'), http = require('http'), crypto = require('crypto');
   const kd = fs.mkdtempSync(path.join(dir, 'gh-'));
+  // Pinned images under the default owner unless opts.images says otherwise (null: a manifest without digests).
   const manifest = { version: opts.version, channel: 'stable', components: {} };
+  const images = opts.images === undefined ? PIN : opts.images;
+  if (images) manifest.components.images = images;
   if (opts.apk) manifest.components.apk = { file: 'mdmesh-agent.apk', versionCode: 999, sha256: crypto.createHash('sha256').update(opts.apk).digest('hex') };
   fs.writeFileSync(path.join(kd, 'manifest.json'), JSON.stringify(manifest));
   cp.execFileSync('minisign', ['-G', '-W', '-p', path.join(kd, 'k.pub'), '-s', path.join(kd, 'k.key')], { stdio: 'ignore' });
@@ -731,6 +769,16 @@ function makeStubs(dir) {
 echo "$*" >> "$STUB_LOG"
 if [ -n "\${STUB_FAIL_RE:-}" ] && echo "$*" | grep -Eq "$STUB_FAIL_RE"; then echo "stub: forced failure: $*" >&2; exit 1; fi
 case "$*" in
+  "compose config --images "*)
+    # What compose resolves the image lines of docker-compose.release.yml to, from the .env in the project (cwd).
+    if [ -n "\${STUB_CONFIG_IMAGES:-}" ]; then printf '%s\n' "$STUB_CONFIG_IMAGES"; exit 0; fi
+    # Like compose: the environment wins over .env.
+    v() { if [ -n "\${!1:-}" ]; then printf '%s' "\${!1}"; else grep -E "^$1=" .env | head -1 | cut -d= -f2-; fi; }
+    o=$(v IMAGE_OWNER); o=\${o:-mdmesh-app}
+    echo "ghcr.io/$o/mdmesh-server:$(v SERVER_VERSION)"; echo "ghcr.io/$o/mdmesh-web:$(v WEB_VERSION)";;
+  "image inspect "*)
+    # RepoDigests of the image named by the last argument: that very ref, unless STUB_REPO_DIGESTS says otherwise.
+    printf '%s\n' "\${STUB_REPO_DIGESTS:-\${@: -1}}";;
   *" pg_dump "*) echo "-- stub dump"; echo "SELECT 1;";;
   *" psql "*"--single-transaction"*)
     cat > "$STUB_LOG.stdin"
@@ -819,7 +867,7 @@ t.test('rollback.sh restores CURRENT_VERSION from the snapshot (not SERVER_VERSI
   // CURRENT_VERSION=0.0.0, not "latest" (which is no version at all and would hide every future update).
   const d = makeDeploy('SERVER_VERSION=latest\nWEB_VERSION=latest\nCURRENT_VERSION=0.0.0\n');
   try {
-    let r = runScript('apply.sh', ['0.0.2'], { ...d.env, STUB_CURL_FAIL: '0' });
+    let r = runScript('apply.sh', applyArgs('0.0.2'), { ...d.env, STUB_CURL_FAIL: '0' });
     a.equal(r.code, 0, r.all);
     const stamp = fs.readFileSync(path.join(d.backups, 'latest'), 'utf8').trim();
     a.match(fs.readFileSync(path.join(d.backups, stamp + '.env'), 'utf8'), /^CURRENT_VERSION=0\.0\.0$/m, 'apply.sh snapshots CURRENT_VERSION');
@@ -971,7 +1019,7 @@ t.test('apply.sh: a failed health check rolls back with the same safe restore; a
   const fs = require('fs');
   let d = makeDeploy('SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
   try {
-    let r = runScript('apply.sh', ['0.0.2'], { ...d.env, STUB_CURL_FAIL: '1', HEALTH_TIMEOUT: '0' });
+    let r = runScript('apply.sh', applyArgs('0.0.2'), { ...d.env, STUB_CURL_FAIL: '1', HEALTH_TIMEOUT: '0' });
     a.equal(r.code, 1, r.all);
     // The first recreate is the new version's; the rollback's stop → restore → start follows it.
     const calls = d.calls(), firstUp = idx(calls, /^compose up /);
@@ -982,7 +1030,7 @@ t.test('apply.sh: a failed health check rolls back with the same safe restore; a
     fs.rmSync(d.dir, { recursive: true, force: true });
 
     d = makeDeploy('SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
-    r = runScript('apply.sh', ['0.0.2'], { ...d.env, STUB_CURL_FAIL: '1', HEALTH_TIMEOUT: '0', STUB_PSQL_FAIL: '1' });
+    r = runScript('apply.sh', applyArgs('0.0.2'), { ...d.env, STUB_CURL_FAIL: '1', HEALTH_TIMEOUT: '0', STUB_PSQL_FAIL: '1' });
     a.equal(r.code, 1, r.all);
     a.match(r.out, /PHASE failed/);
     a.doesNotMatch(r.out, /PHASE rolled_back/);
@@ -998,7 +1046,7 @@ t.test('apply.sh: a failed pull changed no container, so it resets .env only: no
   const fs = require('fs');
   const d = makeDeploy('SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
   try {
-    const r = runScript('apply.sh', ['0.0.2'], { ...d.env, STUB_FAIL_RE: '^compose pull ' });
+    const r = runScript('apply.sh', applyArgs('0.0.2'), { ...d.env, STUB_FAIL_RE: '^compose pull ' });
     a.equal(r.code, 1, r.all);
     a.match(r.out, /PHASE rolled_back/);
     // --quiet drops the per-layer progress (most of the log in the live rehearsal); errors still print.
@@ -1150,11 +1198,11 @@ t.test('apply.sh: if the rollback cannot stop the new server, .env names the new
   for (const knob of [{ STUB_FAIL_RE: '^compose stop server$' }, { STUB_PSQL_FAIL: '1' }]) {
     const d = makeDeploy('SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
     try {
-      const r = runScript('apply.sh', ['0.0.2'], { ...d.env, STUB_CURL_FAIL: '1', HEALTH_TIMEOUT: '0', ...knob });
+      const r = runScript('apply.sh', applyArgs('0.0.2'), { ...d.env, STUB_CURL_FAIL: '1', HEALTH_TIMEOUT: '0', ...knob });
       a.equal(r.code, 1, r.all);
       a.match(r.out, /PHASE failed/);
-      a.match(d.envFile(), /^SERVER_VERSION=0\.0\.2$/m, JSON.stringify(knob) + '\n' + r.all);
-      a.match(d.envFile(), /^WEB_VERSION=0\.0\.2$/m);
+      a.match(d.envFile(), /^SERVER_VERSION=0\.0\.2@sha256:a{64}$/m, JSON.stringify(knob) + '\n' + r.all);
+      a.match(d.envFile(), /^WEB_VERSION=0\.0\.2@sha256:b{64}$/m);
       a.match(d.envFile(), /^CURRENT_VERSION=0\.0\.2$/m);
       a.match(r.err, /^ERR .*\.env still names 0\.0\.2/m);
       // After a failed recreate the new server may or may not be up: the message must not claim it is running.
@@ -1239,6 +1287,154 @@ t.test('a successful manual apply of the skipped version clears the skip (auto.j
     a.equal(s.apply.phase, 'done', sup.log());
     a.equal(s.autoSkipped, null, 'the skip is cleared once that version is running');
     a.deepEqual(JSON.parse(fs.readFileSync(path.join(d.dir, 'auto.json'), 'utf8')), { auto: false, skipVersion: null });
+    // server.js handed apply.sh the signed manifest's digests, and those are what .env now runs.
+    a.match(d.envFile(), /^SERVER_VERSION=0\.0\.2@sha256:a{64}$/m);
+    a.match(d.envFile(), /^WEB_VERSION=0\.0\.2@sha256:b{64}$/m);
+  });
+
+// --- Images pinned by digest: apply.sh runs exactly the images the signed manifest names. ---
+t.test('apply.sh pins server + web by digest (.env <version>@sha256:…), checks compose resolves to them and the pulled '
+  + 'images carry them, then pins a release-following supervisor', () => {
+  const fs = require('fs');
+  const d = makeDeploy('IMAGE_OWNER=mdmesh-app\nSERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nSUPERVISOR_VERSION=latest\nCURRENT_VERSION=0.0.1\n');
+  try {
+    const r = runScript('apply.sh', applyArgs('0.0.2'), d.env);
+    a.equal(r.code, 0, r.all);
+    a.match(r.out, /^OK 0\.0\.2$/m);
+    a.match(d.envFile(), /^SERVER_VERSION=0\.0\.2@sha256:a{64}$/m);
+    a.match(d.envFile(), /^WEB_VERSION=0\.0\.2@sha256:b{64}$/m);
+    a.match(d.envFile(), /^CURRENT_VERSION=0\.0\.2$/m, 'CURRENT_VERSION stays a plain version (the supervisor compares it)');
+    a.match(d.envFile(), /^SUPERVISOR_VERSION=0\.0\.2@sha256:c{64}$/m, ':latest becomes the release\'s signed supervisor');
+    const calls = d.calls();
+    const at = (re) => idx(calls, re);
+    a.ok(at(/^compose config --images server caddy$/) > -1 && at(/^compose config --images/) < at(/ pg_dump /), calls.join('\n'));
+    a.ok(at(new RegExp('^image inspect .* ' + PIN.server.replace(/[.]/g, '\\.') + '$')) > at(/^compose pull /), calls.join('\n'));
+    a.ok(at(new RegExp('^image inspect .* ' + PIN.web.replace(/[.]/g, '\\.') + '$')) < at(/^compose up /), calls.join('\n'));
+    a.equal(calls.filter((c) => /supervisor/.test(c) && /^compose (pull|up)/.test(c)).length, 0, 'the supervisor is never recreated');
+  } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  // A supervisor version set by hand or by setup.sh (which builds it) is left alone; an earlier pin moves on; unset is pinned.
+  for (const [before, after] of [['SUPERVISOR_VERSION=0.0.1\n', /^SUPERVISOR_VERSION=0\.0\.1$/m],
+    ['SUPERVISOR_VERSION=0.0.1@sha256:' + 'd'.repeat(64) + '\n', /^SUPERVISOR_VERSION=0\.0\.2@sha256:c{64}$/m],
+    ['', /^SUPERVISOR_VERSION=0\.0\.2@sha256:c{64}$/m]]) {
+    const d2 = makeDeploy('SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n' + before);
+    try {
+      const r = runScript('apply.sh', applyArgs('0.0.2'), d2.env);
+      a.equal(r.code, 0, r.all);
+      a.match(d2.envFile(), after, before);
+    } finally { fs.rmSync(d2.dir, { recursive: true, force: true }); }
+  }
+});
+
+t.test('apply.sh refuses refs that are missing, malformed or under another owner, before anything changes', () => {
+  const fs = require('fs');
+  const ENV = 'IMAGE_OWNER=forkco\nSERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nSUPERVISOR_VERSION=latest\nCURRENT_VERSION=0.0.1\n';
+  const cases = [
+    [applyArgs('0.0.2'), /^ERR the signed release 0\.0\.2 pins its server image at ghcr\.io\/mdmesh-app\/mdmesh-server, but this install pulls ghcr\.io\/forkco\/mdmesh-server \(IMAGE_OWNER=forkco in \.env\).* Nothing was changed\.$/m],
+    [['0.0.2'], /^ERR the signed release 0\.0\.2 names no digest for its server image .*Nothing was changed\.$/m],
+    [applyArgs('0.0.2', { server: 'ghcr.io/forkco/mdmesh-server@sha256:' + 'a'.repeat(64), web: 'ghcr.io/forkco/mdmesh-web:0.0.2',
+      supervisor: 'x' }), /^ERR the signed release 0\.0\.2 has no valid digest for its web image/m],
+  ];
+  for (const [args, want] of cases) {
+    const d = makeDeploy(ENV);
+    try {
+      const r = runScript('apply.sh', args, d.env);
+      a.equal(r.code, 1, r.all);
+      a.match(r.err, want);
+      a.match(r.out, /^PHASE failed$/m);
+      a.doesNotMatch(r.out, /PHASE backup/);
+      a.deepEqual(d.calls(), [], 'no docker call at all');
+      a.equal(d.envFile(), ENV, '.env untouched');
+    } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  }
+  // The fork's own pinned images apply.
+  const d = makeDeploy(ENV);
+  try {
+    const own = { server: 'ghcr.io/forkco/mdmesh-server@sha256:' + 'a'.repeat(64), web: 'ghcr.io/forkco/mdmesh-web@sha256:' + 'b'.repeat(64),
+      supervisor: 'ghcr.io/forkco/mdmesh-supervisor@sha256:' + 'c'.repeat(64) };
+    const r = runScript('apply.sh', applyArgs('0.0.2', own), d.env);
+    a.equal(r.code, 0, r.all);
+    a.match(d.envFile(), /^SERVER_VERSION=0\.0\.2@sha256:a{64}$/m);
+  } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+});
+
+t.test('apply.sh: a compose file that does not resolve to the pinned refs is refused before the backup; a pulled image '
+  + 'without the signed digest resets .env only (no container changed)', () => {
+  const fs = require('fs');
+  // The compose check runs before the backup: a mismatch changes nothing at all.
+  for (const [knob, want] of [
+    [{ STUB_CONFIG_IMAGES: 'ghcr.io/mdmesh-app/mdmesh-server:0.0.2\nghcr.io/mdmesh-app/mdmesh-web:0.0.2' },
+      /^ERR this install's compose file does not resolve to the signed image ghcr\.io\/mdmesh-app\/mdmesh-server:0\.0\.2@sha256:a{64}.*Nothing was changed\.$/m],
+    [{ STUB_CONFIG_IMAGES: 'ghcr.io/mdmesh-app/mdmesh-server:0.0.2@sha256:' + 'a'.repeat(64) + '\nghcr.io/mdmesh-app/mdmesh-web:0.0.2' },
+      /^ERR this install's compose file does not resolve to the signed image ghcr\.io\/mdmesh-app\/mdmesh-web:0\.0\.2@sha256:b{64}.*Nothing was changed\.$/m],
+    [{ STUB_FAIL_RE: '^compose config ' }, /^ERR could not read the compose configuration/m]]) {
+    const ENV = 'SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nSUPERVISOR_VERSION=latest\nCURRENT_VERSION=0.0.1\n';
+    const d = makeDeploy(ENV);
+    try {
+      const r = runScript('apply.sh', applyArgs('0.0.2'), { ...d.env, ...knob });
+      a.equal(r.code, 1, r.all);
+      a.match(r.err, want);
+      a.match(r.out, /^PHASE failed$/m);
+      a.doesNotMatch(r.out, /PHASE backup/);
+      a.deepEqual(d.calls(), ['compose config --images server caddy'], 'no dump, no pull');
+      a.equal(require('fs').readdirSync(d.backups).length, 0, 'no backup, /backups/latest untouched');
+      a.equal(d.envFile(), ENV);
+    } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  }
+  const knobs = [
+    [{ STUB_REPO_DIGESTS: 'ghcr.io/mdmesh-app/mdmesh-server@sha256:' + 'e'.repeat(64) },
+      /^ERR the pulled image does not carry the signed digest ghcr\.io\/mdmesh-app\/mdmesh-server@sha256:a{64}, so it is not used$/m],
+    // The server image is right and the web image isn't.
+    [{ STUB_REPO_DIGESTS: PIN.server },
+      /^ERR the pulled image does not carry the signed digest ghcr\.io\/mdmesh-app\/mdmesh-web@sha256:b{64}, so it is not used$/m],
+    // docker image inspect fails: no image with that digest here.
+    [{ STUB_FAIL_RE: '^image inspect ' },
+      /^ERR the pulled image does not carry the signed digest ghcr\.io\/mdmesh-app\/mdmesh-server@sha256:a{64}, so it is not used$/m],
+    [{ STUB_FAIL_RE: '^image inspect .*mdmesh-web@' },
+      /^ERR the pulled image does not carry the signed digest ghcr\.io\/mdmesh-app\/mdmesh-web@sha256:b{64}, so it is not used$/m],
+  ];
+  for (const [knob, want] of knobs) {
+    const d = makeDeploy('SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nSUPERVISOR_VERSION=latest\nCURRENT_VERSION=0.0.1\n');
+    try {
+      const r = runScript('apply.sh', applyArgs('0.0.2'), { ...d.env, ...knob });
+      a.equal(r.code, 1, r.all);
+      a.match(r.err, want);
+      a.match(r.out, /PHASE rolled_back/);
+      const calls = d.calls();
+      a.equal(idx(calls, /^compose up /), -1, calls.join('\n'));
+      a.equal(idx(calls, /^compose stop /), -1, calls.join('\n'));
+      a.match(d.envFile(), /^SERVER_VERSION=0\.0\.1$/m);
+      a.match(d.envFile(), /^WEB_VERSION=0\.0\.1$/m);
+      a.match(d.envFile(), /^SUPERVISOR_VERSION=latest$/m);
+      a.match(d.envFile(), /^CURRENT_VERSION=0\.0\.1$/m);
+    } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  }
+});
+
+t.test('a release without digests, or pinned under another owner, is refused by Update with the reason; nothing runs',
+  { skip: !HAS_MINISIGN && 'minisign not installed', timeout: 40000 }, async () => {
+    const fs = require('fs');
+    for (const [opts, envText, want] of [
+      [{ version: '0.0.2', images: null }, '', /names its images by tag only/],
+      [{ version: '0.0.2' }, 'IMAGE_OWNER=forkco\n', /this install pulls ghcr\.io\/forkco\/mdmesh-server \(IMAGE_OWNER=forkco in \.env\)/],
+    ]) {
+      const d = makeDeploy(envText + 'SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
+      let gh = null, sup = null, authz = null;
+      try {
+        gh = await fakeGitHub(d.dir, opts);
+        authz = await fakeAuthz();
+        sup = await spawnSupervisor(d.dir, { ...d.env, ...gh.env, APPLY_SUPPORTED: '1', SERVER_BASE: authz.base }, /supervisor on/, ['--require', gh.preload]);
+        const status = async () => (await fetch(`http://127.0.0.1:${sup.port}/update/status`)).json();
+        const st = await waitFor(async () => { const x = await status(); return x.checkedAt && x; }, 'the startup poll');
+        a.equal(st.updateAvailable, true, 'the release is still offered: Update says why it will not apply');
+        const r = await fetch(`http://127.0.0.1:${sup.port}/update/apply`, { method: 'POST', headers: ADMIN });
+        a.equal(r.status, 400);
+        a.match((await r.json()).error, want);
+        a.deepEqual(d.calls(), [], 'apply.sh never ran');
+      } finally {
+        await stopChild(sup && sup.child); if (gh) await gh.close(); if (authz) await authz.close();
+        fs.rmSync(d.dir, { recursive: true, force: true });
+      }
+    }
   });
 
 t.test('restore_db: the lock bound is a fixed 60s; no environment value reaches the SQL (not even with a newline)', () => {
@@ -1264,7 +1460,7 @@ t.test('backups are private (umask 077): the dump (password hashes), the .env sn
   try {
     fs.chmodSync(path.join(d.project, '.env'), 0o644);
     // umask 022 in the caller (like the supervisor process): the scripts must tighten it themselves.
-    const r = cp.spawnSync('bash', ['-c', 'umask 022; exec bash "$0" 0.0.2', path.join(__dirname, 'apply.sh')],
+    const r = cp.spawnSync('bash', ['-c', 'umask 022; exec bash "$0" "$@"', path.join(__dirname, 'apply.sh'), ...applyArgs('0.0.2')],
       { env: { ...d.env, STUB_CURL_FAIL: '1', HEALTH_TIMEOUT: '0' }, encoding: 'utf8' });
     a.equal(r.status, 1, r.stdout + r.stderr); // health fails → rollback with a restore → restore.log written too
     const stamp = fs.readFileSync(path.join(d.backups, 'latest'), 'utf8').trim();

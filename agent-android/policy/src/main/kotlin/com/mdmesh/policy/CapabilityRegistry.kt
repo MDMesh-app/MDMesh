@@ -7,6 +7,8 @@ import com.mdmesh.policy.camera.CameraPolicy
 import com.mdmesh.policy.camera.CameraPolicyFactory
 import com.mdmesh.policy.factoryreset.FactoryResetPolicy
 import com.mdmesh.policy.factoryreset.FactoryResetPolicyFactory
+import com.mdmesh.policy.location.LocationServicesPolicy
+import com.mdmesh.policy.location.LocationServicesPolicyFactory
 import com.mdmesh.policy.safeboot.SafeBootPolicy
 import com.mdmesh.policy.safeboot.SafeBootPolicyFactory
 import com.mdmesh.policy.screenshots.ScreenshotsPolicy
@@ -62,6 +64,7 @@ class CapabilityRegistry(
         linkedMapOf<String, () -> TogglePolicy?>(
             WifiPolicy.CAPABILITY_KEY to { WifiPolicyFactory.create(handle) },
             CameraPolicy.CAPABILITY_KEY to { CameraPolicyFactory.create(handle) },
+            LocationServicesPolicy.CAPABILITY_KEY to { LocationServicesPolicyFactory.create(handle) },
             ScreenshotsPolicy.CAPABILITY_KEY to { ScreenshotsPolicyFactory.create(handle) },
             BluetoothPolicy.CAPABILITY_KEY to { BluetoothPolicyFactory.create(handle) },
             UsbStoragePolicy.CAPABILITY_KEY to { UsbStoragePolicyFactory.create(handle) },
@@ -86,7 +89,7 @@ class CapabilityRegistry(
     fun togglePolicies(): ResolvedToggles = toggles.current()
 
     /**
-     * `systemUpdatePolicy` (1.6). Not a toggle: only the config.apply `systemUpdate` section sets it, so it is not in
+     * `systemUpdatePolicy` (1.7). Not a toggle: only the config.apply `systemUpdate` section sets it, so it is not in
      * [toggles]. Its support is checked on every call, as theirs is.
      */
     val systemUpdate: SystemUpdateControl = SystemUpdateControl(DpmSystemUpdatePlatform(handle)) {

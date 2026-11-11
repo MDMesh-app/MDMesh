@@ -7,7 +7,7 @@
   "required": ["protocolVersion", "enrollToken", "agent", "device", "capabilities"],
   "properties": {
     "protocolVersion": { "type": "string", "pattern": "^\\d+\\.\\d+$" },
-    "enrollToken": { "type": "string", "description": "Single-use server-issued token from the QR provisioning bundle." },
+    "enrollToken": { "type": "string", "description": "Server-issued enrollment token from the QR provisioning bundle. It enrolls up to the number of devices it was minted for (one by default) until it expires or an admin stops it; the server answers error.agent.token.used once it enrolls no more." },
     "agent": { "$ref": "capability-matrix.schema.json#/properties/agent" },
     "device": {
       "type": "object",

@@ -26,7 +26,7 @@
     <insert id="insertConfiguration" parameterType="Configuration" useGeneratedKeys="true" keyColumn="id" keyProperty="id">
         INSERT INTO configurations (name, description, type, password, backgroundColor, textColor, backgroundImageUrl,
                                     iconSize, desktopHeader, desktopHeaderTemplate, displayStatus, useDefaultDesignSettings, customerId,
-                                    gps, bluetooth, wifi, mobileData, usbStorage, requestUpdates, disableLocation, appPermissions,
+                                    gps, bluetooth, camera, wifi, mobileData, usbStorage, requestUpdates, disableLocation, appPermissions,
                                     pushOptions, keepaliveTime, autoBrightness, brightness, manageTimeout, timeout,
                                     lockVolume, manageVolume, volume, passwordMode, orientation,
                                     runDefaultLauncher, disableScreenshots, autostartForeground, timeZone, allowedClasses, newServerUrl,
@@ -34,11 +34,11 @@
                                     contentAppId, wifiSSID, wifiPassword, wifiSecurityType, encryptDevice, qrParameters, adminExtras, mobileEnrollment, kioskHome, kioskRecents,
                                     kioskNotifications, kioskSystemInfo, kioskKeyguard, kioskLockButtons, kioskScreenOn, launcherUrl, restrictions, autoUpdate,
                                     blockStatusBar, systemUpdateType, systemUpdateFrom, systemUpdateTo,
-                                    scheduleAppUpdate, appUpdateFrom, appUpdateTo, downloadUpdates, defaultFilePath, disableFactoryReset, disableSafeBoot, wifiRadio, kioskLockVolume, connectivityMode,
+                                    scheduleAppUpdate, appUpdateFrom, appUpdateTo, downloadUpdates, defaultFilePath, disableFactoryReset, disableSafeBoot, wifiRadio, locationServices, kioskLockVolume, connectivityMode,
                                     extensions)
         VALUES (#{name}, #{description}, #{type}, #{password}, #{backgroundColor}, #{textColor}, #{backgroundImageUrl},
                 #{iconSize}, #{desktopHeader}, #{desktopHeaderTemplate}, #{displayStatus}, #{useDefaultDesignSettings}, #{customerId},
-                #{gps}, #{bluetooth}, #{wifi}, #{mobileData}, #{usbStorage}, #{requestUpdates}, #{disableLocation}, #{appPermissions},
+                #{gps}, #{bluetooth}, #{camera}, #{wifi}, #{mobileData}, #{usbStorage}, #{requestUpdates}, #{disableLocation}, #{appPermissions},
                 #{pushOptions}, #{keepaliveTime}, #{autoBrightness}, #{brightness}, #{manageTimeout}, #{timeout},
                 #{lockVolume}, #{manageVolume}, #{volume}, #{passwordMode}, #{orientation},
                 #{runDefaultLauncher}, #{disableScreenshots}, #{autostartForeground}, #{timeZone}, #{allowedClasses}, #{newServerUrl},
@@ -46,7 +46,7 @@
                 #{contentAppId}, #{wifiSSID}, #{wifiPassword}, #{wifiSecurityType}, #{encryptDevice}, #{qrParameters}, #{adminExtras}, #{mobileEnrollment}, #{kioskHome}, #{kioskRecents},
                 #{kioskNotifications}, #{kioskSystemInfo}, #{kioskKeyguard}, #{kioskLockButtons}, #{kioskScreenOn}, #{launcherUrl}, #{restrictions}, #{autoUpdate},
                 #{blockStatusBar}, #{systemUpdateType}, #{systemUpdateFrom}, #{systemUpdateTo},
-                #{scheduleAppUpdate}, #{appUpdateFrom}, #{appUpdateTo}, #{downloadUpdates}, #{defaultFilePath}, #{disableFactoryReset}, #{disableSafeBoot}, #{wifiRadio}, #{kioskLockVolume}, #{connectivityMode},
+                #{scheduleAppUpdate}, #{appUpdateFrom}, #{appUpdateTo}, #{downloadUpdates}, #{defaultFilePath}, #{disableFactoryReset}, #{disableSafeBoot}, #{wifiRadio}, #{locationServices}, #{kioskLockVolume}, #{connectivityMode},
                 COALESCE(CAST(#{extensions} AS jsonb), '{}'::jsonb))
     </insert>
 

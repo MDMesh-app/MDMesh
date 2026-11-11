@@ -39,6 +39,7 @@ class UserRestrictionsTest {
         assertEquals("no_physical_media", UserRestrictions.DISALLOW_MOUNT_PHYSICAL_MEDIA)
         assertEquals("no_factory_reset", UserRestrictions.DISALLOW_FACTORY_RESET)
         assertEquals("no_safe_boot", UserRestrictions.DISALLOW_SAFE_BOOT)
+        assertEquals("no_config_location", UserRestrictions.DISALLOW_CONFIG_LOCATION)
     }
 
     @Test

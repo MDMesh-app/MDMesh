@@ -236,7 +236,7 @@ public class DeviceLimitPathsTest {
         return () -> {
             try {
                 return enrollments.enroll(tokenId, customerId, otherConfigurationId, UUID.randomUUID().toString(),
-                        "{}", null, null).kind.name();
+                        "{}", null, null, false).kind.name();
             } catch (AgentEnrollmentDAO.DeviceLimitException e) {
                 return "LIMIT";
             }

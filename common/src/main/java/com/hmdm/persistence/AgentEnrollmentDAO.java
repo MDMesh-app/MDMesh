@@ -16,7 +16,6 @@ import org.mybatis.guice.transactional.Transactional;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
-import javax.inject.Named;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.util.UUID;
@@ -85,7 +84,9 @@ public class AgentEnrollmentDAO {
             /** This attempt's earlier enrollment, with the same secret: {@link #deviceNumber}. */
             RESUMED,
             /** The token has no use left (used up, stopped or expired), or is gone. */
-            NO_USE
+            NO_USE,
+            /** A resume-only request (the agent's recovery) found no enrollment of this attempt to resume. */
+            NOT_RESUMABLE
         }
 
         public final Kind kind;
@@ -112,6 +113,10 @@ public class AgentEnrollmentDAO {
         static Outcome noUse() {
             return new Outcome(Kind.NO_USE, null, null, null);
         }
+
+        static Outcome notResumable() {
+            return new Outcome(Kind.NOT_RESUMABLE, null, null, null);
+        }
     }
 
     /** How long an enrollment waits for its code's (and customer's) lock before failing retryably. */
@@ -125,16 +130,16 @@ public class AgentEnrollmentDAO {
     private final AgentEnrollmentTokenMapper tokenMapper;
     private final AgentDeviceMapper deviceMapper;
     private final DeviceFactory deviceFactory;
-    /** The install's hash.secret (context.xml / ROOT.xml), the key enrollment credentials are derived with. */
-    private final String hashSecret;
+    /** The server-only key enrollment secrets are derived with (random, in the database; never a setting). */
+    private final AgentEnrollmentKey enrollmentKey;
 
     @Inject
     public AgentEnrollmentDAO(AgentEnrollmentTokenMapper tokenMapper, AgentDeviceMapper deviceMapper,
-                              DeviceFactory deviceFactory, @Named("hash.secret") String hashSecret) {
+                              DeviceFactory deviceFactory, AgentEnrollmentKey enrollmentKey) {
         this.tokenMapper = tokenMapper;
         this.deviceMapper = deviceMapper;
         this.deviceFactory = deviceFactory;
-        this.hashSecret = hashSecret == null ? "" : hashSecret;
+        this.enrollmentKey = enrollmentKey;
     }
 
     /** An enroll attempt id: random, URL-safe, long enough not to be guessed; anything else is ignored. */
@@ -174,20 +179,21 @@ public class AgentEnrollmentDAO {
     }
 
     /**
-     * The secret of a device enrolled with an attempt id: HMAC-SHA256 over the device number and the raw attempt id,
-     * keyed with the install's hash.secret, as 64 lowercase hex characters. Deterministic, so every request for one
-     * attempt (a retry, or the original arriving late) gets the same, working credential; and it needs both the key and
-     * the attempt id, which only the agent and the request that carries it hold (the database keeps neither the
-     * attempt id nor the secret, only hashes). Installs keep hash.secret across upgrades; if it changes during an
-     * enrollment's retry window, the resume stores the newly derived secret (see {@link #resume}).
+     * The secret of a device enrolled with an attempt id: HMAC-SHA256 keyed with the server-only
+     * {@link AgentEnrollmentKey}, over a version label, the device number and the raw attempt id, as 64 lowercase hex
+     * characters. Deterministic, so every request for one attempt (a retry, or the original arriving late, on any
+     * server instance, before or after a restart) gets the same, working credential. It needs both the key (random,
+     * only in the database) and the attempt id (only on the agent and in the request that carries it); the database
+     * keeps neither the attempt id nor the secret, only hashes. If the key is rotated during an enrollment's retry
+     * window, the resume stores the newly derived secret (see {@link #resume}).
      */
     String deriveSecret(String deviceNumber, String attempt) {
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
-            // The label keeps the key non-empty (an empty hash.secret is not a valid HMAC key) and separates this use.
-            mac.init(new SecretKeySpec(("mdmesh-enroll-secret-v1:" + hashSecret).getBytes(StandardCharsets.UTF_8),
-                    "HmacSHA256"));
-            byte[] digest = mac.doFinal((deviceNumber + "\n" + attempt).getBytes(StandardCharsets.UTF_8));
+            mac.init(new SecretKeySpec(enrollmentKey.bytes(), "HmacSHA256"));
+            // Domain separation: the label names this use and its version; "\n" can't occur in either value.
+            byte[] digest = mac.doFinal(("mdmesh-enroll-secret-v1\n" + deviceNumber + "\n" + attempt)
+                    .getBytes(StandardCharsets.UTF_8));
             StringBuilder hex = new StringBuilder(digest.length * 2);
             for (byte b : digest) {
                 hex.append(String.format("%02x", b & 0xff));
@@ -204,20 +210,24 @@ public class AgentEnrollmentDAO {
     }
 
     /**
-     * Enrolls a device with token {@code tokenId}, or resumes the enrollment {@code attemptHash} already made.
+     * Enrolls a device with token {@code tokenId}, or resumes the enrollment {@code attempt} already made. The
+     * outcome carries the device's secret (derived from the attempt when there is one, else random).
      *
-     * @param customerId      the token's customer (fixed when it was made)
-     * @param configurationId the token's configuration, or null (the customer's setting for new devices)
-     * @param deviceNumber the number for a new device
-     * @param secretHash   SHA-256 of the secret the caller returns: the new device's, or the resumed one's new secret
-     * @param attemptHash  the enroll attempt's hash, or null (an agent that sends none)
+     * @param customerId       the token's customer (fixed when it was made)
+     * @param configurationId  the token's configuration, or null (the customer's setting for new devices)
+     * @param deviceNumber     the number for a new device
+     * @param capabilitiesJson the agent's capability matrix, stored on the device
+     * @param hardwareId       the agent's stable hardware id, or null
+     * @param attempt          the agent's raw enroll attempt id, or null (an agent that sends none, or an unusable one)
+     * @param resumeOnly       the agent's credential recovery: resume this attempt's device or answer NOT_RESUMABLE,
+     *                         never create one or take a use
      * @throws CreationRefusedException settings refused the device (rolled back, the use not spent)
      * @throws DeviceLimitException     the customer has reached its device limit (rolled back, the use not spent)
      * @throws RuntimeException         a database failure, including the token lock not obtained in time (rolled back)
      */
     @Transactional
     public Outcome enroll(int tokenId, int customerId, Integer configurationId, String deviceNumber,
-                          String capabilitiesJson, String hardwareId, String attempt) {
+                          String capabilitiesJson, String hardwareId, String attempt, boolean resumeOnly) {
         long now = System.currentTimeMillis();
         String attemptHash = attemptHash(tokenId, attempt);
         // Enrolls of one token run one after another; a request that waits longer than this fails retryably.
@@ -237,6 +247,11 @@ public class AgentEnrollmentDAO {
                     return resumed;
                 }
             }
+        }
+        if (resumeOnly) {
+            // The agent's recovery: it may only get back the device its attempt made, never a new one (that device
+            // was deleted, checked in, or is past the window, or the request carries no usable attempt).
+            return Outcome.notResumable();
         }
         // The claim first: a used-up, stopped or expired code gets its final answer, never the device limit's
         // retryable one. A refusal below rolls the claim back, so no use is spent.

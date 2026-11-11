@@ -21,7 +21,7 @@ run: only `GITHUB_REPO` and `GITHUB_TOKEN` survive a hand edit there (a hand-edi
 | `BASE_URL` | `.env`; native: env or prompt → `ROOT.xml` | none | Public address of the server ([rules](#base-url-and-hostname-rules)). Open the console there to make enrollment QR codes: a code carries the address the console is open at, and Enroll warns when that isn't `BASE_URL`. |
 | `HTTP_PORT` | native env | current port; fresh install `8080` | Tomcat's HTTP port. |
 | `REPLACE_DATA` | native env | asks; `-y`: keep | `yes` erases existing data on a re-run. |
-| `DB_PASSWORD`, `HASH_SECRET` | `.env`; native: `ROOT.xml` | generated | Don't change them: the database keeps its original password, and a new `HASH_SECRET` invalidates every enrolled device's token. |
+| `DB_PASSWORD`, `HASH_SECRET` | `.env`; native: `ROOT.xml` | generated | Don't change them: the database keeps its original password, and a new `HASH_SECRET` breaks devices running the legacy Headwind launcher (MDMesh agents don't use it). |
 | `SERVER_JWT_SECRET` | `.env`; native: `ROOT.xml` `jwt.secretkey` | generated | API token signing key ([details](#api-signing-key-jwt)). |
 | `SERVER_JAVA_OPTS` | `.env` (native: `JAVA_OPTS` in a `systemctl edit mdmesh-server` drop-in) | empty | Extra JVM flags, e.g. `-Xmx1g`. |
 | `LEGACY_DEVICE_API` | `.env`; native env → `ROOT.xml` | `0` | `1` re-enables the Headwind launcher's device routes. |
@@ -343,6 +343,16 @@ meanwhile. A burst on one code (a batch of devices switched on together) runs on
 per code the server answers the rest "try again" at once, and the agents retry with backoff. That limit is per server
 instance: with several behind a load balancer each allows 8 per code. Nothing is kept from an enrollment that had to
 retry.
+
+### Enrollment key
+
+An agent that enrolls with an attempt id (MDMesh agent 0.5.0 and later) gets a device secret derived from that attempt
+with a key only the server has: 32 random bytes the server makes the first time a device enrolls, kept in the
+database (table `agentEnrollmentKey`, one row) and in its backups. It is in no setting, file, log or API answer.
+Deriving it this way gives every retry of one enrollment the same secret, so a late duplicate of a request can't lock
+a device out. To rotate it, delete the row and restart the server: devices already enrolled keep working; one still
+inside its 24 h retry window gets a secret derived with the new key on its next retry (or recovers it, on a refused
+check-in).
 
 ## Backups and restore
 

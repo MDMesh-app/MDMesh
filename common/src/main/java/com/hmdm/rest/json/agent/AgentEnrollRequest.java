@@ -48,6 +48,13 @@ public class AgentEnrollRequest {
      */
     private String enrollAttempt;
 
+    /**
+     * Optional (agents from 0.5): true on the agent's credential recovery. The server then only resumes the device
+     * {@link #enrollAttempt} already created and has not checked in yet; otherwise it answers
+     * {@code error.agent.enrollment.notResumable} and takes no use of the code.
+     */
+    private Boolean resumeOnly;
+
     private AgentInfo agent;
 
     private AgentDeviceInfo device;

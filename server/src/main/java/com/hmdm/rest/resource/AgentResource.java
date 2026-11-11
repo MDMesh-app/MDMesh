@@ -119,6 +119,11 @@ public class AgentResource {
      */
     static final String DEVICE_LIMIT = "error.agent.enrollment.deviceLimit";
     /**
+     * A resume-only request (the agent's credential recovery) found no device of its attempt to resume: deleted,
+     * checked in, or past the retry window. Final for the recovery; nothing was created and no use taken.
+     */
+    static final String NOT_RESUMABLE = "error.agent.enrollment.notResumable";
+    /**
      * Enrollments of one code allowed at once (waiting on its lock), per server instance (the count lives in this JVM);
      * more get ENROLLMENT_IN_PROGRESS at once. It bounds one code's burst, not the pool: see PerKeyLimit.
      */
@@ -212,7 +217,7 @@ public class AgentResource {
             // The device's secret is the DAO's: returned once, below, and only its hash is stored.
             outcome = enrollments.enroll(token.getId(), token.getCustomerId(), token.getConfigurationId(),
                     UUID.randomUUID().toString(), capabilitiesJson(request.getCapabilities()), hardwareId,
-                    request.getEnrollAttempt());
+                    request.getEnrollAttempt(), Boolean.TRUE.equals(request.getResumeOnly()));
         } catch (AgentEnrollmentDAO.CreationRefusedException e) {
             // Named error (not a generic internal one) — this exact failure cost a debugging
             // session: valid token, reachable server, no device row.
@@ -239,6 +244,10 @@ public class AgentResource {
         }
 
         switch (outcome.kind) {
+            case NOT_RESUMABLE:
+                // The agent's recovery found nothing of its own to resume: final for the recovery, no use taken.
+                logger.info("Agent enroll refused: nothing to resume for this attempt (token {})", token.getId());
+                return Response.ERROR(NOT_RESUMABLE);
             case NO_USE:
                 if (token.getExpiresAt() != null && token.getExpiresAt() <= System.currentTimeMillis()
                         && !token.isUsed()) {
@@ -253,8 +262,8 @@ public class AgentResource {
                 logger.info("Agent enroll retried: device {} (token {}) gets its credentials again",
                         outcome.deviceNumber, token.getId());
                 Device device = unsecureDAO.getDeviceByNumber(outcome.deviceNumber);
-                return Response.OK(new AgentEnrollResponse(outcome.deviceNumber,
-                        device == null ? null : configurationName(device), outcome.secret));
+                return Response.OK(resumable(new AgentEnrollResponse(outcome.deviceNumber,
+                        device == null ? null : configurationName(device), outcome.secret)));
             }
             case CREATED:
             default: {
@@ -272,10 +281,16 @@ public class AgentResource {
                 // leaked (the mint and revoke-all are in the audit log).
                 logger.info("Agent enrolled device {} with token {} (configuration {}, {} config apps queued)",
                         device.getNumber(), token.getId(), device.getConfigurationId(), queuedApps);
-                return Response.OK(new AgentEnrollResponse(device.getNumber(), configurationName(device),
-                        outcome.secret));
+                return Response.OK(resumable(new AgentEnrollResponse(device.getNumber(), configurationName(device),
+                        outcome.secret)));
             }
         }
+    }
+
+    /** Tells the agent this server resumes enrollments (resumeOnly, protocol 1.9), so it may recover credentials. */
+    private static AgentEnrollResponse resumable(AgentEnrollResponse response) {
+        response.setResumeSupported(Boolean.TRUE);
+        return response;
     }
 
     /** A PostgreSQL lock_timeout (SQL state 55P03) anywhere in the cause chain. */

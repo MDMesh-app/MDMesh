@@ -3182,4 +3182,18 @@
         <rollback>DROP INDEX IF EXISTS devices_customerId_enrollTime_idx;</rollback>
     </changeSet>
 
+    <changeSet id="26.11.11-agentEnrollmentKey" author="lunacy" context="common">
+        <comment>Table,new: agentEnrollmentKey, one row: the server-only key agent enrollment secrets are derived with
+            (32 random bytes as hex). The server makes it on first use; nothing to set. Deleting the row (then restarting)
+            rotates it, which only affects enrollments still inside their 24 h retry window.</comment>
+        <sql>
+            CREATE TABLE agentEnrollmentKey (
+                id INT PRIMARY KEY CHECK (id = 1),
+                keyHex VARCHAR(64) NOT NULL,
+                createdAt BIGINT NOT NULL
+            );
+        </sql>
+        <rollback>DROP TABLE agentEnrollmentKey;</rollback>
+    </changeSet>
+
 </databaseChangeLog>

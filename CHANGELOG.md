@@ -12,8 +12,8 @@ Upgrading
 - The database adds columns on start: `devices.wipedAt`; `configurations.camera`, `configurations.locationServices`,
   `configurations.backgroundImageFileId` and `configurations.backgroundImageSha256`; `device_state.kioskGeneration` and
   `device_state.kioskReturnGeneration`; `applicationVersions.requestedPermissions`; the `configurationAppPermissions`
-  table; and `devices.agentEnrollAttemptHash`, with an index on it and one on each customer's devices by enrollment
-  time. Devices wiped before the update aren't marked.
+  table; `devices.agentEnrollAttemptHash`, with an index on it and one on each customer's devices by enrollment
+  time; and the `agentEnrollmentKey` table, whose one row the server fills with a random key on first use. Devices wiped before the update aren't marked.
 - The database adds three columns to enrollment tokens on start (`maxUses`, `useCount`, `revokedAt`) and stores
   the tokens hashed. Existing codes stay single-use and keep working; on PostgreSQL older than 11 they stop
   instead, so make a new code on the Enroll page. After a downgrade, codes made on this version don't work.
@@ -80,7 +80,9 @@ Fixes
 - Enroll: when the network drops just as a device enrolls, or the agent gives up waiting and tries again while the
   server is still enrolling it, it no longer stays on "Enrolling…" with a code that reads as already used, or takes a
   second device's place on a batch code. Its retry gets the device it already created, with the same credential, so a
-  late duplicate of the request can't lock it out; a stopped code resumes nothing. Needs agent 0.5.0 and this server;
+  late duplicate of the request can't lock it out; a stopped code resumes nothing. If the server refuses a new
+  device's credentials before its first check-in, the agent gets them back by resuming its enrollment (never by
+  making another device). Needs agent 0.5.0 and this server;
   older agents enroll as before.
 - Enroll: each enrollment is now one database transaction. A server error, restart or lost database connection part-way
   through no longer leaves a device in the list that can never check in, or uses up the enrollment code: nothing is
@@ -99,7 +101,8 @@ Fixes
 
 Under the hood
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
-- Agent protocol 1.9 (additive): the enroll request's optional `enrollAttempt`, and the retryable enroll errors
+- Agent protocol 1.9 (additive): the enroll request's optional `enrollAttempt` and `resumeOnly`, the enroll response's
+  `resumeSupported`, `error.agent.enrollment.notResumable`, and the retryable enroll errors
   `error.agent.enrollment.failed`, `error.agent.enrollment.inProgress` and `error.agent.enrollment.deviceLimit`. New
   console API: `GET /private/agent/v1/devices/enrolled`.
 

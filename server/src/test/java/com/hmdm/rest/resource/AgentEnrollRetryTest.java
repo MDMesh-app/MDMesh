@@ -131,4 +131,22 @@ public class AgentEnrollRetryTest {
         String checkIn = Fakes.sqlOf(AgentDeviceMapper.class, "markCheckedIn").replaceAll("\\s+", " ").toLowerCase();
         assertTrue(checkIn, checkIn.contains("agentenrollattempthash = null"));
     }
+
+    @Test
+    public void the_server_says_it_resumes_enrollments() {
+        assertEquals(Boolean.TRUE, data(f.enroll(ATTEMPT)).getResumeSupported());
+        assertEquals(Boolean.TRUE, data(f.resume(ATTEMPT)).getResumeSupported());
+    }
+
+    @Test
+    public void a_resume_only_request_with_nothing_to_resume_creates_nothing_and_says_so() {
+        Response r = f.resume(ATTEMPT);
+
+        assertEquals("error.agent.enrollment.notResumable", r.getMessage());
+        assertTrue(f.created.isEmpty());
+        assertEquals("no use taken", 0, f.token.getUseCount());
+        for (String terminal : new String[]{"token.used", "token.invalid", "token.expired", "enrollment.disabled"}) {
+            assertTrue(!r.getMessage().contains(terminal));
+        }
+    }
 }

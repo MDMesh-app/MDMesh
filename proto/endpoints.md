@@ -49,13 +49,20 @@ The server mints a per-device secret, stores only its SHA-256 hash, and returns 
 before its first enroll request, sends again on every retry of that enrollment, and deletes once its first check-in
 succeeds. When a response is lost, the retry returns the device the first request created instead of
 `error.agent.token.used` or a second device from a batch code, with the same secret: a device enrolled with an attempt
-gets a secret derived from it (HMAC-SHA256 keyed with the install's `hash.secret`, over the device number and the
-attempt id), so every answer for one attempt carries the same credential, and a late duplicate of the request can't
-replace a secret the agent already saved. This works until that device's first check-in and for 24 hours, and not for
-a stopped token (checked under the token's lock, so a stop that commits while a retry waits is seen). The server keeps
-only SHA-256(token id ":" attempt) and SHA-256(secret). If the server refuses the saved secret
-(`error.agent.unauthorized`) before the first check-in succeeds, the agent enrolls again with the same attempt (at
-most 3 times per run) and saves what it gets. Older servers ignore the field.
+gets a secret derived from it (HMAC-SHA256 keyed with a server-only key, over a version label, the device number and
+the attempt id), so every answer for one attempt carries the same credential, and a late duplicate of the request
+can't replace a secret the agent already saved. The key is 32 random bytes the server makes on first use and keeps in
+its database (table `agentEnrollmentKey`); it is in no setting. This works until that device's first check-in and for
+24 hours, and not for a stopped token (checked under the token's lock, so a stop that commits while a retry waits is
+seen). The server keeps only SHA-256(token id ":" attempt) and SHA-256(secret). Older servers ignore the field.
+
+`resumeOnly` (optional, protocol 1.9): `true` on the agent's credential recovery. The server then only resumes the
+device the attempt already made (not checked in yet, within the window); otherwise it answers
+`error.agent.enrollment.notResumable` and creates nothing, taking no use of the code. The enroll response carries
+`resumeSupported: true` from servers that do this; the agent recovers only against those. Recovery: if the server
+refuses the saved secret (`error.agent.unauthorized`) before the first check-in succeeds, the agent sends a
+resume-only enroll with the same token and attempt, once per refused check-in and at most 3 times per run, and saves
+what it gets. On `notResumable` (or any refusal) it stops recovering and the device has to be enrolled again.
 
 Each enrollment is one database transaction that first locks its token's row, so enrollments with one token run one
 after another: a retry sent while its first request still runs waits for it, then resumes it. The token is claimed
@@ -73,6 +80,7 @@ trying:
   enrollment with it, typically the request this one retries; the customer's, held while another device is added;
   or a row a console transaction held), or 8 enrollments with that token are already running on that server instance;
   nothing was kept, and the next retry resumes it or goes through;
+- `...enrollment.notResumable` is final for a resume-only request (nothing of that attempt to resume);
 - `...enrollment.deviceLimit`: on an install with several customers, the token's customer has as many devices as its
   limit allows (as in the console: none for a master customer, 0 = no limit, a negative limit blocks); the device
   enrolls once there is room.

@@ -5,6 +5,7 @@ package com.hmdm.rest.resource;
 
 import com.hmdm.persistence.AgentCommandDAO;
 import com.hmdm.persistence.AgentEnrollmentDAO;
+import com.hmdm.persistence.AgentEnrollmentKey;
 import com.hmdm.persistence.AgentEnrollmentTokenDAO;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentEnrollmentToken;
@@ -84,8 +85,10 @@ final class EnrollFixture {
                     if (a[4] != null) retryable.put((String) a[4], n);
                     return 1;
                 });
-        AgentEnrollmentDAO enrollments = new AgentEnrollmentDAO(tokens.mapper, devices.mapper, this::createDevice,
-                "test-hash-secret");
+        AgentEnrollmentKey key = new AgentEnrollmentKey(null) {
+            @Override public byte[] bytes() { return "0123456789abcdef0123456789abcdef".getBytes(); }
+        };
+        AgentEnrollmentDAO enrollments = new AgentEnrollmentDAO(tokens.mapper, devices.mapper, this::createDevice, key);
 
         AgentEnrollmentTokenDAO tokenDAO = new AgentEnrollmentTokenDAO(null) {
             @Override public AgentEnrollmentToken findByToken(String t) { return TOKEN.equals(t) ? token : null; }
@@ -133,6 +136,15 @@ final class EnrollFixture {
     /** What an authenticated check-in does to the retry window (AgentDeviceMapper.markCheckedIn). */
     void checkIn(String number) {
         retryable.values().removeIf(number::equals);
+    }
+
+    /** The agent's credential recovery: resume only. */
+    Response resume(String attempt) {
+        AgentEnrollRequest req = new AgentEnrollRequest();
+        req.setEnrollToken(TOKEN);
+        req.setEnrollAttempt(attempt);
+        req.setResumeOnly(true);
+        return resource.enroll(req);
     }
 
     Response enroll(String attempt) {

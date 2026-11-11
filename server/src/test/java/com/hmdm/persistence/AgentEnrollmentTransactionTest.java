@@ -9,6 +9,7 @@ import com.google.inject.Injector;
 import com.google.inject.name.Names;
 import com.hmdm.persistence.domain.Device;
 import com.hmdm.persistence.mapper.AgentDeviceMapper;
+import com.hmdm.persistence.mapper.AgentEnrollmentKeyMapper;
 import com.hmdm.persistence.mapper.AgentEnrollmentTokenMapper;
 import com.hmdm.util.CryptoUtil;
 import org.apache.ibatis.annotations.Insert;
@@ -149,6 +150,7 @@ public class AgentEnrollmentTransactionTest {
 
     private String schema;
     private AgentEnrollmentDAO enrollments;
+    private Properties props;
     private AgentDeviceMapper deviceMapper;
     private ConsoleAdd consoleAdd;
     private ExecutorService pool;
@@ -176,6 +178,8 @@ public class AgentEnrollmentTransactionTest {
                         + "lastUpdate BIGINT, enrollTime BIGINT, description TEXT, "
                         + "agentSecretHash VARCHAR(64), agentCapabilities TEXT, hardwareid VARCHAR(100), "
                         + "agentEnrollAttemptHash VARCHAR(64))",
+                "CREATE TABLE " + schema + ".agentEnrollmentKey (id INT PRIMARY KEY CHECK (id = 1), "
+                        + "keyHex VARCHAR(64) NOT NULL, createdAt BIGINT NOT NULL)",
                 "CREATE TABLE " + schema + ".users (id INT PRIMARY KEY, customerId INT, "
                         + "allDevicesAvailable BOOLEAN NOT NULL DEFAULT true)",
                 "CREATE TABLE " + schema + ".deviceGroups (id serial PRIMARY KEY, deviceId INT NOT NULL, groupId INT)",
@@ -187,7 +191,17 @@ public class AgentEnrollmentTransactionTest {
         props.setProperty("JDBC.username", USER == null ? "postgres" : USER);
         props.setProperty("JDBC.password", PASSWORD == null ? "" : PASSWORD);
         props.setProperty("mybatis.pooled.maximumActiveConnections", "10");
-        Injector injector = Guice.createInjector(new MyBatisModule() {
+        this.props = props;
+        Injector injector = buildInjector(props, "test-hash-secret", "test-jwt-secret-key-at-least-32-chars");
+        enrollments = injector.getInstance(AgentEnrollmentDAO.class);
+        deviceMapper = injector.getInstance(AgentDeviceMapper.class);
+        consoleAdd = injector.getInstance(ConsoleAdd.class);
+        pool = Executors.newFixedThreadPool(8);
+    }
+
+    /** The test's injector; hash.secret and jwt.secretkey are bound only to show the enrollment key ignores them. */
+    private static Injector buildInjector(Properties props, String hashSecret, String jwtKey) {
+        return Guice.createInjector(new MyBatisModule() {
             @Override
             protected void initialize() {
                 environmentId("test");
@@ -196,16 +210,14 @@ public class AgentEnrollmentTransactionTest {
                 bindTransactionFactoryType(JdbcTransactionFactory.class);
                 addMapperClass(AgentEnrollmentTokenMapper.class);
                 addMapperClass(AgentDeviceMapper.class);
+                addMapperClass(AgentEnrollmentKeyMapper.class);
                 addMapperClass(TestDeviceMapper.class);
                 bind(ConsoleAdd.class);
                 bind(AgentEnrollmentDAO.DeviceFactory.class).to(TestDeviceFactory.class);
-                bindConstant().annotatedWith(Names.named("hash.secret")).to("test-hash-secret");
+                bindConstant().annotatedWith(Names.named("hash.secret")).to(hashSecret);
+                bindConstant().annotatedWith(Names.named("jwt.secretkey")).to(jwtKey);
             }
         });
-        enrollments = injector.getInstance(AgentEnrollmentDAO.class);
-        deviceMapper = injector.getInstance(AgentDeviceMapper.class);
-        consoleAdd = injector.getInstance(ConsoleAdd.class);
-        pool = Executors.newFixedThreadPool(8);
     }
 
     @After
@@ -280,7 +292,11 @@ public class AgentEnrollmentTransactionTest {
     }
 
     private AgentEnrollmentDAO.Outcome enroll(int tokenId, int customerId, String attempt) {
-        return enrollments.enroll(tokenId, customerId, null, UUID.randomUUID().toString(), "{}", "hw", attempt);
+        return enrollments.enroll(tokenId, customerId, null, UUID.randomUUID().toString(), "{}", "hw", attempt, false);
+    }
+
+    private AgentEnrollmentDAO.Outcome resumeOnly(AgentEnrollmentDAO dao, int tokenId, String attempt) {
+        return dao.enroll(tokenId, 1, null, UUID.randomUUID().toString(), "{}", "hw", attempt, true);
     }
 
     private String storedSecretHash(String deviceNumber) throws Exception {
@@ -740,5 +756,111 @@ public class AgentEnrollmentTransactionTest {
                     retry.get(20, TimeUnit.SECONDS).kind);
         }
         assertEquals("the device's credential is untouched", before, storedSecretHash(first.deviceNumber));
+    }
+
+    // --- the enrollment key (secrets derived per attempt) ---
+
+    @Test
+    public void the_enrollment_key_is_generated_once_when_several_servers_start_at_once() throws Exception {
+        org.apache.ibatis.session.SqlSessionFactory sessions =
+                injectorFor().getInstance(org.apache.ibatis.session.SqlSessionFactory.class);
+        List<Future<String>> all = new ArrayList<>();
+        CountDownLatch start = new CountDownLatch(1);
+        for (int i = 0; i < 8; i++) {
+            all.add(pool.submit(() -> {
+                start.await();
+                return hex(new AgentEnrollmentKey(sessions).bytes()); // a server instance of its own
+            }));
+        }
+        start.countDown();
+        String first = all.get(0).get(20, TimeUnit.SECONDS);
+        for (Future<String> f : all) assertEquals(first, f.get(20, TimeUnit.SECONDS));
+        assertEquals(64, first.length());
+        assertEquals(1, count("SELECT count(*) FROM " + schema + ".agentEnrollmentKey"));
+    }
+
+    @Test
+    public void an_attempt_gets_the_same_secret_after_a_server_restart() throws Exception {
+        int tokenId = token(1);
+        AgentEnrollmentDAO.Outcome first = enroll(tokenId, 1, "attempt-0123456789abcdef");
+        // A restarted server: a new injector, nothing cached, the key read back from the database.
+        AgentEnrollmentDAO restarted = injectorFor().getInstance(AgentEnrollmentDAO.class);
+        AgentEnrollmentDAO.Outcome again = resumeOnly(restarted, tokenId, "attempt-0123456789abcdef");
+        assertEquals(AgentEnrollmentDAO.Outcome.Kind.RESUMED, again.kind);
+        assertEquals(first.secret, again.secret);
+    }
+
+    @Test
+    public void the_secret_does_not_depend_on_hash_secret_or_the_jwt_key() throws Exception {
+        int tokenId = token(1);
+        AgentEnrollmentDAO.Outcome first = enroll(tokenId, 1, "attempt-0123456789abcdef");
+        AgentEnrollmentDAO other = buildInjector(props, "changeme-C3z9vi54", "another-jwt-secret-key-at-least-32ch")
+                .getInstance(AgentEnrollmentDAO.class);
+        assertEquals(first.secret, resumeOnly(other, tokenId, "attempt-0123456789abcdef").secret);
+    }
+
+    @Test
+    public void a_new_enrollment_key_within_the_window_gives_the_retry_a_working_new_secret() throws Exception {
+        int tokenId = token(1);
+        AgentEnrollmentDAO.Outcome first = enroll(tokenId, 1, "attempt-0123456789abcdef");
+        sql("DELETE FROM " + schema + ".agentEnrollmentKey"); // an operator rotates the key; the server restarts
+        AgentEnrollmentDAO rotated = injectorFor().getInstance(AgentEnrollmentDAO.class);
+
+        AgentEnrollmentDAO.Outcome retry = resumeOnly(rotated, tokenId, "attempt-0123456789abcdef");
+
+        assertEquals(AgentEnrollmentDAO.Outcome.Kind.RESUMED, retry.kind);
+        assertTrue("a new key derives a new secret", !first.secret.equals(retry.secret));
+        assertEquals("and it is the one stored", CryptoUtil.getSHA256String(retry.secret),
+                storedSecretHash(first.deviceNumber));
+    }
+
+    // --- resume only (the agent's recovery) ---
+
+    @Test
+    public void resume_only_never_creates_a_device_for_a_deleted_one() throws Exception {
+        int tokenId = token(5);
+        AgentEnrollmentDAO.Outcome first = enroll(tokenId, 1, "attempt-0123456789abcdef");
+        sql("DELETE FROM " + schema + ".devices WHERE number = '" + first.deviceNumber + "'");
+
+        assertEquals(AgentEnrollmentDAO.Outcome.Kind.NOT_RESUMABLE,
+                resumeOnly(enrollments, tokenId, "attempt-0123456789abcdef").kind);
+        assertEquals("no device made", 0, devices());
+        assertEquals("no use taken", 1, uses(tokenId));
+    }
+
+    @Test
+    public void resume_only_after_the_first_check_in_or_the_window_creates_nothing() throws Exception {
+        int tokenId = token(5);
+        AgentEnrollmentDAO.Outcome first = enroll(tokenId, 1, "attempt-0123456789abcdef");
+        sql("UPDATE " + schema + ".devices SET agentEnrollAttemptHash = NULL WHERE number = '" + first.deviceNumber + "'");
+        assertEquals(AgentEnrollmentDAO.Outcome.Kind.NOT_RESUMABLE,
+                resumeOnly(enrollments, tokenId, "attempt-0123456789abcdef").kind);
+
+        AgentEnrollmentDAO.Outcome second = enroll(tokenId, 1, "attempt-second-0123456789");
+        sql("UPDATE " + schema + ".devices SET enrollTime = 1 WHERE number = '" + second.deviceNumber + "'");
+        assertEquals(AgentEnrollmentDAO.Outcome.Kind.NOT_RESUMABLE,
+                resumeOnly(enrollments, tokenId, "attempt-second-0123456789").kind);
+        assertEquals(2, devices());
+        assertEquals(2, uses(tokenId));
+    }
+
+    @Test
+    public void resume_only_resumes_what_it_can() throws Exception {
+        int tokenId = token(5);
+        AgentEnrollmentDAO.Outcome first = enroll(tokenId, 1, "attempt-0123456789abcdef");
+        AgentEnrollmentDAO.Outcome again = resumeOnly(enrollments, tokenId, "attempt-0123456789abcdef");
+        assertEquals(AgentEnrollmentDAO.Outcome.Kind.RESUMED, again.kind);
+        assertEquals(first.secret, again.secret);
+        assertEquals(1, uses(tokenId));
+    }
+
+    private Injector injectorFor() {
+        return buildInjector(props, "test-hash-secret", "test-jwt-secret-key-at-least-32-chars");
+    }
+
+    private static String hex(byte[] bytes) {
+        StringBuilder sb = new StringBuilder();
+        for (byte b : bytes) sb.append(String.format("%02x", b & 0xff));
+        return sb.toString();
     }
 }

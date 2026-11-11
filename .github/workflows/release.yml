@@ -268,15 +268,8 @@ jobs:
             manifest.json.minisig
             quickstart.sh
 
-      # --- Move :latest LAST, only once the release is pullable, signed and published ---
-      # Quick-start installs (*_VERSION=latest, `docker compose pull`) follow :latest, so it must never point
-      # at an image whose release failed. Retag registry-side from the already-pushed :VERSION (no rebuild, no
-      # local state). --prefer-index=false is required: buildx defaults to wrapping a single image manifest in a
-      # NEW index, which would give :latest a different digest from :VERSION. With it, the source manifest is
-      # re-pushed as-is, so both tags share one digest — asserted below. Phased to keep a failure as early and
-      # as all-or-nothing as possible: resolve all three :VERSION first, then move all three, then verify all.
-      # A red job here leaves the Release published; recover by hand (RELEASING.md), don't re-run the job.
-      # Read the published asset back: a Release whose quickstart.sh isn't the signed one must not become :latest.
+      # --- Read the published quickstart.sh back (README's install block downloads it) ---
+      # A Release whose quickstart.sh isn't the file the signed manifest hashes must not get :latest.
       - name: Published quickstart.sh matches the signed manifest
         env:
           GH_TOKEN: ${{ github.token }}
@@ -288,6 +281,14 @@ jobs:
           got=$(sha256sum "$RUNNER_TEMP/readback/quickstart.sh" | cut -d' ' -f1)
           [ "$want" = "$got" ] || { echo "::error::the published quickstart.sh is ${got}, but the signed manifest has ${want}; :latest was not moved"; exit 1; }
 
+      # --- Move :latest LAST, only once the release is pullable, signed and published ---
+      # Quick-start installs (*_VERSION=latest, `docker compose pull`) follow :latest, so it must never point
+      # at an image whose release failed. Retag registry-side from the already-pushed :VERSION (no rebuild, no
+      # local state). --prefer-index=false is required: buildx defaults to wrapping a single image manifest in a
+      # NEW index, which would give :latest a different digest from :VERSION. With it, the source manifest is
+      # re-pushed as-is, so both tags share one digest — asserted below. Phased to keep a failure as early and
+      # as all-or-nothing as possible: resolve all three :VERSION first, then move all three, then verify all.
+      # A red job here leaves the Release published; recover by hand (RELEASING.md), don't re-run the job.
       - name: Move :latest to this release
         env:
           OWNER: ${{ github.repository_owner }}

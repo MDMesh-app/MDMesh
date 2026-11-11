@@ -48,6 +48,12 @@ public class DesiredConfig {
     private DesiredKiosk kiosk;
     private DesiredLocation location;
     /**
+     * Present (1.6) = the configuration sets the device's global Private DNS host. An empty string clears it back to
+     * opportunistic mode. Absent (null) = never managed, so devices that had no host keep their revision and are not
+     * forced off a DNS they set for themselves.
+     */
+    private String dns;
+    /**
      * Present (1.5) = the configuration sets the agent's connectivity mode. Absent (null) = not managed: each device
      * keeps the mode it has, and documents without it keep their revision.
      */

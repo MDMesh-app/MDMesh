@@ -4,9 +4,11 @@ import com.mdmesh.core.command.handlers.PolicyApplyHandler
 import com.mdmesh.core.testing.fixedToggles
 import com.mdmesh.policy.PolicyOutcome
 import com.mdmesh.policy.TogglePolicy
+import com.mdmesh.policy.dns.DnsPolicy
 import com.mdmesh.proto.CommandEnvelope
 import com.mdmesh.proto.CommandStatus
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -77,12 +79,14 @@ class PolicyApplyHandlerTest {
 
     private class FakeDnsPolicy(
         private val outcome: PolicyOutcome,
-    ) : com.mdmesh.policy.dns.DnsPolicy {
+    ) : DnsPolicy {
         override val capabilityKey: String = "dns"
         var lastHost: String? = "unsets"
+        val hosts = mutableListOf<String?>()
         override fun isSupported(): Boolean = true
         override fun setDnsHost(dnsHost: String?): PolicyOutcome {
             lastHost = dnsHost
+            hosts += dnsHost
             return outcome
         }
     }
@@ -90,7 +94,7 @@ class PolicyApplyHandlerTest {
     @Test
     fun `applies dns policy with string host value`() = runTest {
         val dns = FakeDnsPolicy(PolicyOutcome.Applied)
-        val handler = PolicyApplyHandler(fixedToggles(), dnsPolicy = dns)
+        val handler = PolicyApplyHandler(fixedToggles(), dnsPolicy = { dns })
 
         val dnsPayload = buildJsonObject {
             put("policy", "dns")
@@ -99,6 +103,34 @@ class PolicyApplyHandlerTest {
         val result = handler.handle(command(dnsPayload))
 
         assertEquals(CommandStatus.DONE, result.status)
+        assertEquals("1.1.1.1", dns.lastHost)
+    }
+
+    @Test
+    fun `a false or null dns value clears the host`() = runTest {
+        val dns = FakeDnsPolicy(PolicyOutcome.Applied)
+        val handler = PolicyApplyHandler(fixedToggles(), dnsPolicy = { dns })
+
+        handler.handle(command(buildJsonObject { put("policy", "dns"); put("value", JsonNull) }))
+        handler.handle(command(buildJsonObject { put("policy", "dns"); put("value", false) }))
+
+        assertEquals("a JSON null and false both clear", listOf(null, null), dns.hosts)
+    }
+
+    @Test
+    fun `resolves the dns policy per command, so Device Owner after start is picked up`() = runTest {
+        val dns = FakeDnsPolicy(PolicyOutcome.Applied)
+        var resolved: DnsPolicy? = null
+        val handler = PolicyApplyHandler(fixedToggles(), dnsPolicy = { resolved })
+        val dnsPayload = buildJsonObject {
+            put("policy", "dns")
+            put("value", "1.1.1.1")
+        }
+
+        assertEquals("not Device Owner yet", CommandStatus.UNSUPPORTED, handler.handle(command(dnsPayload)).status)
+        resolved = dns // QR provisioning completes after the handler was built
+
+        assertEquals(CommandStatus.DONE, handler.handle(command(dnsPayload)).status)
         assertEquals("1.1.1.1", dns.lastHost)
     }
 }

@@ -10,6 +10,7 @@ import com.mdmesh.policy.ResolvedToggles
 import com.mdmesh.policy.AppRuntimePermissions
 import com.mdmesh.policy.AppPermissionOutcome
 import com.mdmesh.policy.UnsupportedAppRuntimePermissions
+import com.mdmesh.policy.dns.DnsPolicy
 import com.mdmesh.policy.safeboot.SafeBootPolicy
 import com.mdmesh.policy.wifi.WifiRadioPolicy
 import com.mdmesh.proto.ConfigApplyPayload
@@ -22,8 +23,8 @@ import kotlinx.coroutines.sync.withLock
 
 /**
  * Converges the device to a desired-state document. Each present section is applied through the code that
- * already serves the imperative commands (toggle strategies, [KioskApplier], location mode, connectivity mode), so
- * `config.apply` adds no new device behavior — only orchestration and reporting.
+ * already serves the imperative commands (toggle strategies, DNS, [KioskApplier], location mode, connectivity
+ * mode), so `config.apply` adds no new device behavior — only orchestration and reporting.
  *
  * Idempotent: applying the same document twice is a no-op at the OS level. The document is persisted (and its
  * revision reported to the server) only when no section failed; `unsupported` is final and `deferred` (1.4) is
@@ -38,6 +39,9 @@ import kotlinx.coroutines.sync.withLock
  *   never unsupported, so the document is not saved and the server re-sends it; it is never applied or released.
  * @param setPowerMode sets the live-connection mode for the `connectivity` section (1.5), as `device.powerMode` does.
  *   Only called with a mode this agent knows; another one is reported unsupported.
+ * @param dnsPolicy the live DNS strategy, resolved once per apply and never kept: Device-Owner status flips to true
+ *   partway through QR provisioning, after this singleton may have been built (#76). Null when the device cannot
+ *   apply it (old Android, not Device Owner), which is reported unsupported.
  */
 @Suppress("TooManyFunctions") // Coordinator for independently releasable desired-state sections.
 class ConfigApplier(
@@ -47,6 +51,7 @@ class ConfigApplier(
     private val store: ConfigStateStore,
     private val setPowerMode: (String) -> Unit,
     private val appPermissions: AppRuntimePermissions = UnsupportedAppRuntimePermissions,
+    private val dnsPolicy: () -> DnsPolicy? = { null },
 ) {
     private val mutex = Mutex()
 
@@ -126,6 +131,7 @@ class ConfigApplier(
 
     private fun manages(doc: ConfigApplyPayload, outcomeKey: String): Boolean = when {
         outcomeKey == KIOSK -> doc.kiosk != null
+        outcomeKey == DNS -> doc.dns != null
         outcomeKey.startsWith(POLICIES) -> outcomeKey.removePrefix(POLICIES) in doc.policies
         outcomeKey.startsWith(APP_PERMISSIONS) -> appPermissionKeys(doc).contains(outcomeKey)
         else -> true
@@ -157,6 +163,8 @@ class ConfigApplier(
         val previousKeys = previous.flatMap { it.policies.keys } +
             unreleased.filter { it.startsWith(POLICIES) }.map { it.removePrefix(POLICIES) }
         releaseUnmanaged(doc, toggles, previousKeys.toSet(), outcomes)
+        val previousDns = previous.any { it.dns != null } || DNS in unreleased
+        applyDns(doc, previousDns, dnsPolicy())?.let { outcomes[DNS] = it }
         val previousKiosk = previous.any { it.kiosk != null } || KIOSK in unreleased
         applyKiosk(doc, previousKiosk)?.let { outcomes[KIOSK] = it }
         // Last: the policies and the kiosk are now what this document says, so Safe Mode can follow both. The
@@ -275,6 +283,19 @@ class ConfigApplier(
         return (toggles[key] as? ReleasablePolicy)?.let { toOutcome(it.release()) }
     }
 
+    /**
+     * The `dns` section (1.6): present = set the host (an empty one clears it); absent = not managed, so a host a
+     * previous document set is cleared back to opportunistic mode. A failed clear is reported — and kept in
+     * [ConfigStateStore.unreleased] — so the next document retries it; a successful one needs no outcome.
+     *
+     * @return the dns outcome, or null when nothing was asserted or cleared.
+     */
+    private fun applyDns(doc: ConfigApplyPayload, previousManagedDns: Boolean, policy: DnsPolicy?): String? {
+        doc.dns?.let { return toOutcome(policy?.setDnsHost(it)) }
+        if (!previousManagedDns) return null
+        return policy?.let { toOutcome(it.setDnsHost(null)).takeIf(ConfigOutcome::isFailed) }
+    }
+
     /** @return the kiosk outcome, or null when nothing was asserted or exited (the key is then omitted). */
     private suspend fun applyKiosk(doc: ConfigApplyPayload, previousConfigHadKiosk: Boolean): String? {
         // Absent kiosk = "configuration does not assert kiosk". Exit only when a PREVIOUS CONFIG (last saved or last
@@ -321,6 +342,7 @@ class ConfigApplier(
     companion object {
         private const val POLICIES = "policies."
         private const val KIOSK = "kiosk"
+        private const val DNS = "dns"
         private const val CONNECTIVITY = "connectivity"
         private const val APP_PERMISSIONS = "appPermissions."
         private const val NOT_REQUESTED = "not-requested"

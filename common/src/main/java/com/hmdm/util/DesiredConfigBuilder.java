@@ -76,6 +76,9 @@ public final class DesiredConfigBuilder {
         DesiredLocation loc = new DesiredLocation();
         loc.setMode(locationMode(cfg.getRequestUpdates()));
         d.setLocation(loc);
+        // Null = never set: omitted, so existing configurations keep their revision. An empty string is a real value
+        // (the console stores it when an admin clears a host), and the agent turns Private DNS back to opportunistic.
+        d.setDns(cfg.getDns() == null ? null : cfg.getDns().trim());
         String connectivity = connectivityMode(cfg.getConnectivityMode());
         if (connectivity != null) {
             DesiredConnectivity c = new DesiredConnectivity();

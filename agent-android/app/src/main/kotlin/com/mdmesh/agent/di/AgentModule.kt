@@ -201,8 +201,8 @@ object AgentModule {
     @Provides
     @IntoSet
     fun providePolicyApplyHandler(registry: CapabilityRegistry, handle: DpmHandle): CommandHandler =
-        // A function, not a map: the toggles are resolved per command (Device Owner arrives after process start, #76).
-        PolicyApplyHandler(registry::togglePolicies, DnsPolicyFactory.create(handle))
+        // Functions, not maps: the policies are resolved per command (Device Owner arrives after process start, #76).
+        PolicyApplyHandler(registry::togglePolicies, dnsPolicy = { DnsPolicyFactory.create(handle) })
 
     @Provides
     @Singleton
@@ -376,13 +376,15 @@ object AgentModule {
     @Suppress("LongParameterList") // Hilt's explicit configuration-section bindings make this wiring auditable.
     fun provideConfigApplier(
         registry: CapabilityRegistry,
+        handle: DpmHandle,
         kiosk: KioskApplier,
         location: LocationModeStore,
         store: ConfigStateStore,
         power: PowerModeStore,
         appPermissions: AppRuntimePermissions,
     ): ConfigApplier = ConfigApplier(registry::togglePolicies, kiosk, location::set, store,
-        setPowerMode = power::set, appPermissions = appPermissions)
+        setPowerMode = power::set, appPermissions = appPermissions,
+        dnsPolicy = { DnsPolicyFactory.create(handle) })
 
     @Provides
     @Singleton

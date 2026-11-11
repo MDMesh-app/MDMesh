@@ -12,6 +12,7 @@ import com.mdmesh.proto.ProtocolJson
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 
@@ -29,11 +30,12 @@ import kotlinx.serialization.json.booleanOrNull
  * open-registry contract; a key whose support check threw fails the command instead.
  *
  * DNS is the one non-boolean policy (a host, or null to clear), so it is handled
- * explicitly before the toggle lookup.
+ * explicitly before the toggle lookup. Its strategy is resolved per command through
+ * [dnsPolicy] for the same Device-Owner reason: never inject the resolved instance.
  */
 class PolicyApplyHandler(
     private val toggles: () -> ResolvedToggles,
-    private val dnsPolicy: DnsPolicy? = null,
+    private val dnsPolicy: () -> DnsPolicy? = { null },
 ) : CommandHandler {
 
     override val type: String = "policy.apply"
@@ -53,17 +55,18 @@ class PolicyApplyHandler(
         }.getOrElse { return CommandResults.failed(command, "bad payload: ${it.message}") }
 
         if (parsed.policy == DnsPolicy.CAPABILITY_KEY) {
-            val policy = dnsPolicy
+            val policy = dnsPolicy()
                 ?: return CommandResults.unsupported(command, "dns policy not supported on this device")
 
             val host = when (val value = parsed.value) {
+                // A JSON null (or `false`, below) clears the host / falls back to opportunistic mode.
+                null, JsonNull -> null
                 is JsonPrimitive -> when {
                     value.isString -> value.content
-                    // `false` (or a JSON null) clears the host / falls back to opportunistic mode.
                     value.booleanOrNull == false -> null
-                    else -> value.content
+                    else -> return CommandResults.failed(command, "dns value must be a hostname string")
                 }
-                else -> null
+                else -> return CommandResults.failed(command, "dns value must be a hostname string")
             }
 
             return when (val outcome = policy.setDnsHost(host)) {

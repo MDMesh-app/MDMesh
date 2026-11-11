@@ -43,4 +43,28 @@ class KioskPayloadTest {
         val k = KioskApplyPayload(theme = KioskThemeDto(backgroundImage = a))
         assertEquals(k, k.copy(theme = KioskThemeDto(backgroundImage = b)))
     }
+
+    @Test fun `protocol 1_10 fit and focal point are read, and absent means fill around the centre`() {
+        val sha = "a".repeat(64)
+        val old = ProtocolJson.json.decodeFromString(
+            KioskBackgroundImageDto.serializer(), """{"url":"https://x/1.png","sha256":"$sha"}""",
+        )
+        assertEquals(null, old.fit)
+        assertEquals(false, old.letterboxed)
+        assertEquals(0.5, old.focalXOrCentre, 0.0)
+        val fit = ProtocolJson.json.decodeFromString(
+            KioskBackgroundImageDto.serializer(), """{"url":"https://x/1.png","sha256":"$sha","fit":"fit"}""",
+        )
+        assertEquals(true, fit.letterboxed)
+        val focal = ProtocolJson.json.decodeFromString(
+            KioskBackgroundImageDto.serializer(),
+            """{"url":"https://x/1.png","sha256":"$sha","focalX":0.25,"focalY":1.5}""",
+        )
+        assertEquals(0.25, focal.focalXOrCentre, 0.0)
+        assertEquals("out of range: clamped", 1.0, focal.focalYOrCentre, 0.0)
+        // A new fit or focal point is a change (the backdrop is drawn again); a new URL alone is not.
+        org.junit.Assert.assertNotEquals(old, fit)
+        org.junit.Assert.assertNotEquals(old, focal)
+        assertEquals(old, old.copy(url = "https://y/1.png"))
+    }
 }

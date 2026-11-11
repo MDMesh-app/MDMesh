@@ -60,9 +60,29 @@ data class KioskThemeDto(
 data class KioskBackgroundImageDto(
     val url: String,
     val sha256: String,
+    /** 1.10: `fit` draws the whole image, letterboxed with the background colour; absent (or anything else) = fill. */
+    val fit: String? = null,
+    /** 1.10: the point (0..1 across the image) a fill crop keeps in view; absent = the centre. */
+    val focalX: Double? = null,
+    /** 1.10: 0..1 down the image; absent = the centre. */
+    val focalY: Double? = null,
 ) {
-    override fun equals(other: Any?): Boolean =
-        other is KioskBackgroundImageDto && sha256.trim().equals(other.sha256.trim(), ignoreCase = true)
+    /** The whole image, letterboxed (protocol 1.10 `fit`); otherwise fill. */
+    val letterboxed: Boolean get() = fit == FIT
 
-    override fun hashCode(): Int = sha256.trim().lowercase().hashCode()
+    val focalXOrCentre: Double get() = focal(focalX)
+    val focalYOrCentre: Double get() = focal(focalY)
+
+    /** The same image drawn the same way: SHA-256 (any case), fit mode and focal point; the URL is not compared. */
+    override fun equals(other: Any?): Boolean =
+        other is KioskBackgroundImageDto && key() == other.key()
+
+    override fun hashCode(): Int = key().hashCode()
+
+    private fun key() = listOf(sha256.trim().lowercase(), letterboxed, focalXOrCentre, focalYOrCentre)
 }
+
+private const val FIT = "fit"
+private const val CENTRE = 0.5
+
+private fun focal(v: Double?): Double = if (v == null || v.isNaN()) CENTRE else v.coerceIn(0.0, 1.0)

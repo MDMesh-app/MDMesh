@@ -28,6 +28,7 @@ import javax.inject.Named;
 import com.hmdm.notification.PushService;
 import com.hmdm.persistence.*;
 import com.hmdm.persistence.domain.*;
+import com.hmdm.rest.resource.support.KioskImageMetadata;
 import com.hmdm.rest.json.*;
 import com.hmdm.rest.json.view.FileView;
 import com.hmdm.util.APKFileAnalyzer;
@@ -258,6 +259,15 @@ public class FilesResource {
         return SecurityContext.get().getCurrentUser().map(u -> {
             Customer customer = customerDAO.findById(u.getCustomerId());
             try {
+                try {
+                    // A kiosk background is served publicly: its location and camera data go before it is hosted.
+                    if (KioskImageMetadata.stripUpload(new File(uploadedFile.getTmpPath()), fileName)) {
+                        logger.info("Removed the metadata of kiosk image {}", fileName);
+                    }
+                } catch (IOException e) {
+                    // Hosted as uploaded; saving it as a background then hosts a cleaned copy instead.
+                    logger.warn("Could not remove the metadata of kiosk image {}: {}", fileName, e.getMessage());
+                }
                 File movedFile = FileUtil.moveFile(customer, filesDirectory, uploadedFile.getSubdir(), uploadedFile.getTmpPath(), fileName);
                 if (movedFile != null) {
                     List<FileView> result = new LinkedList<>();

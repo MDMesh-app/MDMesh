@@ -23,6 +23,7 @@ import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.fail;
@@ -47,11 +48,21 @@ public class KioskBackgroundImageAssetsTest {
         UploadedFile file;
         boolean foreign;
         int reads;
+        final java.util.List<UploadedFile> inserted = new java.util.ArrayList<>();
         Files() { super(null, null, null, "unused"); }
         @Override public UploadedFile getById(Integer id) {
             reads++;
             if (foreign) throw SecurityException.onAdminDataAccessViolation("read another customer's file");
             return file;
+        }
+        @Override public UploadedFile insert(UploadedFile f) {
+            f.setId(100 + inserted.size());
+            inserted.add(f);
+            return f;
+        }
+        @Override public UploadedFile getByPath(Integer customerId, String path) {
+            for (UploadedFile f : inserted) if (f.getFilePath().equals(path)) return f;
+            return null;
         }
     }
 
@@ -85,6 +96,15 @@ public class KioskBackgroundImageAssetsTest {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         if (!ImageIO.write(image, format, out)) throw new IllegalStateException("no writer for " + format);
         return out.toByteArray();
+    }
+
+    /** A PNG header plus an empty IDAT and IEND: a well-formed container, never decoded here. */
+    private static byte[] withPngEnd(byte[] header) throws IOException {
+        ByteArrayOutputStream o = new ByteArrayOutputStream();
+        o.write(header);
+        o.write(new byte[]{0, 0, 0, 0, 'I', 'D', 'A', 'T', 0x35, (byte) 0xAF, 0x06, 0x1E});
+        o.write(new byte[]{0, 0, 0, 0, 'I', 'E', 'N', 'D', (byte) 0xAE, 0x42, 0x60, (byte) 0x82});
+        return o.toByteArray();
     }
 
     private static String sha256(byte[] bytes) throws Exception {
@@ -184,8 +204,8 @@ public class KioskBackgroundImageAssetsTest {
         // A PNG header claiming 4097 x 4096 pixels: nothing is decoded, so the header alone is enough.
         assertRefused(replaceWith("big.png", KioskImageHeaderTest.pngHeader(4097, 4096)), null,
                 KioskBackgroundImageAssets.TOO_MANY_PIXELS);
-        // Exactly 16 Mpx is allowed.
-        Configuration c = replaceWith("edge.png", KioskImageHeaderTest.pngHeader(4096, 4096));
+        // Exactly 16 Mpx is allowed (a well-formed PNG container around that header).
+        Configuration c = replaceWith("edge.png", withPngEnd(KioskImageHeaderTest.pngHeader(4096, 4096)));
         assets.apply(c, null);
         assertEquals(Integer.valueOf(42), c.getBackgroundImageFileId());
     }
@@ -226,6 +246,56 @@ public class KioskBackgroundImageAssetsTest {
         Configuration c = new Configuration();
         c.setBackgroundImageAction("upload");
         assets.apply(c, null);
+    }
+
+    // ---- metadata ---------------------------------------------------------------------------------------------------
+
+    @Test
+    public void aPhotoWithMetadataIsHostedAgainWithoutItAndHashedAsCleaned() throws Exception {
+        byte[] dirty = KioskImageMetadataTest.phoneJpeg(realImage("jpg", 8, 8), 6);
+        byte[] clean = KioskImageMetadata.strip(dirty);
+        Configuration c = replaceWith("kiosk-aaaaaaaaaaaa-beach.jpg", dirty);
+        uploaded.setDescription("Beach");
+
+        assets.apply(c, null);
+
+        String name = "kiosk-" + sha256(clean).substring(0, 12) + "-beach.jpg";
+        assertImage(c, "https://mdm.example/files/acme/" + name, 100, sha256(clean));
+        assertArrayEquals(clean, java.nio.file.Files.readAllBytes(new File(tenant, name).toPath()));
+        UploadedFile copy = files.inserted.get(0);
+        assertEquals(name, copy.getFilePath());
+        assertEquals(1, copy.getCustomerId());
+        assertEquals("Beach", copy.getDescription());
+        // The original is another uploaded file, possibly used elsewhere: never rewritten behind its users' backs.
+        assertArrayEquals(dirty, java.nio.file.Files.readAllBytes(new File(tenant, "kiosk-aaaaaaaaaaaa-beach.jpg").toPath()));
+    }
+
+    @Test
+    public void choosingTheSameDirtyFileAgainReusesItsCleanedCopy() throws Exception {
+        byte[] dirty = KioskImageMetadataTest.phoneJpeg(realImage("jpg", 8, 8), 1);
+        Configuration first = replaceWith("photo.jpg", dirty);
+        assets.apply(first, null);
+        Configuration second = replaceWith("photo.jpg", dirty);
+        assets.apply(second, null);
+        assertEquals(1, files.inserted.size());
+        assertEquals(first.getBackgroundImageFileId(), second.getBackgroundImageFileId());
+        assertEquals(first.getBackgroundImageSha256(), second.getBackgroundImageSha256());
+    }
+
+    @Test
+    public void aCleanImageIsUsedAsUploaded() throws Exception {
+        byte[] jpeg = realImage("jpg", 8, 8);
+        Configuration c = replaceWith("kiosk-bbbbbbbbbbbb-plain.jpg", jpeg);
+        assets.apply(c, null);
+        assertImage(c, "https://mdm.example/files/acme/kiosk-bbbbbbbbbbbb-plain.jpg", 42, sha256(jpeg));
+        assertEquals(0, files.inserted.size());
+    }
+
+    @Test
+    public void aMalformedImageWhoseHeaderLooksFineIsRefused() throws Exception {
+        // A PNG header with no image data after it: nothing an agent could show.
+        assertRefused(replaceWith("cut.png", KioskImageHeaderTest.pngHeader(10, 10)), null,
+                KioskBackgroundImageAssets.NOT_AN_IMAGE);
     }
 
     // ---- remove -----------------------------------------------------------------------------------------------------

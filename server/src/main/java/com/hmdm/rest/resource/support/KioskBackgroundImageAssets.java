@@ -15,13 +15,19 @@ import javax.inject.Singleton;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
+import java.util.Locale;
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 /**
  * Resolves the kiosk background image of a configuration save. The managed image is an uploaded file of the
- * customer; its URL and SHA-256 always come from the hosted bytes, never from the browser. The same
+ * customer; its URL and SHA-256 always come from the hosted bytes, never from the browser. Those bytes are free of
+ * metadata ({@link KioskImageMetadata}): an image that still has some is hosted again without it, and the SHA-256 is
+ * that of the cleaned file. The same
  * {@code backgroundImageUrl} column is also the legacy Headwind launcher wallpaper, which an admin or an API client may
  * still set as a plain URL.
  */
@@ -37,6 +43,7 @@ public class KioskBackgroundImageAssets {
     static final String TOO_LARGE = "The background image is larger than 10 MB.";
     static final String TOO_MANY_PIXELS = "The background image is larger than 16 megapixels.";
     static final String NOT_FOUND = "The background image is not an uploaded file of this account.";
+    static final String NOT_STORED = "The server could not store the background image without its metadata. Try again.";
     static final String MISSING = "The background image file is missing on the server. Choose the image again.";
 
     private final UploadedFileDAO uploadedFiles;
@@ -135,8 +142,60 @@ public class KioskBackgroundImageAssets {
         } catch (IOException e) {
             throw new IllegalArgumentException(MISSING, e);
         }
-        String sha256 = validate(bytes);
-        setImage(configuration, file.getUrl(baseUrl, customer), fileId, sha256);
+        validate(bytes);
+        byte[] clean = KioskImageMetadata.strip(bytes);
+        if (clean == null) {
+            throw new IllegalArgumentException(NOT_AN_IMAGE);
+        }
+        String sha256 = validate(clean);
+        if (!Arrays.equals(clean, bytes)) {
+            // Metadata (an API upload, or one from before the console cleaned uploads): the image is hosted again
+            // without it. The original is another uploaded file that may be used elsewhere, so it is never rewritten.
+            file = hostCleanCopy(customer, file, clean, sha256);
+        }
+        setImage(configuration, file.getUrl(baseUrl, customer), file.getId(), sha256);
+    }
+
+    private static final Pattern KIOSK_PREFIX = Pattern.compile("^kiosk-[0-9a-f]{12}-");
+
+    /**
+     * Hosts {@code clean} next to {@code original} as {@code kiosk-<12 hex of its SHA-256>-<name>}, or finds it there
+     * from an earlier save of the same image.
+     */
+    private UploadedFile hostCleanCopy(Customer customer, UploadedFile original, byte[] clean, String sha256) {
+        String path = original.getFilePath().replace('\\', '/');
+        int slash = path.lastIndexOf('/');
+        String dir = slash < 0 ? "" : path.substring(0, slash + 1);
+        String name = KIOSK_PREFIX.matcher(path.substring(slash + 1)).replaceFirst("");
+        int dot = name.lastIndexOf('.');
+        String ext = dot > 0 ? name.substring(dot).toLowerCase(Locale.ROOT).replaceAll("[^.a-z0-9]", "") : "";
+        String stem = (dot > 0 ? name.substring(0, dot) : name).replaceAll("[^A-Za-z0-9_-]+", "-");
+        if (stem.length() > 40) stem = stem.substring(0, 40);
+        if (stem.isEmpty()) stem = "image";
+        String copyPath = dir + "kiosk-" + sha256.substring(0, 12) + "-" + stem + ext;
+        try {
+            File target = FileUtil.resolveFile(customer, filesDirectory, null, copyPath);
+            if (target.isFile()) {
+                if (!Arrays.equals(clean, Files.readAllBytes(target.toPath()))) {
+                    throw new IllegalArgumentException(NOT_STORED);
+                }
+            } else {
+                File staged = new File(target.getParentFile(), "." + target.getName() + ".tmp");
+                Files.write(staged.toPath(), clean);
+                Files.move(staged.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE);
+            }
+            UploadedFile existing = uploadedFiles.getByPath(customer.getId(), copyPath);
+            if (existing != null && !existing.isExternal()) return existing;
+            UploadedFile copy = new UploadedFile();
+            copy.setCustomerId(customer.getId());
+            copy.setFilePath(copyPath);
+            copy.setDescription(original.getDescription());
+            copy.setExternal(false);
+            copy.setUploadTime(System.currentTimeMillis());
+            return uploadedFiles.insert(copy);
+        } catch (UnsafePathException | IOException e) {
+            throw new IllegalArgumentException(NOT_STORED, e);
+        }
     }
 
     /**

@@ -25,9 +25,8 @@ object WakeKeepAlive {
     fun schedule(context: Context) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val pi = pendingIntent(context)
-        arm(SystemClock.elapsedRealtime(), Build.VERSION.SDK_INT) { type, triggerAt, allowWhileIdle ->
-            if (allowWhileIdle) am.setAndAllowWhileIdle(type, triggerAt, pi) else am.set(type, triggerAt, pi)
-        }
+        // Inexact and allowed while idle: fires in Doze maintenance windows without the exact-alarm permission.
+        arm(SystemClock.elapsedRealtime()) { type, triggerAt -> am.setAndAllowWhileIdle(type, triggerAt, pi) }
     }
 
     /**
@@ -37,8 +36,8 @@ object WakeKeepAlive {
      * PendingIntent, so the first schedule here replaces it.
      */
     @VisibleForTesting
-    internal fun arm(now: Long, sdk: Int, set: (type: Int, triggerAt: Long, allowWhileIdle: Boolean) -> Unit) {
-        set(AlarmManager.ELAPSED_REALTIME_WAKEUP, now + INTERVAL_MS, sdk >= Build.VERSION_CODES.M)
+    internal fun arm(now: Long, set: (type: Int, triggerAt: Long) -> Unit) {
+        set(AlarmManager.ELAPSED_REALTIME_WAKEUP, now + INTERVAL_MS)
     }
 
     private fun pendingIntent(context: Context): PendingIntent {

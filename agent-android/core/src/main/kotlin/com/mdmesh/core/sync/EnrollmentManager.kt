@@ -7,6 +7,7 @@ import com.mdmesh.core.store.EnrollTokenProvider
 import com.mdmesh.core.telemetry.EventSink
 import com.mdmesh.proto.AgentEnrollRequest
 import com.mdmesh.proto.EventType
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -20,8 +21,9 @@ import javax.inject.Singleton
  * makes the handshake single-flight — the enroll token is single-use, so concurrent
  * callers must never each POST it.
  *
- * Enrollment posts the capability matrix + the single-use enroll token; the server
- * mints and returns the opaque device id, which becomes the agent's permanent identity.
+ * Enrollment posts the capability matrix + the enroll token; the server mints and returns the opaque device id, which
+ * becomes the agent's permanent identity. It is resumable: the attempt id stored before the request lets a retry whose
+ * response was lost get the same device back (servers from protocol 1.6).
  */
 @Singleton
 class EnrollmentManager @Inject constructor(
@@ -48,6 +50,17 @@ class EnrollmentManager @Inject constructor(
         val token = tokenProvider.token()?.takeIf { it.isNotBlank() }
             ?: throw EnrollmentException("no enrollment token available")
 
+        // Stored BEFORE the request: if its response is lost (Wi-Fi drop, the process ends), every retry, even after a
+        // restart, sends the same id and the server answers with the device this enrollment already created instead
+        // of "code already used". Without it (not stored), the enroll still works, just not resumably.
+        val attempt = try {
+            tokenProvider.enrollAttempt(token)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+
         // deviceId is unknown pre-enrollment; the server ignores it and issues one.
         val matrix = capabilitySource.matrix(deviceId = "")
         val response = api.enroll(
@@ -57,6 +70,7 @@ class EnrollmentManager @Inject constructor(
                 device = matrix.device,
                 capabilities = matrix.capabilities,
                 hardwareId = runCatching { hardwareIdSource.get() }.getOrNull(),
+                enrollAttempt = attempt,
             ),
         )
 

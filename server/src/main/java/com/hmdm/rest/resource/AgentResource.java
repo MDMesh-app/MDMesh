@@ -171,6 +171,15 @@ public class AgentResource {
             logger.info("Agent enroll refused: token {} was stopped", token.getId());
             return Response.ERROR("error.agent.token.used");
         }
+        // A retry of an enrollment this server already completed (its response was lost): the same device, before
+        // anything checks whether the code still has a use, since this enrollment already took one.
+        String attemptHash = enrollAttemptHash(token.getId(), request.getEnrollAttempt());
+        if (attemptHash != null) {
+            Response resumed = resumeEnrollment(token, attemptHash);
+            if (resumed != null) {
+                return resumed;
+            }
+        }
         if (token.isUsed()) {
             return Response.ERROR("error.agent.token.used");
         }
@@ -211,7 +220,7 @@ public class AgentResource {
             String hardwareId = request.getHardwareId() == null || request.getHardwareId().trim().isEmpty()
                     ? null : request.getHardwareId().trim();
             completed = commandDAO.completeEnrollment(deviceId, CryptoUtil.getSHA256String(deviceSecret),
-                    capabilitiesJson(request.getCapabilities()), hardwareId);
+                    capabilitiesJson(request.getCapabilities()), hardwareId, attemptHash);
             if (!completed) {
                 logger.warn("Agent enroll: device {} disappeared before its enrollment completed (token {})",
                         deviceId, token.getId());
@@ -252,6 +261,44 @@ public class AgentResource {
                 tokenDAO.release(token.getId());
             }
         }
+    }
+
+    /** An enroll attempt id: random, URL-safe, long enough not to be guessed; anything else is ignored. */
+    private static final java.util.regex.Pattern ENROLL_ATTEMPT = java.util.regex.Pattern.compile("[A-Za-z0-9_-]{16,128}");
+
+    /**
+     * What identifies a retryable enrollment: the SHA-256 of the token id and the agent's attempt id, so the stored
+     * value reveals neither and an attempt id only resumes enrollments made with the same code.
+     *
+     * @return the hash, or null when the request carries no usable attempt id
+     */
+    static String enrollAttemptHash(Integer tokenId, String attempt) {
+        if (tokenId == null || attempt == null || !ENROLL_ATTEMPT.matcher(attempt).matches()) {
+            return null;
+        }
+        return CryptoUtil.getSHA256String(tokenId + ":" + attempt);
+    }
+
+    /**
+     * Answers a retried enrollment with the device its first request created and a new secret (the first one never
+     * reached the agent). Only before that device's first check-in and within a day of its enrollment.
+     *
+     * @return the response, or null when there is no such enrollment (the request is then a new one)
+     */
+    private Response resumeEnrollment(AgentEnrollmentToken token, String attemptHash) {
+        String deviceNumber = commandDAO.findEnrollRetry(attemptHash);
+        if (deviceNumber == null) {
+            return null;
+        }
+        String deviceSecret = UUID.randomUUID().toString().replace("-", "")
+                + UUID.randomUUID().toString().replace("-", "");
+        if (!commandDAO.reissueSecret(deviceNumber, attemptHash, CryptoUtil.getSHA256String(deviceSecret))) {
+            return null; // it checked in meanwhile
+        }
+        Device device = unsecureDAO.getDeviceByNumber(deviceNumber);
+        logger.info("Agent enroll retried: device {} (token {}) gets its credentials again", deviceNumber, token.getId());
+        return Response.OK(new AgentEnrollResponse(deviceNumber, device == null ? null : configurationName(device),
+                deviceSecret));
     }
 
     /** The device's configuration name for the enroll response; best effort (the response is still useful without). */

@@ -176,9 +176,22 @@ public class AgentCommandDAO {
      * @return false when the device row no longer exists
      */
     public boolean completeEnrollment(String deviceNumber, String secretHash, String capabilitiesJson,
-                                      String hardwareId) {
-        return deviceMapper.completeEnrollment(deviceNumber, secretHash, capabilitiesJson, hardwareId,
+                                      String hardwareId, String attemptHash) {
+        return deviceMapper.completeEnrollment(deviceNumber, secretHash, capabilitiesJson, hardwareId, attemptHash,
                 System.currentTimeMillis()) > 0;
+    }
+
+    /** How long after an enrollment the agent may retry it (a lost response); a check-in closes it sooner. */
+    public static final long ENROLL_RETRY_WINDOW_MS = 24L * 60L * 60L * 1000L;
+
+    /** The device a still-retryable enroll attempt created, or null. */
+    public String findEnrollRetry(String attemptHash) {
+        return deviceMapper.findEnrollRetry(attemptHash, System.currentTimeMillis() - ENROLL_RETRY_WINDOW_MS);
+    }
+
+    /** Replace the secret of a device whose enroll attempt is being retried; false when the attempt no longer owns it. */
+    public boolean reissueSecret(String deviceNumber, String attemptHash, String secretHash) {
+        return deviceMapper.reissueSecret(deviceNumber, attemptHash, secretHash, System.currentTimeMillis()) > 0;
     }
 
     /** Deletes a device whose agent enrollment did not complete; never one that has a secret. */
@@ -186,9 +199,12 @@ public class AgentCommandDAO {
         deviceMapper.deleteUnenrolledDevice(deviceNumber);
     }
 
-    /** Stamp the device's last-seen time (drives the admin UI's online/offline state). */
+    /**
+     * Stamp the device's last-seen time at an authenticated check-in (drives the admin UI's online/offline state). The
+     * device has its credentials then, so this also closes its enrollment's retry window.
+     */
     public void touchLastUpdate(String deviceNumber) {
-        deviceMapper.updateLastUpdate(deviceNumber, System.currentTimeMillis());
+        deviceMapper.markCheckedIn(deviceNumber, System.currentTimeMillis());
     }
 
     /** Stamp the device's enrollment time (the console's "Enrolled"), keeping one already set. */

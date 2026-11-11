@@ -14,6 +14,7 @@ Upgrading
 - The database adds three columns to enrollment tokens on start (`maxUses`, `useCount`, `revokedAt`) and stores
   the tokens hashed. Existing codes stay single-use and keep working; on PostgreSQL older than 11 they stop
   instead, so make a new code on the Enroll page. After a downgrade, codes made on this version don't work.
+- The database adds a column to devices (`agentEnrollAttemptHash`) on start. Nothing to do.
 
 New
 - Configurations can allow or block the camera. Block covers every app, kiosk apps too. Not managed after Block
@@ -35,6 +36,9 @@ New
 - Sync now and console commands say when the device isn't connected and will get it at its next check-in.
 
 Fixes
+- Enroll: when the network drops just as a device enrolls, it no longer stays on "Enrolling…" with a code that reads
+  as already used, or takes a second device's place on a batch code. Its retry gets the device it already created. Needs
+  agent 0.5.0 and this server; older agents enroll as before.
 - Enroll: a server error part-way through an enrollment no longer leaves a device in the list that can never check
   in, or uses up the enrollment code. Nothing is kept and the agent tries again.
 - Audit log: on Docker installs, entries show the client's address instead of the edge container's (thanks

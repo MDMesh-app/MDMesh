@@ -68,6 +68,11 @@ public class AgentEnrollTimeTest {
             return d;
         }
         @Override public Configuration getConfigurationById(Integer id) { return null; }
+        @Override public Device getDeviceByNumber(String number) {
+            Device d = new Device();
+            d.setNumber(number);
+            return d;
+        }
     }
 
     static final class FakeCommandDAO extends AgentCommandDAO {
@@ -80,19 +85,30 @@ public class AgentEnrollTimeTest {
 
         FakeCommandDAO() { super(null, null, null, null); }
 
-        @Override public boolean completeEnrollment(String n, String hash, String caps, String hardwareId) {
+        /** Devices by enroll attempt hash, while their retry window is open (cleared by a check-in). */
+        final java.util.Map<String, String> retryable = new java.util.HashMap<>();
+
+        @Override public boolean completeEnrollment(String n, String hash, String caps, String hardwareId,
+                                                    String attemptHash) {
             if ("throw".equals(completion)) throw new RuntimeException("connection reset");
             if ("none".equals(completion)) return false;
             completed.add(n);
             secretHashes.put(n, hash);
             enrollTimeRecorded.add(n);
+            if (attemptHash != null) retryable.put(attemptHash, n);
             return true;
         }
+        @Override public String findEnrollRetry(String attemptHash) { return retryable.get(attemptHash); }
+        @Override public boolean reissueSecret(String n, String attemptHash, String hash) {
+            if (!n.equals(retryable.get(attemptHash))) return false;
+            secretHashes.put(n, hash);
+            return true;
+        }
+        @Override public void touchLastUpdate(String n) { retryable.values().removeIf(n::equals); }
         @Override public void deleteUnenrolledDevice(String n) { deleted.add(n); }
         @Override public void updateDeviceSecretHash(String n, String hash) { }
         @Override public void updateDeviceCapabilities(String n, String json) { }
         @Override public void updateHardwareId(String n, String h) { }
-        @Override public void touchLastUpdate(String n) { }
         @Override public void recordEnrollTime(String n) { enrollTimeRecorded.add(n); }
     }
 

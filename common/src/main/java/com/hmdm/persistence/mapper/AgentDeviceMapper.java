@@ -61,13 +61,37 @@ public interface AgentDeviceMapper {
      */
     @Update({"UPDATE devices SET agentSecretHash = #{secretHash}, agentCapabilities = #{capabilitiesJson}, " +
             "hardwareid = COALESCE(#{hardwareId}, hardwareid), lastUpdate = #{ts}, " +
-            "enrollTime = COALESCE(enrollTime, #{ts}) " +
+            "enrollTime = COALESCE(enrollTime, #{ts}), agentEnrollAttemptHash = #{attemptHash} " +
             "WHERE number = #{deviceNumber}"})
     int completeEnrollment(@Param("deviceNumber") String deviceNumber,
                            @Param("secretHash") String secretHash,
                            @Param("capabilitiesJson") String capabilitiesJson,
                            @Param("hardwareId") String hardwareId,
+                           @Param("attemptHash") String attemptHash,
                            @Param("ts") long ts);
+
+    /**
+     * The device an enroll attempt created, while that enrollment can still be retried: the device has not checked
+     * in since ({@link #markCheckedIn} clears the hash) and enrolled at or after {@code since}.
+     */
+    @Select({"SELECT number FROM devices WHERE agentEnrollAttemptHash = #{attemptHash} AND enrollTime >= #{since} " +
+            "LIMIT 1"})
+    String findEnrollRetry(@Param("attemptHash") String attemptHash, @Param("since") long since);
+
+    /** New secret for a retried enrollment; only while the attempt still owns the device (no check-in yet). */
+    @Update({"UPDATE devices SET agentSecretHash = #{secretHash}, lastUpdate = #{ts} " +
+            "WHERE number = #{deviceNumber} AND agentEnrollAttemptHash = #{attemptHash}"})
+    int reissueSecret(@Param("deviceNumber") String deviceNumber,
+                      @Param("attemptHash") String attemptHash,
+                      @Param("secretHash") String secretHash,
+                      @Param("ts") long ts);
+
+    /**
+     * An authenticated check-in: last-seen, and the device has its credentials, so its enrollment can no longer be
+     * retried.
+     */
+    @Update({"UPDATE devices SET lastUpdate = #{ts}, agentEnrollAttemptHash = NULL WHERE number = #{deviceNumber}"})
+    void markCheckedIn(@Param("deviceNumber") String deviceNumber, @Param("ts") long ts);
 
     /**
      * Removes a device an agent enrollment created but could not complete. Only while it has no secret: a device that
@@ -75,9 +99,6 @@ public interface AgentDeviceMapper {
      */
     @Delete({"DELETE FROM devices WHERE number = #{deviceNumber} AND agentSecretHash IS NULL"})
     int deleteUnenrolledDevice(@Param("deviceNumber") String deviceNumber);
-
-    @Update({"UPDATE devices SET lastUpdate = #{ts} WHERE number = #{deviceNumber}"})
-    void updateLastUpdate(@Param("deviceNumber") String deviceNumber, @Param("ts") long ts);
 
     /** The console's "Enrolled". Set once: a time already there is kept. */
     @Update({"UPDATE devices SET enrollTime = COALESCE(enrollTime, #{ts}) WHERE number = #{deviceNumber}"})

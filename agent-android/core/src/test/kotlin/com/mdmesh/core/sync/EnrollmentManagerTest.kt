@@ -17,7 +17,48 @@ class EnrollmentManagerTest {
         identity: FakeIdentity,
         api: FakeMdmApi = FakeMdmApi(),
         token: String? = "tok-123",
-    ) = EnrollmentManager(api, identity, FakeTokenProvider(token), FakeCapabilitySource(), NoopEventSink)
+        tokens: FakeTokenProvider = FakeTokenProvider(token, attempt = "attempt-0123456789abcdef"),
+    ) = EnrollmentManager(api, identity, tokens, FakeCapabilitySource(), NoopEventSink)
+
+    @Test
+    fun `sends the stored attempt id for the token`() = runTest {
+        val api = FakeMdmApi()
+        val tokens = FakeTokenProvider("tok-123", attempt = "attempt-0123456789abcdef")
+
+        manager(FakeIdentity(), api, tokens = tokens).ensureEnrolled()
+
+        assertEquals(listOf("tok-123"), tokens.attemptRequests)
+        assertEquals("attempt-0123456789abcdef", api.enrollRequests.single().enrollAttempt)
+    }
+
+    @Test
+    fun `a retry after a lost response sends the same attempt id`() = runTest {
+        val api = FakeMdmApi().apply { enrollThrows = java.net.SocketTimeoutException("timeout") }
+        val identity = FakeIdentity()
+        val manager = manager(identity, api)
+
+        runCatching { manager.ensureEnrolled() }
+        api.enrollThrows = null
+        assertEquals("srv-1", manager.ensureEnrolled())
+
+        assertEquals(2, api.enrollRequests.size)
+        assertEquals(api.enrollRequests[0].enrollAttempt, api.enrollRequests[1].enrollAttempt)
+        assertEquals("sek-1", identity.secret())
+    }
+
+    @Test
+    fun `enrolls without an attempt id when it can't be kept`() = runTest {
+        val api = FakeMdmApi()
+        val tokens = object : com.mdmesh.core.store.EnrollTokenProvider {
+            override suspend fun token() = "tok-123"
+            override suspend fun enrollAttempt(token: String): String = throw java.io.IOException("disk full")
+        }
+
+        val id = EnrollmentManager(api, FakeIdentity(), tokens, FakeCapabilitySource(), NoopEventSink).ensureEnrolled()
+
+        assertEquals("srv-1", id)
+        assertEquals(null, api.enrollRequests.single().enrollAttempt)
+    }
 
     @Test
     fun `returns stored id without contacting server when already enrolled`() = runTest {

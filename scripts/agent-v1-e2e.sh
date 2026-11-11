@@ -341,5 +341,22 @@ chk "batch code: enroll after the stop refused" "$(enroll_with "$TOK4" | field "
 TOK5=$(curl -s -b "$CJ" -X POST "$BASE/rest/private/agent/v1/token" | field "d['data']['token']")
 chk "a code made after the stop enrolls" "$(enroll_with "$TOK5" | field "d['status']")" "OK"
 
+# A lost enroll response: the agent retries with the same attempt id and gets the same device back (enrolls one more).
+echo "== a retried enroll gets its own device back =="
+enroll_attempt(){ curl -s -X POST -H 'Content-Type: application/json' -d "{\"enrollToken\":\"$1\",\"enrollAttempt\":\"$2\",\"agent\":{\"version\":\"0.5.0\",\"package\":\"com.mdmesh.agent\"},\"device\":{\"androidSdkInt\":34,\"isDeviceOwner\":true},\"capabilities\":{\"policy\":[],\"appManagement\":[],\"remoteControl\":{\"tier\":\"none\"},\"oem\":{\"vendor\":\"samsung\",\"knox\":false}}}" "$BASE/rest/public/agent/v1/enroll"; }
+TOK6=$(curl -s -b "$CJ" -X POST "$BASE/rest/private/agent/v1/token" | field "d['data']['token']")
+ATT="e2eAttempt$(date +%s%N)"
+R1=$(enroll_attempt "$TOK6" "$ATT"); R2=$(enroll_attempt "$TOK6" "$ATT")
+chk "retry: same device" "$(echo "$R2" | field "d['data']['deviceId']")" "$(echo "$R1" | field "d['data']['deviceId']")"
+RDID=$(echo "$R2" | field "d['data']['deviceId']"); RSEC=$(echo "$R2" | field "d['data']['deviceSecret']")
+OLDSEC=$(echo "$R1" | field "d['data']['deviceSecret']")
+chk "retry: another attempt with the used code refused" "$(enroll_attempt "$TOK6" "${ATT}x" | field "d['message']")" "error.agent.token.used"
+rcheckin(){ curl -s -X POST -H "Authorization: Bearer $1" -H 'Content-Type: application/json' \
+  -d "{\"deviceId\":\"$RDID\",\"capabilities\":{\"policy\":[],\"appManagement\":[],\"remoteControl\":{\"tier\":\"none\"},\"oem\":{\"vendor\":\"samsung\",\"knox\":false}}}" \
+  "$BASE/rest/public/agent/v1/checkin" | field "d['status']"; }
+chk "retry: the lost secret no longer checks in" "$(rcheckin "$OLDSEC")" "ERROR"
+chk "retry: the new secret checks in" "$(rcheckin "$RSEC")" "OK"
+chk "retry: closed after the first check-in" "$(enroll_attempt "$TOK6" "$ATT" | field "d['message']")" "error.agent.token.used"
+
 echo "===== RESULT: PASS=$PASS FAIL=$FAIL ====="
 [ "$FAIL" -eq 0 ]

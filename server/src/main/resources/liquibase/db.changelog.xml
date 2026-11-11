@@ -3112,4 +3112,20 @@
         <rollback>ALTER TABLE agentEnrollmentToken DROP COLUMN revokedAt;</rollback>
     </changeSet>
 
+    <changeSet id="26.11.10-devices-agentEnrollAttemptHash" author="lunacy" context="common">
+        <comment>Column,new: devices#agentEnrollAttemptHash — SHA-256 of (enrollment token id, the agent's random enroll
+            attempt id). An agent whose enroll response was lost retries with the same attempt id and gets this device
+            back with a new secret, instead of the code being used up. Cleared at the device's first check-in. NULL for
+            existing devices and for agents that don't send an attempt id.</comment>
+        <sql>
+            ALTER TABLE devices ADD COLUMN agentEnrollAttemptHash VARCHAR(64);
+            CREATE INDEX devices_agentEnrollAttemptHash_idx ON devices (agentEnrollAttemptHash)
+                WHERE agentEnrollAttemptHash IS NOT NULL;
+        </sql>
+        <rollback>
+            DROP INDEX IF EXISTS devices_agentEnrollAttemptHash_idx;
+            ALTER TABLE devices DROP COLUMN agentEnrollAttemptHash;
+        </rollback>
+    </changeSet>
+
 </databaseChangeLog>

@@ -42,8 +42,13 @@ class FakeIdentity(
     }
 }
 
-class FakeTokenProvider(private val token: String?) : EnrollTokenProvider {
+class FakeTokenProvider(private val token: String?, private val attempt: String? = null) : EnrollTokenProvider {
+    val attemptRequests = mutableListOf<String>()
     override suspend fun token(): String? = token
+    override suspend fun enrollAttempt(token: String): String? {
+        attemptRequests += token
+        return attempt
+    }
 }
 
 class FakeCapabilitySource(
@@ -69,12 +74,15 @@ class FakeMdmApi : MdmApi {
     var checkInGate: CompletableDeferred<Unit>? = null
 
     val enrollRequests = mutableListOf<AgentEnrollRequest>()
+    /** When set, enroll throws it (after recording the request): a request the server may have handled. */
+    var enrollThrows: Throwable? = null
     val checkInRequests = mutableListOf<AgentCheckInRequest>()
     val checkInAuth = mutableListOf<String>()
 
     override suspend fun enroll(request: AgentEnrollRequest): ResponseEnvelope<AgentEnrollResponse> {
         enrollRequests += request
         enrollGate?.await()
+        enrollThrows?.let { throw it }
         return enrollResponse
     }
 

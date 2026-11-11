@@ -44,6 +44,13 @@ Response `data` (`agent-enroll-response.schema.json`):
 ```
 The server mints a per-device secret, stores only its SHA-256 hash, and returns the plaintext
 **once** here. The agent persists it and presents it on every `/checkin`.
+
+`enrollAttempt` (optional, protocol 1.6): a random id (16-128 of `A-Z a-z 0-9 _ -`) the agent generates and stores
+before its first enroll request, and sends again on every retry of that enrollment. When a response is lost, the
+retry returns the device the first request created, with a new secret (the first is replaced), instead of
+`error.agent.token.used` or a second device from a batch code. This works until that device's first check-in and for
+24 hours, and not for a stopped token. The server keeps only SHA-256(token id ":" attempt). Older servers ignore the
+field.
 Errors: `Response.ERROR("error.agent.token.invalid")`, `...token.used`, `...token.expired` and
 `...enrollment.disabled` are final for that token: retrying cannot succeed. `...enrollment.failed` means the server
 failed before the enrollment completed; it kept nothing (no device, the token's use given back), so the agent retries.

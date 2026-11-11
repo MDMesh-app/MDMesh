@@ -2,7 +2,8 @@
 <!--
     App theme: AppCompat DayNight (follows the system light/dark setting), coloured from the v2 tokens in
     colors_v2.xml (values/ = light, values-night/ = dark). No Material Components: dialogs, buttons and fields
-    are hand-styled below. Status and navigation bars are left at the AppCompat defaults for now.
+    are hand-styled below. Screens keep clear of the system bars themselves (ui/SystemBars.kt): on Android 15+
+    the app (targetSdk 35) is drawn edge to edge.
 -->
 <resources>
 

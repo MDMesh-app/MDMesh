@@ -4,6 +4,7 @@ import android.app.ActivityManager
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import android.util.TypedValue
 import android.view.Gravity
@@ -24,8 +25,9 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import com.mdmesh.agent.service.CheckInService
 import com.mdmesh.agent.ui.DialogSlot
 import com.mdmesh.agent.ui.ExitPinDialog
-import com.mdmesh.agent.ui.MdmDialog
 import com.mdmesh.agent.ui.ExitPinUiState
+import com.mdmesh.agent.ui.MdmDialog
+import com.mdmesh.agent.ui.SystemBars
 import com.mdmesh.core.kiosk.KioskApplier
 import com.mdmesh.core.store.KioskStateStore
 import com.mdmesh.core.sync.CheckInWorker
@@ -84,7 +86,7 @@ class KioskLauncherActivity : ComponentActivity() {
         // A kiosk device boots straight into HOME (this); keep the command channel alive even if
         // the user never opens the status screen.
         ContextCompat.startForegroundService(this, Intent(this, CheckInService::class.java))
-        setContentView(idleView())
+        setScreen(idleView())
         // React to kiosk.enter/kiosk.exit live: those run in the check-in service, not here, so we
         // observe the persisted state and re-render (enter → grid/pin, exit → unpin + idle) without
         // waiting for the user to touch the screen.
@@ -93,6 +95,12 @@ class KioskLauncherActivity : ComponentActivity() {
                 store.flow().distinctUntilChanged().collect(::applyState)
             }
         }
+    }
+
+    /** Show [root] as the whole screen, clear of the system bars (its background runs under them). */
+    private fun setScreen(root: View) {
+        setContentView(root)
+        SystemBars.fit(this, root, (root.background as? ColorDrawable)?.color ?: INK)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -126,7 +134,7 @@ class KioskLauncherActivity : ComponentActivity() {
             dialogs.dismiss()
             holding = false
             stopLockTaskSafely()
-            setContentView(idleView())
+            setScreen(idleView())
             return
         }
         // Pin first: a held device (a loop that tripped just before a reboot) is still in kiosk.
@@ -156,7 +164,7 @@ class KioskLauncherActivity : ComponentActivity() {
         if (p.mode == "single" && p.pinPackage != null) {
             launchPinned(p)
         } else {
-            setContentView(launcherGrid(p))
+            setScreen(launcherGrid(p))
         }
     }
 
@@ -164,10 +172,10 @@ class KioskLauncherActivity : ComponentActivity() {
     private fun launchPinned(p: KioskApplyPayload) {
         val intent = p.pinPackage?.let { packageManager.getLaunchIntentForPackage(it) }
         if (intent == null) {
-            setContentView(launcherGrid(p)) // unknown package → fall back to the grid
+            setScreen(launcherGrid(p)) // unknown package → fall back to the grid
             return
         }
-        setContentView(splashView(p))
+        setScreen(splashView(p))
         runCatching { startActivity(intent) }
     }
 
@@ -175,7 +183,7 @@ class KioskLauncherActivity : ComponentActivity() {
     private fun hold(p: KioskApplyPayload) {
         if (!holding) events.record("kioskCrashLoop", "kiosk app closed repeatedly; kiosk stays on, app not reopened")
         holding = true
-        setContentView(holdView(p))
+        setScreen(holdView(p))
     }
 
     private fun startLockTaskSafely() {

@@ -24,6 +24,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import com.mdmesh.agent.service.CheckInService
 import com.mdmesh.agent.ui.DialogSlot
 import com.mdmesh.agent.ui.MdmDialog
+import com.mdmesh.agent.ui.SystemBars
 import com.mdmesh.core.action.NotificationPermissionAccess
 import com.mdmesh.core.config.ServerConfigStore
 import com.mdmesh.core.config.ConfigApplier
@@ -77,7 +78,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(buildUi())
+        val ui = buildUi()
+        setContentView(ui)
+        SystemBars.fit(this, ui, INK)
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 combine(configStore.configuredKioskFlow(), kioskStore.flow()) { _, _ -> Unit }

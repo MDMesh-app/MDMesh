@@ -196,11 +196,13 @@
   white-space: nowrap;
 }
 
+/* Outlined, as on the device: the kiosk background colour, a 1 dp edge and the label in the text colour. */
 .v2 .v2-kbg__exit {
   text-align: center;
   font-weight: 500;
-  background: var(--kbg-text);
-  color: var(--kbg-bg);
+  background: var(--kbg-bg);
+  color: var(--kbg-text);
+  border: solid var(--kbg-text);
 }
 
 /* ---- captions ---- */

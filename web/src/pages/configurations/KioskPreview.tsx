@@ -467,8 +467,9 @@ function ScaledScreen({
           style={{
             ...px(layout.exit.button, s),
             fontSize: layout.exit.size * s,
-            borderRadius: 20 * s,
-            lineHeight: `${layout.exit.button.h * s}px`,
+            borderRadius: 10 * s,
+            borderWidth: Math.max(1, s),
+            lineHeight: `${layout.exit.button.h * s - 2 * Math.max(1, s)}px`,
           }}
         >
           Exit kiosk

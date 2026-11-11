@@ -137,11 +137,14 @@ export interface ImageCells {
 
 /**
  * A launcher element over the image, by its plate box (dp, in the window): `text` and `secondary` need 4.5:1 in that
- * colour; `control` (the Exit button, filled with the text colour) needs 3:1 and is only helped by the dim.
+ * colour; `control` (the outlined Exit button, by its 1 dp border in the text colour) needs 3:1 and is only helped by
+ * the dim.
  */
 export interface LegibilityElement {
   id: string;
   kind: 'text' | 'secondary' | 'control';
+  /** The labels of one grid row share it: they all get the row's highest plate step. */
+  row?: string;
   box: Box;
 }
 
@@ -284,20 +287,16 @@ export function kioskLegibility(
     }
   }
   const plates: Record<string, Plate> = {};
-  let textRatio = Infinity;
-  let onPlate = false;
+  const dimmed: Record<string, { lo: number; hi: number; colour: number }> = {};
   elements.forEach((e, i) => {
     const colour = colourOf(e.kind);
     const lo = blendStep(bg, bounds[i].lo, dim);
     const hi = blendStep(bg, bounds[i].hi, dim);
     const busy = isBusy(lo, hi);
     const ratioWithoutPlate = worstRatio(colour, lo, hi);
-    if (e.kind === 'control') {
-      plates[e.id] = { step: 0, ratio: ratioWithoutPlate, ratioWithoutPlate, busy };
-      return;
-    }
+    dimmed[e.id] = { lo, hi, colour };
     let step = 0;
-    if (ratioWithoutPlate < TEXT_MIN) {
+    if (e.kind !== 'control' && ratioWithoutPlate < TEXT_MIN) {
       step = SCRIM_STEPS;
       if (!busy) {
         for (let s = 1; s <= SCRIM_STEPS; s++) {
@@ -308,11 +307,25 @@ export function kioskLegibility(
         }
       }
     }
-    const ratio = step === 0 ? ratioWithoutPlate : worstRatio(colour, blendStep(bg, lo, step), blendStep(bg, hi, step));
-    plates[e.id] = { step, ratio, ratioWithoutPlate, busy };
-    textRatio = Math.min(textRatio, ratio);
-    if (step > 0) onPlate = true;
+    plates[e.id] = { step, ratio: ratioWithoutPlate, ratioWithoutPlate, busy };
   });
+  // Row uniformity (3.1): when any label of a grid row needs a plate, every label of the row gets the row's highest.
+  const rows = new Map<string, string[]>();
+  for (const e of elements) if (e.row != null && e.kind !== 'control') rows.set(e.row, [...(rows.get(e.row) ?? []), e.id]);
+  for (const ids of rows.values()) {
+    const top = Math.max(...ids.map((id) => plates[id].step));
+    if (top > 0) for (const id of ids) plates[id].step = top;
+  }
+  let textRatio = Infinity;
+  let onPlate = false;
+  for (const e of elements) {
+    const p = plates[e.id];
+    const d = dimmed[e.id];
+    if (p.step > 0) p.ratio = worstRatio(d.colour, blendStep(bg, d.lo, p.step), blendStep(bg, d.hi, p.step));
+    if (e.kind === 'control') continue;
+    textRatio = Math.min(textRatio, p.ratio);
+    if (p.step > 0) onPlate = true;
+  }
   return { dim, plates, textRatio, onPlate };
 }
 

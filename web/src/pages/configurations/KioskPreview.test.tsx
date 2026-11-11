@@ -256,6 +256,30 @@ describe('Exit button warning', () => {
   });
 });
 
+describe('row plates (3.1)', () => {
+  it('gives every label of a row a plate when one needs it, at the same opacity', async () => {
+    // A bright patch under the third label of a portrait phone only (its crop starts at x = 1421 px, 2.77 px/dp).
+    sampling.paint = (x, y) => (x > 1950 && x < 2100 && y > 360 && y < 440 ? 0xffffff : 0x141414);
+    preview({ apps: ['Scanner', 'Notes', 'Maps', 'Browser'], exitVisible: false });
+    await waitFor(() => expect(liveText()).toMatch(/on plate/));
+    const plates = [0, 1, 2, 3].map((i) => large().querySelector<HTMLElement>(`[data-plate="label-${i}"]`));
+    expect(plates.every((p) => p != null)).toBe(true);
+    expect(new Set(plates.map((p) => p!.style.opacity)).size).toBe(1);
+    expect(large().querySelector('[data-plate="header"]')).toBeNull();
+  });
+});
+
+describe('the Exit button', () => {
+  it('is outlined as on the device: background fill, text-colour edge and label', async () => {
+    sampling.paint = DARK;
+    preview({ colours: kioskColours('#00676B', '#FFFFFF') });
+    const exit = within(large()).getByText('Exit kiosk');
+    expect(exit.classList.contains('v2-kbg__exit')).toBe(true);
+    expect(exit.style.borderWidth).not.toBe('');
+    expect(large().style.getPropertyValue('--kbg-bg')).toBe('#00676B');
+  });
+});
+
 describe('labels', () => {
   it('are cut the same in the large view and the thumbnails, as the device cuts them', async () => {
     sampling.paint = DARK;

@@ -75,6 +75,13 @@ describe('launcherLayout (agent KioskRenderer)', () => {
     }
   });
 
+  it('groups the labels of each grid row, for one plate step per row', () => {
+    const l = launcherLayout({ w: 360, h: 780 }, apps, { iconSize: 'SMALL', exitVisible: false }, measure);
+    const rows = l.elements.filter((e) => e.id.startsWith('label')).map((e) => e.row);
+    expect(rows).toEqual(['row-0', 'row-0', 'row-0', 'row-0', 'row-1']);
+    expect(l.elements.find((e) => e.id === 'header')!.row).toBeUndefined();
+  });
+
   it('puts the Exit button at the bottom centre, 40 dp visible, at least 120 dp wide', () => {
     const l = launcherLayout({ w: 360, h: 780 }, apps, { iconSize: 'SMALL', exitVisible: true }, measure);
     const e = l.exit!;

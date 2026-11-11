@@ -54,7 +54,10 @@ export interface LauncherLayout {
   labelPlates: Box[];
   labelSize: number;
   labelLineHeight: number;
-  /** The Exit button (outlined, its own fill): no plate; its box is its region for the dim. */
+  /**
+   * The Exit button, outlined: background-colour fill, 1 dp border and label in the text colour. No plate; its box is
+   * its region for the dim, which brings the border to 3:1.
+   */
   exit: { button: Box; size: number } | null;
   /** What kioskLegibility protects: the header, each label, and the Exit button. */
   elements: LegibilityElement[];
@@ -174,7 +177,7 @@ export function launcherLayout(
   }
 
   const elements: LegibilityElement[] = [{ id: 'header', kind: 'text', box: headerPlate }];
-  labelPlates.forEach((p, i) => elements.push({ id: `label-${i}`, kind: 'text', box: p }));
+  labelPlates.forEach((p, i) => elements.push({ id: `label-${i}`, kind: 'text', row: `row-${Math.floor(i / columns)}`, box: p }));
   if (exit) elements.push({ id: 'exit', kind: 'control', box: exit.button });
   return { window, header, headerPlate, columns, cells, labelPlates, labelSize: LABEL_SP, labelLineHeight: labelLine, exit, elements };
 }

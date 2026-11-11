@@ -45,7 +45,7 @@ interface Vectors {
     textColor: string | null;
     image: { width: number; height: number; cellSize: number; cols: number; rows: number; cells: [string, string][] };
     window: { w: number; h: number };
-    elements: { id: string; kind: 'text' | 'secondary' | 'control'; box: Box }[];
+    elements: { id: string; kind: 'text' | 'secondary' | 'control'; row?: string; box: Box }[];
     expected: {
       background: string;
       text: string;
@@ -61,7 +61,7 @@ const VECTORS = JSON.parse(
 
 describe('kiosk legibility vectors (shared with the agent)', () => {
   it('uses the same constants', () => {
-    expect(VECTORS.version).toBe(3);
+    expect(VECTORS.version).toBe(3.1);
     expect(VECTORS.steps).toBe(SCRIM_STEPS);
     expect(VECTORS.dimMaxStep).toBe(DIM_MAX_STEP);
     expect(VECTORS.textMin).toBe(TEXT_MIN);
@@ -91,7 +91,7 @@ describe('kiosk legibility vectors (shared with the agent)', () => {
       min: v.image.cells.map((c) => parseColor(c[0])!),
       max: v.image.cells.map((c) => parseColor(c[1])!),
     };
-    const elements: LegibilityElement[] = v.elements.map((e) => ({ id: e.id, kind: e.kind, box: e.box }));
+    const elements: LegibilityElement[] = v.elements.map((e) => ({ id: e.id, kind: e.kind, row: e.row, box: e.box }));
     const out = kioskLegibility(cells, v.window, colours, elements);
     expect(out.dim).toBe(v.expected.dim);
     for (const [id, want] of Object.entries(v.expected.plates)) {

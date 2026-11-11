@@ -37,6 +37,7 @@ import com.hmdm.rest.json.LookupItem;
 import com.hmdm.rest.json.UpgradeConfigurationApplicationRequest;
 import com.hmdm.rest.resource.support.ExtensionPoints;
 import com.hmdm.rest.resource.support.KioskBackgroundImageAssets;
+import com.hmdm.rest.resource.support.KioskBackgroundImageInfo;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.util.DesiredConfigBuilder;
 import com.hmdm.util.FileUtil;
@@ -501,6 +502,29 @@ public class ConfigurationResource {
             return Response.PERMISSION_DENIED();
         }
         return Response.OK(this.applicationDAO.populateRequestedPermissions(this.configurationDAO.getConfigurationApplications(id)));
+    }
+
+    // =================================================================================================================
+    @ApiOperation(
+            value = "Describe a kiosk background image",
+            notes = "An uploaded image as devices get it once a configuration is saved with it: name, format, displayed "
+                    + "width and height, size and SHA-256 of the file without metadata, upload time, current URL. "
+                    + "Refuses (ERROR with a message) a file a save would refuse.",
+            response = KioskBackgroundImageInfo.class
+    )
+    @GET
+    @Path("/backgroundImage/{fileId}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getBackgroundImage(@PathParam("fileId") Integer fileId) {
+        if (!SecurityContext.get().hasPermission("configurations") || backgroundImages == null || fileId == null) {
+            log.error("Unauthorized attempt to describe the background image file " + fileId);
+            return Response.PERMISSION_DENIED();
+        }
+        try {
+            return Response.OK(backgroundImages.describe(fileId));
+        } catch (IllegalArgumentException e) {
+            return Response.ERROR(e.getMessage());
+        }
     }
 
     // =================================================================================================================

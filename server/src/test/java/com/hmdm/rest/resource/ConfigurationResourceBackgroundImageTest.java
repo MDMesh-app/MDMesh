@@ -100,6 +100,22 @@ public class ConfigurationResourceBackgroundImageTest {
     }
 
     @Test
+    public void describingAnImageNeedsTheConfigurationsPermission() {
+        SecurityContext.release();
+        SecurityContext.init(Fakes.user(5, 1, "devices"));
+        Response r = resource.getBackgroundImage(42);
+        assertEquals(Response.PERMISSION_DENIED().getMessage(), r.getMessage());
+        assertEquals(0, files.reads);
+    }
+
+    @Test
+    public void describingAnotherCustomersFileIsAnErrorWithAReadableMessage() {
+        Response r = resource.getBackgroundImage(42);
+        assertEquals(Response.ResponseStatus.ERROR, r.getStatus());
+        assertTrue(r.getMessage(), r.getMessage().startsWith("The background image"));
+    }
+
+    @Test
     public void noFileIsReadForAUserWithoutAccessToTheConfiguration() {
         dao.access = false;
         Response r = resource.updateConfiguration(replacing());

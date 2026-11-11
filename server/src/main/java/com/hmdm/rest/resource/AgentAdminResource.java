@@ -435,7 +435,9 @@ public class AgentAdminResource {
         ConfigStatusView v = new ConfigStatusView();
         v.setConfigurationId(device.getConfigurationId());
         Set<String> tokens = AgentCapabilityTokens.flatten(commandDAO.getDeviceCapabilities(deviceId));
-        v.setCurrentRevision(configReconciler.currentRevision(device, tokens));
+        DesiredConfig doc = configReconciler.statusDocument(device);
+        v.setCurrentRevision(ConfigReconciler.statusRevision(doc, tokens));
+        v.setKioskBackgroundImageFrom(doc);
         DeviceState state = commandDAO.getState(deviceId);
         if (state != null) { v.setAppliedRevision(state.getAppliedConfigRevision()); v.setAppliedAt(state.getAppliedConfigAt()); }
         boolean supported = AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, tokens);

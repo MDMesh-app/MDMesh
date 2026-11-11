@@ -298,6 +298,64 @@ public class KioskBackgroundImageAssetsTest {
                 KioskBackgroundImageAssets.NOT_AN_IMAGE);
     }
 
+    // ---- describe (the console's viewer) ----------------------------------------------------------------------------
+
+    @Test
+    public void describeShowsWhatDevicesWillGetAfterSave() throws Exception {
+        byte[] dirty = KioskImageMetadataTest.phoneJpeg(realImage("jpg", 40, 30), 6);
+        byte[] clean = KioskImageMetadata.strip(dirty);
+        java.nio.file.Files.write(new File(tenant, "kiosk-aaaaaaaaaaaa-beach-day.jpg").toPath(), dirty);
+        uploaded.setFilePath("kiosk-aaaaaaaaaaaa-beach-day.jpg");
+        uploaded.setUploadTime(1_700_000_000_000L);
+
+        KioskBackgroundImageInfo info = assets.describe(42);
+
+        assertEquals(Integer.valueOf(42), info.getFileId());
+        assertEquals("beach-day.jpg", info.getName());
+        assertEquals("https://mdm.example/files/acme/kiosk-aaaaaaaaaaaa-beach-day.jpg", info.getUrl());
+        assertEquals("JPEG", info.getFormat());
+        // Orientation 6 (rotate 90): shown 30 wide and 40 high, as the console and the agent draw it.
+        assertEquals(30, info.getWidth());
+        assertEquals(40, info.getHeight());
+        assertEquals(6, info.getOrientation());
+        assertEquals(clean.length, info.getSize());
+        assertEquals(sha256(clean), info.getSha256());
+        assertEquals(Long.valueOf(1_700_000_000_000L), info.getUploadTime());
+        assertEquals(Boolean.TRUE, info.getMetadataRemoved());
+        assertEquals("nothing is written to describe a file", 0, files.inserted.size());
+    }
+
+    @Test
+    public void describeOfACleanImageSaysNothingIsRemoved() throws Exception {
+        KioskBackgroundImageInfo info = assets.describe(42);
+        assertEquals("wallpaper.png", info.getName());
+        assertEquals(4, info.getWidth());
+        assertEquals(3, info.getHeight());
+        assertEquals(png.length, info.getSize());
+        assertEquals(sha256(png), info.getSha256());
+        assertEquals(Boolean.FALSE, info.getMetadataRemoved());
+    }
+
+    @Test
+    public void describeRefusesWhatSaveRefuses() throws Exception {
+        files.foreign = true;
+        try {
+            assets.describe(42);
+            fail("expected a refusal");
+        } catch (IllegalArgumentException e) {
+            assertEquals(KioskBackgroundImageAssets.NOT_FOUND, e.getMessage());
+        }
+        files.foreign = false;
+        java.nio.file.Files.write(new File(tenant, "note.txt").toPath(), "hello".getBytes(StandardCharsets.UTF_8));
+        uploaded.setFilePath("note.txt");
+        try {
+            assets.describe(42);
+            fail("expected a refusal");
+        } catch (IllegalArgumentException e) {
+            assertEquals(KioskBackgroundImageAssets.NOT_AN_IMAGE, e.getMessage());
+        }
+    }
+
     // ---- remove -----------------------------------------------------------------------------------------------------
 
     @Test

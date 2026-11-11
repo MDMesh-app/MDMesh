@@ -106,8 +106,28 @@ public class KioskBackgroundImageAssets {
         setImage(configuration, sent, null, null);
     }
 
-    /** Points the configuration at a hosted file of the current customer, once its bytes pass the agent's limits. */
-    private void useUploadedFile(Configuration configuration, int fileId) {
+    /** An uploaded file of the current customer and its bytes, checked against the agent's limits. */
+    private static final class Hosted {
+        final UploadedFile file;
+        final Customer customer;
+        final byte[] bytes;
+        final byte[] clean;
+        final KioskImageHeader header;
+
+        Hosted(UploadedFile file, Customer customer, byte[] bytes, byte[] clean, KioskImageHeader header) {
+            this.file = file;
+            this.customer = customer;
+            this.bytes = bytes;
+            this.clean = clean;
+            this.header = header;
+        }
+
+        boolean hasMetadata() {
+            return !Arrays.equals(clean, bytes);
+        }
+    }
+
+    private Hosted load(int fileId) {
         UploadedFile file;
         try {
             file = uploadedFiles.getById(fileId);
@@ -142,18 +162,52 @@ public class KioskBackgroundImageAssets {
         } catch (IOException e) {
             throw new IllegalArgumentException(MISSING, e);
         }
+        // Limits from the header first: nothing here ever decodes the pixels.
         validate(bytes);
         byte[] clean = KioskImageMetadata.strip(bytes);
         if (clean == null) {
             throw new IllegalArgumentException(NOT_AN_IMAGE);
         }
-        String sha256 = validate(clean);
-        if (!Arrays.equals(clean, bytes)) {
+        return new Hosted(file, customer, bytes, clean, KioskImageHeader.read(clean));
+    }
+
+    /** Points the configuration at a hosted file of the current customer, once its bytes pass the agent's limits. */
+    private void useUploadedFile(Configuration configuration, int fileId) {
+        Hosted hosted = load(fileId);
+        String sha256 = validate(hosted.clean);
+        UploadedFile file = hosted.file;
+        if (hosted.hasMetadata()) {
             // Metadata (an API upload, or one from before the console cleaned uploads): the image is hosted again
             // without it. The original is another uploaded file that may be used elsewhere, so it is never rewritten.
-            file = hostCleanCopy(customer, file, clean, sha256);
+            file = hostCleanCopy(hosted.customer, file, hosted.clean, sha256);
         }
-        setImage(configuration, file.getUrl(baseUrl, customer), file.getId(), sha256);
+        setImage(configuration, file.getUrl(baseUrl, hosted.customer), file.getId(), sha256);
+    }
+
+    /**
+     * What the console shows for a background image file: the image as devices will get it once a configuration is
+     * saved with it (metadata removed, so size and SHA-256 are the cleaned file's), at the URL of today's base URL.
+     *
+     * @throws IllegalArgumentException with a message for the admin, as a save would refuse the file
+     */
+    public KioskBackgroundImageInfo describe(int fileId) {
+        Hosted hosted = load(fileId);
+        KioskBackgroundImageInfo info = new KioskBackgroundImageInfo();
+        info.setFileId(hosted.file.getId());
+        info.setUrl(hosted.file.getUrl(baseUrl, hosted.customer));
+        String path = hosted.file.getFilePath().replace('\\', '/');
+        info.setName(KIOSK_PREFIX.matcher(path.substring(path.lastIndexOf('/') + 1)).replaceFirst(""));
+        info.setFormat(hosted.header.format);
+        int orientation = KioskImageMetadata.orientation(hosted.clean);
+        boolean quarterTurn = orientation >= 5;
+        info.setWidth(quarterTurn ? hosted.header.height : hosted.header.width);
+        info.setHeight(quarterTurn ? hosted.header.width : hosted.header.height);
+        info.setOrientation(orientation);
+        info.setSize(hosted.clean.length);
+        info.setSha256(validate(hosted.clean));
+        info.setUploadTime(hosted.file.getUploadTime());
+        info.setMetadataRemoved(hosted.hasMetadata());
+        return info;
     }
 
     private static final Pattern KIOSK_PREFIX = Pattern.compile("^kiosk-[0-9a-f]{12}-");

@@ -71,4 +71,24 @@ class ServerUrlsTest {
         assertEquals("mdm example", ServerUrls.toStore(" mdm example ", null))
         assertEquals("mdm example", ServerUrls.toStore("mdm example", "also broken"))
     }
+
+    @Test
+    fun `nothing stored uses the baked address`() {
+        assertEquals("https://mdm.example.com", ServerUrls.effective(null, legacy = false, fallback = "https://mdm.example.com/"))
+    }
+
+    @Test
+    fun `an address saved now is normalised, a broken one returned as given`() {
+        assertEquals("https://a.example.org", ServerUrls.effective("https://a.example.org/", false, "https://b.test/"))
+        assertEquals("mdm example", ServerUrls.effective("mdm example", false, "https://b.test/"))
+    }
+
+    @Test
+    fun `an address an older agent saved keeps its old meaning`() {
+        // Parsed then: the same server (REST already used only scheme, host and port).
+        assertEquals("https://a.example.org", ServerUrls.effective("https://a.example.org/mdm/", true, "https://b.test/"))
+        // Not parseable then: requests went to the baked address, and still do (no move to another server).
+        assertEquals("https://b.test", ServerUrls.effective("a.example.org", true, "https://b.test/"))
+        assertEquals("https://b.test", ServerUrls.effective("mdm example", true, "https://b.test/"))
+    }
 }

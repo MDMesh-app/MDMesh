@@ -21,15 +21,15 @@ class ServerConfigStore @Inject constructor(@ApplicationContext context: Context
     private val prefs = context.getSharedPreferences("mdm_server", Context.MODE_PRIVATE)
 
     /**
-     * Configured server origin (no trailing slash, see [ServerUrls]). Provisioned value, else the baked default. A value
-     * stored by an older agent that isn't a valid address is returned as it is, so requests fail naming it
-     * ([com.mdmesh.core.net.BaseUrlInterceptor]) instead of quietly going to the baked default.
+     * Configured server origin (no trailing slash; [ServerUrls.effective]). Provisioned value, else the baked default.
+     * A value an older agent saved keeps the meaning it had then; one saved now that isn't an address is returned as
+     * given, so requests fail naming it ([com.mdmesh.core.net.BaseUrlInterceptor]).
      */
-    override fun baseUrl(): String {
-        val stored = prefs.getString(KEY, null)?.takeIf { it.isNotBlank() }
-            ?: return ServerUrls.normalize(BuildConfig.MDM_BASE_URL) ?: BuildConfig.MDM_BASE_URL.trimEnd('/')
-        return ServerUrls.normalize(stored) ?: stored.trim().trimEnd('/')
-    }
+    override fun baseUrl(): String = ServerUrls.effective(
+        stored = prefs.getString(KEY, null),
+        legacy = prefs.getInt(KEY_RULES, 0) < RULES,
+        fallback = BuildConfig.MDM_BASE_URL,
+    )
 
     /**
      * Persist the provisioned server URL ([ServerUrls.toStore]): normalised when valid; absent/blank input is a no-op.
@@ -43,11 +43,14 @@ class ServerConfigStore @Inject constructor(@ApplicationContext context: Context
         val valid = ServerUrls.normalize(value) == value
         if (!valid) Log.w(TAG, "provisioned server address is not an http(s) address")
         // commit(): provisioning reads it back from another component right after (and the process may end).
-        return prefs.edit().putString(KEY, value).commit() && valid
+        return prefs.edit().putString(KEY, value).putInt(KEY_RULES, RULES).commit() && valid
     }
 
     private companion object {
         const val KEY = "base_url"
+        /** Which rules saved [KEY]: absent (0) = an agent before [ServerUrls]; [RULES] = saved by [save]. */
+        const val KEY_RULES = "base_url_rules"
+        const val RULES = 1
         const val TAG = "ServerConfigStore"
     }
 }

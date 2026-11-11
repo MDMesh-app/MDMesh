@@ -35,6 +35,19 @@ object ServerUrls {
         return if (normalize(stored) == null) provided.trim() else null
     }
 
+    /**
+     * The server the agent uses. [stored] is what provisioning saved; [legacy] says an agent before these rules saved
+     * it (as given, unchecked). For such a value the old meaning is kept, so an update never moves an enrolled device
+     * to another server: a value it could not parse sent requests to the baked [fallback]. Values saved under these
+     * rules are normalised, and one that isn't an address is returned as given so requests fail naming it.
+     */
+    fun effective(stored: String?, legacy: Boolean, fallback: String): String {
+        val baked = normalize(fallback) ?: fallback.trim().trimEnd('/')
+        val value = stored?.takeIf { it.isNotBlank() } ?: return baked
+        if (legacy && value.toHttpUrlOrNull() == null) return baked
+        return normalize(value) ?: value.trim().trimEnd('/')
+    }
+
     private fun origin(url: HttpUrl): String {
         val defaultPort = HttpUrl.defaultPort(url.scheme)
         val host = if (':' in url.host) "[${url.host}]" else url.host // IPv6 literal

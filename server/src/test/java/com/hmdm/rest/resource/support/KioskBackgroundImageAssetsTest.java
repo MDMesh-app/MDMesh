@@ -503,9 +503,11 @@ public class KioskBackgroundImageAssetsTest {
         Configuration c = new Configuration();
         c.setBackgroundImageSha256("attacker-hash");
         c.setBackgroundImageFileId(99);
-        assets.apply(c, managed());
+        KioskBackgroundImageAssets.Applied kept = assets.apply(c, managed());
         assertImage(c, MANAGED_URL, 7, HASH);
-        assertEquals("no file is read for an unchanged image", 0, files.reads);
+        // Only its row is looked up (to hold it until written); its bytes aren't read or hashed again.
+        assertEquals("no file is read for an unchanged image", 0, assets.reads());
+        kept.release();
     }
 
     @Test

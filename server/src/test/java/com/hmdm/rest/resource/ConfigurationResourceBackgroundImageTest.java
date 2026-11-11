@@ -42,7 +42,9 @@ public class ConfigurationResourceBackgroundImageTest {
         @Override public boolean hasConfigurationAccess(int id) { return access; }
         @Override public void updateConfiguration(Configuration c) { updated.add(c); }
         @Override public Configuration getConfigurationById(Integer id) { return stored != null ? stored : new Configuration(); }
-        @Override public Configuration getConfigurationByIdFull(Integer id) { return new Configuration(); }
+        @Override public Configuration getConfigurationByIdFull(Integer id) { return stored != null ? stored : new Configuration(); }
+        final List<Configuration> inserted = new ArrayList<>();
+        @Override public void insertConfiguration(Configuration c) { inserted.add(c); }
         @Override public List<Application> getPlainConfigurationApplications(Integer id) { return new ArrayList<>(); }
     }
 
@@ -156,6 +158,22 @@ public class ConfigurationResourceBackgroundImageTest {
         Response r = resource.deleteBackgroundImage(42);
         assertEquals(Response.ResponseStatus.ERROR, r.getStatus());
         assertTrue(r.getMessage(), r.getMessage().startsWith("The background image"));
+    }
+
+    /** A copy holds the source's image until written; one deleted meanwhile is refused with a clear message. */
+    @Test
+    public void copyingAConfigurationWhoseImageWasDeletedIsRefused() {
+        SecurityContext.release();
+        SecurityContext.init(Fakes.user(5, 1, "copy_config"));
+        dao.stored = plain();
+        dao.stored.setBackgroundImageFileId(42);
+        Configuration request = new Configuration();
+        request.setId(3);
+        request.setName("lobby copy");
+        Response r = resource.copyConfiguration(request);
+        assertEquals(Response.ResponseStatus.ERROR, r.getStatus());
+        assertTrue(r.getMessage(), r.getMessage().startsWith("That image was deleted"));
+        assertTrue(dao.inserted.isEmpty());
     }
 
     @Test

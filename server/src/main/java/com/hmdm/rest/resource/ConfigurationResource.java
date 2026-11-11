@@ -505,7 +505,21 @@ public class ConfigurationResource {
             copy.setDescription(configuration.getDescription());
             copy.setApplications(configurationApplications);
             copy.setBaseUrl(this.configurationDAO.getBaseUrl());
-            this.configurationDAO.insertConfiguration(copy);
+            // The source's background image is held until the copy is written: a delete meanwhile can't leave the copy
+            // pointing at nothing (refused when it is already gone).
+            KioskBackgroundImageAssets.Applied held = null;
+            if (backgroundImages != null && copy.getBackgroundImageFileId() != null) {
+                try {
+                    held = backgroundImages.holdExisting(copy.getBackgroundImageFileId(), true);
+                } catch (IllegalArgumentException e) {
+                    return Response.ERROR(e.getMessage());
+                }
+            }
+            try {
+                this.configurationDAO.insertConfiguration(copy);
+            } finally {
+                if (held != null) held.release();
+            }
             User user = SecurityContext.get().getCurrentUser().get();
             if (!user.isAllConfigAvailable()) {
                 // User should get permissions to edit a configuration he created
@@ -573,7 +587,9 @@ public class ConfigurationResource {
     private com.hmdm.persistence.IconDAO iconDAO;
 
     /** What else may use an uploaded file (configuration files, icons), checked before a gallery delete. */
-    @Inject
+    // Guice's own annotation: an optional setter Guice fills in production, which Jersey (HK2) leaves alone when a
+    // test registers an instance.
+    @com.google.inject.Inject(optional = true)
     public void setFileUsers(com.hmdm.persistence.ConfigurationFileDAO configurationFileDAO, com.hmdm.persistence.IconDAO iconDAO) {
         this.configurationFileDAO = configurationFileDAO;
         this.iconDAO = iconDAO;

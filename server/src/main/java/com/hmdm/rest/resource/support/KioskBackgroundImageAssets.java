@@ -49,6 +49,7 @@ public class KioskBackgroundImageAssets {
     static final String TOO_LARGE = "The background image is larger than 10 MB.";
     static final String TOO_MANY_PIXELS = "The background image is larger than 16 megapixels.";
     static final String NOT_FOUND = "The background image is not an uploaded file of this account.";
+    static final String DELETED = "That image was deleted meanwhile. Choose or upload an image again.";
     static final String NOT_A_GALLERY_IMAGE = "Only kiosk background images can be deleted here. Use Files for other files.";
     static final String IN_USE = "This image is used by a configuration. Choose another image there first, then delete it.";
     static final String STORAGE_FULL = "The image without its metadata doesn't fit in this account's file storage.";
@@ -155,7 +156,8 @@ public class KioskBackgroundImageAssets {
                 && (sent == null || sent.equals(stored.getBackgroundImageUrl()))) {
             setImage(configuration, stored.getBackgroundImageUrl(), stored.getBackgroundImageFileId(),
                     stored.getBackgroundImageSha256());
-            return Applied.NOTHING;
+            // Kept, and held until written like a new choice (a concurrent replace + delete can't leave it dangling).
+            return holdExisting(stored.getBackgroundImageFileId(), false);
         }
         // A legacy wallpaper URL, as sent: the admin set it over the managed image (if any), so that one is dropped.
         setImage(configuration, sent, null, null);
@@ -251,20 +253,40 @@ public class KioskBackgroundImageAssets {
     /** Points the configuration at a hosted file of the current customer, once its bytes pass the agent's limits. */
     private Applied useUploadedFile(Configuration configuration, int fileId) {
         Resolved resolved = resolve(fileId);
-        Read read = read(resolved);
-        String sha256 = validate(read.clean);
-        UploadedFile file = resolved.file;
-        UploadedFile[] created = new UploadedFile[1];
-        if (read.hasMetadata()) {
-            // Metadata (an API upload, or one from before the console cleaned uploads): the image is hosted again
-            // without it. The original is another uploaded file that may be used elsewhere, so it is never rewritten.
-            file = hostCleanCopy(resolved.customer, file, read.clean, sha256, created);
+        // Held before its bytes are read and hashed, until the save is written or fails: a gallery delete, a Files edit
+        // or another save's undo leaves it alone meanwhile, and one that got there first fails this save cleanly.
+        Applied held = holdExisting(fileId, true);
+        try {
+            if (beforeRead != null) beforeRead.run();
+            Read read = read(resolved);
+            String sha256 = validate(read.clean);
+            UploadedFile file = resolved.file;
+            if (read.hasMetadata()) {
+                // Metadata (an API upload, or one from before the console cleaned uploads): the image is hosted again
+                // without it. The original is another uploaded file that may be used elsewhere, so it is never
+                // rewritten. The copy is held as it is created or found (under the lock); the original is let go.
+                UploadedFile[] created = new UploadedFile[1];
+                file = hostCleanCopy(resolved.customer, file, read.clean, sha256, created);
+                Applied copy = new Applied(this, resolved.customer, created[0], file.getId());
+                held.release();
+                held = copy;
+            }
+            setImage(configuration, file.getUrl(baseUrl, resolved.customer), file.getId(), sha256);
+            return held;
+        } catch (RuntimeException e) {
+            held.release();
+            throw e;
         }
-        // Held until the save is written or fails: a gallery delete or another save's undo leaves it alone meanwhile,
-        // and a delete that got there first fails this save cleanly instead of letting it commit a dangling id.
-        hold(file.getId());
-        setImage(configuration, file.getUrl(baseUrl, resolved.customer), file.getId(), sha256);
-        return new Applied(this, resolved.customer, created[0], file.getId());
+    }
+
+    /**
+     * Holds an uploaded file a configuration is about to keep or copy, until {@link Applied#release()}.
+     *
+     * @param strict refuse (DELETED) when the file is gone; otherwise go on without a hold (an update that keeps
+     *               the image it already has must stay saveable)
+     */
+    public Applied holdExisting(int fileId, boolean strict) {
+        return hold(fileId, strict) ? new Applied(this, null, null, fileId) : Applied.NOTHING;
     }
 
     /** Files chosen by saves not written yet: file id to the number of such saves. */
@@ -272,7 +294,10 @@ public class KioskBackgroundImageAssets {
     /** Tests: runs just before a save takes hold of its file (to put a delete in between). */
     Runnable beforeHold;
 
-    private void hold(int fileId) {
+    /** Tests: runs once a save holds its file, just before its bytes are read. */
+    Runnable beforeRead;
+
+    private boolean hold(int fileId, boolean strict) {
         if (beforeHold != null) beforeHold.run();
         synchronized (COPY_LOCK) {
             UploadedFile still;
@@ -281,9 +306,18 @@ public class KioskBackgroundImageAssets {
             } catch (com.hmdm.security.SecurityException e) {
                 still = null;
             }
-            if (still == null) throw new IllegalArgumentException(NOT_FOUND);
-            held.computeIfAbsent(fileId, k -> new java.util.concurrent.atomic.AtomicInteger()).incrementAndGet();
+            if (still == null) {
+                if (strict) throw new IllegalArgumentException(DELETED);
+                return false;
+            }
+            holdLocked(fileId);
+            return true;
         }
+    }
+
+    /** Counts a hold. Call under COPY_LOCK. */
+    private void holdLocked(int fileId) {
+        held.computeIfAbsent(fileId, k -> new java.util.concurrent.atomic.AtomicInteger()).incrementAndGet();
     }
 
     private void unhold(int fileId) {
@@ -593,6 +627,7 @@ public class KioskBackgroundImageAssets {
                 if (existing != null && !existing.isExternal()) {
                     // Another save uses it now: a failed save that hosted it must not take it back.
                     reused.add(existing.getId());
+                    holdLocked(existing.getId());
                     return existing;
                 }
                 UploadedFile copy = new UploadedFile();
@@ -604,6 +639,7 @@ public class KioskBackgroundImageAssets {
                 UploadedFile inserted = uploadedFiles.insert(copy);
                 // Only a copy this save wrote is taken back if the save fails; a file already there may be in use.
                 if (wrote) created[0] = inserted;
+                holdLocked(inserted.getId());
                 return inserted;
             } catch (UnsafePathException | IOException e) {
                 throw new IllegalArgumentException(NOT_STORED, e);

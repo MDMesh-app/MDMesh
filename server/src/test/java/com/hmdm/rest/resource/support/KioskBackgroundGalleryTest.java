@@ -198,7 +198,7 @@ public class KioskBackgroundGalleryTest {
             assets.apply(c, null);
             fail("expected a refusal");
         } catch (IllegalArgumentException e) {
-            assertEquals(KioskBackgroundImageAssets.NOT_FOUND, e.getMessage());
+            assertEquals(KioskBackgroundImageAssets.DELETED, e.getMessage());
         }
     }
 
@@ -237,6 +237,88 @@ public class KioskBackgroundGalleryTest {
         save.release();
         save.release(); // idempotent
         assertEquals("removed", assets.unlessHeld(1, () -> { ran[0] = true; return "removed"; }, "held"));
+    }
+
+    private static com.hmdm.persistence.domain.Configuration replace(int fileId) {
+        com.hmdm.persistence.domain.Configuration c = new com.hmdm.persistence.domain.Configuration();
+        c.setBackgroundImageAction("replace");
+        c.setBackgroundImageFileId(fileId);
+        return c;
+    }
+
+    /** The file is held before its bytes are read and hashed: a content replace can't slip in between. */
+    @Test
+    public void aSaveHoldsItsFileBeforeReadingIt() throws Exception {
+        host(1, "kiosk-aaaaaaaaaaaa-beach.jpg", KioskImageMetadataTest.image("jpg", 4, 4), 1, 1);
+        boolean[] heldWhileReading = {false};
+        assets.beforeRead = () -> heldWhileReading[0] = assets.isHeld(1);
+        assets.apply(replace(1), null).release();
+        assertTrue(heldWhileReading[0]);
+        assertFalse(assets.isHeld(1));
+    }
+
+    /** Hosting a cleaned copy: the copy is held (taken under the lock), the original let go. */
+    @Test
+    public void aSaveThatHostsACopyHoldsTheCopy() throws Exception {
+        host(1, "photo.jpg", KioskImageMetadataTest.phoneJpeg(KioskImageMetadataTest.image("jpg", 8, 8), 1), 1, 1);
+        com.hmdm.persistence.domain.Configuration c = replace(1);
+        KioskBackgroundImageAssets.Applied save = assets.apply(c, null);
+        int copy = c.getBackgroundImageFileId();
+        assertTrue(assets.isHeld(copy));
+        assertFalse(assets.isHeld(1));
+        save.release();
+        assertFalse(assets.isHeld(copy));
+    }
+
+    /** A save refused after taking hold (not an image) lets go: the file stays deletable without a restart. */
+    @Test
+    public void aRefusedSaveLetsGoOfItsFile() throws Exception {
+        host(1, "kiosk-aaaaaaaaaaaa-notes.png", "hello".getBytes(StandardCharsets.UTF_8), 1, 1);
+        try {
+            assets.apply(replace(1), null);
+            fail("expected a refusal");
+        } catch (IllegalArgumentException e) {
+            assertEquals(KioskBackgroundImageAssets.NOT_AN_IMAGE, e.getMessage());
+        }
+        assertFalse(assets.isHeld(1));
+    }
+
+    /** An update that keeps its image holds it too, and a copy holds the source's (strict: refused once deleted). */
+    @Test
+    public void keepingOrCopyingAnImageHoldsIt() throws Exception {
+        host(1, "kiosk-aaaaaaaaaaaa-beach.jpg", KioskImageMetadataTest.image("jpg", 4, 4), 1, 1);
+        com.hmdm.persistence.domain.Configuration stored = new com.hmdm.persistence.domain.Configuration();
+        stored.setBackgroundImageFileId(1);
+        stored.setBackgroundImageUrl("https://mdm.example/files/acme/kiosk-aaaaaaaaaaaa-beach.jpg");
+        stored.setBackgroundImageSha256("ab");
+        KioskBackgroundImageAssets.Applied keep = assets.apply(new com.hmdm.persistence.domain.Configuration(), stored);
+        assertTrue(assets.isHeld(1));
+        keep.release();
+        KioskBackgroundImageAssets.Applied copy = assets.holdExisting(1, true);
+        assertTrue(assets.isHeld(1));
+        copy.release();
+        assertFalse(assets.isHeld(1));
+        assets.deleteUnused(1, id -> false);
+        try {
+            assets.holdExisting(1, true);
+            fail("expected a refusal");
+        } catch (IllegalArgumentException e) {
+            assertEquals(KioskBackgroundImageAssets.DELETED, e.getMessage());
+        }
+        // Lenient (an update that keeps what it has): no hold, no refusal.
+        assets.holdExisting(1, false).release();
+    }
+
+    @Test
+    public void aSaveOfAnImageDeletedMeanwhileSaysSo() throws Exception {
+        host(1, "kiosk-aaaaaaaaaaaa-beach.jpg", KioskImageMetadataTest.image("jpg", 4, 4), 1, 1);
+        assets.beforeHold = () -> assets.deleteUnused(1, id -> false);
+        try {
+            assets.apply(replace(1), null);
+            fail("expected a refusal");
+        } catch (IllegalArgumentException e) {
+            assertEquals(KioskBackgroundImageAssets.DELETED, e.getMessage());
+        }
     }
 
     @Test

@@ -343,4 +343,21 @@ public class FilesResourceCommitTest {
         assertTrue("a file of another record must survive", other.exists());
         assertFalse(mine.exists());
     }
+
+    /** Files → edit of a file a configuration save holds is refused (the save hashed these bytes). */
+    @Test
+    public void editingAFileASaveHoldsIsRefused() throws IOException {
+        uploadedFileDAO.existing = hosted(5, "kiosk-aaaaaaaaaaaa-beach.jpg");
+        resource.setKioskImages(new com.hmdm.rest.resource.support.KioskBackgroundImageAssets(uploadedFileDAO,
+                new FakeCustomerDAO(customer), "https://mdm.example.com", filesDir.getAbsolutePath()) {
+            @Override public <T> T unlessHeld(int fileId, java.util.function.Supplier<T> action, T whenHeld) {
+                return fileId == 5 ? whenHeld : action.get();
+            }
+        });
+        UploadedFile edit = hosted(5, "kiosk-aaaaaaaaaaaa-beach.jpg");
+        edit.setDescription("renamed");
+        Response r = resource.updateFile(edit);
+        assertEquals("error.used.file", r.getMessage());
+        assertTrue(uploadedFileDAO.written.isEmpty());
+    }
 }

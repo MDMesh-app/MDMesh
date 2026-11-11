@@ -177,7 +177,9 @@ public class FilesResource {
     private com.hmdm.rest.resource.support.KioskBackgroundImageAssets kioskImages;
 
     /** The kiosk background images, whose saves hold their file until written (see removeFile). */
-    @Inject
+    // Guice's own annotation: an optional setter Guice fills in production, which Jersey (HK2) leaves alone when a
+    // test registers an instance.
+    @com.google.inject.Inject(optional = true)
     public void setKioskImages(com.hmdm.rest.resource.support.KioskBackgroundImageAssets kioskImages) {
         this.kioskImages = kioskImages;
     }
@@ -240,6 +242,10 @@ public class FilesResource {
             } else {
                 return createExternalFileInternal(uploadedFile);
             }
+        } else if (kioskImages != null && uploadedFile.getId() != null) {
+            // Not while a configuration save holds the file: it has hashed these bytes. A file a configuration already
+            // uses as its background is refused below in any case (its digest is pinned).
+            return kioskImages.unlessHeld(uploadedFile.getId(), () -> updateFileInternal(uploadedFile), Response.FILE_USED());
         } else {
             return updateFileInternal(uploadedFile);
         }

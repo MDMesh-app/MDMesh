@@ -22,7 +22,7 @@
         <item name="android:importantForAccessibility">no</item>
     </style>
 
-    <!-- Status pill (v2 badge): 12.5/500 label, dot drawn at the start. -->
+    <!-- Status pill (v2 badge): 13/500 label, dot drawn at the start. -->
     <style name="Widget.MdmAgent.Pill" parent="">
         <item name="android:textAppearance">@style/TextAppearance.MdmAgent.Pill</item>
         <item name="android:paddingStart">@dimen/mdm_space_8</item>
@@ -35,18 +35,18 @@
     </style>
 
     <style name="TextAppearance.MdmAgent.Pill" parent="TextAppearance.AppCompat">
-        <item name="android:textSize">12.5sp</item>
+        <item name="android:textSize">13sp</item>
         <item name="android:fontFamily">sans-serif-medium</item>
     </style>
 
-    <!-- Callout title (13/500) and body (13/400), coloured by tone in code. -->
+    <!-- Callout title (14/500) and body (14/400), coloured by tone in code. -->
     <style name="TextAppearance.MdmAgent.CalloutTitle" parent="TextAppearance.AppCompat">
         <item name="android:textSize">14sp</item>
         <item name="android:fontFamily">sans-serif-medium</item>
     </style>
 
     <style name="TextAppearance.MdmAgent.CalloutBody" parent="TextAppearance.AppCompat">
-        <item name="android:textSize">13sp</item>
+        <item name="android:textSize">14sp</item>
     </style>
 
 </resources>

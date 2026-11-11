@@ -73,10 +73,11 @@ finishes the entry even if the screen goes away (a rotation); once in kiosk it q
 | Connectivity | `connectivityMode` (live-connection mode, 1.5) |
 
 **Kiosk colours on the device** (agent 0.5.0+, `KioskPalette`). `backgroundColor` is drawn solid: any transparency
-in it is dropped. `textColor` is used as long as it has at least 3:1 contrast with the background; below that the
-launcher uses whichever of the v2 text colours (or black or white) reads best. The launcher's secondary text, pressed
-highlights and buttons are derived from the two, each kept readable (4.5:1 for text). Older agents use both colours
-as sent.
+in it is dropped. `textColor` is used when it has at least 4.5:1 contrast with the background (WCAG AA for text; the
+launcher has no text large enough for the 3:1 large-text level); below that the launcher uses whichever of the v2
+text colours (or black or white) reads best, for all of its text and buttons. Secondary text is the text colour at
+80% over the background, kept at 4.5:1 or more; focused apps and buttons get a 2dp ring in the text colour. Older
+agents use both colours as sent.
 
 `name` and `description` are metadata only. Wire shapes: `proto/payloads/config-apply.schema.json` and
 `proto/payloads/config-apply-result.schema.json`.

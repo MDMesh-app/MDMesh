@@ -6,13 +6,12 @@ package com.mdmesh.agent.ui
  * looks the same in light and dark mode and needs no redraw when the system switches.
  *
  * Readability floors (WCAG, via [Contrast]):
- * - [text] is the admin's text colour while it reaches 3:1 on the background (large-text level: the admin chose
- *   it, and many brand pairs sit between 3 and 4.5). Below that it is unreadable, and the v2 text colour that reads
- *   best on the background is used instead.
- * - [secondary] is [text] at 72% over the background, but never under 4.5:1: then it is [text], or failing that
- *   the most readable colour.
- * - The filled button is "ink = text, on-ink = background" when that pair reaches 4.5:1, else the most readable
- *   colour with the background as its label. Either way its label reaches 4.5:1 and its edge 3:1.
+ * - [text] is the admin's text colour while it reaches 4.5:1 on the background (WCAG AA for text). The launcher has
+ *   no large text (its titles are 20sp medium, not 24sp or bold), so the 3:1 large-text level never applies. Below
+ *   4.5:1 the v2 text colour that reads best on the background is used instead, for all of the launcher's text.
+ * - [secondary] is [text] at 80% over the background, but never under 4.5:1: then it is [text].
+ * - The filled button is "ink = text, on-ink = background": its label reaches 4.5:1 and its edge 3:1, and so does
+ *   the [focus] ring.
  */
 data class KioskPalette(
     val background: Int,
@@ -20,13 +19,16 @@ data class KioskPalette(
     val secondary: Int,
     /** Decorative 1dp lines (the empty-state frame). */
     val line: Int,
-    /** Pressed and focused cells and outlined buttons: [text] at 12%. */
+    /** Pressed cells and outlined buttons: [text] at 12% (focus also gets the [focus] ring). */
     val ripple: Int,
     val buttonFill: Int,
     val buttonLabel: Int,
     /** Pressed filled button: [buttonLabel] at 24%. */
     val buttonRipple: Int,
 ) {
+    /** The 2dp keyboard and D-pad focus ring around cells and buttons: the text colour. */
+    val focus: Int get() = buttonFill
+
     companion object {
         /** v2 dark `--app`: the launcher's background when the kiosk sets none. */
         const val DEFAULT_BACKGROUND = 0xFF0F1115.toInt()
@@ -43,17 +45,16 @@ data class KioskPalette(
         fun of(background: Int?, text: Int?): KioskPalette {
             val bg = opaque(background ?: DEFAULT_BACKGROUND)
             val readable = mostReadableOn(bg)
-            val fg = opaque(text ?: DEFAULT_TEXT).takeIf { Contrast.ratio(it, bg) >= Contrast.UI_MIN } ?: readable
-            val strong = fg.takeIf { Contrast.ratio(it, bg) >= Contrast.TEXT_MIN } ?: readable
+            val fg = opaque(text ?: DEFAULT_TEXT).takeIf { Contrast.ratio(it, bg) >= Contrast.TEXT_MIN } ?: readable
             val secondary = blend(fg, bg, SECONDARY_ALPHA).takeIf { Contrast.ratio(it, bg) >= Contrast.TEXT_MIN }
-                ?: strong
+                ?: fg
             return KioskPalette(
                 background = bg,
                 text = fg,
                 secondary = secondary,
                 line = blend(fg, bg, LINE_ALPHA),
                 ripple = withAlpha(fg, RIPPLE_ALPHA),
-                buttonFill = strong,
+                buttonFill = fg,
                 buttonLabel = bg,
                 buttonRipple = withAlpha(bg, BUTTON_RIPPLE_ALPHA),
             )
@@ -81,7 +82,7 @@ data class KioskPalette(
 
         private fun withAlpha(c: Int, alpha: Float): Int = (Math.round(alpha * BYTE) shl ALPHA) or (c and RGB)
 
-        private const val SECONDARY_ALPHA = 0.72f
+        private const val SECONDARY_ALPHA = 0.8f
         private const val LINE_ALPHA = 0.24f
         private const val RIPPLE_ALPHA = 0.12f
         private const val BUTTON_RIPPLE_ALPHA = 0.24f

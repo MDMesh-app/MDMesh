@@ -79,6 +79,44 @@ class ThemeResourcesTest {
         )
     }
 
+    /**
+     * Readability beyond AA (owner, 2026-11-10): the small secondary text (eyebrows, subtitle, hint, pill) and the
+     * status callout text reach 7:1 on the fills they sit on. The "Active" pill sits on the stronger ok soft fill,
+     * so it is held to AA only (above).
+     */
+    @Test fun `secondary and status text reach 7 to 1 in both modes`() {
+        assertPairs(
+            listOf(
+                "mdm_secondary" to "mdm_app",
+                "mdm_secondary" to "mdm_surface",
+                "mdm_secondary" to "mdm_surface_2",
+                "mdm_ok_ink" to "mdm_ok_wash",
+                "mdm_ok_ink" to "mdm_surface", // "Copied" check
+                "mdm_warn_ink" to "mdm_warn_soft",
+                "mdm_alert_ink" to "mdm_alert_soft",
+                "mdm_alert_ink" to "mdm_surface", // PIN error line
+            ),
+            AAA_TEXT,
+        )
+    }
+
+    @Test fun `disabled text stays readable in both modes`() {
+        // Disabled controls are exempt from WCAG contrast, but "Returning…" is read: same floor as all text.
+        assertPairs(listOf("mdm_disabled_ink" to "mdm_disabled_bg"), Contrast.TEXT_MIN)
+    }
+
+    @Test fun `focus ring and danger outline pass 3 to 1 in both modes`() {
+        assertPairs(
+            listOf(
+                "mdm_focus" to "mdm_surface",
+                "mdm_focus" to "mdm_app",
+                "mdm_on_ink" to "mdm_ink", // the ring inside the filled button
+                "mdm_alert_border" to "mdm_surface",
+            ),
+            Contrast.UI_MIN,
+        )
+    }
+
     private fun assertPairs(pairs: List<Pair<String, String>>, min: Double) {
         val failures = buildList {
             for ((mode, palette) in listOf("light" to light, "dark" to dark)) {
@@ -89,5 +127,10 @@ class ThemeResourcesTest {
             }
         }
         assertEquals("pairs under $min:1", emptyList<String>(), failures)
+    }
+
+    private companion object {
+        /** WCAG AAA for body text. */
+        const val AAA_TEXT = 7.0
     }
 }

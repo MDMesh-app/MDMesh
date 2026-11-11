@@ -617,3 +617,18 @@
     vertical-align: top;
   }
 }
+
+/* Location tab: the fixes as a list under the map (the map's points are pointer-only). */
+.v2 .v2-device-loclist > summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.v2 .v2-device-loclist[open] > summary {
+  margin-bottom: 8px;
+}

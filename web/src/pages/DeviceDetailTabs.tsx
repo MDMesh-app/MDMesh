@@ -31,6 +31,7 @@ import {
   KeyValueGroup,
   RelativeTime,
   Segmented,
+  Table,
   type KeyValueItem,
 } from '../ui';
 import { CommandsCard } from './DeviceDetailControl';
@@ -443,6 +444,26 @@ export function LocationTab({
       ) : null}
       {fixes && fixes.length > 0 ? (
         <LocationMap fixes={fixes} label={`Map of the device’s ${inRange ? `locations in ${inRange}` : 'recent locations'}`} />
+      ) : null}
+      {fixes && fixes.length > 0 ? (
+        // The map's points open their details on a pointer only; the same fixes as text, for keyboards and screen
+        // readers (2.1.1, 1.1.1).
+        <details className="v2-device-loclist">
+          <summary>Show the locations as a list</summary>
+          <Table<LocationFix>
+            aria-label="Reported locations"
+            edge={0}
+            rowPad={10}
+            rows={fixes}
+            rowKey={(f) => f.id ?? f.capturedAt}
+            columns={[
+              { key: 'when', header: 'When', cell: (f) => fmtDateTime(f.capturedAt) },
+              { key: 'where', header: 'Position', cell: (f) => <span className="v2-mono">{`${f.lat.toFixed(5)}, ${f.lon.toFixed(5)}`}</span> },
+              { key: 'acc', header: 'Accuracy', cell: (f) => (f.accuracy != null ? `±${Math.round(f.accuracy)} m` : DASH) },
+              { key: 'src', header: 'Source', cell: (f) => f.provider || DASH },
+            ]}
+          />
+        </details>
       ) : null}
     </Card>
   );

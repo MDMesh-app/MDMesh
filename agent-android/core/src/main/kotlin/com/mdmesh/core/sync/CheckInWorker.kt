@@ -84,6 +84,22 @@ class CheckInWorker @AssistedInject constructor(
          *  starting the foreground service from a background receiver is blocked on Android 12+.
          *  A plain one-time job (no expedited) keeps it safe on minSdk 24 — WorkManager runs it
          *  promptly once the network constraint is met. */
+        /**
+         * The unique work name and policy of [scheduleOnProcessStart]. Its own name, so it never cancels the "now"
+         * chain (which may be mid-enroll). REPLACE, not KEEP: a one-shot left by a dead process can be waiting out a
+         * long retry backoff (hours, after an outage), and KEEP would make the new process wait on it. Replacing is
+         * safe at process start: no check-in of this name can be running in this process yet, and one that ran in
+         * the dead process died with it.
+         */
+        internal val PROCESS_START_WORK: Pair<String, ExistingWorkPolicy> =
+            "$UNIQUE_NAME-start" to ExistingWorkPolicy.REPLACE
+
+        /** A prompt check-in for a process that just started (after an install, a reboot, or a kill). */
+        fun scheduleOnProcessStart(context: Context) {
+            val (name, policy) = PROCESS_START_WORK
+            WorkManager.getInstance(context).enqueueUniqueWork(name, policy, immediateRequest())
+        }
+
         fun scheduleNow(context: Context) {
             val request = immediateRequest()
 

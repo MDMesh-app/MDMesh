@@ -9,25 +9,41 @@ internal data class StartPlan(
     /** Read the stored credentials and decide on the socket (also done after [initialSync]). */
     val loadCredentials: Boolean,
 ) {
+    /** Who started the service. */
+    enum class Starter {
+        /** Someone started it with an intent: boot, self-update, provisioning, the app. */
+        NORMAL,
+
+        /** The system restarting the START_STICKY service, with no intent, after the process died. */
+        STICKY_RESTART,
+
+        /** The heartbeat, reviving a service Android stopped. */
+        HEARTBEAT;
+
+        companion object {
+            fun of(hasIntent: Boolean, fromHeartbeat: Boolean): Starter = when {
+                fromHeartbeat -> HEARTBEAT
+                !hasIntent -> STICKY_RESTART
+                else -> NORMAL
+            }
+        }
+    }
+
     companion object {
         /**
-         * Whether this start revives a service Android stopped, rather than one someone started: the heartbeat's
-         * start, or the system restarting the START_STICKY service with no intent after the process died (an OEM or
-         * low-memory kill). Boot and self-update start it with an intent (BootReceiver), and keep the grace window:
-         * an operator is likely at the device then. A revived service needs no check-in of its own either: the
-         * heartbeat makes one, and every process start schedules one (MdmApplication).
+         * Only a [Starter.NORMAL] start holds the socket for the grace window: boot and self-update come that way,
+         * when an operator is likely at the device. A revived service (an OEM kill, then the heartbeat or a sticky
+         * restart) would otherwise hold a hot socket on battery after every kill.
+         *
+         * The heartbeat checks in itself, under its wakelock, so a service it starts doesn't. A sticky restart does:
+         * nothing else would check in right away (the heartbeat can be 10 minutes off, and the start-up worker may
+         * wait for a Doze window), and an install queued for the device should not wait that long.
          */
-        fun revived(hasIntent: Boolean, fromHeartbeat: Boolean): Boolean = fromHeartbeat || !hasIntent
-
-        /**
-         * A [revived] service neither checks in nor holds the socket for the grace window (a hot socket on battery
-         * each time an OEM kills it); it only picks up the credentials and follows the normal power-mode rule.
-         */
-        fun of(first: Boolean, revived: Boolean, hasCredentials: Boolean): StartPlan {
+        fun of(first: Boolean, starter: Starter, hasCredentials: Boolean): StartPlan {
             val needed = first || !hasCredentials
             return StartPlan(
-                grace = first && !revived,
-                initialSync = needed && !revived,
+                grace = first && starter == Starter.NORMAL,
+                initialSync = needed && starter != Starter.HEARTBEAT,
                 loadCredentials = needed,
             )
         }

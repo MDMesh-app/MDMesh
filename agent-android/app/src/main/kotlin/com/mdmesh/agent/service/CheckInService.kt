@@ -24,7 +24,7 @@ import com.mdmesh.core.install.InstallManager
 import com.mdmesh.core.power.PowerModeStore
 import com.mdmesh.core.store.DeviceIdentity
 import com.mdmesh.core.sync.CheckInCoordinator
-import com.mdmesh.core.sync.Credentials
+import com.mdmesh.core.sync.CredentialsWatch
 import com.mdmesh.core.sync.SyncStatus
 import com.mdmesh.core.telemetry.EventLog
 import com.mdmesh.core.transport.TransportManager
@@ -58,6 +58,7 @@ class CheckInService : LifecycleService() {
     @Inject lateinit var notificationPermission: NotificationPermissionAccess
     @Inject lateinit var installManager: InstallManager
     @Inject lateinit var syncStatus: SyncStatus
+    private val credentialsWatch = CredentialsWatch()
 
     @Volatile private var started = false
     @Volatile private var interactiveUntil = 0L
@@ -67,7 +68,7 @@ class CheckInService : LifecycleService() {
     // Reachability grace: hold the socket for a window after service start even on idle
     // battery, so a device that just booted / self-updated is instantly commandable — a reboot
     // usually means an operator is acting on it. After the window, adaptive gating resumes.
-    // Not when the service is revived after Android stopped it (see StartPlan.revived).
+    // Not when the service is revived after Android stopped it (see StartPlan.of).
     @Volatile private var graceUntil = 0L
 
     @Suppress("DEPRECATION")
@@ -115,7 +116,7 @@ class CheckInService : LifecycleService() {
         // enroll token, and then it is retried now rather than at the next cycle.
         val plan = StartPlan.of(
             first = first,
-            revived = StartPlan.revived(
+            starter = StartPlan.Starter.of(
                 hasIntent = intent != null,
                 fromHeartbeat = intent?.getBooleanExtra(EXTRA_FROM_HEARTBEAT, false) == true,
             ),
@@ -143,10 +144,16 @@ class CheckInService : LifecycleService() {
                 if (deviceId.isNullOrBlank() || secret.isNullOrBlank()) {
                     // Not enrolled yet (e.g. revived before the first enrollment, so no check-in of its own): pick
                     // the credentials up as soon as a check-in saves them, so always-on gets its socket promptly.
-                    val saved = Credentials.await(syncStatus.successes) { identity.current() to identity.secret() }
-                    deviceId = saved.deviceId
-                    secret = saved.secret
-                    reevaluateSocket()
+                    // One wait at a time, however many starts find no credentials.
+                    credentialsWatch.startIfIdle(
+                        lifecycleScope,
+                        syncStatus.successes,
+                        { identity.current() to identity.secret() },
+                    ) { saved ->
+                        deviceId = saved.deviceId
+                        secret = saved.secret
+                        reevaluateSocket()
+                    }
                 }
             }
         }

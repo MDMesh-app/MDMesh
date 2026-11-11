@@ -1,5 +1,6 @@
 package com.mdmesh.agent.service
 
+import com.mdmesh.agent.service.StartPlan.Starter
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -9,7 +10,7 @@ class StartPlanTest {
     fun `a normal first start checks in and holds the socket for the grace window`() {
         assertEquals(
             StartPlan(grace = true, initialSync = true, loadCredentials = true),
-            StartPlan.of(first = true, revived = false, hasCredentials = false),
+            StartPlan.of(first = true, starter = Starter.NORMAL, hasCredentials = false),
         )
     }
 
@@ -20,39 +21,47 @@ class StartPlanTest {
         for (creds in listOf(true, false)) {
             assertEquals(
                 StartPlan(grace = false, initialSync = false, loadCredentials = true),
-                StartPlan.of(first = true, revived = true, hasCredentials = creds),
+                StartPlan.of(first = true, starter = Starter.HEARTBEAT, hasCredentials = creds),
             )
         }
+    }
+
+    @Test
+    fun `a sticky restart checks in at once but holds no grace socket`() {
+        // After an OEM kill nothing else checks in right away (the heartbeat is up to 10 minutes off, the start-up
+        // worker may wait for Doze), so the service does; only the hot socket is skipped.
+        assertEquals(
+            StartPlan(grace = false, initialSync = true, loadCredentials = true),
+            StartPlan.of(first = true, starter = Starter.STICKY_RESTART, hasCredentials = true),
+        )
     }
 
     @Test
     fun `a repeat start without credentials retries the check-in, unless the heartbeat is doing it`() {
         assertEquals(
             StartPlan(grace = false, initialSync = true, loadCredentials = true),
-            StartPlan.of(first = false, revived = false, hasCredentials = false),
+            StartPlan.of(first = false, starter = Starter.NORMAL, hasCredentials = false),
         )
         assertEquals(
             StartPlan(grace = false, initialSync = false, loadCredentials = true),
-            StartPlan.of(first = false, revived = true, hasCredentials = false),
+            StartPlan.of(first = false, starter = Starter.HEARTBEAT, hasCredentials = false),
         )
     }
 
     @Test
     fun `a repeat start of a running service does nothing`() {
-        for (heartbeat in listOf(true, false)) {
+        for (starter in Starter.entries) {
             assertEquals(
                 StartPlan(grace = false, initialSync = false, loadCredentials = false),
-                StartPlan.of(first = false, revived = heartbeat, hasCredentials = true),
+                StartPlan.of(first = false, starter = starter, hasCredentials = true),
             )
         }
     }
 
     @Test
-    fun `a sticky restart after Android killed the service counts as a revive`() {
-        // No intent: the system restarting a START_STICKY service after the process died (an OEM or low-memory
-        // kill). A boot or self-update starts it with an intent, from BootReceiver.
-        assertEquals(true, StartPlan.revived(hasIntent = false, fromHeartbeat = false))
-        assertEquals(true, StartPlan.revived(hasIntent = true, fromHeartbeat = true))
-        assertEquals(false, StartPlan.revived(hasIntent = true, fromHeartbeat = false))
+    fun `who started it`() {
+        assertEquals(Starter.STICKY_RESTART, Starter.of(hasIntent = false, fromHeartbeat = false))
+        assertEquals(Starter.HEARTBEAT, Starter.of(hasIntent = true, fromHeartbeat = true))
+        assertEquals(Starter.NORMAL, Starter.of(hasIntent = true, fromHeartbeat = false))
     }
 }

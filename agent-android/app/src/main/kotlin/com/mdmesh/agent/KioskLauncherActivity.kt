@@ -28,6 +28,7 @@ import com.mdmesh.agent.ui.KioskBackdrop
 import com.mdmesh.agent.ui.KioskExit
 import com.mdmesh.agent.ui.KioskPalette
 import com.mdmesh.agent.ui.KioskRenderer
+import com.mdmesh.agent.ui.Placement
 import com.mdmesh.agent.ui.KioskScreen
 import com.mdmesh.agent.ui.MdmDialog
 import com.mdmesh.core.kiosk.KioskApplier
@@ -363,7 +364,8 @@ class KioskLauncherActivity : ComponentActivity() {
     private fun showBackdrop(p: KioskApplyPayload?) {
         val image = p?.theme?.backgroundImage ?: return backdrop.clear()
         val metrics = resources.displayMetrics
-        backdrop.want(image, metrics.widthPixels, metrics.heightPixels, palette(p).background)
+        renderer.placement = Placement.of(image)
+        backdrop.want(image, maxOf(metrics.widthPixels, metrics.heightPixels), palette(p).background)
     }
 
     private fun render(next: KioskScreen) {

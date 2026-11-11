@@ -32,7 +32,7 @@ class KioskBackdrop(
     private val decoding: CoroutineDispatcher = Dispatchers.Default,
     private val onReady: (Bitmap?, BackdropInfo?) -> Unit,
 ) {
-    private data class Key(val sha256: String, val width: Int, val height: Int, val background: Int)
+    private data class Key(val sha256: String, val screenLong: Int, val background: Int)
 
     private var wanted: Key? = null
     private var shown: Key? = null
@@ -44,10 +44,13 @@ class KioskBackdrop(
     /** The job is only waiting out a retry delay: a new [want] (HOME back at the front) may look again at once. */
     private var waiting = false
 
-    /** Show [image] for a window [width] x [height] over [background]; null: no image. */
-    fun want(image: KioskBackgroundImageDto?, width: Int, height: Int, background: Int) {
+    /**
+     * Show [image] on a screen whose long edge is [screenLong] px, over [background]; null: no image. Its fit and
+     * focal point and the window's shape (rotation) need no new decode: the renderer places the same bitmap.
+     */
+    fun want(image: KioskBackgroundImageDto?, screenLong: Int, background: Int) {
         if (image == null) return clear()
-        val key = Key(image.sha256.trim().lowercase(), width, height, background)
+        val key = Key(image.sha256.trim().lowercase(), screenLong, background)
         val same = wanted == key
         wanted = key
         // Busy fetching or decoding this image: let it finish. Only waiting for a retry: look again now (a cached
@@ -111,7 +114,7 @@ class KioskBackdrop(
     }
 
     private suspend fun decode(file: File, key: Key): Decoded = withContext(decoding) {
-        BackdropDecoder.decode(file, key.width, key.height, key.background, limits)
+        BackdropDecoder.decode(file, key.screenLong, key.background, limits)
     }
 
     private companion object {

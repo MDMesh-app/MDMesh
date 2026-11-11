@@ -42,8 +42,16 @@ open class BackdropDecoderMatrixTest {
         return File(app.cacheDir, "fixture-$name").apply { writeBytes(bytes) }
     }
 
-    private fun decode(file: File, w: Int = 48, h: Int = 32, limits: DecodeLimits = DecodeLimits.NORMAL) =
-        BackdropDecoder.decode(file, w, h, background, limits)
+    private fun decode(file: File, screenLong: Int = 48, limits: DecodeLimits = DecodeLimits.NORMAL) =
+        BackdropDecoder.decode(file, screenLong, background, limits)
+
+    /** The bounds of a box given in the decoded image's own pixels. */
+    private fun box(d: Decoded.Ready, x: Double, y: Double, w: Double, h: Double): ColourBox {
+        val iw = d.info.cells.width
+        val ih = d.info.cells.height
+        val rect = BackdropGeometry.rect(iw, ih, iw.toDouble(), ih.toDouble(), Placement.DEFAULT)
+        return d.info.cells.bounds(rect, iw.toDouble(), ih.toDouble(), BackdropCells.Region(x, y, w, h), background)
+    }
 
     private fun ready(name: String, limits: DecodeLimits): Decoded.Ready {
         val got = decode(fixture(name), limits = limits)
@@ -55,12 +63,12 @@ open class BackdropDecoderMatrixTest {
         for (limits in listOf(DecodeLimits.NORMAL, DecodeLimits.LOW_MEMORY)) {
             for (name in listOf("opaque.jpg", "opaque.png", "alpha.png", "lossy.webp", "lossless.webp", "alpha.webp")) {
                 val d = ready(name, limits)
-                assertEquals(name, 48, d.bitmap.width)
-                assertEquals(name, 32, d.bitmap.height)
+                assertEquals("$name: whole, not sampled (small)", 96, d.bitmap.width)
+                assertEquals(name, 64, d.bitmap.height)
                 assertNotEquals("never a hardware bitmap", "HARDWARE", d.bitmap.config?.name)
                 // The cells see the picture: yellow on the left (red high), blue on the right (blue high).
-                val left = d.info.cells.bounds(48.0, 32.0, BackdropCells.Region(2.0, 20.0, 4.0, 4.0))
-                val right = d.info.cells.bounds(48.0, 32.0, BackdropCells.Region(42.0, 30.0, 2.0, 1.0))
+                val left = box(d, 4.0, 40.0, 8.0, 8.0)
+                val right = box(d, 84.0, 60.0, 4.0, 2.0)
                 assertTrue("$name left ${Integer.toHexString(left.min)}", Color.red(left.min) > 200)
                 assertTrue("$name right ${Integer.toHexString(right.max)}", Color.red(right.max) < 120)
                 assertEquals("$name cells", 1, d.info.cells.cellSize)
@@ -72,9 +80,8 @@ open class BackdropDecoderMatrixTest {
         for (name in listOf("alpha.png", "alpha.webp")) {
             val d = ready(name, DecodeLimits.NORMAL)
             // The top quarter is fully transparent: the cells there are the kiosk background.
-            val top = d.info.cells.bounds(48.0, 32.0, BackdropCells.Region(10.0, 2.0, 4.0, 2.0))
+            val top = box(d, 20.0, 2.0, 8.0, 4.0)
             assertEquals(name, ColourBox(background, background), top)
-            assertEquals(name, background, d.info.top)
         }
     }
 
@@ -93,15 +100,15 @@ open class BackdropDecoderMatrixTest {
         }
         val file = File(app.cacheDir, "fixture-odd.png")
         file.outputStream().use { src.compress(Bitmap.CompressFormat.PNG, 100, it) }
-        val d = decode(file, w = 64, h = 32, limits = DecodeLimits.LOW_MEMORY) as Decoded.Ready
+        val d = decode(file, limits = DecodeLimits.LOW_MEMORY) as Decoded.Ready
         assertEquals("drawn at 2 bytes a pixel", Bitmap.Config.RGB_565, d.bitmap.config)
-        val all = d.info.cells.bounds(64.0, 32.0, BackdropCells.Region(0.0, 0.0, 64.0, 32.0))
+        val all = box(d, 0.0, 0.0, 64.0, 32.0)
         assertEquals(ColourBox(odd, odd), all)
     }
 
     @Test fun exifOrientationIsApplied() {
-        // Stored 96 x 64 landscape, shown upright 64 x 96: a portrait window's crop takes all of it.
-        val d = decode(fixture("rotated.jpg"), w = 64, h = 96) as Decoded.Ready
+        // Stored 96 x 64 landscape, shown upright 64 x 96.
+        val d = decode(fixture("rotated.jpg")) as Decoded.Ready
         assertEquals(64, d.bitmap.width)
         assertEquals(96, d.bitmap.height)
         // Rotated 90 clockwise: the yellow left half is now the top half.
@@ -122,9 +129,9 @@ open class BackdropDecoderMatrixTest {
         file.outputStream().use { big.compress(Bitmap.CompressFormat.JPEG, 80, it) }
         big.recycle()
         // A 4K tablet / TV window.
-        val normal = decode(file, w = 3840, h = 2160) as Decoded.Ready
+        val normal = decode(file, screenLong = 3840) as Decoded.Ready
         assertTrue("normal cap: ${normal.bitmap.width}", maxOf(normal.bitmap.width, normal.bitmap.height) <= 2560)
-        val low = decode(file, w = 3840, h = 2160, limits = DecodeLimits.LOW_MEMORY) as Decoded.Ready
+        val low = decode(file, screenLong = 3840, limits = DecodeLimits.LOW_MEMORY) as Decoded.Ready
         assertTrue("low-RAM cap: ${low.bitmap.width}", maxOf(low.bitmap.width, low.bitmap.height) <= 1280)
         assertEquals(Bitmap.Config.RGB_565, low.bitmap.config)
     }
@@ -158,16 +165,16 @@ class BackdropDecoderApi24Test {
     @Test fun jpegAndPngDecodeToTheWindowShape() {
         for (limits in listOf(DecodeLimits.NORMAL, DecodeLimits.LOW_MEMORY)) {
             for (name in listOf("opaque.jpg", "opaque.png")) {
-                val d = BackdropDecoder.decode(fixture(name), 48, 32, 0xFF0F1115.toInt(), limits)
+                val d = BackdropDecoder.decode(fixture(name), 48, 0xFF0F1115.toInt(), limits)
                 assertTrue("$name on API 24: $d", d is Decoded.Ready)
             }
         }
     }
 
-    @Test fun garbageAndMissingFilesAreUndecodable() {
-        fun decode(f: File) = BackdropDecoder.decode(f, 48, 32, 0, DecodeLimits.NORMAL)
-        assertEquals(Decoded.Undecodable, decode(fixture("garbage.png")))
-        assertEquals(Decoded.Undecodable, decode(File(app.cacheDir, "none.png")))
+    @Test fun aMissingFileIsUndecodable() {
+        // Garbage is checked on 26+: the stand-in decoder here makes a picture of anything.
+        val missing = BackdropDecoder.decode(File(app.cacheDir, "none.png"), 48, 0, DecodeLimits.NORMAL)
+        assertEquals(Decoded.Undecodable, missing)
     }
 
     @Test fun limitsFollowTheDevice() {

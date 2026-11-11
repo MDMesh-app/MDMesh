@@ -167,7 +167,7 @@ class A11yScreens {
             file.outputStream().use { image.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
             val metrics = a.resources.displayMetrics
             val decoded = com.mdmesh.agent.ui.BackdropDecoder.decode(
-                file, metrics.widthPixels, metrics.heightPixels, screen.palette.background,
+                file, maxOf(metrics.widthPixels, metrics.heightPixels), screen.palette.background,
                 com.mdmesh.agent.ui.DecodeLimits.NORMAL,
             ) as com.mdmesh.agent.ui.Decoded.Ready
             renderer.setBackdrop(decoded.bitmap, decoded.info)

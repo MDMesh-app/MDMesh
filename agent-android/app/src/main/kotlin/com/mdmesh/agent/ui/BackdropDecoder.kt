@@ -4,11 +4,12 @@ import android.app.ActivityManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.ColorSpace
+import android.os.Build
 import android.graphics.Matrix
 import java.io.File
 import kotlin.math.ceil
 import kotlin.math.floor
-import kotlin.math.roundToInt
 
 /**
  * How large a backdrop may be decoded on this device. The window's size, capped: 2560 px on the long edge, 1280 px
@@ -31,16 +32,11 @@ data class DecodeLimits(val maxEdge: Int, val lowMemory: Boolean) {
     }
 }
 
-/**
- * What the launcher keeps of a decoded backdrop besides the bitmap: its [cells] (composited over [background]) and
- * the colour under the status bar.
- */
+/** What the launcher keeps of a decoded backdrop besides the bitmap: its [cells], composited over [background]. */
 class BackdropInfo(
     /** The kiosk background the image was composited over; a different one needs a new decode. */
     val background: Int,
     val cells: BackdropCells,
-    /** A typical colour (median luminance of the cells' midpoints) of the top row of cells, under the status bar. */
-    val top: Int,
 )
 
 /**
@@ -61,32 +57,37 @@ class BackdropCells(val width: Int, val height: Int, private val mins: IntArray,
     data class Region(val x: Double, val y: Double, val w: Double, val h: Double)
 
     /**
-     * The bounds of [r] in a [windowW] x [windowH] window that shows the image CENTER_CROP (any unit, the same for
-     * both): the cells it touches plus one cell around them.
+     * The bounds of [r] in a [windowW] x [windowH] window where the image lies at [rect]: the cells the box touches
+     * (clipped to the image) plus one cell around them, and [background] when the box, clipped to the window, reaches
+     * the letterbox. A box over neither is [background] alone.
      */
-    fun bounds(windowW: Double, windowH: Double, r: Region): ColourBox {
-        val x = r.x
-        val y = r.y
-        val w = r.w
-        val h = r.h
-        val (cx, cy, k) = crop(windowW, windowH)
-        val i0 = maxOf(0, floor((cx + x * k) / cellSize).toInt() - 1)
-        val i1 = minOf(cols - 1, ceil((cx + (x + w) * k) / cellSize).toInt())
-        val j0 = maxOf(0, floor((cy + y * k) / cellSize).toInt() - 1)
-        val j1 = minOf(rows - 1, ceil((cy + (y + h) * k) / cellSize).toInt())
+    fun bounds(rect: ImageRect, windowW: Double, windowH: Double, r: Region, background: Int): ColourBox {
+        val x0 = maxOf(0.0, (r.x - rect.x) / rect.scale)
+        val x1 = minOf(width.toDouble(), (r.x + r.w - rect.x) / rect.scale)
+        val y0 = maxOf(0.0, (r.y - rect.y) / rect.scale)
+        val y1 = minOf(height.toDouble(), (r.y + r.h - rect.y) / rect.scale)
         var box = ColourBox.EMPTY
-        for (j in j0..j1) for (i in i0..i1) box += ColourBox(mins[j * cols + i], maxs[j * cols + i])
+        var any = false
+        if (x1 > x0 && y1 > y0) {
+            any = true
+            val i0 = maxOf(0, floor(x0 / cellSize).toInt() - 1)
+            val i1 = minOf(cols - 1, ceil(x1 / cellSize).toInt())
+            val j0 = maxOf(0, floor(y0 / cellSize).toInt() - 1)
+            val j1 = minOf(rows - 1, ceil(y1 / cellSize).toInt())
+            for (j in j0..j1) for (i in i0..i1) box += ColourBox(mins[j * cols + i], maxs[j * cols + i])
+        }
+        if (reachesLetterbox(rect, windowW, windowH, r) || !any) box += background
         return box
     }
 
-    /** Where the image sits in a [windowW] x [windowH] window ([BackdropGeometry]). */
-    fun crop(windowW: Double, windowH: Double): Triple<Double, Double, Double> {
-        val p = BackdropGeometry.place(width to height, windowW to windowH)
-        return Triple(p.left, p.top, p.perUnit)
+    /** [r], clipped to the window, reaches outside the image's rectangle. */
+    private fun reachesLetterbox(rect: ImageRect, windowW: Double, windowH: Double, r: Region): Boolean {
+        val l = maxOf(0.0, r.x)
+        val t = maxOf(0.0, r.y)
+        val rr = minOf(windowW, r.x + r.w)
+        val b = minOf(windowH, r.y + r.h)
+        return rr > l && b > t && (l < rect.x || t < rect.y || rr > rect.x + rect.w || b > rect.y + rect.h)
     }
-
-    /** Row [j]'s cells as (min, max). */
-    fun row(j: Int): List<ColourBox> = (0 until cols).map { ColourBox(mins[j * cols + it], maxs[j * cols + it]) }
 
     companion object {
         const val CELLS_ON_LONG_EDGE = 120
@@ -152,9 +153,12 @@ sealed interface Decoded {
  */
 object BackdropDecoder {
 
-    /** Decodes [file] for a [width] x [height] window over [background]. Off the main thread. */
-    fun decode(file: File, width: Int, height: Int, background: Int, limits: DecodeLimits): Decoded {
-        val request = Request(file, maxOf(1, width), maxOf(1, height), background, limits)
+    /**
+     * Decodes [file] whole, for a screen whose long edge is [screenLong] px, over [background]. Off the main thread.
+     * The window's shape doesn't matter: fill or fit, focal point and rotation are drawn from the same bitmap.
+     */
+    fun decode(file: File, screenLong: Int, background: Int, limits: DecodeLimits): Decoded {
+        val request = Request(file, maxOf(1, screenLong), background, limits)
         return try {
             decodeOrNull(request, extraSample = 1) ?: Decoded.Undecodable
         } catch (_: OutOfMemoryError) {
@@ -168,45 +172,35 @@ object BackdropDecoder {
         }
     }
 
-    private class Request(
-        val file: File,
-        val width: Int,
-        val height: Int,
-        val background: Int,
-        val limits: DecodeLimits,
-    )
+    private class Request(val file: File, val screenLong: Int, val background: Int, val limits: DecodeLimits)
 
     private fun decodeOrNull(r: Request, extraSample: Int): Decoded? {
+        if (!r.file.isFile) return null // gone (the cache was cleared): the store fetches it again
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(r.file.path, bounds)
         return if (bounds.outWidth > 0 && bounds.outHeight > 0) decodeSized(r, bounds, extraSample) else null
     }
 
     private fun decodeSized(r: Request, bounds: BitmapFactory.Options, extraSample: Int): Decoded? {
-        val file = r.file
-        val width = r.width
-        val height = r.height
-        val limits = r.limits
-        val orientation = exifOrientation(file, bounds.outMimeType)
-        val sideways = orientation.degrees % HALF_TURN != 0
-        val (iw, ih) = if (sideways) bounds.outHeight to bounds.outWidth else bounds.outWidth to bounds.outHeight
-        val (outW, outH) = outputSize(iw, ih, width, height, limits.maxEdge)
-        val (cropW, cropH) = cropSize(iw, ih, width, height)
-        val sample = coverSample(cropW, cropH, outW, outH) * extraSample
-        val opaqueFormat = bounds.outMimeType == "image/jpeg"
+        val orientation = exifOrientation(r.file, bounds.outMimeType)
         val options = BitmapFactory.Options().apply {
-            inSampleSize = sample
+            inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, r.screenLong, r.limits.maxEdge) * extraSample
             // 8 bits a channel: the legibility cells are worked out from these exact sRGB values (RGB_565 would round
             // by more than the rule's one-level allowance). The drawn copy may be RGB_565 after that.
             inPreferredConfig = Bitmap.Config.ARGB_8888
             inMutable = false
+            // An embedded profile (Display P3 included) converted to sRGB; Android 7 ignores profiles, the same as
+            // reading the pixels as sRGB.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                inPreferredColorSpace = ColorSpace.get(ColorSpace.Named.SRGB)
+            }
         }
-        val sampled = BitmapFactory.decodeFile(file.path, options) ?: return null
-        val upright = orientation.apply(sampled)
-        val full = cropTo(upright, width, height, outW / extraSample, outH / extraSample)
+        val sampled = BitmapFactory.decodeFile(r.file.path, options) ?: return null
+        val full = orientation.apply(sampled)
         val info = infoOf(full, r.background)
         // Drawn at 2 bytes a pixel when it has no transparency and is a JPEG, or memory is short.
-        val bitmap = if ((opaqueFormat || limits.lowMemory) && !full.hasAlpha()) {
+        val opaqueFormat = bounds.outMimeType == "image/jpeg"
+        val bitmap = if ((opaqueFormat || r.limits.lowMemory) && !full.hasAlpha()) {
             full.copy(Bitmap.Config.RGB_565, false)?.also { full.recycle() } ?: full
         } else {
             full
@@ -214,39 +208,16 @@ object BackdropDecoder {
         return Decoded.Ready(bitmap, info)
     }
 
-    /** The window's size, scaled down so the long edge is at most [maxEdge]. */
-    fun outputSize(iw: Int, ih: Int, w: Int, h: Int, maxEdge: Int): Pair<Int, Int> {
-        val (cw, ch) = cropSize(iw, ih, w, h)
-        // Never larger than the image's own pixels (no upscaling in memory), nor than the cap.
-        val f = minOf(1f, maxEdge / maxOf(w, h).toFloat(), cw / w.toFloat(), ch / h.toFloat())
-        return maxOf(1, (w * f).roundToInt()) to maxOf(1, (h * f).roundToInt())
-    }
-
-    /** The part of an [iw] x [ih] image a [w] x [h] window shows with CENTER_CROP, in image pixels. */
-    fun cropSize(iw: Int, ih: Int, w: Int, h: Int): Pair<Int, Int> {
-        val p = BackdropGeometry.place(iw to ih, w.toDouble() to h.toDouble())
-        val cw = minOf(iw, (w * p.perUnit).roundToInt()).coerceAtLeast(1)
-        val ch = minOf(ih, (h * p.perUnit).roundToInt()).coerceAtLeast(1)
-        return cw to ch
-    }
-
-    /** The largest power-of-two subsample of an [iw] x [ih] area that still covers [w] x [h]. */
-    fun coverSample(iw: Int, ih: Int, w: Int, h: Int): Int {
+    /**
+     * The power-of-two subsample for an [iw] x [ih] image: at least enough that its long edge is at most [maxEdge],
+     * and more while its short edge would still be at least the screen's long edge [screenLong] (enough to fill the
+     * screen sharp in either orientation).
+     */
+    fun sampleSize(iw: Int, ih: Int, screenLong: Int, maxEdge: Int): Int {
         var sample = 1
-        while (iw / (sample * 2) >= w && ih / (sample * 2) >= h) sample *= 2
+        while (maxOf(iw, ih) / sample > maxEdge) sample *= 2
+        while (minOf(iw, ih) / (sample * 2) >= screenLong) sample *= 2
         return sample
-    }
-
-    /** The centre of [src] with the window's aspect, scaled to [outW] x [outH]; [src] is recycled if replaced. */
-    private fun cropTo(src: Bitmap, w: Int, h: Int, outW: Int, outH: Int): Bitmap {
-        val (cw, ch) = cropSize(src.width, src.height, w, h)
-        val at = BackdropGeometry.place(src.width to src.height, w.toDouble() to h.toDouble())
-        val left = at.left.roundToInt().coerceIn(0, src.width - cw)
-        val top = at.top.roundToInt().coerceIn(0, src.height - ch)
-        val m = Matrix().apply { setScale(maxOf(1, outW) / cw.toFloat(), maxOf(1, outH) / ch.toFloat()) }
-        val out = Bitmap.createBitmap(src, left, top, cw, ch, m, true)
-        if (out !== src) src.recycle()
-        return out
     }
 
     private fun infoOf(bitmap: Bitmap, background: Int): BackdropInfo {
@@ -255,16 +226,13 @@ object BackdropDecoder {
             bitmap.getPixels(into, 0, w, 0, y, w, 1)
             for (i in into.indices) into[i] = KioskScrim.over(into[i], background)
         }
-        val top = cells.row(0).map { KioskScrim.blend(it.min, it.max, KioskScrim.STEPS / 2) }
-            .sortedBy { Contrast.luminance(it) }
-        return BackdropInfo(background, cells, top[top.size / 2])
+        return BackdropInfo(background, cells)
     }
 
     /** Rotation (and mirroring) from a JPEG's EXIF orientation ([JpegOrientation]); none for other formats. */
     private fun exifOrientation(file: File, mime: String?): Orientation =
         if (mime == "image/jpeg") Orientation.of(JpegOrientation.read(file)) else Orientation.NORMAL
 
-    private const val HALF_TURN = 180
 
     /** An EXIF orientation as a rotation plus an optional mirror. */
     enum class Orientation(val degrees: Int, private val mirror: Boolean) {

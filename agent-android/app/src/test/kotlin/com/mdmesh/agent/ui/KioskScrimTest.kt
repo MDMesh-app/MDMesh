@@ -75,8 +75,9 @@ class KioskScrimTest {
         assertEquals(1, BackdropCells.cellSizeOf(120, 1))
         // A 120 x 80 window on a 24 x 16 image: 5 units per cell. The white cell (12, 5) is in the margin of a box
         // over cell 13 of row 5, and not of one over cell 14.
-        assertEquals(white, grid.bounds(120.0, 80.0, BackdropCells.Region(65.0, 25.0, 4.0, 4.0)).max)
-        assertEquals(black, grid.bounds(120.0, 80.0, BackdropCells.Region(71.0, 25.0, 4.0, 4.0)).max)
+        val rect = BackdropGeometry.rect(24, 16, 120.0, 80.0, Placement.DEFAULT)
+        assertEquals(white, grid.bounds(rect, 120.0, 80.0, BackdropCells.Region(65.0, 25.0, 4.0, 4.0), black).max)
+        assertEquals(black, grid.bounds(rect, 120.0, 80.0, BackdropCells.Region(71.0, 25.0, 4.0, 4.0), black).max)
     }
 
     @Test fun `JPEG orientation is read from the EXIF segment, anything else is upright`() {
@@ -104,14 +105,12 @@ class KioskScrimTest {
         assertEquals(0xFF123456.toInt(), KioskScrim.over(0xFF123456.toInt(), black))
     }
 
-    @Test fun `a decode is cropped to the window's shape and capped`() {
-        assertEquals(1080 to 2340, BackdropDecoder.outputSize(4000, 6000, 1080, 2340, 2560))
-        assertEquals(1182 to 2560, BackdropDecoder.outputSize(4000, 9000, 1600, 3464, 2560))
-        assertEquals(1280 to 800, BackdropDecoder.outputSize(6000, 4000, 2560, 1600, 1280))
-        // Never upscaled in memory: a small image keeps its own pixels.
-        assertEquals(500 to 1083, BackdropDecoder.outputSize(500, 2000, 1080, 2340, 2560))
-        assertEquals(1, BackdropDecoder.coverSample(1080, 2340, 1080, 2340))
-        assertEquals(4, BackdropDecoder.coverSample(8000, 8000, 1080, 1920))
+    @Test fun `a decode is sampled by powers of two, capped, and sharp enough for the screen`() {
+        assertEquals("a phone photo on a phone: half", 2, BackdropDecoder.sampleSize(4000, 3000, 1080, 2560))
+        assertEquals("on a 2340 px screen: whole", 1, BackdropDecoder.sampleSize(4000, 3000, 2340, 4096))
+        assertEquals("capped at 2560", 2, BackdropDecoder.sampleSize(4000, 3000, 2340, 2560))
+        assertEquals("low RAM: 1280", 4, BackdropDecoder.sampleSize(4000, 3000, 2340, 1280))
+        assertEquals("a small image: whole", 1, BackdropDecoder.sampleSize(500, 2000, 2340, 2560))
     }
 
     @Test fun `EXIF orientations map to rotations`() {

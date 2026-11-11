@@ -15,8 +15,9 @@ import org.junit.Test
 import java.io.File
 
 /**
- * The shared legibility vectors (`proto/vectors/kiosk-scrim.json`, version 3, also run by the console): parsing,
- * palettes, and layouts (dim, plate steps and busy exactly, ratios within 0.01).
+ * The shared legibility vectors (`proto/vectors/kiosk-scrim.json`, version 3.2, also run by the console): parsing,
+ * palettes, blends, geometry (6 decimals), label rows, and layouts (dim, plate steps and busy exactly, ratios within
+ * 0.01).
  */
 class KioskScrimVectorsTest {
 
@@ -39,8 +40,8 @@ class KioskScrimVectorsTest {
 
     private fun double(o: JsonObject, key: String) = o[key]!!.jsonPrimitive.double
 
-    @Test fun `version 3_1 with the documented constants`() {
-        assertEquals("3.1", vectors["version"]!!.jsonPrimitive.content)
+    @Test fun `version 3_2 with the documented constants`() {
+        assertEquals("3.2", vectors["version"]!!.jsonPrimitive.content)
         assertEquals(KioskScrim.STEPS, int(vectors, "steps"))
         assertEquals(LegibilityV3.DIM_MAX_STEP, int(vectors, "dimMaxStep"))
         assertEquals(Contrast.TEXT_MIN, double(vectors, "textMin"), 0.0)
@@ -60,6 +61,63 @@ class KioskScrimVectorsTest {
         }
     }
 
+    @Test fun `every blend vector`() {
+        val cases = vectors["blends"]!!.jsonArray
+        check(cases.isNotEmpty())
+        for (e in cases) {
+            val v = e.jsonObject
+            val got = KioskScrim.blend(colour(v["over"]!!), colour(v["px"]!!), int(v, "step"))
+            assertEquals("$v", v["expected"]!!.jsonPrimitive.content, hex(got))
+        }
+    }
+
+    private fun fitOf(v: JsonObject) = if (v["mode"]?.takeUnless { it is JsonNull }?.jsonPrimitive?.content == "fit") {
+        BackdropFit.FIT
+    } else {
+        BackdropFit.FILL
+    }
+
+    private fun focalOf(v: JsonObject): Focal =
+        v["focal"]?.takeUnless { it is JsonNull }?.jsonObject?.let { Focal(double(it, "x"), double(it, "y")) }
+            ?: Focal.CENTRE_POINT
+
+    @Test fun `every geometry vector`() {
+        val cases = vectors["geometry"]!!.jsonArray
+        check(cases.isNotEmpty())
+        for (e in cases) {
+            val v = e.jsonObject
+            val image = v["image"]!!.jsonObject
+            val window = v["window"]!!.jsonObject
+            val got = BackdropGeometry.rect(
+                int(image, "width"), int(image, "height"), double(window, "w"), double(window, "h"),
+                Placement(fitOf(v), focalOf(v)),
+            )
+            val want = v["expected"]!!.jsonObject
+            for ((key, value) in listOf("x" to got.x, "y" to got.y, "w" to got.w, "h" to got.h, "scale" to got.scale)) {
+                assertEquals("$v $key", double(want, key), value, 1e-6)
+            }
+        }
+    }
+
+    @Test fun `every row plate vector`() {
+        val cases = vectors["rowPlates"]!!.jsonArray
+        check(cases.isNotEmpty())
+        for (e in cases) {
+            val v = e.jsonObject
+            fun doubles(key: String) = v[key]!!.jsonArray.map { it.jsonPrimitive.double }
+            val got = LabelRows.plates(
+                doubles("centres"), doubles("textWidths"), double(v, "cellWidth"), double(v, "contentLeft"),
+                double(v, "contentRight"),
+            )
+            val want = v["expected"]!!.jsonArray.map { it.jsonObject }
+            assertEquals(v["name"].toString(), want.size, got.size)
+            for ((i, w) in want.withIndex()) {
+                assertEquals("${v["name"]} $i x", double(w, "x"), got[i].x, 1e-9)
+                assertEquals("${v["name"]} $i w", double(w, "w"), got[i].w, 1e-9)
+            }
+        }
+    }
+
     @Test fun `every palette vector`() {
         for (e in vectors["palette"]!!.jsonArray) {
             val v = e.jsonObject
@@ -76,6 +134,24 @@ class KioskScrimVectorsTest {
         for (e in layouts) layout(e.jsonObject)
     }
 
+    /** The vector's cells, or its `#RRGGBBAA` pixels composited over [background] as the device does. */
+    private fun cellsOf(image: JsonObject, background: Int): BackdropCells {
+        val iw = int(image, "width")
+        val ih = int(image, "height")
+        val cells = image["cells"]?.jsonArray?.map { it.jsonArray }
+        if (cells != null) {
+            val mins = cells.map { colour(it[0]) }.toIntArray()
+            return BackdropCells(iw, ih, mins, cells.map { colour(it[1]) }.toIntArray())
+        }
+        val px = image["pixels"]!!.jsonArray.map {
+            val h = it.jsonPrimitive.content
+            (h.substring(7, 9).toInt(16) shl 24) or h.substring(1, 7).toInt(16)
+        }
+        return BackdropCells.of(iw, ih) { y, into ->
+            for (x in 0 until iw) into[x] = KioskScrim.over(px[y * iw + x], background)
+        }
+    }
+
     private fun layout(v: JsonObject) {
         val name = v["name"]!!.jsonPrimitive.content
         val p = palette(v)
@@ -84,24 +160,21 @@ class KioskScrimVectorsTest {
         assertEquals(name, expected["text"]!!.jsonPrimitive.content, hex(p.text))
         assertEquals(name, expected["secondary"]!!.jsonPrimitive.content, hex(p.secondary))
         val image = v["image"]!!.jsonObject
-        val cells = image["cells"]!!.jsonArray.map { it.jsonArray }
-        val grid = BackdropCells(
-            int(image, "width"), int(image, "height"),
-            mins = cells.map { colour(it[0]) }.toIntArray(),
-            maxs = cells.map { colour(it[1]) }.toIntArray(),
-        )
+        val iw = int(image, "width")
+        val ih = int(image, "height")
+        val grid = cellsOf(image, p.background)
         assertEquals(name, int(image, "cellSize"), grid.cellSize)
         assertEquals(name, int(image, "cols"), grid.cols)
         assertEquals(name, int(image, "rows"), grid.rows)
         val window = v["window"]!!.jsonObject
         val w = double(window, "w")
         val h = double(window, "h")
+        val placed = BackdropGeometry.rect(iw, ih, w, h, Placement(fitOf(v), focalOf(v)))
         val elements = v["elements"]!!.jsonArray.map { it.jsonObject }
         fun bounds(el: JsonObject): ColourBox {
             val b = el["box"]!!.jsonObject
-            return grid.bounds(
-                w, h, BackdropCells.Region(double(b, "x"), double(b, "y"), double(b, "w"), double(b, "h")),
-            )
+            val region = BackdropCells.Region(double(b, "x"), double(b, "y"), double(b, "w"), double(b, "h"))
+            return grid.bounds(placed, w, h, region, p.background)
         }
         val controls = elements.filter { it["kind"]!!.jsonPrimitive.content == "control" }.map(::bounds)
         val rule = LegibilityV3

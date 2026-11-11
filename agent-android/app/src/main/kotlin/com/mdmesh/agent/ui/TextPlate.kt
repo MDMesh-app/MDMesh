@@ -15,8 +15,8 @@ import kotlin.math.roundToInt
 
 /**
  * A text plate: a rounded rectangle of the kiosk background colour behind one text over the background image.
- * It hugs the text ([padH] either side, the view's full height) and is centred on it; [sharedWidth] widens it to
- * match the other labels of its grid row (never past the view). Its opacity ([step] of [KioskScrim.STEPS], 0: not
+ * It hugs the text ([padH] either side, the view's full height) and is centred on it; a grid label's plate is
+ * placed by its row instead ([rowPlate], [LabelRows]). Its opacity ([step] of [KioskScrim.STEPS], 0: not
  * drawn) is the least at which the text reaches 4.5:1 over every pixel under it ([TextPlates.update]).
  */
 class TextPlate(
@@ -36,7 +36,8 @@ class TextPlate(
             }
         }
 
-    var sharedWidth: Int = 0
+    /** A grid label's plate, from its row: left and width in the view's own coordinates. */
+    var rowPlate: Pair<Float, Float>? = null
         set(value) {
             if (field != value) {
                 field = value
@@ -47,29 +48,36 @@ class TextPlate(
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val rect = RectF()
 
-    /** The text's own width plus [padH] either side; 0 before layout or without text. */
-    fun naturalWidth(): Int {
-        val layout = view.layout?.takeIf { it.lineCount > 0 && !view.text.isNullOrEmpty() } ?: return 0
+    /** The widest laid-out line; 0 before layout or without text. */
+    fun textWidth(): Float {
+        val layout = view.layout?.takeIf { it.lineCount > 0 && !view.text.isNullOrEmpty() } ?: return 0f
         var w = 0f
         for (i in 0 until layout.lineCount) w = maxOf(w, layout.getLineRight(i) - layout.getLineLeft(i))
-        return ceil(w).toInt() + 2 * padH
+        return w
     }
 
     /** Where the plate is, in the view's own coordinates; empty when there is nothing to back. */
     fun plateRect(out: RectF): RectF {
         val layout = view.layout
-        val natural = naturalWidth()
-        if (layout == null || natural == 0) return out.apply { setEmpty() }
-        var left = Float.MAX_VALUE
-        var right = -Float.MAX_VALUE
-        for (i in 0 until layout.lineCount) {
-            left = minOf(left, layout.getLineLeft(i))
-            right = maxOf(right, layout.getLineRight(i))
+        val natural = if (textWidth() > 0f) ceil(textWidth()).toInt() + 2 * padH else 0
+        val row = rowPlate
+        when {
+            layout == null || natural == 0 -> out.setEmpty()
+            row != null -> out.set(row.first, 0f, row.first + row.second, view.height.toFloat())
+            else -> {
+                var left = Float.MAX_VALUE
+                var right = -Float.MAX_VALUE
+                for (i in 0 until layout.lineCount) {
+                    left = minOf(left, layout.getLineLeft(i))
+                    right = maxOf(right, layout.getLineRight(i))
+                }
+                val centre = view.compoundPaddingLeft + (left + right) / 2f
+                val width = minOf(view.width, natural).toFloat()
+                val l = (centre - width / 2f).coerceIn(0f, maxOf(0f, view.width - width))
+                out.set(l, 0f, l + width, view.height.toFloat())
+            }
         }
-        val centre = view.compoundPaddingLeft + (left + right) / 2f
-        val width = minOf(view.width, maxOf(natural, sharedWidth)).toFloat()
-        val l = (centre - width / 2f).coerceIn(0f, maxOf(0f, view.width - width))
-        return out.apply { set(l, 0f, l + width, view.height.toFloat()) }
+        return out
     }
 
     override fun draw(canvas: Canvas) {
@@ -100,44 +108,47 @@ object TextPlates {
     /** The tag of a control the dim serves (the Exit button): it has its own fill and gets no plate. */
     val CONTROL = Any()
 
+    /** What [update] worked out: the dim, and the colour under the status bar (for its icons). */
+    data class Painted(val dim: Int, val statusBar: Int)
+
     /**
      * [root] is laid out over the image described by [info] (null: no image, no plates), drawn by the root's
-     * [BackdropDrawable] in [palette]. Sets the row widths, the dim from the controls, then every plate's opacity.
-     * Returns the dim, or null without an image.
+     * [BackdropDrawable] in [palette] and [placement]. Places the row plates, works out the dim from the controls,
+     * then every plate's opacity (`docs/kiosk-background-scrim.md`). Null without an image.
      */
-    fun update(root: ViewGroup, info: BackdropInfo?, palette: KioskPalette): Int? {
+    fun update(root: ViewGroup, info: BackdropInfo?, palette: KioskPalette, placement: Placement): Painted? {
         val plates = mutableListOf<Pair<TextView, TextPlate>>()
         val controls = mutableListOf<View>()
         collect(root, plates, controls)
-        shareRowWidths(plates)
+        layOutRows(root, rows(plates))
         if (info == null || root.width == 0 || root.height == 0) {
             plates.forEach { it.second.step = 0 }
             return null
         }
-        val origin = IntArray(2).also(root::getLocationInWindow)
-        val rect = RectF()
-        fun bounds(v: View, r: RectF): ColourBox {
-            val at = IntArray(2).also(v::getLocationInWindow)
-            r.offset((at[0] - origin[0]).toFloat(), (at[1] - origin[1]).toFloat())
+        val w = root.width.toDouble()
+        val h = root.height.toDouble()
+        val image = BackdropGeometry.rect(info.cells.width, info.cells.height, w, h, placement)
+        fun bounds(r: RectF): ColourBox {
             val region = BackdropCells.Region(
                 r.left.toDouble(), r.top.toDouble(), r.width().toDouble(), r.height().toDouble(),
             )
-            return info.cells.bounds(root.width.toDouble(), root.height.toDouble(), region)
+            return info.cells.bounds(image, w, h, region, palette.background)
         }
         val rule = BackdropRules.current
         val controlBounds = controls.filter { it.isShown }
-            .map { bounds(it, RectF(0f, 0f, it.width.toFloat(), it.height.toFloat())) }
+            .map { bounds(inRoot(root, it, RectF(0f, 0f, it.width.toFloat(), it.height.toFloat()))) }
         val dim = rule.dimStep(palette, controlBounds)
         if (rule is LegibilityV3 && rule.controlsShort(palette, controlBounds, dim)) {
             Log.w(TAG, "kiosk background: the Exit button stays under 3:1 even at the 30% dim")
         }
         (root.background as? BackdropDrawable)?.dim = dim
+        val rect = RectF()
         for ((view, plate) in plates) {
             plate.plateRect(rect)
             plate.step = if (rect.isEmpty || !view.isShown) {
                 0
             } else {
-                rule.plateStep(view.currentTextColor, palette.background, bounds(view, rect), dim)
+                rule.plateStep(view.currentTextColor, palette.background, bounds(inRoot(root, view, rect)), dim)
             }
         }
         // The labels of a grid row are plated alike: the row's step for each of them.
@@ -145,7 +156,18 @@ object TextPlates {
             val shared = rule.rowStep(row.map { it.second.step })
             row.forEach { it.second.step = shared }
         }
-        return dim
+        val bar = bounds(RectF(0f, 0f, root.width.toFloat(), maxOf(1, root.paddingTop).toFloat()))
+        val barMiddle = KioskScrim.blend(bar.min, bar.max, KioskScrim.STEPS / 2)
+        val barColour = KioskScrim.blend(palette.background, barMiddle, dim)
+        return Painted(dim, barColour)
+    }
+
+    /** [r] (in [v]'s coordinates) moved into [root]'s. */
+    private fun inRoot(root: View, v: View, r: RectF): RectF {
+        val origin = IntArray(2).also(root::getLocationInWindow)
+        val at = IntArray(2).also(v::getLocationInWindow)
+        r.offset((at[0] - origin[0]).toFloat(), (at[1] - origin[1]).toFloat())
+        return r
     }
 
     /** The shown grid labels, by row (labels of a row share their top). */
@@ -156,10 +178,28 @@ object TextPlates {
             .values
     }
 
-    private fun shareRowWidths(plates: List<Pair<TextView, TextPlate>>) {
-        rows(plates).forEach { row ->
-            val width = row.maxOf { it.second.naturalWidth() }
-            row.forEach { it.second.sharedWidth = width }
+    /**
+     * Each grid row's plates by [LabelRows] (in dp, as the spec): one width, centred under the icons (the cells'
+     * centres), kept inside the grid's content edges (its first cell's start, its last cell's end).
+     */
+    private fun layOutRows(root: View, rows: Collection<List<Pair<TextView, TextPlate>>>) {
+        val density = root.resources.displayMetrics.density.toDouble()
+        for (row in rows) {
+            val cells = row.map { it.first.parent as View }
+            val grid = cells.first().parent as? ViewGroup ?: continue
+            val all = (0 until grid.childCount).map(grid::getChildAt).filter { it.visibility == View.VISIBLE }
+            val gridX = inRoot(root, grid, RectF()).left
+            val left = (gridX + all.minOf { it.left }) / density
+            val right = (gridX + all.maxOf { it.right }) / density
+            val cellX = cells.map { inRoot(root, it, RectF()).left }
+            val centres = cells.mapIndexed { i, c -> (cellX[i] + c.width / 2f) / density }
+            val plates = LabelRows.plates(
+                centres, row.map { it.second.textWidth() / density }, cells.first().width / density, left, right,
+            )
+            row.forEachIndexed { i, (view, plate) ->
+                val viewX = inRoot(root, view, RectF()).left
+                plate.rowPlate = (plates[i].x * density - viewX).toFloat() to (plates[i].w * density).toFloat()
+            }
         }
     }
 

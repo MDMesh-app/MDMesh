@@ -7,6 +7,8 @@ import android.graphics.Color
 import android.view.ViewGroup
 import com.mdmesh.agent.R
 import com.mdmesh.agent.ui.BackdropDrawable
+import com.mdmesh.agent.ui.BackdropFit
+import com.mdmesh.agent.ui.Focal
 import com.mdmesh.agent.ui.KioskScrim
 import com.mdmesh.agent.ui.TextPlate
 import com.mdmesh.proto.KioskApplyPayload
@@ -128,6 +130,25 @@ class KioskBackdropStressTest : KioskHarness() {
         assertFalse("the old bitmap is never recycled under a drawable", old.bitmap.isRecycled)
         // Drawing the old drawable (still possibly on a frame in flight) must not throw.
         old.draw(android.graphics.Canvas(Bitmap.createBitmap(10, 10, Bitmap.Config.ARGB_8888)))
+    }
+
+    /** A new fit or focal point is a configuration change like a new colour; the image itself isn't decoded again. */
+    @Test fun aNewFitOrFocalPointRedrawsTheSameBitmap() {
+        cache()
+        launch(withImage(single))
+        val before = backdrop()!!
+        val fit = withImage(single).let { k -> k.copy(theme = k.theme.copy(backgroundImage = image.copy(fit = "fit"))) }
+        saveKiosk(fit)
+        settle()
+        assertEquals(BackdropFit.FIT, backdrop()!!.placement.fit)
+        assertTrue("no new decode", backdrop()!!.bitmap === before.bitmap)
+        val focal = withImage(single).let { k ->
+            k.copy(theme = k.theme.copy(backgroundImage = image.copy(focalX = 0.0, focalY = 1.0)))
+        }
+        saveKiosk(focal)
+        settle()
+        assertEquals(Focal(0.0, 1.0), backdrop()!!.placement.focal)
+        assertTrue("still no new decode", backdrop()!!.bitmap === before.bitmap)
     }
 
     @Test fun aNewUrlForTheSameImageChangesNothing() {

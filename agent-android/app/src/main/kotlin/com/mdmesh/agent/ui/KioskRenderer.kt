@@ -36,6 +36,16 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
 
     /** The image is drawn under this screen. */
     private var onImage = false
+
+    /** The configuration's fit mode and focal point; a new one is drawn at once, without a new decode. */
+    var placement: Placement = Placement.DEFAULT
+        set(next) {
+            if (next == field) return
+            field = next
+            val s = screen ?: return
+            onImage = activity.paintKioskBackground(root, s, backdropBitmap, backdropInfo, next)
+            updatePlates()
+        }
     private var grid: GridViews? = null
 
     private class GridViews(val views: KioskViews, val cells: AppGridLayout, val empty: View)
@@ -77,21 +87,20 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
         if (platesChange) {
             build(s)
         } else {
-            onImage = activity.paintKioskBackground(root, s, bitmap, info)
+            onImage = activity.paintKioskBackground(root, s, bitmap, info, placement)
             updatePlates()
         }
     }
 
+    /** Everything that follows the layout: row plates, the dim, plate opacities, the bar icons. */
     private fun updatePlates() {
         val s = screen ?: return
-        val info = backdropInfo.takeIf { onImage }
-        val dim = TextPlates.update(root, info, s.palette) ?: return
-        // The bar icons follow the dimmed image under them.
-        if (info != null) activity.updateSystemBarIcons(KioskScrim.blend(s.palette.background, info.top, dim))
+        val painted = TextPlates.update(root, backdropInfo.takeIf { onImage }, s.palette, placement) ?: return
+        activity.updateSystemBarIcons(painted.statusBar)
     }
 
     private fun build(s: KioskScreen) {
-        onImage = activity.paintKioskBackground(root, s, backdropBitmap, backdropInfo)
+        onImage = activity.paintKioskBackground(root, s, backdropBitmap, backdropInfo, placement)
         root.removeAllViews()
         grid = null
         val v = KioskViews(activity, s.palette, onImage = backdropBitmap != null && s != KioskScreen.Idle)

@@ -12,13 +12,15 @@ import android.app.Activity
 import android.view.View
 
 /**
- * The kiosk backdrop: the background colour, the image centre-cropped to the bounds, then the colour again as a
- * dim at [dim] steps of 50 ([BackdropRule]). Set as the launcher root's background, it runs under the system bars and
- * the cutout (a background ignores padding), survives the renderer's rebuilds, and just re-crops for new bounds.
+ * The kiosk backdrop: the background colour, the image placed by [placement] ([BackdropGeometry]: fill around the
+ * focal point, or fit with a letterbox of the colour), then the colour again as a dim at [dim] steps of 50
+ * ([BackdropRule]). Set as the launcher root's background, it runs under the system bars and the cutout (a
+ * background ignores padding), survives the renderer's rebuilds, and is placed again for new bounds.
  */
 class BackdropDrawable(
     private val color: Int,
     val bitmap: Bitmap,
+    val placement: Placement = Placement.DEFAULT,
     dim: Int = 0,
 ) : Drawable() {
 
@@ -38,12 +40,12 @@ class BackdropDrawable(
         val b = bounds
         canvas.drawColor(color or OPAQUE)
         if (b.width() > 0 && b.height() > 0) {
-            val scale = maxOf(b.width() / bitmap.width.toFloat(), b.height() / bitmap.height.toFloat())
-            matrix.setScale(scale, scale)
-            matrix.postTranslate(
-                b.left + (b.width() - bitmap.width * scale) / 2f,
-                b.top + (b.height() - bitmap.height * scale) / 2f,
+            val r = BackdropGeometry.rect(
+                bitmap.width, bitmap.height, b.width().toDouble(), b.height().toDouble(), placement,
             )
+            matrix.setScale(r.scale.toFloat(), r.scale.toFloat())
+            // Translated to whole pixels, as CENTER_CROP does; the legibility cells' margin absorbs the half pixel.
+            matrix.postTranslate(Math.round(b.left + r.x).toFloat(), Math.round(b.top + r.y).toFloat())
             canvas.save()
             canvas.clipRect(b)
             canvas.drawBitmap(bitmap, matrix, paint)
@@ -79,6 +81,7 @@ internal fun Activity.paintKioskBackground(
     screen: KioskScreen,
     bitmap: Bitmap?,
     info: BackdropInfo?,
+    placement: Placement,
 ): Boolean {
     val palette = screen.palette
     colorSystemBars(palette.background)
@@ -88,8 +91,8 @@ internal fun Activity.paintKioskBackground(
         updateSystemBarIcons(palette.background)
         return false
     }
+    // The dim and the bar icons follow after layout ([TextPlates]); until then the last dim stands.
     val previous = (root.background as? BackdropDrawable)?.dim ?: 0
-    root.background = BackdropDrawable(palette.background, bitmap, previous)
-    updateSystemBarIcons(KioskScrim.blend(palette.background, usable.top, previous))
+    root.background = BackdropDrawable(palette.background, bitmap, placement, previous)
     return true
 }

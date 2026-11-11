@@ -71,7 +71,9 @@ class KioskViews(private val context: Context, val palette: KioskPalette, privat
             if (onImage && plate != Plate.NONE) {
                 val padH = dp(PLATE_PAD_H_DP)
                 background = TextPlate(this, palette.background, TextPlates.radius(density), padH, plate == Plate.ROW)
-                setPadding(padH, dp(PLATE_PAD_V_DP), padH, dp(PLATE_PAD_V_DP))
+                // A label's text box is its cell less 24dp (the row plate's at most the cell less 8dp, less padding).
+                val inset = if (plate == Plate.ROW) dp(LabelRows.GAP_DP / 2 + LabelRows.PAD_DP) else padH
+                setPadding(inset, dp(PLATE_PAD_V_DP), inset, dp(PLATE_PAD_V_DP))
             }
         }
 

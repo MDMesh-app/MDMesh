@@ -128,6 +128,9 @@ caching it in private storage (only the current image is kept), and draws it beh
 and the hold screen (not the idle screen), edge to edge under the system bars. An image is known by its SHA-256
 alone: a new URL for the same file (a server that moved) causes no re-download and no re-entry into the kiosk.
 
+- Placement (protocol 1.10, optional `fit` and `focalX`/`focalY`): fill (cropped, keeping the focal point in view;
+  the centre by default) or fit (the whole image, letterboxed with the background color). Servers without them mean
+  fill around the centre. A new fit or focal point redraws the same decoded image.
 - Decoding: BitmapFactory only (JPEG, PNG, WebP lossy, lossless and with transparency, on Android 7 and up), never
   a hardware bitmap, off the main thread, once per image, window size and background color (again after a
   rotation), upright by the JPEG's EXIF orientation, cropped to what the window shows. At most 2560 px on the long

@@ -50,7 +50,8 @@ New
   The download starts as soon as the kiosk is applied, so the image is usually ready when the launcher shows.
   The launcher dims the image only lightly (at most 30 %, as much as the Exit button needs to stand out at 3:1) and
   puts a plate of the background color behind each text that needs one to read at 4.5:1, solid over busy texture;
-  the console's preview shows the same. Needs agent 0.5.0 (thanks @letternumber).
+  the console's preview shows the same. The image fills the screen around a chosen focal point, or fits whole with
+  the background color around it (agent reads both from protocol 1.10). Needs agent 0.5.0 (thanks @letternumber).
 - Configurations can Grant or Deny an app's runtime permissions (camera, location, microphone, contacts, SMS and
   more), under each installed app in the editor; Default removes MDMesh's override. The choices come from the APK
   uploaded to the server. Needs agent 0.5.0 on a Device Owner device: a device on an older agent applies the rest of

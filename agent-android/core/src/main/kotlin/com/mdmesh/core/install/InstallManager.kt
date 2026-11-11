@@ -43,7 +43,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
 import java.security.MessageDigest
-import java.util.concurrent.ConcurrentHashMap
+import java.util.Collections
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -144,8 +144,7 @@ class InstallManager @Inject constructor(
     private val packageInstaller: PackageInstaller
         get() = context.packageManager.packageInstaller
 
-    /** Downloads an install in this process is using; never swept. */
-    private val downloadsInUse: MutableSet<File> = ConcurrentHashMap.newKeySet()
+    private val downloads = DownloadCache({ context.cacheDir })
 
     /**
      * Downloads (or reads) the APK, applies the version policy, then performs a silent
@@ -166,17 +165,18 @@ class InstallManager @Inject constructor(
                 )
         }
 
-        sweepOrphanedDownloads()
-
         // 2. Obtain every part (single APK, or base + splits of a bundle), verifying each
         // part's checksum. All parts install together in one session (step 3).
         val parts = req.apkParts
-        val fetched = ArrayList<FetchedApk>(parts.size)
+        val fetched = ArrayList<File>(parts.size)
+        // Every file we download, recorded as soon as it is named, so it is released even when this is cancelled
+        // between the download and the line that would have kept it. Never a caller-provided APK.
+        val downloaded: MutableList<File> = Collections.synchronizedList(mutableListOf())
         try {
             for (part in parts) {
-                val file = runCatching { obtainPart(part) }
+                val file = runCatching { obtainPart(part, downloaded) }
                     .getOrElse { return InstallOutcome.Failure(null, "apk fetch failed: ${it.message}") }
-                fetched += FetchedApk(file, downloaded = part.url != null)
+                fetched += file
                 part.sha256?.trim()?.let { expected ->
                     val actual = sha256Of(file)
                     if (!actual.equals(expected, ignoreCase = true)) {
@@ -186,7 +186,7 @@ class InstallManager @Inject constructor(
             }
 
             // 3. Create + write EVERY part into ONE session + commit, awaiting the broadcast result.
-            val outcome = runCatching { commitInstall(req.packageName, fetched.map { it.file }) }
+            val outcome = runCatching { commitInstall(req.packageName, fetched) }
                 .getOrElse { return InstallOutcome.Failure(null, "install session error: ${it.message}") }
 
             // 4. Optionally launch the app on success.
@@ -195,24 +195,20 @@ class InstallManager @Inject constructor(
             }
             return outcome
         } finally {
-            // Only clean up files we downloaded; never delete a caller-provided APK.
-            fetched.forEach {
-                if (it.downloaded) {
-                    it.file.delete()
-                    downloadsInUse.remove(it.file)
-                }
-            }
+            synchronized(downloaded) { downloaded.forEach(downloads::release) }
         }
     }
 
-    private suspend fun sweepOrphanedDownloads() = withContext(Dispatchers.IO) {
-        runCatching { DownloadSweep.sweep(context.cacheDir, downloadsInUse.toSet(), System.currentTimeMillis()) }
+    /**
+     * Deletes APK downloads a dead process left behind (a download also does this when it starts). For service start,
+     * so a leftover doesn't wait for the next install.
+     */
+    suspend fun sweepLeftoverDownloads() = withContext(Dispatchers.IO) {
+        runCatching { downloads.sweep() }
             .onSuccess { if (it.isNotEmpty()) Log.i(TAG, "removed ${it.size} leftover APK download(s)") }
             .onFailure { Log.w(TAG, "leftover APK sweep failed", it) }
+        Unit
     }
-
-    /** A fetched part plus whether we downloaded it (and therefore own its cleanup). */
-    private data class FetchedApk(val file: File, val downloaded: Boolean)
 
     /** Silently uninstalls [packageName], awaiting the platform's result. */
     @SuppressLint("MissingPermission") // Device Owner holds DELETE_PACKAGES (declared in the app)
@@ -311,25 +307,20 @@ class InstallManager @Inject constructor(
             else -> InstallOutcome.Failure(event.status, event.message ?: statusName(event.status))
         }
 
-    private suspend fun obtainPart(part: ApkPart): File {
+    private suspend fun obtainPart(part: ApkPart, downloaded: MutableList<File>): File {
         part.localPath?.let { return File(it) }
         val url = requireNotNull(part.url) { "install part needs either url or localPath" }
-        return withContext(Dispatchers.IO) { download(url) }
+        return withContext(Dispatchers.IO) { download(url, downloaded) }
     }
 
-    private fun download(url: String): File {
-        val dest = File(context.cacheDir, DownloadSweep.name(System.nanoTime()))
-        downloadsInUse.add(dest)
-        try {
-            httpClient.newCall(Request.Builder().url(url).build()).execute().use { response ->
-                if (!response.isSuccessful) error("HTTP ${response.code} for $url")
-                val body = response.body ?: error("empty response body for $url")
-                body.byteStream().use { input -> dest.outputStream().use { input.copyTo(it) } }
-            }
-        } catch (t: Throwable) {
-            dest.delete()
-            downloadsInUse.remove(dest)
-            throw t
+    /** Protected from the sweep before its first byte; [install] releases it (also when this fails). */
+    private fun download(url: String, downloaded: MutableList<File>): File {
+        val dest = downloads.newFile()
+        downloaded += dest
+        httpClient.newCall(Request.Builder().url(url).build()).execute().use { response ->
+            if (!response.isSuccessful) error("HTTP ${response.code} for $url")
+            val body = response.body ?: error("empty response body for $url")
+            body.byteStream().use { input -> dest.outputStream().use { input.copyTo(it) } }
         }
         return dest
     }

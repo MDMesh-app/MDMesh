@@ -1,6 +1,7 @@
 package com.mdmesh.core.install
 
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Removes APK downloads a dead process left behind. An install deletes its own download when it ends, but a process
@@ -24,4 +25,29 @@ internal object DownloadSweep {
         }.orEmpty()
         return stale.filter { it.delete() }
     }
+}
+
+/**
+ * The APK downloads of this process: names each one, protects it from the sweep from before its first byte until
+ * [release], and sweeps what a dead process left whenever a new download starts.
+ */
+internal class DownloadCache(
+    private val dir: () -> File,
+    private val now: () -> Long = System::currentTimeMillis,
+) {
+    private val inUse: MutableSet<File> = ConcurrentHashMap.newKeySet()
+
+    /** Blocking (it lists and deletes files): call it off the main thread. */
+    fun newFile(): File {
+        sweep()
+        return File(dir(), DownloadSweep.name(System.nanoTime())).also { inUse.add(it) }
+    }
+
+    fun release(file: File) {
+        file.delete()
+        inUse.remove(file)
+    }
+
+    /** Returns the leftovers it deleted. */
+    fun sweep(): List<File> = DownloadSweep.sweep(dir(), inUse.toSet(), now())
 }

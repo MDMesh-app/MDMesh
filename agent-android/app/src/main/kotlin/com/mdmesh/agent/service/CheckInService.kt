@@ -20,6 +20,7 @@ import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import com.mdmesh.agent.R
 import com.mdmesh.core.action.NotificationPermissionAccess
+import com.mdmesh.core.install.InstallManager
 import com.mdmesh.core.power.PowerModeStore
 import com.mdmesh.core.store.DeviceIdentity
 import com.mdmesh.core.sync.CheckInCoordinator
@@ -53,6 +54,7 @@ class CheckInService : LifecycleService() {
     @Inject lateinit var powerModeStore: PowerModeStore
     @Inject lateinit var eventLog: EventLog
     @Inject lateinit var notificationPermission: NotificationPermissionAccess
+    @Inject lateinit var installManager: InstallManager
 
     @Volatile private var started = false
     @Volatile private var interactiveUntil = 0L
@@ -94,6 +96,8 @@ class CheckInService : LifecycleService() {
         // Best effort: the system caps callbacks per app (API 30+ throws past it); the backoff still retries.
         runCatching { connectivity().registerDefaultNetworkCallback(networkCallback) }
             .onFailure { Log.w(TAG, "network callback not registered", it) }
+        // An APK a dead process left behind would otherwise wait for the next install.
+        lifecycleScope.launch { installManager.sweepLeftoverDownloads() }
     }
 
     private fun connectivity() = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager

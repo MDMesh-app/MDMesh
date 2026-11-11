@@ -34,3 +34,41 @@ class DownloadSweepTest {
         assertTrue(DownloadSweep.sweep(dir.root.resolve("gone"), emptySet(), now).isEmpty())
     }
 }
+
+class DownloadCacheTest {
+
+    @get:Rule val dir = TemporaryFolder()
+
+    private val now = 10 * 60 * 60_000L
+    private val cache = DownloadCache({ dir.root }, { now })
+    private val old = now - 2 * 60 * 60_000L
+
+    @Test
+    fun `a download is protected from the sweep from before its first byte`() {
+        val file = cache.newFile()
+        file.writeText("apk")
+        file.setLastModified(old) // a stalled download: no write for two hours
+        cache.sweep()
+        assertTrue(file.exists())
+    }
+
+    @Test
+    fun `starting a download sweeps what a dead process left`() {
+        val orphan = dir.newFile("mdm-install-1.apk").apply { setLastModified(old) }
+        cache.newFile()
+        assertTrue(!orphan.exists())
+    }
+
+    @Test
+    fun `a released download is deleted and no longer protected`() {
+        val file = cache.newFile()
+        file.writeText("apk")
+        cache.release(file)
+        assertTrue(!file.exists())
+
+        file.writeText("again")
+        file.setLastModified(old)
+        cache.sweep()
+        assertTrue(!file.exists())
+    }
+}

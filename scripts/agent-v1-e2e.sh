@@ -356,8 +356,10 @@ chk "retry: another attempt with the used code refused" "$(enroll_attempt "$TOK6
 rcheckin(){ curl -s -X POST -H "Authorization: Bearer $1" -H 'Content-Type: application/json' \
   -d "{\"deviceId\":\"$RDID\",\"capabilities\":{\"policy\":[],\"appManagement\":[],\"remoteControl\":{\"tier\":\"none\"},\"oem\":{\"vendor\":\"samsung\",\"knox\":false}}}" \
   "$BASE/rest/public/agent/v1/checkin" | field "d['status']"; }
-chk "retry: the lost secret no longer checks in" "$(rcheckin "$OLDSEC")" "ERROR"
-chk "retry: the new secret checks in" "$(rcheckin "$RSEC")" "OK"
+# Every answer for one attempt carries the same secret (derived from it), so whichever answer reached the agent works.
+chk "retry: both answers carry the same secret" "$RSEC" "$OLDSEC"
+chk "retry: the first answer's secret checks in" "$(rcheckin "$OLDSEC")" "OK"
+chk "retry: the retry's secret checks in" "$(rcheckin "$RSEC")" "OK"
 chk "retry: closed after the first check-in" "$(enroll_attempt "$TOK6" "$ATT" | field "d['message']")" "error.agent.token.used"
 
 # Retries of one attempt sent at once (an agent that timed out while the server was slow): one transaction per
@@ -370,6 +372,35 @@ for i in 1 2 3 4 5 6; do (enroll_attempt "$TOK7" "$ATT7" | field "str(d['status'
 chk "concurrent retries: all answered OK" "$(cut -d: -f1 "$PAR7"/* | sort -u)" "OK"
 chk "concurrent retries: one device" "$(cut -d: -f2- "$PAR7"/* | sort -u | wc -l | tr -d ' ')" "1"
 rm -rf "$PAR7"
+
+# The agent's credential recovery: a resume-only enroll gets back the device its attempt made, before that device's
+# first check-in, and otherwise nothing: no device, no use of the code (enrolls two devices).
+echo "== resume-only gets back its own device, and nothing else =="
+enroll_resume(){ curl -s -X POST -H 'Content-Type: application/json' -d "{\"enrollToken\":\"$1\",\"enrollAttempt\":\"$2\",\"resumeOnly\":true,\"agent\":{\"version\":\"0.5.0\",\"package\":\"com.mdmesh.agent\"},\"device\":{\"androidSdkInt\":34,\"isDeviceOwner\":true},\"capabilities\":{\"policy\":[],\"appManagement\":[],\"remoteControl\":{\"tier\":\"none\"},\"oem\":{\"vendor\":\"samsung\",\"knox\":false}}}" "$BASE/rest/public/agent/v1/enroll"; }
+device_count(){ curl -s -b "$CJ" -X POST -H 'Content-Type: application/json' -d '{"value":"","pageNum":1,"pageSize":1}' \
+  "$BASE/rest/private/devices/search" | field "d['data']['devices']['totalItemsCount']"; }
+checkin_as(){ curl -s -X POST -H "Authorization: Bearer $2" -H 'Content-Type: application/json' \
+  -d "{\"deviceId\":\"$1\",\"capabilities\":{\"policy\":[],\"appManagement\":[],\"remoteControl\":{\"tier\":\"none\"},\"oem\":{\"vendor\":\"samsung\",\"knox\":false}}}" \
+  "$BASE/rest/public/agent/v1/checkin" | field "d['status']"; }
+TOK8=$(curl -s -b "$CJ" -X POST -H 'Content-Type: application/json' -d '{"maxUses":2,"validHours":1}' \
+  "$BASE/rest/private/agent/v1/token" | field "d['data']['token']")
+ATT8="e2eResume$(date +%s%N)"
+E8=$(enroll_attempt "$TOK8" "$ATT8")
+chk "resume-only: the enroll answer says the server resumes" "$(echo "$E8" | field "str(d['data'].get('resumeSupported'))")" "True"
+DEV8=$(echo "$E8" | field "d['data']['deviceId']"); SEC8=$(echo "$E8" | field "d['data']['deviceSecret']")
+COUNT8=$(device_count)
+R8=$(enroll_resume "$TOK8" "$ATT8")
+chk "resume-only before the first check-in: the same device" "$(echo "$R8" | field "d['data']['deviceId']")" "$DEV8"
+chk "resume-only before the first check-in: the same secret" "$(echo "$R8" | field "d['data']['deviceSecret']")" "$SEC8"
+chk "resume-only: the device checks in" "$(checkin_as "$DEV8" "$SEC8")" "OK"
+chk "resume-only after the first check-in: nothing to resume" "$(enroll_resume "$TOK8" "$ATT8" | field "d['message']")" \
+  "error.agent.enrollment.notResumable"
+chk "resume-only for an unknown attempt: nothing to resume" "$(enroll_resume "$TOK8" "${ATT8}x" | field "d['message']")" \
+  "error.agent.enrollment.notResumable"
+chk "resume-only made no device" "$(device_count)" "$COUNT8"
+chk "resume-only took no use: the code's second device still enrolls" \
+  "$(enroll_attempt "$TOK8" "${ATT8}second" | field "d['status']")" "OK"
+chk "and then the code is used up" "$(enroll_attempt "$TOK8" "${ATT8}third" | field "d['message']")" "error.agent.token.used"
 
 echo "===== RESULT: PASS=$PASS FAIL=$FAIL ====="
 [ "$FAIL" -eq 0 ]

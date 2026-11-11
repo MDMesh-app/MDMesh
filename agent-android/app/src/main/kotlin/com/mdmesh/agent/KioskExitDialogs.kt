@@ -1,5 +1,8 @@
 package com.mdmesh.agent
 
+import com.mdmesh.kiosk.KioskExit
+import com.mdmesh.proto.KioskApplyPayload
+
 /** What the kiosk launcher shows after it applies a kiosk state. */
 internal enum class LauncherScreen {
     /** No kiosk: the idle screen, no exit. */
@@ -26,6 +29,12 @@ internal enum class LauncherScreen {
 internal object KioskExitDialogs {
     const val PIN = "pin"
     const val LOCKED = "locked"
+
+    /**
+     * The PIN that opens [kiosk]'s on-device exit, or null when it has none: no kiosk, no PIN, or exit mode "remote"
+     * ([KioskExit.onDevice]). The one answer for the affordance, the prompt and the PIN check, read at each use.
+     */
+    fun onDevicePin(kiosk: KioskApplyPayload?): String? = kiosk?.takeIf(KioskExit::onDevice)?.password
 
     /** The dialog to reopen on [screen], given the [tag] that was open before the recreation; null for none. */
     fun reopenOn(screen: LauncherScreen, tag: String?): String? = when {

@@ -145,7 +145,6 @@ class KioskLauncherStressTest : KioskHarness() {
     }
 
     /** Restored PIN prompt (process death) on a kiosk that is now remote-exit only must not come back. */
-    @Ignore("F1: fixed in the next commits")
     @Test fun restoredPromptNotReopenedOnRemoteExitKiosk() {
         launch(grid)
         tapExitKiosk()

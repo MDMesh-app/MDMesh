@@ -308,7 +308,8 @@ class KioskLauncherActivity : ComponentActivity() {
     private fun palette(p: KioskApplyPayload): KioskPalette =
         KioskPalette.of(parseColor(p.theme.backgroundColor), parseColor(p.theme.textColor))
 
-    private fun exitFor(p: KioskApplyPayload): KioskExit = KioskExit.of(p.exitMode, pinGate.isAvailable(p.password))
+    private fun exitFor(p: KioskApplyPayload): KioskExit =
+        KioskExit.of(p.exitMode, KioskExitDialogs.onDevicePin(p) != null)
 
     private fun parseColor(value: String?): Int? =
         value?.let { runCatching { Color.parseColor(it) }.getOrNull() }
@@ -347,8 +348,9 @@ class KioskLauncherActivity : ComponentActivity() {
     // --- Exit flow ---------------------------------------------------------------------------
 
     private fun promptExit(p: KioskApplyPayload, typed: CharSequence? = null) {
-        // No PIN, no on-device exit (the affordance isn't shown either): kiosk then ends only from the console.
-        if (!pinGate.isAvailable(p.password)) return
+        // No on-device exit (no PIN, or exit mode "remote"; the affordance isn't shown either): kiosk then ends only
+        // from the console. A prompt restored or rebuilt onto such a kiosk doesn't open either.
+        if (KioskExitDialogs.onDevicePin(p) == null) return
         pinGate.remainingLockMs()?.let { showExitLocked(it); return }
         val prompt = ExitPinDialog.create(this, typed, ::onPinEntered)
         // "N more wrong PINs lock the exit" comes from the gate's saved count, so a rebuilt or reopened prompt says
@@ -359,11 +361,12 @@ class KioskLauncherActivity : ComponentActivity() {
 
     /**
      * The one place a PIN is checked, and the only caller of [doExit]. It checks against the kiosk applied now, not
-     * the one the prompt was opened for: a PIN changed or removed meanwhile must not still open the exit.
+     * the one the prompt was opened for: a PIN changed or removed meanwhile, or an exit switched to "remote" (console
+     * only), must not still open the exit. No on-device PIN: the gate answers Unavailable and counts no try.
      * [dialog] only shows the result: it closes on Open and Locked, and shows Wrong and Unavailable under the field.
      */
     private fun onPinEntered(entered: String, dialog: ExitPinDialog) {
-        val pin = active?.password
+        val pin = KioskExitDialogs.onDevicePin(active)
         val outcome = pinGate.attempt(entered, pin)
         dialog.render(ExitPinUiState.of(outcome))
         when (outcome) {

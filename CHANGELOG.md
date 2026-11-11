@@ -74,6 +74,8 @@ New
   ([DEPLOY.md](https://github.com/MDMesh-app/MDMesh/blob/main/DEPLOY.md#option-a--quick-start-no-clone-published-images)).
 
 Fixes
+- The installers create .env and other files holding secrets readable only by their owner from the start, and a
+  setup.sh re-run makes an existing .env owner-only again.
 - setup.sh re-runs read `.env` without running it as a script, so `bash -x ./setup.sh` no longer prints its
   passwords and secrets. Values are read as before, quotes and escapes included; a line whose value the shell would
   compute (a `$` or backquote) stops setup.sh, naming the line.

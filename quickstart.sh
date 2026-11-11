@@ -692,7 +692,10 @@ done
 # shellcheck source=install/lib/db.sh
 . ./install/lib/db.sh
 
-cat > .env <<EOF
+# Owner-only from the start: written to a new mode-600 file (mktemp), then renamed to .env, so no other user can read
+# the secrets at any moment.
+ENV_TMP=$(mktemp .env.new.XXXXXX)
+cat > "$ENV_TMP" <<EOF
 DB_NAME=mdmesh
 DB_USER=mdmesh
 DB_PASSWORD=${DB_PASSWORD}
@@ -719,7 +722,7 @@ SMTP_HOST=
 SMTP_PORT=25
 SMTP_FROM=mdm@${HOST}
 EOF
-chmod 600 .env
+mv -f -- "$ENV_TMP" .env
 say "Wrote .env (secrets generated). docker compose reads COMPOSE_FILE/PROFILES from it."
 
 say "Pulling images…"

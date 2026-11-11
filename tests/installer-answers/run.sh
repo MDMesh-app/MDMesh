@@ -45,6 +45,11 @@ for c in docker curl wget apt-get systemctl useradd mvn git; do
   printf '#!/bin/sh\nl=${STUB_LOG:-%s/stubs.called}\n{ echo "$0 $*"; env; } >> "$l"\nexit 99\n' "$WORK" > "$WORK/stubs/$c"
   chmod +x "$WORK/stubs/$c"
 done
+# A chmod stub (only on the PATH of the .env runs below) that records .env's mode when chmod is called, then runs it.
+mkdir -p "$WORK/stubs-chmod"
+printf '#!/bin/sh\n[ ! -e .env ] || stat -c %%a .env >> "%s/chmod.log"\nexec %s "$@"\n' "$WORK" "$(command -v chmod)" \
+  > "$WORK/stubs-chmod/chmod"
+chmod +x "$WORK/stubs-chmod/chmod"
 # With STUB_DOCKER_OK=1, `docker compose version` succeeds (so setup.sh gets past its checks); anything else still fails.
 # shellcheck disable=SC2016  # the stub's own variables
 sed -i '2i [ "${STUB_DOCKER_OK:-}" = 1 ] \&\& [ "$1 $2" = "compose version" ] \&\& exit 0' "$WORK/stubs/docker"
@@ -308,7 +313,7 @@ cp -- "$REPO/setup.sh" "$WORK/src2/"; cp -R -- "$REPO/install/lib" "$WORK/src2/i
 dbpw=c0ffee0dbpassword0c0ffee; hs=c0ffee0hashsecret0c0ffee; tt=c0ffee0tunneltoken0c0ffee
 printf '%s\n' "DB_PASSWORD=$dbpw" "HASH_SECRET=\"$hs\"" "TUNNEL_TOKEN=$tt # set by hand" BASE_URL=https://mdm.example.com \
   COMPOSE_PROFILES=cloudflare IMAGE_OWNER=local > "$WORK/src2/.env"
-chmod 600 "$WORK/src2/.env"
+chmod 644 "$WORK/src2/.env"   # left readable by an older version or a hand edit: the re-run makes it owner-only
 : > "$WORK/children.log"
 (cd "$WORK/src2" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" STUB_LOG="$WORK/children.log" STUB_DOCKER_OK=1 \
   bash -x ./setup.sh < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || true
@@ -317,6 +322,7 @@ grep -q '^\S*docker compose [^v]' "$WORK/children.log" || { fail "the traced set
 for v in "$dbpw" "$hs" "$tt"; do
   if grep -qF -- "$v" "$WORK/out/o" "$WORK/out/e"; then fail "a setup.sh re-run traced with bash -x printed a .env secret"; fi
 done
+[ "$(stat -c %a "$WORK/src2/.env")" = 600 ] || fail "a setup.sh re-run leaves .env readable by others ($(stat -c %a "$WORK/src2/.env"))"
 ok
 
 # install/lib/dotenv.sh (setup.sh's .env reader): every ACCEPT line of dotenv-cases.sh gives exactly the environment
@@ -347,8 +353,13 @@ for c in "1|mdm.example.com|bad SECRET tok|eyJhIjoiYWJjIn0=|^TUNNEL_TOKEN=eyJhIj
   IFS='|' read -r m h bad good want why <<< "$c"
   mkdir -p "$WORK/src3/install"; cp -- "$REPO/setup.sh" "$WORK/src3/"; cp -R -- "$REPO/install/lib" "$WORK/src3/install/"
   [ ! -e "$WORK/src3/.env" ] || mv -- "$WORK/src3/.env" "$WORK/src3/.env.prev"
-  (cd "$WORK/src3" && printf '%s\n' "$m" "$h" "$bad" "$good" | env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" \
-    STUB_LOG="$WORK/children.log" STUB_DOCKER_OK=1 bash ./setup.sh > "$WORK/out/o" 2> "$WORK/out/e") || true
+  : > "$WORK/chmod.log"
+  # umask 022, a common default: the new .env must be owner-only from the start anyway.
+  (cd "$WORK/src3" && umask 022 && printf '%s\n' "$m" "$h" "$bad" "$good" | env -i PATH="$WORK/stubs-chmod:$WORK/stubs:$PATH" \
+    HOME="$WORK" STUB_LOG="$WORK/children.log" STUB_DOCKER_OK=1 bash ./setup.sh > "$WORK/out/o" 2> "$WORK/out/e") || true
+  { [ "$(stat -c %a "$WORK/src3/.env")" = 600 ] && ! grep -qv '^600$' "$WORK/chmod.log" \
+    && [ -z "$(find "$WORK/src3" -maxdepth 1 -name '.env.new.*')" ]; } \
+    || fail "setup.sh's new .env is not owner-only from the start (mode $(stat -c %a "$WORK/src3/.env"); at chmod: $(tr '\n' ' ' < "$WORK/chmod.log"))"
   { grep -qF -- "$why" "$WORK/out/e" && grep -qE -- "$want" "$WORK/src3/.env" && ! grep -q SECRET "$WORK/out/o" "$WORK/out/e"; } \
     || { fail "a wrong typed answer ($why) is not refused and asked again"; show; }
   ok

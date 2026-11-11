@@ -263,6 +263,7 @@ if [ "$REUSE_ENV" = 1 ]; then
   # first init), so a fresh DB_PASSWORD would brick the stack; a fresh HASH_SECRET would likewise
   # invalidate every enrolled device's token. --reset opts out (see the header for when that's safe).
   say "Existing .env found — reusing it (secrets + hosting mode kept; use --reset to start over)."
+  chmod go= .env   # it holds the secrets: owner-only, also when an older version or a hand edit left it looser
   mdm_load_env .env
   version_preflight "${CURRENT_VERSION:-${SERVER_VERSION:-}}"
   _env_base_url=${BASE_URL:-}
@@ -331,7 +332,10 @@ else
   # Checked before .env is written (install/lib/url.sh), so a mistyped hostname leaves nothing behind.
   mdm_check_base_url BASE_URL || { err "Check the hostname you entered (the name only, e.g. mdm.example.com), then re-run."; exit 1; }
 
-  cat > .env <<EOF
+  # Owner-only from the start: written to a new mode-600 file (mktemp), then renamed over .env, so no other user can
+  # read the secrets at any moment, and a --reset over a looser old .env does not keep its mode.
+  _envtmp=$(mktemp .env.new.XXXXXX)
+  cat > "$_envtmp" <<EOF
 DB_NAME=mdmesh
 DB_USER=mdmesh
 DB_PASSWORD=${DB_PASSWORD}
@@ -361,7 +365,7 @@ SMTP_HOST=
 SMTP_PORT=25
 SMTP_FROM=mdm@${HOST}
 EOF
-  chmod 600 .env
+  mv -f -- "$_envtmp" .env
   say "Wrote .env (secrets generated)."
 fi
 

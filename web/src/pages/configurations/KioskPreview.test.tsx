@@ -178,9 +178,11 @@ describe('KioskBackgroundPreview', () => {
     preview({ apps: ['Scanner', 'Notes', 'Maps', 'Browser'] });
     const list = screen.getByRole('list', { name: 'Screen shapes' });
     const buttons = within(list).getAllByRole('button');
-    expect(buttons.map((b) => b.getAttribute('aria-label')?.replace(/: Text .*$/, ''))).toEqual(THUMBNAILS.map(viewLabel));
-    await waitFor(() => expect(buttons[1].getAttribute('aria-label')).toMatch(/on plate/));
-    expect(buttons[0].getAttribute('aria-label')).not.toMatch(/on plate/);
+    // The visible caption is the name: shape, readout and dim.
+    expect(buttons.map((b) => b.querySelector('.v2-kbg__shape-name')!.textContent)).toEqual(THUMBNAILS.map(viewLabel));
+    await waitFor(() => expect(buttons[1].textContent).toMatch(/on plate/));
+    expect(buttons[0].textContent).not.toMatch(/on plate/);
+    expect(buttons[1].querySelector('.v2-kbg__caption')!.textContent).toMatch(/^Phone, landscape.*Text \d+\.\d:1 Pass \(on plate\)/);
     expect(buttons[0].getAttribute('aria-pressed')).toBe('true');
     fireEvent.click(buttons[3]);
     expect(buttons[3].getAttribute('aria-pressed')).toBe('true');

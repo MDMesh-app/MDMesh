@@ -164,8 +164,11 @@ export function KioskBackgroundPreview({
   };
 
   const [thumbList, thumbsWidth] = useWidth<HTMLUListElement>();
-  // Same height for all four, low enough that the widest (phone landscape) fits the row with its button padding.
-  const thumbHeight = Math.min(THUMB_HEIGHT, Math.floor(((thumbsWidth - 16) * DEVICES.phone.short) / DEVICES.phone.long));
+  // One row of four on a wide page, two rows of two on a narrow one; the same height for all four, low enough that
+  // the widest (phone landscape) fits its column with the button's padding.
+  const thumbColumns = thumbsWidth >= 900 ? 4 : 2;
+  const columnWidth = (thumbsWidth - 12 * (thumbColumns - 1)) / thumbColumns - 14;
+  const thumbHeight = Math.max(40, Math.min(THUMB_HEIGHT, Math.floor((columnWidth * DEVICES.phone.short) / DEVICES.phone.long)));
   const key = viewKey(view);
   const current = measured?.[key];
   const big = current?.kind === 'ok' ? readout(current.legibility) : null;
@@ -241,7 +244,12 @@ export function KioskBackgroundPreview({
           <span className="v2-kbg__readout">{status(current)}</span>
         )}
       </p>
-      <ul ref={thumbList} className="v2-kbg__thumbs" aria-label="Screen shapes">
+      <ul
+        ref={thumbList}
+        className="v2-kbg__thumbs"
+        aria-label="Screen shapes"
+        style={{ gridTemplateColumns: `repeat(${thumbColumns}, minmax(0, 1fr))` }}
+      >
         {THUMBNAILS.map((t) => {
           const m = measured?.[viewKey(t)];
           const r = m?.kind === 'ok' ? readout(m.legibility) : null;
@@ -251,7 +259,6 @@ export function KioskBackgroundPreview({
                 type="button"
                 className="v2-kbg__thumb-button"
                 aria-pressed={viewKey(t) === key}
-                aria-label={`${viewLabel(t)}${r ? `: ${r.text}, ${r.dim}` : ''}`}
                 onClick={() => select(t)}
               >
                 <ScaledScreen
@@ -261,7 +268,7 @@ export function KioskBackgroundPreview({
                   colours={colours}
                   scale={thumbHeight / viewWindow(t).h}
                 />
-                <span className="v2-kbg__caption" aria-hidden="true">
+                <span className="v2-kbg__caption">
                   <span className="v2-kbg__shape-name">{viewLabel(t)}</span>
                   {r ? (
                     <>

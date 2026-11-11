@@ -9,6 +9,8 @@
 .v2 .v2-kbg__preview > summary {
   cursor: pointer;
   width: fit-content;
+  padding: 4px 0;
+  line-height: 24px;
   font-weight: 600;
   font-size: var(--fs-sm);
   color: var(--text);
@@ -74,10 +76,9 @@
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
   gap: 12px;
-  align-items: flex-start;
+  align-items: start;
 }
 
 .v2 .v2-kbg__thumbs > li {
@@ -87,6 +88,8 @@
 
 .v2 .v2-kbg__thumb-button {
   display: grid;
+  width: 100%;
+  align-content: start;
   gap: 6px;
   justify-items: start;
   max-width: 100%;

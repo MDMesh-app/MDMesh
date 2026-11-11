@@ -230,6 +230,143 @@ public class KioskImageMetadataTest {
         }
     }
 
+    // ---- bounded work -----------------------------------------------------------------------------------------------
+
+    /** Many small chunks: every format must stay linear in the input size. */
+    @Test(timeout = 5_000)
+    public void manyTinyChunksAreHandledInLinearTime() throws Exception {
+        // WebP: VP8X is only valid as the first chunk; 100k more must not cost 100k rescans.
+        ByteArrayOutputStream webp = bytes('W', 'E', 'B', 'P');
+        riffChunk(webp, "VP8X", new byte[]{0x08, 0, 0, 0, 9, 0, 0, 9, 0, 0});
+        for (int n = 0; n < 100_000; n++) riffChunk(webp, "VP8X", new byte[]{0x08, 0, 0, 0, 9, 0, 0, 9, 0, 0});
+        riffChunk(webp, "VP8L", vp8l(10, 10));
+        assertUnderOneSecond(riff(webp.toByteArray()));
+        // A VP8X anywhere but first is not a well-formed WebP.
+        assertNull(KioskImageMetadata.strip(riff(webp.toByteArray())));
+
+        byte[] plain = image("png", 4, 4);
+        ByteArrayOutputStream png = new ByteArrayOutputStream();
+        png.write(plain, 0, 33);
+        for (int n = 0; n < 100_000; n++) chunk(png, "tEXt", new byte[]{'a', 0, 'b'});
+        png.write(plain, 33, plain.length - 33);
+        assertUnderOneSecond(png.toByteArray());
+
+        byte[] jpg = image("jpg", 4, 4);
+        ByteArrayOutputStream jpeg = new ByteArrayOutputStream();
+        jpeg.write(jpg, 0, 2);
+        for (int n = 0; n < 100_000; n++) seg(jpeg, 0xFE, new byte[]{'x'});
+        jpeg.write(jpg, 2, jpg.length - 2);
+        assertUnderOneSecond(jpeg.toByteArray());
+    }
+
+    private static void assertUnderOneSecond(byte[] input) {
+        long start = System.nanoTime();
+        KioskImageMetadata.strip(input);
+        KioskImageMetadata.orientation(input);
+        long ms = (System.nanoTime() - start) / 1_000_000;
+        assertTrue("took " + ms + " ms", ms < 1_000);
+    }
+
+    @Test
+    public void inputOverTheSizeLimitIsNotProcessed() throws Exception {
+        byte[] big = Arrays.copyOf(image("jpg", 4, 4), (int) KioskBackgroundImageAssets.MAX_BYTES + 1);
+        assertNull(KioskImageMetadata.strip(big));
+    }
+
+    /** Random corruption of every format: never throws, each call stays fast, and a result strips to itself. */
+    @Test(timeout = 30_000)
+    public void fuzzedInputIsBoundedAndIdempotent() throws Exception {
+        byte[][] samples = {
+                phoneJpeg(image("jpg", 32, 24), 6), phonePng(image("png", 32, 24), 3), extendedWebp(true, 8),
+                simpleWebp()};
+        Random random = new Random(20261111);
+        long slowest = 0;
+        for (byte[] sample : samples) {
+            for (int n = 0; n < 3_000; n++) {
+                byte[] corrupt = mutate(sample, random);
+                long start = System.nanoTime();
+                byte[] once = KioskImageMetadata.strip(corrupt);
+                KioskImageMetadata.orientation(corrupt);
+                slowest = Math.max(slowest, System.nanoTime() - start);
+                if (once != null) assertArrayEquals("idempotent", once, KioskImageMetadata.strip(once));
+            }
+        }
+        assertTrue("slowest call " + slowest / 1_000_000 + " ms", slowest < 200_000_000L);
+    }
+
+    private static byte[] mutate(byte[] sample, Random random) {
+        switch (random.nextInt(4)) {
+            case 0: return Arrays.copyOf(sample, random.nextInt(sample.length));
+            case 1: {
+                byte[] c = sample.clone();
+                for (int k = 0; k < 1 + random.nextInt(6); k++) c[random.nextInt(c.length)] = (byte) random.nextInt(256);
+                return c;
+            }
+            case 2: {
+                byte[] c = sample.clone();
+                int at = random.nextInt(c.length - 4);
+                int v = random.nextBoolean() ? 0x7FFFFFFF : random.nextInt();
+                c[at] = (byte) (v >> 24); c[at + 1] = (byte) (v >> 16); c[at + 2] = (byte) (v >> 8); c[at + 3] = (byte) v;
+                return c;
+            }
+            default: {
+                byte[] c = Arrays.copyOf(sample, random.nextInt(sample.length) + 1);
+                c[c.length - 1] = (byte) 0xFF;
+                return c;
+            }
+        }
+    }
+
+    @Test
+    public void aTruncatedScanEndingInAByteFFStripsToItself() throws Exception {
+        byte[] jpg = image("jpg", 16, 16);
+        byte[] cut = Arrays.copyOf(jpg, jpg.length - 10);
+        cut[cut.length - 1] = (byte) 0xFF;
+        byte[] once = KioskImageMetadata.strip(cut);
+        assertArrayEquals(once, KioskImageMetadata.strip(once));
+    }
+
+    // ---- what is kept ------------------------------------------------------------------------------------------------
+
+    @Test
+    public void jpegKeepsOnlyKnownSegmentsAndAShortAdobeMarker() throws Exception {
+        byte[] plain = image("jpg", 8, 8);
+        int app0Length = ((plain[4] & 0xFF) << 8) | (plain[5] & 0xFF);
+        int afterApp0 = 4 + app0Length;
+        ByteArrayOutputStream o = new ByteArrayOutputStream();
+        o.write(plain, 0, afterApp0);
+        ByteArrayOutputStream adobe = new ByteArrayOutputStream();
+        adobe.write("Adobe".getBytes(StandardCharsets.US_ASCII));
+        adobe.write(new byte[]{0, 100, 0, 0, 0, 0, 1});
+        adobe.write(("PADDING " + SERIAL).getBytes(StandardCharsets.US_ASCII));
+        seg(o, 0xEE, adobe.toByteArray());
+        seg(o, 0xF0, ("JPG0 " + SERIAL).getBytes(StandardCharsets.US_ASCII));   // reserved JPGn
+        seg(o, 0x30, ("reserved " + GPS).getBytes(StandardCharsets.US_ASCII));  // reserved marker
+        o.write(plain, afterApp0, plain.length - afterApp0);
+        byte[] clean = KioskImageMetadata.strip(o.toByteArray());
+        assertAbsent(clean, SERIAL, GPS, "PADDING");
+        assertPresent(clean, "Adobe");
+        BufferedImage decoded = ImageIO.read(new ByteArrayInputStream(clean));
+        assertEquals(8, decoded.getWidth());
+    }
+
+    /** An animated PNG is kept as it is (its frames are image data); the agent shows its first frame. */
+    @Test
+    public void anAnimatedPngKeepsItsFrames() throws Exception {
+        byte[] plain = image("png", 6, 6);
+        ByteArrayOutputStream o = new ByteArrayOutputStream();
+        o.write(plain, 0, 33);
+        chunk(o, "acTL", new byte[]{0, 0, 0, 1, 0, 0, 0, 0});
+        chunk(o, "fcTL", new byte[26]);
+        chunk(o, "tEXt", ("Comment\0" + SERIAL).getBytes(StandardCharsets.ISO_8859_1));
+        o.write(plain, 33, plain.length - 33 - 12);
+        chunk(o, "fdAT", new byte[]{0, 0, 0, 2, 1, 2, 3});
+        o.write(plain, plain.length - 12, 12);
+        byte[] clean = KioskImageMetadata.strip(o.toByteArray());
+        assertPresent(clean, "acTL", "fcTL", "fdAT");
+        assertAbsent(clean, SERIAL);
+    }
+
     // ---- uploads committed from the console -------------------------------------------------------------------------
 
     @Test

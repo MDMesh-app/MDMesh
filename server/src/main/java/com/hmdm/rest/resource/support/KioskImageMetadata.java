@@ -28,10 +28,14 @@ import java.util.zip.CRC32;
  * were. A kiosk background is served publicly by URL, so a phone photo must not carry its GPS position, camera serial
  * numbers, embedded thumbnails or editing history to anyone who has the link.
  *
- * <p>Kept: what decoding and colour need (JPEG tables, frame, scans, JFIF without its thumbnail, ICC profile, Adobe
- * colour transform; PNG critical chunks, transparency, gamma, chromaticities, sRGB, ICC, cICP and HDR chunks, pixel
- * density, background; WebP VP8X, ICCP, ALPH, ANIM, ANMF and image data). Removed: EXIF, XMP, IPTC/Photoshop,
- * comments, PNG text and time, multi-picture and gain-map data appended after the end of the image, unknown chunks.</p>
+ * <p>Kept, by allow-list: what decoding and colour need (JPEG frames, tables, restart interval and scans, JFIF without
+ * its thumbnail, ICC profile, the 12 bytes of the Adobe colour transform; PNG critical chunks, transparency, gamma,
+ * chromaticities, sRGB, ICC, cICP and HDR chunks, pixel density, background, and an animated PNG's frames as they
+ * are; WebP VP8X (first chunk only), ICCP, ALPH, ANIM, ANMF and image data). Everything else goes: EXIF, XMP,
+ * IPTC/Photoshop, comments, PNG text and time, multi-picture and gain-map data after the end of the image, unknown
+ * and reserved segments and chunks.</p>
+ *
+ * <p>Every pass is linear in the input, which is at most {@link KioskBackgroundImageAssets#MAX_BYTES}.</p>
  *
  * <p>The one tag kept is the EXIF orientation, rewritten as a minimal EXIF block with nothing else: removing it would
  * turn an upright phone photo on its side. The console already applies it to the pixels before uploading (so its
@@ -55,6 +59,7 @@ public final class KioskImageMetadata {
         if (fileName == null || !KIOSK_UPLOAD_NAME.matcher(fileName).matches()) return false;
         if (!upload.isFile() || upload.length() > KioskBackgroundImageAssets.MAX_BYTES) return false;
         byte[] bytes = Files.readAllBytes(upload.toPath());
+        if (KioskImageHeader.read(bytes) == null) return false;
         byte[] clean = strip(bytes);
         if (clean == null || Arrays.equals(bytes, clean)) return false;
         File staged = new File(upload.getParentFile(), upload.getName() + ".clean");
@@ -68,7 +73,8 @@ public final class KioskImageMetadata {
      * Returns an equal array when there was nothing to remove; running it again on its result changes nothing.
      */
     public static byte[] strip(byte[] bytes) {
-        if (bytes == null || bytes.length < 12) return null;
+        // Every pass below is linear in the input; the size cap bounds the work of one call.
+        if (bytes == null || bytes.length < 12 || bytes.length > KioskBackgroundImageAssets.MAX_BYTES) return null;
         try {
             if (isPng(bytes)) return png(bytes);
             if (u8(bytes, 0) == 0xFF && u8(bytes, 1) == 0xD8 && u8(bytes, 2) == 0xFF) return jpeg(bytes);
@@ -83,7 +89,7 @@ public final class KioskImageMetadata {
     /** The EXIF orientation (1 to 8) a {@link #strip} result keeps, read from its metadata; 1 when there is none. */
     public static int orientation(byte[] bytes) {
         try {
-            if (bytes == null || bytes.length < 12) return 1;
+            if (bytes == null || bytes.length < 12 || bytes.length > KioskBackgroundImageAssets.MAX_BYTES) return 1;
             if (isPng(bytes)) return pngOrientation(bytes);
             if (u8(bytes, 0) == 0xFF && u8(bytes, 1) == 0xD8) return jpegOrientation(bytes);
             if (ascii(bytes, 0, "RIFF") && ascii(bytes, 8, "WEBP")) return webpOrientation(bytes);
@@ -114,9 +120,7 @@ public final class KioskImageMetadata {
             }
             if (marker == 0x01 || (marker >= 0xD0 && marker <= 0xD8)) {
                 if (marker == 0xD8) return null;            // a second start of image
-                rest.write(0xFF);
-                rest.write(marker);
-                continue;
+                continue;                                   // TEM or a restart outside a scan: nothing to keep
             }
             if (i + 2 > b.length) return null;
             int length = be16(b, i);
@@ -141,12 +145,19 @@ public final class KioskImageMetadata {
             } else if (marker == 0xE2) {
                 if (dataLength >= 12 && ascii(b, data, "ICC_PROFILE\0")) segment(rest, b, marker, i, length);
             } else if (marker == 0xEE) {
-                if (dataLength >= 5 && ascii(b, data, "Adobe")) segment(rest, b, marker, i, length);
-            } else if ((marker >= 0xE3 && marker <= 0xEF) || marker == 0xFE) {
-                // Other application segments (IPTC/Photoshop, maker data, ...) and comments.
-            } else {
+                // Adobe: its 12 defined bytes (the colour transform), never what a writer appended after them.
+                if (dataLength >= ADOBE_LENGTH && ascii(b, data, "Adobe")) {
+                    rest.write(0xFF);
+                    rest.write(0xEE);
+                    rest.write(0);
+                    rest.write(ADOBE_LENGTH + 2);
+                    rest.write(b, data, ADOBE_LENGTH);
+                }
+            } else if (isDecodingSegment(marker)) {
                 segment(rest, b, marker, i, length);
             }
+            // Anything else goes: other application segments (IPTC/Photoshop, maker data, ...), comments, reserved
+            // and hierarchical markers.
             i += length;
             if (marker == 0xDA) {
                 // Entropy-coded data runs to the next marker that isn't byte stuffing (FF00) or a restart (FFD0-D7).
@@ -162,7 +173,11 @@ public final class KioskImageMetadata {
                     }
                     i++;
                 }
-                rest.write(b, start, i - start);
+                int end = i;
+                // A file cut off right after an 0xFF: that byte is not data, and kept it would turn the EOI written
+                // below into fill, so a second strip would differ.
+                if (end == b.length && end > start && u8(b, end - 1) == 0xFF) end--;
+                rest.write(b, start, end - start);
             }
         }
         if (!ended && rest.size() == 0) return null;
@@ -184,6 +199,17 @@ public final class KioskImageMetadata {
         out.write(0xFF);
         out.write(0xD9);
         return out.toByteArray();
+    }
+
+    private static final int ADOBE_LENGTH = 12;
+
+    /**
+     * The segments a decoder needs, the only ones kept besides JFIF, ICC and Adobe: frames (SOF0-3, 5-7, 9-11, 13-15),
+     * Huffman and arithmetic tables, quantization tables, restart interval, line count and scans.
+     */
+    private static boolean isDecodingSegment(int marker) {
+        if (marker >= 0xC0 && marker <= 0xCF) return marker != 0xC8;   // SOFn, DHT (C4), DAC (CC); not JPG (C8)
+        return marker == 0xDB || marker == 0xDD || marker == 0xDC || marker == 0xDA;
     }
 
     private static void segment(ByteArrayOutputStream out, byte[] b, int marker, int lengthAt, int length) {
@@ -213,7 +239,9 @@ public final class KioskImageMetadata {
     private static final byte[] PNG_SIGNATURE = {(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
     /** Ancillary chunks that decoding or colour depend on; any other ancillary chunk is dropped. */
     private static final Set<String> PNG_KEEP = new HashSet<String>(Arrays.asList(
-            "tRNS", "gAMA", "cHRM", "sRGB", "iCCP", "sBIT", "cICP", "mDCV", "cLLI", "pHYs", "bKGD"));
+            "tRNS", "gAMA", "cHRM", "sRGB", "iCCP", "sBIT", "cICP", "mDCV", "cLLI", "pHYs", "bKGD",
+            // Animated PNG: kept as it is (image data, not metadata); the agent shows the first frame.
+            "acTL", "fcTL", "fdAT"));
 
     private static byte[] png(byte[] b) {
         int orientation = pngOrientation(b);
@@ -267,7 +295,7 @@ public final class KioskImageMetadata {
     // ---- WebP -------------------------------------------------------------------------------------------------------
 
     private static final Set<String> WEBP_KEEP = new HashSet<String>(Arrays.asList(
-            "VP8X", "ICCP", "ANIM", "ANMF", "ALPH", "VP8 ", "VP8L"));
+            "ICCP", "ANIM", "ANMF", "ALPH", "VP8 ", "VP8L"));
     private static final int VP8X_XMP = 0x04;
     private static final int VP8X_EXIF = 0x08;
 
@@ -283,7 +311,18 @@ public final class KioskImageMetadata {
         int orientation = webpOrientation(b);
         ByteArrayOutputStream out = new ByteArrayOutputStream(b.length);
         out.write(b, 0, 12);                                 // RIFF, size (fixed below), WEBP
-        int i = 12;
+        // VP8X: the first chunk, and only there. Its flags are patched in a copy of it and written once.
+        if (end < 12 + 8 + 10) return null;
+        long vp8xSize = le32(b, 16);
+        if (vp8xSize < 10 || vp8xSize > end - 20L) return null;
+        int vp8xTotal = 8 + (int) (vp8xSize + (vp8xSize & 1));
+        if (vp8xTotal > end - 12) return null;
+        byte[] vp8x = Arrays.copyOfRange(b, 12, 12 + vp8xTotal);
+        int flags = (vp8x[8] & 0xFF) & ~(VP8X_XMP | VP8X_EXIF);
+        if (orientation != 1) flags |= VP8X_EXIF;
+        vp8x[8] = (byte) flags;
+        out.write(vp8x, 0, vp8x.length);
+        int i = 12 + vp8xTotal;
         boolean image = false;
         while (i < end) {
             if (i + 8 > end) return null;
@@ -292,19 +331,9 @@ public final class KioskImageMetadata {
             long padded = size + (size & 1);
             if (padded > end - i - 8L) return null;
             int total = 8 + (int) padded;
+            if ("VP8X".equals(type)) return null;            // a second VP8X: not a well-formed WebP
             if (WEBP_KEEP.contains(type)) {
-                int at = out.size();
                 out.write(b, i, total);
-                if ("VP8X".equals(type)) {
-                    if (size < 10) return null;
-                    byte[] sofar = out.toByteArray();
-                    int flags = sofar[at + 8] & 0xFF;
-                    flags &= ~(VP8X_XMP | VP8X_EXIF);
-                    if (orientation != 1) flags |= VP8X_EXIF;
-                    out.reset();
-                    sofar[at + 8] = (byte) flags;
-                    out.write(sofar, 0, sofar.length);
-                }
                 if ("VP8 ".equals(type) || "VP8L".equals(type) || "ANMF".equals(type)) image = true;
             }
             i += total;

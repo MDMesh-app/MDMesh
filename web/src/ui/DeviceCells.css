@@ -150,12 +150,13 @@
   .v2 .v2-cfgsync__name {
     overflow: visible;
     white-space: normal;
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word; /* whole words first; a word breaks only when it can't fit a line on its own */
     text-overflow: clip;
   }
   .v2 .v2-presence--inline .v2-presence__reason {
     display: block;
     -webkit-line-clamp: unset;
     line-clamp: none;
+    overflow-wrap: break-word; /* "anywhere" lets the column shrink to one letter: "configura|tion" */
   }
 }

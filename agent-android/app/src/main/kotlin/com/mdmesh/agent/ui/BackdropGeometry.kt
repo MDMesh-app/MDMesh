@@ -11,7 +11,10 @@ enum class BackdropFit {
     FIT,
 }
 
-/** The point of the image (0..1 each way) that a [BackdropFit.FILL] crop keeps in view. */
+/**
+ * The point of the image (0..1 each way) that a [BackdropFit.FILL] crop keeps in view, in the upright image (after
+ * a JPEG's EXIF orientation), as the console's preview shows it.
+ */
 data class Focal(val x: Double, val y: Double) {
     companion object {
         private const val CENTRE = 0.5
@@ -58,7 +61,7 @@ object BackdropGeometry {
         }
     }
 
-    /** `max(a, min(b, v))`: when b < a (no room), a. */
+    /** `max(a, min(b, v))`: when b < a (rounding leaves `iw - cw` a hair below 0), a; never throws. */
     private fun clamp(v: Double, a: Double, b: Double) = maxOf(a, minOf(b, v))
 }
 

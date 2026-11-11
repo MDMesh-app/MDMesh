@@ -96,6 +96,28 @@ class KioskApplierTest {
         assertEquals("https://new.example/1.png", store.load()?.theme?.backgroundImage?.url)
         assertEquals("prefetch from the new URL", "https://new.example/1.png", handed.last().theme.backgroundImage?.url)
     }
+    @Test fun `a new look for the same kiosk is saved in place, never entered again`() = runTest {
+        val p = KioskApplyPayload(mode = "single", pinPackage = "com.a", allowedPackages = listOf("com.a"))
+        val c = FakeController(KioskResult.Ok); val h = FakeHome(); val store = InMemoryKioskStateStore()
+        var locked = false
+        val a = KioskApplier(c, store, h, home) { locked }
+        a.enter(p)
+        locked = true
+        h.log.clear()
+        val looks = listOf(
+            KioskThemeDto(backgroundColor = "#FFFFFF"),
+            KioskThemeDto(iconSize = "LARGE"),
+            KioskThemeDto(backgroundImage = KioskBackgroundImageDto("https://x/1.png", "c".repeat(64), fit = "fit")),
+        )
+        for (look in looks) {
+            val next = p.copy(theme = look)
+            assertEquals(KioskResult.Ok, a.enter(next))
+            assertEquals("$look: saved", next, store.load())
+        }
+        assertEquals("entered once", 1, c.enters.size)
+        assertEquals("no relaunch", emptyList<String>(), h.log)
+    }
+
     @Test fun `enter unsupported reverts the home claim and persists nothing`() = runTest {
         val h = FakeHome(); val store = InMemoryKioskStateStore()
         val r = KioskApplier(FakeController(KioskResult.Unsupported), store, h, home) { false }

@@ -8,6 +8,7 @@ import com.mdmesh.kiosk.KioskToggles
 import com.mdmesh.kiosk.lockTaskFeatures
 import com.mdmesh.kiosk.safeModeBlocked
 import com.mdmesh.proto.KioskApplyPayload
+import com.mdmesh.proto.sameKioskAs
 import android.util.Log
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.CoroutineDispatcher
@@ -82,9 +83,10 @@ class KioskApplier(
         // Already in this kiosk: no re-entry or relaunch, but re-assert the volume lock and the Safe Mode block (either
         // may have failed before).
         val current = store.load()
-        if (!reassert && current == p && isLockTaskActive()) {
-            // The same kiosk, its image perhaps at a new URL (same SHA-256): keep the URL for later downloads.
-            if (current.theme.backgroundImage?.url != p.theme.backgroundImage?.url) {
+        if (!reassert && p.sameKioskAs(current) && isLockTaskActive()) {
+            // The same kiosk, perhaps with a new look (colours, image, fit, focal point, or the image at a new URL):
+            // saved in place, the launcher redraws it; nothing is entered or relaunched.
+            if (current != p || current?.theme?.backgroundImage?.url != p.theme.backgroundImage?.url) {
                 store.save(p)
                 onEntered(p)
             }

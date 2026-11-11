@@ -137,9 +137,19 @@ class ExitPinSafetyTest : KioskHarness() {
         launch(grid)
         tapExitKiosk()
         field().setText(pin)
-        saveKiosk(grid.copy(theme = grid.theme.copy(backgroundColor = "#123456")))
+        saveKiosk(grid.copy(password = "9999"))
         settle()
         assertNull(pinDialog())
+    }
+
+    /** A new look is the same kiosk: the prompt (and what was typed) stays. */
+    @Test fun kioskRecolouredWhileTypingKeepsThePrompt() {
+        launch(grid)
+        tapExitKiosk()
+        field().setText(pin)
+        saveKiosk(grid.copy(theme = grid.theme.copy(backgroundColor = "#123456")))
+        settle()
+        assertEquals(pin, field().text.toString())
     }
 
     // --- F9 / F10: what a rebuild keeps --------------------------------------------------------------------------

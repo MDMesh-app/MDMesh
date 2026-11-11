@@ -67,4 +67,13 @@ class KioskPayloadTest {
         org.junit.Assert.assertNotEquals(old, focal)
         assertEquals(old, old.copy(url = "https://y/1.png"))
     }
+
+    @Test fun `a kiosk's identity leaves out its appearance`() {
+        val k = KioskApplyPayload(mode = "single", pinPackage = "com.a", allowedPackages = listOf("com.a"))
+        val looks = k.copy(theme = KioskThemeDto(backgroundColor = "#FFFFFF", iconSize = "LARGE"))
+        assertEquals(true, k.sameKioskAs(looks))
+        assertEquals(false, k.sameKioskAs(k.copy(allowedPackages = listOf("com.a", "com.b"))))
+        assertEquals(false, k.sameKioskAs(k.copy(exitMode = "remote")))
+        assertEquals(false, k.sameKioskAs(null))
+    }
 }

@@ -1,6 +1,7 @@
 package com.mdmesh.agent
 
 import com.mdmesh.proto.KioskApplyPayload
+import com.mdmesh.proto.sameKioskAs
 
 /**
  * What the kiosk launcher does when the saved kiosk reaches it from [com.mdmesh.core.store.KioskStateStore]. The
@@ -25,7 +26,8 @@ enum class KioskDelivery {
     companion object {
         fun of(previous: KioskApplyPayload?, next: KioskApplyPayload?): KioskDelivery = when {
             next == null -> IDLE
-            next == previous && next.mode == "single" && next.pinPackage != null -> PIN_ONLY
+            // The same kiosk (perhaps a new look: drawn in place): never opened again for that.
+            next.sameKioskAs(previous) && next.mode == "single" && next.pinPackage != null -> PIN_ONLY
             else -> APPLY
         }
     }

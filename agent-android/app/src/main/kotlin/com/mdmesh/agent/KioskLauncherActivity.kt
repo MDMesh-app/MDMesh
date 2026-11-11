@@ -43,6 +43,7 @@ import com.mdmesh.kiosk.HoldStore
 import com.mdmesh.kiosk.KioskController
 import com.mdmesh.kiosk.KioskReturnPolicy
 import com.mdmesh.proto.KioskApplyPayload
+import com.mdmesh.proto.sameKioskAs
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -272,7 +273,10 @@ class KioskLauncherActivity : ComponentActivity() {
         showBackdrop(p)
         // The kiosk an exit dialog was opened for is gone or replaced (a remote exit or re-entry, also one that
         // arrived while the launcher was stopped): close it rather than leave it on a kiosk it wasn't for.
-        if (previous != null && previous != p) dialogs.dismiss()
+        if (previous != null && p?.sameKioskAs(previous) != true) dialogs.dismiss()
+        // Only the look changed (colours, icon size, image, fit, focal point): redrawn in place, below; the kiosk
+        // itself is unchanged, so nothing is entered, pinned or opened again for it.
+        val restyled = restyledOnly(previous, p)
         when (resumeGate.onDelivery(KioskDelivery.of(previous, p))) {
             HomeResumeGate.Step.IDLE -> {
                 dialogs.dismiss()
@@ -293,11 +297,25 @@ class KioskLauncherActivity : ComponentActivity() {
                 val kiosk = p ?: return
                 // Pin first: a held device (a loop that tripped just before a reboot) is still in kiosk.
                 startLockTaskSafely()
-                val changed = previous != null && previous != kiosk
+                val changed = previous != null && !kiosk.sameKioskAs(previous)
                 val held = returns.onApplied(changed) == KioskReturnPolicy.Action.HOLD
                 val shown = if (held) hold(kiosk) else show(kiosk)
                 KioskExitDialogs.reopenOn(shown, restored)?.let { reopenExitDialog(it, kiosk) }
             }
+        }
+        if (restyled && p != null) restyle(p)
+    }
+
+    private fun restyledOnly(previous: KioskApplyPayload?, p: KioskApplyPayload?): Boolean =
+        previous != null && p != null && p != previous && p.sameKioskAs(previous)
+
+    /** The current screen again in [p]'s look; no app is opened and no hold is cleared. */
+    private fun restyle(p: KioskApplyPayload) {
+        when (val now = screen) {
+            is KioskScreen.Hold -> render(KioskScreen.Hold(palette(p), exitFor(p)))
+            is KioskScreen.Splash -> render(now.copy(palette = palette(p)))
+            is KioskScreen.Grid -> showGrid(p)
+            KioskScreen.Idle -> Unit
         }
     }
 

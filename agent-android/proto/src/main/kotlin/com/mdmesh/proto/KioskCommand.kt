@@ -26,6 +26,15 @@ data class KioskApplyPayload(
     val theme: KioskThemeDto = KioskThemeDto(),
 )
 
+/**
+ * The same kiosk as [other], whatever either looks like: the apps, mode, exit settings and lock-task features match.
+ * Only these are the kiosk's identity; its [KioskApplyPayload.theme] (colours, icon size, background image, fit,
+ * focal point) is appearance, changed in place: never a re-entry, a relaunch of the pinned app or a lock-task
+ * restart. Lock task depends on nothing in the theme.
+ */
+fun KioskApplyPayload.sameKioskAs(other: KioskApplyPayload?): Boolean =
+    other != null && copy(theme = KioskThemeDto()) == other.copy(theme = KioskThemeDto())
+
 @Serializable
 data class KioskFeaturesDto(
     val home: Boolean? = null,

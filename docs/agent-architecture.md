@@ -128,6 +128,10 @@ caching it in private storage (only the current image is kept), and draws it beh
 and the hold screen (not the idle screen), edge to edge under the system bars. An image is known by its SHA-256
 alone: a new URL for the same file (a server that moved) causes no re-download and no re-entry into the kiosk.
 
+- A kiosk's look (colours, icon size, background image, fit, focal point) is not its identity (apps, mode, exit
+  settings, lock-task features): a new look is drawn in place, never a re-entry, a relaunch of the pinned app, a
+  lock-task restart or a crash-loop reset; a new identity re-enters as before. An open exit-PIN prompt stays through
+  a new look and closes for a new identity.
 - Placement (protocol 1.10, optional `fit` and `focalX`/`focalY`): fill (cropped, keeping the focal point in view;
   the centre by default) or fit (the whole image, letterboxed with the background color). Servers without them mean
   fill around the centre. A new fit or focal point redraws the same decoded image.

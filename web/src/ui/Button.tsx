@@ -107,11 +107,11 @@ export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonEle
 
 /** Square icon-only button. Pass the icon as children. */
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
-  // `tone` is taken out so it never reaches the DOM; it no longer changes anything (deprecated above).
-  { label, size = 'md', tone: _tone, className, type = 'button', children, ...rest },
+  { label, size = 'md', className, type = 'button', children, ...props },
   ref,
 ) {
-  void _tone;
+  // `tone` is deprecated and does nothing; taken out here so it never reaches the DOM.
+  const { tone: _deprecated, ...rest } = props;
   return (
     <button
       ref={ref}

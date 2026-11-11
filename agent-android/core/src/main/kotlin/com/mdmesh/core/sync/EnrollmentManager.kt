@@ -25,7 +25,7 @@ import javax.inject.Singleton
  *
  * Enrollment posts the capability matrix + the enroll token; the server mints and returns the opaque device id, which
  * becomes the agent's permanent identity. It is resumable: the attempt id stored before the request lets a retry whose
- * response was lost get the same device back (servers from protocol 1.6).
+ * response was lost get the same device back (servers from protocol 1.9).
  */
 @Singleton
 class EnrollmentManager @Inject constructor(

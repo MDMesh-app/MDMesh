@@ -11,16 +11,15 @@ line under Unreleased.
 Upgrading
 - The database adds columns on start: `devices.wipedAt`; `configurations.camera`, `configurations.locationServices`,
   `configurations.backgroundImageFileId` and `configurations.backgroundImageSha256`; `device_state.kioskGeneration` and
-  `device_state.kioskReturnGeneration`; `applicationVersions.requestedPermissions`; and the
-  `configurationAppPermissions` table. Devices wiped before the update aren't marked.
+  `device_state.kioskReturnGeneration`; `applicationVersions.requestedPermissions`; the `configurationAppPermissions`
+  table; and `devices.agentEnrollAttemptHash`, with an index on it and one on each customer's devices by enrollment
+  time. Devices wiped before the update aren't marked.
 - The database adds three columns to enrollment tokens on start (`maxUses`, `useCount`, `revokedAt`) and stores
   the tokens hashed. Existing codes stay single-use and keep working; on PostgreSQL older than 11 they stop
   instead, so make a new code on the Enroll page. After a downgrade, codes made on this version don't work.
 - Quick start: run `docker compose pull && docker compose up -d` once after this update. Updates never touch the
   supervisor, and one from before 0.5.0 keeps applying updates by tag. From source, or with `SUPERVISOR_VERSION` set by
   hand: [UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050).
-- The database adds a column and two indexes to devices (`agentEnrollAttemptHash`; enrollment time per customer) on
-  start. Nothing to do.
 
 New
 - Enroll: devices that enroll while the page is open show under the code, with a link, first as getting their

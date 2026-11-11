@@ -4,7 +4,7 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 
 /**
- * The id of one enrollment attempt (protocol 1.6 `enrollAttempt`): random, generated before the first enroll request
+ * The id of one enrollment attempt (protocol 1.9 `enrollAttempt`): random, generated before the first enroll request
  * and kept with the token it was made for, so every retry of that enrollment, including after the process died,
  * sends the same id and a retry whose response was lost gets the device the first request created.
  *

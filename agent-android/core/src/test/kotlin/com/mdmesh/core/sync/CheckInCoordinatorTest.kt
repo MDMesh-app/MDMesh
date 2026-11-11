@@ -10,9 +10,13 @@ import com.mdmesh.proto.CommandResult
 import com.mdmesh.proto.CommandStatus
 import com.mdmesh.core.net.ResponseEnvelope
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -22,7 +26,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
-import kotlin.coroutines.EmptyCoroutineContext
 
 class CheckInCoordinatorTest {
 
@@ -55,14 +58,15 @@ class CheckInCoordinatorTest {
         override fun write(raw: String?) { this.raw = raw }
     }
 
-    private fun coordinator(
+    private fun TestScope.coordinator(
         api: FakeMdmApi,
         pending: PendingResults,
         identityId: String = "dev-1",
         syncStatus: SyncStatus = SyncStatus(),
         installIntegrity: InstallIntegrityPolicy = InstallIntegrityPolicy(),
         probe: ThreadProbeHandler = ThreadProbeHandler(),
-        realDispatcher: Boolean = false,
+        // Virtual-time tests run the cycle on the test scheduler; one test checks the real dispatcher.
+        ioDispatcher: CoroutineDispatcher = StandardTestDispatcher(testScheduler),
         events: com.mdmesh.core.telemetry.EventSink? = null,
     ): CheckInCoordinator {
         val identity = FakeIdentity(initialId = identityId, initialSecret = "sek-1")
@@ -84,10 +88,8 @@ class CheckInCoordinatorTest {
             eventSink = eventSink,
             syncStatus = syncStatus,
             installIntegrity = installIntegrity,
-        ).also {
-            // Virtual-time tests stay on the test dispatcher; the production default is checked on its own below.
-            if (!realDispatcher) it.cycleContext = EmptyCoroutineContext
-        }
+            ioDispatcher = ioDispatcher,
+        )
     }
 
     private fun command(id: String) =
@@ -129,7 +131,7 @@ class CheckInCoordinatorTest {
         val probe = ThreadProbeHandler()
         val caller = Thread.currentThread()
 
-        coordinator(api, PendingResults(), probe = probe, realDispatcher = true).runOnce()
+        coordinator(api, PendingResults(), probe = probe, ioDispatcher = Dispatchers.IO).runOnce()
 
         val ranOn = probe.ranOn
         assertNotNull("the command ran", ranOn)

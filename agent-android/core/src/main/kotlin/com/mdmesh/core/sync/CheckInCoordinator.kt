@@ -2,6 +2,7 @@ package com.mdmesh.core.sync
 
 import com.mdmesh.core.capability.CapabilitySource
 import com.mdmesh.core.command.CommandDispatcher
+import com.mdmesh.core.di.IoDispatcher
 import com.mdmesh.core.install.InstallIntegrityPolicy
 import com.mdmesh.core.net.MdmApi
 import com.mdmesh.core.state.DeviceStateSource
@@ -10,15 +11,14 @@ import com.mdmesh.core.telemetry.EventSink
 import com.mdmesh.core.telemetry.TelemetrySource
 import com.mdmesh.proto.AgentCheckInRequest
 import com.mdmesh.proto.EventType
-import androidx.annotation.VisibleForTesting
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.coroutines.CoroutineContext
 
 /**
  * One full check-in cycle — the source of truth of the sync loop:
@@ -51,19 +51,17 @@ class CheckInCoordinator @Inject constructor(
     private val installIntegrity: InstallIntegrityPolicy,
     private val hardwareIdSource: HardwareIdSource = HardwareIdSource { null },
     private val syncStatus: SyncStatus = SyncStatus(),
+    /**
+     * Where the cycle runs: never the caller's thread. The foreground service calls [runOnce] from its main-thread
+     * scope, and the kiosk HOME shares that thread, so an APK hash, an apps.scan/apps.icons or a multi-MB result
+     * batch there would freeze it (and risk an ANR).
+     */
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
 
     private val mutex = Mutex()
 
-    /**
-     * Where the cycle runs: never the caller's thread. The foreground service calls [runOnce] from its main-thread
-     * scope, and the kiosk HOME shares that thread, so an APK hash, an apps.scan/apps.icons or a multi-MB result
-     * batch there would freeze it (and risk an ANR). Tests that drive virtual time replace it.
-     */
-    @VisibleForTesting
-    internal var cycleContext: CoroutineContext = Dispatchers.IO
-
-    suspend fun runOnce(): Unit = withContext(cycleContext) {
+    suspend fun runOnce(): Unit = withContext(ioDispatcher) {
         mutex.withLock {
             try {
                 cycle()

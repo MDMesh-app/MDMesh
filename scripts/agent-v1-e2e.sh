@@ -130,12 +130,14 @@ chk "state androidRelease=14" \
 
 echo "== desired-state: config.apply on drift =="
 CFG_ID=$(curl -s -b "$CJ" "$BASE/rest/private/agent/v1/devices/$DID/configStatus" | field "d['data']['configurationId']")
-CUR_REV=$(curl -s -b "$CJ" "$BASE/rest/private/agent/v1/devices/$DID/configStatus" | field "d['data']['currentRevision']")
-chk "current revision is 64 hex" "$(printf '%s' "$CUR_REV" | grep -cE '^[0-9a-f]{64}$')" "1"
 # capable agent, stale revision -> command delivered in the same response
 C_DS=$(curl -s -X POST -H "Authorization: Bearer $SEC" -H 'Content-Type: application/json' \
   -d "{\"deviceId\":\"$DID\",\"capabilities\":{\"policy\":[\"wifi\"],\"device\":[\"configApply\"],\"appManagement\":[\"runtimePermissions\"]},\"state\":{\"battery\":77,\"charging\":true,\"locked\":false,\"kioskActive\":false,\"androidRelease\":\"14\",\"lastBootAt\":1000,\"appliedConfigRevision\":\"0000\"}}" \
   "$BASE/rest/public/agent/v1/checkin")
+# Read after the capable check-in: the revision a device is compared with depends on what it advertises (an agent
+# without app.runtimePermissions gets the document without the appPermissions section).
+CUR_REV=$(curl -s -b "$CJ" "$BASE/rest/private/agent/v1/devices/$DID/configStatus" | field "d['data']['currentRevision']")
+chk "current revision is 64 hex" "$(printf '%s' "$CUR_REV" | grep -cE '^[0-9a-f]{64}$')" "1"
 chk "config.apply delivered on drift" "$(echo "$C_DS" | field "[c['type'] for c in d['data']['commands']].count('config.apply')")" "1"
 chk "config.apply carries current revision" "$(echo "$C_DS" | field "[c['payload']['revision'] for c in d['data']['commands'] if c['type']=='config.apply'][0]")" "$CUR_REV"
 DS_CMD=$(echo "$C_DS" | field "[c['commandId'] for c in d['data']['commands'] if c['type']=='config.apply'][0]")

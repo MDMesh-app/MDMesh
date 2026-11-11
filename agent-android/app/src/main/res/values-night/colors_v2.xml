@@ -4,9 +4,9 @@
     <color name="mdm_app">#0F1115</color>
     <color name="mdm_surface">#161922</color>
     <color name="mdm_surface_2">#1E222C</color>
-    <color name="mdm_border">#2E3440</color>
+    <color name="mdm_border">#272C37</color>
     <color name="mdm_border_strong">#39404E</color>
-    <color name="mdm_input_border">#646C7A</color>
+    <color name="mdm_control_border">#727B8B</color>
     <color name="mdm_ink">#F2F4F8</color>
     <color name="mdm_on_ink">#15181D</color>
     <color name="mdm_text">#E7EBF1</color>
@@ -24,7 +24,6 @@
     <color name="mdm_alert_ink">#F4A0A0</color>
     <color name="mdm_alert_soft">#2A1B1E</color>
     <color name="mdm_alert_line">#45292D</color>
-    <color name="mdm_alert_border">#9A5257</color>
     <color name="mdm_focus">#F2F4F8</color>
     <color name="mdm_ripple">#24F2F4F8</color>
     <color name="mdm_ripple_on_ink">#2915181D</color>

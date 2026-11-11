@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Text field: surface, 10dp corners, 1dp input border; 2dp ink when focused. -->
+<!-- Text field: surface, 10dp corners, 1dp control border (3:1); 2dp ink when focused. -->
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:state_enabled="false">
         <shape android:shape="rectangle">
@@ -19,7 +19,7 @@
         <shape android:shape="rectangle">
             <corners android:radius="@dimen/mdm_radius_sm" />
             <solid android:color="@color/mdm_surface" />
-            <stroke android:width="1dp" android:color="@color/mdm_input_border" />
+            <stroke android:width="1dp" android:color="@color/mdm_control_border" />
         </shape>
     </item>
 </selector>

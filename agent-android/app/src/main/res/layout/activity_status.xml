@@ -123,7 +123,7 @@
                         android:padding="14dp"
                         android:scaleType="fitCenter"
                         android:src="@drawable/ic_v2_copy"
-                        android:tint="@color/mdm_secondary" />
+                        android:tint="@color/mdm_control_border" />
                 </LinearLayout>
 
                 <!-- 14dp back from the row's reach into the card padding: the callout keeps the card's edge. -->
@@ -214,7 +214,7 @@
                     android:padding="14dp"
                     android:scaleType="fitCenter"
                     android:src="@drawable/ic_v2_copy"
-                    android:tint="@color/mdm_secondary" />
+                    android:tint="@color/mdm_control_border" />
             </LinearLayout>
 
         </LinearLayout>

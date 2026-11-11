@@ -72,11 +72,41 @@ class ThemeResourcesTest {
         assertPairs(pairs, Contrast.TEXT_MIN)
     }
 
-    @Test fun `field outline and focus ring pass 3 to 1 in both modes`() {
+    /**
+     * "Inputs strong, buttons soft" (owner, console tokens.css): the edges that are the only way to see a control
+     * (a text field's outline, an icon-only button's glyph: copy, show PIN) use the control border and reach 3:1.
+     */
+    @Test fun `inputs and icon-only buttons reach 3 to 1 in both modes`() {
         assertPairs(
-            listOf("mdm_input_border" to "mdm_surface", "mdm_input_border" to "mdm_app", "mdm_ink" to "mdm_surface"),
+            listOf(
+                "mdm_control_border" to "mdm_surface",
+                "mdm_control_border" to "mdm_app",
+                "mdm_ink" to "mdm_surface", // focused field
+            ),
             Contrast.UI_MIN,
         )
+    }
+
+    /**
+     * Exempt from 3:1 (WCAG 1.4.11 needs it only where the edge is what identifies the control): card and divider
+     * lines are decorative, and outlined and danger buttons are identified by their label (4.5:1, above), so their
+     * outlines stay soft. Each edge is wired to its role here, so the rule can't drift drawable by drawable.
+     */
+    @Test fun `each outline uses the token for its role`() {
+        fun stroke(drawable: String) = Regex("""<stroke[^>]*android:color="@color/(\w+)"""")
+            .findAll(File(res, "drawable/$drawable.xml").readText()).map { it.groupValues[1] }.toSet()
+        // Enabled: control border; focused: 2dp ink; disabled: soft (disabled controls are exempt).
+        assertEquals(setOf("mdm_control_border", "mdm_ink", "mdm_border"), stroke("mdm_field_bg"))
+        assertEquals(setOf("mdm_border_strong"), stroke("mdm_btn_outlined"))
+        assertEquals(setOf("mdm_alert_line"), stroke("mdm_btn_danger"))
+        assertEquals(setOf("mdm_border"), stroke("mdm_card_bg"))
+        for (icon in listOf("ic_v2_eye", "ic_v2_eye_off")) {
+            val colours = Regex("""strokeColor="@color/(\w+)"""").findAll(File(res, "drawable/$icon.xml").readText())
+                .map { it.groupValues[1] }.toSet()
+            assertEquals(icon, setOf("mdm_control_border"), colours)
+        }
+        val status = File(res, "layout/activity_status.xml").readText()
+        assertEquals(2, Regex("""android:tint="@color/mdm_control_border"""").findAll(status).count())
     }
 
     /**
@@ -105,13 +135,12 @@ class ThemeResourcesTest {
         assertPairs(listOf("mdm_disabled_ink" to "mdm_disabled_bg"), Contrast.TEXT_MIN)
     }
 
-    @Test fun `focus ring and danger outline pass 3 to 1 in both modes`() {
+    @Test fun `focus ring passes 3 to 1 in both modes`() {
         assertPairs(
             listOf(
                 "mdm_focus" to "mdm_surface",
                 "mdm_focus" to "mdm_app",
                 "mdm_on_ink" to "mdm_ink", // the ring inside the filled button
-                "mdm_alert_border" to "mdm_surface",
             ),
             Contrast.UI_MIN,
         )

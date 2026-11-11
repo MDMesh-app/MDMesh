@@ -163,7 +163,8 @@ class StatusScreen(
      */
     private fun renderCopied(button: ImageButton, @StringRes label: Int, copied: Boolean) {
         button.setImageResource(if (copied) R.drawable.ic_v2_check else R.drawable.ic_v2_copy)
-        button.imageTintList = ColorStateList.valueOf(color(if (copied) R.color.mdm_ok_ink else R.color.mdm_secondary))
+        val tint = if (copied) R.color.mdm_ok_ink else R.color.mdm_control_border
+        button.imageTintList = ColorStateList.valueOf(color(tint))
         button.contentDescription = activity.getString(if (copied) R.string.status_copied else label)
         if (copied) button.announceForAccessibility(activity.getString(R.string.status_copied))
     }

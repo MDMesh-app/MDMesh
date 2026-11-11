@@ -43,8 +43,8 @@ class TransportManager internal constructor(
     private val scope: CoroutineScope,
     /** Monotonic milliseconds, for the stable-session rule. */
     private val clock: () -> Long,
-    /** Picks the actual wait for a backoff whose upper bound is the argument. */
-    private val jitter: (Long) -> Long = { fullJitter(it) },
+    /** Picks each backoff's wait within its bound (see [fullJitter]). */
+    private val random: Random = Random.Default,
     private val log: (String) -> Unit = {},
     /** Emits when a check-in reached the server: proof it is up, so a pending backoff is cut short. */
     serverReachable: Flow<Unit> = emptyFlow(),
@@ -80,7 +80,8 @@ class TransportManager internal constructor(
         class Connecting(val gen: Int) : State("Connecting") { var socket: WebSocket? = null }
         class Connected(val gen: Int, val socket: WebSocket, val since: Long) : State("Connected")
         /** [afterOpen]: the dropped socket had opened, so the server was reachable. */
-        class Backoff(val gen: Int, val delayMs: Long, val job: Job, val afterOpen: Boolean) : State("Backoff")
+        class Backoff(val gen: Int, val delayMs: Long, val boundMs: Long, val job: Job, val afterOpen: Boolean) :
+            State("Backoff")
     }
 
     // All guarded by `this`.
@@ -184,7 +185,8 @@ class TransportManager internal constructor(
      * shutdown (1001). Resetting on open let a connection that dies right after the handshake pin the retry at its
      * minimum. Any other close the server chose (1008 unauthorized for a device deleted in the console, 1000 when
      * another connection for this device replaced the session) is the server saying "not this socket", so it never
-     * resets, and 1008 waits at least a minute.
+     * resets, and 1008 starts at a 64s bound and waits at least half of it (32s, growing to 2.5-5 min). After a
+     * session of [LONG_SESSION_MS] or more every close starts from the bottom again.
      */
     @Synchronized
     private fun dropped(gen: Int, code: Int?) {
@@ -193,12 +195,17 @@ class TransportManager internal constructor(
             is State.Connected -> if (s.gen == gen) s.since else return
             else -> return // stopped, or this socket already reported and its reconnect is pending
         }
-        val stable = since != null && clock() - since >= STABLE_SESSION_MS
+        val lasted = if (since == null) 0L else clock() - since
+        val stable = lasted >= STABLE_SESSION_MS
+        // After a long healthy session the old failure count says nothing about now (it may still sit at the cap
+        // from an outage days ago), so a later close is retried promptly whatever its code.
+        if (lasted >= LONG_SESSION_MS) failures = 0
         when (code) {
             null, CLOSE_GOING_AWAY -> if (stable) failures = 0
             CLOSE_POLICY -> failures = maxOf(failures, POLICY_MIN_FAILURES)
         }
-        val delayMs = jitter(backoffBound(failures))
+        val bound = backoffBound(failures)
+        val delayMs = if (code == CLOSE_POLICY) policyJitter(bound, random) else fullJitter(bound, random)
         failures++
         val next = ++generation
         val job = scope.launch {
@@ -206,7 +213,7 @@ class TransportManager internal constructor(
             backoffElapsed(next)
         }
         val why = if (code == null) "" else " close=$code"
-        moveTo(State.Backoff(next, delayMs, job, afterOpen = since != null), next, why)
+        moveTo(State.Backoff(next, delayMs, bound, job, afterOpen = since != null), next, why)
     }
 
     @Synchronized
@@ -219,7 +226,11 @@ class TransportManager internal constructor(
     private fun moveTo(next: State, gen: Int, why: String = "") {
         val from = state
         state = next
-        val extra = if (next is State.Backoff) " retry in ${next.delayMs}ms failures=$failures" else ""
+        val extra = if (next is State.Backoff) {
+            " retry in ${next.delayMs}ms bound=${next.boundMs}ms failures=$failures"
+        } else {
+            ""
+        }
         log("${from.name} -> ${next.name} gen=$gen$why$extra")
     }
 
@@ -247,10 +258,16 @@ class TransportManager internal constructor(
         const val CLOSE_NORMAL = 1000
         const val CLOSE_GOING_AWAY = 1001
         const val CLOSE_POLICY = 1008
-        /** A 1008 close starts at a 64s bound: a deleted device must not dial every second. */
+        /** A 1008 close starts at a 64s bound (waits 32-64s): a deleted device must not dial every second. */
         const val POLICY_MIN_FAILURES = 6
         /** A server outage costs an always-on device about a dozen dials an hour instead of sixty. */
         const val MAX_BACKOFF_MS = 5 * 60_000L
+
+        /** A session this long proves the channel healthy, whatever ended it (twice the backoff cap). */
+        const val LONG_SESSION_MS = 10 * 60_000L
+
+        /** For a 1008 close: anywhere in the upper half of [bound], so a deleted device never retries within seconds. */
+        fun policyJitter(bound: Long, random: Random = Random.Default): Long = random.nextLong(bound / 2, bound + 1)
 
         /** 1s, 2s, 4s … doubling per failure, capped at [MAX_BACKOFF_MS]: the bound [fullJitter] picks under. */
         fun backoffBound(failures: Int): Long =

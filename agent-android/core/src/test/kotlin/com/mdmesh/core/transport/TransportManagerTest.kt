@@ -30,6 +30,8 @@ class TransportManagerTest {
         /** Closed or cancelled by the agent, or dead on its own (failed). */
         var cancelled = false
         var closedByAgentWith: Int? = null
+        /** Hold onClosed back, as OkHttp does until the close frame is written. */
+        var deferOnClosed = false
         private var serverClosing: Pair<Int, String>? = null
         override fun request() = request
         override fun queueSize() = 0L
@@ -39,7 +41,7 @@ class TransportManagerTest {
             if (cancelled) return false
             cancelled = true
             closedByAgentWith = code
-            serverClosing?.let { (c, r) -> listener.onClosed(this, c, r) }
+            if (!deferOnClosed) serverClosing?.let { (c, r) -> listener.onClosed(this, c, r) }
             return true
         }
         override fun cancel() { cancelled = true }
@@ -78,7 +80,7 @@ class TransportManagerTest {
         baseUrl = { baseUrl() },
         scope = scope,
         clock = { scope.currentTime },
-        jitter = { it }, // the bound itself: deterministic
+        random = Random(1), // the real jitter, seeded: tests assert bounds, not exact waits
         log = { logs += it },
         serverReachable = checkInSucceeded,
     )
@@ -91,9 +93,11 @@ class TransportManagerTest {
     fun `a dropped socket reconnects after the backoff`() {
         start()
         sockets.opened[0].fail()
-        scope.advanceTimeBy(999); scope.runCurrent()
+        val wait = lastRetryMs()
+        assertTrue(wait.toString(), wait in 500L..1_500L)
+        advance(wait - 1)
         assertEquals(1, sockets.opened.size)
-        scope.advanceTimeBy(2); scope.runCurrent()
+        advance(1)
         assertEquals(2, sockets.opened.size)
     }
 
@@ -161,18 +165,17 @@ class TransportManagerTest {
     @Test
     fun `the backoff doubles per failure up to five minutes`() {
         start()
-        val waits = mutableListOf<Long>()
+        val bounds = mutableListOf<Long>()
         repeat(12) {
-            val before = scope.currentTime
             sockets.opened.last().fail()
+            bounds += lastBoundMs()
+            val wait = lastRetryMs()
+            assertTrue("$wait within ${bounds.last()}", wait in 500L..maxOf(1_500L, bounds.last()))
             val count = sockets.opened.size
-            while (sockets.opened.size == count) advance(1_000)
-            waits += scope.currentTime - before
+            advance(wait)
+            assertEquals("reconnects when its wait is over", count + 1, sockets.opened.size)
         }
-        assertEquals(
-            listOf(1L, 2, 4, 8, 16, 32, 64, 128, 256, 300, 300, 300).map { it * 1_000 },
-            waits,
-        )
+        assertEquals(listOf(1L, 2, 4, 8, 16, 32, 64, 128, 256, 300, 300, 300).map { it * 1_000 }, bounds)
     }
 
     @Test
@@ -182,13 +185,13 @@ class TransportManagerTest {
         sockets.opened.last().open()
         advance(5_000)
         sockets.opened.last().fail()
-        assertTrue(logs.last(), logs.last().contains("retry in 8000ms"))
+        assertEquals(8_000L, lastBoundMs())
 
         advance(10 * 60_000L)
         sockets.opened.last().open()
         advance(TransportManager.STABLE_SESSION_MS)
         sockets.opened.last().fail()
-        assertTrue(logs.last(), logs.last().contains("retry in 1000ms"))
+        assertEquals(1_000L, lastBoundMs())
     }
 
     @Test
@@ -236,15 +239,11 @@ class TransportManagerTest {
         sockets.opened[0].open()
         sockets.opened[0].fail()
         transport.stop()
-        assertEquals(
-            listOf(
-                "Stopped -> Connecting gen=1",
-                "Connecting -> Connected gen=1",
-                "Connected -> Backoff gen=2 retry in 1000ms failures=1",
-                "Backoff -> Stopped gen=3",
-            ),
-            logs,
-        )
+        assertEquals(4, logs.size)
+        assertEquals("Stopped -> Connecting gen=1", logs[0])
+        assertEquals("Connecting -> Connected gen=1", logs[1])
+        assertTrue(logs[2], Regex("Connected -> Backoff gen=2 retry in \\d+ms bound=1000ms failures=1").matches(logs[2]))
+        assertEquals("Backoff -> Stopped gen=3", logs[3])
         assertTrue(logs.none { "dev-1" in it || "sek" in it || "mdm.example" in it })
     }
 
@@ -260,6 +259,10 @@ class TransportManagerTest {
     /** The wait the last backoff chose, from its log line. */
     private fun lastRetryMs(): Long =
         Regex("retry in (\\d+)ms").find(logs.last { "retry in" in it })!!.groupValues[1].toLong()
+
+    /** The bound the last backoff drew its wait under. */
+    private fun lastBoundMs(): Long =
+        Regex("bound=(\\d+)ms").find(logs.last { "bound=" in it })!!.groupValues[1].toLong()
 
     @Test
     fun `a close from the server is answered and backs off at once`() {
@@ -282,26 +285,74 @@ class TransportManagerTest {
             sockets.opened.last().open()
             advance(500)
             sockets.opened.last().serverClose(1000)
-            waits += lastRetryMs()
+            waits += lastBoundMs()
             advance(10 * 60_000L)
         }
         assertEquals(listOf(1_000L, 2_000, 4_000, 8_000, 16_000), waits)
     }
 
     @Test
-    fun `an unauthorized close never resets the backoff and waits at least a minute`() {
+    fun `an unauthorized close never resets the backoff and starts at a 64s bound`() {
         // A device deleted in the console: the server accepts, then closes with 1008 "unauthorized".
         start()
-        val waits = mutableListOf<Long>()
+        val bounds = mutableListOf<Long>()
         repeat(3) {
             sockets.opened.last().open()
             advance(TransportManager.STABLE_SESSION_MS + 1)
             sockets.opened.last().serverClose(1008, "unauthorized")
-            waits += lastRetryMs()
+            bounds += lastBoundMs()
             advance(10 * 60_000L)
         }
-        assertTrue(waits.toString(), waits.first() >= 60_000L)
-        assertEquals(listOf(64_000L, 128_000, 256_000), waits)
+        assertEquals(listOf(64_000L, 128_000, 256_000), bounds)
+    }
+
+    @Test
+    fun `an unauthorized close waits at least half its bound, never a quick retry`() {
+        // Many devices, many draws: a deleted device must never come back within seconds.
+        start()
+        repeat(40) {
+            sockets.opened.last().open()
+            advance(1_000)
+            sockets.opened.last().serverClose(1008, "unauthorized")
+            val wait = lastRetryMs()
+            val bound = lastBoundMs()
+            assertTrue("$wait not in [${bound / 2}, $bound]", wait in bound / 2..bound)
+            advance(wait)
+        }
+        assertTrue("never under 32s", logs.filter { "close=1008" in it }.all { line ->
+            Regex("retry in (\\d+)ms").find(line)!!.groupValues[1].toLong() >= 32_000L
+        })
+    }
+
+    @Test
+    fun `a policy draw stays within the upper half of its bound`() {
+        val random = Random(3)
+        val picks = (1..1_000).map { TransportManager.policyJitter(64_000L, random) }
+        assertTrue(picks.all { it in 32_000L..64_000L })
+        assertTrue("spread", picks.toSet().size > 900)
+    }
+
+    @Test
+    fun `a close after a long healthy session is retried promptly`() {
+        // An outage pushed the backoff to its cap; days later the session ends in a close that doesn't reset.
+        start()
+        repeat(9) { sockets.opened.last().fail(); advance(10 * 60_000L) }
+        sockets.opened.last().open()
+        advance(TransportManager.LONG_SESSION_MS)
+        sockets.opened.last().serverClose(1000, "replaced")
+        assertEquals(1_000L, lastBoundMs())
+    }
+
+    @Test
+    fun `a server close moves on at once, before the socket reports it closed`() {
+        // OkHttp delivers onClosed only after our close() is written; the state must not wait for it.
+        start()
+        val socket = sockets.opened[0]
+        socket.open()
+        socket.deferOnClosed = true
+        socket.serverClose(1000)
+        assertEquals("Backoff", transport.stateName)
+        assertEquals(1000, socket.closedByAgentWith)
     }
 
     @Test
@@ -311,7 +362,7 @@ class TransportManagerTest {
         sockets.opened.last().open()
         advance(TransportManager.STABLE_SESSION_MS + 1)
         sockets.opened.last().serverClose(1000, "replaced")
-        assertEquals(8_000L, lastRetryMs())
+        assertEquals(8_000L, lastBoundMs())
     }
 
     @Test
@@ -321,7 +372,7 @@ class TransportManagerTest {
         sockets.opened.last().open()
         advance(TransportManager.STABLE_SESSION_MS + 1)
         sockets.opened.last().serverClose(1001, "going away")
-        assertEquals(1_000L, lastRetryMs())
+        assertEquals(1_000L, lastBoundMs())
     }
 
     @Test
@@ -367,7 +418,7 @@ class TransportManagerTest {
         transport.stop() // screen off
         start() // screen on
         sockets.opened.last().fail()
-        assertEquals(1_000L, lastRetryMs())
+        assertEquals(1_000L, lastBoundMs())
     }
 
     @Test

@@ -13,16 +13,22 @@ import kotlinx.coroutines.withTimeoutOrNull
  * background ANR, which usually means a silent kill of the process hosting the service and the install.
  *
  * The work is never cancelled at the deadline: a check-in that is already running commands carries on in [scope].
+ * Once the broadcast is released the system no longer keeps the CPU awake for it, so from just before the release
+ * until the work ends it holds its own wakelock ([keepAwake], bounded by [WAKELOCK_TIMEOUT_MS]); otherwise a download
+ * or install pushed to an idle device would stall as soon as it suspends.
  */
 object Heartbeat {
     /** Well under the ~60s a background broadcast may take, with room for a cold location fix plus the round-trip. */
     const val DEADLINE_MS = 40_000L
+    /** As long as an install may wait for the platform's result. */
+    const val WAKELOCK_TIMEOUT_MS = 10 * 60_000L
 
     fun launch(
         scope: CoroutineScope,
         onError: (Exception) -> Unit,
         onLate: () -> Unit,
         finish: () -> Unit,
+        keepAwake: (timeoutMs: Long) -> () -> Unit = { {} },
         work: suspend () -> Unit,
     ): Job {
         val job = scope.launch {
@@ -35,12 +41,24 @@ object Heartbeat {
             }
         }
         scope.launch {
+            var release: (() -> Unit)? = null
             try {
-                if (withTimeoutOrNull(DEADLINE_MS) { job.join() } == null) onLate()
+                if (withTimeoutOrNull(DEADLINE_MS) { job.join() } == null) {
+                    onLate()
+                    release = keepAwake(WAKELOCK_TIMEOUT_MS) // before finish(): no gap without a wakelock
+                }
             } finally {
                 finish()
             }
+            release?.let { job.invokeOnCompletion { _ -> it() } }
         }
         return job
+    }
+
+    /** The heartbeat's work: the Wi-Fi self-heal, then a check-in unless one is already running. */
+    suspend fun checkIn(coordinator: CheckInCoordinator, log: (String) -> Unit, selfHeal: suspend () -> Unit) {
+        selfHeal()
+        // Never queue behind a running cycle (an install holds it for minutes): it checks in once more when it ends.
+        if (!coordinator.runIfIdle()) log("check-in already running; heartbeat check-in skipped")
     }
 }

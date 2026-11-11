@@ -28,6 +28,7 @@ command -v jq > /dev/null || { echo "jq is required" >&2; exit 2; }
 # ever stop working. (The commands that would change the host are stubbed out below as well.)
 [ "$(id -u)" != 0 ] || { echo "Run this as an unprivileged user, not root." >&2; exit 2; }
 export LC_ALL=C
+umask 077   # answers files must be private to be read
 
 WORK=$(mktemp -d)
 cleanup() { rm -r -- "$WORK" 2>/dev/null || true; }
@@ -222,15 +223,14 @@ for inst in $(installer_ids); do
     for s in $(secrets_of "$inst"); do
       if grep -qF -- "$s" "$WORK/out/o" "$WORK/out/e"; then fail "$tag: a secret in MDMESH_ANSWERS was printed by xtrace"; fi
     done
-    if grep -q '^MDMESH_TUNNEL_TOKEN=' "$WORK/answers.env"; then
-      # Readable by others: refused before it is read, saying how to fix it.
-      chmod 644 "$WORK/answers.env"
-      dry "$inst" MDMESH_NONINTERACTIVE=1 MDMESH_ANSWERS="$WORK/answers.env"
-      { [ "$RC" != 0 ] && grep -qF 'chmod 600' "$WORK/out/e"; } || { fail "$tag: an answers file with a secret, readable by others, is not refused"; show; }
-      for s in $(secrets_of "$inst"); do
-        if grep -qF -- "$s" "$WORK/out/o" "$WORK/out/e"; then fail "$tag: refusing the answers file printed the secret"; fi
-      done
-    fi
+    # Readable by others: refused before it is read, saying how to fix it (any answers file: it chooses what is
+    # installed, and may hold the token).
+    chmod 644 "$WORK/answers.env"
+    dry "$inst" MDMESH_NONINTERACTIVE=1 MDMESH_ANSWERS="$WORK/answers.env"
+    { [ "$RC" != 0 ] && grep -qF 'chmod 600' "$WORK/out/e"; } || { fail "$tag: an answers file readable by others is not refused"; show; }
+    for s in $(secrets_of "$inst"); do
+      if grep -qF -- "$s" "$WORK/out/o" "$WORK/out/e"; then fail "$tag: refusing the answers file printed the secret"; fi
+    done
     ok
 
     # Only the required answers, non-interactive: every other question takes its default, as the contract says.
@@ -317,6 +317,50 @@ grep -q '^\S*docker compose [^v]' "$WORK/children.log" || { fail "the traced set
 for v in "$dbpw" "$hs" "$tt"; do
   if grep -qF -- "$v" "$WORK/out/o" "$WORK/out/e"; then fail "a setup.sh re-run traced with bash -x printed a .env secret"; fi
 done
+ok
+
+# install/lib/dotenv.sh (setup.sh's .env reader): every ACCEPT line of dotenv-cases.sh gives exactly the environment
+# `set -a; . FILE` gives; every REFUSE line stops it, naming the line number and never the value.
+# shellcheck source=tests/installer-answers/dotenv-cases.sh
+. "$HERE/dotenv-cases.sh"
+envof() { env -i HOME=/nonexistent bash -c "$1; env" _ "$2" 2>/dev/null | { grep -v '^_=' || true; } | sort; }
+for line in "${ACCEPT[@]}"; do
+  printf '%s\n' "$line" > "$WORK/case.env"
+  # shellcheck disable=SC2016  # $1 is the inner bash's
+  want=$(envof 'set -a; . "$1"' "$WORK/case.env")
+  got=$(envof ". '$REPO/install/lib/dotenv.sh'; mdm_load_env \"\$1\"" "$WORK/case.env")
+  [ "$got" = "$want" ] || fail "dotenv: $(printf '%q' "$line") reads as $(printf '%q' "$(diff <(echo "$want") <(echo "$got") | grep '^>' | tr '\n' ' ')"), bash reads $(printf '%q' "$(diff <(echo "$want") <(echo "$got") | grep '^<' | tr '\n' ' ')")"
+  ok
+done
+for line in "${REFUSE[@]}"; do
+  printf 'A=1\n%s\n' "$line" > "$WORK/case.env"
+  RC=0; out=$(env -i bash -c ". '$REPO/install/lib/dotenv.sh'; mdm_load_env \"\$1\"" _ "$WORK/case.env" 2>&1) || RC=$?
+  { [ "$RC" != 0 ] && printf '%s' "$out" | grep -q 'line 2' && ! printf '%s' "$out" | grep -q SECRETVALUE; } \
+    || fail "dotenv: $(printf '%q' "$line") is not refused naming line 2 only (rc $RC): $out"
+  ok
+done
+
+# Answers typed at a question get the same rules as pre-set ones: a wrong one is refused (never echoing a token) and
+# asked again. A real setup.sh run in a copy, answering on stdin; it stops at the docker stub after writing .env.
+for c in "1|mdm.example.com|bad SECRET tok|eyJhIjoiYWJjIn0=|^TUNNEL_TOKEN=eyJhIjoiYWJjIn0=$|is not a Cloudflare Tunnel token" \
+         "2|mdm.example.com|ops @SECRET|ops@example.com|^ACME_EMAIL=ops@example.com$|is not an email address"; do
+  IFS='|' read -r m h bad good want why <<< "$c"
+  mkdir -p "$WORK/src3/install"; cp -- "$REPO/setup.sh" "$WORK/src3/"; cp -R -- "$REPO/install/lib" "$WORK/src3/install/"
+  [ ! -e "$WORK/src3/.env" ] || mv -- "$WORK/src3/.env" "$WORK/src3/.env.prev"
+  (cd "$WORK/src3" && printf '%s\n' "$m" "$h" "$bad" "$good" | env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" \
+    STUB_LOG="$WORK/children.log" STUB_DOCKER_OK=1 bash ./setup.sh > "$WORK/out/o" 2> "$WORK/out/e") || true
+  { grep -qF -- "$why" "$WORK/out/e" && grep -qE -- "$want" "$WORK/src3/.env" && ! grep -q SECRET "$WORK/out/o" "$WORK/out/e"; } \
+    || { fail "a wrong typed answer ($why) is not refused and asked again"; show; }
+  ok
+done
+# The native installer stops on an option it doesn't take (setup.sh's --update, say) instead of installing.
+RC=0; env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" MDMESH_DRY_RUN=1 bash "$WORK/src/install/install-native.sh" --update \
+  < /dev/null > "$WORK/out/o" 2> "$WORK/out/e" || RC=$?
+{ [ "$RC" = 2 ] && grep -q 'Unknown option: --update' "$WORK/out/e"; } || { fail "install-native.sh accepts an unknown option"; show; }
+ok
+# A custom release key shows in the plan.
+dry quickstart.sh MDMESH_RELEASE_PUBKEY=RWQexample
+[ "$(plan_field release-pubkey)" = "(custom) [MDMESH_RELEASE_PUBKEY]" ] || { fail "the plan does not show MDMESH_RELEASE_PUBKEY"; show; }
 ok
 
 # The answers file's own rules, and the native installer's older variable names.

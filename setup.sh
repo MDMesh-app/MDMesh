@@ -41,6 +41,9 @@ err()  { printf '\033[1;31m%s\033[0m\n' "$*" >&2; }
 . ./install/lib/release.sh
 # shellcheck source=install/lib/answers.sh
 . ./install/lib/answers.sh
+# mdm_load_env: reads .env as sourcing it would, without running it (install/lib/dotenv.sh).
+# shellcheck source=install/lib/dotenv.sh
+. ./install/lib/dotenv.sh
 rand() { mdm_rand; }
 # Update KEY in .env in place (or append it) — persists values discovered after .env was written
 # (GITHUB_REPO autodetection, the release QR build args) so compose substitution + the supervisor
@@ -49,32 +52,6 @@ rand() { mdm_rand; }
 setenv() {
   local v=${2//\\/\\\\}; v=${v//#/\\#}; v=${v//&/\\&}
   if grep -q "^$1=" .env 2>/dev/null; then sed -i "s#^$1=.*#$1=$v#" .env; else printf '%s=%s\n' "$1" "$2" >> .env; fi
-}
-
-# load_env FILE: each KEY=VALUE line of FILE as an exported variable, as `set -a; . FILE` did, without running FILE as a
-# script: blank and # lines are skipped, an "export " prefix is allowed, one pair of surrounding '…' or "…" is removed,
-# and an unquoted value ends at " #" and loses trailing blanks, as when sourced. The values (DB_PASSWORD, HASH_SECRET,
-# TUNNEL_TOKEN, …) are never printed: xtrace is off while it runs, and a line it can't use is named by number only.
-load_env() { local _le_x=$-; set +x; _load_env "$1"; case "$_le_x" in *x*) set -x ;; esac; }
-_load_env() {
-  local line key val n=0
-  while IFS= read -r line || [ -n "$line" ]; do
-    n=$((n + 1)); line=${line%$'\r'}; line=${line#"${line%%[![:space:]]*}"}
-    case "$line" in ''|'#'*) continue ;; 'export '*) line=${line#export }; line=${line#"${line%%[![:space:]]*}"} ;; esac
-    case "$line" in *=*) ;; *) warn "$1, line $n is not KEY=VALUE: ignored."; continue ;; esac
-    key=${line%%=*}; val=${line#*=}
-    case "$key" in
-      ''|[0123456789]*|*[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_]*)
-        warn "$1, line $n does not start with a variable name: ignored."; continue ;;
-    esac
-    case "$val" in
-      \"*\"|\'*\') val=${val#?}; val=${val%?} ;;
-      *) val=${val%%[[:space:]]#*}; val=${val%"${val##*[![:space:]]}"} ;;
-    esac
-    printf -v "$key" '%s' "$val"
-    # shellcheck disable=SC2163  # $key names the variable to export
-    export "$key"
-  done < "$1"
 }
 
 RESET=0; ALLOW_DOWNGRADE=0; UPDATE=0
@@ -89,116 +66,112 @@ for a in "$@"; do
     *)        NATIVE_ARGS+=("$a") ;;   # forwarded to the native installer (-y, -v)
   esac
 done
+# Answers given in advance (install/lib/answers.sh, install/options.json): the file is read and checked here, before
+# --update or --native hand over, so MDMESH_DRY_RUN from it counts for them too, and the tunnel token is out of the
+# environment before any other program runs.
+mdm_answers_load
+
 # --update: move this clone to the newest signed release, then run the release's own setup.sh with the other options.
-# Release tags are vX.Y.Z (stable; pre-releases are skipped). The newest one is trusted only through its signed
-# manifest, checked as the quick start checks it (quickstart.sh's verification functions, with this clone's
-# release/minisign.pub): the signature, its version (the tag), and its commit (or, for a release from before manifests
-# recorded it, the SHA-256 of the files it lists) against what the tag points to. No signature, no update. The clone is
-# then on the tag, a detached HEAD: updates come from --update, never from `git pull`.
+# The release tags (vX.Y.Z; pre-releases are skipped) are listed with git ls-remote, newest first. A release is trusted
+# only through its signed manifest, checked as the quick start checks it (quickstart.sh's verification functions, with
+# this clone's release/minisign.pub): the signature, the version (the tag), and the commit, which must be the one the tag
+# points to; the clone is then checked out at that commit (a detached HEAD), so the code that runs is the signed one.
+# Manifests from before 0.5.0 record no commit and are refused. A newest tag whose release has no published manifest yet
+# (still publishing, or failed) is skipped, saying so; a manifest that is there but does not verify stops the update.
+# MDMESH_DRY_RUN=1 does all the checking, then stops before anything is fetched or checked out. Updates come from
+# --update, never from `git pull`.
+_upd_dir=''
+_upd_clean() { [ -z "$_upd_dir" ] || { rm -f -- "$_upd_dir/manifest.json" "$_upd_dir/manifest.json.minisig"; rmdir -- "$_upd_dir" 2>/dev/null || true; }; }
+_upd_stop() { _upd_clean; err "$@"; err "Nothing was changed."; exit 1; }
 update_to_release() {
-  local repo tag t best='' cur tgt d rc=0 f want got mcommit _files dry=${MDMESH_DRY_RUN:-0}
-  if ! command -v git >/dev/null || ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    err "--update needs a git clone: git clone https://github.com/MDMesh-app/MDMesh.git"; exit 1
-  fi
+  local repo gerr refs list ver t sha tag='' tgt='' newest='' skipped='' cur rc mcommit dry=${MDMESH_DRY_RUN:-0} have=0
+  command -v git >/dev/null || _upd_stop "--update needs git."
+  gerr=$(git rev-parse --is-inside-work-tree 2>&1) || _upd_stop "--update needs a git clone of MDMesh, and git refuses this directory: ${gerr}"
   if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
-    err "This clone has local changes (see git status). --update checks out a release tag, which would mix them in or"
-    err "fail: commit or stash them (git stash), then re-run. Nothing was changed."
-    exit 1
+    _upd_stop "This clone has local changes (see git status). --update checks out a release tag, which would mix them in or fail: commit or stash them (git stash), then re-run."
   fi
   repo=${GITHUB_REPO:-$(git remote get-url origin 2>/dev/null | sed -E 's#(git@|https?://)[^/:]+[/:]##; s#\.git$##' || true)}
-  case "$repo" in */*/*|*[!${_MDM_ALNUM}._/-]*|''|/*|*/) err "--update can't tell the GitHub repo of this clone (origin: $(git remote get-url origin 2>/dev/null || echo none)): set GITHUB_REPO=owner/name."; exit 1 ;; esac
-  case "$repo" in */*) ;; *) err "--update can't tell the GitHub repo of this clone: set GITHUB_REPO=owner/name."; exit 1 ;; esac
-  say "Fetching release tags from origin…"
-  git fetch -q --tags origin || { err "Could not fetch the tags from origin (git fetch --tags origin). Nothing was changed."; exit 1; }
-  while IFS= read -r t; do
-    [[ "$t" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
-    if [ -z "$best" ] || mdm_version_gt "${t#v}" "${best#v}"; then best=$t; fi
-  done < <(git tag -l 'v*')
-  [ -n "$best" ] || { err "No release tag (vX.Y.Z) in this clone's origin. Nothing was changed."; exit 1; }
-  tag=$best
-  tgt=$(git rev-parse --verify -q "${tag}^{commit}") || { err "Could not resolve ${tag}. Nothing was changed."; exit 1; }
-  say "Verifying release ${tag} of ${repo}…"
+  case "$repo" in
+    */*/*|*[!${_MDM_ALNUM}._/-]*|''|/*|*/) _upd_stop "--update can't tell the GitHub repo of this clone (origin: $(git remote get-url origin 2>/dev/null || echo none)): set GITHUB_REPO=owner/name." ;;
+    */*) ;;
+    *) _upd_stop "--update can't tell the GitHub repo of this clone: set GITHUB_REPO=owner/name." ;;
+  esac
   # quickstart.sh's own verification functions (scripts/release-manifest-check.sh runs them the same way).
   # shellcheck source=/dev/null
   . <(sed -n '/^# >>> release verification >>>$/,/^# <<< release verification <<<$/p' quickstart.sh)
-  command -v mdm_verify_manifest >/dev/null || { err "quickstart.sh in this clone has no release verification functions."; exit 1; }
-  d=$(mktemp -d)
-  if ! curl -fsSL -m 60 "https://github.com/${repo}/releases/download/${tag}/manifest.json" -o "$d/manifest.json" \
-     || ! curl -fsSL -m 60 "https://github.com/${repo}/releases/download/${tag}/manifest.json.minisig" -o "$d/manifest.json.minisig"; then
-    rm -f -- "$d/manifest.json" "$d/manifest.json.minisig"; rmdir -- "$d"
-    err "Could not download the signed manifest of ${tag} from github.com/${repo} (manifest.json and manifest.json.minisig)."
-    err "--update installs only a signed release. Nothing was changed."
-    exit 1
-  fi
-  mdm_verify_manifest "$(sed -n 2p release/minisign.pub)" "$d/manifest.json" "$d/manifest.json.minisig" || rc=$?
-  if [ "$rc" = 2 ]; then
-    err "Checking the release signature needs OpenSSL 3.0+ or minisign. Install minisign and re-run. Nothing was changed."
-  elif [ "$rc" != 0 ]; then
-    err "The manifest of ${tag} is not signed by the release key in release/minisign.pub (reason above). Nothing was changed."
-  elif [ "$(mdm_manifest_field "$d/manifest.json" version '[0-9A-Za-z.+-]+' || true)" != "${tag#v}" ]; then
-    err "The signed manifest is not the one of ${tag} (its version differs). Nothing was changed."; rc=1
-  else
-    # Bind the signed manifest to the code the tag points to.
-    mcommit=$(mdm_manifest_field "$d/manifest.json" commit '[0123456789abcdef]{40}' || true)
-    if [ -n "$mcommit" ]; then
-      [ "$mcommit" = "$tgt" ] || { err "${tag} points to ${tgt}, but its signed manifest names commit ${mcommit}. Nothing was changed."; rc=1; }
-    elif grep -q '^  "files": {$' "$d/manifest.json"; then
-      # The files the quick start downloads, and quickstart.sh itself when the manifest lists it (0.5.0 on).
-      _files=$MDM_QUICKSTART_FILES
-      if mdm_manifest_field "$d/manifest.json" quickstart.sh "$MDM_SHA256_ERE" >/dev/null; then _files="$_files quickstart.sh"; fi
-      for f in $_files; do
-        want=$(mdm_manifest_field "$d/manifest.json" "$f" "$MDM_SHA256_ERE" || true)
-        got=$(git show "${tag}:${f}" 2>/dev/null | openssl dgst -sha256 -r | cut -d' ' -f1)
-        if [ -z "$want" ] || [ "$got" != "$want" ]; then
-          err "${f} at ${tag} does not match the signed manifest. Nothing was changed."; rc=1; break
-        fi
-      done
-    elif mdm_legacy_file_sha "${tag#v}" install/lib/db.sh >/dev/null; then
-      # v0.4.0 predates "files" in the manifest: the hashes quickstart.sh records for it.
-      for f in $MDM_QUICKSTART_FILES; do
-        want=$(mdm_legacy_file_sha "${tag#v}" "$f" || true)
-        got=$(git show "${tag}:${f}" 2>/dev/null | openssl dgst -sha256 -r | cut -d' ' -f1)
-        if [ -z "$want" ] || [ "$got" != "$want" ]; then
-          err "${f} at ${tag} does not match the signed release. Nothing was changed."; rc=1; break
-        fi
-      done
-    else
-      err "The signed manifest of ${tag} records neither its commit nor its files, so the tag can't be checked. Nothing was changed."; rc=1
+  command -v mdm_verify_manifest >/dev/null || _upd_stop "quickstart.sh in this clone has no release verification functions."
+  say "Looking up the release tags of origin…"
+  refs=$(git ls-remote --tags origin 2>&1) || _upd_stop "Could not list origin's tags (git ls-remote --tags origin): ${refs}"
+  # "X.Y.Z vX.Y.Z <commit>" per release tag (an annotated tag's ^{} line names its commit), newest first.
+  list=$(printf '%s\n' "$refs" | awk -F'\t' '
+    $2 ~ /^refs\/tags\/v[0-9]+\.[0-9]+\.[0-9]+(\^\{\})?$/ && $1 ~ /^[0-9a-f]{40}$/ {
+      t = $2; sub(/^refs\/tags\//, "", t); p = sub(/\^\{\}$/, "", t); if (p || !(t in c)) c[t] = $1 }
+    END { for (t in c) print substr(t, 2), t, c[t] }' | sort -t. -k1,1nr -k2,2nr -k3,3nr)
+  [ -n "$list" ] || _upd_stop "origin has no release tag (vX.Y.Z)."
+  _upd_dir=$(mktemp -d) || _upd_stop "Could not make a temporary directory."
+  while read -r ver t sha; do
+    [ -n "$newest" ] || newest=$t
+    rm -f -- "$_upd_dir/manifest.json" "$_upd_dir/manifest.json.minisig"
+    if ! curl -fsSL -m 60 "https://github.com/${repo}/releases/download/${t}/manifest.json" -o "$_upd_dir/manifest.json" \
+       || ! curl -fsSL -m 60 "https://github.com/${repo}/releases/download/${t}/manifest.json.minisig" -o "$_upd_dir/manifest.json.minisig"; then
+      skipped="$skipped $t"; continue
     fi
+    say "Verifying release ${t} of ${repo}…"
+    rc=0; mdm_verify_manifest "$(sed -n 2p release/minisign.pub)" "$_upd_dir/manifest.json" "$_upd_dir/manifest.json.minisig" || rc=$?
+    [ "$rc" != 2 ] || _upd_stop "Checking the release signature needs OpenSSL 3.0+ or minisign. Install minisign and re-run."
+    [ "$rc" = 0 ] || _upd_stop "The manifest of ${t} is not signed by the release key in release/minisign.pub (reason above)."
+    [ "$(mdm_manifest_field "$_upd_dir/manifest.json" version '[0-9A-Za-z.+-]+' || true)" = "$ver" ] \
+      || _upd_stop "The signed manifest at ${t} is not that release's (its version differs)."
+    mcommit=$(mdm_manifest_field "$_upd_dir/manifest.json" commit '[0123456789abcdef]{40}' || true)
+    [ -n "$mcommit" ] || _upd_stop "The signed manifest of ${t} records no commit (releases before 0.5.0 don't), so --update can't tie the tag to signed code. Update to 0.5.0 the old way once (git pull && ./setup.sh; native: git pull && sudo ./setup.sh --native), then use --update."
+    [ "$mcommit" = "$sha" ] || _upd_stop "${t} points to ${sha}, but its signed manifest names commit ${mcommit}."
+    tag=$t; tgt=$sha
+    break
+  done <<< "$list"
+  [ -n "$tag" ] || _upd_stop "No release tag of origin has a published, signed manifest (tried:${skipped}). A release may still be publishing: try again later."
+  if [ "$tag" != "$newest" ]; then
+    warn "${newest} has no published signed manifest yet (its release may still be publishing, or it failed): using ${tag}, the newest release that has one."
   fi
-  rm -f -- "$d/manifest.json" "$d/manifest.json.minisig"; rmdir -- "$d"
-  [ "$rc" = 0 ] || exit 1
+  _upd_clean
   cur=$(git rev-parse HEAD)
-  if [ "$cur" = "$tgt" ]; then
-    say "This clone is already on ${tag}, the newest signed release."
-  elif ! git merge-base --is-ancestor "$cur" "$tgt"; then
-    # HEAD has commits the release doesn't (main ahead of the release, or a newer local tag): checking out the release
-    # runs older code. Fine on a clone that installed nothing yet; over an install, only with --allow-downgrade.
-    if [ "$ALLOW_DOWNGRADE" != 1 ] && { [ -f .env ] || { [ "$NATIVE" = 1 ] && [ -e /opt/mdmesh-tc/conf/server.xml ]; }; }; then
-      err "This clone is at $(git describe --tags --always 2>/dev/null || echo "$cur"), which has commits the newest release ${tag} doesn't"
-      err "(for example main, ahead of the release). Checking out ${tag} would run older code over this install. Wait for the"
-      err "next release and run --update then, or re-run with --allow-downgrade to go to ${tag} now. Nothing was changed."
-      exit 1
-    fi
-  fi
+  git cat-file -e "${tgt}^{commit}" 2>/dev/null && have=1
   if [ "$dry" = 1 ]; then
-    say "Dry run (MDMESH_DRY_RUN=1): ${tag} verifies. A run would check it out and then run its ./setup.sh ${PASS_ARGS[*]}"
+    if [ "$cur" = "$tgt" ]; then say "Dry run (MDMESH_DRY_RUN=1): this clone is already on ${tag}, which verifies. A run would run its ./setup.sh ${PASS_ARGS[*]}"
+    else
+      [ "$have" = 0 ] || update_downgrade_check "$cur" "$tgt" "$tag"
+      say "Dry run (MDMESH_DRY_RUN=1): ${tag} verifies. A run would fetch it, check it out and run its ./setup.sh ${PASS_ARGS[*]}"
+      [ "$have" = 1 ] || echo "(Whether that goes back from this checkout is checked once the tag is fetched.)"
+    fi
     exit 0
   fi
-  if [ "$cur" != "$tgt" ]; then
-    git -c advice.detachedHead=false checkout -q --detach "$tgt" || { err "git checkout ${tag} failed (above). Nothing else was changed."; exit 1; }
-    say "Checked out ${tag} (signed release, verified)."
-  fi
+  if [ "$cur" = "$tgt" ]; then say "This clone is already on ${tag}, the newest signed release."; return 0; fi
+  git fetch -q --no-tags origin "refs/tags/${tag}:refs/tags/${tag}" \
+    || _upd_stop "Could not fetch ${tag} from origin (above). If this clone has a different ${tag}, remove it (git tag -d ${tag}) and re-run."
+  [ "$(git rev-parse --verify -q "${tag}^{commit}")" = "$tgt" ] || _upd_stop "${tag} in this clone is not the commit origin and the signed manifest name."
+  update_downgrade_check "$cur" "$tgt" "$tag"
+  git -c advice.detachedHead=false checkout -q --detach "$tgt" || _upd_stop "git checkout ${tag} failed (above)."
+  say "Checked out ${tag} (signed release, verified)."
+}
+# update_downgrade_check CUR TGT TAG: stop when CUR has commits TAG doesn't (main ahead of the release, or a newer local
+# tag) and this clone runs an install: checking out TAG would run older code over it. --allow-downgrade allows it.
+update_downgrade_check() {
+  git merge-base --is-ancestor "$1" "$2" && return 0
+  [ "$ALLOW_DOWNGRADE" != 1 ] || return 0
+  { [ -f .env ] || { [ "$NATIVE" = 1 ] && [ -e /opt/mdmesh-tc/conf/server.xml ]; }; } || return 0
+  _upd_stop "This clone is at $(git describe --tags --always 2>/dev/null || echo "$1"), which has commits the newest release $3 doesn't (for example main, ahead of the release). Checking out $3 would run older code over this install. Wait for the next release and run --update then, or re-run with --allow-downgrade to go to $3 now."
 }
 if [ "$UPDATE" = 1 ]; then
   update_to_release
-  # The release's own setup.sh, read afresh from the checked-out tag.
+  # The release's own setup.sh, read afresh from the checked-out tag. The tunnel token, kept out of the environment of
+  # everything --update ran, goes to it alone (it takes it out again at once).
+  if [ -n "${MDMESH_TUNNEL_TOKEN+x}" ]; then export MDMESH_TUNNEL_TOKEN; fi
   exec ./setup.sh "${PASS_ARGS[@]}"
 fi
 
 # Hand off to the native (non-Docker) installer, passing the remaining flags through so
 # `./setup.sh --native -y` really is unattended.
-if [ "$NATIVE" = 1 ]; then exec ./install/install-native.sh "${NATIVE_ARGS[@]}"; fi
+# The native installer has no tunnel: the token is not passed on.
+if [ "$NATIVE" = 1 ]; then unset MDMESH_TUNNEL_TOKEN; exec ./install/install-native.sh "${NATIVE_ARGS[@]}"; fi
 # Docker mode takes no other flag: a typo (--alow-downgrade) must not be silently ignored.
 if [ "${#NATIVE_ARGS[@]}" -gt 0 ]; then
   err "Unknown option: ${NATIVE_ARGS[0]}"
@@ -207,8 +180,7 @@ if [ "${#NATIVE_ARGS[@]}" -gt 0 ]; then
 fi
 
 # Answers given in advance (install/lib/answers.sh, install/options.json), all checked here, before anything else.
-# Only a fresh .env asks questions: a re-run reuses its .env, and then they are not used.
-mdm_answers_load
+# Only a fresh .env asks questions: a re-run reuses its .env, and then they are not used. (The file was read above.)
 mdm_answer mode MODE mode MDMESH_MODE
 mdm_answer host HOST hostname MDMESH_HOST
 mdm_answer tunnel-token TUNNEL_TOKEN tunnel-token MDMESH_TUNNEL_TOKEN
@@ -291,7 +263,7 @@ if [ "$REUSE_ENV" = 1 ]; then
   # first init), so a fresh DB_PASSWORD would brick the stack; a fresh HASH_SECRET would likewise
   # invalidate every enrolled device's token. --reset opts out (see the header for when that's safe).
   say "Existing .env found — reusing it (secrets + hosting mode kept; use --reset to start over)."
-  load_env .env
+  mdm_load_env .env
   version_preflight "${CURRENT_VERSION:-${SERVER_VERSION:-}}"
   _env_base_url=${BASE_URL:-}
   mdm_check_base_url BASE_URL || { err "Fix BASE_URL in .env, then re-run."; exit 1; }
@@ -330,7 +302,10 @@ else
   if [ "$MODE" = "1" ]; then
     mdm_answered host || read -rp "Public hostname devices will use (e.g. mdm.example.com): " HOST   # answer: host
     mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
-    mdm_answered tunnel-token || read -rp "Cloudflare Tunnel token (Zero Trust → Tunnels → your tunnel): " TUNNEL_TOKEN   # answer: tunnel-token
+    while :; do
+      mdm_answered tunnel-token || read -rp "Cloudflare Tunnel token (Zero Trust → Tunnels → your tunnel): " TUNNEL_TOKEN   # answer: tunnel-token
+      mdm_prompt_ok tunnel-token TUNNEL_TOKEN && break
+    done
     BASE_URL="https://${HOST}"
     SITE_ADDRESS=":80"
     ACME_EMAIL=""
@@ -341,7 +316,10 @@ else
   else
     mdm_answered host || read -rp "Your domain (DNS already pointing here, e.g. mdm.example.com): " HOST   # answer: host
     mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
-    mdm_answered acme-email || read -rp "Email for Let's Encrypt: " ACME_EMAIL   # answer: acme-email
+    while :; do
+      mdm_answered acme-email || read -rp "Email for Let's Encrypt: " ACME_EMAIL   # answer: acme-email
+      mdm_prompt_ok acme-email ACME_EMAIL && break
+    done
     BASE_URL="https://${HOST}"
     SITE_ADDRESS="${HOST}"
     TUNNEL_TOKEN=""

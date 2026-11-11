@@ -46,7 +46,14 @@ mdm_answer http-port HTTP_PORT port MDMESH_HTTP_PORT HTTP_PORT
 mdm_answer replace-data REPLACE_DATA yes-no MDMESH_REPLACE_DATA REPLACE_DATA
 
 ASSUME_YES="${ASSUME_YES:-0}"; VERBOSE="${VERBOSE:-0}"
-for a in "$@"; do case "$a" in -y|--yes) ASSUME_YES=1 ;; -v|--verbose) VERBOSE=1 ;; esac; done
+for a in "$@"; do
+  case "$a" in
+    -y|--yes) ASSUME_YES=1 ;;
+    -v|--verbose) VERBOSE=1 ;;
+    # Anything else stops it: an option meant for something else (setup.sh's --update, say) must not run an install.
+    *) echo "Unknown option: $a (the native installer takes -y and -v; from setup.sh: --update, --native)." >&2; exit 2 ;;
+  esac
+done
 # Without -y the run starts with the confirmation, which MDMESH_NONINTERACTIVE=1 can't answer.
 [ "$ASSUME_YES" = 1 ] || mdm_ask assume-yes
 if [ "${MDMESH_DRY_RUN:-0}" = 1 ]; then

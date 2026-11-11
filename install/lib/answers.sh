@@ -19,9 +19,12 @@
 #
 # Secrets (the tunnel token, _MDM_SECRET_KEYS) never reach anything another user or a log could see: they are never
 # printed (not in the plan, a "Using" line, or an error about the value), xtrace (set -x) is off while these functions
-# hold them, they are never put on a command line, their environment variable is removed (unset) once read so that no
-# child process inherits it, and an answers file holding one is read only when it is owned by the user running the
-# installer and nobody else can read or write it (chmod 600).
+# hold them, they are never put on a command line, and their environment variable is taken out of the environment as
+# soon as the answers are loaded (export -n), then unset once read, so that no child process inherits it.
+#
+# An answers file chooses what is installed (MDMESH_REPO, MDMESH_RELEASE_PUBKEY, MDMESH_VERSION, …) and can hold the
+# tunnel token, so it is read only when it belongs to the user running the installer (or to root) and nobody else may
+# read, write or run it (chmod 600). Answers typed at a question are checked with the same rules (mdm_prompt_ok).
 
 # >>> answers.sh functions (quickstart.sh keeps a verbatim copy) >>>
 # The keys an answers file may set: every answer and setting in install/options.json (CI checks the two match).
@@ -35,10 +38,14 @@ _mdm_answer_fail() { printf 'MDMesh installer: %s\n' "$*" >&2; exit 1; }
 # alone), then checks MDMESH_NONINTERACTIVE and MDMESH_DRY_RUN. Stops the installer on any error. xtrace stays off
 # while it runs (the file may hold a secret).
 mdm_answers_load() { local _mdm_x=$-; set +x; _mdm_answers_load; case "$_mdm_x" in *x*) set -x ;; esac; }
-# _mdm_private_file FILE: FILE is owned by this user and nobody else may read, write or run it.
+# _mdm_private_file FILE: FILE belongs to this user (or root) and nobody else may read, write or run it. Fails closed:
+# without find, or when it fails, the file does not count as private.
 _mdm_private_file() {
-  [ -O "$1" ] || return 1
-  [ -z "$(find "$1" -prune \( -perm -040 -o -perm -020 -o -perm -010 -o -perm -004 -o -perm -002 -o -perm -001 \) -print 2>/dev/null)" ]
+  local r
+  command -v find >/dev/null 2>&1 || return 1
+  r=$(find "$1" -prune \( -user "$(id -u)" -o -user 0 \) ! -perm -040 ! -perm -020 ! -perm -010 ! -perm -004 \
+        ! -perm -002 ! -perm -001 -print 2>/dev/null) || return 1
+  [ "$r" = "$1" ]
 }
 _mdm_answers_load() {
   local f=${MDMESH_ANSWERS-} line key val n=0 seen=" " v
@@ -46,12 +53,8 @@ _mdm_answers_load() {
     case "$f" in /*) ;; *) _mdm_answer_fail "MDMESH_ANSWERS must be an absolute path (e.g. \$PWD/answers.env)." ;; esac
     { [ -f "$f" ] && [ -r "$f" ]; } || _mdm_answer_fail "MDMESH_ANSWERS: $f is not a readable file."
     [ "$(wc -c < "$f")" -le 65536 ] || _mdm_answer_fail "MDMESH_ANSWERS: $f is larger than 64 KiB."
-    # A file with a secret in it is read only when it is private (before any line of it is read).
-    for key in $_MDM_SECRET_KEYS; do
-      if grep -q "^$key=" "$f" && ! _mdm_private_file "$f"; then
-        _mdm_answer_fail "MDMESH_ANSWERS: $f holds $key, a secret, so it must be owned by you and private to you: chmod 600 $f. It was not read."
-      fi
-    done
+    # Read only when private (before any line of it is read).
+    _mdm_private_file "$f" || _mdm_answer_fail "MDMESH_ANSWERS: $f must belong to you (or root) and be private to you: chmod 600 $f (under sudo, also chown root $f). It was not read."
     while IFS= read -r line || [ -n "$line" ]; do
       n=$((n + 1)); line=${line%$'\r'}
       case "$line" in ''|'#'*) continue ;; *=*) ;; *) _mdm_answer_fail "$f, line $n: expected KEY=VALUE." ;; esac
@@ -71,6 +74,9 @@ _mdm_answers_load() {
       if [ -z "${!key+x}" ]; then printf -v "$key" '%s' "$val"; _MDM_ANS_FROM_FILE="$_MDM_ANS_FROM_FILE$key "; fi
     done < "$f"
   fi
+  # Secrets leave the environment now: they stay shell variables, so mdm_answer still reads them, but no child sees them.
+  # shellcheck disable=SC2163  # the variable named by $key
+  for key in $_MDM_SECRET_KEYS; do [ -z "${!key+x}" ] || export -n "$key"; done
   for key in MDMESH_NONINTERACTIVE MDMESH_DRY_RUN; do
     v=${!key-}
     case "$v" in ''|0|1) ;; *) _mdm_answer_fail "$key must be 1 or 0." ;; esac
@@ -179,6 +185,19 @@ _mdm_answer() {
   esac
   printf -v "_MDM_ANS_SHOW_$k" '%s' "$_MDM_SHOW"; printf -v "_MDM_ANS_SRC_$k" '%s' "$src"
   _MDM_ANS_GIVEN="$_MDM_ANS_GIVEN$id "
+}
+
+# mdm_prompt_ok ID VAR: checks the answer just typed at question ID (in VAR) with the rule a pre-set answer gets. Fails,
+# saying why (never the value of a secret), so the caller asks again. xtrace is off while it holds the value.
+mdm_prompt_ok() { local _mdm_x=$- _mdm_rc=0; set +x; _mdm_prompt_ok "$@" || _mdm_rc=1; case "$_mdm_x" in *x*) set -x ;; esac; return "$_mdm_rc"; }
+_mdm_prompt_ok() {
+  local r="_MDM_ANS_RULE_${1//-/_}"
+  _MDM_V=${!2-}
+  _mdm_answer_check "${!r}"
+  _MDM_V=''
+  [ -n "$_MDM_WHY" ] || return 0
+  case "$_MDM_WHY" in ' ') printf 'Enter it again.\n' >&2 ;; *) printf 'That answer %s. Enter it again.\n' "$_MDM_WHY" >&2 ;; esac
+  return 1
 }
 
 # mdm_any_answered: succeeds when at least one question was answered in advance. mdm_given ID: when question ID was.

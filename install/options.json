@@ -3,7 +3,7 @@
   "schemaVersion": 1,
   "answersFile": {
     "env": "MDMESH_ANSWERS",
-    "description": "An absolute path to a file of KEY=VALUE lines (any answer or setting below, by its env name; # comments and blank lines allowed; one pair of surrounding quotes is removed; never sourced). The environment wins over the file. Unknown or repeated keys stop the installer, and so does a file holding a secret (MDMESH_TUNNEL_TOKEN) unless it belongs to the user running the installer and only that user can read or write it (chmod 600)."
+    "description": "An absolute path to a file of KEY=VALUE lines (any answer or setting below, by its env name; # comments and blank lines allowed; one pair of surrounding quotes is removed; never sourced). The environment wins over the file. Unknown or repeated keys stop the installer, and so does any file that does not belong to the user running the installer (or root) with no access for anyone else (chmod 600): it chooses what is installed and may hold the tunnel token."
   },
   "installers": [
     { "id": "quickstart.sh", "path": "quickstart.sh", "title": "Quick start (published images, Docker)", "root": false, "flags": [] },
@@ -78,7 +78,7 @@
       "id": "tunnel-token", "env": "MDMESH_TUNNEL_TOKEN", "aliases": [], "installers": ["quickstart.sh", "setup.sh"],
       "type": "secret", "default": null, "required": true, "when": { "mode": "tunnel" }, "secret": true, "rule": "tunnel-token",
       "regex": "^[A-Za-z0-9._=+/-]+$",
-      "description": "The Cloudflare Tunnel token (Zero Trust → Networks → Tunnels → your tunnel). A secret: answer the question, or put it in an answers file that belongs to the user running the installer with mode 600 (any other file holding it is refused); never on a command line or in export, where shell history and the process list show it. The installers never print it or pass it to another program.",
+      "description": "The Cloudflare Tunnel token (Zero Trust → Networks → Tunnels → your tunnel). A secret: answer the question, or put it in an answers file (which must belong to the user running the installer, with mode 600); never on a command line or in export, where shell history and the process list show it. The installers never print it or pass it to another program.",
       "prompts": [ { "id": "tunnel-token.ask", "text": "Cloudflare Tunnel token (Zero Trust → Tunnels → your tunnel):", "script": "Cloudflare Tunnel token (Zero Trust → Tunnels → your tunnel): " } ],
       "examples": { "valid": ["eyJhIjoiYWJjIn0=", "abc.DEF_123-+/="], "invalid": ["", "abc def", "abc$x", "a\"b"] }
     },

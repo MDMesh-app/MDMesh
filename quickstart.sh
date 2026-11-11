@@ -248,10 +248,14 @@ _mdm_answer_fail() { printf 'MDMesh installer: %s\n' "$*" >&2; exit 1; }
 # alone), then checks MDMESH_NONINTERACTIVE and MDMESH_DRY_RUN. Stops the installer on any error. xtrace stays off
 # while it runs (the file may hold a secret).
 mdm_answers_load() { local _mdm_x=$-; set +x; _mdm_answers_load; case "$_mdm_x" in *x*) set -x ;; esac; }
-# _mdm_private_file FILE: FILE is owned by this user and nobody else may read, write or run it.
+# _mdm_private_file FILE: FILE belongs to this user (or root) and nobody else may read, write or run it. Fails closed:
+# without find, or when it fails, the file does not count as private.
 _mdm_private_file() {
-  [ -O "$1" ] || return 1
-  [ -z "$(find "$1" -prune \( -perm -040 -o -perm -020 -o -perm -010 -o -perm -004 -o -perm -002 -o -perm -001 \) -print 2>/dev/null)" ]
+  local r
+  command -v find >/dev/null 2>&1 || return 1
+  r=$(find "$1" -prune \( -user "$(id -u)" -o -user 0 \) ! -perm -040 ! -perm -020 ! -perm -010 ! -perm -004 \
+        ! -perm -002 ! -perm -001 -print 2>/dev/null) || return 1
+  [ "$r" = "$1" ]
 }
 _mdm_answers_load() {
   local f=${MDMESH_ANSWERS-} line key val n=0 seen=" " v
@@ -259,12 +263,8 @@ _mdm_answers_load() {
     case "$f" in /*) ;; *) _mdm_answer_fail "MDMESH_ANSWERS must be an absolute path (e.g. \$PWD/answers.env)." ;; esac
     { [ -f "$f" ] && [ -r "$f" ]; } || _mdm_answer_fail "MDMESH_ANSWERS: $f is not a readable file."
     [ "$(wc -c < "$f")" -le 65536 ] || _mdm_answer_fail "MDMESH_ANSWERS: $f is larger than 64 KiB."
-    # A file with a secret in it is read only when it is private (before any line of it is read).
-    for key in $_MDM_SECRET_KEYS; do
-      if grep -q "^$key=" "$f" && ! _mdm_private_file "$f"; then
-        _mdm_answer_fail "MDMESH_ANSWERS: $f holds $key, a secret, so it must be owned by you and private to you: chmod 600 $f. It was not read."
-      fi
-    done
+    # Read only when private (before any line of it is read).
+    _mdm_private_file "$f" || _mdm_answer_fail "MDMESH_ANSWERS: $f must belong to you (or root) and be private to you: chmod 600 $f (under sudo, also chown root $f). It was not read."
     while IFS= read -r line || [ -n "$line" ]; do
       n=$((n + 1)); line=${line%$'\r'}
       case "$line" in ''|'#'*) continue ;; *=*) ;; *) _mdm_answer_fail "$f, line $n: expected KEY=VALUE." ;; esac
@@ -284,6 +284,9 @@ _mdm_answers_load() {
       if [ -z "${!key+x}" ]; then printf -v "$key" '%s' "$val"; _MDM_ANS_FROM_FILE="$_MDM_ANS_FROM_FILE$key "; fi
     done < "$f"
   fi
+  # Secrets leave the environment now: they stay shell variables, so mdm_answer still reads them, but no child sees them.
+  # shellcheck disable=SC2163  # the variable named by $key
+  for key in $_MDM_SECRET_KEYS; do [ -z "${!key+x}" ] || export -n "$key"; done
   for key in MDMESH_NONINTERACTIVE MDMESH_DRY_RUN; do
     v=${!key-}
     case "$v" in ''|0|1) ;; *) _mdm_answer_fail "$key must be 1 or 0." ;; esac
@@ -394,6 +397,19 @@ _mdm_answer() {
   _MDM_ANS_GIVEN="$_MDM_ANS_GIVEN$id "
 }
 
+# mdm_prompt_ok ID VAR: checks the answer just typed at question ID (in VAR) with the rule a pre-set answer gets. Fails,
+# saying why (never the value of a secret), so the caller asks again. xtrace is off while it holds the value.
+mdm_prompt_ok() { local _mdm_x=$- _mdm_rc=0; set +x; _mdm_prompt_ok "$@" || _mdm_rc=1; case "$_mdm_x" in *x*) set -x ;; esac; return "$_mdm_rc"; }
+_mdm_prompt_ok() {
+  local r="_MDM_ANS_RULE_${1//-/_}"
+  _MDM_V=${!2-}
+  _mdm_answer_check "${!r}"
+  _MDM_V=''
+  [ -n "$_MDM_WHY" ] || return 0
+  case "$_MDM_WHY" in ' ') printf 'Enter it again.\n' >&2 ;; *) printf 'That answer %s. Enter it again.\n' "$_MDM_WHY" >&2 ;; esac
+  return 1
+}
+
 # mdm_any_answered: succeeds when at least one question was answered in advance. mdm_given ID: when question ID was.
 mdm_any_answered() { [ "$_MDM_ANS_GIVEN" != " " ]; }
 mdm_given() { case "$_MDM_ANS_GIVEN" in *" $1 "*) return 0 ;; esac; return 1; }
@@ -487,6 +503,7 @@ if [ "${MDMESH_DRY_RUN:-0}" = 1 ]; then
   if ! mdm_given mode; then mdm_plan_line tunnel-token ''; mdm_plan_line acme-email ''
   elif [ "$MODE" = 1 ]; then mdm_plan_line tunnel-token ''; mdm_plan_row acme-email - unused
   else mdm_plan_row tunnel-token - unused; mdm_plan_line acme-email ''; fi
+  [ -z "${MDMESH_RELEASE_PUBKEY:-}" ] || mdm_plan_row release-pubkey '(custom)' MDMESH_RELEASE_PUBKEY
   _dir=${MDMESH_DIR:-mdmesh}; case "$_dir" in /*) ;; *) _dir="$PWD/$_dir" ;; esac
   _repo=$REPO; if mdm_given repo && [ -n "$GH_REPO" ]; then _repo=$GH_REPO; fi
   _rel="the latest release of ${_repo}"; [ -z "${MDMESH_VERSION:-}" ] || _rel="release v${MDMESH_VERSION#v} of ${_repo}"
@@ -521,9 +538,15 @@ if ! mdm_answered mode; then
   done
 fi
 
-mdm_answered repo || read -rp "Pull releases from GitHub repo [${REPO}]: " GH_REPO   # answer: repo
+while :; do
+  mdm_answered repo || read -rp "Pull releases from GitHub repo [${REPO}]: " GH_REPO   # answer: repo
+  mdm_prompt_ok repo GH_REPO && break
+done
 GH_REPO="${GH_REPO:-$REPO}"
-mdm_answered image-owner || read -rp "Image owner (GHCR, lowercase) [${IMAGE_OWNER_DEFAULT}]: " IMAGE_OWNER   # answer: image-owner
+while :; do
+  mdm_answered image-owner || read -rp "Image owner (GHCR, lowercase) [${IMAGE_OWNER_DEFAULT}]: " IMAGE_OWNER   # answer: image-owner
+  mdm_prompt_ok image-owner IMAGE_OWNER && break
+done
 IMAGE_OWNER="${IMAGE_OWNER:-$IMAGE_OWNER_DEFAULT}"
 
 # Install exactly one published release, verified before anything is downloaded from it: its signed manifest (see "What
@@ -551,6 +574,7 @@ if [ -z "$RELEASE" ]; then
   err "  MDMESH_VERSION=X.Y.Z bash <(curl -fsSL https://raw.githubusercontent.com/${REPO}/refs/tags/vX.Y.Z/quickstart.sh)"
   exit 1
 fi
+[ -z "${MDMESH_RELEASE_PUBKEY:-}" ] || warn "Using MDMESH_RELEASE_PUBKEY: a custom release signing key, not MDMesh's."
 say "Verifying release v${RELEASE} of ${GH_REPO}…"
 VERIFY_DIR=$(mktemp -d)
 cleanup_verify() {
@@ -615,14 +639,20 @@ DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(
 if [ "$MODE" = "1" ]; then
   mdm_answered host || read -rp "Public hostname devices will use (e.g. mdm.example.com): " HOST   # answer: host
   mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
-  mdm_answered tunnel-token || read -rp "Cloudflare Tunnel token (Zero Trust → Tunnels → your tunnel): " TUNNEL_TOKEN   # answer: tunnel-token
+  while :; do
+    mdm_answered tunnel-token || read -rp "Cloudflare Tunnel token (Zero Trust → Tunnels → your tunnel): " TUNNEL_TOKEN   # answer: tunnel-token
+    mdm_prompt_ok tunnel-token TUNNEL_TOKEN && break
+  done
   BASE_URL="https://${HOST}"; SITE_ADDRESS=":80"; ACME_EMAIL=""
   COMPOSE_FILE="docker-compose.yml"; COMPOSE_PROFILES="cloudflare"
   EXTRA_NOTE="In Cloudflare, route the tunnel's public hostname ($HOST) to http://caddy:80."
 else
   mdm_answered host || read -rp "Your domain (DNS already pointing here, e.g. mdm.example.com): " HOST   # answer: host
   mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
-  mdm_answered acme-email || read -rp "Email for Let's Encrypt: " ACME_EMAIL   # answer: acme-email
+  while :; do
+    mdm_answered acme-email || read -rp "Email for Let's Encrypt: " ACME_EMAIL   # answer: acme-email
+    mdm_prompt_ok acme-email ACME_EMAIL && break
+  done
   BASE_URL="https://${HOST}"; SITE_ADDRESS="${HOST}"; TUNNEL_TOKEN=""
   COMPOSE_FILE="docker-compose.yml:docker-compose.domain.yml"; COMPOSE_PROFILES=""
   EXTRA_NOTE="Make sure ${HOST} resolves to this server and ports 80/443 are open."

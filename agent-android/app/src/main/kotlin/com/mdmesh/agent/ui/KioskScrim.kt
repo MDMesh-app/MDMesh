@@ -83,12 +83,16 @@ interface BackdropRule {
 
     /** The plate (0..[KioskScrim.STEPS], 0: none) behind one text in [colour] over [box], under the dim [dim]. */
     fun plateStep(colour: Int, background: Int, box: ColourBox, dim: Int): Int
+
+    /** The one step the labels of a grid row share, from each label's own [steps]. */
+    fun rowStep(steps: List<Int>): Int
 }
 
 /**
- * Version 3: a light dim, at most 30 %, only as much as the controls (the Exit button, filled with the text colour)
- * need for 3:1; then each text gets a plate: none where it already reads 4.5:1 against its worst pixel, solid over
- * texture, else the lowest opacity that reaches 4.5:1.
+ * Version 3.1: a light dim, at most 30 %, only as much as the controls need for 3:1 (the outlined Exit button: its
+ * border, in the text colour, against the dimmed image); then each text gets a plate: none where it already reads
+ * 4.5:1 against its worst pixel, solid over texture, else the lowest opacity that reaches 4.5:1. The labels of a grid
+ * row share one step: the highest of the row's, so a row is plated alike or not at all.
  */
 object LegibilityV3 : BackdropRule {
     /** 15 of 50: 30 %. */
@@ -117,6 +121,8 @@ object LegibilityV3 : BackdropRule {
             else -> (1..KioskScrim.STEPS).firstOrNull(::reads) ?: KioskScrim.STEPS
         }
     }
+
+    override fun rowStep(steps: List<Int>): Int = steps.maxOrNull() ?: 0
 
     /** Whether the dim at its cap still leaves a control under 3:1 (the console warns the admin). */
     fun controlsShort(palette: KioskPalette, controls: List<ColourBox>, dim: Int): Boolean {

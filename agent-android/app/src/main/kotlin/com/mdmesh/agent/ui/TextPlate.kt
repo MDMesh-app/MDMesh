@@ -140,17 +140,27 @@ object TextPlates {
                 rule.plateStep(view.currentTextColor, palette.background, bounds(view, rect), dim)
             }
         }
+        // The labels of a grid row are plated alike: the row's step for each of them.
+        rows(plates).forEach { row ->
+            val shared = rule.rowStep(row.map { it.second.step })
+            row.forEach { it.second.step = shared }
+        }
         return dim
     }
 
-    private fun shareRowWidths(plates: List<Pair<TextView, TextPlate>>) {
+    /** The shown grid labels, by row (labels of a row share their top). */
+    private fun rows(plates: List<Pair<TextView, TextPlate>>): Collection<List<Pair<TextView, TextPlate>>> {
         val at = IntArray(2)
-        plates.filter { it.second.inRow && it.first.isShown }
+        return plates.filter { it.second.inRow && it.first.isShown }
             .groupBy { at.also(it.first::getLocationInWindow)[1] }
-            .values.forEach { row ->
-                val width = row.maxOf { it.second.naturalWidth() }
-                row.forEach { it.second.sharedWidth = width }
-            }
+            .values
+    }
+
+    private fun shareRowWidths(plates: List<Pair<TextView, TextPlate>>) {
+        rows(plates).forEach { row ->
+            val width = row.maxOf { it.second.naturalWidth() }
+            row.forEach { it.second.sharedWidth = width }
+        }
     }
 
     private fun collect(v: View, plates: MutableList<Pair<TextView, TextPlate>>, controls: MutableList<View>) {

@@ -110,6 +110,7 @@ class KioskBackdropStressTest : KioskHarness() {
         labels.groupBy { IntArray(2).also(it::getLocationInWindow)[1] }.values.forEach { row ->
             val widths = row.map { (it.background as TextPlate).plateRect(android.graphics.RectF()).width() }.toSet()
             assertEquals("one width per row", 1, widths.size)
+            assertEquals("one step per row", 1, row.map { (it.background as TextPlate).step }.toSet().size)
         }
     }
 

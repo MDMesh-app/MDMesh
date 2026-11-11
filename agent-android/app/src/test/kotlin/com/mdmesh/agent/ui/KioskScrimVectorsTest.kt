@@ -39,8 +39,8 @@ class KioskScrimVectorsTest {
 
     private fun double(o: JsonObject, key: String) = o[key]!!.jsonPrimitive.double
 
-    @Test fun `version 3 with the documented constants`() {
-        assertEquals(3, int(vectors, "version"))
+    @Test fun `version 3_1 with the documented constants`() {
+        assertEquals("3.1", vectors["version"]!!.jsonPrimitive.content)
         assertEquals(KioskScrim.STEPS, int(vectors, "steps"))
         assertEquals(LegibilityV3.DIM_MAX_STEP, int(vectors, "dimMaxStep"))
         assertEquals(Contrast.TEXT_MIN, double(vectors, "textMin"), 0.0)
@@ -108,16 +108,29 @@ class KioskScrimVectorsTest {
         val dim = rule.dimStep(p, controls)
         assertEquals("$name dim", int(expected, "dim"), dim)
         val plates = expected["plates"]!!.jsonObject
+        fun colourOf(el: JsonObject) = if (el["kind"]!!.jsonPrimitive.content == "secondary") p.secondary else p.text
+        fun own(el: JsonObject) = when (el["kind"]!!.jsonPrimitive.content) {
+            "control" -> 0
+            else -> rule.plateStep(colourOf(el), p.background, bounds(el), dim)
+        }
+        // 3.1: the labels of a grid row share one step.
+        val steps = elements.associate { it["id"]!!.jsonPrimitive.content to own(it) }.toMutableMap()
+        elements.filter { it["row"] != null && it["row"] !is JsonNull }
+            .groupBy { it["row"]!!.jsonPrimitive.content }
+            .values.forEach { row ->
+                val ids = row.map { it["id"]!!.jsonPrimitive.content }
+                val shared = rule.rowStep(ids.map { steps.getValue(it) })
+                ids.forEach { steps[it] = shared }
+            }
         for (el in elements) {
             val id = el["id"]!!.jsonPrimitive.content
             val want = plates[id]!!.jsonObject
-            val kind = el["kind"]!!.jsonPrimitive.content
             val box = bounds(el)
             val lo = KioskScrim.blend(p.background, box.min, dim)
             val hi = KioskScrim.blend(p.background, box.max, dim)
             assertEquals("$name/$id busy", want["busy"]!!.jsonPrimitive.boolean, KioskScrim.busy(lo, hi))
-            val colour = if (kind == "secondary") p.secondary else p.text
-            val step = if (kind == "control") 0 else rule.plateStep(colour, p.background, box, dim)
+            val colour = colourOf(el)
+            val step = steps.getValue(id)
             assertEquals("$name/$id step", int(want, "step"), step)
             val withPlate = KioskScrim.worst(
                 colour, KioskScrim.blend(p.background, lo, step), KioskScrim.blend(p.background, hi, step),

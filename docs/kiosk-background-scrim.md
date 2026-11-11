@@ -1,4 +1,4 @@
-# Kiosk background image: keeping the launcher legible (version 3)
+# Kiosk background image: keeping the launcher legible (version 3.1)
 
 A kiosk background image sits under the launcher's text (header, app labels, empty-state and hold text) and its
 controls (the Exit button). A photo can be any brightness, so the launcher does two things, both with the kiosk
@@ -16,11 +16,12 @@ The console's preview computes the same, so what it shows is what the device dra
   `web/src/data/kioskLauncherLayout.ts` (the plate geometry) and the preview, `web/src/pages/configurations/
   KioskPreview.tsx`.
 - Agent: a `BackdropRule` alongside `KioskPalette` (agent branch).
-- Shared test vectors: [`proto/vectors/kiosk-scrim.json`](../proto/vectors/kiosk-scrim.json), version 3, generated
+- Shared test vectors: [`proto/vectors/kiosk-scrim.json`](../proto/vectors/kiosk-scrim.json), version 3.1, generated
   by an independent implementation and passed by both test suites. A change to these rules changes the vectors.
 
 Version history: versions 1 and 2 (one full-screen scrim from area-averaged samples, with a 2 % allowance) are
-replaced by this one: the bounds are now the worst pixel (per-cell minimum and maximum), and texture gets a solid plate.
+replaced by version 3: the bounds are now the worst pixel (per-cell minimum and maximum), and texture gets a solid plate.
+3.1 adds row uniformity (the labels of a grid row share one plate step) and states the Exit button's outlined model.
 
 ## Parsing
 
@@ -46,7 +47,8 @@ the form before calling `parseColor`. Vectors: `parsing`, and `palette` cases wi
   (`#E7EBF1` or `#1B2230`) that reads best on it, or black/white when neither reaches 4.5:1.
 - `secondary` = `text` at 80 % over `background` (per channel `round(f * 0.8f + b * (1 - 0.8f))` in 32-bit float,
   as Kotlin computes it), or `text` when that is under 4.5:1.
-- The Exit button is filled with `text` (label in `background`), so as a control its colour is `text`.
+- The Exit button is **outlined**: filled with `background`, a 1 dp border and its label in `text`. Its label sits on
+  its own fill (no plate); what has to stand out from the image is the border, so as a control its colour is `text`.
 
 ## The image as cells
 
@@ -89,7 +91,8 @@ worst(colour, lo, hi):                                 // the lowest contrast ag
 busy(lo, hi)       = some channel has hi - lo > 48
 ```
 
-**Dim** `d` (0 to 15), over the controls (the Exit button's box; it has its own fill, colour `text`):
+**Dim** `d` (0 to 15), over the controls (the Exit button's box; its border, colour `text`, against the dimmed
+image):
 
 ```
 no controls:  d = 0
@@ -109,6 +112,10 @@ otherwise:                     k = the lowest s in 1..50 with worst(colour, blen
                                50 when none reaches it
 ```
 
+- **Row uniformity (3.1)**: the labels of one grid row are one group. When any label of a row has `k > 0`, every
+  label of that row gets the row's highest `k` (and, as before, the row's shared width); a row where none needs a plate
+  stays without. The header and other texts are not grouped. Each label's reported ratio is then its `worst` at that
+  shared `k`.
 - Both stages round (the dimmed bounds are integer colours before the plate is blended over them), as two 8-bit
   layers composite.
 - **Solid over texture**: an accessibility checker (and a reader) can't judge text over noise even when its contrast
@@ -128,7 +135,7 @@ In dp, from the laid-out text views; padding is applied with negative margins, s
 - **App labels**: all labels of a grid row share one width: the widest label in that row (as laid out, so at most the
   label's own width in the cell) plus padding, capped at the cell width; each centred under its icon.
 - **Other text** (hold screen, splash): one plate per text view.
-- **No plate**: buttons (the Exit button, Open again) and the empty-state callout, which have their own fill.
+- **No plate**: buttons (the outlined Exit button, Open again) and the empty-state callout, which have their own fill.
 - A plate's box is its region: its bounds come from the cells under it (plus the margin).
 
 ## Drawing
@@ -148,14 +155,15 @@ text needs one) and "Image dimmed 22%".
 
 ## Vectors
 
-`proto/vectors/kiosk-scrim.json` version 3: `parsing` (stored value to colour, or null), `palette` (stored colours to
+`proto/vectors/kiosk-scrim.json` version 3.1: `parsing` (stored value to colour, or null), `palette` (stored colours to
 background, text, secondary) and `layout` cases. A layout case gives the stored colours, an image (`width`, `height`,
 `cellSize`, `cols`, `rows`, and `cells` as `[min, max]` row-major), a window (dp) and elements (`id`, `kind`: `text`,
-`secondary` or `control`, `box` in dp). It expects the palette, the dim `d`, and per element its plate step (always 0
+`secondary` or `control`, `box` in dp, and `row` for the labels of a grid row). It expects the palette, the dim `d`, and per element its plate step (always 0
 for a control), `busy`, its worst ratio with the plate and, for texts, without it. Cases cover no dim, the 30 % cap, no
 controls, a light dim, texture to a solid plate, busy but dark enough (no plate), a translucent plate, a band under one
 label, the one-cell margin (and a cell beyond it), secondary text, a light kiosk, saturated colours, a crop that hides
-the bright sides, and brand colours.
+the bright sides, brand colours, and rows: one label alone needing a translucent plate, one alone over texture (the row
+goes solid), none needing one, and two rows that don't affect each other.
 
 ## Not (yet) done
 

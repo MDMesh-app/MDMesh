@@ -98,7 +98,9 @@ class KioskViews(private val context: Context, val palette: KioskPalette) {
     /** Puts [app] in a cell made by [appCell]. */
     fun bindAppCell(cell: View, app: KioskApp) {
         val parts = cell as LinearLayout
-        (parts.getChildAt(0) as ImageView).setImageDrawable(app.icon)
+        // A copy per cell: the cached Drawable itself is never attached to a view (a Drawable has one owner).
+        val icon = app.icon.constantState?.newDrawable(context.resources)?.mutate() ?: app.icon
+        (parts.getChildAt(0) as ImageView).setImageDrawable(icon)
         (parts.getChildAt(1) as TextView).text = app.label
         cell.contentDescription = app.label
     }

@@ -52,17 +52,20 @@ class AppGridLayout @JvmOverloads constructor(
             cell
         }
         if (cells == (0 until childCount).map(::getChildAt)) return
+        // Keep D-pad focus on the same app across the reorder.
+        val focusedKey = focusedChild?.getTag(R.id.mdm_grid_key)
         removeAllViews()
         cells.forEach(::addView)
+        cells.firstOrNull { it.getTag(R.id.mdm_grid_key) == focusedKey }?.requestFocus()
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val width = if (MeasureSpec.getMode(widthMeasureSpec) == MeasureSpec.UNSPECIFIED) {
-            slotPx * GridColumns.MIN + paddingLeft + paddingRight
+            slotPx * GridColumns.MIN + paddingStart + paddingEnd
         } else {
             MeasureSpec.getSize(widthMeasureSpec)
         }
-        val inner = (width - paddingLeft - paddingRight).coerceAtLeast(0)
+        val inner = (width - paddingStart - paddingEnd).coerceAtLeast(0)
         columns = GridColumns.fit(inner, slotPx)
         cellWidth = inner / columns
         val exactWidth = MeasureSpec.makeMeasureSpec(cellWidth, MeasureSpec.EXACTLY)
@@ -86,20 +89,22 @@ class AppGridLayout @JvmOverloads constructor(
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         val rtl = layoutDirection == LAYOUT_DIRECTION_RTL
-        // The pixels left over after equal columns go to both sides, so the grid stays centred.
-        val inset = (r - l - paddingLeft - paddingRight - cellWidth * columns) / 2
+        val width = r - l
         var top = paddingTop
         forEachVisible { i, cell ->
             val column = i % columns
             if (column == 0 && i > 0) top += rowHeights[i / columns - 1]
-            val left = if (rtl) {
-                r - l - paddingRight - inset - (column + 1) * cellWidth
-            } else {
-                paddingLeft + inset + column * cellWidth
-            }
+            val fromStart = GridColumns.cellLeft(column, width, paddingStart, paddingEnd, slotPx)
+            val left = if (rtl) width - fromStart - cellWidth else fromStart
             cell.layout(left, top, left + cell.measuredWidth, top + cell.measuredHeight)
         }
     }
+
+    /**
+     * Where the first column's icon starts, from the grid's start edge, if the grid is [width] wide and its cells
+     * centre an [iconPx] icon. The header lines up with it (one source for both).
+     */
+    fun iconStart(width: Int, iconPx: Int): Int = GridColumns.iconStart(width, paddingStart, paddingEnd, slotPx, iconPx)
 
     private fun visibleCount(): Int {
         var n = 0
@@ -127,6 +132,24 @@ object GridColumns {
 
     private const val ICON_SIDE_SPACE_DP = 24
     private const val LABEL_MIN_DP = 80
+
+    /**
+     * The start edge of [column]'s cell in a grid [width] wide: equal columns, the pixels left over split between
+     * both sides so the grid stays centred.
+     */
+    fun cellLeft(column: Int, width: Int, padStart: Int, padEnd: Int, slotPx: Int): Int {
+        val inner = (width - padStart - padEnd).coerceAtLeast(0)
+        val cols = fit(inner, slotPx)
+        val cell = inner / cols
+        return padStart + (inner - cell * cols) / 2 + column * cell
+    }
+
+    /** The first icon's start edge: its cell's start plus half the room beside the centred icon. */
+    fun iconStart(width: Int, padStart: Int, padEnd: Int, slotPx: Int, iconPx: Int): Int {
+        val inner = (width - padStart - padEnd).coerceAtLeast(0)
+        val cell = inner / fit(inner, slotPx)
+        return cellLeft(0, width, padStart, padEnd, slotPx) + (cell - iconPx) / 2
+    }
 
     /** How many [slotPx]-wide columns fit in [innerPx]; never fewer than [MIN]. */
     fun fit(innerPx: Int, slotPx: Int): Int = if (slotPx <= 0) MIN else maxOf(MIN, innerPx / slotPx)

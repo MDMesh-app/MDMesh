@@ -38,4 +38,23 @@ class GridColumnsTest {
         assertEquals(GridColumns.MIN, GridColumns.fit(0, 120))
         assertEquals(GridColumns.MIN, GridColumns.fit(500, 0))
     }
+
+    @Test fun `the header starts where the first icon starts, at any width`() {
+        // Header start = first icon's left edge, from the same numbers the grid lays out with.
+        val density = 2.625f
+        fun px(dp: Int) = Math.round(dp * density)
+        for (widthDp in listOf(320, 360, 411, 600, 891)) for (size in IconSize.entries) {
+            val width = px(widthDp)
+            val pad = px(8)
+            val icon = px(size.dp)
+            val slot = px(GridColumns.slotDp(size.dp, 1f))
+            val start = GridColumns.iconStart(width, pad, pad, slot, icon)
+            val inner = width - 2 * pad
+            val cols = GridColumns.fit(inner, slot)
+            val cell = inner / cols
+            val cellLeft = GridColumns.cellLeft(0, width, pad, pad, slot)
+            assertEquals("$widthDp dp $size", cellLeft + (cell - icon) / 2, start)
+            assertEquals(pad + (inner - cell * cols) / 2, cellLeft)
+        }
+    }
 }

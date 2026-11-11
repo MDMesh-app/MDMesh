@@ -1,5 +1,6 @@
 package com.mdmesh.agent.ui
 
+import android.content.Context
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -60,6 +61,7 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
 
     private fun build(s: KioskScreen) {
         activity.colorSystemBars(s.palette.background)
+        activity.updateSystemBarIcons(s.palette.background)
         root.setBackgroundColor(s.palette.background)
         root.removeAllViews()
         grid = null
@@ -92,8 +94,9 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
         val empty = v.emptyNotice(activity.getString(R.string.kiosk_empty)).apply { visibility = View.GONE }
         // Room under the last row, so the floating Exit kiosk button never covers an app.
         val bottom = if (s.exit == KioskExit.VISIBLE) EXIT_BUTTON_RESERVE else SPACE_24
-        val column = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
+        val column = GridColumn(activity).apply {
+            grid = cells
+            iconPx = v.dp(s.iconSize.dp)
             setPadding(0, v.dp(SPACE_24), 0, v.dp(bottom))
             addView(v.inGutter(v.text(activity.getString(R.string.kiosk_header), TITLE_SP, v.palette.text, true), 0))
             addView(v.inGutter(empty, v.dp(SPACE_16)))
@@ -202,5 +205,37 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
         const val BODY_SP = KioskViews.BODY_SP
         const val SPLASH_SP = 16f
         const val WORDMARK_SP = 24f
+    }
+}
+
+/**
+ * The grid screen's column: the header and the empty notice above [grid] start where its first icon starts, in any
+ * orientation and column count. Their side margins are set from [AppGridLayout.iconStart] before each measure, so
+ * they never lag a frame behind the grid.
+ */
+private class GridColumn(context: Context) : LinearLayout(context) {
+
+    /** The grid the other children line up with, and the icon size its cells centre. */
+    var grid: AppGridLayout? = null
+    var iconPx: Int = 0
+
+    init {
+        orientation = VERTICAL
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val g = grid
+        if (g != null) {
+            val start = g.iconStart(MeasureSpec.getSize(widthMeasureSpec) - paddingStart - paddingEnd, iconPx)
+            for (i in 0 until childCount) {
+                val child = getChildAt(i)
+                if (child === g) continue
+                (child.layoutParams as MarginLayoutParams).apply {
+                    marginStart = start
+                    marginEnd = start
+                }
+            }
+        }
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
     }
 }

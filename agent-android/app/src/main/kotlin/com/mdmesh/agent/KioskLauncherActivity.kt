@@ -1,7 +1,10 @@
 package com.mdmesh.agent
 
 import android.app.ActivityManager
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Bundle
@@ -85,13 +88,29 @@ class KioskLauncherActivity : ComponentActivity() {
     /** Exit PIN or Exit locked; reopened after the activity is recreated, once the kiosk state is back. */
     private val dialogs = DialogSlot("exitDialog")
 
+    /** Acts once per return to the front, whichever of onResume and the kiosk delivery comes first. */
+    private val resumeGate = HomeResumeGate()
+
+    /** The display density the grid's icons were loaded for. */
+    private var densityDpi = 0
+
+    /** An allowed app installed, updated or removed while the grid shows: reload it (registered while started). */
+    private val packageChanges = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val pkg = intent.data?.schemeSpecificPart ?: return
+            val p = active ?: return
+            if (KioskAppLoader.affects(screen, pkg)) showGrid(p)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         dialogs.restore(savedInstanceState)
         // A kiosk device boots straight into HOME (this); keep the command channel alive even if
         // the user never opens the status screen.
         ContextCompat.startForegroundService(this, Intent(this, CheckInService::class.java))
-        apps = KioskAppLoader(packageManager)
+        apps = KioskAppLoader(this)
+        densityDpi = resources.configuration.densityDpi
         renderer = KioskRenderer(this, Actions())
         render(KioskScreen.Idle)
         // React to kiosk.enter/kiosk.exit live: those run in the check-in service, not here, so we
@@ -115,11 +134,24 @@ class KioskLauncherActivity : ComponentActivity() {
         // The open exit dialog is rebuilt too, so it takes the new colours and sizes.
         dialogs.onConfigurationChanged(newConfig) { tag, typed -> active?.let { reopenExitDialog(tag, it, typed) } }
         renderer.rebuild()
+        // A display-size change: the grid's icons were decoded for the old density.
+        if (newConfig.densityDpi != densityDpi) {
+            densityDpi = newConfig.densityDpi
+            active?.let { p -> if (screen is KioskScreen.Grid) showGrid(p) }
+        }
     }
 
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        dialogs.save(outState)
+    override fun onStart() {
+        // Before super: the collector restarts in super.onStart() and may deliver at once.
+        resumeGate.onStart()
+        super.onStart()
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_PACKAGE_ADDED)
+            addAction(Intent.ACTION_PACKAGE_REMOVED)
+            addAction(Intent.ACTION_PACKAGE_CHANGED)
+            addDataScheme("package")
+        }
+        ContextCompat.registerReceiver(this, packageChanges, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
     }
 
     /**
@@ -128,7 +160,13 @@ class KioskLauncherActivity : ComponentActivity() {
      */
     override fun onStop() {
         if (!isChangingConfigurations) dialogs.dismiss(KioskExitDialogs.PIN)
+        unregisterReceiver(packageChanges)
         super.onStop()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        dialogs.save(outState)
     }
 
     override fun onDestroy() {
@@ -138,9 +176,15 @@ class KioskLauncherActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // A single-app pin that returned us to HOME means the pinned app exited or crashed — re-pin
-        // it (counting the bounce so a crash loop trips the guard). Enter/exit transitions are
-        // handled by the flow collector, not here.
+        if (resumeGate.onResume() == HomeResumeGate.Step.RETURN) onReturnedToFront()
+    }
+
+    /**
+     * A single-app pin that returned us to HOME means the pinned app exited or crashed — re-pin
+     * it (counting the bounce so a crash loop trips the guard). Enter/exit transitions are
+     * handled by the flow collector, not here.
+     */
+    private fun onReturnedToFront() {
         val p = active ?: return
         if (p.mode == "single") {
             when (returns.onReturned()) {
@@ -158,16 +202,21 @@ class KioskLauncherActivity : ComponentActivity() {
         // The kiosk an exit dialog was opened for is gone or replaced (a remote exit or re-entry, also one that
         // arrived while the launcher was stopped): close it rather than leave it on a kiosk it wasn't for.
         if (previous != null && previous != p) dialogs.dismiss()
-        when (KioskDelivery.of(previous, p)) {
-            KioskDelivery.IDLE -> {
+        when (resumeGate.onDelivery(KioskDelivery.of(previous, p))) {
+            HomeResumeGate.Step.IDLE -> {
                 dialogs.dismiss()
                 holding = false
                 stopLockTaskSafely()
                 render(KioskScreen.Idle)
             }
-            // Back at the front with the same single-app kiosk: onResume reopens the app (or holds), once.
-            KioskDelivery.PIN_ONLY -> startLockTaskSafely()
-            KioskDelivery.APPLY -> {
+            // The same kiosk again, because HOME came back to the front: keep the pin; the return is handled once,
+            // here or in onResume, whichever came second.
+            HomeResumeGate.Step.RETURN -> {
+                startLockTaskSafely()
+                onReturnedToFront()
+            }
+            HomeResumeGate.Step.NONE, HomeResumeGate.Step.WAIT -> if (p != null) startLockTaskSafely()
+            HomeResumeGate.Step.APPLY -> {
                 val kiosk = p ?: return
                 // Pin first: a held device (a loop that tripped just before a reboot) is still in kiosk.
                 startLockTaskSafely()

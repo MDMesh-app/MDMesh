@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ApiError } from '../api/client';
 import { getConfigurations, type Configuration } from '../api/configurations';
-import { mintEnrollToken } from '../api/enroll';
+import { mintEnrollToken, revokeAllEnrollTokens } from '../api/enroll';
 import { getUpdateStatus, type UpdateStatus } from '../api/updates';
 import { agentApkUrl, buildProvisioningPayload, serverBaseUrl, type WifiSecurity } from '../enroll/provisioning';
 import {
@@ -26,6 +26,7 @@ import {
   useToast,
   type KeyValueItem,
   LinkButton,
+  Modal,
 } from '../ui';
 // Not from the barrel: QrPanel pulls in `qrcode`, which stays in this page's chunk.
 import { QrPanel } from '../ui/QrPanel';
@@ -46,6 +47,53 @@ type Method = 'qr' | 'token';
 interface Minted {
   value: string;
   expiresAt?: number;
+  /** The devices it enrolls, as the server says (1 from a server whose tokens are all single-use). */
+  maxUses: number;
+  /** The server applied the chosen devices and validity; false: it predates them, and made a single-use 24 h code. */
+  limitsApplied: boolean;
+}
+
+/**
+ * How many devices one code enrolls: one, a code to send to a customer, or a batch set up together. A code for several
+ * works for anyone who has it until it expires, so it is bounded both ways.
+ */
+const USES_OPTIONS = [1, 10, 25, 100];
+/** How long a code is valid. */
+const VALID_OPTIONS: { hours: number; label: string }[] = [
+  { hours: 24, label: '24 hours' },
+  { hours: 72, label: '3 days' },
+  { hours: 168, label: '7 days' },
+  { hours: 720, label: '30 days' },
+];
+
+function usesText(n: number): string {
+  return n === 1 ? 'One device, then it stops working' : `Up to ${n} devices, then it stops working`;
+}
+
+/** Codes for a batch this page replaced that may still work: how many, and when the last of them expires. */
+interface Replaced {
+  count: number;
+  until?: number;
+}
+
+/** What to say about the codes this page replaced. */
+function replacedText(r: Replaced): string {
+  if (r.count === 1) {
+    return `The code for a batch you replaced still works ${r.until ? `until ${fmtExpiry(r.until)}` : 'until it expires'}, for anyone who has it.`;
+  }
+  return `The ${r.count} codes for a batch you replaced still work ${r.until ? `until ${fmtExpiry(r.until)}` : 'until they expire'}, for anyone who has them.`;
+}
+
+/** Why stopping the codes failed, in words. */
+function revokeError(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.httpStatus === 404 || err.httpStatus === 405)
+      return "This server can't stop codes. Update it, or wait for the codes to expire.";
+    if (err.message === 'error.permission.denied')
+      return "Your account can't stop codes: it needs permission to edit devices.";
+    return err.message || "Couldn't stop the codes.";
+  }
+  return "Couldn't stop the codes.";
 }
 
 function readDefault(): string {
@@ -64,24 +112,27 @@ function tokenError(err: unknown): string {
       return "That configuration doesn't exist any more, or your account can't use it. Pick another one.";
     if (err.message === 'error.permission.denied')
       return "Your account can't enroll devices: it needs permission to edit devices.";
+    if (err.message === 'error.agent.token.maxUses') return 'A code can enroll 1 to 1000 devices.';
+    if (err.message === 'error.agent.token.validHours') return 'A code can be valid for 1 hour to 30 days.';
     return err.message || 'Failed to generate a token.';
   }
   return 'Failed to generate a token.';
 }
 
-/** Token expiry, short enough for the summary box: the token lives 24 h, so no year ("Oct 16, 1:54 PM"). */
+/** Token expiry, short enough for the summary box: a token lives 30 days at most, so no year ("Oct 16, 1:54 PM"). */
 function fmtExpiry(ms: number): string {
   const d = new Date(ms);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
-/** "in 24 hours", "in 5 minutes", "in under a minute". */
+/** "in 7 days", "in 24 hours", "in 5 minutes", "in under a minute". */
 function untilText(ms: number, now: number): string {
   const min = Math.floor((ms - now) / 60_000);
   if (min < 1) return 'in under a minute';
   if (min < 60) return `in ${min} minute${min === 1 ? '' : 's'}`;
   const hr = Math.round(min / 60);
+  if (hr >= 48) return `in ${Math.round(hr / 24)} days`;
   return `in ${hr} hour${hr === 1 ? '' : 's'}`;
 }
 
@@ -124,6 +175,8 @@ export function EnrollPage() {
   const [method, setMethod] = useState<Method>('qr');
   const [defaultId] = useState(readDefault);
   const [cfgId, setCfgId] = useState(defaultId);
+  const [uses, setUses] = useState(1);
+  const [validHours, setValidHours] = useState(24);
   /** null while loading. */
   const [configs, setConfigs] = useState<Configuration[] | null>(null);
   const [configsFailed, setConfigsFailed] = useState(false);
@@ -143,6 +196,12 @@ export function EnrollPage() {
   const [tokError, setTokError] = useState<string | null>(null);
   const mintSeq = useRef(0);
   const minted = useRef(false);
+  /** The code last shown, to tell whether a new one replaces a code for a batch that still works. */
+  const shown = useRef<Minted | null>(null);
+  const [replaced, setReplaced] = useState<Replaced | null>(null);
+  const [stopOpen, setStopOpen] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const [stopError, setStopError] = useState<string | null>(null);
   const now = useNow(30_000, token?.expiresAt);
 
   const [update, setUpdate] = useState<UpdateStatus | null>(null);
@@ -210,21 +269,36 @@ export function EnrollPage() {
   }, [selected, configs]);
 
   /**
-   * Mint a single-use token bound to configuration `id` ('' = none: the server's setting for new devices). The
-   * latest call wins. `keep` leaves the current code up while a new one for the SAME configuration is minted
-   * ("New code"); a configuration change clears it, so a code never carries a token for another configuration.
+   * Mint a token for `maxUses` devices, valid `hours`, bound to configuration `id` ('' = none: the server's setting
+   * for new devices). The latest call wins. `keep` leaves the current code up while a new one for the SAME choices is
+   * minted ("New code"); changing a choice clears it, so a code never carries a token for other choices.
    */
-  const generate = useCallback(async (id: string, keep: boolean) => {
+  const generate = useCallback(async (id: string, keep: boolean, maxUses: number, hours: number) => {
     const seq = ++mintSeq.current;
     const n = Number(id);
+    // A new code doesn't stop the one it replaces. For a batch that one keeps working for anyone who has it: say so,
+    // and offer to stop it (a single-use code is less of a worry, and the page never showed it to anyone else).
+    const prev = shown.current;
+    shown.current = null;
+    if (prev && prev.maxUses > 1 && !(prev.expiresAt && prev.expiresAt <= Date.now())) {
+      setReplaced((r) => ({
+        count: (r?.count ?? 0) + 1,
+        until: Math.max(r?.until ?? 0, prev.expiresAt ?? 0) || undefined,
+      }));
+    }
     setBusy(true);
     setTokError(null);
     if (!keep) setToken(null);
     try {
-      const res = await mintEnrollToken(Number.isFinite(n) && n > 0 ? n : undefined);
+      const res = await mintEnrollToken(Number.isFinite(n) && n > 0 ? n : undefined, { maxUses, validHours: hours });
       if (seq !== mintSeq.current) return;
-      if (res.token) setToken({ value: res.token, expiresAt: res.expiresAt });
-      else setTokError('The server did not return a token.');
+      const applied = typeof res.maxUses === 'number';
+      const devices = typeof res.maxUses === 'number' ? res.maxUses : 1;
+      if (res.token) {
+        const next = { value: res.token, expiresAt: res.expiresAt, maxUses: devices, limitsApplied: applied };
+        shown.current = next;
+        setToken(next);
+      } else setTokError('The server did not return a token.');
     } catch (err) {
       if (seq === mintSeq.current) setTokError(tokenError(err));
     } finally {
@@ -232,9 +306,9 @@ export function EnrollPage() {
     }
   }, []);
 
-  // The token binds the device to the configuration server-side: mint again whenever the choice changes. The first
-  // code is minted at once; a later choice waits until it settles, so arrowing through the select mints one token
-  // (each lives 24 h), not one per option passed. The old code goes at once: it is for another configuration.
+  // The token binds the device to the configuration and its limits server-side: mint again whenever a choice changes.
+  // The first code is minted at once; a later choice waits until it settles, so arrowing through a select mints one
+  // token (each lives until it expires), not one per option passed. The old code goes at once: it is for other choices.
   useEffect(() => {
     if (!mintReady) return;
     if (minted.current) {
@@ -246,16 +320,54 @@ export function EnrollPage() {
     const t = setTimeout(
       () => {
         minted.current = true;
-        void generate(cfgId, false);
+        void generate(cfgId, false, uses, validHours);
       },
       minted.current ? MINT_SETTLE_MS : 0,
     );
     return () => clearTimeout(t);
-  }, [cfgId, generate, mintReady]);
+  }, [cfgId, uses, validHours, generate, mintReady]);
 
-  const newCode = () => void generate(cfgId, true);
+  const newCode = () => void generate(cfgId, true, uses, validHours);
+
+  /** Stop every code that still works, then make a new one for the current choices (the shown one stopped too). */
+  const stopAll = async () => {
+    setStopping(true);
+    setStopError(null);
+    try {
+      const res = await revokeAllEnrollTokens();
+      shown.current = null;
+      setReplaced(null);
+      setStopOpen(false);
+      const n = typeof res.revoked === 'number' ? res.revoked : null;
+      toast.push(
+        'ok',
+        'Codes stopped',
+        n === null ? 'Every enrollment code stopped working. A new code is ready.' : `${n} code${n === 1 ? '' : 's'} stopped working. A new code is ready.`,
+      );
+      void generate(cfgId, false, uses, validHours);
+    } catch (err) {
+      setStopError(revokeError(err));
+    } finally {
+      setStopping(false);
+    }
+  };
+  const openStop = () => {
+    setStopError(null);
+    setStopOpen(true);
+  };
 
   const givesName = selected?.name ?? (cfgId ? `Configuration #${cfgId}` : SERVER_SETTING);
+  // What the code does, not what was asked: an older server ignores both choices and makes a single-use 24 h code.
+  const limitsIgnored = !!token && !token.limitsApplied && (uses !== 1 || validHours !== 24);
+  let devicesHelp: string;
+  if (limitsIgnored) {
+    devicesHelp =
+      'This server makes single-use codes, valid for 24 hours, whatever is chosen here. Update it to set up a batch with one code.';
+  } else if (uses === 1) {
+    devicesHelp = 'One device, then the code stops working: the one to send a customer.';
+  } else {
+    devicesHelp = `Anyone with this code can enroll up to ${uses} devices until it expires, or until you stop all codes. Share it only with whoever sets them up.`;
+  }
   const ssid = wifiSsid.trim();
   const wifiInCode = wifiOn && !!ssid;
   const expired = !!token?.expiresAt && token.expiresAt <= now;
@@ -281,7 +393,7 @@ export function EnrollPage() {
   const facts = (withWifi: boolean): KeyValueItem[] => [
     { key: 'gives', label: 'Gives', value: <span className="v2-enroll__gives">{givesName}</span> },
     ...(withWifi && wifiOn ? [{ key: 'wifi', label: 'Joins Wi-Fi', value: ssid || 'No network name yet' }] : []),
-    { key: 'use', label: 'Use', value: 'One device, then it stops working' },
+    { key: 'use', label: 'Use', value: usesText(token?.maxUses ?? uses) },
     { key: 'expires', label: 'Expires', value: expiresValue },
   ];
 
@@ -319,6 +431,27 @@ export function EnrollPage() {
           )}
         </Select>
       </Field>
+
+      <div className="v2-enroll__limits">
+        <Field label="Devices" help={devicesHelp}>
+          <Select value={String(uses)} onChange={(e) => setUses(Number(e.target.value))}>
+            {USES_OPTIONS.map((n) => (
+              <option key={n} value={String(n)}>
+                {n === 1 ? 'One device' : `Up to ${n} devices`}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Valid for">
+          <Select value={String(validHours)} onChange={(e) => setValidHours(Number(e.target.value))}>
+            {VALID_OPTIONS.map((o) => (
+              <option key={o.hours} value={String(o.hours)}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </div>
 
       <div className="v2-enroll__wifi">
         <div className="v2-enroll__wifirow">
@@ -391,7 +524,9 @@ export function EnrollPage() {
         onNewCode={newCode}
         newCodeBusy={busy}
         fullScreenTitle={`Scan to enroll: ${givesName}`}
-        fullScreenNote={token?.expiresAt ? `Single-use. Expires ${fmtExpiry(token.expiresAt)}.` : 'Single-use.'}
+        fullScreenNote={`${(token?.maxUses ?? 1) === 1 ? 'Single-use' : `For up to ${token?.maxUses} devices`}.${
+          token?.expiresAt ? ` Expires ${fmtExpiry(token.expiresAt)}.` : ''
+        }`}
       />
     ) : (
       <div className="v2-qr">
@@ -440,6 +575,14 @@ export function EnrollPage() {
           This code has expired. Make a new one before you enroll a device.
         </Callout>
       ) : null}
+      {replaced && !(replaced.until && replaced.until <= now) ? (
+        <Callout tone="warn" icon={<IconWarning size={16} />} role="status">
+          {replacedText(replaced)}{' '}
+          <LinkButton tone="inline" onClick={openStop}>
+            Stop all codes
+          </LinkButton>
+        </Callout>
+      ) : null}
       <TabPanel idBase={METHOD_TABS} tabKey={method} className="v2-enroll__panel">
         {method === 'qr' ? (
           <div className="v2-enroll__cols">
@@ -478,6 +621,14 @@ export function EnrollPage() {
           </div>
         )}
       </TabPanel>
+      <div className="v2-enroll__stop">
+        <span className="v2-enroll__help">
+          A code shared further than meant? Stop every code that still works; enrolled devices stay enrolled.
+        </span>
+        <Button size="sm" variant="danger" onClick={openStop}>
+          Stop all codes
+        </Button>
+      </div>
       {!RELEASE_BUILD ? (
         <Callout tone="warn" icon={<IconWarning size={16} />}>
           No verified agent release was found when this console was built, so the code expects the debug build of
@@ -509,6 +660,32 @@ export function EnrollPage() {
       <PageHeader title="Enroll a device" subtitle="Set up a new or factory-reset Android device so MDMesh manages it." />
       {/* QR first on phones: the person is usually holding the device to scan. */}
       <div className="v2-enroll">{mobile ? [enrollCard, chooseCard] : [chooseCard, enrollCard]}</div>
+      <Modal
+        open={stopOpen}
+        size="sm"
+        role="alertdialog"
+        title="Stop all enrollment codes?"
+        description="Every code that still works stops now: this one, codes you replaced, and codes other admins made, printed or shared ones too. Devices already enrolled stay enrolled. A new code is made for your choices."
+        onClose={() => {
+          if (!stopping) setStopOpen(false);
+        }}
+        footer={
+          <>
+            <Button size="lg" disabled={stopping} onClick={() => setStopOpen(false)}>
+              Cancel
+            </Button>
+            <Button size="lg" variant="danger" disabled={stopping} onClick={() => void stopAll()}>
+              {stopping ? 'Stopping…' : 'Stop all codes'}
+            </Button>
+          </>
+        }
+      >
+        {stopError ? (
+          <Callout tone="alert" role="alert">
+            {stopError}
+          </Callout>
+        ) : null}
+      </Modal>
     </>
   );
 }

@@ -59,8 +59,14 @@ public class RolloutDAO {
         return mapper.findById(id);
     }
 
-    public void updateStage(int id, String stage) {
-        mapper.updateStage(id, stage, System.currentTimeMillis());
+    /** @return false when the rollout was no longer in {@code from} (another request moved it first). */
+    public boolean moveStage(int id, String from, String to) {
+        return mapper.moveStage(id, from, to, System.currentTimeMillis()) > 0;
+    }
+
+    /** @return false when the rollout had already finished or been cancelled. */
+    public boolean cancelActive(int id) {
+        return mapper.cancelActive(id, System.currentTimeMillis()) > 0;
     }
 
     public List<String> listCanaryNumbers(int rolloutId) {

@@ -80,6 +80,8 @@ public class Configuration implements CustomerData, Serializable {
     private Boolean gps;
     @ApiModelProperty("A flag indicating if Bluetooth is enabled on device")
     private Boolean bluetooth;
+    @ApiModelProperty("Camera access: null = not managed, true = allow, false = block (sent as policies.camera)")
+    private Boolean camera;
     @ApiModelProperty("A flag indicating if Wi-Fi is enabled on device")
     private Boolean wifi;
     @ApiModelProperty("A flag indicating if Mobile Data is enabled on device")
@@ -422,6 +424,14 @@ public class Configuration implements CustomerData, Serializable {
 
     public void setBluetooth(Boolean bluetooth) {
         this.bluetooth = bluetooth;
+    }
+
+    public Boolean getCamera() {
+        return camera;
+    }
+
+    public void setCamera(Boolean camera) {
+        this.camera = camera;
     }
 
     public Boolean getWifi() {
@@ -1023,6 +1033,7 @@ public class Configuration implements CustomerData, Serializable {
 
         copy.setGps(getGps());
         copy.setBluetooth(getBluetooth());
+        copy.setCamera(getCamera());
         copy.setWifi(getWifi());
         copy.setMobileData(getMobileData());
         copy.setUsbStorage(getUsbStorage());

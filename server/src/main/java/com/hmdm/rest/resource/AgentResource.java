@@ -145,7 +145,7 @@ public class AgentResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Enroll an agent", notes = "Validates a single-use token and registers the device.")
+    @ApiOperation(value = "Enroll an agent", notes = "Validates an enrollment token, uses one of its uses, and registers the device.")
     @POST
     @Path("/enroll")
     @Consumes(MediaType.APPLICATION_JSON)
@@ -160,10 +160,16 @@ public class AgentResource {
             return Response.ERROR("error.agent.token.invalid");
         }
         // Friendly pre-checks for good error messages; the CLAIM below is the actual guard.
+        if (token.getRevokedAt() != null) {
+            // Stopped by an admin. Answered as used up: every agent, older ones too, stops retrying on that (an
+            // unknown error would be retried forever), and it says what matters, that this code enrolls nothing more.
+            logger.info("Agent enroll refused: token {} was stopped", token.getId());
+            return Response.ERROR("error.agent.token.used");
+        }
         if (token.isUsed()) {
             return Response.ERROR("error.agent.token.used");
         }
-        if (token.getExpiresAt() != null && token.getExpiresAt() < System.currentTimeMillis()) {
+        if (token.getExpiresAt() != null && token.getExpiresAt() <= System.currentTimeMillis()) {
             return Response.ERROR("error.agent.token.expired");
         }
         // Atomically consume the token BEFORE creating anything: with N concurrent enrolls
@@ -171,6 +177,7 @@ public class AgentResource {
         // the blind mark-used-after-create used here before let every racer mint its own
         // device row, leaving permanent ghost devices.
         if (!tokenDAO.claim(token.getId())) {
+            // Used up, stopped or expired since the pre-checks, or another enroll took the last use.
             return Response.ERROR("error.agent.token.used");
         }
 
@@ -214,12 +221,15 @@ public class AgentResource {
             // golden image. Failures are logged inside; enrollment itself must not fail on this.
             int queuedApps = configAppInstaller.enqueueConfigApps(device);
 
-            logger.info("Agent enrolled device {} (configuration {}, {} config apps queued)",
-                    deviceId, device.getConfigurationId(), queuedApps);
+            // The token id says which code enrolled the device: with a code for a batch, what to look for when it
+            // leaked (the mint and revoke-all are in the audit log).
+            logger.info("Agent enrolled device {} with token {} (configuration {}, {} config apps queued)",
+                    deviceId, token.getId(), device.getConfigurationId(), queuedApps);
             return Response.OK(new AgentEnrollResponse(deviceId, configurationName, deviceSecret));
         } finally {
-            // A server-side failure (settings rejection, SQL error) must not burn the single-use
-            // token — the agent retries and succeeds once the operator fixes the condition.
+            // A server-side failure (settings rejection, SQL error) must not burn the use it took
+            // — the agent retries and succeeds once the operator fixes the condition. A token
+            // stopped meanwhile stays stopped (the claim checks revokedAt, which release leaves).
             if (device == null) {
                 tokenDAO.release(token.getId());
             }

@@ -115,6 +115,7 @@ public final class DesiredConfigBuilder {
         putIfManaged(p, "wifi", cfg.getWifi());
         putIfManaged(p, "wifiRadio", cfg.getWifiRadio());
         putIfManaged(p, "bluetooth", cfg.getBluetooth());
+        putIfManaged(p, "camera", cfg.getCamera());
         putIfManaged(p, "usbStorage", cfg.getUsbStorage());
         putIfManaged(p, "screenshots", cfg.getDisableScreenshots() == null ? null : !cfg.getDisableScreenshots());
         putIfManaged(p, "factoryReset", cfg.getDisableFactoryReset() == null ? null : !cfg.getDisableFactoryReset());

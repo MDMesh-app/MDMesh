@@ -2,6 +2,7 @@ package com.mdmesh.core.config
 
 import com.mdmesh.core.kiosk.KioskApplier
 import com.mdmesh.core.store.ConfigStateStore
+import com.mdmesh.core.store.configuredKiosk
 import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.policy.PolicyOutcome
 import com.mdmesh.policy.ReleasablePolicy
@@ -12,6 +13,7 @@ import com.mdmesh.proto.ConfigApplyPayload
 import com.mdmesh.proto.ConfigApplyResult
 import com.mdmesh.proto.ConfigOutcome
 import com.mdmesh.proto.DeviceAction
+import com.mdmesh.proto.KioskApplyPayload
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -43,6 +45,21 @@ class ConfigApplier(
 ) {
     private val mutex = Mutex()
 
+    /**
+     * Staff can restore the assigned kiosk locally, including offline. Read the current document under the same
+     * lock as config.apply so an older button click cannot restore a kiosk a newer configuration disabled.
+     * [expected], when given, is the kiosk the person confirmed (its exit, above all): a different one delivered
+     * since is refused rather than entered unseen.
+     */
+    suspend fun returnToConfiguredKiosk(expected: KioskApplyPayload? = null): KioskResult = mutex.withLock {
+        val payload = store.configuredKiosk()
+            ?: return@withLock KioskResult.Failed("The device configuration does not enable kiosk.")
+        if (expected != null && payload != expected) {
+            return@withLock KioskResult.Failed("The kiosk settings just changed. Check them and try again.")
+        }
+        kiosk.enter(payload)
+    }
+
     suspend fun apply(doc: ConfigApplyPayload): ConfigApplyResult = mutex.withLock {
         // What came before: the last saved document, and the last delivered one if a failed section kept it unsaved.
         val previous = listOfNotNull(store.load(), store.delivered)
@@ -67,7 +84,7 @@ class ConfigApplier(
         if (revision == endedFor) return
         val errored = policies.errors[WifiRadioPolicy.CAPABILITY_KEY]
         // endHold only clears saved state, so it also runs on a kept instance whose check threw just now.
-        val radio = wifiRadio(policies) ?: errored?.kept as? WifiRadioPolicy
+        val radio = policies.wifiRadio() ?: errored?.kept as? WifiRadioPolicy
         store.holdEndedFor = when {
             radio != null -> revision.also { radio.endHold() }
             errored != null -> endedFor ?: NO_REVISION // not ended yet: kept explicit, so the fallback above stops
@@ -199,15 +216,12 @@ class ConfigApplier(
      */
     suspend fun selfHealWifiRadio(lastCheckInOkMs: () -> Long?): Boolean = mutex.withLock {
         // Null also when its check threw: this heartbeat is skipped and the next one checks again.
-        val radio = wifiRadio(toggles()) ?: return@withLock false
+        val radio = toggles().wifiRadio() ?: return@withLock false
         // Read under the lock, not before waiting for it.
         if (!radio.selfHeal(lastCheckInOkMs())) return@withLock false
         store.markStale()
         true
     }
-
-    private fun wifiRadio(toggles: ResolvedToggles): WifiRadioPolicy? =
-        toggles[WifiRadioPolicy.CAPABILITY_KEY] as? WifiRadioPolicy
 
     companion object {
         private const val POLICIES = "policies."
@@ -221,6 +235,8 @@ class ConfigApplier(
         fun succeeded(r: ConfigApplyResult): Boolean = r.outcomes.values.none(ConfigOutcome::isFailed)
     }
 }
+
+private fun ResolvedToggles.wifiRadio(): WifiRadioPolicy? = this[WifiRadioPolicy.CAPABILITY_KEY] as? WifiRadioPolicy
 
 private fun toOutcome(o: PolicyOutcome?): String = when (o) {
     null, PolicyOutcome.Unsupported -> ConfigOutcome.UNSUPPORTED

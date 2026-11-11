@@ -26,8 +26,10 @@ interface SlotDialog {
  *   activity rebuilds it from its current state when [takeRestored] hands the tag back, so a reopened dialog never
  *   shows stale facts (an expired lockout, a kiosk changed meanwhile) and nothing typed (a PIN) is written into
  *   the saved state.
- * - **A config change the activity handles itself** (`configChanges`: dark mode, font size, display size): the
- *   open dialog is rebuilt the same way through [onConfigurationChanged], so its colours and sizes follow.
+ * - **A config change the activity handles itself** (what it declares in `configChanges`; the kiosk launcher:
+ *   uiMode and the keyboard set): through [onConfigurationChanged] the open dialog is rebuilt the same way when
+ *   the change alters how it looks (dark mode), with what was typed carried over in memory, and left as it is
+ *   otherwise (a keyboard or scanner connecting, a dock).
  *
  * Call [save] from `onSaveInstanceState`, [restore] from `onCreate`, [onConfigurationChanged] from the activity's
  * own, and [dismiss] from `onDestroy` (a dialog left showing on a destroyed activity leaks its window).

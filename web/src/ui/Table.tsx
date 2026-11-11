@@ -1,4 +1,4 @@
-import type { Key, MouseEvent, ReactNode } from 'react';
+import { useEffect, useRef, useState, type Key, type MouseEvent, type ReactNode } from 'react';
 import { Checkbox } from './Input';
 import { cx } from './cx';
 import './Table.css';
@@ -55,6 +55,27 @@ export interface TableProps<Row> {
   className?: string;
 }
 
+const TABBABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex="0"]';
+
+/**
+ * Whether the table's wrapper must be a Tab stop of its own: while it scrolls sideways (a narrow screen) and nothing
+ * inside can take focus, a keyboard could not otherwise reach the hidden columns (2.1.1).
+ */
+function useScrollStop(wrap: { current: HTMLDivElement | null }): boolean {
+  const [stop, setStop] = useState(false);
+  useEffect(() => {
+    const el = wrap.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const update = () => setStop(el.scrollWidth > el.clientWidth + 1 && !el.querySelector(TABBABLE));
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    update();
+    return () => ro.disconnect();
+  }, [wrap]);
+  return stop;
+}
+
 /** Clicks on these inside a row are theirs, not the row's. */
 const ROW_CONTROLS = 'a, button, input, select, textarea, label, [role="menu"], [role="menuitem"]';
 
@@ -82,9 +103,16 @@ export function Table<Row>({
   const all = selection && rows.length > 0 && selectedCount === rows.length;
   const some = selection && selectedCount > 0 && !all;
   const colCount = columns.length + (selection ? 1 : 0);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const scrollStop = useScrollStop(wrapRef);
+  const name = (aria as { 'aria-label'?: string })['aria-label'];
 
   return (
-    <div className={cx('v2-tablewrap', className)}>
+    <div
+      ref={wrapRef}
+      className={cx('v2-tablewrap', className)}
+      {...(scrollStop ? { tabIndex: 0, role: 'region', 'aria-label': name ? `${name} (scrolls sideways)` : 'Table (scrolls sideways)' } : {})}
+    >
       <table
         className={cx('v2-table', `v2-table--edge${edge}`, rowPad === 10 && 'v2-table--pad10', onRowClick && 'v2-table--rowclick')}
         style={minWidth ? { minWidth } : undefined}

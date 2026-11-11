@@ -191,7 +191,17 @@ public class AgentCommandDAO {
 
     /** Replace the secret of a device whose enroll attempt is being retried; false when the attempt no longer owns it. */
     public boolean reissueSecret(String deviceNumber, String attemptHash, String secretHash) {
-        return deviceMapper.reissueSecret(deviceNumber, attemptHash, secretHash, System.currentTimeMillis()) > 0;
+        return deviceMapper.reissueSecret(deviceNumber, attemptHash, secretHash) > 0;
+    }
+
+    /** Ties a just-created device to its enroll attempt while the enrollment runs. */
+    public void markEnrollAttempt(String deviceNumber, String attemptHash) {
+        deviceMapper.markEnrollAttempt(deviceNumber, attemptHash);
+    }
+
+    /** Whether an enrollment with this attempt is still running (its device exists, without a secret). */
+    public boolean isEnrollInProgress(String attemptHash) {
+        return deviceMapper.isEnrollInProgress(attemptHash);
     }
 
     /** Deletes a device whose agent enrollment did not complete; never one that has a secret. */

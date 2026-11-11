@@ -105,6 +105,11 @@ public class AgentResource {
      * retry it (it matches none of their final markers: token.used/invalid/expired, enrollment.disabled).
      */
     static final String ENROLLMENT_FAILED = "error.agent.enrollment.failed";
+    /**
+     * A retry of an enrollment whose first request is still running (the agent gave up waiting for it). Retryable like
+     * {@link #ENROLLMENT_FAILED}: the next retry gets the device once the first request completes.
+     */
+    static final String ENROLLMENT_IN_PROGRESS = "error.agent.enrollment.inProgress";
     // Details are short diagnostics, except apps.scan / apps.icons, which return JSON: the console asks for icons in
     // batches of 24 (96 px PNG, base64), well under 1 MiB even for incompressible icons. A larger detail is not
     // stored (cut JSON would be useless); the command is marked failed with a short note instead.
@@ -217,6 +222,10 @@ public class AgentResource {
                 logger.warn("Agent enroll: on-demand device creation is disabled by settings (token {})", token.getId());
                 return Response.ERROR("error.agent.enrollment.disabled");
             }
+            if (attemptHash != null) {
+                // A retry arriving while this request runs then waits for it rather than using the code again.
+                commandDAO.markEnrollAttempt(deviceId, attemptHash);
+            }
 
             // Mint a per-device secret; persist only its SHA-256 hash. The plaintext is
             // returned exactly once (below) and is required as a bearer token on /checkin.
@@ -259,12 +268,12 @@ public class AgentResource {
                 // Never leave a device that has no secret (it could never authenticate) or burn a use on an enroll
                 // that did not happen: the agent retries and succeeds once the condition clears. A token stopped
                 // meanwhile stays stopped (the claim checks revokedAt, which release leaves).
-                if (device != null) {
-                    try {
-                        commandDAO.deleteUnenrolledDevice(deviceId);
-                    } catch (RuntimeException e) {
-                        logger.error("Agent enroll: could not remove incomplete device {}: {}", deviceId, e.toString());
-                    }
+                // Also when creation itself failed: it may have inserted the row before failing to read it back.
+                // Only a row without a secret is deleted, and one that was never inserted matches nothing.
+                try {
+                    commandDAO.deleteUnenrolledDevice(deviceId);
+                } catch (RuntimeException e) {
+                    logger.error("Agent enroll: could not remove incomplete device {}: {}", deviceId, e.toString());
                 }
                 tokenDAO.release(token.getId());
             }
@@ -296,6 +305,10 @@ public class AgentResource {
     private Response resumeEnrollment(AgentEnrollmentToken token, String attemptHash) {
         String deviceNumber = commandDAO.findEnrollRetry(attemptHash);
         if (deviceNumber == null) {
+            if (commandDAO.isEnrollInProgress(attemptHash)) {
+                logger.info("Agent enroll retried while its first request runs (token {}): asked to retry", token.getId());
+                return Response.ERROR(ENROLLMENT_IN_PROGRESS);
+            }
             return null;
         }
         String deviceSecret = UUID.randomUUID().toString().replace("-", "")

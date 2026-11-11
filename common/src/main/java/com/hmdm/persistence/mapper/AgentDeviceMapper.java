@@ -78,13 +78,28 @@ public interface AgentDeviceMapper {
             "LIMIT 1"})
     String findEnrollRetry(@Param("attemptHash") String attemptHash, @Param("since") long since);
 
-    /** New secret for a retried enrollment; only while the attempt still owns the device (no check-in yet). */
-    @Update({"UPDATE devices SET agentSecretHash = #{secretHash}, lastUpdate = #{ts} " +
+    /**
+     * New secret for a retried enrollment; only while the attempt still owns the device (no check-in yet). Last-seen is
+     * left at the enrollment time: the device has not checked in.
+     */
+    @Update({"UPDATE devices SET agentSecretHash = #{secretHash} " +
             "WHERE number = #{deviceNumber} AND agentEnrollAttemptHash = #{attemptHash}"})
     int reissueSecret(@Param("deviceNumber") String deviceNumber,
                       @Param("attemptHash") String attemptHash,
-                      @Param("secretHash") String secretHash,
-                      @Param("ts") long ts);
+                      @Param("secretHash") String secretHash);
+
+    /**
+     * Ties a device that an enrollment just created to its attempt, before the enrollment completes, so a retry that
+     * arrives meanwhile is told to wait instead of taking another use of the code.
+     */
+    @Update({"UPDATE devices SET agentEnrollAttemptHash = #{attemptHash} " +
+            "WHERE number = #{deviceNumber} AND agentSecretHash IS NULL"})
+    int markEnrollAttempt(@Param("deviceNumber") String deviceNumber, @Param("attemptHash") String attemptHash);
+
+    /** Whether an enrollment with this attempt has created its device and not completed yet. */
+    @Select({"SELECT EXISTS (SELECT 1 FROM devices " +
+            "WHERE agentEnrollAttemptHash = #{attemptHash} AND agentSecretHash IS NULL)"})
+    boolean isEnrollInProgress(@Param("attemptHash") String attemptHash);
 
     /**
      * An authenticated check-in: last-seen, and the device has its credentials, so its enrollment can no longer be

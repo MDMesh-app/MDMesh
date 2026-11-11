@@ -54,6 +54,8 @@ field.
 Errors: `Response.ERROR("error.agent.token.invalid")`, `...token.used`, `...token.expired` and
 `...enrollment.disabled` are final for that token: retrying cannot succeed. `...enrollment.failed` means the server
 failed before the enrollment completed; it kept nothing (no device, the token's use given back), so the agent retries.
+`...enrollment.inProgress` answers a retry (same `enrollAttempt`) that arrives while the first request still runs; the
+agent retries and then gets the device.
 
 ## POST /checkin
 

@@ -55,6 +55,9 @@ public class AgentEnrollTimeTest {
 
     static final class FakeUnsecureDAO extends UnsecureDAO {
         boolean creationEnabled = true;
+        /** The row is inserted, then reading it back fails (createNewDeviceForToken inserts, then reads). */
+        boolean failAfterInsert = false;
+        final List<String> inserted = new ArrayList<>();
 
         FakeUnsecureDAO() {
             super(null, null, null, null, null, null, null, null, null, null, null, null, null, null, "/tmp", 0, "x");
@@ -62,6 +65,8 @@ public class AgentEnrollTimeTest {
 
         @Override public Device createNewDeviceForToken(String deviceId, int customerId, Integer configurationId) {
             if (!creationEnabled) return null;
+            inserted.add(deviceId);
+            if (failAfterInsert) throw new RuntimeException("read back failed");
             Device d = new Device();
             d.setNumber(deviceId);
             d.setCustomerId(customerId);
@@ -95,9 +100,16 @@ public class AgentEnrollTimeTest {
             completed.add(n);
             secretHashes.put(n, hash);
             enrollTimeRecorded.add(n);
-            if (attemptHash != null) retryable.put(attemptHash, n);
+            if (attemptHash != null) {
+                retryable.put(attemptHash, n);
+                inProgress.remove(attemptHash);
+            }
             return true;
         }
+        /** Attempts whose device exists but whose enrollment hasn't completed yet. */
+        final java.util.Map<String, String> inProgress = new java.util.HashMap<>();
+        @Override public void markEnrollAttempt(String n, String attemptHash) { inProgress.put(attemptHash, n); }
+        @Override public boolean isEnrollInProgress(String attemptHash) { return inProgress.containsKey(attemptHash); }
         @Override public String findEnrollRetry(String attemptHash) { return retryable.get(attemptHash); }
         @Override public boolean reissueSecret(String n, String attemptHash, String hash) {
             if (!n.equals(retryable.get(attemptHash))) return false;
@@ -105,7 +117,10 @@ public class AgentEnrollTimeTest {
             return true;
         }
         @Override public void touchLastUpdate(String n) { retryable.values().removeIf(n::equals); }
-        @Override public void deleteUnenrolledDevice(String n) { deleted.add(n); }
+        @Override public void deleteUnenrolledDevice(String n) {
+            deleted.add(n);
+            inProgress.values().removeIf(n::equals);
+        }
         @Override public void updateDeviceSecretHash(String n, String hash) { }
         @Override public void updateDeviceCapabilities(String n, String json) { }
         @Override public void updateHardwareId(String n, String h) { }

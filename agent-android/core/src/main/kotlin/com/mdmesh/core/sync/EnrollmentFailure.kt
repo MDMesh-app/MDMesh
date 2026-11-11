@@ -46,6 +46,8 @@ object EnrollmentFailure {
                 "for them. An admin can choose a default configuration in Settings, or make the code with one."
             k.endsWith("enrollment.failed") -> "The server had a problem enrolling this device. Trying again " +
                 "automatically."
+            k.endsWith("enrollment.inProgress") -> "The server is still enrolling this device. Trying again " +
+                "automatically."
             else -> "The server refused enrollment."
         }
         return "$text ($k)"

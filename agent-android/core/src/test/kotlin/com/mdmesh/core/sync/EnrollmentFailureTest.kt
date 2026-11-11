@@ -39,9 +39,12 @@ class EnrollmentFailureTest {
     }
 
     @Test
-    fun `the retryable server error doesn't read as final`() {
-        val failed = EnrollmentFailure.forServer("error.agent.enrollment.failed")
-        finalMarkers.forEach { assertFalse(failed, failed.contains(it)) }
+    fun `the retryable server errors don't read as final`() {
+        for (key in listOf("error.agent.enrollment.failed", "error.agent.enrollment.inProgress")) {
+            val message = EnrollmentFailure.forServer(key)
+            assertTrue(message, message.contains("Trying again"))
+            finalMarkers.forEach { assertFalse(message, message.contains(it)) }
+        }
     }
 
     @Test

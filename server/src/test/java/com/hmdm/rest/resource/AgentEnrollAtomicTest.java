@@ -23,7 +23,8 @@ public class AgentEnrollAtomicTest {
 
     private final AgentEnrollTimeTest.FakeTokenDAO tokens = new AgentEnrollTimeTest.FakeTokenDAO();
     private final AgentEnrollTimeTest.FakeCommandDAO commands = new AgentEnrollTimeTest.FakeCommandDAO();
-    private final AgentResource resource = new AgentResource(new AgentEnrollTimeTest.FakeUnsecureDAO(), tokens,
+    private final AgentEnrollTimeTest.FakeUnsecureDAO unsecure = new AgentEnrollTimeTest.FakeUnsecureDAO();
+    private final AgentResource resource = new AgentResource(unsecure, tokens,
             commands, AgentEnrollTimeTest.noConfigApps(), null, null, null, null, null);
 
     private Response enroll() {
@@ -68,6 +69,17 @@ public class AgentEnrollAtomicTest {
 
         assertEquals("error.agent.enrollment.failed", r.getMessage());
         assertEquals(1, commands.deleted.size());
+        assertFalse(tokens.token.isUsed());
+    }
+
+    @Test
+    public void a_failure_reading_the_new_device_back_still_removes_it() {
+        unsecure.failAfterInsert = true;
+
+        Response r = enroll();
+
+        assertEquals("error.agent.enrollment.failed", r.getMessage());
+        assertEquals("the row inserted before the failure is removed", unsecure.inserted, commands.deleted);
         assertFalse(tokens.token.isUsed());
     }
 

@@ -113,6 +113,46 @@ public class AgentEnrollRetryTest {
     }
 
     @Test
+    public void a_retry_while_the_first_request_is_still_running_waits_instead_of_using_the_code() {
+        // The first request created its device and has not completed it yet (a slow server; the agent timed out).
+        String hash = AgentResource.enrollAttemptHash(1, ATTEMPT);
+        commands.markEnrollAttempt("dev-in-progress", hash);
+        tokens.token.setUseCount(1);
+        tokens.token.setUsed(true);
+
+        Response retry = enroll(ATTEMPT);
+
+        assertEquals("error.agent.enrollment.inProgress", retry.getMessage());
+        for (String terminal : new String[]{"token.used", "token.invalid", "token.expired", "enrollment.disabled"}) {
+            assertTrue(!retry.getMessage().contains(terminal));
+        }
+    }
+
+    @Test
+    public void a_batch_code_retry_while_the_first_is_running_takes_no_second_use() {
+        tokens.token.setMaxUses(5);
+        commands.markEnrollAttempt("dev-in-progress", AgentResource.enrollAttemptHash(1, ATTEMPT));
+
+        assertEquals("error.agent.enrollment.inProgress", enroll(ATTEMPT).getMessage());
+        assertEquals(0, tokens.token.getUseCount());
+        assertTrue(commands.completed.isEmpty());
+    }
+
+    @Test
+    public void the_new_device_carries_its_attempt_before_its_enrollment_completes() {
+        commands.completion = "throw"; // stop right after the device is created
+        enroll(ATTEMPT);
+        // It was marked (then removed with the failed enrollment).
+        assertEquals(1, commands.deleted.size());
+    }
+
+    @Test
+    public void a_resumed_enrollment_does_not_look_checked_in() {
+        String reissue = Fakes.sqlOf(AgentDeviceMapper.class, "reissueSecret").replaceAll("\\s+", " ").toLowerCase();
+        assertTrue(reissue, !reissue.contains("lastupdate"));
+    }
+
+    @Test
     public void the_attempt_is_bound_to_the_code_and_stored_hashed() {
         String hash = AgentResource.enrollAttemptHash(1, ATTEMPT);
         assertEquals(64, hash.length());
@@ -141,6 +181,12 @@ public class AgentEnrollRetryTest {
         String reissue = Fakes.sqlOf(AgentDeviceMapper.class, "reissueSecret").replaceAll("\\s+", " ").toLowerCase();
         assertTrue(reissue, reissue.contains("set agentsecrethash = #{secrethash}"));
         assertTrue(reissue, Fakes.whereOf(reissue).contains("agentenrollattempthash = #{attempthash}"));
+        String progress = Fakes.whereOf(Fakes.sqlOf(AgentDeviceMapper.class, "isEnrollInProgress"));
+        assertTrue(progress, progress.contains("agentenrollattempthash = #{attempthash}"));
+        assertTrue(progress, progress.contains("agentsecrethash is null"));
+        String mark = Fakes.sqlOf(AgentDeviceMapper.class, "markEnrollAttempt").replaceAll("\\s+", " ").toLowerCase();
+        assertTrue(mark, mark.contains("set agentenrollattempthash = #{attempthash}"));
+        assertTrue(mark, Fakes.whereOf(mark).contains("agentsecrethash is null"));
         String checkIn = Fakes.sqlOf(AgentDeviceMapper.class, "markCheckedIn").replaceAll("\\s+", " ").toLowerCase();
         assertTrue(checkIn, checkIn.contains("agentenrollattempthash = null"));
         String complete = Fakes.sqlOf(AgentDeviceMapper.class, "completeEnrollment").replaceAll("\\s+", " ").toLowerCase();

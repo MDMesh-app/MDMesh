@@ -32,6 +32,12 @@ class ManifestTest {
         assertTrue("KioskLauncherActivity must handle uiMode itself, got '$flags'", "uiMode" in flags.split('|'))
     }
 
+    /** A keyboard or barcode scanner connecting mid-entry must not recreate HOME (it would wipe a typed PIN). */
+    @Test fun `a keyboard or scanner connecting does not recreate the kiosk HOME`() {
+        val flags = component("activity", ".KioskLauncherActivity").getAttributeNS(ANDROID, "configChanges").split('|')
+        for (change in listOf("keyboard", "keyboardHidden", "navigation")) assertTrue(change, change in flags)
+    }
+
     @Test fun `the kiosk HOME keeps its launch and lock-task attributes`() {
         val kiosk = component("activity", ".KioskLauncherActivity")
         assertEquals("singleInstance", kiosk.getAttributeNS(ANDROID, "launchMode"))

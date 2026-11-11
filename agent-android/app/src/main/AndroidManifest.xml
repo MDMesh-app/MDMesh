@@ -79,10 +79,12 @@
              screens draw in the admin's kiosk colours, not the theme. An open exit dialog is rebuilt in the new
              mode (DialogSlot.onConfigurationChanged, typed PIN kept in memory); later ones open in it. Not redrawn: the plain "Exit kiosk" and "Open again" buttons keep the theme's button
              colours from the mode they were drawn in (on API 24-28 the mode the activity started in) until they
-             get their own colours; their background and text come from the same mode, so they stay legible. -->
+             get their own colours; their background and text come from the same mode, so they stay legible.
+             keyboard|keyboardHidden|navigation: a Bluetooth or USB keyboard or barcode scanner connecting (they
+             come and go as they sleep) changes nothing on screen, and must not wipe a PIN being typed. -->
         <activity
             android:name=".KioskLauncherActivity"
-            android:configChanges="uiMode"
+            android:configChanges="uiMode|keyboard|keyboardHidden|navigation"
             android:exported="true"
             android:launchMode="singleInstance"
             android:excludeFromRecents="true"

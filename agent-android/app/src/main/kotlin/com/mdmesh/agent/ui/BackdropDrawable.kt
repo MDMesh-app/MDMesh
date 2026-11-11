@@ -81,7 +81,7 @@ internal fun Activity.paintKioskBackground(
         updateSystemBarIcons(palette.background)
         return null
     }
-    val step = KioskScrim.step(palette, usable.samples)
+    val step = BackdropRules.current.dimStep(palette, usable.samples)
     root.background = BackdropDrawable(palette.background, bitmap, KioskScrim.alpha(step))
     updateSystemBarIcons(KioskScrim.blend(palette.background, usable.top, step))
     return step

@@ -110,6 +110,22 @@ class KioskBackdropStressTest : KioskHarness() {
         }
     }
 
+    @Test fun aNewImageReplacesTheOldWithoutRecyclingWhatWasDrawn() {
+        cache()
+        launch(withImage(grid))
+        val old = backdrop()!!
+        val other = Bitmap.createBitmap(32, 32, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.rgb(30, 120, 200)) }
+        val bytes = ByteArrayOutputStream().also { other.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+        val otherHash = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        File(app.filesDir, "kiosk-background/$otherHash.image").writeBytes(bytes)
+        saveKiosk(grid.copy(theme = KioskThemeDto(backgroundImage = KioskBackgroundImageDto(image.url, otherHash))))
+        settle()
+        assertTrue("the new image is drawn", backdrop()!!.bitmap !== old.bitmap)
+        assertFalse("the old bitmap is never recycled under a drawable", old.bitmap.isRecycled)
+        // Drawing the old drawable (still possibly on a frame in flight) must not throw.
+        old.draw(android.graphics.Canvas(Bitmap.createBitmap(10, 10, Bitmap.Config.ARGB_8888)))
+    }
+
     @Test fun aNewUrlForTheSameImageChangesNothing() {
         cache()
         launch(withImage(single))

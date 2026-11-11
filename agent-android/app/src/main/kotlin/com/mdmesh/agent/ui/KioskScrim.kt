@@ -117,6 +117,36 @@ object KioskScrim {
     private const val BLUE = 0
 }
 
+/**
+ * How the launcher stays readable over a background image: one dim of the background colour over all of it, then a
+ * plate behind each text that still needs one. One rule at a time ([BackdropRules.current]); the shared spec
+ * (`docs/kiosk-background-scrim.md`, with the console's preview and the vectors) says which, and swapping it changes
+ * nothing else.
+ */
+interface BackdropRule {
+    /** The dim (0..[KioskScrim.STEPS]) of the background over the whole image, from its [samples]. */
+    fun dimStep(palette: KioskPalette, samples: IntArray): Int
+
+    /**
+     * The plate (0..[KioskScrim.STEPS], 0: none) behind one text in [colour] over pixels within [box] (composited
+     * over [background]), seen through the dim at [dimStep].
+     */
+    fun plateStep(colour: Int, background: Int, box: ColourBox, dimStep: Int): Int
+}
+
+/** Spec version 2: the scrim alone brings text to 4.5:1 over 98 % of the samples; plates take the rest. */
+object ScrimRuleV2 : BackdropRule {
+    override fun dimStep(palette: KioskPalette, samples: IntArray): Int = KioskScrim.step(palette, samples)
+
+    override fun plateStep(colour: Int, background: Int, box: ColourBox, dimStep: Int): Int =
+        KioskScrim.plateStep(colour, background, box, dimStep)
+}
+
+object BackdropRules {
+    /** The rule the launcher draws with. */
+    val current: BackdropRule = ScrimRuleV2
+}
+
 /** The per-channel range of some opaque colours: [min] holds each channel's lowest value, [max] each highest. */
 data class ColourBox(val min: Int, val max: Int) {
 

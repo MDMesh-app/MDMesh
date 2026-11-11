@@ -126,7 +126,8 @@ object TextPlates {
             val empty = rect.isEmpty
             rect.offset(x, y)
             val box = info.box(root.width, root.height, rect)
-            plate.step = if (empty) 0 else KioskScrim.plateStep(view.currentTextColor, background, box, scrimStep)
+            val rule = BackdropRules.current
+            plate.step = if (empty) 0 else rule.plateStep(view.currentTextColor, background, box, scrimStep)
         }
     }
 

@@ -128,6 +128,8 @@ class KioskLauncherActivity : ComponentActivity() {
     }
 
     private fun applyState(p: KioskApplyPayload?) {
+        // Taken first, whatever is shown next: a dialog from before a recreation comes back on this state or never.
+        val restored = dialogs.takeRestored()
         val previous = active
         active = p
         if (p == null) {
@@ -139,12 +141,9 @@ class KioskLauncherActivity : ComponentActivity() {
         }
         // Pin first: a held device (a loop that tripped just before a reboot) is still in kiosk.
         startLockTaskSafely()
-        if (returns.onApplied(changed = previous != null && previous != p) == KioskReturnPolicy.Action.HOLD) {
-            hold(p)
-            return
-        }
-        show(p)
-        reopenExitDialog(p)
+        val action = returns.onApplied(changed = previous != null && previous != p)
+        val screen = if (action == KioskReturnPolicy.Action.HOLD) hold(p) else show(p)
+        KioskExitDialogs.reopenOn(screen, restored)?.let { reopenExitDialog(it, p) }
     }
 
     /**
@@ -152,38 +151,41 @@ class KioskLauncherActivity : ComponentActivity() {
      * the PIN check and the lockout stay where they are ([ExitPinGate] persists them), an expired lockout isn't shown,
      * and a kiosk whose exit PIN was removed meanwhile gets no PIN prompt.
      */
-    private fun reopenExitDialog(p: KioskApplyPayload) {
-        when (dialogs.takeRestored()) {
-            DIALOG_PIN -> promptExit(p)
-            DIALOG_LOCKED -> pinGate.remainingLockMs()?.let(::showExitLocked)
+    private fun reopenExitDialog(tag: String, p: KioskApplyPayload) {
+        when (tag) {
+            KioskExitDialogs.PIN -> promptExit(p)
+            KioskExitDialogs.LOCKED -> pinGate.remainingLockMs()?.let(::showExitLocked)
         }
     }
 
-    private fun show(p: KioskApplyPayload) {
+    private fun show(p: KioskApplyPayload): LauncherScreen {
         holding = false
-        if (p.mode == "single" && p.pinPackage != null) {
+        return if (p.mode == "single" && p.pinPackage != null) {
             launchPinned(p)
         } else {
             setScreen(launcherGrid(p))
+            LauncherScreen.GRID
         }
     }
 
     /** Launch + show the pinned app (single mode), with a themed splash behind it. */
-    private fun launchPinned(p: KioskApplyPayload) {
+    private fun launchPinned(p: KioskApplyPayload): LauncherScreen {
         val intent = p.pinPackage?.let { packageManager.getLaunchIntentForPackage(it) }
         if (intent == null) {
             setScreen(launcherGrid(p)) // unknown package → fall back to the grid
-            return
+            return LauncherScreen.GRID
         }
         setScreen(splashView(p))
         runCatching { startActivity(intent) }
+        return LauncherScreen.PINNED_APP
     }
 
     /** The app closed too often: stay in kiosk on the hold screen, without reopening it. */
-    private fun hold(p: KioskApplyPayload) {
+    private fun hold(p: KioskApplyPayload): LauncherScreen {
         if (!holding) events.record("kioskCrashLoop", "kiosk app closed repeatedly; kiosk stays on, app not reopened")
         holding = true
         setScreen(holdView(p))
+        return LauncherScreen.HOLD
     }
 
     private fun startLockTaskSafely() {
@@ -206,7 +208,7 @@ class KioskLauncherActivity : ComponentActivity() {
         // No PIN, no on-device exit (the affordance isn't shown either): kiosk then ends only from the console.
         if (!pinGate.isAvailable(p.password)) return
         pinGate.remainingLockMs()?.let { showExitLocked(it); return }
-        dialogs.show(DIALOG_PIN, ExitPinDialog.create(this, ::onPinEntered).dialog)
+        dialogs.show(KioskExitDialogs.PIN, ExitPinDialog.create(this, ::onPinEntered).dialog)
     }
 
     /**
@@ -246,7 +248,7 @@ class KioskLauncherActivity : ComponentActivity() {
             confirm = getString(R.string.action_ok),
             icon = R.drawable.ic_v2_lock,
         )
-        dialogs.show(DIALOG_LOCKED, MdmDialog.create(this, spec) { it.dismiss() })
+        dialogs.show(KioskExitDialogs.LOCKED, MdmDialog.create(this, spec) { it.dismiss() })
     }
 
     private fun doExit() {
@@ -463,8 +465,6 @@ class KioskLauncherActivity : ComponentActivity() {
         const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         const val GESTURE_TAPS = 7
         const val GESTURE_WINDOW_MS = 3_000L
-        const val DIALOG_PIN = "pin"
-        const val DIALOG_LOCKED = "locked"
         val INK = Color.parseColor("#0E1117")
         val TEXT = Color.parseColor("#E8EEF4")
         val MUTED = Color.parseColor("#8693A4")

@@ -34,15 +34,24 @@ class DialogSlot(private val key: String) {
     }
 
     fun save(outState: Bundle) {
-        // A dialog not yet reopened (recreated again before the activity got to it) is still open as far as the
-        // user is concerned.
-        (current?.first ?: restored)?.let { outState.putString(key, it) }
+        savedTag()?.let { outState.putString(key, it) }
     }
 
-    fun restore(savedInstanceState: Bundle?) {
-        restored = savedInstanceState?.getString(key)
-    }
+    fun restore(savedInstanceState: Bundle?) = restoreTag(savedInstanceState?.getString(key))
 
-    /** The tag of the dialog that was open before the activity was recreated, once; null if none. */
+    /**
+     * The tag of the dialog that was open before the activity was recreated, handed back once; null if none. Once
+     * taken it's gone: the activity either reopens the dialog (then it's [showing] again) or drops it for good.
+     */
     fun takeRestored(): String? = restored.also { restored = null }
+
+    /**
+     * What [save] writes: the dialog showing, or one restored but not yet taken (recreated again before the
+     * activity got to it, so still open as far as the user is concerned).
+     */
+    internal fun savedTag(): String? = current?.first ?: restored
+
+    internal fun restoreTag(tag: String?) {
+        restored = tag
+    }
 }

@@ -39,7 +39,8 @@ New
   and rollouts; the Devices list's Wiped filter shows it (thanks @Przemek-Magic).
 - Sync now and console commands say when the device isn't connected and will get it at its next check-in.
 - Agent: its dialogs (Return to kiosk, Exit kiosk, Exit locked) follow the device's light or dark setting and use
-  the console's look, the same on every phone. They stay open when the device is rotated. Needs agent 0.5.0.
+  the console's look, the same on every phone. An open dialog comes back after the device is rotated, unless
+  kiosk was turned off meanwhile. Needs agent 0.5.0.
 - Agent: Exit kiosk is easier to use. A wrong PIN shows in the dialog, which stays open and says how many tries are
   left before the exit locks; the PIN can be shown while typing. Needs agent 0.5.0.
 - Agent: its notifications have sharp MDMesh status bar icons, and its app icon follows themed icons on Android 13

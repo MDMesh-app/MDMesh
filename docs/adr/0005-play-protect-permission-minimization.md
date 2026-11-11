@@ -2,6 +2,12 @@
 
 **Status:** Accepted (2026-06-21)
 
+**Amended (2026-11-11):** the agent as built does not fully follow this. Since the first public release (v0.1,
+2026-06-25) the sideloaded `:app` requests `QUERY_ALL_PACKAGES` (a Device Owner agent manages arbitrary packages; a
+Play build would have to scope it), and `READ_PHONE_STATE` / `READ_PHONE_NUMBERS` for telemetry (never identity, see
+ADR 0003). `:app` always includes `:remote`, so the accessibility service is in every APK, shipped disabled. The
+manifest (`agent-android/app/src/main/AndroidManifest.xml`) is the current position.
+
 ## Context
 
 The loudest, worsening signal in hmdm's 2026 issue tracker is **Google Play Protect blocking

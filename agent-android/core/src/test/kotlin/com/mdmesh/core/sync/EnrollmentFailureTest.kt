@@ -78,11 +78,10 @@ class EnrollmentFailureTest {
             javax.net.ssl.SSLException("Hostname mdm.acme.test not verified") to "certificate is for a different name",
             javax.net.ssl.SSLException("Connection reset by peer") to
                 "If this Wi-Fi asks you to sign in, sign in first",
-            UnknownServiceException("protocol not supported") to
-                "Enrollment didn't go through (UnknownServiceException",
+            UnknownServiceException("protocol not supported") to EnrollmentFailure.UNEXPECTED,
             http(502) to "has a problem (HTTP 502)",
             SerializationException("Unexpected JSON token") to "didn't come from an MDMesh server",
-            IllegalStateException("boom") to "Enrollment didn't go through (IllegalStateException: boom)",
+            IllegalStateException("boom at https://internal.example/x") to EnrollmentFailure.UNEXPECTED,
         )
         cases.forEach { (t, expected) ->
             val message = network(t)

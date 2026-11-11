@@ -72,10 +72,8 @@ class EnrollmentManagerTest {
             manager(FakeIdentity(), api).ensureEnrolled()
             fail("expected EnrollmentException")
         } catch (e: EnrollmentException) {
-            assertEquals(
-                "Enrollment didn't go through (IllegalStateException: bug). Trying again automatically.",
-                e.message,
-            )
+            assertEquals("Enrollment didn't go through. Trying again automatically.", e.message)
+            assertFalse("no internal detail on screen", e.message!!.contains("bug"))
             assertTrue("the cause is kept for the log", e.cause === bug)
             listOf("token.used", "token.invalid", "token.expired", "enrollment.disabled").forEach {
                 assertFalse("retryable: $it", e.message!!.contains(it))
@@ -93,7 +91,8 @@ class EnrollmentManagerTest {
                 .ensureEnrolled()
             fail("expected EnrollmentException")
         } catch (e: EnrollmentException) {
-            assertTrue(e.message, e.message!!.startsWith("Enrollment didn't go through (IllegalArgumentException"))
+            assertEquals(EnrollmentFailure.UNEXPECTED, e.message)
+            assertTrue("kept for the log", e.cause is IllegalArgumentException)
         }
     }
 

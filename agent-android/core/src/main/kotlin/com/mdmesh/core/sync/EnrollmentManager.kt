@@ -53,8 +53,8 @@ class EnrollmentManager @Inject constructor(
     /**
      * The enrollment boundary: every failure leaves here as an [EnrollmentException] whose message is for the person
      * holding the device (the agent's screen shows it while it isn't enrolled) and which the callers log and retry; an
-     * unexpected one reads "Enrollment didn't go through (…). Trying again automatically." Cancellation and VM errors
-     * pass through unchanged.
+     * unexpected one reads "Enrollment didn't go through. Trying again automatically." (its type and message stay
+     * in the exception's cause, for the log). Cancellation and VM errors pass through unchanged.
      */
     private suspend fun enroll(): String = runCatching { enrollOnce() }.getOrElse { throw asEnrollmentFailure(it) }
 

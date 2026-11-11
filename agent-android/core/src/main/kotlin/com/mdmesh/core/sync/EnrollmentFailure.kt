@@ -62,7 +62,9 @@ object EnrollmentFailure {
      */
     fun forException(t: Throwable, host: String?, now: Long = System.currentTimeMillis()): String {
         val failure = Failure(t, host?.takeIf { it.isNotBlank() }?.let { "the server $it" } ?: "the server", now)
-        return rules.firstOrNull { it.matches(failure) }?.words?.invoke(failure) ?: unexpected(t)
+        // A failure no rule names gets a plain sentence: its type and message can carry internal details and mean
+        // nothing to the person holding the device. The EnrollmentException keeps it as its cause, for the log.
+        return rules.firstOrNull { it.matches(failure) }?.words?.invoke(failure) ?: UNEXPECTED
     }
 
     /** What failed, for the rules: [server] is "the server <host>" or "the server". */
@@ -127,9 +129,9 @@ object EnrollmentFailure {
         else -> "${f.serverCap} refused the request (HTTP $code). Trying again automatically."
     }
 
-    private fun unexpected(t: Throwable): String =
-        "Enrollment didn't go through (${t.javaClass.simpleName}" + (t.message?.let { ": $it" } ?: "") +
-            "). Trying again automatically."
+
+    /** What the device shows for a failure none of the rules names. */
+    const val UNEXPECTED = "Enrollment didn't go through. Trying again automatically."
 
     private const val HTTP_NOT_FOUND = 404
     private const val HTTP_SERVER_ERROR = 500

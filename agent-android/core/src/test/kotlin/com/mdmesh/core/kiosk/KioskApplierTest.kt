@@ -217,12 +217,13 @@ class KioskApplierTest {
         assertTrue("the agent stays HOME", h.log.isEmpty())
     }
 
-    @Test fun `a non-forced failed exit leaves state and volume alone`() = runTest {
+    @Test fun `a non-forced failed exit keeps the state and never releases the volume lock`() = runTest {
         val c = FakeController(KioskResult.Ok, exitResult = KioskResult.Failed("dpm"))
         val store = InMemoryKioskStateStore()
         store.save(KioskApplyPayload(features = KioskFeaturesDto(lockVolume = true)))
         assertEquals(KioskResult.Failed("dpm"), KioskApplier(c, store, FakeHome(), home) { true }.exit())
-        assertTrue(c.volume.isEmpty())
+        // The kiosk is locked again as it is (review 4, N1), its volume lock re-asserted, never lifted.
+        assertFalse(false in c.volume)
         assertNotNull(store.load())
     }
 
@@ -524,5 +525,35 @@ class KioskApplierTest {
             false
         }.exit(force = true)
         assertEquals(7L, begun.single().boot)
+    }
+
+    // --- Review 4 (N1-N3): an unsettled exit ends in kiosk or with HOME released; a failed relock is retried ---
+
+    @Test fun `an unforced exit refused partway locks the saved kiosk again`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+        val partial = FakeController(KioskResult.Ok, exitResult = KioskResult.Failed("features"))
+        val r = applier(partial, store, j = j, configuredOn = false).exit()
+        assertEquals(KioskResult.Failed("features"), r)
+        assertEquals("relocked to the saved kiosk", listOf(listOf("com.a")), partial.enters)
+        assertEquals(kioskA, store.load())
+        assertNull(j.saved)
+    }
+
+    @Test fun `dropping an entry with no kiosk saved releases HOME`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore()
+        j.saved = ExitJournal.Pending(true, true, ExitJournal.fingerprint(kioskA), failed = true)
+        val h = FakeHome()
+        assertFalse(applier(store = store, h = h, j = j, configuredOn = false).resumeInterruptedExit())
+        assertEquals(listOf("claim:false"), h.log)
+        assertNull(j.saved)
+    }
+
+    @Test fun `a relock that fails keeps an entry, so the next start tries again`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+        j.saved = ExitJournal.Pending(true, true, ExitJournal.fingerprint(kioskA), attempts = 1)
+        val c = FakeController(KioskResult.Ok).apply { failFor = listOf("com.a") }
+        assertFalse(applier(c, store, j = j, configuredOn = false).resumeInterruptedExit())
+        assertEquals(true, j.saved?.failed)
+        assertEquals(ExitJournal.fingerprint(kioskA), j.saved?.kiosk)
     }
 }

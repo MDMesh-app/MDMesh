@@ -172,7 +172,10 @@ class KioskApplier(
     private suspend fun exitSteps(handBackHome: Boolean, force: Boolean): KioskResult {
         val r = kiosk.exit()
         if (r != KioskResult.Ok && !force) {
-            withContext(io) { journal.end() } // refused: nothing changed, nothing to finish later
+            // Refused, but maybe partway (the allowlist already dropped when a later step failed): settle in kiosk
+            // by locking the saved kiosk again, so the device is in the kiosk its state says.
+            val saved = store.load()
+            if (saved != null) relock(saved, "exit refused") else withContext(io) { journal.end() }
             return r
         }
         kiosk.setVolumeLocked(false) // best effort: lift the kiosk's volume lock (and its mute)
@@ -217,6 +220,9 @@ class KioskApplier(
                 if (saved != null) {
                     relock(saved, "entry not for the kiosk saved now, or unreadable")
                 } else {
+                    // The state is already cleared: release HOME too, as a finished exit would (no kiosk to keep),
+                    // unless the configuration sets a kiosk, whose re-apply then claims it again anyway.
+                    if (!desiredKioskOn()) home.setClaimEnabled(false)
                     warn("interrupted kiosk exit dropped: no kiosk saved")
                     journal.end()
                 }
@@ -239,7 +245,10 @@ class KioskApplier(
         if (r == KioskResult.Ok) {
             warn("interrupted kiosk exit not finished ($why): kiosk locked again")
         } else {
-            warn("interrupted kiosk exit not finished ($why), and locking the kiosk again failed: $r")
+            // The device may be half out of kiosk: keep a (failed) entry so the next start tries the relock again.
+            val retry = ExitJournal.Pending(true, false, ExitJournal.fingerprint(saved), boot = bootId(), failed = true)
+            withContext(io) { journal.begin(retry) }
+            warn("kiosk exit not finished ($why), and locking the kiosk again failed: $r; tried again at next start")
         }
     }
 

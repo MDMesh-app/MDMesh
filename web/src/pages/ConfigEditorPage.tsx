@@ -717,6 +717,7 @@ function Editor({
           colours={kioskColours(draft.backgroundColor as string | undefined, draft.textColor as string | undefined)}
           appNames={kioskAppNames}
           exitVisible={draft.kioskExit === true}
+          iconSize={draft.iconSize as string | undefined}
         />
       ) : undefined}
     >

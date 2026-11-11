@@ -1,33 +1,85 @@
-// The kiosk background image's preview: the launcher on common screen shapes over the image as the agent draws it
-// (centre crop, then the adaptive scrim), with the text contrast it reaches. Same scrim function as the agent:
-// data/kioskScrim.ts, docs/kiosk-background-scrim.md.
-import { useEffect, useId, useMemo, useState, type CSSProperties } from 'react';
-import { TEXT_MIN, sampleCrop, scrimFor, toHex, type KioskColours, type Scrim } from '../../data/kioskScrim';
-import { Callout, IconCheckSmall, IconCrossSmall, IconInfo, IconWarning } from '../../ui';
+// The kiosk background image's preview: the launcher over the image as the agent draws it (centre crop, a light dim
+// for the Exit button, a plate behind each text that needs one), in one large view at device scale with Phone/Tablet
+// and Rotate, and four thumbnails that select it. Same rules and functions as the agent: data/kioskScrim.ts,
+// data/kioskLauncherLayout.ts, docs/kiosk-background-scrim.md (version 3).
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react';
+import { browserMeasure, launcherLayout, PLATE_RADIUS, type LauncherLayout, type Measure } from '../../data/kioskLauncherLayout';
+import {
+  CONTROL_MIN,
+  DIM_MAX_STEP,
+  SCRIM_STEPS,
+  TEXT_MIN,
+  kioskLegibility,
+  readImageCells,
+  toHex,
+  type Box,
+  type KioskColours,
+  type Legibility,
+} from '../../data/kioskScrim';
+import { Button, Callout, IconCheckSmall, IconCrossSmall, IconInfo, IconSync, IconWarning, Segmented } from '../../ui';
 import './KioskPreview.css';
 
-/** Screen shapes the preview shows: width and height in the shape's proportions, and the short side in dp. */
-export const PREVIEW_SHAPES = [
-  { id: 'phone-portrait', label: 'Phone, portrait', w: 9, h: 19.5, dp: 360 },
-  { id: 'phone-landscape', label: 'Phone, landscape', w: 19.5, h: 9, dp: 360 },
-  { id: 'tablet-landscape', label: 'Tablet 4:3, landscape', w: 4, h: 3, dp: 768 },
-  { id: 'tablet-portrait', label: 'Tablet 16:10, portrait', w: 10, h: 16, dp: 800 },
-] as const;
+/** The devices the preview shows, by their short and long side in dp. */
+export const DEVICES = {
+  phone: { label: 'Phone', short: 360, long: 780 },
+  tablet43: { label: 'Tablet 4:3', short: 768, long: 1024 },
+  tablet1610: { label: 'Tablet 16:10', short: 800, long: 1280 },
+} as const;
+export type Model = keyof typeof DEVICES;
+export type Orientation = 'portrait' | 'landscape';
+export interface View {
+  model: Model;
+  orientation: Orientation;
+}
 
-/** Above this the image is flagged as one the launcher has to dim a lot. */
-export const BUSY_ALPHA = 0.6;
+/** The four thumbnails under the large view. */
+export const THUMBNAILS: readonly View[] = [
+  { model: 'phone', orientation: 'portrait' },
+  { model: 'phone', orientation: 'landscape' },
+  { model: 'tablet43', orientation: 'landscape' },
+  { model: 'tablet1610', orientation: 'portrait' },
+];
+
+const ALL_VIEWS: readonly View[] = (Object.keys(DEVICES) as Model[]).flatMap((model) =>
+  (['portrait', 'landscape'] as const).map((orientation) => ({ model, orientation })),
+);
+
+export const viewKey = (v: View) => `${v.model}-${v.orientation}`;
+export const viewLabel = (v: View) => `${DEVICES[v.model].label}, ${v.orientation}`;
+export function viewWindow(v: View): { w: number; h: number } {
+  const d = DEVICES[v.model];
+  return v.orientation === 'portrait' ? { w: d.short, h: d.long } : { w: d.long, h: d.short };
+}
+
 /** An image with a shorter short edge may look soft on a large tablet. */
 const SOFT_EDGE = 1080;
+/** The turn's length; none when the viewer prefers reduced motion. */
+export const ROTATE_MS = 320;
+/** Thumbnails are this tall (px); their width follows the shape. */
+const THUMB_HEIGHT = 132;
+const LARGE_MAX_HEIGHT = 520;
 
 const ratioText = (r: number) => (Number.isFinite(r) ? `${(Math.floor(r * 10) / 10).toFixed(1)}:1` : 'n/a');
-/* ---------------------------------------------------------------------------------------------------------------
-   The previewer
-   --------------------------------------------------------------------------------------------------------------- */
 
-/** null scrim: the browser couldn't read the pixels; `loaded` false: the image didn't load. */
-type ShapeResult = { scrim: Scrim | null; loaded: boolean };
+/** What a view reads: text contrast (with plates) and the dim. */
+export function readout(l: Legibility): { text: string; dim: string; pass: boolean } {
+  const pass = l.textRatio >= TEXT_MIN;
+  const text = `Text ${ratioText(l.textRatio)} ${pass ? 'Pass' : 'Fail'}${l.onPlate ? ' (on plate)' : ''}`;
+  const dim = l.dim === 0 ? 'Image not dimmed' : `Image dimmed ${Math.round((l.dim / SCRIM_STEPS) * 100)}%`;
+  return { text, dim, pass };
+}
 
-/** The kiosk launcher on common screen shapes, over the image as the agent draws it. */
+type Measured = { kind: 'ok'; legibility: Legibility } | { kind: 'unreadable' } | { kind: 'unloaded' };
+
+function prefersReducedMotion(): boolean {
+  try {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
+}
+
+/** The kiosk launcher over the image, as the agent draws it. */
 export function KioskBackgroundPreview({
   src,
   width,
@@ -35,7 +87,9 @@ export function KioskBackgroundPreview({
   colours,
   appNames,
   exitVisible,
+  iconSize,
   loadImage = defaultLoadImage,
+  measure,
 }: {
   src: string;
   width: number;
@@ -43,68 +97,216 @@ export function KioskBackgroundPreview({
   colours: KioskColours;
   appNames: readonly string[];
   exitVisible: boolean;
+  iconSize?: string | null;
   /** Loads the image for sampling; tests pass their own (jsdom has no canvas). */
   loadImage?: (src: string) => Promise<HTMLImageElement | null>;
+  /** Text widths in dp; the browser's font by default. */
+  measure?: Measure;
 }) {
   const headingId = useId();
-  const [results, setResults] = useState<Record<string, ShapeResult> | null>(null);
+  const [view, setView] = useState<View>(THUMBNAILS[0]);
+  const [lastTablet, setLastTablet] = useState<Model>('tablet43');
+  const [turning, setTurning] = useState(false);
+  const [measured, setMeasured] = useState<Record<string, Measured> | null>(null);
+  const measureFn = useMemo(() => measure ?? browserMeasure(), [measure]);
+  const apps = useMemo(() => (appNames.length ? appNames.slice(0, 24) : ['Camera', 'Notes', 'Browser', 'Scanner']), [appNames]);
+
+  const layouts = useMemo(() => {
+    const out: Record<string, LauncherLayout> = {};
+    for (const v of ALL_VIEWS) out[viewKey(v)] = launcherLayout(viewWindow(v), apps, { iconSize, exitVisible }, measureFn);
+    return out;
+  }, [apps, iconSize, exitVisible, measureFn]);
 
   useEffect(() => {
     let cancelled = false;
-    setResults(null);
+    setMeasured(null);
     loadImage(src).then((img) => {
       if (cancelled) return;
-      const out: Record<string, ShapeResult> = {};
-      for (const s of PREVIEW_SHAPES) {
-        const samples = img ? sampleCrop(img, img.naturalWidth || width, img.naturalHeight || height, s.w, s.h, colours.background) : null;
-        out[s.id] = { scrim: samples ? scrimFor(samples, colours) : null, loaded: img != null };
+      const out: Record<string, Measured> = {};
+      const cells = img ? readImageCells(img, img.naturalWidth || width, img.naturalHeight || height, colours.background) : null;
+      for (const v of ALL_VIEWS) {
+        const key = viewKey(v);
+        out[key] = !img
+          ? { kind: 'unloaded' }
+          : cells
+            ? { kind: 'ok', legibility: kioskLegibility(cells, viewWindow(v), colours, layouts[key].elements) }
+            : { kind: 'unreadable' };
       }
-      setResults(out);
+      setMeasured(out);
     });
     return () => {
       cancelled = true;
     };
-  }, [src, width, height, colours.background, colours.text, colours.secondary, loadImage]);
+  }, [src, width, height, colours, layouts, loadImage]);
 
-  const scrims = results ? Object.values(results).map((r) => r.scrim) : [];
-  const known = scrims.filter((s): s is Scrim => s != null);
-  const maxAlpha = known.length ? Math.max(...known.map((s) => s.alpha)) : 0;
-  const apps = appNames.length ? appNames.slice(0, 8) : ['Camera', 'Notes', 'Browser', 'Scanner'];
+  const turnTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(turnTimer.current), []);
+
+  const rotate = () => {
+    if (turning) return;
+    const next: View = { ...view, orientation: view.orientation === 'portrait' ? 'landscape' : 'portrait' };
+    if (prefersReducedMotion()) {
+      setView(next);
+      return;
+    }
+    setTurning(true);
+    turnTimer.current = window.setTimeout(() => {
+      setView(next);
+      setTurning(false);
+    }, ROTATE_MS);
+  };
+
+  const select = (v: View) => {
+    window.clearTimeout(turnTimer.current);
+    setTurning(false);
+    if (v.model !== 'phone') setLastTablet(v.model);
+    setView(v);
+  };
+
+  const [thumbList, thumbsWidth] = useWidth<HTMLUListElement>();
+  // Same height for all four, low enough that the widest (phone landscape) fits the row with its button padding.
+  const thumbHeight = Math.min(THUMB_HEIGHT, Math.floor(((thumbsWidth - 16) * DEVICES.phone.short) / DEVICES.phone.long));
+  const key = viewKey(view);
+  const current = measured?.[key];
+  const big = current?.kind === 'ok' ? readout(current.legibility) : null;
+  const exitWeak = measured
+    ? THUMBNAILS.some((t) => {
+        const m = measured[viewKey(t)];
+        return m?.kind === 'ok' && m.legibility.dim === DIM_MAX_STEP && (m.legibility.plates.exit?.ratio ?? Infinity) < CONTROL_MIN;
+      })
+    : false;
+  const status = (m: Measured | undefined) =>
+    !m
+      ? 'Measuring…'
+      : m.kind === 'unloaded'
+        ? 'The image could not be loaded to measure it'
+        : m.kind === 'unreadable'
+          ? 'Contrast unavailable in this browser'
+          : null;
 
   return (
     <details className="v2-kbg__preview" open>
       <summary id={headingId}>Preview on devices</summary>
       <p className="v2-kbg__lede">
-        The image fills the screen, cropped at the centre. The launcher lays its background color over it just enough
-        for text to reach {TEXT_MIN}:1.
+        The image fills the screen, cropped at the centre. Text sits on a plate of the background color where the image
+        behind it is too bright or busy (solid over texture), and the image is dimmed by at most 30% for the Exit button.
       </p>
-      {known.length && maxAlpha > BUSY_ALPHA ? (
-        <Callout tone="warn" icon={<IconWarning size={16} />}>
-          This image is busy or bright behind the text, so the launcher dims it by up to {Math.round(maxAlpha * 100)}%. A
-          calmer or darker image keeps more of it visible.
-        </Callout>
-      ) : null}
       {Math.min(width, height) < SOFT_EDGE ? (
         <Callout tone="info" icon={<IconInfo size={16} />}>
           The image is {Math.min(width, height)} px on its short side, so it may look soft on large tablets.
         </Callout>
       ) : null}
-      <ul className="v2-kbg__shapes" aria-labelledby={headingId}>
-        {PREVIEW_SHAPES.map((s) => (
-          <li key={s.id} className="v2-kbg__slot" style={{ '--kbg-w': s.w, '--kbg-h': s.h, '--kbg-dp': s.dp } as CSSProperties}>
-            <ShapePreview
-              shape={s}
-              src={src}
-              colours={colours}
-              scrim={results ? results[s.id].scrim : undefined}
-              loaded={results ? results[s.id].loaded : true}
-              apps={apps}
-              exitVisible={exitVisible}
-            />
-          </li>
-        ))}
+      {exitWeak ? (
+        <Callout tone="warn" icon={<IconWarning size={16} />}>
+          The image is too bright behind the Exit button for it to stand out at 3:1, even dimmed 30%. A calmer or
+          darker image at the bottom of the screen helps.
+        </Callout>
+      ) : null}
+      <div className="v2-kbg__toolbar">
+        <Segmented
+          aria-label="Device"
+          size="sm"
+          options={[
+            { value: 'phone', label: 'Phone' },
+            { value: 'tablet', label: 'Tablet' },
+          ]}
+          value={view.model === 'phone' ? 'phone' : 'tablet'}
+          onChange={(v) => select({ model: v === 'phone' ? 'phone' : lastTablet, orientation: view.orientation })}
+        />
+        <Button
+          size="sm"
+          onClick={rotate}
+          disabled={turning}
+          aria-label={`Rotate to ${view.orientation === 'portrait' ? 'landscape' : 'portrait'}`}
+        >
+          <IconSync size={14} /> Rotate
+        </Button>
+      </div>
+      <LargeScreen
+        view={view}
+        turning={turning}
+        layout={layouts[key]}
+        legibility={current?.kind === 'ok' ? current.legibility : null}
+        src={src}
+        colours={colours}
+      />
+      <p className="v2-kbg__large-readout" aria-live="polite">
+        <span className="v2-kbg__shape-name">{viewLabel(view)}</span>
+        {big ? (
+          <>
+            <Readout r={big} />
+            <span className="v2-kbg__meta">{big.dim}</span>
+          </>
+        ) : (
+          <span className="v2-kbg__readout">{status(current)}</span>
+        )}
+      </p>
+      <ul ref={thumbList} className="v2-kbg__thumbs" aria-label="Screen shapes">
+        {THUMBNAILS.map((t) => {
+          const m = measured?.[viewKey(t)];
+          const r = m?.kind === 'ok' ? readout(m.legibility) : null;
+          return (
+            <li key={viewKey(t)}>
+              <button
+                type="button"
+                className="v2-kbg__thumb-button"
+                aria-pressed={viewKey(t) === key}
+                aria-label={`${viewLabel(t)}${r ? `: ${r.text}, ${r.dim}` : ''}`}
+                onClick={() => select(t)}
+              >
+                <ScaledScreen
+                  layout={layouts[viewKey(t)]}
+                  legibility={m?.kind === 'ok' ? m.legibility : null}
+                  src={src}
+                  colours={colours}
+                  scale={thumbHeight / viewWindow(t).h}
+                />
+                <span className="v2-kbg__caption" aria-hidden="true">
+                  <span className="v2-kbg__shape-name">{viewLabel(t)}</span>
+                  {r ? (
+                    <>
+                      <Readout r={r} />
+                      <span className="v2-kbg__meta">{r.dim}</span>
+                    </>
+                  ) : (
+                    <span className="v2-kbg__readout">{status(m)}</span>
+                  )}
+                </span>
+              </button>
+            </li>
+          );
+        })}
       </ul>
+      <p className="v2-kbg__footnote">Text contrast is the worst case: against every pixel under each text.</p>
     </details>
+  );
+}
+
+/** The width of an element as laid out (640 until known, e.g. in jsdom). */
+function useWidth<T extends HTMLElement>(): [RefObject<T | null>, number] {
+  const ref = useRef<T>(null);
+  const [width, setWidth] = useState(640);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => {
+      const w = el.getBoundingClientRect().width;
+      if (w > 0) setWidth(w);
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, width];
+}
+
+function Readout({ r }: { r: { text: string; pass: boolean } }) {
+  return (
+    <span className={`v2-kbg__readout ${r.pass ? 'is-pass' : 'is-fail'}`}>
+      {r.pass ? <IconCheckSmall size={14} /> : <IconCrossSmall size={14} />}
+      <span>{r.text}</span>
+    </span>
   );
 }
 
@@ -118,83 +320,113 @@ function defaultLoadImage(src: string): Promise<HTMLImageElement | null> {
   });
 }
 
-function ShapePreview({
-  shape,
+/** The large view: scaled to fit the available width (and a maximum height), turning on Rotate. */
+function LargeScreen({
+  view,
+  turning,
+  layout,
+  legibility,
   src,
   colours,
-  scrim,
-  loaded,
-  apps,
-  exitVisible,
 }: {
-  shape: (typeof PREVIEW_SHAPES)[number];
+  view: View;
+  turning: boolean;
+  layout: LauncherLayout;
+  legibility: Legibility | null;
   src: string;
   colours: KioskColours;
-  /** undefined: still measuring; null: the browser couldn't read the pixels. */
-  scrim: Scrim | null | undefined;
-  /** False: the image didn't load, so nothing could be measured. */
-  loaded: boolean;
-  apps: readonly string[];
-  exitVisible: boolean;
 }) {
-  const alpha = scrim?.alpha ?? 0;
-  const pass = scrim ? scrim.ratio >= TEXT_MIN : null;
-  const description = scrim
-    ? `${shape.label}: the image cropped at the centre, dimmed ${Math.round(alpha * 100)}%, text contrast ${ratioText(scrim.ratio)}`
-    : `${shape.label}: the image cropped at the centre`;
-  const style = useMemo(
-    () => ({
-      '--kbg-bg': toHex(colours.background),
-      '--kbg-text': toHex(colours.text),
-      '--kbg-scrim': String(alpha),
-    }) as CSSProperties,
-    [colours.background, colours.text, alpha],
-  );
+  const [frame, available] = useWidth<HTMLDivElement>();
+  const { w, h } = viewWindow(view);
+  const scale = Math.min(available / w, LARGE_MAX_HEIGHT / h);
+  // While turning, the screen rotates a quarter and shrinks to fit its turned footprint.
+  const turnedFit = Math.min(1, available / (h * scale), LARGE_MAX_HEIGHT / (w * scale));
+  const r = legibility ? readout(legibility) : null;
+  const description = `${viewLabel(view)}: the image cropped at the centre${r ? `, ${r.dim.toLowerCase()}, ${r.text.toLowerCase()}` : ''}`;
   return (
-    <figure className="v2-kbg__shape">
-      <div className="v2-kbg__stage">
-        <div className="v2-kbg__screen" style={style} role="img" aria-label={description}>
-          <img className="v2-kbg__img" src={src} alt="" />
-          <div className="v2-kbg__scrim" />
-          <div className="v2-kbg__ui" aria-hidden="true">
-            <div className="v2-kbg__header">MDMesh Kiosk</div>
-            <div className="v2-kbg__grid">
-              {apps.map((name, i) => (
-                <div key={`${name}-${i}`} className="v2-kbg__app">
-                  <span className="v2-kbg__icon">{name.slice(0, 1).toUpperCase()}</span>
-                  <span className="v2-kbg__label">{name}</span>
-                </div>
-              ))}
-            </div>
-            {exitVisible ? <span className="v2-kbg__exit">Exit kiosk</span> : null}
-          </div>
-        </div>
+    <div ref={frame} className="v2-kbg__large" style={{ height: Math.ceil(h * scale) }}>
+      <div
+        className={`v2-kbg__large-turn${turning ? ' is-turning' : ''}`}
+        style={{ '--kbg-turn-fit': turnedFit, '--kbg-turn-ms': `${ROTATE_MS}ms` } as CSSProperties}
+      >
+        <ScaledScreen layout={layout} legibility={legibility} src={src} colours={colours} scale={scale} label={description} />
       </div>
-      <figcaption className="v2-kbg__caption">
-        <span className="v2-kbg__shape-name">{shape.label}</span>
-        {scrim === undefined ? (
-          <span className="v2-kbg__readout">Measuring…</span>
-        ) : scrim === null ? (
-          <span className="v2-kbg__readout">
-            {loaded ? 'Contrast unavailable in this browser' : 'The image could not be loaded to measure it'}
-          </span>
-        ) : (
-          <>
-            <span className={`v2-kbg__readout ${pass ? 'is-pass' : 'is-fail'}`}>
-              {pass ? <IconCheckSmall size={14} /> : <IconCrossSmall size={14} />}
-              <span>
-                Text {ratioText(scrim.ratio)} <strong>{pass ? 'Pass' : 'Fail'}</strong>
-              </span>
-            </span>
-            <span className="v2-kbg__meta">worst 2% of the image aside</span>
-            <span className="v2-kbg__meta">
-              {scrim.step === 0 ? 'No dimming needed' : `Dimmed ${Math.round(scrim.alpha * 100)}%`} · image alone{' '}
-              {ratioText(scrim.ratioWithoutScrim)}
-            </span>
-          </>
-        )}
-      </figcaption>
-    </figure>
+    </div>
   );
 }
 
+const px = (b: Box, s: number): CSSProperties => ({ left: b.x * s, top: b.y * s, width: b.w * s, height: b.h * s });
+
+/** The launcher drawn from its dp layout at `scale` px per dp. */
+function ScaledScreen({
+  layout,
+  legibility,
+  src,
+  colours,
+  scale: s,
+  label,
+}: {
+  layout: LauncherLayout;
+  legibility: Legibility | null;
+  src: string;
+  colours: KioskColours;
+  scale: number;
+  /** An accessible description makes it an image; without one it is decorative (inside a labelled button). */
+  label?: string;
+}) {
+  const { w, h } = layout.window;
+  const plate = (id: string, box: Box) => {
+    const k = legibility?.plates[id]?.step ?? 0;
+    return k > 0 ? (
+      <div
+        key={`plate-${id}`}
+        className="v2-kbg__plate"
+        data-plate={id}
+        style={{ ...px(box, s), borderRadius: PLATE_RADIUS * s, opacity: k / SCRIM_STEPS }}
+      />
+    ) : null;
+  };
+  const style = {
+    width: w * s,
+    height: h * s,
+    '--kbg-bg': toHex(colours.background),
+    '--kbg-text': toHex(colours.text),
+  } as CSSProperties;
+  return (
+    <div className="v2-kbg__screen" style={style} {...(label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true })}>
+      <img className="v2-kbg__img" src={src} alt="" />
+      <div className="v2-kbg__dim" data-dim={legibility?.dim ?? 0} style={{ opacity: (legibility?.dim ?? 0) / SCRIM_STEPS }} />
+      {plate('header', layout.headerPlate)}
+      {layout.labelPlates.map((p, i) => plate(`label-${i}`, p))}
+      <span
+        className="v2-kbg__header"
+        style={{ ...px(layout.header, s), fontSize: layout.header.size * s, lineHeight: `${layout.header.h * s}px` }}
+      >
+        {layout.header.text}
+      </span>
+      {layout.cells.map((c, i) => (
+        <span key={`cell-${i}`}>
+          <span className="v2-kbg__icon" style={{ ...px(c.icon, s), borderRadius: 14 * s, fontSize: c.icon.w * 0.42 * s }}>
+            {c.name.slice(0, 1).toUpperCase()}
+          </span>
+          <span className="v2-kbg__label" style={{ ...px(c.label, s), fontSize: layout.labelSize * s, lineHeight: `${c.label.h * s}px` }}>
+            {c.name}
+          </span>
+        </span>
+      ))}
+      {layout.exit ? (
+        <span
+          className="v2-kbg__exit"
+          style={{
+            ...px(layout.exit.button, s),
+            fontSize: layout.exit.size * s,
+            borderRadius: 20 * s,
+            lineHeight: `${layout.exit.button.h * s}px`,
+          }}
+        >
+          Exit kiosk
+        </span>
+      ) : null}
+    </div>
+  );
+}

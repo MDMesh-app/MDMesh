@@ -1,21 +1,34 @@
-// The kiosk background preview: the launcher on four screen shapes with the agent's scrim and the text contrast it
-// reaches, in the configuration editor too, free of axe violations. jsdom has no canvas, so the pixel sampling is
-// replaced with fixed samples.
-import { render, screen, waitFor, within } from '@testing-library/react';
+// The kiosk background preview: one large view at device scale with Phone/Tablet and Rotate, four thumbnails that
+// select it, the dim and plates the agent draws, and the readouts; free of axe violations. jsdom has no canvas, so the
+// image's cells come from a colour function of the position in image pixels.
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import axe from 'axe-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { KioskBackgroundImageInfo } from '../../api/configurations';
 import { AppRoutes } from '../../App';
 import { renderInConsole } from '../../test/console';
 
-const sampling = vi.hoisted(() => ({ samples: [] as number[] | null }));
+type Paint = ((x: number, y: number) => number) | null;
+const sampling = vi.hoisted(() => ({ paint: null as Paint, reads: 0 }));
 vi.mock('../../data/kioskScrim', async (importOriginal) => {
   const real = await importOriginal<typeof import('../../data/kioskScrim')>();
-  return { ...real, sampleCrop: () => sampling.samples };
+  return {
+    ...real,
+    readImageCells: (_img: unknown, iw: number, ih: number) => {
+      sampling.reads++;
+      const paint = sampling.paint;
+      if (!paint) return null;
+      const { cellSize, cols, rows } = real.cellGrid(iw, ih);
+      const colours = Array.from({ length: cols * rows }, (_, k) =>
+        paint(((k % cols) + 0.5) * cellSize, (Math.floor(k / cols) + 0.5) * cellSize),
+      );
+      return { width: iw, height: ih, cellSize, cols, rows, min: colours, max: colours };
+    },
+  };
 });
 
 import { kioskColours } from '../../data/kioskScrim';
-import { KioskBackgroundPreview, PREVIEW_SHAPES } from './KioskPreview';
+import { KioskBackgroundPreview, ROTATE_MS, THUMBNAILS, readout, viewLabel } from './KioskPreview';
 
 const INFO: KioskBackgroundImageInfo = {
   fileId: 42,
@@ -31,8 +44,15 @@ const INFO: KioskBackgroundImageInfo = {
   hasMetadata: true,
 };
 
-const WHITE = Array<number>(100).fill(0xffffff);
-const DARK = Array<number>(100).fill(0x141414);
+const WHITE: Paint = () => 0xffffff;
+const DARK: Paint = () => 0x141414;
+/**
+ * A bright band across the 3840 x 2160 image at y 550..1000 px: under the app labels of a landscape phone (which
+ * crops the height to 194..1966 px), between the header and the labels of a portrait one.
+ */
+const BRIGHT_BAND: Paint = (_x, y) => (y >= 550 && y <= 1000 ? 0xffffff : 0x141414);
+const measure = (text: string, size: number) => text.length * (size / 2);
+const fakeImage = async () => ({ naturalWidth: 3840, naturalHeight: 2160 }) as HTMLImageElement;
 
 async function violations(): Promise<string[]> {
   const res = await axe.run(document.body, {
@@ -42,112 +62,178 @@ async function violations(): Promise<string[]> {
   return res.violations.map((v) => `${v.id}: ${v.help} — ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`);
 }
 
-const fakeImage = async () => ({ naturalWidth: 3840, naturalHeight: 2160 }) as HTMLImageElement;
+function reducedMotion(on: boolean) {
+  const original = window.matchMedia;
+  const stub = ((q: string) => ({ ...original(q), matches: on && q.includes('reduce') })) as typeof window.matchMedia;
+  Object.defineProperty(window, 'matchMedia', { configurable: true, value: stub });
+  return () => Object.defineProperty(window, 'matchMedia', { configurable: true, value: original });
+}
 
 afterEach(() => {
-  sampling.samples = [];
+  sampling.paint = null;
+  sampling.reads = 0;
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
-describe('KioskBackgroundPreview', () => {
-  const preview = (colours = kioskColours(null, null), exitVisible = true) =>
-    render(
-      <div className="v2">
-        <KioskBackgroundPreview
-          src="/files/acme/beach.jpg"
-          width={3840}
-          height={2160}
-          colours={colours}
-          appNames={['Scanner', 'Notes']}
-          exitVisible={exitVisible}
-          loadImage={fakeImage}
-        />
-      </div>,
-    );
+const preview = (opts: { colours?: ReturnType<typeof kioskColours>; exitVisible?: boolean; apps?: string[] } = {}) =>
+  render(
+    <div className="v2">
+      <KioskBackgroundPreview
+        src="/files/acme/beach.jpg"
+        width={3840}
+        height={2160}
+        colours={opts.colours ?? kioskColours(null, null)}
+        appNames={opts.apps ?? ['Scanner', 'Notes', 'Inventory', 'Maps', 'Browser']}
+        exitVisible={opts.exitVisible ?? true}
+        loadImage={fakeImage}
+        measure={measure}
+      />
+    </div>,
+  );
 
-  it('shows the four shapes, each with the scrim the agent draws and a passing contrast readout', async () => {
-    sampling.samples = WHITE;
+const large = () => screen.getByRole('img', { name: /cropped at the centre/ }) as HTMLElement;
+const liveText = () => document.querySelector('.v2-kbg__large-readout')!.textContent ?? '';
+
+describe('KioskBackgroundPreview', () => {
+  it('shows a large phone in portrait with plates carrying the text and a dim capped at 30%', async () => {
+    sampling.paint = WHITE;
     preview();
-    const list = screen.getByRole('list', { name: 'Preview on devices' });
-    const shapes = within(list).getAllByRole('listitem');
-    expect(shapes).toHaveLength(PREVIEW_SHAPES.length);
-    await waitFor(() => expect(screen.getAllByText(/Pass/)).toHaveLength(4));
-    for (const s of PREVIEW_SHAPES) {
-      const screenImg = screen.getByRole('img', { name: new RegExp(`^${s.label}: the image cropped at the centre, dimmed \\d+%, text contrast`) });
-      const scrim = Number((screenImg as HTMLElement).style.getPropertyValue('--kbg-scrim'));
-      expect(scrim).toBeGreaterThan(0.6);
-      expect(screenImg.querySelector('img')!.getAttribute('src')).toBe('/files/acme/beach.jpg');
-      // The launcher's header, the kiosk's apps and the Exit button sit over it.
-      expect(within(screenImg as HTMLElement).getByText('MDMesh Kiosk')).toBeTruthy();
-      expect(within(screenImg as HTMLElement).getByText('Scanner')).toBeTruthy();
-      expect(within(screenImg as HTMLElement).getByText('Exit kiosk')).toBeTruthy();
-    }
-    // Readout: with the scrim, and the image alone (what fails without it).
-    expect(screen.getAllByText(/Dimmed \d+% · image alone 1\.\d:1/)).toHaveLength(4);
-    // The readout is the 98th percentile, and says so.
-    expect(screen.getAllByText(/worst 2% of the image aside/)).toHaveLength(4);
-    expect(screen.getByText(/busy or bright behind the text/)).toBeTruthy();
+    await waitFor(() => expect(liveText()).toMatch(/Text \d\.\d:1 Pass \(on plate\)/));
+    expect(liveText()).toMatch(/Image dimmed 30%/);
+    expect(large().getAttribute('aria-label')).toMatch(/^Phone, portrait: the image cropped at the centre, image dimmed 30%/);
+    expect(Number(large().querySelector<HTMLElement>('.v2-kbg__dim')!.dataset.dim)).toBe(15);
+    expect(large().querySelector('[data-plate="header"]')).not.toBeNull();
+    expect(large().querySelector('[data-plate="exit"]')).toBeNull();
+    expect(large().querySelector('[data-plate="label-0"]')).not.toBeNull();
+    expect(within(large()).getByText('MDMesh Kiosk')).toBeTruthy();
+    expect(within(large()).getByText('Exit kiosk')).toBeTruthy();
     expect(await violations()).toEqual([]);
   });
 
-  it('leaves a calm image undimmed', async () => {
-    sampling.samples = DARK;
+  it('leaves a calm image alone: no dim, no plates', async () => {
+    sampling.paint = DARK;
     preview();
-    await waitFor(() => expect(screen.getAllByText(/No dimming needed/)).toHaveLength(4));
-    expect(screen.queryByText(/busy or bright/)).toBeNull();
-    const first = screen.getByRole('img', { name: /^Phone, portrait/ }) as HTMLElement;
-    expect(first.style.getPropertyValue('--kbg-scrim')).toBe('0');
+    await waitFor(() => expect(liveText()).toMatch(/Text \d+\.\d:1 Pass/));
+    expect(liveText()).not.toMatch(/on plate/);
+    expect(liveText()).toMatch(/Image not dimmed/);
+    expect(large().querySelector('.v2-kbg__plate')).toBeNull();
+  });
+
+  it('dims nothing without an Exit button', async () => {
+    sampling.paint = WHITE;
+    preview({ exitVisible: false });
+    await waitFor(() => expect(liveText()).toMatch(/Image not dimmed/));
+    expect(liveText()).toMatch(/on plate/);
+  });
+
+  it('rotates: re-crops for the turned window and recomputes the dim and plates', async () => {
+    const restore = reducedMotion(false);
+    sampling.paint = BRIGHT_BAND;
+    preview({ apps: ['Scanner', 'Notes', 'Maps', 'Browser'] });
+    await waitFor(() => expect(liveText()).toMatch(/Phone, portrait.*Image not dimmed/));
+    expect(liveText()).not.toMatch(/on plate/);
+    // The image is read once; every window is cropped from it.
+    expect(sampling.reads).toBe(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Rotate to landscape' }));
+    // The turn is animated: the screen turns first, then the view changes.
+    expect(document.querySelector('.v2-kbg__large-turn.is-turning')).not.toBeNull();
+    await waitFor(() => expect(liveText()).toMatch(/^Phone, landscape/), { timeout: ROTATE_MS * 10 });
+    expect(document.querySelector('.v2-kbg__large-turn.is-turning')).toBeNull();
+    // In landscape the band runs under the labels: they get plates.
+    expect(liveText()).toMatch(/on plate/);
+    expect(large().querySelector('[data-plate^="label-"]')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Rotate to portrait' })).toBeTruthy();
+    restore();
+  });
+
+  it('turns at once when the viewer prefers reduced motion', async () => {
+    const restore = reducedMotion(true);
+    sampling.paint = DARK;
+    preview();
+    await waitFor(() => expect(liveText()).toMatch(/Pass/));
+    fireEvent.click(screen.getByRole('button', { name: 'Rotate to landscape' }));
+    expect(document.querySelector('.v2-kbg__large-turn.is-turning')).toBeNull();
+    expect(liveText()).toMatch(/^Phone, landscape/);
+    restore();
+  });
+
+  it('switches between phone and tablet, keeping the orientation', async () => {
+    const restore = reducedMotion(true);
+    sampling.paint = DARK;
+    preview();
+    await waitFor(() => expect(liveText()).toMatch(/Pass/));
+    const device = screen.getByRole('radiogroup', { name: 'Device' });
+    fireEvent.click(within(device).getByRole('radio', { name: 'Tablet' }));
+    expect(liveText()).toMatch(/^Tablet 4:3, portrait/);
+    fireEvent.click(screen.getByRole('button', { name: 'Rotate to landscape' }));
+    expect(liveText()).toMatch(/^Tablet 4:3, landscape/);
+    fireEvent.click(within(device).getByRole('radio', { name: 'Phone' }));
+    expect(liveText()).toMatch(/^Phone, landscape/);
+    restore();
+  });
+
+  it('has four thumbnails that select the large view, each with its own readout', async () => {
+    sampling.paint = BRIGHT_BAND;
+    preview({ apps: ['Scanner', 'Notes', 'Maps', 'Browser'] });
+    const list = screen.getByRole('list', { name: 'Screen shapes' });
+    const buttons = within(list).getAllByRole('button');
+    expect(buttons.map((b) => b.getAttribute('aria-label')?.replace(/: Text .*$/, ''))).toEqual(THUMBNAILS.map(viewLabel));
+    await waitFor(() => expect(buttons[1].getAttribute('aria-label')).toMatch(/on plate/));
+    expect(buttons[0].getAttribute('aria-label')).not.toMatch(/on plate/);
+    expect(buttons[0].getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(buttons[3]);
+    expect(buttons[3].getAttribute('aria-pressed')).toBe('true');
+    expect(buttons[0].getAttribute('aria-pressed')).toBe('false');
+    expect(liveText()).toMatch(/^Tablet 16:10, portrait/);
+    // Same height for all four.
+    const heights = buttons.map((b) => parseFloat((b.querySelector('.v2-kbg__screen') as HTMLElement).style.height));
+    expect(new Set(heights.map((x) => x.toFixed(3))).size).toBe(1);
+    expect(await violations()).toEqual([]);
   });
 
   it('uses the kiosk’s own colours, made readable as the agent makes them', async () => {
-    sampling.samples = DARK;
-    // Grey text on grey: the launcher (and so the preview) uses black instead.
-    preview(kioskColours('#777777', '#888888'), false);
-    const first = screen.getByRole('img', { name: /^Phone, portrait/ }) as HTMLElement;
-    expect(first.style.getPropertyValue('--kbg-bg')).toBe('#777777');
-    expect(first.style.getPropertyValue('--kbg-text')).toBe('#000000');
-    expect(within(first).queryByText('Exit kiosk')).toBeNull();
-    await waitFor(() => expect(screen.getAllByText(/Pass/)).toHaveLength(4));
+    sampling.paint = DARK;
+    preview({ colours: kioskColours('#777777', '#888888'), exitVisible: false });
+    expect(large().style.getPropertyValue('--kbg-bg')).toBe('#777777');
+    expect(large().style.getPropertyValue('--kbg-text')).toBe('#000000');
+    expect(within(large()).queryByText('Exit kiosk')).toBeNull();
   });
 
   it('says so when the browser can’t read the pixels', async () => {
-    sampling.samples = null;
+    sampling.paint = null;
     preview();
-    await waitFor(() => expect(screen.getAllByText('Contrast unavailable in this browser')).toHaveLength(4));
+    await waitFor(() => expect(liveText()).toMatch(/Contrast unavailable in this browser/));
   });
 
   it('says so when the image doesn’t load', async () => {
-    sampling.samples = DARK;
     render(
-      <KioskBackgroundPreview src="/x.png" width={3840} height={2160} colours={kioskColours(null, null)} appNames={[]} exitVisible={false} loadImage={async () => null} />,
+      <KioskBackgroundPreview src="/x.png" width={3840} height={2160} colours={kioskColours(null, null)} appNames={[]} exitVisible={false} loadImage={async () => null} measure={measure} />,
     );
-    await waitFor(() => expect(screen.getAllByText('The image could not be loaded to measure it')).toHaveLength(4));
+    await waitFor(() => expect(liveText()).toMatch(/The image could not be loaded to measure it/));
   });
 
-  it('lays the four screens out in one even grid with their captions under a shared stage', () => {
-    sampling.samples = DARK;
-    preview();
-    const list = screen.getByRole('list', { name: 'Preview on devices' });
-    expect(list.classList.contains('v2-kbg__shapes')).toBe(true);
-    for (const item of within(list).getAllByRole('listitem')) {
-      expect(item.querySelector('.v2-kbg__stage > .v2-kbg__screen')).not.toBeNull();
-      expect(item.querySelector('.v2-kbg__stage + .v2-kbg__caption')).not.toBeNull();
-    }
-  });
-
-  it('is a disclosure the keyboard can fold', () => {
-    sampling.samples = DARK;
+  it('is a disclosure the keyboard can fold, and says the contrast is the worst case', () => {
     preview();
     const summary = screen.getByText('Preview on devices');
     expect(summary.tagName).toBe('SUMMARY');
-    expect(summary.closest('details')!.open).toBe(true);
+    expect(screen.getByText(/against every pixel under each text/)).toBeTruthy();
   });
 
   it('warns about a small image', () => {
     render(
-      <KioskBackgroundPreview src="/x.png" width={800} height={600} colours={kioskColours(null, null)} appNames={[]} exitVisible={false} loadImage={fakeImage} />,
+      <KioskBackgroundPreview src="/x.png" width={800} height={600} colours={kioskColours(null, null)} appNames={[]} exitVisible={false} loadImage={fakeImage} measure={measure} />,
     );
     expect(screen.getByText(/600 px on its short side/)).toBeTruthy();
+  });
+});
+
+describe('readout', () => {
+  it('names the plate and the dim', () => {
+    expect(readout({ dim: 11, plates: {}, textRatio: 4.63, onPlate: true })).toEqual({
+      text: 'Text 4.6:1 Pass (on plate)', dim: 'Image dimmed 22%', pass: true,
+    });
+    expect(readout({ dim: 0, plates: {}, textRatio: 4.49, onPlate: false }).text).toBe('Text 4.4:1 Fail');
   });
 });
 
@@ -175,14 +261,14 @@ describe('the configuration editor', () => {
   }
 
   it('shows the configuration’s image and its preview in the kiosk section', async () => {
-    sampling.samples = WHITE;
+    sampling.paint = WHITE;
     const calls = open({ backgroundImageFileId: 42, backgroundImageUrl: INFO.url, backgroundImageSha256: INFO.sha256 });
     expect(await screen.findByRole('img', { name: /Current kiosk background: beach\.jpg/ })).toBeTruthy();
     expect(calls).toContain('/private/configurations/backgroundImage/42');
-    const list = screen.getByRole('list', { name: 'Preview on devices' });
     // jsdom loads no images, so the readouts wait for the pixels (the preview tests above cover them).
-    expect(within(list).getAllByRole('listitem')).toHaveLength(4);
-    expect(within(list).getByRole('img', { name: /^Tablet 4:3, landscape/ })).toBeTruthy();
+    const list = screen.getByRole('list', { name: 'Screen shapes' });
+    expect(within(list).getAllByRole('button')).toHaveLength(4);
+    expect(screen.getByRole('img', { name: /^Phone, portrait: the image cropped at the centre/ })).toBeTruthy();
   });
 
   it('asks for nothing without an image', async () => {

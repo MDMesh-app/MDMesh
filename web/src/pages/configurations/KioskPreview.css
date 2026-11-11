@@ -1,9 +1,9 @@
-/* Kiosk background preview: mock launcher screens in the kiosk's own colours (custom properties set per screen, as
-   the launcher does in both themes); the console's own colours come from tokens.css. */
+/* Kiosk background preview. The mock launcher draws in the kiosk's own colours (set per screen, as the launcher does
+   in both themes) at absolute dp positions scaled by the component; the console's own colours come from tokens.css. */
 
 .v2 .v2-kbg__preview {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .v2 .v2-kbg__preview > summary {
@@ -20,156 +20,177 @@
   outline-offset: 2px;
 }
 
-.v2 .v2-kbg__lede {
+.v2 .v2-kbg__lede,
+.v2 .v2-kbg__footnote {
   margin: 0;
   font-size: var(--fs-sm);
   color: var(--secondary);
 }
 
-.v2 .v2-kbg__shapes {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-  align-items: start;
+.v2 .v2-kbg__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 
-@media (max-width: 900px) {
-  .v2 .v2-kbg__shapes {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
+/* ---- large view ---- */
 
-.v2 .v2-kbg__slot {
+.v2 .v2-kbg__large {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
   min-width: 0;
 }
 
-.v2 .v2-kbg__shape {
-  margin: 0;
-  display: grid;
-  gap: 8px;
+.v2 .v2-kbg__large-turn {
+  transform-origin: center center;
+  transition: transform var(--kbg-turn-ms) ease-in-out;
 }
 
-/* Every screen sits in a stage of one height, top-aligned, so the captions under them share a baseline. The screen
-   is as large as fits the stage in its own proportions. */
-.v2 .v2-kbg__stage {
-  height: 300px;
-  container-type: size;
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-start;
+.v2 .v2-kbg__large-turn.is-turning {
+  transform: rotate(-90deg) scale(var(--kbg-turn-fit));
 }
 
-@media (max-width: 600px) {
-  .v2 .v2-kbg__stage {
-    height: 220px;
+@media (prefers-reduced-motion: reduce) {
+  .v2 .v2-kbg__large-turn {
+    transition: none;
   }
 }
+
+.v2 .v2-kbg__large-readout {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 12px;
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+
+/* ---- thumbnails ---- */
+
+.v2 .v2-kbg__thumbs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.v2 .v2-kbg__thumbs > li {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.v2 .v2-kbg__thumb-button {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+  max-width: 100%;
+  padding: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.v2 .v2-kbg__thumb-button:hover {
+  background: var(--hover);
+}
+
+.v2 .v2-kbg__thumb-button[aria-pressed='true'] {
+  border-color: var(--ink);
+}
+
+.v2 .v2-kbg__thumb-button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.v2 .v2-kbg__thumb-button .v2-kbg__screen {
+  max-width: 100%;
+}
+
+/* ---- the mock screen ---- */
 
 .v2 .v2-kbg__screen {
   position: relative;
   overflow: hidden;
-  width: min(100cqw, calc(100cqh * var(--kbg-w) / var(--kbg-h)));
-  aspect-ratio: var(--kbg-w) / var(--kbg-h);
+  flex: none;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-strong);
   background: var(--kbg-bg);
   color: var(--kbg-text);
-  container-type: size;
+  font-family: Roboto, 'IBM Plex Sans', system-ui, sans-serif;
 }
 
 .v2 .v2-kbg__img,
-.v2 .v2-kbg__scrim,
-.v2 .v2-kbg__ui {
+.v2 .v2-kbg__dim {
   position: absolute;
   inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
 .v2 .v2-kbg__img {
-  width: 100%;
-  height: 100%;
   object-fit: cover;
   object-position: center;
 }
 
-.v2 .v2-kbg__scrim {
+.v2 .v2-kbg__dim,
+.v2 .v2-kbg__plate {
   background: var(--kbg-bg);
-  opacity: var(--kbg-scrim);
 }
 
-/* The launcher at its own size in dp (KioskLauncherActivity), scaled to the screen: --u is one dp of a device whose
-   short side is --kbg-dp (360 for a phone, 768/800 for the tablets), so a tablet shows more room, as it does. */
-.v2 .v2-kbg__ui {
-  --u: calc(100cqmin / var(--kbg-dp));
-  display: flex;
-  flex-direction: column;
-  padding: calc(28 * var(--u)) calc(24 * var(--u)) calc(24 * var(--u));
-  gap: calc(16 * var(--u));
-  font-family: var(--font-sans);
+.v2 .v2-kbg__plate,
+.v2 .v2-kbg__header,
+.v2 .v2-kbg__icon,
+.v2 .v2-kbg__label,
+.v2 .v2-kbg__exit {
+  position: absolute;
+  box-sizing: border-box;
 }
 
 .v2 .v2-kbg__header {
   font-weight: 700;
-  font-size: calc(20 * var(--u));
-  line-height: 1.2;
-}
-
-.v2 .v2-kbg__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, calc(80 * var(--u)));
-  gap: calc(12 * var(--u)) 0;
-  align-content: start;
-  flex: 1 1 0;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.v2 .v2-kbg__app {
-  display: grid;
-  justify-items: center;
-  gap: calc(6 * var(--u));
-  min-width: 0;
+  white-space: nowrap;
 }
 
 .v2 .v2-kbg__icon {
-  width: calc(56 * var(--u));
-  height: calc(56 * var(--u));
-  border-radius: calc(14 * var(--u));
   display: grid;
   place-items: center;
-  font-size: calc(24 * var(--u));
   font-weight: 600;
   background: var(--kbg-text);
   color: var(--kbg-bg);
 }
 
 .v2 .v2-kbg__label {
-  max-width: 100%;
-  font-size: calc(12 * var(--u));
-  line-height: 1.2;
+  text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .v2 .v2-kbg__exit {
-  align-self: center;
-  padding: calc(8 * var(--u)) calc(20 * var(--u));
-  border-radius: calc(20 * var(--u));
-  font-size: calc(14 * var(--u));
-  font-weight: 600;
+  text-align: center;
+  font-weight: 500;
   background: var(--kbg-text);
   color: var(--kbg-bg);
 }
+
+/* ---- captions ---- */
 
 .v2 .v2-kbg__caption {
   display: grid;
   gap: 2px;
   font-size: var(--fs-small);
   color: var(--secondary);
-  max-width: 100%;
 }
 
 .v2 .v2-kbg__shape-name {

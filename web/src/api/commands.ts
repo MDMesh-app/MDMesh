@@ -206,6 +206,9 @@ export interface DeviceState {
   agentVersion?: string | null;
   powerMode?: string | null;
   appliedConfigRevision?: string | null;
+  /** Server-owned kiosk-command sequence and the generation of the latest on-device kiosk return. */
+  kioskGeneration?: number | null;
+  kioskReturnGeneration?: number | null;
 }
 
 export interface CommandHistoryItem {

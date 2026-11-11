@@ -51,6 +51,32 @@ setenv() {
   if grep -q "^$1=" .env 2>/dev/null; then sed -i "s#^$1=.*#$1=$v#" .env; else printf '%s=%s\n' "$1" "$2" >> .env; fi
 }
 
+# load_env FILE: each KEY=VALUE line of FILE as an exported variable, as `set -a; . FILE` did, without running FILE as a
+# script: blank and # lines are skipped, an "export " prefix is allowed, one pair of surrounding '…' or "…" is removed,
+# and an unquoted value ends at " #" and loses trailing blanks, as when sourced. The values (DB_PASSWORD, HASH_SECRET,
+# TUNNEL_TOKEN, …) are never printed: xtrace is off while it runs, and a line it can't use is named by number only.
+load_env() { local _le_x=$-; set +x; _load_env "$1"; case "$_le_x" in *x*) set -x ;; esac; }
+_load_env() {
+  local line key val n=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    n=$((n + 1)); line=${line%$'\r'}; line=${line#"${line%%[![:space:]]*}"}
+    case "$line" in ''|'#'*) continue ;; 'export '*) line=${line#export }; line=${line#"${line%%[![:space:]]*}"} ;; esac
+    case "$line" in *=*) ;; *) warn "$1, line $n is not KEY=VALUE: ignored."; continue ;; esac
+    key=${line%%=*}; val=${line#*=}
+    case "$key" in
+      ''|[0123456789]*|*[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_]*)
+        warn "$1, line $n does not start with a variable name: ignored."; continue ;;
+    esac
+    case "$val" in
+      \"*\"|\'*\') val=${val#?}; val=${val%?} ;;
+      *) val=${val%%[[:space:]]#*}; val=${val%"${val##*[![:space:]]}"} ;;
+    esac
+    printf -v "$key" '%s' "$val"
+    # shellcheck disable=SC2163  # $key names the variable to export
+    export "$key"
+  done < "$1"
+}
+
 RESET=0; ALLOW_DOWNGRADE=0; UPDATE=0
 NATIVE=0; NATIVE_ARGS=(); PASS_ARGS=()
 for a in "$@"; do
@@ -262,7 +288,7 @@ if [ "$REUSE_ENV" = 1 ]; then
   # first init), so a fresh DB_PASSWORD would brick the stack; a fresh HASH_SECRET would likewise
   # invalidate every enrolled device's token. --reset opts out (see the header for when that's safe).
   say "Existing .env found — reusing it (secrets + hosting mode kept; use --reset to start over)."
-  set -a; . ./.env; set +a
+  load_env .env
   version_preflight "${CURRENT_VERSION:-${SERVER_VERSION:-}}"
   _env_base_url=${BASE_URL:-}
   mdm_check_base_url BASE_URL || { err "Fix BASE_URL in .env, then re-run."; exit 1; }
@@ -368,7 +394,7 @@ fi
 
 # Source builds (IMAGE_OWNER=local) cannot be updated by pulling images — keep the supervisor's one-click apply off
 # (updates = ./setup.sh --update). A registry owner (IMAGE_OWNER=<ghcr owner>) keeps it on. version_preflight above
-# derived APPLY_SUPPORTED from the IMAGE_OWNER compose sees: the sourced .env on a re-run (quotes stripped, key missing →
+# derived APPLY_SUPPORTED from the IMAGE_OWNER compose sees: the loaded .env on a re-run (quotes stripped, key missing →
 # unset) or the caller's env on a fresh .env (which the heredoc above wrote as ${IMAGE_OWNER:-local}) — same `:-local`
 # default as docker-compose.yml.
 # Persist AND export: a re-run has already exported the OLD .env value (set -a above), and compose gives the shell
@@ -422,7 +448,7 @@ say "Checking GitHub Releases for the signed agent APK…"
 VITE_AGENT_PACKAGE=""; VITE_AGENT_CHECKSUM=""; VITE_AGENT_APK_URL=""
 if [ -n "${GITHUB_REPO:-}" ] && command -v python3 >/dev/null && command -v curl >/dev/null; then
   # agent_ck_ok CK: CK looks like an APK signing-certificate checksum (unpadded base64url of a SHA-256: 43 characters of
-  # A-Z a-z 0-9 _ -). It is written to .env, which this script sources as root on every re-run, so nothing else from a
+  # A-Z a-z 0-9 _ -). It is written to .env, which this script reads as root on every re-run, so nothing else from a
   # download may go there.
   # (The letters are spelled out: a range like A-Z follows the locale and matches non-ASCII letters under en_US.UTF-8.)
   agent_ck_ok() { case "$1" in *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-]*) return 1 ;; esac; [ "${#1}" -eq 43 ]; }

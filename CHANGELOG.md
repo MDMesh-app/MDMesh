@@ -67,6 +67,8 @@ New
   OpenSSL and `minisign`.
 
 Fixes
+- setup.sh re-runs read `.env` as `KEY=VALUE` lines instead of running it as a script, so `bash -x ./setup.sh` no
+  longer prints its passwords and secrets.
 - The console recognizes an on-device Return to kiosk and does not offer the same action again; a later kiosk exit,
   custom kiosk, or configuration apply makes it available again.
 - Files: uploading a file again with the same name and the same content returns the file already there instead of an

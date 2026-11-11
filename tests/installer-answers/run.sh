@@ -44,6 +44,9 @@ for c in docker curl wget apt-get systemctl useradd mvn git; do
   printf '#!/bin/sh\nl=${STUB_LOG:-%s/stubs.called}\n{ echo "$0 $*"; env; } >> "$l"\nexit 99\n' "$WORK" > "$WORK/stubs/$c"
   chmod +x "$WORK/stubs/$c"
 done
+# With STUB_DOCKER_OK=1, `docker compose version` succeeds (so setup.sh gets past its checks); anything else still fails.
+# shellcheck disable=SC2016  # the stub's own variables
+sed -i '2i [ "${STUB_DOCKER_OK:-}" = 1 ] \&\& [ "$1 $2" = "compose version" ] \&\& exit 0' "$WORK/stubs/docker"
 
 FAILS=0; CHECKS=0
 fail() { FAILS=$((FAILS + 1)); printf 'FAIL: %s\n' "$*" >&2; }
@@ -297,6 +300,23 @@ done
 printf '%s\n' "$token" > "$WORK/answers.env"; chmod 600 "$WORK/answers.env"
 dry quickstart.sh MDMESH_ANSWERS="$WORK/answers.env"
 { [ "$RC" != 0 ] && ! grep -qF -- "${token%=}" "$WORK/out/o" "$WORK/out/e"; } || { fail "a bare token line in MDMESH_ANSWERS is echoed (or accepted)"; show; }
+ok
+
+# A setup.sh re-run reads .env with a parser, never by sourcing it: traced (bash -x), the run shows no .env secret.
+mkdir -p "$WORK/src2/install"
+cp -- "$REPO/setup.sh" "$WORK/src2/"; cp -R -- "$REPO/install/lib" "$WORK/src2/install/"
+dbpw=c0ffee0dbpassword0c0ffee; hs=c0ffee0hashsecret0c0ffee; tt=c0ffee0tunneltoken0c0ffee
+printf '%s\n' "DB_PASSWORD=$dbpw" "HASH_SECRET=\"$hs\"" "TUNNEL_TOKEN=$tt # set by hand" BASE_URL=https://mdm.example.com \
+  COMPOSE_PROFILES=cloudflare IMAGE_OWNER=local > "$WORK/src2/.env"
+chmod 600 "$WORK/src2/.env"
+: > "$WORK/children.log"
+(cd "$WORK/src2" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" STUB_LOG="$WORK/children.log" STUB_DOCKER_OK=1 \
+  bash -x ./setup.sh < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || true
+grep -q 'Existing .env found' "$WORK/out/o" || { fail "the traced setup.sh re-run did not reach the .env"; show; }
+grep -q '^\S*docker compose [^v]' "$WORK/children.log" || { fail "the traced setup.sh re-run stopped before using the .env"; show; }
+for v in "$dbpw" "$hs" "$tt"; do
+  if grep -qF -- "$v" "$WORK/out/o" "$WORK/out/e"; then fail "a setup.sh re-run traced with bash -x printed a .env secret"; fi
+done
 ok
 
 # The answers file's own rules, and the native installer's older variable names.

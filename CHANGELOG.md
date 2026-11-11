@@ -36,6 +36,8 @@ New
 - Sync now and console commands say when the device isn't connected and will get it at its next check-in.
 
 Fixes
+- Agent: on Android 12 and later, a device enrolled by QR reports the same hardware id from its first contact, so
+  re-enrolling it after a factory reset is flagged as the same device. Needs agent 0.5.0.
 - Agent: while a device can't enroll, its screen says why and what to do (code used up or expired, server not
   found, certificate not trusted, device date wrong, Wi-Fi asking for a sign-in, `http://` address) instead of an
   error key or exception text. Needs agent 0.5.0.

@@ -67,25 +67,31 @@
 
             <View style="@style/Widget.MdmAgent.Divider" />
 
+            <!-- Each row: label and value centred in a line at least the 48dp copy target tall, the button centred
+                 beside them, so every row (with a button or not) has the same height and the same space around its
+                 value; the button never makes its row taller. -->
             <LinearLayout
                 android:id="@+id/status_row_device_id"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginEnd="-14dp"
-                android:baselineAligned="false"
-                android:orientation="horizontal">
+                android:orientation="vertical">
 
                 <LinearLayout
-                    android:layout_width="0dp"
+                    android:id="@+id/status_device_id_line"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
+                    android:baselineAligned="false"
+                    android:gravity="center_vertical"
+                    android:minHeight="@dimen/mdm_touch_target"
+                    android:orientation="horizontal">
 
                     <!-- Label and value: one TalkBack stop, "Device ID, dev_…" (StatusScreen). -->
                     <LinearLayout
                         android:id="@+id/status_device_id_group"
-                        android:layout_width="match_parent"
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
+                        android:layout_weight="1"
                         android:orientation="vertical">
 
                         <TextView
@@ -105,30 +111,30 @@
                             android:text="@string/status_placeholder" />
                     </LinearLayout>
 
-                    <include
-                        android:id="@+id/status_enroll_error"
-                        layout="@layout/view_callout"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/mdm_space_12"
-                        android:visibility="gone" />
+                    <!-- Copy (instead of selectable text, whose toolbar can open other apps inside the kiosk). The
+                         row reaches 14dp into the card's padding, so the icon's edge is the card's content edge. -->
+                    <ImageButton
+                        android:id="@+id/status_copy_device_id"
+                        android:layout_width="@dimen/mdm_touch_target"
+                        android:layout_height="@dimen/mdm_touch_target"
+                        android:layout_marginStart="@dimen/mdm_space_8"
+                        android:background="@drawable/mdm_icon_button"
+                        android:contentDescription="@string/status_copy_device_id"
+                        android:padding="14dp"
+                        android:scaleType="fitCenter"
+                        android:src="@drawable/ic_v2_copy"
+                        android:tint="@color/mdm_secondary" />
                 </LinearLayout>
 
-                <!-- Copy (instead of selectable text, whose toolbar can open other apps inside the kiosk).
-                     Centred on the value's first line in StatusScreen, by its top margin, so the whole 48dp target
-                     stays inside the row (touches outside a parent never arrive). The row reaches 14dp into the
-                     card's padding, so the icon's edge is the card's content edge. -->
-                <ImageButton
-                    android:id="@+id/status_copy_device_id"
-                    android:layout_width="@dimen/mdm_touch_target"
-                    android:layout_height="@dimen/mdm_touch_target"
-                    android:layout_marginStart="@dimen/mdm_space_8"
-                    android:background="@drawable/mdm_icon_button"
-                    android:contentDescription="@string/status_copy_device_id"
-                    android:padding="14dp"
-                    android:scaleType="fitCenter"
-                    android:src="@drawable/ic_v2_copy"
-                    android:tint="@color/mdm_secondary" />
+                <!-- 14dp back from the row's reach into the card padding: the callout keeps the card's edge. -->
+                <include
+                    android:id="@+id/status_enroll_error"
+                    layout="@layout/view_callout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/mdm_space_12"
+                    android:layout_marginEnd="14dp"
+                    android:visibility="gone" />
             </LinearLayout>
 
             <View style="@style/Widget.MdmAgent.Divider" />
@@ -137,6 +143,8 @@
                 android:id="@+id/status_row_version"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:minHeight="@dimen/mdm_touch_target"
                 android:orientation="vertical">
 
                 <TextView
@@ -164,6 +172,8 @@
                 android:layout_height="wrap_content"
                 android:layout_marginEnd="-14dp"
                 android:baselineAligned="false"
+                android:gravity="center_vertical"
+                android:minHeight="@dimen/mdm_touch_target"
                 android:orientation="horizontal">
 
                 <!-- Label and value: one TalkBack stop, "Server, https://…" (StatusScreen). -->
@@ -192,10 +202,8 @@
 
                 </LinearLayout>
 
-                <!-- Copy (instead of selectable text, whose toolbar can open other apps inside the kiosk).
-                     Centred on the value's first line in StatusScreen, by its top margin, so the whole 48dp target
-                     stays inside the row (touches outside a parent never arrive). The row reaches 14dp into the
-                     card's padding, so the icon's edge is the card's content edge. -->
+                <!-- Copy (instead of selectable text, whose toolbar can open other apps inside the kiosk). The
+                     row reaches 14dp into the card's padding, so the icon's edge is the card's content edge. -->
                 <ImageButton
                     android:id="@+id/status_copy_server"
                     android:layout_width="@dimen/mdm_touch_target"

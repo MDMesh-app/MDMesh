@@ -70,9 +70,6 @@ class StatusScreen(
         returnButton.setOnClickListener { onReturn() }
         copyDeviceId.setOnClickListener { onCopy(StatusCopy.Target.DEVICE_ID) }
         copyServer.setOnClickListener { onCopy(StatusCopy.Target.SERVER) }
-        // Each copy icon sits on its value's first line, at any font size, its whole target inside its row.
-        copyDeviceId.placeOnFirstLineOf(deviceId)
-        copyServer.placeOnFirstLineOf(server)
     }
 
     fun render(state: StatusUiState) {

@@ -83,28 +83,6 @@ fun View.centerOnFirstLineOf(text: TextView) {
     }
 }
 
-/**
- * As [centerOnFirstLineOf], for a touch target: placed by its top margin instead of a translation, so its parent
- * grows to hold all of it. A translated target that sticks out of its parent loses the touches that land outside
- * the parent, as the parent never receives them. The parent must lay this view out from its top (the default in a
- * horizontal LinearLayout).
- */
-fun View.placeOnFirstLineOf(text: TextView) {
-    val target = this
-    val parent = target.parent as? ViewGroup ?: return
-    val caps = Rect()
-    parent.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-        val capCentre = firstLineCapCentre(text, parent, caps) ?: return@addOnLayoutChangeListener
-        val params = target.layoutParams as ViewGroup.MarginLayoutParams
-        val top = (capCentre - target.height / 2f).roundToInt().coerceAtLeast(0)
-        if (params.topMargin != top) {
-            params.topMargin = top
-            // Not from inside this layout pass: on the next frame (it settles there, the text doesn't move).
-            target.post { target.layoutParams = params }
-        }
-    }
-}
-
 /** The cap-height centre of [text]'s first line, from the top of its ancestor [parent]; null before layout. */
 private fun firstLineCapCentre(text: TextView, parent: View, caps: Rect): Float? {
     var textTop = 0f

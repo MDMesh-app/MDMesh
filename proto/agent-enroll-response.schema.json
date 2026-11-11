@@ -9,6 +9,7 @@
   "properties": {
     "protocolVersion": { "type": "string", "pattern": "^\\d+\\.\\d+$" },
     "deviceId": { "type": "string", "description": "Server-issued opaque device id. The agent stores this and uses it as identity forever." },
-    "configurationName": { "type": "string" }
+    "configurationName": { "type": "string" },
+    "deviceSecret": { "type": "string", "description": "Per-device secret, sent as Authorization: Bearer <secret> on every check-in. Returned only here; the agent stores it at once." }
   }
 }

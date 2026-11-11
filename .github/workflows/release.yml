@@ -249,14 +249,24 @@ jobs:
           { git tag -l --format='%(contents)' "$REF_NAME" \
             | sed -E '/^-----BEGIN (PGP SIGNATURE|SSH SIGNATURE|SIGNED MESSAGE)-----/,$d'; } > release-notes.md
           grep -q '[^[:space:]]' release-notes.md || { echo "::error::release notes for ${REF_NAME} came out empty"; exit 1; }
+      # The quickstart.sh uploaded below must be exactly the file the signed manifest hashes: nothing in this job writes
+      # it after the checkout, and this checks it right before the upload (the readback after it checks the asset).
+      - name: quickstart.sh matches the signed manifest
+        run: |
+          want=$(python3 -c 'import json; print(json.load(open("manifest.json"))["files"]["quickstart.sh"])')
+          got=$(sha256sum quickstart.sh | cut -d' ' -f1)
+          [ "$want" = "$got" ] || { echo "::error::quickstart.sh is ${got}, but the signed manifest has ${want}"; exit 1; }
       - uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3  # v3.0.4
         with:
           body_path: release-notes.md
           generate_release_notes: false
+          # quickstart.sh is the tagged commit's copy: the README's checked install block downloads it from the latest
+          # release and checks it against its SHA-256 in the signed manifest's files (build-manifest.sh).
           files: |
             mdmesh-agent.apk
             manifest.json
             manifest.json.minisig
+            quickstart.sh
 
       # --- Move :latest LAST, only once the release is pullable, signed and published ---
       # Quick-start installs (*_VERSION=latest, `docker compose pull`) follow :latest, so it must never point
@@ -266,6 +276,18 @@ jobs:
       # re-pushed as-is, so both tags share one digest — asserted below. Phased to keep a failure as early and
       # as all-or-nothing as possible: resolve all three :VERSION first, then move all three, then verify all.
       # A red job here leaves the Release published; recover by hand (RELEASING.md), don't re-run the job.
+      # Read the published asset back: a Release whose quickstart.sh isn't the signed one must not become :latest.
+      - name: Published quickstart.sh matches the signed manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/readback"
+          gh release download "$REF_NAME" -R "$GITHUB_REPOSITORY" -p quickstart.sh -D "$RUNNER_TEMP/readback" --clobber
+          want=$(python3 -c 'import json; print(json.load(open("manifest.json"))["files"]["quickstart.sh"])')
+          got=$(sha256sum "$RUNNER_TEMP/readback/quickstart.sh" | cut -d' ' -f1)
+          [ "$want" = "$got" ] || { echo "::error::the published quickstart.sh is ${got}, but the signed manifest has ${want}; :latest was not moved"; exit 1; }
+
       - name: Move :latest to this release
         env:
           OWNER: ${{ github.repository_owner }}

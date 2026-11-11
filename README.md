@@ -58,7 +58,7 @@ APK.
 - **Device page:** tabs for remote actions, telemetry (hardware, battery, storage, network), apps, activity and
   location. The Apps tab lists the device's apps that have a launcher icon, from its latest scan, with search and a
   CSV export.
-- **Configurations:** a configuration sets up to 23 device settings, from kiosk options to Wi-Fi, factory reset and
+- **Configurations:** a configuration sets up to 25 device settings, from kiosk options to Wi-Fi, factory reset and
   Safe Mode. Devices apply it at their next check-in, and the device page shows the result for each setting. Apps
   added to a configuration install on its devices at their next check-in.
 - **Kiosk mode:** locks a device to one app or to a grid of chosen apps, in the colours the configuration sets. Safe
@@ -84,14 +84,27 @@ APK.
 
 ## ■ Quick start
 
-On a Linux host with Docker, Docker Compose v2, `curl`, `openssl` 3.0+ (or an older `openssl` and `minisign`), and
-either a domain in Cloudflare (for a Cloudflare Tunnel) or a domain pointed at the host with ports 80 and 443 open:
+On a Linux host with Docker, Docker Compose v2, `curl`, `minisign`, `openssl` 3.0+ (or an older `openssl`), and
+either a domain in Cloudflare (for a Cloudflare Tunnel) or a domain pointed at the host with ports 80 and 443 open,
+this checks the latest release's `quickstart.sh` against its signed manifest and then runs it:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/quickstart.sh)
+R=https://github.com/MDMesh-app/MDMesh/releases; V=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$R/latest"); V=${V##*/v}
+d=$(mktemp -d); for f in quickstart.sh manifest.json manifest.json.minisig; do curl -fsSL -o "$d/$f" "$R/download/v$V/$f" || break; done
+minisign -V -m "$d/manifest.json" -P RWQbf0pIhddaWnDsFknIG4X325wHR05pUxEQJmuuQRdBlQm3zi8/Eqcd &&
+  grep -qx "  \"version\": \"$V\"," "$d/manifest.json" &&
+  grep -qF "\"quickstart.sh\": \"$(sha256sum "$d/quickstart.sh" | cut -d' ' -f1)\"" "$d/manifest.json" &&
+  bash "$d/quickstart.sh"
 ```
 
-This pulls the released images and sets up updates from the console. To build the images from source instead
+Without `minisign`, this unchecked shortcut runs the latest release tag's `quickstart.sh` without checking it
+([details](DEPLOY.md#option-a--quick-start-no-clone-published-images)):
+
+```bash
+bash <(curl -fsSL "https://raw.githubusercontent.com/MDMesh-app/MDMesh/$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/MDMesh-app/MDMesh/releases/latest | sed 's#.*/##')/quickstart.sh")
+```
+
+The quick start pulls the released images and sets up updates from the console. To build the images from source instead
 (`setup.sh` also needs `openssl`, and, if they are there, uses `python3` and `curl` to verify the latest release for
 the enrollment QR):
 

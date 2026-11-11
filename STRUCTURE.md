@@ -11,13 +11,13 @@ cooperating planes plus shared protocol and docs.
 │   pom.xml                                            #   (existing Maven multi-module project, builds launcher.war)
 ├── web/                                               # PLANE 2 — Admin frontend (new, React + Vite + TypeScript)
 ├── agent-android/                                     # PLANE 3 — Device agent (new, Kotlin Device-Owner app)
-│   └── (remote-control transport lives in :remote)    # PLANE 4 — Remote control (WebRTC + coturn, signaling over MQTT/long-poll)
+│   └── (remote-control transport lives in :remote)    # PLANE 4 — Remote control (planned: WebRTC + coturn, signaling over WebSocket)
 ├── proto/                                             # Shared protocol: capability matrix + command model (source of truth)
 ├── supervisor/                                        # Updater + recovery page (Node): polls releases, verifies, applies/rolls back
 ├── install/                                           # Native installer/uninstaller, shared shell libs (lib/), seed SQL, email templates,
 │                                                      #   options.json (the installers' answers contract)
 ├── release/                                           # Release tooling: manifest build/sign/verify, APK checksum, minisign.pub
-├── scripts/                                           # Dev + CI helpers: Agent v1 e2e, dev seed, edge check, supervisor smoke, shots/
+├── scripts/                                           # Dev + CI helpers: Agent v1 e2e, dev seed, edge check, supervisor smoke, release manifest check, shots/, readme/
 ├── tests/native/                                      # T2 rig: native install/upgrade in throwaway systemd containers
 ├── tests/installer-answers/                           # T0: install/options.json against the installers (dry runs only)
 ├── docs/adr/                                          # Architecture Decision Records (one-way-door choices)

@@ -96,7 +96,7 @@ done
 # recorded it, the SHA-256 of the files it lists) against what the tag points to. No signature, no update. The clone is
 # then on the tag, a detached HEAD: updates come from --update, never from `git pull`.
 update_to_release() {
-  local repo tag t best='' cur tgt d rc=0 f want got mcommit dry=${MDMESH_DRY_RUN:-0}
+  local repo tag t best='' cur tgt d rc=0 f want got mcommit _files dry=${MDMESH_DRY_RUN:-0}
   if ! command -v git >/dev/null || ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     err "--update needs a git clone: git clone https://github.com/MDMesh-app/MDMesh.git"; exit 1
   fi
@@ -143,7 +143,10 @@ update_to_release() {
     if [ -n "$mcommit" ]; then
       [ "$mcommit" = "$tgt" ] || { err "${tag} points to ${tgt}, but its signed manifest names commit ${mcommit}. Nothing was changed."; rc=1; }
     elif grep -q '^  "files": {$' "$d/manifest.json"; then
-      for f in $MDM_QUICKSTART_FILES; do
+      # The files the quick start downloads, and quickstart.sh itself when the manifest lists it (0.5.0 on).
+      _files=$MDM_QUICKSTART_FILES
+      if mdm_manifest_field "$d/manifest.json" quickstart.sh "$MDM_SHA256_ERE" >/dev/null; then _files="$_files quickstart.sh"; fi
+      for f in $_files; do
         want=$(mdm_manifest_field "$d/manifest.json" "$f" "$MDM_SHA256_ERE" || true)
         got=$(git show "${tag}:${f}" 2>/dev/null | openssl dgst -sha256 -r | cut -d' ' -f1)
         if [ -z "$want" ] || [ "$got" != "$want" ]; then

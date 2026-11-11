@@ -50,7 +50,7 @@ Errors: `Response.ERROR("error.agent.token.invalid")`, `...token.used`, `...toke
 
 Authenticated by `Authorization: Bearer <deviceSecret>` (the secret from `/enroll`); the
 server verifies it against the stored hash for `deviceId` **before any state change** and
-rejects mismatches with `error.agent.unauthorized`. Posts the current capability matrix +
+rejects mismatches with `error.agent.unauthorized` (a body without `deviceId` gets `error.agent.device.unknown`). Posts the current capability matrix +
 results of previously-received commands; receives the next batch of capability-gated commands.
 
 Request (`agent-checkin-request.schema.json`):
@@ -91,7 +91,7 @@ result that arrives later still counts. Agents must keep this property: never se
   endpoint; carried into the device through the QR provisioning bundle). Each token enrolls up to
   its `maxUses` devices (1 by default: single use) before it expires (24 h by default, 30 days at
   most); every enroll uses one, atomically. An admin can stop every token of the customer at once
-  (`POST /private/agent/v1/token/revoke-all`); a stopped token is answered `error.agent.token.used`.
+  (`POST /rest/private/agent/v1/token/revoke-all`); a stopped token is answered `error.agent.token.used`.
   Tokens are stored as their SHA-256 hash. No global shared secret baked into the APK (ADR 0002 /
   0005).
 - `/checkin` is authenticated by a per-device secret (`Authorization: Bearer <deviceSecret>`),

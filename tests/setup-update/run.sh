@@ -67,8 +67,10 @@ if commit: m["commit"] = commit
 if mode:
     fs = ["docker-compose.release.yml", "docker-compose.domain.yml", "install/sql/hmdm_init.en.sql",
           "install/sql/post_seed.sql", "install/lib/db.sh"]
+    fs.append("quickstart.sh")
     m["files"] = {f: hashlib.sha256(subprocess.run(["git", "-C", o, "show", tag + ":" + f], capture_output=True).stdout).hexdigest() for f in fs}
     if mode == "badfiles": m["files"]["install/lib/db.sh"] = "0" * 64
+    if mode == "badqs": m["files"]["quickstart.sh"] = "0" * 64
 print(json.dumps(m, indent=2))
 PY
   minisign -S -s "$5" -m "$dir/manifest.json" >/dev/null
@@ -78,6 +80,7 @@ manifest "$R/ok" v9.1.0 9.1.0 "$c910" "$WORK/k.key"
 manifest "$R/ok" v9.0.0 9.0.0 "$c900" "$WORK/k.key"
 manifest "$R/files" v9.1.0 9.1.0 '' "$WORK/k.key" files
 manifest "$R/badfiles" v9.1.0 9.1.0 '' "$WORK/k.key" badfiles
+manifest "$R/badqs" v9.1.0 9.1.0 '' "$WORK/k.key" badqs
 manifest "$R/nobind" v9.1.0 9.1.0 '' "$WORK/k.key"
 manifest "$R/wrongcommit" v9.1.0 9.1.0 "$c900" "$WORK/k.key"
 manifest "$R/otherkey" v9.1.0 9.1.0 "$c910" "$WORK/x.key"
@@ -151,6 +154,7 @@ expect_refused dirty ok "a clone with local changes" "commit or stash them"
 for c in nosig:"Could not download the signed manifest" otherkey:"is not signed by the release key" \
          tampered:"is not signed by the release key" replay:"not the one of v9.1.0" \
          wrongcommit:"its signed manifest names commit" badfiles:"does not match the signed manifest" \
+         badqs:"quickstart.sh at v9.1.0 does not match" \
          nobind:"records neither its commit nor its files"; do
   clone "bad-${c%%:*}"
   expect_refused "bad-${c%%:*}" "${c%%:*}" "a release with ${c%%:*}" "${c#*:}"

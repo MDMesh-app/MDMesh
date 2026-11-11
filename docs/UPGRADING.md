@@ -85,7 +85,7 @@ enrollment secret alone, after a `pg_dump` to `/opt/mdmesh/backups/` ([restore](
 - **Unattended (`-y`):** never erases unless you set `REPLACE_DATA=yes`. It keeps the current port unless you set
   `HTTP_PORT`.
 - **Interrupted run:** run the same command again. It picks up where the last run stopped.
-- **Settings:** SMTP, `LEGACY_DEVICE_API`, `GITHUB_REPO` and `GITHUB_TOKEN` carry over from earlier runs, Erase
+- **Settings:** SMTP, `LEGACY_DEVICE_API`, `PROXY_ADDRESSES`, `GITHUB_REPO` and `GITHUB_TOKEN` carry over from earlier runs, Erase
   included. Pass one to change it; `GITHUB_TOKEN=` removes the token ([how](OPERATIONS.md#updater-supervisor)). On the
   first upgrade from v0.3.1 or older they are still kept, but that run's agent APK download can't read the old
   settings file in time: pass `GITHUB_TOKEN` and `GITHUB_REPO` once more if that download needs them.

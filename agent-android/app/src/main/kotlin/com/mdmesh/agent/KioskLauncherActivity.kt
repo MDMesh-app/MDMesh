@@ -2,6 +2,7 @@ package com.mdmesh.agent
 
 import android.app.ActivityManager
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
@@ -106,6 +107,15 @@ class KioskLauncherActivity : ComponentActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         dialogs.save(outState)
+    }
+
+    /**
+     * configChanges (uiMode) keeps this activity through a dark-mode switch; the open exit dialog is rebuilt so it
+     * takes the new colours, the same way it's rebuilt after a recreation.
+     */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        dialogs.onConfigurationChanged { tag -> active?.let { reopenExitDialog(tag, it) } }
     }
 
     override fun onDestroy() {

@@ -7,7 +7,6 @@ import android.text.TextWatcher
 import android.text.method.PasswordTransformationMethod
 import android.view.KeyEvent
 import android.view.View
-import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.ImageButton
@@ -91,7 +90,7 @@ class ExitPinDialog private constructor(
             }
         })
         // Keyboard and focus in the field as the dialog opens.
-        dialog.alert.setOnShowListener { field.requestFocus() }
+        dialog.setOnShown { field.requestFocus() }
         field.setOnEditorActionListener { _, actionId, event ->
             when (editorAction(actionId, event?.action, event?.keyCode)) {
                 EditorAction.SUBMIT -> true.also { submit() }
@@ -140,6 +139,7 @@ class ExitPinDialog private constructor(
                 confirm = context.getString(R.string.kiosk_exit_confirm),
                 cancel = context.getString(R.string.action_cancel),
                 body = R.layout.dialog_exit_pin,
+                keyboard = true,
             )
             // Exit checks the PIN and doesn't close the dialog: render() closes it, or shows the error.
             val mdm = MdmDialog.create(context, spec) { pin?.submit(onSubmit) }
@@ -152,7 +152,6 @@ class ExitPinDialog private constructor(
             )
             pin = dialog
             dialog.wire(onSubmit)
-            mdm.alert.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
             return dialog
         }
 

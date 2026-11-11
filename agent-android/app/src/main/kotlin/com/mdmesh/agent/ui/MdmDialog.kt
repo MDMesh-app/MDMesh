@@ -5,6 +5,7 @@ import android.graphics.Rect
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -23,16 +24,16 @@ import kotlin.math.roundToInt
  * corners and scrim. AppCompat's title/message/button template isn't used: its rows don't share one left edge and
  * its spacing isn't v2's (see the layout).
  *
+ * Shown only through a [DialogSlot], which keeps it across recreations and config changes.
+ *
  * The confirm button calls `onConfirm` and doesn't close the dialog by itself: callers that close on confirm call
  * [dismiss] (the exit PIN dialog stays open on a wrong PIN). Cancel cancels the dialog.
  */
 class MdmDialog private constructor(
-    val alert: AlertDialog,
-    /** The confirm button (the danger-styled one when the dialog is [Spec.danger]). */
-    val confirmButton: Button,
+    private val alert: AlertDialog,
     /** The inflated [Spec.body], if any. */
     val body: View?,
-) {
+) : SlotDialog {
 
     /** What the dialog shows, text already resolved. [body] is a layout shown under the message. */
     data class Spec(
@@ -43,11 +44,19 @@ class MdmDialog private constructor(
         @DrawableRes val icon: Int = 0,
         val danger: Boolean = false,
         @LayoutRes val body: Int = 0,
+        /** Open the keyboard with the dialog (the exit PIN). */
+        val keyboard: Boolean = false,
     )
 
-    fun show(): MdmDialog = apply { alert.show() }
+    /** Shown only through a [DialogSlot]. */
+    override fun show(key: DialogSlot.Key) = alert.show()
 
-    fun dismiss() = alert.dismiss()
+    override fun dismiss() = alert.dismiss()
+
+    override fun setOnDismiss(listener: () -> Unit) = alert.setOnDismissListener { listener() }
+
+    /** [block] runs each time the dialog is shown (focus a field, say). */
+    fun setOnShown(block: () -> Unit) = alert.setOnShowListener { block() }
 
     companion object {
 
@@ -80,16 +89,19 @@ class MdmDialog private constructor(
                 holder.getChildAt(0)
             }
             val alert = builder.setView(root).create()
-            // Accessibility services announce the window title; AppCompat's own title row stays hidden.
-            alert.window?.setTitle(spec.title)
-            val (confirm, unused) = root.findViewById<Button>(R.id.mdm_dialog_confirm) to
-                root.findViewById<Button>(R.id.mdm_dialog_confirm_danger)
-            val shown = if (spec.danger) unused else confirm
-            (if (spec.danger) confirm else unused).visibility = View.GONE
-            shown.visibility = View.VISIBLE
-            shown.text = spec.confirm
-            val dialog = MdmDialog(alert, shown, body)
-            shown.setOnClickListener { onConfirm(dialog) }
+            alert.window?.apply {
+                // Accessibility services announce the window title; AppCompat's own title row stays hidden.
+                setTitle(spec.title)
+                if (spec.keyboard) setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+            }
+            val filled = root.findViewById<Button>(R.id.mdm_dialog_confirm)
+            val danger = root.findViewById<Button>(R.id.mdm_dialog_confirm_danger)
+            val confirm = if (spec.danger) danger else filled
+            (if (spec.danger) filled else danger).visibility = View.GONE
+            confirm.visibility = View.VISIBLE
+            confirm.text = spec.confirm
+            val dialog = MdmDialog(alert, body)
+            confirm.setOnClickListener { onConfirm(dialog) }
             spec.cancel?.let { label ->
                 root.findViewById<Button>(R.id.mdm_dialog_cancel).apply {
                     text = label

@@ -9,7 +9,7 @@ class StartPlanTest {
     fun `a normal first start checks in and holds the socket for the grace window`() {
         assertEquals(
             StartPlan(grace = true, initialSync = true, loadCredentials = true),
-            StartPlan.of(first = true, fromHeartbeat = false, hasCredentials = false),
+            StartPlan.of(first = true, revived = false, hasCredentials = false),
         )
     }
 
@@ -20,7 +20,7 @@ class StartPlanTest {
         for (creds in listOf(true, false)) {
             assertEquals(
                 StartPlan(grace = false, initialSync = false, loadCredentials = true),
-                StartPlan.of(first = true, fromHeartbeat = true, hasCredentials = creds),
+                StartPlan.of(first = true, revived = true, hasCredentials = creds),
             )
         }
     }
@@ -29,11 +29,11 @@ class StartPlanTest {
     fun `a repeat start without credentials retries the check-in, unless the heartbeat is doing it`() {
         assertEquals(
             StartPlan(grace = false, initialSync = true, loadCredentials = true),
-            StartPlan.of(first = false, fromHeartbeat = false, hasCredentials = false),
+            StartPlan.of(first = false, revived = false, hasCredentials = false),
         )
         assertEquals(
             StartPlan(grace = false, initialSync = false, loadCredentials = true),
-            StartPlan.of(first = false, fromHeartbeat = true, hasCredentials = false),
+            StartPlan.of(first = false, revived = true, hasCredentials = false),
         )
     }
 
@@ -42,8 +42,17 @@ class StartPlanTest {
         for (heartbeat in listOf(true, false)) {
             assertEquals(
                 StartPlan(grace = false, initialSync = false, loadCredentials = false),
-                StartPlan.of(first = false, fromHeartbeat = heartbeat, hasCredentials = true),
+                StartPlan.of(first = false, revived = heartbeat, hasCredentials = true),
             )
         }
+    }
+
+    @Test
+    fun `a sticky restart after Android killed the service counts as a revive`() {
+        // No intent: the system restarting a START_STICKY service after the process died (an OEM or low-memory
+        // kill). A boot or self-update starts it with an intent, from BootReceiver.
+        assertEquals(true, StartPlan.revived(hasIntent = false, fromHeartbeat = false))
+        assertEquals(true, StartPlan.revived(hasIntent = true, fromHeartbeat = true))
+        assertEquals(false, StartPlan.revived(hasIntent = true, fromHeartbeat = false))
     }
 }

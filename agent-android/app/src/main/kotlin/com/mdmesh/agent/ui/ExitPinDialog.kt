@@ -132,7 +132,9 @@ class ExitPinDialog private constructor(
             if (kept == null) restartIdle() else idleUntil(kept)
         }
         dialog.idle = object : MdmDialog.IdleTimer {
-            override fun deadline(): Long? = idleDeadline
+            // Until the rebuilt prompt is shown (its OnShow is posted), the deadline handed to it is the one that
+            // counts: a second rebuild in that window must carry it on, not a fresh minute from setText(typed).
+            override fun deadline(): Long? = keptDeadline ?: idleDeadline
             override fun keep(deadline: Long) {
                 keptDeadline = deadline
             }

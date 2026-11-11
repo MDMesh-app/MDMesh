@@ -93,17 +93,6 @@
                         android:textAppearance="@style/TextAppearance.MdmAgent.Mono"
                         android:text="@string/status_placeholder" />
 
-                    <TextView
-                        android:id="@+id/status_copy_device_id_done"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/mdm_space_4"
-                        android:accessibilityLiveRegion="polite"
-                        android:text="@string/status_copied"
-                        android:textAppearance="@style/TextAppearance.MdmAgent.CalloutBody"
-                        android:textColor="@color/mdm_ok_ink"
-                        android:visibility="gone" />
-
                     <include
                         android:id="@+id/status_enroll_error"
                         layout="@layout/view_callout"
@@ -182,16 +171,6 @@
                         android:textAppearance="@style/TextAppearance.MdmAgent.Mono"
                         tools:text="https://mdm.example.com/" />
 
-                    <TextView
-                        android:id="@+id/status_copy_server_done"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/mdm_space_4"
-                        android:accessibilityLiveRegion="polite"
-                        android:text="@string/status_copied"
-                        android:textAppearance="@style/TextAppearance.MdmAgent.CalloutBody"
-                        android:textColor="@color/mdm_ok_ink"
-                        android:visibility="gone" />
                 </LinearLayout>
 
                 <!-- Copy (instead of selectable text, whose toolbar can open other apps inside the kiosk).

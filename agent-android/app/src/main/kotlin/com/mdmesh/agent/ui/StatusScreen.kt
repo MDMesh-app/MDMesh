@@ -1,12 +1,14 @@
 package com.mdmesh.agent.ui
 
 import android.app.Activity
+import android.content.res.ColorStateList
 import android.graphics.drawable.ColorDrawable
 import android.view.View
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.TextView
+import androidx.annotation.StringRes
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.content.ContextCompat
 import com.mdmesh.agent.BuildConfig
@@ -34,8 +36,6 @@ class StatusScreen(
     private val returnError = Callout(activity.findViewById(R.id.status_return_error))
     private val copyDeviceId: ImageButton = activity.findViewById(R.id.status_copy_device_id)
     private val copyServer: ImageButton = activity.findViewById(R.id.status_copy_server)
-    private val copiedDeviceId: View = activity.findViewById(R.id.status_copy_device_id_done)
-    private val copiedServer: View = activity.findViewById(R.id.status_copy_server_done)
     private var drawn: StatusUiState? = null
 
     init {
@@ -77,8 +77,10 @@ class StatusScreen(
         if (before?.kiosk != state.kiosk) renderKiosk(state.kiosk)
         // Nothing to copy until the server has issued an ID; INVISIBLE keeps the row's layout steady.
         copyDeviceId.visibility = if (state.deviceId is StatusUiState.DeviceIdUi.Known) View.VISIBLE else View.INVISIBLE
-        copiedDeviceId.visibility = if (state.copied == StatusCopy.Target.DEVICE_ID) View.VISIBLE else View.GONE
-        copiedServer.visibility = if (state.copied == StatusCopy.Target.SERVER) View.VISIBLE else View.GONE
+        if (before?.copied != state.copied) {
+            renderCopied(copyDeviceId, R.string.status_copy_device_id, state.copied == StatusCopy.Target.DEVICE_ID)
+            renderCopied(copyServer, R.string.status_copy_server, state.copied == StatusCopy.Target.SERVER)
+        }
         if (state.returnFailure == null) {
             returnError.hide()
         } else {
@@ -137,6 +139,17 @@ class StatusScreen(
         returnButton.visibility = if (ui.returnVisible) View.VISIBLE else View.GONE
         returnButton.isEnabled = ui.returnEnabled
         returnButton.setText(ui.returnLabel)
+    }
+
+    /**
+     * "Copied" shows on the copy button itself, a check in the ok colour for a moment, so the row keeps its height;
+     * TalkBack hears it too.
+     */
+    private fun renderCopied(button: ImageButton, @StringRes label: Int, copied: Boolean) {
+        button.setImageResource(if (copied) R.drawable.ic_v2_check else R.drawable.ic_v2_copy)
+        button.imageTintList = ColorStateList.valueOf(color(if (copied) R.color.mdm_ok_ink else R.color.mdm_secondary))
+        button.contentDescription = activity.getString(if (copied) R.string.status_copied else label)
+        if (copied) button.announceForAccessibility(activity.getString(R.string.status_copied))
     }
 
     private fun color(id: Int): Int = ContextCompat.getColor(activity, id)

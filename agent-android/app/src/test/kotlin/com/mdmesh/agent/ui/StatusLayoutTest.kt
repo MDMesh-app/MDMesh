@@ -50,6 +50,12 @@ class StatusLayoutTest {
         }
     }
 
+    @Test fun `the copy confirmation adds no line, so rows keep their height`() {
+        // "Copied" shows on the copy button itself (a check), not as a line that appears under the value.
+        val extra = all().map { it.android("id") }.filter { it.endsWith("_done") }
+        assertEquals(emptyList<String>(), extra)
+    }
+
     @Test fun `every row of the device card is separated by a divider`() {
         // Children of the device card: callout, then rows (eyebrow + value), each preceded by one divider.
         val card = byId("status_device_card")

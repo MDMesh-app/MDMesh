@@ -173,6 +173,10 @@ public class FilesResource {
                 return Response.FILE_USED();
             } else if (this.iconDAO.isFileUsed(file.getId())) {
                 return Response.FILE_USED();
+            } else if (this.configurationDAO != null && this.configurationDAO.isBackgroundImageFileUsed(file.getId())) {
+                // A kiosk image is hash-pinned in desired state. It must be explicitly replaced from the
+                // configuration editor, never deleted behind an active configuration's back.
+                return Response.FILE_USED();
             }
 
             if (!file.isExternal()) {
@@ -270,6 +274,10 @@ public class FilesResource {
                     return Response.ERROR("error.file.save");
                 }
             } catch (FileExistsException e) {
+                Response existing = reuseIdenticalHostedFile(customer, uploadedFile);
+                if (existing != null) {
+                    return existing;
+                }
                 logger.warn("File {} already exists", uploadedFile.getFilePath());
                 return Response.FILE_EXISTS();
             } catch (UnsafePathException e) {
@@ -281,6 +289,34 @@ public class FilesResource {
                 return Response.INTERNAL_ERROR();
             }
         }).orElse(Response.PERMISSION_DENIED());
+    }
+
+    /**
+     * A retry of an interrupted client flow can reach commit after the same bytes were already hosted. Reuse that
+     * customer-owned record only when the content is exactly identical; matching a filename alone would risk binding
+     * a configuration to an older, different image.
+     */
+    private Response reuseIdenticalHostedFile(Customer customer, UploadedFile attempted) {
+        UploadedFile existing = uploadedFileDAO.getByPath(customer.getId(), attempted.getFilePath());
+        if (existing == null || existing.isExternal()) {
+            return null;
+        }
+        try {
+            File hosted = FileUtil.resolveFile(customer, filesDirectory, null, existing.getFilePath());
+            File upload = new File(attempted.getTmpPath());
+            if (!hosted.isFile() || !upload.isFile() || !FileUtils.contentEquals(hosted, upload)) {
+                return null;
+            }
+            if (!upload.delete()) {
+                logger.warn("Could not remove duplicate temporary upload {}", upload);
+            }
+            existing.setUrl(existing.getUrl(baseUrl, customer));
+            logger.info("Reused identical hosted file {} (id={})", existing.getFilePath(), existing.getId());
+            return Response.OK(existing);
+        } catch (IOException | UnsafePathException e) {
+            logger.warn("Could not compare existing file {} with upload: {}", attempted.getFilePath(), e.getMessage());
+            return null;
+        }
     }
 
     /** Shown when a file path would leave the customer's files directory. */
@@ -328,6 +364,11 @@ public class FilesResource {
             if (dbFile == null) {
                 logger.warn("Refused to update file {}: no such file", uploadedFile.getId());
                 return Response.PERMISSION_DENIED();
+            }
+            if (configurationDAO != null && configurationDAO.isBackgroundImageFileUsed(dbFile.getId())) {
+                // The configuration stores the digest of these exact bytes. Replacing or renaming it would make an
+                // already-issued desired-state descriptor stale; create a new image and select it instead.
+                return Response.FILE_USED();
             }
             if (uploadedFile.isExternal() != dbFile.isExternal()) {
                 logger.warn("Refused to update file {}: the external flag cannot change", uploadedFile.getId());

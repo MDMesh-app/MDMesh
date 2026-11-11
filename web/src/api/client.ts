@@ -105,7 +105,7 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
 
   if (!res.ok) {
     throw new ApiError(
-      `Request failed with HTTP ${res.status}`,
+      (res.status === 400 && (await badRequestMessage(res))) || `Request failed with HTTP ${res.status}`,
       'ERROR',
       res.status,
     );
@@ -133,6 +133,16 @@ async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     );
   }
   return envelope.data;
+}
+
+/** The message of a 400 that carries the usual envelope (a refused configuration save says why), or null. */
+async function badRequestMessage(res: globalThis.Response): Promise<string | null> {
+  try {
+    const body = JSON.parse(await res.text()) as Partial<ApiEnvelope<unknown>>;
+    return typeof body.message === 'string' && body.message.trim() ? body.message : null;
+  } catch {
+    return null;
+  }
 }
 
 export const apiClient = {

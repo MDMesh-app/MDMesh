@@ -253,6 +253,10 @@ public class UnsecureDAO {
         return this.configurationMapper.getConfigurationById(id);
     }
 
+    public List<ManagedAppPermission> getManagedAppPermissions(Integer configurationId) {
+        return this.configurationMapper.getManagedAppPermissions(configurationId);
+    }
+
     @Transactional
     public Configuration getConfigurationByIdWithAppSettings(Integer id) {
         final Configuration dbConfiguration = this.configurationMapper.getConfigurationById(id);

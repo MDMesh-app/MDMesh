@@ -37,6 +37,7 @@ import com.hmdm.rest.json.agent.CommandHistoryView;
 import com.hmdm.rest.json.agent.ConfigStatusView;
 import com.hmdm.rest.json.agent.ConfigSyncSummary;
 import com.hmdm.rest.resource.support.InstallHashes;
+import com.hmdm.rest.json.agent.DesiredConfig;
 import com.hmdm.rest.resource.support.ConfigReconciler;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.util.AgentCapabilityTokens;
@@ -433,10 +434,10 @@ public class AgentAdminResource {
 
         ConfigStatusView v = new ConfigStatusView();
         v.setConfigurationId(device.getConfigurationId());
-        v.setCurrentRevision(configReconciler.currentRevision(device));
+        Set<String> tokens = AgentCapabilityTokens.flatten(commandDAO.getDeviceCapabilities(deviceId));
+        v.setCurrentRevision(configReconciler.currentRevision(device, tokens));
         DeviceState state = commandDAO.getState(deviceId);
         if (state != null) { v.setAppliedRevision(state.getAppliedConfigRevision()); v.setAppliedAt(state.getAppliedConfigAt()); }
-        Set<String> tokens = AgentCapabilityTokens.flatten(commandDAO.getDeviceCapabilities(deviceId));
         boolean supported = AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, tokens);
         v.setSupported(supported);
         v.setInSync(v.getCurrentRevision() != null && v.getCurrentRevision().equals(v.getAppliedRevision()));
@@ -452,7 +453,7 @@ public class AgentAdminResource {
     public Response getSyncSummary() {
         Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
         if (!customerId.isPresent()) return Response.PERMISSION_DENIED();
-        Map<Integer, String> revisionByConfig = new HashMap<>();
+        Map<Integer, DesiredConfig> documentByConfig = new HashMap<>();
         Map<Integer, ConfigSyncSummary> out = new LinkedHashMap<>();
         Set<String> accessible = deviceDAO.getDeviceNumbersAccessibleToUser();
         for (DeviceSyncRow row : commandDAO.listDevicesForSync(customerId.get())) {
@@ -464,14 +465,15 @@ public class AgentAdminResource {
                 continue;
             }
             s.setTotal(s.getTotal() + 1);
-            // containsKey/put, not computeIfAbsent: a configuration whose plugin fails has a null revision, which
+            // containsKey/put, not computeIfAbsent: a configuration whose plugin fails has a null document, which
             // computeIfAbsent wouldn't keep, so the document would be rebuilt (and fail again) for every device on it.
-            if (!revisionByConfig.containsKey(cfgId)) {
+            if (!documentByConfig.containsKey(cfgId)) {
                 Device probe = new Device(); probe.setConfigurationId(cfgId); probe.setCustomerId(customerId.get());
-                revisionByConfig.put(cfgId, configReconciler.currentRevision(probe));
+                documentByConfig.put(cfgId, configReconciler.statusDocument(probe));
             }
-            String current = revisionByConfig.get(cfgId);
             Set<String> tokens = AgentCapabilityTokens.flatten(row.getCapabilitiesJson());
+            // Per device: an agent without app permission support is compared with what it can apply.
+            String current = ConfigReconciler.statusRevision(documentByConfig.get(cfgId), tokens);
             boolean supported = AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, tokens);
             if (!supported) {
                 s.setUnsupported(s.getUnsupported() + 1);

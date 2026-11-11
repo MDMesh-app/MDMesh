@@ -76,6 +76,7 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
     private final String filesDirectory;
     private final String baseUrl;
     private final String apkTrustedUrl;
+    private final HostedFiles hostedFiles;
     private APKFileAnalyzer apkFileAnalyzer;
 
     @Inject
@@ -90,6 +91,7 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
         this.baseUrl = baseUrl;
         this.apkTrustedUrl = apkTrustedUrl;
         this.apkFileAnalyzer = apkFileAnalyzer;
+        this.hostedFiles = new HostedFiles(filesDirectory, baseUrl);
     }
 
     public List<Application> getAllApplications() {
@@ -163,6 +165,7 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
 
                 application.setPkg(apkFileDetails.getPkg());
                 application.setVersion(apkFileDetails.getVersion());
+                application.setRequestedPermissions(encodeRequestedPermissions(apkFileDetails.getRequestedPermissions()));
                 // APK architecture is determined on a previous step, and can be overridden by user's request
                 //application.setArch(apkFileDetails.getArch());
             } else {
@@ -1049,6 +1052,7 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
                 }
 
                 applicationVersion.setVersion(apkFileDetails.getVersion());
+                applicationVersion.setRequestedPermissions(encodeRequestedPermissions(apkFileDetails.getRequestedPermissions()));
             } else {
                 log.error("Could not move the uploaded .apk-file {}", filePath);
                 throw new DAOException("Could not move the uploaded .apk-file");
@@ -1107,6 +1111,46 @@ public class ApplicationDAO extends AbstractLinkedDAO<Application, ApplicationCo
         }
 
         return applicationVersion.getId();
+    }
+
+    /**
+     * Adds cached manifest inventory to configuration-app rows. Older library versions did not store it at upload
+     * time, so when their APK is hosted locally we inspect it once here and retain the result for future editor loads.
+     * Remote URLs and system apps deliberately remain null: the server must never fetch arbitrary APK URLs.
+     */
+    public List<Application> populateRequestedPermissions(List<Application> applications) {
+        for (Application application : applications) {
+            if (application.getRequestedPermissions() != null || application.getUsedVersionId() == null) {
+                continue;
+            }
+            File apk = hostedFiles.localFile(application.getUrl());
+            if (apk == null) {
+                continue;
+            }
+            try {
+                String permissions = encodeRequestedPermissions(apkFileAnalyzer.analyzeFile(apk.getAbsolutePath()).getRequestedPermissions());
+                application.setRequestedPermissions(permissions);
+                mapper.saveRequestedPermissions(application.getUsedVersionId(), permissions);
+            } catch (RuntimeException e) {
+                // Inventory helps the editor but must never make a configuration unreadable because a legacy file
+                // cannot be parsed. A later upload can replace it with known metadata.
+                log.warn("Could not inspect requested permissions for application version #{}", application.getUsedVersionId(), e);
+            }
+        }
+        return applications;
+    }
+
+    private static String encodeRequestedPermissions(List<String> permissions) {
+        if (permissions == null) {
+            return "";
+        }
+        return permissions.stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(permission -> permission.startsWith("android.permission."))
+                .distinct()
+                .sorted()
+                .collect(Collectors.joining(","));
     }
 
     private String translateAppVersionUrl(ApplicationVersion appVersion,

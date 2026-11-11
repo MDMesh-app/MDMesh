@@ -36,6 +36,7 @@ import com.hmdm.persistence.domain.*;
 import com.hmdm.rest.json.LookupItem;
 import com.hmdm.rest.json.UpgradeConfigurationApplicationRequest;
 import com.hmdm.rest.resource.support.ExtensionPoints;
+import com.hmdm.rest.resource.support.KioskBackgroundImageAssets;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.util.DesiredConfigBuilder;
 import com.hmdm.util.FileUtil;
@@ -48,6 +49,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Api(tags = {"Configuration"}, authorizations = {@Authorization("Bearer Token")})
@@ -64,6 +67,7 @@ public class ConfigurationResource {
     private UserDAO userDAO;
     private String baseUrl;
     private ExtensionPoints extensionPoints;
+    private KioskBackgroundImageAssets backgroundImages;
 
     /**
      * <p>A constructor required by Swagger.</p>
@@ -78,7 +82,8 @@ public class ConfigurationResource {
                                  CustomerDAO customerDAO,
                                  UserDAO userDAO,
                                  @Named("base.url") String baseUrl,
-                                 ExtensionPoints extensionPoints) {
+                                 ExtensionPoints extensionPoints,
+                                 KioskBackgroundImageAssets backgroundImages) {
         this.configurationDAO = configurationDAO;
         this.applicationDAO = applicationDAO;
         this.pushService = pushService;
@@ -86,6 +91,14 @@ public class ConfigurationResource {
         this.userDAO = userDAO;
         this.baseUrl = baseUrl;
         this.extensionPoints = extensionPoints;
+        this.backgroundImages = backgroundImages;
+    }
+
+    /** Compatibility constructor for focused resource tests which do not exercise managed images. */
+    public ConfigurationResource(ConfigurationDAO configurationDAO, ApplicationDAO applicationDAO,
+                                 PushService pushService, CustomerDAO customerDAO, UserDAO userDAO,
+                                 String baseUrl, ExtensionPoints extensionPoints) {
+        this(configurationDAO, applicationDAO, pushService, customerDAO, userDAO, baseUrl, extensionPoints, null);
     }
     // =================================================================================================================
     @ApiOperation(
@@ -179,13 +192,23 @@ public class ConfigurationResource {
             notes = "Creates a new configuration (if id is not provided) or update existing one otherwise. " +
                     "An update replaces the configuration: every column, and the applications list, are written " +
                     "as sent, so a column left out becomes null and a missing applications list removes every app. " +
-                    "Only files, applicationSettings and extensions left out (null) are kept; an empty list (or " +
-                    "object) clears them. extensions are checked once the user may save (com.hmdm.extension.ConfigurationExtensions), " +
+                    "Only files, applicationSettings, extensions and managedAppPermissions left out (null) are kept; " +
+                    "an empty list (or object) clears them. managedAppPermissions ({applicationId, permission, state}, " +
+                    "state grant or deny; absent = Default) keeps only the rules for apps the save installs; a " +
+                    "malformed, duplicated or excess rule is refused with HTTP 400. extensions are checked once the user may save (com.hmdm.extension.ConfigurationExtensions), " +
                     "the plugins' validators on the namespaces the save changes: " +
                     "a refusal is an ERROR whose message is the first problem's key and whose data lists them all. " +
                     "applicationUsageParameters are upserted and never removed. " +
                     "An explicit \"applications\": null, and a connectivityMode other than adaptive, alwaysOn or null, " +
-                    "are refused with HTTP 400. locationServicesAction is keep (the default), on, off, or notManaged; " +
+                    "are refused with HTTP 400. " +
+                    "Kiosk background image: backgroundImageAction is keep (the default), replace or remove. replace " +
+                    "takes backgroundImageFileId, an uploaded file (PNG, JPEG or WebP, at most 10 MB and 16 megapixels), " +
+                    "and the server sets backgroundImageUrl and backgroundImageSha256 from it; remove clears all three. " +
+                    "With keep, an update keeps the stored image while backgroundImageUrl is left out or unchanged; " +
+                    "another backgroundImageUrl is stored as the legacy launcher wallpaper and drops the managed image. " +
+                    "A new configuration with a backgroundImageFileId gets that image. A refused image is HTTP 400 " +
+                    "with an ERROR whose message says why. " +
+                    "locationServicesAction is keep (the default), on, off, or notManaged; " +
                     "ordinary saves preserve the stored Location-services policy."
     )
     @PUT
@@ -207,6 +230,7 @@ public class ConfigurationResource {
             // An unknown mode would be stored and sent as not managed; a long one used to fail with a 500.
             throw new BadRequestException("connectivityMode must be adaptive, alwaysOn or null");
         }
+        normalizeManagedAppPermissions(configuration);
         try {
             Configuration dbConfiguration = this.configurationDAO.getConfigurationByName(configuration.getName());
             final Integer id = configuration.getId();
@@ -219,6 +243,7 @@ public class ConfigurationResource {
                                 "by user " + SecurityContext.get().getCurrentUserName());
                         return Response.PERMISSION_DENIED();
                     }
+                    canonicalizeBackgroundImage(configuration, null);
                     applyLocationServicesUpdate(configuration, null);
                     Response refused = refuseExtensions(configuration, null);
                     if (refused != null) return refused;
@@ -236,7 +261,9 @@ public class ConfigurationResource {
                                 "by user " + SecurityContext.get().getCurrentUserName());
                         return Response.PERMISSION_DENIED();
                     }
-                    applyLocationServicesUpdate(configuration, configurationDAO.getConfigurationById(id));
+                    Configuration stored = configurationDAO.getConfigurationById(id);
+                    canonicalizeBackgroundImage(configuration, stored);
+                    applyLocationServicesUpdate(configuration, stored);
                     Response refused = refuseExtensions(configuration, storedExtensions(id, configuration));
                     if (refused != null) return refused;
                     log.info("Configuration " + configuration.getName() + " updated by user "  + SecurityContext.get().getCurrentUserName());
@@ -253,6 +280,60 @@ public class ConfigurationResource {
             log.error("Unexpected error when saving the configuration", e);
             e.printStackTrace();
             return Response.INTERNAL_ERROR();
+        }
+    }
+
+    /** The longest permission name a rule may carry (Android's are under 60 characters). */
+    static final int MAX_PERMISSION_LENGTH = 128;
+    /** Rules per app: more than Android has runtime permissions, so only a broken or hostile client reaches it. */
+    static final int MAX_RULES_PER_APP = 64;
+    private static final java.util.regex.Pattern PERMISSION_NAME =
+            java.util.regex.Pattern.compile("android\\.permission\\.[A-Z][A-Z0-9_]*");
+
+    /**
+     * Checks a save's managedAppPermissions and keeps only the rules for apps the save installs. A rule for an app
+     * the save leaves out or doesn't install is dropped, not refused: another path (the Applications page, a new
+     * version) can change a configuration's apps under the editor, and the console still holds that app's rules, so
+     * refusing would make the configuration unsaveable. Null (an older console or API client) keeps what is stored.
+     *
+     * @throws BadRequestException for a malformed rule: a state other than grant or deny, a permission name that is
+     *                             not android.permission.*, too long, duplicated, or more than
+     *                             {@link #MAX_RULES_PER_APP} for one app
+     */
+    static void normalizeManagedAppPermissions(Configuration configuration) {
+        List<ManagedAppPermission> rules = configuration.getManagedAppPermissions();
+        if (rules == null) return;
+        Set<Integer> eligibleApps = configuration.getApplications().stream()
+                .filter(app -> app != null && app.getId() != null && app.getAction() == DesiredConfigBuilder.ACTION_INSTALL)
+                .map(Application::getId).collect(Collectors.toSet());
+        Set<String> seen = new HashSet<String>();
+        java.util.Map<Integer, Integer> perApp = new java.util.HashMap<Integer, Integer>();
+        List<ManagedAppPermission> kept = new java.util.ArrayList<ManagedAppPermission>();
+        for (ManagedAppPermission rule : rules) {
+            if (rule == null || rule.getApplicationId() == null || rule.getPermission() == null
+                    || rule.getPermission().length() > MAX_PERMISSION_LENGTH
+                    || !PERMISSION_NAME.matcher(rule.getPermission()).matches()
+                    || !("grant".equals(rule.getState()) || "deny".equals(rule.getState()))
+                    || !seen.add(rule.getApplicationId() + " " + rule.getPermission())
+                    || perApp.merge(rule.getApplicationId(), 1, Integer::sum) > MAX_RULES_PER_APP) {
+                throw new BadRequestException("managedAppPermissions must be unique android.permission.* names set to "
+                        + "grant or deny, at most " + MAX_RULES_PER_APP + " per app");
+            }
+            if (eligibleApps.contains(rule.getApplicationId())) kept.add(rule);
+        }
+        configuration.setManagedAppPermissions(kept);
+    }
+
+    private void canonicalizeBackgroundImage(Configuration configuration, Configuration stored) {
+        if (backgroundImages == null) return;
+        try {
+            backgroundImages.apply(configuration, stored);
+        } catch (IllegalArgumentException e) {
+            // The usual ERROR envelope, so the console can show the message.
+            throw new BadRequestException(javax.ws.rs.core.Response.status(javax.ws.rs.core.Response.Status.BAD_REQUEST)
+                    .type(MediaType.APPLICATION_JSON)
+                    .entity(Response.ERROR(e.getMessage()))
+                    .build());
         }
     }
 
@@ -419,7 +500,7 @@ public class ConfigurationResource {
             log.error("Unauthorized attempt to access configuration applications");
             return Response.PERMISSION_DENIED();
         }
-        return Response.OK(this.configurationDAO.getConfigurationApplications(id));
+        return Response.OK(this.applicationDAO.populateRequestedPermissions(this.configurationDAO.getConfigurationApplications(id)));
     }
 
     // =================================================================================================================

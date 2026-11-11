@@ -146,13 +146,16 @@
   width: 1%;
   padding-right: 0;
 }
+.v2 .v2-cfged-apps__table td:is(.v2-cfged-apps__action, .v2-cfged-apps__kiosk, .v2-cfged-apps__rm) {
+  vertical-align: top;
+}
 .v2 .v2-cfged-apps__empty {
   color: var(--secondary);
   font-size: var(--fs-sm);
 }
 .v2 .v2-cfged-app {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   min-width: 0;
 }
@@ -196,6 +199,35 @@
   border-top: 1px solid var(--line-soft);
   font-size: var(--fs-sm);
   color: var(--secondary);
+}
+
+.v2 .v2-cfged-app__details {
+  margin-top: 8px;
+}
+.v2 .v2-cfged-permission-app {
+  max-width: 440px;
+}
+.v2 .v2-cfged-permission-app summary {
+  padding: 2px 0 8px;
+  cursor: pointer;
+  color: var(--secondary);
+  font-size: var(--fs-small);
+  font-weight: 400;
+}
+.v2 .v2-cfged-permission-app > p {
+  margin: 0 0 8px;
+  color: var(--secondary);
+  font-size: var(--fs-small);
+}
+.v2 .v2-cfged-permission-app__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 2px;
+}
+.v2 .v2-cfged-permission-app__row select {
+  min-width: 108px;
 }
 
 /* Headwind launcher only: dashed card, collapsed by default */

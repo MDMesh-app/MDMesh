@@ -62,15 +62,16 @@ it. It asks first, says so when that kiosk has no exit on the device, enters onl
 finishes the entry even if the screen goes away (a rotation); once in kiosk it queues a check-in. A newer delivered kiosk-off configuration removes the option even if another policy failed; a remote
 `kiosk.exit` leaves it available while the configuration still enables kiosk.
 
-**The 25 enforced fields**
+**The 26 enforced fields**
 
 | Area | Fields |
 |------|--------|
 | Kiosk | `mainAppId`, `kioskMode`, `kioskExit`, `kioskHome`, `kioskRecents`, `kioskNotifications`, `kioskSystemInfo`, `kioskKeyguard`, `kioskLockButtons`, `kioskLockVolume`, `password` (exit PIN, stored as entered) |
-| Launcher look | `backgroundColor`, `textColor`, `iconSize` |
+| Launcher look | `backgroundColor`, `textColor`, `iconSize`; also the kiosk background image (`backgroundImageFileId`, set in the Kiosk section, agent 0.5.0; see below) |
 | Device policy | `wifi`, `wifiRadio`, `locationServices`, `bluetooth`, `camera`, `usbStorage`, `disableScreenshots`, `disableFactoryReset`, `disableSafeBoot` |
 | Location | `requestUpdates` (location capture mode) |
 | Connectivity | `connectivityMode` (live-connection mode, 1.5) |
+| App permissions | `managedAppPermissions` (per installed app: Grant or Deny a runtime permission, 1.7) |
 
 `name` and `description` are metadata only. Wire shapes: `proto/payloads/config-apply.schema.json` and
 `proto/payloads/config-apply-result.schema.json`.
@@ -100,6 +101,25 @@ finishes the entry even if the screen goes away (a rotation); once in kiosk it q
 - **1.6:** the `locationServices` policy key: Android 11+ Device Owners turn Android Location services on or off and
   lock the setting while managed; Not managed (NULL, the upgrade value) lifts the lock and leaves the switch as it is.
   It is separate from `requestUpdates`. Agents without it, and Android 10 and older, report `unsupported`.
+- **1.7:** the `appPermissions` section: per app the configuration installs, runtime permissions set to `grant` or
+  `deny` (`DevicePolicyManager.setPermissionGrantState`, Device Owner). A rule left out goes back to Default, the
+  device-wide auto-grant set at enrollment. An empty list releases every override the agent set; an absent section
+  (an older server) leaves them. The agent applies a rule only to an installed app that requests the permission
+  (`not-requested` otherwise, which doesn't block); an app that isn't installed yet fails the document, and the
+  agent applies its rules as soon as its `app.install` succeeds, also after an update. Only agents that advertise
+  `app.runtimePermissions` get the section; the others get the document without it, under that document's revision,
+  and show as out of sync while the configuration has a rule.
+
+**Kiosk background image.** A configuration's managed image is an uploaded file (`backgroundImageFileId`). On
+save the server refuses anything but a PNG, JPEG or WebP of at most 10 MB and 16 megapixels (read from the header),
+and stores the file's URL in `backgroundImageUrl` and its SHA-256 in `backgroundImageSha256`; the browser's values
+are never used. `kiosk.theme.backgroundImage` is `{url, sha256}`, sent only when all three are set. Agent 0.5.0
+downloads it over HTTPS only (no redirect to HTTP), up to 10 MB, checks the SHA-256 and the 16-megapixel bound before
+caching it in private storage (only the current image is kept), and draws it behind the launcher grid, the splash
+and the hold screen; on any failure it keeps the background color, and tries again the next time the launcher comes
+to the foreground. With an `http://` server address devices keep the color. Older agents ignore the key (their
+kiosk is re-applied once when the image changes the revision). `backgroundImageUrl` is also the Headwind launcher's
+wallpaper: a save that sends another URL there stores it as that wallpaper and drops the managed image.
 
 **Wi-Fi radio Off, in detail**
 - Off is deferred, without blocking the other keys, while Wi-Fi is the device's only network. It's retried only at

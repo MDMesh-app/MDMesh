@@ -3,12 +3,18 @@
 // icon-only buttons, the password toggle, the colour picker, the ring on a selected segment / tab / nav item /
 // section, the focus ring and the not-reported bar segment are 3:1. Text buttons, chips and cards keep the soft v2
 // edges: their visible label identifies them (rows of kind 'exempt' in contrastPairs.ts).
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { PAIRS } from './contrastPairs';
 
 const SRC = resolve(import.meta.dirname, '..');
+
+function tsxFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((d) =>
+    d.isDirectory() ? tsxFiles(resolve(dir, d.name)) : d.name.endsWith('.tsx') ? [resolve(dir, d.name)] : [],
+  );
+}
 
 const STRONG_EDGES: Array<[what: string, file: string, selector: string, token: string]> = [
   ['text input / select / textarea', 'ui/Input.css', '.v2 .v2-input {', 'input-border'],
@@ -67,7 +73,9 @@ describe('edges that stay soft by design', () => {
 
   it('a select is never a bare native one: every <select> in core uses a styled class', () => {
     // #181 added a bare <select>; the shared Select (v2-input) or the pager/toolbar selects carry the 3:1 edge.
-    const files = import.meta.glob('../{pages,ui}/**/*.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+    const files = Object.fromEntries(
+      ['pages', 'ui'].flatMap((dir) => tsxFiles(resolve(SRC, dir))).map((f) => [f, readFileSync(f, 'utf8')]),
+    );
     expect(Object.keys(files).length).toBeGreaterThan(20);
     expect(Object.values(files).join('').match(/<select\b/g)?.length).toBeGreaterThan(2);
     const bare = Object.entries(files)

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- View tags of AppGridLayout cells: the item's key and the item last bound. -->
+    <item name="mdm_grid_key" type="id" />
+    <item name="mdm_grid_item" type="id" />
+</resources>

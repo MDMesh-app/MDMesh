@@ -4,31 +4,25 @@ import android.app.ActivityManager
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
-import android.graphics.Typeface
-import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
-import android.util.TypedValue
-import android.view.Gravity
-import android.view.View
-import android.view.ViewGroup
-import android.widget.Button
-import android.widget.GridLayout
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
 import com.mdmesh.agent.service.CheckInService
 import com.mdmesh.agent.ui.DialogSlot
 import com.mdmesh.agent.ui.ExitPinDialog
 import com.mdmesh.agent.ui.ExitPinUiState
+import com.mdmesh.agent.ui.IconSize
+import com.mdmesh.agent.ui.KioskAppLoader
+import com.mdmesh.agent.ui.KioskExit
+import com.mdmesh.agent.ui.KioskPalette
+import com.mdmesh.agent.ui.KioskRenderer
+import com.mdmesh.agent.ui.KioskScreen
 import com.mdmesh.agent.ui.MdmDialog
-import com.mdmesh.agent.ui.SystemBars
 import com.mdmesh.core.kiosk.KioskApplier
 import com.mdmesh.core.store.KioskStateStore
 import com.mdmesh.core.sync.CheckInWorker
@@ -78,7 +72,17 @@ class KioskLauncherActivity : ComponentActivity() {
     /** The hold screen is showing (so its event is recorded once per hold). */
     private var holding = false
 
-    /** Exit PIN or Exit locked; reopened after a rotation once the kiosk state is back (see [applyState]). */
+    /** Draws [KioskScreen]s; the activity decides which. */
+    private lateinit var renderer: KioskRenderer
+    private lateinit var apps: KioskAppLoader
+
+    /** The screen showing now. */
+    private var screen: KioskScreen = KioskScreen.Idle
+
+    /** Loads the grid's apps or the splash's app name for the screen showing; replaced with it. */
+    private var loading: Job? = null
+
+    /** Exit PIN or Exit locked; reopened after the activity is recreated, once the kiosk state is back. */
     private val dialogs = DialogSlot("exitDialog")
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -87,7 +91,9 @@ class KioskLauncherActivity : ComponentActivity() {
         // A kiosk device boots straight into HOME (this); keep the command channel alive even if
         // the user never opens the status screen.
         ContextCompat.startForegroundService(this, Intent(this, CheckInService::class.java))
-        setScreen(idleView())
+        apps = KioskAppLoader(packageManager)
+        renderer = KioskRenderer(this, Actions())
+        render(KioskScreen.Idle)
         // React to kiosk.enter/kiosk.exit live: those run in the check-in service, not here, so we
         // observe the persisted state and re-render (enter → grid/pin, exit → unpin + idle) without
         // waiting for the user to touch the screen.
@@ -98,24 +104,22 @@ class KioskLauncherActivity : ComponentActivity() {
         }
     }
 
-    /** Show [root] as the whole screen, clear of the system bars (its background runs under them). */
-    private fun setScreen(root: View) {
-        setContentView(root)
-        SystemBars.fit(this, root, (root.background as? ColorDrawable)?.color ?: INK)
+    /**
+     * The manifest's configChanges bring rotation, window size, font size, display size and dark mode here instead
+     * of recreating the kiosk HOME (which drew the idle screen first, a visible flash, and replayed the saved kiosk,
+     * reopening the pinned app). The screen is redrawn from its state in the new configuration; lock task, the
+     * crash-loop count and an open Exit kiosk dialog carry on.
+     */
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // The open exit dialog is rebuilt too, so it takes the new colours and sizes.
+        dialogs.onConfigurationChanged(newConfig) { tag, typed -> active?.let { reopenExitDialog(tag, it, typed) } }
+        renderer.rebuild()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         dialogs.save(outState)
-    }
-
-    /**
-     * configChanges (uiMode) keeps this activity through a dark-mode switch; the open exit dialog is rebuilt so it
-     * takes the new colours, the same way it's rebuilt after a recreation, keeping what was typed into the PIN.
-     */
-    override fun onConfigurationChanged(newConfig: Configuration) {
-        super.onConfigurationChanged(newConfig)
-        dialogs.onConfigurationChanged(newConfig) { tag, typed -> active?.let { reopenExitDialog(tag, it, typed) } }
     }
 
     /**
@@ -154,25 +158,33 @@ class KioskLauncherActivity : ComponentActivity() {
         // The kiosk an exit dialog was opened for is gone or replaced (a remote exit or re-entry, also one that
         // arrived while the launcher was stopped): close it rather than leave it on a kiosk it wasn't for.
         if (previous != null && previous != p) dialogs.dismiss()
-        if (p == null) {
-            dialogs.dismiss()
-            holding = false
-            stopLockTaskSafely()
-            setScreen(idleView())
-            return
+        when (KioskDelivery.of(previous, p)) {
+            KioskDelivery.IDLE -> {
+                dialogs.dismiss()
+                holding = false
+                stopLockTaskSafely()
+                render(KioskScreen.Idle)
+            }
+            // Back at the front with the same single-app kiosk: onResume reopens the app (or holds), once.
+            KioskDelivery.PIN_ONLY -> startLockTaskSafely()
+            KioskDelivery.APPLY -> {
+                val kiosk = p ?: return
+                // Pin first: a held device (a loop that tripped just before a reboot) is still in kiosk.
+                startLockTaskSafely()
+                val changed = previous != null && previous != kiosk
+                val held = returns.onApplied(changed) == KioskReturnPolicy.Action.HOLD
+                val shown = if (held) hold(kiosk) else show(kiosk)
+                KioskExitDialogs.reopenOn(shown, restored)?.let { reopenExitDialog(it, kiosk) }
+            }
         }
-        // Pin first: a held device (a loop that tripped just before a reboot) is still in kiosk.
-        startLockTaskSafely()
-        val action = returns.onApplied(changed = previous != null && previous != p)
-        val screen = if (action == KioskReturnPolicy.Action.HOLD) hold(p) else show(p)
-        KioskExitDialogs.reopenOn(screen, restored)?.let { reopenExitDialog(it, p) }
     }
 
     /**
-     * Reopen the exit dialog a rotation closed. Rebuilt from the current kiosk and [pinGate], never from saved state:
-     * the PIN check and the lockout stay where they are ([ExitPinGate] persists them), an expired lockout isn't shown,
-     * and a kiosk whose exit PIN was removed meanwhile gets no PIN prompt. [typed] is the PIN being typed when an
-     * in-place rebuild (a config change) replaced the dialog; it only ever passes through memory.
+     * Reopen the exit dialog [tag] after a recreation (rotation no longer causes one, but a locale change or process
+     * death still can) or a handled config change. Rebuilt from the current kiosk and [pinGate], never from saved
+     * state: the PIN check and the lockout stay where they are ([ExitPinGate] persists them), an expired lockout isn't
+     * shown, and a kiosk whose exit PIN was removed meanwhile gets no PIN prompt. [typed] is the PIN being typed when
+     * an in-place rebuild (a config change) replaced the dialog; it only ever passes through memory.
      */
     private fun reopenExitDialog(tag: String, p: KioskApplyPayload, typed: CharSequence? = null) {
         when (tag) {
@@ -183,32 +195,82 @@ class KioskLauncherActivity : ComponentActivity() {
 
     private fun show(p: KioskApplyPayload): LauncherScreen {
         holding = false
-        return if (p.mode == "single" && p.pinPackage != null) {
-            launchPinned(p)
-        } else {
-            setScreen(launcherGrid(p))
-            LauncherScreen.GRID
-        }
+        return if (p.mode == "single" && p.pinPackage != null) launchPinned(p) else showGrid(p)
     }
 
     /** Launch + show the pinned app (single mode), with a themed splash behind it. */
     private fun launchPinned(p: KioskApplyPayload): LauncherScreen {
-        val intent = p.pinPackage?.let { packageManager.getLaunchIntentForPackage(it) }
-        if (intent == null) {
-            setScreen(launcherGrid(p)) // unknown package → fall back to the grid
-            return LauncherScreen.GRID
+        val pkg = p.pinPackage
+        // Resolved here, not in the background: the app opens in the same step that decided to open it.
+        val intent = pkg?.let { packageManager.getLaunchIntentForPackage(it) }
+        if (pkg == null || intent == null) {
+            return showGrid(p) // unknown package → fall back to the grid
         }
-        setScreen(splashView(p))
+        val splash = KioskScreen.Splash(palette(p), exitFor(p), pkg, apps.cachedLabel(pkg))
+        render(splash)
         runCatching { startActivity(intent) }
+        if (splash.appName == null) {
+            load { apps.label(pkg)?.let { name -> if (screen == splash) render(splash.copy(appName = name)) } }
+        }
         return LauncherScreen.PINNED_APP
+    }
+
+    /** The app grid: drawn at once (with the apps already loaded for this allowlist), then refreshed off Main. */
+    private fun showGrid(p: KioskApplyPayload): LauncherScreen {
+        val packages = p.allowedPackages.distinct()
+        val known = (screen as? KioskScreen.Grid)?.takeIf { it.packages == packages }?.apps
+        val grid = KioskScreen.Grid(palette(p), exitFor(p), IconSize.of(p.theme.iconSize), packages, known)
+        render(grid)
+        load {
+            val loaded = apps.load(packages)
+            val now = screen
+            if (now is KioskScreen.Grid && now.packages == packages) render(now.copy(apps = loaded))
+        }
+        return LauncherScreen.GRID
     }
 
     /** The app closed too often: stay in kiosk on the hold screen, without reopening it. */
     private fun hold(p: KioskApplyPayload): LauncherScreen {
         if (!holding) events.record("kioskCrashLoop", "kiosk app closed repeatedly; kiosk stays on, app not reopened")
         holding = true
-        setScreen(holdView(p))
+        render(KioskScreen.Hold(palette(p), exitFor(p)))
         return LauncherScreen.HOLD
+    }
+
+    private fun render(next: KioskScreen) {
+        if (next::class != screen::class) loading?.cancel()
+        screen = next
+        renderer.render(next)
+    }
+
+    private fun load(block: suspend () -> Unit) {
+        loading?.cancel()
+        loading = lifecycleScope.launch { block() }
+    }
+
+    private fun palette(p: KioskApplyPayload): KioskPalette =
+        KioskPalette.of(parseColor(p.theme.backgroundColor), parseColor(p.theme.textColor))
+
+    private fun exitFor(p: KioskApplyPayload): KioskExit = KioskExit.of(p.exitMode, pinGate.isAvailable(p.password))
+
+    private fun parseColor(value: String?): Int? =
+        value?.let { runCatching { Color.parseColor(it) }.getOrNull() }
+
+    /** What the launcher's views can do. The exit goes through [promptExit] and the PIN check, as always. */
+    private inner class Actions : KioskRenderer.Actions {
+        override fun openApp(packageName: String) {
+            runCatching { packageManager.getLaunchIntentForPackage(packageName)?.let { startActivity(it) } }
+        }
+
+        override fun openAgain() {
+            val p = active ?: return
+            returns.retry()
+            show(p)
+        }
+
+        override fun requestExit() {
+            active?.let(::promptExit)
+        }
     }
 
     private fun startLockTaskSafely() {
@@ -289,236 +351,5 @@ class KioskLauncherActivity : ComponentActivity() {
             CheckInWorker.scheduleAfterCurrent(applicationContext)
             finish()
         }
-    }
-
-    // --- Views -------------------------------------------------------------------------------
-
-    private fun splashView(p: KioskApplyPayload): View {
-        val bg = parseColor(p.theme.backgroundColor, INK)
-        val fg = parseColor(p.theme.textColor, TEXT)
-        return frame(bg).apply {
-            addView(centeredText(getString(R.string.kiosk_loading), 18f, fg))
-            addExitAffordance(p, this)
-        }
-    }
-
-    private fun launcherGrid(p: KioskApplyPayload): View {
-        val bg = parseColor(p.theme.backgroundColor, INK)
-        val fg = parseColor(p.theme.textColor, TEXT)
-        val cell = iconCellPx(p.theme.iconSize)
-        val cols = maxOf(2, (resources.displayMetrics.widthPixels - dp(24)) / (cell + dp(24)))
-
-        val grid = GridLayout(this).apply {
-            columnCount = cols
-            setPadding(dp(12), dp(16), dp(12), dp(28))
-        }
-        var rendered = 0
-        for (pkg in p.allowedPackages.distinct()) {
-            val app = runCatching { packageManager.getApplicationInfo(pkg, 0) }.getOrNull() ?: continue
-            val icon = runCatching { packageManager.getApplicationIcon(pkg) }.getOrNull() ?: continue
-            val label = runCatching { packageManager.getApplicationLabel(app).toString() }.getOrDefault(pkg)
-            grid.addView(appCell(pkg, label, icon, cell, fg))
-            rendered++
-        }
-
-        // Always render a header + (when nothing resolved) an empty-state, so kiosk is never a
-        // bare black screen — that previously happened whenever the allowlist was empty or none of
-        // the packages were installed on the device.
-        val column = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(28), dp(24), dp(12))
-            layoutParams = ViewGroup.LayoutParams(MATCH, ViewGroup.LayoutParams.WRAP_CONTENT)
-        }
-        column.addView(text(getString(R.string.kiosk_header), 20f, fg, bold = true))
-        if (rendered == 0) {
-            column.addView(
-                text(
-                    getString(R.string.kiosk_empty),
-                    14f,
-                    MUTED,
-                ).apply { setPadding(0, dp(10), 0, 0) },
-            )
-        }
-        column.addView(grid)
-
-        val root = frame(bg)
-        root.addView(
-            ScrollView(this).apply {
-                addView(column)
-                layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
-            },
-        )
-        addExitAffordance(p, root)
-        return root
-    }
-
-    private fun appCell(
-        pkg: String,
-        label: String,
-        icon: android.graphics.drawable.Drawable,
-        cellPx: Int,
-        fg: Int,
-    ): View = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        gravity = Gravity.CENTER
-        setPadding(dp(12), dp(12), dp(12), dp(12))
-        isClickable = true
-        addView(
-            ImageView(this@KioskLauncherActivity).apply {
-                setImageDrawable(icon)
-                layoutParams = LinearLayout.LayoutParams(cellPx, cellPx)
-            },
-        )
-        addView(
-            text(label, 12f, fg).apply {
-                gravity = Gravity.CENTER
-                maxLines = 1
-                setPadding(0, dp(6), 0, 0)
-            },
-        )
-        setOnClickListener {
-            runCatching {
-                packageManager.getLaunchIntentForPackage(pkg)?.let { startActivity(it) }
-            }
-        }
-    }
-
-    private fun idleView(): View = frame(INK).apply {
-        val col = LinearLayout(this@KioskLauncherActivity).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
-        }
-        col.addView(centeredText(getString(R.string.brand_name), 28f, SIGNAL, bold = true))
-        col.addView(centeredText(getString(R.string.kiosk_idle_subtitle), 14f, MUTED))
-        addView(col)
-    }
-
-    private fun holdView(p: KioskApplyPayload): View {
-        val bg = parseColor(p.theme.backgroundColor, INK)
-        val fg = parseColor(p.theme.textColor, TEXT)
-        val col = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(dp(28), 0, dp(28), 0)
-            layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
-        }
-        col.addView(centeredText(getString(R.string.kiosk_hold_title), 22f, fg, bold = true))
-        col.addView(
-            centeredText(
-                getString(R.string.kiosk_hold_message),
-                14f,
-                MUTED,
-            ).apply { setPadding(0, dp(12), 0, dp(24)) },
-        )
-        col.addView(
-            Button(this).apply {
-                setText(R.string.kiosk_hold_retry)
-                setOnClickListener {
-                    returns.retry()
-                    show(p)
-                }
-            },
-        )
-        val root = frame(bg)
-        root.addView(col)
-        addExitAffordance(p, root)
-        return root
-    }
-
-    /** Add the per-[KioskApplyPayload.exitMode] exit affordance to [parent]; none without an exit PIN. */
-    private fun addExitAffordance(p: KioskApplyPayload, parent: ViewGroup) {
-        if (!pinGate.isAvailable(p.password)) return
-        when (p.exitMode) {
-            "visible" -> {
-                val btn = Button(this).apply {
-                    setText(R.string.kiosk_exit_button)
-                    setOnClickListener { promptExit(p) }
-                }
-                parent.addView(
-                    FrameWrap(this, btn, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL, dp(24)),
-                )
-            }
-            "gesture" -> {
-                // Invisible top-right corner target; 7 taps within the window opens the prompt.
-                val target = View(this).apply {
-                    var taps = 0
-                    var first = 0L
-                    setOnClickListener {
-                        val nowMs = System.currentTimeMillis()
-                        if (nowMs - first > GESTURE_WINDOW_MS) { taps = 0; first = nowMs }
-                        if (++taps >= GESTURE_TAPS) { taps = 0; promptExit(p) }
-                    }
-                }
-                parent.addView(
-                    FrameWrap(this, target, Gravity.TOP or Gravity.END, 0, dp(72), dp(72)),
-                )
-            }
-            else -> Unit // "remote": no on-device exit
-        }
-    }
-
-    // --- View helpers ------------------------------------------------------------------------
-
-    private fun frame(bg: Int): android.widget.FrameLayout =
-        android.widget.FrameLayout(this).apply {
-            setBackgroundColor(bg)
-            layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
-        }
-
-    private fun centeredText(s: String, sizeSp: Float, color: Int, bold: Boolean = false): TextView =
-        text(s, sizeSp, color, bold).apply { gravity = Gravity.CENTER }
-
-    private fun text(s: String, sizeSp: Float, color: Int, bold: Boolean = false): TextView =
-        TextView(this).apply {
-            text = s
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
-            setTextColor(color)
-            if (bold) setTypeface(typeface, Typeface.BOLD)
-        }
-
-    private fun iconCellPx(size: String?): Int = when (size?.uppercase()) {
-        "LARGE" -> dp(96)
-        "MEDIUM" -> dp(72)
-        else -> dp(56)
-    }
-
-    private fun parseColor(value: String?, fallback: Int): Int =
-        value?.let { runCatching { Color.parseColor(it) }.getOrNull() } ?: fallback
-
-    private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
-
-    private companion object {
-        const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
-        const val GESTURE_TAPS = 7
-        const val GESTURE_WINDOW_MS = 3_000L
-        val INK = Color.parseColor("#0E1117")
-        val TEXT = Color.parseColor("#E8EEF4")
-        val MUTED = Color.parseColor("#8693A4")
-        val SIGNAL = Color.parseColor("#F4B942")
-    }
-}
-
-/** A [android.widget.FrameLayout.LayoutParams]-positioned wrapper, kept tiny for the launcher's
- *  programmatic UI (no XML). Places [child] at [gravity] with optional margins/size. */
-private class FrameWrap(
-    activity: ComponentActivity,
-    child: View,
-    gravity: Int,
-    marginPx: Int,
-    widthPx: Int = ViewGroup.LayoutParams.WRAP_CONTENT,
-    heightPx: Int = ViewGroup.LayoutParams.WRAP_CONTENT,
-) : android.widget.FrameLayout(activity) {
-    init {
-        layoutParams = ViewGroup.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT,
-        )
-        addView(
-            child,
-            android.widget.FrameLayout.LayoutParams(widthPx, heightPx, gravity).apply {
-                setMargins(marginPx, marginPx, marginPx, marginPx)
-            },
-        )
     }
 }

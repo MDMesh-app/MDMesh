@@ -38,6 +38,17 @@ class ManifestTest {
         for (change in listOf("keyboard", "keyboardHidden", "navigation")) assertTrue(change, change in flags)
     }
 
+    @Test fun `rotation, window size, font size and display size do not recreate the kiosk HOME`() {
+        // A recreate flashes the idle screen and replays the kiosk (reopening the pinned app); the launcher redraws
+        // itself in onConfigurationChanged instead.
+        val flags = component("activity", ".KioskLauncherActivity").getAttributeNS(ANDROID, "configChanges").split('|')
+        val needed = listOf(
+            "orientation", "screenSize", "smallestScreenSize", "screenLayout", "fontScale", "density",
+            "keyboard", "keyboardHidden", "navigation",
+        )
+        assertEquals(emptyList<String>(), needed - flags.toSet())
+    }
+
     @Test fun `the kiosk HOME keeps its launch and lock-task attributes`() {
         val kiosk = component("activity", ".KioskLauncherActivity")
         assertEquals("singleInstance", kiosk.getAttributeNS(ANDROID, "launchMode"))

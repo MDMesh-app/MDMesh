@@ -32,6 +32,7 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Process
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.mdmesh.core.di.DownloadHttpClient
@@ -144,7 +145,7 @@ class InstallManager @Inject constructor(
     private val packageInstaller: PackageInstaller
         get() = context.packageManager.packageInstaller
 
-    private val downloads = DownloadCache({ context.cacheDir })
+    private val downloads = DownloadCache({ context.cacheDir }, owner = Process.myPid())
 
     /**
      * Downloads (or reads) the APK, applies the version policy, then performs a silent

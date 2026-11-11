@@ -15,14 +15,16 @@ class DownloadSweepTest {
     private fun file(name: String, ageMs: Long) =
         dir.newFile(name).apply { setLastModified(now - ageMs) }
 
+    private val me = 123
+
     @Test
-    fun `deletes only old downloads no install is using`() {
-        val orphan = file("mdm-install-1.apk", ageMs = 2 * 60 * 60_000L)
-        val inUse = file("mdm-install-2.apk", ageMs = 2 * 60 * 60_000L) // a commit waiting on the platform
-        val fresh = file("mdm-install-3.apk", ageMs = 60_000L)
+    fun `this process's downloads go only when old and no install is using them`() {
+        val orphan = file("mdm-install-123-1.apk", ageMs = 2 * 60 * 60_000L)
+        val inUse = file("mdm-install-123-2.apk", ageMs = 2 * 60 * 60_000L) // a commit waiting on the platform
+        val fresh = file("mdm-install-123-3.apk", ageMs = 60_000L)
         val other = file("other.apk", ageMs = 2 * 60 * 60_000L)
 
-        val deleted = DownloadSweep.sweep(dir.root, inUse = setOf(inUse), now = now)
+        val deleted = DownloadSweep.sweep(dir.root, inUse = setOf(inUse), now = now, owner = me)
 
         assertEquals(listOf(orphan), deleted)
         assertTrue(inUse.exists() && fresh.exists() && other.exists())
@@ -30,8 +32,19 @@ class DownloadSweepTest {
     }
 
     @Test
+    fun `a dead process's download goes at once, however fresh`() {
+        // Android killed the agent mid-download and restarted it a minute later: no later sweep may be needed.
+        val leftover = file("mdm-install-999-7.apk", ageMs = 60_000L)
+        val olderAgent = file("mdm-install-8.apk", ageMs = 60_000L) // named before downloads carried their process
+
+        val deleted = DownloadSweep.sweep(dir.root, inUse = emptySet(), now = now, owner = me)
+
+        assertEquals(setOf(leftover, olderAgent), deleted.toSet())
+    }
+
+    @Test
     fun `a missing cache directory is not an error`() {
-        assertTrue(DownloadSweep.sweep(dir.root.resolve("gone"), emptySet(), now).isEmpty())
+        assertTrue(DownloadSweep.sweep(dir.root.resolve("gone"), emptySet(), now, me).isEmpty())
     }
 }
 
@@ -40,7 +53,7 @@ class DownloadCacheTest {
     @get:Rule val dir = TemporaryFolder()
 
     private val now = 10 * 60 * 60_000L
-    private val cache = DownloadCache({ dir.root }, { now })
+    private val cache = DownloadCache({ dir.root }, owner = 123, now = { now })
     private val old = now - 2 * 60 * 60_000L
 
     @Test
@@ -54,7 +67,7 @@ class DownloadCacheTest {
 
     @Test
     fun `starting a download sweeps what a dead process left`() {
-        val orphan = dir.newFile("mdm-install-1.apk").apply { setLastModified(old) }
+        val orphan = dir.newFile("mdm-install-999-1.apk") // a dead process's, a minute old
         cache.newFile()
         assertTrue(!orphan.exists())
     }

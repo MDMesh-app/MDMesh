@@ -26,7 +26,7 @@ import java.util.Map;
 
 /**
  * The enroll endpoint over the real {@link AgentEnrollmentDAO} logic, with in-memory mappers (no database, so no
- * rollback: what a failed transaction keeps is covered by AgentEnrollmentTransactionIT against PostgreSQL).
+ * rollback: what a failed transaction keeps is covered by AgentEnrollmentTransactionTest against PostgreSQL).
  */
 final class EnrollFixture {
 
@@ -65,7 +65,7 @@ final class EnrollFixture {
                 })
                 .answer("claim", a -> claim() ? 1 : 0);
         FakeMapper<AgentDeviceMapper> devices = new FakeMapper<>(AgentDeviceMapper.class)
-                .answer("lockCustomerDeviceLimit", a -> atDeviceLimit ? 1 : 0)
+                .answer("customerDeviceLimit", a -> atDeviceLimit ? 1 : 0)
                 .answer("hasSeveralCustomers", a -> atDeviceLimit)
                 .answer("countCustomerDevices", a -> atDeviceLimit ? 1L : 0L)
                 .answer("findEnrollRetry", a -> retryable.get((String) a[0]))

@@ -83,12 +83,16 @@ public interface AgentDeviceMapper {
                       @Param("attemptHash") String attemptHash,
                       @Param("secretHash") String secretHash);
 
+    /** The customer's device limit as the console applies it: 0 (none) for a master customer; null when not found. */
+    @Select({"SELECT CASE WHEN master THEN 0 ELSE deviceLimit END FROM customers WHERE id = #{customerId}"})
+    Integer customerDeviceLimit(@Param("customerId") int customerId);
+
     /**
-     * Locks the customer's row until the transaction ends and returns its device limit (0: none), or null when there is
-     * no such customer. Enrollments of one customer then count its devices one after another, whatever code each uses.
+     * Serialises the device-limit check of one customer's enrollments until the transaction ends: an advisory lock
+     * (namespace 1296321861, "MDME"), so no row is locked and nothing else waits for it.
      */
-    @Select({"SELECT deviceLimit FROM customers WHERE id = #{customerId} FOR UPDATE"})
-    Integer lockCustomerDeviceLimit(@Param("customerId") int customerId);
+    @Select({"SELECT 1 FROM (SELECT pg_advisory_xact_lock(1296321861, #{customerId})) AS locked"})
+    Integer lockCustomerEnrollments(@Param("customerId") int customerId);
 
     /** The customer's devices, as on-demand creation counts them (UnsecureDAO.createNewDeviceOnDemand). */
     @Select({"SELECT COUNT(*) FROM devices WHERE customerId = #{customerId}"})

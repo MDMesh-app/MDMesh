@@ -116,6 +116,10 @@ public class AgentResource {
      * (no final marker), so the device enrolls once there is room.
      */
     static final String DEVICE_LIMIT = "error.agent.enrollment.deviceLimit";
+    /** Enrollments of one code allowed at once (waiting on its lock); more get ENROLLMENT_IN_PROGRESS at once. */
+    static final int MAX_ENROLLS_PER_CODE = 8;
+    private static final com.hmdm.rest.resource.support.PerKeyLimit<Integer> enrollsPerCode =
+            new com.hmdm.rest.resource.support.PerKeyLimit<>(MAX_ENROLLS_PER_CODE);
     // Details are short diagnostics, except apps.scan / apps.icons, which return JSON: the console asks for icons in
     // batches of 24 (96 px PNG, base64), well under 1 MiB even for incompressible icons. A larger detail is not
     // stored (cut JSON would be useless); the command is marked failed with a short note instead.
@@ -195,6 +199,13 @@ public class AgentResource {
         String attemptHash = enrollAttemptHash(token.getId(), request.getEnrollAttempt());
         String hardwareId = request.getHardwareId() == null || request.getHardwareId().trim().isEmpty()
                 ? null : request.getHardwareId().trim();
+        // Enrolls of one code wait on its lock one after another, each holding a pooled connection: past a few, turn
+        // the rest away now (retryable) instead of letting one code's burst take the pool.
+        if (!enrollsPerCode.tryEnter(token.getId())) {
+            logger.info("Agent enroll with token {}: {} already running, asked to retry", token.getId(),
+                    MAX_ENROLLS_PER_CODE);
+            return Response.ERROR(ENROLLMENT_IN_PROGRESS);
+        }
         AgentEnrollmentDAO.Outcome outcome;
         try {
             // One transaction (AgentEnrollmentDAO): all of it or nothing, enrolls of this token one after another.
@@ -221,6 +232,8 @@ public class AgentResource {
             logger.error("Agent enroll with token {} failed and was rolled back: {}{}", token.getId(),
                     e.getClass().getSimpleName(), sqlState(e).map(st -> " (SQL state " + st + ")").orElse(""));
             return Response.ERROR(ENROLLMENT_FAILED);
+        } finally {
+            enrollsPerCode.exit(token.getId());
         }
 
         switch (outcome.kind) {
@@ -301,7 +314,7 @@ public class AgentResource {
             Configuration configuration = unsecureDAO.getConfigurationById(device.getConfigurationId());
             return configuration == null ? null : configuration.getName();
         } catch (RuntimeException e) {
-            logger.warn("Agent enroll: configuration {} name not read: {}", device.getConfigurationId(), e.toString());
+            logger.warn("Agent enroll: configuration {} name not read: {}", device.getConfigurationId(), e.getClass().getSimpleName());
             return null;
         }
     }

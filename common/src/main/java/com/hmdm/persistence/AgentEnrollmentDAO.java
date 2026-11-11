@@ -101,6 +101,14 @@ public class AgentEnrollmentDAO {
         }
     }
 
+    /** How long an enrollment waits for its code's (and customer's) lock before failing retryably. */
+    private volatile long lockTimeoutMs = 15_000L;
+
+    /** Tests: a short lock wait, to drive a real lock timeout. */
+    void setLockTimeoutMs(long lockTimeoutMs) {
+        this.lockTimeoutMs = lockTimeoutMs;
+    }
+
     private final AgentEnrollmentTokenMapper tokenMapper;
     private final AgentDeviceMapper deviceMapper;
     private final DeviceFactory deviceFactory;
@@ -126,11 +134,11 @@ public class AgentEnrollmentDAO {
      * @throws RuntimeException         a database failure, including the token lock not obtained in time (rolled back)
      */
     @Transactional
-    public Outcome enroll(int tokenId, int customerId, Integer configurationId, String deviceNumber, String secretHash, String capabilitiesJson,
-                          String hardwareId, String attemptHash) {
+    public Outcome enroll(int tokenId, int customerId, Integer configurationId, String deviceNumber, String secretHash,
+                          String capabilitiesJson, String hardwareId, String attemptHash) {
         long now = System.currentTimeMillis();
         // Enrolls of one token run one after another; a request that waits longer than this fails retryably.
-        tokenMapper.setEnrollLockTimeout();
+        tokenMapper.setEnrollLockTimeout(lockTimeoutMs + "ms");
         if (tokenMapper.lockForEnroll(tokenId) == null) {
             return Outcome.noUse();
         }
@@ -141,12 +149,14 @@ public class AgentEnrollmentDAO {
                 return Outcome.resumed(resumable);
             }
         }
-        // A new device: within the customer's device limit, counted under the customer's row lock so two enrolls of
-        // the same customer (any codes) can't both take the last place. A resumed enrollment (above) adds no device.
-        enforceDeviceLimit(customerId);
+        // The claim first: a used-up, stopped or expired code gets its final answer, never the device limit's
+        // retryable one. A refusal below rolls the claim back, so no use is spent.
         if (tokenMapper.claim(tokenId, now) != 1) {
             return Outcome.noUse();
         }
+        // A new device: within the customer's device limit. A resumed enrollment (above) adds no device, so it is never
+        // counted again.
+        enforceDeviceLimit(customerId);
         Device device = deviceFactory.create(deviceNumber, customerId, configurationId);
         if (device == null) {
             throw new CreationRefusedException();
@@ -159,14 +169,26 @@ public class AgentEnrollmentDAO {
     }
 
     /**
-     * Refuses a new device when the customer has as many as its limit allows. As on-demand creation: only on an install
-     * with several customers (the first customer carries a default limit nobody set), and 0 means no limit.
+     * Refuses a new device when the customer has as many as its limit allows, by the console's rule
+     * (DeviceResource, CommonDAO.loadCustomerSettings): only on an install with several customers (the first customer
+     * carries a default limit nobody set), none for a master customer, 0 means no limit, and a negative one blocks.
+     *
+     * <p>The count is taken under a transaction-scoped advisory lock on the customer, so two enrolls of the customer
+     * (through any codes) can't both take the last place. It locks no row: device and other inserts that reference the
+     * customer, and sign-ins (which update it), never wait for an enrollment. Taken only when a limit applies.</p>
      */
     private void enforceDeviceLimit(int customerId) {
-        Integer limit = deviceMapper.lockCustomerDeviceLimit(customerId);
-        if (limit == null || limit <= 0 || !deviceMapper.hasSeveralCustomers()) {
+        if (!deviceMapper.hasSeveralCustomers()) {
             return;
         }
+        Integer limit = deviceMapper.customerDeviceLimit(customerId);
+        if (limit == null || limit == 0) {
+            return;
+        }
+        if (limit < 0) {
+            throw new DeviceLimitException(limit);
+        }
+        deviceMapper.lockCustomerEnrollments(customerId);
         if (deviceMapper.countCustomerDevices(customerId) >= limit) {
             throw new DeviceLimitException(limit);
         }

@@ -119,6 +119,7 @@ public class AgentEnrollmentTransactionTest {
 
     private String schema;
     private AgentEnrollmentDAO enrollments;
+    private AgentDeviceMapper deviceMapper;
     private ExecutorService pool;
 
     @Before
@@ -136,12 +137,18 @@ public class AgentEnrollmentTransactionTest {
                         + "expiresAt BIGINT, configurationId INT, maxUses INT NOT NULL DEFAULT 1, "
                         + "useCount INT NOT NULL DEFAULT 0, revokedAt BIGINT)",
                 "CREATE TABLE " + schema + ".customers (id INT PRIMARY KEY, name VARCHAR(50), "
-                        + "deviceLimit INT NOT NULL DEFAULT 3)",
+                        + "deviceLimit INT NOT NULL DEFAULT 3, master BOOLEAN NOT NULL DEFAULT false, "
+                        + "lastLoginTime BIGINT)",
                 "INSERT INTO " + schema + ".customers (id, name, deviceLimit) VALUES (1, 'default', 3)",
                 "CREATE TABLE " + schema + ".devices (id serial PRIMARY KEY, number VARCHAR(100) UNIQUE NOT NULL, "
-                        + "customerId INT, configurationId INT, lastUpdate BIGINT, enrollTime BIGINT, "
+                        + "customerId INT REFERENCES " + schema + ".customers(id), configurationId INT, "
+                        + "lastUpdate BIGINT, enrollTime BIGINT, description TEXT, "
                         + "agentSecretHash VARCHAR(64), agentCapabilities TEXT, hardwareid VARCHAR(100), "
-                        + "agentEnrollAttemptHash VARCHAR(64))");
+                        + "agentEnrollAttemptHash VARCHAR(64))",
+                "CREATE TABLE " + schema + ".users (id INT PRIMARY KEY, customerId INT, "
+                        + "allDevicesAvailable BOOLEAN NOT NULL DEFAULT true)",
+                "CREATE TABLE " + schema + ".deviceGroups (id serial PRIMARY KEY, deviceId INT NOT NULL, groupId INT)",
+                "CREATE TABLE " + schema + ".userDeviceGroupsAccess (id serial PRIMARY KEY, userId INT, groupId INT)");
 
         Properties props = new Properties();
         props.setProperty("JDBC.driver", "org.postgresql.Driver");
@@ -163,6 +170,7 @@ public class AgentEnrollmentTransactionTest {
             }
         });
         enrollments = injector.getInstance(AgentEnrollmentDAO.class);
+        deviceMapper = injector.getInstance(AgentDeviceMapper.class);
         pool = Executors.newFixedThreadPool(8);
     }
 
@@ -425,5 +433,113 @@ public class AgentEnrollmentTransactionTest {
         existingDevices(1, 3);
         int tokenId = token(1);
         assertEquals(AgentEnrollmentDAO.Outcome.Kind.CREATED, enroll(tokenId, "attempt-0123456789abcdef").kind);
+    }
+
+    /** Runs {@code statement} on its own connection, giving up after {@code ms} of lock waiting; true if it ran. */
+    private boolean runsWithoutWaiting(String statement, int ms) throws Exception {
+        try (Connection c = connect(); Statement st = c.createStatement()) {
+            st.execute("SET lock_timeout = '" + ms + "ms'");
+            st.execute(statement);
+            return true;
+        } catch (java.sql.SQLException e) {
+            if ("55P03".equals(e.getSQLState())) return false;
+            throw e;
+        }
+    }
+
+    /** Starts an enroll that stops inside its transaction (after the device insert) until released. */
+    private Future<AgentEnrollmentDAO.Outcome> enrollHeldOpen(int tokenId, int customerId) throws Exception {
+        Hooks.inside = new CountDownLatch(1);
+        Hooks.proceed = new CountDownLatch(1);
+        Future<AgentEnrollmentDAO.Outcome> f = pool.submit(() -> enroll(tokenId, customerId, "attempt-held-0123456789"));
+        assertTrue("the enroll is inside its transaction", Hooks.inside.await(10, TimeUnit.SECONDS));
+        return f;
+    }
+
+    @Test
+    public void an_enroll_on_a_single_customer_install_blocks_no_other_insert_and_no_sign_in() throws Exception {
+        int tokenId = token(1);
+        Future<AgentEnrollmentDAO.Outcome> held = enrollHeldOpen(tokenId, 1);
+        try {
+            assertTrue("another device for the customer is added meanwhile", runsWithoutWaiting(
+                    "INSERT INTO " + schema + ".devices (number, customerId) VALUES ('console-1', 1)", 1500));
+            assertTrue("a sign-in records its time meanwhile", runsWithoutWaiting(
+                    "UPDATE " + schema + ".customers SET lastLoginTime = 1 WHERE id = 1", 1500));
+        } finally {
+            Hooks.proceed.countDown();
+        }
+        assertEquals(AgentEnrollmentDAO.Outcome.Kind.CREATED, held.get(20, TimeUnit.SECONDS).kind);
+    }
+
+    @Test
+    public void an_enroll_under_a_device_limit_blocks_no_other_insert_and_no_sign_in() throws Exception {
+        int customerId = customer(5);
+        int tokenId = token(5, customerId);
+        Future<AgentEnrollmentDAO.Outcome> held = enrollHeldOpen(tokenId, customerId);
+        try {
+            assertTrue(runsWithoutWaiting("INSERT INTO " + schema + ".devices (number, customerId) VALUES "
+                    + "('console-2', " + customerId + ")", 1500));
+            assertTrue(runsWithoutWaiting("UPDATE " + schema + ".customers SET lastLoginTime = 1 WHERE id = "
+                    + customerId, 1500));
+        } finally {
+            Hooks.proceed.countDown();
+        }
+        assertEquals(AgentEnrollmentDAO.Outcome.Kind.CREATED, held.get(20, TimeUnit.SECONDS).kind);
+    }
+
+    @Test
+    public void a_dead_code_at_the_device_limit_gets_its_final_answer_not_the_limit() throws Exception {
+        int customerId = customer(1);
+        existingDevices(customerId, 1);
+        int usedUp = token(1, customerId);
+        sql("UPDATE " + schema + ".agentEnrollmentToken SET useCount = 1, used = true WHERE id = " + usedUp);
+        int expired = token(5, customerId);
+        sql("UPDATE " + schema + ".agentEnrollmentToken SET expiresAt = 1 WHERE id = " + expired);
+
+        assertEquals(AgentEnrollmentDAO.Outcome.Kind.NO_USE, enroll(usedUp, customerId, null).kind);
+        assertEquals(AgentEnrollmentDAO.Outcome.Kind.NO_USE, enroll(expired, customerId, null).kind);
+    }
+
+    @Test
+    public void a_master_customer_has_no_limit_and_a_negative_limit_blocks() throws Exception {
+        int master = customer(1);
+        sql("UPDATE " + schema + ".customers SET master = true WHERE id = " + master);
+        existingDevices(master, 3);
+        assertEquals(AgentEnrollmentDAO.Outcome.Kind.CREATED, enroll(token(1, master), master, null).kind);
+
+        int negative = customer(-1);
+        try {
+            enroll(token(1, negative), negative, null);
+            fail("a negative limit blocks, as in the console");
+        } catch (AgentEnrollmentDAO.DeviceLimitException expected) {
+            assertEquals(-1, expected.limit);
+        }
+    }
+
+    @Test
+    public void a_lock_wait_past_the_timeout_answers_retryably_and_keeps_nothing() throws Exception {
+        int tokenId = token(1);
+        enrollments.setLockTimeoutMs(300);
+        com.hmdm.persistence.domain.AgentEnrollmentToken t = new com.hmdm.persistence.domain.AgentEnrollmentToken();
+        t.setId(tokenId);
+        t.setCustomerId(1);
+        AgentEnrollmentTokenDAO tokens = new AgentEnrollmentTokenDAO(null) {
+            @Override public com.hmdm.persistence.domain.AgentEnrollmentToken findByToken(String v) { return t; }
+        };
+        com.hmdm.rest.resource.AgentResource resource = new com.hmdm.rest.resource.AgentResource(
+                null, tokens, null, null, null, null, null, null, null, enrollments);
+        try (Connection c = connect(); Statement st = c.createStatement()) {
+            c.setAutoCommit(false);
+            st.executeQuery("SELECT id FROM " + schema + ".agentEnrollmentToken WHERE id = " + tokenId + " FOR UPDATE")
+                    .close();
+            com.hmdm.rest.json.agent.AgentEnrollRequest req = new com.hmdm.rest.json.agent.AgentEnrollRequest();
+            req.setEnrollToken("any");
+            req.setEnrollAttempt("attempt-0123456789abcdef");
+            com.hmdm.rest.json.Response r = resource.enroll(req);
+            assertEquals("error.agent.enrollment.inProgress", r.getMessage());
+            c.rollback();
+        }
+        assertEquals("nothing kept", 0, devices());
+        assertEquals("no use spent", 0, uses(tokenId));
     }
 }

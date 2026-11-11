@@ -14,7 +14,7 @@ import static org.junit.Assert.assertTrue;
 
 /**
  * A token for several devices, through the enroll endpoint and in the SQL that counts its uses. What a refused or
- * failed enrollment keeps (nothing: its transaction rolls back) is AgentEnrollmentTransactionIT's, against PostgreSQL.
+ * failed enrollment keeps (nothing: its transaction rolls back) is AgentEnrollmentTransactionTest's, against PostgreSQL.
  */
 public class AgentEnrollTokenUsesTest {
 
@@ -48,7 +48,7 @@ public class AgentEnrollTokenUsesTest {
     public void claiming_takes_one_use_only_while_one_is_left_and_marks_the_last() {
         // The guard that keeps concurrent enrolls from creating more devices than the token allows is this one
         // statement (and the token row lock the enrollment transaction takes first); scripts/agent-v1-e2e.sh and
-        // AgentEnrollmentTransactionIT run it against PostgreSQL, in parallel.
+        // AgentEnrollmentTransactionTest run it against PostgreSQL, in parallel.
         String sql = Fakes.sqlOf(AgentEnrollmentTokenMapper.class, "claim").replaceAll("\\s+", " ").toLowerCase();
         assertTrue(sql, sql.contains("set usecount = usecount + 1, used = (usecount + 1 >= maxuses)"));
         String where = Fakes.whereOf(sql);
@@ -62,6 +62,7 @@ public class AgentEnrollTokenUsesTest {
         String lock = Fakes.sqlOf(AgentEnrollmentTokenMapper.class, "lockForEnroll").replaceAll("\\s+", " ").toLowerCase();
         assertTrue(lock, lock.contains("from agentenrollmenttoken where id = #{id} for update"));
         String timeout = Fakes.sqlOf(AgentEnrollmentTokenMapper.class, "setEnrollLockTimeout").toLowerCase();
-        assertTrue(timeout, timeout.contains("set local lock_timeout"));
+        assertTrue("transaction-local, as set local: " + timeout,
+                timeout.contains("set_config('lock_timeout', #{timeout}, true)"));
     }
 }

@@ -16,7 +16,7 @@ import static org.junit.Assert.assertTrue;
 
 /**
  * What the endpoint answers for each way an enrollment ends. That a failed one keeps nothing (its transaction rolls
- * back) is AgentEnrollmentTransactionIT's, against PostgreSQL.
+ * back) is AgentEnrollmentTransactionTest's, against PostgreSQL.
  */
 public class AgentEnrollAtomicTest {
 
@@ -82,10 +82,14 @@ public class AgentEnrollAtomicTest {
     }
 
     @Test
-    public void the_device_limit_is_counted_under_the_customers_row_lock() {
-        String lock = Fakes.sqlOf(AgentDeviceMapper.class, "lockCustomerDeviceLimit").replaceAll("\\s+", " ")
+    public void the_device_limit_is_counted_under_an_advisory_lock_not_a_row_lock() {
+        String lock = Fakes.sqlOf(AgentDeviceMapper.class, "lockCustomerEnrollments").replaceAll("\\s+", " ")
                 .toLowerCase();
-        assertTrue(lock, lock.contains("from customers where id = #{customerid} for update"));
+        assertTrue(lock, lock.contains("pg_advisory_xact_lock(1296321861, #{customerid})"));
+        String limit = Fakes.sqlOf(AgentDeviceMapper.class, "customerDeviceLimit").replaceAll("\\s+", " ").toLowerCase();
+        assertTrue("a master customer has none, as in the console: " + limit,
+                limit.contains("case when master then 0 else devicelimit end"));
+        assertFalse("no customer row lock: " + limit, limit.contains("for update"));
     }
 
     @Test

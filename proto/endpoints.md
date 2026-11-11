@@ -52,17 +52,22 @@ first is replaced), instead of `error.agent.token.used` or a second device from 
 device's first check-in and for 24 hours, and not for a stopped token. The server keeps only SHA-256(token id ":"
 attempt). Older servers ignore the field.
 
-Each enrollment is one database transaction that first locks its token's row (and its customer's row), so enrollments
-with one token run one after another: a retry sent while its first request still runs waits for it, then resumes it.
+Each enrollment is one database transaction that first locks its token's row, so enrollments with one token run one
+after another: a retry sent while its first request still runs waits for it, then resumes it. The token is claimed
+before the customer's device limit is checked, so a used-up, stopped or expired token always gets its final error.
+When a limit applies, the customer's enrollments count its devices under a transaction-scoped advisory lock (no row is
+locked: other inserts and sign-ins never wait for an enrollment).
 
 Errors: `Response.ERROR("error.agent.token.invalid")`, `...token.used`, `...token.expired` and
 `...enrollment.disabled` are final for that token: retrying cannot succeed. These are retryable, and the agent keeps
 trying:
 - `...enrollment.failed`: the server failed and rolled the enrollment back (no device kept, no use spent);
 - `...enrollment.inProgress`: another enrollment with the same token held its lock longer than 15 s (on a slow
-  database, typically the request this one retries); the next retry resumes it;
+  database, typically the request this one retries), or 8 enrollments with that token are already running; the next
+  retry resumes it or goes through;
 - `...enrollment.deviceLimit`: on an install with several customers, the token's customer has as many devices as its
-  limit allows; the device enrolls once there is room.
+  limit allows (as in the console: none for a master customer, 0 = no limit, a negative limit blocks); the device
+  enrolls once there is room.
 
 ## POST /checkin
 

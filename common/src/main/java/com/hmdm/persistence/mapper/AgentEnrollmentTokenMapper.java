@@ -57,11 +57,12 @@ public interface AgentEnrollmentTokenMapper {
     int claim(@Param("id") Integer id, @Param("now") long now);
 
     /**
-     * For the rest of the current transaction, wait at most 15 s for a lock: an enroll that can't get its token's lock
-     * in that time fails (retryably) instead of holding a request thread.
+     * For the rest of the current transaction (is_local = true, as SET LOCAL), wait at most {@code timeout} (e.g.
+     * "15000ms") for a lock: an enroll that can't get its token's lock in that time fails (retryably) instead of holding
+     * a request thread.
      */
-    @Update({"SET LOCAL lock_timeout = '15s'"})
-    void setEnrollLockTimeout();
+    @Select({"SELECT set_config('lock_timeout', #{timeout}, true)"})
+    String setEnrollLockTimeout(@Param("timeout") String timeout);
 
     /**
      * Locks the token row until the transaction ends, so enrollments with one token run one after another (a retry

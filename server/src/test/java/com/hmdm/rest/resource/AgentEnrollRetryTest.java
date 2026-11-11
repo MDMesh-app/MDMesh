@@ -18,7 +18,7 @@ import static org.junit.Assert.assertTrue;
 /**
  * An agent whose enroll response was lost (Wi-Fi dropped during setup, the app stopped after the request) retries
  * with the same enroll attempt id and gets the device the first request created, instead of "code already used" and
- * an orphan device, or a second device from a batch code. Concurrent retries: AgentEnrollmentTransactionIT.
+ * an orphan device, or a second device from a batch code. Concurrent retries: AgentEnrollmentTransactionTest.
  */
 public class AgentEnrollRetryTest {
 

@@ -2,6 +2,7 @@ package com.mdmesh.agent.ui
 
 import android.content.Context
 import android.graphics.Rect
+import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -48,8 +49,25 @@ class MdmDialog private constructor(
         val keyboard: Boolean = false,
     )
 
-    /** Shown only through a [DialogSlot]. */
-    override fun show(key: DialogSlot.Key) = alert.show()
+    /** Shown only through a [DialogSlot]. Sized here, from the activity's current configuration. */
+    override fun show(key: DialogSlot.Key) {
+        val res = alert.context.resources
+        val metrics = res.displayMetrics
+        val portrait = metrics.widthPixels < metrics.heightPixels
+        // AppCompat's own share of the screen (95% portrait, 65% landscape on phones), capped at M3's 560dp.
+        val fraction = TypedValue().let {
+            val attr = if (portrait) android.R.attr.windowMinWidthMinor else android.R.attr.windowMinWidthMajor
+            if (alert.context.theme.resolveAttribute(attr, it, true) && it.type == TypedValue.TYPE_FRACTION) {
+                it.getFraction(1f, 1f)
+            } else {
+                1f
+            }
+        }
+        val max = res.getDimensionPixelSize(R.dimen.mdm_dialog_max_width) +
+            2 * res.getDimensionPixelSize(R.dimen.mdm_dialog_inset)
+        alert.window?.setLayout(windowWidth(metrics.widthPixels, fraction, max), ViewGroup.LayoutParams.WRAP_CONTENT)
+        alert.show()
+    }
 
     override fun dismiss() = alert.dismiss()
 
@@ -92,7 +110,7 @@ class MdmDialog private constructor(
             alert.window?.apply {
                 // Accessibility services announce the window title; AppCompat's own title row stays hidden.
                 setTitle(spec.title)
-                if (spec.keyboard) setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+                setSoftInputMode(softInputMode(spec.keyboard))
             }
             val filled = root.findViewById<Button>(R.id.mdm_dialog_confirm)
             val danger = root.findViewById<Button>(R.id.mdm_dialog_confirm_danger)
@@ -120,12 +138,30 @@ class MdmDialog private constructor(
         private fun alignIcon(icon: ImageView, title: TextView) {
             val drawable = icon.drawable ?: return
             val metrics = title.paint.fontMetricsInt
-            // First baseline from the view's top; TextView adds the font padding (fontMetrics.top) by default.
-            val baseline = title.paddingTop - if (title.includeFontPadding) metrics.top else metrics.ascent
+            val baseline = firstBaseline(title.paddingTop, title.includeFontPadding, metrics.top, metrics.ascent)
             val caps = Rect().also { title.paint.getTextBounds(CAP_SAMPLE, 0, CAP_SAMPLE.length, it) }.height()
             (icon.layoutParams as ViewGroup.MarginLayoutParams).topMargin =
                 iconTopFor(baseline, caps, drawable.intrinsicHeight)
         }
+
+        /**
+         * The first line's baseline from a TextView's top: its padding, then the font's ascent, or its `top` when the
+         * TextView adds the font padding (the default).
+         */
+        internal fun firstBaseline(paddingTop: Int, includeFontPadding: Boolean, top: Int, ascent: Int): Int =
+            paddingTop - if (includeFontPadding) top else ascent
+
+        /** The dialog window's width: the theme's [fraction] of the screen, at most [maxPx]. */
+        internal fun windowWidth(screenWidthPx: Int, fraction: Float, maxPx: Int): Int =
+            minOf((screenWidthPx * fraction).roundToInt(), maxPx)
+
+        /**
+         * The window gives way to the keyboard (ADJUST_RESIZE): the body scrolls and the buttons stay above it. With
+         * [keyboard] the keyboard opens with the dialog.
+         */
+        internal fun softInputMode(keyboard: Boolean): Int =
+            WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or
+                if (keyboard) WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE else 0
 
         /** The icon's top offset that puts its centre on the cap-height centre of a line with this [baseline]. */
         internal fun iconTopFor(baseline: Int, capHeight: Int, iconHeight: Int): Int =

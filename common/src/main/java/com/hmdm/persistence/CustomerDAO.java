@@ -238,8 +238,11 @@ public class CustomerDAO {
             // Notify plugins about new customer so they could set up default settings for this customer
             this.eventService.fireEvent(new CustomerCreatedEvent(customer));
 
-            // Generate three default devices
-            for (int i = 0; i < DEFAULT_DEVICE_SUFFIXES.length; i++) {
+            // Generate three default devices, within the customer's device limit (CustomerDeviceLimit: a limit of 1
+            // or 2 gets that many, a negative one none).
+            int defaultDevices = CustomerDeviceLimit.defaultDevices(customer.getDeviceLimit(),
+                    DEFAULT_DEVICE_SUFFIXES.length);
+            for (int i = 0; i < defaultDevices; i++) {
                 String deviceNumber = customer.getPrefix() + DEFAULT_DEVICE_SUFFIXES[i];
                 Device newDevice = new Device();
                 newDevice.setLastUpdate(0L);

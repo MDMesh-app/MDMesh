@@ -38,4 +38,16 @@ public final class CustomerDeviceLimit {
         lock.run();
         return count.getAsLong() < limit;
     }
+
+    /**
+     * How many of the {@code wanted} default devices a new customer gets under {@code limit}: all with no limit (0),
+     * at most the limit when it is positive, none when it is negative (a negative limit blocks every add). A new
+     * customer has no devices yet and nothing else adds to it before it exists, so no lock is needed.
+     */
+    public static int defaultDevices(int limit, int wanted) {
+        if (limit == 0) {
+            return wanted;
+        }
+        return limit < 0 ? 0 : Math.min(wanted, limit);
+    }
 }

@@ -55,9 +55,10 @@ attempt). Older servers ignore the field.
 Each enrollment is one database transaction that first locks its token's row, so enrollments with one token run one
 after another: a retry sent while its first request still runs waits for it, then resumes it. The token is claimed
 before the customer's device limit is checked, so a used-up, stopped or expired token always gets its final error.
-When a limit applies, the customer's devices are counted under a transaction-scoped advisory lock that console and
-on-demand device creation take too, so no path can overfill the limit (no row is locked: other inserts and sign-ins
-never wait for an enrollment).
+When a limit applies, the customer's devices are counted under a transaction-scoped advisory lock: device inserts
+through the console, on-demand creation and enrollment all count under it, so concurrent adds through them can't
+together pass the limit (they wait for each other, by design). No row is locked: other writes, and sign-ins, don't wait
+for it. A new customer's default devices are capped at its limit when it sets one.
 
 Errors: `Response.ERROR("error.agent.token.invalid")`, `...token.used`, `...token.expired` and
 `...enrollment.disabled` are final for that token: retrying cannot succeed. These are retryable, and the agent keeps

@@ -53,4 +53,14 @@ public class CustomerDeviceLimitTest {
         assertEquals(expected, Fakes.sqlOf(DeviceMapper.class, "lockCustomerDevices").trim());
         assertTrue(expected, expected.contains("pg_advisory_xact_lock(1296321861, #{customerId})"));
     }
+
+    @Test
+    public void a_new_customer_gets_its_default_devices_within_its_limit() {
+        assertEquals("no limit", 3, CustomerDeviceLimit.defaultDevices(0, 3));
+        assertEquals(1, CustomerDeviceLimit.defaultDevices(1, 3));
+        assertEquals(2, CustomerDeviceLimit.defaultDevices(2, 3));
+        assertEquals(3, CustomerDeviceLimit.defaultDevices(3, 3));
+        assertEquals(3, CustomerDeviceLimit.defaultDevices(100, 3));
+        assertEquals("a negative limit blocks every add", 0, CustomerDeviceLimit.defaultDevices(-1, 3));
+    }
 }

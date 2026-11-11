@@ -153,10 +153,17 @@
     overflow-wrap: break-word; /* whole words first; a word breaks only when it can't fit a line on its own */
     text-overflow: clip;
   }
+  /* The reason keeps whole words: it is never narrower than its longest word, and moves under the pill when the
+     row can't fit both ("anywhere" let it shrink to one letter: "Configura|tion"). */
+  .v2 .v2-presence--inline {
+    flex-wrap: wrap;
+  }
   .v2 .v2-presence--inline .v2-presence__reason {
     display: block;
+    flex: 1 1 9em;
+    min-width: min-content;
     -webkit-line-clamp: unset;
     line-clamp: none;
-    overflow-wrap: break-word; /* "anywhere" lets the column shrink to one letter: "configura|tion" */
+    overflow-wrap: break-word;
   }
 }

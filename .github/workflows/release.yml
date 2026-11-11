@@ -253,10 +253,13 @@ jobs:
         with:
           body_path: release-notes.md
           generate_release_notes: false
+          # quickstart.sh is the tagged commit's copy: the README's install command runs it from
+          # releases/latest/download/, and its SHA-256 is in the signed manifest's files (build-manifest.sh).
           files: |
             mdmesh-agent.apk
             manifest.json
             manifest.json.minisig
+            quickstart.sh
 
       # --- Move :latest LAST, only once the release is pullable, signed and published ---
       # Quick-start installs (*_VERSION=latest, `docker compose pull`) follow :latest, so it must never point

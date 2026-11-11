@@ -4,8 +4,10 @@
 #   SERVER_IMG / WEB_IMG: the :VERSION tags (components.serverImage / webImage, which every supervisor reads).
 #   *_REF: the same images by digest, repo@sha256:<hex> (components.images: what a 0.5.0+ supervisor and the quick start
 #   pull; a supervisor before 0.5.0 ignores the field).
-# Also records the SHA-256 of each file the quick start downloads from this release's tag (files), read from the
-# checkout this runs in, which must be the tagged commit. Paths are relative to the repo root, wherever this runs from.
+# Also records the SHA-256 of each file the quick start downloads from this release's tag, and of quickstart.sh itself
+# (published as a release asset, so an operator can check it before running it: RELEASING.md), in files. They are read
+# from the checkout this runs in, which must be the tagged commit. Paths are relative to the repo root, wherever this
+# runs from.
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 python3 - "$ROOT" "$@" <<'PY'
@@ -38,6 +40,8 @@ images = {
 QUICKSTART_FILES = ["docker-compose.release.yml", "docker-compose.domain.yml", "install/sql/hmdm_init.en.sql",
                     "install/sql/post_seed.sql", "install/lib/db.sh"]
 files = {f: sha(os.path.join(root, f)) for f in QUICKSTART_FILES}
+# The release asset quickstart.sh (release.yml uploads this same file); the quick start itself never reads this entry.
+files["quickstart.sh"] = sha(os.path.join(root, "quickstart.sh"))
 
 m = {
   "version": ver, "channel": ch,

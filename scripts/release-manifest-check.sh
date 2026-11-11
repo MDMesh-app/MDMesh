@@ -6,7 +6,8 @@
 #   - they read the version, the three image digests and each downloaded file's SHA-256 from it;
 #   - supervisor/lib.js imagePins (what apply.sh is handed) reads the same three refs;
 #   - the fields older supervisors and the installers read (components.serverImage/webImage/apk) are unchanged;
-#   - quickstart.sh's copy of the release key and its file list match release/minisign.pub and build-manifest.sh.
+#   - quickstart.sh's copy of the release key and its file list match release/minisign.pub and build-manifest.sh;
+#   - the manifest records quickstart.sh's own SHA-256, and release.yml publishes quickstart.sh as a release asset.
 # Needs bash, python3, node, openssl and minisign. Run from anywhere: scripts/release-manifest-check.sh
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -72,9 +73,11 @@ mdm_verify_manifest "$PK" "$T/manifest.json" "$T/manifest.json.minisig" || fail 
 [ "$(mdm_manifest_field "$T/manifest.json" web "$MDM_IMAGE_REF_ERE")" = "ghcr.io/$O/mdmesh-web@$D2" ] || fail "web ref not read"
 [ "$(mdm_manifest_field "$T/manifest.json" supervisor "$MDM_IMAGE_REF_ERE")" = "ghcr.io/$O/mdmesh-supervisor@$D3" ] || fail "supervisor ref not read"
 grep -q '^  "files": {$' "$T/manifest.json" || fail "quickstart.sh would not find the files block"
-for f in $MDM_QUICKSTART_FILES; do
+for f in $MDM_QUICKSTART_FILES quickstart.sh; do
   [ "$(mdm_manifest_field "$T/manifest.json" "$f" "$MDM_SHA256_ERE")" = "$(mdm_sha256 "$ROOT/$f")" ] || fail "sha256 of $f not read or wrong"
 done
+# The release asset quickstart.sh, which the README runs from releases/latest/download/, is uploaded by release.yml.
+grep -Eq '^ +quickstart\.sh$' "$ROOT/.github/workflows/release.yml" || fail "release.yml no longer uploads quickstart.sh as a release asset"
 
 # shellcheck disable=SC2016  # the JavaScript is single-quoted on purpose
 node -e '

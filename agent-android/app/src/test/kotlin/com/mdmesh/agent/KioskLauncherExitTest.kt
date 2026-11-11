@@ -26,6 +26,14 @@ class KioskLauncherExitTest {
             .replace(Regex("\"(?:\\\\.|[^\"\\\\\n])*\""), blank)
     }
 
+    private fun backgroundStoreSource(): String {
+        val root = generateSequence(File("").absoluteFile) { it.parentFile }
+            .first { File(it, "settings.gradle.kts").isFile }
+        val file = File(root, "core/src/main/kotlin/com/mdmesh/core/kiosk/KioskBackgroundImageStore.kt")
+        assertTrue("missing $file", file.isFile)
+        return file.readText()
+    }
+
     private fun checkInWorkerSource(): String {
         val root = generateSequence(File("").absoluteFile) { it.parentFile }
             .first { File(it, "settings.gradle.kts").isFile }
@@ -109,6 +117,16 @@ class KioskLauncherExitTest {
         assertEquals("stopLockTask outside doExit/stopLockTaskSafely", emptyList<Int>(), stops)
         // One definition + the no-kiosk branch of applyState.
         assertEquals("stopLockTaskSafely callers changed; check none is a crash path", 2, callers)
+    }
+
+    @Test
+    fun `overlapping image downloads use distinct temporary files`() {
+        val src = backgroundStoreSource()
+        assertTrue("background staging must use a unique temporary file", "File.createTempFile" in src)
+        assertTrue(
+            "background staging must not use one hash-named shared download",
+            ".\${request.hash}.download" !in src,
+        )
     }
 
     @Test

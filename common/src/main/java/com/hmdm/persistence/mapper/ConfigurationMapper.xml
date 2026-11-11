@@ -24,7 +24,7 @@
 <mapper namespace="com.hmdm.persistence.mapper.ConfigurationMapper">
 
     <insert id="insertConfiguration" parameterType="Configuration" useGeneratedKeys="true" keyColumn="id" keyProperty="id">
-        INSERT INTO configurations (name, description, type, password, backgroundColor, textColor, backgroundImageUrl,
+        INSERT INTO configurations (name, description, type, password, backgroundColor, textColor, backgroundImageUrl, backgroundImageFileId, backgroundImageSha256,
                                     iconSize, desktopHeader, desktopHeaderTemplate, displayStatus, useDefaultDesignSettings, customerId,
                                     gps, bluetooth, camera, wifi, mobileData, usbStorage, requestUpdates, disableLocation, appPermissions,
                                     pushOptions, keepaliveTime, autoBrightness, brightness, manageTimeout, timeout,
@@ -34,9 +34,9 @@
                                     contentAppId, wifiSSID, wifiPassword, wifiSecurityType, encryptDevice, qrParameters, adminExtras, mobileEnrollment, kioskHome, kioskRecents,
                                     kioskNotifications, kioskSystemInfo, kioskKeyguard, kioskLockButtons, kioskScreenOn, launcherUrl, restrictions, autoUpdate,
                                     blockStatusBar, systemUpdateType, systemUpdateFrom, systemUpdateTo,
-                                    scheduleAppUpdate, appUpdateFrom, appUpdateTo, downloadUpdates, defaultFilePath, disableFactoryReset, disableSafeBoot, wifiRadio, kioskLockVolume, connectivityMode,
+                                    scheduleAppUpdate, appUpdateFrom, appUpdateTo, downloadUpdates, defaultFilePath, disableFactoryReset, disableSafeBoot, wifiRadio, locationServices, kioskLockVolume, connectivityMode,
                                     extensions)
-        VALUES (#{name}, #{description}, #{type}, #{password}, #{backgroundColor}, #{textColor}, #{backgroundImageUrl},
+        VALUES (#{name}, #{description}, #{type}, #{password}, #{backgroundColor}, #{textColor}, #{backgroundImageUrl}, #{backgroundImageFileId}, #{backgroundImageSha256},
                 #{iconSize}, #{desktopHeader}, #{desktopHeaderTemplate}, #{displayStatus}, #{useDefaultDesignSettings}, #{customerId},
                 #{gps}, #{bluetooth}, #{camera}, #{wifi}, #{mobileData}, #{usbStorage}, #{requestUpdates}, #{disableLocation}, #{appPermissions},
                 #{pushOptions}, #{keepaliveTime}, #{autoBrightness}, #{brightness}, #{manageTimeout}, #{timeout},
@@ -46,7 +46,7 @@
                 #{contentAppId}, #{wifiSSID}, #{wifiPassword}, #{wifiSecurityType}, #{encryptDevice}, #{qrParameters}, #{adminExtras}, #{mobileEnrollment}, #{kioskHome}, #{kioskRecents},
                 #{kioskNotifications}, #{kioskSystemInfo}, #{kioskKeyguard}, #{kioskLockButtons}, #{kioskScreenOn}, #{launcherUrl}, #{restrictions}, #{autoUpdate},
                 #{blockStatusBar}, #{systemUpdateType}, #{systemUpdateFrom}, #{systemUpdateTo},
-                #{scheduleAppUpdate}, #{appUpdateFrom}, #{appUpdateTo}, #{downloadUpdates}, #{defaultFilePath}, #{disableFactoryReset}, #{disableSafeBoot}, #{wifiRadio}, #{kioskLockVolume}, #{connectivityMode},
+                #{scheduleAppUpdate}, #{appUpdateFrom}, #{appUpdateTo}, #{downloadUpdates}, #{defaultFilePath}, #{disableFactoryReset}, #{disableSafeBoot}, #{wifiRadio}, #{locationServices}, #{kioskLockVolume}, #{connectivityMode},
                 COALESCE(CAST(#{extensions} AS jsonb), '{}'::jsonb))
     </insert>
 
@@ -98,7 +98,7 @@
         CREATE TEMP TABLE ${tempTable} ON COMMIT DROP AS SELECT * FROM configurationApplications WHERE configurationApplications.configurationId = #{id};
         SELECT applications.id, applications.name, applications.pkg, applications.runAfterInstall, applications.runAtBoot,
                applications.type, applications.iconText, applications.iconId,
-               applicationVersions.version, applicationVersions.url,
+               applicationVersions.version, applicationVersions.url, applicationVersions.requestedPermissions,
                applicationVersions.split, applicationVersions.urlArmeabi, applicationVersions.urlArm64,
                configurationApplications.applicationVersionId AS usedVersionId,
                applications.system, applications.customerId,
@@ -142,7 +142,7 @@
     <select id="getPlainConfigurationApplications" resultType="Application">
         SELECT applications.id, applications.name, applications.pkg, applications.runAfterInstall, applications.runAtBoot,
                applications.type, applications.iconText, applications.iconId, uploadedFiles.filepath AS icon,
-               applicationVersions.version, applicationVersions.versionCode, applicationVersions.url,
+               applicationVersions.version, applicationVersions.versionCode, applicationVersions.url, applicationVersions.requestedPermissions,
                applicationVersions.parts,
                applicationVersions.split, applicationVersions.urlArmeabi, applicationVersions.urlArm64,
                ${caTableName}.applicationVersionId AS usedVersionId,
@@ -187,7 +187,7 @@
     <select id="getPlainConfigurationAppsOptimized" resultType="Application">
         SELECT applications.id, applications.name, applications.pkg, applications.runAfterInstall, applications.runAtBoot,
                applications.type, applications.iconText, applications.iconId,
-               applicationVersions.version, applicationVersions.url,
+               applicationVersions.version, applicationVersions.url, applicationVersions.requestedPermissions,
                configurationApplications.applicationVersionId AS usedVersionId,
                applications.system, applications.customerId,
                applications.latestVersion, applications.intent,

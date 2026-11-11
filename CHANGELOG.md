@@ -9,11 +9,16 @@ line under Unreleased.
 ## Unreleased
 
 Upgrading
-- The database adds two columns (`devices.wipedAt`, `configurations.camera`) on start. Devices wiped before the
-  update aren't marked.
+- The database adds columns on start: `devices.wipedAt`; `configurations.camera`, `configurations.locationServices`,
+  `configurations.backgroundImageFileId` and `configurations.backgroundImageSha256`; `device_state.kioskGeneration` and
+  `device_state.kioskReturnGeneration`; `applicationVersions.requestedPermissions`; and the
+  `configurationAppPermissions` table. Devices wiped before the update aren't marked.
 - The database adds three columns to enrollment tokens on start (`maxUses`, `useCount`, `revokedAt`) and stores
   the tokens hashed. Existing codes stay single-use and keep working; on PostgreSQL older than 11 they stop
   instead, so make a new code on the Enroll page. After a downgrade, codes made on this version don't work.
+- Quick start: run `docker compose pull && docker compose up -d` once after this update. Updates never touch the
+  supervisor, and one from before 0.5.0 keeps applying updates by tag. From source, or with `SUPERVISOR_VERSION` set by
+  hand: [UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050).
 
 Heads-up
 - The agent is now called **MDMesh** on the device (was MDM Agent): in the app drawer, Settings → Apps, the
@@ -37,6 +42,17 @@ New
   stopping them is in the audit log, and the server log names the code each device enrolled with. The API takes
   `maxUses` and `validHours` on `POST /private/agent/v1/token`, and `POST /private/agent/v1/token/revoke-all`
   (thanks @alessfi).
+- Configuration → Network can manage Android Location services independently of MDMesh location reporting on Android
+  11+ Device Owner devices. Needs agent 0.5.0 (thanks @letternumber).
+- Kiosk: a configuration can show a background image behind the kiosk launcher. Choose it in the Kiosk section: a
+  PNG, JPEG or WebP image, at most 10 MB and 16 megapixels. Devices download it only over HTTPS (with an `http://`
+  server address they keep the background color), check it by its SHA-256, and keep the color if it can't be shown.
+  The launcher darkens or lightens the image just enough that its text, icons and Exit button stay readable (4.5:1)
+  and puts text on a small plate of the background color. Needs agent 0.5.0 (thanks @letternumber).
+- Configurations can Grant or Deny an app's runtime permissions (camera, location, microphone, contacts, SMS and
+  more), under each installed app in the editor; Default removes MDMesh's override. The choices come from the APK
+  uploaded to the server. Needs agent 0.5.0 on a Device Owner device: a device on an older agent applies the rest of
+  the configuration and shows as out of sync while the configuration has a rule (thanks @letternumber).
 - Settings → Users & roles: create, edit and delete console accounts, choose the devices and configurations each
   can reach, and edit roles and their permissions (thanks @lared3294).
 - A wiped device shows as **Wiped** instead of Online and then Offline, and is left out of the counts, Needs attention
@@ -60,8 +76,15 @@ New
 - Agent: the status screen, dialogs and kiosk launcher are easier to read and use: darker secondary and status text,
   no text under 13sp, a visible focus ring for keyboards and D-pads, full-size copy buttons, and TalkBack reads
   headings, each fact with its label, and a failed return or stuck enrolment as it appears. Needs agent 0.5.0.
+- Updates and the quick start run exactly the images the signed release names, pinned by digest; the quick start
+  also checks each file it downloads, stops instead of falling back to `main`, and needs OpenSSL 3.0+, or an older
+  OpenSSL and `minisign`.
 
 Fixes
+- The console recognizes an on-device Return to kiosk and does not offer the same action again; a later kiosk exit,
+  custom kiosk, or configuration apply makes it available again.
+- Files: uploading a file again with the same name and the same content returns the file already there instead of an
+  error.
 - Audit log: on Docker installs, entries show the client's address instead of the edge container's (thanks
   @Przemek-Magic).
 - Agent: on Android 15 the status screen and the kiosk no longer draw under the status and navigation bars, where

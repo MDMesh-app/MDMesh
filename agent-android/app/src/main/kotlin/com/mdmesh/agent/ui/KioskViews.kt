@@ -32,7 +32,12 @@ import kotlin.math.roundToInt
  * theme's colours, so a system light/dark switch leaves the launcher as it is. No behaviour lives here: click
  * handlers stay in KioskLauncherActivity.
  */
-class KioskViews(private val context: Context, val palette: KioskPalette) {
+/**
+ * Builds the kiosk launcher's views in [palette]. [onImage]: the screen lies over the background image, so every
+ * text sits on a small plate of the kiosk colour. The scrim keeps the image calm enough for the icons and buttons;
+ * a plate keeps text crisp however busy the image is under a long, wrapped label.
+ */
+class KioskViews(private val context: Context, val palette: KioskPalette, private val onImage: Boolean = false) {
 
     private val density = context.resources.displayMetrics.density
 
@@ -47,6 +52,10 @@ class KioskViews(private val context: Context, val palette: KioskPalette) {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
             setTextColor(color)
             if (medium) typeface = Typeface.create(MEDIUM, Typeface.NORMAL)
+            if (onImage) {
+                background = rounded(dp(PLATE_RADIUS_DP), palette.background)
+                setPadding(dp(PLATE_PAD_DP), 0, dp(PLATE_PAD_DP), 0)
+            }
         }
 
     /** A centred column filling its parent, for the splash, hold and idle screens. */
@@ -193,6 +202,8 @@ class KioskViews(private val context: Context, val palette: KioskPalette) {
         const val TITLE_SP = 20f
         const val BODY_SP = 14f
         const val LABEL_SP = 14f
+        private const val PLATE_RADIUS_DP = 6
+        private const val PLATE_PAD_DP = 4
         private const val LABEL_LINES = 2
         private const val LABEL_LINES_LARGE = 3
         private const val FOCUS_RING_DP = 2

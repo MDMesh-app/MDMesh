@@ -40,7 +40,7 @@ public interface ApplicationMapper {
 
     String SELECT_BASE =
             "SELECT applications.*, customers.name AS customerName, customers.master AS commonApplication, " +
-                    "applicationVersions.version, applicationVersions.versionCode, applicationVersions.url, applicationVersions.parts," +
+                    "applicationVersions.version, applicationVersions.versionCode, applicationVersions.url, applicationVersions.parts, applicationVersions.requestedPermissions," +
                     "applicationVersions.split, applicationVersions.urlArmeabi, applicationVersions.urlArm64," +
                     "applications.latestVersion AS usedVersionId, " +
                     "(usageData.usageCount > 0) AS deletionProhibited, " +
@@ -55,7 +55,7 @@ public interface ApplicationMapper {
 
     String SELECT_BY_VERSION_BASE =
             "SELECT applications.*, customers.name AS customerName, customers.master AS commonApplication, " +
-                    "applicationVersions.version, applicationVersions.versionCode, applicationVersions.url, applicationVersions.parts, " +
+                    "applicationVersions.version, applicationVersions.versionCode, applicationVersions.url, applicationVersions.parts, applicationVersions.requestedPermissions, " +
                     "applicationVersions.split, applicationVersions.urlArmeabi, applicationVersions.urlArm64," +
                     "applications.latestVersion AS usedVersionId, " +
                     "(usageData.usageCount > 0) AS deletionProhibited " +
@@ -79,6 +79,7 @@ public interface ApplicationMapper {
                     "applicationVersions.urlArmeabi, " +
                     "applicationVersions.urlArm64, " +
                     "applicationVersions.apkHash, " +
+                    "applicationVersions.requestedPermissions, " +
                     "(usageData.usageCount > 0 OR versionsData.appVersionsCount = 1) AS deletionProhibited, " +
                     "customers.master AS commonApplication," +
                     "applications.system, " +
@@ -138,8 +139,8 @@ public interface ApplicationMapper {
     @SelectKey( statement = "SELECT currval('applications_id_seq')", keyColumn = "id", keyProperty = "id", before = false, resultType = int.class )
     void insertApplication(Application application);
 
-    @Insert({"INSERT INTO applicationVersions (applicationId, version, versionCode, url, apkHash, split, urlArmeabi, urlArm64, parts) " +
-            "VALUES (#{applicationId}, #{version}, #{versionCode}, #{url}, #{apkHash}, #{split}, #{urlArmeabi}, #{urlArm64}, #{parts})"})
+    @Insert({"INSERT INTO applicationVersions (applicationId, version, versionCode, url, apkHash, split, urlArmeabi, urlArm64, parts, requestedPermissions) " +
+            "VALUES (#{applicationId}, #{version}, #{versionCode}, #{url}, #{apkHash}, #{split}, #{urlArmeabi}, #{urlArm64}, #{parts}, #{requestedPermissions})"})
     @SelectKey( statement = "SELECT currval('applicationVersions_id_seq')", keyColumn = "id", keyProperty = "id", before = false, resultType = int.class )
     int insertApplicationVersion(ApplicationVersion version);
 
@@ -151,9 +152,12 @@ public interface ApplicationMapper {
     void updateApplication(Application application);
 
     @Update({"UPDATE applicationVersions SET version = #{version}, versionCode=#{versionCode}, url = #{url}, apkHash = #{apkHash}, " +
-            "split = #{split}, urlArmeabi = #{urlArmeabi}, urlArm64 = #{urlArm64} " +
+            "split = #{split}, urlArmeabi = #{urlArmeabi}, urlArm64 = #{urlArm64}, requestedPermissions = COALESCE(#{requestedPermissions}, requestedPermissions) " +
             "WHERE id=#{id} AND applicationId=#{applicationId}"})
     void updateApplicationVersion(ApplicationVersion applicationVersion);
+
+    @Update("UPDATE applicationVersions SET requestedPermissions = #{requestedPermissions} WHERE id = #{id}")
+    void saveRequestedPermissions(@Param("id") int id, @Param("requestedPermissions") String requestedPermissions);
 
     @Delete({"DELETE FROM applications WHERE id=#{id}"})
     void removeApplicationById(@Param("id") Integer id);

@@ -22,6 +22,8 @@ data class ConfigApplyPayload(
     val kiosk: KioskApplyPayload? = null,
     val location: ConfigLocation? = null,
     val connectivity: ConfigConnectivity? = null,
+    /** Null = server does not manage app permissions; empty = deliberately release all earlier overrides. */
+    val appPermissions: List<ConfigAppPermissions>? = null,
 )
 
 @Serializable
@@ -29,6 +31,13 @@ data class ConfigLocation(val mode: String = DeviceAction.LOCATION_PASSIVE)
 
 @Serializable
 data class ConfigConnectivity(val mode: String = DeviceAction.POWER_ADAPTIVE)
+
+@Serializable
+data class ConfigAppPermissions(
+    val packageName: String,
+    /** Exact Android runtime permission names mapped to `grant` or `deny`. */
+    val permissions: Map<String, String> = emptyMap(),
+)
 
 /** JSON-encoded into `CommandResult.detail` (proto/payloads/config-apply-result.schema.json). */
 @Serializable

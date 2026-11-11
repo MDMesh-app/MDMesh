@@ -142,6 +142,21 @@ abstract class AtfScreensTest(private val fontScale: Float = 1f) {
 
     @Test fun kioskEmpty() = kiosk("empty", grid(KioskPalette.of(BRAND_RED, WHITE), KioskExit.NONE, apps = false))
 
+    /** Over a busy, high-contrast image the adaptive scrim keeps every text and the Exit button readable. */
+    @Test fun kioskGridOverBusyImage() =
+        check("grid over a busy image", s.kioskScreen(grid(KioskPalette.DEFAULT), s.busyImage()).window.decorView)
+
+    @Test fun kioskGridWhiteOverBusyImage() = check(
+        "white grid over a busy image",
+        s.kioskScreen(grid(KioskPalette.of(WHITE, LIGHT_TEXT)), s.busyImage()).window.decorView,
+    )
+
+    @Test fun kioskHoldOverBusyImage() = check(
+        "hold over a busy image",
+        s.kioskScreen(KioskScreen.Hold(KioskPalette.of(BRAND_RED, WHITE), KioskExit.VISIBLE), s.busyImage())
+            .window.decorView,
+    )
+
     @Test fun kioskIdle() = kiosk("idle", KioskScreen.Idle)
 
     @Test fun kioskSplash() =

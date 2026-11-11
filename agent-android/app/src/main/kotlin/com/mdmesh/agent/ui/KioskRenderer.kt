@@ -1,6 +1,7 @@
 package com.mdmesh.agent.ui
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -30,6 +31,8 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
         layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
     }
     private var screen: KioskScreen? = null
+    private var backdropBitmap: Bitmap? = null
+    private var backdropStats: BackdropStats? = null
     private var grid: GridViews? = null
 
     private class GridViews(val views: KioskViews, val cells: AppGridLayout, val empty: View)
@@ -51,22 +54,29 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
         }
     }
 
-    /** [next] is [previous] with other apps: update the cells, keep the rest. */
-    private fun sameGrid(previous: KioskScreen?, next: KioskScreen.Grid): Boolean =
-        previous is KioskScreen.Grid && previous.copy(apps = null) == next.copy(apps = null)
-
     /** Draws the current screen again from scratch: sizes, fonts and resources may have changed. */
     fun rebuild() {
         screen?.let(::build)
     }
 
+    /**
+     * The kiosk's background image (null: none) and its [BackdropStats]: painted behind every screen from now on,
+     * the current one included, without rebuilding it.
+     */
+    fun setBackdrop(bitmap: Bitmap?, stats: BackdropStats?) {
+        val platesChange = (bitmap != null) != (backdropBitmap != null)
+        backdropBitmap = bitmap
+        backdropStats = stats
+        val s = screen ?: return
+        // Text over an image sits on plates: drawn again when an image comes or goes, only repainted otherwise.
+        if (platesChange) build(s) else activity.paintKioskBackground(root, s, bitmap, stats)
+    }
+
     private fun build(s: KioskScreen) {
-        activity.colorSystemBars(s.palette.background)
-        activity.updateSystemBarIcons(s.palette.background)
-        root.setBackgroundColor(s.palette.background)
+        activity.paintKioskBackground(root, s, backdropBitmap, backdropStats)
         root.removeAllViews()
         grid = null
-        val v = KioskViews(activity, s.palette)
+        val v = KioskViews(activity, s.palette, onImage = backdropBitmap != null && s != KioskScreen.Idle)
         when (s) {
             KioskScreen.Idle -> root.addView(idle(v))
             is KioskScreen.Splash -> root.addView(splash(v, s))
@@ -265,3 +275,7 @@ private class GridColumn(context: Context) : LinearLayout(context) {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
     }
 }
+
+/** [next] is [previous] with other apps: update the cells, keep the rest. */
+private fun sameGrid(previous: KioskScreen?, next: KioskScreen.Grid): Boolean =
+    previous is KioskScreen.Grid && previous.copy(apps = null) == next.copy(apps = null)

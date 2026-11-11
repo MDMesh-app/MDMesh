@@ -128,6 +128,16 @@ public class Configuration implements CustomerData, Serializable {
     private Boolean kioskLockVolume;
     @ApiModelProperty("Wi-Fi radio: null = not managed, true = turn on, false = turn off (sent as policies.wifiRadio)")
     private Boolean wifiRadio;
+    @ApiModelProperty("Location services: null = not managed, true = turn on, false = turn off (sent as policies.locationServices)")
+    private Boolean locationServices;
+    /**
+     * Console-only instruction for changing Location-services management. Not persisted: omitted saves keep the
+     * stored policy so an older client cannot accidentally release it.
+     */
+    @ApiModelProperty(value = "How to update Location services: keep, on, off, or notManaged",
+            allowableValues = "keep,on,off,notManaged")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String locationServicesAction;
     @ApiModelProperty("Agent connectivity: null = not managed, adaptive = battery-saver, alwaysOn = always connected (connectivity.mode)")
     private String connectivityMode;
     @ApiModelProperty("Server plugins' and console extensions' data, by namespace (an extension id, or <id>.<name>), each "
@@ -200,8 +210,21 @@ public class Configuration implements CustomerData, Serializable {
     private String backgroundColor;
     @ApiModelProperty("A text color to use when running MDM application")
     private String textColor;
-    @ApiModelProperty("An URL for background image to use when running MDM application")
+    @ApiModelProperty("The Headwind launcher wallpaper URL; with a kiosk background image, the URL the server set "
+            + "for its uploaded file. Another URL drops that image (see backgroundImageAction)")
     private String backgroundImageUrl;
+    @ApiModelProperty("Uploaded file used as the kiosk background image (PNG, JPEG or WebP, at most 10 MB and "
+            + "16 megapixels; needs agent 0.5.0)")
+    private Integer backgroundImageFileId;
+    @ApiModelProperty(hidden = true)
+    private String backgroundImageSha256;
+    /**
+     * Console-only instruction for saving a managed kiosk background image. This is deliberately not persisted:
+     * omitted means keep the stored image, while replace and remove are explicit user actions.
+     */
+    @ApiModelProperty(value = "How to update the managed kiosk background image: keep, replace, or remove",
+            allowableValues = "keep,replace,remove")
+    private String backgroundImageAction;
     @ApiModelProperty("A size of the icons to use when running MDM application")
     private IconSize iconSize = SMALL;
     @ApiModelProperty("A type of desktop header to use when running MDM application")
@@ -217,6 +240,9 @@ public class Configuration implements CustomerData, Serializable {
 
     @ApiModelProperty("A list of settings for applications set for configuration")
     private List<ApplicationSetting> applicationSettings;
+
+    /** Explicit managed runtime permissions. Null on an update preserves rules for older console clients. */
+    private List<ManagedAppPermission> managedAppPermissions;
 
     @ApiModelProperty("A list of files to be used on devices")
     private List<ConfigurationFile> files;
@@ -327,6 +353,30 @@ public class Configuration implements CustomerData, Serializable {
 
     public void setBackgroundImageUrl(String backgroundImageUrl) {
         this.backgroundImageUrl = backgroundImageUrl;
+    }
+
+    public Integer getBackgroundImageFileId() {
+        return backgroundImageFileId;
+    }
+
+    public void setBackgroundImageFileId(Integer backgroundImageFileId) {
+        this.backgroundImageFileId = backgroundImageFileId;
+    }
+
+    public String getBackgroundImageSha256() {
+        return backgroundImageSha256;
+    }
+
+    public void setBackgroundImageSha256(String backgroundImageSha256) {
+        this.backgroundImageSha256 = backgroundImageSha256;
+    }
+
+    public String getBackgroundImageAction() {
+        return backgroundImageAction;
+    }
+
+    public void setBackgroundImageAction(String backgroundImageAction) {
+        this.backgroundImageAction = backgroundImageAction;
     }
 
     public IconSize getIconSize() {
@@ -675,6 +725,9 @@ public class Configuration implements CustomerData, Serializable {
         this.applicationSettings = applicationSettings;
     }
 
+    public List<ManagedAppPermission> getManagedAppPermissions() { return managedAppPermissions; }
+    public void setManagedAppPermissions(List<ManagedAppPermission> managedAppPermissions) { this.managedAppPermissions = managedAppPermissions; }
+
     public List<ConfigurationApplicationParameters> getApplicationUsageParameters() {
         return applicationUsageParameters;
     }
@@ -938,6 +991,22 @@ public class Configuration implements CustomerData, Serializable {
         this.wifiRadio = wifiRadio;
     }
 
+    public Boolean getLocationServices() {
+        return locationServices;
+    }
+
+    public void setLocationServices(Boolean locationServices) {
+        this.locationServices = locationServices;
+    }
+
+    public String getLocationServicesAction() {
+        return locationServicesAction;
+    }
+
+    public void setLocationServicesAction(String locationServicesAction) {
+        this.locationServicesAction = locationServicesAction;
+    }
+
     public String getConnectivityMode() {
         return connectivityMode;
     }
@@ -961,6 +1030,9 @@ public class Configuration implements CustomerData, Serializable {
         copy.setName(getName());
         copy.setApplications(getApplications());
         copy.setApplicationSettings(getApplicationSettings());
+        // Same applications, so the same app ids: a copy keeps the app permission rules.
+        copy.setManagedAppPermissions(getManagedAppPermissions() == null ? null
+                : new java.util.ArrayList<ManagedAppPermission>(getManagedAppPermissions()));
         copy.setApplicationUsageParameters(getApplicationUsageParameters());
         copy.setFiles(getFiles());
         copy.setPassword(getPassword());
@@ -1031,6 +1103,8 @@ public class Configuration implements CustomerData, Serializable {
         copy.setBackgroundColor(getBackgroundColor());
         copy.setTextColor(getTextColor());
         copy.setBackgroundImageUrl(getBackgroundImageUrl());
+        copy.setBackgroundImageFileId(getBackgroundImageFileId());
+        copy.setBackgroundImageSha256(getBackgroundImageSha256());
         copy.setIconSize(getIconSize());
         copy.setDesktopHeader(getDesktopHeader());
         copy.setDesktopHeaderTemplate(getDesktopHeaderTemplate());
@@ -1041,6 +1115,7 @@ public class Configuration implements CustomerData, Serializable {
         copy.setDisableSafeBoot(getDisableSafeBoot());
         copy.setKioskLockVolume(getKioskLockVolume());
         copy.setWifiRadio(getWifiRadio());
+        copy.setLocationServices(getLocationServices());
         copy.setConnectivityMode(getConnectivityMode());
         copy.setExtensions(getExtensions() == null ? null : getExtensions().deepCopy());
 

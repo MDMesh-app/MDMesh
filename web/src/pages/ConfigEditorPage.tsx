@@ -9,7 +9,15 @@ import {
   type Configuration,
 } from '../api/configurations';
 import { ApiError } from '../api/client';
-import { listApplications, type Application } from '../api/applications';
+import { commitUpload, listApplications, uploadRawFile, type Application } from '../api/applications';
+import {
+  KIOSK_IMAGE_AGENT,
+  KIOSK_IMAGE_TYPES,
+  kioskImageContentId,
+  kioskImageErrorText,
+  kioskImageProblem,
+  kioskImageUploadName,
+} from '../data/kioskBackground';
 import { getSyncSummary, type ConfigSyncSummary } from '../api/configSync';
 import {
   CONFIG_FIELDS,
@@ -25,8 +33,10 @@ import {
   hasDefaultPin,
   hasNoPin,
   isLocked,
+  locationServicesAction,
 } from '../data/configurationRules';
 import { kioskAffectingChanges } from '../data/kioskChanges';
+import { manageableAppPermissions, managedAppPermissionLabel } from '../data/managedAppPermissions';
 import {
   Badge,
   Breadcrumb,
@@ -263,7 +273,7 @@ const LAYOUT: Record<'kiosk' | 'network' | 'security' | 'enrollment', Item[]> = 
     'textColor',
     'iconSize',
   ],
-  network: ['wifi', 'wifiRadio', 'bluetooth', 'requestUpdates', 'connectivityMode'],
+  network: ['wifi', 'wifiRadio', 'bluetooth', 'locationServices', 'requestUpdates', 'connectivityMode'],
   security: ['camera', 'usbStorage', 'disableScreenshots', 'disableFactoryReset', 'disableSafeBoot'],
   enrollment: ['wifiSSID', 'wifiPassword', 'wifiSecurityType'],
 };
@@ -301,10 +311,24 @@ function appsSignature(c: Configuration): string {
     .join(',');
 }
 
+/** Order-free: setting a permission back to what it was is no change, wherever the rule moved in the list. */
+function appPermissionsSignature(c: Configuration): string {
+  const rules = Array.isArray(c.managedAppPermissions) ? (c.managedAppPermissions as Array<Record<string, unknown>>) : [];
+  return rules
+    .map((r) => `${String(r?.applicationId)} ${String(r?.permission)} ${String(r?.state)}`)
+    .sort()
+    .join(',');
+}
+
 function changedKeys(before: Configuration, after: Configuration): Set<string> {
   const out = new Set<string>();
   for (const f of CONFIG_FIELDS) if (norm(before[f.key]) !== norm(after[f.key])) out.add(f.key);
+  // The background image picker is a managed asset control rather than a generic CONFIG_FIELDS control.
+  // Its identity must still participate in the editor's dirty state and save/apply flow.
+  if (norm(before.backgroundImageFileId) !== norm(after.backgroundImageFileId)
+    || norm(after.backgroundImageAction) !== null) out.add('backgroundImageFileId');
   if (appsSignature(before) !== appsSignature(after)) out.add('applications');
+  if (appPermissionsSignature(before) !== appPermissionsSignature(after)) out.add('managedAppPermissions');
   return out;
 }
 
@@ -374,6 +398,8 @@ function Editor({
   // Discards so far: the apps table files its rows again by their restored state.
   const [discards, setDiscards] = useState(0);
   const nameRef = useRef<HTMLInputElement>(null);
+  const backgroundImageRef = useRef<HTMLInputElement>(null);
+  const [backgroundUploading, setBackgroundUploading] = useState(false);
   const ids = useId();
 
   // The assigned apps: the configuration's own, or the template's for a copy. Until they arrive, saving is blocked
@@ -402,7 +428,12 @@ function Editor({
     };
   }, [appsSource, appsAttempt]);
 
-  const set = useCallback((key: string, value: unknown) => setDraft((d) => ({ ...d, [key]: value })), []);
+  const set = useCallback((key: string, value: unknown) => setDraft((d) => {
+    if (key === 'locationServices') {
+      return { ...d, locationServices: value, locationServicesAction: locationServicesAction(value) };
+    }
+    return { ...d, [key]: value };
+  }), []);
 
   const changed = useMemo(() => changedKeys(baseline, draft), [baseline, draft]);
 
@@ -426,6 +457,7 @@ function Editor({
     let n = 0;
     for (const k of changed) {
       if (k === 'applications') n += sec === 'apps' ? 1 : 0;
+      else if (k === 'backgroundImageFileId') n += sec === 'kiosk' ? 1 : 0;
       else if (FIELD[k] && sectionOf(FIELD[k]) === sec) n++;
     }
     return readOnly ? 0 : n;
@@ -470,10 +502,16 @@ function Editor({
       const assigned = (d.applications as ConfigApp[] | undefined) ?? [];
       const target = assigned.find((a) => a.id === id);
       const applications = next(assigned);
+      // Permission rules are valid only for applications this configuration installs. Drop them at the same time as
+      // the application assignment/action changes, rather than leaving an invisible rule for the server to reject.
+      const installed = new Set(applications.filter((app) => (app.action ?? 1) === 1).map((app) => app.id));
+      const managedAppPermissions = Array.isArray(d.managedAppPermissions)
+        ? d.managedAppPermissions.filter((rule) => !!rule && typeof rule === 'object' && installed.has(Number((rule as Record<string, unknown>).applicationId)))
+        : d.managedAppPermissions;
       const after = applications.find((a) => a.id === id);
       const stillMain = after != null && (after.action ?? 1) === 1 && after.showIcon !== false;
       const mainAppId = !stillMain && target?.usedVersionId != null && target.usedVersionId === d.mainAppId ? null : d.mainAppId;
-      return { ...d, applications, mainAppId };
+      return { ...d, applications, managedAppPermissions, mainAppId };
     });
   }
   const removeApp = (id: number) => updateApps(id, (list) => list.filter((a) => a.id !== id));
@@ -482,8 +520,21 @@ function Editor({
   // A hidden app cannot remain the kiosk's pinned main app: updateApps clears the stale selection.
   const setAppKioskVisibility = (id: number, showIcon: boolean) =>
     updateApps(id, (list) => list.map((a) => (a.id === id ? { ...a, showIcon } : a)));
+  const setAppPermission = (applicationId: number, permission: string, state: string) => setDraft((d) => {
+    const rules = Array.isArray(d.managedAppPermissions) ? d.managedAppPermissions as Array<Record<string, unknown>> : [];
+    const without = rules.filter((r) => !(r.applicationId === applicationId && r.permission === permission));
+    return { ...d, managedAppPermissions: state === 'default' ? without : [...without, { applicationId, permission, state }] };
+  });
+  const appPermissionState = (applicationId: number, permission: string): string => {
+    const rules = Array.isArray(draft.managedAppPermissions) ? draft.managedAppPermissions as Array<Record<string, unknown>> : [];
+    return String(rules.find((r) => r.applicationId === applicationId && r.permission === permission)?.state ?? 'default');
+  };
 
   function requestSave() {
+    if (backgroundUploading) {
+      toast.push('err', 'Image still uploading', 'Wait for the selected background image to finish uploading before saving.');
+      return;
+    }
     if (!String(draft.name ?? '').trim()) {
       setNameError('Give the configuration a name.');
       toast.push('err', 'Name required', 'Give the configuration a name.');
@@ -509,6 +560,7 @@ function Editor({
   }
 
   async function doSave() {
+    if (backgroundUploading) return;
     setBusy(true);
     try {
       // The whole configuration goes back (the server replaces every column and list), with the name as validated.
@@ -598,6 +650,75 @@ function Editor({
     );
   };
 
+  async function uploadBackgroundImage(file: File) {
+    const problem = kioskImageProblem(file);
+    if (problem) {
+      toast.push('err', 'Image not used', problem);
+      return;
+    }
+    setBackgroundUploading(true);
+    try {
+      // Hosted under a name from its content: an edited image with the same file name doesn't clash with the old one.
+      const name = kioskImageUploadName(file.name, await kioskImageContentId(file));
+      const temporary = await uploadRawFile(new File([file], name, { type: file.type }));
+      const saved = await commitUpload(temporary.serverPath);
+      if (saved.id == null) throw new Error('The server did not return the uploaded image identity.');
+      // URL and checksum are server-canonicalized on save. Clearing the old values avoids a stale preview payload.
+      setDraft((d) => ({
+        ...d,
+        backgroundImageAction: 'replace',
+        backgroundImageFileId: saved.id,
+        backgroundImageUrl: undefined,
+        backgroundImageSha256: undefined,
+      }));
+      toast.push('ok', 'Background image uploaded', 'Save and apply the configuration to use it in kiosk.');
+    } catch (e) {
+      toast.push('err', 'Image upload failed', kioskImageErrorText(e));
+    } finally {
+      setBackgroundUploading(false);
+    }
+  }
+
+  const backgroundImageRow = kioskOn ? (
+    <FieldRow
+      id={`${ids}-backgroundImage`}
+      label="Background image"
+      help={`Needs agent ${KIOSK_IMAGE_AGENT}. A PNG, JPEG or WebP image, at most 10 MB and 16 megapixels, shown behind the kiosk launcher; the background color stays the fallback. Devices download it only when the server address is HTTPS, and check it by its SHA-256. It is hosted in Files, where anyone with its link can open it, so don't use a confidential image. Remove also clears the legacy Background image URL.`}
+      adornment={changed.has('backgroundImageFileId') && !readOnly ? <ChangedChip /> : undefined}
+      disabled={readOnly}
+    >
+      {() => (
+        <div className="v2-cfged-calloutline">
+          <input
+            ref={backgroundImageRef}
+            type="file"
+            accept={KIOSK_IMAGE_TYPES.join(',')}
+            hidden
+            onChange={(e) => {
+              const file = e.currentTarget.files?.[0];
+              e.currentTarget.value = '';
+              if (file) void uploadBackgroundImage(file);
+            }}
+          />
+          <Button size="sm" onClick={() => backgroundImageRef.current?.click()} disabled={readOnly || backgroundUploading}>
+            {backgroundUploading ? 'Uploading…' : draft.backgroundImageFileId != null || draft.backgroundImageUrl ? 'Replace image' : 'Choose image'}
+          </Button>
+          {draft.backgroundImageFileId != null || draft.backgroundImageUrl ? (
+            <Button size="sm" onClick={() => setDraft((d) => ({
+              ...d,
+              backgroundImageAction: 'remove',
+              backgroundImageFileId: null,
+              backgroundImageUrl: undefined,
+              backgroundImageSha256: undefined,
+            }))} disabled={readOnly || backgroundUploading}>
+              Remove
+            </Button>
+          ) : null}
+        </div>
+      )}
+    </FieldRow>
+  ) : null;
+
   const renderItems = (items: Item[]) =>
     items.map((it) => {
       if (typeof it === 'string') return row(it);
@@ -615,6 +736,7 @@ function Editor({
     <Card as="section" id={id} padding="rows" aria-labelledby={`${ids}-${id}-h`}>
       <CardHeader titleId={`${ids}-${id}-h`} title={title} subtitle={SECTION_SUB[id]} spacing={12} />
       {renderItems(LAYOUT[id])}
+      {id === 'kiosk' ? backgroundImageRow : null}
     </Card>
   );
 
@@ -652,7 +774,7 @@ function Editor({
   // Duplicate = the server copy (PUT /configurations/copy), the same path as the list's Duplicate: it copies every
   // setting, the apps, configuration files and app settings of the saved configuration.
   const actions = isNew ? (
-    <Button size="lg" variant="primary" onClick={requestSave} disabled={busy || !appsReady}>
+    <Button size="lg" variant="primary" onClick={requestSave} disabled={busy || !appsReady || backgroundUploading}>
       {busy ? 'Creating…' : 'Create configuration'}
     </Button>
   ) : !canCopy ? null : readOnly ? (
@@ -793,6 +915,29 @@ function Editor({
           onKioskVisibility={setAppKioskVisibility}
           onRemove={removeApp}
           resetKey={discards}
+          renderAppDetails={(app) => {
+            if ((app.action ?? 1) !== 1) return null;
+            const configured = (Array.isArray(draft.managedAppPermissions) ? draft.managedAppPermissions : [])
+              .filter((rule): rule is Record<string, unknown> => !!rule && typeof rule === 'object')
+              .filter((rule) => rule.applicationId === app.id && typeof rule.permission === 'string')
+              .map((rule) => String(rule.permission));
+            const permissions = manageableAppPermissions(app.requestedPermissions, configured);
+            if (permissions.length === 0) return null;
+            return (
+              <details className="v2-cfged-permission-app">
+                <summary>Permissions · {permissions.length} available</summary>
+                <p>APK candidates only. Each device applies what its Android version and installed app support. Default removes MDMesh’s explicit override.</p>
+                {permissions.map((permission) => (
+                  <label className="v2-cfged-permission-app__row" key={permission}>
+                    <span>{managedAppPermissionLabel(permission)}</span>
+                    <select value={appPermissionState(app.id, permission)} disabled={readOnly} onChange={(e) => setAppPermission(app.id, permission, e.target.value)}>
+                      <option value="default">Default</option><option value="grant">Grant</option><option value="deny">Deny</option>
+                    </select>
+                  </label>
+                ))}
+              </details>
+            );
+          }}
         />
         <p className="v2-cfged-apps__note">
           “Do not install” keeps an app listed without installing it. “Remove” takes the app out of this configuration;
@@ -894,7 +1039,7 @@ function Editor({
             saveLabel={isNew ? 'Create configuration' : 'Save and apply'}
             busy={busy}
             busyLabel={isNew ? 'Creating…' : 'Saving…'}
-            saveDisabled={!appsReady}
+            saveDisabled={!appsReady || backgroundUploading}
           />
         )}
       </SectionLayout>
@@ -909,8 +1054,10 @@ function Editor({
       <KioskConfirmModal
         keys={confirmKeys}
         count={deviceCount}
+        saveDisabled={backgroundUploading}
         onCancel={() => setConfirmKeys(null)}
         onConfirm={() => {
+          if (backgroundUploading) return;
           setConfirmKeys(null);
           void doSave();
         }}

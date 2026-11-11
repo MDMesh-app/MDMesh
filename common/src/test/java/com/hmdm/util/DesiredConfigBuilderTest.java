@@ -185,6 +185,23 @@ public class DesiredConfigBuilderTest {
     }
 
     @Test
+    public void kiosk_background_image_requires_a_server_managed_file_and_hash() {
+        Configuration c = kioskConfig();
+        c.setBackgroundImageUrl("https://mdm.example/files/kiosk-background.jpg");
+        c.setBackgroundImageFileId(42);
+        c.setBackgroundImageSha256("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+
+        assertEquals("https://mdm.example/files/kiosk-background.jpg", build(c, Collections.emptyList())
+                .getKiosk().getTheme().getBackgroundImage().getUrl());
+        assertEquals("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", build(c, Collections.emptyList())
+                .getKiosk().getTheme().getBackgroundImage().getSha256());
+
+        c.setBackgroundImageSha256(null);
+        assertNull("a URL alone is a legacy value, not a managed image", build(c, Collections.emptyList())
+                .getKiosk().getTheme().getBackgroundImage());
+    }
+
+    @Test
     public void factory_reset_is_inverted_into_the_blocking_policy() {
         // disableFactoryReset=true means "block the wipe", so the agent receives factoryReset=false.
         DesiredConfig blocked = build(policiesConfig(), Collections.emptyList());
@@ -288,6 +305,22 @@ public class DesiredConfigBuilderTest {
         // Existing configurations upgrade with a NULL column: the kiosk golden revision must not move.
         assertEquals(resource("desired-config-kiosk.sha256"),
                 build(kioskConfig(), Arrays.asList(app(5, 505, "com.acme.pos", 1))).getRevision());
+    }
+
+    @Test
+    public void location_services_is_its_own_tri_state_policy_not_location_reporting() {
+        Configuration legacy = policiesConfig();
+        legacy.setRequestUpdates(RequestUpdatesType.GPS);
+        assertFalse("null locationServices = services not managed", build(legacy, Collections.emptyList())
+                .getPolicies().containsKey("locationServices"));
+        assertEquals("GPS reporting stays active", "active", build(legacy, Collections.emptyList()).getLocation().getMode());
+
+        Configuration off = policiesConfig(); off.setLocationServices(false);
+        assertEquals(Boolean.FALSE, build(off, Collections.emptyList()).getPolicies().get("locationServices"));
+        assertEquals("telemetry mode is independent", "off", build(off, Collections.emptyList()).getLocation().getMode());
+
+        Configuration on = policiesConfig(); on.setLocationServices(true);
+        assertEquals(Boolean.TRUE, build(on, Collections.emptyList()).getPolicies().get("locationServices"));
     }
 
     @Test

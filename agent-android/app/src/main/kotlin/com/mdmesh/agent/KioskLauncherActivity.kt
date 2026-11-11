@@ -24,12 +24,14 @@ import com.mdmesh.agent.ui.ExitPinDialog
 import com.mdmesh.agent.ui.ExitPinUiState
 import com.mdmesh.agent.ui.IconSize
 import com.mdmesh.agent.ui.KioskAppLoader
+import com.mdmesh.agent.ui.KioskBackdrop
 import com.mdmesh.agent.ui.KioskExit
 import com.mdmesh.agent.ui.KioskPalette
 import com.mdmesh.agent.ui.KioskRenderer
 import com.mdmesh.agent.ui.KioskScreen
 import com.mdmesh.agent.ui.MdmDialog
 import com.mdmesh.core.kiosk.KioskApplier
+import com.mdmesh.core.kiosk.KioskBackgroundImageStore
 import com.mdmesh.core.store.KioskStateStore
 import com.mdmesh.core.sync.CheckInWorker
 import com.mdmesh.core.telemetry.EventSink
@@ -73,6 +75,7 @@ class KioskLauncherActivity : ComponentActivity() {
     @Inject lateinit var events: EventSink
     @Inject lateinit var crashGuard: CrashLoopGuard
     @Inject lateinit var holdStore: HoldStore
+    @Inject lateinit var backgroundImages: KioskBackgroundImageStore
     @Inject lateinit var pinGate: ExitPinGate
 
     /** Last applied non-null kiosk state, so [onResume] can recover a bounced single-app pin. */
@@ -89,6 +92,9 @@ class KioskLauncherActivity : ComponentActivity() {
     /** Draws [KioskScreen]s; the activity decides which. */
     private lateinit var renderer: KioskRenderer
     private lateinit var apps: KioskAppLoader
+
+    /** The kiosk's background image: fetched and decoded off Main, painted by the renderer behind every screen. */
+    private lateinit var backdrop: KioskBackdrop
 
     /** The screen showing now. */
     private var screen: KioskScreen = KioskScreen.Idle
@@ -135,6 +141,9 @@ class KioskLauncherActivity : ComponentActivity() {
         apps = KioskAppLoader(this)
         densityDpi = resources.configuration.densityDpi
         renderer = KioskRenderer(this, Actions())
+        backdrop = KioskBackdrop(lifecycleScope, backgroundImages) { bitmap, stats ->
+            renderer.setBackdrop(bitmap, stats)
+        }
         render(KioskScreen.Idle)
         // React to kiosk.enter/kiosk.exit live: those run in the check-in service, not here, so we
         // observe the persisted state and re-render (enter → grid/pin, exit → unpin + idle) without
@@ -165,6 +174,9 @@ class KioskLauncherActivity : ComponentActivity() {
         // The open exit dialog is rebuilt too, so it takes the new colours and sizes.
         dialogs.onConfigurationChanged(newConfig) { tag, typed -> active?.let { reopenExitDialog(tag, it, typed) } }
         renderer.rebuild()
+        // A new window size (rotation, split screen): the image is decoded again to cover it; the old one stays
+        // until then.
+        showBackdrop(active)
         // A display-size change: the grid's icons were decoded for the old density.
         if (newConfig.densityDpi != densityDpi) {
             densityDpi = newConfig.densityDpi
@@ -254,6 +266,9 @@ class KioskLauncherActivity : ComponentActivity() {
         val restored = dialogs.takeRestored()
         val previous = active
         active = p
+        // On every kiosk state (each HomeResumeGate step, so a failed image is retried when HOME comes back): the
+        // image only repaints the backdrop, it never reopens the pinned app or clears a hold.
+        showBackdrop(p)
         // The kiosk an exit dialog was opened for is gone or replaced (a remote exit or re-entry, also one that
         // arrived while the launcher was stopped): close it rather than leave it on a kiosk it wasn't for.
         if (previous != null && previous != p) dialogs.dismiss()
@@ -343,6 +358,12 @@ class KioskLauncherActivity : ComponentActivity() {
         holding = true
         render(KioskScreen.Hold(palette(p), exitFor(p)))
         return LauncherScreen.HOLD
+    }
+
+    private fun showBackdrop(p: KioskApplyPayload?) {
+        val image = p?.theme?.backgroundImage ?: return backdrop.clear()
+        val metrics = resources.displayMetrics
+        backdrop.want(image, metrics.widthPixels, metrics.heightPixels)
     }
 
     private fun render(next: KioskScreen) {

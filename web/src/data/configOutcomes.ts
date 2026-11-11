@@ -39,6 +39,12 @@ function words(key: string): string {
  * `policies.x.netaccess.blockTethering` → "netaccess: block tethering".
  */
 export function outcomeKeyLabel(key: string): string {
+  if (key.startsWith('appPermissions.')) {
+    const rest = key.slice('appPermissions.'.length);
+    const split = rest.indexOf('.android.permission.');
+    if (split > 0) return `${rest.slice(0, split)}: ${words(rest.slice(split + '.android.permission.'.length)).toLowerCase()}`;
+    return `App permission: ${rest}`;
+  }
   const k = key.startsWith('policies.') ? key.slice('policies.'.length) : key;
   if (k === 'kiosk') return 'Kiosk mode';
   if (k === 'location') return 'Location reporting';
@@ -61,6 +67,25 @@ export interface Outcome {
   reason?: string;
 }
 
+/** Context the console already knows when it explains a device-specific unsupported outcome. */
+export interface OutcomeDeviceContext {
+  androidSdkInt?: number;
+  isDeviceOwner?: boolean;
+}
+
+/**
+ * An older agent and an older Android release both return the wire-level `unsupported` outcome. Give the only
+ * version-gated core policy a useful, truthful distinction without inventing a new protocol result reason.
+ */
+export function unsupportedOutcomeReason(key: string, context: OutcomeDeviceContext): string | undefined {
+  if (key !== 'policies.locationServices') return undefined;
+  if (context.isDeviceOwner === false) return 'Requires Device Owner mode.';
+  if (context.androidSdkInt != null && context.androidSdkInt < 30) {
+    return `Requires Android 11 or later (this device is API ${context.androidSdkInt}).`;
+  }
+  return 'Requires an agent that supports Location services.';
+}
+
 /** Classify one outcome string from `lastCommand.detail` (proto config-apply-result). */
 export function classifyOutcome(key: string, raw: string): Outcome {
   const label = outcomeKeyLabel(key);
@@ -70,6 +95,7 @@ export function classifyOutcome(key: string, raw: string): Outcome {
   };
   if (raw === 'applied') return { key, label, kind: 'applied', text: 'Applied' };
   if (raw === 'unsupported') return { key, label, kind: 'unsupported', text: 'Not supported' };
+  if (raw === 'not-requested') return { key, label, kind: 'unsupported', text: 'Not requested by this app' };
   if (raw.startsWith('deferred')) return { key, label, kind: 'deferred', text: 'Deferred', reason: reasonOf('deferred') };
   if (raw.startsWith('failed')) return { key, label, kind: 'failed', text: 'Failed', reason: reasonOf('failed') };
   return { key, label, kind: 'failed', text: raw };

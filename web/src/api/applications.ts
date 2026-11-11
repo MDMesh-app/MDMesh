@@ -147,6 +147,13 @@ export async function uploadApk(file: File): Promise<FileUploadResult> {
   return apiClient.postForm<FileUploadResult>('/private/web-ui-files', form);
 }
 
+/** Upload a non-APK file into the server's temporary customer-owned area. */
+export async function uploadRawFile(file: File): Promise<FileUploadResult> {
+  const form = new FormData();
+  form.append('file', file, file.name);
+  return apiClient.postForm<FileUploadResult>('/private/web-ui-files/raw', form);
+}
+
 // --- Split-APK bundle upload (.xapk/.apks/.apkm/.zip) ------------------------
 // The server unpacks the bundle, hosts each split, and returns the parts to
 // install together in one session. See the /bundle endpoint on FilesResource.

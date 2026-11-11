@@ -118,6 +118,8 @@ export interface DeviceState {
     agentVersion?: string | null;
     powerMode?: string | null;
     appliedConfigRevision?: string | null;
+    kioskGeneration?: number | null;
+    kioskReturnGeneration?: number | null;
 }
 
 // ---- api/configSync ----
@@ -149,6 +151,7 @@ export interface ConfigApp {
     remove?: boolean;
     system?: boolean;
     usedVersionId?: number;
+    requestedPermissions?: string | null;
     screenOrder?: number | null;
     keyCode?: number | null;
     bottom?: boolean | null;

@@ -27,6 +27,8 @@ export type KioskTheme = {
   backgroundColor?: string;
   textColor?: string;
   iconSize?: string;
+  /** Optional server-managed launcher image; agent validates HTTPS and SHA-256 before using it. */
+  backgroundImage?: { url: string; sha256: string };
 };
 
 /** The `kiosk.enter` payload (KioskApplyPayload): also the `kiosk` block of a `config.apply` document. */
@@ -181,15 +183,24 @@ export function configuredKioskState({
   history,
   kioskActive,
   inSync,
+  kioskGeneration,
+  kioskReturnGeneration,
   configuredIds,
 }: {
   history: CommandHistoryItem[];
   kioskActive: boolean | undefined;
   /** The device runs the configuration's current revision (configStatus.inSync). */
   inSync: boolean | undefined;
+  /** Server-owned generations, which are neither paged nor device-clock based. */
+  kioskGeneration: number | null | undefined;
+  kioskReturnGeneration: number | null | undefined;
   configuredIds: ReadonlySet<string>;
 }): ConfiguredKioskState {
   const last = lastKioskCommand(history);
+  // A local return records the current server-owned generation. A later Custom kiosk, exit, or configuration apply
+  // advances it, making Return available again. This avoids deriving state from a device-clock event or a paged list.
+  if (kioskGeneration != null && kioskReturnGeneration === kioskGeneration
+      && kioskActive === true && inSync === true) return 'active';
   if (!last) return 'ready';
   const fromConfig = last.type === 'config.apply';
   const configured = fromConfig || (last.type === 'kiosk.enter' && configuredIds.has(String(last.id)));
@@ -238,15 +249,25 @@ export function versionAtLeast(version: string | null | undefined, min: string):
 /** The agent release whose kiosk honours features.lockVolume (protocol 1.4); older agents ignore it. */
 export const LOCK_VOLUME_AGENT = '0.3.4';
 
-/** The assigned configuration's launcher theme (colours, icon size), or undefined when it sets none. */
+/** The assigned configuration's launcher theme, including a complete managed-image descriptor when present. */
 export function kioskTheme(configuration: Configuration | undefined): KioskTheme | undefined {
   if (!configuration) return undefined;
   const value = (key: 'backgroundColor' | 'textColor' | 'iconSize') =>
     typeof configuration[key] === 'string' ? (configuration[key] as string) : undefined;
+  const imageUrl = typeof configuration.backgroundImageUrl === 'string' ? configuration.backgroundImageUrl.trim() : '';
+  const imageSha256 = typeof configuration.backgroundImageSha256 === 'string'
+    ? configuration.backgroundImageSha256.trim().toLowerCase()
+    : '';
+  // Never turn a legacy arbitrary backgroundImageUrl into an agent download. The descriptor is
+  // valid only when the server supplied both a HTTPS URL and the canonical digest it calculated.
+  const backgroundImage = imageUrl.startsWith('https://') && /^[0-9a-f]{64}$/.test(imageSha256)
+    ? { url: imageUrl, sha256: imageSha256 }
+    : undefined;
   const theme = {
     backgroundColor: value('backgroundColor'),
     textColor: value('textColor'),
     iconSize: value('iconSize'),
+    ...(backgroundImage ? { backgroundImage } : {}),
   };
   return Object.values(theme).some((v) => v !== undefined) ? theme : undefined;
 }

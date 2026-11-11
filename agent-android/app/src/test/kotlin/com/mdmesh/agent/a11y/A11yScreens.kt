@@ -155,13 +155,35 @@ class A11yScreens {
     // ---- kiosk launcher ----
 
     /** [screen] drawn by the launcher's renderer, on the app theme. */
-    fun kioskScreen(screen: KioskScreen): ComponentActivity {
+    fun kioskScreen(screen: KioskScreen, backdrop: android.graphics.Bitmap? = null): ComponentActivity {
         val c = Robolectric.buildActivity(ComponentActivity::class.java)
         c.get().setTheme(R.style.Theme_MdmAgent)
         val a = start(c)
-        KioskRenderer(a, NoActions).render(screen)
+        val renderer = KioskRenderer(a, NoActions)
+        renderer.render(screen)
+        backdrop?.let { renderer.setBackdrop(it, statsOf(it)) }
         idle()
         return a
+    }
+
+    /** The [com.mdmesh.agent.ui.BackdropStats] the launcher would compute for [bitmap] (all of it visible). */
+    private fun statsOf(bitmap: android.graphics.Bitmap): com.mdmesh.agent.ui.BackdropStats {
+        val small = android.graphics.Bitmap.createScaledBitmap(bitmap, STATS, STATS, true)
+        val px = IntArray(STATS * STATS).also { small.getPixels(it, 0, STATS, 0, 0, STATS, STATS) }
+        return com.mdmesh.agent.ui.KioskScrim.stats(px, STATS, 4)
+    }
+
+    /** A busy, high-contrast photo stand-in: black and white noise in small blocks, plus saturated stripes. */
+    fun busyImage(): android.graphics.Bitmap {
+        val w = 540
+        val h = 1170
+        val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+        val random = java.util.Random(7)
+        val palette = intArrayOf(Color.BLACK, Color.WHITE, Color.RED, Color.YELLOW, Color.BLUE, Color.GREEN)
+        val blocks = IntArray((w / BLOCK + 1) * (h / BLOCK + 1)) { palette[random.nextInt(palette.size)] }
+        val pixels = IntArray(w * h) { i -> blocks[(i / w / BLOCK) * (w / BLOCK + 1) + (i % w) / BLOCK] }
+        bmp.setPixels(pixels, 0, w, 0, 0, w, h)
+        return bmp
     }
 
     fun kioskApps(): List<KioskApp> = apps.map { (pkg, label) -> KioskApp(pkg, label, ColorDrawable(Color.GRAY)) }
@@ -231,3 +253,6 @@ class A11yScreens {
         const val MAX_TRIES = 12
     }
 }
+
+private const val STATS = 48
+private const val BLOCK = 6

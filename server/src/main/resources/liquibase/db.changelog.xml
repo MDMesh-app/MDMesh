@@ -3128,4 +3128,11 @@
         </rollback>
     </changeSet>
 
+    <changeSet id="26.11.10-devices-customerId-enrollTime-idx" author="lunacy" context="common">
+        <comment>Index,new: devices (customerId, enrollTime), for the Enroll page's "devices enrolled since this code
+            was made" (a bounded, newest-first read it repeats every few seconds while a code is shown).</comment>
+        <sql>CREATE INDEX devices_customerId_enrollTime_idx ON devices (customerId, enrollTime);</sql>
+        <rollback>DROP INDEX IF EXISTS devices_customerId_enrollTime_idx;</rollback>
+    </changeSet>
+
 </databaseChangeLog>

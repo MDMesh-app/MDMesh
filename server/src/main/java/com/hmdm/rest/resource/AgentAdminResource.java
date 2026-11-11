@@ -28,6 +28,7 @@ import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.AgentEnrollmentToken;
 import com.hmdm.persistence.domain.Device;
+import com.hmdm.rest.json.agent.EnrolledDeviceView;
 import com.hmdm.persistence.domain.DeviceState;
 import com.hmdm.persistence.domain.DeviceSyncRow;
 import com.hmdm.notification.AgentWakeHub;
@@ -417,6 +418,28 @@ public class AgentAdminResource {
             return Response.PERMISSION_DENIED();
         }
         return Response.OK(commandDAO.getState(deviceId));
+    }
+
+    /** The most devices one "enrolled since" answer lists (the Enroll page shows the newest). */
+    static final int MAX_ENROLLED_SINCE = 50;
+
+    // =================================================================================================================
+    @ApiOperation(value = "Devices enrolled since", notes = "The devices of the customer the user may access that "
+            + "enrolled at or after `since` (server time, ms), newest first, at most `limit` (1 to 50, default 25). "
+            + "The Enroll page polls it while a code is shown.")
+    @GET
+    @Path("/devices/enrolled")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listEnrolledSince(@QueryParam("since") Long since, @QueryParam("limit") Integer limit) {
+        Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
+        if (!customerId.isPresent()) return Response.PERMISSION_DENIED();
+        long from = since == null ? System.currentTimeMillis() : since;
+        int max = limit == null ? 25 : Math.max(1, Math.min(limit, MAX_ENROLLED_SINCE));
+        List<EnrolledDeviceView> out = new ArrayList<>();
+        for (Device d : commandDAO.listEnrolledSince(customerId.get(), from, max)) {
+            if (deviceDAO.isAccessibleToUser(d)) out.add(new EnrolledDeviceView(d));
+        }
+        return Response.OK(out);
     }
 
     // =================================================================================================================

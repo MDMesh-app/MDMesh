@@ -162,6 +162,11 @@ public class AgentCommandDAO {
         deviceMapper.updateHardwareId(deviceNumber, hardwareId);
     }
 
+    /** The customer's devices enrolled since {@code since}, newest first, at most {@code limit}. */
+    public List<com.hmdm.persistence.domain.Device> listEnrolledSince(int customerId, long since, int limit) {
+        return deviceMapper.listEnrolledSince(customerId, since, limit);
+    }
+
     public String getDeviceSecretHash(String deviceNumber) {
         return deviceMapper.getDeviceSecretHash(deviceNumber);
     }

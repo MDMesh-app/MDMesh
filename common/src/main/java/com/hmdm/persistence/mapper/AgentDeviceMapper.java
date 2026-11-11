@@ -99,6 +99,16 @@ public interface AgentDeviceMapper {
     boolean hasSeveralCustomers();
 
     /**
+     * The customer's devices enrolled at or after {@code since}, newest first, at most {@code limit} (the Enroll page).
+     * Uses the (customerId, enrollTime) index.
+     */
+    @Select({"SELECT id, number, description, customerId, enrollTime, lastUpdate FROM devices " +
+            "WHERE customerId = #{customerId} AND enrollTime >= #{since} ORDER BY enrollTime DESC LIMIT #{limit}"})
+    List<com.hmdm.persistence.domain.Device> listEnrolledSince(@Param("customerId") int customerId,
+                                                              @Param("since") long since,
+                                                              @Param("limit") int limit);
+
+    /**
      * An authenticated check-in: last-seen, and the device has its credentials, so its enrollment can no longer be
      * retried.
      */

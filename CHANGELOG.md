@@ -14,11 +14,14 @@ Upgrading
 - The database adds three columns to enrollment tokens on start (`maxUses`, `useCount`, `revokedAt`) and stores
   the tokens hashed. Existing codes stay single-use and keep working; on PostgreSQL older than 11 they stop
   instead, so make a new code on the Enroll page. After a downgrade, codes made on this version don't work.
-- The database adds a column to devices (`agentEnrollAttemptHash`) on start. Nothing to do.
+- The database adds a column and two indexes to devices (`agentEnrollAttemptHash`; enrollment time per customer) on
+  start. Nothing to do.
 
 New
 - Enroll: devices that enroll while the page is open show under the code, with a link, first as getting their
-  configuration and then Online, so you see the device you just set up arrive without going to Devices.
+  configuration and then Online (or that one hasn't checked in after 10 minutes), so you see the device you just set
+  up arrive without going to Devices. The page stops looking after 30 minutes until you ask it to look again. Needs
+  this server.
 - Configurations can allow or block the camera. Block covers every app, kiosk apps too. Not managed after Block
   gives the camera back on agent 0.5.0; on older agents, choose Allow to lift a block (thanks @letternumber).
 - Kiosk: staff can tap Return to kiosk in the MDMesh Agent after leaving with the exit PIN, even offline. It shows
@@ -72,6 +75,9 @@ Fixes
 
 Under the hood
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
+- Agent protocol 1.6 (additive): the enroll request's optional `enrollAttempt`, and the retryable enroll errors
+  `error.agent.enrollment.failed`, `error.agent.enrollment.inProgress` and `error.agent.enrollment.deviceLimit`. New
+  console API: `GET /private/agent/v1/devices/enrolled`.
 
 ## v0.4.0 — 2026-11-03
 

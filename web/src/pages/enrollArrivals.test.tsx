@@ -14,11 +14,10 @@ function api(devices: () => unknown[]) {
     if (p === '/configurations/search') return [];
     if (p === '/agent/v1/token' && init?.method === 'POST')
       return { token: 'tok-1', createdAt: CREATED, expiresAt: Date.now() + 3600_000, maxUses: 1 };
-    if (p === '/devices/search' && init?.method === 'POST') {
-      const body = JSON.parse(String(init.body ?? '{}')) as { sortBy?: string; sortDir?: string };
-      expect(body.sortBy).toBe('ENROLLMENT_DATE');
-      expect(body.sortDir).toBe('DESC');
-      return { devices: { items: devices(), totalItemsCount: devices().length } };
+    if (p === '/agent/v1/devices/enrolled') {
+      const q = new URL(path, 'http://console').searchParams;
+      expect(q.get('since')).toBe(String(CREATED));
+      return devices();
     }
     return null;
   };
@@ -28,8 +27,8 @@ describe('Enroll: devices enrolled while the page is open', () => {
   it('lists a device that enrolled with the code, not one enrolled before it', async () => {
     stubApi(
       api(() => [
-        { id: 2, number: 'new-1', enrollTime: CREATED + 5_000, lastUpdate: CREATED + 5_000 },
-        { id: 1, number: 'old-1', enrollTime: CREATED - 60_000, lastUpdate: Date.now() },
+        { number: 'new-1', enrollTime: Date.now(), lastUpdate: Date.now() },
+        { number: 'old-1', enrollTime: CREATED - 60_000, lastUpdate: Date.now() },
       ]),
     );
     renderInConsole(<AppRoutes />, { path: '/enroll' });

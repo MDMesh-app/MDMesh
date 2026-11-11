@@ -42,3 +42,25 @@ export async function mintEnrollToken(
 export async function revokeAllEnrollTokens(): Promise<{ revoked?: number }> {
   return (await apiClient.post<{ revoked?: number } | undefined>('/private/agent/v1/token/revoke-all', {})) ?? {};
 }
+
+/** A device that enrolled since a code was made: GET /rest/private/agent/v1/devices/enrolled (server 0.5+). */
+export interface EnrolledDevice {
+  number: string;
+  description?: string;
+  /** Server time, ms. */
+  enrollTime: number;
+  /** Server time, ms: equal to enrollTime until the device's first check-in. */
+  lastUpdate?: number;
+}
+
+/**
+ * The devices (this user may see) enrolled at or after `since` (server time), newest first, at most `limit`. A server
+ * that predates it answers 404.
+ */
+export async function listEnrolledSince(since: number, limit = 25, signal?: AbortSignal): Promise<EnrolledDevice[]> {
+  const list = await apiClient.get<EnrolledDevice[] | null>(
+    `/private/agent/v1/devices/enrolled?since=${encodeURIComponent(String(since))}&limit=${limit}`,
+    signal,
+  );
+  return Array.isArray(list) ? list : [];
+}

@@ -176,6 +176,7 @@ function qrSteps(wifiInCode: boolean): ReactNode[] {
 const ARRIVAL_LABEL: Record<ArrivalState, string> = {
   settingUp: 'Enrolled, getting its configuration…',
   online: 'Online',
+  silent: 'Enrolled, hasn’t checked in yet',
   offline: 'Enrolled, but not heard from since',
 };
 
@@ -217,7 +218,7 @@ export function EnrollPage() {
   const now = useNow(30_000, token?.expiresAt);
   /** Server time of the first code made on this visit: devices enrolled since then show up on the page. */
   const [since, setSince] = useState<number | undefined>(undefined);
-  const arrivals = useArrivals(since);
+  const { arrivals, watching, unsupported: arrivalsUnsupported, watchAgain } = useArrivals(since);
 
   const [update, setUpdate] = useState<UpdateStatus | null>(null);
 
@@ -657,11 +658,21 @@ export function EnrollPage() {
           </div>
         )}
       </TabPanel>
-      {since != null ? (
+      {since != null && !arrivalsUnsupported ? (
         <div className="v2-enroll__arrivals" role="status" aria-live="polite">
           <span className="v2-enroll__wifilabel">Enrolled while this page is open</span>
+          {!watching ? (
+            <span className="v2-enroll__help">
+              Stopped looking for new devices after 30 minutes.{' '}
+              <LinkButton tone="inline" onClick={watchAgain}>
+                Look again
+              </LinkButton>
+            </span>
+          ) : null}
           {arrivals.length === 0 ? (
-            <span className="v2-enroll__help">No device yet. A device shows here within seconds of enrolling.</span>
+            watching ? (
+              <span className="v2-enroll__help">No device yet. A device shows here within seconds of enrolling.</span>
+            ) : null
           ) : (
             <ul className="v2-enroll__arrivallist">
               {arrivals.map((a) => (

@@ -12,7 +12,8 @@
   right: calc(var(--page-pad) + max(0px, (100% - var(--sidebar-w) - var(--main-max)) / 2));
   bottom: calc(24px + var(--v2-savebar-offset, 0px));
   gap: 10px;
-  max-width: 380px;
+  /* One width for every toast (not each its own content's), so their edges line up under the "N more" pill. */
+  width: min(380px, 100% - 2 * var(--page-pad));
   max-height: 50vh;
   overflow-y: auto;
   font-family: var(--font-sans);
@@ -126,7 +127,7 @@
     left: var(--page-pad);
     right: var(--page-pad);
     bottom: calc(16px + var(--v2-savebar-offset, 0px));
-    max-width: none;
+    width: auto;
     max-height: 40vh;
   }
 }

@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { useMediaQuery } from './useMediaQuery';
 import './Toast.css';
 
 /** `warn`: it went through, but not as asked (a sync that waits for the device's next check-in). */
@@ -34,6 +35,9 @@ const TOAST_MS: Record<ToastKind, number> = { ok: 5000, warn: 5000, err: 30_000 
 const HOLD_RECHECK_MS = 1000;
 /** Toasts shown at once; older ones wait behind "N more". */
 const VISIBLE = 3;
+/** On a screen this narrow, two, so the stack leaves most of the focused field in view. */
+const NARROW_QUERY = '(max-width: 360px)';
+const VISIBLE_NARROW = 2;
 /** How long an announcement stays in its live region (it has been read by then; the toast stays on screen). */
 const ANNOUNCE_MS = 7000;
 
@@ -42,7 +46,8 @@ const ANNOUNCE_MS = 7000;
  * 30 s; the pointer over the stack or focus in it holds them (2.2.1), and each has a Dismiss button (Escape too).
  * Each message is announced once as it arrives, failures from one assertive live region and the rest from one polite
  * region (4.1.3; plain aria-live, so the empty regions add no alert/status roles to every page); the stack itself is
- * not live. A repeated message shows as one toast with a count, announced again; three show at once, in arrival order.
+ * not live. A repeated message shows as one toast with a count, announced again; three show at once (two at 360px or less), in
+ * arrival order.
  */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -80,7 +85,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   // it came from. From a pointer (the press focused the button, with no ring): straight back where it came from, or
   // nowhere; focus left in the stack would hold every toast with nothing on screen to show why.
   const cameFrom = useRef<HTMLElement | null>(null);
-  const focusAfter = useRef<number | 'back' | null>(null);
+  const focusAfter = useRef<number | 'back' | 'back-quiet' | null>(null);
   useEffect(() => {
     const onFocusIn = (e: FocusEvent) => {
       const el = e.target as HTMLElement | null;
@@ -96,7 +101,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     const wrap = wrapRef.current;
     const next = typeof target === 'number' ? wrap?.querySelector<HTMLElement>(`[data-toast="${target}"] .t-close`) : null;
     if (next) next.focus();
-    else if (cameFrom.current && document.contains(cameFrom.current)) cameFrom.current.focus();
+    else if (cameFrom.current && document.contains(cameFrom.current)) {
+      // After a pointer dismiss the user is looking at the stack, not the field: don't scroll the page to it.
+      if (target === 'back-quiet') cameFrom.current.focus({ preventScroll: true });
+      else cameFrom.current.focus();
+    }
     else if (wrap?.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
   }, [toasts]);
 
@@ -113,7 +122,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         const next = all.slice(at + 1).find((x) => !ids.includes(x.id)) ?? [...all.slice(0, at)].reverse().find((x) => !ids.includes(x.id));
         focusAfter.current = next ? next.id : 'back';
       } else if (wrap?.contains(document.activeElement)) {
-        focusAfter.current = 'back';
+        focusAfter.current = keyboard ? 'back' : 'back-quiet';
       }
       return left;
     });
@@ -141,7 +150,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   );
   const api = useMemo(() => ({ push }), [push]);
 
-  const shown = toasts.slice(-VISIBLE);
+  const narrow = useMediaQuery(NARROW_QUERY);
+  const shown = toasts.slice(-(narrow ? VISIBLE_NARROW : VISIBLE));
   const more = toasts.length - shown.length;
   const render = (t: Toast) => (
     <div key={t.id} data-toast={t.id} className={`toast ${t.kind}`}>

@@ -143,6 +143,36 @@ describe('ToastProvider', () => {
     expect(toastNode('Saved')).toBeNull();
   });
 
+  it('a mouse dismiss returns focus without scrolling the page; a keyboard dismiss focuses normally', () => {
+    const { api } = renderProvider();
+    const save = screen.getByRole('button', { name: 'Save' });
+    save.focus();
+    const focus = vi.spyOn(save, 'focus');
+    act(() => api.push('err', 'First', ''));
+    act(() => api.push('err', 'Second', ''));
+    window.scrollY = 0;
+    const [first] = screen.getAllByRole('button', { name: 'Dismiss' });
+    act(() => first.focus());
+    fireEvent.click(first, { detail: 1 });
+    expect(focus).toHaveBeenLastCalledWith({ preventScroll: true });
+    expect(window.scrollY).toBe(0);
+    // Keyboard, last toast: back where focus came from, scrolled into view as usual.
+    const [last] = screen.getAllByRole('button', { name: 'Dismiss' });
+    act(() => last.focus());
+    fireEvent.click(last);
+    expect(focus).toHaveBeenLastCalledWith();
+  });
+
+  it('shows 2 toasts at once on a screen 360px wide or less', () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation(
+      (q: string) => ({ matches: q.includes('360px'), media: q, addEventListener() {}, removeEventListener() {} }) as unknown as MediaQueryList,
+    );
+    const { api } = renderProvider();
+    for (const t of ['One', 'Two', 'Three']) act(() => api.push('err', t, ''));
+    expect(toastTitles()).toEqual(['Two', 'Three']);
+    expect(stack().textContent).toContain('1 more');
+  });
+
   it('a mouse dismiss with nothing focused before blurs the button', () => {
     const { api } = renderProvider();
     act(() => api.push('err', 'First', ''));

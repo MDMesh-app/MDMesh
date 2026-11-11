@@ -109,31 +109,68 @@ class KioskLauncherExitTest {
     }
 
     @Test
-    fun `an unchanged kiosk state does not clear a rendered background`() {
+    fun `an unchanged kiosk state still re-pins and runs the return policy`() {
         val src = launcherSource()
         val apply = src.substring(body(src, "applyState"))
-        val unchanged = Regex(
-            "if\\s*\\(\\s*p\\s*!=\\s*null\\s*&&\\s*p\\s*==\\s*previous\\s*\\)\\s*return",
+        // The same state comes again each time the launcher is back in the foreground; returning early for it
+        // would skip the re-pin and the crash-loop count.
+        assertTrue(
+            "applyState must not return early for an unchanged state",
+            !Regex("p\\s*==\\s*previous\\s*\\)\\s*return").containsMatchIn(apply),
         )
-            .find(apply)?.range?.first ?: error("applyState must preserve an unchanged kiosk surface")
-        val clears = apply.indexOf("backgroundImageFile = null")
-        val message = "applyState must return before it clears the cached background for the same state"
-        assertTrue(message, clears > unchanged)
+        val returns = Regex("\\breturn\\b").findAll(apply).map { it.range.first }.toList()
+        val pin = apply.indexOf("startLockTaskSafely()")
+        val policy = apply.indexOf("returns.onApplied(")
+        assertTrue("applyState must pin and run the return policy", pin in 0 until policy)
+        val idle = apply.indexOf("setContentView(idleView())")
+        assertTrue(
+            "applyState's only early return is the no-kiosk branch",
+            returns.all { it in idle until pin },
+        )
+    }
+
+    @Test
+    fun `an unchanged state keeps a loaded or loading background image`() {
+        val src = launcherSource()
+        val apply = src.substring(body(src, "applyState"))
+        assertTrue(
+            "applyState must drop the image only when the state wants another one",
+            Regex("if\\s*\\(\\s*p\\.theme\\.backgroundImage\\s*!=\\s*backgroundFor\\s*\\)\\s*clearBackground\\(\\)")
+                .containsMatchIn(apply),
+        )
+        assertTrue("applyState must (re)start a missing image", "loadBackground(p)" in apply)
+        val load = src.substring(body(src, "loadBackground"))
+        assertTrue(
+            "loadBackground must not start a second download, or reload a loaded image",
+            "if (backgroundBitmap != null || backgroundFetch?.isActive == true) return" in load,
+        )
     }
 
     @Test
     fun `background completion only renders the current state and preserves a crash hold`() {
         val src = launcherSource()
-        val fetch = src.substring(body(src, "fetchBackgroundImage"))
+        val fetch = src.substring(body(src, "loadBackground"))
         assertTrue(
-            "background completion must reject a changed kiosk payload",
-            "if (active != p) return@launch" in fetch,
+            "background completion must reject a state that no longer wants this image",
+            "if (current.theme.backgroundImage != requested) return@launch" in fetch,
         )
         assertTrue(
             "background completion must redraw the hold screen instead of relaunching",
-            "if (holding) hold(p)" in fetch,
+            "if (holding) hold(current)" in fetch,
         )
         assertTrue("background completion must not call show while held", "|| holding" !in fetch)
+    }
+
+    @Test
+    fun `the background image is decoded once, off the main thread`() {
+        val src = launcherSource()
+        val frame = src.substring(body(src, "frame"))
+        assertTrue("frame must reuse the decoded bitmap", "decodeBackground" !in frame && "backgroundBitmap" in frame)
+        val obtain = src.substring(body(src, "obtainBackgroundImage"))
+        assertTrue(
+            "the decode must run on a background dispatcher",
+            Regex("withContext\\(Dispatchers\\.(IO|Default)\\)\\s*\\{\\s*decodeBackground").containsMatchIn(obtain),
+        )
     }
 
     @Test

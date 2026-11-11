@@ -24,14 +24,23 @@ class KioskBackgroundImageStore @Inject constructor(
     @ApplicationContext private val context: Context,
     @DownloadHttpClient private val http: OkHttpClient,
 ) {
+    /** No switch between HTTPS and HTTP on a redirect: the image is fetched over HTTPS only. */
+    private val client: OkHttpClient by lazy { http.newBuilder().followSslRedirects(false).build() }
+
     suspend fun obtain(image: KioskBackgroundImageDto): File? = withContext(Dispatchers.IO) {
         val request = validRequest(image) ?: return@withContext null
 
         val dir = File(context.filesDir, "kiosk-background").also { it.mkdirs() }
         val target = File(dir, "${request.hash}.image")
-        if (validImage(target)) return@withContext target
-        target.delete()
-        download(request, target)
+        val result = if (validImage(target)) {
+            target
+        } else {
+            target.delete()
+            download(request, target)
+        }
+        // Only the current image is kept: an older one (up to 10 MB each) would stay in private storage forever.
+        if (result != null) pruneBackgroundCache(dir, keep = result, nowMs = System.currentTimeMillis())
+        result
     }
 
     private fun validRequest(image: KioskBackgroundImageDto): BackgroundRequest? {
@@ -50,7 +59,7 @@ class KioskBackgroundImageStore @Inject constructor(
         // truncate or delete another's verified bytes.
         val temporary = File.createTempFile(".${request.hash}.", ".download", target.parentFile)
         return try {
-            val digest = http.newCall(Request.Builder().url(request.url).get().build()).execute().use { response ->
+            val digest = client.newCall(Request.Builder().url(request.url).get().build()).execute().use { response ->
                 response.body?.takeIf { response.isSuccessful }?.let { body ->
                     copyAndDigest(body.byteStream(), temporary)
                 }
@@ -100,3 +109,22 @@ class KioskBackgroundImageStore @Inject constructor(
         const val MAX_PIXELS = 16L * 1024 * 1024
     }
 }
+
+/**
+ * Deletes every cached image in [dir] but [keep], and downloads left behind (a killed process) once they are older
+ * than [STALE_DOWNLOAD_MS]; a younger one may still be written by another launcher instance.
+ */
+internal fun pruneBackgroundCache(dir: File, keep: File, nowMs: Long) {
+    dir.listFiles()?.forEach { file ->
+        val stale = when {
+            file.name == keep.name -> false
+            file.name.endsWith(".image") -> true
+            file.name.endsWith(".download") -> nowMs - file.lastModified() > STALE_DOWNLOAD_MS
+            else -> false
+        }
+        if (stale && file.isFile) file.delete()
+    }
+}
+
+/** A download takes seconds; one this old was abandoned. */
+internal const val STALE_DOWNLOAD_MS = 60L * 60 * 1000

@@ -36,10 +36,13 @@ import com.mdmesh.kiosk.ExitPinGate
 import com.mdmesh.kiosk.KioskController
 import com.mdmesh.kiosk.KioskReturnPolicy
 import com.mdmesh.proto.KioskApplyPayload
+import com.mdmesh.proto.KioskBackgroundImageDto
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -73,9 +76,11 @@ class KioskLauncherActivity : ComponentActivity() {
 
     /** Last applied non-null kiosk state, so [onResume] can recover a bounced single-app pin. */
     private var active: KioskApplyPayload? = null
-    /** Validated private image for [active], or null while the color-only fallback is shown. */
-    private var backgroundImageFile: java.io.File? = null
-    /** Current optional-image fetch; cancelled when a newer kiosk configuration arrives. */
+    /** The background image [backgroundBitmap] and [backgroundFetch] are for. */
+    private var backgroundFor: KioskBackgroundImageDto? = null
+    /** [backgroundFor], decoded for this screen, or null while the color-only fallback is shown. */
+    private var backgroundBitmap: android.graphics.Bitmap? = null
+    /** The download and decode of [backgroundFor]; cancelled when the state wants another image or none. */
     private var backgroundFetch: Job? = null
 
     private val returns by lazy { KioskReturnPolicy(crashGuard) }
@@ -115,49 +120,71 @@ class KioskLauncherActivity : ComponentActivity() {
 
     private fun applyState(p: KioskApplyPayload?) {
         val previous = active
-        // repeatOnLifecycle re-subscribes after the screen wakes, and StateFlow immediately emits its current value.
-        // Rebuilding an unchanged launcher clears the already-rendered cached image, briefly exposing the color
-        // fallback before the image is decoded again. The existing surface is still the desired state.
-        if (p != null && p == previous) return
         active = p
-        backgroundFetch?.cancel()
-        backgroundFetch = null
-        backgroundImageFile = null
         if (p == null) {
             holding = false
+            clearBackground()
             stopLockTaskSafely()
             setContentView(idleView())
-        } else {
-            // Pin first: a held device (a loop that tripped just before a reboot) is still in kiosk.
-            startLockTaskSafely()
-            if (returns.onApplied(changed = previous != null && previous != p) == KioskReturnPolicy.Action.HOLD) {
-                hold(p)
-            } else {
-                show(p)
-                fetchBackgroundImage(p)
-            }
+            return
         }
+        // The same state comes again each time the launcher returns to the foreground (repeatOnLifecycle re-collects
+        // the store): it still re-pins and counts for the return policy, as below, but keeps a background image that
+        // is loaded or loading. Only another image (or none) drops it.
+        if (p.theme.backgroundImage != backgroundFor) clearBackground()
+        // Pin first: a held device (a loop that tripped just before a reboot) is still in kiosk.
+        startLockTaskSafely()
+        if (returns.onApplied(changed = previous != null && previous != p) == KioskReturnPolicy.Action.HOLD) {
+            hold(p)
+        } else {
+            show(p)
+        }
+        loadBackground(p)
     }
 
-    private fun fetchBackgroundImage(p: KioskApplyPayload) {
+    /** Drops the background image and stops its download, for another image or none. */
+    private fun clearBackground() {
+        backgroundFetch?.cancel()
+        backgroundFetch = null
+        backgroundFor = null
+        backgroundBitmap = null
+    }
+
+    /**
+     * Downloads and decodes [p]'s background image, unless it is loaded or loading. A download that failed is tried
+     * again the next time the state is applied (the launcher back in the foreground, the screen on).
+     */
+    private fun loadBackground(p: KioskApplyPayload) {
         val requested = p.theme.backgroundImage ?: return
+        if (backgroundBitmap != null || backgroundFetch?.isActive == true) return
+        backgroundFor = requested
+        val metrics = resources.displayMetrics
+        val longEdge = maxOf(metrics.widthPixels, metrics.heightPixels)
         backgroundFetch = lifecycleScope.launch {
-            val file = obtainBackgroundImage(requested) ?: return@launch
-            // A newer configuration may have arrived while this download was in flight. Compare
-            // the full payload: a matching image alone does not make its app grid current.
-            if (active != p) return@launch
-            backgroundImageFile = file
+            val bitmap = obtainBackgroundImage(requested, longEdge) ?: return@launch
+            // The state may have changed while it loaded: draw it only if the current state still wants this
+            // image, and draw that state (its app grid), not the one that started the download.
+            val current = active ?: return@launch
+            if (current.theme.backgroundImage != requested) return@launch
+            backgroundBitmap = bitmap
             // Do not reopen a pinned app, or clear a crash-loop hold, merely because its optional
             // splash background arrived.
-            if (holding) hold(p) else if (p.mode == "launcher") show(p)
+            if (holding) hold(current) else if (current.mode == "launcher") show(current)
         }
     }
 
     /** One bounded retry lets a transient network failure recover without keeping a retry loop alive. */
-    private suspend fun obtainBackgroundImage(requested: com.mdmesh.proto.KioskBackgroundImageDto): java.io.File? {
-        backgroundImages.obtain(requested)?.let { return it }
-        delay(BACKGROUND_RETRY_MS)
-        return backgroundImages.obtain(requested)
+    private suspend fun obtainBackgroundImage(
+        requested: KioskBackgroundImageDto,
+        longEdge: Int,
+    ): android.graphics.Bitmap? {
+        val file = backgroundImages.obtain(requested)
+            ?: run {
+                delay(BACKGROUND_RETRY_MS)
+                backgroundImages.obtain(requested)
+            }
+            ?: return null
+        return withContext(Dispatchers.IO) { decodeBackground(file, longEdge) }
     }
 
     private fun show(p: KioskApplyPayload) {
@@ -442,26 +469,29 @@ class KioskLauncherActivity : ComponentActivity() {
         android.widget.FrameLayout(this).apply {
             setBackgroundColor(bg)
             layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
-            backgroundImageFile?.let { file ->
-                decodeBackground(file)?.let { bitmap ->
-                    addView(ImageView(this@KioskLauncherActivity).apply {
-                        setImageBitmap(bitmap)
-                        scaleType = ImageView.ScaleType.CENTER_CROP
-                        layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
-                    })
-                }
+            backgroundBitmap?.let { bitmap ->
+                addView(ImageView(this@KioskLauncherActivity).apply {
+                    setImageBitmap(bitmap)
+                    scaleType = ImageView.ScaleType.CENTER_CROP
+                    layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
+                })
             }
         }
 
-    /** Decode only enough pixels for the current screen; source dimensions were bounded before caching. */
-    private fun decodeBackground(file: java.io.File): android.graphics.Bitmap? {
+    /**
+     * Decodes [file] once, off the main thread, halved while its long edge stays at least [longEdge] (the screen's),
+     * so a large image is not held at full size. The source size was bounded before it was cached.
+     */
+    private fun decodeBackground(file: java.io.File, longEdge: Int): android.graphics.Bitmap? = runCatching {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.path, bounds)
+        val sourceEdge = maxOf(bounds.outWidth, bounds.outHeight)
+        if (sourceEdge <= 0) return@runCatching null
+        val target = longEdge.coerceAtLeast(1)
         var sample = 1
-        val target = maxOf(resources.displayMetrics.widthPixels, resources.displayMetrics.heightPixels)
-        while (bounds.outWidth / sample > target * 2 || bounds.outHeight / sample > target * 2) sample *= 2
-        return BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })
-    }
+        while (sourceEdge / (sample * 2) >= target) sample *= 2
+        BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })
+    }.getOrNull()
 
     private fun centeredText(s: String, sizeSp: Float, color: Int, bold: Boolean = false): TextView =
         text(s, sizeSp, color, bold).apply { gravity = Gravity.CENTER }

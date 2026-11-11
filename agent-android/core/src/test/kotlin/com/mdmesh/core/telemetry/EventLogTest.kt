@@ -118,27 +118,58 @@ class EventLogTest {
     }
 
     @Test fun `waiting for the disk does not hold up record() on another thread`() {
-        // record() runs on the main thread (receivers, the kiosk); a slow disk under the check-in's drain must not
-        // block it.
+        // record() runs on the main thread (receivers, the kiosk); a slow disk under the check-in's drain, restore or
+        // delivered must not block it.
+        val ops: List<Pair<String, (EventLog) -> Unit>> = listOf(
+            "drain" to { log -> log.drain() },
+            "restore" to { log -> log.restore(listOf(com.mdmesh.proto.TelemetryEventDto("boot", 1))) },
+            "delivered" to { log -> log.delivered() },
+        )
+        for ((name, op) in ops) {
+            val slow = AtomicBoolean(false)
+            val inDiskWait = CountDownLatch(1)
+            val diskDone = CountDownLatch(1)
+            val store = object : FakeStore() {
+                override fun flush() {
+                    if (!slow.get()) return
+                    inDiskWait.countDown()
+                    diskDone.await(2, TimeUnit.SECONDS)
+                }
+            }
+            val log = EventLog(store)
+            log.record("boot")
+            slow.set(true)
+            val worker = thread { op(log) }
+            assertTrue(name, inDiskWait.await(2, TimeUnit.SECONDS))
+
+            val recorded = CountDownLatch(1)
+            thread { log.record("appInstalled"); recorded.countDown() }
+            val quick = recorded.await(300, TimeUnit.MILLISECONDS)
+            diskDone.countDown()
+            worker.join()
+            assertTrue("record() waited for $name's disk write", quick)
+        }
+    }
+
+    @Test fun `nothing is lost when record() runs while a drain waits for the disk`() {
         val inDiskWait = CountDownLatch(1)
         val diskDone = CountDownLatch(1)
+        val slow = AtomicBoolean(true)
         val store = object : FakeStore() {
-            override fun flush() = slowDisk()
-            fun slowDisk() { inDiskWait.countDown(); diskDone.await(2, TimeUnit.SECONDS) }
+            override fun flush() {
+                if (!slow.getAndSet(false)) return
+                inDiskWait.countDown()
+                diskDone.await(2, TimeUnit.SECONDS)
+            }
         }
         val log = EventLog(store)
         log.record("boot")
         val drainer = thread { log.drain() }
         assertTrue(inDiskWait.await(2, TimeUnit.SECONDS))
-
-        val recorded = CountDownLatch(1)
-        thread { log.record("appInstalled"); recorded.countDown() }
-        val quick = recorded.await(300, TimeUnit.MILLISECONDS)
+        thread { log.record("appInstalled") }.join(1_000)
         diskDone.countDown()
         drainer.join()
-
-        assertTrue("record() waited for the drain's disk write", quick)
         log.delivered()
-        assertEquals("nothing lost", listOf("appInstalled"), EventLog(store).drain().map { it.type })
+        assertEquals(listOf("appInstalled"), EventLog(store).drain().map { it.type })
     }
 }

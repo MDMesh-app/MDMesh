@@ -2,7 +2,7 @@ package com.mdmesh.agent.ui
 
 import android.content.Context
 import android.util.AttributeSet
-import android.widget.EditText
+import androidx.appcompat.widget.AppCompatEditText
 
 /**
  * The exit PIN field. Refuses the text actions that would take the PIN out of it (Copy, Cut, Share, Translate,
@@ -11,8 +11,8 @@ import android.widget.EditText
 class PinEditText @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
-    defStyleAttr: Int = android.R.attr.editTextStyle,
-) : EditText(context, attrs, defStyleAttr) {
+    defStyleAttr: Int = androidx.appcompat.R.attr.editTextStyle,
+) : AppCompatEditText(context, attrs, defStyleAttr) {
 
     override fun onTextContextMenuItem(id: Int): Boolean =
         if (id == android.R.id.paste || id == android.R.id.selectAll) super.onTextContextMenuItem(id) else true

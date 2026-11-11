@@ -242,13 +242,13 @@ public class ConfigurationResource {
                                 "by user " + SecurityContext.get().getCurrentUserName());
                         return Response.PERMISSION_DENIED();
                     }
+                    Configuration stored = configurationDAO.getConfigurationById(id);
                     // Like the plugins' validators, only what the save changes: a row saved before this check
                     // can still get an unrelated edit.
-                    if (systemUpdateError != null
-                            && systemUpdateChanges(configuration, configurationDAO.getConfigurationById(id))) {
+                    if (systemUpdateError != null && systemUpdateChanges(configuration, stored)) {
                         throw new BadRequestException(systemUpdateError);
                     }
-                    applyLocationServicesUpdate(configuration, configurationDAO.getConfigurationById(id));
+                    applyLocationServicesUpdate(configuration, stored);
                     Response refused = refuseExtensions(configuration, storedExtensions(id, configuration));
                     if (refused != null) return refused;
                     log.info("Configuration " + configuration.getName() + " updated by user "  + SecurityContext.get().getCurrentUserName());

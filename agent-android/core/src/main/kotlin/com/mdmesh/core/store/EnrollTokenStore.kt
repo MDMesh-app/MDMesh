@@ -35,8 +35,16 @@ interface EnrollTokenProvider {
     /** Forget the enrollment attempt once the device has checked in: it can resume nothing any more. */
     suspend fun clearEnrollAttempt() {}
 
-    /** Remember that the server which enrolled with the held attempt resumes enrollments (resume-only recovery). */
-    suspend fun markAttemptResumable() {}
+    /** Whether the server which enrolled with the held attempt resumes enrollments (resume-only recovery). */
+    suspend fun setAttemptResumable(resumable: Boolean) {}
+
+    /**
+     * The server refused this device's credentials and had nothing to resume: the device has to be enrolled again.
+     * Persistent until a successful enrollment, so the status screen can say so whatever later check-ins report.
+     */
+    suspend fun setCredentialsLost(lost: Boolean) {}
+
+    suspend fun credentialsLost(): Boolean = false
 
     /**
      * The attempt id held for [token] when the server that took it resumes enrollments, without making one; null
@@ -73,15 +81,26 @@ class EnrollTokenStore(private val context: Context) : EnrollTokenProvider {
             if (isNew) {
                 prefs[KEY_ATTEMPT] = id
                 prefs[KEY_ATTEMPT_FOR] = EnrollAttempts.bindingOf(token)
+                // A new attempt: whether it can be resumed is up to the server that answers it.
+                prefs.remove(KEY_ATTEMPT_RESUMABLE)
             }
             attempt = id
         }
         return attempt
     }
 
-    override suspend fun markAttemptResumable() {
-        context.enrollTokenDataStore.edit { it[KEY_ATTEMPT_RESUMABLE] = true }
+    override suspend fun setAttemptResumable(resumable: Boolean) {
+        context.enrollTokenDataStore.edit { it[KEY_ATTEMPT_RESUMABLE] = resumable }
     }
+
+    override suspend fun setCredentialsLost(lost: Boolean) {
+        context.enrollTokenDataStore.edit {
+            if (lost) it[KEY_CREDENTIALS_LOST] = true else it.remove(KEY_CREDENTIALS_LOST)
+        }
+    }
+
+    override suspend fun credentialsLost(): Boolean =
+        context.enrollTokenDataStore.data.first()[KEY_CREDENTIALS_LOST] == true
 
     override suspend fun resumableAttempt(token: String): String? {
         val prefs = context.enrollTokenDataStore.data.first()
@@ -103,5 +122,6 @@ class EnrollTokenStore(private val context: Context) : EnrollTokenProvider {
         val KEY_ATTEMPT = stringPreferencesKey("enroll_attempt")
         val KEY_ATTEMPT_FOR = stringPreferencesKey("enroll_attempt_for")
         val KEY_ATTEMPT_RESUMABLE = booleanPreferencesKey("enroll_attempt_resumable")
+        val KEY_CREDENTIALS_LOST = booleanPreferencesKey("credentials_lost")
     }
 }

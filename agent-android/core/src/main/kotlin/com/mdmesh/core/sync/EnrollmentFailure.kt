@@ -32,6 +32,10 @@ object EnrollmentFailure {
     const val NO_CODE = "This device has no enrollment code: it wasn't set up with an MDMesh QR code. " +
         "Factory-reset it and scan a QR code from the console's Enroll page."
 
+    /** Shown next to the device id once the server refused its credentials and had nothing to resume. */
+    const val CREDENTIALS_LOST = "The server no longer accepts this device's credentials and can't restore them. " +
+        "Factory-reset the device and scan a new QR code to enroll it again."
+
     /** The server refused enrollment with [key] (`error.agent.…`). */
     fun forServer(key: String?): String {
         val k = key ?: "error.agent.enrollment.refused"
@@ -48,8 +52,7 @@ object EnrollmentFailure {
                 "automatically."
             k.endsWith("enrollment.deviceLimit") -> "This organisation has reached its device limit. Ask your " +
                 "admin to make room; this device then enrolls by itself."
-            k.endsWith("enrollment.notResumable") -> "The server no longer accepts this device's credentials and " +
-                "can't restore them. Factory-reset the device and scan a new QR code to enroll it again."
+            k.endsWith("enrollment.notResumable") -> CREDENTIALS_LOST
             k.endsWith("enrollment.inProgress") -> "The server is still enrolling this device. Trying again " +
                 "automatically."
             else -> "The server refused enrollment."

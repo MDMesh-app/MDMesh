@@ -28,6 +28,7 @@ import com.mdmesh.core.config.ConfigApplier
 import com.mdmesh.core.store.ConfigStateStore
 import com.mdmesh.core.store.configuredKiosk
 import com.mdmesh.core.store.DeviceIdStore
+import com.mdmesh.core.store.EnrollTokenStore
 import com.mdmesh.core.store.KioskStateStore
 import com.mdmesh.core.sync.CheckInWorker
 import com.mdmesh.core.sync.SyncStatus
@@ -65,6 +66,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var configStore: ConfigStateStore
     @Inject lateinit var kioskStore: KioskStateStore
     @Inject lateinit var events: EventLog
+    @Inject lateinit var enrollTokens: EnrollTokenStore
 
     private lateinit var deviceIdValue: TextView
     private lateinit var kioskValue: TextView
@@ -114,7 +116,14 @@ class MainActivity : ComponentActivity() {
         returnButton.text = if (returningToKiosk) "Returning…" else "Return to kiosk"
         lifecycleScope.launch {
             val id = deviceIdStore.current()
-            deviceIdValue.text = if (id.isNullOrBlank()) enrollingLabel() else id
+            val lost = try {
+                enrollTokens.credentialsLost()
+            } catch (ignored: java.io.IOException) {
+                false // unreadable store: show the id; the state is written again on the next recovery
+            }
+            deviceIdValue.text = DeviceIdLabel.of(id, lost, syncStatus.lastError.value) {
+                DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(it))
+            }
         }
     }
 
@@ -166,13 +175,6 @@ class MainActivity : ComponentActivity() {
             KioskResult.Unsupported -> "Kiosk is not supported on this device."
             is KioskResult.Failed -> result.reason
         }
-    }
-
-    /** "Enrolling…" plus the last sync error (if any), so a stuck enrollment is diagnosable on-device. */
-    private fun enrollingLabel(): String {
-        val failure = syncStatus.lastError.value ?: return "Enrolling…"
-        val at = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(failure.atMillis))
-        return "Enrolling… (last error: ${failure.message} at $at)"
     }
 
     private fun isLocked(): Boolean {

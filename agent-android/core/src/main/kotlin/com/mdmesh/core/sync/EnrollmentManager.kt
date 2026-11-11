@@ -52,7 +52,7 @@ class EnrollmentManager @Inject constructor(
 
     /**
      * Returns the server-issued device id, enrolling first if necessary. Until the first check-in succeeds it keeps the
-     * enrollment's attempt id: if the server rejects the saved credentials meanwhile, it enrolls again with that same
+     * enrollment's attempt id: if the server rejects the saved credentials meanwhile, it resumes that same
      * attempt, which returns the same device and the credential the server holds, instead of retrying a dead secret.
      */
     suspend fun ensureEnrolled(): String {
@@ -86,8 +86,9 @@ class EnrollmentManager @Inject constructor(
      * Resumes the held attempt (same token, same id, resume only): the server answers with this attempt's device and
      * the credential it stores, and never makes a new device. Only against a server that said it resumes enrollments
      * ([AgentEnrollResponse.resumeSupported]). Runs once per refused check-in ([recoveredFailure]) and at most
-     * [MAX_RECOVERIES] times per process. A network failure leaves things as they are for the next refusal; a refusal
-     * from the server (nothing to resume) ends recovery: the attempt is dropped and the reason recorded for the screen.
+     * [MAX_RECOVERIES] times per process. A network failure or a retryable answer leaves things as they are for the
+     * next refusal; a final answer ([FINAL_RECOVERY_ANSWERS]) ends recovery: the attempt is dropped and the credentials
+     * are marked lost, which persists for the status screen until the device enrolls again.
      */
     private suspend fun recover(current: String): String {
         recoveries++
@@ -97,11 +98,17 @@ class EnrollmentManager @Inject constructor(
         if (token == null || attempt == null) return current
         val data = runCatching { post(token, attempt, resumeOnly = true) }.getOrElse { failure ->
             if (failure is CancellationException) throw failure
-            // Logged (no secrets in it). A refusal by the server (nothing to resume) ends recovery for good.
+            // Logged (no secrets in it). Only a final answer ends recovery; a retryable one (inProgress, failed) or a
+            // network failure leaves the attempt for the next refused check-in.
             environment.log.warn("credential recovery failed; the device keeps its saved credentials", failure)
-            if (failure is EnrollmentException) {
-                runCatching { tokenProvider.clearEnrollAttempt() }
-                environment.syncStatus.recordFailure(failure)
+            val final = failure is EnrollmentException &&
+                FINAL_RECOVERY_ANSWERS.any { failure.message.orEmpty().endsWith("$it)") }
+            if (final) {
+                withContext(NonCancellable) {
+                    bestEffort { tokenProvider.clearEnrollAttempt() }
+                    // Persistent, for the status screen: later check-ins replace the last error, not this.
+                    bestEffort { tokenProvider.setCredentialsLost(true) }
+                }
             }
             null
         }
@@ -112,9 +119,9 @@ class EnrollmentManager @Inject constructor(
     /** After the first successful check-in the attempt can recover nothing: drop it. */
     private suspend fun forgetAttemptOnceCheckedIn() {
         if (attemptForgotten || environment.syncStatus.lastSuccessAtMs == null) return
-        runCatching { tokenProvider.clearEnrollAttempt() }.onSuccess { attemptForgotten = true }
+        bestEffort { tokenProvider.clearEnrollAttempt() }
+        attemptForgotten = true
     }
-
 
     /**
      * One enrollment. Its caller ([ensureEnrolled]) is the enrollment boundary: every failure leaves there as an
@@ -127,8 +134,7 @@ class EnrollmentManager @Inject constructor(
         val token = tokenProvider.token()?.takeIf { it.isNotBlank() }
             ?: throw EnrollmentException(EnrollmentFailure.NO_CODE)
         val data = post(token, storedAttempt(token))
-        persist(data)
-        if (data.resumeSupported == true) runCatching { tokenProvider.markAttemptResumable() }
+        persist(data, resumeSupported = data.resumeSupported == true)
         runCatching { eventSink.record(EventType.ENROLLED) }
         return data.deviceId
     }
@@ -138,11 +144,16 @@ class EnrollmentManager @Inject constructor(
      * REPLACE/stop) or the credentials are lost. Id and secret are saved together; the attempt id is kept until the
      * first successful check-in (see [ensureEnrolled]).
      */
-    private suspend fun persist(data: AgentEnrollResponse) {
+    private suspend fun persist(data: AgentEnrollResponse, resumeSupported: Boolean? = null) {
         withContext(NonCancellable) {
             identity.saveCredentials(data.deviceId, data.deviceSecret)
+            // Credentials the server accepts again: whatever was lost is not any more.
+            bestEffort { tokenProvider.setCredentialsLost(false) }
+            // A new enrollment's answer decides whether its attempt can be resumed (an older server: no).
+            resumeSupported?.let { bestEffort { tokenProvider.setAttemptResumable(it) } }
         }
     }
+
 
     /**
      * The attempt id for [token], stored BEFORE the request: if its response is lost (Wi-Fi drop, the process ends),
@@ -217,7 +228,6 @@ class EnrollmentEnvironment(
     ) : this(HardwareIdSource { null }, serverAddress, syncStatus, log)
 }
 
-
 /**
  * Enrollment could not complete. [message] is for the person holding the device ([EnrollmentFailure]); a server
  * refusal ends with its key, which [CheckInWorker] uses to stop retrying a code that can never work.
@@ -227,5 +237,19 @@ class EnrollmentException(message: String, cause: Throwable? = null) : Exception
 /** The check-in refusal for credentials the server doesn't accept (AgentResource). */
 private const val UNAUTHORIZED = "error.agent.unauthorized"
 
+/** Server answers after which a recovery can never succeed: the attempt is dropped and the credentials marked lost. */
+private val FINAL_RECOVERY_ANSWERS = listOf(
+    "error.agent.enrollment.notResumable", "error.agent.token.used", "error.agent.token.invalid",
+)
+
 /** Recoveries per process: a device whose credentials keep being refused stops re-enrolling and keeps retrying. */
 private const val MAX_RECOVERIES = 3
+
+/** A store write whose failure (a storage error) must not undo what already happened; cancellation still propagates. */
+private suspend fun bestEffort(write: suspend () -> Unit) {
+    try {
+        write()
+    } catch (ignored: IOException) {
+        // DataStore failed; the next enrollment or check-in writes it again.
+    }
+}

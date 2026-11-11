@@ -103,26 +103,68 @@ class EnrollmentManagerTest {
     }
 
     @Test
-    fun `when nothing can be resumed the agent stops recovering and says so`() = runTest {
-        val tokens = FakeTokenProvider("tok-123", attempt = "attempt-0123456789abcdef")
-        val status = SyncStatus()
-        val api = FakeMdmApi().apply { enrollResponse = resumableAnswer("sek-1") }
-        val manager = recovering(api, tokens, status)
-        manager.ensureEnrolled()
-        api.enrollResponse = com.mdmesh.core.net.ResponseEnvelope(
-            status = "ERROR", message = "error.agent.enrollment.notResumable",
+    fun `when nothing can be resumed the agent stops recovering and remembers the credentials are lost`() = runTest {
+        val finals = listOf(
+            "error.agent.enrollment.notResumable",
+            "error.agent.token.used",
+            "error.agent.token.invalid",
         )
+        for (final in finals) {
+            val tokens = FakeTokenProvider("tok-123", attempt = "attempt-0123456789abcdef")
+            val status = SyncStatus()
+            val api = FakeMdmApi().apply { enrollResponse = resumableAnswer("sek-1") }
+            val manager = recovering(api, tokens, status)
+            manager.ensureEnrolled()
+            api.enrollResponse = com.mdmesh.core.net.ResponseEnvelope(status = "ERROR", message = final)
 
-        status.recordFailure(CheckInException("error.agent.unauthorized"))
-        manager.ensureEnrolled()
-        val shown = status.lastError.value?.message.orEmpty()
-        assertTrue(shown, shown.contains("Factory-reset the device"))
-        assertTrue(shown, shown.endsWith("(error.agent.enrollment.notResumable)"))
-        assertEquals("the attempt is dropped", 1, tokens.attemptCleared)
+            status.recordFailure(CheckInException("error.agent.unauthorized"))
+            manager.ensureEnrolled()
+            // The next check-in is refused again, which replaces the last error; the lost state stays.
+            status.recordFailure(CheckInException("error.agent.unauthorized (next check-in)"))
 
-        status.recordFailure(CheckInException("error.agent.unauthorized"))
-        manager.ensureEnrolled()
-        assertEquals("no further recovery", 2, api.enrollRequests.size)
+            assertTrue(final, tokens.credentialsLost)
+            assertEquals("$final: the attempt is dropped", 1, tokens.attemptCleared)
+            manager.ensureEnrolled()
+            assertEquals("$final: no further recovery", 2, api.enrollRequests.size)
+        }
+    }
+
+    @Test
+    fun `a retryable answer to a recovery keeps the attempt for the next refused check-in`() = runTest {
+        for (retryable in listOf("error.agent.enrollment.inProgress", "error.agent.enrollment.failed")) {
+            val identity = FakeIdentity()
+            val tokens = FakeTokenProvider("tok-123", attempt = "attempt-0123456789abcdef")
+            val status = SyncStatus()
+            val api = FakeMdmApi().apply { enrollResponse = resumableAnswer("sek-1") }
+            val manager = recovering(api, tokens, status, identity)
+            manager.ensureEnrolled()
+
+            api.enrollResponse = com.mdmesh.core.net.ResponseEnvelope(status = "ERROR", message = retryable)
+            status.recordFailure(CheckInException("error.agent.unauthorized (1)"))
+            manager.ensureEnrolled()
+            assertEquals("$retryable: attempt kept", 0, tokens.attemptCleared)
+            assertTrue(retryable, !tokens.credentialsLost)
+
+            api.enrollResponse = resumableAnswer("sek-2")
+            status.recordFailure(CheckInException("error.agent.unauthorized (2)"))
+            manager.ensureEnrolled()
+            assertEquals("$retryable: the first enroll and two recoveries", 3, api.enrollRequests.size)
+            assertEquals("sek-2", identity.secret())
+        }
+    }
+
+    @Test
+    fun `a successful enrollment clears a lost-credentials state`() = runTest {
+        val tokens = FakeTokenProvider("tok-123", attempt = "attempt-0123456789abcdef").apply { credentialsLost = true }
+        manager(FakeIdentity(), tokens = tokens).ensureEnrolled()
+        assertTrue(!tokens.credentialsLost)
+    }
+
+    @Test
+    fun `the resume flag follows the latest answer`() = runTest {
+        val tokens = FakeTokenProvider("tok-123", attempt = "attempt-0123456789abcdef").apply { resumable = true }
+        manager(FakeIdentity(), FakeMdmApi(), tokens = tokens).ensureEnrolled() // an older server: no flag
+        assertTrue("an older server's answer clears it", !tokens.resumable)
     }
 
     @Test

@@ -13,7 +13,8 @@ Upgrading
   `configurations.backgroundImageFileId` and `configurations.backgroundImageSha256`; `device_state.kioskGeneration` and
   `device_state.kioskReturnGeneration`; `applicationVersions.requestedPermissions`; the `configurationAppPermissions`
   table; `devices.agentEnrollAttemptHash`, with an index on it and one on each customer's devices by enrollment
-  time; and the `agentEnrollmentKey` table, whose one row the server fills with a random key on first use. Devices wiped before the update aren't marked.
+  time; and the `agentEnrollmentKey` table, whose one row the server fills with a random key on first use. Devices
+  wiped before the update aren't marked.
 - The database adds three columns to enrollment tokens on start (`maxUses`, `useCount`, `revokedAt`) and stores
   the tokens hashed. Existing codes stay single-use and keep working; on PostgreSQL older than 11 they stop
   instead, so make a new code on the Enroll page. After a downgrade, codes made on this version don't work.

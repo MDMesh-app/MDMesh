@@ -62,7 +62,10 @@ device the attempt already made (not checked in yet, within the window); otherwi
 `resumeSupported: true` from servers that do this; the agent recovers only against those. Recovery: if the server
 refuses the saved secret (`error.agent.unauthorized`) before the first check-in succeeds, the agent sends a
 resume-only enroll with the same token and attempt, once per refused check-in and at most 3 times per run, and saves
-what it gets. On `notResumable` (or any refusal) it stops recovering and the device has to be enrolled again.
+what it gets. A final answer (`notResumable`, `token.used`, `token.invalid`) stops recovering: the agent drops the
+attempt and its status screen says the device has to be enrolled again (a persistent state, cleared by a successful
+enrollment). A retryable answer (`inProgress`, `failed`) or a network failure keeps the attempt for the next refused
+check-in.
 
 Each enrollment is one database transaction that first locks its token's row, so enrollments with one token run one
 after another: a retry sent while its first request still runs waits for it, then resumes it. The token is claimed

@@ -49,6 +49,7 @@ public class FilesResourceCommitTest {
 
     private static final class FakeUploadedFileDAO extends UploadedFileDAO {
         UploadedFile existing;
+        UploadedFile byPath;
         final List<UploadedFile> written = new ArrayList<>();
         FakeUploadedFileDAO() { super(null, null, null, "unused"); }
         @Override public UploadedFile getById(Integer id) { return existing; }
@@ -56,7 +57,7 @@ public class FilesResourceCommitTest {
         @Override public void update(UploadedFile file) { written.add(file); }
         final List<Integer> removed = new ArrayList<>();
         @Override public void remove(int fileId) { removed.add(fileId); }
-        @Override public UploadedFile getByPath(Integer customerId, String filePath) { return null; }
+        @Override public UploadedFile getByPath(Integer customerId, String filePath) { return byPath; }
     }
 
     private static final class UnusedConfigurationFileDAO extends com.hmdm.persistence.ConfigurationFileDAO {
@@ -205,6 +206,43 @@ public class FilesResourceCommitTest {
         assertEquals(1, uploadedFileDAO.written.size());
         assertEquals(null, uploadedFileDAO.written.get(0).getExternalUrl());
         new File(filesDir, "acme/new.png").delete();
+    }
+
+    @Test
+    public void aDuplicateCommitReusesAnExistingFileOnlyWhenBytesMatch() throws IOException {
+        File hosted = new File(filesDir, "acme/background.jpg");
+        Files.write(hosted.toPath(), "same image bytes".getBytes(StandardCharsets.UTF_8));
+        UploadedFile existing = hosted(19, "background.jpg");
+        existing.setCustomerId(1);
+        uploadedFileDAO.byPath = existing;
+
+        File retry = com.hmdm.util.FileUtil.createUploadFile(customer, "background.jpg");
+        Files.write(retry.toPath(), "same image bytes".getBytes(StandardCharsets.UTF_8));
+        Response result = resource.updateFile(commit(retry.getAbsolutePath(), "background.jpg"));
+
+        assertEquals(Response.ResponseStatus.OK, result.getStatus());
+        assertEquals(existing, result.getData());
+        assertFalse("the duplicate temporary upload is removed", retry.exists());
+        assertTrue(hosted.exists());
+        assertEquals(0, uploadedFileDAO.written.size());
+    }
+
+    @Test
+    public void aDifferentFileWithTheSameNameRemainsRejected() throws IOException {
+        File hosted = new File(filesDir, "acme/background.jpg");
+        Files.write(hosted.toPath(), "old image".getBytes(StandardCharsets.UTF_8));
+        UploadedFile existing = hosted(19, "background.jpg");
+        existing.setCustomerId(1);
+        uploadedFileDAO.byPath = existing;
+
+        File retry = com.hmdm.util.FileUtil.createUploadFile(customer, "background.jpg");
+        Files.write(retry.toPath(), "new image".getBytes(StandardCharsets.UTF_8));
+        Response result = resource.updateFile(commit(retry.getAbsolutePath(), "background.jpg"));
+
+        assertEquals(Response.ResponseStatus.ERROR, result.getStatus());
+        assertEquals("error.duplicate.file", result.getMessage());
+        assertTrue("a rejected upload is retained for the caller's normal error handling", retry.exists());
+        assertEquals("old image", new String(Files.readAllBytes(hosted.toPath()), StandardCharsets.UTF_8));
     }
 
     @Test

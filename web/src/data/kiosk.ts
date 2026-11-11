@@ -27,6 +27,8 @@ export type KioskTheme = {
   backgroundColor?: string;
   textColor?: string;
   iconSize?: string;
+  /** Optional server-managed launcher image; agent validates HTTPS and SHA-256 before using it. */
+  backgroundImage?: { url: string; sha256: string };
 };
 
 /** The `kiosk.enter` payload (KioskApplyPayload): also the `kiosk` block of a `config.apply` document. */
@@ -247,15 +249,25 @@ export function versionAtLeast(version: string | null | undefined, min: string):
 /** The agent release whose kiosk honours features.lockVolume (protocol 1.4); older agents ignore it. */
 export const LOCK_VOLUME_AGENT = '0.3.4';
 
-/** The assigned configuration's launcher theme (colours, icon size), or undefined when it sets none. */
+/** The assigned configuration's launcher theme, including a complete managed-image descriptor when present. */
 export function kioskTheme(configuration: Configuration | undefined): KioskTheme | undefined {
   if (!configuration) return undefined;
   const value = (key: 'backgroundColor' | 'textColor' | 'iconSize') =>
     typeof configuration[key] === 'string' ? (configuration[key] as string) : undefined;
+  const imageUrl = typeof configuration.backgroundImageUrl === 'string' ? configuration.backgroundImageUrl.trim() : '';
+  const imageSha256 = typeof configuration.backgroundImageSha256 === 'string'
+    ? configuration.backgroundImageSha256.trim().toLowerCase()
+    : '';
+  // Never turn a legacy arbitrary backgroundImageUrl into an agent download. The descriptor is
+  // valid only when the server supplied both a HTTPS URL and the canonical digest it calculated.
+  const backgroundImage = imageUrl.startsWith('https://') && /^[0-9a-f]{64}$/.test(imageSha256)
+    ? { url: imageUrl, sha256: imageSha256 }
+    : undefined;
   const theme = {
     backgroundColor: value('backgroundColor'),
     textColor: value('textColor'),
     iconSize: value('iconSize'),
+    ...(backgroundImage ? { backgroundImage } : {}),
   };
   return Object.values(theme).some((v) => v !== undefined) ? theme : undefined;
 }

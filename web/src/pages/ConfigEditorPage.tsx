@@ -9,7 +9,15 @@ import {
   type Configuration,
 } from '../api/configurations';
 import { ApiError } from '../api/client';
-import { listApplications, type Application } from '../api/applications';
+import { commitUpload, listApplications, uploadRawFile, type Application } from '../api/applications';
+import {
+  KIOSK_IMAGE_AGENT,
+  KIOSK_IMAGE_TYPES,
+  kioskImageContentId,
+  kioskImageErrorText,
+  kioskImageProblem,
+  kioskImageUploadName,
+} from '../data/kioskBackground';
 import { getSyncSummary, type ConfigSyncSummary } from '../api/configSync';
 import {
   CONFIG_FIELDS,
@@ -315,6 +323,10 @@ function appPermissionsSignature(c: Configuration): string {
 function changedKeys(before: Configuration, after: Configuration): Set<string> {
   const out = new Set<string>();
   for (const f of CONFIG_FIELDS) if (norm(before[f.key]) !== norm(after[f.key])) out.add(f.key);
+  // The background image picker is a managed asset control rather than a generic CONFIG_FIELDS control.
+  // Its identity must still participate in the editor's dirty state and save/apply flow.
+  if (norm(before.backgroundImageFileId) !== norm(after.backgroundImageFileId)
+    || norm(after.backgroundImageAction) !== null) out.add('backgroundImageFileId');
   if (appsSignature(before) !== appsSignature(after)) out.add('applications');
   if (appPermissionsSignature(before) !== appPermissionsSignature(after)) out.add('managedAppPermissions');
   return out;
@@ -386,6 +398,8 @@ function Editor({
   // Discards so far: the apps table files its rows again by their restored state.
   const [discards, setDiscards] = useState(0);
   const nameRef = useRef<HTMLInputElement>(null);
+  const backgroundImageRef = useRef<HTMLInputElement>(null);
+  const [backgroundUploading, setBackgroundUploading] = useState(false);
   const ids = useId();
 
   // The assigned apps: the configuration's own, or the template's for a copy. Until they arrive, saving is blocked
@@ -443,6 +457,7 @@ function Editor({
     let n = 0;
     for (const k of changed) {
       if (k === 'applications') n += sec === 'apps' ? 1 : 0;
+      else if (k === 'backgroundImageFileId') n += sec === 'kiosk' ? 1 : 0;
       else if (FIELD[k] && sectionOf(FIELD[k]) === sec) n++;
     }
     return readOnly ? 0 : n;
@@ -516,6 +531,10 @@ function Editor({
   };
 
   function requestSave() {
+    if (backgroundUploading) {
+      toast.push('err', 'Image still uploading', 'Wait for the selected background image to finish uploading before saving.');
+      return;
+    }
     if (!String(draft.name ?? '').trim()) {
       setNameError('Give the configuration a name.');
       toast.push('err', 'Name required', 'Give the configuration a name.');
@@ -541,6 +560,7 @@ function Editor({
   }
 
   async function doSave() {
+    if (backgroundUploading) return;
     setBusy(true);
     try {
       // The whole configuration goes back (the server replaces every column and list), with the name as validated.
@@ -630,6 +650,75 @@ function Editor({
     );
   };
 
+  async function uploadBackgroundImage(file: File) {
+    const problem = kioskImageProblem(file);
+    if (problem) {
+      toast.push('err', 'Image not used', problem);
+      return;
+    }
+    setBackgroundUploading(true);
+    try {
+      // Hosted under a name from its content: an edited image with the same file name doesn't clash with the old one.
+      const name = kioskImageUploadName(file.name, await kioskImageContentId(file));
+      const temporary = await uploadRawFile(new File([file], name, { type: file.type }));
+      const saved = await commitUpload(temporary.serverPath);
+      if (saved.id == null) throw new Error('The server did not return the uploaded image identity.');
+      // URL and checksum are server-canonicalized on save. Clearing the old values avoids a stale preview payload.
+      setDraft((d) => ({
+        ...d,
+        backgroundImageAction: 'replace',
+        backgroundImageFileId: saved.id,
+        backgroundImageUrl: undefined,
+        backgroundImageSha256: undefined,
+      }));
+      toast.push('ok', 'Background image uploaded', 'Save and apply the configuration to use it in kiosk.');
+    } catch (e) {
+      toast.push('err', 'Image upload failed', kioskImageErrorText(e));
+    } finally {
+      setBackgroundUploading(false);
+    }
+  }
+
+  const backgroundImageRow = kioskOn ? (
+    <FieldRow
+      id={`${ids}-backgroundImage`}
+      label="Background image"
+      help={`Needs agent ${KIOSK_IMAGE_AGENT}. A PNG, JPEG or WebP image, at most 10 MB and 16 megapixels, shown behind the kiosk launcher; the background color stays the fallback. Devices download it only when the server address is HTTPS, and check it by its SHA-256. It is hosted in Files, where anyone with its link can open it, so don't use a confidential image. Remove also clears the legacy Background image URL.`}
+      adornment={changed.has('backgroundImageFileId') && !readOnly ? <ChangedChip /> : undefined}
+      disabled={readOnly}
+    >
+      {() => (
+        <div className="v2-cfged-calloutline">
+          <input
+            ref={backgroundImageRef}
+            type="file"
+            accept={KIOSK_IMAGE_TYPES.join(',')}
+            hidden
+            onChange={(e) => {
+              const file = e.currentTarget.files?.[0];
+              e.currentTarget.value = '';
+              if (file) void uploadBackgroundImage(file);
+            }}
+          />
+          <Button size="sm" onClick={() => backgroundImageRef.current?.click()} disabled={readOnly || backgroundUploading}>
+            {backgroundUploading ? 'Uploading…' : draft.backgroundImageFileId != null || draft.backgroundImageUrl ? 'Replace image' : 'Choose image'}
+          </Button>
+          {draft.backgroundImageFileId != null || draft.backgroundImageUrl ? (
+            <Button size="sm" onClick={() => setDraft((d) => ({
+              ...d,
+              backgroundImageAction: 'remove',
+              backgroundImageFileId: null,
+              backgroundImageUrl: undefined,
+              backgroundImageSha256: undefined,
+            }))} disabled={readOnly || backgroundUploading}>
+              Remove
+            </Button>
+          ) : null}
+        </div>
+      )}
+    </FieldRow>
+  ) : null;
+
   const renderItems = (items: Item[]) =>
     items.map((it) => {
       if (typeof it === 'string') return row(it);
@@ -647,6 +736,7 @@ function Editor({
     <Card as="section" id={id} padding="rows" aria-labelledby={`${ids}-${id}-h`}>
       <CardHeader titleId={`${ids}-${id}-h`} title={title} subtitle={SECTION_SUB[id]} spacing={12} />
       {renderItems(LAYOUT[id])}
+      {id === 'kiosk' ? backgroundImageRow : null}
     </Card>
   );
 
@@ -684,7 +774,7 @@ function Editor({
   // Duplicate = the server copy (PUT /configurations/copy), the same path as the list's Duplicate: it copies every
   // setting, the apps, configuration files and app settings of the saved configuration.
   const actions = isNew ? (
-    <Button size="lg" variant="primary" onClick={requestSave} disabled={busy || !appsReady}>
+    <Button size="lg" variant="primary" onClick={requestSave} disabled={busy || !appsReady || backgroundUploading}>
       {busy ? 'Creating…' : 'Create configuration'}
     </Button>
   ) : !canCopy ? null : readOnly ? (
@@ -949,7 +1039,7 @@ function Editor({
             saveLabel={isNew ? 'Create configuration' : 'Save and apply'}
             busy={busy}
             busyLabel={isNew ? 'Creating…' : 'Saving…'}
-            saveDisabled={!appsReady}
+            saveDisabled={!appsReady || backgroundUploading}
           />
         )}
       </SectionLayout>
@@ -964,8 +1054,10 @@ function Editor({
       <KioskConfirmModal
         keys={confirmKeys}
         count={deviceCount}
+        saveDisabled={backgroundUploading}
         onCancel={() => setConfirmKeys(null)}
         onConfirm={() => {
+          if (backgroundUploading) return;
           setConfirmKeys(null);
           void doSave();
         }}

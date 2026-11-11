@@ -3128,6 +3128,18 @@
         <rollback>ALTER TABLE configurations DROP COLUMN locationServices;</rollback>
     </changeSet>
 
+    <changeSet id="26.11.06-configurations-backgroundImageAsset" author="letternumber" context="common">
+        <comment>Configuration kiosk background image: an optional customer-owned uploaded file and the SHA-256 of its
+            immutable selected bytes. NULL keeps the color-only kiosk theme. The URL remains derived from the hosted
+            uploaded-file record rather than being trusted from a browser request.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN backgroundImageFileId INTEGER;
+            ALTER TABLE configurations ADD COLUMN backgroundImageSha256 VARCHAR(64);
+            CREATE INDEX IF NOT EXISTS configurations_backgroundImageFileId_idx ON configurations (backgroundImageFileId);</sql>
+        <rollback>DROP INDEX IF EXISTS configurations_backgroundImageFileId_idx;
+            ALTER TABLE configurations DROP COLUMN backgroundImageSha256;
+            ALTER TABLE configurations DROP COLUMN backgroundImageFileId;</rollback>
+    </changeSet>
+
     <changeSet id="26.11.09-configurationAppPermissions" author="letter-number" context="common">
         <comment>Configuration-owned explicit runtime permission overrides. Absence is Default; the modern agent
             releases a prior override when its configuration's desired document no longer lists it.</comment>

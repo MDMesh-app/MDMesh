@@ -36,6 +36,7 @@ import com.hmdm.persistence.domain.*;
 import com.hmdm.rest.json.LookupItem;
 import com.hmdm.rest.json.UpgradeConfigurationApplicationRequest;
 import com.hmdm.rest.resource.support.ExtensionPoints;
+import com.hmdm.rest.resource.support.KioskBackgroundImageAssets;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.util.DesiredConfigBuilder;
 import com.hmdm.util.FileUtil;
@@ -66,6 +67,7 @@ public class ConfigurationResource {
     private UserDAO userDAO;
     private String baseUrl;
     private ExtensionPoints extensionPoints;
+    private KioskBackgroundImageAssets backgroundImages;
 
     /**
      * <p>A constructor required by Swagger.</p>
@@ -80,7 +82,8 @@ public class ConfigurationResource {
                                  CustomerDAO customerDAO,
                                  UserDAO userDAO,
                                  @Named("base.url") String baseUrl,
-                                 ExtensionPoints extensionPoints) {
+                                 ExtensionPoints extensionPoints,
+                                 KioskBackgroundImageAssets backgroundImages) {
         this.configurationDAO = configurationDAO;
         this.applicationDAO = applicationDAO;
         this.pushService = pushService;
@@ -88,6 +91,14 @@ public class ConfigurationResource {
         this.userDAO = userDAO;
         this.baseUrl = baseUrl;
         this.extensionPoints = extensionPoints;
+        this.backgroundImages = backgroundImages;
+    }
+
+    /** Compatibility constructor for focused resource tests which do not exercise managed images. */
+    public ConfigurationResource(ConfigurationDAO configurationDAO, ApplicationDAO applicationDAO,
+                                 PushService pushService, CustomerDAO customerDAO, UserDAO userDAO,
+                                 String baseUrl, ExtensionPoints extensionPoints) {
+        this(configurationDAO, applicationDAO, pushService, customerDAO, userDAO, baseUrl, extensionPoints, null);
     }
     // =================================================================================================================
     @ApiOperation(
@@ -189,7 +200,15 @@ public class ConfigurationResource {
                     "a refusal is an ERROR whose message is the first problem's key and whose data lists them all. " +
                     "applicationUsageParameters are upserted and never removed. " +
                     "An explicit \"applications\": null, and a connectivityMode other than adaptive, alwaysOn or null, " +
-                    "are refused with HTTP 400. locationServicesAction is keep (the default), on, off, or notManaged; " +
+                    "are refused with HTTP 400. " +
+                    "Kiosk background image: backgroundImageAction is keep (the default), replace or remove. replace " +
+                    "takes backgroundImageFileId, an uploaded file (PNG, JPEG or WebP, at most 10 MB and 16 megapixels), " +
+                    "and the server sets backgroundImageUrl and backgroundImageSha256 from it; remove clears all three. " +
+                    "With keep, an update keeps the stored image while backgroundImageUrl is left out or unchanged; " +
+                    "another backgroundImageUrl is stored as the legacy launcher wallpaper and drops the managed image. " +
+                    "A new configuration with a backgroundImageFileId gets that image. A refused image is HTTP 400 " +
+                    "with an ERROR whose message says why. " +
+                    "locationServicesAction is keep (the default), on, off, or notManaged; " +
                     "ordinary saves preserve the stored Location-services policy."
     )
     @PUT
@@ -224,6 +243,7 @@ public class ConfigurationResource {
                                 "by user " + SecurityContext.get().getCurrentUserName());
                         return Response.PERMISSION_DENIED();
                     }
+                    canonicalizeBackgroundImage(configuration, null);
                     applyLocationServicesUpdate(configuration, null);
                     Response refused = refuseExtensions(configuration, null);
                     if (refused != null) return refused;
@@ -241,7 +261,9 @@ public class ConfigurationResource {
                                 "by user " + SecurityContext.get().getCurrentUserName());
                         return Response.PERMISSION_DENIED();
                     }
-                    applyLocationServicesUpdate(configuration, configurationDAO.getConfigurationById(id));
+                    Configuration stored = configurationDAO.getConfigurationById(id);
+                    canonicalizeBackgroundImage(configuration, stored);
+                    applyLocationServicesUpdate(configuration, stored);
                     Response refused = refuseExtensions(configuration, storedExtensions(id, configuration));
                     if (refused != null) return refused;
                     log.info("Configuration " + configuration.getName() + " updated by user "  + SecurityContext.get().getCurrentUserName());
@@ -300,6 +322,19 @@ public class ConfigurationResource {
             if (eligibleApps.contains(rule.getApplicationId())) kept.add(rule);
         }
         configuration.setManagedAppPermissions(kept);
+    }
+
+    private void canonicalizeBackgroundImage(Configuration configuration, Configuration stored) {
+        if (backgroundImages == null) return;
+        try {
+            backgroundImages.apply(configuration, stored);
+        } catch (IllegalArgumentException e) {
+            // The usual ERROR envelope, so the console can show the message.
+            throw new BadRequestException(javax.ws.rs.core.Response.status(javax.ws.rs.core.Response.Status.BAD_REQUEST)
+                    .type(MediaType.APPLICATION_JSON)
+                    .entity(Response.ERROR(e.getMessage()))
+                    .build());
+        }
     }
 
     private static void applyLocationServicesUpdate(Configuration configuration, Configuration stored) {

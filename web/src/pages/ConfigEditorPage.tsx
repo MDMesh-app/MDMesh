@@ -62,6 +62,7 @@ import {
   PageHeader,
   SectionLayout,
   SectionNav,
+  Select,
   StickySaveBar,
   Textarea,
   useLeaveGuard,
@@ -930,9 +931,10 @@ function Editor({
                 {permissions.map((permission) => (
                   <label className="v2-cfged-permission-app__row" key={permission}>
                     <span>{managedAppPermissionLabel(permission)}</span>
-                    <select value={appPermissionState(app.id, permission)} disabled={readOnly} onChange={(e) => setAppPermission(app.id, permission, e.target.value)}>
+                    {/* The shared Select: the 3:1 input border every select has (componentEdges.test.ts). */}
+                    <Select size="xs" value={appPermissionState(app.id, permission)} disabled={readOnly} onChange={(e) => setAppPermission(app.id, permission, e.target.value)}>
                       <option value="default">Default</option><option value="grant">Grant</option><option value="deny">Deny</option>
-                    </select>
+                    </Select>
                   </label>
                 ))}
               </details>

@@ -107,15 +107,17 @@ export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonEle
 
 /** Square icon-only button. Pass the icon as children. */
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
-  { label, size = 'md', tone = 'default', className, type = 'button', children, ...rest },
+  // `tone` is taken out so it never reaches the DOM; it no longer changes anything (deprecated above).
+  { label, size = 'md', tone: _tone, className, type = 'button', children, ...rest },
   ref,
 ) {
+  void _tone;
   return (
     <button
       ref={ref}
       type={type}
       aria-label={label}
-      className={cx('v2-iconbtn', `v2-iconbtn--${size}`, tone === 'strong' && 'v2-iconbtn--strong', className)}
+      className={cx('v2-iconbtn', `v2-iconbtn--${size}`, className)}
       {...rest}
     >
       {children}

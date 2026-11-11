@@ -14,7 +14,9 @@ const STRONG_EDGES: Array<[what: string, file: string, selector: string, token: 
   ['text input / select / textarea', 'ui/Input.css', '.v2 .v2-input {', 'input-border'],
   ['labelled toolbar select', 'ui/Input.css', '.v2 .v2-lselect {', 'input-border'],
   ['search box', 'ui/Input.css', '.v2 .v2-search {', 'input-border'],
-  ['icon-only button', 'ui/Button.css', '.v2 .v2-iconbtn {', 'control-border'],
+  ['rows-per-page select', 'ui/Pagination.css', '.v2 .v2-pager__select {', 'input-border'],
+  ['icon-only button (IconButton: drawer toggle, dialog close, row and card "…" menus, rename)', 'ui/Button.css', '.v2 .v2-iconbtn {', 'control-border'],
+  ['"More actions" menu trigger (icon-only Button)', 'ui/Menu.css', '.v2 .v2-btn.v2-menu__iconbtn:not(:disabled) {', 'control-border'],
   ['password show/hide toggle', 'ui/Password.css', '.v2 .v2-password__toggle {', 'control-border'],
   ['colour picker button', 'ui/ColourInput.css', '.v2 .v2-colour__btn {', 'control-border'],
   ['selected segment', 'ui/Segmented.css', '.v2 .v2-seg__opt.is-selected {', 'control-border'],
@@ -36,10 +38,41 @@ function rule(file: string, selector: string): string {
   return lines.slice(at + 1, end).join('\n');
 }
 
+/**
+ * Soft on purpose, written down so the choice is not mistaken for a miss: the edge each paints with is not a 3:1 pair.
+ * - Text buttons and chips: the visible label identifies them (owner: "inputs strong, buttons soft").
+ * - Read-only and disabled inputs: not operable, so 1.4.11 asks nothing of their edge (as on main).
+ * - Toast Dismiss: a borderless icon button; the × itself is --text-2 (≥ 3:1, "Icon in a button" pairs) on the toast.
+ */
+const SOFT_BY_DESIGN: Array<[what: string, file: string, selector: string, token: string]> = [
+  ['secondary text button', 'ui/Button.css', '.v2 .v2-btn--secondary:hover,', 'border-strong'],
+  ['danger text button', 'ui/Button.css', '.v2 .v2-btn--danger:hover {', 'alert-line'],
+  ['read-only input', 'ui/Input.css', ".v2 .v2-input[readonly] {", 'border'],
+  ['disabled input', 'ui/Input.css', '.v2 .v2-input:disabled {', 'border'],
+  ['toast Dismiss (icon only, no edge)', 'ui/Toast.css', '.v2 .toast .t-close {', 'text-2'],
+];
+
 describe('component edges that must reach 3:1', () => {
   it.each(STRONG_EDGES)('%s paints with its 3:1 token', (_what, file, selector, token) => {
     expect(rule(file, selector)).toContain(`var(--${token})`);
     // …and that token is one whose 3:1 pairs the token test checks.
     expect(PAIRS.some((p) => p.fg === token && p.kind === 'ui')).toBe(true);
+  });
+});
+
+describe('edges that stay soft by design', () => {
+  it.each(SOFT_BY_DESIGN)('%s paints with its soft token', (_what, file, selector, token) => {
+    expect(rule(file, selector)).toContain(`var(--${token})`);
+  });
+
+  it('a select is never a bare native one: every <select> in core uses a styled class', () => {
+    // #181 added a bare <select>; the shared Select (v2-input) or the pager/toolbar selects carry the 3:1 edge.
+    const files = import.meta.glob('../{pages,ui}/**/*.tsx', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
+    expect(Object.keys(files).length).toBeGreaterThan(20);
+    expect(Object.values(files).join('').match(/<select\b/g)?.length).toBeGreaterThan(2);
+    const bare = Object.entries(files)
+      .filter(([f]) => !f.includes('.test.'))
+      .flatMap(([f, src]) => [...src.matchAll(/<select\b[^>]*>/g)].filter((m) => !/className=/.test(m[0])).map(() => f));
+    expect(bare).toEqual([]);
   });
 });

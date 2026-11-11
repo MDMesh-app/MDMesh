@@ -4,6 +4,10 @@
 #
 #   bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/quickstart.sh)
 #
+# Each question can be answered in advance with an environment variable (MDMESH_MODE, MDMESH_HOST, …) or an answers
+# file (MDMESH_ANSWERS); MDMESH_NONINTERACTIVE=1 never asks, MDMESH_DRY_RUN=1 only checks the answers and prints the
+# plan. The variables are listed in install/options.json and DEPLOY.md.
+#
 # It creates ./mdmesh, downloads the pull-only compose + seed, generates secrets, brings the stack
 # up, and prints the console URL + a temporary admin password (you set your own on first login).
 set -euo pipefail
@@ -225,6 +229,242 @@ mdm_check_host() {
 }
 # <<< url.sh functions <<<
 
+# Answers given in advance (see install/lib/answers.sh and install/options.json): a verbatim copy of the functions
+# between the markers, for the same reason as url.sh's above. CI (t0-fast, edge entry) fails if the copies differ.
+# >>> answers.sh functions (quickstart.sh keeps a verbatim copy) >>>
+# The keys an answers file may set: every answer and setting in install/options.json (CI checks the two match).
+_MDM_ANSWER_KEYS=" MDMESH_MODE MDMESH_REPO MDMESH_IMAGE_OWNER MDMESH_HOST MDMESH_TUNNEL_TOKEN MDMESH_ACME_EMAIL MDMESH_BASE_URL MDMESH_HTTP_PORT MDMESH_REPLACE_DATA MDMESH_ASSUME_YES MDMESH_DIR MDMESH_VERSION MDMESH_RELEASE_PUBKEY MDMESH_NONINTERACTIVE MDMESH_DRY_RUN "
+_MDM_ANS_GIVEN=" "       # ids of the questions answered in advance
+_MDM_ANS_FROM_FILE=" "   # keys set from the answers file
+_mdm_answer_fail() { printf 'MDMesh installer: %s\n' "$*" >&2; exit 1; }
+
+# mdm_answers_load: reads the answers file MDMESH_ANSWERS names, if any (keys already in the environment are left
+# alone), then checks MDMESH_NONINTERACTIVE and MDMESH_DRY_RUN. Stops the installer on any error.
+mdm_answers_load() {
+  local f=${MDMESH_ANSWERS-} line key val n=0 seen=" " v
+  if [ -n "$f" ]; then
+    case "$f" in /*) ;; *) _mdm_answer_fail "MDMESH_ANSWERS must be an absolute path (e.g. \$PWD/answers.env)." ;; esac
+    { [ -f "$f" ] && [ -r "$f" ]; } || _mdm_answer_fail "MDMESH_ANSWERS: $f is not a readable file."
+    [ "$(wc -c < "$f")" -le 65536 ] || _mdm_answer_fail "MDMESH_ANSWERS: $f is larger than 64 KiB."
+    while IFS= read -r line || [ -n "$line" ]; do
+      n=$((n + 1)); line=${line%$'\r'}
+      case "$line" in ''|'#'*) continue ;; *=*) ;; *) _mdm_answer_fail "$f, line $n: expected KEY=VALUE." ;; esac
+      key=${line%%=*}; val=${line#*=}
+      case "$_MDM_ANSWER_KEYS" in
+        *" $key "*) ;;
+        *) case "$key" in *[![:print:]]*) key=$(printf '%q' "$key") ;; esac
+           _mdm_answer_fail "$f, line $n: unknown key $key (the keys are in install/options.json)." ;;
+      esac
+      case "$seen" in *" $key "*) _mdm_answer_fail "$f, line $n: $key is set twice." ;; esac
+      seen="$seen$key "
+      case "$val" in \"*\"|\'*\') val=${val#?}; val=${val%?} ;; esac
+      if [ -z "${!key+x}" ]; then printf -v "$key" '%s' "$val"; _MDM_ANS_FROM_FILE="$_MDM_ANS_FROM_FILE$key "; fi
+    done < "$f"
+  fi
+  for key in MDMESH_NONINTERACTIVE MDMESH_DRY_RUN; do
+    v=${!key-}
+    case "$v" in ''|0|1) ;; *) _mdm_answer_fail "$key must be 1 or 0." ;; esac
+  done
+}
+
+# _mdm_answer_check RULE: checks the value in _MDM_V by RULE. On success it may normalise _MDM_V (the value used) and
+# sets _MDM_SHOW (the value shown); otherwise it sets _MDM_WHY (empty when url.sh has already said why on stderr).
+_mdm_answer_check() {
+  local v=$_MDM_V u l d
+  _MDM_WHY=''; _MDM_SHOW=$v
+  case "$1" in
+    mode)
+      case "$v" in tunnel|1) _MDM_V=1; _MDM_SHOW=tunnel ;; domain|2) _MDM_V=2; _MDM_SHOW=domain ;;
+        *) _MDM_WHY='must be tunnel or domain' ;; esac ;;
+    hostname)
+      u="https://$v"
+      { mdm_check_host _MDM_V && mdm_check_base_url u; } || _MDM_WHY=' ' ;;
+    base-url)
+      mdm_check_base_url _MDM_V || _MDM_WHY=' '
+      _MDM_SHOW=$_MDM_V ;;
+    tunnel-token)
+      _MDM_SHOW='(hidden)'
+      case "$v" in
+        '') _MDM_WHY='is empty' ;;
+        *[!${_MDM_ALNUM}._=+/-]*) _MDM_WHY='is not a Cloudflare Tunnel token (only letters, digits and . _ = + / -)' ;;
+      esac ;;
+    email)
+      l=${v%%@*}; d=${v#*@}
+      case "$v" in
+        '') ;;
+        *@*@*|*[!${_MDM_ALNUM}._%+@-]*) _MDM_WHY='is not an email address (name@example.com)' ;;
+        *@*) case "$l" in '') _MDM_WHY='is not an email address (name@example.com)' ;; esac
+             case "$d" in *[!${_MDM_ALNUM}.-]*|.*|*.|*..*|'') _MDM_WHY='is not an email address (name@example.com)' ;;
+               *.*) ;; *) _MDM_WHY='is not an email address (name@example.com)' ;; esac ;;
+        *) _MDM_WHY='is not an email address (name@example.com)' ;;
+      esac ;;
+    github-repo)
+      case "$v" in
+        '') ;;
+        */*/*|*[!${_MDM_ALNUM}._/-]*) _MDM_WHY='must be owner/name (e.g. MDMesh-app/MDMesh)' ;;
+        */*) case "${v%%/*}" in ''|.|..) _MDM_WHY='must be owner/name (e.g. MDMesh-app/MDMesh)' ;; esac
+             case "${v#*/}" in ''|.|..) _MDM_WHY='must be owner/name (e.g. MDMesh-app/MDMesh)' ;; esac ;;
+        *) _MDM_WHY='must be owner/name (e.g. MDMesh-app/MDMesh)' ;;
+      esac ;;
+    image-owner)
+      case "$v" in
+        '') ;;
+        [!abcdefghijklmnopqrstuvwxyz0123456789]*|*[!abcdefghijklmnopqrstuvwxyz0123456789._-]*)
+          _MDM_WHY='must be a GHCR owner in lowercase (letters, digits and . _ -, starting with a letter or digit)' ;;
+      esac ;;
+    port)
+      u=$v
+      while case "$u" in 0?*) true ;; *) false ;; esac; do u=${u#0}; done   # leading zeros, as the port question takes them
+      case "$u" in
+        '') ;;
+        *[!${_MDM_DIGITS}]*) _MDM_WHY='must be a number' ;;
+        *) { [ "${#u}" -le 5 ] && [ "$u" -ge 1 ] && [ "$u" -le 65535 ]; } || _MDM_WHY='must be 1-65535' ;;
+      esac ;;
+    yes-no)
+      case "$v" in yes|no) ;; *) _MDM_WHY='must be yes or no' ;; esac ;;
+    flag)
+      case "$v" in 0|1) ;; *) _MDM_WHY='must be 1 or 0' ;; esac ;;
+    *) _mdm_answer_fail "internal: unknown answer rule $1" ;;
+  esac
+}
+
+# _mdm_answer_rule_has_default RULE: an empty or missing answer means the question's default (Enter at the prompt).
+_mdm_answer_rule_has_default() { case "$1" in github-repo|image-owner|port|email|yes-no) return 0 ;; esac; return 1; }
+
+# mdm_answer ID VAR RULE ENV [ALIAS]: if ENV (or ALIAS, the installer's older name for it) is set, in the environment or
+# the answers file, checks its value by RULE and stores it in VAR: question ID is then answered. Stops the installer when
+# the value is invalid, or when ENV and ALIAS are both set to different values. An empty value answers the GitHub repo,
+# image owner and Let's Encrypt email questions (the default, as Enter at the prompt); for a base URL, the HTTP port,
+# Keep/Erase and the confirmation it counts as not set, as it always did for the native installer.
+mdm_answer() {
+  local id=$1 var=$2 rule=$3 env=$4 alias=${5-} k src=''
+  k=${1//-/_}
+  printf -v "_MDM_ANS_ENV_$k" '%s' "$env"; printf -v "_MDM_ANS_RULE_$k" '%s' "$rule"; printf -v "_MDM_ANS_VAR_$k" '%s' "$var"
+  if [ -n "$alias" ] && [ -n "${!env-}" ] && [ -n "${!alias-}" ] && [ "${!env}" != "${!alias}" ]; then
+    _mdm_answer_fail "$env and $alias are both set, to different values: set only $env."
+  fi
+  if [ -n "${!env+x}" ] && { [ -n "${!env}" ] || [ -z "$alias" ] || [ -z "${!alias-}" ]; }; then
+    _MDM_V=${!env}; src=$env
+    case "$_MDM_ANS_FROM_FILE" in *" $env "*) src="$env (from $MDMESH_ANSWERS)" ;; esac
+  elif [ -n "$alias" ] && [ -n "${!alias+x}" ]; then
+    _MDM_V=${!alias}; src=$alias
+  else
+    return 0
+  fi
+  if [ -z "$_MDM_V" ]; then
+    case "$rule" in base-url|port|yes-no|flag) return 0 ;; esac
+  fi
+  _mdm_answer_check "$rule"
+  if [ -n "$_MDM_WHY" ]; then
+    case "$_MDM_WHY" in ' ') _mdm_answer_fail "$src is invalid (why above)." ;; esac
+    _mdm_answer_fail "$src $_MDM_WHY."
+  fi
+  printf -v "$var" '%s' "$_MDM_V"
+  printf -v "_MDM_ANS_SHOW_$k" '%s' "$_MDM_SHOW"; printf -v "_MDM_ANS_SRC_$k" '%s' "$src"
+  _MDM_ANS_GIVEN="$_MDM_ANS_GIVEN$id "
+}
+
+# mdm_any_answered: succeeds when at least one question was answered in advance. mdm_given ID: when question ID was.
+mdm_any_answered() { [ "$_MDM_ANS_GIVEN" != " " ]; }
+mdm_given() { case "$_MDM_ANS_GIVEN" in *" $1 "*) return 0 ;; esac; return 1; }
+
+# mdm_unused ID WHY: question ID is not asked in this run (WHY, e.g. "in domain mode"): an answer given for it is
+# ignored, with a warning on stderr.
+mdm_unused() {
+  local e="_MDM_ANS_ENV_${1//-/_}"
+  mdm_given "$1" || return 0
+  printf 'MDMesh installer: %s is not used %s: ignoring it.\n' "${!e}" "$2" >&2
+  _MDM_ANS_GIVEN=${_MDM_ANS_GIVEN/ $1 / }
+}
+
+# mdm_ask ID: called just before question ID is asked. With MDMESH_NONINTERACTIVE=1 it stops the installer instead,
+# naming the variable that answers it.
+mdm_ask() {
+  local e="_MDM_ANS_ENV_${1//-/_}"
+  [ "${MDMESH_NONINTERACTIVE:-0}" = 1 ] || return 0
+  _mdm_answer_fail "MDMESH_NONINTERACTIVE=1, and the question \"$1\" has no answer: set ${!e-its variable} (see install/options.json)."
+}
+
+# mdm_need ID: with MDMESH_NONINTERACTIVE=1, stops the installer now when question ID, which this run will ask, has no
+# answer and no default: before the run downloads or changes anything, rather than when it gets to the question.
+mdm_need() {
+  local r="_MDM_ANS_RULE_${1//-/_}"
+  mdm_given "$1" || _mdm_answer_rule_has_default "${!r-}" || mdm_ask "$1"
+}
+
+# mdm_answered ID: succeeds when question ID needs no asking: it was answered in advance (says so, the value hidden when
+# secret), or MDMESH_NONINTERACTIVE=1 and it has a default (the caller then applies it). Otherwise fails, so the caller
+# asks it; with MDMESH_NONINTERACTIVE=1 and no default it stops the installer (mdm_ask).
+mdm_answered() {
+  local k=${1//-/_} e s r
+  e="_MDM_ANS_ENV_$k"; s="_MDM_ANS_SHOW_$k"; r="_MDM_ANS_RULE_$k"
+  case "$_MDM_ANS_GIVEN" in
+    *" $1 "*) e="_MDM_ANS_SRC_$k"
+              case "${!r-}" in tunnel-token) printf 'Using %s: (hidden)\n' "${!e}" ;; *) printf 'Using %s: %s\n' "${!e}" "${!s}" ;; esac
+              return 0 ;;
+  esac
+  if [ "${MDMESH_NONINTERACTIVE:-0}" = 1 ] && _mdm_answer_rule_has_default "${!r-}"; then
+    s="_MDM_ANS_VAR_$k"; printf -v "${!s}" '%s' ''   # the caller applies the default to an empty answer, as to Enter
+    printf 'Using the default for %s\n' "${!e}"; return 0
+  fi
+  mdm_ask "$1"
+  return 1
+}
+
+# mdm_plan_line ID DEFAULT [TAKES_DEFAULT]: the dry-run plan's line for question ID: "  <id> <value> [<source>]", where
+# source is the variable that answered it, "default" (MDMESH_NONINTERACTIVE=1 and the question has a default, or
+# TAKES_DEFAULT=1, as with -y), or "ask" (the question would be asked; value "?"). An empty value shows as "".
+# With MDMESH_NONINTERACTIVE=1 a question that would be asked stops the installer instead (mdm_ask).
+mdm_plan_line() {
+  local id=$1 def=$2 k=${1//-/_} v s r
+  r="_MDM_ANS_RULE_$k"
+  case "$_MDM_ANS_GIVEN" in
+    *" $id "*) v="_MDM_ANS_SHOW_$k"; v=${!v}; s="_MDM_ANS_SRC_$k"; s=${!s%% *}
+               [ -n "$v" ] || v=$def ;;
+    *) if [ "${3:-0}" = 1 ] || { [ "${MDMESH_NONINTERACTIVE:-0}" = 1 ] && _mdm_answer_rule_has_default "${!r-}"; }; then
+         v=$def; s=default
+       else
+         mdm_ask "$id"; v='?'; s=ask
+       fi ;;
+  esac
+  [ -n "$v" ] || v='""'
+  mdm_plan_row "$id" "$v" "$s"
+}
+# mdm_plan_row ID VALUE SOURCE: one line of the dry-run plan, in mdm_plan_line's format.
+mdm_plan_row() { printf '  %-13s %-32s [%s]\n' "$1" "$2" "$3"; }
+# <<< answers.sh functions <<<
+
+# Every answer is checked here, before anything else happens.
+mdm_answers_load
+mdm_answer mode MODE mode MDMESH_MODE
+mdm_answer repo GH_REPO github-repo MDMESH_REPO
+mdm_answer image-owner IMAGE_OWNER image-owner MDMESH_IMAGE_OWNER
+mdm_answer host HOST hostname MDMESH_HOST
+mdm_answer tunnel-token TUNNEL_TOKEN tunnel-token MDMESH_TUNNEL_TOKEN
+mdm_answer acme-email ACME_EMAIL email MDMESH_ACME_EMAIL
+if mdm_given mode; then
+  if [ "$MODE" = 1 ]; then mdm_unused acme-email "in tunnel mode"; else mdm_unused tunnel-token "in domain mode"; fi
+fi
+mdm_need mode; mdm_need host
+if mdm_given mode && [ "$MODE" = 1 ]; then mdm_need tunnel-token; fi
+if [ "${MDMESH_DRY_RUN:-0}" = 1 ]; then
+  say "== MDMesh quick start: dry run (MDMESH_DRY_RUN=1) =="
+  echo "The answers check out. Nothing on this host was checked or changed. What a run would do:"
+  mdm_plan_line mode ''
+  mdm_plan_line repo "$REPO"
+  mdm_plan_line image-owner "$IMAGE_OWNER_DEFAULT"
+  mdm_plan_line host ''
+  if ! mdm_given mode; then mdm_plan_line tunnel-token ''; mdm_plan_line acme-email ''
+  elif [ "$MODE" = 1 ]; then mdm_plan_line tunnel-token ''; mdm_plan_row acme-email - unused
+  else mdm_plan_row tunnel-token - unused; mdm_plan_line acme-email ''; fi
+  _dir=${MDMESH_DIR:-mdmesh}; case "$_dir" in /*) ;; *) _dir="$PWD/$_dir" ;; esac
+  _repo=$REPO; if mdm_given repo && [ -n "$GH_REPO" ]; then _repo=$GH_REPO; fi
+  _rel="the latest release of ${_repo}"; [ -z "${MDMESH_VERSION:-}" ] || _rel="release v${MDMESH_VERSION#v} of ${_repo}"
+  echo "Then: download ${_rel}, check it against its signed manifest, and run it with Docker in ${_dir}."
+  if mdm_given host; then echo "Its base URL: https://${HOST}"; fi
+  exit 0
+fi
+
 command -v docker >/dev/null || { err "Docker is required."; exit 1; }
 docker compose version >/dev/null 2>&1 || { err "Docker Compose v2 is required ('docker compose')."; exit 1; }
 command -v curl    >/dev/null || { err "curl is required."; exit 1; }
@@ -240,17 +480,21 @@ cd -P -- "$DIR"
 say "== MDMesh quick start (published images) =="
 echo "Installing into: $(pwd)"
 echo
-echo "Hosting mode:"
-echo "  1) Cloudflare Tunnel   (no open ports; Cloudflare manages TLS — needs a domain in Cloudflare)"
-echo "  2) Your own domain     (open 80/443; Caddy auto-provisions a Let's Encrypt cert)"
-MODE=""
-while [ "$MODE" != "1" ] && [ "$MODE" != "2" ]; do
-  read -rp "Choose [1/2]: " MODE || { err "No selection (non-interactive run?). Aborting."; exit 1; }
-  case "$MODE" in 1|2) ;; *) warn "Please enter 1 or 2." ;; esac
-done
+if ! mdm_answered mode; then
+  echo "Hosting mode:"
+  echo "  1) Cloudflare Tunnel   (no open ports; Cloudflare manages TLS — needs a domain in Cloudflare)"
+  echo "  2) Your own domain     (open 80/443; Caddy auto-provisions a Let's Encrypt cert)"
+  MODE=""
+  while [ "$MODE" != "1" ] && [ "$MODE" != "2" ]; do
+    read -rp "Choose [1/2]: " MODE || { err "No selection (non-interactive run?). Aborting."; exit 1; }   # answer: mode
+    case "$MODE" in 1|2) ;; *) warn "Please enter 1 or 2." ;; esac
+  done
+fi
 
-read -rp "Pull releases from GitHub repo [${REPO}]: " GH_REPO;       GH_REPO="${GH_REPO:-$REPO}"
-read -rp "Image owner (GHCR, lowercase) [${IMAGE_OWNER_DEFAULT}]: " IMAGE_OWNER; IMAGE_OWNER="${IMAGE_OWNER:-$IMAGE_OWNER_DEFAULT}"
+mdm_answered repo || read -rp "Pull releases from GitHub repo [${REPO}]: " GH_REPO   # answer: repo
+GH_REPO="${GH_REPO:-$REPO}"
+mdm_answered image-owner || read -rp "Image owner (GHCR, lowercase) [${IMAGE_OWNER_DEFAULT}]: " IMAGE_OWNER   # answer: image-owner
+IMAGE_OWNER="${IMAGE_OWNER:-$IMAGE_OWNER_DEFAULT}"
 
 # Install exactly one published release, verified before anything is downloaded from it: its signed manifest (see "What
 # the quick start trusts" above) names the image digests and the SHA-256 of each file fetched from its tag. The server,
@@ -339,16 +583,16 @@ say "Installing release v${RELEASE} of ${GH_REPO}."
 DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
 
 if [ "$MODE" = "1" ]; then
-  read -rp "Public hostname devices will use (e.g. mdm.example.com): " HOST
+  mdm_answered host || read -rp "Public hostname devices will use (e.g. mdm.example.com): " HOST   # answer: host
   mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
-  read -rp "Cloudflare Tunnel token (Zero Trust → Tunnels → your tunnel): " TUNNEL_TOKEN
+  mdm_answered tunnel-token || read -rp "Cloudflare Tunnel token (Zero Trust → Tunnels → your tunnel): " TUNNEL_TOKEN   # answer: tunnel-token
   BASE_URL="https://${HOST}"; SITE_ADDRESS=":80"; ACME_EMAIL=""
   COMPOSE_FILE="docker-compose.yml"; COMPOSE_PROFILES="cloudflare"
   EXTRA_NOTE="In Cloudflare, route the tunnel's public hostname ($HOST) to http://caddy:80."
 else
-  read -rp "Your domain (DNS already pointing here, e.g. mdm.example.com): " HOST
+  mdm_answered host || read -rp "Your domain (DNS already pointing here, e.g. mdm.example.com): " HOST   # answer: host
   mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
-  read -rp "Email for Let's Encrypt: " ACME_EMAIL
+  mdm_answered acme-email || read -rp "Email for Let's Encrypt: " ACME_EMAIL   # answer: acme-email
   BASE_URL="https://${HOST}"; SITE_ADDRESS="${HOST}"; TUNNEL_TOKEN=""
   COMPOSE_FILE="docker-compose.yml:docker-compose.domain.yml"; COMPOSE_PROFILES=""
   EXTRA_NOTE="Make sure ${HOST} resolves to this server and ports 80/443 are open."

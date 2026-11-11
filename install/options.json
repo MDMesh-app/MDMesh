@@ -1,0 +1,140 @@
+{
+  "$comment": "The installers' answers contract. Every question quickstart.sh, setup.sh and install/install-native.sh ask, with the variable that answers it in advance, its rule and default. The website's install wizard reads this file at the release tag; tests/installer-answers/run.sh (CI) fails when it and the scripts disagree. Rules are install/lib/answers.sh's (the scripts are authoritative); regex is the same rule for a browser, an ERE that is also a JavaScript RegExp, applied to a non-empty value.",
+  "schemaVersion": 1,
+  "answersFile": {
+    "env": "MDMESH_ANSWERS",
+    "description": "An absolute path to a file of KEY=VALUE lines (any answer or setting below, by its env name; # comments and blank lines allowed; one pair of surrounding quotes is removed; never sourced). The environment wins over the file. Unknown or repeated keys stop the installer."
+  },
+  "installers": [
+    { "id": "quickstart.sh", "path": "quickstart.sh", "title": "Quick start (published images, Docker)", "root": false, "flags": [] },
+    { "id": "setup.sh", "path": "setup.sh", "title": "From source (Docker)", "root": false, "flags": ["--reset", "--allow-downgrade", "--native"] },
+    { "id": "install-native.sh", "path": "install/install-native.sh", "title": "Native (Debian 12/13, Ubuntu 24.04)", "root": true, "flags": ["-y", "-v"] }
+  ],
+  "settings": [
+    {
+      "id": "noninteractive", "env": "MDMESH_NONINTERACTIVE", "type": "boolean", "allowed": ["0", "1"], "default": "0",
+      "installers": ["quickstart.sh", "setup.sh", "install-native.sh"],
+      "description": "1: never ask. A missing answer with a default takes it; a missing answer without one stops the installer, naming its variable."
+    },
+    {
+      "id": "dry-run", "env": "MDMESH_DRY_RUN", "type": "boolean", "allowed": ["0", "1"], "default": "0",
+      "installers": ["quickstart.sh", "setup.sh", "install-native.sh"],
+      "description": "1: check the answers, print the plan (each question: its answer, default, or ?/ask) and exit, before anything on the host is checked or changed. Needs no root, Docker or network."
+    },
+    {
+      "id": "dir", "env": "MDMESH_DIR", "type": "string", "default": "mdmesh", "installers": ["quickstart.sh"],
+      "description": "The directory the quick start installs into (created; relative to the current directory)."
+    },
+    {
+      "id": "version", "env": "MDMESH_VERSION", "type": "string", "default": null, "regex": "^v?[0-9]+\\.[0-9]+\\.[0-9]+([-+][0-9A-Za-z.+-]+)?$",
+      "installers": ["quickstart.sh"],
+      "description": "The release to install (X.Y.Z, 0.4.0 or later). Default: the latest published release of the repo."
+    },
+    {
+      "id": "release-pubkey", "env": "MDMESH_RELEASE_PUBKEY", "type": "string", "default": null, "installers": ["quickstart.sh"],
+      "description": "A fork's release signing key: the key line (line 2) of its release/minisign.pub."
+    }
+  ],
+  "options": [
+    {
+      "id": "mode", "env": "MDMESH_MODE", "aliases": [], "installers": ["quickstart.sh", "setup.sh"],
+      "type": "enum", "allowed": ["tunnel", "domain"], "synonyms": { "1": "tunnel", "2": "domain" },
+      "default": null, "required": true, "when": null, "secret": false, "rule": "mode",
+      "regex": "^(tunnel|domain|1|2)$",
+      "description": "How the server is reached: tunnel (Cloudflare Tunnel, no open ports) or domain (your own domain, ports 80/443, a Let's Encrypt certificate from Caddy).",
+      "prompts": [ { "id": "mode.choose", "text": "Choose [1/2]:", "script": "Choose [1/2]: " } ],
+      "examples": { "valid": ["tunnel", "domain", "1", "2"], "invalid": ["3", "Domain", "cloudflare", " "] }
+    },
+    {
+      "id": "repo", "env": "MDMESH_REPO", "aliases": [], "installers": ["quickstart.sh"],
+      "type": "string", "default": "MDMesh-app/MDMesh", "emptyMeans": "default",
+      "required": false, "when": null, "secret": false, "rule": "github-repo",
+      "regex": "^(\\.?[A-Za-z0-9_-][A-Za-z0-9._-]*|\\.\\.[A-Za-z0-9._-]+)/(\\.?[A-Za-z0-9_-][A-Za-z0-9._-]*|\\.\\.[A-Za-z0-9._-]+)$",
+      "description": "The GitHub repository whose releases are installed (owner/name).",
+      "prompts": [ { "id": "repo.ask", "text": "Pull releases from GitHub repo [MDMesh-app/MDMesh]:", "script": "Pull releases from GitHub repo [${REPO}]: " } ],
+      "examples": { "valid": ["MDMesh-app/MDMesh", "me/my.fork", "a/..b", ""], "invalid": ["MDMesh", "a/b/c", "../x", "a/.", "a b/c", "https://github.com/a/b"] }
+    },
+    {
+      "id": "image-owner", "env": "MDMESH_IMAGE_OWNER", "aliases": [], "installers": ["quickstart.sh"],
+      "type": "string", "default": "mdmesh-app", "emptyMeans": "default",
+      "required": false, "when": null, "secret": false, "rule": "image-owner",
+      "regex": "^[a-z0-9][a-z0-9._-]*$",
+      "description": "The GHCR owner of the release's images, in lowercase.",
+      "prompts": [ { "id": "image-owner.ask", "text": "Image owner (GHCR, lowercase) [mdmesh-app]:", "script": "Image owner (GHCR, lowercase) [${IMAGE_OWNER_DEFAULT}]: " } ],
+      "examples": { "valid": ["mdmesh-app", "me", "a.b_c-d", ""], "invalid": ["MDMesh-app", "-x", "a/b", "ghcr.io/me"] }
+    },
+    {
+      "id": "host", "env": "MDMESH_HOST", "aliases": [], "installers": ["quickstart.sh", "setup.sh"],
+      "type": "hostname", "default": null, "required": true, "when": null, "secret": false, "rule": "hostname",
+      "regex": "^(\\[[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*\\]|[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*)(:([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$",
+      "description": "The public hostname devices use (the name only: no https://, path or user@), optionally with :port. The base URL becomes https://<host>. In domain mode its DNS must point at this server.",
+      "prompts": [
+        { "id": "host.tunnel", "when": { "mode": "tunnel" }, "text": "Public hostname devices will use (e.g. mdm.example.com):", "script": "Public hostname devices will use (e.g. mdm.example.com): " },
+        { "id": "host.domain", "when": { "mode": "domain" }, "text": "Your domain (DNS already pointing here, e.g. mdm.example.com):", "script": "Your domain (DNS already pointing here, e.g. mdm.example.com): " }
+      ],
+      "examples": { "valid": ["mdm.example.com", "localhost", "mdm.example.com:8443", "10.0.0.5", "[::1]"], "invalid": ["", "https://mdm.example.com", "mdm.example.com/x", "admin@mdm.example.com", "-mdm.example.com", "mdm..example.com", "mdm.example.com:0", "mdm.example.com:99999", "mdm example.com"] }
+    },
+    {
+      "id": "tunnel-token", "env": "MDMESH_TUNNEL_TOKEN", "aliases": [], "installers": ["quickstart.sh", "setup.sh"],
+      "type": "secret", "default": null, "required": true, "when": { "mode": "tunnel" }, "secret": true, "rule": "tunnel-token",
+      "regex": "^[A-Za-z0-9._=+/-]+$",
+      "description": "The Cloudflare Tunnel token (Zero Trust → Networks → Tunnels → your tunnel). A secret: put it in the answers file or answer the question, not on a command line.",
+      "prompts": [ { "id": "tunnel-token.ask", "text": "Cloudflare Tunnel token (Zero Trust → Tunnels → your tunnel):", "script": "Cloudflare Tunnel token (Zero Trust → Tunnels → your tunnel): " } ],
+      "examples": { "valid": ["eyJhIjoiYWJjIn0=", "abc.DEF_123-+/="], "invalid": ["", "abc def", "abc$x", "a\"b"] }
+    },
+    {
+      "id": "acme-email", "env": "MDMESH_ACME_EMAIL", "aliases": [], "installers": ["quickstart.sh", "setup.sh"],
+      "type": "email", "default": "", "emptyMeans": "default",
+      "required": false, "when": { "mode": "domain" }, "secret": false, "rule": "email",
+      "regex": "^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+$",
+      "description": "The email Let's Encrypt sends certificate notices to. Empty: none.",
+      "prompts": [ { "id": "acme-email.ask", "text": "Email for Let's Encrypt:", "script": "Email for Let's Encrypt: " } ],
+      "examples": { "valid": ["ops@example.com", "a.b+c@mail.example.co.uk", ""], "invalid": ["ops", "ops@example", "@example.com", "a@b@example.com", "ops@example..com", "ops @example.com"] }
+    },
+    {
+      "id": "base-url", "env": "MDMESH_BASE_URL", "aliases": ["BASE_URL"], "installers": ["install-native.sh"],
+      "type": "url", "default": null, "emptyMeans": "unset",
+      "required": "fresh-install", "requiredNote": "On a fresh install. A re-run keeps the install's current base URL unless one is given.",
+      "when": null, "secret": false, "rule": "base-url",
+      "regex": "^[Hh][Tt][Tt][Pp][Ss]?://(\\[[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*\\]|[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*)(:([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?(/[A-Za-z0-9._:/+=,-]*)?$",
+      "description": "The public base URL devices and the console use, behind your own TLS proxy (https://…; http:// is accepted too).",
+      "prompts": [
+        { "id": "base-url.fresh", "text": "Public base URL (e.g. https://mdm.example.com):", "script": "  Public base URL (e.g. https://mdm.example.com): " },
+        { "id": "base-url.current", "text": "Public base URL [<current>]:", "script": "  Public base URL [${_cur_url}]: " },
+        { "id": "base-url.keep", "text": "Public base URL [keep the current one]:", "script": "  Public base URL [keep the current one]: " }
+      ],
+      "examples": { "valid": ["https://mdm.example.com", "HTTPS://mdm.example.com", "http://10.0.0.5:8080", "https://mdm.example.com/mdm"], "invalid": ["mdm.example.com", "ftp://mdm.example.com", "https://user@mdm.example.com", "https://mdm.example.com/?a=1", "https://mdm.example.com/a b", "https://https://x"] }
+    },
+    {
+      "id": "http-port", "env": "MDMESH_HTTP_PORT", "aliases": ["HTTP_PORT"], "installers": ["install-native.sh"],
+      "type": "port", "default": "8080", "defaultNote": "A re-run keeps the port the install already uses.", "emptyMeans": "unset",
+      "required": false, "when": null, "secret": false, "rule": "port",
+      "regex": "^0*([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$",
+      "description": "The HTTP port Tomcat listens on (your TLS proxy forwards to it).",
+      "prompts": [ { "id": "http-port.ask", "text": "HTTP port [8080]:", "script": "  HTTP port [${_port_hint}]: " } ],
+      "examples": { "valid": ["8080", "9090", "1", "65535"], "invalid": ["0", "65536", "80a", "-1", "8080 "] }
+    },
+    {
+      "id": "replace-data", "env": "MDMESH_REPLACE_DATA", "aliases": ["REPLACE_DATA"], "installers": ["install-native.sh"],
+      "type": "enum", "allowed": ["no", "yes"], "default": "no", "emptyMeans": "unset",
+      "required": false, "when": null, "secret": false, "rule": "yes-no",
+      "regex": "^(yes|no)$",
+      "description": "Asked only when the database already holds data: no keeps it (deploys the new code and runs migrations), yes erases it and starts from an empty seed. This cannot be undone.",
+      "prompts": [
+        { "id": "replace-data.choice", "text": "Choice [K/e]:", "script": "  Choice %s[K/e]%s: " },
+        { "id": "replace-data.confirm", "text": "Type ERASE to confirm dropping <n> device(s) and <n> user(s):", "script": "  %sType ERASE to confirm dropping %s device(s) and %s user(s):%s " }
+      ],
+      "examples": { "valid": ["no", "yes"], "invalid": ["YES", "y", "erase", "keep"] }
+    },
+    {
+      "id": "assume-yes", "env": "MDMESH_ASSUME_YES", "aliases": ["ASSUME_YES"], "flag": "-y", "installers": ["install-native.sh"],
+      "type": "boolean", "allowed": ["0", "1"], "default": "0", "emptyMeans": "unset",
+      "required": true, "requiredNote": "For a run without questions: 1 confirms the changes to this host.",
+      "when": null, "secret": false, "rule": "flag",
+      "regex": "^(0|1)$",
+      "description": "1 (or -y): proceed without typing yes, and take the default for every other question not answered (the current base URL and port on a re-run, 8080 on a fresh install, Keep for existing data).",
+      "prompts": [ { "id": "assume-yes.confirm", "text": "Type \"yes\" to proceed:", "script": "  Type \"yes\" to proceed: " } ],
+      "examples": { "valid": ["1", "0"], "invalid": ["yes", "true", "2"] }
+    }
+  ]
+}

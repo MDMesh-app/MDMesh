@@ -12,6 +12,10 @@
 #        ./setup.sh --native   # hand off to the native (non-Docker) installer
 #        ./setup.sh --allow-downgrade  # registry IMAGE_OWNER only: build and run a checkout older than the running
 #                              # release, or one with no readable release tag (both refused by default)
+#
+# A fresh setup's questions can be answered in advance with environment variables (MDMESH_MODE, MDMESH_HOST,
+# MDMESH_TUNNEL_TOKEN or MDMESH_ACME_EMAIL) or an answers file (MDMESH_ANSWERS); MDMESH_NONINTERACTIVE=1 never asks,
+# MDMESH_DRY_RUN=1 only checks the answers and prints the plan. See install/options.json and DEPLOY.md.
 set -euo pipefail
 # An exported CDPATH makes cd (here and in every child, e.g. `bash -c 'cd web && …'`) resolve a relative path against
 # CDPATH's directories, not the current one — silently building or reading from a same-named directory elsewhere. Unset
@@ -32,6 +36,8 @@ err()  { printf '\033[1;31m%s\033[0m\n' "$*" >&2; }
 . ./install/lib/url.sh
 # shellcheck source=install/lib/release.sh
 . ./install/lib/release.sh
+# shellcheck source=install/lib/answers.sh
+. ./install/lib/answers.sh
 rand() { mdm_rand; }
 # Update KEY in .env in place (or append it) — persists values discovered after .env was written
 # (GITHUB_REPO autodetection, the release QR build args) so compose substitution + the supervisor
@@ -60,6 +66,41 @@ if [ "${#NATIVE_ARGS[@]}" -gt 0 ]; then
   err "Unknown option: ${NATIVE_ARGS[0]}"
   sed -n '/^# Usage:/,/^set -euo pipefail/p' "$(basename "$0")" | sed '$d; s/^# \{0,1\}//' >&2
   exit 2
+fi
+
+# Answers given in advance (install/lib/answers.sh, install/options.json), all checked here, before anything else.
+# Only a fresh .env asks questions: a re-run reuses its .env, and then they are not used.
+mdm_answers_load
+mdm_answer mode MODE mode MDMESH_MODE
+mdm_answer host HOST hostname MDMESH_HOST
+mdm_answer tunnel-token TUNNEL_TOKEN tunnel-token MDMESH_TUNNEL_TOKEN
+mdm_answer acme-email ACME_EMAIL email MDMESH_ACME_EMAIL
+if mdm_given mode; then
+  if [ "$MODE" = 1 ]; then mdm_unused acme-email "in tunnel mode"; else mdm_unused tunnel-token "in domain mode"; fi
+fi
+REUSE_ENV=0
+if [ -f .env ] && [ "$RESET" != 1 ]; then REUSE_ENV=1; fi
+if [ "$REUSE_ENV" = 1 ] && mdm_any_answered; then
+  warn "The MDMESH_* answers are not used: an .env exists here, and a re-run reuses it (--reset starts over)."
+fi
+if [ "$REUSE_ENV" = 0 ]; then
+  mdm_need mode; mdm_need host
+  if mdm_given mode && [ "$MODE" = 1 ]; then mdm_need tunnel-token; fi
+fi
+if [ "${MDMESH_DRY_RUN:-0}" = 1 ]; then
+  say "== MDMesh setup: dry run (MDMESH_DRY_RUN=1) =="
+  echo "The answers check out. Nothing on this host was checked or changed. What a run would do:"
+  if [ "$REUSE_ENV" = 1 ]; then
+    echo "Reuse the .env here (no questions), then build the images from this checkout and start them with Docker."
+    exit 0
+  fi
+  mdm_plan_line mode ''
+  mdm_plan_line host ''
+  if ! mdm_given mode; then mdm_plan_line tunnel-token ''; mdm_plan_line acme-email ''
+  elif [ "$MODE" = 1 ]; then mdm_plan_line tunnel-token ''; mdm_plan_row acme-email - unused
+  else mdm_plan_row tunnel-token - unused; mdm_plan_line acme-email ''; fi
+  echo "Then: write a new .env here$(if mdm_given host; then echo " with the base URL https://${HOST}"; fi), build the images from this checkout and start them with Docker."
+  exit 0
 fi
 
 command -v docker >/dev/null || { err "Docker is required (or run ./setup.sh --native)."; exit 1; }
@@ -106,7 +147,7 @@ version_preflight() {  # version_preflight <running>
   fi
 }
 
-if [ -f .env ] && [ "$RESET" != 1 ]; then
+if [ "$REUSE_ENV" = 1 ]; then
   # RE-RUN: reuse the existing .env verbatim — never regenerate secrets over a live deployment.
   # The pgdata volume keeps the ORIGINAL DB password (Postgres only reads POSTGRES_PASSWORD on
   # first init), so a fresh DB_PASSWORD would brick the stack; a fresh HASH_SECRET would likewise
@@ -133,23 +174,25 @@ else
     warn "run 'docker compose down -v' first for a genuinely clean slate."
   fi
   version_preflight ""
-  echo "Hosting mode:"
-  echo "  1) Cloudflare Tunnel   (no open ports; Cloudflare manages TLS — needs a domain in Cloudflare)"
-  echo "  2) Your own domain     (open 80/443; Caddy auto-provisions a Let's Encrypt cert)"
-  MODE=""
-  while [ "$MODE" != "1" ] && [ "$MODE" != "2" ]; do
-    read -rp "Choose [1/2]: " MODE || { err "No selection (non-interactive run?). Aborting."; exit 1; }
-    case "$MODE" in 1|2) ;; *) warn "Please enter 1 or 2." ;; esac
-  done
+  if ! mdm_answered mode; then
+    echo "Hosting mode:"
+    echo "  1) Cloudflare Tunnel   (no open ports; Cloudflare manages TLS — needs a domain in Cloudflare)"
+    echo "  2) Your own domain     (open 80/443; Caddy auto-provisions a Let's Encrypt cert)"
+    MODE=""
+    while [ "$MODE" != "1" ] && [ "$MODE" != "2" ]; do
+      read -rp "Choose [1/2]: " MODE || { err "No selection (non-interactive run?). Aborting."; exit 1; }   # answer: mode
+      case "$MODE" in 1|2) ;; *) warn "Please enter 1 or 2." ;; esac
+    done
+  fi
 
   DB_PASSWORD=$(rand)
   HASH_SECRET=$(rand)
   if [ -n "$REPO_VERSION" ]; then CURRENT_VERSION=$REPO_VERSION; fi   # else the heredoc's ${CURRENT_VERSION:-0.0.0}
 
   if [ "$MODE" = "1" ]; then
-    read -rp "Public hostname devices will use (e.g. mdm.example.com): " HOST
+    mdm_answered host || read -rp "Public hostname devices will use (e.g. mdm.example.com): " HOST   # answer: host
     mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
-    read -rp "Cloudflare Tunnel token (Zero Trust → Tunnels → your tunnel): " TUNNEL_TOKEN
+    mdm_answered tunnel-token || read -rp "Cloudflare Tunnel token (Zero Trust → Tunnels → your tunnel): " TUNNEL_TOKEN   # answer: tunnel-token
     BASE_URL="https://${HOST}"
     SITE_ADDRESS=":80"
     ACME_EMAIL=""
@@ -158,9 +201,9 @@ else
     COMPOSE_PROFILES="cloudflare"
     EXTRA_NOTE="In Cloudflare, route the tunnel's public hostname ($HOST) to http://caddy:80."
   else
-    read -rp "Your domain (DNS already pointing here, e.g. mdm.example.com): " HOST
+    mdm_answered host || read -rp "Your domain (DNS already pointing here, e.g. mdm.example.com): " HOST   # answer: host
     mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
-    read -rp "Email for Let's Encrypt: " ACME_EMAIL
+    mdm_answered acme-email || read -rp "Email for Let's Encrypt: " ACME_EMAIL   # answer: acme-email
     BASE_URL="https://${HOST}"
     SITE_ADDRESS="${HOST}"
     TUNNEL_TOKEN=""

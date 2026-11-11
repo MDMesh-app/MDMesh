@@ -3,6 +3,10 @@
 # server on the host and assumes you terminate TLS yourself (your own reverse proxy / cert, or Caddy in
 # front). For the turnkey experience use ./setup.sh (Docker). Flags: -y/--yes (skip confirm), -v/--verbose
 # (stream all output instead of hiding it in the log). Best-effort + idempotent; review before prod use.
+# Each question can be answered in advance with an environment variable (MDMESH_ASSUME_YES, MDMESH_BASE_URL,
+# MDMESH_HTTP_PORT, MDMESH_REPLACE_DATA; the older BASE_URL, HTTP_PORT, REPLACE_DATA and ASSUME_YES still work) or an
+# answers file (MDMESH_ANSWERS). MDMESH_DRY_RUN=1 only checks the answers and prints the plan (no root needed). See
+# install/options.json and DEPLOY.md.
 # shellcheck source-path=SCRIPTDIR  # lets shellcheck -x follow lib/*.sh from any working directory
 set -euo pipefail
 # An exported CDPATH makes cd (here and in every child, e.g. `bash -c 'cd web && …'`) resolve a relative path against
@@ -31,12 +35,40 @@ REPO="$PWD"   # repo root — used for absolute paths inside subshells (e.g. exp
 . "$REPO/install/lib/runas.sh"
 # shellcheck source=lib/release.sh
 . "$REPO/install/lib/release.sh"
+# shellcheck source=lib/answers.sh
+. "$REPO/install/lib/answers.sh"
 
-[ "$(id -u)" = "0" ] || { echo "Run as root (sudo)."; exit 1; }
-command -v apt-get >/dev/null || { echo "This script targets Debian/Ubuntu."; exit 1; }
+# Answers given in advance (install/lib/answers.sh, install/options.json), all checked here, before anything else.
+mdm_answers_load
+mdm_answer assume-yes ASSUME_YES flag MDMESH_ASSUME_YES ASSUME_YES
+mdm_answer base-url BASE_URL base-url MDMESH_BASE_URL BASE_URL
+mdm_answer http-port HTTP_PORT port MDMESH_HTTP_PORT HTTP_PORT
+mdm_answer replace-data REPLACE_DATA yes-no MDMESH_REPLACE_DATA REPLACE_DATA
 
 ASSUME_YES="${ASSUME_YES:-0}"; VERBOSE="${VERBOSE:-0}"
 for a in "$@"; do case "$a" in -y|--yes) ASSUME_YES=1 ;; -v|--verbose) VERBOSE=1 ;; esac; done
+# Without -y the run starts with the confirmation, which MDMESH_NONINTERACTIVE=1 can't answer.
+[ "$ASSUME_YES" = 1 ] || mdm_ask assume-yes
+if [ "${MDMESH_DRY_RUN:-0}" = 1 ]; then
+  printf '\n  MDMesh · native install: dry run (MDMESH_DRY_RUN=1)\n\n'
+  echo "  The answers check out. Nothing on this host was checked or changed. What a run would do:"
+  if [ "$ASSUME_YES" != 1 ]; then mdm_plan_row assume-yes '?' ask
+  elif mdm_given assume-yes; then mdm_plan_line assume-yes ''
+  else mdm_plan_row assume-yes 1 -y; fi
+  _keep=0
+  if mdm_given base-url || [ "$ASSUME_YES" != 1 ]; then mdm_plan_line base-url ''
+  else mdm_plan_row base-url '(current)' keep; _keep=1; fi
+  mdm_plan_line http-port 8080 "$ASSUME_YES"
+  mdm_plan_line replace-data no "$ASSUME_YES"
+  [ "$_keep" = 0 ] || echo "  base-url: a re-run keeps the current one; a fresh install stops without one (set MDMESH_BASE_URL)."
+  echo "  A re-run keeps its HTTP port unless one is given. replace-data is asked only when the database holds data."
+  echo "  Then, as root: install the packages and runtimes, build the server and run it under systemd (the list a"
+  echo "  real run shows before it asks you to type yes)."
+  exit 0
+fi
+
+[ "$(id -u)" = "0" ] || { echo "Run as root (sudo)."; exit 1; }
+command -v apt-get >/dev/null || { echo "This script targets Debian/Ubuntu."; exit 1; }
 
 # ------------------------------------------------------------------------------------------------------
 # Lightweight UI (zero deps): colored status lines, a spinner for long steps, and verbose command output
@@ -130,8 +162,9 @@ cat <<WARN
 
 WARN
 if [ "$ASSUME_YES" != "1" ]; then
+  mdm_ask assume-yes
   printf '  Type "yes" to proceed: '
-  read -r _confirm
+  read -r _confirm   # answer: assume-yes
   [ "$_confirm" = "yes" ] || { echo "  Aborted — no changes made."; exit 1; }
 fi
 
@@ -435,14 +468,15 @@ if [ -z "$BASE_URL" ]; then
     info "That is the base URL in the existing ROOT.xml: ignoring it"; _cur_url=
   fi
   if [ -n "$_cur_url" ]; then
-    [ "$ASSUME_YES" = 1 ] || read -rp "  Public base URL [${_cur_url}]: " BASE_URL
+    [ "$ASSUME_YES" = 1 ] || { mdm_ask base-url; read -rp "  Public base URL [${_cur_url}]: " BASE_URL; }   # answer: base-url
     if [ -z "$BASE_URL" ]; then BASE_URL=$_cur_url; info "Keeping the base URL ${BASE_URL} (from ROOT.xml; set BASE_URL to change it)"; fi
   elif [ "$_old_root_deferred" = 1 ]; then
-    [ "$ASSUME_YES" = 1 ] || read -rp "  Public base URL [keep the current one]: " BASE_URL
+    [ "$ASSUME_YES" = 1 ] || { mdm_ask base-url; read -rp "  Public base URL [keep the current one]: " BASE_URL; }   # answer: base-url
     [ -n "$BASE_URL" ] || { _url_deferred=1; info "Keeping the base URL in ROOT.xml (read once this run has handed the tree back)"; }
   else
     [ "$ASSUME_YES" = 1 ] && { echo "  BASE_URL must be set when running with -y (e.g. BASE_URL=https://mdm.example.com)."; exit 1; }
-    read -rp "  Public base URL (e.g. https://mdm.example.com): " BASE_URL
+    mdm_ask base-url
+    read -rp "  Public base URL (e.g. https://mdm.example.com): " BASE_URL   # answer: base-url
   fi
 fi
 # install/lib/url.sh: http(s)://host[:port][/path]; lower-cases the scheme.
@@ -465,7 +499,9 @@ if [ -e "$CATALINA/conf/server.xml" ] || [ -L "$CATALINA/conf/server.xml" ]; the
 fi
 _port_hint=${_cur_port:-8080}; [ "$_port_deferred" = 0 ] || _port_hint="keep the current port"
 HTTP_PORT="${HTTP_PORT:-}"
-if [ -z "$HTTP_PORT" ] && [ "$ASSUME_YES" != 1 ]; then read -rp "  HTTP port [${_port_hint}]: " HTTP_PORT; fi
+if [ -z "$HTTP_PORT" ] && [ "$ASSUME_YES" != 1 ] && ! mdm_answered http-port; then
+  read -rp "  HTTP port [${_port_hint}]: " HTTP_PORT   # answer: http-port
+fi
 if [ -n "$HTTP_PORT" ]; then _port_deferred=0
 elif [ "$_port_deferred" = 0 ]; then HTTP_PORT=${_cur_port:-8080}; fi
 [ "$_port_deferred" = 1 ] || check_port
@@ -659,7 +695,7 @@ if [ "$DB_STATE" = seeded ]; then
   uc=$(n_or_q "$(q "SELECT count(*) FROM users")"); dc=$(n_or_q "$(q "SELECT count(*) FROM devices")")
   REPLACE_DATA="${REPLACE_DATA:-}"
   if [ -z "$REPLACE_DATA" ]; then
-    if [ "$ASSUME_YES" = 1 ]; then
+    if [ "$ASSUME_YES" = 1 ] || mdm_answered replace-data; then
       REPLACE_DATA=no   # never destroy data unprompted
     else
       printf '\n  %s%s⚠  Existing MDMesh data found: %s device(s), %s user(s).%s\n' "$c_red" "$c_bold" "$dc" "$uc" "$c_reset"
@@ -667,12 +703,12 @@ if [ "$DB_STATE" = seeded ]; then
       printf '    %s[K]eep%s  — deploy new code + run migrations; devices, users and configs untouched %s(default)%s\n' "$c_bold" "$c_reset" "$c_bold" "$c_reset"
       printf '    %s[E]rase%s — drop the database and start from an empty seed. %sThis cannot be undone.%s\n' "$c_bold" "$c_reset" "$c_red" "$c_reset"
       printf '  Choice %s[K/e]%s: ' "$c_bold" "$c_reset"
-      read -r _r
+      read -r _r   # answer: replace-data
       case "$_r" in
         e|E|erase|ERASE)
           # Destructive path needs a second, typed confirmation (same convention as `gh repo delete`).
           printf '  %sType ERASE to confirm dropping %s device(s) and %s user(s):%s ' "$c_red" "$dc" "$uc" "$c_reset"
-          read -r _c
+          read -r _c   # answer: replace-data
           if [ "$_c" = "ERASE" ]; then REPLACE_DATA=yes; else info "Not confirmed — keeping existing data."; REPLACE_DATA=no; fi ;;
         *) REPLACE_DATA=no ;;
       esac

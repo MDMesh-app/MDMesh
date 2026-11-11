@@ -1,0 +1,287 @@
+#!/usr/bin/env bash
+# The installers' answers contract: install/options.json against quickstart.sh, setup.sh and install/install-native.sh.
+#
+# Usage: tests/installer-answers/run.sh
+#
+# Fails when:
+#   - an installer asks a question (a `read` from the terminal) without an "# answer: <id>" marker naming an option in
+#     options.json, or with a prompt text the option doesn't list;
+#   - an option (or one of its prompt texts) is missing from an installer it names, or its `mdm_answer` call there uses
+#     another variable, alias or rule than the contract says;
+#   - install/lib/answers.sh accepts other answer-file keys than the contract's variables;
+#   - a dry run (MDMESH_DRY_RUN=1) with a full set of answers asks anything, fails, shows another value, or prints a
+#     secret; the same answers from an answers file give another plan;
+#   - a default differs (a dry run with only the required answers and MDMESH_NONINTERACTIVE=1 shows each default);
+#   - a required answer can be left out under MDMESH_NONINTERACTIVE=1, or a question without an answer isn't asked;
+#   - an example value in the contract is accepted or refused differently by the script, or by the contract's regex.
+#
+# Every installer run here is a dry run, in a temporary copy (setup.sh and the native installer) or a temporary working
+# directory (quickstart.sh), with an empty environment and stdin from /dev/null: nothing is installed, and a question
+# the scripts would ask fails the run. Needs: bash, jq, grep, sed, awk.
+set -euo pipefail
+unset CDPATH
+HERE=$(cd -P -- "$(dirname -- "$0")" && pwd)
+REPO=$(cd -P -- "$HERE/../.." && pwd)
+CONTRACT="$REPO/install/options.json"
+command -v jq > /dev/null || { echo "jq is required" >&2; exit 2; }
+# Not as root: the native installer refuses a non-root user before it changes anything, a second guard should a dry run
+# ever stop working. (The commands that would change the host are stubbed out below as well.)
+[ "$(id -u)" != 0 ] || { echo "Run this as an unprivileged user, not root." >&2; exit 2; }
+export LC_ALL=C
+
+WORK=$(mktemp -d)
+cleanup() { rm -r -- "$WORK" 2>/dev/null || true; }
+trap cleanup EXIT
+mkdir -p "$WORK/src/install" "$WORK/qs" "$WORK/out"
+cp -- "$REPO/setup.sh" "$WORK/src/"
+cp -R -- "$REPO/install/lib" "$WORK/src/install/"
+cp -- "$REPO/install/install-native.sh" "$WORK/src/install/"
+# Stubs, first on PATH, for every command that could install or start something: called at all, they record it and fail.
+mkdir -p "$WORK/stubs"
+for c in docker curl wget apt-get systemctl useradd mvn git; do
+  # shellcheck disable=SC2016  # $0 and $* belong to the stub
+  printf '#!/bin/sh\necho "$0 $*" >> "%s/stubs.called"\nexit 99\n' "$WORK" > "$WORK/stubs/$c"
+  chmod +x "$WORK/stubs/$c"
+done
+
+FAILS=0; CHECKS=0
+fail() { FAILS=$((FAILS + 1)); printf 'FAIL: %s\n' "$*" >&2; }
+ok() { CHECKS=$((CHECKS + 1)); }
+
+jq -e '.options | length > 0' "$CONTRACT" > /dev/null || { echo "install/options.json: no options" >&2; exit 1; }
+installer_path() { jq -r --arg i "$1" '.installers[] | select(.id == $i) | .path' "$CONTRACT"; }
+installer_ids() { jq -r '.installers[].id' "$CONTRACT"; }
+# options_of INSTALLER: the ids of the options that installer asks.
+options_of() { jq -r --arg i "$1" '.options[] | select(.installers | index($i)) | .id' "$CONTRACT"; }
+opt() { jq -r --arg o "$1" ".options[] | select(.id == \$o) | $2" "$CONTRACT"; }
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Static: questions <-> contract.
+# prompt_reads FILE: "LINENO:LINE" of each read from the terminal: a `read -r…` that is not a comment, not in a while
+# loop, and not reading an array, a NUL-delimited stream or a here-string.
+prompt_reads() {
+  grep -nE '(^|[^[:alnum:]_])read[[:space:]]+-r' "$1" \
+    | grep -vE '^[0-9]+:[[:space:]]*#' | grep -vE '<<<|while|read[[:space:]]+-r[[:space:]]+-a|-d[[:space:]]' || true
+}
+
+for inst in $(installer_ids); do
+  f="$REPO/$(installer_path "$inst")"
+  [ -f "$f" ] || { fail "$inst: $f is missing"; continue; }
+  while IFS= read -r hit; do
+    [ -n "$hit" ] || continue
+    n=${hit%%:*}; line=${hit#*:}
+    id=$(printf '%s\n' "$line" | sed -nE 's/.*# answer: ([a-z0-9-]+).*/\1/p')
+    if [ -z "$id" ]; then fail "$inst:$n asks a question with no '# answer: <id>' marker (and no options.json entry): $line"; continue; fi
+    if ! options_of "$inst" | grep -qx -- "$id"; then fail "$inst:$n: the answer \"$id\" has no options.json entry for $inst"; continue; fi
+    text=$(printf '%s\n' "$line" | sed -nE 's/.*read -rp "([^"]*)".*/\1/p')
+    if [ -n "$text" ]; then
+      opt "$id" '.prompts[].script' | grep -qxF -- "$text" \
+        || fail "$inst:$n: prompt text \"$text\" is not among options.json's prompts for \"$id\""
+    else
+      ctx=$(sed -n "$((n > 4 ? n - 4 : 1)),${n}p" "$f")
+      found=0
+      while IFS= read -r s; do case "$ctx" in *"$s"*) found=1 ;; esac; done < <(opt "$id" '.prompts[].script')
+      [ "$found" = 1 ] || fail "$inst:$n: none of options.json's prompts for \"$id\" is printed just before this read"
+    fi
+    ok
+  done < <(prompt_reads "$f")
+
+  for id in $(options_of "$inst"); do
+    grep -qE "# answer: ${id}([^a-z0-9-]|\$)" "$f" || fail "$inst: options.json has \"$id\", but no question in $inst is marked '# answer: $id'"
+    while IFS= read -r s; do
+      grep -qF -- "$s" "$f" || fail "$inst: options.json's prompt text for \"$id\" is not in $inst: \"$s\""
+    done < <(opt "$id" '.prompts[].script')
+    grep -qE "(mdm_answered|mdm_ask) ${id}([^a-z0-9-]|\$)" "$f" \
+      || fail "$inst: no mdm_answered/mdm_ask $id before its question (so MDMESH_NONINTERACTIVE=1 would not stop it)"
+    # The default the question shows ("[${NAME}]") is one constant, assigned once, to the contract's default (or, for a
+    # default that depends on the install, defaultNote, written as ${…:-default}).
+    def=$(opt "$id" '.default // ""')
+    if [ -n "$def" ]; then
+      for name in $(opt "$id" '.prompts[].script' | sed -nE 's/.*\[\$\{([A-Za-z_][A-Za-z0-9_]*)\}\].*/\1/p'); do
+        if [ "$(opt "$id" '.defaultNote // ""')" != "" ]; then
+          grep -qF -- ":-$def}" "$f" || fail "$inst: the default $def of \"$id\" (\${…:-$def}) is not in $inst"
+        else
+          assigns=$(grep -E "(^|[^A-Za-z0-9_])$name=" "$f" || true)
+          [ "$assigns" = "$name=\"$def\"" ] || fail "$inst: \"$id\" shows [\${$name}], which must be assigned once, as $name=\"$def\" (found: $assigns)"
+        fi
+      done
+    fi
+    calls=$(grep -E "^[[:space:]]*mdm_answer ${id} " "$f" || true)
+    if [ "$(printf '%s' "$calls" | grep -c .)" != 1 ]; then fail "$inst: expected one 'mdm_answer $id …' call"; continue; fi
+    read -r _ _ _var rule env alias _rest <<< "$calls"
+    [ "$rule" = "$(opt "$id" .rule)" ] || fail "$inst: mdm_answer $id uses rule $rule, options.json says $(opt "$id" .rule)"
+    [ "$env" = "$(opt "$id" .env)" ] || fail "$inst: mdm_answer $id reads $env, options.json says $(opt "$id" .env)"
+    [ "${alias:-}" = "$(opt "$id" '.aliases[0] // ""')" ] || fail "$inst: mdm_answer $id alias ${alias:-(none)} differs from options.json"
+    ok
+  done
+  # Each mdm_answer call is in the contract.
+  while read -r _ id _; do
+    options_of "$inst" | grep -qx -- "$id" || fail "$inst: mdm_answer $id has no options.json entry for $inst"
+  done < <(grep -E '^[[:space:]]*mdm_answer [a-z]' "$f" || true)
+  for env in $(jq -r --arg i "$inst" '.settings[] | select(.installers | index($i)) | .env' "$CONTRACT"); do
+    grep -qF -- "$env" "$f" || grep -qF -- "$env" "$REPO/install/lib/answers.sh" || fail "$inst: setting $env is not read"
+  done
+done
+
+lib_keys=$(sed -nE 's/^_MDM_ANSWER_KEYS="(.*)"$/\1/p' "$REPO/install/lib/answers.sh" | tr ' ' '\n' | grep . | sort)
+contract_keys=$(jq -r '(.options[].env), (.settings[].env)' "$CONTRACT" | sort)
+[ "$lib_keys" = "$contract_keys" ] || fail "install/lib/answers.sh _MDM_ANSWER_KEYS differs from options.json's variables: $(diff <(echo "$lib_keys") <(echo "$contract_keys") | grep '^[<>]' | tr '\n' ' ')"
+ok
+
+# Regexes and allowed values: every valid example matches, every invalid one doesn't (empty ones: emptyMeans).
+for id in $(jq -r '.options[].id' "$CONTRACT"); do
+  re=$(opt "$id" '.regex // ""')
+  [ -n "$re" ] || { fail "$id has no regex"; continue; }
+  while IFS= read -r v; do
+    [ -n "$v" ] || continue
+    printf '%s\n' "$v" | grep -Eqx -- "$re" || fail "$id: valid example \"$v\" does not match the contract's regex"
+  done < <(opt "$id" '.examples.valid[]')
+  while IFS= read -r v; do
+    [ -n "$v" ] || continue
+    if printf '%s\n' "$v" | grep -Eqx -- "$re"; then fail "$id: invalid example \"$v\" matches the contract's regex"; fi
+  done < <(opt "$id" '.examples.invalid[]')
+  while IFS= read -r v; do
+    opt "$id" '.examples.valid[]' | grep -qxF -- "$v" || fail "$id: allowed value \"$v\" is not a valid example"
+  done < <(opt "$id" '(.allowed // [])[], ((.synonyms // {}) | keys[])')
+  ok
+done
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Dynamic: dry runs.
+# dry INSTALLER [NAME=VALUE...]: runs INSTALLER with MDMESH_DRY_RUN=1, only the given variables in its environment and
+# stdin from /dev/null. Sets RC; stdout in $WORK/out/o, stderr in $WORK/out/e.
+dry() {
+  local inst=$1 script; shift
+  case "$inst" in
+    quickstart.sh) script="$REPO/quickstart.sh" ;;
+    setup.sh) script="$WORK/src/setup.sh" ;;
+    install-native.sh) script="$WORK/src/install/install-native.sh" ;;
+  esac
+  RC=0
+  (cd "$WORK/qs" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" MDMESH_DRY_RUN=1 "$@" bash "$script" < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || RC=$?
+}
+show() { sed 's/^/    | /' "$WORK/out/o" "$WORK/out/e" >&2; }
+# plan_field ID: "<value> <source>" from the plan line of ID.
+plan_field() { awk -v id="$1" '$1 == id { print $2, $NF; exit }' "$WORK/out/o"; }
+modes_of() { if options_of "$1" | grep -qx mode; then echo tunnel domain; else echo -; fi; }
+# opt_m ID MODE: y when option ID is asked in MODE ("-": an installer without modes), else n.
+opt_m() { jq -r --arg o "$1" --arg m "$2" '.options[] | select(.id == $o) | if .when == null or $m == "-" then "y" elif .when.mode == $m then "y" else "n" end' "$CONTRACT"; }
+# answers INSTALLER MODE [required]: NAME=VALUE for each answer (the first valid example; mode = MODE), all or only the
+# required ones.
+answers() {
+  local id req
+  for id in $(options_of "$1"); do
+    [ "$(opt_m "$id" "$2")" = y ] || continue
+    req=$(opt "$id" .required)
+    [ "${3:-}" != required ] || [ "$req" = true ] || [ "$req" = fresh-install ] || continue
+    if [ "$id" = mode ]; then echo "MDMESH_MODE=$2"; else echo "$(opt "$id" .env)=$(opt "$id" '.examples.valid[0]')"; fi
+  done
+}
+secrets_of() { for id in $(options_of "$1"); do [ "$(opt "$id" .secret)" = true ] && opt "$id" '.examples.valid[]'; done; true; }
+
+for inst in $(installer_ids); do
+  for mode in $(modes_of "$inst"); do
+    tag="$inst${mode#-}"; [ "$mode" = - ] || tag="$inst ($mode)"
+    mapfile -t full < <(answers "$inst" "$mode")
+    mapfile -t req < <(answers "$inst" "$mode" required)
+
+    # A full set of answers, non-interactive: nothing asked, every answer shown as given, no secret printed.
+    dry "$inst" MDMESH_NONINTERACTIVE=1 "${full[@]}"
+    if [ "$RC" != 0 ] || grep -q '\[ask\]' "$WORK/out/o"; then fail "$tag: a dry run with every answer failed or asks something"; show; fi
+    for a in "${full[@]}"; do
+      env=${a%%=*}; val=${a#*=}; id=$(jq -r --arg e "$env" '.options[] | select(.env == $e) | .id' "$CONTRACT")
+      want=$val; [ "$(opt "$id" .secret)" != true ] || want='(hidden)'
+      [ "$(plan_field "$id")" = "$want [$env]" ] || { fail "$tag: plan shows \"$(plan_field "$id")\" for $id, expected \"$want [$env]\""; show; }
+    done
+    for s in $(secrets_of "$inst"); do
+      if grep -qF -- "$s" "$WORK/out/o" "$WORK/out/e"; then fail "$tag: a secret was printed"; fi
+    done
+    [ -z "$(ls -A "$WORK/qs")" ] || fail "$tag: the dry run created files in its working directory"
+    cp "$WORK/out/o" "$WORK/out/full.plan"
+    ok
+    # Interactive (no MDMESH_NONINTERACTIVE), every answer given: nothing asked either (stdin is /dev/null).
+    dry "$inst" "${full[@]}"
+    { [ "$RC" = 0 ] && ! grep -q '\[ask\]' "$WORK/out/o"; } || { fail "$tag: a dry run with every answer (interactive) asks something"; show; }
+    ok
+    # The same answers from an answers file: the same plan.
+    printf '# answers\n' > "$WORK/answers.env"; printf '%s\n' "${full[@]}" >> "$WORK/answers.env"
+    dry "$inst" MDMESH_NONINTERACTIVE=1 MDMESH_ANSWERS="$WORK/answers.env"
+    { [ "$RC" = 0 ] && cmp -s "$WORK/out/o" "$WORK/out/full.plan"; } || { fail "$tag: answers from MDMESH_ANSWERS give another plan"; show; }
+    ok
+
+    # Only the required answers, non-interactive: every other question takes its default, as the contract says.
+    dry "$inst" MDMESH_NONINTERACTIVE=1 "${req[@]}"
+    [ "$RC" = 0 ] || { fail "$tag: a dry run with only the required answers failed"; show; }
+    for id in $(options_of "$inst"); do
+      [ "$(opt_m "$id" "$mode")" = y ] || continue
+      [ "$(opt "$id" .required)" = false ] || continue
+      def=$(opt "$id" '.default'); [ -n "$def" ] || def='""'
+      [ "$(plan_field "$id")" = "$def [default]" ] || { fail "$tag: default of $id is \"$(plan_field "$id")\", options.json says \"$def\""; show; }
+    done
+    ok
+    # Leaving out a required answer stops a non-interactive run, naming its variable.
+    for a in "${req[@]}"; do
+      env=${a%%=*}; id=$(jq -r --arg e "$env" '.options[] | select(.env == $e) | .id' "$CONTRACT")
+      [ "$(opt "$id" .required)" = true ] || continue
+      rest=(); for b in "${req[@]}"; do [ "$b" = "$a" ] || rest+=("$b"); done
+      dry "$inst" MDMESH_NONINTERACTIVE=1 "${rest[@]}"
+      { [ "$RC" != 0 ] && grep -qF -- "$env" "$WORK/out/e"; } || { fail "$tag: without $env a non-interactive run does not stop naming it"; show; }
+      ok
+    done
+
+    # Examples (interactive, the other answers given): each valid one is accepted, each invalid one refused, naming the
+    # variable and never echoing a secret.
+    for id in $(options_of "$inst"); do
+      [ "$(opt_m "$id" "$mode")" = y ] || continue
+      env=$(opt "$id" .env)
+      base=(); for b in "${full[@]}"; do [ "${b%%=*}" = "$env" ] || base+=("$b"); done
+      while IFS= read -r v; do
+        [ "$id" != mode ] || [ "$v" = "$mode" ] || [ "$(jq -r --arg v "$v" '.options[] | select(.id == "mode") | .synonyms[$v] // ""' "$CONTRACT")" = "$mode" ] || continue
+        dry "$inst" "${base[@]}" "$env=$v"
+        [ "$RC" = 0 ] || { fail "$tag: $env=\"$v\" (a valid example) is refused"; show; }
+        ok
+      done < <(opt "$id" '.examples.valid[]')
+      while IFS= read -r v; do
+        dry "$inst" "${base[@]}" "$env=$v"
+        { [ "$RC" != 0 ] && grep -qF -- "$env" "$WORK/out/e"; } || { fail "$tag: $env=\"$v\" (an invalid example) is not refused naming $env"; show; }
+        if [ "$(opt "$id" .secret)" = true ] && [ "${#v}" -gt 2 ] && grep -qF -- "$v" "$WORK/out/o" "$WORK/out/e"; then fail "$tag: the invalid secret was printed"; fi
+        ok
+      done < <(opt "$id" '.examples.invalid[]')
+    done
+
+    # No answers, interactive: every question would be asked.
+    dry "$inst"
+    [ "$RC" = 0 ] || { fail "$tag: a dry run without answers failed"; show; }
+    for id in $(options_of "$inst"); do
+      [ "$(plan_field "$id")" = "? [ask]" ] || { fail "$tag: without answers, $id is not asked: \"$(plan_field "$id")\""; show; }
+    done
+    ok
+  done
+done
+
+# The answers file's own rules, and the native installer's older variable names.
+dry quickstart.sh MDMESH_ANSWERS=answers.env
+{ [ "$RC" != 0 ] && grep -q 'absolute path' "$WORK/out/e"; } || fail "a relative MDMESH_ANSWERS is not refused"
+printf 'MDMESH_HOSTNAME=x\n' > "$WORK/answers.env"; dry quickstart.sh MDMESH_ANSWERS="$WORK/answers.env"
+{ [ "$RC" != 0 ] && grep -q 'unknown key MDMESH_HOSTNAME' "$WORK/out/e"; } || fail "an unknown key in MDMESH_ANSWERS is not refused"
+printf 'MDMESH_HOST=a.example.com\nMDMESH_HOST=b.example.com\n' > "$WORK/answers.env"; dry quickstart.sh MDMESH_ANSWERS="$WORK/answers.env"
+{ [ "$RC" != 0 ] && grep -q 'set twice' "$WORK/out/e"; } || fail "a key set twice in MDMESH_ANSWERS is not refused"
+printf 'MDMESH_HOST="a.example.com"\r\n' > "$WORK/answers.env"
+dry quickstart.sh MDMESH_ANSWERS="$WORK/answers.env" MDMESH_HOST=b.example.com
+[ "$(plan_field host)" = "b.example.com [MDMESH_HOST]" ] || { fail "the environment does not win over MDMESH_ANSWERS"; show; }
+dry quickstart.sh MDMESH_ANSWERS="$WORK/answers.env"
+[ "$(plan_field host)" = "a.example.com [MDMESH_HOST]" ] || { fail "quotes/CRLF in MDMESH_ANSWERS are not handled"; show; }
+dry quickstart.sh MDMESH_NONINTERACTIVE=yes
+{ [ "$RC" != 0 ] && grep -q 'MDMESH_NONINTERACTIVE must be 1 or 0' "$WORK/out/e"; } || fail "MDMESH_NONINTERACTIVE=yes is not refused"
+dry install-native.sh BASE_URL=https://old.example.com ASSUME_YES=1
+[ "$(plan_field base-url)" = "https://old.example.com [BASE_URL]" ] || { fail "the native installer's BASE_URL is not read"; show; }
+dry install-native.sh BASE_URL=https://old.example.com MDMESH_BASE_URL=https://new.example.com
+{ [ "$RC" != 0 ] && grep -q 'both set' "$WORK/out/e"; } || fail "different MDMESH_BASE_URL and BASE_URL are not refused"
+dry install-native.sh MDMESH_NONINTERACTIVE=1 MDMESH_BASE_URL=https://mdm.example.com
+{ [ "$RC" != 0 ] && grep -q 'MDMESH_ASSUME_YES' "$WORK/out/e"; } || fail "a non-interactive native run without MDMESH_ASSUME_YES is not refused"
+CHECKS=$((CHECKS + 9))
+
+if [ -e "$WORK/stubs.called" ]; then fail "a dry run ran a command that changes the host: $(cat "$WORK/stubs.called")"; fi
+
+if [ "$FAILS" != 0 ]; then echo "installer answers: $FAILS failure(s)" >&2; exit 1; fi
+echo "installer answers: all $CHECKS checks passed"

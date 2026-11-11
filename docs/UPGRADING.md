@@ -5,8 +5,8 @@
 | Install | Update with | One-click rollback |
 |---------|-------------|--------------------|
 | Quick start (Option A) | **Update** in the console, or automatic updates | Yes, from `/recovery` |
-| From source (Option B) | `./setup.sh --update` | Only with a registry `IMAGE_OWNER` ([below](#from-source-docker-installs)) |
-| Native (Option C) | `sudo ./setup.sh --update --native` | No |
+| From source (Option B) | `./setup.sh --update` (from 0.4.x, [once the old way](#v050)) | Only with a registry `IMAGE_OWNER` ([below](#from-source-docker-installs)) |
+| Native (Option C) | `sudo ./setup.sh --update --native` (from 0.4.x, [once the old way](#v050)) | No |
 
 Before you update, read the [version notes](#version-notes) for each release you are moving past.
 
@@ -53,7 +53,8 @@ pinned. If you set `SUPERVISOR_VERSION` yourself, see [v0.5.0](#v050).
 ```
 
 `--update` moves the clone to the newest signed release tag and runs its setup.sh (see
-[DEPLOY](../DEPLOY.md#option-b--from-source-clone--build)). A clone that followed `main` with `git pull` is usually ahead
+[DEPLOY](../DEPLOY.md#option-b--from-source-clone--build)). It comes with 0.5.0: from 0.4.x, update once with
+`git pull && ./setup.sh` ([v0.5.0](#v050)). A clone that followed `main` with `git pull` is usually ahead
 of the newest release: over an install, `--update` then stops rather than run older code. Wait for the next release
 and run it then, or pass `--allow-downgrade` to go to the release now.
 
@@ -76,6 +77,8 @@ build in two cases:
 ```bash
 sudo ./setup.sh --update --native
 ```
+
+From 0.4.x, update once with `git pull && sudo ./setup.sh --native` ([v0.5.0](#v050)): 0.4.x has no `--update`.
 
 Choose **Keep** (the default) or **Erase** (type `ERASE`). Keep runs migrations and leaves all data and the
 enrollment secret alone, after a `pg_dump` to `/opt/mdmesh/backups/` ([restore](OPERATIONS.md#backups-and-restore)).
@@ -166,13 +169,17 @@ out of sync while a configuration has a rule). It also works with a 0.4.0 server
 
 ### v0.5.0
 
+- **From source and native: this one update the old way.** 0.4.x has no `./setup.sh --update`. Update to 0.5.0 with
+  `git pull && ./setup.sh` (native: `git pull && sudo ./setup.sh --native`), then use `./setup.sh --update` (native:
+  `sudo ./setup.sh --update --native`) for every later release. On 0.4.x, `./setup.sh --update` is refused as an
+  unknown option, and with `--native` it would install 0.4.x again.
 - **Update the supervisor once, or updates stay unpinned.** Updates now run the images the signed release names, by
   digest ([how](#quick-start-installs)). The supervisor you run does that, and updates never touch it, so one from
   before 0.5.0 applies 0.5.0 by tag and goes on doing so for every later release, without a message.
   - **Quick start:** apply 0.5.0 (**Settings → Updates**, or automatic updates), then run
     `docker compose pull && docker compose up -d` in the install directory. The quick start set
     `SUPERVISOR_VERSION=latest`; if you set a version in `.env` yourself, change it to `0.5.0` first.
-  - **From source with a registry `IMAGE_OWNER`:** `./setup.sh --update`, also after applying 0.5.0 from the
+  - **From source with a registry `IMAGE_OWNER`:** `git pull && ./setup.sh` (the update to 0.5.0, above), also after applying 0.5.0 from the
     console. setup.sh builds the supervisor and ties `SUPERVISOR_VERSION` to the checkout's release, so
     `docker compose pull` alone keeps the old one.
   - **Nothing to do:** a new 0.5.0 quick start is pinned from the start, and from-source installs with

@@ -92,9 +92,14 @@ git clone https://github.com/MDMesh-app/MDMesh.git && cd MDMesh
 ./setup.sh --update      # checks out the newest signed release, then sets it up
 ```
 
-`--update` fetches the release tags, checks the newest release's signed manifest (as the quick start does, with the
-clone's `release/minisign.pub`), checks out its tag and runs that release's setup.sh. It stops on an unsigned release
-and on local changes. Run the same command to update later; the clone stays on a release tag, so don't `git pull`.
+`--update` looks up the release tags, checks the newest release's signed manifest (as the quick start does, with the
+clone's `release/minisign.pub`) and that the commit it names is the one the tag points to, then fetches and checks
+out that commit and runs that release's setup.sh. A newest tag whose release isn't published yet is skipped, saying
+so. It stops on a manifest that doesn't verify (or, from before 0.5.0, names no commit) and on local changes. Run the
+same command to update later; the clone stays on a release tag, so don't `git pull`.
+
+Installs from 0.4.x have no `--update` yet: update to 0.5.0 the old way once, `git pull && ./setup.sh` (native:
+`git pull && sudo ./setup.sh --native`), then use `./setup.sh --update` from then on.
 
 The wizard asks how to expose the server:
 
@@ -174,12 +179,14 @@ journalctl -u mdmesh-server -f        # follow Tomcat's stdout/stderr
 The installer doesn't open ports 80/443, so put your own TLS proxy in front. If the chosen port is held by a process
 the installer didn't start, it stops rather than kill that process.
 
-To upgrade, run the same command again ([Upgrading](docs/UPGRADING.md#native-installs)).
+To upgrade, run the same command again ([Upgrading](docs/UPGRADING.md#native-installs)). From 0.4.x, update to 0.5.0
+once with `git pull && sudo ./setup.sh --native` first: 0.4.x has no `--update`.
 
 ## Answering the questions in advance
 
 Every question the installers ask can be answered before they run, with an environment variable or a line in an
-answers file. A question with an answer isn't asked; one without is asked as usual. Each answer is checked with the
+answers file. A question with an answer isn't asked; one without is asked as usual. Each answer, given in advance or
+typed at the question, is checked with the
 same rule as the question, and a wrong one stops the installer before it changes anything. The tunnel token is never
 printed.
 
@@ -199,13 +206,15 @@ printed.
 setup.sh (B) asks only when it writes a new `.env`; a re-run reuses its `.env` and ignores these answers.
 
 - `MDMESH_ANSWERS=/full/path/answers.env` reads answers from a file of `KEY=VALUE` lines (`#` comments allowed;
-  never run as a script). A variable set in the environment wins over the file. A file holding the tunnel token must
-  belong to you with mode 600, or the installer refuses to read it.
+  never run as a script). A variable set in the environment wins over the file. The file chooses what gets installed
+  and may hold the tunnel token, so it must belong to you (or root) with mode 600, or the installer refuses to read
+  it. Under `sudo`, `chown root` it.
 - `MDMESH_NONINTERACTIVE=1` never asks: a missing answer with a default takes it, and any other stops the installer,
   naming its variable. Use it whenever there is no terminal to answer on. The native installer also needs
   `MDMESH_ASSUME_YES=1` (or `-y`).
-- `MDMESH_DRY_RUN=1` checks the answers, prints what a run would use and ask, and exits. It needs no root, Docker or
-  network, and changes nothing.
+- `MDMESH_DRY_RUN=1` checks the answers, prints what a run would use and ask, and exits. It needs no root or Docker,
+  and changes nothing. With `./setup.sh --update` it also looks up and checks the newest release (network), but
+  fetches and checks out nothing.
 
 A quick start on your own domain, with no questions: set these, then run the checked install block in
 [Option A](#option-a--quick-start-no-clone-published-images). It passes them on to `quickstart.sh` (and sets
@@ -227,7 +236,8 @@ export MDMESH_ANSWERS="$PWD/answers.env" MDMESH_NONINTERACTIVE=1
 Then run the same Option A block. To see what it would do first, add `MDMESH_DRY_RUN=1` to the exports.
 
 The installer never prints the token (nor with `bash -x`), and no program it starts sees it in its arguments or
-environment. Delete the file once the install is done.
+environment. `./setup.sh --update` hands it only to the release's setup.sh it runs next, which takes it out at once;
+the native installer never gets it. Delete the file once the install is done.
 
 Native, from a clone: `sudo MDMESH_ASSUME_YES=1 MDMESH_BASE_URL=https://mdm.example.com ./setup.sh --update --native`.
 

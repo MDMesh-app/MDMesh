@@ -19,9 +19,11 @@ Upgrading
 - Quick start: run `docker compose pull && docker compose up -d` once after this update. Updates never touch the
   supervisor, and one from before 0.5.0 keeps applying updates by tag. From source, or with `SUPERVISOR_VERSION` set by
   hand: [UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050).
-- From source and native: update with `./setup.sh --update` (native: `sudo ./setup.sh --update --native`) instead of
-  `git pull`. A clone that followed `main` is usually ahead of the newest release, so the first `--update` over an
-  install stops; run it after the next release, or add `--allow-downgrade` to go to the release now.
+- From source and native: update to 0.5.0 the old way, once: `git pull && ./setup.sh` (native: `git pull && sudo
+  ./setup.sh --native`). 0.4.x has no `--update`. From 0.5.0 on, update with `./setup.sh --update` (native:
+  `sudo ./setup.sh --update --native`).
+- Native: the installer now stops on an option it doesn't take, instead of ignoring it.
+- Answers files (`MDMESH_ANSWERS`) must belong to you and be private (mode 600), or they are refused.
 
 Heads-up
 - Native installs: `REPLACE_DATA` must be `yes` or `no`, and `ASSUME_YES` `1` or `0`. Any other value now stops the
@@ -29,8 +31,9 @@ Heads-up
 
 New
 - From source and native: `./setup.sh --update` moves the clone to the newest release, checked against its signed
-  manifest like the quick start, then runs it. Unsigned releases and local changes stop it. Fresh installs clone and
-  run `./setup.sh --update` too.
+  manifest like the quick start, then runs it. A manifest that doesn't verify, or names no commit, and local changes
+  stop it; a release that isn't published yet is skipped. Fresh installs clone and run `./setup.sh --update` too.
+- Installers check answers typed at a question with the same rules as answers given in advance, and ask again.
 - The console's update steps for source and native installs show `./setup.sh --update`.
 - Installers: every question can be answered in advance, with `MDMESH_*` variables or an answers file, and
   `MDMESH_NONINTERACTIVE=1` runs with no questions at all. `MDMESH_DRY_RUN=1` checks the answers and shows what a run
@@ -71,8 +74,9 @@ New
   ([DEPLOY.md](https://github.com/MDMesh-app/MDMesh/blob/main/DEPLOY.md#option-a--quick-start-no-clone-published-images)).
 
 Fixes
-- setup.sh re-runs read `.env` as `KEY=VALUE` lines instead of running it as a script, so `bash -x ./setup.sh` no
-  longer prints its passwords and secrets.
+- setup.sh re-runs read `.env` without running it as a script, so `bash -x ./setup.sh` no longer prints its
+  passwords and secrets. Values are read as before, quotes and escapes included; a line whose value the shell would
+  compute (a `$` or backquote) stops setup.sh, naming the line.
 - The console recognizes an on-device Return to kiosk and does not offer the same action again; a later kiosk exit,
   custom kiosk, or configuration apply makes it available again.
 - Files: uploading a file again with the same name and the same content returns the file already there instead of an

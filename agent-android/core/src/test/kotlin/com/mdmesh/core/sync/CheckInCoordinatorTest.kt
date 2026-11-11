@@ -72,7 +72,7 @@ class CheckInCoordinatorTest {
     private fun TestScope.coordinator(
         api: FakeMdmApi,
         pending: PendingResults,
-        identityId: String = "dev-1",
+        identityId: String? = "dev-1",
         syncStatus: SyncStatus = SyncStatus(),
         installIntegrity: InstallIntegrityPolicy = InstallIntegrityPolicy(),
         probe: ThreadProbeHandler = ThreadProbeHandler(),
@@ -259,7 +259,7 @@ class CheckInCoordinatorTest {
         api.checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse())
         gate.gate.complete(Unit)
         running.join()
-        assertEquals(listOf(false, false, false), heartbeats.awaitAll())
+        assertEquals(List(3) { CheckInOutcome.SERVED }, heartbeats.awaitAll())
         assertEquals("one trailing check-in serves them all", 2, api.checkInRequests.size)
         assertEquals("it carries the install's result", listOf("c1"),
             api.checkInRequests.last().results.map { it.commandId })
@@ -268,7 +268,7 @@ class CheckInCoordinatorTest {
     @Test
     fun `an idle coordinator runs the request itself`() = runTest {
         val api = FakeMdmApi()
-        assertTrue(coordinator(api, PendingResults()).runOrHandOff())
+        assertEquals(CheckInOutcome.RAN, coordinator(api, PendingResults()).runOrHandOff())
         assertEquals(1, api.checkInRequests.size)
     }
 
@@ -301,7 +301,7 @@ class CheckInCoordinatorTest {
         api.checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse())
         gate.gate.complete(Unit)
         running.join()
-        assertEquals(listOf(false, false), listOf(first.await(), second.await()))
+        assertEquals(List(2) { CheckInOutcome.SERVED }, listOf(first.await(), second.await()))
         assertEquals(3, api.checkInRequests.size)
         assertEquals(listOf("c2"), api.checkInRequests.last().results.map { it.commandId })
     }
@@ -310,7 +310,7 @@ class CheckInCoordinatorTest {
     fun `trailing cycles are bounded`() = runTest {
         // Every cycle gets a command, and every command brings another request: the holder still lets go.
         lateinit var coordinator: CheckInCoordinator
-        val waiters = mutableListOf<kotlinx.coroutines.Deferred<Boolean>>()
+        val waiters = mutableListOf<kotlinx.coroutines.Deferred<CheckInOutcome>>()
         val api = FakeMdmApi().apply {
             checkInResponse = ResponseEnvelope(
                 status = "OK",
@@ -337,6 +337,77 @@ class CheckInCoordinatorTest {
         assertEquals("one cycle plus at most three trailing", 1 + CheckInCoordinator.MAX_TRAILING_CYCLES,
             api.checkInRequests.size)
         assertTrue("every waiter returned", waiters.all { it.isCompleted })
+    }
+
+    @Test
+    fun `a waiter is let go, unserved, when the running cycle fails`() = runTest {
+        val api = FakeMdmApi().apply {
+            checkInGate = CompletableDeferred()
+            checkInThrows = IOException("network down")
+        }
+        val coordinator = coordinator(api, PendingResults())
+        val running = launch { runCatching { coordinator.runOnce() } }
+        testScheduler.advanceUntilIdle()
+        val waiter = async { coordinator.runOrHandOff() }
+        testScheduler.advanceUntilIdle()
+
+        api.checkInGate!!.complete(Unit)
+        testScheduler.advanceUntilIdle()
+        assertTrue("released, not left waiting forever", waiter.isCompleted)
+        assertEquals(CheckInOutcome.NOT_SERVED, waiter.await())
+        assertEquals("no trailing cycle after a failed one", 1, api.checkInRequests.size)
+        running.join()
+    }
+
+    @Test
+    fun `a waiter is let go, unserved, when the running cycle is cancelled`() = runTest {
+        val api = FakeMdmApi().apply { checkInGate = CompletableDeferred() }
+        val coordinator = coordinator(api, PendingResults())
+        val running = launch { coordinator.runOnce() } // a worker WorkManager stops, or the service's scope
+        testScheduler.advanceUntilIdle()
+        val waiter = async { coordinator.runOrHandOff() }
+        testScheduler.advanceUntilIdle()
+
+        running.cancel()
+        testScheduler.advanceUntilIdle()
+        assertTrue("released, not left waiting forever", waiter.isCompleted)
+        assertEquals(CheckInOutcome.NOT_SERVED, waiter.await())
+        assertEquals(1, api.checkInRequests.size)
+    }
+
+    @Test
+    fun `a request that finds the lock held but no cycle open runs its own once it can`() = runTest {
+        // The moment a holder opens or lets go: nothing to hand off to, so it must not count as served.
+        val api = FakeMdmApi()
+        val coordinator = coordinator(api, PendingResults())
+        coordinator.mutex.lock()
+        val request = async { coordinator.runOrHandOff() }
+        testScheduler.advanceTimeBy(1_000)
+        testScheduler.runCurrent()
+        assertFalse("waits for the lock instead of pretending", request.isCompleted)
+        assertTrue(api.checkInRequests.isEmpty())
+
+        coordinator.mutex.unlock()
+        assertEquals(CheckInOutcome.RAN, request.await())
+        assertEquals(1, api.checkInRequests.size)
+    }
+
+    @Test
+    fun `a request that arrives before the running cycle has sent joins it instead of adding one`() = runTest {
+        // A cold start by the alarm: the start-up check-in is still enrolling or building its request when the
+        // heartbeat asks; that same request serves both.
+        val api = FakeMdmApi().apply { enrollGate = CompletableDeferred() }
+        val coordinator = coordinator(api, PendingResults(), identityId = null)
+        val running = launch { coordinator.runOnce() }
+        testScheduler.advanceUntilIdle()
+        assertTrue("still enrolling, nothing sent", api.checkInRequests.isEmpty())
+        val waiter = async { coordinator.runOrHandOff() }
+        testScheduler.advanceUntilIdle()
+
+        api.enrollGate!!.complete(Unit)
+        running.join()
+        assertEquals(CheckInOutcome.SERVED, waiter.await())
+        assertEquals("one check-in for both", 1, api.checkInRequests.size)
     }
 
     @Test

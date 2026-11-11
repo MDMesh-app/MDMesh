@@ -113,11 +113,9 @@ class HeartbeatTest {
         assertTrue(failing.isCompleted)
     }
 
-    @Test
-    fun `the heartbeat hands its check-in to a running one and waits for it`() = runTest {
-        val api = FakeMdmApi().apply { checkInGate = CompletableDeferred() }
+    private fun kotlinx.coroutines.test.TestScope.coordinator(api: FakeMdmApi): CheckInCoordinator {
         val identity = FakeIdentity(initialId = "dev-1", initialSecret = "sek-1")
-        val coordinator = CheckInCoordinator(
+        return CheckInCoordinator(
             api = api,
             enrollment = EnrollmentManager(api, identity, FakeTokenProvider("t"), FakeCapabilitySource(), NoopEventSink),
             identity = identity,
@@ -130,12 +128,20 @@ class HeartbeatTest {
             installIntegrity = InstallIntegrityPolicy(),
             ioDispatcher = StandardTestDispatcher(testScheduler),
         )
+    }
+
+    @Test
+    fun `the heartbeat hands its check-in to a running one and waits for it`() = runTest {
+        val api = FakeMdmApi().apply { checkInGate = CompletableDeferred() }
+        val coordinator = coordinator(api)
         val running = launch { coordinator.runOnce() } // an install holds the cycle
         advanceUntilIdle()
 
         val logs = mutableListOf<String>()
         var healed = false
-        val heartbeat = launch { Heartbeat.checkIn(coordinator, { logs += it }) { healed = true } }
+        val heartbeat = launch {
+            Heartbeat.checkIn(coordinator, { logs += it }, { testScheduler.currentTime }) { healed = true }
+        }
         advanceUntilIdle()
         assertTrue(healed)
         assertEquals("no cycle of its own", 1, api.checkInRequests.size)
@@ -146,5 +152,41 @@ class HeartbeatTest {
         heartbeat.join()
         assertEquals(2, api.checkInRequests.size)
         assertEquals(listOf("check-in already running; handed to it"), logs)
+    }
+
+    @Test
+    fun `a hand-off that no check-in served is made up by the heartbeat itself`() = runTest {
+        val api = FakeMdmApi().apply { checkInGate = CompletableDeferred() }
+        val coordinator = coordinator(api)
+        val running = launch { coordinator.runOnce() } // a worker WorkManager is about to stop
+        advanceUntilIdle()
+        val logs = mutableListOf<String>()
+        val heartbeat = launch { Heartbeat.checkIn(coordinator, { logs += it }, { testScheduler.currentTime }) {} }
+        advanceUntilIdle()
+
+        api.checkInGate = null
+        running.cancel()
+        heartbeat.join()
+        assertEquals("the cancelled one, then the heartbeat's own", 2, api.checkInRequests.size)
+        assertEquals(listOf("handed-off check-in did not run; checking in now"), logs)
+    }
+
+    @Test
+    fun `without time left in its wakelock the heartbeat leaves it to the next one`() = runTest {
+        val api = FakeMdmApi().apply { checkInGate = CompletableDeferred() }
+        val coordinator = coordinator(api)
+        val running = launch { coordinator.runOnce() }
+        advanceUntilIdle()
+        var now = 0L
+        val logs = mutableListOf<String>()
+        val heartbeat = launch { Heartbeat.checkIn(coordinator, { logs += it }, { now }) {} }
+        advanceUntilIdle()
+
+        now = Heartbeat.RETRY_BUDGET_MS + 1 // the running cycle took that long
+        api.checkInGate = null
+        running.cancel()
+        heartbeat.join()
+        assertEquals(1, api.checkInRequests.size)
+        assertEquals(listOf("handed-off check-in did not run; the next heartbeat retries"), logs)
     }
 }

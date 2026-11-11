@@ -11,6 +11,7 @@ import com.mdmesh.core.telemetry.EventSink
 import com.mdmesh.core.telemetry.TelemetrySource
 import com.mdmesh.proto.AgentCheckInRequest
 import com.mdmesh.proto.EventType
+import androidx.annotation.VisibleForTesting
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -61,85 +62,125 @@ class CheckInCoordinator @Inject constructor(
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
 
-    private val mutex = Mutex()
+    @VisibleForTesting
+    internal val mutex = Mutex()
 
-    // Hand-offs, guarded by handOffLock. While a holder is open, a runOrHandOff() that finds the lock busy leaves a
-    // request instead of waiting for the lock; the holder serves it with one more cycle before it lets go.
+    // Hand-offs, all guarded by handOffLock. While a holder is open, a runOrHandOff() that finds the lock busy leaves
+    // a request instead of waiting for the lock. Before the running cycle has sent its check-in, the request joins
+    // that cycle ([current]); after, it waits for one more cycle ([handOff]). Each deferred completes with whether a
+    // check-in was made for it.
     private val handOffLock = Any()
     private var holderOpen = false
-    private var handOff: CompletableDeferred<Unit>? = null
+    private var currentSent = false
+    private var current: CompletableDeferred<Boolean>? = null
+    private var handOff: CompletableDeferred<Boolean>? = null
 
     suspend fun runOnce(): Unit = withContext(ioDispatcher) {
         mutex.withLock { holderCycles() }
     }
 
     /**
-     * A check-in without queueing behind one already running. Idle: runs the cycle itself and returns true. Busy:
-     * hands the request to the running cycle, which checks in once more when it ends, and returns false once that
-     * trailing check-in is done. For the heartbeat: a long cycle (an install holds it for minutes) must not hold its
-     * broadcast, yet the install's result should reach the server right after it, under the heartbeat's wakelock.
+     * A check-in without queueing behind one already running. Idle: runs the cycle itself ([CheckInOutcome.RAN]).
+     * Busy: hands the request to the running holder and waits until a check-in has been made for it
+     * ([CheckInOutcome.SERVED]): the running cycle if it hadn't sent its request yet, else one trailing cycle after
+     * it. [CheckInOutcome.NOT_SERVED] when that holder failed, was cancelled or hit its cap first.
+     *
+     * For the heartbeat: a long cycle (an install holds it for minutes) must not hold its broadcast, yet the
+     * install's result should reach the server right after it, under the heartbeat's wakelock.
      */
-    suspend fun runOrHandOff(): Boolean = withContext(ioDispatcher) {
-        var ranItself: Boolean? = null
-        while (ranItself == null) {
+    suspend fun runOrHandOff(): CheckInOutcome = withContext(ioDispatcher) {
+        var outcome: CheckInOutcome? = null
+        while (outcome == null) {
             if (mutex.tryLock()) {
                 try {
                     holderCycles()
                 } finally {
                     mutex.unlock()
                 }
-                ranItself = true
+                outcome = CheckInOutcome.RAN
                 continue
             }
-            val served = synchronized(handOffLock) {
-                if (holderOpen) handOff ?: CompletableDeferred<Unit>().also { handOff = it } else null
+            val request = synchronized(handOffLock) {
+                when {
+                    !holderOpen -> null
+                    !currentSent -> current ?: CompletableDeferred<Boolean>().also { current = it }
+                    else -> handOff ?: CompletableDeferred<Boolean>().also { handOff = it }
+                }
             }
-            if (served != null) {
-                served.await()
-                ranItself = false
+            if (request != null) {
+                outcome = if (request.await()) CheckInOutcome.SERVED else CheckInOutcome.NOT_SERVED
             } else {
-                delay(HAND_OFF_RETRY_MS) // the holder is just opening or just letting go: look again in a moment
+                // The holder is just opening or just letting go: nothing to hand off to yet, so look again shortly.
+                delay(HAND_OFF_RETRY_MS)
             }
         }
-        ranItself == true
+        outcome
     }
 
     /**
-     * Caller holds the lock. One cycle, then one trailing cycle per batch of hand-offs that arrived meanwhile (several
-     * requests share one), at most [MAX_TRAILING_CYCLES]; requests past that are let go unserved, as are the waiters
-     * of a cycle that failed or was cancelled. The next trigger covers them.
+     * Caller holds the lock. One cycle, then one trailing cycle per batch of hand-offs that arrived after a cycle sent
+     * its request (several requests share one), at most [MAX_TRAILING_CYCLES]. Requests past that, and those of a
+     * cycle that failed before sending or was cancelled, are let go unserved; the next trigger covers them.
      */
     private suspend fun holderCycles() {
-        synchronized(handOffLock) { holderOpen = true }
+        synchronized(handOffLock) {
+            holderOpen = true
+            currentSent = false
+        }
         try {
-            recordedCycle()
+            servedCycle()
             var trailing = 0
             while (true) {
-                val served = synchronized(handOffLock) {
+                val waiting = synchronized(handOffLock) {
                     val request = handOff
                     handOff = null
-                    if (request == null || trailing >= MAX_TRAILING_CYCLES) holderOpen = false
+                    if (request == null || trailing >= MAX_TRAILING_CYCLES) {
+                        holderOpen = false
+                    } else {
+                        current = request // the next cycle serves them, and anyone who asks before it sends
+                        currentSent = false
+                    }
                     request
                 } ?: return
                 if (trailing >= MAX_TRAILING_CYCLES) {
-                    served.complete(Unit)
+                    waiting.complete(false)
                     return
                 }
                 trailing++
-                try {
-                    recordedCycle()
-                } finally {
-                    served.complete(Unit)
-                }
+                servedCycle()
             }
         } finally {
             synchronized(handOffLock) {
                 holderOpen = false
-                handOff?.complete(Unit)
+                current?.complete(false)
+                current = null
+                handOff?.complete(false)
                 handOff = null
             }
         }
     }
+
+    /** One cycle; then its joined requests learn whether a check-in was made (a failure after sending was one). */
+    private suspend fun servedCycle() {
+        var made = false
+        try {
+            recordedCycle()
+            made = true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (t: Throwable) {
+            made = synchronized(handOffLock) { currentSent }
+            throw t
+        } finally {
+            synchronized(handOffLock) {
+                current?.complete(made)
+                current = null
+            }
+        }
+    }
+
+    /** From here on this cycle's request is (being) sent: later hand-offs need a cycle of their own. */
+    private fun sending() = synchronized(handOffLock) { currentSent = true }
 
     private suspend fun recordedCycle() {
         try {
@@ -163,6 +204,7 @@ class CheckInCoordinator @Inject constructor(
         val acks = pending.drain()
         val bufferedEvents = eventSink.drain()
 
+        sending()
         val response = try {
             api.checkIn(
                 authorization,
@@ -204,6 +246,16 @@ class CheckInCoordinator @Inject constructor(
             eventSink.record(EventType.COMMAND_RESULT, "${result.commandId}:${result.status}")
         }
     }
+}
+
+/** What [CheckInCoordinator.runOrHandOff] did with a request. */
+enum class CheckInOutcome {
+    /** No check-in was running: it ran one itself. */
+    RAN,
+    /** It handed the request to the running cycle, which checked in for it. */
+    SERVED,
+    /** It handed the request over, but no check-in ran for it (that cycle failed first, was cancelled, or hit its cap). */
+    NOT_SERVED,
 }
 
 /** A check-in was rejected by the server. Lets the worker retry with backoff. */

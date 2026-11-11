@@ -22,6 +22,8 @@ object Heartbeat {
     const val DEADLINE_MS = 40_000L
     /** As long as an install may wait for the platform's result. */
     const val WAKELOCK_TIMEOUT_MS = 10 * 60_000L
+    /** A heartbeat makes up for an unserved hand-off only this soon after it started: its wakelock lasts 10:40. */
+    const val RETRY_BUDGET_MS = 8 * 60_000L
 
     fun launch(
         scope: CoroutineScope,
@@ -64,11 +66,32 @@ object Heartbeat {
 
     /**
      * The heartbeat's work: the Wi-Fi self-heal, then a check-in. If one is already running it hands the request to
-     * it and waits for the trailing check-in that serves it, so that check-in also runs under the heartbeat's wakelock.
+     * it and waits for the check-in that serves it, so that check-in also runs under the heartbeat's wakelock. [clock]
+     * is monotonic milliseconds.
      */
-    suspend fun checkIn(coordinator: CheckInCoordinator, log: (String) -> Unit, selfHeal: suspend () -> Unit) {
+    suspend fun checkIn(
+        coordinator: CheckInCoordinator,
+        log: (String) -> Unit,
+        clock: () -> Long = { System.nanoTime() / 1_000_000 },
+        selfHeal: suspend () -> Unit,
+    ) {
+        val start = clock()
         selfHeal()
-        // Never queue behind a running cycle (an install holds it for minutes): it checks in once more when it ends.
-        if (!coordinator.runOrHandOff()) log("check-in already running; handed to it")
+        // Never queue behind a running cycle (an install holds it for minutes): it checks in for us when it can.
+        when (coordinator.runOrHandOff()) {
+            CheckInOutcome.RAN -> Unit
+            CheckInOutcome.SERVED -> log("check-in already running; handed to it")
+            CheckInOutcome.NOT_SERVED ->
+                // That cycle failed first, was cancelled (a stopped worker) or hit its cap. Make up for it once, while
+                // the wakelock still has time to cover a check-in; otherwise the next heartbeat is 10 minutes away.
+                if (clock() - start < RETRY_BUDGET_MS) {
+                    log("handed-off check-in did not run; checking in now")
+                    if (coordinator.runOrHandOff() == CheckInOutcome.NOT_SERVED) {
+                        log("check-in did not run again; the next heartbeat retries")
+                    }
+                } else {
+                    log("handed-off check-in did not run; the next heartbeat retries")
+                }
+        }
     }
 }

@@ -32,6 +32,22 @@ class EnrollmentManagerTest {
     }
 
     @Test
+    fun `the attempt id is cleared once the credentials are stored, not before`() = runTest {
+        val identity = FakeIdentity()
+        val tokens = FakeTokenProvider("tok-123", attempt = "attempt-0123456789abcdef")
+        val api = FakeMdmApi().apply { enrollThrows = java.net.SocketTimeoutException("timeout") }
+        val manager = manager(identity, api, tokens = tokens)
+
+        runCatching { manager.ensureEnrolled() }
+        assertEquals("kept while the enrollment can still be retried", 0, tokens.attemptCleared)
+
+        api.enrollThrows = null
+        manager.ensureEnrolled()
+        assertEquals("sek-1", identity.secret())
+        assertEquals(1, tokens.attemptCleared)
+    }
+
+    @Test
     fun `a retry after a lost response sends the same attempt id`() = runTest {
         val api = FakeMdmApi().apply { enrollThrows = java.net.SocketTimeoutException("timeout") }
         val identity = FakeIdentity()

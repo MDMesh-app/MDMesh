@@ -44,10 +44,15 @@ class FakeIdentity(
 
 class FakeTokenProvider(private val token: String?, private val attempt: String? = null) : EnrollTokenProvider {
     val attemptRequests = mutableListOf<String>()
+    var attemptCleared = 0
+        private set
     override suspend fun token(): String? = token
     override suspend fun enrollAttempt(token: String): String? {
         attemptRequests += token
         return attempt
+    }
+    override suspend fun clearEnrollAttempt() {
+        attemptCleared++
     }
 }
 

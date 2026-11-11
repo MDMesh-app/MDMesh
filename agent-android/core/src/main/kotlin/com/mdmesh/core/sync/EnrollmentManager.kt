@@ -100,6 +100,8 @@ class EnrollmentManager @Inject constructor(
         withContext(NonCancellable) {
             // Persist id + per-device secret together; the secret authenticates every check-in.
             identity.saveCredentials(data.deviceId, data.deviceSecret)
+            // The attempt can resume nothing now (the server closes it at the first check-in): don't keep it.
+            runCatching { tokenProvider.clearEnrollAttempt() }
             runCatching { eventSink.record(EventType.ENROLLED) }
         }
         return data.deviceId

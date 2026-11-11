@@ -30,6 +30,9 @@ interface EnrollTokenProvider {
      * call for that token (across process death). Null when it can't be kept.
      */
     suspend fun enrollAttempt(token: String): String? = null
+
+    /** Forget the enrollment attempt once its credentials are stored: it can resume nothing any more. */
+    suspend fun clearEnrollAttempt() {}
 }
 
 private val Context.enrollTokenDataStore: DataStore<Preferences> by preferencesDataStore(
@@ -64,6 +67,13 @@ class EnrollTokenStore(private val context: Context) : EnrollTokenProvider {
             attempt = id
         }
         return attempt
+    }
+
+    override suspend fun clearEnrollAttempt() {
+        context.enrollTokenDataStore.edit {
+            it.remove(KEY_ATTEMPT)
+            it.remove(KEY_ATTEMPT_FOR)
+        }
     }
 
     private companion object {

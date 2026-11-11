@@ -1,15 +1,25 @@
 #!/usr/bin/env bash
-# apply.sh <target-version>
+# apply.sh <target-version> <server-ref> <web-ref> <supervisor-ref>
+#
+# The refs are the signed manifest's components.images, ghcr.io/<owner>/mdmesh-<name>@sha256:<digest> (server.js passes
+# them after verifying the manifest). The images are pinned by digest: .env gets
+# SERVER_VERSION/WEB_VERSION=<version>@<digest>, so compose's ghcr.io/${IMAGE_OWNER}/mdmesh-server:${SERVER_VERSION}
+# becomes repo:tag@digest, which docker pulls and runs by the digest alone (the tag is ignored). A release whose refs are
+# missing, malformed or under another owner than IMAGE_OWNER is refused before anything changes.
+#
+# This is the copy baked into the RUNNING supervisor image (server.js runs its own /app/apply.sh), so an update is
+# applied by the supervisor already installed, never by the release being installed: a supervisor before 0.5.0 applies
+# by tag as it always did, and pinning starts once a 0.5.0+ supervisor runs.
 #
 # Runs inside the supervisor container (project mounted at /project, docker.sock mounted). Applies a VERIFIED
 # update to the `server` + `caddy` services with a pre-update DB backup and AUTOMATIC ROLLBACK on any
 # failure. Emits `PHASE <name>` / `ERR <msg>` / `OK <version>` lines on stdout — server.js parses these
 # to drive /update/status. It NEVER touches `supervisor` or `postgres` (no self-destruct, no data loss).
 #
-# Sequence: backup → pull → recreate → healthcheck → done. A failed pull → rollback of .env only (no container
-# changed yet). A later failure → rollback (restore versions, stop the server, restore the DB, recreate the old
-# images, re-health-check) → rolled_back, or failed (non-zero, with ERR lines saying what state it is in) if the
-# rollback itself can't recover.
+# Sequence: check the pins + compose → backup → pull (+ digest check) → recreate → healthcheck → done (+ pin the supervisor).
+# A failed pull or digest check → rollback of .env only (no container changed yet). A later failure → rollback (restore
+# versions, stop the server, restore the DB, recreate the old images, re-health-check) → rolled_back, or failed
+# (non-zero, with ERR lines saying what state it is in) if the rollback itself can't recover.
 #
 # supervisor/test.js drives it with a stub docker (order, exit codes, messages). The restore was checked by hand
 # against postgres:14 with a good and a deliberately broken dump; validate the full path on a staging deploy.
@@ -18,7 +28,10 @@ set -uo pipefail   # deliberately NOT -e: failures are handled explicitly so we 
 # and restore.log sit beside it. (The host .env is only rewritten in place: sed -i and >> keep its mode and owner.)
 umask 077
 
-VERSION="${1:?usage: apply.sh <version>}"
+VERSION="${1:?usage: apply.sh <version> <server-ref> <web-ref> <supervisor-ref>}"
+SERVER_REF="${2:-}"
+WEB_REF="${3:-}"
+SUPERVISOR_REF="${4:-}"
 PROJECT_DIR="${COMPOSE_PROJECT_DIR:-/project}"
 ENV_FILE="$PROJECT_DIR/.env"
 BACKUP_DIR="${BACKUP_DIR:-/backups}"
@@ -98,6 +111,45 @@ restore_db() {
   fi
 }
 
+# --- the digest pins: checked before anything is touched (same rule as supervisor/lib.js imagePins) ---
+# The owner compose pulls from: IMAGE_OWNER in .env (quotes and a CR removed), else compose's default.
+IMAGE_OWNER_NOW="$(get_env IMAGE_OWNER | tr -d '\r"'"'"'')"
+IMAGE_OWNER_NOW="${IMAGE_OWNER_NOW:-mdmesh-app}"
+pin_problem() {  # pin_problem <name> <ref>: prints why <ref> can't be applied as the <name> image; nothing when it can
+  local name="$1" ref="$2" want="ghcr.io/${IMAGE_OWNER_NOW}/mdmesh-$1"
+  if [ -z "$ref" ]; then
+    echo "the signed release ${VERSION} names no digest for its ${name} image (its release workflow predates digest pinning), so it is not applied. Publish it with the current release workflow, or update by hand (docs/UPGRADING.md)."
+  elif ! [[ "$ref" =~ ^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)+@sha256:[0-9a-f]{64}$ ]]; then
+    echo "the signed release ${VERSION} has no valid digest for its ${name} image, so it is not applied."
+  elif [ "${ref%@*}" != "$want" ]; then
+    echo "the signed release ${VERSION} pins its ${name} image at ${ref%@*}, but this install pulls ${want} (IMAGE_OWNER=${IMAGE_OWNER_NOW} in .env), so it is not applied. Set GITHUB_REPO to the repository that publishes ${IMAGE_OWNER_NOW}'s images, or IMAGE_OWNER to the owner this release names."
+  fi
+}
+_why="$(pin_problem server "$SERVER_REF")"
+[ -n "$_why" ] || _why="$(pin_problem web "$WEB_REF")"
+[ -n "$_why" ] || _why="$(pin_problem supervisor "$SUPERVISOR_REF")"
+if [ -n "$_why" ]; then errln "$_why Nothing was changed."; phase failed; exit 1; fi
+SERVER_PIN="${VERSION}@${SERVER_REF#*@}"   # SERVER_VERSION / WEB_VERSION / SUPERVISOR_VERSION values: <version>@sha256:…
+WEB_PIN="${VERSION}@${WEB_REF#*@}"
+SUPERVISOR_PIN="${VERSION}@${SUPERVISOR_REF#*@}"
+
+# compose must resolve server + caddy to exactly the pinned refs (a compose file whose image lines don't follow
+# IMAGE_OWNER/SERVER_VERSION/WEB_VERSION would run something else). Checked before the backup, with the pins passed in
+# the environment (compose prefers it over .env), so a mismatch changes nothing: no dump, no new /backups/latest.
+if ! IMAGES_NOW="$(SERVER_VERSION="$SERVER_PIN" WEB_VERSION="$WEB_PIN" dc config --images server caddy)"; then
+  errln "could not read the compose configuration (docker compose config failed, see the log above). Nothing was changed."
+  phase failed
+  exit 1
+fi
+for want in "${SERVER_REF%@*}:${SERVER_PIN}" "${WEB_REF%@*}:${WEB_PIN}"; do
+  # A here-string, not a pipe: under pipefail, grep -q exiting at the first match can fail the writer with SIGPIPE.
+  if ! grep -qxF -- "$want" <<< "$IMAGES_NOW"; then
+    errln "this install's compose file does not resolve to the signed image ${want} (it resolves to: $(printf '%s' "$IMAGES_NOW" | tr '\n' ' ')). Its image lines must be ghcr.io/\${IMAGE_OWNER}/mdmesh-server:\${SERVER_VERSION} and ghcr.io/\${IMAGE_OWNER}/mdmesh-web:\${WEB_VERSION}, as in docker-compose.release.yml. Nothing was changed."
+    phase failed
+    exit 1
+  fi
+done
+
 OLD_SERVER="$(get_env SERVER_VERSION)"
 OLD_WEB="$(get_env WEB_VERSION)"
 OLD_CURRENT="$(get_env CURRENT_VERSION)"
@@ -148,14 +200,23 @@ echo "$STAMP" > "$BACKUP_DIR/latest"   # pointer the recovery page / rollback re
 
 # ---------------- pull ----------------
 phase pull
-set_env SERVER_VERSION "$VERSION"
-set_env WEB_VERSION "$VERSION"
+set_env SERVER_VERSION "$SERVER_PIN"
+set_env WEB_VERSION "$WEB_PIN"
 set_env CURRENT_VERSION "$VERSION"
 if ! dc pull --quiet server caddy; then   # --quiet: no per-layer progress; errors still print
   errln "image pull failed"
   rollback env-only
   exit 1
 fi
+# Pulled by digest, so docker checked the content against it; confirm the local images carry exactly the signed digests.
+for ref in "$SERVER_REF" "$WEB_REF"; do
+  digests="$(docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$ref" 2>/dev/null)" || digests=""
+  if ! grep -qxF -- "$ref" <<< "$digests"; then
+    errln "the pulled image does not carry the signed digest ${ref}, so it is not used"
+    rollback env-only
+    exit 1
+  fi
+done
 
 # ---------------- recreate ----------------
 phase recreate
@@ -168,6 +229,13 @@ fi
 # ---------------- healthcheck ----------------
 phase healthcheck
 if healthy; then
+  # The supervisor itself is never recreated here (this script runs inside it). Its pin moves to this release's signed
+  # digest, so the next `docker compose up -d` brings that exact image. Only when it follows releases: `latest` (the old
+  # quick-start default), unset, or an earlier pin; a version set by hand or by setup.sh (which builds it) is kept.
+  case "$(get_env SUPERVISOR_VERSION)" in
+    ''|latest|*@sha256:*) set_env SUPERVISOR_VERSION "$SUPERVISOR_PIN"
+                          echo "supervisor pinned to ${SUPERVISOR_REF} in .env; 'docker compose up -d' starts it" ;;
+  esac
   phase "done"   # quoted: shellcheck SC1010 reads a bare done as the keyword
   echo "OK $VERSION"
   exit 0

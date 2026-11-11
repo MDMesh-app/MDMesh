@@ -1,5 +1,5 @@
 // The kiosk launcher's grid screen in dp, as the agent lays it out (agent ui/KioskRenderer, AppGridLayout, KioskViews),
-// with the plate geometry of docs/kiosk-background-scrim.md (version 3). The console's preview draws from it and
+// with the plate geometry of docs/kiosk-background-scrim.md (3.2). The console's preview draws from it and
 // computes the dim and the plates over exactly these boxes, so a label is cut where the device cuts it.
 import type { Box, LegibilityElement } from './kioskScrim';
 

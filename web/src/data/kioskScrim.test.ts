@@ -12,7 +12,6 @@ import {
   blendStep,
   boxBounds,
   cellGrid,
-  centreCrop,
   contrastRatio,
   imageCells,
   kioskColours,
@@ -152,7 +151,7 @@ describe('geometry and blending vectors (3.2)', () => {
       expect(g.w).toBeCloseTo(r.expected[i].w, 9);
     });
     // In a real grid (icons a cell apart) neighbouring plates are at least 8 dp apart.
-    if (r.name.startsWith('seven')) {
+    if (r.name.startsWith('seven-cells')) {
       for (let i = 1; i < got.length; i++) expect(got[i].x - (got[i - 1].x + got[i - 1].w)).toBeGreaterThanOrEqual(8 - 1e-9);
     }
   });
@@ -254,7 +253,8 @@ describe('centre crop (CENTER_CROP), both orientations', () => {
   it.each(cases.flatMap(([n, iw, ih]) => windows.map(([wn, w, h]) => [`${n} on ${wn}`, iw, ih, w, h] as const)))(
     '%s: fills the window, centred, in its proportions',
     (_, iw, ih, w, h) => {
-      const c = centreCrop(iw, ih, w, h);
+      const p = placement(iw, ih, w, h);
+      const c = { x: -p.x / p.scale, y: -p.y / p.scale, w: w / p.scale, h: h / p.scale };
       // The crop has the window's proportions, lies inside the image, is centred, and is as large as it can be.
       expect(c.w / c.h).toBeCloseTo(w / h, 6);
       expect(c.x).toBeGreaterThanOrEqual(-1e-9);
@@ -268,11 +268,15 @@ describe('centre crop (CENTER_CROP), both orientations', () => {
   );
 
   it('rotating the window re-crops: a landscape photo shows all of its width only in landscape', () => {
-    const portrait = centreCrop(4000, 3000, 360, 780);
-    const landscape = centreCrop(4000, 3000, 780, 360);
-    expect(portrait.h).toBe(3000);
-    expect(portrait.w).toBeCloseTo((3000 * 360) / 780, 6);
-    expect(landscape.w).toBe(4000);
-    expect(landscape.h).toBeCloseTo((4000 * 360) / 780, 6);
+    const portrait = placement(4000, 3000, 360, 780);
+    const landscape = placement(4000, 3000, 780, 360);
+    expect(780 / portrait.scale).toBeCloseTo(3000, 6);
+    expect(360 / portrait.scale).toBeCloseTo((3000 * 360) / 780, 6);
+    expect(780 / landscape.scale).toBeCloseTo(4000, 6);
+    expect(360 / landscape.scale).toBeCloseTo((4000 * 360) / 780, 6);
+  });
+
+  it('treats a focal point that is not a number as the centre', () => {
+    expect(placement(4000, 3000, 360, 780, 'fill', { x: NaN, y: Infinity })).toEqual(placement(4000, 3000, 360, 780));
   });
 });

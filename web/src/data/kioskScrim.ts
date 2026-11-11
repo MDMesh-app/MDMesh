@@ -1,4 +1,4 @@
-// Kiosk background legibility, the console side (version 3): the image's per-cell colour bounds, a light dim for the
+// Kiosk background legibility, the console side (spec 3.2): the image's per-cell colour bounds, a light dim for the
 // launcher's controls capped at 30%, and a plate of the kiosk background colour behind each text that needs one (solid
 // over texture), so text stays at 4.5:1 or more against every pixel under it. The agent computes the same on the device; both are tested against proto/vectors/kiosk-scrim.json. Rules and
 // rationale: docs/kiosk-background-scrim.md.
@@ -245,8 +245,12 @@ export function placement(iw: number, ih: number, W: number, H: number, mode: Fi
   const scale = Math.max(W / iw, H / ih);
   const cw = W / scale;
   const ch = H / scale;
-  const cx = clamp(focal.x * iw - cw / 2, 0, iw - cw);
-  const cy = clamp(focal.y * ih - ch / 2, 0, ih - ch);
+  // A focal point that isn't a number (a broken document) is the centre; clamp is max(0, min(b, v)), never a check
+  // that b >= 0: iw - cw can come out a hair below 0 from rounding.
+  const fx = Number.isFinite(focal.x) ? focal.x : 0.5;
+  const fy = Number.isFinite(focal.y) ? focal.y : 0.5;
+  const cx = clamp(fx * iw - cw / 2, 0, iw - cw);
+  const cy = clamp(fy * ih - ch / 2, 0, ih - ch);
   return { x: -cx * scale, y: -cy * scale, w: iw * scale, h: ih * scale, scale };
 }
 
@@ -326,7 +330,7 @@ export function isBusy(lo: number, hi: number): boolean {
   return false;
 }
 
-/** The dim, then a plate per text (docs/kiosk-background-scrim.md, version 3). */
+/** The dim, then a plate per text (docs/kiosk-background-scrim.md, 3.2). */
 export function kioskLegibility(
   cells: ImageCells,
   window: { w: number; h: number },
@@ -391,13 +395,6 @@ export function kioskLegibility(
   return { dim, plates, textRatio, onPlate };
 }
 
-/** The part of an `iw` x `ih` image a `fw` x `fh` window shows, centre-cropped (Android's CENTER_CROP). */
-export function centreCrop(iw: number, ih: number, fw: number, fh: number): { x: number; y: number; w: number; h: number } {
-  const scale = Math.max(fw / iw, fh / ih);
-  const w = Math.min(iw, fw / scale);
-  const h = Math.min(ih, fh / scale);
-  return { x: (iw - w) / 2, y: (ih - h) / 2, w, h };
-}
 
 /** The cells of a loaded image, read at its full size. Null when the browser can't read the pixels. */
 export function readImageCells(image: CanvasImageSource, iw: number, ih: number, background: number): ImageCells | null {

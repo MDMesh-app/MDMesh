@@ -17,7 +17,8 @@ The console's preview computes the same, so what it shows is what the device dra
   KioskPreview.tsx`.
 - Agent: a `BackdropRule` alongside `KioskPalette` (agent branch).
 - Shared test vectors: [`proto/vectors/kiosk-scrim.json`](../proto/vectors/kiosk-scrim.json), version 3.2, generated
-  by an independent implementation and passed by both test suites. A change to these rules changes the vectors.
+  by an independent implementation. The console passes them; agent implementations must pass them too (the agent
+  isn't released with images until it does). A change to these rules changes the vectors.
 
 Version history: versions 1 and 2 (one full-screen scrim from area-averaged samples, with a 2 % allowance) are
 replaced by version 3: the bounds are now the worst pixel (per-cell minimum and maximum), and texture gets a solid plate.
@@ -39,7 +40,11 @@ picker writes (the server doesn't check them, so an API client may store anythin
 - `#AARRGGBB`: `#` and exactly 8 ASCII hex digits; the alpha is dropped (the launcher draws its colours opaque).
 - One of Android's names, any case, lower-cased with `Locale.ROOT` (so `WHITE` is white in every locale; `WHİTE` is
   not a colour): black, darkgray, gray, lightgray, white, red, green, blue, yellow, cyan, magenta,
-  aqua, fuchsia, darkgrey, grey, lightgrey, lime, maroon, navy, olive, purple, silver, teal.
+  aqua, fuchsia, darkgrey, grey, lightgrey, lime, maroon, navy, olive, purple, silver, teal. Android's values, which
+  differ from CSS for some: black `#000000`, darkgray/darkgrey `#444444`, gray/grey `#888888`, lightgray/lightgrey
+  `#CCCCCC`, white `#FFFFFF`, red `#FF0000`, green and lime `#00FF00`, blue `#0000FF`, yellow `#FFFF00`, cyan and
+  aqua `#00FFFF`, magenta and fuchsia `#FF00FF`, maroon `#800000`, navy `#000080`, olive `#808000`, purple
+  `#800080`, silver `#C0C0C0`, teal `#008080`.
 
 Anything else is not a colour, and the default is used: `#RGB`, a missing `#`, spaces around the value, `+`/`-` after
 the `#` (which `parseColor` would take), CSS forms like `rgb(...)` or `transparent`, an empty string. The agent checks
@@ -84,7 +89,10 @@ in doubles (not floats).
 
 - **Fill** (the default): `scale = max(W / iw, H / ih)` (dp per image px), crop `cw = W / scale`, `ch = H / scale`,
   `cx = clamp(fx * iw - cw / 2, 0, iw - cw)`, `cy = clamp(fy * ih - ch / 2, 0, ih - ch)` with the focal point
-  `(fx, fy)` (default `(0.5, 0.5)`, which is Android's `CENTER_CROP`), `clamp(v, a, b) = max(a, min(b, v))`. The image's
+  `(fx, fy)` (default `(0.5, 0.5)`, which is Android's `CENTER_CROP`), `clamp(v, a, b) = max(a, min(b, v))`.
+  Written exactly like that, not as a range check: `iw - cw` can come out a hair below 0 from rounding (1440 x 3200 in
+  393 x 851 dp), where Kotlin's `coerceIn(0.0, iw - cw)` would throw. The focal point is in the **upright** image
+  (after the EXIF orientation), 0..1 on each axis; one that isn't a finite number (a broken document) is the centre. The image's
   rectangle in the window: `x = -cx * scale`, `y = -cy * scale`, `w = iw * scale`, `h = ih * scale`.
 - **Fit**: `scale = min(W / iw, H / ih)`, `w = iw * scale`, `h = ih * scale`, `x = (W - w) / 2`, `y = (H - h) / 2`; the
   rest of the window (the letterbox) is the background colour. The focal point is ignored. Never stretched.
@@ -97,8 +105,9 @@ in doubles (not floats).
   `y1' > y0'`, take cells `i` from `max(0, floor(x0' / cellSize) - 1)` to `min(cols - 1, ceil(x1' / cellSize))` and `j`
   from `max(0, floor(y0' / cellSize) - 1)` to `min(rows - 1, ceil(y1' / cellSize))`: the cells the box touches plus a
   one-cell margin (for the sub-cell position of the text and the GPU's filtering).
-- **Letterbox** (fit): when the box, clipped to the window, reaches outside the image rectangle, the background colour
-  joins the bounds. A box with no cell and no letterbox under it has the background colour as both bounds.
+- **Letterbox** (fit): when the box, **clipped to the window first**, reaches outside the image rectangle, the
+  background colour joins the bounds. On the tight axis the image can come out a hair short of the window, so a box
+  touching 0 or `W` would count as letterbox; no launcher box comes within 8 dp of an edge. A box with no cell and no letterbox under it has the background colour as both bounds.
 - Their `low` and `high` are the box's bounds.
 
 ## Functions
@@ -124,8 +133,9 @@ otherwise:    d = the lowest s in 0..15 with worst(text, blend(background, low, 
                   for every control (low, high: the control's bounds); 15 when none reaches it
 ```
 
-The dim is decided over all controls first, then the plates. A control reports `busy` and its ratio but never gets a
-plate; when 30 % isn't enough the console warns.
+The dim is decided over all controls first (every one must reach 3:1, not any), then the plates. A control reports
+`busy` and its ratio, both from its dimmed bounds, but never gets a plate; when 30 % isn't enough the console warns.
+A text's `busy` is also judged on its dimmed bounds.
 
 **Plate** `k` (0 to 50) of a text, colour `text` or `secondary`, over its plate box:
 
@@ -195,8 +205,8 @@ text needs one) and "Image dimmed 22%".
 - `blends`: `blend(over, px, step)` at exact half steps (half up, not half even).
 - `geometry`: image size, window, mode and focal point to the image rectangle (`x`, `y`, `w`, `h`, `scale`), compared
   to 6 decimals (doubles): centred, extreme focal points, very wide and very tall images, square, fit.
-- `rowPlates`: icon centres, label text widths, cell width and content edges to each plate's `x` and `w`: a 7-column
-  landscape row with one long label, a capped row, a short row, and clamping at the edges.
+- `rowPlates`: icon centres, label text widths, cell width and content edges to each plate's `x` and `w`: a row of 7
+  cells (function level) with one long label, a capped row, a short row, and clamping at the edges.
 - `layout`: stored colours, an image (`width`, `height`, `cellSize`, `cols`, `rows`, and either `cells` as
   `[min, max]` row-major or `pixels` as `#RRGGBBAA` row-major, composited per the formula above), a window (dp), the
   optional `mode` and `focal`, and elements (`id`, `kind`: `text`, `secondary` or `control`, `box` in dp, and `row` for
@@ -207,6 +217,10 @@ text needs one) and "Image dimmed 22%".
   bright sides, brand colours, rows (one label alone needing a plate, one over texture, none, two rows), a span of
   exactly 48 and 49, cells of 3 px under a non-terminating scale with box edges inside cells, pixels with alpha, fit
   with a letterbox, fit ignoring the focal point, and focal points that move a bright area under a label or away.
+  Added after review (no change to the rules): a right edge inside a cell (`ceil`), texture that is busy only
+  undimmed, two controls with one weak, a box past the window edge in fit (letterbox on the clipped box), and a box
+  edge exactly on a cell boundary under a non-terminating scale; a `#707070` background (white fallback), Android's
+  green and darkgray; and a geometry case where `iw - cw` is a hair below 0.
 
 ## What 3.2 changes
 

@@ -147,6 +147,27 @@ public class ConfigurationResourceExtensionsTest {
     }
 
     @Test
+    public void aNewConfigurationKeepsTheLocationServicesItWasSentWithoutAnAction() {
+        Configuration created = configuration(null, null);
+        created.setLocationServices(Boolean.FALSE); // e.g. an API client, or a copy saved by a console without the action
+
+        assertEquals(Response.ResponseStatus.OK, resource.updateConfiguration(created).getStatus());
+        assertEquals(Boolean.FALSE, dao.inserted.get(0).getLocationServices());
+    }
+
+    @Test
+    public void anUnknownLocationServicesActionIsRefusedAndNothingIsStored() {
+        Configuration bad = configuration(3, null);
+        bad.setLocationServicesAction("toggle");
+        try {
+            resource.updateConfiguration(bad);
+            org.junit.Assert.fail("expected a 400");
+        } catch (javax.ws.rs.BadRequestException expected) {
+            assertEquals(0, dao.updated.size());
+        }
+    }
+
+    @Test
     public void aSaveWithExtensionsStoresThemAsSent() {
         Response r = resource.updateConfiguration(configuration(3, "{\"netaccess.vpn\":{\"port\":443},\"other\":{}}"));
         assertEquals(Response.ResponseStatus.OK, r.getStatus());

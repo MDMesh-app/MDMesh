@@ -259,7 +259,9 @@ public class ConfigurationResource {
     private static void applyLocationServicesUpdate(Configuration configuration, Configuration stored) {
         String action = configuration.getLocationServicesAction();
         if (action == null || "keep".equals(action)) {
-            configuration.setLocationServices(stored == null ? null : stored.getLocationServices());
+            // Keep protects a stored policy from a client that doesn't know the field. A new configuration has none
+            // stored, so it gets the value it was sent with (an API client, or a console copy without the action).
+            if (stored != null) configuration.setLocationServices(stored.getLocationServices());
             return;
         }
         if ("on".equals(action)) {

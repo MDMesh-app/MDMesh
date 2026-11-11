@@ -29,7 +29,7 @@ New
   `maxUses` and `validHours` on `POST /private/agent/v1/token`, and `POST /private/agent/v1/token/revoke-all`
   (thanks @alessfi).
 - Configuration → Network can manage Android Location services independently of MDMesh location reporting on Android
-  11+ Device Owner devices.
+  11+ Device Owner devices. Needs agent 0.5.0 (thanks @letternumber).
 - Settings → Users & roles: create, edit and delete console accounts, choose the devices and configurations each
   can reach, and edit roles and their permissions (thanks @lared3294).
 - A wiped device shows as **Wiped** instead of Online and then Offline, and is left out of the counts, Needs attention

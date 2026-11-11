@@ -1,0 +1,171 @@
+/* Kiosk background preview: mock launcher screens in the kiosk's own colours (custom properties set per screen, as
+   the launcher does in both themes); the console's own colours come from tokens.css. */
+
+.v2 .v2-kbg__preview {
+  display: grid;
+  gap: 10px;
+}
+
+.v2 .v2-kbg__preview > summary {
+  cursor: pointer;
+  width: fit-content;
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  border-radius: var(--radius-xs);
+}
+
+.v2 .v2-kbg__preview > summary:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.v2 .v2-kbg__lede {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+
+.v2 .v2-kbg__shapes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-end;
+}
+
+/* Every screen is 150 px on its short side, and shrinks to the row on a phone. */
+.v2 .v2-kbg__slot {
+  --kbg-short: 150px;
+  flex: 0 1 var(--kbg-short);
+  min-width: 0;
+}
+
+.v2 .v2-kbg__slot--wide {
+  flex-basis: calc(var(--kbg-short) * var(--kbg-w) / var(--kbg-h));
+}
+
+.v2 .v2-kbg__shape {
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.v2 .v2-kbg__screen {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  aspect-ratio: var(--kbg-w) / var(--kbg-h);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  background: var(--kbg-bg);
+  color: var(--kbg-text);
+}
+
+.v2 .v2-kbg__img,
+.v2 .v2-kbg__scrim,
+.v2 .v2-kbg__ui {
+  position: absolute;
+  inset: 0;
+}
+
+.v2 .v2-kbg__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+.v2 .v2-kbg__scrim {
+  background: var(--kbg-bg);
+  opacity: var(--kbg-scrim);
+}
+
+.v2 .v2-kbg__ui {
+  display: flex;
+  flex-direction: column;
+  padding: 14px 12px 10px;
+  gap: 8px;
+  font-family: var(--font-sans);
+}
+
+.v2 .v2-kbg__header {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.v2 .v2-kbg__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  gap: 8px 4px;
+  align-content: start;
+  flex: 1;
+  overflow: hidden;
+}
+
+.v2 .v2-kbg__app {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.v2 .v2-kbg__icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--kbg-text);
+  color: var(--kbg-bg);
+}
+
+.v2 .v2-kbg__label {
+  max-width: 100%;
+  font-size: 9px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v2 .v2-kbg__exit {
+  align-self: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 600;
+  background: var(--kbg-text);
+  color: var(--kbg-bg);
+}
+
+.v2 .v2-kbg__caption {
+  display: grid;
+  gap: 2px;
+  font-size: var(--fs-small);
+  color: var(--secondary);
+  max-width: 100%;
+}
+
+.v2 .v2-kbg__shape-name {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.v2 .v2-kbg__readout {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  color: var(--text);
+}
+
+.v2 .v2-kbg__readout.is-pass svg {
+  color: var(--ok-ink);
+}
+
+.v2 .v2-kbg__readout.is-fail {
+  color: var(--alert-ink);
+}

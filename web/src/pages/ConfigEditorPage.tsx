@@ -74,7 +74,9 @@ import { NoAccess } from '../ext/hosts/RoutePage';
 import { usePermission } from '../ext/permissions';
 import { paths } from '../routes';
 import { AssignedApps } from './configurations/AssignedApps';
-import { KioskBackgroundField, useKioskBackgroundInfo } from './configurations/KioskBackground';
+import { KioskBackgroundField, hostedPath, useKioskBackgroundInfo } from './configurations/KioskBackground';
+import { KioskBackgroundPreview } from './configurations/KioskPreview';
+import { kioskColours } from '../data/kioskScrim';
 import { AppSelect, FieldControl, LongHelp } from './configurations/controls';
 import { AppPickerModal, CopyConfigModal, DeleteConfigModal, KioskConfirmModal } from './configurations/modals';
 import { devicesBlockingDelete, plural, usedByLine, wipedOnly, wipedOnlyLine } from './configurations/sync';
@@ -684,7 +686,7 @@ function Editor({
         backgroundImageUrl: undefined,
         backgroundImageSha256: undefined,
       }));
-      toast.push('ok', 'Background image uploaded', 'Save and apply the configuration to use it in kiosk.');
+      toast.push('ok', 'Background image uploaded', 'Check the preview, then save and apply the configuration to use it in kiosk.');
     } catch (e) {
       toast.push('err', 'Image upload failed', kioskImageErrorText(e));
     } finally {
@@ -694,6 +696,11 @@ function Editor({
 
   const backgroundFileId = draft.backgroundImageFileId as number | null | undefined;
   const backgroundInfo = useKioskBackgroundInfo(kioskOn ? backgroundFileId : null);
+  // The kiosk's apps by name, for the preview's grid: installed and shown in kiosk, as the launcher lists them.
+  const kioskAppNames = allowed
+    .filter((a) => (a.action ?? 1) === 1 && a.showIcon !== false)
+    .map((a) => apps.find((x) => x.id === a.id)?.name ?? (a as { name?: string }).name ?? '')
+    .filter((n) => n !== '');
 
   const backgroundImageRow = kioskOn ? (
     <FieldRow
@@ -702,6 +709,16 @@ function Editor({
       help={`Needs agent ${KIOSK_IMAGE_AGENT}. A PNG, JPEG or WebP image, at most 10 MB and 16 megapixels, shown behind the kiosk launcher, cropped at the centre to fill the screen; the background color stays the fallback. The console turns photos upright and scales them to at most 3840 px, and the server removes location and camera details before devices get it. Devices download it only when the server address is HTTPS, and check it by its SHA-256. It is hosted in Files, where anyone with its link can open it, so don't use a confidential image. Remove also clears the legacy Background image URL.`}
       adornment={changed.has('backgroundImageFileId') && !readOnly ? <ChangedChip /> : undefined}
       disabled={readOnly}
+      below={backgroundInfo.info ? (
+        <KioskBackgroundPreview
+          src={hostedPath(backgroundInfo.info.url)}
+          width={backgroundInfo.info.width}
+          height={backgroundInfo.info.height}
+          colours={kioskColours(draft.backgroundColor as string | undefined, draft.textColor as string | undefined)}
+          appNames={kioskAppNames}
+          exitVisible={draft.kioskExit === true}
+        />
+      ) : undefined}
     >
       {({ labelId }) => (
         <KioskBackgroundField

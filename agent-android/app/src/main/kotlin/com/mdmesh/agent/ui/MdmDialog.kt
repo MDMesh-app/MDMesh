@@ -65,8 +65,10 @@ class MdmDialog private constructor(
         }
         val max = res.getDimensionPixelSize(R.dimen.mdm_dialog_max_width) +
             2 * res.getDimensionPixelSize(R.dimen.mdm_dialog_inset)
-        alert.window?.setLayout(windowWidth(metrics.widthPixels, fraction, max), ViewGroup.LayoutParams.WRAP_CONTENT)
         alert.show()
+        // After show(): installing the decor (on the first show) resets a floating window to WRAP_CONTENT. Same
+        // message as the show, before the first layout pass, so it opens at this width.
+        alert.window?.setLayout(windowWidth(metrics.widthPixels, fraction, max), ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
     override fun dismiss() = alert.dismiss()

@@ -89,6 +89,11 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    testOptions {
+        // Robolectric dialog tests inflate the app's real layouts, styles and drawables.
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -118,6 +123,8 @@ dependencies {
     ksp(libs.hilt.work.compiler)
 
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.test.runner)
 }

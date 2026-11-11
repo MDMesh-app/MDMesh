@@ -31,6 +31,9 @@ kotlinxCoroutines = "1.8.1"
 junit = "4.13.2"
 androidxJunit = "1.2.1"
 androidxTestRunner = "1.6.2"
+# Robolectric: dialog behaviour on the real framework code, API 24-35, on the JVM (no screenshots)
+robolectric = "4.14.1"
+androidxTestCore = "1.6.1"
 coroutinesTest = "1.8.1"
 
 [libraries]
@@ -75,6 +78,8 @@ kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-cor
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxJunit" }
 androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidxTestRunner" }
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+androidx-test-core = { group = "androidx.test", name = "core-ktx", version.ref = "androidxTestCore" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutinesTest" }
 
 [plugins]

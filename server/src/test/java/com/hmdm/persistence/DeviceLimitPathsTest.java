@@ -3,11 +3,12 @@
  */
 package com.hmdm.persistence;
 
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.google.inject.AbstractModule;
 import com.google.inject.Guice;
 import com.google.inject.Inject;
 import com.google.inject.Injector;
 import com.google.inject.name.Names;
+import com.hmdm.guice.module.PersistenceModule;
 import com.hmdm.persistence.domain.Device;
 import com.hmdm.rest.json.DeviceCreateOptions;
 import com.hmdm.persistence.domain.User;
@@ -19,20 +20,22 @@ import liquibase.database.Database;
 import liquibase.database.DatabaseFactory;
 import liquibase.database.jvm.JdbcConnection;
 import liquibase.resource.ClassLoaderResourceAccessor;
-import org.apache.ibatis.transaction.jdbc.JdbcTransactionFactory;
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Assume;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
-import org.mybatis.guice.MyBatisModule;
-import org.mybatis.guice.datasource.builtin.PooledDataSourceProvider;
 
+import javax.servlet.ServletContext;
+import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -121,33 +124,43 @@ public class DeviceLimitPathsTest {
             new Liquibase("liquibase/db.changelog.xml", new ClassLoaderResourceAccessor(), db).update("common,private");
         }
 
-        Properties props = new Properties();
-        props.setProperty("JDBC.driver", "org.postgresql.Driver");
-        props.setProperty("JDBC.url", url);
-        props.setProperty("JDBC.username", user());
-        props.setProperty("JDBC.password", password());
-        props.setProperty("mybatis.pooled.maximumActiveConnections", "10");
-        props.setProperty("files.directory", "/nonexistent-mdmesh-test-files");
-        props.setProperty("role.orgadmin.id", "2");
-        props.setProperty("launcher.package", "com.hmdm.launcher");
-        props.setProperty("device.fast.search.chars", "5");
-        // Settings the DAOs' collaborators take; unused by these paths.
-        props.setProperty("aapt.command", "aapt");
-        props.setProperty("apk.trusted.url", "");
-        props.setProperty("base.url", "https://mdm.example.test");
-        injector = Guice.createInjector(new MyBatisModule() {
+        // The server's own persistence module (PersistenceModule → AbstractPersistenceModule: pooled data source,
+        // JDBC transactions, every mapper, the domain aliases, the JSON type handler), fed the JDBC settings the way the
+        // servlet context feeds it. Only the named settings its DAOs' collaborators take, and the device factory seam,
+        // are added here. The pool's connections carry an application name so the wait probe below sees only them.
+        Map<String, String> jdbc = new HashMap<>();
+        jdbc.put("JDBC.driver", "org.postgresql.Driver");
+        jdbc.put("JDBC.url", url + "&ApplicationName=" + schema);
+        jdbc.put("JDBC.username", user());
+        jdbc.put("JDBC.password", password());
+        injector = Guice.createInjector(new PersistenceModule(servletContext(jdbc)), new AbstractModule() {
             @Override
-            protected void initialize() {
-                environmentId("test");
+            protected void configure() {
+                Properties props = new Properties();
+                props.setProperty("files.directory", "/nonexistent-mdmesh-test-files");
+                props.setProperty("role.orgadmin.id", "2");
+                props.setProperty("launcher.package", "com.hmdm.launcher");
+                props.setProperty("device.fast.search.chars", "5");
+                // Settings the DAOs' collaborators take; unused by these paths.
+                props.setProperty("aapt.command", "aapt");
+                props.setProperty("apk.trusted.url", "");
+                props.setProperty("base.url", "https://mdm.example.test");
                 Names.bindProperties(binder(), props);
-                bindDataSourceProviderType(PooledDataSourceProvider.class);
-                bindTransactionFactoryType(JdbcTransactionFactory.class);
-                addMapperClasses("com.hmdm.persistence.mapper");
-                addSimpleAliases("com.hmdm.persistence.domain");
-                handleType(ObjectNode.class).with(JsonObjectTypeHandler.class);
                 bind(AgentEnrollmentDAO.DeviceFactory.class).to(HoldingFactory.class);
             }
         });
+    }
+
+    /** A servlet context that only answers init parameters, as the server's context.xml provides them. */
+    private static ServletContext servletContext(Map<String, String> params) {
+        return (ServletContext) Proxy.newProxyInstance(ServletContext.class.getClassLoader(),
+                new Class<?>[]{ServletContext.class}, (proxy, method, args) -> {
+                    switch (method.getName()) {
+                        case "getInitParameterNames": return Collections.enumeration(params.keySet());
+                        case "getInitParameter": return params.get((String) args[0]);
+                        default: throw new UnsupportedOperationException(method.getName());
+                    }
+                });
     }
 
     @AfterClass
@@ -307,7 +320,8 @@ public class DeviceLimitPathsTest {
             Future<Boolean> add = pool.submit(first);
             // Wait until it is blocked on its insert (it has counted under the lock by then).
             long until = System.currentTimeMillis() + 10_000;
-            while (scalar("SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' "
+            while (scalar("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() "
+                    + "AND application_name = '" + schema + "' AND wait_event_type = 'Lock' "
                     + "AND query ILIKE '%INSERT INTO devices%'") == 0) {
                 if (System.currentTimeMillis() > until) fail(what + " never reached its device insert");
                 Thread.sleep(50);

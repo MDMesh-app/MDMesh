@@ -43,7 +43,8 @@ import kotlinx.coroutines.sync.withLock
  * @param systemUpdate sets the OS update policy for the `systemUpdate` section (1.8), and clears it once a document
  *   stops managing it. Null (tests that don't need it): the section is unsupported, as a toggle without a strategy.
  */
-@Suppress("TooManyFunctions") // Coordinator for independently releasable desired-state sections.
+// Coordinator for independently releasable desired-state sections: one dependency per section.
+@Suppress("TooManyFunctions", "LongParameterList")
 class ConfigApplier(
     private val toggles: () -> ResolvedToggles,
     private val kiosk: KioskApplier,

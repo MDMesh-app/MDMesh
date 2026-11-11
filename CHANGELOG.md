@@ -42,8 +42,19 @@ Fixes
 - Agent rollout: when every device is in the canary, the rollout finishes once they've updated instead of staying
   open, and Settings stops offering the same agent again. If one can't update, it offers Finish instead of Promote
   (thanks @letternumber).
+- Agent: commands like an app scan, app icons or an install no longer run on the thread the kiosk home screen uses, so
+  the kiosk stays responsive while they run. Needs agent 0.5.0.
+- Agent: after the screen turns off and on, or the network drops, the agent keeps one connection to the server
+  instead of sometimes opening a second one or leaving one open. Needs agent 0.5.0.
+- Agent: the 10-minute heartbeat keeps its pace when the device's clock is corrected, for example right after setup.
+  Needs agent 0.5.0.
+- Agent: device events (boot, app installed, and so on) are no longer lost when two arrive at once or when the agent
+  is stopped during a check-in. Needs agent 0.5.0.
 
 Under the hood
+- Agent: when the server can't be reached, the agent retries its connection at random intervals of up to 5 minutes
+  instead of every minute, so devices don't all reconnect at once after a server restart, and it retries right away
+  when the network comes back.
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
 
 ## v0.4.0 — 2026-11-03

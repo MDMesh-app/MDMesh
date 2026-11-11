@@ -137,6 +137,10 @@ export interface ConfigStatus {
         createdAt?: number;
         completedAt?: number;
     } | null;
+    kioskBackgroundImage?: {
+        url: string;
+        sha256: string;
+    } | null;
 }
 
 // ---- api/configurations ----

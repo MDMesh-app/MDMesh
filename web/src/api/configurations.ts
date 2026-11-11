@@ -90,6 +90,31 @@ export async function getServerBaseUrl(): Promise<string | null> {
   return u ?? null;
 }
 
+/** A kiosk background image as devices get it once a configuration is saved with it (KioskBackgroundImageInfo). */
+export interface KioskBackgroundImageInfo {
+  fileId: number;
+  /** Where devices download it (from the server's current base URL). */
+  url: string;
+  /** The file name, without the `kiosk-<hex>-` prefix it is hosted under. */
+  name: string;
+  format: 'PNG' | 'JPEG' | 'WebP';
+  /** As displayed (after the EXIF orientation). */
+  width: number;
+  height: number;
+  orientation: number;
+  /** Bytes, without metadata. */
+  size: number;
+  sha256: string;
+  uploadTime?: number | null;
+  /** The uploaded file still carries metadata (location, camera), which saving removes. */
+  metadataRemoved?: boolean;
+}
+
+/** Describes an uploaded background image file; refused (ApiError with a readable message) as a save would. */
+export async function getKioskBackgroundImage(fileId: number): Promise<KioskBackgroundImageInfo> {
+  return apiClient.get<KioskBackgroundImageInfo>(`/private/configurations/backgroundImage/${fileId}`);
+}
+
 /** One full configuration: every column plus its files, app settings and usage parameters (not its apps). */
 export async function getConfiguration(id: number): Promise<Configuration> {
   return apiClient.get<Configuration>(`/private/configurations/${id}`);

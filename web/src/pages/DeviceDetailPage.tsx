@@ -54,6 +54,7 @@ import {
   type KeyValueItem,
 } from '../ui';
 import { ActionDialog, CommandsCard, ConfigPanel, RemoteActions, TEMPLATE, type KioskReturnOffer } from './DeviceDetailControl';
+import { DeviceKioskBackground } from './configurations/KioskBackground';
 import { ActivityTab, LocationTab, TelemetryTab } from './DeviceDetailTabs';
 import { AppsTab, useAppScan } from './DeviceDetailApps';
 import { ConfiguredKioskDialog, DeviceKioskDialog } from './DeviceKioskDialog';
@@ -934,6 +935,13 @@ export function DeviceDetailPage() {
                 busy={busy}
                 onRetry={canEdit && !wiped ? () => void syncNow() : undefined}
                 now={now}
+              />
+            ) : null}
+            {cfgLoaded && cfgStatus?.kioskBackgroundImage ? (
+              <DeviceKioskBackground
+                image={cfgStatus.kioskBackgroundImage}
+                configurationId={cfgStatus.configurationId}
+                configName={configName}
               />
             ) : null}
             {canEdit ? (

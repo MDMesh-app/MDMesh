@@ -12,7 +12,6 @@ import { ApiError } from '../api/client';
 import { commitUpload, listApplications, uploadRawFile, type Application } from '../api/applications';
 import {
   KIOSK_IMAGE_AGENT,
-  KIOSK_IMAGE_TYPES,
   kioskImageContentId,
   kioskImageErrorText,
   kioskImageProblem,
@@ -75,6 +74,7 @@ import { NoAccess } from '../ext/hosts/RoutePage';
 import { usePermission } from '../ext/permissions';
 import { paths } from '../routes';
 import { AssignedApps } from './configurations/AssignedApps';
+import { KioskBackgroundField, useKioskBackgroundInfo } from './configurations/KioskBackground';
 import { AppSelect, FieldControl, LongHelp } from './configurations/controls';
 import { AppPickerModal, CopyConfigModal, DeleteConfigModal, KioskConfirmModal } from './configurations/modals';
 import { devicesBlockingDelete, plural, usedByLine, wipedOnly, wipedOnlyLine } from './configurations/sync';
@@ -399,7 +399,6 @@ function Editor({
   // Discards so far: the apps table files its rows again by their restored state.
   const [discards, setDiscards] = useState(0);
   const nameRef = useRef<HTMLInputElement>(null);
-  const backgroundImageRef = useRef<HTMLInputElement>(null);
   const [backgroundUploading, setBackgroundUploading] = useState(false);
   const ids = useId();
 
@@ -693,42 +692,35 @@ function Editor({
     }
   }
 
+  const backgroundFileId = draft.backgroundImageFileId as number | null | undefined;
+  const backgroundInfo = useKioskBackgroundInfo(kioskOn ? backgroundFileId : null);
+
   const backgroundImageRow = kioskOn ? (
     <FieldRow
       id={`${ids}-backgroundImage`}
       label="Background image"
-      help={`Needs agent ${KIOSK_IMAGE_AGENT}. A PNG, JPEG or WebP image, at most 10 MB and 16 megapixels, shown behind the kiosk launcher; the background color stays the fallback. Devices download it only when the server address is HTTPS, and check it by its SHA-256. It is hosted in Files, where anyone with its link can open it, so don't use a confidential image. Remove also clears the legacy Background image URL.`}
+      help={`Needs agent ${KIOSK_IMAGE_AGENT}. A PNG, JPEG or WebP image, at most 10 MB and 16 megapixels, shown behind the kiosk launcher, cropped at the centre to fill the screen; the background color stays the fallback. The console turns photos upright and scales them to at most 3840 px, and the server removes location and camera details before devices get it. Devices download it only when the server address is HTTPS, and check it by its SHA-256. It is hosted in Files, where anyone with its link can open it, so don't use a confidential image. Remove also clears the legacy Background image URL.`}
       adornment={changed.has('backgroundImageFileId') && !readOnly ? <ChangedChip /> : undefined}
       disabled={readOnly}
     >
-      {() => (
-        <div className="v2-cfged-calloutline">
-          <input
-            ref={backgroundImageRef}
-            type="file"
-            accept={KIOSK_IMAGE_TYPES.join(',')}
-            hidden
-            onChange={(e) => {
-              const file = e.currentTarget.files?.[0];
-              e.currentTarget.value = '';
-              if (file) void uploadBackgroundImage(file);
-            }}
-          />
-          <Button size="sm" onClick={() => backgroundImageRef.current?.click()} disabled={readOnly || backgroundUploading}>
-            {backgroundUploading ? 'Uploading…' : draft.backgroundImageFileId != null || draft.backgroundImageUrl ? 'Replace image' : 'Choose image'}
-          </Button>
-          {draft.backgroundImageFileId != null || draft.backgroundImageUrl ? (
-            <Button size="sm" onClick={() => setDraft((d) => ({
-              ...d,
-              backgroundImageAction: 'remove',
-              backgroundImageFileId: null,
-              backgroundImageUrl: undefined,
-              backgroundImageSha256: undefined,
-            }))} disabled={readOnly || backgroundUploading}>
-              Remove
-            </Button>
-          ) : null}
-        </div>
+      {({ labelId }) => (
+        <KioskBackgroundField
+          fileId={backgroundFileId}
+          info={backgroundInfo.info}
+          error={backgroundInfo.error}
+          legacyUrl={draft.backgroundImageUrl as string | undefined}
+          readOnly={readOnly}
+          uploading={backgroundUploading}
+          onFile={(file) => void uploadBackgroundImage(file)}
+          onRemove={() => setDraft((d) => ({
+            ...d,
+            backgroundImageAction: 'remove',
+            backgroundImageFileId: null,
+            backgroundImageUrl: undefined,
+            backgroundImageSha256: undefined,
+          }))}
+          labelId={labelId}
+        />
       )}
     </FieldRow>
   ) : null;

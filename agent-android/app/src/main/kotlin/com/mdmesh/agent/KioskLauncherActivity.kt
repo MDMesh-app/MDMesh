@@ -9,6 +9,7 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -33,6 +34,7 @@ import com.mdmesh.core.sync.CheckInWorker
 import com.mdmesh.core.telemetry.EventSink
 import com.mdmesh.kiosk.CrashLoopGuard
 import com.mdmesh.kiosk.ExitPinGate
+import com.mdmesh.kiosk.HoldStore
 import com.mdmesh.kiosk.KioskController
 import com.mdmesh.kiosk.KioskReturnPolicy
 import com.mdmesh.proto.KioskApplyPayload
@@ -66,12 +68,14 @@ class KioskLauncherActivity : ComponentActivity() {
     @Inject lateinit var applier: KioskApplier
     @Inject lateinit var events: EventSink
     @Inject lateinit var crashGuard: CrashLoopGuard
+    @Inject lateinit var holdStore: HoldStore
     @Inject lateinit var pinGate: ExitPinGate
 
     /** Last applied non-null kiosk state, so [onResume] can recover a bounced single-app pin. */
     private var active: KioskApplyPayload? = null
 
-    private val returns by lazy { KioskReturnPolicy(crashGuard) }
+    /** The crash-loop hold is saved ([holdStore]), so it outlives this activity; it belongs to this boot. */
+    private val returns by lazy { KioskReturnPolicy(crashGuard, holdStore, ::bootCount) }
 
     /** The hold screen is showing (so its event is recorded once per hold). */
     private var holding = false
@@ -213,6 +217,8 @@ class KioskLauncherActivity : ComponentActivity() {
         when (resumeGate.onDelivery(KioskDelivery.of(previous, p))) {
             HomeResumeGate.Step.IDLE -> {
                 dialogs.dismiss()
+                // The kiosk ended: a crash-loop hold ends with it, so a kiosk entered later starts afresh.
+                returns.retry()
                 holding = false
                 stopLockTaskSafely()
                 render(KioskScreen.Idle)
@@ -330,6 +336,10 @@ class KioskLauncherActivity : ComponentActivity() {
             active?.let(::promptExit)
         }
     }
+
+    /** Which boot this is: a saved crash-loop hold belongs to the boot it started in. */
+    private fun bootCount(): Long =
+        runCatching { Settings.Global.getInt(contentResolver, Settings.Global.BOOT_COUNT, 0).toLong() }.getOrDefault(0L)
 
     private fun startLockTaskSafely() {
         runCatching {

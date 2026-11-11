@@ -61,6 +61,8 @@ import com.mdmesh.core.telemetry.TelemetrySource
 import com.mdmesh.proto.AppManagement
 import com.mdmesh.proto.DeviceAction
 import com.mdmesh.kiosk.CrashLoopGuard
+import com.mdmesh.kiosk.HoldStore
+import com.mdmesh.kiosk.SharedPrefsHoldStore
 import com.mdmesh.kiosk.ExitPinGate
 import com.mdmesh.kiosk.FaultStore
 import com.mdmesh.kiosk.KioskController
@@ -220,6 +222,11 @@ object AgentModule {
     @Provides
     @Singleton
     fun provideCrashLoopGuard(store: FaultStore): CrashLoopGuard = CrashLoopGuard(store)
+
+    /** The kiosk launcher's crash-loop hold, saved next to the crash counter so it outlives the activity. */
+    @Provides
+    @Singleton
+    fun provideHoldStore(@ApplicationContext context: Context): HoldStore = SharedPrefsHoldStore(context)
 
     @Provides
     @Singleton

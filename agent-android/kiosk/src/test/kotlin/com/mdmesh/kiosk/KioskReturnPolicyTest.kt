@@ -77,4 +77,55 @@ class KioskReturnPolicyTest {
         assertEquals(-1L, store.lastFaultTime)
         assertFalse(guard.isCrashLoopDetected())
     }
+
+    // --- The hold is persisted (F2): it survives a new policy (activity recreation, process restore) at any age ---
+
+    private val holds = InMemoryHoldStore()
+    private var boot = 1L
+    private fun policy() = KioskReturnPolicy(CrashLoopGuard(store) { nowMs }, holds) { boot }
+
+    @Test
+    fun `a hold survives recreation long after the guard window`() {
+        val first = policy()
+        repeat(CrashLoopGuard.LOOP_CRASHES + 1) { nowMs += 1_000; first.onReturned() }
+        assertTrue(first.held)
+        nowMs += 10 * CrashLoopGuard.LOOP_TIME_SPAN
+        val recreated = policy()
+        assertTrue(recreated.held)
+        assertEquals(Action.HOLD, recreated.onApplied(changed = false))
+        assertEquals(Action.HOLD, recreated.onReturned())
+    }
+
+    @Test
+    fun `open again clears the saved hold`() {
+        val first = policy()
+        repeat(CrashLoopGuard.LOOP_CRASHES + 1) { first.onReturned() }
+        first.retry()
+        assertFalse(policy().held)
+    }
+
+    @Test
+    fun `a reboot ends a hold older than the guard window`() {
+        val first = policy()
+        repeat(CrashLoopGuard.LOOP_CRASHES + 1) { first.onReturned() }
+        nowMs += 10 * CrashLoopGuard.LOOP_TIME_SPAN
+        boot = 2L
+        assertEquals(Action.REOPEN, policy().onApplied(changed = false))
+    }
+
+    @Test
+    fun `a reboot right after the loop still holds`() {
+        val first = policy()
+        repeat(CrashLoopGuard.LOOP_CRASHES + 1) { first.onReturned() }
+        boot = 2L
+        assertEquals(Action.HOLD, policy().onApplied(changed = false))
+    }
+
+    @Test
+    fun `a different kiosk clears the saved hold`() {
+        val first = policy()
+        repeat(CrashLoopGuard.LOOP_CRASHES + 1) { first.onReturned() }
+        assertEquals(Action.REOPEN, policy().onApplied(changed = true))
+        assertFalse(policy().held)
+    }
 }

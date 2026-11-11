@@ -52,7 +52,6 @@ class KioskLauncherStressTest : KioskHarness() {
      * The crash guard's window is 60 s of wall clock; a recreation more than a minute into the hold loses the
      * activity's `held` flag and reopens the crashing app.
      */
-    @Ignore("F2: fixed in the next commits")
     @Test fun holdSurvivesRecreationAfterTheGuardWindow() {
         launch(single)
         bounce(4)
@@ -64,7 +63,6 @@ class KioskLauncherStressTest : KioskHarness() {
         assertEquals("crashing app not reopened by a recreation", 0, pinnedStarts())
     }
 
-    @Ignore("F2: fixed in the next commits")
     @Test fun holdSurvivesProcessDeathRestoreAfterTheGuardWindow() {
         launch(single)
         bounce(4)

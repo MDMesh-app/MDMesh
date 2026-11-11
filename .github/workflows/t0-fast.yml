@@ -66,10 +66,11 @@ jobs:
         name: [server, web, agent, supervisor, edge]
     # PostgreSQL for the server entry's database-backed tests (AgentEnrollmentTransactionTest: the enroll transaction,
     # its row locks and rollback). The same major version as docker-compose.yml. An empty image skips the service, so
-    # the other entries don't start it. Published on a random host port: a shared runner may run several jobs at once.
+    # it starts only for the server entry, and only when the server paths changed (when its steps run). Published on a
+    # random host port: a shared runner may run several jobs at once.
     services:
       postgres:
-        image: ${{ matrix.name == 'server' && 'postgres:14' || '' }}
+        image: ${{ (matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)) && 'postgres:14' || '' }}
         env:
           POSTGRES_USER: mdmesh_test
           POSTGRES_PASSWORD: mdmesh_test

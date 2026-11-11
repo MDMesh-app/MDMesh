@@ -39,7 +39,7 @@ New
   and rollouts; the Devices list's Wiped filter shows it (thanks @Przemek-Magic).
 - Sync now and console commands say when the device isn't connected and will get it at its next check-in.
 - Agent: its dialogs (Return to kiosk, Exit kiosk, Exit locked) follow the device's light or dark setting and use
-  the console's look, the same on every phone. Needs agent 0.5.0.
+  the console's look, the same on every phone. They stay open when the device is rotated. Needs agent 0.5.0.
 - Agent: Exit kiosk is easier to use. A wrong PIN shows in the dialog, which stays open and says how many tries are
   left before the exit locks; the PIN can be shown while typing. Needs agent 0.5.0.
 - Agent: its notifications have sharp MDMesh status bar icons, and its app icon follows themed icons on Android 13
@@ -48,6 +48,8 @@ New
 Fixes
 - Audit log: on Docker installs, entries show the client's address instead of the edge container's (thanks
   @Przemek-Magic).
+- Agent: on Android 15 the status screen and the kiosk no longer draw under the status and navigation bars, where
+  the kiosk's Exit kiosk button could be hard to reach. Needs agent 0.5.0.
 - Kiosk: after someone leaves kiosk on the device with the exit PIN, the agent checks in right away, so the console
   shows kiosk off without waiting for the next heartbeat. Needs agent 0.5.0 (thanks @letternumber).
 - Agent rollout: when every device is in the canary, the rollout finishes once they've updated instead of staying

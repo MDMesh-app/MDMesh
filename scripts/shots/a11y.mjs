@@ -6,8 +6,8 @@
 //   node scripts/shots/a11y.mjs [--dist <dir>] [--out <dir>] [--only <substring>] [--quick] [--keys] [--shots]
 //
 // --quick: light theme at 1280 only. --keys: also the keyboard walk. --shots: a screenshot per state.
-// Writes <out>/axe.json, <out>/summary.txt (and keys.json, aria/*.yml with --keys) and exits 1 on any axe violation
-// or any state whose setup failed.
+// Writes <out>/axe.json, <out>/summary.txt, <out>/failures.txt (and keys.json, aria/*.yml with --keys) and exits 1 on
+// any failed check (see failures(): axe, setup, horizontal scroll, text spacing, page errors, keyboard).
 // The build must exist (`npm run build` in web/; VITE_GALLERY=1 adds the component gallery to the sweep).
 import { chromium } from 'playwright';
 import { AxeBuilder } from '@axe-core/playwright';
@@ -129,7 +129,7 @@ const STATES = [
     name: 'devices-bulk-modal',
     route: '/devices',
     setup: async (p) => {
-      await p.locator('input[type=checkbox][aria-label^="Select "]').nth(1).check().catch(() => {});
+      await p.locator('input[type=checkbox][aria-label^="Select "]').nth(1).check();
       await p.waitForTimeout(200);
       await click(p, 'button', 'Run action');
     },
@@ -172,8 +172,8 @@ const STATES = [
     name: 'config-editor-dirty',
     route: '/configurations/1',
     setup: async (p) => {
-      await p.getByRole('radiogroup', { name: 'Bluetooth' }).getByRole('radio', { name: 'Block' }).click().catch(() => {});
-      await p.waitForTimeout(300);
+      await p.getByRole('radiogroup', { name: 'Bluetooth' }).getByRole('radio', { name: 'Block' }).click();
+      await p.getByRole('region', { name: 'Unsaved changes' }).waitFor({ timeout: 5000 });
     },
   },
   {
@@ -186,10 +186,10 @@ const STATES = [
     route: '/configurations/1',
     mobile: false,
     setup: async (p) => {
-      await p.getByRole('radiogroup', { name: 'Bluetooth' }).getByRole('radio', { name: 'Block' }).click().catch(() => {});
-      await p.waitForTimeout(200);
+      await p.getByRole('radiogroup', { name: 'Bluetooth' }).getByRole('radio', { name: 'Block' }).click();
+      await p.getByRole('region', { name: 'Unsaved changes' }).waitFor({ timeout: 5000 });
       await p.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /Devices/ }).click();
-      await p.waitForTimeout(400);
+      await p.locator('dialog[open]').waitFor({ timeout: 5000 });
     },
   },
   // ---- apps ----
@@ -568,6 +568,41 @@ function summarize(results) {
   ].join('\n');
 }
 
+/**
+ * Known, accepted exceptions to the checks below, as `<state>/<theme>/<viewport>: <check>` (none today). An entry
+ * names the state precisely, so a new failure elsewhere still fails the run.
+ */
+const EXCEPTIONS = new Set([]);
+
+/**
+ * Everything that fails the run: axe violations; a state whose setup failed (never checked); and the layout and
+ * keyboard checks the sweep measures: horizontal scroll (1.4.10), text clipped by WCAG text spacing (1.4.12), an
+ * uncaught page error, and with --keys a Tab stop without a visible, in-view, uncovered ring (2.4.7/2.4.11) or a
+ * dialog/menu that Escape doesn't close or that doesn't return focus.
+ */
+function failures(results, keys) {
+  const out = [];
+  const add = (where, check) => {
+    if (!EXCEPTIONS.has(`${where}: ${check}`)) out.push(`${where}: ${check}`);
+  };
+  for (const r of results) {
+    const where = `${r.state}/${r.theme}/${r.viewport}`;
+    for (const v of r.violations) add(where, `axe ${v.id} ×${v.nodes.length}`);
+    if (r.setupError) add(where, `setup failed: ${r.setupError}`);
+    if (r.facts.overflowX) add(where, `horizontal scroll (${r.facts.scrollWidth}px)`);
+    if (r.facts.spacingClipped?.length) add(where, `text spacing clips: ${r.facts.spacingClipped.join(', ')}`);
+    for (const e of r.pageErrors) add(where, `page error: ${e}`);
+  }
+  for (const w of keys?.walks ?? []) {
+    const bad = w.steps.filter((s) => s.tag !== 'body' && (!s.visibleRing || s.covered || !s.inView));
+    for (const s of bad) add(`keys ${w.page}/${w.viewport}`, `focus not visible or covered: ${s.tag} "${s.name}"`);
+  }
+  for (const e of keys?.escapes ?? []) {
+    if (e.error || !e.closed || !e.returned) add(`esc ${e.route}`, `${e.label}: ${e.error ?? `closed=${e.closed} returned=${e.returned}`}`);
+  }
+  return out;
+}
+
 const { server, base } = await startServer(dist);
 const browser = await chromium.launch();
 try {
@@ -575,13 +610,16 @@ try {
   fs.writeFileSync(path.join(out, 'axe.json'), JSON.stringify(results, null, 1));
   const summary = summarize(results);
   fs.writeFileSync(path.join(out, 'summary.txt'), summary);
+  let keys = null;
   if (flag('--keys')) {
-    const keys = await keyboardWalk(browser, base);
+    keys = await keyboardWalk(browser, base);
     fs.writeFileSync(path.join(out, 'keys.json'), JSON.stringify(keys, null, 1));
   }
+  const problems = failures(results, keys);
+  fs.writeFileSync(path.join(out, 'failures.txt'), problems.join('\n'));
   console.log('\n' + summary.split('\n').slice(0, 3).join('\n') + `\n→ ${out}`);
-  // A state whose setup failed was never checked: that fails the run as a violation does.
-  process.exitCode = results.some((r) => r.violations.length || r.setupError) ? 1 : 0;
+  if (problems.length) console.error(`\n${problems.length} failed checks:\n` + problems.map((l) => '  ' + l).join('\n'));
+  process.exitCode = problems.length ? 1 : 0;
 } finally {
   await browser.close();
   server.close();

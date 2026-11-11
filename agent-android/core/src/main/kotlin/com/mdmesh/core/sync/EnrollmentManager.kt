@@ -1,6 +1,7 @@
 package com.mdmesh.core.sync
 
 import com.mdmesh.core.capability.CapabilitySource
+import com.mdmesh.core.config.ServerAddress
 import com.mdmesh.core.net.MdmApi
 import com.mdmesh.core.store.DeviceIdentity
 import com.mdmesh.core.store.EnrollTokenProvider
@@ -12,6 +13,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -33,6 +35,7 @@ class EnrollmentManager @Inject constructor(
     private val capabilitySource: CapabilitySource,
     private val eventSink: EventSink,
     private val hardwareIdSource: HardwareIdSource = HardwareIdSource { null },
+    private val serverAddress: ServerAddress = ServerAddress { "" },
 ) {
 
     private val mutex = Mutex()
@@ -46,9 +49,15 @@ class EnrollmentManager @Inject constructor(
         }
     }
 
+    /** The server's host for messages; the address itself when it isn't one. */
+    private fun host(): String? = runCatching {
+        val raw = serverAddress.baseUrl()
+        raw.toHttpUrlOrNull()?.host ?: raw
+    }.getOrNull()
+
     private suspend fun enroll(): String {
         val token = tokenProvider.token()?.takeIf { it.isNotBlank() }
-            ?: throw EnrollmentException("no enrollment token available")
+            ?: throw EnrollmentException(EnrollmentFailure.NO_CODE)
 
         // Stored BEFORE the request: if its response is lost (Wi-Fi drop, the process ends), every retry, even after a
         // restart, sends the same id and the server answers with the device this enrollment already created instead
@@ -63,20 +72,28 @@ class EnrollmentManager @Inject constructor(
 
         // deviceId is unknown pre-enrollment; the server ignores it and issues one.
         val matrix = capabilitySource.matrix(deviceId = "")
-        val response = api.enroll(
-            AgentEnrollRequest(
-                enrollToken = token,
-                agent = matrix.agent,
-                device = matrix.device,
-                capabilities = matrix.capabilities,
-                hardwareId = runCatching { hardwareIdSource.get() }.getOrNull(),
-                enrollAttempt = attempt,
-            ),
-        )
+        val response = try {
+            api.enroll(
+                AgentEnrollRequest(
+                    enrollToken = token,
+                    agent = matrix.agent,
+                    device = matrix.device,
+                    capabilities = matrix.capabilities,
+                    hardwareId = runCatching { hardwareIdSource.get() }.getOrNull(),
+                    enrollAttempt = attempt,
+                ),
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Network, TLS, HTTP and parse failures: retried by the caller; said in words the person holding the
+            // device can act on (it's what the agent's screen shows while it isn't enrolled).
+            throw EnrollmentException(EnrollmentFailure.forException(e, host()), e)
+        }
 
         val data = response.data
         if (!response.isOk || data == null) {
-            throw EnrollmentException(response.message ?: "enrollment rejected")
+            throw EnrollmentException(EnrollmentFailure.forServer(response.message))
         }
         // The POST above already burned the single-use token server-side, so persistence must
         // survive cancellation (e.g. WorkManager REPLACE/stop) or the credentials are lost forever.
@@ -89,5 +106,8 @@ class EnrollmentManager @Inject constructor(
     }
 }
 
-/** Enrollment could not complete (no token, or server rejected). Lets the worker retry. */
-class EnrollmentException(message: String) : Exception(message)
+/**
+ * Enrollment could not complete. [message] is for the person holding the device ([EnrollmentFailure]); a server
+ * refusal ends with its key, which [CheckInWorker] uses to stop retrying a code that can never work.
+ */
+class EnrollmentException(message: String, cause: Throwable? = null) : Exception(message, cause)

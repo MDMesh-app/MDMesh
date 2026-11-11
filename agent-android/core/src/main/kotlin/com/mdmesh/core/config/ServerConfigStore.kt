@@ -17,7 +17,7 @@ import javax.inject.Singleton
  * directly (the DPC's [com.mdmesh.agent.admin.AdminReceiver] has no Hilt graph).
  */
 @Singleton
-class ServerConfigStore @Inject constructor(@ApplicationContext context: Context) {
+class ServerConfigStore @Inject constructor(@ApplicationContext context: Context) : ServerAddress {
     private val prefs = context.getSharedPreferences("mdm_server", Context.MODE_PRIVATE)
 
     /**
@@ -25,7 +25,7 @@ class ServerConfigStore @Inject constructor(@ApplicationContext context: Context
      * stored by an older agent that isn't a valid address is returned as it is, so requests fail naming it
      * ([com.mdmesh.core.net.BaseUrlInterceptor]) instead of quietly going to the baked default.
      */
-    fun baseUrl(): String {
+    override fun baseUrl(): String {
         val stored = prefs.getString(KEY, null)?.takeIf { it.isNotBlank() }
             ?: return ServerUrls.normalize(BuildConfig.MDM_BASE_URL) ?: BuildConfig.MDM_BASE_URL.trimEnd('/')
         return ServerUrls.normalize(stored) ?: stored.trim().trimEnd('/')
@@ -52,4 +52,9 @@ class ServerConfigStore @Inject constructor(@ApplicationContext context: Context
         const val KEY = "base_url"
         const val TAG = "ServerConfigStore"
     }
+}
+
+/** The server address the agent uses; an interface so enroll logic and its tests need no Android. */
+fun interface ServerAddress {
+    fun baseUrl(): String
 }

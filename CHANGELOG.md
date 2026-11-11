@@ -36,6 +36,9 @@ New
 - Sync now and console commands say when the device isn't connected and will get it at its next check-in.
 
 Fixes
+- Agent: while a device can't enroll, its screen says why and what to do (code used up or expired, server not
+  found, certificate not trusted, device date wrong, Wi-Fi asking for a sign-in, `http://` address) instead of an
+  error key or exception text. Needs agent 0.5.0.
 - Agent: a server address in the QR with spaces, a trailing slash, no `https://` or a path now works, and one that
   isn't an address is reported on the device instead of the agent quietly trying a placeholder host. Needs agent
   0.5.0.

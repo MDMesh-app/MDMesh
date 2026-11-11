@@ -105,7 +105,7 @@ class EnrollmentManagerTest {
             manager(FakeIdentity(initialId =null), token = null).ensureEnrolled()
             fail("expected EnrollmentException")
         } catch (e: EnrollmentException) {
-            assertTrue(e.message!!.contains("token"))
+            assertEquals(EnrollmentFailure.NO_CODE, e.message)
         }
     }
 
@@ -118,7 +118,24 @@ class EnrollmentManagerTest {
             manager(FakeIdentity(initialId =null), api).ensureEnrolled()
             fail("expected EnrollmentException")
         } catch (e: EnrollmentException) {
-            assertEquals("error.agent.token.used", e.message)
+            assertTrue(e.message, e.message!!.startsWith("This enrollment code has already enrolled"))
+            assertTrue("the key stays for the log and the retry rule", e.message!!.endsWith("(error.agent.token.used)"))
+        }
+    }
+
+    @Test
+    fun `a network failure says what happened and names the server`() = runTest {
+        val api = FakeMdmApi().apply { enrollThrows = java.net.UnknownHostException("mdm.acme.test") }
+        val manager = EnrollmentManager(
+            api, FakeIdentity(), FakeTokenProvider("tok-123"), FakeCapabilitySource(), NoopEventSink,
+            serverAddress = { "https://mdm.acme.test" },
+        )
+        try {
+            manager.ensureEnrolled()
+            fail("expected EnrollmentException")
+        } catch (e: EnrollmentException) {
+            assertTrue(e.message, e.message!!.startsWith("Can't find the server mdm.acme.test."))
+            assertTrue(e.cause is java.net.UnknownHostException)
         }
     }
 }

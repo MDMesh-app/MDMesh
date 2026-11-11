@@ -75,6 +75,7 @@ class KioskViews(private val context: Context, val palette: KioskPalette, privat
     /** A centred column filling its parent, for the splash, hold and idle screens. */
     fun centredColumn(): LinearLayout = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
+        clipToPadding = false // plates reach into the padding
         gravity = Gravity.CENTER
         setPadding(gutter, 0, gutter, 0)
         layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
@@ -101,6 +102,7 @@ class KioskViews(private val context: Context, val palette: KioskPalette, privat
      */
     fun appCell(iconPx: Int): LinearLayout = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
+        clipToPadding = false // a label's plate reaches 4dp into the cell's padding
         gravity = Gravity.CENTER_HORIZONTAL
         setPadding(dp(CELL_PAD_H_DP), dp(CELL_PAD_V_DP), dp(CELL_PAD_H_DP), dp(CELL_PAD_V_DP))
         isClickable = true

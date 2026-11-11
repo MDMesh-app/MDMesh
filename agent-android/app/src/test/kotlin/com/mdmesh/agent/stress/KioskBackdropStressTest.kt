@@ -103,6 +103,9 @@ class KioskBackdropStressTest : KioskHarness() {
         val header = plated.first { it.text == s(R.string.kiosk_header) }
         val rect = (header.background as TextPlate).plateRect(android.graphics.RectF())
         assertTrue("the header plate hugs its text", rect.width() < header.width)
+        for (t in plated) {
+            assertFalse("a plate is never clipped by its parent's padding", (t.parent as ViewGroup).clipToPadding)
+        }
         val labels = plated.filter { (it.background as TextPlate).inRow }
         labels.groupBy { IntArray(2).also(it::getLocationInWindow)[1] }.values.forEach { row ->
             val widths = row.map { (it.background as TextPlate).plateRect(android.graphics.RectF()).width() }.toSet()

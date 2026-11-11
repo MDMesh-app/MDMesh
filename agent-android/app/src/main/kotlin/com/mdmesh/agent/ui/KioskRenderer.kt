@@ -267,6 +267,7 @@ private class GridColumn(context: Context) : LinearLayout(context) {
 
     init {
         orientation = VERTICAL
+        clipToPadding = false // the header's plate reaches into the top padding
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {

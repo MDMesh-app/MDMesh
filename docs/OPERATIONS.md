@@ -499,7 +499,8 @@ It never touches apt packages, your proxy or the git checkout.
 - Enrollment codes are stored hashed. A code for a batch enrolls devices for anyone who has it until it expires or
   its devices are used up. If one is shared further than meant, use **Stop all codes** on the Enroll page (or
   `POST /rest/private/agent/v1/token/revoke-all`): every code of the customer that still works stops, and enrolled
-  devices stay enrolled. The server log names the token that enrolled each device, and the audit log records making
+  devices stay enrolled. The server log names the token that enrolled each device, and logs each refused enrollment
+  with its reason (unknown, expired, used up or stopped code; never the code itself). The audit log records making
   and stopping codes.
 - The console session cookie is `SameSite=Lax`, and `Secure` when `BASE_URL` is https.
 - Failed sign-ins are limited per address and per account ([Sign-in limits](#sign-in-limits)).

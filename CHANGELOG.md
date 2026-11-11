@@ -36,6 +36,8 @@ New
 - Sync now and console commands say when the device isn't connected and will get it at its next check-in.
 
 Fixes
+- Enroll: the server log says why it refused a device's enrollment (unknown, expired, used up or stopped code), so
+  "my code doesn't work" can be answered from the log.
 - Enroll: when the network drops just as a device enrolls, it no longer stays on "Enrolling…" with a code that reads
   as already used, or takes a second device's place on a batch code. Its retry gets the device it already created. Needs
   agent 0.5.0 and this server; older agents enroll as before.

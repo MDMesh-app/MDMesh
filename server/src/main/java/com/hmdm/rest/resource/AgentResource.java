@@ -162,6 +162,9 @@ public class AgentResource {
 
         AgentEnrollmentToken token = tokenDAO.findByToken(request.getEnrollToken());
         if (token == null) {
+            // Every refusal is logged with its reason (never the code): what an admin looks for when a device says
+            // its code doesn't work. A code that was never made, or was made on another server, lands here.
+            logger.info("Agent enroll refused: unknown code (made on another server, mistyped, or deleted)");
             return Response.ERROR("error.agent.token.invalid");
         }
         // Friendly pre-checks for good error messages; the CLAIM below is the actual guard.
@@ -181,9 +184,13 @@ public class AgentResource {
             }
         }
         if (token.isUsed()) {
+            logger.info("Agent enroll refused: token {} has enrolled all its {} device(s)", token.getId(),
+                    token.getMaxUses() == null ? 1 : token.getMaxUses());
             return Response.ERROR("error.agent.token.used");
         }
         if (token.getExpiresAt() != null && token.getExpiresAt() <= System.currentTimeMillis()) {
+            logger.info("Agent enroll refused: token {} expired at {}", token.getId(),
+                    java.time.Instant.ofEpochMilli(token.getExpiresAt()));
             return Response.ERROR("error.agent.token.expired");
         }
         // Atomically consume the token BEFORE creating anything: with N concurrent enrolls
@@ -192,6 +199,7 @@ public class AgentResource {
         // device row, leaving permanent ghost devices.
         if (!tokenDAO.claim(token.getId())) {
             // Used up, stopped or expired since the pre-checks, or another enroll took the last use.
+            logger.info("Agent enroll refused: token {} was used up, stopped or expired by another request", token.getId());
             return Response.ERROR("error.agent.token.used");
         }
 

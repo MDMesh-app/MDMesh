@@ -96,6 +96,8 @@ android {
         // Robolectric keeps a sandbox per SDK and graphics mode for the whole run; with the accessibility tests'
         // (API 26 and 35, native graphics) that outgrows Gradle's 512 MB default.
         unitTests.all { it.maxHeapSize = "2g" }
+        // The shared legibility vectors live outside the module: a change to them must rerun the tests.
+        unitTests.all { it.inputs.file(rootProject.file("../proto/vectors/kiosk-scrim.json")) }
     }
 }
 

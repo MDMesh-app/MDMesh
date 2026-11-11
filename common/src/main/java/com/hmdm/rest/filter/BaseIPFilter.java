@@ -133,6 +133,11 @@ public class BaseIPFilter {
         return addr != null ? addr : request.getRemoteAddr();
     }
 
+    /** Whether the peer is a configured proxy (or this host) that sent the header {@link #getRemoteAddr} reads. */
+    public boolean isProxyNamingClient(HttpServletRequest request) {
+        return isFromProxy(request) && request.getHeader(ipHeader) != null;
+    }
+
     /**
      * The client's address: the peer, or, when the peer is a configured proxy (or this host), the last entry of the
      * proxy's header, the one the proxy itself added (docs/OPERATIONS.md). Null when that proxy sent a header that is

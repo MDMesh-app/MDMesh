@@ -142,7 +142,9 @@ Sign in as **admin** with the temporary password the installer printed, then set
 One prebuilt agent APK works for every deployment. The server URL travels in the enrollment QR
 (`com.mdmesh.SERVER_URL`), not in the APK. The latest verified release's APK is served at `/files/agent.apk`; if it
 isn't, host one there yourself. Generate the QR on the console's **Enroll** page. It holds your `BASE_URL`, the APK
-location and a single-use token.
+location and an enrollment token: single-use and valid for 24 hours by default, or, to set up a batch, for up to 100
+devices and 30 days (the API allows up to 1000 devices). **Stop all codes** on the same page ends every code that
+still works.
 
 ## Updates, recovery and logs
 
@@ -151,6 +153,7 @@ location and a single-use token.
   [docs/UPGRADING.md, Recovery and rollback](docs/UPGRADING.md#recovery-and-rollback).
 - **Server logs** and a temporary DEBUG log: [docs/OPERATIONS.md, Server logs](docs/OPERATIONS.md#server-logs).
 - **Settings**: [configuration reference](docs/OPERATIONS.md#configuration-reference).
+- **Console accounts and roles**: [docs/USER_MANAGEMENT.md](docs/USER_MANAGEMENT.md).
 - [Health checks](docs/OPERATIONS.md#health-checks), [backups](docs/OPERATIONS.md#backups-and-restore),
   [moving to a new BASE_URL](docs/OPERATIONS.md#moving-to-a-new-base_url),
   [uninstalling](docs/OPERATIONS.md#uninstalling) and [security](docs/OPERATIONS.md#security-notes).

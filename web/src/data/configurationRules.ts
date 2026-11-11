@@ -57,10 +57,11 @@ export function cloneForNew(base: Configuration | null, baseApps?: ConfigApp[]):
 
 /**
  * Devices that will actually re-apply kiosk: agents too old for config.apply ("unsupported") won't.
- * null = no sync summary for this configuration — the caller fails closed (dialog without a number).
+ * null = no sync summary for this configuration, or only wiped devices visible (this admin may not see them all) —
+ * the caller fails closed (dialog without a number).
  */
 export function affectedDeviceCount(row: ConfigSyncSummary | undefined): number | null {
-  return row ? Math.max(0, row.total - row.unsupported) : null;
+  return row && row.total > 0 ? Math.max(0, row.total - row.unsupported) : null;
 }
 
 // configurations.mainAppId is an applicationVersions.id (NOT an applications.id): the server

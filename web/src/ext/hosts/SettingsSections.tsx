@@ -33,13 +33,19 @@ function SettingsSection({ entry }: { entry: SlotEntry<SettingsSectionContributi
 
 /**
  * The Settings page's sections the role may see, core's and extensions' in order, and the section nav that goes
- * with them. `coreMeta` is keyed by core section id.
+ * with them. `coreMeta` is keyed by core section id; `hiddenCoreSections` leaves out core sections the page has no
+ * body for yet (Users & roles, until the server says the account administers users).
  */
-export function useSettingsSections(coreMeta: Readonly<Record<string, SectionMeta>>): {
+export function useSettingsSections(
+  coreMeta: Readonly<Record<string, SectionMeta>>,
+  hiddenCoreSections: readonly string[] = [],
+): {
   nav: SectionNavItem[];
   sections: ReactNode;
 } {
-  const entries = useContributions('settings.section');
+  const entries = useContributions('settings.section').filter(
+    (entry) => !entry.extension.core || !hiddenCoreSections.includes(entry.contribution.id),
+  );
   const nav = entries.map((entry) => ({
     id: sectionAnchor(entry.extension, entry.contribution.id),
     label: entry.contribution.title,

@@ -85,6 +85,12 @@ public class AgentResource {
     private static final Set<String> ALLOWED_RESULT_STATUS = new HashSet<>(Arrays.asList(
             "accepted", "done", "failed", "unsupported", "expired"));
 
+    /** The factory reset. Delivering it marks the device wiped: it erases itself before it can report. */
+    static final String WIPE_COMMAND = "device.wipe";
+    // A wiped device never checks in again under its old identity, so one that does, this long after its wipe was
+    // delivered, didn't erase itself. The grace covers a check-in the agent may still make before the reset starts.
+    static final long WIPE_GRACE_MS = 5L * 60L * 1000L;
+
     // Ingestion caps: an authenticated device is still untrusted input. These bound what a single
     // check-in (potentially every 5s in foreground mode) can write into the database.
     private static final int MAX_EVENTS_PER_CHECKIN = 100;
@@ -139,7 +145,7 @@ public class AgentResource {
     }
 
     // =================================================================================================================
-    @ApiOperation(value = "Enroll an agent", notes = "Validates a single-use token and registers the device.")
+    @ApiOperation(value = "Enroll an agent", notes = "Validates an enrollment token, uses one of its uses, and registers the device.")
     @POST
     @Path("/enroll")
     @Consumes(MediaType.APPLICATION_JSON)
@@ -154,10 +160,16 @@ public class AgentResource {
             return Response.ERROR("error.agent.token.invalid");
         }
         // Friendly pre-checks for good error messages; the CLAIM below is the actual guard.
+        if (token.getRevokedAt() != null) {
+            // Stopped by an admin. Answered as used up: every agent, older ones too, stops retrying on that (an
+            // unknown error would be retried forever), and it says what matters, that this code enrolls nothing more.
+            logger.info("Agent enroll refused: token {} was stopped", token.getId());
+            return Response.ERROR("error.agent.token.used");
+        }
         if (token.isUsed()) {
             return Response.ERROR("error.agent.token.used");
         }
-        if (token.getExpiresAt() != null && token.getExpiresAt() < System.currentTimeMillis()) {
+        if (token.getExpiresAt() != null && token.getExpiresAt() <= System.currentTimeMillis()) {
             return Response.ERROR("error.agent.token.expired");
         }
         // Atomically consume the token BEFORE creating anything: with N concurrent enrolls
@@ -165,6 +177,7 @@ public class AgentResource {
         // the blind mark-used-after-create used here before let every racer mint its own
         // device row, leaving permanent ghost devices.
         if (!tokenDAO.claim(token.getId())) {
+            // Used up, stopped or expired since the pre-checks, or another enroll took the last use.
             return Response.ERROR("error.agent.token.used");
         }
 
@@ -208,12 +221,15 @@ public class AgentResource {
             // golden image. Failures are logged inside; enrollment itself must not fail on this.
             int queuedApps = configAppInstaller.enqueueConfigApps(device);
 
-            logger.info("Agent enrolled device {} (configuration {}, {} config apps queued)",
-                    deviceId, device.getConfigurationId(), queuedApps);
+            // The token id says which code enrolled the device: with a code for a batch, what to look for when it
+            // leaked (the mint and revoke-all are in the audit log).
+            logger.info("Agent enrolled device {} with token {} (configuration {}, {} config apps queued)",
+                    deviceId, token.getId(), device.getConfigurationId(), queuedApps);
             return Response.OK(new AgentEnrollResponse(deviceId, configurationName, deviceSecret));
         } finally {
-            // A server-side failure (settings rejection, SQL error) must not burn the single-use
-            // token — the agent retries and succeeds once the operator fixes the condition.
+            // A server-side failure (settings rejection, SQL error) must not burn the use it took
+            // — the agent retries and succeeds once the operator fixes the condition. A token
+            // stopped meanwhile stays stopped (the claim checks revokedAt, which release leaves).
             if (device == null) {
                 tokenDAO.release(token.getId());
             }
@@ -265,6 +281,11 @@ public class AgentResource {
 
         // Stamp last-seen so the admin UI shows the device online.
         commandDAO.touchLastUpdate(deviceNumber);
+
+        if (device.getWipedAt() != null && receivedAt - device.getWipedAt() > WIPE_GRACE_MS
+                && commandDAO.clearWipedBefore(deviceNumber, receivedAt - WIPE_GRACE_MS)) {
+            logger.info("Device {} checked in after its wipe was delivered, so it wasn't wiped: unmarked", deviceNumber);
+        }
 
         // Backfill the stable hardware id for already-enrolled devices (set once / when it changes).
         if (request.getHardwareId() != null && !request.getHardwareId().trim().isEmpty()
@@ -389,6 +410,10 @@ public class AgentResource {
                 if ("done".equals(status)) {
                     // A completed config.apply records which agent version applied it (config resync baseline).
                     commandDAO.recordConfigApplyDone(deviceNumber, commandId);
+                } else if (device.getWipedAt() != null && ("failed".equals(status) || "unsupported".equals(status))
+                        && commandDAO.clearWipedForCommand(deviceNumber, commandId)) {
+                    logger.info("Device {} reported its wipe (command {}) {}: no longer marked wiped",
+                            deviceNumber, commandId, status);
                 }
             }
         }
@@ -455,6 +480,10 @@ public class AgentResource {
             // Atomically claim it so a concurrent check-in can't deliver the same command twice.
             if (commandDAO.claimForDelivery(stored.getId(), now)) {
                 commands.add(toWire(stored));
+                if (WIPE_COMMAND.equals(stored.getType())) {
+                    commandDAO.markWiped(deviceNumber, now);
+                    logger.info("Device {} received its wipe (command {}): marked wiped", deviceNumber, stored.getId());
+                }
             }
         }
 

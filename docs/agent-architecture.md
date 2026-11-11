@@ -56,14 +56,19 @@ configuration.
 configuration; an ad-hoc "Custom kiosk" from the console is left alone. After someone leaves the kiosk, the console's
 "Return to configured kiosk" sends `kiosk.enter` with the configuration's own kiosk block (the same payload
 `config.apply` carries), so the device is back in exactly that kiosk without waiting for a configuration change.
+After a PIN exit, staff can tap **Return to kiosk** in the agent to restore the latest locally stored configured
+kiosk, even offline; the button is available only outside kiosk on Device Owner devices whose configuration enables
+it. It asks first, says so when that kiosk has no exit on the device, enters only the kiosk that was confirmed, and
+finishes the entry even if the screen goes away (a rotation); once in kiosk it queues a check-in. A newer delivered kiosk-off configuration removes the option even if another policy failed; a remote
+`kiosk.exit` leaves it available while the configuration still enables kiosk.
 
-**The 23 enforced fields**
+**The 24 enforced fields**
 
 | Area | Fields |
 |------|--------|
 | Kiosk | `mainAppId`, `kioskMode`, `kioskExit`, `kioskHome`, `kioskRecents`, `kioskNotifications`, `kioskSystemInfo`, `kioskKeyguard`, `kioskLockButtons`, `kioskLockVolume`, `password` (exit PIN, stored as entered) |
 | Launcher look | `backgroundColor`, `textColor`, `iconSize` |
-| Device policy | `wifi`, `wifiRadio`, `bluetooth`, `usbStorage`, `disableScreenshots`, `disableFactoryReset`, `disableSafeBoot` |
+| Device policy | `wifi`, `wifiRadio`, `bluetooth`, `camera`, `usbStorage`, `disableScreenshots`, `disableFactoryReset`, `disableSafeBoot` |
 | Location | `requestUpdates` (location capture mode) |
 | Connectivity | `connectivityMode` (live-connection mode, 1.5) |
 

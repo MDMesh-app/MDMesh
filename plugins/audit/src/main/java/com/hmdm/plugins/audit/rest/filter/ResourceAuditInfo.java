@@ -27,6 +27,7 @@ import javax.servlet.ServletResponse;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -67,7 +68,10 @@ public enum ResourceAuditInfo {
     DEVICE_LOCK("PUT", "/rest/plugins/devicereset/private/lock", true, "plugin.audit.action.device.lock", true, true),
     DEVICE_COMMAND("POST", Pattern.compile("/rest/private/agent/v1/devices/[^/]+/commands/?"), "plugin.audit.action.device.command", true, true, true),
     BULK_DEVICE_COMMAND("POST", Pattern.compile("/rest/private/agent/v1/bulk/commands/?"), "plugin.audit.action.device.bulk.command", true, true, true),
-    SYNC_DEVICE_APPS("POST", Pattern.compile("/rest/private/agent/v1/devices/[^/]+/syncApps/?"), "plugin.audit.action.device.sync.apps", true, false, true);
+    SYNC_DEVICE_APPS("POST", Pattern.compile("/rest/private/agent/v1/devices/[^/]+/syncApps/?"), "plugin.audit.action.device.sync.apps", true, false, true),
+    // The request (configuration, devices, validity) is saved; the response, which holds the code, never is.
+    MINT_ENROLL_TOKEN("POST", "/rest/private/agent/v1/token", true, "plugin.audit.action.enroll.token.mint", true, true),
+    REVOKE_ENROLL_TOKENS("POST", "/rest/private/agent/v1/token/revoke-all", true, "plugin.audit.action.enroll.token.revoke.all", false, true);
 
     /**
      * <p>Method for the REST resource to track audit log for.</p>
@@ -151,8 +155,21 @@ public enum ResourceAuditInfo {
      */
     public ResourceAuditor getResourceAuditor(ServletRequest request, ServletResponse response, FilterChain chain,
                                               String proxyIps, String ipHeader) throws IOException {
+        return getResourceAuditor(request, response, chain, proxyIps, ipHeader, ResourceAuditor.proxyList(proxyIps),
+                false);
+    }
+
+    /**
+     * <p>Gets the auditor for the specified request/response chain.</p>
+     *
+     * @param trustedProxies         {@code proxy.addresses}, split ({@link ResourceAuditor#proxyList}).
+     * @param privatePeersAreProxies {@code proxy.private.networks}: any private-network peer is the install's proxy.
+     */
+    public ResourceAuditor getResourceAuditor(ServletRequest request, ServletResponse response, FilterChain chain,
+                                              String proxyIps, String ipHeader, List<String> trustedProxies,
+                                              boolean privatePeersAreProxies) throws IOException {
         return new ResourceAuditor(auditLogAction, request, response, chain, payload, maskCommandPayload, checkResponse,
-                proxyIps, ipHeader);
+                proxyIps, ipHeader, trustedProxies, privatePeersAreProxies);
     }
 
     /**

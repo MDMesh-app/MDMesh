@@ -1,7 +1,12 @@
 // Runs before every test file (vite.config.ts `test.setupFiles`).
-import { cleanup } from '@testing-library/react';
+import { cleanup, configure } from '@testing-library/react';
 import { afterEach, vi } from 'vitest';
 import { readHistoryAgain } from '../whatsnew/seen';
+
+// Each page is lazy, so whichever test reaches one first compiles and renders it cold, which a busy machine stretches
+// past Testing Library's 1 s default. The test limit that goes with this wait is `test.testTimeout` in vite.config.ts.
+// A `{ timeout }` passed to one call beats this value, so tests don't pass one.
+configure({ asyncUtilTimeout: 10_000 });
 
 // jsdom has no matchMedia; the shell and the theme read it. Every query answers "no match" (desktop, light).
 Object.defineProperty(window, 'matchMedia', {

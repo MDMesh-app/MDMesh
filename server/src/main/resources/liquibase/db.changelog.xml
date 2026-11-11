@@ -3059,4 +3059,57 @@
         <rollback>ALTER TABLE device_state DROP COLUMN appsRevision;</rollback>
     </changeSet>
 
+    <changeSet id="26.11.04-devices-wipedAt" author="Przemek-Magic" context="common">
+        <comment>Column,new: devices#wipedAt, epoch millis: when a device.wipe command was delivered to the device. The
+            device erases itself before it can report, so this is what tells a wiped device from one that is switched
+            off. Cleared when the device reports the wipe failed, or checks in again later. NULL = not wiped; existing
+            devices stay NULL.</comment>
+        <sql>ALTER TABLE devices ADD COLUMN wipedAt BIGINT;</sql>
+        <rollback>ALTER TABLE devices DROP COLUMN wipedAt;</rollback>
+    </changeSet>
+
+    <changeSet id="26.11.08-configurations-camera" author="letter-number" context="common">
+        <comment>Column,new: configurations#camera — null = not managed, true = allow and false = block,
+            sent as policies.camera. No DEFAULT preserves existing configurations and avoids a fleet-wide change.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN camera BOOLEAN;</sql>
+        <rollback>ALTER TABLE configurations DROP COLUMN camera;</rollback>
+    </changeSet>
+
+    <changeSet id="26.11.07-agentEnrollmentToken-maxUses" author="nexi-space" context="common">
+        <comment>Columns,new: agentEnrollmentToken#maxUses, #useCount: a token enrolls up to maxUses devices, and
+            useCount counts those enrolled; used turns true with the last. Existing tokens get maxUses 1 (single use,
+            as before) and useCount 1 when already used.</comment>
+        <sql>
+            ALTER TABLE agentEnrollmentToken ADD COLUMN maxUses INT NOT NULL DEFAULT 1;
+            ALTER TABLE agentEnrollmentToken ADD COLUMN useCount INT NOT NULL DEFAULT 0;
+            UPDATE agentEnrollmentToken SET useCount = 1 WHERE used = true;
+        </sql>
+        <rollback>
+            ALTER TABLE agentEnrollmentToken DROP COLUMN useCount;
+            ALTER TABLE agentEnrollmentToken DROP COLUMN maxUses;
+        </rollback>
+    </changeSet>
+
+    <changeSet id="26.11.08-agentEnrollmentToken-revokedAt-hash" author="lunacy" context="common">
+        <comment>Column,new: agentEnrollmentToken#revokedAt (an admin stopped every code: the claim refuses a token
+            with it set). The token column now holds the uppercase hex SHA-256 of the token, as devices' secrets
+            are stored: existing tokens are hashed in place, so a code already printed or in a QR keeps working.
+            sha256() needs PostgreSQL 11+; on an older server the existing tokens are marked used instead (each is a
+            24 h single-use code, made again on the Enroll page). The rollback keeps the hashes: an older server
+            finds none of them, so a code made before the downgrade stops working, which fails safe.</comment>
+        <sql splitStatements="false">
+            ALTER TABLE agentEnrollmentToken ADD COLUMN revokedAt BIGINT;
+            DO $$
+            BEGIN
+                IF current_setting('server_version_num')::int &gt;= 110000 THEN
+                    EXECUTE $q$UPDATE agentEnrollmentToken
+                        SET token = upper(encode(sha256(convert_to(token, 'UTF8')), 'hex'))$q$;
+                ELSE
+                    EXECUTE $q$UPDATE agentEnrollmentToken SET token = 'unhashed-' || id, used = true$q$;
+                END IF;
+            END $$;
+        </sql>
+        <rollback>ALTER TABLE agentEnrollmentToken DROP COLUMN revokedAt;</rollback>
+    </changeSet>
+
 </databaseChangeLog>

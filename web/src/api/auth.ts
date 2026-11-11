@@ -70,7 +70,7 @@ export interface AuthOptions {
   publicKey?: string;
 }
 
-function hashPassword(plain: string): string {
+export function hashPassword(plain: string): string {
   // Matches login.controller.js: md5(password).toUpperCase()
   return SparkMD5.hash(plain).toUpperCase();
 }

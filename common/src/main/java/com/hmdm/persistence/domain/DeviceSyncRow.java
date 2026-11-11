@@ -16,4 +16,6 @@ public class DeviceSyncRow {
     private String appliedConfigRevision;
     /** The latest config.apply result reports a deferred outcome (e.g. Wi-Fi radio Off on the only network). */
     private boolean lastApplyDeferred;
+    /** devices.wipedAt is set: the device erased itself and can't report a new revision. */
+    private boolean wiped;
 }

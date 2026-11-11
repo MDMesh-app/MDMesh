@@ -36,6 +36,7 @@ export const ORDER = Object.freeze({
   }),
   settingsSection: Object.freeze({
     account: 100,
+    users: 150,
     server: 200,
     updates: 300,
     agentRollout: 400,

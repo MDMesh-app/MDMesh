@@ -173,6 +173,10 @@ works with a 0.3.9 server.
   must use the current release workflow ([RELEASING.md](../RELEASING.md)). An install that follows upstream releases
   with its own `IMAGE_OWNER` sets `GITHUB_REPO` to the repository that publishes its images, or `IMAGE_OWNER` to
   `mdmesh-app`.
+- **Return to kiosk on the device (agent 0.5.0):** after someone leaves a kiosk with the exit PIN, the MDMesh Agent
+  offers **Return to kiosk**, offline too, while the device's configuration enables kiosk. A console **Exit kiosk**
+  (`kiosk.exit`) leaves that option on the device; to remove it, turn kiosk off in the configuration. Older agents
+  don't show it.
 
 ### v0.4.0
 

@@ -55,16 +55,18 @@ attempt). Older servers ignore the field.
 Each enrollment is one database transaction that first locks its token's row, so enrollments with one token run one
 after another: a retry sent while its first request still runs waits for it, then resumes it. The token is claimed
 before the customer's device limit is checked, so a used-up, stopped or expired token always gets its final error.
-When a limit applies, the customer's enrollments count its devices under a transaction-scoped advisory lock (no row is
-locked: other inserts and sign-ins never wait for an enrollment).
+When a limit applies, the customer's devices are counted under a transaction-scoped advisory lock that console and
+on-demand device creation take too, so no path can overfill the limit (no row is locked: other inserts and sign-ins
+never wait for an enrollment).
 
 Errors: `Response.ERROR("error.agent.token.invalid")`, `...token.used`, `...token.expired` and
 `...enrollment.disabled` are final for that token: retrying cannot succeed. These are retryable, and the agent keeps
 trying:
 - `...enrollment.failed`: the server failed and rolled the enrollment back (no device kept, no use spent);
-- `...enrollment.inProgress`: another enrollment with the same token held its lock longer than 15 s (on a slow
-  database, typically the request this one retries), or 8 enrollments with that token are already running; the next
-  retry resumes it or goes through;
+- `...enrollment.inProgress`: the enrollment couldn't get its locks in time (15 s: the token's, held by another
+  enrollment with it, typically the request this one retries; the customer's, held while another device is added;
+  or a row a console transaction held), or 8 enrollments with that token are already running on that server instance;
+  nothing was kept, and the next retry resumes it or goes through;
 - `...enrollment.deviceLimit`: on an install with several customers, the token's customer has as many devices as its
   limit allows (as in the console: none for a master customer, 0 = no limit, a negative limit blocks); the device
   enrolls once there is room.

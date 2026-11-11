@@ -335,6 +335,15 @@ limit. Nothing logs this. If your domain has an AAAA record, either turn on IPv6
 (Docker's [IPv6 guide](https://docs.docker.com/engine/daemon/ipv6/)), or remove the AAAA record so clients use IPv4.
 The Cloudflare tunnel mode is not affected.
 
+## Enrollment under load
+
+Each enrollment is one database transaction that waits for its code's lock (and, on an install with several
+customers and a device limit, the customer's), at most 15 s, holding one of the server's 30 database connections
+meanwhile. A burst on one code (a batch of devices switched on together) runs one enrollment at a time; past 8 at once
+per code the server answers the rest "try again" at once, and the agents retry with backoff. That limit is per server
+instance: with several behind a load balancer each allows 8 per code. Nothing is kept from an enrollment that had to
+retry.
+
 ## Backups and restore
 
 **Docker.** One-click updates dump the database first, and a rollback restores that dump

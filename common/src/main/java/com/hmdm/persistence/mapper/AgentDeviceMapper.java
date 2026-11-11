@@ -88,10 +88,10 @@ public interface AgentDeviceMapper {
     Integer customerDeviceLimit(@Param("customerId") int customerId);
 
     /**
-     * Serialises the device-limit check of one customer's enrollments until the transaction ends: an advisory lock
-     * (namespace 1296321861, "MDME"), so no row is locked and nothing else waits for it.
+     * Serialises the device-limit check of one customer until the transaction ends ({@link
+     * com.hmdm.persistence.CustomerDeviceLimit#LOCK_SQL}, which console and on-demand device creation take too).
      */
-    @Select({"SELECT 1 FROM (SELECT pg_advisory_xact_lock(1296321861, #{customerId})) AS locked"})
+    @Select({com.hmdm.persistence.CustomerDeviceLimit.LOCK_SQL})
     Integer lockCustomerEnrollments(@Param("customerId") int customerId);
 
     /** The customer's devices, as on-demand creation counts them (UnsecureDAO.createNewDeviceOnDemand). */

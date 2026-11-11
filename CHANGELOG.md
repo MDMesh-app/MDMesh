@@ -74,7 +74,8 @@ Fixes
   through no longer leaves a device in the list that can never check in, or uses up the enrollment code: nothing is
   kept and the agent tries again.
 - Enroll: on an install with several customers, enrolling with a code now respects the customer's device limit, as
-  other ways of adding devices already did. A device over the limit isn't added and says the organisation has
+  other ways of adding devices already did, and devices added at the same moment through the console, enrollment or
+  on-demand creation can no longer together pass it. A device over the limit isn't added and says the organisation has
   reached its device limit; it enrolls by itself once there is room (agent 0.5.0; older agents just keep trying).
 - Audit log: on Docker installs, entries show the client's address instead of the edge container's (thanks
   @Przemek-Magic).
@@ -86,7 +87,8 @@ Fixes
 
 Under the hood
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
-- Agent protocol 1.6 (additive): the enroll request's optional `enrollAttempt`, and the retryable enroll errors
+- Agent protocol 1.6 (additive): config.apply `policies.locationServices`, the enroll request's optional
+  `enrollAttempt`, and the retryable enroll errors
   `error.agent.enrollment.failed`, `error.agent.enrollment.inProgress` and `error.agent.enrollment.deviceLimit`. New
   console API: `GET /private/agent/v1/devices/enrolled`.
 

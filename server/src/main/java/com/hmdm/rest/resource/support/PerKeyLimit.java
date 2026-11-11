@@ -10,6 +10,11 @@ import java.util.concurrent.ConcurrentMap;
  * At most {@code max} callers at once per key; the rest are turned away at once instead of queueing. Enrollments of one
  * code run one after another on its database lock, each holding a pooled connection while it waits: this keeps a burst
  * on one code (a batch of devices switched on together) from taking the whole pool. A key's entry goes when idle.
+ *
+ * <p>Scope: one server instance (the counts live in this JVM). Several instances behind a load balancer allow
+ * {@code max} per code on each, and several codes bursting at once on a slow database can still use more connections
+ * than the pool has (30): those requests wait for a connection, then for the lock, and fail retryably at its timeout.
+ * The database lock, not this, is what keeps enrollments correct.</p>
  */
 public final class PerKeyLimit<K> {
 

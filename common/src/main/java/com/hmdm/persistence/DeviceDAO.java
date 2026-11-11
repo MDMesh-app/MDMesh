@@ -192,6 +192,26 @@ public class DeviceDAO extends AbstractDAO<Device> {
         return getSingleRecord(() -> this.mapper.getDeviceByNumberIgnoreCase(number), SecurityException::onDeviceAccessViolation);
     }
 
+    /**
+     * Inserts a device the console adds, within the customer's device limit ({@code deviceLimit} as the console
+     * applies it: 0 none, negative blocks), counted under the per-customer lock all device-adding paths share
+     * ({@link CustomerDeviceLimit}), in one transaction with the insert.
+     *
+     * @return false when the limit leaves no room (nothing inserted)
+     */
+    @Transactional
+    public boolean insertDeviceWithinLimit(Device device, int deviceLimit) {
+        int customerId = SecurityContext.get().getCurrentCustomerId().orElse(device.getCustomerId());
+        if (!CustomerDeviceLimit.roomForOne(deviceLimit, () -> this.mapper.lockCustomerDevices(customerId), () -> {
+            Long n = this.mapper.countAllDevicesForCustomer(customerId);
+            return n == null ? 0L : n;
+        })) {
+            return false;
+        }
+        insertDevice(device);
+        return true;
+    }
+
     @Transactional
     public void insertDevice(Device device) {
         insertRecord(device, d -> {

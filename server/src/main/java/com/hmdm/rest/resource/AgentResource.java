@@ -107,8 +107,10 @@ public class AgentResource {
      */
     static final String ENROLLMENT_FAILED = "error.agent.enrollment.failed";
     /**
-     * Another enrollment with the same code held its lock too long (the request this one retries, on a slow database).
-     * Retryable like {@link #ENROLLMENT_FAILED}: the next retry resumes that enrollment once it has committed.
+     * The enrollment couldn't get its locks in time (its code's, held by another enrollment with it, often the request
+     * this one retries; the customer's, held by another device being added; or a row a console transaction held), or
+     * too many enrollments with its code are running. Retryable like {@link #ENROLLMENT_FAILED}: nothing was kept, and
+     * the next retry resumes or goes through.
      */
     static final String ENROLLMENT_IN_PROGRESS = "error.agent.enrollment.inProgress";
     /**
@@ -116,7 +118,10 @@ public class AgentResource {
      * (no final marker), so the device enrolls once there is room.
      */
     static final String DEVICE_LIMIT = "error.agent.enrollment.deviceLimit";
-    /** Enrollments of one code allowed at once (waiting on its lock); more get ENROLLMENT_IN_PROGRESS at once. */
+    /**
+     * Enrollments of one code allowed at once (waiting on its lock), per server instance (the count lives in this JVM);
+     * more get ENROLLMENT_IN_PROGRESS at once. It bounds one code's burst, not the pool: see PerKeyLimit.
+     */
     static final int MAX_ENROLLS_PER_CODE = 8;
     private static final com.hmdm.rest.resource.support.PerKeyLimit<Integer> enrollsPerCode =
             new com.hmdm.rest.resource.support.PerKeyLimit<>(MAX_ENROLLS_PER_CODE);
@@ -224,7 +229,8 @@ public class AgentResource {
             return Response.ERROR(DEVICE_LIMIT);
         } catch (RuntimeException e) {
             if (isLockTimeout(e)) {
-                logger.info("Agent enroll with token {} waited too long for another enrollment with it", token.getId());
+                logger.info("Agent enroll with token {}: the enrollment couldn't get its locks in time; asked to retry",
+                        token.getId());
                 return Response.ERROR(ENROLLMENT_IN_PROGRESS);
             }
             // Rolled back: nothing kept, the use not spent; the agent retries. The class and SQL state only (a driver

@@ -173,9 +173,9 @@ public class AgentEnrollmentDAO {
      * (DeviceResource, CommonDAO.loadCustomerSettings): only on an install with several customers (the first customer
      * carries a default limit nobody set), none for a master customer, 0 means no limit, and a negative one blocks.
      *
-     * <p>The count is taken under a transaction-scoped advisory lock on the customer, so two enrolls of the customer
-     * (through any codes) can't both take the last place. It locks no row: device and other inserts that reference the
-     * customer, and sign-ins (which update it), never wait for an enrollment. Taken only when a limit applies.</p>
+     * <p>Counted under {@link CustomerDeviceLimit}'s per-customer lock, which console and on-demand device creation
+     * take too, so adds through any path (and enrolls through any codes) can't together pass the limit. No row is
+     * locked; taken only when a positive limit applies.</p>
      */
     private void enforceDeviceLimit(int customerId) {
         if (!deviceMapper.hasSeveralCustomers()) {
@@ -185,11 +185,8 @@ public class AgentEnrollmentDAO {
         if (limit == null || limit == 0) {
             return;
         }
-        if (limit < 0) {
-            throw new DeviceLimitException(limit);
-        }
-        deviceMapper.lockCustomerEnrollments(customerId);
-        if (deviceMapper.countCustomerDevices(customerId) >= limit) {
+        if (!CustomerDeviceLimit.roomForOne(limit, () -> deviceMapper.lockCustomerEnrollments(customerId),
+                () -> deviceMapper.countCustomerDevices(customerId))) {
             throw new DeviceLimitException(limit);
         }
     }

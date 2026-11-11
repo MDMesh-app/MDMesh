@@ -70,6 +70,36 @@ public class AgentEnrollmentTransactionTest {
                 "VALUES (#{number}, #{customerId}, #{configurationId}, 0)"})
         void insert(@Param("number") String number, @Param("customerId") int customerId,
                     @Param("configurationId") Integer configurationId);
+
+        /** The lock DeviceMapper.lockCustomerDevices takes for console and on-demand device creation. */
+        @org.apache.ibatis.annotations.Select({CustomerDeviceLimit.LOCK_SQL})
+        Integer lockCustomerDevices(@Param("customerId") int customerId);
+
+        @org.apache.ibatis.annotations.Select({"SELECT COUNT(*) FROM devices WHERE customerId = #{customerId}"})
+        long count(@Param("customerId") int customerId);
+    }
+
+    /**
+     * A device added the way the console (DeviceDAO.insertDeviceWithinLimit) and on-demand creation
+     * (UnsecureDAO.createNewDeviceOnDemand) add one: the shared rule, then the insert, in one transaction.
+     */
+    public static class ConsoleAdd {
+        private final TestDeviceMapper mapper;
+
+        @Inject
+        public ConsoleAdd(TestDeviceMapper mapper) {
+            this.mapper = mapper;
+        }
+
+        @org.mybatis.guice.transactional.Transactional
+        public boolean add(String number, int customerId, int limit) {
+            if (!CustomerDeviceLimit.roomForOne(limit, () -> mapper.lockCustomerDevices(customerId),
+                    () -> mapper.count(customerId))) {
+                return false;
+            }
+            mapper.insert(number, customerId, null);
+            return true;
+        }
     }
 
     /** Hooks into device creation, inside the enrollment transaction. */
@@ -120,6 +150,7 @@ public class AgentEnrollmentTransactionTest {
     private String schema;
     private AgentEnrollmentDAO enrollments;
     private AgentDeviceMapper deviceMapper;
+    private ConsoleAdd consoleAdd;
     private ExecutorService pool;
 
     @Before
@@ -166,11 +197,13 @@ public class AgentEnrollmentTransactionTest {
                 addMapperClass(AgentEnrollmentTokenMapper.class);
                 addMapperClass(AgentDeviceMapper.class);
                 addMapperClass(TestDeviceMapper.class);
+                bind(ConsoleAdd.class);
                 bind(AgentEnrollmentDAO.DeviceFactory.class).to(TestDeviceFactory.class);
             }
         });
         enrollments = injector.getInstance(AgentEnrollmentDAO.class);
         deviceMapper = injector.getInstance(AgentDeviceMapper.class);
+        consoleAdd = injector.getInstance(ConsoleAdd.class);
         pool = Executors.newFixedThreadPool(8);
     }
 
@@ -379,8 +412,93 @@ public class AgentEnrollmentTransactionTest {
 
     @Test
     public void enrolls_from_different_codes_at_once_never_pass_the_device_limit_together() throws Exception {
+        // Room for exactly one. The first enroll stops inside its transaction after counting (2 < 3) and inserting;
+        // the second, on another code (so no token lock in common), must wait for the customer's lock instead of
+        // counting 2 as well and adding a fourth device.
         int customerId = customer(3);
-        existingDevices(customerId, 1);
+        existingDevices(customerId, 2);
+        int tokenA = token(5, customerId);
+        int tokenB = token(5, customerId);
+        Future<AgentEnrollmentDAO.Outcome> first = enrollHeldOpen(tokenA, customerId);
+        Hooks.inside = null; // the second must not stop in the factory: without the lock it would create at once
+        Future<String> second = pool.submit(() -> {
+            try {
+                return enroll(tokenB, customerId, "attempt-second-0123456789").kind.name();
+            } catch (AgentEnrollmentDAO.DeviceLimitException e) {
+                return "LIMIT";
+            }
+        });
+        try {
+            String early = second.get(1500, TimeUnit.MILLISECONDS);
+            fail("the second enroll finished (" + early + ") while the first held the customer's count: devices "
+                    + devicesOf(customerId));
+        } catch (TimeoutException expected) {
+            // waiting on the customer's lock
+        } finally {
+            Hooks.proceed.countDown();
+        }
+        assertEquals(AgentEnrollmentDAO.Outcome.Kind.CREATED, first.get(20, TimeUnit.SECONDS).kind);
+        assertEquals("the second finds the customer full", "LIMIT", second.get(20, TimeUnit.SECONDS));
+        assertEquals(3, devicesOf(customerId));
+        assertEquals("one use; the refused enroll's use rolled back", 1, uses(tokenA) + uses(tokenB));
+    }
+
+    @Test
+    public void a_device_added_in_the_console_during_an_enroll_does_not_pass_the_limit_with_it() throws Exception {
+        // Room for one: the enroll counts 2 < 3 and stops before committing; the console add must wait for it, then
+        // find the customer full, instead of counting 2 as well.
+        int customerId = customer(3);
+        existingDevices(customerId, 2);
+        Future<AgentEnrollmentDAO.Outcome> enroll = enrollHeldOpen(token(5, customerId), customerId);
+        Future<Boolean> console = pool.submit(() -> consoleAdd.add("console-added", customerId, 3));
+        try {
+            Boolean early = console.get(1500, TimeUnit.MILLISECONDS);
+            fail("the console add finished (" + early + ") while the enroll held the customer's count");
+        } catch (TimeoutException expected) {
+            // waiting on the customer's lock
+        } finally {
+            Hooks.proceed.countDown();
+        }
+        assertEquals(AgentEnrollmentDAO.Outcome.Kind.CREATED, enroll.get(20, TimeUnit.SECONDS).kind);
+        assertFalse("the console add finds the customer full", console.get(20, TimeUnit.SECONDS));
+        assertEquals(3, devicesOf(customerId));
+    }
+
+    @Test
+    public void an_enroll_during_a_console_add_does_not_pass_the_limit_with_it() throws Exception {
+        int customerId = customer(3);
+        existingDevices(customerId, 2);
+        int tokenId = token(5, customerId);
+        // The console add holds the customer's lock (its transaction, opened on a raw connection) while the enroll runs.
+        try (Connection c = connect(); Statement st = c.createStatement()) {
+            c.setAutoCommit(false);
+            st.execute("SET search_path = " + schema);
+            st.executeQuery("SELECT pg_advisory_xact_lock(1296321861, " + customerId + ")").close();
+            st.execute("INSERT INTO devices (number, customerId) VALUES ('console-first', " + customerId + ")");
+            Future<String> enroll = pool.submit(() -> {
+                try {
+                    return enroll(tokenId, customerId, "attempt-after-console-0123").kind.name();
+                } catch (AgentEnrollmentDAO.DeviceLimitException e) {
+                    return "LIMIT";
+                }
+            });
+            try {
+                String early = enroll.get(1500, TimeUnit.MILLISECONDS);
+                fail("the enroll finished (" + early + ") while the console add held the customer's count");
+            } catch (TimeoutException expected) {
+                // waiting on the customer's lock
+            }
+            c.commit();
+            assertEquals("LIMIT", enroll.get(20, TimeUnit.SECONDS));
+        }
+        assertEquals(3, devicesOf(customerId));
+        assertEquals("the refused enroll spends no use", 0, uses(tokenId));
+    }
+
+    @Test
+    public void many_enrolls_through_two_codes_never_pass_the_device_limit() throws Exception {
+        int customerId = customer(3);
+        existingDevices(customerId, 2);
         int tokenA = token(5, customerId);
         int tokenB = token(5, customerId);
         List<Future<String>> all = new ArrayList<>();
@@ -399,16 +517,12 @@ public class AgentEnrollmentTransactionTest {
         }
         start.countDown();
         int created = 0;
-        int limited = 0;
         for (Future<String> f : all) {
-            String k = f.get(30, TimeUnit.SECONDS);
-            if ("CREATED".equals(k)) created++;
-            if ("LIMIT".equals(k)) limited++;
+            if ("CREATED".equals(f.get(30, TimeUnit.SECONDS))) created++;
         }
-        assertEquals("room for two more", 2, created);
-        assertEquals(4, limited);
+        assertEquals("room for one more", 1, created);
         assertEquals(3, devicesOf(customerId));
-        assertEquals(2, uses(tokenA) + uses(tokenB));
+        assertEquals(1, uses(tokenA) + uses(tokenB));
     }
 
     @Test
@@ -535,7 +649,15 @@ public class AgentEnrollmentTransactionTest {
             com.hmdm.rest.json.agent.AgentEnrollRequest req = new com.hmdm.rest.json.agent.AgentEnrollRequest();
             req.setEnrollToken("any");
             req.setEnrollAttempt("attempt-0123456789abcdef");
-            com.hmdm.rest.json.Response r = resource.enroll(req);
+            // In the pool with a bound: if the lock timeout ever stopped applying, this fails instead of hanging.
+            Future<com.hmdm.rest.json.Response> pending = pool.submit(() -> resource.enroll(req));
+            com.hmdm.rest.json.Response r;
+            try {
+                r = pending.get(10, TimeUnit.SECONDS);
+            } catch (TimeoutException e) {
+                c.rollback(); // frees the waiting enroll so the pool can shut down
+                throw new AssertionError("the enroll waited past its lock timeout");
+            }
             assertEquals("error.agent.enrollment.inProgress", r.getMessage());
             c.rollback();
         }

@@ -30,7 +30,9 @@ import com.mdmesh.agent.R
  *
  * The typed PIN is never saved with the activity's state: after a rotation the launcher reopens the dialog empty
  * (an in-place rebuild hands it over in memory). It goes with the dialog when the screen goes off (the launcher
- * stops) or after [IDLE_TIMEOUT_MS] without input. Shown or not, it can't be copied, shared or autofilled.
+ * stops), after [IDLE_TIMEOUT_MS] without input (or the user's longer accessibility "Time to take action"), and once
+ * a PIN is accepted: the prompt then settles, and a second "done" for the same press does nothing. Shown or not,
+ * the PIN can't be copied, shared, autofilled or content-captured.
  * The wrong-PIN count and lockout live in ExitPinGate's persisted store, so neither resets with the dialog.
  */
 class ExitPinDialog private constructor(
@@ -162,8 +164,8 @@ class ExitPinDialog private constructor(
     /** [IDLE_TIMEOUT_MS], or longer if the user set a longer "Time to take action" (accessibility, API 29+). */
     private fun idleTimeoutMs(): Long {
         val a11y = field.context.getSystemService(AccessibilityManager::class.java)
-        val flags = AccessibilityManager.FLAG_CONTENT_CONTROLS or AccessibilityManager.FLAG_CONTENT_TEXT
         val recommended = if (a11y != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val flags = AccessibilityManager.FLAG_CONTENT_CONTROLS or AccessibilityManager.FLAG_CONTENT_TEXT
             a11y.getRecommendedTimeoutMillis(IDLE_TIMEOUT_MS.toInt(), flags).toLong()
         } else {
             IDLE_TIMEOUT_MS

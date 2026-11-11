@@ -302,8 +302,13 @@ function appsSignature(c: Configuration): string {
     .join(',');
 }
 
+/** Order-free: setting a permission back to what it was is no change, wherever the rule moved in the list. */
 function appPermissionsSignature(c: Configuration): string {
-  return JSON.stringify(c.managedAppPermissions ?? []);
+  const rules = Array.isArray(c.managedAppPermissions) ? (c.managedAppPermissions as Array<Record<string, unknown>>) : [];
+  return rules
+    .map((r) => `${String(r?.applicationId)} ${String(r?.permission)} ${String(r?.state)}`)
+    .sort()
+    .join(',');
 }
 
 function changedKeys(before: Configuration, after: Configuration): Set<string> {

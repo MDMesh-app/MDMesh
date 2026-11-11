@@ -98,6 +98,24 @@ describe('assigned apps: search, filter and sort', () => {
     expect(table().tBodies[0].rows).toHaveLength(1);
   });
 
+  it('setting a permission back to what it was leaves no unsaved change', async () => {
+    const chrome = assigned(TEN.slice(0, 1));
+    chrome[0].requestedPermissions = 'android.permission.CAMERA,android.permission.RECORD_AUDIO';
+    open(chrome, {
+      managedAppPermissions: [
+        { applicationId: 1, permission: 'android.permission.CAMERA', state: 'deny' },
+        { applicationId: 1, permission: 'android.permission.RECORD_AUDIO', state: 'grant' },
+      ],
+    });
+    await loaded();
+    const camera = screen.getByText('Camera').closest('label')!.querySelector('select')!;
+    fireEvent.change(camera, { target: { value: 'default' } });
+    expect(saveBar()?.textContent).toContain('1 unsaved change');
+    // Deny again: the rule is back, now after RECORD_AUDIO in the list.
+    fireEvent.change(camera, { target: { value: 'deny' } });
+    await waitFor(() => expect(saveBar()).toBeNull());
+  });
+
   it('drops permission rules when an app is removed or no longer installed', async () => {
     const chrome = assigned(TEN.slice(0, 1));
     const rule = { applicationId: 1, permission: 'android.permission.CAMERA', state: 'deny' };

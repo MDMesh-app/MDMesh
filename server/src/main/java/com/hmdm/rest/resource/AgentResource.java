@@ -197,11 +197,6 @@ public class AgentResource {
             return Response.ERROR("error.agent.token.used");
         }
 
-        // The secret is returned once, below; only its hash is stored. A resumed enrollment gets this new one (the
-        // first never reached the agent).
-        String deviceSecret = UUID.randomUUID().toString().replace("-", "")
-                + UUID.randomUUID().toString().replace("-", "");
-        String attemptHash = enrollAttemptHash(token.getId(), request.getEnrollAttempt());
         String hardwareId = request.getHardwareId() == null || request.getHardwareId().trim().isEmpty()
                 ? null : request.getHardwareId().trim();
         // Enrolls of one code wait on its lock one after another, each holding a pooled connection: past a few, turn
@@ -214,9 +209,10 @@ public class AgentResource {
         AgentEnrollmentDAO.Outcome outcome;
         try {
             // One transaction (AgentEnrollmentDAO): all of it or nothing, enrolls of this token one after another.
+            // The device's secret is the DAO's: returned once, below, and only its hash is stored.
             outcome = enrollments.enroll(token.getId(), token.getCustomerId(), token.getConfigurationId(),
-                    UUID.randomUUID().toString(), CryptoUtil.getSHA256String(deviceSecret),
-                    capabilitiesJson(request.getCapabilities()), hardwareId, attemptHash);
+                    UUID.randomUUID().toString(), capabilitiesJson(request.getCapabilities()), hardwareId,
+                    request.getEnrollAttempt());
         } catch (AgentEnrollmentDAO.CreationRefusedException e) {
             // Named error (not a generic internal one) — this exact failure cost a debugging
             // session: valid token, reachable server, no device row.
@@ -258,7 +254,7 @@ public class AgentResource {
                         outcome.deviceNumber, token.getId());
                 Device device = unsecureDAO.getDeviceByNumber(outcome.deviceNumber);
                 return Response.OK(new AgentEnrollResponse(outcome.deviceNumber,
-                        device == null ? null : configurationName(device), deviceSecret));
+                        device == null ? null : configurationName(device), outcome.secret));
             }
             case CREATED:
             default: {
@@ -276,7 +272,8 @@ public class AgentResource {
                 // leaked (the mint and revoke-all are in the audit log).
                 logger.info("Agent enrolled device {} with token {} (configuration {}, {} config apps queued)",
                         device.getNumber(), token.getId(), device.getConfigurationId(), queuedApps);
-                return Response.OK(new AgentEnrollResponse(device.getNumber(), configurationName(device), deviceSecret));
+                return Response.OK(new AgentEnrollResponse(device.getNumber(), configurationName(device),
+                        outcome.secret));
             }
         }
     }
@@ -295,9 +292,6 @@ public class AgentResource {
         return java.util.Optional.empty();
     }
 
-    /** An enroll attempt id: random, URL-safe, long enough not to be guessed; anything else is ignored. */
-    private static final java.util.regex.Pattern ENROLL_ATTEMPT = java.util.regex.Pattern.compile("[A-Za-z0-9_-]{16,128}");
-
     /**
      * What identifies a retryable enrollment: the SHA-256 of the token id and the agent's attempt id, so the stored
      * value reveals neither and an attempt id only resumes enrollments made with the same code.
@@ -305,10 +299,7 @@ public class AgentResource {
      * @return the hash, or null when the request carries no usable attempt id
      */
     static String enrollAttemptHash(Integer tokenId, String attempt) {
-        if (tokenId == null || attempt == null || !ENROLL_ATTEMPT.matcher(attempt).matches()) {
-            return null;
-        }
-        return CryptoUtil.getSHA256String(tokenId + ":" + attempt);
+        return AgentEnrollmentDAO.attemptHash(tokenId, attempt);
     }
 
     /** The device's configuration name for the enroll response; best effort (the response is still useful without). */

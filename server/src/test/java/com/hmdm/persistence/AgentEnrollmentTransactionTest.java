@@ -199,6 +199,7 @@ public class AgentEnrollmentTransactionTest {
                 addMapperClass(TestDeviceMapper.class);
                 bind(ConsoleAdd.class);
                 bind(AgentEnrollmentDAO.DeviceFactory.class).to(TestDeviceFactory.class);
+                bindConstant().annotatedWith(Names.named("hash.secret")).to("test-hash-secret");
             }
         });
         enrollments = injector.getInstance(AgentEnrollmentDAO.class);
@@ -279,9 +280,14 @@ public class AgentEnrollmentTransactionTest {
     }
 
     private AgentEnrollmentDAO.Outcome enroll(int tokenId, int customerId, String attempt) {
-        String attemptHash = attempt == null ? null : CryptoUtil.getSHA256String(tokenId + ":" + attempt);
-        return enrollments.enroll(tokenId, customerId, null, UUID.randomUUID().toString(),
-                CryptoUtil.getSHA256String(UUID.randomUUID().toString()), "{}", "hw", attemptHash);
+        return enrollments.enroll(tokenId, customerId, null, UUID.randomUUID().toString(), "{}", "hw", attempt);
+    }
+
+    private String storedSecretHash(String deviceNumber) throws Exception {
+        try (Connection c = connect(); Statement s = c.createStatement(); ResultSet r = s.executeQuery(
+                "SELECT agentSecretHash FROM " + schema + ".devices WHERE number = '" + deviceNumber + "'")) {
+            return r.next() ? r.getString(1) : null;
+        }
     }
 
     /** A retry sent while the first request is still inside its transaction: it waits, then resumes that device. */
@@ -307,6 +313,8 @@ public class AgentEnrollmentTransactionTest {
         assertEquals(AgentEnrollmentDAO.Outcome.Kind.CREATED, a.kind);
         assertEquals(AgentEnrollmentDAO.Outcome.Kind.RESUMED, b.kind);
         assertEquals("the same device", a.deviceNumber, b.deviceNumber);
+        assertEquals("the same credential: whichever answer the agent keeps works", a.secret, b.secret);
+        assertEquals(CryptoUtil.getSHA256String(a.secret), storedSecretHash(a.deviceNumber));
         assertEquals("one device", 1, devices());
         assertEquals("one use", 1, uses(tokenId));
     }
@@ -683,5 +691,54 @@ public class AgentEnrollmentTransactionTest {
         assertEquals("mine", mine.get(0).getNumber());
         assertEquals("a super admin sees them all, still bounded", 25,
                 deviceMapper.listEnrolledSince(customerId, 7, true, 0, 25).size());
+    }
+
+    @Test
+    public void a_late_duplicate_of_an_enrollment_returns_the_credential_the_agent_already_saved() throws Exception {
+        // The agent's retry was answered first and its secret saved; the original request, delayed on the way, is
+        // served afterwards. Its answer is discarded by the agent, so it must not replace the saved secret.
+        int tokenId = token(1);
+        AgentEnrollmentDAO.Outcome answeredFirst = enroll(tokenId, 1, "attempt-0123456789abcdef");
+        String saved = answeredFirst.secret;
+
+        AgentEnrollmentDAO.Outcome lateOriginal = enroll(tokenId, 1, "attempt-0123456789abcdef");
+
+        assertEquals(AgentEnrollmentDAO.Outcome.Kind.RESUMED, lateOriginal.kind);
+        assertEquals(saved, lateOriginal.secret);
+        assertEquals("the saved secret still authenticates", CryptoUtil.getSHA256String(saved),
+                storedSecretHash(answeredFirst.deviceNumber));
+    }
+
+    @Test
+    public void the_credential_depends_on_the_attempt_and_the_device() throws Exception {
+        AgentEnrollmentDAO.Outcome a = enroll(token(1), 1, "attempt-aaaaaaaaaaaaaaaa");
+        AgentEnrollmentDAO.Outcome b = enroll(token(1), 1, "attempt-bbbbbbbbbbbbbbbb");
+        AgentEnrollmentDAO.Outcome noAttempt = enroll(token(1), 1, null);
+        assertTrue(a.secret.matches("[0-9a-f]{64}"));
+        assertTrue(!a.secret.equals(b.secret));
+        assertTrue(noAttempt.secret.matches("[0-9a-f]{64}"));
+    }
+
+    @Test
+    public void a_retry_waiting_while_its_code_is_stopped_gets_no_credential() throws Exception {
+        int tokenId = token(1);
+        AgentEnrollmentDAO.Outcome first = enroll(tokenId, 1, "attempt-0123456789abcdef");
+        String before = storedSecretHash(first.deviceNumber);
+        try (Connection c = connect(); Statement st = c.createStatement()) {
+            c.setAutoCommit(false);
+            // An admin stops every code: the UPDATE holds the token row until it commits.
+            st.executeUpdate("UPDATE " + schema + ".agentEnrollmentToken SET revokedAt = 1 WHERE id = " + tokenId);
+            Future<AgentEnrollmentDAO.Outcome> retry = pool.submit(() -> enroll(tokenId, 1, "attempt-0123456789abcdef"));
+            try {
+                AgentEnrollmentDAO.Outcome early = retry.get(1500, TimeUnit.MILLISECONDS);
+                fail("the retry finished (" + early.kind + ") before the stop committed");
+            } catch (TimeoutException expected) {
+                // waiting on the token row
+            }
+            c.commit();
+            assertEquals("a stopped code resumes nothing", AgentEnrollmentDAO.Outcome.Kind.NO_USE,
+                    retry.get(20, TimeUnit.SECONDS).kind);
+        }
+        assertEquals("the device's credential is untouched", before, storedSecretHash(first.deviceNumber));
     }
 }

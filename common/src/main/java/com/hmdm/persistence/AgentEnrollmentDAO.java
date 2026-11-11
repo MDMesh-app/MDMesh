@@ -7,10 +7,20 @@ package com.hmdm.persistence;
 import com.google.inject.ImplementedBy;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
+import com.hmdm.persistence.domain.AgentEnrollmentToken;
 import com.hmdm.persistence.domain.Device;
 import com.hmdm.persistence.mapper.AgentDeviceMapper;
 import com.hmdm.persistence.mapper.AgentEnrollmentTokenMapper;
+import com.hmdm.util.CryptoUtil;
 import org.mybatis.guice.transactional.Transactional;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import javax.inject.Named;
+import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
+import java.util.UUID;
+import java.util.regex.Pattern;
 
 /**
  * <p>An agent enrollment as ONE database transaction, serialised per enrollment token: lock the token row, resume the
@@ -72,7 +82,7 @@ public class AgentEnrollmentDAO {
         public enum Kind {
             /** A new device: {@link #device} (committed). */
             CREATED,
-            /** This attempt's earlier enrollment, given the new secret: {@link #deviceNumber}. */
+            /** This attempt's earlier enrollment, with the same secret: {@link #deviceNumber}. */
             RESUMED,
             /** The token has no use left (used up, stopped or expired), or is gone. */
             NO_USE
@@ -81,23 +91,26 @@ public class AgentEnrollmentDAO {
         public final Kind kind;
         public final String deviceNumber;
         public final Device device;
+        /** The device's secret (CREATED or RESUMED), returned to the agent; only its hash is stored. */
+        public final String secret;
 
-        private Outcome(Kind kind, String deviceNumber, Device device) {
+        private Outcome(Kind kind, String deviceNumber, Device device, String secret) {
             this.kind = kind;
             this.deviceNumber = deviceNumber;
             this.device = device;
+            this.secret = secret;
         }
 
-        static Outcome created(Device device) {
-            return new Outcome(Kind.CREATED, device.getNumber(), device);
+        static Outcome created(Device device, String secret) {
+            return new Outcome(Kind.CREATED, device.getNumber(), device, secret);
         }
 
-        static Outcome resumed(String deviceNumber) {
-            return new Outcome(Kind.RESUMED, deviceNumber, null);
+        static Outcome resumed(String deviceNumber, String secret) {
+            return new Outcome(Kind.RESUMED, deviceNumber, null, secret);
         }
 
         static Outcome noUse() {
-            return new Outcome(Kind.NO_USE, null, null);
+            return new Outcome(Kind.NO_USE, null, null, null);
         }
     }
 
@@ -112,13 +125,82 @@ public class AgentEnrollmentDAO {
     private final AgentEnrollmentTokenMapper tokenMapper;
     private final AgentDeviceMapper deviceMapper;
     private final DeviceFactory deviceFactory;
+    /** The install's hash.secret (context.xml / ROOT.xml), the key enrollment credentials are derived with. */
+    private final String hashSecret;
 
     @Inject
     public AgentEnrollmentDAO(AgentEnrollmentTokenMapper tokenMapper, AgentDeviceMapper deviceMapper,
-                              DeviceFactory deviceFactory) {
+                              DeviceFactory deviceFactory, @Named("hash.secret") String hashSecret) {
         this.tokenMapper = tokenMapper;
         this.deviceMapper = deviceMapper;
         this.deviceFactory = deviceFactory;
+        this.hashSecret = hashSecret == null ? "" : hashSecret;
+    }
+
+    /** An enroll attempt id: random, URL-safe, long enough not to be guessed; anything else is ignored. */
+    private static final Pattern ENROLL_ATTEMPT = Pattern.compile("[A-Za-z0-9_-]{16,128}");
+
+    /** {@code attempt} when it is a usable enroll attempt id, else null (the enrollment is then not resumable). */
+    public static String validAttempt(String attempt) {
+        return attempt != null && ENROLL_ATTEMPT.matcher(attempt).matches() ? attempt : null;
+    }
+
+    /**
+     * What identifies a retryable enrollment: the SHA-256 of the token id and the agent's attempt id, so the stored
+     * value reveals neither and an attempt id only resumes enrollments made with the same code.
+     *
+     * @return the hash, or null when there is no usable attempt id
+     */
+    public static String attemptHash(Integer tokenId, String attempt) {
+        String valid = validAttempt(attempt);
+        return tokenId == null || valid == null ? null : CryptoUtil.getSHA256String(tokenId + ":" + valid);
+    }
+
+    /**
+     * The device's credential for a resumed enrollment: the same secret its first answer carried (derived, see
+     * {@link #deriveSecret}), so a late duplicate of a request, or a retry, never replaces a secret the agent may have
+     * saved. Only when it doesn't match what is stored (hash.secret changed in between) is the derived one stored.
+     *
+     * @return the outcome, or null when the attempt no longer owns the device (it checked in meanwhile)
+     */
+    private Outcome resume(String deviceNumber, String attemptHash, String attempt) {
+        String secret = deriveSecret(deviceNumber, attempt);
+        String hash = CryptoUtil.getSHA256String(secret);
+        if (hash.equals(deviceMapper.getDeviceSecretHash(deviceNumber))
+                || deviceMapper.reissueSecret(deviceNumber, attemptHash, hash) > 0) {
+            return Outcome.resumed(deviceNumber, secret);
+        }
+        return null;
+    }
+
+    /**
+     * The secret of a device enrolled with an attempt id: HMAC-SHA256 over the device number and the raw attempt id,
+     * keyed with the install's hash.secret, as 64 lowercase hex characters. Deterministic, so every request for one
+     * attempt (a retry, or the original arriving late) gets the same, working credential; and it needs both the key and
+     * the attempt id, which only the agent and the request that carries it hold (the database keeps neither the
+     * attempt id nor the secret, only hashes). Installs keep hash.secret across upgrades; if it changes during an
+     * enrollment's retry window, the resume stores the newly derived secret (see {@link #resume}).
+     */
+    String deriveSecret(String deviceNumber, String attempt) {
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            // The label keeps the key non-empty (an empty hash.secret is not a valid HMAC key) and separates this use.
+            mac.init(new SecretKeySpec(("mdmesh-enroll-secret-v1:" + hashSecret).getBytes(StandardCharsets.UTF_8),
+                    "HmacSHA256"));
+            byte[] digest = mac.doFinal((deviceNumber + "\n" + attempt).getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(digest.length * 2);
+            for (byte b : digest) {
+                hex.append(String.format("%02x", b & 0xff));
+            }
+            return hex.toString();
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException("HmacSHA256 unavailable", e);
+        }
+    }
+
+    /** A random device secret: 256 bits as 64 lowercase hex characters. */
+    static String randomSecret() {
+        return UUID.randomUUID().toString().replace("-", "") + UUID.randomUUID().toString().replace("-", "");
     }
 
     /**
@@ -134,19 +216,26 @@ public class AgentEnrollmentDAO {
      * @throws RuntimeException         a database failure, including the token lock not obtained in time (rolled back)
      */
     @Transactional
-    public Outcome enroll(int tokenId, int customerId, Integer configurationId, String deviceNumber, String secretHash,
-                          String capabilitiesJson, String hardwareId, String attemptHash) {
+    public Outcome enroll(int tokenId, int customerId, Integer configurationId, String deviceNumber,
+                          String capabilitiesJson, String hardwareId, String attempt) {
         long now = System.currentTimeMillis();
+        String attemptHash = attemptHash(tokenId, attempt);
         // Enrolls of one token run one after another; a request that waits longer than this fails retryably.
         tokenMapper.setEnrollLockTimeout(lockTimeoutMs + "ms");
-        if (tokenMapper.lockForEnroll(tokenId) == null) {
+        AgentEnrollmentToken locked = tokenMapper.lockForEnroll(tokenId);
+        if (locked == null || locked.getRevokedAt() != null) {
+            // Gone, or stopped: read under the lock, so a stop that committed while this request waited (after the
+            // caller's own check) is seen. A stopped code resumes nothing and enrolls nothing.
             return Outcome.noUse();
         }
         if (attemptHash != null) {
             // Under the lock, so a retry that waited for the first request sees what it committed.
             String resumable = deviceMapper.findEnrollRetry(attemptHash, now - RETRY_WINDOW_MS);
-            if (resumable != null && deviceMapper.reissueSecret(resumable, attemptHash, secretHash) > 0) {
-                return Outcome.resumed(resumable);
+            if (resumable != null) {
+                Outcome resumed = resume(resumable, attemptHash, validAttempt(attempt));
+                if (resumed != null) {
+                    return resumed;
+                }
             }
         }
         // The claim first: a used-up, stopped or expired code gets its final answer, never the device limit's
@@ -161,11 +250,13 @@ public class AgentEnrollmentDAO {
         if (device == null) {
             throw new CreationRefusedException();
         }
-        if (deviceMapper.completeEnrollment(deviceNumber, secretHash, capabilitiesJson, hardwareId, attemptHash,
-                now) != 1) {
+        // Derived from the attempt when there is one, so every answer to this attempt carries the same secret.
+        String secret = attemptHash == null ? randomSecret() : deriveSecret(deviceNumber, validAttempt(attempt));
+        if (deviceMapper.completeEnrollment(deviceNumber, CryptoUtil.getSHA256String(secret), capabilitiesJson,
+                hardwareId, attemptHash, now) != 1) {
             throw new IllegalStateException("device " + deviceNumber + " not found to complete its enrollment");
         }
-        return Outcome.created(device);
+        return Outcome.created(device, secret);
     }
 
     /**

@@ -145,6 +145,7 @@ public class DeviceLimitPathsTest {
                 props.setProperty("aapt.command", "aapt");
                 props.setProperty("apk.trusted.url", "");
                 props.setProperty("base.url", "https://mdm.example.test");
+                props.setProperty("hash.secret", "test-hash-secret");
                 Names.bindProperties(binder(), props);
                 bind(AgentEnrollmentDAO.DeviceFactory.class).to(HoldingFactory.class);
             }
@@ -235,7 +236,7 @@ public class DeviceLimitPathsTest {
         return () -> {
             try {
                 return enrollments.enroll(tokenId, customerId, otherConfigurationId, UUID.randomUUID().toString(),
-                        CryptoUtil.getSHA256String(UUID.randomUUID().toString()), "{}", null, null).kind.name();
+                        "{}", null, null).kind.name();
             } catch (AgentEnrollmentDAO.DeviceLimitException e) {
                 return "LIMIT";
             }

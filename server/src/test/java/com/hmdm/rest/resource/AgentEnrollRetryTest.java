@@ -32,15 +32,14 @@ public class AgentEnrollRetryTest {
     }
 
     @Test
-    public void a_retry_of_the_same_attempt_gets_the_same_device_with_a_new_secret() {
+    public void a_retry_of_the_same_attempt_gets_the_same_device_and_the_same_secret() {
         AgentEnrollResponse first = data(f.enroll(ATTEMPT));
 
         AgentEnrollResponse retry = data(f.enroll(ATTEMPT));
 
         assertEquals(first.getDeviceId(), retry.getDeviceId());
-        assertNotEquals("the lost secret is replaced", first.getDeviceSecret(), retry.getDeviceSecret());
-        assertEquals("only the new secret authenticates", CryptoUtil.getSHA256String(retry.getDeviceSecret()),
-                f.secretHashes.get(first.getDeviceId()));
+        assertEquals("whichever answer reached the agent works", first.getDeviceSecret(), retry.getDeviceSecret());
+        assertEquals(CryptoUtil.getSHA256String(retry.getDeviceSecret()), f.secretHashes.get(first.getDeviceId()));
         assertEquals("one device", 1, f.created.size());
         assertEquals("one use", 1, f.token.getUseCount());
     }

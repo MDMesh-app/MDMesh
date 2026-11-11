@@ -43,7 +43,7 @@ public class AgentEnrollRequest {
     private String hardwareId;
 
     /**
-     * Optional (agents from 0.5): a random id the agent keeps until it has stored its credentials, sent again on every
+     * Optional (agents from 0.5): a random id the agent keeps until its first check-in succeeds, sent again on every
      * retry of the same enrollment. A retry whose response was lost gets the device the first request created.
      */
     private String enrollAttempt;

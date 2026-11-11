@@ -61,7 +61,7 @@ final class EnrollFixture {
                         throw new PersistenceException(new SQLException("canceling statement due to lock timeout",
                                 "55P03"));
                     }
-                    return token.getId();
+                    return token;
                 })
                 .answer("claim", a -> claim() ? 1 : 0);
         FakeMapper<AgentDeviceMapper> devices = new FakeMapper<>(AgentDeviceMapper.class)
@@ -69,6 +69,7 @@ final class EnrollFixture {
                 .answer("hasSeveralCustomers", a -> atDeviceLimit)
                 .answer("countCustomerDevices", a -> atDeviceLimit ? 1L : 0L)
                 .answer("findEnrollRetry", a -> retryable.get((String) a[0]))
+                .answer("getDeviceSecretHash", a -> secretHashes.get((String) a[0]))
                 .answer("reissueSecret", a -> {
                     if (!a[0].equals(retryable.get((String) a[1]))) return 0;
                     secretHashes.put((String) a[0], (String) a[2]);
@@ -83,7 +84,8 @@ final class EnrollFixture {
                     if (a[4] != null) retryable.put((String) a[4], n);
                     return 1;
                 });
-        AgentEnrollmentDAO enrollments = new AgentEnrollmentDAO(tokens.mapper, devices.mapper, this::createDevice);
+        AgentEnrollmentDAO enrollments = new AgentEnrollmentDAO(tokens.mapper, devices.mapper, this::createDevice,
+                "test-hash-secret");
 
         AgentEnrollmentTokenDAO tokenDAO = new AgentEnrollmentTokenDAO(null) {
             @Override public AgentEnrollmentToken findByToken(String t) { return TOKEN.equals(t) ? token : null; }

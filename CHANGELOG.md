@@ -79,8 +79,9 @@ Fixes
   "my code doesn't work" can be answered from the log.
 - Enroll: when the network drops just as a device enrolls, or the agent gives up waiting and tries again while the
   server is still enrolling it, it no longer stays on "Enrolling…" with a code that reads as already used, or takes a
-  second device's place on a batch code. Its retry gets the device it already created. Needs agent 0.5.0 and this
-  server; older agents enroll as before.
+  second device's place on a batch code. Its retry gets the device it already created, with the same credential, so a
+  late duplicate of the request can't lock it out; a stopped code resumes nothing. Needs agent 0.5.0 and this server;
+  older agents enroll as before.
 - Enroll: each enrollment is now one database transaction. A server error, restart or lost database connection part-way
   through no longer leaves a device in the list that can never check in, or uses up the enrollment code: nothing is
   kept and the agent tries again.

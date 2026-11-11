@@ -66,10 +66,11 @@ public interface AgentEnrollmentTokenMapper {
 
     /**
      * Locks the token row until the transaction ends, so enrollments with one token run one after another (a retry
-     * waits for the request it retries). Null when the token is gone.
+     * waits for the request it retries), and reads it as committed by then (a stop that committed while this waited
+     * is seen). Null when the token is gone.
      */
-    @Select({"SELECT id FROM agentEnrollmentToken WHERE id = #{id} FOR UPDATE"})
-    Integer lockForEnroll(@Param("id") Integer id);
+    @Select({"SELECT * FROM agentEnrollmentToken WHERE id = #{id} FOR UPDATE"})
+    AgentEnrollmentToken lockForEnroll(@Param("id") Integer id);
 
     /**
      * Stop every token of the customer that has not expired, used-up ones included. One UPDATE: a claim that races it

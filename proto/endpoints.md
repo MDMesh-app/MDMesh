@@ -46,11 +46,16 @@ The server mints a per-device secret, stores only its SHA-256 hash, and returns 
 **once** here. The agent persists it and presents it on every `/checkin`.
 
 `enrollAttempt` (optional, protocol 1.9): a random id (16-128 of `A-Z a-z 0-9 _ -`) the agent generates and stores
-before its first enroll request, sends again on every retry of that enrollment, and deletes once it has stored the
-credentials. When a response is lost, the retry returns the device the first request created, with a new secret (the
-first is replaced), instead of `error.agent.token.used` or a second device from a batch code. This works until that
-device's first check-in and for 24 hours, and not for a stopped token. The server keeps only SHA-256(token id ":"
-attempt). Older servers ignore the field.
+before its first enroll request, sends again on every retry of that enrollment, and deletes once its first check-in
+succeeds. When a response is lost, the retry returns the device the first request created instead of
+`error.agent.token.used` or a second device from a batch code, with the same secret: a device enrolled with an attempt
+gets a secret derived from it (HMAC-SHA256 keyed with the install's `hash.secret`, over the device number and the
+attempt id), so every answer for one attempt carries the same credential, and a late duplicate of the request can't
+replace a secret the agent already saved. This works until that device's first check-in and for 24 hours, and not for
+a stopped token (checked under the token's lock, so a stop that commits while a retry waits is seen). The server keeps
+only SHA-256(token id ":" attempt) and SHA-256(secret). If the server refuses the saved secret
+(`error.agent.unauthorized`) before the first check-in succeeds, the agent enrolls again with the same attempt (at
+most 3 times per run) and saves what it gets. Older servers ignore the field.
 
 Each enrollment is one database transaction that first locks its token's row, so enrollments with one token run one
 after another: a retry sent while its first request still runs waits for it, then resumes it. The token is claimed

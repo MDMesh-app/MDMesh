@@ -19,6 +19,9 @@ Heads-up
 - The agent is now called **MDMesh** on the device (was MDM Agent): in the app drawer, Settings → Apps, the
   device admin list and the device's Apps tab in the console. Its icon is new too: a white square on dark (was a white
   shield on blue). It's the same app, so it updates in place. Needs agent 0.5.0.
+- Kiosk: the launcher keeps its text readable. If a configuration's kiosk text color is hard to read on its
+  background (under 3:1 contrast), the device uses a readable color instead, and the background is always drawn
+  solid (transparency is ignored). Needs agent 0.5.0.
 
 New
 - Configurations can allow or block the camera. Block covers every app, kiosk apps too. Not managed after Block

@@ -116,8 +116,8 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'showWifi', label: 'Show Wi-Fi on error', type: 'tri', group: 'Kiosk', help: 'Headwind launcher showed Wi-Fi settings when it could not reach the server.' },
 
   // ── Kiosk appearance ──────────────────────────────────────────────────────
-  { key: 'backgroundColor', label: 'Background color', type: 'color', group: 'Kiosk appearance', enforced: true, kioskOnly: true, help: 'Kiosk launcher background.' },
-  { key: 'textColor', label: 'Text color', type: 'color', group: 'Kiosk appearance', enforced: true, kioskOnly: true, help: 'Kiosk launcher text.' },
+  { key: 'backgroundColor', label: 'Background color', type: 'color', group: 'Kiosk appearance', enforced: true, kioskOnly: true, help: 'Kiosk launcher background. Always solid: transparency is ignored.' },
+  { key: 'textColor', label: 'Text color', type: 'color', group: 'Kiosk appearance', enforced: true, kioskOnly: true, help: 'Kiosk launcher text. If it is hard to read on the background, the device uses a readable color instead.' },
   { key: 'iconSize', label: 'Icon size', type: 'enum', group: 'Kiosk appearance', enforced: true, kioskOnly: true, help: 'App icon size in the kiosk launcher.', options: [
     { value: 'SMALL', label: 'Small' }, { value: 'MEDIUM', label: 'Medium' }, { value: 'LARGE', label: 'Large' },
   ] },

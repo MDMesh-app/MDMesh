@@ -186,7 +186,7 @@ class TransportManager internal constructor(
      * minimum. Any other close the server chose (1008 unauthorized for a device deleted in the console, 1000 when
      * another connection for this device replaced the session) is the server saying "not this socket", so it never
      * resets, and 1008 starts at a 64s bound and waits at least half of it (32s, growing to 2.5-5 min). After a
-     * session of [LONG_SESSION_MS] or more every close starts from the bottom again.
+     * session of [LONG_SESSION_MS] or more every close starts from the bottom again (a 1008 still at its 64s floor).
      */
     @Synchronized
     private fun dropped(gen: Int, code: Int?) {

@@ -20,6 +20,7 @@ class EventLogTest {
         override fun put(vararg changes: Pair<String, String?>) {
             for ((key, value) in changes) if (value == null) values.remove(key) else values[key] = value
         }
+        override fun flush() {}
     }
 
     @Test fun encodeDecodeRoundTrip() {
@@ -100,12 +101,12 @@ class EventLogTest {
     }
 
     @Test fun `what a check-in sends or confirms is on disk before it goes on`() {
-        // drain/restore/delivered run off the main thread, so they can wait for the disk: a process death right after
+        // drain/restore/delivered run off the main thread, so they wait for the disk: a process death right after
         // can then neither lose the batch nor send a confirmed one again.
         val writes = mutableListOf<String>()
         val store = object : FakeStore() {
             override fun put(vararg changes: Pair<String, String?>) { writes += "put"; super.put(*changes) }
-            override fun commit(vararg changes: Pair<String, String?>) { writes += "commit"; super.put(*changes) }
+            override fun flush() { writes += "flush" }
         }
         val log = EventLog(store)
         log.record("boot")
@@ -113,6 +114,31 @@ class EventLogTest {
         log.restore(drained)
         log.drain()
         log.delivered()
-        assertEquals(listOf("put", "commit", "commit", "commit", "commit"), writes)
+        assertEquals(listOf("put", "put", "flush", "put", "flush", "put", "flush", "put", "flush"), writes)
+    }
+
+    @Test fun `waiting for the disk does not hold up record() on another thread`() {
+        // record() runs on the main thread (receivers, the kiosk); a slow disk under the check-in's drain must not
+        // block it.
+        val inDiskWait = CountDownLatch(1)
+        val diskDone = CountDownLatch(1)
+        val store = object : FakeStore() {
+            override fun flush() = slowDisk()
+            fun slowDisk() { inDiskWait.countDown(); diskDone.await(2, TimeUnit.SECONDS) }
+        }
+        val log = EventLog(store)
+        log.record("boot")
+        val drainer = thread { log.drain() }
+        assertTrue(inDiskWait.await(2, TimeUnit.SECONDS))
+
+        val recorded = CountDownLatch(1)
+        thread { log.record("appInstalled"); recorded.countDown() }
+        val quick = recorded.await(300, TimeUnit.MILLISECONDS)
+        diskDone.countDown()
+        drainer.join()
+
+        assertTrue("record() waited for the drain's disk write", quick)
+        log.delivered()
+        assertEquals("nothing lost", listOf("appInstalled"), EventLog(store).drain().map { it.type })
     }
 }

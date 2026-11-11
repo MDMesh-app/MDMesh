@@ -27,20 +27,22 @@ interface EventSink {
 @Singleton
 class EventLog internal constructor(private val store: Store) : EventSink {
 
-    /** Where events are kept. [put] applies all its changes in one write. */
+    /** Where events are kept. [put] applies all its changes in one write, visible at once, on disk later. */
     interface Store {
         fun get(key: String): String?
         fun put(vararg changes: Pair<String, String?>)
-        /** Like [put], but on disk before it returns. */
-        fun commit(vararg changes: Pair<String, String?>) = put(*changes)
+        /** Returns once everything [put] so far is on disk. */
+        fun flush()
     }
 
     private class PrefsStore(context: Context) : Store {
         private val prefs = context.getSharedPreferences("mdm_events", Context.MODE_PRIVATE)
         override fun get(key: String): String? = prefs.getString(key, null)
         override fun put(vararg changes: Pair<String, String?>) = edit(changes).apply()
-        override fun commit(vararg changes: Pair<String, String?>) {
-            edit(changes).commit()
+
+        // An empty commit(): documented to block until every outstanding apply() is written, then itself.
+        override fun flush() {
+            prefs.edit().commit()
         }
 
         private fun edit(changes: Array<out Pair<String, String?>>) = prefs.edit().apply {
@@ -59,29 +61,38 @@ class EventLog internal constructor(private val store: Store) : EventSink {
         store.put(KEY to encode(cap(list)))
     }
 
-    // drain/restore/delivered run in the check-in, off the main thread, so they write to disk before returning: a
-    // process death right after can neither lose the batch nor send a confirmed one again. record() may run on Main
-    // (receivers, the kiosk), so it stays asynchronous.
+    // drain/restore/delivered run in the check-in, off the main thread, so they wait for the disk before returning: a
+    // process death right after can neither lose the batch nor send a confirmed one again. They wait outside the
+    // lock, so a record() on the main thread (receivers, the kiosk) never waits for the disk; its own write stays
+    // asynchronous.
 
     /**
      * Take everything for the check-in about to run. The batch stays stored (in flight) until [delivered] or
      * [restore], like [com.mdmesh.core.sync.PendingResults], so a process death mid-check-in sends it again rather
      * than losing it. Whatever a dead process left in flight is older, so it goes first.
      */
-    override fun drain(): List<TelemetryEventDto> = synchronized(LOCK) {
-        val batch = cap(load(IN_FLIGHT) + load(KEY))
-        store.commit(IN_FLIGHT to batch.takeIf { it.isNotEmpty() }?.let(::encode), KEY to null)
-        batch
+    override fun drain(): List<TelemetryEventDto> {
+        val batch = synchronized(LOCK) {
+            cap(load(IN_FLIGHT) + load(KEY)).also { batch ->
+                store.put(IN_FLIGHT to batch.takeIf { it.isNotEmpty() }?.let(::encode), KEY to null)
+            }
+        }
+        store.flush()
+        return batch
     }
 
     /** The check-in failed: put the drained [events] back in front of anything recorded since. */
-    override fun restore(events: List<TelemetryEventDto>) = synchronized(LOCK) {
-        val list = cap(events + load(KEY))
-        store.commit(KEY to list.takeIf { it.isNotEmpty() }?.let(::encode), IN_FLIGHT to null)
+    override fun restore(events: List<TelemetryEventDto>) {
+        synchronized(LOCK) {
+            val list = cap(events + load(KEY))
+            store.put(KEY to list.takeIf { it.isNotEmpty() }?.let(::encode), IN_FLIGHT to null)
+        }
+        store.flush()
     }
 
-    override fun delivered() = synchronized(LOCK) {
-        store.commit(IN_FLIGHT to null)
+    override fun delivered() {
+        synchronized(LOCK) { store.put(IN_FLIGHT to null) }
+        store.flush()
     }
 
     private fun load(key: String): List<TelemetryEventDto> = decode(store.get(key))

@@ -260,8 +260,8 @@ jobs:
         with:
           body_path: release-notes.md
           generate_release_notes: false
-          # quickstart.sh is the tagged commit's copy: the README's install command runs it from
-          # releases/latest/download/, and its SHA-256 is in the signed manifest's files (build-manifest.sh).
+          # quickstart.sh is the tagged commit's copy: the README's checked install block downloads it from the latest
+          # release and checks it against its SHA-256 in the signed manifest's files (build-manifest.sh).
           files: |
             mdmesh-agent.apk
             manifest.json

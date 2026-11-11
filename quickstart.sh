@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # MDMesh quick start — deploy from PUBLISHED images, no clone and no build. Needs only Docker.
-# Run from anywhere (the `bash <(...)` form keeps the prompts interactive). The README runs the latest release's copy,
-# a release asset (to check it against the signed manifest before running it, see DEPLOY.md):
+# Run from anywhere (the `bash <(...)` form keeps the prompts interactive). The README's install block downloads the
+# latest release's copy (a release asset) and checks it against the signed manifest before running it; its unchecked
+# shortcut runs the copy at the latest release's tag (DEPLOY.md, Option A):
 #
-#   bash <(curl -fsSL https://github.com/MDMesh-app/MDMesh/releases/latest/download/quickstart.sh)
+#   bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/vX.Y.Z/quickstart.sh)
 #
 # It creates ./mdmesh, downloads the pull-only compose + seed, generates secrets, brings the stack
 # up, and prints the console URL + a temporary admin password (you set your own on first login).
@@ -36,7 +37,7 @@ latest_release() {
 # signature by the release key below, a copy of release/minisign.pub's key line (CI fails if the two differ). The signed
 # manifest pins the server, web and supervisor images by digest and every file downloaded below by SHA-256, so a release
 # asset, a tag or a raw file changed by anyone without the private signing key is refused. The trust root is this script
-# itself, with the key in it, served over HTTPS as a release asset (or from the repository): whoever can change that
+# itself, with the key in it, served over HTTPS as a release asset or from a release tag: whoever can change that
 # copy could change the key too. Its SHA-256 is in its release's signed manifest (files), so an operator can check it
 # before running it (DEPLOY.md). A fork with its own signing key sets MDMESH_RELEASE_PUBKEY to the key line (line 2) of
 # its release/minisign.pub.
@@ -278,7 +279,7 @@ fi
 if [ -z "$RELEASE" ]; then
   err "Could not resolve the latest release of ${GH_REPO} (GitHub API unreachable or rate-limited, or no release yet)."
   err "The quick start installs only a published, signed release. Try again in a few minutes, or name the release:"
-  err "  MDMESH_VERSION=X.Y.Z bash <(curl -fsSL https://github.com/${REPO}/releases/latest/download/quickstart.sh)"
+  err "  MDMESH_VERSION=X.Y.Z bash <(curl -fsSL https://raw.githubusercontent.com/${REPO}/vX.Y.Z/quickstart.sh)"
   exit 1
 fi
 say "Verifying release v${RELEASE} of ${GH_REPO}…"

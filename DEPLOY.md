@@ -34,11 +34,12 @@ minisign -V -m "$d/manifest.json" -P RWQbf0pIhddaWnDsFknIG4X325wHR05pUxEQJmuuQRd
 
 Nothing runs if a check fails. This needs releases from 0.5.0 on (earlier ones don't publish `quickstart.sh`).
 
-Without `minisign`, the shortcut runs the same script **unchecked** (the script itself still verifies everything it
-downloads, but not itself):
+**Unchecked shortcut.** Without `minisign`, this looks up the latest release's tag and runs `quickstart.sh` from that
+tag in the repository, **without checking it** (the script still verifies everything it downloads, but not itself;
+the `v*` tag ruleset is what keeps a tag's files from being changed, see [RELEASING.md](RELEASING.md)):
 
 ```bash
-bash <(curl -fsSL https://github.com/MDMesh-app/MDMesh/releases/latest/download/quickstart.sh)
+bash <(curl -fsSL "https://raw.githubusercontent.com/MDMesh-app/MDMesh/$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/MDMesh-app/MDMesh/releases/latest | sed 's#.*/##')/quickstart.sh")
 ```
 
 It needs Docker with Compose v2, curl, and OpenSSL 3.0 or newer to check the release signature. On a host with
@@ -62,12 +63,13 @@ Before using anything from the release, the quick start checks its `manifest.jso
 the image digests and the SHA-256 of the compose files, the seed and `install/lib/db.sh`, which come from the
 release's tag; a file that doesn't match stops the install. The trust root is `quickstart.sh` itself, which carries
 a copy of `release/minisign.pub`: checked against the signed manifest by the block above, or taken on trust from the
-release's assets by the shortcut. A fork with its own signing key sets
+release's tag by the shortcut. A fork with its own signing key sets
 `MDMESH_RELEASE_PUBKEY` to the key line of its `release/minisign.pub`.
 
 If the latest release can't be looked up (GitHub API unreachable or rate-limited), the quick start stops and says so;
 it no longer falls back to `main` and `:latest`. Run it again later, or name the release:
-`MDMESH_VERSION=X.Y.Z bash <(curl -fsSL https://github.com/MDMesh-app/MDMesh/releases/latest/download/quickstart.sh)`.
+`MDMESH_VERSION=X.Y.Z bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/vX.Y.Z/quickstart.sh)`
+(unchecked, like the shortcut).
 
 ## Option B — from source (clone + build)
 

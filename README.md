@@ -97,8 +97,12 @@ minisign -V -m "$d/manifest.json" -P RWQbf0pIhddaWnDsFknIG4X325wHR05pUxEQJmuuQRd
   bash "$d/quickstart.sh"
 ```
 
-Without `minisign`, `bash <(curl -fsSL https://github.com/MDMesh-app/MDMesh/releases/latest/download/quickstart.sh)`
-runs the same script unchecked ([details](DEPLOY.md#option-a--quick-start-no-clone-published-images)).
+Without `minisign`, this unchecked shortcut runs the latest release tag's `quickstart.sh` without checking it
+([details](DEPLOY.md#option-a--quick-start-no-clone-published-images)):
+
+```bash
+bash <(curl -fsSL "https://raw.githubusercontent.com/MDMesh-app/MDMesh/$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/MDMesh-app/MDMesh/releases/latest | sed 's#.*/##')/quickstart.sh")
+```
 
 The quick start pulls the released images and sets up updates from the console. To build the images from source instead
 (`setup.sh` also needs `openssl`, and, if they are there, uses `python3` and `curl` to verify the latest release for

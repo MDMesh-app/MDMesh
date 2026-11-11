@@ -113,7 +113,8 @@ release/changelog-section.sh --check vX.Y.Z "$sha" && git push origin :refs/tags
 ```
 
 **If "Published quickstart.sh matches the signed manifest" fails**, the published `quickstart.sh` asset was changed
-during the run: the checked install refuses it, but the shortcut would run it. Upload the tag's own copy over it
+during the run: the checked install refuses it (the shortcut runs the tag's copy, not the asset). Upload the tag's
+own copy over it
 (`gh release upload vX.Y.Z quickstart.sh --clobber -R MDMesh-app/MDMesh` from the tagged commit, then check its
 SHA-256 against the manifest) and find out who changed it; then move `:latest` by hand as below.
 
@@ -192,8 +193,16 @@ The release job runs in the `release` environment, so the repo settings decide w
   - **Environment secrets:** the six secrets above (`MDM_RELEASE_STORE_B64`, `MDM_RELEASE_STORE_PASSWORD`,
     `MDM_RELEASE_KEY_ALIAS`, `MDM_RELEASE_KEY_PASSWORD`, `MINISIGN_SECRET_KEY`, `MINISIGN_PASSWORD`). Then delete any
     repository-level copies (Settings → Secrets and variables → Actions → Repository secrets).
-- **Settings → Rules → Rulesets → New tag ruleset** (enforcement *Active*), target tags matching `v*`: restrict
-  **creations**, **updates** and **deletions**, with a bypass list of the release maintainers only.
+- **Settings → Rules → Rulesets → New ruleset → New tag ruleset.** It is what keeps a release tag, and so what the
+  quick start's unchecked shortcut runs, from being moved. Exactly:
+  - **Ruleset name:** any, e.g. `v* ruleset`; **Enforcement status:** *Active*.
+  - **Bypass list:** add the release maintainers only (or a team of them), mode *Always allow*. Not *Repository admin*
+    as a role unless every admin is a release maintainer, and no apps or deploy keys.
+  - **Target tags → Add target → Include by pattern:** `v*`.
+  - **Rules:** tick **Restrict creations**, **Restrict updates**, **Restrict deletions** and **Block force pushes**;
+    leave the others off.
+  - Save, then check it: `gh api repos/MDMesh-app/MDMesh/rulesets` lists it with `"enforcement": "active"` and
+    `"target": "tag"`. Re-tagging after a failed changelog check (above) needs a bypass actor.
 - **Settings → Rules → Rulesets** (or branch protection) for `main`: require pull requests and the CI checks, and
   block force pushes, so "on `main`" means reviewed.
 
@@ -204,11 +213,13 @@ and web images by the digests it pins, and pins its own image the same way for i
 pulls the `:VERSION` tags). A release published without the private minisign key fails verification and is
 refused, so a hijacked repo/account or a moved image tag alone can't push code to the fleet.
 
-**The `quickstart.sh` asset.** Anyone with write access to the repository can replace a release asset, without a PR
-or review, and the README's unchecked shortcut would run the replacement. So the README's install block checks the
-script before running it: the manifest's minisign signature against the release key, that the manifest is the latest
-release's, and the script's SHA-256 in its `files`. Only the private minisign key can make a script pass that; the
-shortcut trusts the repository's write access, as running `quickstart.sh` from `main` did.
+**What runs `quickstart.sh`, and what protects it.** Anyone with write access to the repository can replace a release
+asset, without a PR or review. So the README's install block checks the asset before running it: the manifest's
+minisign signature against the release key, that the manifest is the latest release's, and the script's SHA-256 in
+its `files`; only the private minisign key can make a script pass that. The README's unchecked shortcut instead runs
+`quickstart.sh` from the latest release's tag on raw.githubusercontent.com, so what it runs is the tagged commit, which
+the `v*` tag ruleset ([setup step 4](#4-release-environment-and-tag-protection)) keeps anyone outside its bypass list
+from moving, deleting or creating. Without that ruleset, anyone with write access could repoint a tag.
 
 The quick start verifies the same signature with `openssl` against a copy of the key line in `quickstart.sh` (T0
 fails if it differs from `release/minisign.pub`), then the image digests and the downloaded files' SHA-256. **If you

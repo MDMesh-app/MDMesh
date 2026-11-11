@@ -76,7 +76,7 @@ grep -q '^  "files": {$' "$T/manifest.json" || fail "quickstart.sh would not fin
 for f in $MDM_QUICKSTART_FILES quickstart.sh; do
   [ "$(mdm_manifest_field "$T/manifest.json" "$f" "$MDM_SHA256_ERE")" = "$(mdm_sha256 "$ROOT/$f")" ] || fail "sha256 of $f not read or wrong"
 done
-# The release asset quickstart.sh, which the README runs from releases/latest/download/, is uploaded by release.yml.
+# The release asset quickstart.sh, which the README's checked install block downloads, is uploaded by release.yml.
 grep -Eq '^ +quickstart\.sh$' "$ROOT/.github/workflows/release.yml" || fail "release.yml no longer uploads quickstart.sh as a release asset"
 
 # shellcheck disable=SC2016  # the JavaScript is single-quoted on purpose

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # MDMesh quick start — deploy from PUBLISHED images, no clone and no build. Needs only Docker.
-# Run from anywhere (the `bash <(...)` form keeps the prompts interactive):
+# Run from anywhere (the `bash <(...)` form keeps the prompts interactive). The README runs the latest release's copy,
+# a release asset (to check it against the signed manifest before running it, see DEPLOY.md):
 #
-#   bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/quickstart.sh)
+#   bash <(curl -fsSL https://github.com/MDMesh-app/MDMesh/releases/latest/download/quickstart.sh)
 #
 # It creates ./mdmesh, downloads the pull-only compose + seed, generates secrets, brings the stack
 # up, and prints the console URL + a temporary admin password (you set your own on first login).
@@ -35,8 +36,10 @@ latest_release() {
 # signature by the release key below, a copy of release/minisign.pub's key line (CI fails if the two differ). The signed
 # manifest pins the server, web and supervisor images by digest and every file downloaded below by SHA-256, so a release
 # asset, a tag or a raw file changed by anyone without the private signing key is refused. The trust root is this script
-# itself, served from main over HTTPS, with the key in it: whoever can change main could change the key too. A fork
-# with its own signing key sets MDMESH_RELEASE_PUBKEY to the key line (line 2) of its release/minisign.pub.
+# itself, with the key in it, served over HTTPS as a release asset (or from the repository): whoever can change that
+# copy could change the key too. Its SHA-256 is in its release's signed manifest (files), so an operator can check it
+# before running it (DEPLOY.md). A fork with its own signing key sets MDMESH_RELEASE_PUBKEY to the key line (line 2) of
+# its release/minisign.pub.
 MDM_RELEASE_PUBKEY_DEFAULT="RWQbf0pIhddaWnDsFknIG4X325wHR05pUxEQJmuuQRdBlQm3zi8/Eqcd"
 
 # mdm_openssl_can_verify: succeeds when this host's openssl can check a minisign signature: `pkeyutl -rawin` (Ed25519
@@ -135,8 +138,9 @@ mdm_sha256() { openssl dgst -sha256 -r "$1" | cut -d' ' -f1; }
 # <<< release verification <<<
 
 # The BASE_URL rule of install/lib/url.sh (see there for what it accepts and why it is an allowlist). A verbatim copy
-# of the functions between the markers, not a download: this script runs from main but fetches install/lib from the
-# release it installs, which may predate url.sh (see db.sh below). CI (t0-fast, edge entry) fails if the copies differ.
+# of the functions between the markers, not a download: this script may be newer than the release it installs
+# (MDMESH_VERSION, or a copy from main) and fetches install/lib from that release, which may predate url.sh (see db.sh
+# below). CI (t0-fast, edge entry) fails if the copies differ.
 # >>> url.sh functions (quickstart.sh keeps a verbatim copy) >>>
 # The character sets, spelled out: a range such as [A-Za-z0-9] follows the locale's collation, and under en_US.UTF-8
 # bash matches thousands of non-ASCII letters with it (https://ｅxample.com would pass).
@@ -274,7 +278,7 @@ fi
 if [ -z "$RELEASE" ]; then
   err "Could not resolve the latest release of ${GH_REPO} (GitHub API unreachable or rate-limited, or no release yet)."
   err "The quick start installs only a published, signed release. Try again in a few minutes, or name the release:"
-  err "  MDMESH_VERSION=X.Y.Z bash <(curl -fsSL https://raw.githubusercontent.com/${REPO}/main/quickstart.sh)"
+  err "  MDMESH_VERSION=X.Y.Z bash <(curl -fsSL https://github.com/${REPO}/releases/latest/download/quickstart.sh)"
   exit 1
 fi
 say "Verifying release v${RELEASE} of ${GH_REPO}…"
@@ -381,8 +385,8 @@ for f in $MDM_QUICKSTART_FILES; do
   mv -f -- "$VERIFY_DIR/dl.$n" "$dest"
 done
 # Shared seed rules with setup.sh / the native installer (seed gate, verified seed, post-seed repairs).
-# Version coupling: this script runs from main, but db.sh (like the compose file and the seed) comes from the release
-# tag being installed, so it matches the images. Call only db.sh functions, with only the arguments and output, that the
+# Version coupling: this script may be newer than the release it installs (MDMESH_VERSION, or a copy from main), but
+# db.sh (like the compose file and the seed) comes from the release tag being installed, so it matches the images. Call only db.sh functions, with only the arguments and output, that the
 # latest published release already has; a db.sh change becomes usable here once a release ships it. (install/lib/db.sh
 # states the same rule for its side.)
 # shellcheck source=install/lib/db.sh
@@ -421,8 +425,8 @@ say "Wrote .env (secrets generated). docker compose reads COMPOSE_FILE/PROFILES 
 say "Pulling images…"
 docker compose pull || { err "Could not pull the v${RELEASE} images from ghcr.io/${IMAGE_OWNER} (pinned by digest in .env). Has a release been published? (to cut one, see RELEASING.md)"; exit 1; }
 # The init marker the wait below reads is on the server's data volume, and the server writes it only when it is absent.
-# The entrypoint removes the previous start's marker only in images after v0.3.1, and this script (served from main) may
-# be installing v0.3.1 or older, so a re-run over an existing volume would read the last run's result. Remove it here:
+# The entrypoint removes the previous start's marker only in images after v0.3.1, and this script (the latest
+# release's, or main's) may be installing v0.3.1 or older, so a re-run over an existing volume would read the last run's result. Remove it here:
 # the old server stopped first (so it cannot write it again in between), then a one-off container of the server image
 # that runs rm as the server's own user (never as root on the volume; rm -f removes a planted link, not its target).
 # On a fresh install there is no container to stop and no marker to remove, and the one-off only creates the volume

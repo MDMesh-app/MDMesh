@@ -88,10 +88,11 @@ On a Linux host with Docker, Docker Compose v2, `curl`, `openssl` 3.0+ (or an ol
 either a domain in Cloudflare (for a Cloudflare Tunnel) or a domain pointed at the host with ports 80 and 443 open:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/quickstart.sh)
+bash <(curl -fsSL https://github.com/MDMesh-app/MDMesh/releases/latest/download/quickstart.sh)
 ```
 
-This pulls the released images and sets up updates from the console. To build the images from source instead
+This runs the quick start of the latest release ([check it first](DEPLOY.md#check-the-quick-start-before-running-it)
+if you like), pulls the released images and sets up updates from the console. To build the images from source instead
 (`setup.sh` also needs `openssl`, and, if they are there, uses `python3` and `curl` to verify the latest release for
 the enrollment QR):
 

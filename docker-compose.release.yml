@@ -1,7 +1,7 @@
 # Pull-only MDMesh stack — no build context, every service runs a published GHCR image. This is the
 # "no clone, no build" deploy. Easiest via quickstart.sh, or by hand:
 #
-#   curl -fsSLO https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/docker-compose.release.yml
+#   curl -fsSLO https://raw.githubusercontent.com/MDMesh-app/MDMesh/vX.Y.Z/docker-compose.release.yml   # the release you run
 #   # write a .env (DB_PASSWORD, HASH_SECRET, BASE_URL, IMAGE_OWNER, …) — see quickstart.sh. For the tunnel, include
 #   # COMPOSE_PROFILES=cloudflare: --profile alone doesn't reach caddy, which then won't believe cloudflared's
 #   # CF-Connecting-IP (docker/edge-peers.sh)

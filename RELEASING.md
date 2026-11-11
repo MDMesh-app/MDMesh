@@ -39,7 +39,8 @@
    `--cleanup=whitespace` keeps lines that start with `#`. Then approve the `release` environment's deployment once
    the `gate` job is green (setup step 4).
 7. **Verify the published release** ([below](#verifying-a-published-release)): asset SHA-256 against the
-   manifest, the minisign signature, the APK's signing certificate, its versionCode, and the GHCR images.
+   manifest, the minisign signature, the APK's signing certificate, its versionCode, `quickstart.sh`, and the GHCR
+   images.
 
 ### Patch releases
 
@@ -79,12 +80,13 @@ commit it checked out.
 `.github/workflows/release.yml` then: runs the agent unit tests + builds the **signed** release APK,
 builds & pushes the **server**, **web**, and **supervisor** images to GHCR as `:VERSION`, reads back each image's
 digest (`release/image-digest.sh`), builds a **minisign-signed manifest**, and publishes a **GitHub Release** with
-`mdmesh-agent.apk`, `manifest.json`, and `manifest.json.minisig`. The fleet auto-updater consumes that signed manifest
+`mdmesh-agent.apk`, `manifest.json`, `manifest.json.minisig` and `quickstart.sh` (the tagged commit's copy, which the
+README's install command runs from `releases/latest/download/`). The fleet auto-updater consumes that signed manifest
 to apply/roll-out updates.
 
 The manifest (`release/build-manifest.sh`) keeps `components.serverImage`/`webImage` (the `:VERSION` tags, which
 supervisors before 0.5.0 read) and adds `components.images`, the three images as `repo@sha256:…`, and `files`, the
-SHA-256 of each file the quick start downloads from the tag. A 0.5.0+ supervisor and the quick start run exactly those
+SHA-256 of each file the quick start downloads from the tag and of `quickstart.sh` itself (the release asset). A 0.5.0+ supervisor and the quick start run exactly those
 digests and refuse a manifest without them, so a fork that publishes its own releases must use this workflow (or write
 the same fields). `scripts/release-manifest-check.sh` (T0) checks the manifest against what its readers expect.
 
@@ -191,8 +193,9 @@ The release job runs in the `release` environment, so the repo settings decide w
 
 ## How a deployment trusts a release
 The updater fetches the GitHub Release, verifies `manifest.json` against the baked
-`release/minisign.pub`, then checks each artifact's SHA-256 against the manifest and pulls the server and web
-images by the digests it pins. A release published without the private minisign key fails verification and is
+`release/minisign.pub`, then checks each artifact's SHA-256 against the manifest. A 0.5.0+ supervisor pulls the server
+and web images by the digests it pins, and pins its own image the same way for its next start (an older supervisor
+pulls the `:VERSION` tags). A release published without the private minisign key fails verification and is
 refused, so a hijacked repo/account or a moved image tag alone can't push code to the fleet.
 
 The quick start verifies the same signature with `openssl` against a copy of the key line in `quickstart.sh` (T0
@@ -215,4 +218,9 @@ for img in mdmesh-server mdmesh-web mdmesh-supervisor; do   # :V and :latest pri
   for t in "$V" latest; do docker buildx imagetools inspect --format "$img:$t {{.Manifest.Digest}}{{println}}" "ghcr.io/mdmesh-app/$img:$t"; done
 done
 python3 -c 'import json,sys; print(*json.load(open(sys.argv[1]))["components"]["images"].values(), sep="\n")' "$d/manifest.json"   # = those digests
+python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["files"]["quickstart.sh"])' "$d/manifest.json"
+sha256sum "$d/quickstart.sh"                      # = that, and the same as quickstart.sh at the tag
 ```
+
+`components.images`, `files` and the `quickstart.sh` asset exist from 0.5.0 on; a manifest from an earlier release has
+only `components.serverImage`/`webImage` (the `:VERSION` tags) and `components.apk`.

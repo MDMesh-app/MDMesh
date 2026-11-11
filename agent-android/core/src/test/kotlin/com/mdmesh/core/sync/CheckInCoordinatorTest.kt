@@ -411,6 +411,53 @@ class CheckInCoordinatorTest {
     }
 
     @Test
+    fun `a request that joined a cycle which then ran commands gets their results delivered`() = runTest {
+        // A cold start picks up a queued install while the heartbeat waits: joining saves a check-in only when the
+        // joined one has nothing to report afterwards.
+        val gate = GateHandler()
+        val api = FakeMdmApi().apply {
+            enrollGate = CompletableDeferred()
+            checkInResponse = ResponseEnvelope(
+                status = "OK",
+                data = AgentCheckInResponse(commands = listOf(command("c1").copy(type = "test.gate"))),
+            )
+        }
+        val coordinator = coordinator(api, PendingResults(), identityId = null, gate = gate)
+        val running = launch { coordinator.runOnce() }
+        testScheduler.advanceUntilIdle()
+        val waiter = async { coordinator.runOrHandOff() }
+        testScheduler.advanceUntilIdle()
+
+        api.enrollGate!!.complete(Unit) // the joined cycle sends, and gets c1
+        testScheduler.advanceUntilIdle()
+        api.checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse())
+        gate.gate.complete(Unit)
+        running.join()
+
+        assertEquals(CheckInOutcome.SERVED, waiter.await())
+        assertEquals("one trailing check-in for the results", 2, api.checkInRequests.size)
+        assertEquals(listOf("c1"), api.checkInRequests.last().results.map { it.commandId })
+    }
+
+    @Test
+    fun `a request that joined a cycle which failed before sending is not served`() = runTest {
+        val api = FakeMdmApi().apply {
+            enrollGate = CompletableDeferred()
+            enrollResponse = ResponseEnvelope(status = "ERROR", message = "token used")
+        }
+        val coordinator = coordinator(api, PendingResults(), identityId = null)
+        val running = launch { runCatching { coordinator.runOnce() } }
+        testScheduler.advanceUntilIdle()
+        val waiter = async { coordinator.runOrHandOff() }
+        testScheduler.advanceUntilIdle()
+
+        api.enrollGate!!.complete(Unit)
+        running.join()
+        assertEquals(CheckInOutcome.NOT_SERVED, waiter.await())
+        assertTrue(api.checkInRequests.isEmpty())
+    }
+
+    @Test
     fun `without a turned-away request there is no extra check-in`() = runTest {
         val api = FakeMdmApi()
         val coordinator = coordinator(api, PendingResults())

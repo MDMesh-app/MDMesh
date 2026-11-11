@@ -67,13 +67,14 @@ class CheckInCoordinator @Inject constructor(
 
     // Hand-offs, all guarded by handOffLock. While a holder is open, a runOrHandOff() that finds the lock busy leaves
     // a request instead of waiting for the lock. Before the running cycle has sent its check-in, the request joins
-    // that cycle ([current]); after, it waits for one more cycle ([handOff]). Each deferred completes with whether a
-    // check-in was made for it.
+    // that cycle ([current]); after, it waits for one more cycle ([handOff]). A request is served by a check-in made
+    // after it that leaves nothing to report: if that cycle ran commands, it moves on to the next cycle, which
+    // carries their results. Each request completes with whether it was served.
     private val handOffLock = Any()
     private var holderOpen = false
     private var currentSent = false
-    private var current: CompletableDeferred<Boolean>? = null
-    private var handOff: CompletableDeferred<Boolean>? = null
+    private val current = mutableListOf<CompletableDeferred<Boolean>>()
+    private val handOff = mutableListOf<CompletableDeferred<Boolean>>()
 
     suspend fun runOnce(): Unit = withContext(ioDispatcher) {
         mutex.withLock { holderCycles() }
@@ -101,10 +102,10 @@ class CheckInCoordinator @Inject constructor(
                 continue
             }
             val request = synchronized(handOffLock) {
-                when {
-                    !holderOpen -> null
-                    !currentSent -> current ?: CompletableDeferred<Boolean>().also { current = it }
-                    else -> handOff ?: CompletableDeferred<Boolean>().also { handOff = it }
+                if (!holderOpen) {
+                    null
+                } else {
+                    CompletableDeferred<Boolean>().also { if (currentSent) handOff += it else current += it }
                 }
             }
             if (request != null) {
@@ -118,9 +119,10 @@ class CheckInCoordinator @Inject constructor(
     }
 
     /**
-     * Caller holds the lock. One cycle, then one trailing cycle per batch of hand-offs that arrived after a cycle sent
-     * its request (several requests share one), at most [MAX_TRAILING_CYCLES]. Requests past that, and those of a
-     * cycle that failed before sending or was cancelled, are let go unserved; the next trigger covers them.
+     * Caller holds the lock. One cycle, then one trailing cycle per batch of hand-offs still waiting (requests that
+     * arrived after a cycle sent, or joined one that then ran commands; several share one), at most
+     * [MAX_TRAILING_CYCLES]. Requests past that, and those of a cycle that failed before sending or was cancelled,
+     * are let go unserved; the next trigger covers them.
      */
     private suspend fun holderCycles() {
         synchronized(handOffLock) {
@@ -131,40 +133,41 @@ class CheckInCoordinator @Inject constructor(
             servedCycle()
             var trailing = 0
             while (true) {
-                val waiting = synchronized(handOffLock) {
-                    val request = handOff
-                    handOff = null
-                    if (request == null || trailing >= MAX_TRAILING_CYCLES) {
-                        holderOpen = false
-                    } else {
-                        current = request // the next cycle serves them, and anyone who asks before it sends
-                        currentSent = false
-                    }
-                    request
-                } ?: return
-                if (trailing >= MAX_TRAILING_CYCLES) {
-                    waiting.complete(false)
-                    return
+                val proceed = synchronized(handOffLock) {
+                    when {
+                        handOff.isEmpty() -> false
+                        trailing >= MAX_TRAILING_CYCLES -> false // let go: the finally releases them unserved
+                        else -> {
+                            current += handOff // the next cycle serves them, and anyone who asks before it sends
+                            handOff.clear()
+                            currentSent = false
+                            true
+                        }
+                    }.also { if (!it) holderOpen = false }
                 }
+                if (!proceed) return
                 trailing++
                 servedCycle()
             }
         } finally {
             synchronized(handOffLock) {
                 holderOpen = false
-                current?.complete(false)
-                current = null
-                handOff?.complete(false)
-                handOff = null
+                (current + handOff).forEach { it.complete(false) }
+                current.clear()
+                handOff.clear()
             }
         }
     }
 
-    /** One cycle; then its joined requests learn whether a check-in was made (a failure after sending was one). */
+    /**
+     * One cycle, then its joined requests: served if it ran no commands; moved on to the next cycle if it did (that
+     * one reports their results); on a failure, served only if the request had gone out.
+     */
     private suspend fun servedCycle() {
         var made = false
+        var ranCommands = false
         try {
-            recordedCycle()
+            ranCommands = recordedCycle()
             made = true
         } catch (e: CancellationException) {
             throw e
@@ -173,8 +176,12 @@ class CheckInCoordinator @Inject constructor(
             throw t
         } finally {
             synchronized(handOffLock) {
-                current?.complete(made)
-                current = null
+                if (made && ranCommands) {
+                    handOff.addAll(0, current)
+                } else {
+                    current.forEach { it.complete(made) }
+                }
+                current.clear()
             }
         }
     }
@@ -182,9 +189,10 @@ class CheckInCoordinator @Inject constructor(
     /** From here on this cycle's request is (being) sent: later hand-offs need a cycle of their own. */
     private fun sending() = synchronized(handOffLock) { currentSent = true }
 
-    private suspend fun recordedCycle() {
+    /** Returns whether the cycle ran commands. */
+    private suspend fun recordedCycle(): Boolean {
         try {
-            cycle()
+            return cycle()
         } catch (t: Throwable) {
             if (t !is CancellationException) syncStatus.recordFailure(t)
             throw t
@@ -197,7 +205,7 @@ class CheckInCoordinator @Inject constructor(
         private const val HAND_OFF_RETRY_MS = 10L
     }
 
-    private suspend fun cycle() {
+    private suspend fun cycle(): Boolean {
         val deviceId = enrollment.ensureEnrolled()
         val authorization = "Bearer ${identity.secret().orEmpty()}"
         val matrix = capabilitySource.matrix(deviceId)
@@ -245,6 +253,7 @@ class CheckInCoordinator @Inject constructor(
             // Record each command outcome as a timeline event (flushed next cycle).
             eventSink.record(EventType.COMMAND_RESULT, "${result.commandId}:${result.status}")
         }
+        return data.commands.isNotEmpty()
     }
 }
 

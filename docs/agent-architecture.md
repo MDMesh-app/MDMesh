@@ -129,7 +129,8 @@ the background color: the lightest scrim at which the text, secondary text and E
 image's darkest and lightest parts. Text also sits on a small plate of the background color. On any failure it keeps
 the background color and retries with backoff (30 s doubling to 6 h, with jitter; a new image starts over), and
 looks again every time the launcher comes to the foreground; an arriving image never reopens the pinned app or
-lifts a crash-loop hold. With an `http://` server address devices keep the color. Older agents ignore the key (their
+lifts a crash-loop hold. The download is queued (WorkManager, on the network) as soon as a kiosk with an image is entered,
+so a single-app kiosk has it before its launcher next shows; the old image stays until the new one is verified. With an `http://` server address devices keep the color. Older agents ignore the key (their
 kiosk is re-applied once when the image changes the revision). `backgroundImageUrl` is also the Headwind launcher's
 wallpaper: a save that sends another URL there stores it as that wallpaper and drops the managed image.
 

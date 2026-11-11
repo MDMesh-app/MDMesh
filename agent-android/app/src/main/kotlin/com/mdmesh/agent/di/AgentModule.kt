@@ -37,6 +37,7 @@ import com.mdmesh.core.command.handlers.KioskExitHandler
 import com.mdmesh.core.kiosk.AndroidKioskHomeSwitch
 import com.mdmesh.core.kiosk.ConfiguredSafeModeSetting
 import com.mdmesh.core.kiosk.KioskApplier
+import com.mdmesh.core.kiosk.KioskBackgroundPrefetchWorker
 import com.mdmesh.core.kiosk.SharedPrefsExitJournal
 import com.mdmesh.core.command.handlers.PolicyApplyHandler
 import com.mdmesh.core.device.AppInventoryCollector
@@ -293,6 +294,7 @@ object AgentModule {
             // An exit cut off midway is never finished while the configuration says kiosk on.
             desiredKioskOn = { configStore.configuredKiosk() != null },
             io = Dispatchers.IO,
+            onEntered = { p -> p.theme.backgroundImage?.let { KioskBackgroundPrefetchWorker.enqueue(context, it) } },
             bootId = { Boot.count(context) },
             isLockTaskActive = { kiosk.isLocked(context) },
         )

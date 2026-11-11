@@ -47,6 +47,7 @@ New
 - Kiosk: a configuration can show a background image behind the kiosk launcher. Choose it in the Kiosk section: a
   PNG, JPEG or WebP image, at most 10 MB and 16 megapixels. Devices download it only over HTTPS (with an `http://`
   server address they keep the background color), check it by its SHA-256, and keep the color if it can't be shown.
+  The download starts as soon as the kiosk is applied, so the image is usually ready when the launcher shows.
   The launcher darkens or lightens the image just enough that its text, icons and Exit button stay readable (4.5:1)
   and puts text on a small plate of the background color. Needs agent 0.5.0 (thanks @letternumber).
 - Configurations can Grant or Deny an app's runtime permissions (camera, location, microphone, contacts, SMS and

@@ -58,6 +58,21 @@ class KioskApplierTest {
         assertEquals("com.a", store.load()?.pinPackage)
         assertEquals(listOf("claim:true", "launcher"), h.log)
     }
+    @Test fun `a new kiosk is handed on (background prefetch), a repeated or failed entry is not`() = runTest {
+        val p = KioskApplyPayload(mode = "single", pinPackage = "com.a", allowedPackages = listOf("com.a"))
+        val handed = mutableListOf<KioskApplyPayload>()
+        var locked = false
+        val c = FakeController(KioskResult.Ok)
+        val a = KioskApplier(c, InMemoryKioskStateStore(), FakeHome(), home, onEntered = { handed += it }) { locked }
+        a.enter(p)
+        assertEquals(listOf(p), handed)
+        locked = true
+        a.enter(p) // already in this kiosk: nothing new to fetch
+        assertEquals(1, handed.size)
+        c.failFor = listOf("com.b")
+        a.enter(KioskApplyPayload(mode = "single", pinPackage = "com.b", allowedPackages = listOf("com.b")))
+        assertEquals("a failed entry hands nothing on", 1, handed.size)
+    }
     @Test fun `enter unsupported reverts the home claim and persists nothing`() = runTest {
         val h = FakeHome(); val store = InMemoryKioskStateStore()
         val r = KioskApplier(FakeController(KioskResult.Unsupported), store, h, home) { false }

@@ -57,6 +57,12 @@ class KioskApplier(
      * main thread. The default runs it in place, for tests that drive the applier on a test scheduler.
      */
     private val io: CoroutineDispatcher = Dispatchers.Unconfined,
+    /**
+     * Called with each kiosk the device has just been locked into (not a repeat of the kiosk it is in): production
+     * queues its background image's download ([KioskBackgroundPrefetchWorker]), so the image is ready before the
+     * launcher next shows. Must not block.
+     */
+    private val onEntered: (KioskApplyPayload) -> Unit = {},
     /** Which boot this is (Settings.Global.BOOT_COUNT): written into a journal entry, for the logs. */
     private val bootId: () -> Long = { 0L },
     /** Whether lock task is active now ([KioskController.isLocked]). Last, so a trailing lambda can only be this. */
@@ -85,6 +91,7 @@ class KioskApplier(
                 // short-circuit above re-asserts it without relaunching the kiosk.
                 store.save(p)
                 home.showLauncher()
+                onEntered(p)
                 applySafeMode(applyVolume(p, r))
             }
             else -> {

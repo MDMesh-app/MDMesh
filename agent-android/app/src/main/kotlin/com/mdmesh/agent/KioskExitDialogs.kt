@@ -11,7 +11,11 @@ internal enum class LauncherScreen {
     /** The hold screen after a crash loop, with the exit affordance. */
     HOLD,
 
-    /** The pinned app was launched on top; the launcher behind it only shows a splash. */
+    /**
+     * The pinned app was launched on top, over the splash. The splash does carry the exit affordance (reachable if
+     * the app fails to start or closes at once), but a dialog restored here would sit hidden behind the app that a
+     * recreation just relaunched, so it's dropped; staff can open it again from the splash.
+     */
     PINNED_APP,
 }
 

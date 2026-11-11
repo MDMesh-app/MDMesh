@@ -3,7 +3,9 @@ package com.mdmesh.agent
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.w3c.dom.Element
 import java.io.File
+import javax.xml.parsers.DocumentBuilderFactory
 
 /**
  * Dialogs use androidx.appcompat's AlertDialog, which takes the app theme's v2 dialog style. The framework
@@ -38,6 +40,17 @@ class DialogSourceTest {
         assertEquals("dialogs built outside MdmDialog", emptyList<String>(), direct)
     }
 
+    /** Activities in the manifest by simple class name, to their android:configChanges (null when absent). */
+    private fun manifestActivities(manifest: File): Map<String, String?> {
+        val doc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(manifest)
+        val nodes = doc.getElementsByTagName("activity")
+        return (0 until nodes.length).associate { i ->
+            val el = nodes.item(i) as Element
+            el.getAttribute("android:name").substringAfterLast('.') to
+                el.getAttribute("android:configChanges").ifEmpty { null }
+        }
+    }
+
     /** Source with comments and string literals blanked, so a guard can't be met by a comment. */
     private fun code(file: File): String {
         val blank = { m: MatchResult -> m.value.replace(Regex("[^\n]"), " ") }
@@ -59,16 +72,14 @@ class DialogSourceTest {
         val opens = sources.filter { it.name !in setOf("MdmDialog.kt", "ExitPinDialog.kt") }
             .filter { creates.containsMatchIn(code(it)) }
         assertTrue("no activity opens a dialog; update this guard", opens.isNotEmpty())
-        val manifest = File(root, "app/src/main/AndroidManifest.xml").readText()
+        val activities = manifestActivities(File(root, "app/src/main/AndroidManifest.xml"))
         for (file in opens) {
             val src = code(file)
             val calls = listOf("dialogs.save(", "dialogs.restore(", "dialogs.dismiss()", "dialogs.takeRestored()")
             for (call in calls) assertTrue("${file.name} doesn't call $call", call in src)
             val activity = file.nameWithoutExtension
-            val handlesConfig = Regex("""android:name="\.$activity"[^>]*android:configChanges""").containsMatchIn(
-                manifest.replace(Regex("\\s+"), " "),
-            )
-            if (handlesConfig) {
+            assertTrue("$activity isn't in the manifest", activity in activities)
+            if (!activities.getValue(activity).isNullOrBlank()) {
                 val forwards = Regex("""fun onConfigurationChanged\([^)]*\)\s*\{[^}]*dialogs\.onConfigurationChanged""")
                 assertTrue("${file.name} must rebuild its dialog on a config change", forwards.containsMatchIn(src))
             }

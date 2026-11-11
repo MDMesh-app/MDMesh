@@ -660,7 +660,7 @@ function Editor({
     }
     setBackgroundUploading(true);
     try {
-      // Upright and at most 3840 px along its long edge; the server removes whatever metadata is left.
+      // At most 3840 px along its long edge (drawn upright when scaled); the server removes the metadata.
       let file: File;
       try {
         file = (await normalizeKioskImage(picked)).file;
@@ -706,7 +706,7 @@ function Editor({
     <FieldRow
       id={`${ids}-backgroundImage`}
       label="Background image"
-      help={`Needs agent ${KIOSK_IMAGE_AGENT}. A PNG, JPEG or WebP image, at most 10 MB and 16 megapixels, shown behind the kiosk launcher, cropped at the centre to fill the screen; the background color stays the fallback. The console turns photos upright and scales them to at most 3840 px, and the server removes location and camera details before devices get it. Devices download it only when the server address is HTTPS, and check it by its SHA-256. It is hosted in Files, where anyone with its link can open it, so don't use a confidential image. Remove also clears the legacy Background image URL.`}
+      help={`Needs agent ${KIOSK_IMAGE_AGENT}. A PNG, JPEG or WebP image, at most 10 MB and 16 megapixels, shown behind the kiosk launcher, cropped at the centre to fill the screen; the background color stays the fallback. The console scales large photos to at most 3840 px, and the server removes location and camera details before devices get it. Devices download it only when the server address is HTTPS, and check it by its SHA-256. It is hosted in Files, where anyone with its link can open it, so don't use a confidential image. Remove also clears the legacy Background image URL.`}
       adornment={changed.has('backgroundImageFileId') && !readOnly ? <ChangedChip /> : undefined}
       disabled={readOnly}
       below={backgroundInfo.info ? (

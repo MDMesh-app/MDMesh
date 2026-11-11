@@ -40,8 +40,8 @@ New
   server address they keep the background color), check it by its SHA-256, and keep the color if it can't be shown.
   The editor shows the current image (size, upload date, short SHA-256) with Replace and Remove, and previews the
   launcher over it on a phone and a tablet in both orientations, with the text contrast it reaches; the launcher dims
-  the image just enough for text to stay at 4.5:1. Photos are turned upright and scaled to at most 3840 px before
-  upload, and their location, camera details and other metadata are removed before devices get them. The device page
+  the image just enough for text to stay at 4.5:1. Large photos are scaled to at most 3840 px before upload, and
+  their location, camera details and other metadata are removed before devices get them. The device page
   names the image its configuration sets. Needs agent 0.5.0 (thanks @letternumber).
 - Configurations can Grant or Deny an app's runtime permissions (camera, location, microphone, contacts, SMS and
   more), under each installed app in the editor; Default removes MDMesh's override. The choices come from the APK

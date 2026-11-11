@@ -84,6 +84,8 @@ describe('KioskBackgroundPreview', () => {
     }
     // Readout: with the scrim, and the image alone (what fails without it).
     expect(screen.getAllByText(/Dimmed \d+% · image alone 1\.\d:1/)).toHaveLength(4);
+    // The readout is the 98th percentile, and says so.
+    expect(screen.getAllByText(/worst 2% of the image aside/)).toHaveLength(4);
     expect(screen.getByText(/busy or bright behind the text/)).toBeTruthy();
     expect(await violations()).toEqual([]);
   });
@@ -112,6 +114,25 @@ describe('KioskBackgroundPreview', () => {
     sampling.samples = null;
     preview();
     await waitFor(() => expect(screen.getAllByText('Contrast unavailable in this browser')).toHaveLength(4));
+  });
+
+  it('says so when the image doesn’t load', async () => {
+    sampling.samples = DARK;
+    render(
+      <KioskBackgroundPreview src="/x.png" width={3840} height={2160} colours={kioskColours(null, null)} appNames={[]} exitVisible={false} loadImage={async () => null} />,
+    );
+    await waitFor(() => expect(screen.getAllByText('The image could not be loaded to measure it')).toHaveLength(4));
+  });
+
+  it('lays the four screens out in one even grid with their captions under a shared stage', () => {
+    sampling.samples = DARK;
+    preview();
+    const list = screen.getByRole('list', { name: 'Preview on devices' });
+    expect(list.classList.contains('v2-kbg__shapes')).toBe(true);
+    for (const item of within(list).getAllByRole('listitem')) {
+      expect(item.querySelector('.v2-kbg__stage > .v2-kbg__screen')).not.toBeNull();
+      expect(item.querySelector('.v2-kbg__stage + .v2-kbg__caption')).not.toBeNull();
+    }
   });
 
   it('is a disclosure the keyboard can fold', () => {

@@ -115,8 +115,8 @@ save the server refuses anything but a PNG, JPEG or WebP of at most 10 MB and 16
 removes its metadata without decoding it (`KioskImageMetadata`: EXIF, GPS, XMP, IPTC, comments, thumbnails and data
 after the image go; only the EXIF orientation stays, as a minimal EXIF block; an image that had some is hosted again
 as a cleaned copy, the original file is never rewritten), and stores its SHA-256 in `backgroundImageSha256` (of the
-cleaned file) and a URL in `backgroundImageUrl`; the browser's values are never used. The console already uploads
-images upright and at most 3840 px along the long edge (`normalizeKioskImage`), and the commit of such an upload is
+cleaned file) and a URL in `backgroundImageUrl`; the browser's values are never used. The console scales images over
+3840 px along the long edge before uploading them, drawn upright (`normalizeKioskImage`), and the commit of such an upload is
 cleaned before it is hosted. `kiosk.theme.backgroundImage` is `{url, sha256}`, sent only for a managed image; its URL
 is built from the server's current `base.url` each time the document is built (`KioskBackgroundImageUrls`), so a move
 to HTTPS or another domain reaches devices as a new revision; the stored URL is only the fallback. Agent 0.5.0

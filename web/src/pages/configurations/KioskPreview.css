@@ -30,38 +30,54 @@
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
-  align-items: flex-end;
+  align-items: start;
 }
 
-/* Every screen is 150 px on its short side, and shrinks to the row on a phone. */
+@media (max-width: 900px) {
+  .v2 .v2-kbg__shapes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .v2 .v2-kbg__slot {
-  --kbg-short: 150px;
-  flex: 0 1 var(--kbg-short);
   min-width: 0;
-}
-
-.v2 .v2-kbg__slot--wide {
-  flex-basis: calc(var(--kbg-short) * var(--kbg-w) / var(--kbg-h));
 }
 
 .v2 .v2-kbg__shape {
   margin: 0;
   display: grid;
-  gap: 6px;
+  gap: 8px;
+}
+
+/* Every screen sits in a stage of one height, top-aligned, so the captions under them share a baseline. The screen
+   is as large as fits the stage in its own proportions. */
+.v2 .v2-kbg__stage {
+  height: 300px;
+  container-type: size;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+@media (max-width: 600px) {
+  .v2 .v2-kbg__stage {
+    height: 220px;
+  }
 }
 
 .v2 .v2-kbg__screen {
   position: relative;
   overflow: hidden;
-  width: 100%;
+  width: min(100cqw, calc(100cqh * var(--kbg-w) / var(--kbg-h)));
   aspect-ratio: var(--kbg-w) / var(--kbg-h);
   border-radius: var(--radius-md);
   border: 1px solid var(--border-strong);
   background: var(--kbg-bg);
   color: var(--kbg-text);
+  container-type: size;
 }
 
 .v2 .v2-kbg__img,
@@ -83,42 +99,47 @@
   opacity: var(--kbg-scrim);
 }
 
+/* The launcher at its own size in dp (KioskLauncherActivity), scaled to the screen: --u is one dp of a device whose
+   short side is --kbg-dp (360 for a phone, 768/800 for the tablets), so a tablet shows more room, as it does. */
 .v2 .v2-kbg__ui {
+  --u: calc(100cqmin / var(--kbg-dp));
   display: flex;
   flex-direction: column;
-  padding: 14px 12px 10px;
-  gap: 8px;
+  padding: calc(28 * var(--u)) calc(24 * var(--u)) calc(24 * var(--u));
+  gap: calc(16 * var(--u));
   font-family: var(--font-sans);
 }
 
 .v2 .v2-kbg__header {
   font-weight: 700;
-  font-size: 13px;
+  font-size: calc(20 * var(--u));
+  line-height: 1.2;
 }
 
 .v2 .v2-kbg__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
-  gap: 8px 4px;
+  grid-template-columns: repeat(auto-fill, calc(80 * var(--u)));
+  gap: calc(12 * var(--u)) 0;
   align-content: start;
-  flex: 1;
+  flex: 1 1 0;
+  min-height: 0;
   overflow: hidden;
 }
 
 .v2 .v2-kbg__app {
   display: grid;
   justify-items: center;
-  gap: 3px;
+  gap: calc(6 * var(--u));
   min-width: 0;
 }
 
 .v2 .v2-kbg__icon {
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
+  width: calc(56 * var(--u));
+  height: calc(56 * var(--u));
+  border-radius: calc(14 * var(--u));
   display: grid;
   place-items: center;
-  font-size: 12px;
+  font-size: calc(24 * var(--u));
   font-weight: 600;
   background: var(--kbg-text);
   color: var(--kbg-bg);
@@ -126,7 +147,8 @@
 
 .v2 .v2-kbg__label {
   max-width: 100%;
-  font-size: 9px;
+  font-size: calc(12 * var(--u));
+  line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -134,9 +156,9 @@
 
 .v2 .v2-kbg__exit {
   align-self: center;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 9px;
+  padding: calc(8 * var(--u)) calc(20 * var(--u));
+  border-radius: calc(20 * var(--u));
+  font-size: calc(14 * var(--u));
   font-weight: 600;
   background: var(--kbg-text);
   color: var(--kbg-bg);

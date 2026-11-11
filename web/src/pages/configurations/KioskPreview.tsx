@@ -6,12 +6,12 @@ import { TEXT_MIN, sampleCrop, scrimFor, toHex, type KioskColours, type Scrim } 
 import { Callout, IconCheckSmall, IconCrossSmall, IconInfo, IconWarning } from '../../ui';
 import './KioskPreview.css';
 
-/** Screen shapes the preview shows: width and height in the shape's proportions. */
+/** Screen shapes the preview shows: width and height in the shape's proportions, and the short side in dp. */
 export const PREVIEW_SHAPES = [
-  { id: 'phone-portrait', label: 'Phone, portrait', w: 9, h: 19.5 },
-  { id: 'phone-landscape', label: 'Phone, landscape', w: 19.5, h: 9 },
-  { id: 'tablet-landscape', label: 'Tablet 4:3, landscape', w: 4, h: 3 },
-  { id: 'tablet-portrait', label: 'Tablet 16:10, portrait', w: 10, h: 16 },
+  { id: 'phone-portrait', label: 'Phone, portrait', w: 9, h: 19.5, dp: 360 },
+  { id: 'phone-landscape', label: 'Phone, landscape', w: 19.5, h: 9, dp: 360 },
+  { id: 'tablet-landscape', label: 'Tablet 4:3, landscape', w: 4, h: 3, dp: 768 },
+  { id: 'tablet-portrait', label: 'Tablet 16:10, portrait', w: 10, h: 16, dp: 800 },
 ] as const;
 
 /** Above this the image is flagged as one the launcher has to dim a lot. */
@@ -24,7 +24,8 @@ const ratioText = (r: number) => (Number.isFinite(r) ? `${(Math.floor(r * 10) / 
    The previewer
    --------------------------------------------------------------------------------------------------------------- */
 
-type ShapeResult = { scrim: Scrim | null };
+/** null scrim: the browser couldn't read the pixels; `loaded` false: the image didn't load. */
+type ShapeResult = { scrim: Scrim | null; loaded: boolean };
 
 /** The kiosk launcher on common screen shapes, over the image as the agent draws it. */
 export function KioskBackgroundPreview({
@@ -56,7 +57,7 @@ export function KioskBackgroundPreview({
       const out: Record<string, ShapeResult> = {};
       for (const s of PREVIEW_SHAPES) {
         const samples = img ? sampleCrop(img, img.naturalWidth || width, img.naturalHeight || height, s.w, s.h, colours.background) : null;
-        out[s.id] = { scrim: samples ? scrimFor(samples, colours) : null };
+        out[s.id] = { scrim: samples ? scrimFor(samples, colours) : null, loaded: img != null };
       }
       setResults(out);
     });
@@ -90,16 +91,13 @@ export function KioskBackgroundPreview({
       ) : null}
       <ul className="v2-kbg__shapes" aria-labelledby={headingId}>
         {PREVIEW_SHAPES.map((s) => (
-          <li
-            key={s.id}
-            className={`v2-kbg__slot v2-kbg__slot--${s.w > s.h ? 'wide' : 'tall'}`}
-            style={{ '--kbg-w': s.w, '--kbg-h': s.h } as CSSProperties}
-          >
+          <li key={s.id} className="v2-kbg__slot" style={{ '--kbg-w': s.w, '--kbg-h': s.h, '--kbg-dp': s.dp } as CSSProperties}>
             <ShapePreview
               shape={s}
               src={src}
               colours={colours}
               scrim={results ? results[s.id].scrim : undefined}
+              loaded={results ? results[s.id].loaded : true}
               apps={apps}
               exitVisible={exitVisible}
             />
@@ -125,6 +123,7 @@ function ShapePreview({
   src,
   colours,
   scrim,
+  loaded,
   apps,
   exitVisible,
 }: {
@@ -133,6 +132,8 @@ function ShapePreview({
   colours: KioskColours;
   /** undefined: still measuring; null: the browser couldn't read the pixels. */
   scrim: Scrim | null | undefined;
+  /** False: the image didn't load, so nothing could be measured. */
+  loaded: boolean;
   apps: readonly string[];
   exitVisible: boolean;
 }) {
@@ -151,20 +152,22 @@ function ShapePreview({
   );
   return (
     <figure className="v2-kbg__shape">
-      <div className="v2-kbg__screen" style={style} role="img" aria-label={description}>
-        <img className="v2-kbg__img" src={src} alt="" />
-        <div className="v2-kbg__scrim" />
-        <div className="v2-kbg__ui" aria-hidden="true">
-          <div className="v2-kbg__header">MDMesh Kiosk</div>
-          <div className="v2-kbg__grid">
-            {apps.map((name, i) => (
-              <div key={`${name}-${i}`} className="v2-kbg__app">
-                <span className="v2-kbg__icon">{name.slice(0, 1).toUpperCase()}</span>
-                <span className="v2-kbg__label">{name}</span>
-              </div>
-            ))}
+      <div className="v2-kbg__stage">
+        <div className="v2-kbg__screen" style={style} role="img" aria-label={description}>
+          <img className="v2-kbg__img" src={src} alt="" />
+          <div className="v2-kbg__scrim" />
+          <div className="v2-kbg__ui" aria-hidden="true">
+            <div className="v2-kbg__header">MDMesh Kiosk</div>
+            <div className="v2-kbg__grid">
+              {apps.map((name, i) => (
+                <div key={`${name}-${i}`} className="v2-kbg__app">
+                  <span className="v2-kbg__icon">{name.slice(0, 1).toUpperCase()}</span>
+                  <span className="v2-kbg__label">{name}</span>
+                </div>
+              ))}
+            </div>
+            {exitVisible ? <span className="v2-kbg__exit">Exit kiosk</span> : null}
           </div>
-          {exitVisible ? <span className="v2-kbg__exit">Exit kiosk</span> : null}
         </div>
       </div>
       <figcaption className="v2-kbg__caption">
@@ -172,7 +175,9 @@ function ShapePreview({
         {scrim === undefined ? (
           <span className="v2-kbg__readout">Measuring…</span>
         ) : scrim === null ? (
-          <span className="v2-kbg__readout">Contrast unavailable in this browser</span>
+          <span className="v2-kbg__readout">
+            {loaded ? 'Contrast unavailable in this browser' : 'The image could not be loaded to measure it'}
+          </span>
         ) : (
           <>
             <span className={`v2-kbg__readout ${pass ? 'is-pass' : 'is-fail'}`}>
@@ -181,6 +186,7 @@ function ShapePreview({
                 Text {ratioText(scrim.ratio)} <strong>{pass ? 'Pass' : 'Fail'}</strong>
               </span>
             </span>
+            <span className="v2-kbg__meta">worst 2% of the image aside</span>
             <span className="v2-kbg__meta">
               {scrim.step === 0 ? 'No dimming needed' : `Dimmed ${Math.round(scrim.alpha * 100)}%`} · image alone{' '}
               {ratioText(scrim.ratioWithoutScrim)}

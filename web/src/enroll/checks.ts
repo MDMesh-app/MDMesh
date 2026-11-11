@@ -20,6 +20,9 @@ function isLoopback(host: string): boolean {
 
 function isPrivate(host: string): boolean {
   if (/^10\./.test(host) || /^192\.168\./.test(host) || /^169\.254\./.test(host)) return true;
+  // Carrier-grade NAT (100.64.0.0/10), which Tailscale also uses.
+  const cg = /^100\.(\d+)\./.exec(host);
+  if (cg && Number(cg[1]) >= 64 && Number(cg[1]) <= 127) return true;
   const m = /^172\.(\d+)\./.exec(host);
   if (m && Number(m[1]) >= 16 && Number(m[1]) <= 31) return true;
   if (/^f[cd][0-9a-f]{2}:/.test(host) || /^fe80:/.test(host)) return true;
@@ -56,7 +59,7 @@ export function addressProblem(origin: string, baseUrl: string | null): AddressP
   if (here.protocol !== 'https:') {
     return {
       tone: 'alert',
-      text: `This console is open over http://. Android enrolls only over https://, so a device that scans this code can't reach the server.${openThere || ' Open the console at its https:// address and make the code there.'}`,
+      text: `This console is open over http://. Android 9 and later enroll only over https://, so most devices that scan this code can't reach the server.${openThere || ' Open the console at its https:// address and make the code there.'}`,
     };
   }
   if (serverOrigin && serverOrigin !== here.origin) {
@@ -87,8 +90,19 @@ export function wifiProblem(wifi: WifiConfig | undefined): string | null {
   if (security !== 'NONE' && !wifi.password) {
     return 'Enter the Wi-Fi password, or choose Open. Until then the network is left out of the code and the device asks for Wi-Fi on its screen.';
   }
-  if (security === 'WPA' && wifi.password && wifi.password.length < 8) {
-    return 'A WPA password has at least 8 characters, so the device could not join with this one. It is left out of the code until it is fixed.';
+  if (security === 'WPA' && wifi.password) {
+    const p = wifi.password;
+    const hexKey = p.length === 64 && /^[0-9a-fA-F]+$/.test(p);
+    if (p.length < 8 || (p.length > 63 && !hexKey)) {
+      return 'A WPA password has 8 to 63 characters (or is a 64-digit hex key), so the device could not join with this one. It is left out of the code until it is fixed.';
+    }
+  }
+  if (security === 'WEP' && wifi.password) {
+    const p = wifi.password;
+    const ok = p.length === 5 || p.length === 13 || ((p.length === 10 || p.length === 26) && /^[0-9a-fA-F]+$/.test(p));
+    if (!ok) {
+      return 'A WEP key has 5 or 13 characters, or 10 or 26 hex digits, so the device could not join with this one. It is left out of the code until it is fixed.';
+    }
   }
   return null;
 }

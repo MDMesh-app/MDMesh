@@ -21,7 +21,7 @@ describe('addressProblem', () => {
   it('stops a code made over http', () => {
     const p = addressProblem('http://mdm.acme.test', null);
     expect(p?.tone).toBe('alert');
-    expect(p?.text).toContain('only over https://');
+    expect(p?.text).toContain('Android 9 and later enroll only over https://');
   });
 
   it('warns when the console is open at another address than the server setting', () => {
@@ -37,6 +37,8 @@ describe('addressProblem', () => {
     expect(addressProblem('https://mdm.local', null)?.tone).toBe('warn');
     expect(addressProblem('https://mdmesh', null)?.tone).toBe('warn');
     expect(addressProblem('https://172.40.0.2', null)).toBeNull();
+    expect(addressProblem('https://100.101.5.6', null)?.tone).toBe('warn');
+    expect(addressProblem('https://100.20.5.6', null)).toBeNull();
   });
 
   it('ignores what it cannot parse', () => {
@@ -57,7 +59,13 @@ describe('wifiProblem', () => {
     expect(wifiProblem({ ssid: 'Office', password: '', security: 'WPA' })).toContain('Enter the Wi-Fi password');
     expect(wifiProblem({ ssid: 'Office', password: '', security: 'WEP' })).toContain('Enter the Wi-Fi password');
     expect(wifiProblem({ ssid: 'Corp', password: 'x', security: 'EAP' })).toContain('EAP');
-    expect(wifiProblem({ ssid: 'Office', password: 'short', security: 'WPA' })).toContain('at least 8');
+    expect(wifiProblem({ ssid: 'Office', password: 'short', security: 'WPA' })).toContain('8 to 63');
+    expect(wifiProblem({ ssid: 'Office', password: 'x'.repeat(64), security: 'WPA' })).toContain('8 to 63');
+    expect(wifiProblem({ ssid: 'Office', password: 'a'.repeat(64), security: 'WPA' })).toBeNull(); // hex PSK
+    expect(wifiProblem({ ssid: 'Old', password: 'abcd', security: 'WEP' })).toContain('WEP key');
+    expect(wifiProblem({ ssid: 'Old', password: 'abcde', security: 'WEP' })).toBeNull();
+    expect(wifiProblem({ ssid: 'Old', password: '0123456789', security: 'WEP' })).toBeNull();
+    expect(wifiProblem({ ssid: 'Old', password: 'zzzzzzzzzz', security: 'WEP' })).toContain('WEP key');
   });
 });
 

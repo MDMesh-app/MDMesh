@@ -28,7 +28,7 @@ vi.mock('../../data/kioskScrim', async (importOriginal) => {
 });
 
 import { kioskColours } from '../../data/kioskScrim';
-import { KioskBackgroundPreview, ROTATE_MS, THUMBNAILS, readout, viewLabel } from './KioskPreview';
+import { KioskBackgroundPreview, ROTATE_MS, THUMBNAILS, readout, thumbnailGrid, viewLabel } from './KioskPreview';
 
 const INFO: KioskBackgroundImageInfo = {
   fileId: 42,
@@ -227,6 +227,54 @@ describe('KioskBackgroundPreview', () => {
       <KioskBackgroundPreview src="/x.png" width={800} height={600} colours={kioskColours(null, null)} appNames={[]} exitVisible={false} loadImage={fakeImage} measure={measure} />,
     );
     expect(screen.getByText(/600 px on its short side/)).toBeTruthy();
+  });
+});
+
+describe('Exit button warning', () => {
+  /** Bright only at the bottom of the 3840 x 2160 image (y > 2000 px), where most Exit buttons sit. */
+  const BRIGHT_BOTTOM: Paint = (_x, y) => (y > 2000 ? 0xffffff : 0x141414);
+
+  it('names the shapes it applies to, and marks their thumbnails with an icon and text', async () => {
+    sampling.paint = BRIGHT_BOTTOM;
+    preview();
+    const callout = await screen.findByText(/too bright behind the Exit button/);
+    expect(callout.textContent).toMatch(/^In phone portrait, tablet 4:3 landscape and tablet 16:10 portrait, the image/);
+    const buttons = within(screen.getByRole('list', { name: 'Screen shapes' })).getAllByRole('button');
+    const warned = buttons.map((b) => /Exit button under 3:1/.test(b.textContent ?? ''));
+    // A landscape phone crops the image's bottom away.
+    expect(warned).toEqual([true, false, true, true]);
+    expect(buttons[0].querySelector('.v2-kbg__readout.is-warn svg')).not.toBeNull();
+    expect(liveText()).toMatch(/Exit button under 3:1/);
+  });
+
+  it('is not shown when no shape needs it', async () => {
+    sampling.paint = DARK;
+    preview();
+    await waitFor(() => expect(liveText()).toMatch(/Pass/));
+    expect(screen.queryByText(/too bright behind the Exit button/)).toBeNull();
+    expect(screen.queryByText(/Exit button under 3:1/)).toBeNull();
+  });
+});
+
+describe('labels', () => {
+  it('are cut the same in the large view and the thumbnails, as the device cuts them', async () => {
+    sampling.paint = DARK;
+    preview({ apps: ['Signage Player Pro Edition', 'Notes'] });
+    const lines = (root: Element) => [...root.querySelectorAll('.v2-kbg__label')][0].textContent;
+    const thumb = within(screen.getByRole('list', { name: 'Screen shapes' })).getAllByRole('button')[0];
+    expect(lines(large())).toBe(lines(thumb));
+    expect(large().querySelectorAll('.v2-kbg__label')[0].querySelectorAll('.v2-kbg__label-line').length).toBeLessThanOrEqual(2);
+    expect(lines(large())).toMatch(/…$/);
+  });
+});
+
+describe('thumbnailGrid', () => {
+  it('gives all four one height: two columns on a wide page, one on a phone', () => {
+    const wide = thumbnailGrid(690);
+    expect(wide.columns).toBe(2);
+    // The widest pair (tablet 4:3 landscape + phone landscape) fills the row.
+    expect(Math.max(150, (wide.height * 1024) / 768) + (wide.height * 780) / 360 + 40).toBeLessThanOrEqual(690);
+    expect(thumbnailGrid(330)).toEqual({ columns: 1, height: Math.floor(((330 - 28) * 360) / 780) });
   });
 });
 

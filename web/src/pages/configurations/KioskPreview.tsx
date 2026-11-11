@@ -2,7 +2,7 @@
 // for the Exit button, a plate behind each text that needs one), in one large view at device scale with Phone/Tablet
 // and Rotate, and four thumbnails that select it. Same rules and functions as the agent: data/kioskScrim.ts,
 // data/kioskLauncherLayout.ts, docs/kiosk-background-scrim.md (version 3).
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { browserMeasure, launcherLayout, PLATE_RADIUS, type LauncherLayout, type Measure } from '../../data/kioskLauncherLayout';
 import {
   CONTROL_MIN,
@@ -55,11 +55,28 @@ export function viewWindow(v: View): { w: number; h: number } {
 const SOFT_EDGE = 1080;
 /** The turn's length; none when the viewer prefers reduced motion. */
 export const ROTATE_MS = 320;
-/** Thumbnails are this tall (px); their width follows the shape. */
-const THUMB_HEIGHT = 132;
 const LARGE_MAX_HEIGHT = 520;
 
 const ratioText = (r: number) => (Number.isFinite(r) ? `${(Math.floor(r * 10) / 10).toFixed(1)}:1` : 'n/a');
+
+/** "a", "a and b", "a, b and c". */
+function listNames(names: string[]): string {
+  return names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+/** Thumbnails: a shared screen height (px) and the number of columns, from the width the list has. */
+export function thumbnailGrid(width: number): { columns: 1 | 2; height: number } {
+  const budget = width - 2 * 14; // button padding and border on both sides
+  if (width < 520) return { columns: 1, height: Math.max(40, Math.min(160, Math.floor((budget * 360) / 780))) };
+  // Two columns: phone portrait over tablet 4:3 landscape, phone landscape over tablet 16:10 portrait; every caption
+  // at least 150 px wide.
+  for (let h = 180; h > 40; h--) {
+    const first = Math.max(150, (h * 1024) / 768, (h * 360) / 780);
+    const second = Math.max(150, (h * 780) / 360, (h * 800) / 1280);
+    if (first + second + 2 * 14 + 12 <= width) return { columns: 2, height: h };
+  }
+  return { columns: 1, height: 40 };
+}
 
 /** What a view reads: text contrast (with plates) and the dim. */
 export function readout(l: Legibility): { text: string; dim: string; pass: boolean } {
@@ -164,20 +181,16 @@ export function KioskBackgroundPreview({
   };
 
   const [thumbList, thumbsWidth] = useWidth<HTMLUListElement>();
-  // One row of four on a wide page, two rows of two on a narrow one; the same height for all four, low enough that
-  // the widest (phone landscape) fits its column with the button's padding.
-  const thumbColumns = thumbsWidth >= 900 ? 4 : 2;
-  const columnWidth = (thumbsWidth - 12 * (thumbColumns - 1)) / thumbColumns - 14;
-  const thumbHeight = Math.max(40, Math.min(THUMB_HEIGHT, Math.floor((columnWidth * DEVICES.phone.short) / DEVICES.phone.long)));
+  const thumbs = thumbnailGrid(thumbsWidth);
   const key = viewKey(view);
   const current = measured?.[key];
   const big = current?.kind === 'ok' ? readout(current.legibility) : null;
-  const exitWeak = measured
-    ? THUMBNAILS.some((t) => {
-        const m = measured[viewKey(t)];
-        return m?.kind === 'ok' && m.legibility.dim === DIM_MAX_STEP && (m.legibility.plates.exit?.ratio ?? Infinity) < CONTROL_MIN;
-      })
-    : false;
+  const weakExit = (v: View) => {
+    const m = measured?.[viewKey(v)];
+    return m?.kind === 'ok' && m.legibility.dim === DIM_MAX_STEP && (m.legibility.plates.exit?.ratio ?? Infinity) < CONTROL_MIN;
+  };
+  const shown = THUMBNAILS.some((t) => viewKey(t) === key) ? THUMBNAILS : [...THUMBNAILS, view];
+  const weakViews = shown.filter(weakExit);
   const status = (m: Measured | undefined) =>
     !m
       ? 'Measuring…'
@@ -199,10 +212,10 @@ export function KioskBackgroundPreview({
           The image is {Math.min(width, height)} px on its short side, so it may look soft on large tablets.
         </Callout>
       ) : null}
-      {exitWeak ? (
+      {weakViews.length ? (
         <Callout tone="warn" icon={<IconWarning size={16} />}>
-          The image is too bright behind the Exit button for it to stand out at 3:1, even dimmed 30%. A calmer or
-          darker image at the bottom of the screen helps.
+          In {listNames(weakViews.map((v) => `${DEVICES[v.model].label} ${v.orientation}`.toLowerCase()))}, the image is too bright behind the Exit button
+          for it to stand out at 3:1, even dimmed 30%. A calmer or darker image at the bottom of the screen helps.
         </Callout>
       ) : null}
       <div className="v2-kbg__toolbar">
@@ -232,23 +245,25 @@ export function KioskBackgroundPreview({
         legibility={current?.kind === 'ok' ? current.legibility : null}
         src={src}
         colours={colours}
-      />
-      <p className="v2-kbg__large-readout" aria-live="polite">
-        <span className="v2-kbg__shape-name">{viewLabel(view)}</span>
-        {big ? (
-          <>
-            <Readout r={big} />
-            <span className="v2-kbg__meta">{big.dim}</span>
-          </>
-        ) : (
-          <span className="v2-kbg__readout">{status(current)}</span>
-        )}
-      </p>
+      >
+        <p className="v2-kbg__large-readout" aria-live="polite">
+          <span className="v2-kbg__shape-name">{viewLabel(view)}</span>
+          {big ? (
+            <>
+              <Readout r={big} />
+              <span className="v2-kbg__meta">{big.dim}</span>
+              {weakExit(view) ? <ExitWarning /> : null}
+            </>
+          ) : (
+            <span className="v2-kbg__readout">{status(current)}</span>
+          )}
+        </p>
+      </LargeScreen>
       <ul
         ref={thumbList}
         className="v2-kbg__thumbs"
         aria-label="Screen shapes"
-        style={{ gridTemplateColumns: `repeat(${thumbColumns}, minmax(0, 1fr))` }}
+        style={{ gridTemplateColumns: thumbs.columns === 2 ? 'auto auto' : 'auto' }}
       >
         {THUMBNAILS.map((t) => {
           const m = measured?.[viewKey(t)];
@@ -266,7 +281,7 @@ export function KioskBackgroundPreview({
                   legibility={m?.kind === 'ok' ? m.legibility : null}
                   src={src}
                   colours={colours}
-                  scale={thumbHeight / viewWindow(t).h}
+                  scale={thumbs.height / viewWindow(t).h}
                 />
                 <span className="v2-kbg__caption">
                   <span className="v2-kbg__shape-name">{viewLabel(t)}</span>
@@ -274,6 +289,7 @@ export function KioskBackgroundPreview({
                     <>
                       <Readout r={r} />
                       <span className="v2-kbg__meta">{r.dim}</span>
+                      {weakExit(t) ? <ExitWarning /> : null}
                     </>
                   ) : (
                     <span className="v2-kbg__readout">{status(m)}</span>
@@ -308,6 +324,15 @@ function useWidth<T extends HTMLElement>(): [RefObject<T | null>, number] {
   return [ref, width];
 }
 
+function ExitWarning() {
+  return (
+    <span className="v2-kbg__readout is-warn">
+      <IconWarning size={14} />
+      <span>Exit button under 3:1</span>
+    </span>
+  );
+}
+
 function Readout({ r }: { r: { text: string; pass: boolean } }) {
   return (
     <span className={`v2-kbg__readout ${r.pass ? 'is-pass' : 'is-fail'}`}>
@@ -335,6 +360,7 @@ function LargeScreen({
   legibility,
   src,
   colours,
+  children,
 }: {
   view: View;
   turning: boolean;
@@ -342,6 +368,8 @@ function LargeScreen({
   legibility: Legibility | null;
   src: string;
   colours: KioskColours;
+  /** The readout, under the frame and aligned with its left edge. */
+  children: ReactNode;
 }) {
   const [frame, available] = useWidth<HTMLDivElement>();
   const { w, h } = viewWindow(view);
@@ -351,12 +379,17 @@ function LargeScreen({
   const r = legibility ? readout(legibility) : null;
   const description = `${viewLabel(view)}: the image cropped at the centre${r ? `, ${r.dim.toLowerCase()}, ${r.text.toLowerCase()}` : ''}`;
   return (
-    <div ref={frame} className="v2-kbg__large" style={{ height: Math.ceil(h * scale) }}>
-      <div
-        className={`v2-kbg__large-turn${turning ? ' is-turning' : ''}`}
-        style={{ '--kbg-turn-fit': turnedFit, '--kbg-turn-ms': `${ROTATE_MS}ms` } as CSSProperties}
-      >
-        <ScaledScreen layout={layout} legibility={legibility} src={src} colours={colours} scale={scale} label={description} />
+    <div ref={frame} className="v2-kbg__large">
+      <div className="v2-kbg__large-figure" style={{ width: Math.floor(w * scale) }}>
+        <div className="v2-kbg__large-stage" style={{ height: Math.ceil(h * scale) }}>
+          <div
+            className={`v2-kbg__large-turn${turning ? ' is-turning' : ''}`}
+            style={{ '--kbg-turn-fit': turnedFit, '--kbg-turn-ms': `${ROTATE_MS}ms` } as CSSProperties}
+          >
+            <ScaledScreen layout={layout} legibility={legibility} src={src} colours={colours} scale={scale} label={description} />
+          </div>
+        </div>
+        {children}
       </div>
     </div>
   );
@@ -416,8 +449,15 @@ function ScaledScreen({
           <span className="v2-kbg__icon" style={{ ...px(c.icon, s), borderRadius: 14 * s, fontSize: c.icon.w * 0.42 * s }}>
             {c.name.slice(0, 1).toUpperCase()}
           </span>
-          <span className="v2-kbg__label" style={{ ...px(c.label, s), fontSize: layout.labelSize * s, lineHeight: `${c.label.h * s}px` }}>
-            {c.name}
+          <span
+            className="v2-kbg__label"
+            style={{ ...px(c.label, s), fontSize: layout.labelSize * s, lineHeight: `${layout.labelLineHeight * s}px` }}
+          >
+            {c.lines.map((line, k) => (
+              <span key={k} className="v2-kbg__label-line">
+                {line}
+              </span>
+            ))}
           </span>
         </span>
       ))}

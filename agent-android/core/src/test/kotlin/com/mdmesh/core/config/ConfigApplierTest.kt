@@ -608,7 +608,7 @@ class ConfigApplierTest {
         dns.outcome = PolicyOutcome.Failed("dpm busy")
         val failed = a.apply(ConfigApplyPayload(revision = "f2"))
         assertEquals(ConfigOutcome.failed("dpm busy"), failed.outcomes["dns"])
-        assertNull("not saved, so the release is retried", store.revision())
+        assertEquals("not saved, so the release is retried", "f1", store.revision())
 
         dns.outcome = PolicyOutcome.Applied
         val retried = a.apply(ConfigApplyPayload(revision = "f2"))

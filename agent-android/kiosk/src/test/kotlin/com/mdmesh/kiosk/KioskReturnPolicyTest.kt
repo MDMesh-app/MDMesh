@@ -82,7 +82,7 @@ class KioskReturnPolicyTest {
 
     private val holds = InMemoryHoldStore()
     private var boot = 1L
-    private fun policy() = KioskReturnPolicy(CrashLoopGuard(store) { nowMs }, holds) { boot }
+    private fun policy() = KioskReturnPolicy(CrashLoopGuard(store) { nowMs }, holds, boot = { boot })
 
     @Test
     fun `a hold survives recreation long after the guard window`() {
@@ -127,5 +127,28 @@ class KioskReturnPolicyTest {
         repeat(CrashLoopGuard.LOOP_CRASHES + 1) { first.onReturned() }
         assertEquals(Action.REOPEN, policy().onApplied(changed = true))
         assertFalse(policy().held)
+    }
+
+    // --- N2: no boot count on this ROM: uptime tells boots apart ---
+
+    private var uptime = 500_000L
+    private fun noBootCount() = KioskReturnPolicy(CrashLoopGuard(store) { nowMs }, holds, { 0L }) { uptime }
+
+    @Test
+    fun `without a boot count a recreation in the same boot keeps the hold`() {
+        val first = noBootCount()
+        repeat(CrashLoopGuard.LOOP_CRASHES + 1) { first.onReturned() }
+        nowMs += 10 * CrashLoopGuard.LOOP_TIME_SPAN
+        uptime += 10 * CrashLoopGuard.LOOP_TIME_SPAN
+        assertEquals(Action.HOLD, noBootCount().onApplied(changed = false))
+    }
+
+    @Test
+    fun `without a boot count a reboot (uptime back near zero) ends an old hold`() {
+        val first = noBootCount()
+        repeat(CrashLoopGuard.LOOP_CRASHES + 1) { first.onReturned() }
+        nowMs += 10 * CrashLoopGuard.LOOP_TIME_SPAN
+        uptime = 30_000L
+        assertEquals(Action.REOPEN, noBootCount().onApplied(changed = false))
     }
 }

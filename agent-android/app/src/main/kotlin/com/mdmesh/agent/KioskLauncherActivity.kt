@@ -9,6 +9,7 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.core.content.ContextCompat
@@ -78,7 +79,9 @@ class KioskLauncherActivity : ComponentActivity() {
     private var active: KioskApplyPayload? = null
 
     /** The crash-loop hold is saved ([holdStore]), so it outlives this activity; it belongs to this boot. */
-    private val returns by lazy { KioskReturnPolicy(crashGuard, holdStore, ::bootCount) }
+    private val returns by lazy {
+        KioskReturnPolicy(crashGuard, holdStore, ::bootCount) { SystemClock.elapsedRealtime() }
+    }
 
     /** The hold screen is showing (so its event is recorded once per hold). */
     private var holding = false

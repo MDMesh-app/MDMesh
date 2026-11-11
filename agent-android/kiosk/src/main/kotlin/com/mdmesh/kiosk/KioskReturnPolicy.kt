@@ -18,13 +18,22 @@ class KioskReturnPolicy(
     private val holds: HoldStore = InMemoryHoldStore(),
     /** Which boot this is (Settings.Global.BOOT_COUNT in production): a hold belongs to the boot it started in. */
     private val boot: () -> Long = { 0L },
+    /**
+     * Uptime (SystemClock.elapsedRealtime in production). Where the ROM keeps no boot count ([boot] is 0), a reboot
+     * shows as an uptime smaller than when the hold started.
+     */
+    private val elapsed: () -> Long = { 0L },
 ) {
 
     enum class Action { REOPEN, HOLD }
 
     /** True while HOME holds instead of reopening the pinned app. Saved, not derived from the guard's window. */
     val held: Boolean
-        get() = holds.heldBoot == boot()
+        get() {
+            val heldIn = holds.heldBoot ?: return false
+            val now = boot()
+            return if (now != 0L) heldIn == now else elapsed() >= holds.heldElapsed
+        }
 
     /** HOME came back to the front in single-app kiosk. */
     fun onReturned(): Action {
@@ -53,7 +62,7 @@ class KioskReturnPolicy(
 
     private fun check(): Action {
         if (!guard.isCrashLoopDetected()) return Action.REOPEN
-        holds.writeHeld(boot())
+        holds.writeHeld(boot(), elapsed())
         return Action.HOLD
     }
 }

@@ -11,12 +11,16 @@ class SharedPrefsHoldStore(context: Context) : HoldStore {
     override val heldBoot: Long?
         get() = prefs.getLong(KEY_HELD_BOOT, NOT_HELD).takeIf { it != NOT_HELD }
 
-    override fun writeHeld(boot: Long?) {
-        prefs.edit().putLong(KEY_HELD_BOOT, boot ?: NOT_HELD).commit()
+    override val heldElapsed: Long
+        get() = prefs.getLong(KEY_HELD_ELAPSED, 0L)
+
+    override fun writeHeld(boot: Long?, elapsed: Long) {
+        prefs.edit().putLong(KEY_HELD_BOOT, boot ?: NOT_HELD).putLong(KEY_HELD_ELAPSED, elapsed).commit()
     }
 
     private companion object {
         const val KEY_HELD_BOOT = "held_boot"
+        const val KEY_HELD_ELAPSED = "held_elapsed"
         const val NOT_HELD = Long.MIN_VALUE
     }
 }

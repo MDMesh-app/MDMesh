@@ -61,7 +61,7 @@ const TABBABLE = 'a[href], button:not([disabled]), input:not([disabled]), select
  * Whether the table's wrapper must be a Tab stop of its own: while it scrolls sideways (a narrow screen) and nothing
  * inside can take focus, a keyboard could not otherwise reach the hidden columns (2.1.1).
  */
-function useScrollStop(wrap: { current: HTMLDivElement | null }): boolean {
+export function useScrollStop(wrap: { current: HTMLDivElement | null }): boolean {
   const [stop, setStop] = useState(false);
   useEffect(() => {
     const el = wrap.current;
@@ -74,6 +74,11 @@ function useScrollStop(wrap: { current: HTMLDivElement | null }): boolean {
     return () => ro.disconnect();
   }, [wrap]);
   return stop;
+}
+
+/** The wrapper's attributes while it is a scroll stop: a named region in the Tab order. */
+export function scrollStopProps(stop: boolean, name?: string) {
+  return stop ? { tabIndex: 0, role: 'region', 'aria-label': name ? `${name} (scrolls sideways)` : 'Table (scrolls sideways)' } : {};
 }
 
 /** Clicks on these inside a row are theirs, not the row's. */
@@ -111,7 +116,7 @@ export function Table<Row>({
     <div
       ref={wrapRef}
       className={cx('v2-tablewrap', className)}
-      {...(scrollStop ? { tabIndex: 0, role: 'region', 'aria-label': name ? `${name} (scrolls sideways)` : 'Table (scrolls sideways)' } : {})}
+      {...scrollStopProps(scrollStop, name)}
     >
       <table
         className={cx('v2-table', `v2-table--edge${edge}`, rowPad === 10 && 'v2-table--pad10', onRowClick && 'v2-table--rowclick')}

@@ -76,7 +76,8 @@ colour at `alpha`.
 ## What the console shows
 
 For each previewed shape (phone portrait 9:19.5, phone landscape, tablet 4:3 landscape, tablet 16:10 portrait): the
-scrim percentage and the text contrast with and without it (pass at 4.5:1). Without the scrim is what agents before
+scrim percentage and the text contrast with and without it (pass at 4.5:1), as `covered` measures it: over the
+image, its worst 2 % aside. Without the scrim is what agents before
 the scrim show. A scrim over 60 % is flagged as a busy image that will look noticeably dimmed.
 
 ## Not (yet) done

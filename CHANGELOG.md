@@ -42,8 +42,9 @@ New
   the console's look, the same on every phone. An open dialog comes back after the device is rotated, unless
   kiosk was turned off meanwhile. Needs agent 0.5.0.
 - Agent: Exit kiosk is easier to use. A wrong PIN shows in the dialog, which stays open and says how many tries are
-  left before the exit locks; the PIN can be shown while typing, but not copied or shared. A half-typed PIN is
-  cleared when the screen goes off or after a minute without typing. Needs agent 0.5.0.
+  left before the exit locks; the PIN can be shown while typing, but not copied or shared. The prompt closes, and
+  what was typed with it, when the screen goes off or another app opens, or after a minute without typing. Needs
+  agent 0.5.0.
 - Agent: its notifications have sharp MDMesh status bar icons, and its app icon follows themed icons on Android 13
   and later. Needs agent 0.5.0.
 

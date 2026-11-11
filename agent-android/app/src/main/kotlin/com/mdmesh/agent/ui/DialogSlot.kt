@@ -70,8 +70,10 @@ class DialogSlot(private val key: String) {
     }
 
     /**
-     * The activity's configuration changed without a recreation (it declares `configChanges`). If the change alters
-     * how the open dialog looks (dark mode, font size, display size or the window's size), close it and let [reopen]
+     * The activity's configuration changed without a recreation: only what it declares in `configChanges` arrives
+     * here (the kiosk launcher: uiMode, keyboard, keyboardHidden, navigation; everything else recreates it and goes
+     * through [restore]). If the change alters how the open dialog looks (dark mode; font size, density or window
+     * size too, should an activity declare those), close it and let [reopen]
      * build and show it again (through [show]) from current state, as after a recreation, with what was typed in
      * it: kept in memory for this hand-over only, never in saved state. Other changes (a desk or car dock switching
      * the UI mode type) leave it open as it is.

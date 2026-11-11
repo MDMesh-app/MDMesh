@@ -9,9 +9,12 @@ import com.hmdm.persistence.domain.RequestUpdatesType;
 import com.hmdm.rest.json.agent.DesiredConfig;
 import com.hmdm.rest.json.agent.DesiredConnectivity;
 import com.hmdm.rest.json.agent.DesiredKiosk;
+import com.hmdm.rest.json.agent.DesiredKioskBackgroundImage;
 import com.hmdm.rest.json.agent.DesiredKioskFeatures;
 import com.hmdm.rest.json.agent.DesiredKioskTheme;
 import com.hmdm.rest.json.agent.DesiredLocation;
+import com.hmdm.rest.json.agent.DesiredAppPermissions;
+import com.hmdm.persistence.domain.ManagedAppPermission;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -39,6 +42,8 @@ import java.util.regex.Pattern;
 public final class DesiredConfigBuilder {
     public static final String COMMAND_TYPE = "config.apply";
     public static final String CAPABILITY = "device.configApply";
+    /** Agent support token for the optional per-app runtime permission document section. */
+    public static final String APP_PERMISSIONS_CAPABILITY = "app.runtimePermissions";
     public static final String POLICY_PREFIX = "policies.";
     public static final String KEY_KIOSK = "kiosk";
     public static final String KEY_LOCATION = "location";
@@ -77,10 +82,32 @@ public final class DesiredConfigBuilder {
             c.setMode(connectivity);
             d.setConnectivity(c);
         }
+        d.setAppPermissions(appPermissions(cfg, appList));
         // Last, once core's sections are built from cfg, so a contributor can't change them.
         contribute(policies, cfg, Collections.unmodifiableList(appList), contributors);
         d.setRevision(revision(d));
         return d;
+    }
+
+    private static List<DesiredAppPermissions> appPermissions(Configuration cfg, List<Application> apps) {
+        if (cfg.getManagedAppPermissions() == null) return null;
+        Map<Integer, Application> installed = new TreeMap<Integer, Application>();
+        for (Application app : apps) if (app != null && app.getId() != null && app.getAction() == ACTION_INSTALL
+                && app.getPkg() != null && !app.getPkg().trim().isEmpty()) installed.put(app.getId(), app);
+        Map<String, Map<String, String>> byPackage = new TreeMap<String, Map<String, String>>();
+        for (ManagedAppPermission rule : cfg.getManagedAppPermissions()) {
+            if (rule == null || !("grant".equals(rule.getState()) || "deny".equals(rule.getState()))
+                    || rule.getPermission() == null || !rule.getPermission().startsWith("android.permission.")) continue;
+            Application app = installed.get(rule.getApplicationId());
+            if (app != null) byPackage.computeIfAbsent(app.getPkg().trim(), k -> new TreeMap<String, String>())
+                    .put(rule.getPermission(), rule.getState());
+        }
+        List<DesiredAppPermissions> result = new ArrayList<DesiredAppPermissions>();
+        for (Map.Entry<String, Map<String, String>> entry : byPackage.entrySet()) {
+            DesiredAppPermissions value = new DesiredAppPermissions();
+            value.setPackageName(entry.getKey()); value.setPermissions(entry.getValue()); result.add(value);
+        }
+        return result;
     }
 
     /**
@@ -246,6 +273,15 @@ public final class DesiredConfigBuilder {
         DesiredKioskTheme t = new DesiredKioskTheme();
         t.setBackgroundColor(cfg.getBackgroundColor()); t.setTextColor(cfg.getTextColor());
         t.setIconSize(cfg.getIconSize() == null ? null : cfg.getIconSize().name());
+        // A legacy raw backgroundImageUrl is intentionally not emitted. Only a managed uploaded file,
+        // whose checksum was computed by the server, can become agent desired state.
+        if (cfg.getBackgroundImageFileId() != null && cfg.getBackgroundImageUrl() != null
+                && cfg.getBackgroundImageSha256() != null) {
+            DesiredKioskBackgroundImage image = new DesiredKioskBackgroundImage();
+            image.setUrl(cfg.getBackgroundImageUrl());
+            image.setSha256(cfg.getBackgroundImageSha256());
+            t.setBackgroundImage(image);
+        }
         k.setTheme(t);
         return k;
     }

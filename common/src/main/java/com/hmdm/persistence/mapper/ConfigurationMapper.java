@@ -26,6 +26,7 @@ import java.util.List;
 import com.hmdm.persistence.domain.ApplicationSetting;
 import com.hmdm.persistence.domain.ConfigurationApplicationParameters;
 import com.hmdm.persistence.domain.ConfigurationFile;
+import com.hmdm.persistence.domain.ManagedAppPermission;
 import org.apache.ibatis.annotations.*;
 import com.hmdm.persistence.domain.Application;
 import com.hmdm.persistence.domain.Configuration;
@@ -145,6 +146,8 @@ public interface ConfigurationMapper {
             "locationServices=#{locationServices}, " +
             "kioskLockVolume=#{kioskLockVolume}, " +
             "connectivityMode=#{connectivityMode}, " +
+            "backgroundImageFileId=#{backgroundImageFileId}, " +
+            "backgroundImageSha256=#{backgroundImageSha256}, " +
             // Left out (null), the stored extensions stay: a client that doesn't know them can't wipe them.
             "extensions=COALESCE(CAST(#{extensions} AS jsonb), extensions) " +
             "WHERE id=#{id}"})
@@ -152,6 +155,9 @@ public interface ConfigurationMapper {
 
     @Delete({"DELETE FROM configurations WHERE id=#{id}"})
     void removeConfigurationById(@Param("id") Integer id);
+
+    @Select("SELECT COUNT(*) FROM configurations WHERE backgroundImageFileId = #{fileId}")
+    long countBackgroundImageFileReferences(@Param("fileId") int fileId);
 
     @Select({"SELECT * " +
             "FROM configurations " +
@@ -174,6 +180,16 @@ public interface ConfigurationMapper {
 
     @Delete({"DELETE FROM configurationApplicationSettings WHERE extRefId = #{id}"})
     void removeConfigurationApplicationSettingsById(@Param("id") Integer id);
+
+    @Select("SELECT applicationId, permission, state FROM configurationAppPermissions WHERE configurationId=#{id} ORDER BY applicationId, permission")
+    List<ManagedAppPermission> getManagedAppPermissions(@Param("id") Integer id);
+
+    @Insert({"<script>INSERT INTO configurationAppPermissions(configurationId, applicationId, permission, state) VALUES ",
+            "<foreach item='item' collection='rules' separator=','>(#{id}, #{item.applicationId}, #{item.permission}, #{item.state})</foreach></script>"})
+    void insertManagedAppPermissions(@Param("id") Integer id, @Param("rules") List<ManagedAppPermission> rules);
+
+    @Delete("DELETE FROM configurationAppPermissions WHERE configurationId=#{id}")
+    void removeManagedAppPermissions(@Param("id") Integer id);
 
     /**
      * <p>Gets the list of all existing applications in context of applications usage by specified configuration.</p>

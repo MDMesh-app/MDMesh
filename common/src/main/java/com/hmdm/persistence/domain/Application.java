@@ -130,6 +130,8 @@ public class Application implements CustomerData, Serializable {
     private String latestVersionText;
     @ApiModelProperty(hidden = true)
     private Integer usedVersionId;
+    /** APK-manifest permissions of the selected configuration version; null means no server-local inventory. */
+    private String requestedPermissions;
 
     public String getIcon() {
         return icon;
@@ -368,6 +370,14 @@ public class Application implements CustomerData, Serializable {
 
     public void setUsedVersionId(Integer usedVersionId) {
         this.usedVersionId = usedVersionId;
+    }
+
+    public String getRequestedPermissions() {
+        return requestedPermissions;
+    }
+
+    public void setRequestedPermissions(String requestedPermissions) {
+        this.requestedPermissions = requestedPermissions;
     }
 
     public boolean isRunAfterInstall() {

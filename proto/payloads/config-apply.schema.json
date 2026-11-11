@@ -23,10 +23,22 @@
         "features": { "type": "object", "properties": { "home": {"type":"boolean"}, "recents": {"type":"boolean"}, "notifications": {"type":"boolean"}, "systemInfo": {"type":"boolean"}, "keyguard": {"type":"boolean"}, "lockButtons": {"type":"boolean", "description":"true = block the power menu (no LOCK_TASK_FEATURE_GLOBAL_ACTIONS); does not touch volume"}, "lockVolume": {"type":"boolean", "description":"1.4: true = DISALLOW_ADJUST_VOLUME while in kiosk (the platform mutes the device meanwhile); released on exit"} } },
         "exitMode": { "enum": ["gesture", "visible", "remote"] },
         "password": { "type": "string" },
-        "theme": { "type": "object", "properties": { "backgroundColor": {"type":"string"}, "textColor": {"type":"string"}, "iconSize": {"type":"string"} } }
+        "theme": { "type": "object", "properties": { "backgroundColor": {"type":"string"}, "textColor": {"type":"string"}, "iconSize": {"type":"string"}, "backgroundImage": { "type": "object", "description": "Agent 0.5.0: an image the server hosts, drawn behind the launcher. Sent only for a configuration's uploaded image (PNG, JPEG or WebP, at most 10 MB and 16 megapixels, checked on save). The agent downloads it over HTTPS only, checks the SHA-256 and the size, and keeps backgroundColor on any failure. Older agents ignore it.", "required": ["url", "sha256"], "properties": { "url": {"type":"string", "description":"<base.url>/files/... of the uploaded file"}, "sha256": {"type":"string", "pattern":"^[0-9a-f]{64}$", "description":"lowercase hex SHA-256 of the file"} } } } }
       }
     },
     "location": { "type": "object", "properties": { "mode": { "enum": ["passive", "active", "off"], "description": "active = fresh fix each check-in (GPS), passive = last-known (console: Last known (passive), formerly Network), off = read no location (Do not track; 1.4, older agents treat it as passive and the server drops what they report)" } } },
-    "connectivity": { "type": "object", "properties": { "mode": { "enum": ["adaptive", "alwaysOn"], "description": "1.5: the live-connection mode, the same modes as device.powerMode. adaptive = hold the wake socket only while the screen is on or charging (battery-saver, the agent default); alwaysOn = hold it 24/7. Absent = not managed (the device keeps its mode). Older agents ignore it." } } }
+    "connectivity": { "type": "object", "properties": { "mode": { "enum": ["adaptive", "alwaysOn"], "description": "1.5: the live-connection mode, the same modes as device.powerMode. adaptive = hold the wake socket only while the screen is on or charging (battery-saver, the agent default); alwaysOn = hold it 24/7. Absent = not managed (the device keeps its mode). Older agents ignore it." } } },
+    "appPermissions": {
+      "type": "array",
+      "description": "Optional per-application runtime permission overrides. Omitted means an older server does not manage this section; an empty list releases every prior MDMesh override.",
+      "items": {
+        "type": "object",
+        "required": ["packageName", "permissions"],
+        "properties": {
+          "packageName": { "type": "string" },
+          "permissions": { "type": "object", "additionalProperties": { "enum": ["grant", "deny"] } }
+        }
+      }
+    }
   }
 }

@@ -92,7 +92,7 @@ const preview = (opts: { colours?: ReturnType<typeof kioskColours>; exitVisible?
     </div>,
   );
 
-const large = () => screen.getByRole('img', { name: /cropped at the centre/ }) as HTMLElement;
+const large = () => document.querySelector<HTMLElement>('.v2-kbg__large [role="img"]')!;
 const liveText = () => document.querySelector('.v2-kbg__large-readout')!.textContent ?? '';
 
 describe('KioskBackgroundPreview', () => {
@@ -101,7 +101,7 @@ describe('KioskBackgroundPreview', () => {
     preview();
     await waitFor(() => expect(liveText()).toMatch(/Text \d\.\d:1 Pass \(on plate\)/));
     expect(liveText()).toMatch(/Image dimmed 30%/);
-    expect(large().getAttribute('aria-label')).toMatch(/^Phone, portrait: the image cropped at the centre, image dimmed 30%/);
+    expect(large().getAttribute('aria-label')).toMatch(/^Phone, portrait: the image filling the screen, cropped around its focal point, image dimmed 30%/);
     expect(Number(large().querySelector<HTMLElement>('.v2-kbg__dim')!.dataset.dim)).toBe(15);
     expect(large().querySelector('[data-plate="header"]')).not.toBeNull();
     expect(large().querySelector('[data-plate="exit"]')).toBeNull();
@@ -243,6 +243,36 @@ describe('KioskBackgroundPreview', () => {
   });
 });
 
+describe('fit and focal point', () => {
+  /** Bright left third of the 3840 x 2160 image. */
+  const BRIGHT_LEFT: Paint = (x) => (x < 1280 ? 0xffffff : 0x141414);
+
+  it('moves the crop with the focal point and recomputes the plates', async () => {
+    sampling.paint = BRIGHT_LEFT;
+    const props = { src: '/i.jpg', width: 3840, height: 2160, colours: kioskColours(null, null), appNames: ['Scanner', 'Notes'], exitVisible: false, loadImage: fakeImage, measure };
+    const { rerender } = render(<KioskBackgroundPreview {...props} focal={{ x: 0, y: 0.5 }} />);
+    await waitFor(() => expect(liveText()).toMatch(/on plate/));
+    const img = large().querySelector<HTMLElement>('.v2-kbg__img')!;
+    expect(parseFloat(img.style.left)).toBe(0);
+    rerender(<KioskBackgroundPreview {...props} focal={{ x: 1, y: 0.5 }} />);
+    await waitFor(() => expect(liveText()).not.toMatch(/on plate/));
+    expect(parseFloat(large().querySelector<HTMLElement>('.v2-kbg__img')!.style.left)).toBeLessThan(0);
+  });
+
+  it('shows the whole image letterboxed in Fit, ignoring the focal point', async () => {
+    sampling.paint = DARK;
+    render(
+      <KioskBackgroundPreview src="/i.jpg" width={3840} height={2160} colours={kioskColours(null, null)} appNames={[]} exitVisible={false} loadImage={fakeImage} measure={measure} fit="fit" focal={{ x: 0, y: 0 }} />,
+    );
+    await waitFor(() => expect(liveText()).toMatch(/Pass/));
+    const img = large().querySelector<HTMLElement>('.v2-kbg__img')!;
+    // A 16:9 image on a 360 x 780 phone: full width, centred vertically.
+    expect(parseFloat(img.style.left)).toBe(0);
+    expect(parseFloat(img.style.top)).toBeGreaterThan(0);
+    expect(large().getAttribute('aria-label')).toMatch(/the whole image, letterboxed/);
+  });
+});
+
 describe('Exit button warning', () => {
   /** Bright only at the bottom of the 3840 x 2160 image (y > 2000 px), where most Exit buttons sit. */
   const BRIGHT_BOTTOM: Paint = (_x, y) => (y > 2000 ? 0xffffff : 0x141414);
@@ -368,7 +398,7 @@ describe('the configuration editor', () => {
     // jsdom loads no images, so the readouts wait for the pixels (the preview tests above cover them).
     const list = screen.getByRole('list', { name: 'Screen shapes' });
     expect(within(list).getAllByRole('button')).toHaveLength(4);
-    expect(screen.getByRole('img', { name: /^Phone, portrait: the image cropped at the centre/ })).toBeTruthy();
+    expect(screen.getByRole('img', { name: /^Phone, portrait: the image filling the screen/ })).toBeTruthy();
   });
 
   it('asks for nothing without an image', async () => {

@@ -9,10 +9,15 @@ import {
   DIM_MAX_STEP,
   SCRIM_STEPS,
   TEXT_MIN,
+  DEFAULT_FOCAL,
   kioskLegibility,
+  placement,
   readImageCells,
   toHex,
   type Box,
+  type FitMode,
+  type FocalPoint,
+  type ImageCells,
   type KioskColours,
   type Legibility,
 } from '../../data/kioskScrim';
@@ -105,6 +110,8 @@ export function KioskBackgroundPreview({
   appNames,
   exitVisible,
   iconSize,
+  fit = 'fill',
+  focal = DEFAULT_FOCAL,
   loadImage = defaultLoadImage,
   measure,
 }: {
@@ -115,6 +122,9 @@ export function KioskBackgroundPreview({
   appNames: readonly string[];
   exitVisible: boolean;
   iconSize?: string | null;
+  /** Fill (cropped around the focal point) or fit (whole, letterboxed). */
+  fit?: FitMode;
+  focal?: FocalPoint;
   /** Loads the image for sampling; tests pass their own (jsdom has no canvas). */
   loadImage?: (src: string) => Promise<HTMLImageElement | null>;
   /** Text widths in dp; the browser's font by default. */
@@ -124,7 +134,6 @@ export function KioskBackgroundPreview({
   const [view, setView] = useState<View>(THUMBNAILS[0]);
   const [lastTablet, setLastTablet] = useState<Model>('tablet43');
   const [turning, setTurning] = useState<View | null>(null);
-  const [measured, setMeasured] = useState<Record<string, Measured> | null>(null);
   const measureFn = useMemo(() => measure ?? browserMeasure(), [measure]);
   const apps = useMemo(() => (appNames.length ? appNames.slice(0, 24) : ['Camera', 'Notes', 'Browser', 'Scanner']), [appNames]);
 
@@ -134,27 +143,37 @@ export function KioskBackgroundPreview({
     return out;
   }, [apps, iconSize, exitVisible, measureFn]);
 
+  // The image's cells: read once per image (and background colour), then every view is placed from them.
+  const [source, setSource] = useState<{ cells: ImageCells | null; loaded: boolean } | null>(null);
   useEffect(() => {
     let cancelled = false;
-    setMeasured(null);
+    setSource(null);
     loadImage(src).then((img) => {
       if (cancelled) return;
-      const out: Record<string, Measured> = {};
-      const cells = img ? readImageCells(img, img.naturalWidth || width, img.naturalHeight || height, colours.background) : null;
-      for (const v of ALL_VIEWS) {
-        const key = viewKey(v);
-        out[key] = !img
-          ? { kind: 'unloaded' }
-          : cells
-            ? { kind: 'ok', legibility: kioskLegibility(cells, viewWindow(v), colours, layouts[key].elements) }
-            : { kind: 'unreadable' };
-      }
-      setMeasured(out);
+      setSource({
+        loaded: img != null,
+        cells: img ? readImageCells(img, img.naturalWidth || width, img.naturalHeight || height, colours.background) : null,
+      });
     });
     return () => {
       cancelled = true;
     };
-  }, [src, width, height, colours, layouts, loadImage]);
+  }, [src, width, height, colours.background, loadImage]);
+
+  const imageFit = useMemo(() => ({ mode: fit, focal }), [fit, focal]);
+  const measured = useMemo(() => {
+    if (!source) return null;
+    const out: Record<string, Measured> = {};
+    for (const v of ALL_VIEWS) {
+      const key = viewKey(v);
+      out[key] = !source.loaded
+        ? { kind: 'unloaded' }
+        : source.cells
+          ? { kind: 'ok', legibility: kioskLegibility(source.cells, viewWindow(v), colours, layouts[key].elements, imageFit) }
+          : { kind: 'unreadable' };
+    }
+    return out;
+  }, [source, colours, layouts, imageFit]);
 
   const turnTimer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(turnTimer.current), []);
@@ -204,7 +223,7 @@ export function KioskBackgroundPreview({
     <details className="v2-kbg__preview" open>
       <summary id={headingId}>Preview on devices</summary>
       <p className="v2-kbg__lede">
-        The image fills the screen, cropped at the centre. Text sits on a plate of the background color where the image
+        {fit === 'fit' ? 'The whole image is shown, letterboxed with the background color.' : 'The image fills the screen, cropped around its focal point.'} Text sits on a plate of the background color where the image
         behind it is too bright or busy (solid over texture), and the image is dimmed by at most 30% for the Exit button.
       </p>
       {Math.min(width, height) < SOFT_EDGE ? (
@@ -239,6 +258,8 @@ export function KioskBackgroundPreview({
         </Button>
       </div>
       <LargeScreen
+        image={{ w: width, h: height }}
+        fit={imageFit}
         view={view}
         next={turning}
         layout={layouts[key]}
@@ -277,6 +298,8 @@ export function KioskBackgroundPreview({
                 onClick={() => select(t)}
               >
                 <ScaledScreen
+                  image={{ w: width, h: height }}
+                  fit={imageFit}
                   layout={layouts[viewKey(t)]}
                   legibility={m?.kind === 'ok' ? m.legibility : null}
                   src={src}
@@ -361,7 +384,11 @@ function LargeScreen({
   src,
   colours,
   children,
+  image,
+  fit,
 }: {
+  image: { w: number; h: number };
+  fit: { mode: FitMode; focal: FocalPoint };
   view: View;
   /** The view a Rotate turns to, while it turns; null otherwise. */
   next: View | null;
@@ -393,13 +420,23 @@ function LargeScreen({
   const boxW = Math.max(w * scale, nextBox?.w ?? 0);
   const boxH = Math.max(h * scale, nextBox?.h ?? 0);
   const r = legibility ? readout(legibility) : null;
-  const description = `${viewLabel(view)}: the image cropped at the centre${r ? `, ${r.dim.toLowerCase()}, ${r.text.toLowerCase()}` : ''}`;
+  const how = fit.mode === 'fit' ? 'the whole image, letterboxed' : 'the image filling the screen, cropped around its focal point';
+  const description = `${viewLabel(view)}: ${how}${r ? `, ${r.dim.toLowerCase()}, ${r.text.toLowerCase()}` : ''}`;
   return (
     <div ref={frame} className="v2-kbg__large">
       <div className="v2-kbg__large-figure" style={{ width: Math.floor(boxW) }}>
         <div className="v2-kbg__large-stage" style={{ height: Math.ceil(boxH) }}>
           <div className={`v2-kbg__large-turn${next ? ' is-turning' : ''}`} style={turn as CSSProperties}>
-            <ScaledScreen layout={layout} legibility={legibility} src={src} colours={colours} scale={scale} label={description} />
+            <ScaledScreen
+              layout={layout}
+              legibility={legibility}
+              src={src}
+              colours={colours}
+              scale={scale}
+              label={description}
+              image={image}
+              fit={fit}
+            />
           </div>
         </div>
         {children}
@@ -418,7 +455,12 @@ function ScaledScreen({
   colours,
   scale: s,
   label,
+  image,
+  fit,
 }: {
+  /** The image's size and how it is placed: the same geometry as the device (data/kioskScrim placement). */
+  image: { w: number; h: number };
+  fit: { mode: FitMode; focal: FocalPoint };
   layout: LauncherLayout;
   legibility: Legibility | null;
   src: string;
@@ -428,6 +470,8 @@ function ScaledScreen({
   label?: string;
 }) {
   const { w, h } = layout.window;
+  const p = placement(image.w, image.h, w, h, fit.mode, fit.focal);
+  const placed: Box = { x: p.x, y: p.y, w: p.w, h: p.h };
   // Below 9 px glyphs don't scale evenly (thumbnails): text is drawn as a bar of its line's width instead.
   const tiny = (sp: number) => sp * s < 9;
   const bar = (width: number, lineH: number, key?: number) => (
@@ -452,7 +496,7 @@ function ScaledScreen({
   } as CSSProperties;
   return (
     <div className="v2-kbg__screen" style={style} {...(label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true })}>
-      <img className="v2-kbg__img" src={src} alt="" />
+      <img className="v2-kbg__img" src={src} alt="" style={px(placed, s)} />
       <div className="v2-kbg__dim" data-dim={legibility?.dim ?? 0} style={{ opacity: (legibility?.dim ?? 0) / SCRIM_STEPS }} />
       {plate('header', layout.headerPlate)}
       {layout.labelPlates.map((p, i) => plate(`label-${i}`, p))}

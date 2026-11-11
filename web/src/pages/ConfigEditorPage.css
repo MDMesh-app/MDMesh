@@ -339,3 +339,8 @@
     width: auto;
   }
 }
+
+.v2 .v2-cfged-kbg {
+  display: grid;
+  gap: 24px;
+}

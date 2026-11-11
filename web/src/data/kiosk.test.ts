@@ -88,3 +88,23 @@ describe('configuredKioskState', () => {
     })).toBe('active');
   });
 });
+
+
+describe('kioskTheme fit and focal point (protocol 1.10)', () => {
+  const base = {
+    name: 'k',
+    backgroundImageUrl: 'https://mdm.example/files/a.jpg',
+    backgroundImageSha256: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+  };
+  it('sends them only when not the default, and no focal point with fit', async () => {
+    const { kioskTheme } = await import('./kiosk');
+    expect(kioskTheme({ ...base })?.backgroundImage).toEqual({ url: base.backgroundImageUrl, sha256: base.backgroundImageSha256 });
+    expect(kioskTheme({ ...base, backgroundImageFit: 'fill', backgroundImageFocalX: 0.5, backgroundImageFocalY: 0.5 })?.backgroundImage)
+      .toEqual({ url: base.backgroundImageUrl, sha256: base.backgroundImageSha256 });
+    expect(kioskTheme({ ...base, backgroundImageFocalX: 0.2, backgroundImageFocalY: 0.9 })?.backgroundImage)
+      .toMatchObject({ focalX: 0.2, focalY: 0.9 });
+    const fit = kioskTheme({ ...base, backgroundImageFit: 'fit', backgroundImageFocalX: 0.2 })?.backgroundImage;
+    expect(fit).toMatchObject({ fit: 'fit' });
+    expect(fit?.focalX).toBeUndefined();
+  });
+});

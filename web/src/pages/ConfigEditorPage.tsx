@@ -76,7 +76,8 @@ import { paths } from '../routes';
 import { AssignedApps } from './configurations/AssignedApps';
 import { KioskBackgroundField, hostedPath, useKioskBackgroundInfo } from './configurations/KioskBackground';
 import { KioskBackgroundPreview } from './configurations/KioskPreview';
-import { kioskColours } from '../data/kioskScrim';
+import { kioskColours, type FitMode } from '../data/kioskScrim';
+import { KioskPlacement } from './configurations/KioskPlacement';
 import { AppSelect, FieldControl, LongHelp } from './configurations/controls';
 import { AppPickerModal, CopyConfigModal, DeleteConfigModal, KioskConfirmModal } from './configurations/modals';
 import { devicesBlockingDelete, plural, usedByLine, wipedOnly, wipedOnlyLine } from './configurations/sync';
@@ -329,7 +330,10 @@ function changedKeys(before: Configuration, after: Configuration): Set<string> {
   // The background image picker is a managed asset control rather than a generic CONFIG_FIELDS control.
   // Its identity must still participate in the editor's dirty state and save/apply flow.
   if (norm(before.backgroundImageFileId) !== norm(after.backgroundImageFileId)
-    || norm(after.backgroundImageAction) !== null) out.add('backgroundImageFileId');
+    || norm(after.backgroundImageAction) !== null
+    || norm(before.backgroundImageFit) !== norm(after.backgroundImageFit)
+    || norm(before.backgroundImageFocalX) !== norm(after.backgroundImageFocalX)
+    || norm(before.backgroundImageFocalY) !== norm(after.backgroundImageFocalY)) out.add('backgroundImageFileId');
   if (appsSignature(before) !== appsSignature(after)) out.add('applications');
   if (appPermissionsSignature(before) !== appPermissionsSignature(after)) out.add('managedAppPermissions');
   return out;
@@ -702,6 +706,11 @@ function Editor({
     .map((a) => apps.find((x) => x.id === a.id)?.name ?? (a as { name?: string }).name ?? '')
     .filter((n) => n !== '');
 
+  const imageFitMode: FitMode = draft.backgroundImageFit === 'fit' ? 'fit' : 'fill';
+  const focalX = typeof draft.backgroundImageFocalX === 'number' ? draft.backgroundImageFocalX : 0.5;
+  const focalY = typeof draft.backgroundImageFocalY === 'number' ? draft.backgroundImageFocalY : 0.5;
+  const imageFocal = useMemo(() => ({ x: focalX, y: focalY }), [focalX, focalY]);
+
   const backgroundImageRow = kioskOn ? (
     <FieldRow
       id={`${ids}-backgroundImage`}
@@ -710,15 +719,29 @@ function Editor({
       adornment={changed.has('backgroundImageFileId') && !readOnly ? <ChangedChip /> : undefined}
       disabled={readOnly}
       below={backgroundInfo.info ? (
-        <KioskBackgroundPreview
-          src={hostedPath(backgroundInfo.info.url)}
-          width={backgroundInfo.info.width}
-          height={backgroundInfo.info.height}
-          colours={kioskColours(draft.backgroundColor as string | undefined, draft.textColor as string | undefined)}
-          appNames={kioskAppNames}
-          exitVisible={draft.kioskExit === true}
-          iconSize={draft.iconSize as string | undefined}
-        />
+        <div className="v2-cfged-kbg">
+          <KioskPlacement
+            src={hostedPath(backgroundInfo.info.url)}
+            width={backgroundInfo.info.width}
+            height={backgroundInfo.info.height}
+            fit={imageFitMode}
+            focal={imageFocal}
+            disabled={readOnly}
+            onFit={(v) => setDraft((d) => ({ ...d, backgroundImageFit: v }))}
+            onFocal={(f) => setDraft((d) => ({ ...d, backgroundImageFocalX: f.x, backgroundImageFocalY: f.y }))}
+          />
+          <KioskBackgroundPreview
+            src={hostedPath(backgroundInfo.info.url)}
+            width={backgroundInfo.info.width}
+            height={backgroundInfo.info.height}
+            colours={kioskColours(draft.backgroundColor as string | undefined, draft.textColor as string | undefined)}
+            appNames={kioskAppNames}
+            exitVisible={draft.kioskExit === true}
+            iconSize={draft.iconSize as string | undefined}
+            fit={imageFitMode}
+            focal={imageFocal}
+          />
+        </div>
       ) : undefined}
     >
       {({ labelId }) => (

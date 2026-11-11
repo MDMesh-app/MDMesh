@@ -152,7 +152,6 @@
   font-family: Roboto, 'IBM Plex Sans', system-ui, sans-serif;
 }
 
-.v2 .v2-kbg__img,
 .v2 .v2-kbg__dim {
   position: absolute;
   inset: 0;
@@ -160,9 +159,10 @@
   height: 100%;
 }
 
+/* Placed by the component (fill or fit, around the focal point), the same geometry as the device. */
 .v2 .v2-kbg__img {
-  object-fit: cover;
-  object-position: center;
+  position: absolute;
+  max-width: none;
 }
 
 .v2 .v2-kbg__dim,

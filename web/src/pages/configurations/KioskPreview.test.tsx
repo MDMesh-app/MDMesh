@@ -135,11 +135,24 @@ describe('KioskBackgroundPreview', () => {
     expect(liveText()).not.toMatch(/on plate/);
     // The image is read once; every window is cropped from it.
     expect(sampling.reads).toBe(1);
-    fireEvent.click(screen.getByRole('button', { name: 'Rotate to landscape' }));
-    // The turn is animated: the screen turns first, then the view changes.
-    expect(document.querySelector('.v2-kbg__large-turn.is-turning')).not.toBeNull();
+    const rotate = screen.getByRole('button', { name: 'Rotate to landscape' });
+    rotate.focus();
+    fireEvent.click(rotate);
+    // One continuous turn: the old view turns onto the box of the new one, then the new one replaces it in place.
+    const turn = document.querySelector<HTMLElement>('.v2-kbg__large-turn.is-turning')!;
+    expect(turn).not.toBeNull();
+    expect(turn.style.getPropertyValue('--kbg-turn-fit')).not.toBe('');
+    // Rotate keeps focus while it turns, and ignores activation until done.
+    expect(rotate.getAttribute('aria-disabled')).toBe('true');
+    expect(rotate.hasAttribute('disabled')).toBe(false);
+    expect(document.activeElement).toBe(rotate);
+    fireEvent.click(rotate);
     await waitFor(() => expect(liveText()).toMatch(/^Phone, landscape/), { timeout: ROTATE_MS * 10 });
-    expect(document.querySelector('.v2-kbg__large-turn.is-turning')).toBeNull();
+    const after = document.querySelector<HTMLElement>('.v2-kbg__large-turn')!;
+    expect(after.classList.contains('is-turning')).toBe(false);
+    expect(after.style.getPropertyValue('--kbg-turn-fit')).toBe('');
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Rotate to portrait' }));
+    expect(screen.getByRole('button', { name: 'Rotate to portrait' }).getAttribute('aria-disabled')).toBe('false');
     // In landscape the band runs under the labels: they get plates.
     expect(liveText()).toMatch(/on plate/);
     expect(large().querySelector('[data-plate^="label-"]')).not.toBeNull();
@@ -286,9 +299,22 @@ describe('labels', () => {
     preview({ apps: ['Signage Player Pro Edition', 'Notes'] });
     const lines = (root: Element) => [...root.querySelectorAll('.v2-kbg__label')][0].textContent;
     const thumb = within(screen.getByRole('list', { name: 'Screen shapes' })).getAllByRole('button')[0];
-    expect(lines(large())).toBe(lines(thumb));
-    expect(large().querySelectorAll('.v2-kbg__label')[0].querySelectorAll('.v2-kbg__label-line').length).toBeLessThanOrEqual(2);
+    // The thumbnail draws the same laid-out lines (as bars at its scale).
+    const largeLines = large().querySelectorAll('.v2-kbg__label')[0].querySelectorAll('.v2-kbg__label-line').length;
+    expect(thumb.querySelectorAll('.v2-kbg__label')[0].querySelectorAll('.v2-kbg__text-bar').length).toBe(largeLines);
+    expect(largeLines).toBeLessThanOrEqual(2);
     expect(lines(large())).toMatch(/…$/);
+  });
+});
+
+describe('thumbnails', () => {
+  it('draw text smaller than 9 px as bars (the large view keeps the text)', async () => {
+    sampling.paint = DARK;
+    preview();
+    const thumb = within(screen.getByRole('list', { name: 'Screen shapes' })).getAllByRole('button')[3];
+    expect(thumb.querySelector('.v2-kbg__screen .v2-kbg__text-bar')).not.toBeNull();
+    expect(within(thumb.querySelector('.v2-kbg__screen') as HTMLElement).queryByText('MDMesh Kiosk')).toBeNull();
+    expect(within(large()).getByText('MDMesh Kiosk')).toBeTruthy();
   });
 });
 

@@ -40,7 +40,7 @@
 
 .v2 .v2-kbg__large {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   min-width: 0;
 }
 
@@ -50,23 +50,27 @@
   max-width: 100%;
 }
 
+/* The turn stays inside the stage: it never draws over the toolbar or the notices above. */
 .v2 .v2-kbg__large-stage {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   align-items: flex-start;
+  overflow: clip;
 }
 
 .v2 .v2-kbg__large-turn {
   transform-origin: center center;
-  transition: transform var(--kbg-turn-ms) ease-in-out;
+  transition: none;
 }
 
+/* Only the way there is animated: at the end the turned view replaces it in place, without a transition back. */
 .v2 .v2-kbg__large-turn.is-turning {
-  transform: rotate(-90deg) scale(var(--kbg-turn-fit));
+  transition: transform var(--kbg-turn-ms) ease-in-out;
+  transform: translate(var(--kbg-turn-dx), var(--kbg-turn-dy)) rotate(-90deg) scale(var(--kbg-turn-fit));
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .v2 .v2-kbg__large-turn {
+  .v2 .v2-kbg__large-turn.is-turning {
     transition: none;
   }
 }
@@ -100,7 +104,8 @@
 
 .v2 .v2-kbg__thumb-button {
   display: grid;
-  width: 100%;
+  width: fit-content;
+  min-width: 150px;
   align-content: start;
   gap: 6px;
   justify-items: start;
@@ -135,6 +140,8 @@
 /* ---- the mock screen ---- */
 
 .v2 .v2-kbg__screen {
+  /* The frame is drawn outside the drawing area, so everything sits at dp x scale from the screen's own edge. */
+  box-sizing: content-box;
   position: relative;
   overflow: hidden;
   flex: none;
@@ -188,6 +195,17 @@
 .v2 .v2-kbg__label {
   text-align: center;
   overflow: hidden;
+}
+
+.v2 .v2-kbg__text-bar {
+  display: block;
+  margin-inline: auto;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.v2 .v2-kbg__header .v2-kbg__text-bar {
+  margin-inline: 0;
 }
 
 /* The lines come laid out from kioskLauncherLayout, cut where the device cuts them. */

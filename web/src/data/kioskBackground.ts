@@ -280,6 +280,8 @@ export function browserImageCodec(): KioskImageCodec | null {
     async decode(file, upright) {
       // Without "from-image" a decoder that applies orientations would turn it anyway: then `upright` is what was
       // probed, and a size that doesn't match the stored one makes normalizeKioskImage keep the original.
+      // `{}` for the stored orientation: there is no option that ignores the tag ('none' means from-image in Chromium
+      // 150, measured), so this path is only taken when the probe showed that this decoder doesn't apply it.
       const bitmap = await createImageBitmap(file, upright ? { imageOrientation: 'from-image' } : {});
       return { image: bitmap, width: bitmap.width, height: bitmap.height, close: () => bitmap.close() };
     },

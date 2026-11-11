@@ -123,7 +123,7 @@ export function KioskBackgroundPreview({
   const headingId = useId();
   const [view, setView] = useState<View>(THUMBNAILS[0]);
   const [lastTablet, setLastTablet] = useState<Model>('tablet43');
-  const [turning, setTurning] = useState(false);
+  const [turning, setTurning] = useState<View | null>(null);
   const [measured, setMeasured] = useState<Record<string, Measured> | null>(null);
   const measureFn = useMemo(() => measure ?? browserMeasure(), [measure]);
   const apps = useMemo(() => (appNames.length ? appNames.slice(0, 24) : ['Camera', 'Notes', 'Browser', 'Scanner']), [appNames]);
@@ -160,22 +160,22 @@ export function KioskBackgroundPreview({
   useEffect(() => () => window.clearTimeout(turnTimer.current), []);
 
   const rotate = () => {
-    if (turning) return;
+    if (turning) return; // ignored while turning; the button keeps focus (aria-disabled, not disabled)
     const next: View = { ...view, orientation: view.orientation === 'portrait' ? 'landscape' : 'portrait' };
     if (prefersReducedMotion()) {
       setView(next);
       return;
     }
-    setTurning(true);
+    setTurning(next);
     turnTimer.current = window.setTimeout(() => {
       setView(next);
-      setTurning(false);
+      setTurning(null);
     }, ROTATE_MS);
   };
 
   const select = (v: View) => {
     window.clearTimeout(turnTimer.current);
-    setTurning(false);
+    setTurning(null);
     if (v.model !== 'phone') setLastTablet(v.model);
     setView(v);
   };
@@ -232,7 +232,7 @@ export function KioskBackgroundPreview({
         <Button
           size="sm"
           onClick={rotate}
-          disabled={turning}
+          aria-disabled={turning != null}
           aria-label={`Rotate to ${view.orientation === 'portrait' ? 'landscape' : 'portrait'}`}
         >
           <IconSync size={14} /> Rotate
@@ -240,7 +240,7 @@ export function KioskBackgroundPreview({
       </div>
       <LargeScreen
         view={view}
-        turning={turning}
+        next={turning}
         layout={layouts[key]}
         legibility={current?.kind === 'ok' ? current.legibility : null}
         src={src}
@@ -355,7 +355,7 @@ function defaultLoadImage(src: string): Promise<HTMLImageElement | null> {
 /** The large view: scaled to fit the available width (and a maximum height), turning on Rotate. */
 function LargeScreen({
   view,
-  turning,
+  next,
   layout,
   legibility,
   src,
@@ -363,7 +363,8 @@ function LargeScreen({
   children,
 }: {
   view: View;
-  turning: boolean;
+  /** The view a Rotate turns to, while it turns; null otherwise. */
+  next: View | null;
   layout: LauncherLayout;
   legibility: Legibility | null;
   src: string;
@@ -372,20 +373,32 @@ function LargeScreen({
   children: ReactNode;
 }) {
   const [frame, available] = useWidth<HTMLDivElement>();
+  const fitScale = (v: View) => {
+    const win = viewWindow(v);
+    return Math.min(available / win.w, LARGE_MAX_HEIGHT / win.h);
+  };
   const { w, h } = viewWindow(view);
-  const scale = Math.min(available / w, LARGE_MAX_HEIGHT / h);
-  // While turning, the screen rotates a quarter and shrinks to fit its turned footprint.
-  const turnedFit = Math.min(1, available / (h * scale), LARGE_MAX_HEIGHT / (w * scale));
+  const scale = fitScale(view);
+  // One continuous turn: the screen rotates a quarter about its centre while it moves and scales onto the box the
+  // turned view takes; at the end the turned view replaces it, in place, with no transition.
+  const nextBox = next ? { w: viewWindow(next).w * fitScale(next), h: viewWindow(next).h * fitScale(next) } : null;
+  const turn = nextBox
+    ? {
+        '--kbg-turn-dx': `${(nextBox.w - w * scale) / 2}px`,
+        '--kbg-turn-dy': `${(nextBox.h - h * scale) / 2}px`,
+        '--kbg-turn-fit': fitScale(next!) / scale,
+        '--kbg-turn-ms': `${ROTATE_MS}ms`,
+      }
+    : {};
+  const boxW = Math.max(w * scale, nextBox?.w ?? 0);
+  const boxH = Math.max(h * scale, nextBox?.h ?? 0);
   const r = legibility ? readout(legibility) : null;
   const description = `${viewLabel(view)}: the image cropped at the centre${r ? `, ${r.dim.toLowerCase()}, ${r.text.toLowerCase()}` : ''}`;
   return (
     <div ref={frame} className="v2-kbg__large">
-      <div className="v2-kbg__large-figure" style={{ width: Math.floor(w * scale) }}>
-        <div className="v2-kbg__large-stage" style={{ height: Math.ceil(h * scale) }}>
-          <div
-            className={`v2-kbg__large-turn${turning ? ' is-turning' : ''}`}
-            style={{ '--kbg-turn-fit': turnedFit, '--kbg-turn-ms': `${ROTATE_MS}ms` } as CSSProperties}
-          >
+      <div className="v2-kbg__large-figure" style={{ width: Math.floor(boxW) }}>
+        <div className="v2-kbg__large-stage" style={{ height: Math.ceil(boxH) }}>
+          <div className={`v2-kbg__large-turn${next ? ' is-turning' : ''}`} style={turn as CSSProperties}>
             <ScaledScreen layout={layout} legibility={legibility} src={src} colours={colours} scale={scale} label={description} />
           </div>
         </div>
@@ -415,6 +428,11 @@ function ScaledScreen({
   label?: string;
 }) {
   const { w, h } = layout.window;
+  // Below 9 px glyphs don't scale evenly (thumbnails): text is drawn as a bar of its line's width instead.
+  const tiny = (sp: number) => sp * s < 9;
+  const bar = (width: number, lineH: number, key?: number) => (
+    <span key={key} className="v2-kbg__text-bar" style={{ width: width * s, height: Math.max(1, lineH * s * 0.42), marginBlock: lineH * s * 0.29 }} />
+  );
   const plate = (id: string, box: Box) => {
     const k = legibility?.plates[id]?.step ?? 0;
     return k > 0 ? (
@@ -442,7 +460,7 @@ function ScaledScreen({
         className="v2-kbg__header"
         style={{ ...px(layout.header, s), fontSize: layout.header.size * s, lineHeight: `${layout.header.h * s}px` }}
       >
-        {layout.header.text}
+        {tiny(layout.header.size) ? bar(layout.header.w, layout.header.h) : layout.header.text}
       </span>
       {layout.cells.map((c, i) => (
         <span key={`cell-${i}`}>
@@ -453,11 +471,15 @@ function ScaledScreen({
             className="v2-kbg__label"
             style={{ ...px(c.label, s), fontSize: layout.labelSize * s, lineHeight: `${layout.labelLineHeight * s}px` }}
           >
-            {c.lines.map((line, k) => (
-              <span key={k} className="v2-kbg__label-line">
-                {line}
-              </span>
-            ))}
+            {c.lines.map((line, k) =>
+              tiny(layout.labelSize) ? (
+                bar(Math.min(c.label.w, c.lineWidth), layout.labelLineHeight, k)
+              ) : (
+                <span key={k} className="v2-kbg__label-line">
+                  {line}
+                </span>
+              ),
+            )}
           </span>
         </span>
       ))}
@@ -472,7 +494,7 @@ function ScaledScreen({
             lineHeight: `${layout.exit.button.h * s - 2 * Math.max(1, s)}px`,
           }}
         >
-          Exit kiosk
+          {tiny(layout.exit.size) ? bar(layout.exit.button.w * 0.5, layout.exit.button.h * 0.5) : 'Exit kiosk'}
         </span>
       ) : null}
     </div>

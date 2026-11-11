@@ -1,9 +1,103 @@
 {
-  "$comment": "Kiosk adaptive scrim test vectors, shared by the console (web/src/data/kioskScrim.test.ts) and the agent. Algorithm: docs/kiosk-background-scrim.md. Colours are opaque sRGB; samples are the visible crop of the image after compositing over the background colour. ratio values are rounded to 2 decimals; compare with a tolerance of 0.01.",
-  "version": 1,
+  "$comment": "Kiosk adaptive scrim test vectors, shared by the console (web/src/data/kioskScrim.test.ts) and the agent. Algorithm: docs/kiosk-background-scrim.md. Colours are opaque sRGB; samples are the visible crop of the image after compositing over the background colour. ratio values are rounded to 2 decimals; compare with a tolerance of 0.01. parsing: what a stored colour reads as (null: not a colour, the default is used).",
+  "version": 2,
   "steps": 50,
   "textMin": 4.5,
   "allowancePercent": 2,
+  "parsing": [
+    {
+      "input": "#FFF",
+      "expected": null
+    },
+    {
+      "input": "FFFFFF",
+      "expected": null
+    },
+    {
+      "input": "white",
+      "expected": "#FFFFFF"
+    },
+    {
+      "input": "#80FFFFFF",
+      "expected": "#FFFFFF"
+    },
+    {
+      "input": "#FFFFFF",
+      "expected": "#FFFFFF"
+    },
+    {
+      "input": "#ffffff",
+      "expected": "#FFFFFF"
+    },
+    {
+      "input": "#0f1115",
+      "expected": "#0F1115"
+    },
+    {
+      "input": "WHITE",
+      "expected": "#FFFFFF"
+    },
+    {
+      "input": "Grey",
+      "expected": "#888888"
+    },
+    {
+      "input": "lightgrey",
+      "expected": "#CCCCCC"
+    },
+    {
+      "input": "teal",
+      "expected": "#008080"
+    },
+    {
+      "input": "#00FFFFFF",
+      "expected": "#FFFFFF"
+    },
+    {
+      "input": "#FF0000FF",
+      "expected": "#0000FF"
+    },
+    {
+      "input": " #FFFFFF",
+      "expected": null
+    },
+    {
+      "input": "#FFFFFF ",
+      "expected": null
+    },
+    {
+      "input": "#+FFFFF",
+      "expected": null
+    },
+    {
+      "input": "#-00001",
+      "expected": null
+    },
+    {
+      "input": "rgb(1,2,3)",
+      "expected": null
+    },
+    {
+      "input": "transparent",
+      "expected": null
+    },
+    {
+      "input": "",
+      "expected": null
+    },
+    {
+      "input": "#GGGGGG",
+      "expected": null
+    },
+    {
+      "input": "#FFFFFFF",
+      "expected": null
+    },
+    {
+      "input": "0xFFFFFF",
+      "expected": null
+    }
+  ],
   "palette": [
     {
       "backgroundColor": null,
@@ -67,6 +161,54 @@
       "expected": {
         "text": "#FFFFFF",
         "secondary": "#D8D8D8"
+      }
+    },
+    {
+      "backgroundColor": "#ffffff",
+      "textColor": "#FFF",
+      "expected": {
+        "text": "#1B2230",
+        "secondary": "#494E59"
+      }
+    },
+    {
+      "backgroundColor": "#000000",
+      "textColor": "FFFFFF",
+      "expected": {
+        "text": "#E7EBF1",
+        "secondary": "#B9BCC1"
+      }
+    },
+    {
+      "backgroundColor": "#000000",
+      "textColor": "white",
+      "expected": {
+        "text": "#FFFFFF",
+        "secondary": "#CCCCCC"
+      }
+    },
+    {
+      "backgroundColor": "#000000",
+      "textColor": "#80FFFFFF",
+      "expected": {
+        "text": "#FFFFFF",
+        "secondary": "#CCCCCC"
+      }
+    },
+    {
+      "backgroundColor": "Teal",
+      "textColor": "#ffffff",
+      "expected": {
+        "text": "#FFFFFF",
+        "secondary": "#FFFFFF"
+      }
+    },
+    {
+      "backgroundColor": " #000000",
+      "textColor": "red",
+      "expected": {
+        "text": "#FF0000",
+        "secondary": "#FF0000"
       }
     }
   ],

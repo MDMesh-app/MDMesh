@@ -17,6 +17,8 @@ import {
 
 // The vectors the agent's implementation is tested against too: the console's preview shows what the device draws.
 interface Vectors {
+  version: number;
+  parsing: { input: string; expected: string | null }[];
   steps: number;
   textMin: number;
   allowancePercent: number;
@@ -43,9 +45,15 @@ const VECTORS = JSON.parse(
 
 describe('kiosk scrim vectors (shared with the agent)', () => {
   it('uses the same constants', () => {
+    expect(VECTORS.version).toBe(2);
     expect(VECTORS.steps).toBe(SCRIM_STEPS);
     expect(VECTORS.textMin).toBe(TEXT_MIN);
     expect(VECTORS.allowancePercent).toBe(ALLOWANCE_PERCENT);
+  });
+
+  it.each(VECTORS.parsing.map((p) => [JSON.stringify(p.input), p] as const))('parses %s as the agent does', (_, p) => {
+    const c = parseColor(p.input);
+    expect(c == null ? null : toHex(c)).toBe(p.expected);
   });
 
   it.each(VECTORS.palette.map((p) => [`${p.backgroundColor} / ${p.textColor}`, p] as const))(
@@ -89,12 +97,14 @@ describe('kiosk scrim building blocks', () => {
     expect(blendStep(0x000000, 0xffffff, 25)).toBe(0x808080);
   });
 
-  it('parses the colour forms a configuration may hold', () => {
-    expect(parseColor('#fff')).toBe(0xffffff);
+  it('parses the colour forms a configuration may hold, as Android does', () => {
+    expect(parseColor('#fff')).toBeNull();
     expect(parseColor('#0F1115')).toBe(0x0f1115);
     expect(parseColor('#800F1115')).toBe(0x0f1115);
-    expect(parseColor('teal')).toBeNull();
+    expect(parseColor('teal')).toBe(0x008080);
     expect(parseColor(undefined)).toBeNull();
+    expect(parseColor('constructor')).toBeNull();
+    expect(parseColor('__proto__')).toBeNull();
   });
 
   it('never needs more than the solid colour, for any single sample', () => {

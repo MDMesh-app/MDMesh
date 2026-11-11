@@ -13,10 +13,25 @@ Implementations:
 - Shared test vectors: [`proto/vectors/kiosk-scrim.json`](../proto/vectors/kiosk-scrim.json). Both test suites
   load it; a change to the algorithm changes the vectors, and both sides must pass them.
 
+## Parsing
+
+The configuration stores `backgroundColor` and `textColor` as strings; the server sends them unchanged. Both sides
+read a stored value the same way: exactly the forms Android's `Color.parseColor` reads and the console's colour
+picker writes (the server doesn't check them, so an API client may store anything):
+
+- `#RRGGBB`: `#` and exactly 6 hex digits, any case.
+- `#AARRGGBB`: `#` and exactly 8 hex digits; the alpha is dropped (the launcher draws its colours opaque).
+- One of Android's names, any case: black, darkgray, gray, lightgray, white, red, green, blue, yellow, cyan, magenta,
+  aqua, fuchsia, darkgrey, grey, lightgrey, lime, maroon, navy, olive, purple, silver, teal.
+
+Anything else is not a colour, and the default is used: `#RGB`, a missing `#`, spaces around the value, `+`/`-` after
+the `#` (which `parseColor` would take), CSS forms like `rgb(...)` or `transparent`, an empty string. The agent checks
+the form before calling `parseColor`. Vectors: `parsing` in the vector file, and palette cases with such values.
+
 ## Inputs
 
 1. **Colours** (`KioskPalette.of` on the agent, `kioskColours` in the console), opaque sRGB:
-   - `background` = the configuration's background colour, or v2 dark `#0F1115`.
+   - `background` = the configuration's background colour (see Parsing), or v2 dark `#0F1115`.
    - `text` = the configuration's text colour while it reaches 4.5:1 on `background`; otherwise the v2 text colour
      (`#E7EBF1` or `#1B2230`) that reads best on it, or black/white when neither reaches 4.5:1.
    - `secondary` = `text` at 80 % over `background` (per channel `round(f * 0.8f + b * (1 - 0.8f))` in 32-bit

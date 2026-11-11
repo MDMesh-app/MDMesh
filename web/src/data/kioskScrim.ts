@@ -36,14 +36,25 @@ export function contrastRatio(a: number, b: number): number {
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
-/** `#RGB`, `#RRGGBB` or `#AARRGGBB` (alpha ignored, as the agent draws colours opaque); null when it isn't one. */
+/** Android's colour names (Color.parseColor), lower case. */
+const COLOUR_NAMES: Readonly<Record<string, number>> = {
+  black: 0x000000, darkgray: 0x444444, gray: 0x888888, lightgray: 0xcccccc, white: 0xffffff, red: 0xff0000,
+  green: 0x00ff00, blue: 0x0000ff, yellow: 0xffff00, cyan: 0x00ffff, magenta: 0xff00ff, aqua: 0x00ffff,
+  fuchsia: 0xff00ff, darkgrey: 0x444444, grey: 0x888888, lightgrey: 0xcccccc, lime: 0x00ff00, maroon: 0x800000,
+  navy: 0x000080, olive: 0x808000, purple: 0x800080, silver: 0xc0c0c0, teal: 0x008080,
+};
+
+/**
+ * A stored kiosk colour as the agent reads it (docs/kiosk-background-scrim.md, Parsing): `#RRGGBB`, `#AARRGGBB`
+ * (alpha dropped: the launcher draws opaque) or one of Android's colour names, any case. Anything else, `#RGB`, a
+ * missing `#` and surrounding spaces included, is null: the default colour, as on the device.
+ */
 export function parseColor(value: string | null | undefined): number | null {
-  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec((value ?? '').trim());
-  if (!m) return null;
-  let hex = m[1];
-  if (hex.length === 3) hex = hex.replace(/./g, (c) => c + c);
-  if (hex.length === 8) hex = hex.slice(2);
-  return parseInt(hex, 16);
+  if (value == null) return null;
+  const hex = /^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.exec(value);
+  if (hex) return parseInt(hex[1].slice(-6), 16);
+  const name = value.toLowerCase();
+  return Object.prototype.hasOwnProperty.call(COLOUR_NAMES, name) ? COLOUR_NAMES[name] : null;
 }
 
 export function toHex(rgb: number): string {

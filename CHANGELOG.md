@@ -10,7 +10,8 @@ line under Unreleased.
 
 Upgrading
 - The database adds columns on start: `devices.wipedAt`; `configurations.camera`, `configurations.locationServices`,
-  `configurations.backgroundImageFileId` and `configurations.backgroundImageSha256`; `device_state.kioskGeneration` and
+  `configurations.backgroundImageFileId`, `configurations.backgroundImageSha256`, `configurations.backgroundImageFit`,
+  `configurations.backgroundImageFocalX` and `configurations.backgroundImageFocalY`; `device_state.kioskGeneration` and
   `device_state.kioskReturnGeneration`; `applicationVersions.requestedPermissions`; and the
   `configurationAppPermissions` table. Devices wiped before the update aren't marked.
 - The database adds three columns to enrollment tokens on start (`maxUses`, `useCount`, `revokedAt`) and stores
@@ -40,7 +41,10 @@ New
   server address they keep the background color), check it by its SHA-256, and keep the color if it can't be shown.
   The editor shows the current image (size, upload date, short SHA-256) with Replace and Remove, and previews the
   launcher over it on a phone and a tablet, turned either way, with the text contrast it reaches: text sits on a plate
-  of the background color where the image behind it is bright or busy, and the image is dimmed by at most 30%. Large photos are scaled to at most 3840 px before upload, and
+  of the background color where the image behind it is bright or busy, and the image is dimmed by at most 30%. Fill
+  (cropped around a focal point you set by clicking, dragging or with the arrow keys) or Fit (the whole image,
+  letterboxed); an agent without fit and focal point support fills from the centre. Choose from uploaded images reuses one
+  without uploading it again, and deletes ones nothing uses. Large photos are scaled to at most 3840 px before upload, and
   their location, camera details and other metadata are removed before devices get them. The device page
   names the image its configuration sets. Needs agent 0.5.0 (thanks @letternumber).
 - Configurations can Grant or Deny an app's runtime permissions (camera, location, microphone, contacts, SMS and
@@ -70,6 +74,9 @@ Fixes
   (thanks @letternumber).
 
 Under the hood
+- Protocol 1.10: `theme.backgroundImage` may carry `fit` and `focalX`/`focalY`, sent only when not the default
+  (additive). `GET /private/configurations/backgroundImages` lists a customer's kiosk images and
+  `POST /private/configurations/backgroundImages/{fileId}/delete` deletes an unused one.
 - The kiosk background image's address is built from the server's current address each time a configuration is sent,
   so moving the server to HTTPS or another domain needs no new pick of the image. The adaptive scrim is documented in
   `docs/kiosk-background-scrim.md`, with test vectors (`proto/vectors/kiosk-scrim.json`) the console and the agent

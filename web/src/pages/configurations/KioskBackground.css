@@ -3,7 +3,7 @@
 
 .v2 .v2-kbg {
   display: grid;
-  gap: 12px;
+  gap: 16px;
   min-width: 0;
 }
 
@@ -97,4 +97,29 @@
   margin: 0;
   font-size: var(--fs-sm);
   color: var(--secondary);
+}
+
+.v2 .v2-kbg__how > summary {
+  cursor: pointer;
+  width: fit-content;
+  padding: 4px 0;
+  line-height: 24px;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  border-radius: var(--radius-xs);
+}
+
+.v2 .v2-kbg__how > summary:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.v2 .v2-kbg__how ul {
+  margin: 8px 0 0;
+  padding-left: 16px;
+  display: grid;
+  gap: 4px;
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+  max-width: 64ch;
 }

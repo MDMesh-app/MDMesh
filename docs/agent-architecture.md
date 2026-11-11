@@ -127,7 +127,7 @@ to the foreground. With an `http://` server address devices keep the color. Olde
 kiosk is re-applied once when the image changes the revision). `backgroundImageUrl` is also the Headwind launcher's
 wallpaper: a save that sends another URL there stores it as that wallpaper and drops the managed image. Text over the
 image is kept at 4.5:1 by a plate behind each text that needs one (solid over texture) and a dim of at most 30 % for
-the Exit button, the same rules in the console's preview and on the agent: [kiosk-background-scrim.md](
+the Exit button, the same rules in the console's preview and on the agent (with the fit mode and focal point, protocol 1.10): [kiosk-background-scrim.md](
 kiosk-background-scrim.md). The console's device page names the image the device's
 configuration sets (`configStatus.kioskBackgroundImage`); what the device shows isn't reported yet.
 

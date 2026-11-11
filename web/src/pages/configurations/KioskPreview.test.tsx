@@ -354,7 +354,7 @@ describe('thumbnailGrid', () => {
     expect(wide.columns).toBe(2);
     // The widest pair (tablet 4:3 landscape + phone landscape) fills the row.
     expect(Math.max(150, (wide.height * 1024) / 768) + (wide.height * 780) / 360 + 40).toBeLessThanOrEqual(690);
-    expect(thumbnailGrid(330)).toEqual({ columns: 1, height: Math.floor(((330 - 28) * 360) / 780) });
+    expect(thumbnailGrid(330)).toEqual({ columns: 1, height: Math.floor(((330 - 16) * 360) / 780) });
   });
 });
 

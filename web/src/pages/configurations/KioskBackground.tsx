@@ -126,6 +126,17 @@ export function KioskBackgroundField({
           </Button>
         ) : null}
       </div>
+      <details className="v2-kbg__how">
+        <summary>How it works</summary>
+        <ul>
+          <li>At most 10 MB and 16 megapixels. The console scales larger photos to 3840 px before uploading.</li>
+          <li>The server removes location, camera and other details before devices get the image.</li>
+          <li>Devices download it only over HTTPS and check it by its SHA-256; on any problem they keep the color.</li>
+          <li>Text gets a plate of the background color where the image behind it is busy, so it stays readable.</li>
+          <li>It is hosted in Files, where anyone with its link can open it: don't use a confidential image.</li>
+          <li>Remove also clears the legacy Background image URL.</li>
+        </ul>
+      </details>
     </div>
   );
 }

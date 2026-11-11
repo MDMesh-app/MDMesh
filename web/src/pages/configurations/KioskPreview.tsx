@@ -61,6 +61,10 @@ const SOFT_EDGE = 1080;
 /** The turn's length; none when the viewer prefers reduced motion. */
 export const ROTATE_MS = 320;
 const LARGE_MAX_HEIGHT = 520;
+/** Device frames: px around the screen. */
+const LARGE_BEZEL = 10;
+const THUMB_BEZEL = 4;
+const cameraOf = (v: View): 'top' | 'left' | null => (v.model !== 'phone' ? null : v.orientation === 'portrait' ? 'top' : 'left');
 
 const ratioText = (r: number) => (Number.isFinite(r) ? `${(Math.floor(r * 10) / 10).toFixed(1)}:1` : 'n/a');
 
@@ -71,14 +75,14 @@ function listNames(names: string[]): string {
 
 /** Thumbnails: a shared screen height (px) and the number of columns, from the width the list has. */
 export function thumbnailGrid(width: number): { columns: 1 | 2; height: number } {
-  const budget = width - 2 * 14; // button padding and border on both sides
+  const budget = width - 2 * 8; // button padding (7) and border (1) on both sides
   if (width < 520) return { columns: 1, height: Math.max(40, Math.min(160, Math.floor((budget * 360) / 780))) };
   // Two columns: phone portrait over tablet 4:3 landscape, phone landscape over tablet 16:10 portrait; every caption
   // at least 150 px wide.
   for (let h = 180; h > 40; h--) {
     const first = Math.max(150, (h * 1024) / 768, (h * 360) / 780);
     const second = Math.max(150, (h * 780) / 360, (h * 800) / 1280);
-    if (first + second + 2 * 14 + 12 <= width) return { columns: 2, height: h };
+    if (first + second + 2 * 2 * 8 + 16 <= width) return { columns: 2, height: h };
   }
   return { columns: 1, height: 40 };
 }
@@ -300,11 +304,13 @@ export function KioskBackgroundPreview({
                 <ScaledScreen
                   image={{ w: width, h: height }}
                   fit={imageFit}
+                  bezel={THUMB_BEZEL}
+                  camera={cameraOf(t)}
                   layout={layouts[viewKey(t)]}
                   legibility={m?.kind === 'ok' ? m.legibility : null}
                   src={src}
                   colours={colours}
-                  scale={thumbs.height / viewWindow(t).h}
+                  scale={(thumbs.height - 2 * THUMB_BEZEL) / viewWindow(t).h}
                 />
                 <span className="v2-kbg__caption">
                   <span className="v2-kbg__shape-name">{viewLabel(t)}</span>
@@ -402,7 +408,7 @@ function LargeScreen({
   const [frame, available] = useWidth<HTMLDivElement>();
   const fitScale = (v: View) => {
     const win = viewWindow(v);
-    return Math.min(available / win.w, LARGE_MAX_HEIGHT / win.h);
+    return Math.min((available - 2 * LARGE_BEZEL) / win.w, LARGE_MAX_HEIGHT / win.h);
   };
   const { w, h } = viewWindow(view);
   const scale = fitScale(view);
@@ -424,8 +430,8 @@ function LargeScreen({
   const description = `${viewLabel(view)}: ${how}${r ? `, ${r.dim.toLowerCase()}, ${r.text.toLowerCase()}` : ''}`;
   return (
     <div ref={frame} className="v2-kbg__large">
-      <div className="v2-kbg__large-figure" style={{ width: Math.floor(boxW) }}>
-        <div className="v2-kbg__large-stage" style={{ height: Math.ceil(boxH) }}>
+      <div className="v2-kbg__large-figure" style={{ width: Math.floor(boxW + 2 * LARGE_BEZEL) }}>
+        <div className="v2-kbg__large-stage" style={{ height: Math.ceil(boxH + 2 * LARGE_BEZEL) }}>
           <div className={`v2-kbg__large-turn${next ? ' is-turning' : ''}`} style={turn as CSSProperties}>
             <ScaledScreen
               layout={layout}
@@ -436,6 +442,8 @@ function LargeScreen({
               label={description}
               image={image}
               fit={fit}
+              bezel={LARGE_BEZEL}
+              camera={cameraOf(view)}
             />
           </div>
         </div>
@@ -457,7 +465,13 @@ function ScaledScreen({
   label,
   image,
   fit,
+  bezel,
+  camera,
 }: {
+  /** The device frame around the screen, px. */
+  bezel: number;
+  /** A phone's front camera hole, at the top in portrait and the left in landscape; none on tablets. */
+  camera: 'top' | 'left' | null;
   /** The image's size and how it is placed: the same geometry as the device (data/kioskScrim placement). */
   image: { w: number; h: number };
   fit: { mode: FitMode; focal: FocalPoint };
@@ -493,10 +507,22 @@ function ScaledScreen({
     height: h * s,
     '--kbg-bg': toHex(colours.background),
     '--kbg-text': toHex(colours.text),
+    '--kbg-bezel': `${bezel}px`,
+    '--kbg-corner': `${Math.round(Math.min(w, h) * 0.07 * s)}px`,
   } as CSSProperties;
   return (
     <div className="v2-kbg__screen" style={style} {...(label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true })}>
       <img className="v2-kbg__img" src={src} alt="" style={px(placed, s)} />
+      {camera ? (
+        <span
+          className="v2-kbg__camera"
+          style={{
+            width: 8 * s,
+            height: 8 * s,
+            ...(camera === 'top' ? { top: 8 * s, left: '50%', marginLeft: -4 * s } : { left: 8 * s, top: '50%', marginTop: -4 * s }),
+          }}
+        />
+      ) : null}
       <div className="v2-kbg__dim" data-dim={legibility?.dim ?? 0} style={{ opacity: (legibility?.dim ?? 0) / SCRIM_STEPS }} />
       {plate('header', layout.headerPlate)}
       {layout.labelPlates.map((p, i) => plate(`label-${i}`, p))}

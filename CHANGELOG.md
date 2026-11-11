@@ -54,6 +54,7 @@ Fixes
   could get the agent stopped by Android. Needs agent 0.5.0.
 - Agent: APK downloads left behind when the agent was stopped during an install are removed at the next install.
   Needs agent 0.5.0.
+- Agent: the device timeline no longer shows a network change each time the agent's service starts. Needs agent 0.5.0.
 
 Under the hood
 - Agent: when the server can't be reached, the agent retries its connection at random intervals of up to 5 minutes

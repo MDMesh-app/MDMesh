@@ -26,7 +26,6 @@ import com.mdmesh.core.sync.CheckInCoordinator
 import com.mdmesh.core.telemetry.EventLog
 import com.mdmesh.core.transport.TransportManager
 import com.mdmesh.core.transport.WakeSignal
-import com.mdmesh.proto.EventType
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -68,13 +67,10 @@ class CheckInService : LifecycleService() {
     @Suppress("DEPRECATION")
     private val powerReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            when (intent?.action) {
-                android.net.ConnectivityManager.CONNECTIVITY_ACTION ->
-                    runCatching { eventLog.record(EventType.CONNECTIVITY) }
-                Intent.ACTION_BATTERY_LOW ->
-                    runCatching { eventLog.record(EventType.LOW_BATTERY) }
+            DeviceEvents.eventFor(intent?.action, isInitialStickyBroadcast)?.let { event ->
+                runCatching { eventLog.record(event) }
             }
-            reevaluateSocket()
+            reevaluateSocket() // also for the initial sticky one: brings the socket up as soon as the service starts
         }
     }
 

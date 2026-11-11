@@ -161,16 +161,19 @@ class A11yScreens {
         val a = start(c)
         val renderer = KioskRenderer(a, NoActions)
         renderer.render(screen)
-        backdrop?.let { renderer.setBackdrop(it, statsOf(it)) }
+        backdrop?.let { image ->
+            // Through the launcher's own decoder: written as a PNG, decoded for this window and colour.
+            val file = java.io.File(app.cacheDir, "busy.png")
+            file.outputStream().use { image.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+            val metrics = a.resources.displayMetrics
+            val decoded = com.mdmesh.agent.ui.BackdropDecoder.decode(
+                file, metrics.widthPixels, metrics.heightPixels, screen.palette.background,
+                com.mdmesh.agent.ui.DecodeLimits.NORMAL,
+            ) as com.mdmesh.agent.ui.Decoded.Ready
+            renderer.setBackdrop(decoded.bitmap, decoded.info)
+        }
         idle()
         return a
-    }
-
-    /** The [com.mdmesh.agent.ui.BackdropStats] the launcher would compute for [bitmap] (all of it visible). */
-    private fun statsOf(bitmap: android.graphics.Bitmap): com.mdmesh.agent.ui.BackdropStats {
-        val small = android.graphics.Bitmap.createScaledBitmap(bitmap, STATS, STATS, true)
-        val px = IntArray(STATS * STATS).also { small.getPixels(it, 0, STATS, 0, 0, STATS, STATS) }
-        return com.mdmesh.agent.ui.KioskScrim.stats(px, STATS, 4)
     }
 
     /** A busy, high-contrast photo stand-in: black and white noise in small blocks, plus saturated stripes. */
@@ -254,5 +257,4 @@ class A11yScreens {
     }
 }
 
-private const val STATS = 48
 private const val BLOCK = 6

@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.res.Configuration
-import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
@@ -19,6 +18,7 @@ import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
 import com.mdmesh.agent.service.CheckInService
+import com.mdmesh.agent.ui.DecodeLimits
 import com.mdmesh.agent.ui.DialogSlot
 import com.mdmesh.agent.ui.ExitPinDialog
 import com.mdmesh.agent.ui.ExitPinUiState
@@ -141,8 +141,8 @@ class KioskLauncherActivity : ComponentActivity() {
         apps = KioskAppLoader(this)
         densityDpi = resources.configuration.densityDpi
         renderer = KioskRenderer(this, Actions())
-        backdrop = KioskBackdrop(lifecycleScope, backgroundImages) { bitmap, stats ->
-            renderer.setBackdrop(bitmap, stats)
+        backdrop = KioskBackdrop(lifecycleScope, backgroundImages, DecodeLimits.of(this)) { bitmap, info ->
+            renderer.setBackdrop(bitmap, info)
         }
         render(KioskScreen.Idle)
         // React to kiosk.enter/kiosk.exit live: those run in the check-in service, not here, so we
@@ -363,7 +363,7 @@ class KioskLauncherActivity : ComponentActivity() {
     private fun showBackdrop(p: KioskApplyPayload?) {
         val image = p?.theme?.backgroundImage ?: return backdrop.clear()
         val metrics = resources.displayMetrics
-        backdrop.want(image, metrics.widthPixels, metrics.heightPixels)
+        backdrop.want(image, metrics.widthPixels, metrics.heightPixels, palette(p).background)
     }
 
     private fun render(next: KioskScreen) {
@@ -378,13 +378,10 @@ class KioskLauncherActivity : ComponentActivity() {
     }
 
     private fun palette(p: KioskApplyPayload): KioskPalette =
-        KioskPalette.of(parseColor(p.theme.backgroundColor), parseColor(p.theme.textColor))
+        KioskPalette.of(KioskPalette.parse(p.theme.backgroundColor), KioskPalette.parse(p.theme.textColor))
 
     private fun exitFor(p: KioskApplyPayload): KioskExit =
         KioskExit.of(p.exitMode, KioskExitDialogs.onDevicePin(p) != null)
-
-    private fun parseColor(value: String?): Int? =
-        value?.let { runCatching { Color.parseColor(it) }.getOrNull() }
 
     /** What the launcher's views can do. The exit goes through [promptExit] and the PIN check, as always. */
     private inner class Actions : KioskRenderer.Actions {

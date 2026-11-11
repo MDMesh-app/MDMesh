@@ -2,6 +2,7 @@ package com.mdmesh.core.kiosk
 
 import android.content.Context
 import android.graphics.BitmapFactory
+import android.os.SystemClock
 import com.mdmesh.core.di.DownloadHttpClient
 import com.mdmesh.proto.KioskBackgroundImageDto
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -9,6 +10,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.cancellation.CancellationException
@@ -21,10 +23,20 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 
 /**
- * Retrieves a server-managed kiosk image into private app storage. Every failure (network, checksum, storage, a
- * cache directory that isn't one) comes back as a result, never as an exception: the launcher keeps its colour
- * and must never crash over an optional image. A failed image is tried again only after a backoff that grows per
- * attempt (30 s doubling to 6 h, ±20 %), remembered per image hash, so screen wakes don't re-download it.
+ * Retrieves a server-managed kiosk image into private app storage. Every failure (network, checksum, a full disk, a
+ * cache directory that isn't one or was cleared) comes back as a result, never as an exception: the launcher keeps
+ * what it shows and must never crash over an optional image.
+ *
+ * - A failed download is tried again only after a backoff that grows per attempt (30 s doubling to 6 h, ±20 %),
+ *   per image hash, so screen wakes don't re-download it. The count survives a restart; the waiting runs on the
+ *   elapsed-time clock (a changed wall clock neither stalls nor rushes it), so a new process may try once at once.
+ * - A download is written to a private temporary file and only renamed into place once its SHA-256 matches: a
+ *   process killed midway leaves no file that is ever used (old leftovers are pruned).
+ * - A cached file is checked against its hash once per process before it is first used: a corrupt or truncated one
+ *   is deleted and downloaded again.
+ * - An image that matches its hash but can't be decoded ([undecodable]) is remembered as [Obtained.Invalid]: no
+ *   retries, ever, for that hash.
+ * - The last image that was ready ([lastGood]) stays available while a new one is not, e.g. deleted on the server.
  */
 @Singleton
 class KioskBackgroundImageStore internal constructor(
@@ -32,17 +44,24 @@ class KioskBackgroundImageStore internal constructor(
     private val fetch: (url: String) -> InputStream?,
     private val bounds: (File) -> Pair<Int, Int>?,
     private val failures: FailureMemory,
-    private val now: () -> Long,
-    /** A number in [-1, 1] that spreads retries (jitter). */
-    private val jitter: () -> Double,
+    private val clocks: Clocks,
 ) {
+    /** Time and chance, injected for tests. */
+    class Clocks(
+        /** Monotonic milliseconds (SystemClock.elapsedRealtime): the backoff's clock. */
+        val elapsed: () -> Long,
+        /** Wall-clock milliseconds, only to age leftover downloads by their file time. */
+        val wallNow: () -> Long,
+        /** A number in [-1, 1] that spreads retries (jitter). */
+        val jitter: () -> Double,
+    )
+
     @Inject constructor(@ApplicationContext context: Context, @DownloadHttpClient http: OkHttpClient) : this(
         dir = { File(context.filesDir, DIR) },
         fetch = HttpsFetch(http)::open,
         bounds = ::bitmapBounds,
         failures = PrefsFailureMemory(context),
-        now = System::currentTimeMillis,
-        jitter = { Random.nextDouble(-1.0, 1.0) },
+        clocks = Clocks(SystemClock::elapsedRealtime, System::currentTimeMillis) { Random.nextDouble(-1.0, 1.0) },
     )
 
     /** What [obtain] found. */
@@ -50,61 +69,96 @@ class KioskBackgroundImageStore internal constructor(
         /** The verified image, in the cache. */
         data class Ready(val file: File) : Obtained
 
-        /** Not now; try again at [atMs] (wall clock). */
-        data class Retry(val atMs: Long) : Obtained
+        /** Not now; try again in [inMs]. */
+        data class Retry(val inMs: Long) : Obtained
 
-        /** The descriptor can never work (not HTTPS, no valid hash): don't retry. */
+        /** Can never work (not HTTPS, no valid hash, or the verified image doesn't decode): don't retry. */
         data object Invalid : Obtained
     }
 
+    /** When each hash may be downloaded again, on the [elapsed] clock. In memory only: see the class notes. */
+    private val notBefore = ConcurrentHashMap<String, Long>()
+
+    /** Cached files whose hash was checked in this process, by name, size and time. */
+    private val checked = ConcurrentHashMap<String, Pair<Long, Long>>()
+
     /** The image [image] names, from the cache or downloaded and verified. Off the main thread; never throws. */
-    suspend fun obtain(image: KioskBackgroundImageDto): Obtained = withContext(Dispatchers.IO) {
-        val request = validRequest(image) ?: return@withContext Obtained.Invalid
-        runCatching { obtainOrRetry(request) }.getOrElse {
-            if (it is CancellationException) throw it
-            failed(request.hash)
+    suspend fun obtain(image: KioskBackgroundImageDto): Obtained = guarded(image) { obtainOrRetry(it) }
+
+    /**
+     * The launcher could not decode [image]'s file. If the file still matches its hash, the image itself is bad:
+     * remembered as [Obtained.Invalid]. If not (corrupt, truncated, or gone), the copy is dropped and fetched again.
+     */
+    suspend fun undecodable(image: KioskBackgroundImageDto): Obtained = guarded(image) { request ->
+        val target = File(dir(), "${request.hash}.image")
+        checked.remove(target.name)
+        if (target.isFile && sha256(target) == request.hash) {
+            failures.markInvalid(request.hash)
+            Obtained.Invalid
+        } else {
+            target.delete()
+            Obtained.Retry(0)
         }
     }
+
+    /** The last image that was ready, while its file is still there; null otherwise. Off the main thread. */
+    suspend fun lastGood(): File? = withContext(Dispatchers.IO) {
+        runCatching {
+            failures.lastGood()?.let { File(dir(), "$it.image") }?.takeIf { it.isFile }
+        }.getOrNull()
+    }
+
+    private suspend fun guarded(image: KioskBackgroundImageDto, block: (BackgroundRequest) -> Obtained): Obtained =
+        withContext(Dispatchers.IO) {
+            val request = validRequest(image) ?: return@withContext Obtained.Invalid
+            runCatching { block(request) }.getOrElse {
+                if (it is CancellationException) throw it
+                failed(request.hash)
+            }
+        }
 
     private fun obtainOrRetry(request: BackgroundRequest): Obtained {
         val dir = dir()
         val target = File(dir, "${request.hash}.image")
-        val backoff = failures.get(request.hash)?.second?.takeIf { now() < it }
+        val wait = (notBefore[request.hash] ?: 0L) - clocks.elapsed()
         return when {
+            failures.isInvalid(request.hash) -> Obtained.Invalid
             !dir.isDirectory && !dir.mkdirs() -> failed(request.hash)
-            validImage(target) -> ready(dir, target)
-            backoff != null -> Obtained.Retry(backoff)
+            cachedAndIntact(target, request.hash) -> ready(dir, target, request.hash)
+            wait > 0 -> Obtained.Retry(wait)
             else -> {
                 target.delete()
-                download(request, target)?.let { ready(dir, it) } ?: failed(request.hash)
+                download(request, target)?.let { ready(dir, it, request.hash) } ?: failed(request.hash)
             }
         }
     }
 
-    private fun ready(dir: File, file: File): Obtained {
-        failures.clear()
+    /** [target] is there, a plausible image, and (once per process) matches [hash]; a corrupt copy is deleted. */
+    private fun cachedAndIntact(target: File, hash: String): Boolean {
+        if (!validImage(target)) return false
+        val stamp = target.length() to target.lastModified()
+        val intact = checked[target.name] == stamp || sha256(target) == hash
+        if (intact) checked[target.name] = stamp else target.delete()
+        return intact
+    }
+
+    private fun ready(dir: File, file: File, hash: String): Obtained {
+        notBefore.remove(hash)
+        failures.succeeded(hash)
+        checked[file.name] = file.length() to file.lastModified()
         // Only the current image is kept: an older one (up to 10 MB each) would stay in private storage forever.
-        pruneBackgroundCache(dir, keep = file, nowMs = now())
+        pruneBackgroundCache(dir, keep = file, nowMs = clocks.wallNow())
         return Obtained.Ready(file)
     }
 
     /** Remembers one more failure for [hash] and when to try it next. A different hash starts afresh. */
     private fun failed(hash: String): Obtained {
-        val count = (failures.get(hash)?.first ?: 0) + 1
+        val count = failures.failures(hash) + 1
         val base = min(FIRST_RETRY_MS * (1L shl min(count - 1, MAX_DOUBLINGS)), MAX_RETRY_MS)
-        val next = now() + (base * (1 + JITTER * jitter())).roundToLong()
-        failures.record(hash, count, next)
-        return Obtained.Retry(next)
-    }
-
-    private fun validRequest(image: KioskBackgroundImageDto): BackgroundRequest? {
-        val url = image.url.trim()
-        val hash = image.sha256.trim().lowercase()
-        return if (url.startsWith("https://", ignoreCase = true) && HASH.matches(hash)) {
-            BackgroundRequest(url, hash)
-        } else {
-            null
-        }
+        val wait = (base * (1 + JITTER * clocks.jitter())).roundToLong()
+        failures.failed(hash, count)
+        notBefore[hash] = clocks.elapsed() + wait
+        return Obtained.Retry(wait)
     }
 
     private fun download(request: BackgroundRequest, target: File): File? {
@@ -121,57 +175,48 @@ class KioskBackgroundImageStore internal constructor(
         }
     }
 
-    private fun copyAndDigest(input: InputStream, outputFile: File): String? = input.use { source ->
-        FileOutputStream(outputFile).use { output ->
-            val digest = MessageDigest.getInstance("SHA-256")
-            if (copyBounded(source, output, digest)) digest.digest().joinToString("") { "%02x".format(it) } else null
-        }
-    }
-
-    private fun copyBounded(input: InputStream, output: FileOutputStream, digest: MessageDigest): Boolean {
-        val buffer = ByteArray(BUFFER_BYTES)
-        var total = 0L
-        while (true) {
-            val read = input.read(buffer)
-            if (read < 0) break
-            total += read
-            if (total > MAX_BYTES) return false
-            digest.update(buffer, 0, read)
-            output.write(buffer, 0, read)
-        }
-        return true
-    }
-
     private fun validImage(file: File): Boolean {
         val size = if (file.isFile && file.length() in 1..MAX_BYTES) bounds(file) else null
         return size != null && size.first > 0 && size.second > 0 &&
             size.first.toLong() * size.second.toLong() <= MAX_PIXELS
     }
 
-    /** Failures per image hash: how many in a row and when to try again. Only the latest hash is kept. */
+    /**
+     * What survives a restart: the failures in a row for the latest failing hash, the hashes that never decode, and
+     * the last hash that was ready.
+     */
     interface FailureMemory {
-        fun get(hash: String): Pair<Int, Long>?
-        fun record(hash: String, count: Int, nextAttemptMs: Long)
-        fun clear()
+        fun failures(hash: String): Int
+        fun failed(hash: String, count: Int)
+        fun succeeded(hash: String)
+        fun isInvalid(hash: String): Boolean
+        fun markInvalid(hash: String)
+        fun lastGood(): String?
     }
 
     private class PrefsFailureMemory(context: Context) : FailureMemory {
         private val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-        override fun get(hash: String): Pair<Int, Long>? =
-            if (prefs.getString(KEY_HASH, null) == hash) {
-                prefs.getInt(KEY_COUNT, 0) to prefs.getLong(KEY_NEXT, 0L)
-            } else {
-                null
-            }
+        override fun failures(hash: String): Int =
+            if (prefs.getString(KEY_HASH, null) == hash) prefs.getInt(KEY_COUNT, 0) else 0
 
-        override fun record(hash: String, count: Int, nextAttemptMs: Long) {
-            prefs.edit().putString(KEY_HASH, hash).putInt(KEY_COUNT, count).putLong(KEY_NEXT, nextAttemptMs).apply()
+        override fun failed(hash: String, count: Int) {
+            prefs.edit().putString(KEY_HASH, hash).putInt(KEY_COUNT, count).apply()
         }
 
-        override fun clear() {
-            prefs.edit().clear().apply()
+        override fun succeeded(hash: String) {
+            prefs.edit().remove(KEY_HASH).remove(KEY_COUNT).putString(KEY_LAST_GOOD, hash).apply()
         }
+
+        override fun isInvalid(hash: String): Boolean = hash in prefs.getStringSet(KEY_INVALID, emptySet()).orEmpty()
+
+        override fun markInvalid(hash: String) {
+            // A few hashes at most: an admin replaces a broken image. Bounded all the same.
+            val kept = prefs.getStringSet(KEY_INVALID, emptySet()).orEmpty().take(MAX_INVALID - 1).toSet()
+            prefs.edit().putStringSet(KEY_INVALID, kept + hash).apply()
+        }
+
+        override fun lastGood(): String? = prefs.getString(KEY_LAST_GOOD, null)
     }
 
     /** HTTPS only: no switch to HTTP on a redirect. The response closes with the stream. */
@@ -196,7 +241,9 @@ class KioskBackgroundImageStore internal constructor(
         private const val PREFS = "mdm_kiosk_background"
         private const val KEY_HASH = "failed_hash"
         private const val KEY_COUNT = "failures"
-        private const val KEY_NEXT = "next_attempt_ms"
+        private const val KEY_INVALID = "invalid_hashes"
+        private const val KEY_LAST_GOOD = "last_good"
+        private const val MAX_INVALID = 8
         val HASH = Regex("[0-9a-f]{64}")
         const val BUFFER_BYTES = 64 * 1024
         const val MAX_BYTES = 10L * 1024 * 1024
@@ -205,6 +252,19 @@ class KioskBackgroundImageStore internal constructor(
         const val MAX_RETRY_MS = 6L * 60 * 60 * 1000
         const val MAX_DOUBLINGS = 20
         const val JITTER = 0.2
+
+        fun sha256(file: File): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val buffer = ByteArray(BUFFER_BYTES)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    digest.update(buffer, 0, read)
+                }
+            }
+            return digest.digest().joinToString("") { "%02x".format(it) }
+        }
 
         private fun bitmapBounds(file: File): Pair<Int, Int>? {
             val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -232,3 +292,34 @@ internal fun pruneBackgroundCache(dir: File, keep: File, nowMs: Long) {
 
 /** A download takes seconds; one this old was abandoned. */
 internal const val STALE_DOWNLOAD_MS = 60L * 60 * 1000
+
+private fun validRequest(image: KioskBackgroundImageDto): KioskBackgroundImageStore.Companion.BackgroundRequest? {
+    val url = image.url.trim()
+    val hash = image.sha256.trim().lowercase()
+    return if (url.startsWith("https://", ignoreCase = true) && KioskBackgroundImageStore.HASH.matches(hash)) {
+        KioskBackgroundImageStore.Companion.BackgroundRequest(url, hash)
+    } else {
+        null
+    }
+}
+
+private fun copyAndDigest(input: InputStream, outputFile: File): String? = input.use { source ->
+    FileOutputStream(outputFile).use { output ->
+        val digest = MessageDigest.getInstance("SHA-256")
+        if (copyBounded(source, output, digest)) digest.digest().joinToString("") { "%02x".format(it) } else null
+    }
+}
+
+private fun copyBounded(input: InputStream, output: FileOutputStream, digest: MessageDigest): Boolean {
+    val buffer = ByteArray(KioskBackgroundImageStore.BUFFER_BYTES)
+    var total = 0L
+    while (true) {
+        val read = input.read(buffer)
+        if (read < 0) break
+        total += read
+        if (total > KioskBackgroundImageStore.MAX_BYTES) return false
+        digest.update(buffer, 0, read)
+        output.write(buffer, 0, read)
+    }
+    return true
+}

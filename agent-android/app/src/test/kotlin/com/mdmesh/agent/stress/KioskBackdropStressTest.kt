@@ -5,7 +5,10 @@ import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.view.ViewGroup
+import com.mdmesh.agent.R
 import com.mdmesh.agent.ui.BackdropDrawable
+import com.mdmesh.agent.ui.KioskScrim
+import com.mdmesh.agent.ui.TextPlate
 import com.mdmesh.proto.KioskApplyPayload
 import com.mdmesh.proto.KioskBackgroundImageDto
 import com.mdmesh.proto.KioskThemeDto
@@ -88,18 +91,48 @@ class KioskBackdropStressTest : KioskHarness() {
         assertEquals(ActivityManager.LOCK_TASK_MODE_LOCKED, lockTaskState())
     }
 
-    @Test fun textOverTheImageSitsOnAPlate() {
+    @Test fun textOverTheImageHasHuggingPlatesSharedPerRow() {
         cache()
         launch(withImage(grid))
-        val texts = texts(activity.findViewById(android.R.id.content))
-        assertTrue("some text shown", texts.isNotEmpty())
-        assertTrue("every text has a plate", texts.all { it.background != null })
+        val plated = texts(activity.findViewById(android.R.id.content))
+        assertTrue("some text shown", plated.isNotEmpty())
+        assertTrue("every text off a fill of its own has a plate", plated.all { it.background is TextPlate })
+        // A black and white checkerboard: plates are solid where the scrim alone leaves a text under 4.5:1, none where
+        // it doesn't.
+        assertTrue(plated.all { (it.background as TextPlate).step.let { s -> s == 0 || s == KioskScrim.STEPS } })
+        val header = plated.first { it.text == s(R.string.kiosk_header) }
+        val rect = (header.background as TextPlate).plateRect(android.graphics.RectF())
+        assertTrue("the header plate hugs its text", rect.width() < header.width)
+        val labels = plated.filter { (it.background as TextPlate).inRow }
+        labels.groupBy { IntArray(2).also(it::getLocationInWindow)[1] }.values.forEach { row ->
+            val widths = row.map { (it.background as TextPlate).plateRect(android.graphics.RectF()).width() }.toSet()
+            assertEquals("one width per row", 1, widths.size)
+        }
     }
 
+    @Test fun aNewUrlForTheSameImageChangesNothing() {
+        cache()
+        launch(withImage(single))
+        val before = backdrop()!!.bitmap
+        drainStarts()
+        val moved = withImage(single).let { k ->
+            k.copy(theme = k.theme.copy(backgroundImage = image.copy(url = "https://elsewhere.example/kiosk.png")))
+        }
+        saveKiosk(moved)
+        settle()
+        assertEquals("no re-pin, no relaunch", 0, pinnedStarts())
+        assertTrue("the same bitmap, no flash of the colour", backdrop()!!.bitmap === before)
+    }
+
+    /** TextViews not inside a filled container or a button (those carry their own fill). */
     private fun texts(v: android.view.View): List<android.widget.TextView> = when (v) {
-        is android.widget.Button -> emptyList() // buttons carry their own fill
+        is android.widget.Button -> emptyList()
         is android.widget.TextView -> listOf(v)
-        is ViewGroup -> (0 until v.childCount).flatMap { texts(v.getChildAt(it)) }
+        is ViewGroup -> if (v.background is android.graphics.drawable.GradientDrawable) {
+            emptyList()
+        } else {
+            (0 until v.childCount).flatMap { texts(v.getChildAt(it)) }
+        }
         else -> emptyList()
     }
 

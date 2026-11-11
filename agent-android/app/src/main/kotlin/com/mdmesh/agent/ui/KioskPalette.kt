@@ -60,6 +60,33 @@ data class KioskPalette(
             )
         }
 
+        /**
+         * A kiosk colour from the configuration, read as `docs/kiosk-background-scrim.md` (Parsing) says, the same
+         * as the console: `#RRGGBB`, `#AARRGGBB` (the alpha is dropped: the launcher draws opaque colours) or one of
+         * Android's colour names, any case, exactly as written. Anything else (`#RGB`, no `#`, spaces, `#+FFFFF`,
+         * CSS forms) is null: the default colour. Never Color.parseColor on these untrusted strings; the names are
+         * its table, fixed here so every Android version reads them alike.
+         */
+        fun parse(value: String?): Int? = when {
+            value == null -> null
+            HEX_COLOUR.matches(value) -> OPAQUE or (value.takeLast(RGB_DIGITS).toLong(HEX_RADIX).toInt() and RGB)
+            else -> NAMED[value.lowercase(java.util.Locale.ROOT)]?.let { OPAQUE or it }
+        }
+
+        private val HEX_COLOUR = Regex("#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})")
+
+        /** Color.parseColor's names. */
+        private val NAMED: Map<String, Int> = mapOf(
+            "black" to 0x000000, "darkgray" to 0x444444, "gray" to 0x888888, "lightgray" to 0xCCCCCC,
+            "white" to 0xFFFFFF, "red" to 0xFF0000, "green" to 0x00FF00, "blue" to 0x0000FF, "yellow" to 0xFFFF00,
+            "cyan" to 0x00FFFF, "magenta" to 0xFF00FF, "aqua" to 0x00FFFF, "fuchsia" to 0xFF00FF,
+            "darkgrey" to 0x444444, "grey" to 0x888888, "lightgrey" to 0xCCCCCC, "lime" to 0x00FF00,
+            "maroon" to 0x800000, "navy" to 0x000080, "olive" to 0x808000, "purple" to 0x800080,
+            "silver" to 0xC0C0C0, "teal" to 0x008080,
+        )
+        private const val RGB_DIGITS = 6
+        private const val HEX_RADIX = 16
+
         /** The v2 text colour that reads best on [bg], or black or white when neither reaches 4.5:1. */
         fun mostReadableOn(bg: Int): Int {
             val v2 = listOf(DEFAULT_TEXT, LIGHT_TEXT).maxBy { Contrast.ratio(it, bg) }

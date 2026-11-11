@@ -62,19 +62,27 @@ class BackdropDrawable(
 
 /**
  * Paints the kiosk launcher's [root] for [screen]: the kiosk colour, or the image under the adaptive scrim
- * ([KioskScrim]) that keeps the screen's colours at 4.5:1 over it. As the root's background it runs under the
- * system bars (padding doesn't apply to a background) and stays through rebuilds. The bar icons follow what lies
- * under them; before Android 15 the bars take the kiosk colour.
+ * ([KioskScrim]). As the root's background it runs under the system bars (padding doesn't apply to a background)
+ * and stays through rebuilds. The bar icons follow what lies under them; before Android 15 the bars take the kiosk
+ * colour. Returns the scrim step, or null when no image is drawn (none, the idle screen, or [info] made for another
+ * background colour: a new decode for this one is on its way).
  */
-internal fun Activity.paintKioskBackground(root: View, screen: KioskScreen, bitmap: Bitmap?, stats: BackdropStats?) {
+internal fun Activity.paintKioskBackground(
+    root: View,
+    screen: KioskScreen,
+    bitmap: Bitmap?,
+    info: BackdropInfo?,
+): Int? {
     val palette = screen.palette
     colorSystemBars(palette.background)
-    if (bitmap == null || stats == null || screen == KioskScreen.Idle) {
+    val usable = info?.takeIf { screen != KioskScreen.Idle && it.background == palette.background }
+    if (bitmap == null || usable == null) {
         root.background = ColorDrawable(palette.background)
         updateSystemBarIcons(palette.background)
-    } else {
-        val alpha = KioskScrim.alpha(palette, stats)
-        root.background = BackdropDrawable(palette.background, bitmap, alpha)
-        updateSystemBarIcons(KioskScrim.scrimmed(palette, stats.top, alpha))
+        return null
     }
+    val step = KioskScrim.step(palette, usable.samples)
+    root.background = BackdropDrawable(palette.background, bitmap, KioskScrim.alpha(step))
+    updateSystemBarIcons(KioskScrim.blend(palette.background, usable.top, step))
+    return step
 }

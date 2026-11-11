@@ -34,8 +34,8 @@ import kotlin.math.roundToInt
  */
 /**
  * Builds the kiosk launcher's views in [palette]. [onImage]: the screen lies over the background image, so every
- * text sits on a small plate of the kiosk colour. The scrim keeps the image calm enough for the icons and buttons;
- * a plate keeps text crisp however busy the image is under a long, wrapped label.
+ * text that isn't on a fill of its own gets a [TextPlate] (drawn only where the scrim alone leaves it under 4.5:1).
+ * A plated text's padding sits in negative margins ([plated]), so the text itself stays where it is without one.
  */
 class KioskViews(private val context: Context, val palette: KioskPalette, private val onImage: Boolean = false) {
 
@@ -46,15 +46,29 @@ class KioskViews(private val context: Context, val palette: KioskPalette, privat
     /** Screen side margin: 16dp on phones, 24dp from 600dp wide. */
     val gutter: Int get() = context.resources.getDimensionPixelSize(R.dimen.mdm_gutter)
 
-    fun text(s: CharSequence, sizeSp: Float, color: Int, medium: Boolean = false): TextView =
+    /** Whether a text over the image gets a [TextPlate]. */
+    enum class Plate {
+        /** It sits on a fill of its own (a callout). */
+        NONE,
+
+        /** Its own plate. */
+        OWN,
+
+        /** An app label: a plate as wide as its grid row's widest. */
+        ROW,
+    }
+
+    /** A text; over the image ([onImage]) with a [plate]. */
+    fun text(s: CharSequence, sizeSp: Float, color: Int, medium: Boolean = false, plate: Plate = Plate.OWN): TextView =
         TextView(context).apply {
             text = s
             setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
             setTextColor(color)
             if (medium) typeface = Typeface.create(MEDIUM, Typeface.NORMAL)
-            if (onImage) {
-                background = rounded(dp(PLATE_RADIUS_DP), palette.background)
-                setPadding(dp(PLATE_PAD_DP), 0, dp(PLATE_PAD_DP), 0)
+            if (onImage && plate != Plate.NONE) {
+                val padH = dp(PLATE_PAD_H_DP)
+                background = TextPlate(this, palette.background, TextPlates.radius(density), padH, plate == Plate.ROW)
+                setPadding(padH, dp(PLATE_PAD_V_DP), padH, dp(PLATE_PAD_V_DP))
             }
         }
 
@@ -110,13 +124,15 @@ class KioskViews(private val context: Context, val palette: KioskPalette, privat
             },
         )
         addView(
-            text("", LABEL_SP, palette.text).apply {
+            text("", LABEL_SP, palette.text, plate = Plate.ROW).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
                 maxLines = labelLines(context.resources.configuration.fontScale)
                 ellipsize = TextUtils.TruncateAt.END
                 // The cell is announced once, by its content description.
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-                layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(LABEL_GAP_DP) }
+                layoutParams = plated(
+                    LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(LABEL_GAP_DP) },
+                )
             },
         )
     }
@@ -142,7 +158,7 @@ class KioskViews(private val context: Context, val palette: KioskPalette, privat
         val info = icon(R.drawable.ic_v2_info, CALLOUT_ICON_DP, palette.secondary).apply {
             (layoutParams as LinearLayout.LayoutParams).marginEnd = dp(CALLOUT_ICON_GAP_DP)
         }
-        val body = text(message, BODY_SP, palette.secondary).apply {
+        val body = text(message, BODY_SP, palette.secondary, plate = Plate.NONE).apply {
             layoutParams = LinearLayout.LayoutParams(0, WRAP, 1f)
         }
         addView(info)
@@ -202,8 +218,8 @@ class KioskViews(private val context: Context, val palette: KioskPalette, privat
         const val TITLE_SP = 20f
         const val BODY_SP = 14f
         const val LABEL_SP = 14f
-        private const val PLATE_RADIUS_DP = 6
-        private const val PLATE_PAD_DP = 4
+        const val PLATE_PAD_H_DP = 8
+        const val PLATE_PAD_V_DP = 4
         private const val LABEL_LINES = 2
         private const val LABEL_LINES_LARGE = 3
         private const val FOCUS_RING_DP = 2
@@ -252,14 +268,34 @@ fun KioskViews.outlinedButton(label: String): Button = button(
 fun KioskViews.centredLine(s: String, sizeSp: Float, color: Int, topDp: Int, medium: Boolean = false): TextView =
     text(s, sizeSp, color, medium).apply {
         gravity = Gravity.CENTER_HORIZONTAL
-        layoutParams = LinearLayout.LayoutParams(KioskViews.MATCH, KioskViews.WRAP).apply { topMargin = dp(topDp) }
+        layoutParams = plated(
+            LinearLayout.LayoutParams(KioskViews.MATCH, KioskViews.WRAP).apply { topMargin = dp(topDp) },
+        )
     }
 
 /** Gives [view] the screen's side margins in a vertical LinearLayout, [topPx] below the view before it. */
 fun <T : View> KioskViews.inGutter(view: T, topPx: Int): T = view.apply {
-    layoutParams = LinearLayout.LayoutParams(KioskViews.MATCH, KioskViews.WRAP).apply {
-        marginStart = gutter
-        marginEnd = gutter
-        topMargin = topPx
+    // Symmetric, so plain left and right margins (a plated text's are narrowed by its plate's padding).
+    layoutParams = plated(
+        LinearLayout.LayoutParams(KioskViews.MATCH, KioskViews.WRAP).apply {
+            leftMargin = gutter
+            rightMargin = gutter
+            topMargin = topPx
+        },
+    )
+}
+
+/**
+ * [lp] for this view: a plated text's plate padding taken back out of its margins, so the text sits where it would
+ * without a plate.
+ */
+fun <T : ViewGroup.MarginLayoutParams> View.plated(lp: T): T = lp.apply {
+    if (background is TextPlate) {
+        val h = (KioskViews.PLATE_PAD_H_DP * resources.displayMetrics.density).roundToInt()
+        val v = (KioskViews.PLATE_PAD_V_DP * resources.displayMetrics.density).roundToInt()
+        leftMargin -= h
+        rightMargin -= h
+        topMargin -= v
+        bottomMargin -= v
     }
 }

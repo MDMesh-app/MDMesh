@@ -32,7 +32,10 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
     }
     private var screen: KioskScreen? = null
     private var backdropBitmap: Bitmap? = null
-    private var backdropStats: BackdropStats? = null
+    private var backdropInfo: BackdropInfo? = null
+
+    /** The scrim step painted now; null: no image under this screen. */
+    private var scrimStep: Int? = null
     private var grid: GridViews? = null
 
     private class GridViews(val views: KioskViews, val cells: AppGridLayout, val empty: View)
@@ -41,6 +44,8 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
         activity.setContentView(root)
         // Android 15 draws edge to edge: the kiosk background runs under the bars, the content stays clear of them.
         SystemBars.fit(activity, root, KioskPalette.DEFAULT.background)
+        // Plates follow the text: widths and opacities are worked out again after every layout.
+        root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updatePlates() }
     }
 
     fun render(next: KioskScreen) {
@@ -60,37 +65,43 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
     }
 
     /**
-     * The kiosk's background image (null: none) and its [BackdropStats]: painted behind every screen from now on,
-     * the current one included, without rebuilding it.
+     * The kiosk's background image (null: none) and its [BackdropInfo]: painted behind every screen from now on,
+     * the current one included. Text gets plates when an image comes or goes (a rebuild); otherwise the backdrop and
+     * the plates' opacities are only worked out again.
      */
-    fun setBackdrop(bitmap: Bitmap?, stats: BackdropStats?) {
+    fun setBackdrop(bitmap: Bitmap?, info: BackdropInfo?) {
         val platesChange = (bitmap != null) != (backdropBitmap != null)
         backdropBitmap = bitmap
-        backdropStats = stats
+        backdropInfo = info
         val s = screen ?: return
-        // Text over an image sits on plates: drawn again when an image comes or goes, only repainted otherwise.
-        if (platesChange) build(s) else activity.paintKioskBackground(root, s, bitmap, stats)
+        if (platesChange) {
+            build(s)
+        } else {
+            scrimStep = activity.paintKioskBackground(root, s, bitmap, info)
+            updatePlates()
+        }
+    }
+
+    private fun updatePlates() {
+        val s = screen ?: return
+        val step = scrimStep
+        TextPlates.update(root, backdropInfo.takeIf { step != null }, s.palette.background, step ?: 0)
     }
 
     private fun build(s: KioskScreen) {
-        activity.paintKioskBackground(root, s, backdropBitmap, backdropStats)
+        scrimStep = activity.paintKioskBackground(root, s, backdropBitmap, backdropInfo)
         root.removeAllViews()
         grid = null
         val v = KioskViews(activity, s.palette, onImage = backdropBitmap != null && s != KioskScreen.Idle)
         when (s) {
             KioskScreen.Idle -> root.addView(idle(v))
-            is KioskScreen.Splash -> root.addView(splash(v, s))
+            is KioskScreen.Splash -> root.addView(v.splash(activity, s))
             is KioskScreen.Grid -> root.addView(grid(v, s))
             is KioskScreen.Hold -> root.addView(hold(v))
         }
         addExit(v, s.exit)
         // TalkBack announces the pane title when the screen changes (grid to "App closed", splash to grid).
         ViewCompat.setAccessibilityPaneTitle(root, s.paneTitle(activity))
-    }
-
-    private fun splash(v: KioskViews, s: KioskScreen.Splash): View = v.centredColumn().apply {
-        addView(v.spinner())
-        addView(v.centredLine(s.message(activity), SPLASH_SP, v.palette.text, topDp = SPACE_16))
     }
 
     private fun grid(v: KioskViews, s: KioskScreen.Grid): View {
@@ -227,7 +238,6 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
         const val HOLD_ICON_DP = 32
         const val TITLE_SP = KioskViews.TITLE_SP
         const val BODY_SP = KioskViews.BODY_SP
-        const val SPLASH_SP = 16f
         const val WORDMARK_SP = 24f
     }
 }
@@ -266,9 +276,11 @@ private class GridColumn(context: Context) : LinearLayout(context) {
             for (i in 0 until childCount) {
                 val child = getChildAt(i)
                 if (child === g) continue
+                // A plated header starts its plate's padding earlier, so its text still lines up with the icon.
+                val inset = (child.background as? TextPlate)?.let { child.paddingLeft } ?: 0
                 (child.layoutParams as MarginLayoutParams).apply {
-                    marginStart = start
-                    marginEnd = start
+                    marginStart = start - inset
+                    marginEnd = start - inset
                 }
             }
         }
@@ -279,3 +291,12 @@ private class GridColumn(context: Context) : LinearLayout(context) {
 /** [next] is [previous] with other apps: update the cells, keep the rest. */
 private fun sameGrid(previous: KioskScreen?, next: KioskScreen.Grid): Boolean =
     previous is KioskScreen.Grid && previous.copy(apps = null) == next.copy(apps = null)
+
+/** The splash: a spinner and what is opening. */
+private fun KioskViews.splash(activity: ComponentActivity, s: KioskScreen.Splash): View = centredColumn().apply {
+    addView(spinner())
+    addView(centredLine(s.message(activity), SPLASH_TEXT_SP, palette.text, topDp = SPLASH_GAP_DP))
+}
+
+private const val SPLASH_TEXT_SP = 16f
+private const val SPLASH_GAP_DP = 16

@@ -73,8 +73,10 @@ finishes the entry even if the screen goes away (a rotation); once in kiosk it q
 | Connectivity | `connectivityMode` (live-connection mode, 1.5) |
 | App permissions | `managedAppPermissions` (per installed app: Grant or Deny a runtime permission, 1.7) |
 
-**Kiosk colours on the device** (agent 0.5.0+, `KioskPalette`). `backgroundColor` is drawn solid: any transparency
-in it is dropped. `textColor` is used when it has at least 4.5:1 contrast with the background (WCAG AA for text; the
+**Kiosk colours on the device** (agent 0.5.0+, `KioskPalette`). A colour is `#RRGGBB`, `#AARRGGBB` or one of
+Android's colour names (any case, nothing around it), read the same way in the console's preview and on the device
+([kiosk-background-scrim.md](kiosk-background-scrim.md), Parsing); anything else means the default colour. `backgroundColor` is drawn solid:
+any transparency in it is dropped. `textColor` is used when it has at least 4.5:1 contrast with the background (WCAG AA for text; the
 launcher has no text large enough for the 3:1 large-text level); below that the launcher uses whichever of the v2
 text colours (or black or white) reads best, for all of its text and buttons. Secondary text is the text colour at
 80% over the background, kept at 4.5:1 or more; focused apps and buttons get a 2dp ring in the text colour. Older
@@ -123,14 +125,25 @@ and stores the file's URL in `backgroundImageUrl` and its SHA-256 in `background
 are never used. `kiosk.theme.backgroundImage` is `{url, sha256}`, sent only when all three are set. Agent 0.5.0
 downloads it over HTTPS only (no redirect to HTTP), up to 10 MB, checks the SHA-256 and the 16-megapixel bound before
 caching it in private storage (only the current image is kept), and draws it behind the launcher grid, the splash
-and the hold screen (not the idle screen), edge to edge under the system bars. It is decoded once, off the main
-thread, at the window's size (EXIF orientation applied, decoded again after a rotation), under an adaptive scrim of
-the background color: the lightest scrim at which the text, secondary text and Exit button keep 4.5:1 over the
-image's darkest and lightest parts. Text also sits on a small plate of the background color. On any failure it keeps
-the background color and retries with backoff (30 s doubling to 6 h, with jitter; a new image starts over), and
-looks again every time the launcher comes to the foreground; an arriving image never reopens the pinned app or
-lifts a crash-loop hold. The download is queued (WorkManager, on the network) as soon as a kiosk with an image is entered,
-so a single-app kiosk has it before its launcher next shows; the old image stays until the new one is verified. With an `http://` server address devices keep the color. Older agents ignore the key (their
+and the hold screen (not the idle screen), edge to edge under the system bars. An image is known by its SHA-256
+alone: a new URL for the same file (a server that moved) causes no re-download and no re-entry into the kiosk.
+
+- Decoding: BitmapFactory only (JPEG, PNG, WebP lossy, lossless and with transparency, on Android 7 and up), never
+  a hardware bitmap, off the main thread, once per image, window size and background color (again after a
+  rotation), upright by the JPEG's EXIF orientation, cropped to what the window shows. At most 2560 px on the long
+  edge, 1280 px and 2 bytes a pixel on a low-RAM device or one with a heap class of 128 MB or less; on running out of
+  memory, once more at half size, then the launcher keeps what it shows.
+- Readability: the dim and the text plates of [kiosk-background-scrim.md](kiosk-background-scrim.md), shared with
+  the console's preview and its test vectors.
+- Failures keep the last good image, else the background color. A download retries with backoff on the elapsed-time
+  clock (30 s doubling to 6 h, with jitter; a new image starts over, a restart may try once at once), and the
+  launcher looks again every time it comes to the foreground. A download is only used once its SHA-256 matches; a
+  cached copy is checked again once per process (a corrupt one is fetched again); an image that matches its hash but
+  doesn't decode is never fetched again. An arriving image never reopens the pinned app or lifts a crash-loop hold.
+- The download is queued (WorkManager, on the network) as soon as a kiosk with an image is entered, so a single-app
+  kiosk has it before its launcher next shows; the old image stays until the new one is verified.
+
+With an `http://` server address devices keep the color. Older agents ignore the key (their
 kiosk is re-applied once when the image changes the revision). `backgroundImageUrl` is also the Headwind launcher's
 wallpaper: a save that sends another URL there stores it as that wallpaper and drops the managed image.
 

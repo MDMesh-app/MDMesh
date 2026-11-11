@@ -194,3 +194,4 @@ class AtfLargestFont35Test : AtfScreensTest(fontScale = 2f)
 
 @Config(sdk = [26], qualifiers = "w360dp-h640dp-port-notnight-xhdpi")
 class AtfLight26Test : AtfScreensTest()
+

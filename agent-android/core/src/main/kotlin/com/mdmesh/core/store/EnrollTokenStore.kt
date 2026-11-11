@@ -31,8 +31,11 @@ interface EnrollTokenProvider {
      */
     suspend fun enrollAttempt(token: String): String? = null
 
-    /** Forget the enrollment attempt once its credentials are stored: it can resume nothing any more. */
+    /** Forget the enrollment attempt once the device has checked in: it can resume nothing any more. */
     suspend fun clearEnrollAttempt() {}
+
+    /** The attempt id still held for [token], without making one; null when there is none. */
+    suspend fun heldAttempt(token: String): String? = null
 }
 
 private val Context.enrollTokenDataStore: DataStore<Preferences> by preferencesDataStore(
@@ -67,6 +70,12 @@ class EnrollTokenStore(private val context: Context) : EnrollTokenProvider {
             attempt = id
         }
         return attempt
+    }
+
+    override suspend fun heldAttempt(token: String): String? {
+        val prefs = context.enrollTokenDataStore.data.first()
+        val attempt = prefs[KEY_ATTEMPT]
+        return attempt?.takeIf { it.isNotBlank() && prefs[KEY_ATTEMPT_FOR] == EnrollAttempts.bindingOf(token) }
     }
 
     override suspend fun clearEnrollAttempt() {

@@ -41,37 +41,94 @@ class EnrollmentManager @Inject constructor(
 
     private val mutex = Mutex()
 
-    /** Returns the server-issued device id, enrolling first if necessary. */
+    /** Recoveries this process made (see [credentialsRejectedBeforeFirstCheckIn]); bounded so it can't loop. */
+    @Volatile private var recoveries = 0
+
+    /** The held attempt id was forgotten after the first successful check-in (this process). */
+    @Volatile private var attemptForgotten = false
+
+    /**
+     * Returns the server-issued device id, enrolling first if necessary. Until the first check-in succeeds it keeps the
+     * enrollment's attempt id: if the server rejects the saved credentials meanwhile, it enrolls again with that same
+     * attempt, which returns the same device and the credential the server holds, instead of retrying a dead secret.
+     */
     suspend fun ensureEnrolled(): String {
-        identity.current()?.takeIf { it.isNotBlank() }?.let { return it }
+        identity.current()?.takeIf { it.isNotBlank() }?.let { id ->
+            if (!credentialsRejectedBeforeFirstCheckIn()) {
+                forgetAttemptOnceCheckedIn()
+                return id
+            }
+        }
         return mutex.withLock {
-            // Re-check inside the lock: a racing caller may have enrolled while we waited.
-            identity.current()?.takeIf { it.isNotBlank() } ?: enroll()
+            // Re-check inside the lock: a racing caller may have enrolled (or recovered) while we waited.
+            val id = identity.current()?.takeIf { it.isNotBlank() }
+            when {
+                // The enrollment boundary: every failure leaves as a worded EnrollmentException (asEnrollmentFailure).
+                id == null -> runCatching { enrollOnce() }.getOrElse { throw asEnrollmentFailure(it) }
+                credentialsRejectedBeforeFirstCheckIn() -> recover(id)
+                else -> id
+            }
         }
     }
 
-    /**
-     * The enrollment boundary: every failure leaves here as an [EnrollmentException] whose message is for the person
-     * holding the device (the agent's screen shows it while it isn't enrolled) and which the callers log and retry; an
-     * unexpected one reads "Enrollment didn't go through. Trying again automatically." (its type and message stay
-     * in the exception's cause, for the log). Cancellation and VM errors pass through unchanged.
-     */
-    private suspend fun enroll(): String = runCatching { enrollOnce() }.getOrElse { throw asEnrollmentFailure(it) }
+    /** The last check-in was refused as unauthorized, and none has ever succeeded: the server holds another secret. */
+    private fun credentialsRejectedBeforeFirstCheckIn(): Boolean {
+        val status = environment.syncStatus
+        return recoveries < MAX_RECOVERIES && status.lastSuccessAtMs == null &&
+            status.lastError.value?.message?.contains(UNAUTHORIZED) == true
+    }
 
+    /**
+     * Enrolls again with the held attempt (same token, same id): the server answers with this attempt's device and its
+     * credential (derived from the attempt, so it is the one it stores). Without a held attempt, or when that fails,
+     * the device keeps what it has and the next cycle tries again, at most [MAX_RECOVERIES] times per process.
+     */
+    private suspend fun recover(current: String): String {
+        recoveries++
+        val token = tokenProvider.token()?.takeIf { it.isNotBlank() }
+        val attempt = token?.let { tokenProvider.heldAttempt(it) }
+        val data = if (token == null || attempt == null) {
+            null
+        } else {
+            runCatching { post(token, attempt) }.getOrElse { if (it is CancellationException) throw it else null }
+        }
+        if (data == null) return current
+        persist(data)
+        return data.deviceId
+    }
+
+    /** After the first successful check-in the attempt can recover nothing: drop it. */
+    private suspend fun forgetAttemptOnceCheckedIn() {
+        if (attemptForgotten || environment.syncStatus.lastSuccessAtMs == null) return
+        runCatching { tokenProvider.clearEnrollAttempt() }.onSuccess { attemptForgotten = true }
+    }
+
+
+    /**
+     * One enrollment. Its caller ([ensureEnrolled]) is the enrollment boundary: every failure leaves there as an
+     * [EnrollmentException] whose message is for the person holding the device (the agent's screen shows it while it
+     * isn't enrolled) and which the callers log and retry; an unexpected one reads "Enrollment didn't go through.
+     * Trying again automatically." (its type and message stay in the exception's cause, for the log). Cancellation and
+     * VM errors pass through unchanged.
+     */
     private suspend fun enrollOnce(): String {
         val token = tokenProvider.token()?.takeIf { it.isNotBlank() }
             ?: throw EnrollmentException(EnrollmentFailure.NO_CODE)
         val data = post(token, storedAttempt(token))
-        // The POST above already burned the single-use token server-side, so persistence must
-        // survive cancellation (e.g. WorkManager REPLACE/stop) or the credentials are lost forever.
-        withContext(NonCancellable) {
-            // Persist id + per-device secret together; the secret authenticates every check-in.
-            identity.saveCredentials(data.deviceId, data.deviceSecret)
-            // The attempt can resume nothing now (the server closes it at the first check-in): don't keep it.
-            runCatching { tokenProvider.clearEnrollAttempt() }
-            runCatching { eventSink.record(EventType.ENROLLED) }
-        }
+        persist(data)
+        runCatching { eventSink.record(EventType.ENROLLED) }
         return data.deviceId
+    }
+
+    /**
+     * The POST already used the token server-side, so persistence must survive cancellation (e.g. WorkManager
+     * REPLACE/stop) or the credentials are lost. Id and secret are saved together; the attempt id is kept until the
+     * first successful check-in (see [ensureEnrolled]).
+     */
+    private suspend fun persist(data: AgentEnrollResponse) {
+        withContext(NonCancellable) {
+            identity.saveCredentials(data.deviceId, data.deviceSecret)
+        }
     }
 
     /**
@@ -124,15 +181,20 @@ class EnrollmentManager @Inject constructor(
 }
 
 /**
- * What enrollment reads about this device and its server besides the token: the stable hardware id it reports and the
- * server address its messages name. Grouped so tests that don't care can leave both out.
+ * What enrollment reads about this device and its server besides the token: the stable hardware id it reports, the
+ * server address its messages name, and the sync status (whether a check-in has succeeded or was refused as
+ * unauthorized). Grouped so tests that don't care can leave them out.
  */
 class EnrollmentEnvironment @Inject constructor(
     val hardwareIdSource: HardwareIdSource,
     val serverAddress: ServerAddress,
+    val syncStatus: SyncStatus,
 ) {
-    /** Tests: no hardware id, no address. */
-    constructor() : this(HardwareIdSource { null }, ServerAddress { "" })
+    /** Tests: no hardware id; the address and the sync status only when a test needs them. */
+    constructor(
+        serverAddress: ServerAddress = ServerAddress { "" },
+        syncStatus: SyncStatus = SyncStatus(),
+    ) : this(HardwareIdSource { null }, serverAddress, syncStatus)
 }
 
 /**
@@ -140,3 +202,9 @@ class EnrollmentEnvironment @Inject constructor(
  * refusal ends with its key, which [CheckInWorker] uses to stop retrying a code that can never work.
  */
 class EnrollmentException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+/** The check-in refusal for credentials the server doesn't accept (AgentResource). */
+private const val UNAUTHORIZED = "error.agent.unauthorized"
+
+/** Recoveries per process: a device whose credentials keep being refused stops re-enrolling and keeps retrying. */
+private const val MAX_RECOVERIES = 3

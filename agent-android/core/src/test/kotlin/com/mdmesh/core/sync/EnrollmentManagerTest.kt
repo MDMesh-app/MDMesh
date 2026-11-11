@@ -34,19 +34,76 @@ class EnrollmentManagerTest {
     }
 
     @Test
-    fun `the attempt id is cleared once the credentials are stored, not before`() = runTest {
+    fun `the attempt id is kept until a check-in succeeds, then forgotten`() = runTest {
         val identity = FakeIdentity()
         val tokens = FakeTokenProvider("tok-123", attempt = "attempt-0123456789abcdef")
-        val api = FakeMdmApi().apply { enrollThrows = java.net.SocketTimeoutException("timeout") }
-        val manager = manager(identity, api, tokens = tokens)
+        val status = SyncStatus()
+        val manager = EnrollmentManager(api = FakeMdmApi(), identity = identity, tokenProvider = tokens,
+            capabilitySource = FakeCapabilitySource(), eventSink = NoopEventSink,
+            environment = EnrollmentEnvironment(syncStatus = status))
 
-        runCatching { manager.ensureEnrolled() }
-        assertEquals("kept while the enrollment can still be retried", 0, tokens.attemptCleared)
-
-        api.enrollThrows = null
         manager.ensureEnrolled()
-        assertEquals("sek-1", identity.secret())
+        assertEquals("kept: the credentials may still be rejected", 0, tokens.attemptCleared)
+
+        status.recordSuccess()
+        manager.ensureEnrolled()
         assertEquals(1, tokens.attemptCleared)
+    }
+
+    @Test
+    fun `credentials rejected before the first check-in are recovered with the same attempt`() = runTest {
+        val identity = FakeIdentity()
+        val tokens = FakeTokenProvider("tok-123", attempt = "attempt-0123456789abcdef")
+        val status = SyncStatus()
+        val api = FakeMdmApi()
+        val manager = EnrollmentManager(api = api, identity = identity, tokenProvider = tokens,
+            capabilitySource = FakeCapabilitySource(), eventSink = NoopEventSink,
+            environment = EnrollmentEnvironment(syncStatus = status))
+        manager.ensureEnrolled()
+
+        // The server no longer accepts the saved secret (it was replaced), and the device has never checked in.
+        status.recordFailure(CheckInException("error.agent.unauthorized"))
+        api.enrollResponse = com.mdmesh.core.net.ResponseEnvelope(
+            status = "OK", data = com.mdmesh.proto.AgentEnrollResponse(deviceId = "srv-1", deviceSecret = "sek-2"),
+        )
+        assertEquals("srv-1", manager.ensureEnrolled())
+
+        assertEquals("enrolled again", 2, api.enrollRequests.size)
+        assertEquals("with the same attempt", api.enrollRequests[0].enrollAttempt, api.enrollRequests[1].enrollAttempt)
+        assertEquals("sek-2", identity.secret())
+    }
+
+    @Test
+    fun `no recovery once the device has checked in`() = runTest {
+        val tokens = FakeTokenProvider("tok-123", attempt = "attempt-0123456789abcdef")
+        val status = SyncStatus()
+        val api = FakeMdmApi()
+        val manager = EnrollmentManager(api = api, identity = FakeIdentity(), tokenProvider = tokens,
+            capabilitySource = FakeCapabilitySource(), eventSink = NoopEventSink,
+            environment = EnrollmentEnvironment(syncStatus = status))
+        manager.ensureEnrolled()
+        status.recordSuccess()
+        status.recordFailure(CheckInException("error.agent.unauthorized"))
+
+        manager.ensureEnrolled()
+
+        assertEquals(1, api.enrollRequests.size)
+    }
+
+    @Test
+    fun `recovery is bounded, so a device can't loop on enroll`() = runTest {
+        val tokens = FakeTokenProvider("tok-123", attempt = "attempt-0123456789abcdef")
+        val status = SyncStatus()
+        val api = FakeMdmApi()
+        val manager = EnrollmentManager(api = api, identity = FakeIdentity(), tokenProvider = tokens,
+            capabilitySource = FakeCapabilitySource(), eventSink = NoopEventSink,
+            environment = EnrollmentEnvironment(syncStatus = status))
+        manager.ensureEnrolled()
+        repeat(10) {
+            status.recordFailure(CheckInException("error.agent.unauthorized"))
+            manager.ensureEnrolled()
+        }
+        assertEquals("the first enroll and at most 3 recoveries", 4, api.enrollRequests.size)
     }
 
     @Test
@@ -207,10 +264,7 @@ class EnrollmentManagerTest {
         val api = FakeMdmApi().apply { enrollThrows = java.net.UnknownHostException("mdm.acme.test") }
         val manager = EnrollmentManager(
             api, FakeIdentity(), FakeTokenProvider("tok-123"), FakeCapabilitySource(), NoopEventSink,
-            environment = EnrollmentEnvironment(
-                HardwareIdSource { null },
-                com.mdmesh.core.config.ServerAddress { "https://mdm.acme.test" },
-            ),
+            environment = EnrollmentEnvironment(serverAddress = { "https://mdm.acme.test" }),
         )
         try {
             manager.ensureEnrolled()

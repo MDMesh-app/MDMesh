@@ -90,6 +90,20 @@ restore_db() {
   fi
 }
 
+# Make a prepared console directory servable. The host Nginx workers usually run as an unprivileged user, so every
+# directory must be traversable and every file readable by others. This script runs under umask 077 (its backups stay
+# private), which makes the restored tree 0700/0600; without this the rollback would leave Nginx answering 403.
+publish_web_dir() {  # publish_web_dir <dir>
+  local bad
+  chmod -R a+rX "$1" 2>/dev/null || { errln "could not make the console files readable ($1)"; return 1; }
+  # Verify the bits rather than [ -r ]: the script runs as root, which can read anything.
+  bad=$(find "$1" -type d ! -perm -005 -print -quit 2>/dev/null; find "$1" -type f ! -perm -004 -print -quit 2>/dev/null)
+  if [ -n "$bad" ]; then
+    errln "the console files would not be readable by the Nginx user ($bad)"
+    return 1
+  fi
+}
+
 # Replace web_dist with a fully prepared directory; on failure the previous contents are put back (the host Nginx
 # serves WEB_DIR directly).
 swap_web_dir() {  # swap_web_dir <staged-dir>
@@ -136,6 +150,10 @@ restore_web() {  # restore_web <web-backup>
       return 1
     fi
     docker rm "$cid" >/dev/null 2>&1 || true
+  fi
+  if ! publish_web_dir "$stage"; then
+    rm -rf "$stage"
+    return 1
   fi
   if ! swap_web_dir "$stage"; then
     rm -rf "$stage"

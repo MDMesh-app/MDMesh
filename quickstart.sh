@@ -897,6 +897,8 @@ if [ "${HOST_NGINX:-0}" = "1" ]; then
     err "Could not prepare the console files (from mdmesh-web.zip or the mdmesh-web image). Nothing was installed."
     exit 1
   fi
+  # Nginx workers are unprivileged: the served tree must be readable and traversable whatever the caller's umask.
+  chmod -R a+rX "$STAGE_DIR" || { rm -rf -- "$STAGE_DIR"; err "Could not set the console file permissions. Nothing was installed."; exit 1; }
   rm -rf -- "$WEB_DIR"
   mv -- "$STAGE_DIR" "$WEB_DIR"
 

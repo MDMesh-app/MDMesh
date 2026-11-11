@@ -55,6 +55,21 @@ errln() { echo "ERR $1" >&2; }
 dc()    { docker compose "$@"; }
 sha256_file() { sha256sum "$1" | awk '{print $1}'; }
 
+# Make a prepared console directory servable. The host Nginx workers usually run as an unprivileged user, so every
+# directory must be traversable and every file readable by others. This script runs under umask 077 (its backups stay
+# private), which makes the staged tree and anything extracted into it 0700/0600; without this the swap would leave
+# Nginx answering 403 while the server-only health check still reports success.
+publish_web_dir() {  # publish_web_dir <dir>
+  local bad
+  chmod -R a+rX "$1" 2>/dev/null || { errln "could not make the console files readable ($1)"; return 1; }
+  # Verify the bits rather than [ -r ]: the script runs as root, which can read anything.
+  bad=$(find "$1" -type d ! -perm -005 -print -quit 2>/dev/null; find "$1" -type f ! -perm -004 -print -quit 2>/dev/null)
+  if [ -n "$bad" ]; then
+    errln "the console files would not be readable by the Nginx user ($bad)"
+    return 1
+  fi
+}
+
 # Replace web_dist with a fully prepared directory; on failure the previous contents are put back. The host Nginx
 # serves WEB_DIR directly, so the old files stay in place until the new ones are complete.
 swap_web_dir() {  # swap_web_dir <staged-dir>
@@ -241,6 +256,10 @@ restore_web() {
     fi
     docker rm "$cid" >/dev/null 2>&1 || true
   fi
+  if ! publish_web_dir "$stage"; then
+    rm -rf "$stage"
+    return 1
+  fi
   if ! swap_web_dir "$stage"; then
     rm -rf "$stage"
     return 1
@@ -363,6 +382,11 @@ if [ "$HOST_NGINX" = "1" ]; then
 
   if [ "$UPDATED_WEB" != 1 ] || [ ! -s "$STAGE_DIR/index.html" ]; then
     errln "could not prepare the console files (neither a verified mdmesh-web.zip nor the pinned web image produced them)"
+    rm -rf "$STAGE_DIR"
+    rollback
+    exit 1
+  fi
+  if ! publish_web_dir "$STAGE_DIR"; then
     rm -rf "$STAGE_DIR"
     rollback
     exit 1

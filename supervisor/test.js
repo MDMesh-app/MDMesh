@@ -1389,10 +1389,18 @@ t.test('apply.sh host-Nginx: verifies mdmesh-web.zip against the signed sha256 b
     a.equal(fs.readFileSync(path.join(web, 'index.html'), 'utf8'), 'new console', 'the verified archive is served');
     const stamp = fs.readFileSync(path.join(d.backups, 'latest'), 'utf8').trim();
     a.ok(fs.existsSync(path.join(d.backups, stamp + '.web.tar.gz')), 'the previous console is saved with the backup');
+    // apply.sh runs under umask 077 (its backups are private), but the host Nginx workers are unprivileged: a 0700
+    // web_dist would answer 403 while the server-only health check reports success.
+    const mode = (p) => fs.statSync(p).mode & 0o777;
+    a.equal(mode(web), 0o755, 'the served console directory stays traversable for the Nginx user');
+    a.equal(mode(path.join(web, 'index.html')), 0o644, 'the served console files stay readable for the Nginx user');
+    a.equal(mode(path.join(d.backups, stamp + '.web.tar.gz')), 0o600, 'the console snapshot stays private');
 
     r = runScript('rollback.sh', [], { ...d.env });
     a.equal(r.code, 0, r.all);
     a.equal(fs.readFileSync(path.join(web, 'index.html'), 'utf8'), 'old console', 'a rollback puts the matching console back');
+    a.equal(mode(web), 0o755, 'the restored console directory stays traversable for the Nginx user');
+    a.equal(mode(path.join(web, 'index.html')), 0o644, 'the restored console files stay readable for the Nginx user');
   } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
 });
 
@@ -1415,6 +1423,8 @@ t.test('apply.sh host-Nginx: a zip that does not match the signed sha256 is not 
     a.equal(r.code, 0, r.all);
     a.match(r.all, /does not match the sha256 in the signed manifest/);
     a.equal(fs.readFileSync(path.join(web, 'index.html'), 'utf8'), 'console from the pinned image');
+    const mode = (p) => fs.statSync(p).mode & 0o777;
+    a.equal(mode(path.join(web, 'index.html')), 0o644, 'the console copied from the image is readable by the Nginx user');
 
     // Neither the zip nor the image yields files: the update fails, and the rollback leaves the old console serving.
     fs.writeFileSync(path.join(web, 'index.html'), 'old console');

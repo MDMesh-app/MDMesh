@@ -289,7 +289,7 @@ mdm_answer host HOST hostname MDMESH_HOST
 mdm_answer tunnel-token TUNNEL_TOKEN tunnel-token MDMESH_TUNNEL_TOKEN
 mdm_answer acme-email ACME_EMAIL email MDMESH_ACME_EMAIL
 if [ "$NGINX_FLAG" = 1 ]; then
-  [ ! mdm_given mode ] || [ "$MODE" = 3 ] || warn "--nginx selects the host Nginx mode: ignoring MDMESH_MODE."
+  if mdm_given mode && [ "$MODE" != 3 ]; then warn "--nginx selects the host Nginx mode: ignoring MDMESH_MODE."; fi
   MODE=3
 fi
 if mdm_given mode || [ "$NGINX_FLAG" = 1 ]; then
@@ -767,6 +767,8 @@ if [ "${HOST_NGINX:-0}" = "1" ]; then
     exit 1
   fi
   docker rm "$CID" >/dev/null 2>&1 || true
+  # Nginx workers are unprivileged: the served tree must be readable and traversable whatever the caller's umask.
+  chmod -R a+rX "$STAGE_DIR" || { rm -rf -- "$STAGE_DIR"; err "Could not set the console file permissions (${STAGE_DIR})."; exit 1; }
   # Swap the fully prepared directory in; on failure put the previous console back.
   OLD_WEB_DIR="$(pwd)/.web_dist.old"
   rm -rf -- "$OLD_WEB_DIR"

@@ -389,6 +389,15 @@ mkdir -p "$WORK/qs2"
   || { fail "quickstart.sh does not refuse a wrong repo or image owner and ask again"; show; }
 ok
 
+# A re-run whose .env this user can't read says so, naming its owner, instead of a bare "Permission denied".
+mkdir -p "$WORK/src4/install"; cp -- "$REPO/setup.sh" "$WORK/src4/"; cp -R -- "$REPO/install/lib" "$WORK/src4/install/"
+printf 'BASE_URL=https://mdm.example.com\n' > "$WORK/src4/.env"; chmod 000 "$WORK/src4/.env"
+(cd "$WORK/src4" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" STUB_LOG="$WORK/children.log" STUB_DOCKER_OK=1 \
+  bash ./setup.sh < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || true
+{ grep -qF "can't read .env" "$WORK/out/e" && grep -qF "it belongs to $(id -un)" "$WORK/out/e" && ! grep -q 'Permission denied' "$WORK/out/e"; } \
+  || { fail "an unreadable .env does not get a clear message"; show; }
+ok
+
 # The answers file's own rules, and the native installer's older variable names.
 dry quickstart.sh MDMESH_ANSWERS=answers.env
 { [ "$RC" != 0 ] && grep -q 'absolute path' "$WORK/out/e"; } || fail "a relative MDMESH_ANSWERS is not refused"

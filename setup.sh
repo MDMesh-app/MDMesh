@@ -79,8 +79,8 @@ mdm_answers_load
 # this clone's release/minisign.pub): the signature, the version (the tag), and the commit, which must be the one the tag
 # points to; the clone is then checked out at that commit (a detached HEAD), so the code that runs is the signed one.
 # Manifests from before 0.5.0 record no commit and are refused. A newest tag whose release has no published manifest yet
-# (HTTP 404: still publishing, or failed) is skipped, saying so; the walk stops below the release this clone is on, and
-# after the 5 newest tags. Any other download failure (a timeout, DNS, TLS, a 5xx; each retried twice) stops the update:
+# (HTTP 404: still publishing, or failed) is skipped, saying so; with an install, the walk stops below the release this
+# clone is on (going back is the downgrade check's business); it always stops after the 5 newest tags. Any other download failure (a timeout, DNS, TLS, a 5xx; each retried twice) stops the update:
 # that is GitHub out of reach, not a release missing. A manifest that is there but does not verify stops it too.
 # MDMESH_DRY_RUN=1 does all the checking, then stops before anything is fetched or checked out. Updates come from
 # --update, never from `git pull`.
@@ -89,24 +89,33 @@ _upd_clean() { [ -z "$_upd_dir" ] || { rm -f -- "$_upd_dir/manifest.json" "$_upd
 _upd_stop() { _upd_clean; err "$@"; err "Nothing was changed."; exit 1; }
 # _upd_get URL FILE: downloads URL to FILE. 0 when done, 4 on HTTP 404 (not published), 1 on anything else (a timeout,
 # DNS, TLS, a 5xx: retried twice, with short timeouts), with the reason in _upd_why.
+# The HTTP code decides first: a curl set to fail on HTTP errors (`fail` in a .curlrc) exits 22 on a 404 too. (No -q:
+# a proxy set in .curlrc must still be used.)
 _upd_get() {
   local code rc n
   for n in 1 2 3; do
     rc=0; code=$(curl -sSL --connect-timeout 10 -m 30 -o "$2" -w '%{http_code}' "$1" 2>/dev/null) || rc=$?
-    if [ "$rc" = 0 ]; then
-      case "$code" in
-        200) return 0 ;;
-        404) return 4 ;;
-        408|429|5??) _upd_why="HTTP $code" ;;
-        *) _upd_why="HTTP ${code:-000}"; return 1 ;;
-      esac
-    else
-      _upd_why="curl exit $rc: a timeout, DNS or TLS failure"
-    fi
+    case "$code" in
+      200) [ "$rc" != 0 ] || return 0; _upd_why="curl error $rc after HTTP 200" ;;
+      404) return 4 ;;
+      408|429|5??) _upd_why="HTTP $code" ;;
+      000|'')
+        case "$rc" in
+          6) _upd_why="DNS lookup failed" ;;
+          7) _upd_why="connection refused" ;;
+          28) _upd_why="timed out" ;;
+          35) _upd_why="TLS handshake failed" ;;
+          60) _upd_why="TLS certificate not trusted" ;;
+          *) _upd_why="curl error $rc" ;;
+        esac ;;
+      *) _upd_why="HTTP $code"; return 1 ;;
+    esac
     [ "$n" = 3 ] || sleep "$n"
   done
   return 1
 }
+# _upd_has_install: this clone runs an install (a Docker .env, or with --native a native server).
+_upd_has_install() { [ -f .env ] || { [ "$NATIVE" = 1 ] && [ -e /opt/mdmesh-tc/conf/server.xml ]; }; }
 update_to_release() {
   local repo gerr refs list ver t sha tag='' tgt='' skipped='' cur curver rc mcommit dry=${MDMESH_DRY_RUN:-0} have=0 walked=0 f
   command -v git >/dev/null || _upd_stop "--update needs git."
@@ -132,7 +141,8 @@ update_to_release() {
       t = $2; sub(/^refs\/tags\//, "", t); p = sub(/\^\{\}$/, "", t); if (p || !(t in c)) c[t] = $1 }
     END { for (t in c) print substr(t, 2), t, c[t] }' | sort -t. -k1,1nr -k2,2nr -k3,3nr)
   [ -n "$list" ] || _upd_stop "origin has no release tag (vX.Y.Z)."
-  curver=$(mdm_repo_version .)   # the release this clone is on, or the nearest one before it ("" when none)
+  # With an install, the release this clone is on (or the nearest one before it); a fresh clone has nothing to protect.
+  curver=''; if _upd_has_install; then curver=$(mdm_repo_version .); fi
   _upd_dir=$(mktemp -d) || _upd_stop "Could not make a temporary directory."
   while read -r ver t sha; do
     if [ -n "$skipped" ]; then
@@ -191,7 +201,7 @@ update_to_release() {
 update_downgrade_check() {
   git merge-base --is-ancestor "$1" "$2" && return 0
   [ "$ALLOW_DOWNGRADE" != 1 ] || return 0
-  { [ -f .env ] || { [ "$NATIVE" = 1 ] && [ -e /opt/mdmesh-tc/conf/server.xml ]; }; } || return 0
+  _upd_has_install || return 0
   _upd_stop "This clone is at $(git describe --tags --always 2>/dev/null || echo "$1"), which has commits the newest release $3 doesn't (for example main, ahead of the release). Checking out $3 would run older code over this install. Wait for the next release and run --update then, or re-run with --allow-downgrade to go to $3 now."
 }
 if [ "$UPDATE" = 1 ]; then
@@ -302,6 +312,11 @@ if [ "$REUSE_ENV" = 1 ]; then
   if [ -O .env ]; then chmod go= .env
   elif [ -n "$(find .env -prune \( -perm -040 -o -perm -004 \) -print 2>/dev/null)" ]; then
     warn ".env is readable by other users, and owned by another one: run chmod 600 .env as its owner."
+  fi
+  if [ ! -r .env ]; then
+    err "This user ($(id -un)) can't read .env: it belongs to $(stat -c %U .env 2>/dev/null || echo another user), mode $(stat -c %a .env 2>/dev/null || echo '?')."
+    err "Run ./setup.sh as that user (or with sudo if root owns it)."
+    exit 1
   fi
   mdm_load_env .env
   version_preflight "${CURRENT_VERSION:-${SERVER_VERSION:-}}"

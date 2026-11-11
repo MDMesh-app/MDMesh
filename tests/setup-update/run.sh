@@ -30,8 +30,9 @@ ok() { CHECKS=$((CHECKS + 1)); }
 G=(git -c user.name=t -c user.email=t@example.com -c init.defaultBranch=main -c advice.detachedHead=false)
 
 # Stubs: curl serves https://github.com/test/repo/releases/download/<tag>/<name> from $REL_DIR/<tag>/<name>, answering
-# -w '%{http_code}' (404 for a missing file); CURL_FAULT=<tag>:28 makes it time out for that tag (curl exit 28, code
-# 000), <tag>:503 answer HTTP 503; CURL_FLAKY=N makes its first N calls time out. docker (and anything else that could
+# -w '%{http_code}' (404 for a missing file; with CURL_FAILFLAG=1, as with `fail` in a .curlrc, also curl exit 22);
+# CURL_FAULT=<tag>:28 makes it time out for that tag (curl exit 28, code 000), <tag>:7 refuse the connection (exit 7),
+# <tag>:503 answer HTTP 503; CURL_FLAKY=N makes its first N calls time out. docker (and anything else that could
 # install) fails.
 mkdir -p "$WORK/stubs"
 cat > "$WORK/stubs/curl" <<'EOF'
@@ -46,10 +47,12 @@ if [ -n "${CURL_FLAKY:-}" ]; then
   n=$(cat "$WORK_ENV_LOG.flaky" 2>/dev/null || echo 0); echo $((n + 1)) > "$WORK_ENV_LOG.flaky"
   [ "$n" -ge "$CURL_FLAKY" ] || { code 000; exit 28; }
 fi
-case "${CURL_FAULT:-}" in "${rel%%/*}":28) code 000; exit 28 ;; "${rel%%/*}":503) code 503; exit 0 ;; esac
+case "${CURL_FAULT:-}" in
+  "${rel%%/*}":28) code 000; exit 28 ;; "${rel%%/*}":7) code 000; exit 7 ;; "${rel%%/*}":503) code 503; exit 0 ;;
+esac
 f="$REL_DIR/$rel"
 if [ -f "$f" ] && [ -n "$out" ]; then cp "$f" "$out"; code 200; exit 0; fi
-code 404; exit 0
+code 404; [ "${CURL_FAILFLAG:-}" != 1 ] || exit 22; exit 0
 EOF
 # shellcheck disable=SC2016  # the stub's own variable
 for c in docker apt-get systemctl mvn; do printf '#!/bin/sh\nenv >> "$WORK_ENV_LOG"\nexit 99\n' > "$WORK/stubs/$c"; done
@@ -148,15 +151,26 @@ upd tok ok MDMESH_TUNNEL_TOKEN=c0ffee0token0c0ffee MDMESH_MODE=tunnel MDMESH_HOS
 { head_is tok "$c910" && [ -s "$WORK/env.log" ] && ! grep -q c0ffee0token0c0ffee "$WORK/env.log" "$WORK/out"; } \
   || { fail "the tunnel token reached a program --update ran, or the output"; show; }
 ok
-# A newest tag whose release isn't published yet (HTTP 404): skipped, saying so, for the newest that is.
+# A newest tag whose release isn't published yet (HTTP 404): skipped, saying so, for the newest that is. From an older
+# release; and on a fresh clone of main, which sits on that unpublished tag (the documented first install); and with a
+# curl that fails on HTTP errors (`fail` in a .curlrc: exit 22, still a 404).
 clone fallback v9.0.0 "$WORK/origin2"
 upd fallback ok
 { head_is fallback "$c910" && grep -q 'v9.1.1: no published release yet' "$WORK/out"; } \
   || { fail "a newest tag without a published release is not skipped for the newest signed one"; show; }
 ok
+clone fallback-fresh '' "$WORK/origin2"
+upd fallback-fresh ok
+{ head_is fallback-fresh "$c910" && grep -q 'v9.1.1: no published release yet' "$WORK/out"; } \
+  || { fail "a fresh clone on an unpublished tag does not fall back to the newest signed release"; show; }
+ok
+clone fallback-fail v9.0.0 "$WORK/origin2"
+upd fallback-fail ok CURL_FAILFLAG=1 --
+head_is fallback-fail "$c910" || { fail "a 404 with curl exit 22 is not treated as a 404"; show; }
+ok
 # A network failure is not "not published": a timeout or a 5xx stops, saying GitHub could not be reached, and never
 # falls back (nor tells you to update the old way). Tags skipped before it are listed first.
-for f in "v9.1.0:28|curl exit 28" "v9.1.0:503|HTTP 503"; do
+for f in "v9.1.0:28|timed out" "v9.1.0:7|connection refused" "v9.1.0:503|HTTP 503"; do
   clone "net-${f%%:*}-${f#*:}" v9.0.0 "$WORK/origin2"
   upd "net-${f%%:*}-${f#*:}" ok CURL_FAULT="${f%%|*}" --
   { [ "$RC" != 0 ] && head_is "net-${f%%:*}-${f#*:}" "$c900" && grep -qF "Could not reach GitHub" "$WORK/out" \
@@ -170,7 +184,8 @@ clone flaky v9.0.0
 upd flaky ok CURL_FLAKY=2 --
 head_is flaky "$c910" || { fail "--update does not retry a timeout"; show; }
 ok
-# The walk stops at the release this clone is on: nothing newer published yet is said so, nothing older is tried.
+# With an install, the walk stops at the release this clone is on: nothing newer published yet is said so, nothing older
+# is tried.
 clone older v9.1.0 "$WORK/origin2"; : > "$WORK/older/.env"
 upd older nosig
 { [ "$RC" != 0 ] && head_is older "$c910" && grep -q 'No release newer than this clone' "$WORK/out"; } \
@@ -202,7 +217,7 @@ ok
 clone dirty; echo x >> "$WORK/dirty/note"
 expect_refused dirty ok "a clone with local changes" "commit or stash them"
 # Releases that don't verify.
-for c in nosig:"is published yet" otherkey:"is not signed by the release key" \
+for c in nosig:"has a published, signed manifest" otherkey:"is not signed by the release key" \
          tampered:"is not signed by the release key" replay:"is not that release's" \
          wrongcommit:"its signed manifest names commit" nobind:"records no commit"; do
   clone "bad-${c%%:*}"

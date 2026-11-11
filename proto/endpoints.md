@@ -45,7 +45,7 @@ Response `data` (`agent-enroll-response.schema.json`):
 The server mints a per-device secret, stores only its SHA-256 hash, and returns the plaintext
 **once** here. The agent persists it and presents it on every `/checkin`.
 
-`enrollAttempt` (optional, protocol 1.6): a random id (16-128 of `A-Z a-z 0-9 _ -`) the agent generates and stores
+`enrollAttempt` (optional, protocol 1.9): a random id (16-128 of `A-Z a-z 0-9 _ -`) the agent generates and stores
 before its first enroll request, sends again on every retry of that enrollment, and deletes once it has stored the
 credentials. When a response is lost, the retry returns the device the first request created, with a new secret (the
 first is replaced), instead of `error.agent.token.used` or a second device from a batch code. This works until that

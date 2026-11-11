@@ -99,8 +99,7 @@ Fixes
 
 Under the hood
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
-- Agent protocol 1.6 (additive): config.apply `policies.locationServices`, the enroll request's optional
-  `enrollAttempt`, and the retryable enroll errors
+- Agent protocol 1.9 (additive): the enroll request's optional `enrollAttempt`, and the retryable enroll errors
   `error.agent.enrollment.failed`, `error.agent.enrollment.inProgress` and `error.agent.enrollment.deviceLimit`. New
   console API: `GET /private/agent/v1/devices/enrolled`.
 

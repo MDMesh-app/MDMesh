@@ -23,7 +23,7 @@ data class AgentEnrollRequest(
      *  can recognise a re-enrolling physical device and flag duplicate rows. */
     val hardwareId: String? = null,
     /** Random id of this enrollment, kept until the credentials are stored and sent again on every retry, so a retry
-     *  whose response was lost gets the same device back (protocol 1.6; older servers ignore it). */
+     *  whose response was lost gets the same device back (protocol 1.9; older servers ignore it). */
     val enrollAttempt: String? = null,
 )
 

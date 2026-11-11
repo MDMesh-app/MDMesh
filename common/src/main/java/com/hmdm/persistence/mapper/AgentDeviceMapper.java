@@ -23,6 +23,7 @@ package com.hmdm.persistence.mapper;
 
 import com.hmdm.persistence.domain.DeviceLocation;
 import com.hmdm.persistence.domain.DeviceSyncRow;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -50,6 +51,30 @@ public interface AgentDeviceMapper {
 
     @Select({"SELECT agentSecretHash FROM devices WHERE number = #{deviceNumber}"})
     String getDeviceSecretHash(@Param("deviceNumber") String deviceNumber);
+
+    /**
+     * Completes an agent enrollment in ONE statement: the secret hash that lets the device authenticate, its
+     * capabilities, its hardware id (an absent one keeps what is there), last-seen and the enrollment time (kept when
+     * already set). Either all of it is stored or none, so a device is never left without a secret.
+     *
+     * @return rows updated: 1, or 0 when the device row is gone
+     */
+    @Update({"UPDATE devices SET agentSecretHash = #{secretHash}, agentCapabilities = #{capabilitiesJson}, " +
+            "hardwareid = COALESCE(#{hardwareId}, hardwareid), lastUpdate = #{ts}, " +
+            "enrollTime = COALESCE(enrollTime, #{ts}) " +
+            "WHERE number = #{deviceNumber}"})
+    int completeEnrollment(@Param("deviceNumber") String deviceNumber,
+                           @Param("secretHash") String secretHash,
+                           @Param("capabilitiesJson") String capabilitiesJson,
+                           @Param("hardwareId") String hardwareId,
+                           @Param("ts") long ts);
+
+    /**
+     * Removes a device an agent enrollment created but could not complete. Only while it has no secret: a device that
+     * can authenticate is never deleted by this. Its group links cascade.
+     */
+    @Delete({"DELETE FROM devices WHERE number = #{deviceNumber} AND agentSecretHash IS NULL"})
+    int deleteUnenrolledDevice(@Param("deviceNumber") String deviceNumber);
 
     @Update({"UPDATE devices SET lastUpdate = #{ts} WHERE number = #{deviceNumber}"})
     void updateLastUpdate(@Param("deviceNumber") String deviceNumber, @Param("ts") long ts);

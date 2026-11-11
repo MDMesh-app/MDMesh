@@ -170,6 +170,22 @@ public class AgentCommandDAO {
         return deviceMapper.getDeviceSecretHash(deviceNumber);
     }
 
+    /**
+     * Completes an agent enrollment atomically (see {@link AgentDeviceMapper#completeEnrollment}).
+     *
+     * @return false when the device row no longer exists
+     */
+    public boolean completeEnrollment(String deviceNumber, String secretHash, String capabilitiesJson,
+                                      String hardwareId) {
+        return deviceMapper.completeEnrollment(deviceNumber, secretHash, capabilitiesJson, hardwareId,
+                System.currentTimeMillis()) > 0;
+    }
+
+    /** Deletes a device whose agent enrollment did not complete; never one that has a secret. */
+    public void deleteUnenrolledDevice(String deviceNumber) {
+        deviceMapper.deleteUnenrolledDevice(deviceNumber);
+    }
+
     /** Stamp the device's last-seen time (drives the admin UI's online/offline state). */
     public void touchLastUpdate(String deviceNumber) {
         deviceMapper.updateLastUpdate(deviceNumber, System.currentTimeMillis());

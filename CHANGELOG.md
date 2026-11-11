@@ -35,6 +35,8 @@ New
 - Sync now and console commands say when the device isn't connected and will get it at its next check-in.
 
 Fixes
+- Enroll: a server error part-way through an enrollment no longer leaves a device in the list that can never check
+  in, or uses up the enrollment code. Nothing is kept and the agent tries again.
 - Audit log: on Docker installs, entries show the client's address instead of the edge container's (thanks
   @Przemek-Magic).
 - Kiosk: after someone leaves kiosk on the device with the exit PIN, the agent checks in right away, so the console

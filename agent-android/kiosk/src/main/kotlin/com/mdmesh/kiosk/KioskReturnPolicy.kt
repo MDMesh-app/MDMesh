@@ -32,7 +32,12 @@ class KioskReturnPolicy(
         get() {
             val heldIn = holds.heldBoot ?: return false
             val now = boot()
-            return if (now != 0L) heldIn == now else elapsed() >= holds.heldElapsed
+            if (now != 0L) return heldIn == now
+            // No boot count: an uptime below the hold's start means the device rebooted since. The hold is over for
+            // good (cleared), so it can't come back once uptime passes its old value.
+            if (elapsed() >= holds.heldElapsed) return true
+            holds.writeHeld(null)
+            return false
         }
 
     /** HOME came back to the front in single-app kiosk. */

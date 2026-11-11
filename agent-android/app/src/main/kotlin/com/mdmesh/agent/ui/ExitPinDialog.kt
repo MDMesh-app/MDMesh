@@ -1,27 +1,33 @@
 package com.mdmesh.agent.ui
 
 import android.content.Context
+import android.graphics.Typeface
 import android.text.Editable
 import android.text.TextWatcher
 import android.text.method.PasswordTransformationMethod
-import android.view.LayoutInflater
 import android.view.View
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.TextView
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.content.res.AppCompatResources
+import androidx.core.view.AccessibilityDelegateCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import com.mdmesh.agent.R
 
 /**
  * The Exit kiosk dialog: PIN field with a show/hide toggle and an error line under it. It doesn't check PINs: Exit
- * (or the keyboard's Done) hands the text to [onSubmit] (the launcher's `onPinEntered`), which renders the result
+ * (or the keyboard's Done) hands the text to `onSubmit` (the launcher's `onPinEntered`), which renders the result
  * back with [render]. A wrong PIN keeps the dialog open; it closes only on [ExitPinUiState.Close] or Cancel.
+ *
+ * The typed PIN is never saved with the activity's state: after a rotation the launcher reopens the dialog empty.
+ * The wrong-PIN count and lockout live in ExitPinGate's persisted store, so neither resets with the dialog.
  */
 class ExitPinDialog private constructor(
-    private val dialog: AlertDialog,
+    /** The dialog itself, for the activity's [DialogSlot]. */
+    val dialog: MdmDialog,
     private val field: EditText,
     private val toggle: ImageButton,
     private val error: TextView,
@@ -29,22 +35,26 @@ class ExitPinDialog private constructor(
 
     private var shown = false
 
+    /** The error shown under the field, also given to accessibility services as the field's error. */
+    private var errorText: String? = null
+
     fun render(state: ExitPinUiState) {
         when (state) {
             ExitPinUiState.Close -> dialog.dismiss()
             is ExitPinUiState.Error -> {
                 if (state.clearField) field.text = null
-                showError(state.message.resolve(dialog.context.resources))
+                showError(state.message.resolve(field.resources))
                 field.requestFocus()
             }
         }
     }
 
     private fun showError(message: String?) {
+        errorText = message
         error.text = message
         error.visibility = if (message == null) View.GONE else View.VISIBLE
         val background = if (message == null) R.drawable.mdm_field_bg else R.drawable.mdm_field_bg_error
-        keepingPadding(field) { field.background = AppCompatResources.getDrawable(dialog.context, background) }
+        keepingPadding(field) { field.background = AppCompatResources.getDrawable(field.context, background) }
     }
 
     private fun toggleShown() {
@@ -54,15 +64,33 @@ class ExitPinDialog private constructor(
         if (selection.first >= 0) field.setSelection(selection.first, selection.second)
         toggle.setImageResource(if (shown) R.drawable.ic_v2_eye_off else R.drawable.ic_v2_eye)
         toggle.contentDescription =
-            dialog.context.getString(if (shown) R.string.kiosk_exit_pin_hide else R.string.kiosk_exit_pin_show)
+            field.context.getString(if (shown) R.string.kiosk_exit_pin_hide else R.string.kiosk_exit_pin_show)
+    }
+
+    /** Exit or the keyboard's Done. */
+    private fun submit(onSubmit: (entered: String, dialog: ExitPinDialog) -> Unit) {
+        // An empty field is never a try: after a wrong PIN the field is cleared and the dialog stays open, so a second
+        // tap on Exit (or Done, then Exit) would otherwise use up tries without anything being typed.
+        if (isSubmittable(field.text)) onSubmit(field.text.toString(), this)
     }
 
     private fun wire(onSubmit: (entered: String, dialog: ExitPinDialog) -> Unit) {
-        // An empty field is never a try: after a wrong PIN the field is cleared and the dialog stays open, so a second
-        // tap on Exit (or Done, then Exit) would otherwise use up tries without anything being typed.
-        val submit = { if (isSubmittable(field.text)) onSubmit(field.text.toString(), this) }
-        // Replaces the default click, which would close the dialog on any answer.
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setOnClickListener { submit() }
+        val submit = { submit(onSubmit) }
+        // inputType textPassword switches the field to monospace, hint included; keep the dialog's sans.
+        field.typeface = Typeface.DEFAULT
+        // TalkBack: the error line is a polite live region (announced when it appears), and the field reports it as
+        // its error, so focusing the field reads "Exit PIN, error: Wrong PIN ...".
+        ViewCompat.setAccessibilityDelegate(field, object : AccessibilityDelegateCompat() {
+            override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfoCompat) {
+                super.onInitializeAccessibilityNodeInfo(host, info)
+                errorText?.let {
+                    info.error = it
+                    info.isContentInvalid = true
+                }
+            }
+        })
+        // Keyboard and focus in the field as the dialog opens.
+        dialog.alert.setOnShowListener { field.requestFocus() }
         field.setOnEditorActionListener { _, action, _ ->
             (action == EditorInfo.IME_ACTION_DONE).also { if (it) submit() }
         }
@@ -81,29 +109,28 @@ class ExitPinDialog private constructor(
         /** Whether the field's text is worth handing to the PIN check: an empty string can never match a PIN. */
         internal fun isSubmittable(text: CharSequence?): Boolean = !text.isNullOrEmpty()
 
-        /** Show the dialog on [context] (an activity, never the application context: the theme matters). */
-        fun show(context: Context, onSubmit: (entered: String, dialog: ExitPinDialog) -> Unit): ExitPinDialog {
-            val builder = AlertDialog.Builder(context)
-            // Inflated from the dialog's themed context, so the field takes the dialog theme's v2 field style.
-            val body = LayoutInflater.from(builder.context).inflate(R.layout.dialog_exit_pin, null, false)
-            val alert = builder
-                .setTitle(R.string.kiosk_exit_title)
-                .setMessage(R.string.kiosk_exit_message)
-                .setView(body)
-                .setPositiveButton(R.string.kiosk_exit_confirm, null)
-                .setNegativeButton(R.string.action_cancel, null)
-                .create()
-            // Keyboard up with the dialog, focus in the field.
-            alert.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
-            alert.show()
+        /** Build (not show) the dialog on [context]: an activity, never the application context (the theme). */
+        fun create(context: Context, onSubmit: (entered: String, dialog: ExitPinDialog) -> Unit): ExitPinDialog {
+            var pin: ExitPinDialog? = null
+            val spec = MdmDialog.Spec(
+                title = context.getString(R.string.kiosk_exit_title),
+                message = context.getString(R.string.kiosk_exit_message),
+                confirm = context.getString(R.string.kiosk_exit_confirm),
+                cancel = context.getString(R.string.action_cancel),
+                body = R.layout.dialog_exit_pin,
+            )
+            // Exit checks the PIN and doesn't close the dialog: render() closes it, or shows the error.
+            val mdm = MdmDialog.create(context, spec) { pin?.submit(onSubmit) }
+            val body = checkNotNull(mdm.body)
             val dialog = ExitPinDialog(
-                alert,
+                mdm,
                 body.findViewById(R.id.exit_pin_field),
                 body.findViewById(R.id.exit_pin_toggle),
                 body.findViewById(R.id.exit_pin_error),
             )
+            pin = dialog
             dialog.wire(onSubmit)
-            dialog.field.requestFocus()
+            mdm.alert.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
             return dialog
         }
 

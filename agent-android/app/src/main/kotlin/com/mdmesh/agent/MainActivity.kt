@@ -17,13 +17,13 @@ import android.widget.Toast
 import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.annotation.StringRes
-import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.mdmesh.agent.service.CheckInService
-import com.mdmesh.agent.ui.markConfirmDanger
+import com.mdmesh.agent.ui.DialogSlot
+import com.mdmesh.agent.ui.MdmDialog
 import com.mdmesh.core.action.NotificationPermissionAccess
 import com.mdmesh.core.config.ServerConfigStore
 import com.mdmesh.core.config.ConfigApplier
@@ -72,7 +72,8 @@ class MainActivity : ComponentActivity() {
     private lateinit var kioskValue: TextView
     private lateinit var returnButton: Button
     private var returningToKiosk = false
-    private var confirmDialog: AlertDialog? = null
+    /** The Return to kiosk confirmation; reopened after a rotation. */
+    private val dialogs = DialogSlot("dialog")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -95,6 +96,14 @@ class MainActivity : ComponentActivity() {
         // launcher activity keeps us in the foreground-start allowance on Android 12+.
         ContextCompat.startForegroundService(this, Intent(this, CheckInService::class.java))
         refresh()
+        // Reopen the confirmation a rotation closed, if returning is still possible (the button says so).
+        dialogs.restore(savedInstanceState)
+        if (dialogs.takeRestored() == DIALOG_RETURN && returnButton.isEnabled) confirmReturnToKiosk()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        dialogs.save(outState)
     }
 
     override fun onResume() {
@@ -103,8 +112,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        confirmDialog?.dismiss()
-        confirmDialog = null
+        dialogs.dismiss()
         super.onDestroy()
     }
 
@@ -122,17 +130,23 @@ class MainActivity : ComponentActivity() {
 
     /** Ask first: returning locks the device, and some kiosks have no exit on the device at all. */
     private fun confirmReturnToKiosk() {
-        if (returningToKiosk || confirmDialog != null) return
+        if (returningToKiosk || dialogs.showing != null) return
         val kiosk = configStore.configuredKiosk() ?: return refresh()
         val prompt = KioskReturnPrompt.of(kiosk)
-        confirmDialog = AlertDialog.Builder(this)
-            .setTitle(prompt.title)
-            .setMessage(prompt.message)
-            .setNegativeButton(R.string.action_cancel, null)
-            .setPositiveButton(prompt.confirm) { _, _ -> returnToKiosk(kiosk) }
-            .setOnDismissListener { confirmDialog = null }
-            .show()
-            .also { if (prompt.danger) it.markConfirmDanger() }
+        val spec = MdmDialog.Spec(
+            title = getString(prompt.title),
+            message = getString(prompt.message),
+            confirm = getString(prompt.confirm),
+            cancel = getString(R.string.action_cancel),
+            // No exit on the device: an alert-tone lock in the header and a danger confirm.
+            icon = if (prompt.danger) R.drawable.ic_v2_lock else 0,
+            danger = prompt.danger,
+        )
+        val dialog = MdmDialog.create(this, spec) {
+            it.dismiss()
+            returnToKiosk(kiosk)
+        }
+        dialogs.show(DIALOG_RETURN, dialog)
     }
 
     private fun returnToKiosk(confirmed: KioskApplyPayload) {
@@ -292,6 +306,7 @@ class MainActivity : ComponentActivity() {
         const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         const val RETURN_BUTTON_GAP = 12
         const val ELLIPSIS = "…"
+        const val DIALOG_RETURN = "return"
         val INK = Color.parseColor("#0E1117")
         val TEXT = Color.parseColor("#E8EEF4")
         val MUTED = Color.parseColor("#8693A4")

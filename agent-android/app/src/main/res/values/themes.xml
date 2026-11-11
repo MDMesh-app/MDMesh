@@ -17,15 +17,11 @@
         <item name="alertDialogTheme">@style/ThemeOverlay.MdmAgent.Dialog</item>
     </style>
 
-    <!-- AlertDialog (androidx.appcompat): v2 Modal. Surface, 16dp corners, title 18/600, message text-2,
-         Cancel as a ghost button and the confirm as the filled ink button. -->
+    <!-- The dialog window (androidx.appcompat AlertDialog): v2 Modal surface, 16dp corners, scrim. Its content is
+         our own layout, mdm_dialog.xml (MdmDialog), not AppCompat's alert template; this overlay themes its field. -->
     <style name="ThemeOverlay.MdmAgent.Dialog" parent="Theme.AppCompat.DayNight.Dialog.Alert">
         <item name="android:windowBackground">@drawable/mdm_dialog_bg</item>
         <item name="android:backgroundDimAmount">@dimen/mdm_dim_amount</item>
-        <item name="android:windowTitleStyle">@style/MdmAgent.DialogTitle</item>
-        <!-- The message uses ?android:textColorPrimary (TextAppearance.AppCompat.Subhead): v2 text-2. -->
-        <item name="android:textColorPrimary">@color/mdm_text_2</item>
-        <item name="android:textColorSecondary">@color/mdm_secondary</item>
         <item name="android:textColorHint">@color/mdm_secondary</item>
         <item name="android:textColorHighlight">@color/mdm_selection</item>
         <item name="colorPrimary">@color/mdm_ink</item>
@@ -34,11 +30,6 @@
         <item name="colorControlActivated">@color/mdm_ink</item>
         <item name="colorControlHighlight">@color/mdm_ripple</item>
         <item name="colorError">@color/mdm_alert_ink</item>
-        <item name="dialogPreferredPadding">@dimen/mdm_dialog_padding</item>
-        <item name="buttonBarStyle">@style/Widget.MdmAgent.ButtonBar</item>
-        <item name="buttonBarPositiveButtonStyle">@style/Widget.MdmAgent.Button.Dialog.Positive</item>
-        <item name="buttonBarNegativeButtonStyle">@style/Widget.MdmAgent.Button.Dialog.Negative</item>
-        <item name="buttonBarNeutralButtonStyle">@style/Widget.MdmAgent.Button.Dialog.Negative</item>
         <item name="android:editTextStyle">@style/Widget.MdmAgent.EditText</item>
         <item name="editTextStyle">@style/Widget.MdmAgent.EditText</item>
     </style>

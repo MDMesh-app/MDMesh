@@ -16,14 +16,15 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
-import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.flow.distinctUntilChanged
 import com.mdmesh.agent.service.CheckInService
+import com.mdmesh.agent.ui.DialogSlot
 import com.mdmesh.agent.ui.ExitPinDialog
+import com.mdmesh.agent.ui.MdmDialog
 import com.mdmesh.agent.ui.ExitPinUiState
 import com.mdmesh.core.kiosk.KioskApplier
 import com.mdmesh.core.store.KioskStateStore
@@ -74,8 +75,12 @@ class KioskLauncherActivity : ComponentActivity() {
     /** The hold screen is showing (so its event is recorded once per hold). */
     private var holding = false
 
+    /** Exit PIN or Exit locked; reopened after a rotation once the kiosk state is back (see [applyState]). */
+    private val dialogs = DialogSlot("exitDialog")
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        dialogs.restore(savedInstanceState)
         // A kiosk device boots straight into HOME (this); keep the command channel alive even if
         // the user never opens the status screen.
         ContextCompat.startForegroundService(this, Intent(this, CheckInService::class.java))
@@ -88,6 +93,16 @@ class KioskLauncherActivity : ComponentActivity() {
                 store.flow().distinctUntilChanged().collect(::applyState)
             }
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        dialogs.save(outState)
+    }
+
+    override fun onDestroy() {
+        dialogs.dismiss()
+        super.onDestroy()
     }
 
     override fun onResume() {
@@ -108,6 +123,7 @@ class KioskLauncherActivity : ComponentActivity() {
         val previous = active
         active = p
         if (p == null) {
+            dialogs.dismiss()
             holding = false
             stopLockTaskSafely()
             setContentView(idleView())
@@ -120,6 +136,19 @@ class KioskLauncherActivity : ComponentActivity() {
             return
         }
         show(p)
+        reopenExitDialog(p)
+    }
+
+    /**
+     * Reopen the exit dialog a rotation closed. Rebuilt from the current kiosk and [pinGate], never from saved state:
+     * the PIN check and the lockout stay where they are ([ExitPinGate] persists them), an expired lockout isn't shown,
+     * and a kiosk whose exit PIN was removed meanwhile gets no PIN prompt.
+     */
+    private fun reopenExitDialog(p: KioskApplyPayload) {
+        when (dialogs.takeRestored()) {
+            DIALOG_PIN -> promptExit(p)
+            DIALOG_LOCKED -> pinGate.remainingLockMs()?.let(::showExitLocked)
+        }
     }
 
     private fun show(p: KioskApplyPayload) {
@@ -169,7 +198,7 @@ class KioskLauncherActivity : ComponentActivity() {
         // No PIN, no on-device exit (the affordance isn't shown either): kiosk then ends only from the console.
         if (!pinGate.isAvailable(p.password)) return
         pinGate.remainingLockMs()?.let { showExitLocked(it); return }
-        ExitPinDialog.show(this, ::onPinEntered)
+        dialogs.show(DIALOG_PIN, ExitPinDialog.create(this, ::onPinEntered).dialog)
     }
 
     /**
@@ -203,12 +232,13 @@ class KioskLauncherActivity : ComponentActivity() {
     }
 
     private fun showExitLocked(remainingMs: Long) {
-        AlertDialog.Builder(this)
-            .setIcon(R.drawable.ic_v2_lock)
-            .setTitle(R.string.kiosk_exit_locked_title)
-            .setMessage(getString(R.string.kiosk_exit_locked_message, ExitPinGate.describe(remainingMs)))
-            .setPositiveButton(R.string.action_ok, null)
-            .show()
+        val spec = MdmDialog.Spec(
+            title = getString(R.string.kiosk_exit_locked_title),
+            message = getString(R.string.kiosk_exit_locked_message, ExitPinGate.describe(remainingMs)),
+            confirm = getString(R.string.action_ok),
+            icon = R.drawable.ic_v2_lock,
+        )
+        dialogs.show(DIALOG_LOCKED, MdmDialog.create(this, spec) { it.dismiss() })
     }
 
     private fun doExit() {
@@ -425,6 +455,8 @@ class KioskLauncherActivity : ComponentActivity() {
         const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         const val GESTURE_TAPS = 7
         const val GESTURE_WINDOW_MS = 3_000L
+        const val DIALOG_PIN = "pin"
+        const val DIALOG_LOCKED = "locked"
         val INK = Color.parseColor("#0E1117")
         val TEXT = Color.parseColor("#E8EEF4")
         val MUTED = Color.parseColor("#8693A4")

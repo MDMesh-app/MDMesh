@@ -1,16 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Exit kiosk dialog body (ExitPinDialog), under the title and message. Inflated from the dialog's themed context,
-    so the field takes the v2 field style. Full text keyboard: the console stores the PIN as entered (D6).
+    Exit kiosk dialog body (ExitPinDialog), under the title and message of mdm_dialog.xml, which supplies the 24dp
+    side insets. Inflated from the dialog's themed context, so the field takes the v2 field style. Full text
+    keyboard: the console stores the PIN as entered (D6). The error starts where the typed text starts.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:paddingStart="@dimen/mdm_dialog_padding"
-    android:paddingTop="8dp"
-    android:paddingEnd="@dimen/mdm_dialog_padding">
+    android:paddingTop="@dimen/mdm_dialog_title_gap">
 
     <FrameLayout
         android:layout_width="match_parent"
@@ -25,8 +24,8 @@
             android:importantForAutofill="no"
             android:inputType="textPassword"
             android:maxLines="1"
-            android:paddingStart="12dp"
-            android:paddingEnd="52dp"
+            android:paddingStart="@dimen/mdm_field_padding_h"
+            android:paddingEnd="@dimen/mdm_touch_target"
             tools:targetApi="o" />
 
         <ImageButton
@@ -44,7 +43,9 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:accessibilityLiveRegion="polite"
-        android:paddingTop="6dp"
+        android:paddingStart="@dimen/mdm_field_padding_h"
+        android:paddingTop="4dp"
+        android:paddingEnd="@dimen/mdm_field_padding_h"
         android:textAppearance="@style/TextAppearance.MdmAgent.BodySmall"
         android:textColor="@color/mdm_alert_ink"
         android:visibility="gone" />

@@ -1,14 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- v2 IconLock (web/src/ui/icons.tsx) in alert ink: the Exit locked dialog. -->
+<!--
+    v2 IconLock (web/src/ui/icons.tsx) in alert ink: the dialog header icon (Exit locked, lock with no way out).
+    Same 1.5dp-per-unit scale as the other 24dp v2 icons, but cropped to the glyph (x 2..14, y 1.67..15 of the
+    16-unit icon) so its left edge lines up with the dialog text below it and its box centre is the glyph's centre.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="16"
-    android:viewportHeight="16">
-    <path
-        android:pathData="M3,7h10v7H3zM5.5,7V5a2.5,2.5 0,0 1,5 0v2"
-        android:strokeWidth="1.6"
-        android:strokeColor="@color/mdm_alert_ink"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round" />
+    android:width="18dp"
+    android:height="20dp"
+    android:viewportWidth="12"
+    android:viewportHeight="13.3333">
+    <group
+        android:translateX="-2"
+        android:translateY="-1.6667">
+        <path
+            android:pathData="M3,7h10v7H3zM5.5,7V5a2.5,2.5 0,0 1,5 0v2"
+            android:strokeWidth="1.6"
+            android:strokeColor="@color/mdm_alert_ink"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
 </vector>

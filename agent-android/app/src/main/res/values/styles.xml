@@ -27,7 +27,7 @@
     </style>
 
     <!-- Danger: surface + alert line, alert-ink label ("Lock anyway"). -->
-    <style name="Widget.MdmAgent.Button.Danger" tools:ignore="UnusedResources">
+    <style name="Widget.MdmAgent.Button.Danger">
         <item name="android:background">@drawable/mdm_btn_danger</item>
         <item name="android:textColor">@color/mdm_btn_danger_label</item>
     </style>
@@ -40,20 +40,6 @@
         <item name="android:paddingEnd">12dp</item>
     </style>
 
-    <!-- Dialog footer: buttons right-aligned, 8dp apart, padded like the content. -->
-    <style name="Widget.MdmAgent.ButtonBar" parent="Widget.AppCompat.ButtonBar.AlertDialog">
-        <item name="android:paddingStart">12dp</item>
-        <item name="android:paddingEnd">12dp</item>
-        <item name="android:paddingTop">8dp</item>
-        <item name="android:paddingBottom">12dp</item>
-    </style>
-
-    <style name="Widget.MdmAgent.Button.Dialog.Positive" parent="Widget.MdmAgent.Button">
-        <item name="android:layout_marginStart">8dp</item>
-    </style>
-
-    <style name="Widget.MdmAgent.Button.Dialog.Negative" parent="Widget.MdmAgent.Button.Text" />
-
     <!-- Text field (v2 Field): 10dp corners, input border, 2dp ink focus ring, 48dp tall. -->
     <style name="Widget.MdmAgent.EditText" parent="Widget.AppCompat.EditText">
         <item name="android:background">@drawable/mdm_field_bg</item>
@@ -62,16 +48,9 @@
         <item name="android:textColor">@color/mdm_text</item>
         <item name="android:textColorHint">@color/mdm_secondary</item>
         <item name="android:minHeight">@dimen/mdm_touch_target</item>
-        <item name="android:paddingStart">12dp</item>
-        <item name="android:paddingEnd">12dp</item>
+        <item name="android:paddingStart">@dimen/mdm_field_padding_h</item>
+        <item name="android:paddingEnd">@dimen/mdm_field_padding_h</item>
         <item name="android:paddingTop">10dp</item>
         <item name="android:paddingBottom">10dp</item>
     </style>
-
-    <style name="MdmAgent.DialogTitle" parent="android:Widget">
-        <item name="android:maxLines">1</item>
-        <item name="android:scrollHorizontally">true</item>
-        <item name="android:textAppearance">@style/TextAppearance.MdmAgent.TitleLarge</item>
-    </style>
-
 </resources>

@@ -114,10 +114,17 @@ _upd_get() {
   done
   return 1
 }
-# _upd_has_install: this clone runs an install (a Docker .env, or with --native a native server).
-_upd_has_install() { [ -f .env ] || { [ "$NATIVE" = 1 ] && [ -e /opt/mdmesh-tc/conf/server.xml ]; }; }
+# _upd_has_install: this host runs an install from this clone: a Docker .env, or a native install, with or without
+# --native. /opt/mdmesh-tc itself is visible to any user (its contents are not: mode 700). (MDM_TEST_NATIVE_DIR: for
+# tests/setup-update only.)
+_upd_has_install() { [ -f .env ] || [ -d "${MDM_TEST_NATIVE_DIR:-/opt/mdmesh-tc}" ]; }
 update_to_release() {
   local repo gerr refs list ver t sha tag='' tgt='' skipped='' cur curver rc mcommit dry=${MDMESH_DRY_RUN:-0} have=0 walked=0 f
+  # --native changes this host's install, which needs root: stop before anything is looked up or checked out, rather
+  # than move the clone and leave the install behind it.
+  if [ "$NATIVE" = 1 ] && [ "$EUID" != 0 ] && [ "$dry" != 1 ]; then
+    _upd_stop "--update --native updates this host's native install, which needs root: run sudo ./setup.sh --update --native"
+  fi
   command -v git >/dev/null || _upd_stop "--update needs git."
   gerr=$(git rev-parse --is-inside-work-tree 2>&1) || _upd_stop "--update needs a git clone of MDMesh, and git refuses this directory: ${gerr}"
   if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
@@ -314,8 +321,13 @@ if [ "$REUSE_ENV" = 1 ]; then
     warn ".env is readable by other users, and owned by another one: run chmod 600 .env as its owner."
   fi
   if [ ! -r .env ]; then
-    err "This user ($(id -un)) can't read .env: it belongs to $(stat -c %U .env 2>/dev/null || echo another user), mode $(stat -c %a .env 2>/dev/null || echo '?')."
-    err "Run ./setup.sh as that user (or with sudo if root owns it)."
+    _envmode=$(stat -L -c %a .env 2>/dev/null || echo '?'); case "$_envmode" in *[!0-9]*) ;; *) _envmode=$(printf '%03d' "$_envmode") ;; esac
+    if [ -O .env ]; then
+      err "This user ($(id -un)) can't read .env (mode ${_envmode}), its own file: make it readable to you only with chmod 600 .env, then re-run."
+    else
+      err "This user ($(id -un)) can't read .env: it belongs to $(stat -L -c %U .env 2>/dev/null || echo another user), mode ${_envmode}."
+      err "Run ./setup.sh as that user (or with sudo if root owns it)."
+    fi
     exit 1
   fi
   mdm_load_env .env

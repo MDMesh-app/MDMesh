@@ -389,14 +389,23 @@ mkdir -p "$WORK/qs2"
   || { fail "quickstart.sh does not refuse a wrong repo or image owner and ask again"; show; }
 ok
 
-# A re-run whose .env this user can't read says so, naming its owner, instead of a bare "Permission denied".
+# A re-run whose .env this user can't read says what to do, instead of a bare "Permission denied": its own .env (mode
+# 000) → chmod 600 .env; another user's (here a link to root's /etc/shadow, which only root can read) → run as them.
 mkdir -p "$WORK/src4/install"; cp -- "$REPO/setup.sh" "$WORK/src4/"; cp -R -- "$REPO/install/lib" "$WORK/src4/install/"
 printf 'BASE_URL=https://mdm.example.com\n' > "$WORK/src4/.env"; chmod 000 "$WORK/src4/.env"
 (cd "$WORK/src4" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" STUB_LOG="$WORK/children.log" STUB_DOCKER_OK=1 \
   bash ./setup.sh < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || true
-{ grep -qF "can't read .env" "$WORK/out/e" && grep -qF "it belongs to $(id -un)" "$WORK/out/e" && ! grep -q 'Permission denied' "$WORK/out/e"; } \
-  || { fail "an unreadable .env does not get a clear message"; show; }
+{ grep -qF "can't read .env (mode 000)" "$WORK/out/e" && grep -qF 'chmod 600 .env' "$WORK/out/e" \
+  && ! grep -q 'Permission denied\|as that user' "$WORK/out/e"; } || { fail "an unreadable .env of this user's does not say chmod 600"; show; }
 ok
+if [ -e /etc/shadow ] && [ ! -r /etc/shadow ]; then
+  mv -- "$WORK/src4/.env" "$WORK/src4/.env.own"; ln -s /etc/shadow "$WORK/src4/.env"
+  (cd "$WORK/src4" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" STUB_LOG="$WORK/children.log" STUB_DOCKER_OK=1 \
+    bash ./setup.sh < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || true
+  { grep -qF "can't read .env" "$WORK/out/e" && grep -qF 'it belongs to root' "$WORK/out/e" && grep -qF 'as that user' "$WORK/out/e" \
+    && ! grep -q 'Permission denied' "$WORK/out/e"; } || { fail "an unreadable .env of another user's does not name its owner"; show; }
+  ok
+fi
 
 # The answers file's own rules, and the native installer's older variable names.
 dry quickstart.sh MDMESH_ANSWERS=answers.env

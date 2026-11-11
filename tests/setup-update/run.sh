@@ -111,6 +111,7 @@ upd() {
   local envs=(); while [ "$#" -gt 0 ] && [ "$1" != -- ]; do envs+=("$1"); shift; done; [ "$#" = 0 ] || shift
   RC=0; : > "$WORK/env.log"; rm -f -- "$WORK/env.log.flaky"
   (cd "$WORK/$name" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" GITHUB_REPO=test/repo REL_DIR="$R/$rel" WORK_ENV_LOG="$WORK/env.log" \
+    MDM_TEST_NATIVE_DIR="$WORK/no-native-install" \
     "${envs[@]}" bash ./setup.sh --update "$@" < /dev/null > "$WORK/out" 2>&1) || RC=$?
 }
 head_is() { [ "$(git -C "$WORK/$1" rev-parse HEAD)" = "$2" ]; }
@@ -190,6 +191,29 @@ clone older v9.1.0 "$WORK/origin2"; : > "$WORK/older/.env"
 upd older nosig
 { [ "$RC" != 0 ] && head_is older "$c910" && grep -q 'No release newer than this clone' "$WORK/out"; } \
   || { fail "--update walks below the release the clone is on"; show; }
+ok
+# A native install counts as an install for both rules, with or without --native: its /opt/mdmesh-tc is visible to any
+# user even though it is mode 700 (here a stand-in directory).
+mkdir -p "$WORK/native-tc"
+clone nat-ahead
+expect_refused_env() {  # NAME RELEASES WHAT TEXT ENV...
+  local n=$1 r=$2 what=$3 text=$4 before; shift 4; before=$(git -C "$WORK/$n" rev-parse HEAD)
+  upd "$n" "$r" "$@" --
+  { [ "$RC" != 0 ] && grep -qF -- "$text" "$WORK/out" && head_is "$n" "$before"; } || { fail "$what is not refused"; show; }
+  ok
+}
+expect_refused_env nat-ahead ok "going back from main over a native install" "would run older code" MDM_TEST_NATIVE_DIR="$WORK/native-tc"
+clone nat-older v9.1.0 "$WORK/origin2"
+expect_refused_env nat-older nosig "walking below the release of a native install" "No release newer than this clone" MDM_TEST_NATIVE_DIR="$WORK/native-tc"
+# --update --native changes this host's install: as a non-root user it stops at once, saying to use sudo, before it
+# looks anything up or checks anything out. A dry run is fine without root.
+clone nat-user
+upd nat-user ok -- --native
+{ [ "$RC" != 0 ] && head_is nat-user "$cmain" && grep -qF 'sudo ./setup.sh --update --native' "$WORK/out" \
+  && ! grep -q 'Looking up' "$WORK/out"; } || { fail "--update --native as a non-root user does not stop at once"; show; }
+ok
+upd nat-user ok MDMESH_DRY_RUN=1 -- --native
+{ [ "$RC" = 0 ] && head_is nat-user "$cmain" && grep -q 'v9.1.0 verifies' "$WORK/out"; } || { fail "a dry run of --update --native needs root"; show; }
 ok
 # ... and gives up after the 5 newest tags.
 clone capped v9.0.0 "$WORK/origin3"

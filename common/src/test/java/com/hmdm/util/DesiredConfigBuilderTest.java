@@ -201,6 +201,44 @@ public class DesiredConfigBuilderTest {
                 .getKiosk().getTheme().getBackgroundImage());
     }
 
+    private static Configuration managedImage() {
+        Configuration c = kioskConfig();
+        c.setBackgroundImageUrl("https://mdm.example/files/kiosk-background.jpg");
+        c.setBackgroundImageFileId(42);
+        c.setBackgroundImageSha256("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+        return c;
+    }
+
+    /** Protocol 1.10: fit and focal point are sent only when they aren't the defaults, so revisions don't move. */
+    @Test
+    public void kiosk_background_fit_and_focal_are_sent_only_when_not_the_default() {
+        String plain = build(managedImage(), Collections.emptyList()).getRevision();
+        Configuration defaults = managedImage();
+        defaults.setBackgroundImageFit("fill");
+        defaults.setBackgroundImageFocalX(0.5);
+        defaults.setBackgroundImageFocalY(0.5);
+        DesiredConfig d = build(defaults, Collections.emptyList());
+        assertEquals("defaults leave the document as it was", plain, d.getRevision());
+        assertNull(d.getKiosk().getTheme().getBackgroundImage().getFit());
+        assertNull(d.getKiosk().getTheme().getBackgroundImage().getFocalX());
+
+        Configuration focal = managedImage();
+        focal.setBackgroundImageFocalX(0.2);
+        focal.setBackgroundImageFocalY(0.9);
+        DesiredConfig f = build(focal, Collections.emptyList());
+        assertEquals(Double.valueOf(0.2), f.getKiosk().getTheme().getBackgroundImage().getFocalX());
+        assertEquals(Double.valueOf(0.9), f.getKiosk().getTheme().getBackgroundImage().getFocalY());
+        assertNull(f.getKiosk().getTheme().getBackgroundImage().getFit());
+
+        Configuration fit = managedImage();
+        fit.setBackgroundImageFit("fit");
+        fit.setBackgroundImageFocalX(0.2);
+        fit.setBackgroundImageFocalY(0.9);
+        DesiredConfig ft = build(fit, Collections.emptyList());
+        assertEquals("fit", ft.getKiosk().getTheme().getBackgroundImage().getFit());
+        assertNull("fit ignores the focal point", ft.getKiosk().getTheme().getBackgroundImage().getFocalX());
+    }
+
     @Test
     public void factory_reset_is_inverted_into_the_blocking_policy() {
         // disableFactoryReset=true means "block the wipe", so the agent receives factoryReset=false.

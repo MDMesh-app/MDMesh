@@ -232,6 +232,7 @@ public class ConfigurationResource {
             throw new BadRequestException("connectivityMode must be adaptive, alwaysOn or null");
         }
         normalizeManagedAppPermissions(configuration);
+        validateBackgroundImageFit(configuration);
         // A cleaned copy of the background image this save hosted: taken back if the save then fails.
         KioskBackgroundImageAssets.Applied imageApplied = null;
         try {
@@ -272,6 +273,7 @@ public class ConfigurationResource {
                     Configuration stored = configurationDAO.getConfigurationById(id);
                     imageApplied = canonicalizeBackgroundImage(configuration, stored);
                     applyLocationServicesUpdate(configuration, stored);
+                    keepBackgroundImageFit(configuration, stored);
                     Response refused = refuseExtensions(configuration, storedExtensions(id, configuration));
                     if (refused != null) {
                         undo(imageApplied);
@@ -358,6 +360,36 @@ public class ConfigurationResource {
                     .entity(Response.ERROR(e.getMessage()))
                     .build());
         }
+    }
+
+    /** fit is fill, fit or null; a focal coordinate is null or a number from 0 to 1 (NaN and infinities refused). */
+    private static void validateBackgroundImageFit(Configuration c) {
+        String fit = c.getBackgroundImageFit();
+        if (fit != null && !"fill".equals(fit) && !"fit".equals(fit)) {
+            throw badRequest("backgroundImageFit must be fill, fit or null");
+        }
+        for (Double v : new Double[]{c.getBackgroundImageFocalX(), c.getBackgroundImageFocalY()}) {
+            if (v != null && !(v >= 0 && v <= 1)) {
+                throw badRequest("backgroundImageFocalX and backgroundImageFocalY must be from 0 to 1");
+            }
+        }
+    }
+
+    /** A client that doesn't send fit or the focal point (an older console or API client) keeps the stored ones. */
+    private static void keepBackgroundImageFit(Configuration c, Configuration stored) {
+        if (stored == null) return;
+        if (c.getBackgroundImageFit() == null) c.setBackgroundImageFit(stored.getBackgroundImageFit());
+        if (c.getBackgroundImageFocalX() == null && c.getBackgroundImageFocalY() == null) {
+            c.setBackgroundImageFocalX(stored.getBackgroundImageFocalX());
+            c.setBackgroundImageFocalY(stored.getBackgroundImageFocalY());
+        }
+    }
+
+    private static BadRequestException badRequest(String message) {
+        return new BadRequestException(javax.ws.rs.core.Response.status(javax.ws.rs.core.Response.Status.BAD_REQUEST)
+                .type(MediaType.APPLICATION_JSON)
+                .entity(Response.ERROR(message))
+                .build());
     }
 
     private static void applyLocationServicesUpdate(Configuration configuration, Configuration stored) {

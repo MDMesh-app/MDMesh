@@ -148,6 +148,9 @@ public interface ConfigurationMapper {
             "connectivityMode=#{connectivityMode}, " +
             "backgroundImageFileId=#{backgroundImageFileId}, " +
             "backgroundImageSha256=#{backgroundImageSha256}, " +
+            "backgroundImageFit=#{backgroundImageFit}, " +
+            "backgroundImageFocalX=#{backgroundImageFocalX}, " +
+            "backgroundImageFocalY=#{backgroundImageFocalY}, " +
             // Left out (null), the stored extensions stay: a client that doesn't know them can't wipe them.
             "extensions=COALESCE(CAST(#{extensions} AS jsonb), extensions) " +
             "WHERE id=#{id}"})

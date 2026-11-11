@@ -3159,4 +3159,19 @@
         <rollback>ALTER TABLE applicationVersions DROP COLUMN requestedPermissions;</rollback>
     </changeSet>
 
+    <changeSet id="26.11.11-configurations-backgroundImageFitFocal" author="lunacy" context="common">
+        <comment>Kiosk background image fit (fill = cropped, the default; fit = whole, letterboxed) and focal point
+            (0..1 of the image, what a fill crop keeps in view). NULL = the default (fill, centre), so existing
+            configurations keep their document and revision; older agents ignore the new fields.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN backgroundImageFit VARCHAR(8) DEFAULT NULL
+                CHECK (backgroundImageFit IS NULL OR backgroundImageFit IN ('fill', 'fit'));
+            ALTER TABLE configurations ADD COLUMN backgroundImageFocalX DOUBLE PRECISION DEFAULT NULL
+                CHECK (backgroundImageFocalX IS NULL OR (backgroundImageFocalX &gt;= 0 AND backgroundImageFocalX &lt;= 1));
+            ALTER TABLE configurations ADD COLUMN backgroundImageFocalY DOUBLE PRECISION DEFAULT NULL
+                CHECK (backgroundImageFocalY IS NULL OR (backgroundImageFocalY &gt;= 0 AND backgroundImageFocalY &lt;= 1));</sql>
+        <rollback>ALTER TABLE configurations DROP COLUMN backgroundImageFocalY;
+            ALTER TABLE configurations DROP COLUMN backgroundImageFocalX;
+            ALTER TABLE configurations DROP COLUMN backgroundImageFit;</rollback>
+    </changeSet>
+
 </databaseChangeLog>

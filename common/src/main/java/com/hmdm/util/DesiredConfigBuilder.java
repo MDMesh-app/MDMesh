@@ -280,6 +280,17 @@ public final class DesiredConfigBuilder {
             DesiredKioskBackgroundImage image = new DesiredKioskBackgroundImage();
             image.setUrl(cfg.getBackgroundImageUrl());
             image.setSha256(cfg.getBackgroundImageSha256());
+            // 1.10, sent only when not the default, so existing documents and revisions don't move.
+            if ("fit".equals(cfg.getBackgroundImageFit())) {
+                image.setFit("fit");
+            } else {
+                double fx = cfg.getBackgroundImageFocalX() == null ? 0.5 : cfg.getBackgroundImageFocalX();
+                double fy = cfg.getBackgroundImageFocalY() == null ? 0.5 : cfg.getBackgroundImageFocalY();
+                if (fx != 0.5 || fy != 0.5) {
+                    image.setFocalX(fx);
+                    image.setFocalY(fy);
+                }
+            }
             t.setBackgroundImage(image);
         }
         k.setTheme(t);

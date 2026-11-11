@@ -33,6 +33,7 @@ public class ConfigurationResourceBackgroundImageTest {
 
     private static final class FakeConfigurationDAO extends ConfigurationDAO {
         boolean access = true;
+        Configuration stored;
         final List<Configuration> updated = new ArrayList<>();
         FakeConfigurationDAO() {
             super(null, null, null, null, "https://mdm.example.com", System.getProperty("java.io.tmpdir"), null);
@@ -40,7 +41,7 @@ public class ConfigurationResourceBackgroundImageTest {
         @Override public Configuration getConfigurationByName(String name) { return null; }
         @Override public boolean hasConfigurationAccess(int id) { return access; }
         @Override public void updateConfiguration(Configuration c) { updated.add(c); }
-        @Override public Configuration getConfigurationById(Integer id) { return new Configuration(); }
+        @Override public Configuration getConfigurationById(Integer id) { return stored != null ? stored : new Configuration(); }
         @Override public Configuration getConfigurationByIdFull(Integer id) { return new Configuration(); }
         @Override public List<Application> getPlainConfigurationApplications(Integer id) { return new ArrayList<>(); }
     }
@@ -113,6 +114,82 @@ public class ConfigurationResourceBackgroundImageTest {
         Response r = resource.getBackgroundImage(42);
         assertEquals(Response.ResponseStatus.ERROR, r.getStatus());
         assertTrue(r.getMessage(), r.getMessage().startsWith("The background image"));
+    }
+
+    private static Configuration plain() {
+        Configuration c = new Configuration();
+        c.setId(3);
+        c.setName("lobby");
+        c.setApplications(new ArrayList<>());
+        return c;
+    }
+
+    private void assertBadRequest(Configuration c, String message) {
+        try {
+            resource.updateConfiguration(c);
+            fail("expected HTTP 400");
+        } catch (BadRequestException e) {
+            assertEquals(400, e.getResponse().getStatus());
+            assertTrue(((Response) e.getResponse().getEntity()).getMessage().contains(message));
+        }
+        assertTrue("nothing is stored", dao.updated.isEmpty());
+    }
+
+    @Test
+    public void fitMustBeFillOrFit() {
+        Configuration c = plain();
+        c.setBackgroundImageFit("stretch");
+        assertBadRequest(c, "backgroundImageFit");
+    }
+
+    @Test
+    public void focalPointMustBeWithinTheImage() {
+        for (double bad : new double[]{-0.01, 1.01, Double.NaN, Double.POSITIVE_INFINITY}) {
+            Configuration c = plain();
+            c.setBackgroundImageFocalX(bad);
+            assertBadRequest(c, "backgroundImageFocal");
+            Configuration d = plain();
+            d.setBackgroundImageFocalY(bad);
+            assertBadRequest(d, "backgroundImageFocal");
+        }
+    }
+
+    @Test
+    public void anUpdateWithoutFitOrFocalKeepsTheStoredOnes() {
+        dao.stored = plain();
+        dao.stored.setBackgroundImageFit("fit");
+        dao.stored.setBackgroundImageFocalX(0.25);
+        dao.stored.setBackgroundImageFocalY(0.75);
+        resource.updateConfiguration(plain());
+        Configuration saved = dao.updated.get(0);
+        assertEquals("fit", saved.getBackgroundImageFit());
+        assertEquals(Double.valueOf(0.25), saved.getBackgroundImageFocalX());
+        assertEquals(Double.valueOf(0.75), saved.getBackgroundImageFocalY());
+    }
+
+    @Test
+    public void validFitAndFocalAreSaved() {
+        Configuration c = plain();
+        c.setBackgroundImageFit("fill");
+        c.setBackgroundImageFocalX(0.0);
+        c.setBackgroundImageFocalY(1.0);
+        resource.updateConfiguration(c);
+        Configuration saved = dao.updated.get(0);
+        assertEquals("fill", saved.getBackgroundImageFit());
+        assertEquals(Double.valueOf(0.0), saved.getBackgroundImageFocalX());
+        assertEquals(Double.valueOf(1.0), saved.getBackgroundImageFocalY());
+    }
+
+    @Test
+    public void aCopyKeepsFitAndFocal() {
+        Configuration c = plain();
+        c.setBackgroundImageFit("fit");
+        c.setBackgroundImageFocalX(0.1);
+        c.setBackgroundImageFocalY(0.2);
+        Configuration copy = c.newCopy();
+        assertEquals("fit", copy.getBackgroundImageFit());
+        assertEquals(Double.valueOf(0.1), copy.getBackgroundImageFocalX());
+        assertEquals(Double.valueOf(0.2), copy.getBackgroundImageFocalY());
     }
 
     @Test

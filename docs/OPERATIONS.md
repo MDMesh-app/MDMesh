@@ -18,7 +18,7 @@ run: only `GITHUB_REPO` and `GITHUB_TOKEN` survive a hand edit there (a hand-edi
 
 | Setting | Where | Default | Meaning |
 |---------|-------|---------|---------|
-| `BASE_URL` | `.env`; native: env or prompt → `ROOT.xml` | none | Public address of the server, also put in the enrollment QR ([rules](#base-url-and-hostname-rules)). |
+| `BASE_URL` | `.env`; native: env or prompt → `ROOT.xml` | none | Public address of the server ([rules](#base-url-and-hostname-rules)). Open the console there to make enrollment QR codes: a code carries the address the console is open at, and Enroll warns when that isn't `BASE_URL`. |
 | `HTTP_PORT` | native env | current port; fresh install `8080` | Tomcat's HTTP port. |
 | `REPLACE_DATA` | native env | asks; `-y`: keep | `yes` erases existing data on a re-run. |
 | `DB_PASSWORD`, `HASH_SECRET` | `.env`; native: `ROOT.xml` | generated | Don't change them: the database keeps its original password, and a new `HASH_SECRET` invalidates every enrolled device's token. |

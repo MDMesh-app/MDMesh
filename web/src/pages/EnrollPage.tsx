@@ -3,6 +3,7 @@ import { ApiError } from '../api/client';
 import { getConfigurations, type Configuration } from '../api/configurations';
 import { mintEnrollToken, revokeAllEnrollTokens } from '../api/enroll';
 import { getUpdateStatus, type UpdateStatus } from '../api/updates';
+import { addressProblem, wifiProblem } from '../enroll/checks';
 import { agentApkUrl, buildProvisioningPayload, serverBaseUrl, type WifiSecurity } from '../enroll/provisioning';
 import {
   Button,
@@ -369,7 +370,15 @@ export function EnrollPage() {
     devicesHelp = `Anyone with this code can enroll up to ${uses} devices until it expires, or until you stop all codes. Share it only with whoever sets them up.`;
   }
   const ssid = wifiSsid.trim();
-  const wifiInCode = wifiOn && !!ssid;
+  const wifiIssue = wifiOn ? wifiProblem({ ssid: wifiSsid, password: wifiPass, security: wifiSec }) : null;
+  const wifiInCode = wifiOn && !!ssid && !wifiIssue;
+  // The code carries this page's address (see enroll/provisioning.ts); compare it with the server's own setting, which
+  // every configuration carries.
+  const serverSetting = useMemo(
+    () => configs?.map((c) => c.baseUrl).find((v): v is string => typeof v === 'string' && v.trim() !== '') ?? null,
+    [configs],
+  );
+  const address = useMemo(() => addressProblem(serverBaseUrl(), serverSetting), [serverSetting]);
   const expired = !!token?.expiresAt && token.expiresAt <= now;
   const payload = useMemo(
     () =>
@@ -392,7 +401,9 @@ export function EnrollPage() {
   }
   const facts = (withWifi: boolean): KeyValueItem[] => [
     { key: 'gives', label: 'Gives', value: <span className="v2-enroll__gives">{givesName}</span> },
-    ...(withWifi && wifiOn ? [{ key: 'wifi', label: 'Joins Wi-Fi', value: ssid || 'No network name yet' }] : []),
+    ...(withWifi && wifiOn
+      ? [{ key: 'wifi', label: 'Joins Wi-Fi', value: wifiIssue ? 'Not in the code (see Wi-Fi above)' : ssid || 'No network name yet' }]
+      : []),
     { key: 'use', label: 'Use', value: usesText(token?.maxUses ?? uses) },
     { key: 'expires', label: 'Expires', value: expiresValue },
   ];
@@ -502,7 +513,11 @@ export function EnrollPage() {
                 </Field>
               ) : null}
             </div>
-            {wifiSec !== 'NONE' ? (
+            {wifiIssue ? (
+              <Callout tone="warn" icon={<IconWarning size={16} />} role="status">
+                {wifiIssue}
+              </Callout>
+            ) : wifiSec !== 'NONE' ? (
               <Callout tone="warn" icon={<IconWarning size={16} />}>
                 The Wi-Fi password is written into the QR code. Anyone who photographs the code can read it.
               </Callout>
@@ -562,6 +577,11 @@ export function EnrollPage() {
           />
         }
       />
+      {address ? (
+        <Callout tone={address.tone} icon={<IconWarning size={16} />} role="status">
+          {address.text}
+        </Callout>
+      ) : null}
       {tokError ? (
         <Callout tone="alert" role="alert">
           {tokError}{' '}

@@ -36,6 +36,10 @@ New
 - Sync now and console commands say when the device isn't connected and will get it at its next check-in.
 
 Fixes
+- Enroll: the page warns before you hand out a QR code devices can't use: the console is open at localhost, over
+  `http://`, at a local address, or at another address than the server's `BASE_URL` (devices keep the address in the
+  code until a factory reset). Wi-Fi a device can't join from a QR code (no password, a WPA password under 8
+  characters, enterprise EAP) is left out of the code with the reason, instead of stopping setup at the Wi-Fi step.
 - Agent: on Android 12 and later, a device enrolled by QR reports the same hardware id from its first contact, so
   re-enrolling it after a factory reset is flagged as the same device. Needs agent 0.5.0.
 - Agent: while a device can't enroll, its screen says why and what to do (code used up or expired, server not

@@ -3128,6 +3128,18 @@
         <rollback>ALTER TABLE configurations DROP COLUMN locationServices;</rollback>
     </changeSet>
 
+    <changeSet id="26.11.06-configurations-backgroundImageAsset" author="letternumber" context="common">
+        <comment>Configuration kiosk background image: an optional customer-owned uploaded file and the SHA-256 of its
+            immutable selected bytes. NULL keeps the color-only kiosk theme. The URL remains derived from the hosted
+            uploaded-file record rather than being trusted from a browser request.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN backgroundImageFileId INTEGER;
+            ALTER TABLE configurations ADD COLUMN backgroundImageSha256 VARCHAR(64);
+            CREATE INDEX IF NOT EXISTS configurations_backgroundImageFileId_idx ON configurations (backgroundImageFileId);</sql>
+        <rollback>DROP INDEX IF EXISTS configurations_backgroundImageFileId_idx;
+            ALTER TABLE configurations DROP COLUMN backgroundImageSha256;
+            ALTER TABLE configurations DROP COLUMN backgroundImageFileId;</rollback>
+    </changeSet>
+
     <changeSet id="26.11.10-devices-agentEnrollAttemptHash" author="lunacy" context="common">
         <comment>Column,new: devices#agentEnrollAttemptHash — SHA-256 of (enrollment token id, the agent's random enroll
             attempt id). An agent whose enroll response was lost retries with the same attempt id and gets this device

@@ -90,17 +90,19 @@ class ExitPinSafetyTest : KioskHarness() {
         assertEquals("the closed prompt keeps no PIN", "", edit(dialog.window!!.decorView)!!.text.toString())
     }
 
-    /** An IME that sends Done and then an Enter key for the same press. */
-    @Test fun imeDoneThenEnterKeyExitsOnce() {
+    /**
+     * Done from the soft keyboard, then a hardware Enter for the same PIN (an IME plus a keyboard, or a scanner that
+     * sends both): the Enter reaches the field after Done closed the prompt, and must not exit again.
+     */
+    @Test fun imeDoneThenHardwareEnterExitsOnce() {
         launch(grid)
         tapExitKiosk()
         val f = field()
         f.requestFocus()
         f.setText(pin)
-        val ic = f.onCreateInputConnection(EditorInfo())!!
-        ic.performEditorAction(EditorInfo.IME_ACTION_DONE)
-        ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
-        ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+        f.onCreateInputConnection(EditorInfo())!!.performEditorAction(EditorInfo.IME_ACTION_DONE)
+        f.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+        f.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
         settle()
         assertEquals(1, events("kioskExit"))
     }

@@ -92,4 +92,16 @@ class ExitPinInputTest {
         val next = looper.nextScheduledTaskTime
         assertEquals("a task is still scheduled at $next", java.time.Duration.ZERO, next)
     }
+
+    /**
+     * A submit already posted (a scanner's text newline) when the prompt closes in the same message, its text still
+     * in the field: it must not reach the PIN check.
+     */
+    @Test fun `a submit pending when the prompt closes does nothing`() {
+        field.onCreateInputConnection(EditorInfo())!!.commitText("1234\r", 1)
+        DialogHost.showing().cancel()
+        DialogHost.idle()
+        assertEquals("1234", field.text.toString())
+        assertEquals(emptyList<String>(), submitted)
+    }
 }

@@ -109,6 +109,7 @@ class CheckInCoordinator @Inject constructor(
         // The server answered: recorded now, not after the commands (an app.install can download for minutes).
         syncStatus.recordSuccess()
         pending.delivered(data.resultsAccepted)
+        eventSink.delivered()
         // Before this batch runs: its installs are judged by what this server guarantees.
         installIntegrity.update(data.installIntegrity)
 

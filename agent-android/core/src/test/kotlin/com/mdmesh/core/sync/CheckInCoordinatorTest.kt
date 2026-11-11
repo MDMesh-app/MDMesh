@@ -63,9 +63,10 @@ class CheckInCoordinatorTest {
         installIntegrity: InstallIntegrityPolicy = InstallIntegrityPolicy(),
         probe: ThreadProbeHandler = ThreadProbeHandler(),
         realDispatcher: Boolean = false,
+        events: com.mdmesh.core.telemetry.EventSink? = null,
     ): CheckInCoordinator {
         val identity = FakeIdentity(initialId = identityId, initialSecret = "sek-1")
-        val eventSink = object : com.mdmesh.core.telemetry.EventSink {
+        val eventSink = events ?: object : com.mdmesh.core.telemetry.EventSink {
             override fun record(type: String, detail: String?) {}
             override fun drain() = emptyList<com.mdmesh.proto.TelemetryEventDto>()
             override fun restore(events: List<com.mdmesh.proto.TelemetryEventDto>) {}
@@ -134,6 +135,29 @@ class CheckInCoordinatorTest {
         assertNotNull("the command ran", ranOn)
         assertNotSame("command ran on the caller's thread", caller, ranOn)
         assertEquals(1, api.checkInRequests.size)
+    }
+
+    /** Survives a "process restart": a new EventLog on the same store. */
+    private class FakeEventStore : com.mdmesh.core.telemetry.EventLog.Store {
+        val values = mutableMapOf<String, String>()
+        override fun get(key: String): String? = values[key]
+        override fun put(vararg changes: Pair<String, String?>) {
+            for ((key, value) in changes) if (value == null) values.remove(key) else values[key] = value
+        }
+    }
+
+    @Test
+    fun `buffered events are kept until a check-in carrying them succeeds`() = runTest {
+        val store = FakeEventStore()
+        com.mdmesh.core.telemetry.EventLog(store).record("boot")
+        val api = FakeMdmApi().apply { checkInThrows = IOException("network down") }
+
+        runCatching { coordinator(api, PendingResults(), events = com.mdmesh.core.telemetry.EventLog(store)).runOnce() }
+        api.checkInThrows = null
+        coordinator(api, PendingResults(), events = com.mdmesh.core.telemetry.EventLog(store)).runOnce()
+
+        assertEquals(listOf("boot"), api.checkInRequests.last().events.map { it.type })
+        assertTrue("gone once delivered", com.mdmesh.core.telemetry.EventLog(store).drain().isEmpty())
     }
 
     @Test

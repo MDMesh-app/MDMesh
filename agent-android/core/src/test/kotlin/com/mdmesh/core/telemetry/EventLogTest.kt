@@ -98,4 +98,21 @@ class EventLogTest {
         }
         assertEquals(listOf("boot"), EventLog(store).drain().map { it.type })
     }
+
+    @Test fun `what a check-in sends or confirms is on disk before it goes on`() {
+        // drain/restore/delivered run off the main thread, so they can wait for the disk: a process death right after
+        // can then neither lose the batch nor send a confirmed one again.
+        val writes = mutableListOf<String>()
+        val store = object : FakeStore() {
+            override fun put(vararg changes: Pair<String, String?>) { writes += "put"; super.put(*changes) }
+            override fun commit(vararg changes: Pair<String, String?>) { writes += "commit"; super.put(*changes) }
+        }
+        val log = EventLog(store)
+        log.record("boot")
+        val drained = log.drain()
+        log.restore(drained)
+        log.drain()
+        log.delivered()
+        assertEquals(listOf("put", "commit", "commit", "commit", "commit"), writes)
+    }
 }

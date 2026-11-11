@@ -193,17 +193,23 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-      - uses: ./.github/actions/ci-kit/setup-npm
+      # setup-node directly (not ci-kit/setup-npm): the npm cache key covers both lock files.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
         with:
-          working-directory: web
+          node-version-file: web/package.json
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            scripts/shots/package-lock.json
+      - name: Install the console and the shots harness
+        run: |
+          npm ci --prefix web
+          npm ci --prefix scripts/shots
       - name: Build the console with the component gallery
         working-directory: web
         env:
           VITE_GALLERY: "1"
         run: npm run build
-      - name: Install the shots harness
-        working-directory: scripts/shots
-        run: npm ci
       - id: pw
         name: Playwright version
         working-directory: scripts/shots
@@ -214,13 +220,19 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}-chromium
       - if: steps.pw-cache.outputs.cache-hit != 'true'
-        name: Install Chromium and its system libraries
+        name: Download Chromium
         working-directory: scripts/shots
-        run: npx playwright install --with-deps chromium
-      - if: steps.pw-cache.outputs.cache-hit == 'true'
-        name: Install Chromium's system libraries
+        run: npx playwright install chromium
+      # System libraries only when Chromium can't start without them: hosted Ubuntu images have them, and a
+      # self-hosted runner (vars.CI_RUNNER) may have them but no sudo for apt.
+      - name: Chromium starts (system libraries only if it doesn't)
         working-directory: scripts/shots
-        run: npx playwright install-deps chromium
+        run: |
+          probe() { node -e "require('playwright').chromium.launch().then((b) => b.close())"; }
+          if probe; then exit 0; fi
+          echo "Chromium needs system libraries; installing them (needs apt and sudo)."
+          npx playwright install-deps chromium
+          probe
       - name: Accessibility sweep (axe, light, 1280 px)
         run: node scripts/shots/a11y.mjs --quick --out a11y-out
       - if: always()

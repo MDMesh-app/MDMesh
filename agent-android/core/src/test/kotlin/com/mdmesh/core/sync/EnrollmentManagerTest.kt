@@ -22,6 +22,22 @@ class EnrollmentManagerTest {
         tokens: FakeTokenProvider = FakeTokenProvider(token, attempt = "attempt-0123456789abcdef"),
     ) = EnrollmentManager(api, identity, tokens, FakeCapabilitySource(), NoopEventSink)
 
+    /** What a server that resumes enrollments (protocol 1.9) answers. */
+    private fun resumableAnswer(secret: String) = com.mdmesh.core.net.ResponseEnvelope(
+        status = "OK",
+        data = com.mdmesh.proto.AgentEnrollResponse(deviceId = "srv-1", deviceSecret = secret, resumeSupported = true),
+    )
+
+    private fun recovering(
+        api: FakeMdmApi,
+        tokens: FakeTokenProvider,
+        status: SyncStatus,
+        identity: FakeIdentity = FakeIdentity(),
+    ) =
+        EnrollmentManager(api = api, identity = identity, tokenProvider = tokens,
+            capabilitySource = FakeCapabilitySource(), eventSink = NoopEventSink,
+            environment = EnrollmentEnvironment(syncStatus = status))
+
     @Test
     fun `sends the stored attempt id for the token`() = runTest {
         val api = FakeMdmApi()
@@ -51,36 +67,86 @@ class EnrollmentManagerTest {
     }
 
     @Test
-    fun `credentials rejected before the first check-in are recovered with the same attempt`() = runTest {
+    fun `credentials rejected before the first check-in are recovered by resuming the same attempt`() = runTest {
         val identity = FakeIdentity()
         val tokens = FakeTokenProvider("tok-123", attempt = "attempt-0123456789abcdef")
         val status = SyncStatus()
-        val api = FakeMdmApi()
-        val manager = EnrollmentManager(api = api, identity = identity, tokenProvider = tokens,
-            capabilitySource = FakeCapabilitySource(), eventSink = NoopEventSink,
-            environment = EnrollmentEnvironment(syncStatus = status))
+        val api = FakeMdmApi().apply { enrollResponse = resumableAnswer("sek-1") }
+        val manager = recovering(api, tokens, status, identity)
         manager.ensureEnrolled()
 
-        // The server no longer accepts the saved secret (it was replaced), and the device has never checked in.
+        // The server no longer accepts the saved secret, and the device has never checked in.
         status.recordFailure(CheckInException("error.agent.unauthorized"))
-        api.enrollResponse = com.mdmesh.core.net.ResponseEnvelope(
-            status = "OK", data = com.mdmesh.proto.AgentEnrollResponse(deviceId = "srv-1", deviceSecret = "sek-2"),
-        )
+        api.enrollResponse = resumableAnswer("sek-2")
         assertEquals("srv-1", manager.ensureEnrolled())
 
         assertEquals("enrolled again", 2, api.enrollRequests.size)
-        assertEquals("with the same attempt", api.enrollRequests[0].enrollAttempt, api.enrollRequests[1].enrollAttempt)
+        val recovery = api.enrollRequests[1]
+        assertEquals("with the same attempt", api.enrollRequests[0].enrollAttempt, recovery.enrollAttempt)
+        assertEquals("resume only: never a new device", true, recovery.resumeOnly)
+        assertEquals(null, api.enrollRequests[0].resumeOnly)
         assertEquals("sek-2", identity.secret())
+    }
+
+    @Test
+    fun `no recovery against a server that doesn't resume enrollments`() = runTest {
+        val tokens = FakeTokenProvider("tok-123", attempt = "attempt-0123456789abcdef")
+        val status = SyncStatus()
+        val api = FakeMdmApi() // an older server: no resumeSupported in its answer
+        val manager = recovering(api, tokens, status)
+        manager.ensureEnrolled()
+        status.recordFailure(CheckInException("error.agent.unauthorized"))
+
+        manager.ensureEnrolled()
+
+        assertEquals("an ordinary enroll there could make a new device", 1, api.enrollRequests.size)
+    }
+
+    @Test
+    fun `when nothing can be resumed the agent stops recovering and says so`() = runTest {
+        val tokens = FakeTokenProvider("tok-123", attempt = "attempt-0123456789abcdef")
+        val status = SyncStatus()
+        val api = FakeMdmApi().apply { enrollResponse = resumableAnswer("sek-1") }
+        val manager = recovering(api, tokens, status)
+        manager.ensureEnrolled()
+        api.enrollResponse = com.mdmesh.core.net.ResponseEnvelope(
+            status = "ERROR", message = "error.agent.enrollment.notResumable",
+        )
+
+        status.recordFailure(CheckInException("error.agent.unauthorized"))
+        manager.ensureEnrolled()
+        val shown = status.lastError.value?.message.orEmpty()
+        assertTrue(shown, shown.contains("Factory-reset the device"))
+        assertTrue(shown, shown.endsWith("(error.agent.enrollment.notResumable)"))
+        assertEquals("the attempt is dropped", 1, tokens.attemptCleared)
+
+        status.recordFailure(CheckInException("error.agent.unauthorized"))
+        manager.ensureEnrolled()
+        assertEquals("no further recovery", 2, api.enrollRequests.size)
+    }
+
+    @Test
+    fun `one recovery per refused check-in, even when several cycles run`() = runTest {
+        val tokens = FakeTokenProvider("tok-123", attempt = "attempt-0123456789abcdef")
+        val status = SyncStatus()
+        val api = FakeMdmApi().apply { enrollResponse = resumableAnswer("sek-1") }
+        val manager = recovering(api, tokens, status)
+        manager.ensureEnrolled()
+        status.recordFailure(CheckInException("error.agent.unauthorized"))
+
+        // The worker, the heartbeat and a wake all reach enrollment before the next check-in reports anything.
+        (1..3).map { async { manager.ensureEnrolled() } }.awaitAll()
+        manager.ensureEnrolled()
+
+        assertEquals("the first enroll and one recovery", 2, api.enrollRequests.size)
     }
 
     @Test
     fun `no recovery once the device has checked in`() = runTest {
         val tokens = FakeTokenProvider("tok-123", attempt = "attempt-0123456789abcdef")
         val status = SyncStatus()
-        val api = FakeMdmApi()
-        val manager = EnrollmentManager(api = api, identity = FakeIdentity(), tokenProvider = tokens,
-            capabilitySource = FakeCapabilitySource(), eventSink = NoopEventSink,
-            environment = EnrollmentEnvironment(syncStatus = status))
+        val api = FakeMdmApi().apply { enrollResponse = resumableAnswer("sek-1") }
+        val manager = recovering(api, tokens, status)
         manager.ensureEnrolled()
         status.recordSuccess()
         status.recordFailure(CheckInException("error.agent.unauthorized"))
@@ -94,13 +160,12 @@ class EnrollmentManagerTest {
     fun `recovery is bounded, so a device can't loop on enroll`() = runTest {
         val tokens = FakeTokenProvider("tok-123", attempt = "attempt-0123456789abcdef")
         val status = SyncStatus()
-        val api = FakeMdmApi()
-        val manager = EnrollmentManager(api = api, identity = FakeIdentity(), tokenProvider = tokens,
-            capabilitySource = FakeCapabilitySource(), eventSink = NoopEventSink,
-            environment = EnrollmentEnvironment(syncStatus = status))
+        val api = FakeMdmApi().apply { enrollResponse = resumableAnswer("sek-1") }
+        val manager = recovering(api, tokens, status)
         manager.ensureEnrolled()
         repeat(10) {
-            status.recordFailure(CheckInException("error.agent.unauthorized"))
+            // Distinct refusals (a StateFlow keeps the earlier one when an equal failure is recorded the same ms).
+            status.recordFailure(CheckInException("error.agent.unauthorized (check-in $it)"))
             manager.ensureEnrolled()
         }
         assertEquals("the first enroll and at most 3 recoveries", 4, api.enrollRequests.size)

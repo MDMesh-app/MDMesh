@@ -47,6 +47,9 @@ class EnrollmentManager @Inject constructor(
     /** The held attempt id was forgotten after the first successful check-in (this process). */
     @Volatile private var attemptForgotten = false
 
+    /** The refused check-in the last recovery acted on: each refusal is recovered once, whatever path runs next. */
+    @Volatile private var recoveredFailure: SyncStatus.Failure? = null
+
     /**
      * Returns the server-issued device id, enrolling first if necessary. Until the first check-in succeeds it keeps the
      * enrollment's attempt id: if the server rejects the saved credentials meanwhile, it enrolls again with that same
@@ -74,27 +77,36 @@ class EnrollmentManager @Inject constructor(
     /** The last check-in was refused as unauthorized, and none has ever succeeded: the server holds another secret. */
     private fun credentialsRejectedBeforeFirstCheckIn(): Boolean {
         val status = environment.syncStatus
-        return recoveries < MAX_RECOVERIES && status.lastSuccessAtMs == null &&
-            status.lastError.value?.message?.contains(UNAUTHORIZED) == true
+        val failure = status.lastError.value
+        return recoveries < MAX_RECOVERIES && status.lastSuccessAtMs == null && failure !== recoveredFailure &&
+            failure?.message?.contains(UNAUTHORIZED) == true
     }
 
     /**
-     * Enrolls again with the held attempt (same token, same id): the server answers with this attempt's device and its
-     * credential (derived from the attempt, so it is the one it stores). Without a held attempt, or when that fails,
-     * the device keeps what it has and the next cycle tries again, at most [MAX_RECOVERIES] times per process.
+     * Resumes the held attempt (same token, same id, resume only): the server answers with this attempt's device and
+     * the credential it stores, and never makes a new device. Only against a server that said it resumes enrollments
+     * ([AgentEnrollResponse.resumeSupported]). Runs once per refused check-in ([recoveredFailure]) and at most
+     * [MAX_RECOVERIES] times per process. A network failure leaves things as they are for the next refusal; a refusal
+     * from the server (nothing to resume) ends recovery: the attempt is dropped and the reason recorded for the screen.
      */
     private suspend fun recover(current: String): String {
         recoveries++
+        recoveredFailure = environment.syncStatus.lastError.value
         val token = tokenProvider.token()?.takeIf { it.isNotBlank() }
-        val attempt = token?.let { tokenProvider.heldAttempt(it) }
-        val data = if (token == null || attempt == null) {
+        val attempt = token?.let { tokenProvider.resumableAttempt(it) }
+        if (token == null || attempt == null) return current
+        val data = runCatching { post(token, attempt, resumeOnly = true) }.getOrElse { failure ->
+            if (failure is CancellationException) throw failure
+            // Logged (no secrets in it). A refusal by the server (nothing to resume) ends recovery for good.
+            environment.log.warn("credential recovery failed; the device keeps its saved credentials", failure)
+            if (failure is EnrollmentException) {
+                runCatching { tokenProvider.clearEnrollAttempt() }
+                environment.syncStatus.recordFailure(failure)
+            }
             null
-        } else {
-            runCatching { post(token, attempt) }.getOrElse { if (it is CancellationException) throw it else null }
         }
-        if (data == null) return current
-        persist(data)
-        return data.deviceId
+        if (data != null) persist(data)
+        return data?.deviceId ?: current
     }
 
     /** After the first successful check-in the attempt can recover nothing: drop it. */
@@ -116,6 +128,7 @@ class EnrollmentManager @Inject constructor(
             ?: throw EnrollmentException(EnrollmentFailure.NO_CODE)
         val data = post(token, storedAttempt(token))
         persist(data)
+        if (data.resumeSupported == true) runCatching { tokenProvider.markAttemptResumable() }
         runCatching { eventSink.record(EventType.ENROLLED) }
         return data.deviceId
     }
@@ -144,7 +157,7 @@ class EnrollmentManager @Inject constructor(
     }
 
     /** POSTs the enrollment; the server's answer (a refusal as an [EnrollmentException] naming its key). */
-    private suspend fun post(token: String, attempt: String?): AgentEnrollResponse {
+    private suspend fun post(token: String, attempt: String?, resumeOnly: Boolean = false): AgentEnrollResponse {
         // deviceId is unknown pre-enrollment; the server ignores it and issues one.
         val matrix = capabilitySource.matrix(deviceId = "")
         val request = AgentEnrollRequest(
@@ -154,6 +167,7 @@ class EnrollmentManager @Inject constructor(
             capabilities = matrix.capabilities,
             hardwareId = runCatching { environment.hardwareIdSource.get() }.getOrNull(),
             enrollAttempt = attempt,
+            resumeOnly = resumeOnly.takeIf { it },
         )
         val response = api.enroll(request)
         val data = response.data
@@ -185,17 +199,24 @@ class EnrollmentManager @Inject constructor(
  * server address its messages name, and the sync status (whether a check-in has succeeded or was refused as
  * unauthorized). Grouped so tests that don't care can leave them out.
  */
-class EnrollmentEnvironment @Inject constructor(
+class EnrollmentEnvironment(
     val hardwareIdSource: HardwareIdSource,
     val serverAddress: ServerAddress,
     val syncStatus: SyncStatus,
+    val log: EnrollmentLog,
 ) {
-    /** Tests: no hardware id; the address and the sync status only when a test needs them. */
+    @Inject
+    constructor(hardwareIdSource: HardwareIdSource, serverAddress: ServerAddress, syncStatus: SyncStatus) :
+        this(hardwareIdSource, serverAddress, syncStatus, AndroidEnrollmentLog)
+
+    /** Tests: no hardware id; the address, the sync status and the log only when a test needs them. */
     constructor(
         serverAddress: ServerAddress = ServerAddress { "" },
         syncStatus: SyncStatus = SyncStatus(),
-    ) : this(HardwareIdSource { null }, serverAddress, syncStatus)
+        log: EnrollmentLog = EnrollmentLog { _, _ -> },
+    ) : this(HardwareIdSource { null }, serverAddress, syncStatus, log)
 }
+
 
 /**
  * Enrollment could not complete. [message] is for the person holding the device ([EnrollmentFailure]); a server

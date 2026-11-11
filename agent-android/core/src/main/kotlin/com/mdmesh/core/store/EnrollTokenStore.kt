@@ -3,6 +3,7 @@ package com.mdmesh.core.store
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -34,8 +35,14 @@ interface EnrollTokenProvider {
     /** Forget the enrollment attempt once the device has checked in: it can resume nothing any more. */
     suspend fun clearEnrollAttempt() {}
 
-    /** The attempt id still held for [token], without making one; null when there is none. */
-    suspend fun heldAttempt(token: String): String? = null
+    /** Remember that the server which enrolled with the held attempt resumes enrollments (resume-only recovery). */
+    suspend fun markAttemptResumable() {}
+
+    /**
+     * The attempt id held for [token] when the server that took it resumes enrollments, without making one; null
+     * otherwise (no attempt, or an older server, where a recovery enroll could make a new device).
+     */
+    suspend fun resumableAttempt(token: String): String? = null
 }
 
 private val Context.enrollTokenDataStore: DataStore<Preferences> by preferencesDataStore(
@@ -72,16 +79,22 @@ class EnrollTokenStore(private val context: Context) : EnrollTokenProvider {
         return attempt
     }
 
-    override suspend fun heldAttempt(token: String): String? {
+    override suspend fun markAttemptResumable() {
+        context.enrollTokenDataStore.edit { it[KEY_ATTEMPT_RESUMABLE] = true }
+    }
+
+    override suspend fun resumableAttempt(token: String): String? {
         val prefs = context.enrollTokenDataStore.data.first()
         val attempt = prefs[KEY_ATTEMPT]
-        return attempt?.takeIf { it.isNotBlank() && prefs[KEY_ATTEMPT_FOR] == EnrollAttempts.bindingOf(token) }
+        val held = !attempt.isNullOrBlank() && prefs[KEY_ATTEMPT_FOR] == EnrollAttempts.bindingOf(token)
+        return attempt.takeIf { held && prefs[KEY_ATTEMPT_RESUMABLE] == true }
     }
 
     override suspend fun clearEnrollAttempt() {
         context.enrollTokenDataStore.edit {
             it.remove(KEY_ATTEMPT)
             it.remove(KEY_ATTEMPT_FOR)
+            it.remove(KEY_ATTEMPT_RESUMABLE)
         }
     }
 
@@ -89,5 +102,6 @@ class EnrollTokenStore(private val context: Context) : EnrollTokenProvider {
         val KEY_TOKEN = stringPreferencesKey("enroll_token")
         val KEY_ATTEMPT = stringPreferencesKey("enroll_attempt")
         val KEY_ATTEMPT_FOR = stringPreferencesKey("enroll_attempt_for")
+        val KEY_ATTEMPT_RESUMABLE = booleanPreferencesKey("enroll_attempt_resumable")
     }
 }

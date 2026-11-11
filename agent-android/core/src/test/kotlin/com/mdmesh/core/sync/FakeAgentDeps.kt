@@ -54,7 +54,13 @@ class FakeTokenProvider(private val token: String?, private val attempt: String?
     override suspend fun clearEnrollAttempt() {
         attemptCleared++
     }
-    override suspend fun heldAttempt(token: String): String? = if (attemptCleared == 0) attempt else null
+    var resumable = false
+        private set
+    override suspend fun markAttemptResumable() {
+        resumable = true
+    }
+    override suspend fun resumableAttempt(token: String): String? =
+        if (attemptCleared == 0 && resumable) attempt else null
 }
 
 class FakeCapabilitySource(

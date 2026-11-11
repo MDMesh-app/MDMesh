@@ -48,6 +48,8 @@ object EnrollmentFailure {
                 "automatically."
             k.endsWith("enrollment.deviceLimit") -> "This organisation has reached its device limit. Ask your " +
                 "admin to make room; this device then enrolls by itself."
+            k.endsWith("enrollment.notResumable") -> "The server no longer accepts this device's credentials and " +
+                "can't restore them. Factory-reset the device and scan a new QR code to enroll it again."
             k.endsWith("enrollment.inProgress") -> "The server is still enrolling this device. Trying again " +
                 "automatically."
             else -> "The server refused enrollment."

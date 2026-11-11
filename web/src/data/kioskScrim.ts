@@ -1,17 +1,22 @@
-// The kiosk launcher's adaptive scrim, the console side: how much of the kiosk background colour the agent lays over a
-// background image so the launcher's text stays at 4.5:1 or more. The agent computes the same thing on the device;
-// both are tested against proto/vectors/kiosk-scrim.json. Algorithm and rationale: docs/kiosk-background-scrim.md.
+// Kiosk background legibility, the console side (version 3): the image's per-cell colour bounds, a light dim for the
+// launcher's controls capped at 30%, and a plate of the kiosk background colour behind each text that needs one (solid
+// over texture), so text stays at 4.5:1 or more against every pixel under it. The agent computes the same on the device; both are tested against proto/vectors/kiosk-scrim.json. Rules and
+// rationale: docs/kiosk-background-scrim.md.
 //
 // Colours are opaque sRGB as 0xRRGGBB numbers. Everything here is pure except sampleCrop, which needs a canvas.
 
-/** The scrim's alpha moves in 1/50 steps: 0 (the image as is) to 50 (the solid background colour). */
+/** Dim and plate alphas move in 1/50 steps: 0 (nothing) to 50 (the solid background colour). */
 export const SCRIM_STEPS = 50;
+/** The dim never goes past 15/50 (30%): plates carry the text, the image stays visible. */
+export const DIM_MAX_STEP = 15;
 /** WCAG AA for body text; the launcher has no large text. */
 export const TEXT_MIN = 4.5;
-/** Up to this share of the samples (rounded down) may stay under TEXT_MIN: a few bright specks don't dim a photo. */
-export const ALLOWANCE_PERCENT = 2;
-/** The visible crop is sampled at most this many pixels along its long edge. */
-export const SAMPLE_EDGE = 48;
+/** WCAG 1.4.11 for controls (the Exit button). */
+export const CONTROL_MIN = 3;
+/** Over texture (a channel spanning more than this many levels under a text) a plate is solid. */
+export const BUSY_SPAN = 48;
+/** The image is kept as this many cells along its long edge, each with its per-channel minimum and maximum. */
+export const CELLS_ON_LONG_EDGE = 120;
 
 /** v2 dark `--app` and `--text`, the launcher's colours when the kiosk sets none (KioskPalette on the agent). */
 export const DEFAULT_BACKGROUND = 0x0f1115;
@@ -111,39 +116,204 @@ export function kioskColours(backgroundColor?: string | null, textColor?: string
   return { background: bg, text, secondary };
 }
 
+export interface Box {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** The image as cells: per cell, the per-channel minimum and maximum of its pixels over the background colour. */
+export interface ImageCells {
+  width: number;
+  height: number;
+  cellSize: number;
+  cols: number;
+  rows: number;
+  /** Row-major, 0xRRGGBB. */
+  min: ArrayLike<number>;
+  max: ArrayLike<number>;
+}
+
 /**
- * The contrast `text` keeps over the scrimmed samples, all but the allowance: the (allowance+1)-th lowest ratio.
- * Infinity without samples.
+ * A launcher element over the image, by its plate box (dp, in the window): `text` and `secondary` need 4.5:1 in that
+ * colour; `control` (the Exit button, filled with the text colour) needs 3:1 and is only helped by the dim.
  */
-export function coveredRatio(samples: readonly number[], scrim: number, text: number, step: number): number {
-  if (samples.length === 0) return Infinity;
-  const allowed = Math.floor((samples.length * ALLOWANCE_PERCENT) / 100);
-  const ratios = samples.map((s) => contrastRatio(text, blendStep(scrim, s, step))).sort((a, b) => a - b);
-  return ratios[allowed];
+export interface LegibilityElement {
+  id: string;
+  kind: 'text' | 'secondary' | 'control';
+  box: Box;
 }
 
-export interface Scrim {
-  /** 0 to 50. */
+export interface Plate {
+  /** 0 (no plate) to 50 (solid background colour); always 0 for a control. */
   step: number;
-  /** step / 50: the scrim colour's opacity over the image. */
-  alpha: number;
-  /** The lowest covered ratio of the launcher's text colours with the scrim (Infinity without samples). */
+  /** The worst contrast against any pixel under the box, with the plate. */
   ratio: number;
-  /** The same without any scrim: what an agent without the scrim shows. */
-  ratioWithoutScrim: number;
+  /** The same on the dimmed image alone. */
+  ratioWithoutPlate: number;
+  /** Texture under the box: a channel spans more than BUSY_SPAN levels. */
+  busy: boolean;
 }
 
-/** The least scrim at which every text colour reaches 4.5:1 over the samples (the allowance aside). */
-export function scrimFor(samples: readonly number[], colours: KioskColours): Scrim {
-  const texts = [colours.text, colours.secondary];
-  const worst = (step: number) => Math.min(...texts.map((t) => coveredRatio(samples, colours.background, t, step)));
-  const ratioWithoutScrim = worst(0);
-  for (let step = 0; step <= SCRIM_STEPS; step++) {
-    const ratio = step === 0 ? ratioWithoutScrim : worst(step);
-    if (ratio >= TEXT_MIN) return { step, alpha: step / SCRIM_STEPS, ratio, ratioWithoutScrim };
+export interface Legibility {
+  /** The image dim, 0 to DIM_MAX_STEP. */
+  dim: number;
+  plates: Record<string, Plate>;
+  /** The lowest text contrast with the plates (Infinity without texts). */
+  textRatio: number;
+  /** Some text needs a plate. */
+  onPlate: boolean;
+}
+
+/** The cell grid of an iw x ih image: square cells of ceil(long / 120) px. */
+export function cellGrid(iw: number, ih: number): { cellSize: number; cols: number; rows: number } {
+  const cellSize = Math.max(1, Math.ceil(Math.max(iw, ih) / CELLS_ON_LONG_EDGE));
+  return { cellSize, cols: Math.ceil(iw / cellSize), rows: Math.ceil(ih / cellSize) };
+}
+
+/**
+ * Cells of RGBA pixels (canvas ImageData order), each pixel first composited over `background`:
+ * per channel floor((c * a + b * (255 - a) + 127) / 255).
+ */
+export function imageCells(rgba: ArrayLike<number>, iw: number, ih: number, background: number): ImageCells {
+  const { cellSize, cols, rows } = cellGrid(iw, ih);
+  const n = cols * rows;
+  const lo = new Array<number>(n * 3).fill(255);
+  const hi = new Array<number>(n * 3).fill(0);
+  const bg = [(background >> 16) & 255, (background >> 8) & 255, background & 255];
+  for (let y = 0; y < ih; y++) {
+    const row = Math.floor(y / cellSize) * cols;
+    for (let x = 0; x < iw; x++) {
+      const p = (y * iw + x) * 4;
+      const a = rgba[p + 3];
+      const c = (row + Math.floor(x / cellSize)) * 3;
+      for (let k = 0; k < 3; k++) {
+        const v = a === 255 ? rgba[p + k] : Math.floor((rgba[p + k] * a + bg[k] * (255 - a) + 127) / 255);
+        if (v < lo[c + k]) lo[c + k] = v;
+        if (v > hi[c + k]) hi[c + k] = v;
+      }
+    }
   }
-  // Not reached: at 50 the samples are the background colour, which the text colours reach 4.5:1 on.
-  return { step: SCRIM_STEPS, alpha: 1, ratio: worst(SCRIM_STEPS), ratioWithoutScrim };
+  const pack = (arr: number[], i: number) => (arr[i * 3] << 16) | (arr[i * 3 + 1] << 8) | arr[i * 3 + 2];
+  return {
+    width: iw,
+    height: ih,
+    cellSize,
+    cols,
+    rows,
+    min: Array.from({ length: n }, (_, i) => pack(lo, i)),
+    max: Array.from({ length: n }, (_, i) => pack(hi, i)),
+  };
+}
+
+/** The per-channel bounds of the pixels under `box` (dp in a w x h window): its cells through the crop, plus one. */
+export function boxBounds(cells: ImageCells, window: { w: number; h: number }, box: Box): { lo: number; hi: number } {
+  const crop = centreCrop(cells.width, cells.height, window.w, window.h);
+  const k = crop.w / window.w;
+  const cs = cells.cellSize;
+  const x0 = crop.x + box.x * k;
+  const x1 = crop.x + (box.x + box.w) * k;
+  const y0 = crop.y + box.y * k;
+  const y1 = crop.y + (box.y + box.h) * k;
+  const i0 = Math.max(0, Math.floor(x0 / cs) - 1);
+  const i1 = Math.min(cells.cols - 1, Math.ceil(x1 / cs));
+  const j0 = Math.max(0, Math.floor(y0 / cs) - 1);
+  const j1 = Math.min(cells.rows - 1, Math.ceil(y1 / cs));
+  const lo = [255, 255, 255];
+  const hi = [0, 0, 0];
+  for (let j = j0; j <= j1; j++) {
+    for (let i = i0; i <= i1; i++) {
+      const mn = cells.min[j * cells.cols + i];
+      const mx = cells.max[j * cells.cols + i];
+      for (let c = 0; c < 3; c++) {
+        const shift = 16 - 8 * c;
+        lo[c] = Math.min(lo[c], (mn >> shift) & 255);
+        hi[c] = Math.max(hi[c], (mx >> shift) & 255);
+      }
+    }
+  }
+  return { lo: (lo[0] << 16) | (lo[1] << 8) | lo[2], hi: (hi[0] << 16) | (hi[1] << 8) | hi[2] };
+}
+
+const widen = (c: number, by: number) => {
+  let out = 0;
+  for (const shift of [16, 8, 0]) out |= Math.min(255, Math.max(0, ((c >> shift) & 255) + by)) << shift;
+  return out;
+};
+
+/**
+ * The lowest contrast of `colour` against any pixel whose channels lie between `lo` and `hi`, widened by one level
+ * each way for the GPU's rounding: luminance only grows with each channel, so the pixels' luminances span
+ * [lum(lo), lum(hi)]; 1 when the colour's own luminance is inside.
+ */
+export function worstRatio(colour: number, lo: number, hi: number): number {
+  const lt = luminance(colour);
+  const a = luminance(widen(lo, -1));
+  const b = luminance(widen(hi, 1));
+  if (lt >= a && lt <= b) return 1;
+  const other = lt < a ? a : b;
+  return (Math.max(lt, other) + 0.05) / (Math.min(lt, other) + 0.05);
+}
+
+/** Texture: a channel spans more than BUSY_SPAN levels. */
+export function isBusy(lo: number, hi: number): boolean {
+  for (const shift of [16, 8, 0]) if (((hi >> shift) & 255) - ((lo >> shift) & 255) > BUSY_SPAN) return true;
+  return false;
+}
+
+/** The dim, then a plate per text (docs/kiosk-background-scrim.md, version 3). */
+export function kioskLegibility(
+  cells: ImageCells,
+  window: { w: number; h: number },
+  colours: KioskColours,
+  elements: readonly LegibilityElement[],
+): Legibility {
+  const bg = colours.background;
+  const colourOf = (kind: LegibilityElement['kind']) => (kind === 'secondary' ? colours.secondary : colours.text);
+  const bounds = elements.map((e) => boxBounds(cells, window, e.box));
+  const controls = bounds.filter((_, i) => elements[i].kind === 'control');
+  let dim = 0;
+  if (controls.length) {
+    dim = DIM_MAX_STEP;
+    for (let s = 0; s <= DIM_MAX_STEP; s++) {
+      if (controls.every((b) => worstRatio(colours.text, blendStep(bg, b.lo, s), blendStep(bg, b.hi, s)) >= CONTROL_MIN)) {
+        dim = s;
+        break;
+      }
+    }
+  }
+  const plates: Record<string, Plate> = {};
+  let textRatio = Infinity;
+  let onPlate = false;
+  elements.forEach((e, i) => {
+    const colour = colourOf(e.kind);
+    const lo = blendStep(bg, bounds[i].lo, dim);
+    const hi = blendStep(bg, bounds[i].hi, dim);
+    const busy = isBusy(lo, hi);
+    const ratioWithoutPlate = worstRatio(colour, lo, hi);
+    if (e.kind === 'control') {
+      plates[e.id] = { step: 0, ratio: ratioWithoutPlate, ratioWithoutPlate, busy };
+      return;
+    }
+    let step = 0;
+    if (ratioWithoutPlate < TEXT_MIN) {
+      step = SCRIM_STEPS;
+      if (!busy) {
+        for (let s = 1; s <= SCRIM_STEPS; s++) {
+          if (worstRatio(colour, blendStep(bg, lo, s), blendStep(bg, hi, s)) >= TEXT_MIN) {
+            step = s;
+            break;
+          }
+        }
+      }
+    }
+    const ratio = step === 0 ? ratioWithoutPlate : worstRatio(colour, blendStep(bg, lo, step), blendStep(bg, hi, step));
+    plates[e.id] = { step, ratio, ratioWithoutPlate, busy };
+    textRatio = Math.min(textRatio, ratio);
+    if (step > 0) onPlate = true;
+  });
+  return { dim, plates, textRatio, onPlate };
 }
 
 /** The part of an `iw` x `ih` image a `fw` x `fh` window shows, centre-cropped (Android's CENTER_CROP). */
@@ -154,44 +324,16 @@ export function centreCrop(iw: number, ih: number, fw: number, fh: number): { x:
   return { x: (iw - w) / 2, y: (ih - h) / 2, w, h };
 }
 
-/** The sample grid of a crop: SAMPLE_EDGE along its long edge, at least 1 along the short one. */
-export function sampleGrid(w: number, h: number): { cols: number; rows: number } {
-  const long = Math.max(w, h);
-  return {
-    cols: Math.max(1, Math.round((SAMPLE_EDGE * w) / long)),
-    rows: Math.max(1, Math.round((SAMPLE_EDGE * h) / long)),
-  };
-}
-
-/**
- * Samples the part of `image` a `fw` x `fh` window shows: the centre crop, scaled down to the sample grid over the
- * background colour (transparent pixels show it on the device too). Null when the browser can't read the pixels.
- */
-export function sampleCrop(
-  image: CanvasImageSource,
-  iw: number,
-  ih: number,
-  fw: number,
-  fh: number,
-  background: number,
-): number[] | null {
-  const crop = centreCrop(iw, ih, fw, fh);
-  const { cols, rows } = sampleGrid(crop.w, crop.h);
+/** The cells of a loaded image, read at its full size. Null when the browser can't read the pixels. */
+export function readImageCells(image: CanvasImageSource, iw: number, ih: number, background: number): ImageCells | null {
   try {
     const canvas = document.createElement('canvas');
-    canvas.width = cols;
-    canvas.height = rows;
+    canvas.width = iw;
+    canvas.height = ih;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return null;
-    ctx.fillStyle = toHex(background);
-    ctx.fillRect(0, 0, cols, rows);
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(image, crop.x, crop.y, crop.w, crop.h, 0, 0, cols, rows);
-    const data = ctx.getImageData(0, 0, cols, rows).data;
-    const samples: number[] = [];
-    for (let i = 0; i < data.length; i += 4) samples.push((data[i] << 16) | (data[i + 1] << 8) | data[i + 2]);
-    return samples;
+    ctx.drawImage(image, 0, 0, iw, ih);
+    return imageCells(ctx.getImageData(0, 0, iw, ih).data, iw, ih, background);
   } catch {
     // A tainted canvas (cross-origin image) or no canvas support.
     return null;

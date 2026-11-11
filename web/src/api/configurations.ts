@@ -43,6 +43,9 @@ export interface ConfigApp {
   /** The version this config is pinned to; preserved across a save so the
    *  server doesn't silently bump the app to its latest version. */
   usedVersionId?: number;
+  /** Comma-separated Android permissions parsed from this selected version's locally hosted APK; absent for system
+   *  apps and remote APKs until the device permission-inventory follow-up exists. */
+  requestedPermissions?: string | null;
   // Headwind launcher layout for the app (configurationApplications columns). The console doesn't edit them, but
   // a save re-inserts every row from what it sends, so they must go back exactly as loaded.
   screenOrder?: number | null;

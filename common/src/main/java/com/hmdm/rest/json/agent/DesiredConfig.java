@@ -26,6 +26,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Getter;
 import lombok.Setter;
 import java.util.Map;
+import java.util.List;
 
 /**
  * Desired-state document carried by the {@code config.apply} command (proto/payloads/config-apply.schema.json).
@@ -51,8 +52,10 @@ public class DesiredConfig {
      * keeps the mode it has, and documents without it keep their revision.
      */
     private DesiredConnectivity connectivity;
+    /** Null for a legacy configuration row; empty means release all managed app permission overrides. */
+    private List<DesiredAppPermissions> appPermissions;
     /**
-     * Present (1.7) = the configuration sets how the device installs OS updates. Absent (null) = Default: the device
+     * Present (1.8) = the configuration sets how the device installs OS updates. Absent (null) = Default: the device
      * decides (an agent that set a policy for an earlier document clears it), and documents without it keep their
      * revision.
      */

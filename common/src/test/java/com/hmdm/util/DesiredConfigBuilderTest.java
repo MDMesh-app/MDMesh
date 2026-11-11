@@ -185,6 +185,23 @@ public class DesiredConfigBuilderTest {
     }
 
     @Test
+    public void kiosk_background_image_requires_a_server_managed_file_and_hash() {
+        Configuration c = kioskConfig();
+        c.setBackgroundImageUrl("https://mdm.example/files/kiosk-background.jpg");
+        c.setBackgroundImageFileId(42);
+        c.setBackgroundImageSha256("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+
+        assertEquals("https://mdm.example/files/kiosk-background.jpg", build(c, Collections.emptyList())
+                .getKiosk().getTheme().getBackgroundImage().getUrl());
+        assertEquals("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", build(c, Collections.emptyList())
+                .getKiosk().getTheme().getBackgroundImage().getSha256());
+
+        c.setBackgroundImageSha256(null);
+        assertNull("a URL alone is a legacy value, not a managed image", build(c, Collections.emptyList())
+                .getKiosk().getTheme().getBackgroundImage());
+    }
+
+    @Test
     public void factory_reset_is_inverted_into_the_blocking_policy() {
         // disableFactoryReset=true means "block the wipe", so the agent receives factoryReset=false.
         DesiredConfig blocked = build(policiesConfig(), Collections.emptyList());
@@ -332,7 +349,7 @@ public class DesiredConfigBuilderTest {
 
     @Test
     public void system_update_is_sent_only_when_set_and_default_keeps_the_revision() {
-        // Existing configurations upgrade with systemUpdateType 0 (Default, protocol 1.7): no section, no revision moves.
+        // Existing configurations upgrade with systemUpdateType 0 (Default, protocol 1.8): no section, no revision moves.
         DesiredConfig byDefault = build(policiesConfig(), Collections.emptyList());
         assertNull("Default = not managed", byDefault.getSystemUpdate());
         assertFalse(DesiredConfigBuilder.canonicalJson(byDefault).contains("systemUpdate"));

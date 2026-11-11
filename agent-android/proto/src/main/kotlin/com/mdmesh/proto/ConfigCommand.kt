@@ -13,7 +13,7 @@ import kotlinx.serialization.Serializable
  * @property location capture cadence (`passive`, `active`, or `off` since 1.4), see [DeviceAction.LOCATION_MODE].
  * @property connectivity (1.5) present = set the live-connection mode (`adaptive` or `alwaysOn`), the same modes as
  *   [DeviceAction.POWER_MODE]; absent = not managed, the device keeps its mode.
- * @property systemUpdate (1.7) present = set the OS update policy; absent = not managed, and a policy the agent set
+ * @property systemUpdate (1.8) present = set the OS update policy; absent = not managed, and a policy the agent set
  *   for an earlier document is cleared (see ConfigApplier).
  */
 @Serializable
@@ -24,6 +24,8 @@ data class ConfigApplyPayload(
     val kiosk: KioskApplyPayload? = null,
     val location: ConfigLocation? = null,
     val connectivity: ConfigConnectivity? = null,
+    /** Null = server does not manage app permissions; empty = deliberately release all earlier overrides. */
+    val appPermissions: List<ConfigAppPermissions>? = null,
     val systemUpdate: ConfigSystemUpdate? = null,
 )
 
@@ -33,8 +35,15 @@ data class ConfigLocation(val mode: String = DeviceAction.LOCATION_PASSIVE)
 @Serializable
 data class ConfigConnectivity(val mode: String = DeviceAction.POWER_ADAPTIVE)
 
+@Serializable
+data class ConfigAppPermissions(
+    val packageName: String,
+    /** Exact Android runtime permission names mapped to `grant` or `deny`. */
+    val permissions: Map<String, String> = emptyMap(),
+)
+
 /**
- * The `systemUpdate` section (1.7): how the device installs OS updates.
+ * The `systemUpdate` section (1.8): how the device installs OS updates.
  *
  * @property policy [AUTOMATIC], [WINDOWED] or [POSTPONE]; another value is reported unsupported.
  * @property windowStart [WINDOWED] only: minutes after local midnight (0..1439).

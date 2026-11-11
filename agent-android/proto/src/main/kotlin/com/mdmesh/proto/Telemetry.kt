@@ -88,10 +88,10 @@ data class SecurityPosture(
     val patchAgeDays: Int?,
     val isDeviceOwner: Boolean,
     /**
-     * 1.7: when the OS update the device is waiting to install was first offered (epoch millis). Null when none is
+     * 1.8: when the OS update the device is waiting to install was first offered (epoch millis). Null when none is
      * pending, or when the agent can't tell (API < 26, not Device Owner, the call failed).
      */
     val pendingSystemUpdateAt: Long? = null,
-    /** 1.7: whether that update is a security patch; null when the platform doesn't know, or none is pending. */
+    /** 1.8: whether that update is a security patch; null when the platform doesn't know, or none is pending. */
     val pendingSystemUpdateSecurityPatch: Boolean? = null,
 )

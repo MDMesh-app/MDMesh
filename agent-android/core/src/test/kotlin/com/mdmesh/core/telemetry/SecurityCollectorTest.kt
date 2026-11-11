@@ -34,7 +34,7 @@ class SecurityCollectorTest {
         val noneJson = ProtocolJson.json.encodeToString(SecurityPosture.serializer(), none)
         assertFalse(noneJson.contains("pendingSystemUpdate"))
         val decoded = ProtocolJson.json.decodeFromString(SecurityPosture.serializer(), noneJson)
-        assertEquals("JSON without them (as from before 1.7) decodes", none, decoded)
+        assertEquals("JSON without them (as from before 1.8) decodes", none, decoded)
 
         val pending = none.copy(pendingSystemUpdateAt = 1_700_000_000_000L, pendingSystemUpdateSecurityPatch = true)
         val json = ProtocolJson.json.encodeToString(SecurityPosture.serializer(), pending)

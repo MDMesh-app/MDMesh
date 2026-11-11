@@ -89,7 +89,7 @@ class CapabilityRegistry(
     fun togglePolicies(): ResolvedToggles = toggles.current()
 
     /**
-     * `systemUpdatePolicy` (1.7). Not a toggle: only the config.apply `systemUpdate` section sets it, so it is not in
+     * `systemUpdatePolicy` (1.8). Not a toggle: only the config.apply `systemUpdate` section sets it, so it is not in
      * [toggles]. Its support is checked on every call, as theirs is.
      */
     val systemUpdate: SystemUpdateControl = SystemUpdateControl(DpmSystemUpdatePlatform(handle)) {

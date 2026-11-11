@@ -28,7 +28,7 @@ Advertised only when the device has a working strategy for it (`CapabilityRegist
 | `mobileData` | mobile data toggle | 24 | Planned: not advertised yet. |
 | `kioskLockTask` | COSU lock-task kiosk | 24 | Planned: not advertised; kiosk commands are ungated (see below). |
 | `passwordComplexity` | password policy | 31 | Planned: not advertised yet. setRequiredPasswordComplexity (setPasswordQuality deprecated @26) |
-| `systemUpdatePolicy` | OS update policy | 24 | 1.7. Advertised to a Device Owner. config.apply `systemUpdate`: `setSystemUpdatePolicy` automatic / windowed / postpone; a document without the section clears a policy the agent set. |
+| `systemUpdatePolicy` | OS update policy | 24 | 1.8. Advertised to a Device Owner. config.apply `systemUpdate`: `setSystemUpdatePolicy` automatic / windowed / postpone; a document without the section clears a policy the agent set. |
 | `factoryResetProtection` | FRP policy | 30 | setFactoryResetProtectionPolicy; does not *prevent* a wipe, it decides whether a wiped device demands a Google account. Not implemented. |
 
 A config.apply document can also carry a server plugin's keys, `x.<pluginId>.<key>` (`policies.x.netaccess.vpn`,
@@ -51,6 +51,7 @@ with a protocol bump, a capability token and a per-section outcome, in the relea
 | `silentUninstall` | silent uninstall | Planned: not advertised yet. |
 | `splitApk` | split/.xapk install | Planned key: not advertised; `app.install` already takes split `parts`. |
 | `fdroidCatalog` | can pull from an F-Droid repo | Planned: not advertised yet. |
+| `runtimePermissions` | per-app runtime permission grant, denial, and release | 1.7. Device Owner and API 23+. The optional `config.apply.appPermissions` section is sent only to agents advertising `app.runtimePermissions`; omission is legacy/no management and an empty array releases MDMesh overrides. |
 
 ### remoteControl
 Advertised as an object (`tier`, `screenCapture`, `inputInjection`, `transport`). See README. The agent
@@ -91,7 +92,7 @@ string, except `configApply`.
 | `app.uninstall` | — | `{ packageName }`; no console or server sender yet |
 | `apps.scan` | — | none; result detail is `{ apps: [...] }` |
 | `apps.icons` | — | `{ packages: [...] }`; result detail is `{ icons: [{ pkg, pngBase64 }] }` |
-| `kiosk.enter` | — | `{ mode, allowedPackages, pinPackage, features, exitMode, password, theme }` (`KioskApplyPayload`); `features.lockButtons` blocks the power menu, `features.lockVolume` (1.4) blocks volume changes and mutes while in kiosk |
+| `kiosk.enter` | — | `{ mode, allowedPackages, pinPackage, features, exitMode, password, theme }` (`KioskApplyPayload`); `features.lockButtons` blocks the power menu, `features.lockVolume` (1.4) blocks volume changes and mutes while in kiosk; `theme.backgroundImage` `{ url, sha256 }` (agent 0.5.0) is an HTTPS image the agent checks by SHA-256 (at most 10 MB and 16 megapixels) and draws behind the launcher, keeping `theme.backgroundColor` on any failure |
 | `kiosk.exit` | — | none |
 | `device.lock` | `device.lock` | none |
 | `device.reboot` | `device.reboot` | none (DO) |

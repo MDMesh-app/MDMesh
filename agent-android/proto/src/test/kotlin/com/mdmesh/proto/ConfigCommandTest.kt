@@ -57,12 +57,29 @@ class ConfigCommandTest {
         assertNull(absent.connectivity)
     }
 
+    @Test
+    fun `app permissions distinguish an old server omission from an explicit release (protocol 1_7)`() {
+        val managedJson = """{"revision":"r","appPermissions":[{"packageName":"org.example.maps",""" +
+            """"permissions":{"android.permission.CAMERA":"deny"}}]}"""
+        val managed = ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), managedJson)
+        assertEquals("deny", managed.appPermissions?.single()?.permissions?.get("android.permission.CAMERA"))
+        val omitted = ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), """{"revision":"r"}""")
+        assertNull(omitted.appPermissions)
+        assertEquals(emptyList<ConfigAppPermissions>(),
+            ProtocolJson.json.decodeFromString(
+                ConfigApplyPayload.serializer(),
+                """{"revision":"r","appPermissions":[]}""",
+            ).appPermissions,
+        )
+        assertEquals("1.8", ProtocolJson.PROTOCOL_VERSION)
+    }
+
     private fun systemUpdate(section: String): ConfigSystemUpdate? = ProtocolJson.json
         .decodeFromString(ConfigApplyPayload.serializer(), """{"revision":"r","systemUpdate":$section}""")
         .systemUpdate
 
     @Test
-    fun `systemUpdate decodes each policy and is absent by default (protocol 1_7)`() {
+    fun `systemUpdate decodes each policy and is absent by default (protocol 1_8)`() {
         assertEquals(ConfigSystemUpdate(ConfigSystemUpdate.AUTOMATIC), systemUpdate("""{"policy":"automatic"}"""))
         assertEquals(
             ConfigSystemUpdate(ConfigSystemUpdate.WINDOWED, windowStart = 1320, windowEnd = 240),
@@ -71,7 +88,7 @@ class ConfigCommandTest {
         assertEquals(ConfigSystemUpdate(ConfigSystemUpdate.POSTPONE), systemUpdate("""{"policy":"postpone"}"""))
         val absent = ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), """{"revision":"r"}""")
         assertNull(absent.systemUpdate)
-        assertEquals("1.7", ProtocolJson.PROTOCOL_VERSION)
+        assertEquals("1.8", ProtocolJson.PROTOCOL_VERSION)
     }
 
     @Test

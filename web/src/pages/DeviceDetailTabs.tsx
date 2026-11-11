@@ -75,7 +75,7 @@ interface RowSpec {
   since?: string;
 }
 
-/** Agent 0.5.0 (protocol 1.7) reports a waiting OS update. */
+/** Agent 0.5.0 (protocol 1.8) reports a waiting OS update. */
 const PENDING_UPDATE_AGENT = '0.5.0';
 
 const yesNo = (v: unknown, yes = 'Yes', no = 'No') => (v === true ? yes : v === false ? no : undefined);

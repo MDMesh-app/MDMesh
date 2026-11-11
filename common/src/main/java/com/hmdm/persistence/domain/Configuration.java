@@ -200,9 +200,11 @@ public class Configuration implements CustomerData, Serializable {
     private String backgroundColor;
     @ApiModelProperty("A text color to use when running MDM application")
     private String textColor;
-    @ApiModelProperty("An URL for background image to use when running MDM application")
+    @ApiModelProperty("The Headwind launcher wallpaper URL; with a kiosk background image, the URL the server set "
+            + "for its uploaded file. Another URL drops that image (see backgroundImageAction)")
     private String backgroundImageUrl;
-    @ApiModelProperty("Server-owned uploaded file used as the kiosk background image")
+    @ApiModelProperty("Uploaded file used as the kiosk background image (PNG, JPEG or WebP, at most 10 MB and "
+            + "16 megapixels; needs agent 0.5.0)")
     private Integer backgroundImageFileId;
     @ApiModelProperty(hidden = true)
     private String backgroundImageSha256;

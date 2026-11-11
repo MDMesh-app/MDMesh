@@ -196,8 +196,14 @@ public class ConfigurationResource {
                     "a refusal is an ERROR whose message is the first problem's key and whose data lists them all. " +
                     "applicationUsageParameters are upserted and never removed. " +
                     "An explicit \"applications\": null, and a connectivityMode other than adaptive, alwaysOn or null, " +
-                    "are refused with HTTP 400. backgroundImageAction is keep (the default), replace, or remove; " +
-                    "ordinary saves preserve a stored legacy launcher wallpaper."
+                    "are refused with HTTP 400. " +
+                    "Kiosk background image: backgroundImageAction is keep (the default), replace or remove. replace " +
+                    "takes backgroundImageFileId, an uploaded file (PNG, JPEG or WebP, at most 10 MB and 16 megapixels), " +
+                    "and the server sets backgroundImageUrl and backgroundImageSha256 from it; remove clears all three. " +
+                    "With keep, an update keeps the stored image while backgroundImageUrl is left out or unchanged; " +
+                    "another backgroundImageUrl is stored as the legacy launcher wallpaper and drops the managed image. " +
+                    "A new configuration with a backgroundImageFileId gets that image. A refused image is HTTP 400 " +
+                    "with an ERROR whose message says why."
     )
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
@@ -272,7 +278,11 @@ public class ConfigurationResource {
         try {
             backgroundImages.apply(configuration, stored);
         } catch (IllegalArgumentException e) {
-            throw new BadRequestException(e.getMessage());
+            // The usual ERROR envelope, so the console can show the message.
+            throw new BadRequestException(javax.ws.rs.core.Response.status(javax.ws.rs.core.Response.Status.BAD_REQUEST)
+                    .type(MediaType.APPLICATION_JSON)
+                    .entity(Response.ERROR(e.getMessage()))
+                    .build());
         }
     }
 

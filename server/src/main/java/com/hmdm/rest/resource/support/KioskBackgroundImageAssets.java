@@ -6,79 +6,169 @@ import com.hmdm.persistence.domain.Configuration;
 import com.hmdm.persistence.domain.Customer;
 import com.hmdm.persistence.domain.UploadedFile;
 import com.hmdm.security.SecurityContext;
+import com.hmdm.util.CryptoUtil;
+import com.hmdm.util.FileUtil;
+import com.hmdm.util.UnsafePathException;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Objects;
 
-/** Resolves a browser-selected uploaded file into immutable kiosk desired-state data. */
+/**
+ * Resolves the kiosk background image of a configuration save. The managed image is an uploaded file of the
+ * customer; its URL and SHA-256 always come from the hosted bytes, never from the browser. The same
+ * {@code backgroundImageUrl} column is also the legacy Headwind launcher wallpaper, which an admin or an API client may
+ * still set as a plain URL.
+ */
 @Singleton
 public class KioskBackgroundImageAssets {
+
+    /** The agent refuses a larger download (KioskBackgroundImageStore.MAX_BYTES). */
+    public static final long MAX_BYTES = 10L * 1024 * 1024;
+    /** The agent refuses a larger image (KioskBackgroundImageStore.MAX_PIXELS). */
+    public static final long MAX_PIXELS = 16L * 1024 * 1024;
+
+    static final String NOT_AN_IMAGE = "The background image must be a PNG, JPEG or WebP file.";
+    static final String TOO_LARGE = "The background image is larger than 10 MB.";
+    static final String TOO_MANY_PIXELS = "The background image is larger than 16 megapixels.";
+    static final String NOT_FOUND = "The background image is not an uploaded file of this account.";
+    static final String MISSING = "The background image file is missing on the server. Choose the image again.";
+
     private final UploadedFileDAO uploadedFiles;
     private final CustomerDAO customers;
-    private final ApkHashResolver hashes;
     private final String baseUrl;
+    private final String filesDirectory;
 
     @Inject
     public KioskBackgroundImageAssets(UploadedFileDAO uploadedFiles, CustomerDAO customers,
-                                      ApkHashResolver hashes, @Named("base.url") String baseUrl) {
+                                      @Named("base.url") String baseUrl,
+                                      @Named("files.directory") String filesDirectory) {
         this.uploadedFiles = uploadedFiles;
         this.customers = customers;
-        this.hashes = hashes;
         this.baseUrl = baseUrl;
+        this.filesDirectory = filesDirectory;
     }
 
     /**
-     * Applies the browser's explicit image operation. An omitted operation keeps the stored image, so an ordinary
-     * configuration save cannot wipe a legacy launcher wallpaper merely because it has no managed uploaded-file id.
-     * Browser-provided URL/hash values are never accepted.
+     * Applies a save to the image fields. {@code replace} uses the sent file id; {@code remove} clears the URL, file
+     * id and hash. Otherwise ({@code keep} or none): an update keeps the stored managed image while the sent URL is
+     * empty or the stored one; any other URL is a legacy wallpaper that replaces the managed image. A new
+     * configuration with a file id gets that image (a copy of one that has it); without one, its URL is a legacy
+     * wallpaper.
+     *
+     * @throws IllegalArgumentException with a message for the admin, when the action or the image is refused
      */
     public void apply(Configuration configuration, Configuration stored) {
         String action = configuration.getBackgroundImageAction();
-        if (action == null || "keep".equals(action)) {
-            copyStoredImage(configuration, stored);
-            return;
-        }
         if ("remove".equals(action)) {
-            clearImage(configuration);
+            setImage(configuration, null, null, null);
             return;
         }
-        if (!"replace".equals(action)) {
+        if ("replace".equals(action)) {
+            if (configuration.getBackgroundImageFileId() == null) {
+                throw new IllegalArgumentException("backgroundImageFileId is required when replacing the background image");
+            }
+            useUploadedFile(configuration, configuration.getBackgroundImageFileId());
+            return;
+        }
+        if (action != null && !"keep".equals(action)) {
             throw new IllegalArgumentException("backgroundImageAction must be keep, replace, or remove");
         }
 
-        Integer id = configuration.getBackgroundImageFileId();
-        if (id == null) {
-            throw new IllegalArgumentException("backgroundImageFileId is required when replacing the background image");
+        String sent = blankToNull(configuration.getBackgroundImageUrl());
+        if (stored == null) {
+            if (configuration.getBackgroundImageFileId() != null) {
+                useUploadedFile(configuration, configuration.getBackgroundImageFileId());
+            } else {
+                setImage(configuration, sent, null, null);
+            }
+            return;
         }
-        UploadedFile file = uploadedFiles.getById(id);
-        if (file == null || file.isExternal()) {
-            throw new IllegalArgumentException("backgroundImageFileId must name an uploaded file of this customer");
+        if (stored.getBackgroundImageFileId() != null
+                && (sent == null || sent.equals(stored.getBackgroundImageUrl()))) {
+            setImage(configuration, stored.getBackgroundImageUrl(), stored.getBackgroundImageFileId(),
+                    stored.getBackgroundImageSha256());
+            return;
+        }
+        // A legacy wallpaper URL, as sent: the admin set it over the managed image (if any), so that one is dropped.
+        setImage(configuration, sent, null, null);
+    }
+
+    /** Points the configuration at a hosted file of the current customer, once its bytes pass the agent's limits. */
+    private void useUploadedFile(Configuration configuration, int fileId) {
+        UploadedFile file;
+        try {
+            file = uploadedFiles.getById(fileId);
+        } catch (com.hmdm.security.SecurityException e) {
+            // Another customer's file.
+            throw new IllegalArgumentException(NOT_FOUND);
+        }
+        if (file == null || file.isExternal() || file.getFilePath() == null) {
+            throw new IllegalArgumentException(NOT_FOUND);
         }
         Customer customer = SecurityContext.get().getCurrentUser()
                 .map(user -> customers.findById(user.getCustomerId()))
                 .orElseThrow(() -> new IllegalArgumentException("authenticated customer is required"));
-        String url = file.getUrl(baseUrl, customer);
+        if (customer == null || !Objects.equals(customer.getId(), file.getCustomerId())) {
+            throw new IllegalArgumentException(NOT_FOUND);
+        }
+        File hosted;
         try {
-            configuration.setBackgroundImageUrl(url);
-            configuration.setBackgroundImageSha256(hashes.sha256Hex(url));
-        } catch (Exception e) {
-            throw new IllegalArgumentException("background image file is unavailable", e);
+            hosted = FileUtil.resolveFile(customer, filesDirectory, null, file.getFilePath());
+        } catch (UnsafePathException e) {
+            throw new IllegalArgumentException(NOT_FOUND);
+        }
+        if (!hosted.isFile()) {
+            throw new IllegalArgumentException(MISSING);
+        }
+        if (hosted.length() > MAX_BYTES) {
+            throw new IllegalArgumentException(TOO_LARGE);
+        }
+        byte[] bytes;
+        try {
+            bytes = Files.readAllBytes(hosted.toPath());
+        } catch (IOException e) {
+            throw new IllegalArgumentException(MISSING, e);
+        }
+        String sha256 = validate(bytes);
+        setImage(configuration, file.getUrl(baseUrl, customer), fileId, sha256);
+    }
+
+    /**
+     * Refuses bytes the agent would not show (format, size, pixel count, read from the header only).
+     *
+     * @return the lowercase hex SHA-256 of the bytes
+     */
+    static String validate(byte[] bytes) {
+        if (bytes.length > MAX_BYTES) {
+            throw new IllegalArgumentException(TOO_LARGE);
+        }
+        KioskImageHeader header = KioskImageHeader.read(bytes);
+        if (header == null) {
+            throw new IllegalArgumentException(NOT_AN_IMAGE);
+        }
+        if ((long) header.width * header.height > MAX_PIXELS) {
+            throw new IllegalArgumentException(TOO_MANY_PIXELS);
+        }
+        try {
+            return CryptoUtil.getLowerHexString(MessageDigest.getInstance("SHA-256").digest(bytes));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
         }
     }
 
-    private void copyStoredImage(Configuration configuration, Configuration stored) {
-        if (stored == null) {
-            clearImage(configuration);
-            return;
-        }
-        configuration.setBackgroundImageUrl(stored.getBackgroundImageUrl());
-        configuration.setBackgroundImageFileId(stored.getBackgroundImageFileId());
-        configuration.setBackgroundImageSha256(stored.getBackgroundImageSha256());
+    private static void setImage(Configuration configuration, String url, Integer fileId, String sha256) {
+        configuration.setBackgroundImageUrl(url);
+        configuration.setBackgroundImageFileId(fileId);
+        configuration.setBackgroundImageSha256(sha256);
     }
 
-    private void clearImage(Configuration configuration) {
-        configuration.setBackgroundImageUrl(null);
-        configuration.setBackgroundImageFileId(null);
-        configuration.setBackgroundImageSha256(null);
+    private static String blankToNull(String s) {
+        return s == null || s.trim().isEmpty() ? null : s;
     }
 }

@@ -57,13 +57,14 @@ class KioskApplier(
 
     suspend fun enter(p: KioskApplyPayload): KioskResult = mutex.withLock { enterLocked(p) }
 
-    private suspend fun enterLocked(p: KioskApplyPayload): KioskResult {
+    /** [reassert]: skip the "already in this kiosk" short-circuit (a relock after a cut-off exit). */
+    private suspend fun enterLocked(p: KioskApplyPayload, reassert: Boolean = false): KioskResult {
         // Entering supersedes any exit a process death cut off: it must never be finished against this kiosk.
         journal.end()
         // Already in this kiosk: no re-entry or relaunch, but re-assert the volume lock and the Safe Mode block (either
         // may have failed before).
         val current = store.load()
-        if (current == p && isLockTaskActive()) return applySafeMode(applyVolume(p, KioskResult.Ok))
+        if (!reassert && current == p && isLockTaskActive()) return applySafeMode(applyVolume(p, KioskResult.Ok))
         home.setClaimEnabled(true)
         return when (val r = lockTo(p)) {
             KioskResult.Ok -> {
@@ -173,13 +174,16 @@ class KioskApplier(
                 true
             }
             ExitJournal.Resume.ROLL_BACK -> {
-                enterLocked(checkNotNull(saved)) // clears the journal first
+                relock(checkNotNull(saved), "configuration still sets a kiosk")
                 false
             }
             ExitJournal.Resume.DISCARD -> {
-                // Best effort: logging must not stand in the way (the JVM unit tests have no android.util.Log).
-                runCatching { Log.w(TAG, "interrupted kiosk exit dropped: not for the kiosk saved now, or unreadable") }
-                journal.end()
+                if (saved != null) {
+                    relock(saved, "entry not for the kiosk saved now, or unreadable")
+                } else {
+                    warn("interrupted kiosk exit dropped: no kiosk saved")
+                    journal.end()
+                }
                 false
             }
         }
@@ -188,6 +192,24 @@ class KioskApplier(
     /** At agent start: drop a volume lock left behind (e.g. by an interrupted exit) unless the kiosk wants it. */
     suspend fun releaseStaleVolumeLock(): Unit = mutex.withLock {
         if (store.load()?.features?.lockVolume != true) kiosk.setVolumeLocked(false)
+    }
+
+    /**
+     * Lock [saved] again after a cut-off exit: allowlist, lock task and HOME claim, as a fresh entry (which also
+     * clears the journal). A failed relock leaves the device half out of kiosk, so it is logged loudly.
+     */
+    private suspend fun relock(saved: KioskApplyPayload, why: String) {
+        val r = enterLocked(saved, reassert = true)
+        if (r == KioskResult.Ok) {
+            warn("interrupted kiosk exit not finished ($why): kiosk locked again")
+        } else {
+            warn("interrupted kiosk exit not finished ($why), and locking the kiosk again failed: $r")
+        }
+    }
+
+    /** Best effort: logging must not stand in the way (the JVM unit tests have no android.util.Log). */
+    private fun warn(message: String) {
+        runCatching { Log.w(TAG, message) }
     }
 
     private companion object {

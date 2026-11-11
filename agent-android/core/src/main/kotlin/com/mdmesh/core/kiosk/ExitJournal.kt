@@ -30,13 +30,22 @@ interface ExitJournal {
         /** Nothing pending. */
         NONE,
 
-        /** Finish the exit: the same kiosk is still saved (or already cleared) and the configuration is kiosk-off. */
+        /**
+         * Finish the exit: the same kiosk is still saved (or already cleared), and the configuration doesn't set a
+         * kiosk (`configuredKiosk() == null`). That is the case for every kiosk from a `kiosk.enter` command: its exit
+         * was authorized (the right PIN, a remote exit), so finishing it is right. Don't tighten this into "never
+         * finish": a cut-off exit of a command kiosk would then relock forever.
+         */
         FINISH,
 
-        /** Lock the saved kiosk again: the configuration still says kiosk on (fail closed). */
+        /** Lock the saved kiosk again: the configuration still sets a kiosk (fail closed). */
         ROLL_BACK,
 
-        /** Drop the entry and change nothing: another kiosk since, or an entry that can't be read. */
+        /**
+         * Drop the entry: another kiosk since, or an entry that can't be read. The saved kiosk, if any, is locked
+         * again (allowlist, lock task, HOME claim): the exit may have got past dropping the allowlist, so "stays in
+         * kiosk" is made true, not assumed.
+         */
         DISCARD,
     }
 
@@ -54,7 +63,7 @@ interface ExitJournal {
 
         /**
          * The decision, pure: [saved] is the kiosk saved now, [configuredOn] whether the server's configuration
-         * (the desired state) has kiosk on. Anything unclear stays locked.
+         * (the desired state) sets a kiosk. Anything unclear stays, or goes back, in kiosk.
          */
         fun decide(pending: Pending?, saved: KioskApplyPayload?, configuredOn: Boolean): Resume = when {
             pending == null -> Resume.NONE

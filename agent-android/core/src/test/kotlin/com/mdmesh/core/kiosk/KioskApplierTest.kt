@@ -339,7 +339,7 @@ class KioskApplierTest {
         assertFalse(c.exited)
     }
 
-    @Test fun `a journal for another kiosk than the saved one is discarded, the kiosk stays`() = runTest {
+    @Test fun `a journal for another kiosk than the saved one is dropped, the saved kiosk locked again`() = runTest {
         val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskB)
         j.saved = ExitJournal.Pending(handBackHome = true, force = true, kiosk = ExitJournal.fingerprint(kioskA))
         val c = FakeController(KioskResult.Ok); val h = FakeHome()
@@ -347,6 +347,7 @@ class KioskApplierTest {
         assertEquals(kioskB, store.load())
         assertFalse(c.exited)
         assertFalse("claim:false" in h.log)
+        assertEquals("re-asserted, not assumed", listOf(listOf("com.b")), c.enters)
         assertNull(j.saved)
     }
 
@@ -370,6 +371,7 @@ class KioskApplierTest {
             assertFalse(applier(c, store, j = j, configuredOn = false).resumeInterruptedExit())
             assertEquals(kioskA, store.load())
             assertFalse(c.exited)
+            assertEquals("the saved kiosk is locked again", listOf(listOf("com.a")), c.enters)
             assertNull(j.saved)
         }
     }
@@ -403,5 +405,32 @@ class KioskApplierTest {
         assertEquals(ExitJournal.fingerprint(kioskA), ExitJournal.fingerprint(kioskA.copy()))
         assertNotEquals(ExitJournal.fingerprint(kioskA), ExitJournal.fingerprint(kioskB))
         assertNotEquals(ExitJournal.fingerprint(kioskA), ExitJournal.fingerprint(null))
+    }
+
+    // --- Review 3 (R4, R5) ---
+
+    /** R5: process death after kiosk.exit() dropped the allowlist, before the state was cleared; entry unreadable. */
+    @Test fun `an unreadable entry over a half-exited kiosk re-asserts the saved kiosk`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+        j.saved = ExitJournal.Pending(handBackHome = true, force = true, kiosk = "")
+        val c = FakeController(KioskResult.Ok); val h = FakeHome()
+        assertFalse(applier(c, store, h, j, configuredOn = false).resumeInterruptedExit())
+        assertEquals(listOf(listOf("com.a")), c.enters)
+        assertTrue("HOME claimed again", "claim:true" in h.log)
+        assertEquals(kioskA, store.load())
+        assertNull(j.saved)
+    }
+
+    /** R4: kiosk.enter of the kiosk already showing (the short-circuit) still clears a cut-off exit. */
+    @Test fun `re-entering the same kiosk, already locked, clears a cut-off exit`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+        j.saved = ExitJournal.Pending(handBackHome = true, force = true, kiosk = ExitJournal.fingerprint(kioskA))
+        val c = FakeController(KioskResult.Ok)
+        val a = KioskApplier(c, store, FakeHome(), home, journal = j, desiredKioskOn = { false }) { true }
+        a.enter(kioskA)
+        assertNull(j.saved)
+        assertFalse(a.resumeInterruptedExit())
+        assertEquals(kioskA, store.load())
+        assertFalse(c.exited)
     }
 }

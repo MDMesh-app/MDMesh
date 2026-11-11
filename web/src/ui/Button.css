@@ -80,13 +80,8 @@
 .v2 .v2-btn--subtle,
 .v2 .v2-btn--subtle:hover {
   background: var(--surface);
-  border-color: var(--border-strong);
+  border-color: var(--control-border);
   color: var(--ink);
-}
-/* Remote-action tiles rest on the lighter card border. */
-.v2 .v2-btn--subtle,
-.v2 .v2-btn--subtle:hover {
-  border-color: var(--border);
 }
 .v2 .v2-btn--secondary .v2-btn__icon,
 .v2 .v2-btn--subtle .v2-btn__icon {
@@ -96,7 +91,7 @@
 .v2 .v2-btn--danger,
 .v2 .v2-btn--danger:hover {
   background: var(--surface);
-  border-color: var(--alert-line);
+  border-color: var(--alert-control);
   color: var(--alert-ink);
 }
 
@@ -157,7 +152,7 @@
   justify-content: center;
   box-sizing: border-box;
   padding: 0;
-  border: 1px solid var(--border);
+  border: 1px solid var(--control-border);
   background: var(--surface);
   color: var(--text-2);
   cursor: pointer;
@@ -178,9 +173,6 @@
   height: 34px;
   border-radius: var(--radius-tile);
 }
-.v2 .v2-iconbtn--strong {
-  border-color: var(--border-strong);
-}
 .v2 .v2-iconbtn:not(:disabled):hover {
   background: var(--hover);
   color: var(--ink);
@@ -190,12 +182,24 @@
   cursor: default;
 }
 
-/* Touch: raise row icon buttons to 36px on small screens, for touch. */
+/* Touch: row icon buttons grow to 36px and the larger ones to 44px; text buttons from md up are at least 44px tall,
+   the console's aim for primary controls on touch (2.5.8 asks 24). */
 @media (max-width: 860px) {
   .v2 .v2-iconbtn--sm,
   .v2 .v2-iconbtn--md {
     width: 36px;
     height: 36px;
+  }
+  .v2 .v2-iconbtn--lg {
+    width: 44px;
+    height: 44px;
+  }
+  .v2 .v2-btn--md,
+  .v2 .v2-btn--lg,
+  .v2 .v2-btn--xl,
+  .v2 .v2-btn--hero,
+  .v2 .v2-btn--auth {
+    min-height: 44px;
   }
 }
 

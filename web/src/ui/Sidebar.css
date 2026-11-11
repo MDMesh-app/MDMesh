@@ -71,10 +71,18 @@
   background: var(--hover);
   color: var(--ink);
 }
+/* The current page: the fill alone is 1.1:1 on the sidebar, so a 1px control-border ring marks it at 3:1 (1.4.11). */
 .v2 .v2-navitem.is-active {
   background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--control-border);
   color: var(--ink);
   font-weight: 600;
+}
+/* Touch: nav items are the drawer's primary controls, 44px tall (2.5.8; 44 is the console's aim on touch). */
+@media (max-width: 860px) {
+  .v2 .v2-navitem {
+    min-height: 44px;
+  }
 }
 .v2 .v2-navitem__label {
   flex: 1 1 auto;

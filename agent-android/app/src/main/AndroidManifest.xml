@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Base app manifest. PERMISSION MINIMIZATION (Play Protect):
-      * NO READ_SMS, NO QUERY_ALL_PACKAGES.
-      * NO accessibility (that lives ONLY in :remote and merges in for builds
-        that include it).
-      * Package visibility is scoped via <queries>, not a blanket query-all.
-    Identity is the server-issued device id; we never request phone-state / IMEI.
+    Base app manifest. What it asks for, and why:
+      * No READ_SMS.
+      * QUERY_ALL_PACKAGES is declared (see below): a Device Owner agent manages any package.
+      * The accessibility service is declared only in :remote's manifest and merges in from
+        there. :app depends on :remote, so every current build includes it.
+      * READ_PHONE_STATE / READ_PHONE_NUMBERS feed the telemetry census: IdentityCollector
+        reports the serial, IMEI and phone number (Device Owner grants them at provisioning).
+    The device's identity with the server is still the server-issued device id.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">

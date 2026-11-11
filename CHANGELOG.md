@@ -60,6 +60,7 @@ Under the hood
 - Agent: when the server can't be reached, the agent retries its connection at random intervals of up to 5 minutes
   instead of every minute, so devices don't all reconnect at once after a server restart, and it retries right away
   when the network comes back or a check-in reaches the server.
+- Agent: the manifest's comments now match the permissions it declares.
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
 
 ## v0.4.0 — 2026-11-03

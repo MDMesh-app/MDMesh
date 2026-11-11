@@ -75,14 +75,14 @@ function listNames(names: string[]): string {
 
 /** Thumbnails: a shared screen height (px) and the number of columns, from the width the list has. */
 export function thumbnailGrid(width: number): { columns: 1 | 2; height: number } {
-  const budget = width - 2 * 8; // button padding (7) and border (1) on both sides
+  const budget = width - 2 * 5; // the selection ring (5 px) on both sides
   if (width < 520) return { columns: 1, height: Math.max(40, Math.min(160, Math.floor((budget * 360) / 780))) };
   // Two columns: phone portrait over tablet 4:3 landscape, phone landscape over tablet 16:10 portrait; every caption
   // at least 150 px wide.
   for (let h = 180; h > 40; h--) {
     const first = Math.max(150, (h * 1024) / 768, (h * 360) / 780);
     const second = Math.max(150, (h * 780) / 360, (h * 800) / 1280);
-    if (first + second + 2 * 2 * 8 + 16 <= width) return { columns: 2, height: h };
+    if (first + second + 2 * 2 * 5 + 16 <= width) return { columns: 2, height: h };
   }
   return { columns: 1, height: 40 };
 }
@@ -510,19 +510,26 @@ function ScaledScreen({
     '--kbg-bezel': `${bezel}px`,
     '--kbg-corner': `${Math.round(Math.min(w, h) * 0.07 * s)}px`,
   } as CSSProperties;
+  // The device: its frame (bezel) around the screen, with a phone's camera hole in the bezel, never over the screen
+  // (a device keeps its window out of the cutout).
+  const hole = Math.max(2, Math.min(8 * s, bezel * 0.6));
   return (
-    <div className="v2-kbg__screen" style={style} {...(label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true })}>
-      <img className="v2-kbg__img" src={src} alt="" style={px(placed, s)} />
+    <div className="v2-kbg__device" style={{ '--kbg-bezel': `${bezel}px`, '--kbg-corner': style['--kbg-corner' as keyof CSSProperties] } as CSSProperties}>
       {camera ? (
         <span
           className="v2-kbg__camera"
+          aria-hidden="true"
           style={{
-            width: 8 * s,
-            height: 8 * s,
-            ...(camera === 'top' ? { top: 8 * s, left: '50%', marginLeft: -4 * s } : { left: 8 * s, top: '50%', marginTop: -4 * s }),
+            width: hole,
+            height: hole,
+            ...(camera === 'top'
+              ? { top: (bezel - hole) / 2, left: '50%', marginLeft: -hole / 2 }
+              : { left: (bezel - hole) / 2, top: '50%', marginTop: -hole / 2 }),
           }}
         />
       ) : null}
+    <div className="v2-kbg__screen" style={style} {...(label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true })}>
+      <img className="v2-kbg__img" src={src} alt="" style={px(placed, s)} />
       <div className="v2-kbg__dim" data-dim={legibility?.dim ?? 0} style={{ opacity: (legibility?.dim ?? 0) / SCRIM_STEPS }} />
       {plate('header', layout.headerPlate)}
       {layout.labelPlates.map((p, i) => plate(`label-${i}`, p))}
@@ -567,6 +574,7 @@ function ScaledScreen({
           {tiny(layout.exit.size) ? bar(layout.exit.button.w * 0.5, layout.exit.button.h * 0.5) : 'Exit kiosk'}
         </span>
       ) : null}
+    </div>
     </div>
   );
 }

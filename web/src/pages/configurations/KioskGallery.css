@@ -96,3 +96,14 @@
     justify-content: flex-start;
   }
 }
+
+.v2 .v2-kgal__confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.v2 .v2-kgal__list:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 4px;
+}

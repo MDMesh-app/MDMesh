@@ -337,6 +337,24 @@ describe('labels', () => {
   });
 });
 
+describe('the camera hole', () => {
+  it('sits in the bezel, outside the screen, top in portrait and left in landscape', async () => {
+    const restore = reducedMotion(true);
+    sampling.paint = DARK;
+    preview();
+    const device = large().parentElement!;
+    expect(device.classList.contains('v2-kbg__device')).toBe(true);
+    const cam = device.querySelector<HTMLElement>(':scope > .v2-kbg__camera')!;
+    expect(cam).not.toBeNull();
+    expect(large().querySelector('.v2-kbg__camera')).toBeNull();
+    expect(cam.style.top).not.toBe('50%');
+    fireEvent.click(screen.getByRole('button', { name: 'Rotate to landscape' }));
+    const cam2 = large().parentElement!.querySelector<HTMLElement>(':scope > .v2-kbg__camera')!;
+    expect(cam2.style.top).toBe('50%');
+    restore();
+  });
+});
+
 describe('thumbnails', () => {
   it('draw text smaller than 9 px as bars (the large view keeps the text)', async () => {
     sampling.paint = DARK;
@@ -353,8 +371,8 @@ describe('thumbnailGrid', () => {
     const wide = thumbnailGrid(690);
     expect(wide.columns).toBe(2);
     // The widest pair (tablet 4:3 landscape + phone landscape) fills the row.
-    expect(Math.max(150, (wide.height * 1024) / 768) + (wide.height * 780) / 360 + 40).toBeLessThanOrEqual(690);
-    expect(thumbnailGrid(330)).toEqual({ columns: 1, height: Math.floor(((330 - 16) * 360) / 780) });
+    expect(Math.max(150, (wide.height * 1024) / 768) + (wide.height * 780) / 360 + 36).toBeLessThanOrEqual(690);
+    expect(thumbnailGrid(330)).toEqual({ columns: 1, height: Math.floor(((330 - 10) * 360) / 780) });
   });
 });
 
@@ -379,7 +397,10 @@ describe('the configuration editor', () => {
         if (p === '/private/configurations/7') data = { id: 7, name: 'Lobby', kioskMode: true, extensions: {}, ...configuration };
         else if (p === '/private/configurations/applications/7') data = [];
         else if (p === '/private/configurations/backgroundImage/42') data = INFO;
-        else if (p === '/private/agent/v1/configurations/syncSummary') data = [];
+        else if (p === '/private/configurations/backgroundImage/43') data = { ...INFO, fileId: 43, name: 'night.jpg' };
+        else if (p === '/private/configurations/backgroundImages') {
+          data = { items: [{ ...INFO, fileId: 43, fileIds: [43], name: 'night.jpg', sha256: 'f'.repeat(64), usedBy: [], usedByCount: 0 }], total: 1, page: 0, size: 100 };
+        } else if (p === '/private/agent/v1/configurations/syncSummary') data = [];
         return new Response(JSON.stringify({ status: 'OK', message: null, data }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
@@ -399,6 +420,17 @@ describe('the configuration editor', () => {
     const list = screen.getByRole('list', { name: 'Screen shapes' });
     expect(within(list).getAllByRole('button')).toHaveLength(4);
     expect(screen.getByRole('img', { name: /^Phone, portrait: the image filling the screen/ })).toBeTruthy();
+  });
+
+  it('starts another image chosen from the gallery at the centre, keeping Fill or Fit', async () => {
+    sampling.paint = DARK;
+    open({ backgroundImageFileId: 42, backgroundImageUrl: INFO.url, backgroundImageSha256: INFO.sha256, backgroundImageFit: 'fill', backgroundImageFocalX: 0.2, backgroundImageFocalY: 0.8 });
+    const slider = await screen.findByRole('slider', { name: 'Focal point' });
+    expect(slider.getAttribute('aria-valuetext')).toBe('20% across, 80% down');
+    fireEvent.click(screen.getByRole('button', { name: 'Choose from uploaded' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Use night.jpg' }));
+    await waitFor(() => expect(screen.getByRole('slider', { name: 'Focal point' }).getAttribute('aria-valuetext')).toBe('50% across, 50% down'));
+    expect(screen.getByRole('radio', { name: 'Fill' }).getAttribute('aria-checked')).toBe('true');
   });
 
   it('asks for nothing without an image', async () => {

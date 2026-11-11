@@ -62,6 +62,11 @@ describe('KioskPlacement', () => {
     fireEvent.pointerUp(area, { pointerId: 1 });
     fireEvent.pointerMove(area, { clientX: 150, clientY: 80, pointerId: 1 });
     expect(seen[seen.length - 1]).toEqual({ x: 1, y: 1 });
+    // A cancelled touch ends the drag: a later hover doesn't move the point.
+    fireEvent.pointerDown(area, { clientX: 150, clientY: 80, pointerId: 2 });
+    fireEvent.pointerCancel(area, { pointerId: 2 });
+    fireEvent.pointerMove(area, { clientX: 300, clientY: 200, pointerId: 2 });
+    expect(seen[seen.length - 1]).toEqual({ x: 0.25, y: 0.2 });
     fireEvent.click(screen.getByRole('button', { name: 'Centre' }));
     expect(seen[seen.length - 1]).toEqual({ x: 0.5, y: 0.5 });
   });

@@ -686,12 +686,15 @@ function Editor({
       const saved = await commitUpload(temporary.serverPath);
       if (saved.id == null) throw new Error('The server did not return the uploaded image identity.');
       // URL and checksum are server-canonicalized on save. Clearing the old values avoids a stale preview payload.
+      // Another image: its own focal point starts at the centre (Fill or Fit stays as chosen).
       setDraft((d) => ({
         ...d,
         backgroundImageAction: 'replace',
         backgroundImageFileId: saved.id,
         backgroundImageUrl: undefined,
         backgroundImageSha256: undefined,
+        backgroundImageFocalX: 0.5,
+        backgroundImageFocalY: 0.5,
       }));
       toast.push('ok', 'Background image uploaded', 'Check the preview, then save and apply the configuration to use it in kiosk.');
     } catch (e) {
@@ -782,6 +785,8 @@ function Editor({
           backgroundImageFileId: item.fileId,
           backgroundImageUrl: undefined,
           backgroundImageSha256: undefined,
+          backgroundImageFocalX: item.fileId === backgroundFileId ? d.backgroundImageFocalX : 0.5,
+          backgroundImageFocalY: item.fileId === backgroundFileId ? d.backgroundImageFocalY : 0.5,
         }));
         setGalleryOpen(false);
         toast.push('ok', 'Background image chosen', `${item.name}. Save and apply the configuration to use it in kiosk.`);

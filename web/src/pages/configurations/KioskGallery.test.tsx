@@ -26,6 +26,7 @@ const item = (n: number, over: Partial<KioskGalleryItem> = {}): KioskGalleryItem
 
 function serve(pages: KioskGalleryItem[][], refuseDelete = false) {
   const calls: string[] = [];
+  const all = pages.flat();
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -34,10 +35,20 @@ function serve(pages: KioskGalleryItem[][], refuseDelete = false) {
       let body: unknown = { status: 'OK', message: null, data: null };
       if (url.pathname.endsWith('/backgroundImages')) {
         const page = Number(url.searchParams.get('page'));
-        const all = pages.flat();
-        body = { status: 'OK', message: null, data: { items: pages[page] ?? [], total: all.length, page, size: 20 } };
-      } else if (url.pathname.endsWith('/delete') && refuseDelete) {
-        body = { status: 'ERROR', message: 'This image is used by a configuration. Choose another image there first, then delete it.', data: null };
+        const size = Number(url.searchParams.get('size'));
+        body = { status: 'OK', message: null, data: { items: all.slice(page * size, page * size + size), total: all.length, page, size } };
+      } else if (url.pathname.endsWith('/delete')) {
+        const parts = url.pathname.split('/');
+        const id = Number(parts[parts.length - 2]);
+        if (refuseDelete && id !== 2) {
+          body = { status: 'ERROR', message: 'This image is used by a configuration. Choose another image there first, then delete it.', data: null };
+        } else {
+          const i = all.findIndex((x) => x.fileIds.includes(id));
+          if (i >= 0) {
+            all[i] = { ...all[i], fileIds: all[i].fileIds.filter((f) => f !== id) };
+            if (all[i].fileIds.length === 0) all.splice(i, 1);
+          }
+        }
       }
       return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }),
@@ -98,13 +109,44 @@ describe('KioskGallery', () => {
     expect(screen.getByRole('status').textContent).toMatch(/img2\.jpg deleted/);
   });
 
-  it('shows why the server refused a delete', async () => {
-    serve([[item(2)]], true);
+  it('shows why the server refused a delete, and the row as the server has it now', async () => {
+    // Two files with the same content: the first goes, the second is refused (it became used meanwhile).
+    serve([[item(2, { fileIds: [2, 12] })]], true);
     open();
     fireEvent.click(await screen.findByRole('button', { name: 'Delete img2.jpg' }));
     fireEvent.click(screen.getByRole('button', { name: 'Delete img2.jpg for good' }));
     expect((await screen.findByRole('alert')).textContent).toMatch(/used by a configuration/);
     expect(screen.getByText('img2.jpg')).toBeTruthy();
+    // Reloaded: the row no longer points at the deleted file.
+    await waitFor(() => expect(screen.getByRole('list', { name: 'Uploaded images' })).toBe(document.activeElement));
+  });
+
+  it('keeps focus in the list: on the confirmation, back on Delete, then on the next row', async () => {
+    serve([[item(2), item(3, { sha256: sha('3') })]]);
+    open();
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete img2.jpg' }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Delete img2.jpg for good' })));
+    fireEvent.click(screen.getByRole('button', { name: 'Keep' }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Delete img2.jpg' })));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete img2.jpg' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete img2.jpg for good' }));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Use img3.jpg' })));
+  });
+
+  it('shows more after a delete without skipping or repeating images', async () => {
+    const many = Array.from({ length: 45 }, (_, i) => item(100 + i, { sha256: sha('e').slice(0, 58) + String(100000 + i) }));
+    serve([many]);
+    open();
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(20));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete img105.jpg' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete img105.jpg for good' }));
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(19));
+    fireEvent.click(screen.getByRole('button', { name: 'Show more (25)' }));
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(39));
+    const names = screen.getAllByRole('listitem').map((li) => li.querySelector('.v2-kgal__name')!.textContent);
+    expect(new Set(names).size).toBe(39);
+    expect(names).not.toContain('img105.jpg');
+    expect(names).toContain('img120.jpg');
   });
 
   it('offers no Delete without the files permission', async () => {
@@ -120,6 +162,7 @@ describe('KioskGallery', () => {
     open();
     await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(20));
     fireEvent.click(screen.getByRole('button', { name: 'Show more (1)' }));
+    // One request per 100 images; the list keeps the first n.
     await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(21));
     expect(screen.queryByRole('button', { name: /Show more/ })).toBeNull();
   });

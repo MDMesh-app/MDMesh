@@ -77,9 +77,8 @@
 
 .v2 .v2-kbg__large-readout {
   margin: 0;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-start;
+  display: grid;
+  justify-items: start;
   gap: 4px 12px;
   font-size: var(--fs-sm);
   color: var(--secondary);
@@ -105,13 +104,12 @@
 .v2 .v2-kbg__thumb-button {
   display: grid;
   width: fit-content;
-  min-width: 150px;
   align-content: start;
   gap: 8px;
   justify-items: start;
   max-width: 100%;
-  padding: 7px;
-  border: 1px solid transparent;
+  padding: 0;
+  border: 0;
   border-radius: var(--radius-sm);
   background: none;
   color: inherit;
@@ -120,12 +118,13 @@
   cursor: pointer;
 }
 
-.v2 .v2-kbg__thumb-button:hover {
-  background: var(--hover);
+/* Selected: a ring around the device itself, not around the caption's width. */
+.v2 .v2-kbg__thumb-button[aria-pressed='true'] .v2-kbg__device {
+  box-shadow: 0 0 0 1px var(--border-strong), 0 0 0 3px var(--surface), 0 0 0 5px var(--ink);
 }
 
-.v2 .v2-kbg__thumb-button[aria-pressed='true'] {
-  border-color: var(--ink);
+.v2 .v2-kbg__thumb-button:hover .v2-kbg__device {
+  box-shadow: 0 0 0 1px var(--border-strong), 0 0 0 3px var(--surface), 0 0 0 5px var(--border-strong);
 }
 
 .v2 .v2-kbg__thumb-button:focus-visible {
@@ -136,30 +135,35 @@
 
 /* ---- the mock screen ---- */
 
+/* The device: a dark bezel (the same in both themes, as hardware is) with a hairline edge that reads on dark pages.
+   Everything on the screen sits at dp x scale from the screen's own edge. */
+.v2 .v2-kbg__device {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  padding: var(--kbg-bezel);
+  border-radius: calc(var(--kbg-corner) + var(--kbg-bezel));
+  background: #16181d;
+  box-shadow: 0 0 0 1px var(--border-strong);
+  line-height: 0;
+}
+
 .v2 .v2-kbg__screen {
-  /* Everything sits at dp x scale from the screen's own edge; the device frame is drawn outside it (a shadow ring in
-     the margin it reserves), so it never shifts the content. */
   box-sizing: content-box;
   position: relative;
   overflow: hidden;
-  flex: none;
-  margin: var(--kbg-bezel);
   border-radius: var(--kbg-corner);
   background: var(--kbg-bg);
   color: var(--kbg-text);
   font-family: Roboto, 'IBM Plex Sans', system-ui, sans-serif;
-  /* The device: a dark bezel (the same in both themes, as hardware is) with a hairline edge that reads on dark pages. */
-  box-shadow:
-    0 0 0 var(--kbg-bezel) #16181d,
-    0 0 0 calc(var(--kbg-bezel) + 1px) var(--border-strong);
+  line-height: normal;
 }
 
 .v2 .v2-kbg__camera {
   position: absolute;
-  z-index: 1;
   border-radius: 50%;
-  background: #0b0c0e;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+  background: #050506;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
 }
 
 .v2 .v2-kbg__dim {

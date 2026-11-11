@@ -99,6 +99,7 @@ export function KioskPlacement({
             aria-describedby={`${ids}-focal-help`}
             aria-valuemin={0}
             aria-valuemax={100}
+            // One slider for a 2D point: valuenow is the horizontal part; valuetext says both (Up/Down move the other).
             aria-valuenow={Math.round(focal.x * 100)}
             aria-valuetext={valueText}
             aria-disabled={focalOff}
@@ -114,6 +115,12 @@ export function KioskPlacement({
             }
             onPointerMove={focalOff ? undefined : (e) => dragging.current && fromPointer(e)}
             onPointerUp={() => {
+              dragging.current = false;
+            }}
+            onPointerCancel={() => {
+              dragging.current = false;
+            }}
+            onLostPointerCapture={() => {
               dragging.current = false;
             }}
           >

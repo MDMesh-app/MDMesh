@@ -779,6 +779,11 @@ case "$*" in
   "image inspect "*)
     # RepoDigests of the image named by the last argument: that very ref, unless STUB_REPO_DIGESTS says otherwise.
     printf '%s\n' "\${STUB_REPO_DIGESTS:-\${@: -1}}";;
+  "create "*)
+    echo "stub-cid";;
+  "cp "*)  # docker cp <cid>:/srv/. <dir>: emulate the image's static files when STUB_WEB_SRC names them.
+    if [ -n "\${STUB_WEB_SRC:-}" ]; then cp -a "$STUB_WEB_SRC"/. "\${@: -1}"; fi;;
+  "rm "*) ;;
   *" pg_dump "*) echo "-- stub dump"; echo "SELECT 1;";;
   *" psql "*"--single-transaction"*)
     cat > "$STUB_LOG.stdin"
@@ -786,7 +791,15 @@ case "$*" in
 esac
 exit 0
 `, { mode: 0o755 });
-  fs.writeFileSync(path.join(bin, 'curl'), '#!/usr/bin/env bash\n[ "${STUB_CURL_FAIL:-0}" = 1 ] && exit 7\nexit 0\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'curl'), `#!/usr/bin/env bash
+[ "\${STUB_CURL_FAIL:-0}" = 1 ] && exit 7
+if [ -n "\${STUB_CURL_OUT:-}" ]; then
+  out=""
+  while [ $# -gt 0 ]; do case "$1" in -o) out="$2"; shift 2 ;; *) shift ;; esac; done
+  [ -n "$out" ] && cp "$STUB_CURL_OUT" "$out"
+fi
+exit 0
+`, { mode: 0o755 });
   return bin;
 }
 /** A deploy dir (project/.env) + backups dir + stubs under a fresh temp dir. HEALTH_TIMEOUT is 5, not 1: healthy()
@@ -809,6 +822,40 @@ function makeDeploy(envText) {
 function runScript(name, args, env) {
   const r = cp.spawnSync('bash', [require('path').join(__dirname, name), ...args], { env, encoding: 'utf8', timeout: 30000 });
   return { code: r.status, out: r.stdout, err: r.stderr, all: r.stdout + r.stderr };
+}
+/** A minimal ZIP writer (stored entries, no compression) so the host-Nginx tests need no python3/zip binary — the
+ *  supervisor image they run in is node:24-alpine plus apply.sh's own tools. */
+function crc32(buf) {
+  let crc = 0xffffffff;
+  for (const b of buf) {
+    crc ^= b;
+    for (let k = 0; k < 8; k++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+function writeZip(file, entries) {
+  const fs = require('fs');
+  const parts = [], central = [];
+  let offset = 0;
+  for (const [name, text] of Object.entries(entries)) {
+    const nameBuf = Buffer.from(name), data = Buffer.from(text), crc = crc32(data);
+    const lh = Buffer.alloc(30);
+    lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4);
+    lh.writeUInt32LE(crc, 14); lh.writeUInt32LE(data.length, 18); lh.writeUInt32LE(data.length, 22);
+    lh.writeUInt16LE(nameBuf.length, 26);
+    parts.push(lh, nameBuf, data);
+    const cd = Buffer.alloc(46);
+    cd.writeUInt32LE(0x02014b50, 0); cd.writeUInt16LE(20, 4); cd.writeUInt16LE(20, 6);
+    cd.writeUInt32LE(crc, 16); cd.writeUInt32LE(data.length, 20); cd.writeUInt32LE(data.length, 24);
+    cd.writeUInt16LE(nameBuf.length, 28); cd.writeUInt32LE(offset, 42);
+    central.push(cd, nameBuf);
+    offset += lh.length + nameBuf.length + data.length;
+  }
+  const cdBuf = Buffer.concat(central), eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(Object.keys(entries).length, 8); eocd.writeUInt16LE(Object.keys(entries).length, 10);
+  eocd.writeUInt32LE(cdBuf.length, 12); eocd.writeUInt32LE(offset, 16);
+  fs.writeFileSync(file, Buffer.concat([...parts, cdBuf, eocd]));
 }
 
 t.test('supervisor start: CURRENT_VERSION comes from the project .env (what apply/rollback write), not the stale container env',
@@ -1323,6 +1370,59 @@ t.test('apply.sh pins server + web by digest (.env <version>@sha256:…), checks
       a.match(d2.envFile(), after, before);
     } finally { fs.rmSync(d2.dir, { recursive: true, force: true }); }
   }
+});
+
+t.test('apply.sh host-Nginx: verifies mdmesh-web.zip against the signed sha256 before serving it, and a rollback restores '
+  + 'the console it saved', () => {
+  const fs = require('fs'), path = require('path'), cp = require('child_process');
+  const d = makeDeploy('IMAGE_OWNER=mdmesh-app\nHOST_NGINX=1\nSERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
+  const web = path.join(d.project, 'web_dist');
+  try {
+    fs.mkdirSync(web);
+    fs.writeFileSync(path.join(web, 'index.html'), 'old console');
+    const zip = path.join(d.dir, 'mdmesh-web.zip');
+    writeZip(zip, { 'index.html': 'new console' });
+    const sha = cp.execFileSync('sha256sum', [zip], { encoding: 'utf8' }).split(' ')[0];
+
+    let r = runScript('apply.sh', [...applyArgs('0.0.2'), zip, sha], { ...d.env, STUB_CURL_OUT: zip });
+    a.equal(r.code, 0, r.all);
+    a.equal(fs.readFileSync(path.join(web, 'index.html'), 'utf8'), 'new console', 'the verified archive is served');
+    const stamp = fs.readFileSync(path.join(d.backups, 'latest'), 'utf8').trim();
+    a.ok(fs.existsSync(path.join(d.backups, stamp + '.web.tar.gz')), 'the previous console is saved with the backup');
+
+    r = runScript('rollback.sh', [], { ...d.env });
+    a.equal(r.code, 0, r.all);
+    a.equal(fs.readFileSync(path.join(web, 'index.html'), 'utf8'), 'old console', 'a rollback puts the matching console back');
+  } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+});
+
+t.test('apply.sh host-Nginx: a zip that does not match the signed sha256 is not served, and a failed console preparation '
+  + 'leaves the current console in place', () => {
+  const fs = require('fs'), path = require('path'), cp = require('child_process');
+  const d = makeDeploy('IMAGE_OWNER=mdmesh-app\nHOST_NGINX=1\nSERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
+  const web = path.join(d.project, 'web_dist');
+  const image = path.join(d.dir, 'image-srv');
+  try {
+    fs.mkdirSync(web); fs.mkdirSync(image);
+    fs.writeFileSync(path.join(web, 'index.html'), 'old console');
+    fs.writeFileSync(path.join(image, 'index.html'), 'console from the pinned image');
+    const zip = path.join(d.dir, 'bad.zip');
+    writeZip(zip, { 'index.html': 'evil' });
+
+    // Wrong hash: fall back to the pinned web image rather than extract the untrusted archive.
+    let r = runScript('apply.sh', [...applyArgs('0.0.2'), zip, 'f'.repeat(64)],
+      { ...d.env, STUB_CURL_OUT: zip, STUB_WEB_SRC: image });
+    a.equal(r.code, 0, r.all);
+    a.match(r.all, /does not match the sha256 in the signed manifest/);
+    a.equal(fs.readFileSync(path.join(web, 'index.html'), 'utf8'), 'console from the pinned image');
+
+    // Neither the zip nor the image yields files: the update fails, and the rollback leaves the old console serving.
+    fs.writeFileSync(path.join(web, 'index.html'), 'old console');
+    r = runScript('apply.sh', [...applyArgs('0.0.2'), zip, 'f'.repeat(64)], { ...d.env, STUB_CURL_OUT: zip });
+    a.notEqual(r.code, 0, r.all);
+    a.match(r.all, /could not prepare the console files/);
+    a.equal(fs.readFileSync(path.join(web, 'index.html'), 'utf8'), 'old console', 'a failed update never empties the console');
+  } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
 });
 
 t.test('apply.sh refuses refs that are missing, malformed or under another owner, before anything changes', () => {

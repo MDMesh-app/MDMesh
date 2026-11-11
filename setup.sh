@@ -473,10 +473,14 @@ else
     EXTRA_NOTE="Make sure ${HOST} resolves to this server and ports 80/443 are open."
   else
     mdm_answered host || read -rp "Your domain (DNS already pointing here, e.g. mdm.example.com): " HOST   # answer: host
+    mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
     read -rp "Backend Server port [8080]: " INP_SERVER_PORT
     read -rp "Backend Supervisor port [9000]: " INP_SUPERVISOR_PORT
     SERVER_PORT="${INP_SERVER_PORT:-8080}"
     SUPERVISOR_PORT="${INP_SUPERVISOR_PORT:-9000}"
+    mdm_check_port SERVER_PORT || { err "The backend server port must be a number from 1 to 65535."; exit 1; }
+    mdm_check_port SUPERVISOR_PORT || { err "The backend supervisor port must be a number from 1 to 65535."; exit 1; }
+    [ "$SERVER_PORT" != "$SUPERVISOR_PORT" ] || { err "The backend server and supervisor ports must differ."; exit 1; }
     HOST_NGINX=1
     BASE_URL="https://${HOST}"
     SITE_ADDRESS="${HOST}"
@@ -741,39 +745,43 @@ fi
 # Configure host Nginx if in Host Nginx mode
 if [ "${HOST_NGINX:-0}" = "1" ]; then
   say "Setting up Host Nginx web assets and configuration…"
+  # The console must match the checkout this run deploys, so build the caddy service's web image explicitly
+  # (`COMPOSE_PROFILES=none` makes `up --build` skip it) and copy /srv out of the image this run just built. A
+  # release's mdmesh-web.zip would be the latest release's console, which can differ from a source checkout.
   WEB_DIR="$(pwd)/web_dist"
-  mkdir -p "$WEB_DIR"
-
-  # Fetch or extract web files
-  WEB_ZIP_URL=""
-  if [ -n "${GITHUB_REPO:-}" ] && command -v python3 >/dev/null && command -v curl >/dev/null; then
-    AUTH=(); [ -n "${GITHUB_TOKEN:-}" ] && AUTH=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
-    REL=$(curl -fsSL "${AUTH[@]}" "https://api.github.com/repos/${GITHUB_REPO}/releases/latest" 2>/dev/null || true)
-    WEB_ZIP_URL=$(printf '%s' "$REL" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(next((a["browser_download_url"] for a in d.get("assets",[]) if a["name"]=="mdmesh-web.zip"),""))' 2>/dev/null || true)
+  STAGE_DIR="$(pwd)/.web_dist.new"
+  say "Building the console image for this checkout…"
+  docker compose --profile caddy build caddy || { err "Could not build the console image (caddy / docker/web.Dockerfile)."; exit 1; }
+  # Ask compose for the image it just built (the environment, .env and the image: line all take part), rather than
+  # rebuilding the tag here from a shell variable that may be unset.
+  WEB_IMAGE="$(docker compose --profile caddy config --images caddy 2>/dev/null | head -1 || true)"
+  [ -n "$WEB_IMAGE" ] || { err "Could not read the console image name from docker compose."; exit 1; }
+  CID=$(docker create "$WEB_IMAGE" 2>/dev/null || true)
+  [ -n "$CID" ] || { err "Could not create a container from ${WEB_IMAGE} after building it."; exit 1; }
+  rm -rf -- "$STAGE_DIR"
+  mkdir -p -- "$STAGE_DIR"
+  if ! docker cp "$CID:/srv/." "$STAGE_DIR" || [ ! -s "$STAGE_DIR/index.html" ]; then
+    docker rm -f "$CID" >/dev/null 2>&1 || true
+    rm -rf -- "$STAGE_DIR"
+    err "Could not copy the console files out of ${WEB_IMAGE}."
+    exit 1
   fi
-
-  EXTRACTED=0
-  if [ -n "$WEB_ZIP_URL" ]; then
-    TMP_ZIP=$(mktemp)
-    if curl -fsSL "${AUTH[@]}" "$WEB_ZIP_URL" -o "$TMP_ZIP" 2>/dev/null; then
-      if command -v unzip >/dev/null; then
-        unzip -q -o "$TMP_ZIP" -d "$WEB_DIR" && EXTRACTED=1
-      elif command -v python3 >/dev/null; then
-        python3 -c "import zipfile; zipfile.ZipFile('$TMP_ZIP').extractall('$WEB_DIR')" && EXTRACTED=1
-      fi
-    fi
-    rm -f "$TMP_ZIP"
+  docker rm "$CID" >/dev/null 2>&1 || true
+  # Swap the fully prepared directory in; on failure put the previous console back.
+  OLD_WEB_DIR="$(pwd)/.web_dist.old"
+  rm -rf -- "$OLD_WEB_DIR"
+  if [ -d "$WEB_DIR" ] && ! mv -- "$WEB_DIR" "$OLD_WEB_DIR"; then
+    rm -rf -- "$STAGE_DIR"
+    err "Could not move the current console files aside (${WEB_DIR})."
+    exit 1
   fi
-
-  if [ "$EXTRACTED" != 1 ]; then
-    say "Extracting web static assets from mdmesh-web container image…"
-    WEB_IMAGE="ghcr.io/${IMAGE_OWNER:-local}/mdmesh-web:${WEB_VERSION:-latest}"
-    CID=$(docker create "$WEB_IMAGE" 2>/dev/null || true)
-    if [ -n "$CID" ]; then
-      docker cp "$CID:/srv/." "$WEB_DIR" 2>/dev/null || true
-      docker rm "$CID" >/dev/null 2>&1 || true
-    fi
+  if ! mv -- "$STAGE_DIR" "$WEB_DIR"; then
+    [ -d "$OLD_WEB_DIR" ] && mv -- "$OLD_WEB_DIR" "$WEB_DIR"
+    rm -rf -- "$STAGE_DIR"
+    err "Could not put the console files in place (${WEB_DIR})."
+    exit 1
   fi
+  rm -rf -- "$OLD_WEB_DIR"
 
   # Certbot check
   if command -v certbot >/dev/null; then

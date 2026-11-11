@@ -122,6 +122,13 @@ mdm_manifest_field() {
 MDM_SHA256_ERE='[0123456789abcdef]{64}'
 MDM_IMAGE_REF_ERE='[abcdefghijklmnopqrstuvwxyz0123456789._/-]+@sha256:[0123456789abcdef]{64}'
 
+# mdm_manifest_webzip_sha FILE: the SHA-256 of components.webZip in the manifest FILE (the mdmesh-web.zip asset of a
+# host-Nginx release), or nothing when the release has no web zip. Read only from a manifest whose signature verified.
+# mdm_manifest_field cannot do it: the manifest has several "sha256" lines (the agent APK has one too).
+mdm_manifest_webzip_sha() {
+  LC_ALL=C sed -n '/"webZip": *{/,/}/ s/.*"sha256": "\([0123456789abcdef]\{64\}\)".*/\1/p' "$1" | head -1
+}
+
 # The files downloaded from the release's tag, as named in the manifest's "files" (release/build-manifest.sh).
 MDM_QUICKSTART_FILES="docker-compose.release.yml docker-compose.domain.yml install/sql/hmdm_init.en.sql install/sql/post_seed.sql install/lib/db.sh"
 # Extra files downloaded and verified only for host-Nginx installs (new releases record their hashes too).
@@ -232,6 +239,22 @@ mdm_check_host() {
   [ -z "$why" ] && return 0
   case "$h" in *[![:print:]]*) h=$(printf '%q' "$h") ;; esac
   printf 'Invalid hostname %s: %s.\n' "${h:-(empty)}" "$why" >&2
+  return 1
+}
+# mdm_check_port VAR: checks that the variable named VAR holds a TCP port: digits only, 1-65535, no leading zero.
+# Otherwise it prints why to stderr and fails. The host-Nginx prompts use it for the loopback backend ports.
+mdm_check_port() {
+  local p=${!1-} why=''
+  case "$p" in
+    '')                  why='it is empty' ;;
+    *[!${_MDM_DIGITS}]*) why='it is not a number' ;;
+    0*)                  why='a port is 1-65535, with no leading zero' ;;
+  esac
+  # Length first, so the numeric compare never sees a value too big for the shell's integer.
+  [ -n "$why" ] || { [ "${#p}" -le 5 ] && [ "$p" -ge 1 ] && [ "$p" -le 65535 ]; } || why='a port is 1-65535'
+  [ -z "$why" ] && return 0
+  case "$p" in *[![:print:]]*) p=$(printf '%q' "$p") ;; esac
+  printf 'Invalid port %s: %s.\n' "${p:-(empty)}" "$why" >&2
   return 1
 }
 # <<< url.sh functions <<<
@@ -681,10 +704,14 @@ elif [ "$MODE" = "2" ]; then
   EXTRA_NOTE="Make sure ${HOST} resolves to this server and ports 80/443 are open."
 else
   mdm_answered host || read -rp "Your domain (DNS already pointing here, e.g. mdm.example.com): " HOST   # answer: host
+  mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
   read -rp "Backend Server port [8080]: " INP_SERVER_PORT
   read -rp "Backend Supervisor port [9000]: " INP_SUPERVISOR_PORT
   SERVER_PORT="${INP_SERVER_PORT:-8080}"
   SUPERVISOR_PORT="${INP_SUPERVISOR_PORT:-9000}"
+  mdm_check_port SERVER_PORT || { err "The backend server port must be a number from 1 to 65535."; exit 1; }
+  mdm_check_port SUPERVISOR_PORT || { err "The backend supervisor port must be a number from 1 to 65535."; exit 1; }
+  [ "$SERVER_PORT" != "$SUPERVISOR_PORT" ] || { err "The backend server and supervisor ports must differ."; exit 1; }
   HOST_NGINX=1
   BASE_URL="https://${HOST}"; SITE_ADDRESS="${HOST}"; ACME_EMAIL=""; TUNNEL_TOKEN=""
   COMPOSE_FILE="docker-compose.yml:docker-compose.nginx.yml"; COMPOSE_PROFILES="none"
@@ -826,37 +853,52 @@ fi
 if [ "${HOST_NGINX:-0}" = "1" ]; then
   say "Setting up Host Nginx web assets and configuration…"
   WEB_DIR="$(pwd)/web_dist"
-  mkdir -p "$WEB_DIR"
+  STAGE_DIR="$(pwd)/.web_dist.new"
+  rm -rf -- "$STAGE_DIR"
+  mkdir -p -- "$STAGE_DIR"
 
-  # Fetch or extract web files
-  WEB_ZIP_URL=""
-  if [ -n "${GH_REPO:-}" ] && command -v python3 >/dev/null && command -v curl >/dev/null; then
-    REL=$(curl -fsSL "https://api.github.com/repos/${GH_REPO}/releases/latest" 2>/dev/null || true)
-    WEB_ZIP_URL=$(printf '%s' "$REL" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(next((a["browser_download_url"] for a in d.get("assets",[]) if a["name"]=="mdmesh-web.zip"),""))' 2>/dev/null || true)
-  fi
-
-  EXTRACTED=0
-  if [ -n "$WEB_ZIP_URL" ]; then
+  # Serve the console that belongs to release v${RELEASE}: its signed manifest names mdmesh-web.zip and the asset's
+  # SHA-256 (components.webZip). Download from this release's tag (never /releases/latest: MDMESH_VERSION may select an
+  # older release) and verify it before extracting, so a replaced asset cannot inject JavaScript into the console.
+  WEB_ZIP_SHA=$(mdm_manifest_webzip_sha "$MANIFEST" || true)
+  CONSOLE_OK=0
+  if [ -n "$WEB_ZIP_SHA" ]; then
     TMP_ZIP=$(mktemp)
-    if curl -fsSL "$WEB_ZIP_URL" -o "$TMP_ZIP" 2>/dev/null; then
+    if curl -fsSL -m 300 "${REL_URL}/mdmesh-web.zip" -o "$TMP_ZIP"; then
+      if [ "$(mdm_sha256 "$TMP_ZIP")" != "$WEB_ZIP_SHA" ]; then
+        rm -f -- "$TMP_ZIP" "$STAGE_DIR"/* 2>/dev/null || true
+        rmdir -- "$STAGE_DIR" 2>/dev/null || true
+        err "mdmesh-web.zip for v${RELEASE} does not match the SHA-256 in the signed manifest. Nothing was installed."
+        exit 1
+      fi
       if command -v unzip >/dev/null; then
-        unzip -q -o "$TMP_ZIP" -d "$WEB_DIR" && EXTRACTED=1
+        unzip -q -o "$TMP_ZIP" -d "$STAGE_DIR" && CONSOLE_OK=1
       elif command -v python3 >/dev/null; then
-        python3 -c "import zipfile; zipfile.ZipFile('$TMP_ZIP').extractall('$WEB_DIR')" && EXTRACTED=1
+        python3 -c "import zipfile; zipfile.ZipFile('$TMP_ZIP').extractall('$STAGE_DIR')" && CONSOLE_OK=1
       fi
     fi
-    rm -f "$TMP_ZIP"
+    rm -f -- "$TMP_ZIP"
   fi
 
-  if [ "$EXTRACTED" != 1 ]; then
-    say "Extracting web static assets from mdmesh-web container image…"
-    WEB_IMAGE="ghcr.io/${IMAGE_OWNER:-mdmesh-app}/mdmesh-web:${WEB_VERSION:-latest}"
+  if [ "$CONSOLE_OK" != 1 ]; then
+    say "Extracting web static assets from the verified mdmesh-web image…"
+    WEB_IMAGE="${WEB_REF:-ghcr.io/${IMAGE_OWNER}/mdmesh-web:${WEB_TAG:-latest}}"
+    # COMPOSE_PROFILES=none keeps `docker compose pull` from fetching the caddy service's image, so fetch it here.
+    docker pull --quiet "$WEB_IMAGE" >/dev/null 2>&1 || true
     CID=$(docker create "$WEB_IMAGE" 2>/dev/null || true)
     if [ -n "$CID" ]; then
-      docker cp "$CID:/srv/." "$WEB_DIR" 2>/dev/null || true
+      docker cp "$CID:/srv/." "$STAGE_DIR" && CONSOLE_OK=1
       docker rm "$CID" >/dev/null 2>&1 || true
     fi
   fi
+
+  if [ "$CONSOLE_OK" != 1 ] || [ ! -s "$STAGE_DIR/index.html" ]; then
+    rm -rf -- "$STAGE_DIR"
+    err "Could not prepare the console files (from mdmesh-web.zip or the mdmesh-web image). Nothing was installed."
+    exit 1
+  fi
+  rm -rf -- "$WEB_DIR"
+  mv -- "$STAGE_DIR" "$WEB_DIR"
 
   # Certbot check
   if command -v certbot >/dev/null; then

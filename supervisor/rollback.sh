@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# rollback.sh — restore the most recent pre-update backup (the .env version snapshot + DB dump that
-# apply.sh wrote): stop `server`, restore the DB, recreate `server` + `caddy` on the old versions, health-check.
+# rollback.sh — restore the most recent pre-update backup (the .env version snapshot + DB dump +, in host-Nginx mode,
+# the web_dist console files that apply.sh saved): stop `server`, restore the DB and console, recreate `server` + `caddy`
+# (or only `server` for host Nginx) on the old versions, health-check.
 # The break-glass recovery action. Emits PHASE/ERR/OK lines for server.js, mirroring apply.sh, and exits non-zero on
 # any failure. Never touches `supervisor` or `postgres` containers. Data written since the update is discarded.
 set -uo pipefail
@@ -10,6 +11,7 @@ umask 077
 
 PROJECT_DIR="${COMPOSE_PROJECT_DIR:-/project}"
 ENV_FILE="$PROJECT_DIR/.env"
+WEB_DIR="$PROJECT_DIR/web_dist"
 BACKUP_DIR="${BACKUP_DIR:-/backups}"
 DB_USER="${DB_USER:-mdmesh}"
 DB_NAME="${DB_NAME:-mdmesh}"
@@ -30,6 +32,10 @@ set_env() {
     echo "${k}=${v}" >> "$ENV_FILE"
   fi
 }
+
+# The owner compose pulls images from, needed to rebuild the previous web image reference when a web snapshot is missing.
+IMAGE_OWNER="$(grep -E '^IMAGE_OWNER=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\r"'"'"'')"
+IMAGE_OWNER="${IMAGE_OWNER:-mdmesh-app}"
 
 healthy() {
   local deadline=$(( $(date +%s) + HEALTH_TIMEOUT ))
@@ -84,6 +90,59 @@ restore_db() {
   fi
 }
 
+# Replace web_dist with a fully prepared directory; on failure the previous contents are put back (the host Nginx
+# serves WEB_DIR directly).
+swap_web_dir() {  # swap_web_dir <staged-dir>
+  local stage="$1" old="$PROJECT_DIR/.web_dist.old"
+  rm -rf "$old"
+  if [ -d "$WEB_DIR" ] && ! mv "$WEB_DIR" "$old"; then
+    errln "could not move the current console files aside ($WEB_DIR)"
+    return 1
+  fi
+  if ! mv "$stage" "$WEB_DIR"; then
+    errln "could not move the restored console files into place ($WEB_DIR)"
+    [ -d "$old" ] && mv "$old" "$WEB_DIR"
+    return 1
+  fi
+  rm -rf "$old"
+}
+
+# Put the pre-update console files back in web_dist, from the snapshot apply.sh took with this backup. When the snapshot
+# is missing (an install from before host-Nginx updates recorded one), extract them from the previous pinned web image.
+# Returns non-zero (after an ERR line) when neither source is available, so a rollback never claims success with the
+# console still on the release it rolled back from.
+restore_web() {  # restore_web <web-backup>
+  local backup="$1" stage="$PROJECT_DIR/.web_dist.rollback" img cid
+  rm -rf "$stage"
+  if [ -s "$backup" ]; then
+    mkdir -p "$stage"
+    if ! tar -C "$stage" -xzf "$backup"; then
+      errln "could not restore the console files from ${backup}"
+      rm -rf "$stage"
+      return 1
+    fi
+  else
+    img="ghcr.io/${IMAGE_OWNER:-mdmesh-app}/mdmesh-web:${OLD_WEB:-latest}"
+    cid=$(docker create "$img" 2>/dev/null || true)
+    if [ -z "$cid" ]; then
+      errln "no saved console files and the previous web image ${img} is not available, so the console was not restored"
+      return 1
+    fi
+    mkdir -p "$stage"
+    if ! docker cp "$cid:/srv/." "$stage" 2>/dev/null; then
+      errln "could not copy the previous console files out of ${img}"
+      docker rm "$cid" >/dev/null 2>&1 || true
+      rm -rf "$stage"
+      return 1
+    fi
+    docker rm "$cid" >/dev/null 2>&1 || true
+  fi
+  if ! swap_web_dir "$stage"; then
+    rm -rf "$stage"
+    return 1
+  fi
+}
+
 phase rollback
 STAMP="$(cat "$BACKUP_DIR/latest" 2>/dev/null)"
 if [ -z "$STAMP" ]; then errln "no backup recorded to roll back to"; phase failed; exit 1; fi
@@ -116,6 +175,11 @@ fi
 
 HOST_NGINX="$(grep -E '^HOST_NGINX=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2-)"
 if [ "$HOST_NGINX" = "1" ]; then
+  if ! restore_web "$BACKUP_DIR/$STAMP.web.tar.gz"; then
+    errln "the old server and database are restored, but the console files could not be restored: fix the cause above, then Roll back again."
+    phase failed
+    exit 1
+  fi
   if ! dc up -d --no-deps server; then
     errln "could not start the old server (see the log above); .env names the old versions and the database is restored: run 'docker compose up -d server' in the install directory, or Roll back again."
     phase failed

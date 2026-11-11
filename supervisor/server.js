@@ -332,7 +332,8 @@ function startApply(trigger) {
   apply = { phase: 'authorizing', fromVersion: currentVersion, toVersion, trigger, startedAt: Date.now(), finishedAt: null, error: null };
   state.apply = apply;
   const webZipUrl = lastWebZip ? lastWebZip.url : '';
-  spawnPhases([APPLY_SCRIPT, toVersion, pins.server, pins.web, pins.supervisor, webZipUrl], (code, final) => {
+  const webZipSha256 = lastWebZip ? lastWebZip.sha256 : '';
+  spawnPhases([APPLY_SCRIPT, toVersion, pins.server, pins.web, pins.supervisor, webZipUrl, webZipSha256], (code, final) => {
     // .env is the record of what is running now: toVersion on success, the restored version after apply.sh rolled back.
     currentVersion = readCurrentVersion(code === 0 ? toVersion : currentVersion);
     // apply.sh exits non-zero after any failure, ending at rolled_back or failed.

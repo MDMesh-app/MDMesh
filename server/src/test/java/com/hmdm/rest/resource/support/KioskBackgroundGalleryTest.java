@@ -43,7 +43,7 @@ public class KioskBackgroundGalleryTest {
         @Override public UploadedFile getById(Integer id) {
             UploadedFile f = byId.get(id);
             if (f != null && f.getCustomerId() != 1) throw SecurityException.onAdminDataAccessViolation("foreign");
-            return f;
+            return f == null || removed.contains(id) ? null : f;
         }
         @Override public List<UploadedFile> getAll() {
             List<UploadedFile> out = new ArrayList<>();
@@ -57,6 +57,12 @@ public class KioskBackgroundGalleryTest {
             return null;
         }
         @Override public void remove(int fileId) { removed.add(fileId); }
+        int insertIds = 100;
+        @Override public UploadedFile insert(UploadedFile f) {
+            f.setId(insertIds++);
+            byId.put(f.getId(), f);
+            return f;
+        }
     }
 
     private static final class Customers extends CustomerDAO {
@@ -151,6 +157,98 @@ public class KioskBackgroundGalleryTest {
         }
         assertTrue(files.removed.isEmpty());
         assertTrue(new File(tenant, "kiosk-aaaaaaaaaaaa-beach.jpg").exists());
+    }
+
+    /** A save that has chosen a file holds it until it is committed or fails: a gallery delete meanwhile is refused. */
+    @Test
+    public void refusesToDeleteAnImageASaveIsUsing() throws Exception {
+        host(1, "kiosk-aaaaaaaaaaaa-beach.jpg", KioskImageMetadataTest.image("jpg", 4, 4), 1, 1);
+        com.hmdm.persistence.domain.Configuration c = new com.hmdm.persistence.domain.Configuration();
+        c.setBackgroundImageAction("replace");
+        c.setBackgroundImageFileId(1);
+        KioskBackgroundImageAssets.Applied save = assets.apply(c, null);
+        try {
+            assets.deleteUnused(1, id -> false);
+            fail("expected a refusal");
+        } catch (IllegalArgumentException e) {
+            assertEquals(KioskBackgroundImageAssets.IN_USE, e.getMessage());
+        }
+        assertTrue(files.removed.isEmpty());
+        save.release();
+        // Committed (the configuration now references it) or not, the save no longer holds it.
+        assets.deleteUnused(1, id -> false);
+        assertEquals(Collections.singletonList(1), files.removed);
+    }
+
+    /** A delete that wins the race: the save that chose the file fails cleanly instead of committing a dangling id. */
+    @Test
+    public void aSaveOfAnImageDeletedMeanwhileFailsCleanly() throws Exception {
+        host(1, "kiosk-aaaaaaaaaaaa-beach.jpg", KioskImageMetadataTest.image("jpg", 4, 4), 1, 1);
+        assets.beforeHold = () -> {
+            try {
+                assets.deleteUnused(1, id -> false);
+            } catch (IllegalArgumentException e) {
+                throw new AssertionError(e);
+            }
+        };
+        com.hmdm.persistence.domain.Configuration c = new com.hmdm.persistence.domain.Configuration();
+        c.setBackgroundImageAction("replace");
+        c.setBackgroundImageFileId(1);
+        try {
+            assets.apply(c, null);
+            fail("expected a refusal");
+        } catch (IllegalArgumentException e) {
+            assertEquals(KioskBackgroundImageAssets.NOT_FOUND, e.getMessage());
+        }
+    }
+
+    /** A failed save never undoes a copy another save is using, even before that one commits. */
+    @Test
+    public void undoNeverRemovesACopyASaveIsUsing() throws Exception {
+        host(1, "photo.jpg", KioskImageMetadataTest.phoneJpeg(KioskImageMetadataTest.image("jpg", 8, 8), 1), 1, 1);
+        files.insertIds = 100;
+        com.hmdm.persistence.domain.Configuration a = new com.hmdm.persistence.domain.Configuration();
+        a.setBackgroundImageAction("replace");
+        a.setBackgroundImageFileId(1);
+        KioskBackgroundImageAssets.Applied saveA = assets.apply(a, null);
+        int copy = a.getBackgroundImageFileId();
+        // B picks the copy from the gallery (a clean file: no copy of its own) and is still saving.
+        com.hmdm.persistence.domain.Configuration b = new com.hmdm.persistence.domain.Configuration();
+        b.setBackgroundImageAction("replace");
+        b.setBackgroundImageFileId(copy);
+        KioskBackgroundImageAssets.Applied saveB = assets.apply(b, null);
+        saveA.undo(id -> false);
+        saveA.release();
+        assertFalse(files.removed.contains(copy));
+        saveB.release();
+    }
+
+    /** The Files page's Remove goes through the same check. */
+    @Test
+    public void filesRemoveWaitsForNoSaveToHoldTheFile() throws Exception {
+        host(1, "kiosk-aaaaaaaaaaaa-beach.jpg", KioskImageMetadataTest.image("jpg", 4, 4), 1, 1);
+        com.hmdm.persistence.domain.Configuration c = new com.hmdm.persistence.domain.Configuration();
+        c.setBackgroundImageAction("replace");
+        c.setBackgroundImageFileId(1);
+        KioskBackgroundImageAssets.Applied save = assets.apply(c, null);
+        boolean[] ran = {false};
+        assertEquals("held", assets.unlessHeld(1, () -> { ran[0] = true; return "removed"; }, "held"));
+        assertFalse(ran[0]);
+        save.release();
+        save.release(); // idempotent
+        assertEquals("removed", assets.unlessHeld(1, () -> { ran[0] = true; return "removed"; }, "held"));
+    }
+
+    @Test
+    public void deletesOnlyWhatTheGalleryLists() throws Exception {
+        host(5, "notes.png", KioskImageMetadataTest.image("png", 4, 4), 1, 1);
+        try {
+            assets.deleteUnused(5, id -> false);
+            fail("expected a refusal");
+        } catch (IllegalArgumentException e) {
+            assertEquals(KioskBackgroundImageAssets.NOT_A_GALLERY_IMAGE, e.getMessage());
+        }
+        assertTrue(files.removed.isEmpty());
     }
 
     @Test

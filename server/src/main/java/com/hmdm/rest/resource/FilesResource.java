@@ -166,41 +166,56 @@ public class FilesResource {
             return Response.PERMISSION_DENIED();
         }
 
-        return SecurityContext.get().getCurrentUser().map(u -> {
-            Customer customer = customerDAO.findById(u.getCustomerId());
+        return SecurityContext.get().getCurrentUser().map(u -> kioskImages == null
+                ? removeUnlessUsed(u, file)
+                // Under the lock a configuration save takes hold of its background image with: never a file a save
+                // is about to commit.
+                : kioskImages.unlessHeld(file.getId(), () -> removeUnlessUsed(u, file), Response.FILE_USED())
+        ).orElse(Response.PERMISSION_DENIED());
+    }
 
-            // Check if file is not used
-            if (this.configurationFileDAO.isFileUsed(file.getId())) {
-                return Response.FILE_USED();
-            } else if (this.iconDAO.isFileUsed(file.getId())) {
-                return Response.FILE_USED();
-            } else if (this.configurationDAO != null && this.configurationDAO.isBackgroundImageFileUsed(file.getId())) {
-                // A kiosk image is hash-pinned in desired state. It must be explicitly replaced from the
-                // configuration editor, never deleted behind an active configuration's back.
-                return Response.FILE_USED();
-            }
+    private com.hmdm.rest.resource.support.KioskBackgroundImageAssets kioskImages;
 
-            if (!file.isExternal()) {
-                // Delete the file the record points at, never a path taken from the request.
-                UploadedFile dbFile = uploadedFileDAO.getById(file.getId());
-                if (dbFile == null) {
-                    return Response.PERMISSION_DENIED();
-                }
-                String recordedPath = dbFile.getFilePath();
-                logger.info("File {} is removed by user {}", recordedPath, SecurityContext.get().getCurrentUserName());
-                uploadedFileDAO.remove(file.getId());
-                if (recordedPath != null && !recordedPath.isEmpty()
-                        && uploadedFileDAO.getByPath(customer.getId(), recordedPath) == null) {
-                    FileUtil.deleteFile(customer, filesDirectory, recordedPath);
-                }
-                return Response.OK();
-            } else {
-                logger.info("External file {} ({}) is removed by user {}",
-                        file.getDescription(), file.getUrl(), SecurityContext.get().getCurrentUserName());
-                uploadedFileDAO.remove(file.getId());
-                return Response.OK();
+    /** The kiosk background images, whose saves hold their file until written (see removeFile). */
+    @Inject
+    public void setKioskImages(com.hmdm.rest.resource.support.KioskBackgroundImageAssets kioskImages) {
+        this.kioskImages = kioskImages;
+    }
+
+    private Response removeUnlessUsed(User u, FileView file) {
+        Customer customer = customerDAO.findById(u.getCustomerId());
+
+        // Check if file is not used
+        if (this.configurationFileDAO.isFileUsed(file.getId())) {
+            return Response.FILE_USED();
+        } else if (this.iconDAO.isFileUsed(file.getId())) {
+            return Response.FILE_USED();
+        } else if (this.configurationDAO != null && this.configurationDAO.isBackgroundImageFileUsed(file.getId())) {
+            // A kiosk image is hash-pinned in desired state. It must be explicitly replaced from the
+            // configuration editor, never deleted behind an active configuration's back.
+            return Response.FILE_USED();
+        }
+
+        if (!file.isExternal()) {
+            // Delete the file the record points at, never a path taken from the request.
+            UploadedFile dbFile = uploadedFileDAO.getById(file.getId());
+            if (dbFile == null) {
+                return Response.PERMISSION_DENIED();
             }
-        }).orElse(Response.PERMISSION_DENIED());
+            String recordedPath = dbFile.getFilePath();
+            logger.info("File {} is removed by user {}", recordedPath, SecurityContext.get().getCurrentUserName());
+            uploadedFileDAO.remove(file.getId());
+            if (recordedPath != null && !recordedPath.isEmpty()
+                    && uploadedFileDAO.getByPath(customer.getId(), recordedPath) == null) {
+                FileUtil.deleteFile(customer, filesDirectory, recordedPath);
+            }
+            return Response.OK();
+        } else {
+            logger.info("External file {} ({}) is removed by user {}",
+                    file.getDescription(), file.getUrl(), SecurityContext.get().getCurrentUserName());
+            uploadedFileDAO.remove(file.getId());
+            return Response.OK();
+        }
     }
 
     // =================================================================================================================

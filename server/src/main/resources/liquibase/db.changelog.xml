@@ -3159,7 +3159,7 @@
         <rollback>ALTER TABLE applicationVersions DROP COLUMN requestedPermissions;</rollback>
     </changeSet>
 
-    <changeSet id="26.11.11-configurations-backgroundImageFitFocal" author="lunacy" context="common">
+    <changeSet id="26.11.11-configurations-backgroundImageFitFocal" author="letter-number" context="common">
         <comment>Kiosk background image fit (fill = cropped, the default; fit = whole, letterboxed) and focal point
             (0..1 of the image, what a fill crop keeps in view). NULL = the default (fill, centre), so existing
             configurations keep their document and revision; older agents ignore the new fields.</comment>

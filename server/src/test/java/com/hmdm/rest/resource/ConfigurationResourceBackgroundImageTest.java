@@ -191,6 +191,19 @@ public class ConfigurationResourceBackgroundImageTest {
     }
 
     @Test
+    public void aSaveSendingOneFocalCoordinateKeepsTheOther() {
+        dao.stored = plain();
+        dao.stored.setBackgroundImageFocalX(0.25);
+        dao.stored.setBackgroundImageFocalY(0.75);
+        Configuration c = plain();
+        c.setBackgroundImageFocalX(0.1);
+        resource.updateConfiguration(c);
+        Configuration saved = dao.updated.get(0);
+        assertEquals(Double.valueOf(0.1), saved.getBackgroundImageFocalX());
+        assertEquals(Double.valueOf(0.75), saved.getBackgroundImageFocalY());
+    }
+
+    @Test
     public void validFitAndFocalAreSaved() {
         Configuration c = plain();
         c.setBackgroundImageFit("fill");

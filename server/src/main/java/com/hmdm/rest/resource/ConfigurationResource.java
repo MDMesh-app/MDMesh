@@ -241,6 +241,8 @@ public class ConfigurationResource {
         validateBackgroundImageFit(configuration);
         // A cleaned copy of the background image this save hosted: taken back if the save then fails.
         KioskBackgroundImageAssets.Applied imageApplied = null;
+        // The file the save chose, held from the image check until the save is written or fails.
+        KioskBackgroundImageAssets.Applied imageHeld = null;
         try {
             Configuration dbConfiguration = this.configurationDAO.getConfigurationByName(configuration.getName());
             final Integer id = configuration.getId();
@@ -254,6 +256,7 @@ public class ConfigurationResource {
                         return Response.PERMISSION_DENIED();
                     }
                     imageApplied = canonicalizeBackgroundImage(configuration, null);
+                    imageHeld = imageApplied;
                     applyLocationServicesUpdate(configuration, null);
                     Response refused = refuseExtensions(configuration, null);
                     if (refused != null) {
@@ -278,6 +281,7 @@ public class ConfigurationResource {
                     }
                     Configuration stored = configurationDAO.getConfigurationById(id);
                     imageApplied = canonicalizeBackgroundImage(configuration, stored);
+                    imageHeld = imageApplied;
                     applyLocationServicesUpdate(configuration, stored);
                     keepBackgroundImageFit(configuration, stored);
                     Response refused = refuseExtensions(configuration, storedExtensions(id, configuration));
@@ -302,6 +306,9 @@ public class ConfigurationResource {
             log.error("Unexpected error when saving the configuration", e);
             e.printStackTrace();
             return Response.INTERNAL_ERROR();
+        } finally {
+            // Written (the configuration references the file) or failed: the save no longer holds it.
+            if (imageHeld != null) imageHeld.release();
         }
     }
 
@@ -381,14 +388,12 @@ public class ConfigurationResource {
         }
     }
 
-    /** A client that doesn't send fit or the focal point (an older console or API client) keeps the stored ones. */
+    /** What a client doesn't send of fit and the focal point (an older console or API client) keeps its stored value. */
     private static void keepBackgroundImageFit(Configuration c, Configuration stored) {
         if (stored == null) return;
         if (c.getBackgroundImageFit() == null) c.setBackgroundImageFit(stored.getBackgroundImageFit());
-        if (c.getBackgroundImageFocalX() == null && c.getBackgroundImageFocalY() == null) {
-            c.setBackgroundImageFocalX(stored.getBackgroundImageFocalX());
-            c.setBackgroundImageFocalY(stored.getBackgroundImageFocalY());
-        }
+        if (c.getBackgroundImageFocalX() == null) c.setBackgroundImageFocalX(stored.getBackgroundImageFocalX());
+        if (c.getBackgroundImageFocalY() == null) c.setBackgroundImageFocalY(stored.getBackgroundImageFocalY());
     }
 
     private static BadRequestException badRequest(String message) {
@@ -578,7 +583,9 @@ public class ConfigurationResource {
     @ApiOperation(
             value = "Kiosk background images",
             notes = "The customer's kiosk background images, once per content (SHA-256), newest first, with the "
-                    + "configurations using each (the ones the user may see by name, all of them counted). Paged.",
+                    + "configurations using each (the ones the user may see by name, all of them counted). Paged. "
+                    + "Needs the configurations permission (as editing a background does), not Files access: a user "
+                    + "who edits configurations sees every kiosk image of the customer.",
             response = KioskBackgroundImageAssets.GalleryPage.class
     )
     @GET

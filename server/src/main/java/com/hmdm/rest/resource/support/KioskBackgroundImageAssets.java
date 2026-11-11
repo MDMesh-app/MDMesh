@@ -49,6 +49,7 @@ public class KioskBackgroundImageAssets {
     static final String TOO_LARGE = "The background image is larger than 10 MB.";
     static final String TOO_MANY_PIXELS = "The background image is larger than 16 megapixels.";
     static final String NOT_FOUND = "The background image is not an uploaded file of this account.";
+    static final String NOT_A_GALLERY_IMAGE = "Only kiosk background images can be deleted here. Use Files for other files.";
     static final String IN_USE = "This image is used by a configuration. Choose another image there first, then delete it.";
     static final String STORAGE_FULL = "The image without its metadata doesn't fit in this account's file storage.";
     static final String NOT_STORED = "The server could not store the background image without its metadata. Try again.";
@@ -69,23 +70,29 @@ public class KioskBackgroundImageAssets {
         this.filesDirectory = filesDirectory;
     }
 
-    /** What {@link #apply} did that a failed save must take back. */
+    /**
+     * What {@link #apply} did: the file the save now holds (until {@link #release()}) and a cleaned copy it hosted,
+     * which a failed save takes back ({@link #undo}).
+     */
     public static final class Applied {
-        static final Applied NOTHING = new Applied(null, null, null);
+        static final Applied NOTHING = new Applied(null, null, null, null);
         private final KioskBackgroundImageAssets owner;
         private final Customer customer;
         private final UploadedFile createdCopy;
+        private final Integer heldId;
+        private boolean released;
 
-        private Applied(KioskBackgroundImageAssets owner, Customer customer, UploadedFile createdCopy) {
+        private Applied(KioskBackgroundImageAssets owner, Customer customer, UploadedFile createdCopy, Integer heldId) {
             this.owner = owner;
             this.customer = customer;
             this.createdCopy = createdCopy;
+            this.heldId = heldId;
         }
 
         /**
-         * Removes a cleaned copy this save hosted (row and file), unless another save has picked it up since (it found
-         * the file and row) or a configuration references it ({@code inUse}, asked under the same lock). A copy found
-         * from an earlier save is never removed.
+         * Removes a cleaned copy this save hosted (row and file), unless another save holds it or has picked it up
+         * since, or a configuration references it ({@code inUse}, asked under the same lock). A copy found from an
+         * earlier save is never removed.
          *
          * @param inUse whether any configuration references a file id (ConfigurationDAO.isBackgroundImageFileUsed)
          */
@@ -93,10 +100,20 @@ public class KioskBackgroundImageAssets {
             if (createdCopy == null) return;
             synchronized (COPY_LOCK) {
                 int id = createdCopy.getId();
-                if (owner.reused.contains(id) || inUse.test(id)) return;
+                if (owner.reused.contains(id) || owner.heldByOthers(id, this) || inUse.test(id)) return;
                 owner.uploadedFiles.remove(id);
                 FileUtil.deleteFile(customer, owner.filesDirectory, createdCopy.getFilePath());
             }
+        }
+
+        /**
+         * Lets go of the file this save chose: call it once the configuration is written (it references the file from
+         * then on) or the save failed. Idempotent.
+         */
+        public void release() {
+            if (heldId == null || released) return;
+            released = true;
+            owner.unhold(heldId);
         }
     }
 
@@ -237,23 +254,79 @@ public class KioskBackgroundImageAssets {
         Read read = read(resolved);
         String sha256 = validate(read.clean);
         UploadedFile file = resolved.file;
-        Applied applied = Applied.NOTHING;
+        UploadedFile[] created = new UploadedFile[1];
         if (read.hasMetadata()) {
             // Metadata (an API upload, or one from before the console cleaned uploads): the image is hosted again
             // without it. The original is another uploaded file that may be used elsewhere, so it is never rewritten.
-            UploadedFile[] created = new UploadedFile[1];
             file = hostCleanCopy(resolved.customer, file, read.clean, sha256, created);
-            if (created[0] != null) applied = new Applied(this, resolved.customer, created[0]);
         }
+        // Held until the save is written or fails: a gallery delete or another save's undo leaves it alone meanwhile,
+        // and a delete that got there first fails this save cleanly instead of letting it commit a dangling id.
+        hold(file.getId());
         setImage(configuration, file.getUrl(baseUrl, resolved.customer), file.getId(), sha256);
-        return applied;
+        return new Applied(this, resolved.customer, created[0], file.getId());
+    }
+
+    /** Files chosen by saves not written yet: file id to the number of such saves. */
+    private final Map<Integer, java.util.concurrent.atomic.AtomicInteger> held = new java.util.concurrent.ConcurrentHashMap<>();
+    /** Tests: runs just before a save takes hold of its file (to put a delete in between). */
+    Runnable beforeHold;
+
+    private void hold(int fileId) {
+        if (beforeHold != null) beforeHold.run();
+        synchronized (COPY_LOCK) {
+            UploadedFile still;
+            try {
+                still = uploadedFiles.getById(fileId);
+            } catch (com.hmdm.security.SecurityException e) {
+                still = null;
+            }
+            if (still == null) throw new IllegalArgumentException(NOT_FOUND);
+            held.computeIfAbsent(fileId, k -> new java.util.concurrent.atomic.AtomicInteger()).incrementAndGet();
+        }
+    }
+
+    private void unhold(int fileId) {
+        synchronized (COPY_LOCK) {
+            java.util.concurrent.atomic.AtomicInteger n = held.get(fileId);
+            if (n != null && n.decrementAndGet() <= 0) held.remove(fileId);
+        }
+    }
+
+    /** A save not written yet holds the file (other than {@code self}). Call under COPY_LOCK. */
+    private boolean heldByOthers(int fileId, Applied self) {
+        java.util.concurrent.atomic.AtomicInteger n = held.get(fileId);
+        int mine = self != null && self.heldId != null && self.heldId == fileId && !self.released ? 1 : 0;
+        return n != null && n.get() > mine;
+    }
+
+    /** A save not written yet holds the file. */
+    public boolean isHeld(int fileId) {
+        synchronized (COPY_LOCK) {
+            return heldByOthers(fileId, null);
+        }
+    }
+
+    /**
+     * Runs {@code action} under the lock saves take hold of files with, unless a save holds {@code fileId}: the Files
+     * page's Remove goes through here, so it can't remove a file a save is about to commit.
+     *
+     * @return the action's result, or {@code whenHeld} (nothing run) when a save holds the file
+     */
+    public <T> T unlessHeld(int fileId, java.util.function.Supplier<T> action, T whenHeld) {
+        synchronized (COPY_LOCK) {
+            if (heldByOthers(fileId, null)) return whenHeld;
+            return action.get();
+        }
     }
 
     /** Describe results by file and its modification: a GET doesn't read and strip up to 10 MB again. */
     private final Map<String, KioskBackgroundImageInfo> described = new LinkedHashMap<String, KioskBackgroundImageInfo>(16, 0.75f, true) {
         @Override
         protected boolean removeEldestEntry(Map.Entry<String, KioskBackgroundImageInfo> eldest) {
-            return size() > 128;
+            // Small entries (no pixels): enough for every kiosk image of a large customer, so the gallery reads a file
+            // once per change, not once per page.
+            return size() > 4096;
         }
     };
 
@@ -400,11 +473,14 @@ public class KioskBackgroundImageAssets {
     }
 
     /**
-     * Deletes an uploaded image of the current customer that nothing uses, under the same lock as hosting a cleaned
-     * copy (so a save can't pick it up meanwhile). The file goes too unless another record points at it.
+     * Deletes an uploaded kiosk image (one the gallery lists by its {@code kiosk-<hex>-} name) of the current customer
+     * that nothing uses and no save holds. It runs under the lock saves take hold of their file with, so a save either
+     * holds the file first (the delete is refused) or finds it gone (the save fails cleanly). The file on disk goes too
+     * unless another record points at it.
      *
      * @param inUse whether a configuration (or any other part of the console) uses a file id
-     * @throws IllegalArgumentException NOT_FOUND for another customer's or an unknown file, IN_USE when used
+     * @throws IllegalArgumentException NOT_FOUND for another customer's or an unknown file, NOT_A_GALLERY_IMAGE for any
+     *                                  other file, IN_USE when used or held
      */
     public void deleteUnused(int fileId, java.util.function.IntPredicate inUse) {
         synchronized (COPY_LOCK) {
@@ -420,7 +496,10 @@ public class KioskBackgroundImageAssets {
             if (file == null || file.isExternal() || customer == null || !Objects.equals(customer.getId(), file.getCustomerId())) {
                 throw new IllegalArgumentException(NOT_FOUND);
             }
-            if (inUse.test(fileId)) throw new IllegalArgumentException(IN_USE);
+            if (!KIOSK_NAME.matcher(file.getFilePath() == null ? "" : file.getFilePath().replace('\\', '/')).find()) {
+                throw new IllegalArgumentException(NOT_A_GALLERY_IMAGE);
+            }
+            if (heldByOthers(fileId, null) || inUse.test(fileId)) throw new IllegalArgumentException(IN_USE);
             uploadedFiles.remove(fileId);
             if (file.getFilePath() != null && uploadedFiles.getByPath(customer.getId(), file.getFilePath()) == null) {
                 FileUtil.deleteFile(customer, filesDirectory, file.getFilePath());

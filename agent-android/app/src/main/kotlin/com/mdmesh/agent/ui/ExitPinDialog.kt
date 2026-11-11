@@ -7,11 +7,13 @@ import android.text.InputFilter
 import android.text.Spanned
 import android.text.TextWatcher
 import android.text.method.PasswordTransformationMethod
+import android.os.Build
 import android.view.ActionMode
 import android.view.KeyEvent
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
+import android.view.accessibility.AccessibilityManager
 import android.view.inputmethod.EditorInfo
 import android.widget.ImageButton
 import android.widget.TextView
@@ -44,9 +46,20 @@ class ExitPinDialog private constructor(
     /** The error shown under the field, also given to accessibility services as the field's error. */
     private var errorText: String? = null
 
+    /**
+     * The prompt is done: a PIN was accepted (right, or locked out) or the dialog closed. Every later submit is a
+     * no-op, so two "done" signals for one press (a scanner's CR plus its Enter key, an IME's Done plus an Enter
+     * key) can't run the exit twice.
+     */
+    private var settled = false
+
     fun render(state: ExitPinUiState) {
         when (state) {
-            ExitPinUiState.Close -> dialog.dismiss()
+            ExitPinUiState.Close -> {
+                settled = true
+                field.text = null
+                dialog.dismiss()
+            }
             is ExitPinUiState.Error -> {
                 if (state.clearField) field.text = null
                 showError(state.message.resolve(field.resources))
@@ -79,7 +92,7 @@ class ExitPinDialog private constructor(
     private fun submit(onSubmit: (entered: String, dialog: ExitPinDialog) -> Unit) {
         // An empty field is never a try: after a wrong PIN the field is cleared and the dialog stays open, so a second
         // tap on Exit (or Done, then Exit) would otherwise use up tries without anything being typed.
-        if (isSubmittable(field.text)) onSubmit(field.text.toString(), this)
+        if (!settled && isSubmittable(field.text)) onSubmit(field.text.toString(), this)
     }
 
     private fun wire(onSubmit: (entered: String, dialog: ExitPinDialog) -> Unit) {
@@ -96,6 +109,15 @@ class ExitPinDialog private constructor(
                     info.error = it
                     info.isContentInvalid = true
                 }
+            }
+        })
+        // Gone from the screen (dismissed, cancelled, rebuilt, activity destroyed): settled, and no timer left behind
+        // holding the dialog and its activity.
+        field.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) = Unit
+            override fun onViewDetachedFromWindow(v: View) {
+                settled = true
+                field.removeCallbacks(idle)
             }
         })
         // Keyboard and focus in the field as the dialog opens; from then on a minute without input closes it.
@@ -137,9 +159,21 @@ class ExitPinDialog private constructor(
     /** Closes the prompt (and with it whatever was typed) a while after the last input. */
     private val idle = Runnable { dialog.dismiss() }
 
+    /** [IDLE_TIMEOUT_MS], or longer if the user set a longer "Time to take action" (accessibility, API 29+). */
+    private fun idleTimeoutMs(): Long {
+        val a11y = field.context.getSystemService(AccessibilityManager::class.java)
+        val flags = AccessibilityManager.FLAG_CONTENT_CONTROLS or AccessibilityManager.FLAG_CONTENT_TEXT
+        val recommended = if (a11y != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            a11y.getRecommendedTimeoutMillis(IDLE_TIMEOUT_MS.toInt(), flags).toLong()
+        } else {
+            IDLE_TIMEOUT_MS
+        }
+        return recommended.coerceAtLeast(IDLE_TIMEOUT_MS)
+    }
+
     private fun restartIdle() {
         field.removeCallbacks(idle)
-        field.postDelayed(idle, IDLE_TIMEOUT_MS)
+        field.postDelayed(idle, idleTimeoutMs())
     }
 
     /** What a key or editor action in the PIN field does. */

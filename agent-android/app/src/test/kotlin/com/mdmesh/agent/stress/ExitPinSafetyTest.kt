@@ -2,6 +2,8 @@ package com.mdmesh.agent.stress
 
 import android.app.ActivityManager
 import android.content.res.Configuration
+import android.view.KeyEvent
+import android.view.inputmethod.EditorInfo
 import android.text.method.PasswordTransformationMethod
 import com.mdmesh.agent.R
 import org.junit.Assert.assertEquals
@@ -66,6 +68,41 @@ class ExitPinSafetyTest : KioskHarness() {
         assertEquals("482", field().text.toString())
         ShadowLooper.idleMainLooper(Duration.ofSeconds(2).toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS)
         assertNull("prompt still open a minute after the last key", pinDialog())
+    }
+
+    // --- One exit per right PIN ----------------------------------------------------------------------------------
+
+    /**
+     * A keyboard-wedge scanner whose barcode ends in CR (sent as text) and also an Enter key: two "done" signals for
+     * one scan. The first right PIN closes the prompt; the second must not run the exit again.
+     */
+    @Test fun rightPinFromAScannerWithCrAndEnterExitsOnce() {
+        launch(grid)
+        tapExitKiosk()
+        val dialog = pinDialog()!!
+        val f = field()
+        f.requestFocus()
+        f.onCreateInputConnection(EditorInfo())!!.commitText(pin + "\r", 1)
+        f.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+        f.dispatchKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+        settle()
+        assertEquals("kiosk exits", 1, events("kioskExit"))
+        assertEquals("the closed prompt keeps no PIN", "", edit(dialog.window!!.decorView)!!.text.toString())
+    }
+
+    /** An IME that sends Done and then an Enter key for the same press. */
+    @Test fun imeDoneThenEnterKeyExitsOnce() {
+        launch(grid)
+        tapExitKiosk()
+        val f = field()
+        f.requestFocus()
+        f.setText(pin)
+        val ic = f.onCreateInputConnection(EditorInfo())!!
+        ic.performEditorAction(EditorInfo.IME_ACTION_DONE)
+        ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+        ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+        settle()
+        assertEquals(1, events("kioskExit"))
     }
 
     // --- F4: the kiosk it was typed for ends ---------------------------------------------------------------------

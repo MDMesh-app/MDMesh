@@ -81,4 +81,15 @@ class ExitPinInputTest {
         assertEquals("4821", field.text.toString())
         assertEquals(emptyList<String>(), submitted)
     }
+
+    /** Closed (Cancel here), the prompt leaves no timer behind holding it and the activity. */
+    @Test fun `the idle timer goes with the dialog`() {
+        field.setText("12")
+        DialogHost.showing().cancel()
+        DialogHost.idle()
+        val looper = org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper())
+        looper.idleFor(java.time.Duration.ofSeconds(1))
+        val next = looper.nextScheduledTaskTime
+        assertEquals("a task is still scheduled at $next", java.time.Duration.ZERO, next)
+    }
 }

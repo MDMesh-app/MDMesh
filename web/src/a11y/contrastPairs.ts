@@ -6,7 +6,8 @@
 export type PairKind =
   /** Normal-size text: 4.5:1. */
   | 'text'
-  /** Non-text UI that carries meaning (control borders, focus ring, toggles, status marks, chart fills): 3:1. */
+  /** Non-text UI that carries meaning (input and icon-button edges, selected-state rings, focus ring, toggles, status
+   *  marks, chart fills): 3:1. componentEdges.test.ts checks the components really paint with these tokens. */
   | 'ui'
   /** Disabled controls: exempt under WCAG, listed for the record only (no minimum). */
   | 'exempt';
@@ -51,8 +52,9 @@ export const PAIRS: ContrastPair[] = [
   { element: 'Primary button hover', fg: 'on-ink', bg: 'ink-hover', kind: 'text' },
   // ---- non-text: control boundaries ----
   ...grid('Text input / select border', ['input-border'], ['surface', 'app', 'surface-2'], 'ui'),
-  ...grid('Secondary / icon / danger button border', ['control-border'], ['surface', 'app', 'surface-2'], 'ui'),
-  ...grid('Danger button border', ['alert-control'], ['surface', 'app'], 'ui'),
+  // Owner's rule, "inputs strong, buttons soft": icon-only buttons (no label to identify them), the password toggle
+  // and the colour picker take --control-border; text buttons keep the soft v2 edge (exempt rows below).
+  ...grid('Icon-only button / password toggle / colour picker edge', ['control-border'], ['surface', 'app', 'surface-2'], 'ui'),
   { element: 'Invalid input border', fg: 'alert', bg: 'surface', kind: 'ui' },
   { element: 'Warning input border', fg: 'warn', bg: 'surface', kind: 'ui' },
   ...grid('Selected segment / tab outline', ['control-border'], ['seg-selected'], 'ui'),
@@ -72,6 +74,11 @@ export const PAIRS: ContrastPair[] = [
   { element: 'Sidebar update dot (ok) on its card', fg: 'online', bg: 'app', kind: 'ui' },
   // ---- icons that carry meaning ----
   ...grid('Icon in a button / nav item', ['text-2', 'secondary'], ['surface', 'hover', 'surface-2'], 'ui'),
+  // ---- soft by design: exempt, recorded (1.4.11 asks no edge of a control its visible label identifies) ----
+  { element: 'Secondary text button edge', fg: 'border-strong', bg: 'surface', kind: 'exempt' },
+  { element: 'Subtle text button edge (remote-action tiles)', fg: 'border', bg: 'surface', kind: 'exempt' },
+  { element: 'Danger text button edge', fg: 'alert-line', bg: 'surface', kind: 'exempt' },
+  { element: 'Card and panel border (decorative)', fg: 'border', bg: 'app', kind: 'exempt' },
   // ---- disabled: exempt, recorded ----
   { element: 'Disabled text (faint)', fg: 'faint', bg: 'surface', kind: 'exempt' },
   { element: 'Disabled primary button', fg: 'disabled-ink', bg: 'disabled-bg', kind: 'exempt' },

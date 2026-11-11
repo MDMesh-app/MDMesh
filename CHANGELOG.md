@@ -52,8 +52,8 @@ Fixes
 - Agent rollout: when every device is in the canary, the rollout finishes once they've updated instead of staying
   open, and Settings stops offering the same agent again. If one can't update, it offers Finish instead of Promote
   (thanks @letternumber).
-- Console accessibility: buttons, inputs, status dots and bars reach 3:1 contrast in both themes, help and status
-  text is darker, the selected tab, section and page are outlined, and disabled settings stay readable.
+- Console accessibility: inputs, icon buttons, toggles, status dots and bars reach 3:1 contrast in both themes, help
+  and status text is darker, the selected tab, section and page are outlined, and disabled settings stay readable.
 - Console: a toast waits while you point at it or tab into it, can be dismissed (Escape too), and a failure stays 30
   seconds. A repeated message shows once with a count, at most three show at once, and they sit above the Save bar.
 - Console: the device's Location tab lists its locations under the map, for keyboards and screen readers, and a
@@ -64,9 +64,10 @@ Fixes
 
 Under the hood
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
-- Console: two new colour tokens for extensions, `--control-border` and `--alert-control`. `npm test` checks every
-  token pair's contrast and runs axe on each page; `scripts/shots/a11y.mjs` runs axe, a keyboard walk and reflow
-  checks on the built console in both themes at 1280, 640 and 320px.
+- Console: a new colour token for extensions, `--control-border`, the 3:1 edge for icon buttons and selected
+  items. `npm test` checks every token pair's contrast, which component edges must be 3:1, and runs axe on each page;
+  `scripts/shots/a11y.mjs` runs axe, a keyboard walk and reflow checks on the built console in both themes at 1280,
+  640 and 320px, and CI runs its quick pass.
 
 ## v0.4.0 — 2026-11-03
 

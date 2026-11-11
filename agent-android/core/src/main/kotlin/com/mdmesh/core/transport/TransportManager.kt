@@ -5,6 +5,7 @@ import com.mdmesh.core.config.ServerConfigStore
 import com.mdmesh.core.di.ApiHttpClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -27,21 +28,31 @@ import java.util.concurrent.TimeUnit
  * backstop when the socket is down.
  */
 @Singleton
-class TransportManager @Inject constructor(
-    @ApiHttpClient okHttpClient: OkHttpClient,
-    private val serverConfig: ServerConfigStore,
+class TransportManager internal constructor(
+    private val sockets: WebSocket.Factory,
+    private val baseUrl: () -> String,
+    private val scope: CoroutineScope,
 ) {
-    // Keepalive ping kept just under typical proxy idle timeouts (~100s) to hold the socket open
-    // with the fewest radio wakeups. (When idle on battery in adaptive mode the socket is dropped
-    // entirely, so this cost only applies while the socket is intentionally held hot.)
-    private val client: OkHttpClient = okHttpClient.newBuilder()
-        .pingInterval(50, TimeUnit.SECONDS)
-        .build()
-
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Inject constructor(
+        @ApiHttpClient okHttpClient: OkHttpClient,
+        serverConfig: ServerConfigStore,
+    ) : this(
+        // Keepalive ping kept just under typical proxy idle timeouts (~100s) to hold the socket open
+        // with the fewest radio wakeups. (When idle on battery in adaptive mode the socket is dropped
+        // entirely, so this cost only applies while the socket is intentionally held hot.)
+        okHttpClient.newBuilder().pingInterval(50, TimeUnit.SECONDS).build(),
+        serverConfig::baseUrl,
+        CoroutineScope(SupervisorJob() + Dispatchers.IO),
+    )
 
     @Volatile private var running = false
-    @Volatile private var ws: WebSocket? = null
+    // Guarded by `this`. Every socket's listener remembers the generation it was opened in; a callback from an older
+    // generation (a socket stop() cancelled, or one that already scheduled its reconnect) is ignored. Without this a
+    // late onFailure/onClosed of a replaced socket opened a second socket chain (the server then closes the other one,
+    // which reconnects, and so on), or reopened a socket after stop().
+    private var ws: WebSocket? = null
+    private var generation = 0
+    private var reconnectJob: Job? = null
     @Volatile private var attempt = 0
     @Volatile private var openedAt = 0L
 
@@ -60,26 +71,41 @@ class TransportManager @Inject constructor(
         connect()
     }
 
+    /** Close the socket and forget any pending reconnect: nothing reopens it until [start]. */
     @Synchronized
     fun stop() {
         running = false
+        generation++
+        reconnectJob?.cancel()
+        reconnectJob = null
         ws?.cancel()
         ws = null
     }
 
+    /** Callers hold the lock. */
     private fun connect() {
         if (!running) return
-        val base = serverConfig.baseUrl()
+        val gen = ++generation
+        reconnectJob = null
+        val base = baseUrl()
         val url = "$base/agent/ws/$deviceId"
-        ws = client.newWebSocket(
+        ws = sockets.newWebSocket(
             // Secret goes in the handshake header, never the URL (query strings leak into logs).
             Request.Builder().url(url).addHeader("Authorization", "Bearer $secret").build(),
             object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {
+                    if (!isCurrent(gen)) {
+                        webSocket.cancel()
+                        return
+                    }
                     openedAt = System.currentTimeMillis()
                 }
 
                 override fun onMessage(webSocket: WebSocket, text: String) {
+                    if (!isCurrent(gen)) {
+                        webSocket.cancel()
+                        return
+                    }
                     val signal = WakeSignal.parse(text) ?: return
                     val cb = onWake ?: return
                     scope.launch {
@@ -89,20 +115,24 @@ class TransportManager @Inject constructor(
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                    scheduleReconnect()
+                    scheduleReconnect(gen)
                 }
 
                 // A server-initiated clean close is a failure for backoff purposes too — otherwise
                 // an accept-then-close server drives a reconnect every second, forever.
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                    scheduleReconnect()
+                    scheduleReconnect(gen)
                 }
             },
         )
     }
 
-    private fun scheduleReconnect() {
-        if (!running) return
+    private fun isCurrent(gen: Int): Boolean = synchronized(this) { running && gen == generation }
+
+    @Synchronized
+    private fun scheduleReconnect(gen: Int) {
+        // A superseded socket: stop() or its successor owns the channel now.
+        if (!running || gen != generation) return
         ws = null
         // Reset backoff only after a stable session (open ≥30s); resetting in onOpen let a
         // connection that dies right after the handshake pin the retry delay at 1s.
@@ -110,9 +140,11 @@ class TransportManager @Inject constructor(
         openedAt = 0L
         val backoffMs = minOf(60_000L, 1_000L * (1L shl minOf(attempt, 5)))
         attempt++
-        scope.launch {
+        // From here this socket's further callbacks (onFailure after onClosing, …) are stale too.
+        val next = ++generation
+        reconnectJob = scope.launch {
             delay(backoffMs)
-            synchronized(this@TransportManager) { if (running) connect() }
+            synchronized(this@TransportManager) { if (running && generation == next) connect() }
         }
     }
 

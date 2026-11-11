@@ -32,6 +32,7 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.mdmesh.core.di.DownloadHttpClient
 import kotlinx.coroutines.Dispatchers
@@ -42,6 +43,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -142,6 +144,9 @@ class InstallManager @Inject constructor(
     private val packageInstaller: PackageInstaller
         get() = context.packageManager.packageInstaller
 
+    /** Downloads an install in this process is using; never swept. */
+    private val downloadsInUse: MutableSet<File> = ConcurrentHashMap.newKeySet()
+
     /**
      * Downloads (or reads) the APK, applies the version policy, then performs a silent
      * install and awaits the platform's result. Returns the mapped [InstallOutcome].
@@ -160,6 +165,8 @@ class InstallManager @Inject constructor(
                     reason = "downgrade blocked for ${req.packageName}: uninstall the current version first",
                 )
         }
+
+        sweepOrphanedDownloads()
 
         // 2. Obtain every part (single APK, or base + splits of a bundle), verifying each
         // part's checksum. All parts install together in one session (step 3).
@@ -189,8 +196,19 @@ class InstallManager @Inject constructor(
             return outcome
         } finally {
             // Only clean up files we downloaded; never delete a caller-provided APK.
-            fetched.forEach { if (it.downloaded) it.file.delete() }
+            fetched.forEach {
+                if (it.downloaded) {
+                    it.file.delete()
+                    downloadsInUse.remove(it.file)
+                }
+            }
         }
+    }
+
+    private suspend fun sweepOrphanedDownloads() = withContext(Dispatchers.IO) {
+        runCatching { DownloadSweep.sweep(context.cacheDir, downloadsInUse.toSet(), System.currentTimeMillis()) }
+            .onSuccess { if (it.isNotEmpty()) Log.i(TAG, "removed ${it.size} leftover APK download(s)") }
+            .onFailure { Log.w(TAG, "leftover APK sweep failed", it) }
     }
 
     /** A fetched part plus whether we downloaded it (and therefore own its cleanup). */
@@ -300,14 +318,18 @@ class InstallManager @Inject constructor(
     }
 
     private fun download(url: String): File {
-        val dest = File(context.cacheDir, "mdm-install-${System.nanoTime()}.apk")
-        httpClient.newCall(Request.Builder().url(url).build()).execute().use { response ->
-            if (!response.isSuccessful) {
-                dest.delete()
-                error("HTTP ${response.code} for $url")
+        val dest = File(context.cacheDir, DownloadSweep.name(System.nanoTime()))
+        downloadsInUse.add(dest)
+        try {
+            httpClient.newCall(Request.Builder().url(url).build()).execute().use { response ->
+                if (!response.isSuccessful) error("HTTP ${response.code} for $url")
+                val body = response.body ?: error("empty response body for $url")
+                body.byteStream().use { input -> dest.outputStream().use { input.copyTo(it) } }
             }
-            val body = response.body ?: run { dest.delete(); error("empty response body for $url") }
-            body.byteStream().use { input -> dest.outputStream().use { input.copyTo(it) } }
+        } catch (t: Throwable) {
+            dest.delete()
+            downloadsInUse.remove(dest)
+            throw t
         }
         return dest
     }
@@ -357,5 +379,6 @@ class InstallManager @Inject constructor(
     private companion object {
         /** How long a committed session may take to report back before the install counts as failed. */
         const val RESULT_TIMEOUT_MS = 10 * 60_000L
+        const val TAG = "InstallManager"
     }
 }

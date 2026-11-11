@@ -52,6 +52,8 @@ Fixes
   is stopped during a check-in. Needs agent 0.5.0.
 - Agent: the 10-minute heartbeat no longer waits behind an install or another check-in that is still running, which
   could get the agent stopped by Android. Needs agent 0.5.0.
+- Agent: APK downloads left behind when the agent was stopped during an install are removed at the next install.
+  Needs agent 0.5.0.
 
 Under the hood
 - Agent: when the server can't be reached, the agent retries its connection at random intervals of up to 5 minutes

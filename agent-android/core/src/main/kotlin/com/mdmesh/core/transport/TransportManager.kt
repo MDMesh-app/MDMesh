@@ -5,11 +5,14 @@ import android.util.Log
 import com.mdmesh.core.config.ServerConfigStore
 import com.mdmesh.core.di.ApiHttpClient
 import com.mdmesh.core.di.IoDispatcher
+import com.mdmesh.core.sync.SyncStatus
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -45,11 +48,14 @@ class TransportManager internal constructor(
     /** Picks the actual wait for a backoff whose upper bound is the argument. */
     private val jitter: (Long) -> Long = { fullJitter(it) },
     private val log: (String) -> Unit = {},
+    /** Emits when a check-in reached the server: proof it is up, so a pending backoff is cut short. */
+    serverReachable: Flow<Unit> = emptyFlow(),
 ) {
     @Inject constructor(
         @ApiHttpClient okHttpClient: OkHttpClient,
         serverConfig: ServerConfigStore,
         @IoDispatcher io: CoroutineDispatcher,
+        syncStatus: SyncStatus,
     ) : this(
         // Keepalive ping kept just under typical proxy idle timeouts (~100s) to hold the socket open
         // with the fewest radio wakeups. (When idle on battery in adaptive mode the socket is dropped
@@ -59,7 +65,14 @@ class TransportManager internal constructor(
         scope = CoroutineScope(SupervisorJob() + io),
         clock = SystemClock::elapsedRealtime,
         log = { Log.i(TAG, it) },
+        serverReachable = syncStatus.successes,
     )
+
+    init {
+        // A server outage can push the backoff to its 5-minute cap; the next successful check-in (heartbeat or
+        // worker) brings the socket back within that cycle instead.
+        scope.launch { serverReachable.collect { retryNow("server reachable") } }
+    }
 
     internal sealed class State(val name: String) {
         object Stopped : State("Stopped")
@@ -100,12 +113,18 @@ class TransportManager internal constructor(
         moveTo(State.Stopped, ++generation)
     }
 
-    /** The device has a network again: don't sit out the rest of a backoff. The failure count stays. */
+    /** The device has a network again: don't sit out the rest of a backoff. */
+    fun onNetworkAvailable() = retryNow("network available")
+
+    /**
+     * Ends a pending backoff early. The failure count stays, so if the socket itself keeps failing (a proxy that
+     * blocks WebSockets) each hint costs one attempt, not a fresh run of short backoffs.
+     */
     @Synchronized
-    fun onNetworkAvailable() {
+    private fun retryNow(reason: String) {
         val s = state as? State.Backoff ?: return
         s.job.cancel()
-        log("network available, retrying now")
+        log("$reason, retrying now")
         connect()
     }
 

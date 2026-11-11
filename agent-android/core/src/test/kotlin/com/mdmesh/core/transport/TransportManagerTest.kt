@@ -1,6 +1,7 @@
 package com.mdmesh.core.transport
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.currentTime
@@ -49,6 +50,7 @@ class TransportManagerTest {
     private val sockets = FakeSockets()
     private val wakes = mutableListOf<WakeSignal>()
     private val logs = mutableListOf<String>()
+    private val checkInSucceeded = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     private val transport = TransportManager(
         sockets = sockets,
         baseUrl = { "https://mdm.example" },
@@ -56,6 +58,7 @@ class TransportManagerTest {
         clock = { scope.currentTime },
         jitter = { it }, // the bound itself: deterministic
         log = { logs += it },
+        serverReachable = checkInSucceeded,
     )
 
     private fun advance(ms: Long) { scope.advanceTimeBy(ms); scope.runCurrent() }
@@ -178,6 +181,20 @@ class TransportManagerTest {
         assertEquals("Connecting", transport.stateName)
         advance(10 * 60_000L)
         assertEquals("the cancelled backoff must not connect again", 8, sockets.opened.size)
+    }
+
+    @Test
+    fun `a successful check-in cuts a backoff short`() {
+        start()
+        repeat(9) { sockets.opened.last().fail(); advance(10 * 60_000L) }
+        sockets.opened.last().fail() // next try in 5 min: the server was down
+        assertEquals("Backoff", transport.stateName)
+
+        checkInSucceeded.tryEmit(Unit) // the server answered a check-in: it is back
+        scope.runCurrent()
+        assertEquals("Connecting", transport.stateName)
+        assertEquals(11, sockets.opened.size)
+        assertTrue(logs.any { it == "server reachable, retrying now" })
     }
 
     @Test

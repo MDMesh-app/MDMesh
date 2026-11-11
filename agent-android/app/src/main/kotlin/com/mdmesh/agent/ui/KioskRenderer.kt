@@ -8,6 +8,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import androidx.activity.ComponentActivity
+import androidx.core.view.ViewCompat
 import com.mdmesh.agent.R
 
 /**
@@ -73,13 +74,13 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
             is KioskScreen.Hold -> root.addView(hold(v))
         }
         addExit(v, s.exit)
+        // TalkBack announces the pane title when the screen changes (grid to "App closed", splash to grid).
+        ViewCompat.setAccessibilityPaneTitle(root, s.paneTitle(activity))
     }
 
     private fun splash(v: KioskViews, s: KioskScreen.Splash): View = v.centredColumn().apply {
         addView(v.spinner())
-        val message = s.appName?.let { activity.getString(R.string.kiosk_opening, it) }
-            ?: activity.getString(R.string.kiosk_loading)
-        addView(v.centredLine(message, SPLASH_SP, v.palette.text, topDp = SPACE_16))
+        addView(v.centredLine(s.message(activity), SPLASH_SP, v.palette.text, topDp = SPACE_16))
     }
 
     private fun grid(v: KioskViews, s: KioskScreen.Grid): View {
@@ -98,7 +99,9 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
             grid = cells
             iconPx = v.dp(s.iconSize.dp)
             setPadding(0, v.dp(SPACE_24), 0, v.dp(bottom))
-            addView(v.inGutter(v.text(activity.getString(R.string.kiosk_header), TITLE_SP, v.palette.text, true), 0))
+            val header = v.text(activity.getString(R.string.kiosk_header), TITLE_SP, v.palette.text, true)
+            ViewCompat.setAccessibilityHeading(header, true)
+            addView(v.inGutter(header, 0))
             s.missingApp?.let { pkg ->
                 val notice = v.emptyNotice(activity.getString(R.string.kiosk_app_missing, pkg))
                 addView(v.inGutter(notice, v.dp(SPACE_16)))
@@ -151,7 +154,10 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
 
     private fun hold(v: KioskViews): View = v.centredColumn().apply {
         addView(v.icon(R.drawable.ic_v2_warning, HOLD_ICON_DP, v.palette.text))
-        addView(v.centredLine(activity.getString(R.string.kiosk_hold_title), TITLE_SP, v.palette.text, SPACE_16, true))
+        val title =
+            v.centredLine(activity.getString(R.string.kiosk_hold_title), TITLE_SP, v.palette.text, SPACE_16, true)
+        ViewCompat.setAccessibilityHeading(title, true)
+        addView(title)
         addView(v.centredLine(activity.getString(R.string.kiosk_hold_message), BODY_SP, v.palette.secondary, SPACE_8))
         addView(
             v.filledButton(activity.getString(R.string.kiosk_hold_retry)).apply {
@@ -176,8 +182,11 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
                 )
             }
             KioskExit.GESTURE -> {
-                // Invisible top-right corner target; 7 taps within the window opens the prompt.
+                // Invisible top-right corner target; 7 taps within the window opens the prompt. Hidden from
+                // TalkBack and keyboard focus: it is a secret way out (and 7 quick taps can't be made with TalkBack
+                // on; such kiosks use the visible exit, or exit from the console).
                 val target = View(activity).apply {
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                     var taps = 0
                     var first = 0L
                     setOnClickListener {
@@ -185,6 +194,7 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
                         if (nowMs - first > GESTURE_WINDOW_MS) { taps = 0; first = nowMs }
                         if (++taps >= GESTURE_TAPS) { taps = 0; actions.requestExit() }
                     }
+                    isFocusable = false
                 }
                 val size = v.dp(GESTURE_TARGET_DP)
                 root.addView(target, FrameLayout.LayoutParams(size, size, Gravity.TOP or Gravity.END))
@@ -211,6 +221,18 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
         const val WORDMARK_SP = 24f
     }
 }
+
+/** What TalkBack announces when [this] screen appears: its title, or the splash's line. */
+private fun KioskScreen.paneTitle(context: Context): String = when (this) {
+    KioskScreen.Idle -> context.getString(R.string.kiosk_idle_subtitle)
+    is KioskScreen.Splash -> message(context)
+    is KioskScreen.Grid -> context.getString(R.string.kiosk_header)
+    is KioskScreen.Hold -> context.getString(R.string.kiosk_hold_title)
+}
+
+/** The splash's line: "Opening <app>…" once the app's name is known. */
+private fun KioskScreen.Splash.message(context: Context): String =
+    appName?.let { context.getString(R.string.kiosk_opening, it) } ?: context.getString(R.string.kiosk_loading)
 
 /**
  * The grid screen's column: the header and the empty notice above [grid] start where its first icon starts, in any

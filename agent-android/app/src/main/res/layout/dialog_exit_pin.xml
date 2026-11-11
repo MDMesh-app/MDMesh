@@ -36,7 +36,7 @@
             android:layout_width="@dimen/mdm_touch_target"
             android:layout_height="@dimen/mdm_touch_target"
             android:layout_gravity="end|center_vertical"
-            android:background="?attr/selectableItemBackgroundBorderless"
+            android:background="@drawable/mdm_icon_button"
             android:contentDescription="@string/kiosk_exit_pin_show"
             android:src="@drawable/ic_v2_eye" />
     </FrameLayout>

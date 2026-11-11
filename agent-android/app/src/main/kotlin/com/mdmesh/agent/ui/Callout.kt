@@ -11,6 +11,7 @@ import androidx.annotation.DrawableRes
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.content.ContextCompat
 import com.mdmesh.agent.R
+import kotlin.math.roundToInt
 
 /** The v2 callout tones the status screen uses: soft fill, 1dp line, ink text and icon. */
 enum class CalloutTone(@DrawableRes val background: Int, @ColorRes val ink: Int, @DrawableRes val icon: Int) {
@@ -19,8 +20,12 @@ enum class CalloutTone(@DrawableRes val background: Int, @ColorRes val ink: Int,
     ALERT(R.drawable.mdm_callout_alert, R.color.mdm_alert_ink, R.drawable.ic_v2_alert),
 }
 
-/** A `view_callout` layout: tone, title and an optional body line. */
-class Callout(private val root: View) {
+/**
+ * A `view_callout` layout: tone, title and an optional body line. TalkBack reads it as one stop, title then body;
+ * with [announce] it is a polite live region, so it is read out when it appears or changes (an error the person
+ * didn't ask for, like a failed return or a stuck enrolment).
+ */
+class Callout(private val root: View, announce: Boolean = false) {
 
     private val icon: ImageView = root.findViewById(R.id.callout_icon)
     private val title: TextView = root.findViewById(R.id.callout_title)
@@ -28,6 +33,9 @@ class Callout(private val root: View) {
 
     init {
         icon.centerOnFirstLineOf(title)
+        title.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        body.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        if (announce) root.accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
     }
 
     fun show(tone: CalloutTone, title: CharSequence, body: CharSequence? = null) {
@@ -41,6 +49,7 @@ class Callout(private val root: View) {
         this.body.text = body
         this.body.setTextColor(ink)
         this.body.visibility = if (body.isNullOrEmpty()) View.GONE else View.VISIBLE
+        root.contentDescription = if (body.isNullOrEmpty()) title else "$title. $body"
         root.visibility = View.VISIBLE
     }
 
@@ -69,17 +78,45 @@ fun View.centerOnFirstLineOf(text: TextView) {
     val parent = icon.parent as? ViewGroup ?: return
     val caps = Rect()
     parent.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-        val layout = text.layout ?: return@addOnLayoutChangeListener
-        var textTop = 0f
-        var v: View = text
-        while (v !== parent) {
-            textTop += v.top
-            v = v.parent as? View ?: return@addOnLayoutChangeListener
-        }
-        text.paint.getTextBounds(CAP_SAMPLE, 0, CAP_SAMPLE.length, caps)
-        val capCentre = textTop + text.totalPaddingTop + layout.getLineBaseline(0) - caps.height() / 2f
+        val capCentre = firstLineCapCentre(text, parent, caps) ?: return@addOnLayoutChangeListener
         icon.translationY = capCentre - (icon.top + icon.height / 2f)
     }
+}
+
+/**
+ * As [centerOnFirstLineOf], for a touch target: placed by its top margin instead of a translation, so its parent
+ * grows to hold all of it. A translated target that sticks out of its parent loses the touches that land outside
+ * the parent, as the parent never receives them. The parent must lay this view out from its top (the default in a
+ * horizontal LinearLayout).
+ */
+fun View.placeOnFirstLineOf(text: TextView) {
+    val target = this
+    val parent = target.parent as? ViewGroup ?: return
+    val caps = Rect()
+    parent.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+        val capCentre = firstLineCapCentre(text, parent, caps) ?: return@addOnLayoutChangeListener
+        val params = target.layoutParams as ViewGroup.MarginLayoutParams
+        val top = (capCentre - target.height / 2f).roundToInt().coerceAtLeast(0)
+        if (params.topMargin != top) {
+            params.topMargin = top
+            // Not from inside this layout pass: on the next frame (it settles there, the text doesn't move).
+            target.post { target.layoutParams = params }
+        }
+    }
+}
+
+/** The cap-height centre of [text]'s first line, from the top of its ancestor [parent]; null before layout. */
+private fun firstLineCapCentre(text: TextView, parent: View, caps: Rect): Float? {
+    var textTop = 0f
+    var v: View? = text
+    while (v != null && v !== parent) {
+        textTop += v.top
+        v = v.parent as? View
+    }
+    val layout = text.layout
+    if (v == null || layout == null) return null
+    text.paint.getTextBounds(CAP_SAMPLE, 0, CAP_SAMPLE.length, caps)
+    return textTop + text.totalPaddingTop + layout.getLineBaseline(0) - caps.height() / 2f
 }
 
 private const val CAP_SAMPLE = "H"

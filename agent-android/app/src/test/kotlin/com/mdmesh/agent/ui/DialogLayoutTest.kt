@@ -72,7 +72,8 @@ class DialogLayoutTest {
         assertEquals(inset, bar.getAttribute("android:paddingEnd"))
         // The button shapes are inset inside their 48dp touch targets; the bar padding makes up the rest.
         val insets = listOf("mdm_btn_filled", "mdm_btn_text", "mdm_btn_danger", "mdm_btn_outlined").map {
-            val d = xml("drawable/$it.xml")
+            // The shape's inset (the focus ring is layered on top of it).
+            val d = xml("drawable/$it.xml").all().first { el -> el.tagName == "inset" }
             assertEquals(d.getAttribute("android:insetTop"), d.getAttribute("android:insetBottom"))
             dp(d.getAttribute("android:insetTop"))
         }.distinct()

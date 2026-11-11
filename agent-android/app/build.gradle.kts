@@ -93,6 +93,9 @@ android {
     testOptions {
         // Robolectric dialog tests inflate the app's real layouts, styles and drawables.
         unitTests.isIncludeAndroidResources = true
+        // Robolectric keeps a sandbox per SDK and graphics mode for the whole run; with the accessibility tests'
+        // (API 26 and 35, native graphics) that outgrows Gradle's 512 MB default.
+        unitTests.all { it.maxHeapSize = "2g" }
     }
 }
 

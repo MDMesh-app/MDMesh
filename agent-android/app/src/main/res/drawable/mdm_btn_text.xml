@@ -1,14 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Ghost button: no fill, ripple clipped to the 10dp shape. -->
-<inset xmlns:android="http://schemas.android.com/apk/res/android"
-    android:insetTop="4dp"
-    android:insetBottom="4dp">
-    <ripple android:color="@color/mdm_ripple">
-        <item android:id="@android:id/mask">
-            <shape android:shape="rectangle">
-                <corners android:radius="@dimen/mdm_radius_sm" />
-                <solid android:color="@android:color/white" />
-            </shape>
-        </item>
-    </ripple>
-</inset>
+<!-- Ghost button: no fill, ripple clipped to the 10dp shape. With the focus ring on top. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <inset
+            android:insetTop="4dp"
+            android:insetBottom="4dp">
+            <ripple android:color="@color/mdm_ripple">
+                <item android:id="@android:id/mask">
+                    <shape android:shape="rectangle">
+                        <corners android:radius="@dimen/mdm_radius_sm" />
+                        <solid android:color="@android:color/white" />
+                    </shape>
+                </item>
+            </ripple>
+        </inset>
+    </item>
+    <item android:drawable="@drawable/mdm_focus_ring" />
+</layer-list>

@@ -1,15 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Danger button: surface + 1dp alert line; text in alert ink. -->
-<inset xmlns:android="http://schemas.android.com/apk/res/android"
-    android:insetTop="4dp"
-    android:insetBottom="4dp">
-    <ripple android:color="@color/mdm_ripple">
-        <item>
-            <shape android:shape="rectangle">
-                <corners android:radius="@dimen/mdm_radius_sm" />
-                <solid android:color="@color/mdm_surface" />
-                <stroke android:width="1dp" android:color="@color/mdm_alert_line" />
-            </shape>
-        </item>
-    </ripple>
-</inset>
+<!-- Danger button: surface + 1dp alert border (3:1); text in alert ink. With the focus ring on top. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <inset
+            android:insetTop="4dp"
+            android:insetBottom="4dp">
+            <ripple android:color="@color/mdm_ripple">
+                <item>
+                    <shape android:shape="rectangle">
+                        <corners android:radius="@dimen/mdm_radius_sm" />
+                        <solid android:color="@color/mdm_surface" />
+                        <stroke android:width="1dp" android:color="@color/mdm_alert_border" />
+                    </shape>
+                </item>
+            </ripple>
+        </inset>
+    </item>
+    <item android:drawable="@drawable/mdm_focus_ring" />
+</layer-list>

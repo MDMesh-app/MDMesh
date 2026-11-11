@@ -19,9 +19,10 @@ Heads-up
 - The agent is now called **MDMesh** on the device (was MDM Agent): in the app drawer, Settings → Apps, the
   device admin list and the device's Apps tab in the console. Its icon is new too: a white square on dark (was a white
   shield on blue). It's the same app, so it updates in place. Needs agent 0.5.0.
-- Kiosk: the launcher keeps its text readable. If a configuration's kiosk text color is hard to read on its
-  background (under 3:1 contrast), the device uses a readable color instead, and the background is always drawn
-  solid (transparency is ignored). Needs agent 0.5.0.
+- Kiosk: the launcher keeps its text readable. If a configuration's kiosk text color has less than 4.5:1 contrast
+  with its background (the minimum for readable text), the device uses a readable color instead, so some brand
+  pairs show dark text (white on a bright red, for example). The background is always drawn solid (transparency is
+  ignored). Needs agent 0.5.0.
 
 New
 - Configurations can allow or block the camera. Block covers every app, kiosk apps too. Not managed after Block
@@ -53,9 +54,12 @@ New
 - Agent: the MDMesh status screen follows the device's light or dark setting and uses the console's look: a device
   card, a Kiosk card with Return to kiosk, and a callout that stays on screen when a return fails (it was a
   short-lived message). Needs agent 0.5.0.
-- Kiosk: the launcher grid has pressed highlights, two-line app names and as many columns as fit, also after
-  rotating; its empty, loading, "App closed" and idle screens and the Exit kiosk button use the kiosk's own colours
-  and stay readable on any background. Needs agent 0.5.0.
+- Kiosk: the launcher grid has pressed highlights, two-line app names (three with a larger font) and as many
+  columns as fit, also after rotating; its empty, loading, "App closed" and idle screens and the Exit kiosk button
+  use the kiosk's own colours and stay readable on any background. Needs agent 0.5.0.
+- Agent: the status screen, dialogs and kiosk launcher are easier to read and use: darker secondary and status text,
+  no text under 13sp, a visible focus ring for keyboards and D-pads, full-size copy buttons, and TalkBack reads
+  headings, each fact with its label, and a failed return or stuck enrolment as it appears. Needs agent 0.5.0.
 
 Fixes
 - Audit log: on Docker installs, entries show the client's address instead of the edge container's (thanks

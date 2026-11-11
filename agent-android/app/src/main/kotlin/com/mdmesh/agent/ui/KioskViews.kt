@@ -6,7 +6,9 @@ import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.InsetDrawable
+import android.graphics.drawable.LayerDrawable
 import android.graphics.drawable.RippleDrawable
+import android.graphics.drawable.StateListDrawable
 import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
@@ -19,6 +21,9 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.annotation.DrawableRes
 import androidx.appcompat.content.res.AppCompatResources
+import androidx.core.view.AccessibilityDelegateCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import com.mdmesh.agent.R
 import kotlin.math.roundToInt
 
@@ -59,24 +64,35 @@ class KioskViews(private val context: Context, val palette: KioskPalette) {
         layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
     }
 
-    /** Indeterminate spinner in the text colour (the splash). */
+    /** Indeterminate spinner in the text colour (the splash). Not a TalkBack stop: the line under it says it. */
     fun spinner(): ProgressBar = ProgressBar(context).apply {
         isIndeterminate = true
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         indeterminateTintList = ColorStateList.valueOf(palette.text)
         layoutParams = LinearLayout.LayoutParams(dp(SPINNER_DP), dp(SPINNER_DP))
     }
 
-    /** One app cell: icon over a label of up to two lines, with a rounded pressed and focus highlight. */
+    /**
+     * One app cell: icon over a label of up to two lines (three at larger font sizes), with a rounded pressed
+     * highlight and a 2dp focus ring for keyboards and D-pads. TalkBack reads it as a button named by its label.
+     */
     fun appCell(iconPx: Int): LinearLayout = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
         gravity = Gravity.CENTER_HORIZONTAL
         setPadding(dp(CELL_PAD_H_DP), dp(CELL_PAD_V_DP), dp(CELL_PAD_H_DP), dp(CELL_PAD_V_DP))
         isClickable = true
         isFocusable = true
-        background = InsetDrawable(
-            RippleDrawable(ColorStateList.valueOf(palette.ripple), null, rounded(dp(CELL_RADIUS_DP), WHITE)),
-            dp(CELL_INSET_DP),
+        background = LayerDrawable(
+            arrayOf(
+                InsetDrawable(
+                    RippleDrawable(ColorStateList.valueOf(palette.ripple), null, rounded(dp(CELL_RADIUS_DP), WHITE)),
+                    dp(CELL_INSET_DP),
+                ),
+                // The ring sits 2dp outside the highlight (in the cell's 4dp inset).
+                focusRing(rounded(dp(CELL_RADIUS_DP + CELL_INSET_DP), TRANSPARENT), palette.focus),
+            ),
         )
+        ViewCompat.setAccessibilityDelegate(this, ButtonRole)
         addView(
             ImageView(context).apply {
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
@@ -86,7 +102,7 @@ class KioskViews(private val context: Context, val palette: KioskPalette) {
         addView(
             text("", LABEL_SP, palette.text).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
-                maxLines = 2
+                maxLines = labelLines(context.resources.configuration.fontScale)
                 ellipsize = TextUtils.TruncateAt.END
                 // The cell is announced once, by its content description.
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
@@ -130,14 +146,35 @@ class KioskViews(private val context: Context, val palette: KioskPalette) {
             text = label
             setTextColor(textColor)
             keepingPadding {
-                // 40dp visible inside the style's 48dp minimum height, like the theme's buttons.
+                // 40dp visible inside the style's 48dp minimum height, like the theme's buttons. The focus ring is
+                // drawn 2dp inside the shape in the label's colour, so it shows on the filled button's fill and on the
+                // outlined one's background alike.
+                val ring = focusRing(
+                    rounded(dp(BUTTON_RADIUS_DP - FOCUS_OFFSET_DP), TRANSPARENT),
+                    textColor,
+                    inset = dp(FOCUS_OFFSET_DP),
+                )
                 background = InsetDrawable(
-                    RippleDrawable(ColorStateList.valueOf(ripple), shape, null),
+                    LayerDrawable(arrayOf(RippleDrawable(ColorStateList.valueOf(ripple), shape, null), ring)),
                     0, dp(BUTTON_INSET_DP), 0, dp(BUTTON_INSET_DP),
                 )
             }
             minWidth = dp(BUTTON_MIN_WIDTH_DP)
         }
+
+    /** [shape] stroked 2dp in [color], drawn only while focused; [inset] px in from the bounds. */
+    private fun focusRing(shape: GradientDrawable, color: Int, inset: Int = 0) = StateListDrawable().apply {
+        shape.setStroke(dp(FOCUS_RING_DP), color)
+        addState(intArrayOf(android.R.attr.state_focused), InsetDrawable(shape, inset))
+    }
+
+    /** TalkBack calls an app cell a button ("Inventory, button"); it is a plain clickable layout otherwise. */
+    private object ButtonRole : AccessibilityDelegateCompat() {
+        override fun onInitializeAccessibilityNodeInfo(host: View, info: AccessibilityNodeInfoCompat) {
+            super.onInitializeAccessibilityNodeInfo(host, info)
+            info.className = Button::class.java.name
+        }
+    }
 
     companion object {
         fun rounded(radiusPx: Int, fill: Int) = GradientDrawable().apply {
@@ -146,12 +183,20 @@ class KioskViews(private val context: Context, val palette: KioskPalette) {
             setColor(fill)
         }
 
+        /** App label lines: two, three once the font is larger than the default (no name cut at "Safety Che…"). */
+        fun labelLines(fontScale: Float): Int = if (fontScale > 1f) LABEL_LINES_LARGE else LABEL_LINES
+
         const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
         const val MEDIUM = "sans-serif-medium"
         const val TITLE_SP = 20f
         const val BODY_SP = 14f
-        const val LABEL_SP = 13f
+        const val LABEL_SP = 14f
+        private const val LABEL_LINES = 2
+        private const val LABEL_LINES_LARGE = 3
+        private const val FOCUS_RING_DP = 2
+        private const val FOCUS_OFFSET_DP = 2
+        private const val TRANSPARENT = 0
         private const val WHITE = 0xFFFFFFFF.toInt()
         private const val SPINNER_DP = 40
         private const val CELL_PAD_H_DP = 8

@@ -11,6 +11,7 @@ import android.widget.TextView
 import androidx.annotation.StringRes
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
 import com.mdmesh.agent.BuildConfig
 import com.mdmesh.agent.R
 import java.text.DateFormat
@@ -29,11 +30,12 @@ class StatusScreen(
     private val deviceId: TextView = activity.findViewById(R.id.status_device_id)
     private val server: TextView = activity.findViewById(R.id.status_server)
     private val management = Callout(activity.findViewById(R.id.status_management))
-    private val enrollError = Callout(activity.findViewById(R.id.status_enroll_error))
+    private val enrollError = Callout(activity.findViewById(R.id.status_enroll_error), announce = true)
     private val kioskPill: TextView = activity.findViewById(R.id.status_kiosk_pill)
     private val kioskBody: TextView = activity.findViewById(R.id.status_kiosk_body)
     private val returnButton: Button = activity.findViewById(R.id.status_return)
-    private val returnError = Callout(activity.findViewById(R.id.status_return_error))
+    private val returnError = Callout(activity.findViewById(R.id.status_return_error), announce = true)
+    private val kioskHeader: View = activity.findViewById(R.id.status_kiosk_header)
     private val copyDeviceId: ImageButton = activity.findViewById(R.id.status_copy_device_id)
     private val copyServer: ImageButton = activity.findViewById(R.id.status_copy_server)
     private var drawn: StatusUiState? = null
@@ -58,14 +60,19 @@ class StatusScreen(
             ink = color(R.color.mdm_ink),
             secondary = color(R.color.mdm_secondary),
         )
-        activity.findViewById<TextView>(R.id.status_version).text =
+        // TalkBack: the wordmark is the screen's title and "Kiosk" its card's; each fact is one stop, label and value.
+        ViewCompat.setAccessibilityHeading(activity.findViewById(R.id.status_wordmark_text), true)
+        ViewCompat.setAccessibilityHeading(activity.findViewById(R.id.status_kiosk_title), true)
+        val version =
             activity.getString(R.string.status_agent_version, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE)
+        activity.findViewById<TextView>(R.id.status_version).text = version
+        describe(R.id.status_row_version, R.string.status_label_agent_version, version)
         returnButton.setOnClickListener { onReturn() }
         copyDeviceId.setOnClickListener { onCopy(StatusCopy.Target.DEVICE_ID) }
         copyServer.setOnClickListener { onCopy(StatusCopy.Target.SERVER) }
-        // Each copy icon sits on its value's first line, at any font size.
-        copyDeviceId.centerOnFirstLineOf(deviceId)
-        copyServer.centerOnFirstLineOf(server)
+        // Each copy icon sits on its value's first line, at any font size, its whole target inside its row.
+        copyDeviceId.placeOnFirstLineOf(deviceId)
+        copyServer.placeOnFirstLineOf(server)
     }
 
     fun render(state: StatusUiState) {
@@ -73,7 +80,10 @@ class StatusScreen(
         drawn = state
         if (before?.deviceOwner != state.deviceOwner) renderManagement(state.deviceOwner)
         if (before?.deviceId != state.deviceId) renderDeviceId(state.deviceId)
-        if (before?.serverUrl != state.serverUrl) server.text = state.serverUrl
+        if (before?.serverUrl != state.serverUrl) {
+            server.text = state.serverUrl
+            describe(R.id.status_server_group, R.string.status_label_server, state.serverUrl)
+        }
         if (before?.kiosk != state.kiosk) renderKiosk(state.kiosk)
         // Nothing to copy until the server has issued an ID; INVISIBLE keeps the row's layout steady.
         copyDeviceId.visibility = if (state.deviceId is StatusUiState.DeviceIdUi.Known) View.VISIBLE else View.INVISIBLE
@@ -112,6 +122,7 @@ class StatusScreen(
             is StatusUiState.DeviceIdUi.Known -> deviceId.text = id.id
             is StatusUiState.DeviceIdUi.Enrolling -> deviceId.setText(R.string.status_enrolling)
         }
+        describe(R.id.status_device_id_group, R.string.status_label_device_id, deviceId.text)
         val error = (id as? StatusUiState.DeviceIdUi.Enrolling)?.lastError
         if (error == null) {
             enrollError.hide()
@@ -139,6 +150,14 @@ class StatusScreen(
         returnButton.visibility = if (ui.returnVisible) View.VISIBLE else View.GONE
         returnButton.isEnabled = ui.returnEnabled
         returnButton.setText(ui.returnLabel)
+        // One stop, "Kiosk, Off"; a polite live region, so a change (Active, Off) is read out.
+        kioskHeader.contentDescription =
+            "${activity.getString(R.string.status_label_kiosk)}, ${activity.getString(ui.pill)}"
+    }
+
+    /** The group [id] reads as "label, value" (its label and value TextViews are hidden from TalkBack). */
+    private fun describe(id: Int, @StringRes label: Int, value: CharSequence) {
+        activity.findViewById<View>(id).contentDescription = "${activity.getString(label)}, $value"
     }
 
     /**

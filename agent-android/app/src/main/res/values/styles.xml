@@ -13,8 +13,10 @@
         <item name="android:minWidth">64dp</item>
         <item name="android:paddingStart">16dp</item>
         <item name="android:paddingEnd">16dp</item>
-        <item name="android:paddingTop">0dp</item>
-        <item name="android:paddingBottom">0dp</item>
+        <!-- 4dp of it is the background's inset: the label keeps 4dp to the drawn edge, and the button grows with
+             large text instead of the label overrunning the 40dp shape. -->
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">8dp</item>
         <item name="android:stateListAnimator">@null</item>
         <item name="android:elevation">0dp</item>
         <item name="android:focusable">true</item>

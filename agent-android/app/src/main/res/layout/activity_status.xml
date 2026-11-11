@@ -58,7 +58,8 @@
             style="@style/Widget.MdmAgent.Card"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="@dimen/mdm_space_24">
+            android:layout_marginTop="@dimen/mdm_space_24"
+            android:clipToPadding="false">
 
             <include
                 android:id="@+id/status_management"
@@ -70,6 +71,7 @@
                 android:id="@+id/status_row_device_id"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginEnd="-14dp"
                 android:baselineAligned="false"
                 android:orientation="horizontal">
 
@@ -79,19 +81,29 @@
                     android:layout_weight="1"
                     android:orientation="vertical">
 
-                    <TextView
+                    <!-- Label and value: one TalkBack stop, "Device ID, dev_…" (StatusScreen). -->
+                    <LinearLayout
+                        android:id="@+id/status_device_id_group"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="@string/status_label_device_id"
-                        android:textAppearance="@style/TextAppearance.MdmAgent.Eyebrow" />
+                        android:orientation="vertical">
 
-                    <TextView
-                        android:id="@+id/status_device_id"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="@dimen/mdm_space_4"
-                        android:textAppearance="@style/TextAppearance.MdmAgent.Mono"
-                        android:text="@string/status_placeholder" />
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:importantForAccessibility="no"
+                            android:text="@string/status_label_device_id"
+                            android:textAppearance="@style/TextAppearance.MdmAgent.Eyebrow" />
+
+                        <TextView
+                            android:id="@+id/status_device_id"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/mdm_space_4"
+                            android:importantForAccessibility="no"
+                            android:textAppearance="@style/TextAppearance.MdmAgent.Mono"
+                            android:text="@string/status_placeholder" />
+                    </LinearLayout>
 
                     <include
                         android:id="@+id/status_enroll_error"
@@ -103,15 +115,15 @@
                 </LinearLayout>
 
                 <!-- Copy (instead of selectable text, whose toolbar can open other apps inside the kiosk).
-                     Centred on the value's first line in StatusScreen; the target reaches 14dp into the card's
-                     padding, so the icon's edge is the card's content edge. -->
+                     Centred on the value's first line in StatusScreen, by its top margin, so the whole 48dp target
+                     stays inside the row (touches outside a parent never arrive). The row reaches 14dp into the
+                     card's padding, so the icon's edge is the card's content edge. -->
                 <ImageButton
                     android:id="@+id/status_copy_device_id"
                     android:layout_width="@dimen/mdm_touch_target"
                     android:layout_height="@dimen/mdm_touch_target"
                     android:layout_marginStart="@dimen/mdm_space_8"
-                    android:layout_marginEnd="-14dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:background="@drawable/mdm_icon_button"
                     android:contentDescription="@string/status_copy_device_id"
                     android:padding="14dp"
                     android:scaleType="fitCenter"
@@ -130,6 +142,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:importantForAccessibility="no"
                     android:text="@string/status_label_agent_version"
                     android:textAppearance="@style/TextAppearance.MdmAgent.Eyebrow" />
 
@@ -138,6 +151,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="@dimen/mdm_space_4"
+                    android:importantForAccessibility="no"
                     android:textAppearance="@style/TextAppearance.MdmAgent.Mono"
                     tools:text="0.5.0 (build 500)" />
             </LinearLayout>
@@ -148,10 +162,13 @@
                 android:id="@+id/status_row_server"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginEnd="-14dp"
                 android:baselineAligned="false"
                 android:orientation="horizontal">
 
+                <!-- Label and value: one TalkBack stop, "Server, https://…" (StatusScreen). -->
                 <LinearLayout
+                    android:id="@+id/status_server_group"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
@@ -160,6 +177,7 @@
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:importantForAccessibility="no"
                         android:text="@string/status_label_server"
                         android:textAppearance="@style/TextAppearance.MdmAgent.Eyebrow" />
 
@@ -168,21 +186,22 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="@dimen/mdm_space_4"
+                        android:importantForAccessibility="no"
                         android:textAppearance="@style/TextAppearance.MdmAgent.Mono"
                         tools:text="https://mdm.example.com/" />
 
                 </LinearLayout>
 
                 <!-- Copy (instead of selectable text, whose toolbar can open other apps inside the kiosk).
-                     Centred on the value's first line in StatusScreen; the target reaches 14dp into the card's
-                     padding, so the icon's edge is the card's content edge. -->
+                     Centred on the value's first line in StatusScreen, by its top margin, so the whole 48dp target
+                     stays inside the row (touches outside a parent never arrive). The row reaches 14dp into the
+                     card's padding, so the icon's edge is the card's content edge. -->
                 <ImageButton
                     android:id="@+id/status_copy_server"
                     android:layout_width="@dimen/mdm_touch_target"
                     android:layout_height="@dimen/mdm_touch_target"
                     android:layout_marginStart="@dimen/mdm_space_8"
-                    android:layout_marginEnd="-14dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:background="@drawable/mdm_icon_button"
                     android:contentDescription="@string/status_copy_server"
                     android:padding="14dp"
                     android:scaleType="fitCenter"
@@ -199,13 +218,17 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="@dimen/mdm_space_16">
 
+            <!-- Title and pill: one TalkBack stop, "Kiosk, Off", announced when the state changes. -->
             <LinearLayout
+                android:id="@+id/status_kiosk_header"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:accessibilityLiveRegion="polite"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
                 <TextView
+                    android:id="@+id/status_kiosk_title"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_marginEnd="@dimen/mdm_space_12"
@@ -233,6 +256,7 @@
             <Button
                 android:id="@+id/status_return"
                 style="@style/Widget.MdmAgent.Button"
+                android:accessibilityLiveRegion="polite"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="@dimen/mdm_space_8"

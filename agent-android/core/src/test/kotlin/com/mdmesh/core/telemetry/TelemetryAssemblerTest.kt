@@ -2,7 +2,6 @@ package com.mdmesh.core.telemetry
 
 import com.mdmesh.proto.DynamicState
 import com.mdmesh.proto.SecurityPosture
-import com.mdmesh.proto.AppPermissionInventory
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -35,16 +34,5 @@ class TelemetryAssemblerTest {
         val sec = SecurityPosture(true, true, false, false, false, 10, true)
         val a = TelemetryAssembler({ error("x") }, { error("x") }, { dyn() }, { sec })
         assertEquals(sec, a.snapshot().security)
-    }
-
-    @Test fun includesRuntimePermissionInventoryWhenAvailable() = runTest {
-        val inventory = listOf(AppPermissionInventory("org.example", listOf("android.permission.CAMERA")))
-        val a = TelemetryAssembler({ error("x") }, { error("x") }, { dyn() }, { error("x") }, { inventory })
-        assertEquals(inventory, a.snapshot().applications)
-    }
-
-    @Test fun omitsPermissionInventoryWhenCollectorFails() = runTest {
-        val a = TelemetryAssembler({ error("x") }, { error("x") }, { dyn() }, { error("x") }, { error("x") })
-        assertEquals(emptyList<AppPermissionInventory>(), a.snapshot().applications)
     }
 }

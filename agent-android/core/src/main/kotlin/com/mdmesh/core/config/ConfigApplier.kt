@@ -65,7 +65,9 @@ class ConfigApplier(
         kiosk.enter(payload)
     }
 
-    suspend fun apply(doc: ConfigApplyPayload): ConfigApplyResult = mutex.withLock {
+    suspend fun apply(doc: ConfigApplyPayload): ConfigApplyResult = mutex.withLock { applyDeliveredLocked(doc) }
+
+    private suspend fun applyDeliveredLocked(doc: ConfigApplyPayload): ConfigApplyResult {
         // What came before: the last saved document, and the last delivered one if a failed section kept it unsaved.
         val previous = listOfNotNull(store.load(), store.delivered)
         val policies = toggles()
@@ -74,7 +76,31 @@ class ConfigApplier(
         val result = applyLocked(doc, policies, previous, store.unreleased)
         // A release or kiosk exit that failed is retried with the next document, whatever that one says.
         store.unreleased = result.outcomes.filter { (k, o) -> ConfigOutcome.isFailed(o) && !manages(doc, k) }.keys
-        result
+        return result
+    }
+
+    /**
+     * `app.install` just installed or updated [packageName]: apply the configuration's permission rules for it now.
+     * The server queues `config.apply` before the configuration's `app.install`s, so a new app's rules first fail as
+     * not installed; without this they would wait for the server's re-send, an hour later, while the app ran under
+     * the device-wide auto-grant. An update may also request a configured permission the old version didn't.
+     *
+     * A delivered document that is not applied yet is applied whole, exactly as the server's re-send would, so it is
+     * saved (and reported in sync) when nothing else fails. An applied one gets only this app's rules again; if one
+     * fails, the revision is marked stale so the server re-sends the document. Null when no rule names the app.
+     */
+    suspend fun applyAfterInstall(packageName: String): ConfigApplyResult? = mutex.withLock {
+        val doc = store.delivered ?: store.load() ?: return@withLock null
+        val rules = doc.appPermissions.orEmpty().filter { it.packageName == packageName }
+            .flatMap { entry -> entry.permissions.map { (permission, state) -> AppPermissionRule(packageName, permission, state) } }
+        if (rules.isEmpty()) return@withLock null
+        val applied = store.revision()
+        if (applied != doc.revision && applied != ConfigStateStore.STALE_REVISION) {
+            return@withLock applyDeliveredLocked(doc)
+        }
+        val outcomes = rules.associate { it.key to setRule(it) }
+        if (outcomes.values.any(ConfigOutcome::isFailed)) store.markStale()
+        ConfigApplyResult(doc.revision, outcomes)
     }
 
     /**
@@ -170,9 +196,7 @@ class ConfigApplier(
         val desiredRules = desired.flatMap { entry -> entry.permissions.map { (permission, state) ->
             AppPermissionRule(entry.packageName, permission, state)
         } }
-        desiredRules.forEach { rule ->
-            outcomes[rule.key] = appPermissionOutcome(appPermissions.set(rule.packageName, rule.permission, rule.state))
-        }
+        desiredRules.forEach { rule -> outcomes[rule.key] = setRule(rule) }
         val priorRules = priorAppPermissionRules(previous) +
             unreleased.filter { it.startsWith(APP_PERMISSIONS) && it !in appPermissionKeys(doc) }
             .mapNotNull(::ruleFromKey)
@@ -195,6 +219,14 @@ class ConfigApplier(
             entry.permissions.keys.map { permission ->
                 AppPermissionRule(entry.packageName, permission, AppRuntimePermissions.DEFAULT)
             }
+        }
+
+    /** A state this agent doesn't know (a newer server's) is unsupported, never applied as something else. */
+    private fun setRule(rule: AppPermissionRule): String =
+        if (rule.state != AppRuntimePermissions.GRANT && rule.state != AppRuntimePermissions.DENY) {
+            ConfigOutcome.UNSUPPORTED
+        } else {
+            appPermissionOutcome(appPermissions.set(rule.packageName, rule.permission, rule.state))
         }
 
     private fun appPermissionKeys(doc: ConfigApplyPayload): Set<String> =

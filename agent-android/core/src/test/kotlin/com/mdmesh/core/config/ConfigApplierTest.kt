@@ -141,6 +141,77 @@ class ConfigApplierTest {
         assertNull(store.revision())
     }
 
+    /** Answers NotInstalled until [installed] has the package, then [answer]; records every call. */
+    private class FakeAppPermissions(var answer: AppPermissionOutcome = AppPermissionOutcome.Applied) :
+        AppRuntimePermissions {
+        val installed = mutableSetOf<String>()
+        val calls = mutableListOf<Triple<String, String, String>>()
+        override fun set(packageName: String, permission: String, state: String): AppPermissionOutcome {
+            calls += Triple(packageName, permission, state)
+            return if (packageName in installed) answer else AppPermissionOutcome.NotInstalled
+        }
+    }
+
+    private val denyCamera = ConfigApplyPayload(
+        revision = "p1",
+        appPermissions = listOf(ConfigAppPermissions("org.example", mapOf("android.permission.CAMERA" to "deny"))),
+    )
+
+    @Test fun `an app installed after config apply gets its rules at once and the document is saved`() = runTest {
+        val permissions = FakeAppPermissions()
+        val store = InMemoryConfigStateStore()
+        val a = applier(fixedToggles(), kiosk(FakeController()), {}, store, permissions)
+        assertFalse(ConfigApplier.succeeded(a.apply(denyCamera)))
+        assertNull(store.revision())
+
+        permissions.installed += "org.example"
+        val after = a.applyAfterInstall("org.example")!!
+
+        assertTrue(ConfigApplier.succeeded(after))
+        assertEquals(ConfigOutcome.APPLIED, after.outcomes["appPermissions.org.example.android.permission.CAMERA"])
+        assertEquals("p1", store.revision())
+        assertEquals(Triple("org.example", "android.permission.CAMERA", "deny"), permissions.calls.last())
+    }
+
+    @Test fun `an update of an app with rules gets them again and a failure has the server re-send`() = runTest {
+        val permissions = FakeAppPermissions().apply { installed += "org.example" }
+        val store = InMemoryConfigStateStore()
+        val a = applier(fixedToggles(), kiosk(FakeController()), {}, store, permissions)
+        a.apply(denyCamera)
+        assertEquals("p1", store.revision())
+
+        a.applyAfterInstall("org.example")
+        assertEquals(2, permissions.calls.size)
+        assertEquals("p1", store.revision())
+
+        permissions.answer = AppPermissionOutcome.Failed("boom")
+        a.applyAfterInstall("org.example")
+        assertEquals(ConfigStateStore.STALE_REVISION, store.revision())
+    }
+
+    @Test fun `an app without rules is left alone after its install`() = runTest {
+        val permissions = FakeAppPermissions().apply { installed += "org.example" }
+        val store = InMemoryConfigStateStore()
+        val a = applier(fixedToggles(), kiosk(FakeController()), {}, store, permissions)
+        a.apply(denyCamera)
+        assertNull(a.applyAfterInstall("org.other"))
+        assertEquals(1, permissions.calls.size)
+    }
+
+    @Test fun `a permission state from a newer server is unsupported and never applied`() = runTest {
+        val permissions = FakeAppPermissions().apply { installed += "org.example" }
+        val store = InMemoryConfigStateStore()
+        val result = applier(fixedToggles(), kiosk(FakeController()), {}, store, permissions).apply(
+            ConfigApplyPayload(
+                revision = "p1",
+                appPermissions = listOf(ConfigAppPermissions("org.example", mapOf("android.permission.CAMERA" to "ask"))),
+            ),
+        )
+        assertEquals(ConfigOutcome.UNSUPPORTED, result.outcomes["appPermissions.org.example.android.permission.CAMERA"])
+        assertTrue(permissions.calls.isEmpty())
+        assertEquals("p1", store.revision())
+    }
+
     @Test fun `applies present policies only and persists on full success`() = runTest {
         val wifi = FakeToggle("wifi", PolicyOutcome.Applied); val bt = FakeToggle("bluetooth", PolicyOutcome.Applied)
         val store = InMemoryConfigStateStore(); var loc: String? = null

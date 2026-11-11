@@ -177,13 +177,11 @@ object AgentModule {
         identity: IdentityCollector,
         dynamic: DynamicStateCollector,
         security: SecurityCollector,
-        appInventory: AppInventoryCollector,
     ): TelemetrySource = TelemetryAssembler(
         hardware = { deviceInfo.collect() },
         identity = { identity.collect() },
         dynamic = { dynamic.collect() },
         security = { security.collect() },
-        applications = { appInventory.permissionInventory() },
     )
 
     // --- Command handlers (multibound). Add a command == add one @IntoSet provider. ---
@@ -240,8 +238,8 @@ object AgentModule {
 
     @Provides
     @IntoSet
-    fun provideAppInstallHandler(installManager: InstallManager): CommandHandler =
-        AppInstallHandler(installManager)
+    fun provideAppInstallHandler(installManager: InstallManager, applier: ConfigApplier): CommandHandler =
+        AppInstallHandler(installManager) { pkg -> applier.applyAfterInstall(pkg) }
 
     @Provides
     @IntoSet

@@ -3,4 +3,6 @@
     <!-- View tags of AppGridLayout cells: the item's key and the item last bound. -->
     <item name="mdm_grid_key" type="id" />
     <item name="mdm_grid_item" type="id" />
+    <!-- An app cell's icon: another app's own artwork, outside our colour checks (AtfScreensTest). -->
+    <item name="kiosk_app_icon" type="id" />
 </resources>

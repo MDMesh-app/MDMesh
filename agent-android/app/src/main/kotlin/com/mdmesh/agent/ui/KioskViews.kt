@@ -95,6 +95,7 @@ class KioskViews(private val context: Context, val palette: KioskPalette) {
         ViewCompat.setAccessibilityDelegate(this, ButtonRole)
         addView(
             ImageView(context).apply {
+                id = R.id.kiosk_app_icon
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 layoutParams = LinearLayout.LayoutParams(iconPx, iconPx)
             },

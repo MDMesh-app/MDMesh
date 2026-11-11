@@ -1,6 +1,7 @@
 package com.mdmesh.agent.a11y
 
 import android.view.View
+import androidx.core.view.ViewCompat
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ProgressBar
@@ -49,7 +50,7 @@ class SemanticsTest {
     @Test fun `the status screen has headings`() {
         val root = s.status(s.kiosk, s.statusState(configured = true)).window.decorView
         assertTrue("wordmark", heading(root.findViewById(R.id.status_wordmark_text)))
-        assertTrue("Kiosk card title", heading(root.findViewById(R.id.status_kiosk_title)))
+        assertTrue("Kiosk card header", heading(root.findViewById(R.id.status_kiosk_header)))
     }
 
     @Test fun `each fact is one stop, its label with its value`() {
@@ -73,6 +74,14 @@ class SemanticsTest {
         assertEquals(View.ACCESSIBILITY_LIVE_REGION_POLITE, header.accessibilityLiveRegion)
         val returning = root.findViewById<Button>(R.id.status_return)
         assertEquals(View.ACCESSIBILITY_LIVE_REGION_POLITE, returning.accessibilityLiveRegion)
+    }
+
+    @Test fun `the kiosk header is read once, not again as title and pill`() {
+        val root = s.status(s.kiosk, s.statusState(configured = true)).window.decorView
+        assertTrue(ViewCompat.isScreenReaderFocusable(root.findViewById(R.id.status_kiosk_header)))
+        for (hidden in listOf(R.id.status_kiosk_title, R.id.status_kiosk_pill)) {
+            assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO, root.findViewById<View>(hidden).importantForAccessibility)
+        }
     }
 
     @Test fun `failure and enrolment-error callouts are announced, read as one`() {

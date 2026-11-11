@@ -62,7 +62,12 @@ class StatusScreen(
         )
         // TalkBack: the wordmark is the screen's title and "Kiosk" its card's; each fact is one stop, label and value.
         ViewCompat.setAccessibilityHeading(activity.findViewById(R.id.status_wordmark_text), true)
-        ViewCompat.setAccessibilityHeading(activity.findViewById(R.id.status_kiosk_title), true)
+        // "Kiosk, Off" is one stop, the card's heading: its title and pill aren't read again on their own.
+        ViewCompat.setAccessibilityHeading(kioskHeader, true)
+        ViewCompat.setScreenReaderFocusable(kioskHeader, true)
+        activity.findViewById<View>(R.id.status_kiosk_title).importantForAccessibility =
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        kioskPill.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         val version =
             activity.getString(R.string.status_agent_version, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE)
         activity.findViewById<TextView>(R.id.status_version).text = version
@@ -78,7 +83,7 @@ class StatusScreen(
         if (before?.deviceOwner != state.deviceOwner) renderManagement(state.deviceOwner)
         if (before?.deviceId != state.deviceId) renderDeviceId(state.deviceId)
         if (before?.serverUrl != state.serverUrl) {
-            server.text = state.serverUrl
+            server.text = breakHints(state.serverUrl)
             describe(R.id.status_server_group, R.string.status_label_server, state.serverUrl)
         }
         if (before?.kiosk != state.kiosk) renderKiosk(state.kiosk)
@@ -116,10 +121,12 @@ class StatusScreen(
     private fun renderDeviceId(id: StatusUiState.DeviceIdUi) {
         when (id) {
             StatusUiState.DeviceIdUi.Loading -> deviceId.setText(R.string.status_placeholder)
-            is StatusUiState.DeviceIdUi.Known -> deviceId.text = id.id
+            is StatusUiState.DeviceIdUi.Known -> deviceId.text = breakHints(id.id)
             is StatusUiState.DeviceIdUi.Enrolling -> deviceId.setText(R.string.status_enrolling)
         }
-        describe(R.id.status_device_id_group, R.string.status_label_device_id, deviceId.text)
+        // TalkBack reads the value itself, not the display text with its break hints.
+        val spoken = (id as? StatusUiState.DeviceIdUi.Known)?.id ?: deviceId.text
+        describe(R.id.status_device_id_group, R.string.status_label_device_id, spoken)
         val error = (id as? StatusUiState.DeviceIdUi.Enrolling)?.lastError
         if (error == null) {
             enrollError.hide()

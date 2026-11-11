@@ -63,8 +63,10 @@ abstract class AtfScreensTest(private val fontScale: Float = 1f) {
 
     private fun check(name: String, dialog: Dialog) = check(name, dialog.window!!.decorView)
 
+    /** Only another app's icon in an app cell: its artwork isn't ours to check. Our own icons are checked. */
     private fun decorativeImage(r: AccessibilityHierarchyCheckResult): Boolean =
-        r.sourceCheckClass == ImageContrastCheck::class.java && r.element?.isImportantForAccessibility == false
+        r.sourceCheckClass == ImageContrastCheck::class.java &&
+            r.element?.resourceName?.endsWith("/kiosk_app_icon") == true
 
     /**
      * TextSizeCheck's "fixed-width view group with scalable text" on a dialog's window (DecorView): MdmDialog fixes

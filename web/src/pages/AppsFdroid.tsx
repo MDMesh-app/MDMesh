@@ -241,8 +241,10 @@ export function AppsFdroid({
                     ) : (
                       <>
                         {canAdd ? (
-                          <Button size="xs" disabled={busy} onClick={() => void addToLibrary(a)} aria-label={`Add ${a.name} to library`}>
+                          <Button size="xs" disabled={busy} onClick={() => void addToLibrary(a)}>
+                            {/* The name starts with the visible words (2.5.3, label in name); the app's name follows. */}
                             {busy ? 'Adding…' : 'Add to library'}
+                            <span className="v2-visually-hidden">: {a.name}</span>
                           </Button>
                         ) : null}
                         {deployable(a) ? (

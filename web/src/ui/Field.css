@@ -69,8 +69,11 @@
 .v2 .v2-fieldrow__below {
   flex: 1 1 100%;
 }
-/* Only for a disabled row (its control is disabled by the fieldset), so the lowered contrast is exempt. */
-.v2 .v2-fieldrow.is-disabled .v2-fieldrow__text,
+/* A disabled row: its control is disabled by the fieldset and dims (exempt as an inactive control). The label and
+   help stay readable at 4.5:1, since they say what the setting does and why it's off; the label drops to secondary. */
+.v2 .v2-fieldrow.is-disabled .v2-fieldrow__label {
+  color: var(--secondary);
+}
 .v2 .v2-fieldrow.is-disabled .v2-fieldrow__control {
   opacity: 0.55;
 }

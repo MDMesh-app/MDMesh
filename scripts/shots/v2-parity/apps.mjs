@@ -225,7 +225,7 @@ await page.route('**/rest/private/applications/android', (r) => {
   putBody = r.request().postData();
   return r.fulfill(ok({ id: 950, name: 'AntennaPod', pkg: 'de.danoeh.antennapod' }));
 });
-await page.getByRole('button', { name: 'Add AntennaPod to library' }).click();
+await page.getByRole('button', { name: 'Add to library: AntennaPod' }).click();
 check('fdroid add toast', await waitToast('Added to Library'));
 check('fdroid add body', !!putBody && putBody.includes('f-droid.org/repo/de.danoeh.antennapod') && putBody.includes('sha256'), putBody);
 check('now in library', (await page.locator('.v2-apps-fd__card', { hasText: 'AntennaPod' }).locator('.v2-apps-fd__inlib').count()) === 1);

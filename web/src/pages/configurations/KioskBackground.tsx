@@ -160,7 +160,7 @@ export function KioskBackgroundSummary({ info }: { info: KioskBackgroundImageInf
             },
           ]}
         />
-        {info.metadataRemoved ? (
+        {info.hasMetadata ? (
           <p className="v2-kbg__note">
             <IconInfo size={14} /> Its location and camera details are removed when you save.
           </p>

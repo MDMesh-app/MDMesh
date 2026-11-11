@@ -25,7 +25,9 @@ import java.security.MessageDigest;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
@@ -42,13 +44,15 @@ public class KioskBackgroundImageAssetsTest {
     private byte[] png;
     private UploadedFile uploaded;
     private Files files;
+    private Customers customers;
     private KioskBackgroundImageAssets assets;
 
     private static final class Files extends UploadedFileDAO {
         UploadedFile file;
         boolean foreign;
         int reads;
-        final java.util.List<UploadedFile> inserted = new java.util.ArrayList<>();
+        final java.util.List<UploadedFile> inserted = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        final java.util.List<Integer> removed = new java.util.ArrayList<>();
         Files() { super(null, null, null, "unused"); }
         @Override public UploadedFile getById(Integer id) {
             reads++;
@@ -56,14 +60,20 @@ public class KioskBackgroundImageAssetsTest {
             return file;
         }
         @Override public UploadedFile insert(UploadedFile f) {
-            f.setId(100 + inserted.size());
-            inserted.add(f);
+            synchronized (inserted) {
+                f.setId(100 + inserted.size());
+                Thread.yield();
+                inserted.add(f);
+            }
             return f;
         }
         @Override public UploadedFile getByPath(Integer customerId, String path) {
-            for (UploadedFile f : inserted) if (f.getFilePath().equals(path)) return f;
+            synchronized (inserted) {
+                for (UploadedFile f : inserted) if (f.getFilePath().equals(path) && !removed.contains(f.getId())) return f;
+            }
             return null;
         }
+        @Override public void remove(int fileId) { removed.add(fileId); }
     }
 
     private static final class Customers extends CustomerDAO {
@@ -84,7 +94,7 @@ public class KioskBackgroundImageAssetsTest {
         uploaded = new UploadedFile(); uploaded.setId(42); uploaded.setCustomerId(1);
         uploaded.setFilePath("wallpaper.png"); uploaded.setExternal(false);
         files = new Files(); files.file = uploaded;
-        Customers customers = new Customers(); customers.customer = customer;
+        customers = new Customers(); customers.customer = customer;
         assets = new KioskBackgroundImageAssets(files, customers, "https://mdm.example", root.getAbsolutePath());
         SecurityContext.init(Fakes.user(1, 1, "configurations"));
     }
@@ -298,6 +308,83 @@ public class KioskBackgroundImageAssetsTest {
                 KioskBackgroundImageAssets.NOT_AN_IMAGE);
     }
 
+    @Test
+    public void concurrentSavesOfOneDirtyImageHostOneCopy() throws Exception {
+        byte[] dirty = KioskImageMetadataTest.phoneJpeg(realImage("jpg", 16, 16), 1);
+        java.nio.file.Files.write(new File(tenant, "photo.jpg").toPath(), dirty);
+        uploaded.setFilePath("photo.jpg");
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(8);
+        java.util.List<java.util.concurrent.Future<Integer>> results = new java.util.ArrayList<>();
+        for (int n = 0; n < 16; n++) {
+            results.add(pool.submit(() -> {
+                SecurityContext.init(Fakes.user(1, 1, "configurations"));
+                try {
+                    Configuration c = new Configuration();
+                    c.setBackgroundImageAction("replace");
+                    c.setBackgroundImageFileId(42);
+                    assets.apply(c, null);
+                    return c.getBackgroundImageFileId();
+                } finally {
+                    SecurityContext.release();
+                }
+            }));
+        }
+        java.util.Set<Integer> ids = new java.util.HashSet<>();
+        for (java.util.concurrent.Future<Integer> f : results) ids.add(f.get());
+        pool.shutdown();
+        assertEquals(1, files.inserted.size());
+        assertEquals(1, ids.size());
+        String[] left = tenant.list((d, name) -> name.endsWith(".tmp"));
+        assertEquals("no staged files left", 0, left.length);
+    }
+
+    @Test
+    public void aFailedSaveTakesBackTheCopyItHosted() throws Exception {
+        byte[] dirty = KioskImageMetadataTest.phoneJpeg(realImage("jpg", 8, 8), 1);
+        Configuration c = replaceWith("photo.jpg", dirty);
+        KioskBackgroundImageAssets.Applied applied = assets.apply(c, null);
+        File copy = new File(tenant, files.inserted.get(0).getFilePath());
+        assertTrue(copy.isFile());
+        applied.undo();
+        assertFalse(copy.exists());
+        assertEquals(java.util.Collections.singletonList(100), files.removed);
+        // A copy an earlier save hosted is reused, and never taken back by a later failed save.
+        Configuration again = replaceWith("photo.jpg", dirty);
+        assets.apply(again, null);
+        Configuration third = replaceWith("photo.jpg", dirty);
+        assets.apply(third, null).undo();
+        assertTrue(new File(tenant, files.inserted.get(1).getFilePath()).isFile());
+    }
+
+    @Test
+    public void aCopyOverTheAccountsStorageLimitIsRefused() throws Exception {
+        Customer full = new Customer(); full.setId(1); full.setFilesDir("acme"); full.setSizeLimit(1);
+        java.nio.file.Files.write(new File(tenant, "filler.bin").toPath(), new byte[2 * 1024 * 1024]);
+        customers.customer = full;
+        byte[] dirty = KioskImageMetadataTest.phoneJpeg(realImage("jpg", 8, 8), 1);
+        assertRefused(replaceWith("photo.jpg", dirty), null, KioskBackgroundImageAssets.STORAGE_FULL);
+        assertEquals(0, files.inserted.size());
+    }
+
+    @Test
+    public void describeReadsAFileOnceUntilItChanges() throws Exception {
+        assets.describe(42);
+        assets.describe(42);
+        assertEquals(1, assets.reads());
+        File f = new File(tenant, "wallpaper.png");
+        java.nio.file.Files.write(f.toPath(), realImage("png", 6, 5));
+        assertTrue(f.setLastModified(f.lastModified() + 5_000));
+        assertEquals(6, assets.describe(42).getWidth());
+        assertEquals(2, assets.reads());
+    }
+
+    @Test
+    public void aTrailingSlashInTheBaseUrlIsNotDoubled() throws Exception {
+        KioskBackgroundImageAssets slash = new KioskBackgroundImageAssets(files, customers, "https://mdm.example/",
+                tenant.getParentFile().getAbsolutePath());
+        assertEquals("https://mdm.example/files/acme/wallpaper.png", slash.describe(42).getUrl());
+    }
+
     // ---- describe (the console's viewer) ----------------------------------------------------------------------------
 
     @Test
@@ -321,7 +408,7 @@ public class KioskBackgroundImageAssetsTest {
         assertEquals(clean.length, info.getSize());
         assertEquals(sha256(clean), info.getSha256());
         assertEquals(Long.valueOf(1_700_000_000_000L), info.getUploadTime());
-        assertEquals(Boolean.TRUE, info.getMetadataRemoved());
+        assertEquals(Boolean.TRUE, info.getHasMetadata());
         assertEquals("nothing is written to describe a file", 0, files.inserted.size());
     }
 
@@ -333,7 +420,7 @@ public class KioskBackgroundImageAssetsTest {
         assertEquals(3, info.getHeight());
         assertEquals(png.length, info.getSize());
         assertEquals(sha256(png), info.getSha256());
-        assertEquals(Boolean.FALSE, info.getMetadataRemoved());
+        assertEquals(Boolean.FALSE, info.getHasMetadata());
     }
 
     @Test

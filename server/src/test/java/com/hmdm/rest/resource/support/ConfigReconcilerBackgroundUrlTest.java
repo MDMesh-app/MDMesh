@@ -149,6 +149,19 @@ public class ConfigReconcilerBackgroundUrlTest {
                 sentImage(dao(), "https://mdm.example/").getUrl());
     }
 
+    /** A base.url ending in a slash stored "//files" URLs: built again they are the same address, not a new revision. */
+    @Test
+    public void aTrailingSlashBaseUrlKeepsTheStoredUrlAndRevision() {
+        Dao dao = dao();
+        dao.configuration.setBackgroundImageUrl("https://mdm.example//files/acme/kiosk-0123456789ab-beach.jpg");
+        String withResolver = new ConfigReconciler(dao, null, Fakes.noExtensionPoints(),
+                new KioskBackgroundImageUrls(dao, "https://mdm.example/")).currentDocument(device()).getRevision();
+        Dao storedOnly = dao();
+        storedOnly.configuration.setBackgroundImageUrl("https://mdm.example//files/acme/kiosk-0123456789ab-beach.jpg");
+        assertEquals(new ConfigReconciler(storedOnly, null, Fakes.noExtensionPoints()).currentDocument(device()).getRevision(),
+                withResolver);
+    }
+
     private static Device device() {
         Device device = new Device(); device.setConfigurationId(7);
         return device;

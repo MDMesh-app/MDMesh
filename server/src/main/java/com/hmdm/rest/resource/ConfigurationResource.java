@@ -232,6 +232,8 @@ public class ConfigurationResource {
             throw new BadRequestException("connectivityMode must be adaptive, alwaysOn or null");
         }
         normalizeManagedAppPermissions(configuration);
+        // A cleaned copy of the background image this save hosted: taken back if the save then fails.
+        KioskBackgroundImageAssets.Applied imageApplied = null;
         try {
             Configuration dbConfiguration = this.configurationDAO.getConfigurationByName(configuration.getName());
             final Integer id = configuration.getId();
@@ -244,10 +246,13 @@ public class ConfigurationResource {
                                 "by user " + SecurityContext.get().getCurrentUserName());
                         return Response.PERMISSION_DENIED();
                     }
-                    canonicalizeBackgroundImage(configuration, null);
+                    imageApplied = canonicalizeBackgroundImage(configuration, null);
                     applyLocationServicesUpdate(configuration, null);
                     Response refused = refuseExtensions(configuration, null);
-                    if (refused != null) return refused;
+                    if (refused != null) {
+                        undo(imageApplied);
+                        return refused;
+                    }
                     configuration.setDisableLocation(false);        // Not used but shouldn't be NULL
                     this.configurationDAO.insertConfiguration(configuration);
                     User user = SecurityContext.get().getCurrentUser().get();
@@ -263,10 +268,13 @@ public class ConfigurationResource {
                         return Response.PERMISSION_DENIED();
                     }
                     Configuration stored = configurationDAO.getConfigurationById(id);
-                    canonicalizeBackgroundImage(configuration, stored);
+                    imageApplied = canonicalizeBackgroundImage(configuration, stored);
                     applyLocationServicesUpdate(configuration, stored);
                     Response refused = refuseExtensions(configuration, storedExtensions(id, configuration));
-                    if (refused != null) return refused;
+                    if (refused != null) {
+                        undo(imageApplied);
+                        return refused;
+                    }
                     log.info("Configuration " + configuration.getName() + " updated by user "  + SecurityContext.get().getCurrentUserName());
                     this.configurationDAO.updateConfiguration(configuration);
                     this.pushService.notifyDevicesOnUpdate(configuration.getId());
@@ -276,8 +284,10 @@ public class ConfigurationResource {
                 return Response.OK(configuration);
             }
         } catch (BadRequestException e) {
+            undo(imageApplied);
             throw e;
         } catch (Exception e) {
+            undo(imageApplied);
             log.error("Unexpected error when saving the configuration", e);
             e.printStackTrace();
             return Response.INTERNAL_ERROR();
@@ -325,10 +335,19 @@ public class ConfigurationResource {
         configuration.setManagedAppPermissions(kept);
     }
 
-    private void canonicalizeBackgroundImage(Configuration configuration, Configuration stored) {
-        if (backgroundImages == null) return;
+    private static void undo(KioskBackgroundImageAssets.Applied applied) {
+        if (applied == null) return;
         try {
-            backgroundImages.apply(configuration, stored);
+            applied.undo();
+        } catch (RuntimeException e) {
+            log.warn("Could not remove the background image copy of a failed save", e);
+        }
+    }
+
+    private KioskBackgroundImageAssets.Applied canonicalizeBackgroundImage(Configuration configuration, Configuration stored) {
+        if (backgroundImages == null) return null;
+        try {
+            return backgroundImages.apply(configuration, stored);
         } catch (IllegalArgumentException e) {
             // The usual ERROR envelope, so the console can show the message.
             throw new BadRequestException(javax.ws.rs.core.Response.status(javax.ws.rs.core.Response.Status.BAD_REQUEST)

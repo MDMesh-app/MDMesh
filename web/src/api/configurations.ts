@@ -107,7 +107,7 @@ export interface KioskBackgroundImageInfo {
   sha256: string;
   uploadTime?: number | null;
   /** The uploaded file still carries metadata (location, camera), which saving removes. */
-  metadataRemoved?: boolean;
+  hasMetadata?: boolean;
 }
 
 /** Describes an uploaded background image file; refused (ApiError with a readable message) as a save would. */

@@ -28,6 +28,6 @@ public class KioskBackgroundImageInfo {
     private String sha256;
     /** Epoch milliseconds; null when unknown. */
     private Long uploadTime;
-    /** The uploaded file still has metadata, which saving removes (by hosting a cleaned copy). */
-    private Boolean metadataRemoved;
+    /** The uploaded file still has metadata (location, camera...): saving hosts a copy without it. */
+    private Boolean hasMetadata;
 }

@@ -4,6 +4,7 @@ import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.Configuration;
 import com.hmdm.persistence.domain.Customer;
 import com.hmdm.persistence.domain.UploadedFile;
+import com.hmdm.util.BaseUrl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -27,7 +28,7 @@ public class KioskBackgroundImageUrls {
     @Inject
     public KioskBackgroundImageUrls(UnsecureDAO unsecureDAO, @Named("base.url") String baseUrl) {
         this.unsecureDAO = unsecureDAO;
-        this.baseUrl = baseUrl == null ? null : baseUrl.replaceAll("/+$", "");
+        this.baseUrl = BaseUrl.trim(baseUrl);
     }
 
     /**
@@ -43,7 +44,10 @@ public class KioskBackgroundImageUrls {
             if (file == null || file.isExternal() || file.getFilePath() == null) return stored;
             // The file's own customer: a configuration copied from the master template points at the master's file.
             Customer owner = unsecureDAO.getCustomerByIdUnsecure(file.getCustomerId());
-            return owner == null ? stored : file.getUrl(baseUrl, owner);
+            if (owner == null) return stored;
+            String built = file.getUrl(baseUrl, owner);
+            // Saved under a base URL with a trailing slash: the same address, so the same document and revision.
+            return BaseUrl.sameAddress(built, stored) ? stored : built;
         } catch (RuntimeException e) {
             logger.debug("kiosk background image {} of configuration {}: sending the stored URL", fileId, cfg.getId(), e);
             return stored;

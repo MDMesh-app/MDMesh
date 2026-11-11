@@ -18,7 +18,7 @@ const INFO: KioskBackgroundImageInfo = {
   size: 2_400_000,
   sha256: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
   uploadTime: Date.UTC(2026, 10, 11, 9, 30),
-  metadataRemoved: true,
+  hasMetadata: true,
 };
 
 

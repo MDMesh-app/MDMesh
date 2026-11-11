@@ -34,13 +34,15 @@ const TOAST_MS: Record<ToastKind, number> = { ok: 5000, warn: 5000, err: 30_000 
 const HOLD_RECHECK_MS = 1000;
 /** Toasts shown at once; older ones wait behind "N more". */
 const VISIBLE = 3;
+/** How long an announcement stays in its live region (it has been read by then; the toast stays on screen). */
+const ANNOUNCE_MS = 7000;
 
 /**
  * Toasts, bottom right, above the configuration editor's save bar. Success and warning go after 5 s, a failure after
  * 30 s; the pointer over the stack or focus in it holds them (2.2.1), and each has a Dismiss button (Escape too).
- * Failures are announced from one assertive live region, the rest from one polite region (4.1.3; plain aria-live, so the
- * empty regions are no extra alert/status landmarks on every page); a
- * repeated message comes back as one toast with a count; three show at once.
+ * Each message is announced once as it arrives, failures from one assertive live region and the rest from one polite
+ * region (4.1.3; plain aria-live, so the empty regions add no alert/status roles to every page); the stack itself is
+ * not live. A repeated message shows as one toast with a count, announced again; three show at once, in arrival order.
  */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -74,7 +76,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     [held],
   );
 
-  // Where focus goes after a toast that had it is dismissed: the next toast's button, else where it came from.
+  // Where focus goes after a toast that had it is dismissed. From the keyboard: the next toast's button, else where
+  // it came from. From a pointer (the press focused the button, with no ring): straight back where it came from, or
+  // nowhere; focus left in the stack would hold every toast with nothing on screen to show why.
   const cameFrom = useRef<HTMLElement | null>(null);
   const focusAfter = useRef<number | 'back' | null>(null);
   useEffect(() => {
@@ -93,9 +97,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     const next = typeof target === 'number' ? wrap?.querySelector<HTMLElement>(`[data-toast="${target}"] .t-close`) : null;
     if (next) next.focus();
     else if (cameFrom.current && document.contains(cameFrom.current)) cameFrom.current.focus();
+    else if (wrap?.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
   }, [toasts]);
 
-  const dismiss = useCallback((ids: number[]) => {
+  const dismiss = useCallback((ids: number[], keyboard: boolean) => {
     if (!mounted.current) return;
     setToasts((all) => {
       const wrap = wrapRef.current;
@@ -103,7 +108,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         ? Number(document.activeElement?.closest<HTMLElement>('[data-toast]')?.dataset.toast)
         : NaN;
       const left = all.filter((x) => !ids.includes(x.id));
-      if (ids.includes(focused)) {
+      if (keyboard && ids.includes(focused)) {
         const at = all.findIndex((x) => x.id === focused);
         const next = all.slice(at + 1).find((x) => !ids.includes(x.id)) ?? [...all.slice(0, at)].reverse().find((x) => !ids.includes(x.id));
         focusAfter.current = next ? next.id : 'back';
@@ -114,13 +119,20 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // What the live regions say: each pushed message once, as it arrives. The stack itself is not live, so a toast that
+  // moves into view from "N more" is not read again; a repeat is a new push and is.
+  const [said, setSaid] = useState<Array<{ id: number; kind: ToastKind; text: string }>>([]);
   const push = useCallback(
     (kind: ToastKind, title: string, body: string) => {
       if (!mounted.current) return;
       const id = ++seq.current;
+      setSaid((a) => [...a.slice(-4), { id, kind, text: body ? `${title}. ${body}` : title }]);
+      window.setTimeout(() => {
+        if (mounted.current) setSaid((a) => a.filter((x) => x.id !== id));
+      }, ANNOUNCE_MS);
       setToasts((t) => {
         const same = t.find((x) => x.kind === kind && x.title === title && x.body === body);
-        // A repeat replaces the toast (a new node, so it is announced again) and counts.
+        // A repeat replaces the toast at the newest end, with its count.
         return [...t.filter((x) => x !== same), { id, kind, title, body, count: (same?.count ?? 0) + 1 }];
       });
       expire(id, TOAST_MS[kind]);
@@ -148,7 +160,14 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         </div>
         {t.body && <div className="t-body">{t.body}</div>}
       </div>
-      <button type="button" className="t-close" aria-label="Dismiss" aria-describedby={`toast-${t.id}`} onClick={() => dismiss([t.id])}>
+      {/* detail 0: a click from the keyboard (Enter, Space), not a pointer. */}
+      <button
+        type="button"
+        className="t-close"
+        aria-label="Dismiss"
+        aria-describedby={`toast-${t.id}`}
+        onClick={(e) => dismiss([t.id], e.detail === 0)}
+      >
         <CrossMark />
       </button>
     </div>
@@ -166,24 +185,29 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           const id = Number((e.target as HTMLElement).closest<HTMLElement>('[data-toast]')?.dataset.toast);
           if (!Number.isNaN(id)) {
             e.preventDefault();
-            dismiss([id]);
+            dismiss([id], true);
           }
         }}
       >
         {more > 0 ? (
           <div className="toast-more">
             <span>{more} more</span>
-            <button type="button" className="t-all" onClick={() => dismiss(toasts.map((t) => t.id))}>
+            <button type="button" className="t-all" onClick={(e) => dismiss(toasts.map((t) => t.id), e.detail === 0)}>
               Dismiss all
             </button>
           </div>
         ) : null}
+        <div className="toast-region">{shown.map(render)}</div>
         {/* Two live regions that are always there (a region added with its content is often not read). */}
-        <div aria-live="assertive" className="toast-region">
-          {shown.filter((t) => t.kind === 'err').map(render)}
+        <div aria-live="assertive" className="v2-visually-hidden">
+          {said.filter((a) => a.kind === 'err').map((a) => (
+            <p key={a.id}>{a.text}</p>
+          ))}
         </div>
-        <div aria-live="polite" className="toast-region">
-          {shown.filter((t) => t.kind !== 'err').map(render)}
+        <div aria-live="polite" className="v2-visually-hidden">
+          {said.filter((a) => a.kind !== 'err').map((a) => (
+            <p key={a.id}>{a.text}</p>
+          ))}
         </div>
       </section>
     </Ctx.Provider>

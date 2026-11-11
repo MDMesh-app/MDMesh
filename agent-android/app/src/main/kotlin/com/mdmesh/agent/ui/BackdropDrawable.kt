@@ -13,15 +13,23 @@ import android.view.View
 
 /**
  * The kiosk backdrop: the background colour, the image centre-cropped to the bounds, then the colour again as a
- * scrim at [scrimAlpha] ([KioskScrim]). Set as the launcher root's background, it runs under the system bars and the
- * cutout (a background ignores padding), survives the renderer's rebuilds, and just re-crops for new bounds.
+ * dim at [dim] steps of 50 ([BackdropRule]). Set as the launcher root's background, it runs under the system bars and
+ * the cutout (a background ignores padding), survives the renderer's rebuilds, and just re-crops for new bounds.
  */
 class BackdropDrawable(
     private val color: Int,
     val bitmap: Bitmap,
-    /** 0..1: how much of the colour lies over the image. */
-    val scrimAlpha: Float,
+    dim: Int = 0,
 ) : Drawable() {
+
+    /** The dim, 0..50 steps of the colour over the image: worked out after layout, from the controls' boxes. */
+    var dim: Int = dim
+        set(value) {
+            if (field != value) {
+                field = value
+                invalidateSelf()
+            }
+        }
 
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
     private val matrix = Matrix()
@@ -41,7 +49,7 @@ class BackdropDrawable(
             canvas.drawBitmap(bitmap, matrix, paint)
             canvas.restore()
         }
-        val scrim = (scrimAlpha.coerceIn(0f, 1f) * BYTE).toInt()
+        val scrim = (dim.coerceIn(0, KioskScrim.STEPS) * BYTE + KioskScrim.STEPS / 2) / KioskScrim.STEPS
         if (scrim > 0) canvas.drawColor((scrim shl ALPHA_SHIFT) or (color and RGB))
     }
 
@@ -61,28 +69,27 @@ class BackdropDrawable(
 }
 
 /**
- * Paints the kiosk launcher's [root] for [screen]: the kiosk colour, or the image under the adaptive scrim
- * ([KioskScrim]). As the root's background it runs under the system bars (padding doesn't apply to a background)
- * and stays through rebuilds. The bar icons follow what lies under them; before Android 15 the bars take the kiosk
- * colour. Returns the scrim step, or null when no image is drawn (none, the idle screen, or [info] made for another
- * background colour: a new decode for this one is on its way).
+ * Paints the kiosk launcher's [root] for [screen]: the kiosk colour, or the image (its dim follows after layout,
+ * [TextPlates]). As the root's background it runs under the system bars (padding doesn't apply to a background) and
+ * stays through rebuilds. Before Android 15 the bars take the kiosk colour. Returns whether the image is drawn (not
+ * for none, the idle screen, or [info] made for another background colour: a new decode for it is on its way).
  */
 internal fun Activity.paintKioskBackground(
     root: View,
     screen: KioskScreen,
     bitmap: Bitmap?,
     info: BackdropInfo?,
-): Int? {
+): Boolean {
     val palette = screen.palette
     colorSystemBars(palette.background)
     val usable = info?.takeIf { screen != KioskScreen.Idle && it.background == palette.background }
     if (bitmap == null || usable == null) {
         root.background = ColorDrawable(palette.background)
         updateSystemBarIcons(palette.background)
-        return null
+        return false
     }
-    val step = BackdropRules.current.dimStep(palette, usable.samples)
-    root.background = BackdropDrawable(palette.background, bitmap, KioskScrim.alpha(step))
-    updateSystemBarIcons(KioskScrim.blend(palette.background, usable.top, step))
-    return step
+    val previous = (root.background as? BackdropDrawable)?.dim ?: 0
+    root.background = BackdropDrawable(palette.background, bitmap, previous)
+    updateSystemBarIcons(KioskScrim.blend(palette.background, usable.top, previous))
+    return true
 }

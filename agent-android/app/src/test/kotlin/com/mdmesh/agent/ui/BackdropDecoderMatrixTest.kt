@@ -58,10 +58,12 @@ open class BackdropDecoderMatrixTest {
                 assertEquals(name, 48, d.bitmap.width)
                 assertEquals(name, 32, d.bitmap.height)
                 assertNotEquals("never a hardware bitmap", "HARDWARE", d.bitmap.config?.name)
-                // The left half is yellow, the right blue: the samples see the picture, composited and opaque.
-                val left = d.info.samples[d.info.samples.size / 2 - 40]
-                assertEquals("$name opaque samples", 0xFF, left ushr 24)
-                assertEquals("$name decoded once into the 48-sample grid", 48 * 32, d.info.samples.size)
+                // The cells see the picture: yellow on the left (red high), blue on the right (blue high).
+                val left = d.info.cells.bounds(48.0, 32.0, BackdropCells.Region(2.0, 20.0, 4.0, 4.0))
+                val right = d.info.cells.bounds(48.0, 32.0, BackdropCells.Region(42.0, 30.0, 2.0, 1.0))
+                assertTrue("$name left ${Integer.toHexString(left.min)}", Color.red(left.min) > 200)
+                assertTrue("$name right ${Integer.toHexString(right.max)}", Color.red(right.max) < 120)
+                assertEquals("$name cells", 1, d.info.cells.cellSize)
             }
         }
     }
@@ -69,8 +71,9 @@ open class BackdropDecoderMatrixTest {
     @Test fun transparencyIsCompositedOverTheKioskColour() {
         for (name in listOf("alpha.png", "alpha.webp")) {
             val d = ready(name, DecodeLimits.NORMAL)
-            // The top quarter is fully transparent: the samples there are the kiosk background.
-            assertEquals(name, background, d.info.samples[2])
+            // The top quarter is fully transparent: the cells there are the kiosk background.
+            val top = d.info.cells.bounds(48.0, 32.0, BackdropCells.Region(10.0, 2.0, 4.0, 2.0))
+            assertEquals(name, ColourBox(background, background), top)
             assertEquals(name, background, d.info.top)
         }
     }

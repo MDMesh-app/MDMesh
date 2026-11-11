@@ -48,9 +48,9 @@ New
   PNG, JPEG or WebP image, at most 10 MB and 16 megapixels. Devices download it only over HTTPS (with an `http://`
   server address they keep the background color), check it by its SHA-256, and keep the color if it can't be shown.
   The download starts as soon as the kiosk is applied, so the image is usually ready when the launcher shows.
-  The launcher lays its background color over the image just enough that its text stays readable (4.5:1), and puts
-  a plate of that color behind a label only where the image right under it is still too bright, dark or busy; the
-  console's preview shows the same. Needs agent 0.5.0 (thanks @letternumber).
+  The launcher dims the image only lightly (at most 30 %, as much as the Exit button needs to stand out at 3:1) and
+  puts a plate of the background color behind each text that needs one to read at 4.5:1, solid over busy texture;
+  the console's preview shows the same. Needs agent 0.5.0 (thanks @letternumber).
 - Configurations can Grant or Deny an app's runtime permissions (camera, location, microphone, contacts, SMS and
   more), under each installed app in the editor; Default removes MDMesh's override. The choices come from the APK
   uploaded to the server. Needs agent 0.5.0 on a Device Owner device: a device on an older agent applies the rest of

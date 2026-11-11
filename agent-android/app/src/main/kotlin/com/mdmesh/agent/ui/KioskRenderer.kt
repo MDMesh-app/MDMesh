@@ -34,8 +34,8 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
     private var backdropBitmap: Bitmap? = null
     private var backdropInfo: BackdropInfo? = null
 
-    /** The scrim step painted now; null: no image under this screen. */
-    private var scrimStep: Int? = null
+    /** The image is drawn under this screen. */
+    private var onImage = false
     private var grid: GridViews? = null
 
     private class GridViews(val views: KioskViews, val cells: AppGridLayout, val empty: View)
@@ -77,19 +77,21 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
         if (platesChange) {
             build(s)
         } else {
-            scrimStep = activity.paintKioskBackground(root, s, bitmap, info)
+            onImage = activity.paintKioskBackground(root, s, bitmap, info)
             updatePlates()
         }
     }
 
     private fun updatePlates() {
         val s = screen ?: return
-        val step = scrimStep
-        TextPlates.update(root, backdropInfo.takeIf { step != null }, s.palette.background, step ?: 0)
+        val info = backdropInfo.takeIf { onImage }
+        val dim = TextPlates.update(root, info, s.palette) ?: return
+        // The bar icons follow the dimmed image under them.
+        if (info != null) activity.updateSystemBarIcons(KioskScrim.blend(s.palette.background, info.top, dim))
     }
 
     private fun build(s: KioskScreen) {
-        scrimStep = activity.paintKioskBackground(root, s, backdropBitmap, backdropInfo)
+        onImage = activity.paintKioskBackground(root, s, backdropBitmap, backdropInfo)
         root.removeAllViews()
         grid = null
         val v = KioskViews(activity, s.palette, onImage = backdropBitmap != null && s != KioskScreen.Idle)
@@ -193,6 +195,7 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
         when (exit) {
             KioskExit.VISIBLE -> {
                 val button = v.outlinedButton(activity.getString(R.string.kiosk_exit_button)).apply {
+                    tag = TextPlates.CONTROL // the dim brings it to 3:1 over the image
                     setOnClickListener { actions.requestExit() }
                 }
                 root.addView(

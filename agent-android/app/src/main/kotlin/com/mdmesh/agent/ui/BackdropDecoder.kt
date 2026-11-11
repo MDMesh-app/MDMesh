@@ -5,8 +5,9 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
-import android.graphics.RectF
 import java.io.File
+import kotlin.math.ceil
+import kotlin.math.floor
 import kotlin.math.roundToInt
 
 /**
@@ -31,69 +32,76 @@ data class DecodeLimits(val maxEdge: Int, val lowMemory: Boolean) {
 }
 
 /**
- * What the launcher keeps of a decoded backdrop besides the bitmap: the scrim's samples, the colour under the status
- * bar, and a coarse map of colour ranges for the text plates. All of it composited over [background].
+ * What the launcher keeps of a decoded backdrop besides the bitmap: its [cells] (composited over [background]) and
+ * the colour under the status bar.
  */
 class BackdropInfo(
     /** The kiosk background the image was composited over; a different one needs a new decode. */
     val background: Int,
-    /** The scrim's samples ([KioskScrim]): 48 along the long edge, row-major. */
-    val samples: IntArray,
-    /** A typical colour (median luminance) of the top sample row, under the status bar. */
+    val cells: BackdropCells,
+    /** A typical colour (median luminance of the cells' midpoints) of the top row of cells, under the status bar. */
     val top: Int,
-    val detail: BackdropDetail,
-    /** The decoded bitmap's size: drawn centre-cropped onto the launcher, which may be a little off its shape. */
-    val width: Int,
-    val height: Int,
-) {
-    /** The colours under [rect] of a [viewW] x [viewH] launcher root that draws the bitmap centre-cropped. */
-    fun box(viewW: Int, viewH: Int, rect: RectF): ColourBox {
-        val scale = maxOf(viewW / width.toFloat(), viewH / height.toFloat())
-        val dx = (viewW - width * scale) / 2f
-        val dy = (viewH - height * scale) / 2f
-        val w = width * scale
-        val h = height * scale
-        return detail.box((rect.left - dx) / w, (rect.top - dy) / h, (rect.right - dx) / w, (rect.bottom - dy) / h)
-    }
-}
+)
 
 /**
- * Per cell of a grid over the window: the range of every pixel's colour ([ColourBox]). [box] answers "which colours
- * can be under this rectangle" without keeping or reading the pixels again.
+ * The image as square cells, each with the per-channel minimum and maximum of its pixels (composited over the
+ * background), exactly as `docs/kiosk-background-scrim.md` (The image as cells) defines them: `cellSize = max(1,
+ * ceil(max(width, height) / 120))`. [bounds] answers "which colours can be under this box" without the pixels.
  */
-class BackdropDetail(
-    private val cols: Int,
-    private val rows: Int,
-    private val mins: IntArray,
-    private val maxs: IntArray,
-) {
+class BackdropCells(val width: Int, val height: Int, private val mins: IntArray, private val maxs: IntArray) {
+    val cellSize: Int = cellSizeOf(width, height)
+    val cols: Int = ceilDiv(width, cellSize)
+    val rows: Int = ceilDiv(height, cellSize)
+
+    init {
+        require(mins.size == cols * rows && maxs.size == cols * rows) { "cells: $cols x $rows" }
+    }
+
+    /** A box in a window: left, top, width, height, in the window's unit. */
+    data class Region(val x: Double, val y: Double, val w: Double, val h: Double)
 
     /**
-     * The colours under the part of the window from [left], [top] to [right], [bottom] (fractions 0..1 of its width
-     * and height), plus one cell around it: drawing scales the bitmap with filtering, which mixes neighbours in.
+     * The bounds of [r] in a [windowW] x [windowH] window that shows the image CENTER_CROP (any unit, the same for
+     * both): the cells it touches plus one cell around them.
      */
-    fun box(left: Float, top: Float, right: Float, bottom: Float): ColourBox {
-        val c0 = (left * cols).toInt().minus(1).coerceIn(0, cols - 1)
-        val c1 = (right * cols).toInt().plus(1).coerceIn(0, cols - 1)
-        val r0 = (top * rows).toInt().minus(1).coerceIn(0, rows - 1)
-        val r1 = (bottom * rows).toInt().plus(1).coerceIn(0, rows - 1)
+    fun bounds(windowW: Double, windowH: Double, r: Region): ColourBox {
+        val x = r.x
+        val y = r.y
+        val w = r.w
+        val h = r.h
+        val scale = maxOf(windowW / width, windowH / height)
+        val cw = minOf(width.toDouble(), windowW / scale)
+        val ch = minOf(height.toDouble(), windowH / scale)
+        val cx = (width - cw) / 2
+        val cy = (height - ch) / 2
+        val k = cw / windowW
+        val i0 = maxOf(0, floor((cx + x * k) / cellSize).toInt() - 1)
+        val i1 = minOf(cols - 1, ceil((cx + (x + w) * k) / cellSize).toInt())
+        val j0 = maxOf(0, floor((cy + y * k) / cellSize).toInt() - 1)
+        val j1 = minOf(rows - 1, ceil((cy + (y + h) * k) / cellSize).toInt())
         var box = ColourBox.EMPTY
-        for (r in r0..r1) for (c in c0..c1) box += ColourBox(mins[r * cols + c], maxs[r * cols + c])
+        for (j in j0..j1) for (i in i0..i1) box += ColourBox(mins[j * cols + i], maxs[j * cols + i])
         return box
     }
 
+    /** Row [j]'s cells as (min, max). */
+    fun row(j: Int): List<ColourBox> = (0 until cols).map { ColourBox(mins[j * cols + it], maxs[j * cols + it]) }
+
     companion object {
-        /** Cells along the long edge: about 8dp each on a phone. */
-        const val CELLS = 120
+        const val CELLS_ON_LONG_EDGE = 120
+
+        fun cellSizeOf(width: Int, height: Int): Int = maxOf(1, ceilDiv(maxOf(width, height), CELLS_ON_LONG_EDGE))
+
+        private fun ceilDiv(a: Int, b: Int) = (a + b - 1) / b
 
         /**
-         * From a [width] x [height] image whose opaque, composited rows [row] fills in (one row at a time: no copy
-         * of the whole image in memory).
+         * From a [width] x [height] image whose rows [row] fills in, already composited over the background (one
+         * row at a time: no copy of the whole image in memory).
          */
-        fun of(width: Int, height: Int, row: (y: Int, into: IntArray) -> Unit): BackdropDetail {
-            val cell = maxOf(1, maxOf(width, height) / CELLS)
-            val cols = (width + cell - 1) / cell
-            val rows = (height + cell - 1) / cell
+        fun of(width: Int, height: Int, row: (y: Int, into: IntArray) -> Unit): BackdropCells {
+            val cell = cellSizeOf(width, height)
+            val cols = ceilDiv(width, cell)
+            val rows = ceilDiv(height, cell)
             val lo = Array(CHANNELS) { IntArray(cols * rows) { BYTE } }
             val hi = Array(CHANNELS) { IntArray(cols * rows) }
             val line = IntArray(width)
@@ -105,7 +113,7 @@ class BackdropDetail(
             fun pack(a: Array<IntArray>, i: Int) =
                 OPAQUE or (a[0][i] shl SHIFTS[0]) or (a[1][i] shl SHIFTS[1]) or (a[2][i] shl SHIFTS[2])
             val n = cols * rows
-            return BackdropDetail(cols, rows, IntArray(n) { pack(lo, it) }, IntArray(n) { pack(hi, it) })
+            return BackdropCells(width, height, IntArray(n) { pack(lo, it) }, IntArray(n) { pack(hi, it) })
         }
 
         /** Cell [i]'s per-channel range grown to hold [px]. */
@@ -235,33 +243,19 @@ object BackdropDecoder {
 
     private fun infoOf(bitmap: Bitmap, background: Int): BackdropInfo {
         val w = bitmap.width
-        val h = bitmap.height
-        val detail = BackdropDetail.of(w, h) { y, into ->
+        val cells = BackdropCells.of(w, bitmap.height) { y, into ->
             bitmap.getPixels(into, 0, w, 0, y, w, 1)
             for (i in into.indices) into[i] = KioskScrim.over(into[i], background)
         }
-        val (sw, sh) = sampleGrid(w, h)
-        val small = Bitmap.createScaledBitmap(bitmap, sw, sh, true)
-        val samples = IntArray(sw * sh)
-        small.getPixels(samples, 0, sw, 0, 0, sw, sh)
-        if (small !== bitmap) small.recycle()
-        for (i in samples.indices) samples[i] = KioskScrim.over(samples[i], background)
-        val top = samples.copyOfRange(0, sw).sortedBy { Contrast.luminance(it) }[sw / 2]
-        return BackdropInfo(background, samples, top, detail, w, h)
-    }
-
-    /** 48 along the long edge, `round(48 * short / long)` (at least 1) along the short one. */
-    fun sampleGrid(w: Int, h: Int): Pair<Int, Int> {
-        val long = maxOf(w, h)
-        val short = maxOf(1, (SAMPLES * minOf(w, h) / long.toFloat()).roundToInt())
-        return if (w >= h) SAMPLES to short else short to SAMPLES
+        val top = cells.row(0).map { KioskScrim.blend(it.min, it.max, KioskScrim.STEPS / 2) }
+            .sortedBy { Contrast.luminance(it) }
+        return BackdropInfo(background, cells, top[top.size / 2])
     }
 
     /** Rotation (and mirroring) from a JPEG's EXIF orientation ([JpegOrientation]); none for other formats. */
     private fun exifOrientation(file: File, mime: String?): Orientation =
         if (mime == "image/jpeg") Orientation.of(JpegOrientation.read(file)) else Orientation.NORMAL
 
-    private const val SAMPLES = 48
     private const val HALF_TURN = 180
 
     /** An EXIF orientation as a rotation plus an optional mirror. */

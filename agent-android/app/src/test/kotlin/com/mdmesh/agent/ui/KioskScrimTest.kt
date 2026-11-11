@@ -24,48 +24,68 @@ class KioskScrimTest {
         assertEquals(white, KioskScrim.blend(white, 0xFF123456.toInt(), 50))
     }
 
-    @Test fun `the allowance is a count, 2 in 100`() {
-        assertEquals(0, KioskScrim.allowed(49))
-        assertEquals(1, KioskScrim.allowed(50))
-        assertEquals(46, KioskScrim.allowed(2304)) // 48 x 48
-    }
-
-    @Test fun `with no samples there is no scrim`() {
-        assertEquals(0, KioskScrim.step(KioskPalette.DEFAULT, IntArray(0)))
-        assertNull(KioskScrim.covered(white, black, IntArray(0), 0))
-    }
-
     private val palettes: List<KioskPalette> by lazy {
         colours.flatMap { bg -> colours.map { fg -> KioskPalette.of(bg, fg) } }
     }
     private val pairs: List<Pair<Int, Int>> by lazy { colours.flatMap { a -> colours.map { b -> a to b } } }
 
-    @Test fun `every palette over any samples reaches 4_5 at the chosen step, and not one step lower`() {
+    @Test fun `no controls, no dim, and the dim never passes 30 percent`() {
+        assertEquals(0, LegibilityV3.dimStep(KioskPalette.DEFAULT, emptyList()))
         for ((p, ab) in palettes.flatMap { p -> pairs.map { p to it } }) {
-            val samples = IntArray(50) { if (it % 2 == 0) ab.first else ab.second }
-            val step = KioskScrim.step(p, samples)
-            fun least(at: Int) =
-                listOf(p.text, p.secondary).minOf { KioskScrim.covered(it, p.background, samples, at)!! }
-            assertTrue("$p $ab", least(step) >= Contrast.TEXT_MIN)
-            assertTrue("$p $ab: the least step", step == 0 || least(step - 1) < Contrast.TEXT_MIN)
+            val d = LegibilityV3.dimStep(p, listOf(ColourBox.EMPTY + ab.first + ab.second))
+            assertTrue("$p $ab: $d", d in 0..LegibilityV3.DIM_MAX_STEP)
         }
     }
 
-    @Test fun `a plate makes every colour in its box readable, and none is drawn where the scrim already is`() {
-        val cases = palettes.flatMap { p -> pairs.flatMap { ab -> listOf(0, 20, 40).map { Triple(p, ab, it) } } }
-        for ((p, ab, scrim) in cases) {
+    @Test fun `a plate makes every colour in its box readable, and none is drawn where the dim already is`() {
+        val cases = palettes.flatMap { p -> pairs.flatMap { ab -> listOf(0, 8, 15).map { Triple(p, ab, it) } } }
+        for ((p, ab, dim) in cases) {
             val box = ColourBox.EMPTY + ab.first + ab.second
-            val plate = KioskScrim.plateStep(p.text, p.background, box, scrim)
-            // Every corner and channel mix of the box, through scrim and plate.
+            val plate = LegibilityV3.plateStep(p.text, p.background, box, dim)
+            // Every corner and channel mix of the box, through dim and plate.
             for (px in corners(box)) {
-                val seen = KioskScrim.blend(p.background, KioskScrim.blend(p.background, px, scrim), plate)
+                val seen = KioskScrim.blend(p.background, KioskScrim.blend(p.background, px, dim), plate)
                 assertTrue("$p over $px", Contrast.ratio(p.text, seen) >= Contrast.TEXT_MIN)
             }
         }
         for (p in palettes) {
-            val none = KioskScrim.plateStep(p.text, p.background, ColourBox.EMPTY + p.background, 0)
+            val none = LegibilityV3.plateStep(p.text, p.background, ColourBox.EMPTY + p.background, 0)
             assertEquals("the background itself: no plate", 0, none)
         }
+    }
+
+    @Test fun `a plate is solid over texture and as light as it can be over a calm patch`() {
+        val p = KioskPalette.DEFAULT
+        val noise = ColourBox.EMPTY + black + white
+        assertEquals("black and white noise", KioskScrim.STEPS, LegibilityV3.plateStep(p.text, p.background, noise, 0))
+        val calmLight = ColourBox.EMPTY + 0xFFB0B0B0.toInt() + 0xFFB8B8B8.toInt()
+        val step = LegibilityV3.plateStep(p.text, p.background, calmLight, 0)
+        assertTrue("translucent over a calm mid-grey: $step", step in 1 until KioskScrim.STEPS)
+        val darkTexture = ColourBox.EMPTY + 0xFF000000.toInt() + 0xFF404040.toInt()
+        assertEquals("busy but dark enough: none", 0, LegibilityV3.plateStep(p.text, p.background, darkTexture, 0))
+    }
+
+    @Test fun `cells follow the spec's size and crop mapping, with a one-cell margin`() {
+        val n = 24 * 16
+        val white512 = 5 * 24 + 12
+        val grid = BackdropCells(24, 16, IntArray(n) { black }, IntArray(n) { if (it == white512) white else black })
+        assertEquals(1, grid.cellSize)
+        assertEquals(24, grid.cols)
+        assertEquals(5, BackdropCells.cellSizeOf(600, 300))
+        assertEquals(1, BackdropCells.cellSizeOf(120, 1))
+        // A 120 x 80 window on a 24 x 16 image: 5 units per cell. The white cell (12, 5) is in the margin of a box
+        // over cell 13 of row 5, and not of one over cell 14.
+        assertEquals(white, grid.bounds(120.0, 80.0, BackdropCells.Region(65.0, 25.0, 4.0, 4.0)).max)
+        assertEquals(black, grid.bounds(120.0, 80.0, BackdropCells.Region(71.0, 25.0, 4.0, 4.0)).max)
+    }
+
+    @Test fun `JPEG orientation is read from the EXIF segment, anything else is upright`() {
+        fun res(name: String) = java.io.File(javaClass.getResource("/backdrop/$name")!!.toURI())
+        assertEquals(6, JpegOrientation.read(res("rotated.jpg")))
+        assertEquals(1, JpegOrientation.read(res("opaque.jpg")))
+        assertEquals(1, JpegOrientation.read(res("opaque.png")))
+        assertEquals(1, JpegOrientation.read(res("garbage.png")))
+        assertEquals(1, JpegOrientation.read(java.io.File("missing.jpg")))
     }
 
     private fun corners(box: ColourBox): List<Int> {
@@ -92,8 +112,6 @@ class KioskScrimTest {
         assertEquals(500 to 1083, BackdropDecoder.outputSize(500, 2000, 1080, 2340, 2560))
         assertEquals(1, BackdropDecoder.coverSample(1080, 2340, 1080, 2340))
         assertEquals(4, BackdropDecoder.coverSample(8000, 8000, 1080, 1920))
-        assertEquals(48 to 22, BackdropDecoder.sampleGrid(2340, 1080))
-        assertEquals(22 to 48, BackdropDecoder.sampleGrid(1080, 2340))
     }
 
     @Test fun `EXIF orientations map to rotations`() {

@@ -3120,6 +3120,14 @@
             ALTER TABLE device_state DROP COLUMN kioskGeneration;</rollback>
     </changeSet>
 
+    <changeSet id="26.11.09-configurations-locationServices" author="letter-number" context="common">
+        <comment>Column,new: configurations#locationServices (sent as policies.locationServices): Device Owner turns
+            Android location services on or off and locks the setting while managed. No DEFAULT: NULL = not managed,
+            so existing configurations keep their revision and device state on upgrade.</comment>
+        <sql>ALTER TABLE configurations ADD COLUMN locationServices BOOLEAN;</sql>
+        <rollback>ALTER TABLE configurations DROP COLUMN locationServices;</rollback>
+    </changeSet>
+
     <changeSet id="26.11.10-devices-agentEnrollAttemptHash" author="lunacy" context="common">
         <comment>Column,new: devices#agentEnrollAttemptHash — SHA-256 of (enrollment token id, the agent's random enroll
             attempt id). An agent whose enroll response was lost retries with the same attempt id and gets this device

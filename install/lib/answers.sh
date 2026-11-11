@@ -91,8 +91,12 @@ _mdm_answer_check() {
   _MDM_WHY=''; _MDM_SHOW=$v
   case "$1" in
     mode)
-      case "$v" in tunnel|1) _MDM_V=1; _MDM_SHOW=tunnel ;; domain|2) _MDM_V=2; _MDM_SHOW=domain ;;
-        *) _MDM_WHY='must be tunnel or domain' ;; esac ;;
+      case "$v" in
+        tunnel|1) _MDM_V=1; _MDM_SHOW=tunnel ;;
+        domain|2) _MDM_V=2; _MDM_SHOW=domain ;;
+        host-nginx|3|nginx) _MDM_V=3; _MDM_SHOW=host-nginx ;;
+        *) _MDM_WHY='must be tunnel, domain or host-nginx' ;;
+      esac ;;
     hostname)
       u="https://$v"
       { mdm_check_host _MDM_V && mdm_check_base_url u; } || _MDM_WHY=' ' ;;

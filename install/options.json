@@ -38,12 +38,12 @@
   "options": [
     {
       "id": "mode", "env": "MDMESH_MODE", "aliases": [], "installers": ["quickstart.sh", "setup.sh"],
-      "type": "enum", "allowed": ["tunnel", "domain"], "synonyms": { "1": "tunnel", "2": "domain" },
+      "type": "enum", "allowed": ["tunnel", "domain", "host-nginx"], "synonyms": { "1": "tunnel", "2": "domain", "3": "host-nginx", "nginx": "host-nginx" },
       "default": null, "required": true, "when": null, "secret": false, "rule": "mode",
-      "regex": "^(tunnel|domain|1|2)$",
-      "description": "How the server is reached: tunnel (Cloudflare Tunnel, no open ports) or domain (your own domain, ports 80/443, a Let's Encrypt certificate from Caddy).",
-      "prompts": [ { "id": "mode.choose", "text": "Choose [1/2]:", "script": "Choose [1/2]: " } ],
-      "examples": { "valid": ["tunnel", "domain", "1", "2"], "invalid": ["3", "Domain", "cloudflare", " "] }
+      "regex": "^(tunnel|domain|host-nginx|1|2|3|nginx)$",
+      "description": "How the server is reached: tunnel (Cloudflare Tunnel, no open ports), domain (your own domain, ports 80/443, a Let's Encrypt certificate from Caddy), or host-nginx (an existing Nginx on the host reverse-proxies to the Docker backend).",
+      "prompts": [ { "id": "mode.choose", "text": "Choose [1/2/3]:", "script": "Choose [1/2/3]: " } ],
+      "examples": { "valid": ["tunnel", "domain", "host-nginx", "1", "2", "3", "nginx"], "invalid": ["4", "Domain", "cloudflare", " "] }
     },
     {
       "id": "repo", "env": "MDMESH_REPO", "aliases": [], "installers": ["quickstart.sh"],
@@ -70,7 +70,8 @@
       "description": "The public hostname devices use (the name only: no https://, path or user@), optionally with :port. The base URL becomes https://<host>. In domain mode its DNS must point at this server.",
       "prompts": [
         { "id": "host.tunnel", "when": { "mode": "tunnel" }, "text": "Public hostname devices will use (e.g. mdm.example.com):", "script": "Public hostname devices will use (e.g. mdm.example.com): " },
-        { "id": "host.domain", "when": { "mode": "domain" }, "text": "Your domain (DNS already pointing here, e.g. mdm.example.com):", "script": "Your domain (DNS already pointing here, e.g. mdm.example.com): " }
+        { "id": "host.domain", "when": { "mode": "domain" }, "text": "Your domain (DNS already pointing here, e.g. mdm.example.com):", "script": "Your domain (DNS already pointing here, e.g. mdm.example.com): " },
+        { "id": "host.nginx", "when": { "mode": "host-nginx" }, "text": "Your domain (DNS already pointing here, e.g. mdm.example.com):", "script": "Your domain (DNS already pointing here, e.g. mdm.example.com): " }
       ],
       "examples": { "valid": ["mdm.example.com", "localhost", "mdm.example.com:8443", "10.0.0.5", "[::1]"], "invalid": ["", "https://mdm.example.com", "mdm.example.com/x", "admin@mdm.example.com", "-mdm.example.com", "mdm..example.com", "mdm.example.com:0", "mdm.example.com:99999", "mdm example.com"] }
     },

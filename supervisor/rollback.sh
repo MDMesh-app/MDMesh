@@ -114,10 +114,19 @@ fi
 [ -n "$OLD_CURRENT" ] && set_env CURRENT_VERSION "$OLD_CURRENT"
 [ -n "$OLD_WEB" ] && set_env WEB_VERSION "$OLD_WEB"
 
-if ! dc up -d --no-deps server caddy; then
-  errln "could not start the old server (see the log above); .env names the old versions and the database is restored: run 'docker compose up -d server caddy' in the install directory, or Roll back again."
-  phase failed
-  exit 1
+HOST_NGINX="$(grep -E '^HOST_NGINX=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2-)"
+if [ "$HOST_NGINX" = "1" ]; then
+  if ! dc up -d --no-deps server; then
+    errln "could not start the old server (see the log above); .env names the old versions and the database is restored: run 'docker compose up -d server' in the install directory, or Roll back again."
+    phase failed
+    exit 1
+  fi
+else
+  if ! dc up -d --no-deps server caddy; then
+    errln "could not start the old server (see the log above); .env names the old versions and the database is restored: run 'docker compose up -d server caddy' in the install directory, or Roll back again."
+    phase failed
+    exit 1
+  fi
 fi
 
 if healthy; then phase rolled_back; echo "OK ${OLD_CURRENT:-}"; exit 0; fi

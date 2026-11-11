@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# apply.sh <target-version> <server-ref> <web-ref> <supervisor-ref>
+# apply.sh <target-version> <server-ref> <web-ref> <supervisor-ref> [web-zip-url]
 #
 # The refs are the signed manifest's components.images, ghcr.io/<owner>/mdmesh-<name>@sha256:<digest> (server.js passes
 # them after verifying the manifest). The images are pinned by digest: .env gets
@@ -7,12 +7,16 @@
 # becomes repo:tag@digest, which docker pulls and runs by the digest alone (the tag is ignored). A release whose refs are
 # missing, malformed or under another owner than IMAGE_OWNER is refused before anything changes.
 #
+# In host-Nginx mode (HOST_NGINX=1) the optional web-zip-url is the release's mdmesh-web.zip asset; its static files are
+# extracted into web_dist and served by the host Nginx. Without it, they are copied out of the pinned web image.
+#
 # This is the copy baked into the RUNNING supervisor image (server.js runs its own /app/apply.sh), so an update is
 # applied by the supervisor already installed, never by the release being installed: a supervisor before 0.5.0 applies
 # by tag as it always did, and pinning starts once a 0.5.0+ supervisor runs.
 #
 # Runs inside the supervisor container (project mounted at /project, docker.sock mounted). Applies a VERIFIED
-# update to the `server` + `caddy` services with a pre-update DB backup and AUTOMATIC ROLLBACK on any
+# update to the `server` + `caddy` services (or only `server` plus host-Nginx web assets when HOST_NGINX=1)
+# with a pre-update DB backup and AUTOMATIC ROLLBACK on any
 # failure. Emits `PHASE <name>` / `ERR <msg>` / `OK <version>` lines on stdout — server.js parses these
 # to drive /update/status. It NEVER touches `supervisor` or `postgres` (no self-destruct, no data loss).
 #
@@ -28,10 +32,11 @@ set -uo pipefail   # deliberately NOT -e: failures are handled explicitly so we 
 # and restore.log sit beside it. (The host .env is only rewritten in place: sed -i and >> keep its mode and owner.)
 umask 077
 
-VERSION="${1:?usage: apply.sh <version> <server-ref> <web-ref> <supervisor-ref>}"
+VERSION="${1:?usage: apply.sh <version> <server-ref> <web-ref> <supervisor-ref> [web-zip-url]}"
 SERVER_REF="${2:-}"
 WEB_REF="${3:-}"
 SUPERVISOR_REF="${4:-}"
+WEB_ZIP_URL="${5:-}"
 PROJECT_DIR="${COMPOSE_PROJECT_DIR:-/project}"
 ENV_FILE="$PROJECT_DIR/.env"
 BACKUP_DIR="${BACKUP_DIR:-/backups}"
@@ -43,6 +48,15 @@ HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-180}"
 phase() { echo "PHASE $1"; }
 errln() { echo "ERR $1" >&2; }
 dc()    { docker compose "$@"; }
+
+# In host-Nginx mode there is no caddy container: the host serves the built SPA and proxies to `server`.
+recreate_apps() {
+  if [ "$(get_env HOST_NGINX)" = "1" ]; then
+    dc up -d --no-deps server
+  else
+    dc up -d --no-deps server caddy
+  fi
+}
 
 cd "$PROJECT_DIR" || { errln "cannot cd $PROJECT_DIR"; phase failed; exit 1; }
 
@@ -178,8 +192,8 @@ rollback() {
     restore_db "$BACKUP_SQL" "$BACKUP_DIR/$STAMP.restore.log" || { phase failed; return; }
   fi
   restore_env   # only now: .env must keep naming the version the database belongs to until the restore succeeded
-  if ! dc up -d --no-deps server caddy; then
-    errln "could not start the old server (see the log above); .env names the old versions and the database is restored: run 'docker compose up -d server caddy' in the install directory, or Roll back again from /recovery."
+  if ! recreate_apps; then
+    errln "could not start the old server (see the log above); .env names the old versions and the database is restored: run 'docker compose up -d' in the install directory, or Roll back again from /recovery."
     phase failed
     return
   fi
@@ -203,10 +217,25 @@ phase pull
 set_env SERVER_VERSION "$SERVER_PIN"
 set_env WEB_VERSION "$WEB_PIN"
 set_env CURRENT_VERSION "$VERSION"
-if ! dc pull --quiet server caddy; then   # --quiet: no per-layer progress; errors still print
-  errln "image pull failed"
-  rollback env-only
-  exit 1
+if [ "$(get_env HOST_NGINX)" = "1" ]; then
+  if ! dc pull --quiet server; then   # --quiet: no per-layer progress; errors still print
+    errln "image pull failed"
+    rollback env-only
+    exit 1
+  fi
+  # caddy is not run in host-Nginx mode, but its web image is still needed to extract the static assets when the
+  # release has no mdmesh-web.zip. Pull it by the signed digest so the check below (and the extraction) uses it.
+  if ! docker pull --quiet "$WEB_REF"; then
+    errln "web image pull failed"
+    rollback env-only
+    exit 1
+  fi
+else
+  if ! dc pull --quiet server caddy; then
+    errln "image pull failed"
+    rollback env-only
+    exit 1
+  fi
 fi
 # Pulled by digest, so docker checked the content against it; confirm the local images carry exactly the signed digests.
 for ref in "$SERVER_REF" "$WEB_REF"; do
@@ -220,10 +249,41 @@ done
 
 # ---------------- recreate ----------------
 phase recreate
-if ! dc up -d --no-deps server caddy; then
-  errln "recreate failed"
-  rollback
-  exit 1
+HOST_NGINX="$(get_env HOST_NGINX)"
+if [ "$HOST_NGINX" = "1" ]; then
+  if ! dc up -d --no-deps server; then
+    errln "recreate failed"
+    rollback
+    exit 1
+  fi
+
+  # Extract/update static web assets for host Nginx
+  WEB_DIR="$PROJECT_DIR/web_dist"
+  mkdir -p "$WEB_DIR"
+  rm -rf "${WEB_DIR:?}"/*
+  UPDATED_WEB=0
+  if [ -n "$WEB_ZIP_URL" ]; then
+    TMP_ZIP=$(mktemp)
+    if curl -fsSL "$WEB_ZIP_URL" -o "$TMP_ZIP" 2>/dev/null; then
+      python3 -c "import zipfile; zipfile.ZipFile('$TMP_ZIP').extractall('$WEB_DIR')" 2>/dev/null && UPDATED_WEB=1
+    fi
+    rm -f "$TMP_ZIP"
+  fi
+
+  if [ "$UPDATED_WEB" != 1 ]; then
+    # Fallback: copy the static assets out of the pinned web image.
+    CID=$(docker create "$WEB_REF" 2>/dev/null || true)
+    if [ -n "$CID" ]; then
+      docker cp "$CID:/srv/." "$WEB_DIR" 2>/dev/null || true
+      docker rm "$CID" >/dev/null 2>&1 || true
+    fi
+  fi
+else
+  if ! dc up -d --no-deps server caddy; then
+    errln "recreate failed"
+    rollback
+    exit 1
+  fi
 fi
 
 # ---------------- healthcheck ----------------

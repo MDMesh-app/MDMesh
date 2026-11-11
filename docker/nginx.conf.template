@@ -1,0 +1,94 @@
+# Nginx configuration for MDMesh (Host Nginx)
+# Server domain: __HOST__
+# Web static root: __WEB_ROOT__
+# Server proxy port: __SERVER_PORT__
+# Supervisor proxy port: __SUPERVISOR_PORT__
+
+server {
+    server_name __HOST__;
+
+    listen [::]:443 ssl; # managed by Certbot
+    listen 443 ssl; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/__HOST__/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/__HOST__/privkey.pem; # managed by Certbot
+
+    root __WEB_ROOT__;
+    index index.html;
+
+    client_max_body_size 500M;
+
+    # Static web app files
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # API and uploaded files -> Tomcat server
+    location /rest/ {
+        proxy_pass http://127.0.0.1:__SERVER_PORT__/rest/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /files/ {
+        # Canonical agent APK route goes to supervisor mirror
+        location = /files/agent.apk {
+            proxy_pass http://127.0.0.1:__SUPERVISOR_PORT__/update/agent.apk;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }
+
+        proxy_pass http://127.0.0.1:__SERVER_PORT__/files/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Agent wake WebSocket
+    location /agent/ws/ {
+        proxy_pass http://127.0.0.1:__SERVER_PORT__/agent/ws/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Updater & recovery -> supervisor
+    location /update/ {
+        proxy_pass http://127.0.0.1:__SUPERVISOR_PORT__/update/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /recovery {
+        proxy_pass http://127.0.0.1:__SUPERVISOR_PORT__/recovery;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+server {
+    if ($host = __HOST__) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+    listen 80;
+    listen [::]:80;
+    server_name __HOST__;
+    return 404; # managed by Certbot
+
+
+}

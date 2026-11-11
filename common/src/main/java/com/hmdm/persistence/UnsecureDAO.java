@@ -715,6 +715,11 @@ public class UnsecureDAO {
         return userMapper.findUserRoleByName(name);
     }
 
+    /** An uploaded file of any customer, by id; null when there is none. */
+    public UploadedFile getUploadedFileById(Integer id) {
+        return id == null ? null : uploadedFileMapper.findById(id);
+    }
+
     public UploadedFile getUploadedFileByPath(Integer customerId, String path) {
         return uploadedFileMapper.findByPath(customerId, path);
     }

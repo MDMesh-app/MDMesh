@@ -19,10 +19,11 @@ import javax.inject.Inject
  * Fired by the [WakeKeepAlive] doze-proof alarm. Does a single check-in (delivering any pending
  * commands during the Doze maintenance window) and reschedules the next alarm. Uses `goAsync`, released when the
  * check-in ends or at [Heartbeat.DEADLINE_MS]; a longer check-in carries on in the agent's scope under a bounded
- * wakelock. It skips when a check-in is already running (that one checks in once more when it ends).
+ * wakelock. When a check-in is already running it hands the request to it (that one checks in once more when it
+ * ends) instead of waiting for the lock.
  *
- * A check-in here does NOT require starting a foreground service, so it sidesteps the Android 12+
- * background-FGS-start restriction.
+ * The check-in itself does not depend on the foreground service. The receiver also restarts that service if Android
+ * stopped it (allowed from the background for a Device Owner; a refusal changes nothing else).
  *
  * It fires with or without a network, so it is also where a `wifiRadio` Off after which the device could not reach
  * the server is undone ([ConfigApplier.selfHealWifiRadio]). Wi-Fi still has to connect after that, so a healed
@@ -42,9 +43,10 @@ class KeepAliveReceiver : BroadcastReceiver() {
         WakeKeepAlive.schedule(context)
         // Bring the foreground service back if an OEM killed it: it keeps this process (and any install the check-in
         // below starts) from being frozen or killed once the broadcast is released, and restores the instant channel.
-        // A running service only re-posts its notification; a Device Owner may start it from the background, and
-        // where that is refused, nothing else changes.
-        CheckInService.start(context)
+        // Started "from heartbeat": no check-in of its own (the one below is it) and no grace window. A running
+        // service only re-posts its notification; a Device Owner may start it from the background, and where that is
+        // refused, nothing else changes.
+        CheckInService.start(context, fromHeartbeat = true)
         val pending = goAsync()
         Heartbeat.launch(
             scope = scope,

@@ -106,20 +106,27 @@ class CheckInService : LifecycleService() {
         super.onStartCommand(intent, flags, startId)
         startAsForeground()
         val first = !started
-        if (first) {
-            started = true
+        started = true
+        // Also when started again without credentials: the first sync can run before provisioning has saved the
+        // enroll token, and then it is retried now rather than at the next cycle.
+        val plan = StartPlan.of(
+            first = first,
+            fromHeartbeat = intent?.getBooleanExtra(EXTRA_FROM_HEARTBEAT, false) == true,
+            hasCredentials = !deviceId.isNullOrBlank() && !secret.isNullOrBlank(),
+        )
+        if (plan.grace) {
             graceUntil = System.currentTimeMillis() + REACHABILITY_GRACE_MS
             lifecycleScope.launch {
                 delay(REACHABILITY_GRACE_MS + 1_000L)
                 reevaluateSocket() // drop back to adaptive gating once the grace window lapses
             }
         }
-        // Also when started again without credentials: the first sync can run before provisioning has saved the
-        // enroll token, and then it is retried now rather than at the next cycle.
-        if (first || deviceId.isNullOrBlank() || secret.isNullOrBlank()) {
+        if (plan.loadCredentials) {
             lifecycleScope.launch {
-                runCatching { coordinator.runOnce() } // initial sync
-                    .onFailure { Log.w(TAG, "initial check-in failed", it) }
+                if (plan.initialSync) {
+                    runCatching { coordinator.runOnce() } // initial sync
+                        .onFailure { Log.w(TAG, "initial check-in failed", it) }
+                }
                 // Read identity AFTER the initial sync: on a fresh device that runOnce just
                 // enrolled, so reading before it would leave blank credentials and no socket
                 // until the process restarts.
@@ -244,9 +251,13 @@ class CheckInService : LifecycleService() {
          * Start the instant command channel from outside the app's screens (provisioning). A Device Owner may start a
          * foreground service from the background; if an OEM refuses anyway, the scheduled check-ins still run.
          */
-        fun start(context: Context) {
-            runCatching { ContextCompat.startForegroundService(context, Intent(context, CheckInService::class.java)) }
+        fun start(context: Context, fromHeartbeat: Boolean = false) {
+            val intent = Intent(context, CheckInService::class.java).putExtra(EXTRA_FROM_HEARTBEAT, fromHeartbeat)
+            runCatching { ContextCompat.startForegroundService(context, intent) }
         }
+
+        /** Started by the heartbeat to revive the service: see [StartPlan.of]. */
+        private const val EXTRA_FROM_HEARTBEAT = "com.mdmesh.agent.extra.FROM_HEARTBEAT"
 
         private const val TAG = "CheckInService"
         private const val CHANNEL_ID = "mdm_checkin"

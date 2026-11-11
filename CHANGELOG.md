@@ -36,6 +36,9 @@ New
 - Sync now and console commands say when the device isn't connected and will get it at its next check-in.
 
 Fixes
+- Agent: a server address in the QR with spaces, a trailing slash, no `https://` or a path now works, and one that
+  isn't an address is reported on the device instead of the agent quietly trying a placeholder host. Needs agent
+  0.5.0.
 - Enroll: the server log says why it refused a device's enrollment (unknown, expired, used up or stopped code), so
   "my code doesn't work" can be answered from the log.
 - Enroll: when the network drops just as a device enrolls, it no longer stays on "Enrolling…" with a code that reads

@@ -61,23 +61,43 @@ class CheckInCoordinator @Inject constructor(
 
     private val mutex = Mutex()
 
+    /** A [runIfIdle] found the lock busy: the holder runs one more cycle before releasing it. */
+    @Volatile private var rerunRequested = false
+
     suspend fun runOnce(): Unit = withContext(ioDispatcher) {
-        mutex.withLock { recordedCycle() }
+        mutex.withLock { cycles() }
     }
 
     /**
-     * Like [runOnce], unless a cycle is already in flight: then it returns false at once instead of waiting. For the
-     * heartbeat, which must not queue behind a long cycle (an install holds it for minutes); the running cycle is the
-     * check-in it wanted anyway.
+     * Like [runOnce], unless a cycle is already in flight: then it returns false at once instead of waiting, and the
+     * running cycle checks in once more when it ends. For the heartbeat, which must not queue behind a long cycle (an
+     * install holds it for minutes), yet the install's result should still reach the server right after it.
      */
     suspend fun runIfIdle(): Boolean = withContext(ioDispatcher) {
-        if (!mutex.tryLock()) return@withContext false
+        if (!mutex.tryLock()) {
+            rerunRequested = true
+            return@withContext false
+        }
         try {
-            recordedCycle()
+            cycles()
         } finally {
             mutex.unlock()
         }
         true
+    }
+
+    /**
+     * Caller holds the lock. One cycle, plus at most one trailing cycle when a [runIfIdle] was turned away meanwhile
+     * (several requests coalesce into that one). A request that lands after the check below is served by the next
+     * holder's cycle instead.
+     */
+    private suspend fun cycles() {
+        rerunRequested = false
+        recordedCycle()
+        if (rerunRequested) {
+            rerunRequested = false
+            recordedCycle()
+        }
     }
 
     private suspend fun recordedCycle() {

@@ -57,7 +57,8 @@ Fixes
 - Agent: device events (boot, app installed, and so on) are no longer lost when two arrive at once or when the agent
   is stopped during a check-in. Needs agent 0.5.0.
 - Agent: the 10-minute heartbeat no longer waits behind an install or another check-in that is still running, which
-  could get the agent stopped by Android. Needs agent 0.5.0.
+  could get the agent stopped by Android, and the install's result still reaches the console as soon as it ends.
+  Needs agent 0.5.0.
 - Agent: a device deleted in the console no longer reconnects to the server about once a minute forever; it waits
   longer each time, up to 5 minutes. Needs agent 0.5.0.
 - Agent: APK downloads left behind when the agent was stopped during an install are removed at the next install.

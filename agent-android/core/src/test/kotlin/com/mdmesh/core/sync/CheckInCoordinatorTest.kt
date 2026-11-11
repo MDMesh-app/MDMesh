@@ -41,6 +41,15 @@ class CheckInCoordinatorTest {
         override suspend fun handle(command: CommandEnvelope): CommandResult = awaitCancellation()
     }
 
+    /** Runs until its gate opens, like an install waiting on the platform. */
+    private class GateHandler(val gate: CompletableDeferred<Unit> = CompletableDeferred()) : CommandHandler {
+        override val type: String = "test.gate"
+        override suspend fun handle(command: CommandEnvelope): CommandResult {
+            gate.await()
+            return CommandResults.done(command)
+        }
+    }
+
     /** Remembers the thread its command ran on. */
     private class ThreadProbeHandler : CommandHandler {
         override val type: String = "test.thread"
@@ -65,6 +74,7 @@ class CheckInCoordinatorTest {
         syncStatus: SyncStatus = SyncStatus(),
         installIntegrity: InstallIntegrityPolicy = InstallIntegrityPolicy(),
         probe: ThreadProbeHandler = ThreadProbeHandler(),
+        gate: GateHandler = GateHandler(),
         // Virtual-time tests run the cycle on the test scheduler; one test checks the real dispatcher.
         ioDispatcher: CoroutineDispatcher = StandardTestDispatcher(testScheduler),
         events: com.mdmesh.core.telemetry.EventSink? = null,
@@ -81,7 +91,7 @@ class CheckInCoordinatorTest {
             enrollment = enrollment,
             identity = identity,
             capabilitySource = FakeCapabilitySource(),
-            dispatcher = CommandDispatcher(listOf(TestHandler(), HangingHandler(), probe)),
+            dispatcher = CommandDispatcher(listOf(TestHandler(), HangingHandler(), probe, gate)),
             pending = pending,
             stateSource = { null },
             telemetrySource = { null },
@@ -236,8 +246,39 @@ class CheckInCoordinatorTest {
         assertEquals(1, api.checkInRequests.size)
 
         api.checkInGate!!.complete(Unit)
-        first.join()
+        first.join() // plus the one trailing check-in the skipped call asked for
         assertTrue(coordinator.runIfIdle())
+        assertEquals(3, api.checkInRequests.size)
+    }
+
+    @Test
+    fun `a skipped runIfIdle makes the running cycle check in once more, with its results`() = runTest {
+        val gate = GateHandler()
+        val api = FakeMdmApi().apply {
+            checkInResponse = ResponseEnvelope(
+                status = "OK",
+                data = AgentCheckInResponse(commands = listOf(command("c1").copy(type = "test.gate"))),
+            )
+        }
+        val coordinator = coordinator(api, PendingResults(), gate = gate)
+
+        val first = launch { coordinator.runOnce() } // an install is running in it
+        testScheduler.advanceUntilIdle()
+        repeat(3) { assertFalse(coordinator.runIfIdle()) } // heartbeats while it runs
+        api.checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse())
+        gate.gate.complete(Unit)
+        first.join()
+
+        assertEquals("one trailing check-in, however many were skipped", 2, api.checkInRequests.size)
+        assertEquals(listOf("c1"), api.checkInRequests.last().results.map { it.commandId })
+    }
+
+    @Test
+    fun `without a skipped runIfIdle there is no extra check-in`() = runTest {
+        val api = FakeMdmApi()
+        val coordinator = coordinator(api, PendingResults())
+        coordinator.runOnce()
+        coordinator.runOnce()
         assertEquals(2, api.checkInRequests.size)
     }
 

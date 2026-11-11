@@ -390,7 +390,7 @@ mkdir -p "$WORK/qs2"
 ok
 
 # A re-run whose .env this user can't read says what to do, instead of a bare "Permission denied": its own .env (mode
-# 000) → chmod 600 .env; another user's (here a link to root's /etc/shadow, which only root can read) → run as them.
+# 000) → chmod 600 .env; another user's (here a link to /proc/1/environ: root's, mode 400) → run as them.
 mkdir -p "$WORK/src4/install"; cp -- "$REPO/setup.sh" "$WORK/src4/"; cp -R -- "$REPO/install/lib" "$WORK/src4/install/"
 printf 'BASE_URL=https://mdm.example.com\n' > "$WORK/src4/.env"; chmod 000 "$WORK/src4/.env"
 (cd "$WORK/src4" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" STUB_LOG="$WORK/children.log" STUB_DOCKER_OK=1 \
@@ -398,12 +398,22 @@ printf 'BASE_URL=https://mdm.example.com\n' > "$WORK/src4/.env"; chmod 000 "$WOR
 { grep -qF "can't read .env (mode 000)" "$WORK/out/e" && grep -qF 'chmod 600 .env' "$WORK/out/e" \
   && ! grep -q 'Permission denied\|as that user' "$WORK/out/e"; } || { fail "an unreadable .env of this user's does not say chmod 600"; show; }
 ok
-if [ -e /etc/shadow ] && [ ! -r /etc/shadow ]; then
-  mv -- "$WORK/src4/.env" "$WORK/src4/.env.own"; ln -s /etc/shadow "$WORK/src4/.env"
+if [ -e /proc/1/environ ] && [ ! -r /proc/1/environ ] && [ ! -O /proc/1/environ ]; then
+  mv -- "$WORK/src4/.env" "$WORK/src4/.env.own"; ln -s /proc/1/environ "$WORK/src4/.env"
   (cd "$WORK/src4" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" STUB_LOG="$WORK/children.log" STUB_DOCKER_OK=1 \
     bash ./setup.sh < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || true
   { grep -qF "can't read .env" "$WORK/out/e" && grep -qF 'it belongs to root' "$WORK/out/e" && grep -qF 'as that user' "$WORK/out/e" \
     && ! grep -q 'Permission denied' "$WORK/out/e"; } || { fail "an unreadable .env of another user's does not name its owner"; show; }
+  # Its target (mode 400) is not readable by others, though the link itself is 777: no warning about that.
+  ! grep -qF 'readable by other users' "$WORK/out/o" "$WORK/out/e" || { fail "a .env linked to a private file is said to be readable by others"; show; }
+  ok
+fi
+# A link to another user's file that everyone can read (/etc/passwd) is warned about.
+if [ -r /etc/passwd ] && [ ! -O /etc/passwd ]; then
+  rm -f -- "$WORK/src4/.env"; ln -s /etc/passwd "$WORK/src4/.env"
+  (cd "$WORK/src4" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" STUB_LOG="$WORK/children.log" STUB_DOCKER_OK=1 \
+    bash ./setup.sh < /dev/null > "$WORK/out/o" 2> "$WORK/out/e") || true
+  grep -qF 'readable by other users' "$WORK/out/o" "$WORK/out/e" || { fail "a .env linked to a world-readable file is not warned about"; show; }
   ok
 fi
 

@@ -115,9 +115,9 @@ _upd_get() {
   return 1
 }
 # _upd_has_install: this host runs an install from this clone: a Docker .env, or a native install, with or without
-# --native. /opt/mdmesh-tc itself is visible to any user (its contents are not: mode 700). (MDM_TEST_NATIVE_DIR: for
-# tests/setup-update only.)
-_upd_has_install() { [ -f .env ] || [ -d "${MDM_TEST_NATIVE_DIR:-/opt/mdmesh-tc}" ]; }
+# --native. /opt/mdmesh-tc itself is visible to any user (its contents are not: mode 700). (tests/setup-update checks
+# the path below is exactly this.)
+_upd_has_install() { [ -f .env ] || [ -d /opt/mdmesh-tc ]; }
 update_to_release() {
   local repo gerr refs list ver t sha tag='' tgt='' skipped='' cur curver rc mcommit dry=${MDMESH_DRY_RUN:-0} have=0 walked=0 f
   # --native changes this host's install, which needs root: stop before anything is looked up or checked out, rather
@@ -317,7 +317,7 @@ if [ "$REUSE_ENV" = 1 ]; then
   # It holds the secrets: owner-only, also when an older version or a hand edit left it looser. (Not ours to change when
   # another user owns it: say so instead.)
   if [ -O .env ]; then chmod go= .env
-  elif [ -n "$(find .env -prune \( -perm -040 -o -perm -004 \) -print 2>/dev/null)" ]; then
+  elif [ -n "$(find -L .env -prune \( -perm -040 -o -perm -004 \) -print 2>/dev/null)" ]; then   # the file, not a link
     warn ".env is readable by other users, and owned by another one: run chmod 600 .env as its owner."
   fi
   if [ ! -r .env ]; then

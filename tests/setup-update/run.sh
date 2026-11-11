@@ -66,6 +66,11 @@ mkdir -p "$O/release"
 cp -R -- "$REPO/setup.sh" "$REPO/quickstart.sh" "$REPO/install" "$REPO/docker-compose.release.yml" \
   "$REPO/docker-compose.domain.yml" "$O/"
 cp -- "$WORK/k.pub" "$O/release/minisign.pub"
+# The fixture's setup.sh looks for a native install in $WORK/native-tc instead of /opt/mdmesh-tc (the native tests
+# below create it). The shipped one must keep the real path: a typo there would hide every native install.
+grep -qF '[ -d /opt/mdmesh-tc ]' "$REPO/setup.sh" || { echo "FAIL: setup.sh no longer checks [ -d /opt/mdmesh-tc ]" >&2; exit 1; }
+sed -i "s#\[ -d /opt/mdmesh-tc \]#[ -d $WORK/native-tc ]#" "$O/setup.sh"
+grep -qF "[ -d $WORK/native-tc ]" "$O/setup.sh" || { echo "FAIL: could not point the fixture's setup.sh at a stand-in native install" >&2; exit 1; }
 ( cd "$O" && "${G[@]}" init -q && "${G[@]}" add -A && "${G[@]}" commit -qm r1 && "${G[@]}" tag -a -m r1 v9.0.0 \
   && echo 1 > note && "${G[@]}" add note && "${G[@]}" commit -qm r2 && "${G[@]}" tag v9.1.0 \
   && echo 2 > note && "${G[@]}" commit -qam rc && "${G[@]}" tag v9.2.0-rc1 \
@@ -111,7 +116,6 @@ upd() {
   local envs=(); while [ "$#" -gt 0 ] && [ "$1" != -- ]; do envs+=("$1"); shift; done; [ "$#" = 0 ] || shift
   RC=0; : > "$WORK/env.log"; rm -f -- "$WORK/env.log.flaky"
   (cd "$WORK/$name" && env -i PATH="$WORK/stubs:$PATH" HOME="$WORK" GITHUB_REPO=test/repo REL_DIR="$R/$rel" WORK_ENV_LOG="$WORK/env.log" \
-    MDM_TEST_NATIVE_DIR="$WORK/no-native-install" \
     "${envs[@]}" bash ./setup.sh --update "$@" < /dev/null > "$WORK/out" 2>&1) || RC=$?
 }
 head_is() { [ "$(git -C "$WORK/$1" rev-parse HEAD)" = "$2" ]; }
@@ -202,9 +206,10 @@ expect_refused_env() {  # NAME RELEASES WHAT TEXT ENV...
   { [ "$RC" != 0 ] && grep -qF -- "$text" "$WORK/out" && head_is "$n" "$before"; } || { fail "$what is not refused"; show; }
   ok
 }
-expect_refused_env nat-ahead ok "going back from main over a native install" "would run older code" MDM_TEST_NATIVE_DIR="$WORK/native-tc"
+expect_refused_env nat-ahead ok "going back from main over a native install" "would run older code"
 clone nat-older v9.1.0 "$WORK/origin2"
-expect_refused_env nat-older nosig "walking below the release of a native install" "No release newer than this clone" MDM_TEST_NATIVE_DIR="$WORK/native-tc"
+expect_refused_env nat-older nosig "walking below the release of a native install" "No release newer than this clone"
+rmdir -- "$WORK/native-tc"
 # --update --native changes this host's install: as a non-root user it stops at once, saying to use sudo, before it
 # looks anything up or checks anything out. A dry run is fine without root.
 clone nat-user

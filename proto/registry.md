@@ -20,10 +20,11 @@ Advertised only when the device has a working strategy for it (`CapabilityRegist
 | `bluetooth` | toggle/lock Bluetooth | 24 | BLUETOOTH_SCAN auto-grant fails if target app targetSdk<=30 |
 | `usbStorage` | block USB mass storage | 24 | |
 | `camera` | allow/block all camera access | 24 | `false` disables every camera for the managed user; `true` restores access. From agent 0.5.0, omitting the key after a block also restores access; older agents keep a prior block, so send `true` (Allow) to lift it. Device Owner only. |
+| `locationServices` | turn Android Location services on/off | 30 | Device Owner only. While managed, MDMesh also blocks the user from changing the global Location setting; when it becomes unmanaged it restores that Settings control but leaves the current on/off state. This is separate from the `location` telemetry section. |
 | `screenshots` | disable screenshots | 24 | |
 | `factoryReset` | block/restore the user-initiated factory reset | 24 | `UserManager.DISALLOW_FACTORY_RESET`; Device Owner only; does **not** cover a wipe from recovery mode or fastboot. Not to be confused with `factoryResetProtection` below. |
 | `safeBoot` | block/restore rebooting into Safe Mode | 24 | `UserManager.DISALLOW_SAFE_BOOT` (API 23); Device Owner only. Closes the Safe-Mode escape from a kiosk. From agent 0.3.7 the kiosk also blocks Safe Mode itself while in kiosk unless the configuration sends `true`, and every `config.apply` re-checks it last, so a block nothing asks for is lifted (a `policy.apply` block lasts until the next `config.apply`, which includes the re-apply at boot). |
-| `gps` | location toggle | 24 | Planned: not advertised yet. |
+| `gps` | legacy location toggle | 24 | Planned: not advertised. Use `locationServices` for the modern Android Location-services policy. |
 | `mobileData` | mobile data toggle | 24 | Planned: not advertised yet. |
 | `kioskLockTask` | COSU lock-task kiosk | 24 | Planned: not advertised; kiosk commands are ungated (see below). |
 | `passwordComplexity` | password policy | 31 | Planned: not advertised yet. setRequiredPasswordComplexity (setPasswordQuality deprecated @26) |

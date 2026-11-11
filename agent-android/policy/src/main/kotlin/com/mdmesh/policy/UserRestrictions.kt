@@ -45,6 +45,7 @@ object UserRestrictions {
     const val DISALLOW_MOUNT_PHYSICAL_MEDIA = "no_physical_media"
     const val DISALLOW_FACTORY_RESET = "no_factory_reset"
     const val DISALLOW_SAFE_BOOT = "no_safe_boot"
+    const val DISALLOW_CONFIG_LOCATION = "no_config_location"
 
     /** API 33. Used by the `wifiRadio` policy (not by [forKey]: it is added only on "off"). */
     const val DISALLOW_CHANGE_WIFI_STATE = "no_change_wifi_state"

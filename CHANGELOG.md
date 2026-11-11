@@ -9,7 +9,7 @@ line under Unreleased.
 ## Unreleased
 
 Upgrading
-- The database adds three columns (`devices.wipedAt`, `configurations.camera`,
+- The database adds four columns (`devices.wipedAt`, `configurations.camera`, `configurations.locationServices`,
   `applicationVersions.requestedPermissions`) and the `configurationAppPermissions` table on start. Devices wiped
   before the update aren't marked.
 - The database adds three columns to enrollment tokens on start (`maxUses`, `useCount`, `revokedAt`) and stores
@@ -32,6 +32,8 @@ New
   stopping them is in the audit log, and the server log names the code each device enrolled with. The API takes
   `maxUses` and `validHours` on `POST /private/agent/v1/token`, and `POST /private/agent/v1/token/revoke-all`
   (thanks @alessfi).
+- Configuration → Network can manage Android Location services independently of MDMesh location reporting on Android
+  11+ Device Owner devices. Needs agent 0.5.0 (thanks @letternumber).
 - Configurations can Grant or Deny an app's runtime permissions (camera, location, microphone, contacts, SMS and
   more), under each installed app in the editor; Default removes MDMesh's override. The choices come from the APK
   uploaded to the server. Needs agent 0.5.0 on a Device Owner device: a device on an older agent applies the rest of

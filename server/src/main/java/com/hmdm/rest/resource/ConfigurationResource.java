@@ -189,7 +189,8 @@ public class ConfigurationResource {
                     "a refusal is an ERROR whose message is the first problem's key and whose data lists them all. " +
                     "applicationUsageParameters are upserted and never removed. " +
                     "An explicit \"applications\": null, and a connectivityMode other than adaptive, alwaysOn or null, " +
-                    "are refused with HTTP 400."
+                    "are refused with HTTP 400. locationServicesAction is keep (the default), on, off, or notManaged; " +
+                    "ordinary saves preserve the stored Location-services policy."
     )
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
@@ -223,6 +224,7 @@ public class ConfigurationResource {
                                 "by user " + SecurityContext.get().getCurrentUserName());
                         return Response.PERMISSION_DENIED();
                     }
+                    applyLocationServicesUpdate(configuration, null);
                     Response refused = refuseExtensions(configuration, null);
                     if (refused != null) return refused;
                     configuration.setDisableLocation(false);        // Not used but shouldn't be NULL
@@ -239,6 +241,7 @@ public class ConfigurationResource {
                                 "by user " + SecurityContext.get().getCurrentUserName());
                         return Response.PERMISSION_DENIED();
                     }
+                    applyLocationServicesUpdate(configuration, configurationDAO.getConfigurationById(id));
                     Response refused = refuseExtensions(configuration, storedExtensions(id, configuration));
                     if (refused != null) return refused;
                     log.info("Configuration " + configuration.getName() + " updated by user "  + SecurityContext.get().getCurrentUserName());
@@ -249,6 +252,8 @@ public class ConfigurationResource {
 
                 return Response.OK(configuration);
             }
+        } catch (BadRequestException e) {
+            throw e;
         } catch (Exception e) {
             log.error("Unexpected error when saving the configuration", e);
             e.printStackTrace();
@@ -295,6 +300,29 @@ public class ConfigurationResource {
             if (eligibleApps.contains(rule.getApplicationId())) kept.add(rule);
         }
         configuration.setManagedAppPermissions(kept);
+    }
+
+    private static void applyLocationServicesUpdate(Configuration configuration, Configuration stored) {
+        String action = configuration.getLocationServicesAction();
+        if (action == null || "keep".equals(action)) {
+            // Keep protects a stored policy from a client that doesn't know the field. A new configuration has none
+            // stored, so it gets the value it was sent with (an API client, or a console copy without the action).
+            if (stored != null) configuration.setLocationServices(stored.getLocationServices());
+            return;
+        }
+        if ("on".equals(action)) {
+            configuration.setLocationServices(true);
+            return;
+        }
+        if ("off".equals(action)) {
+            configuration.setLocationServices(false);
+            return;
+        }
+        if ("notManaged".equals(action)) {
+            configuration.setLocationServices(null);
+            return;
+        }
+        throw new BadRequestException("locationServicesAction must be keep, on, off, or notManaged");
     }
 
     /**

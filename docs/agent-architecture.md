@@ -62,16 +62,16 @@ it. It asks first, says so when that kiosk has no exit on the device, enters onl
 finishes the entry even if the screen goes away (a rotation); once in kiosk it queues a check-in. A newer delivered kiosk-off configuration removes the option even if another policy failed; a remote
 `kiosk.exit` leaves it available while the configuration still enables kiosk.
 
-**The 25 enforced fields**
+**The 26 enforced fields**
 
 | Area | Fields |
 |------|--------|
 | Kiosk | `mainAppId`, `kioskMode`, `kioskExit`, `kioskHome`, `kioskRecents`, `kioskNotifications`, `kioskSystemInfo`, `kioskKeyguard`, `kioskLockButtons`, `kioskLockVolume`, `password` (exit PIN, stored as entered) |
 | Launcher look | `backgroundColor`, `textColor`, `iconSize` |
-| Device policy | `wifi`, `wifiRadio`, `bluetooth`, `camera`, `usbStorage`, `disableScreenshots`, `disableFactoryReset`, `disableSafeBoot` |
+| Device policy | `wifi`, `wifiRadio`, `locationServices`, `bluetooth`, `camera`, `usbStorage`, `disableScreenshots`, `disableFactoryReset`, `disableSafeBoot` |
 | Location | `requestUpdates` (location capture mode) |
 | Connectivity | `connectivityMode` (live-connection mode, 1.5) |
-| App permissions | `managedAppPermissions` (per installed app: Grant or Deny a runtime permission, 1.6) |
+| App permissions | `managedAppPermissions` (per installed app: Grant or Deny a runtime permission, 1.7) |
 
 `name` and `description` are metadata only. Wire shapes: `proto/payloads/config-apply.schema.json` and
 `proto/payloads/config-apply-result.schema.json`.
@@ -98,7 +98,10 @@ finishes the entry even if the screen goes away (a rotation); once in kiosk it q
   after every boot and agent update (`ConfigReapplyWorker`), and the server re-sends `config.apply` when the agent
   version changes, so a device-level mode lasts only until then. Switching a configuration from `alwaysOn` back to
   not managed leaves its devices on `alwaysOn`; set `adaptive` to switch them back. Older agents ignore it.
-- **1.6:** the `appPermissions` section: per app the configuration installs, runtime permissions set to `grant` or
+- **1.6:** the `locationServices` policy key: Android 11+ Device Owners turn Android Location services on or off and
+  lock the setting while managed; Not managed (NULL, the upgrade value) lifts the lock and leaves the switch as it is.
+  It is separate from `requestUpdates`. Agents without it, and Android 10 and older, report `unsupported`.
+- **1.7:** the `appPermissions` section: per app the configuration installs, runtime permissions set to `grant` or
   `deny` (`DevicePolicyManager.setPermissionGrantState`, Device Owner). A rule left out goes back to Default, the
   device-wide auto-grant set at enrollment. An empty list releases every override the agent set; an absent section
   (an older server) leaves them. The agent applies a rule only to an installed app that requests the permission

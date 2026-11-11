@@ -930,6 +930,7 @@ export function DeviceDetailPage() {
                 status={cfgStatus}
                 configName={configName}
                 isDeviceOwner={deviceOwner}
+                androidSdkInt={teleNum(hw.sdkInt)}
                 busy={busy}
                 onRetry={canEdit && !wiped ? () => void syncNow() : undefined}
                 now={now}

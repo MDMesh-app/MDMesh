@@ -153,6 +153,9 @@ available).
 Agent 0.4.0 speaks protocol 1.5: it applies a configuration's connectivity mode, which older agents ignore. It also
 works with a 0.3.9 server.
 
+Agent 0.5.0 speaks protocol 1.6: it applies a configuration's app permissions, which older agents can't (their devices
+show as out of sync while a configuration has a rule). It also works with a 0.4.0 server, which sends no rules.
+
 ## Version notes
 
 ### v0.5.0
@@ -173,6 +176,12 @@ works with a 0.3.9 server.
   must use the current release workflow ([RELEASING.md](../RELEASING.md)). An install that follows upstream releases
   with its own `IMAGE_OWNER` sets `GITHUB_REPO` to the repository that publishes its images, or `IMAGE_OWNER` to
   `mdmesh-app`.
+- **App permissions (agent 0.5.0):** a configuration can Grant or Deny an installed app's runtime permissions. Devices
+  on an older agent, or not Device Owner, can't apply them: they get the rest of the configuration and show as out of
+  sync while it has a rule, until their agent is updated. Configurations without rules stay in sync on every agent.
+  API clients: `PUT /private/configurations` takes `managedAppPermissions` (`[{applicationId, permission, state}]`,
+  state `grant` or `deny`); leaving it out keeps the stored rules, and rules for apps the save doesn't install are
+  dropped.
 - **Return to kiosk on the device (agent 0.5.0):** after someone leaves a kiosk with the exit PIN, the MDMesh Agent
   offers **Return to kiosk**, offline too, while the device's configuration enables kiosk. A console **Exit kiosk**
   (`kiosk.exit`) leaves that option on the device; to remove it, turn kiosk off in the configuration. Older agents

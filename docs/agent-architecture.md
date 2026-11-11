@@ -62,7 +62,7 @@ it. It asks first, says so when that kiosk has no exit on the device, enters onl
 finishes the entry even if the screen goes away (a rotation); once in kiosk it queues a check-in. A newer delivered kiosk-off configuration removes the option even if another policy failed; a remote
 `kiosk.exit` leaves it available while the configuration still enables kiosk.
 
-**The 24 enforced fields**
+**The 25 enforced fields**
 
 | Area | Fields |
 |------|--------|
@@ -71,6 +71,7 @@ finishes the entry even if the screen goes away (a rotation); once in kiosk it q
 | Device policy | `wifi`, `wifiRadio`, `bluetooth`, `camera`, `usbStorage`, `disableScreenshots`, `disableFactoryReset`, `disableSafeBoot` |
 | Location | `requestUpdates` (location capture mode) |
 | Connectivity | `connectivityMode` (live-connection mode, 1.5) |
+| App permissions | `managedAppPermissions` (per installed app: Grant or Deny a runtime permission, 1.6) |
 
 `name` and `description` are metadata only. Wire shapes: `proto/payloads/config-apply.schema.json` and
 `proto/payloads/config-apply-result.schema.json`.
@@ -97,6 +98,14 @@ finishes the entry even if the screen goes away (a rotation); once in kiosk it q
   after every boot and agent update (`ConfigReapplyWorker`), and the server re-sends `config.apply` when the agent
   version changes, so a device-level mode lasts only until then. Switching a configuration from `alwaysOn` back to
   not managed leaves its devices on `alwaysOn`; set `adaptive` to switch them back. Older agents ignore it.
+- **1.6:** the `appPermissions` section: per app the configuration installs, runtime permissions set to `grant` or
+  `deny` (`DevicePolicyManager.setPermissionGrantState`, Device Owner). A rule left out goes back to Default, the
+  device-wide auto-grant set at enrollment. An empty list releases every override the agent set; an absent section
+  (an older server) leaves them. The agent applies a rule only to an installed app that requests the permission
+  (`not-requested` otherwise, which doesn't block); an app that isn't installed yet fails the document, and the
+  agent applies its rules as soon as its `app.install` succeeds, also after an update. Only agents that advertise
+  `app.runtimePermissions` get the section; the others get the document without it, under that document's revision,
+  and show as out of sync while the configuration has a rule.
 
 **Wi-Fi radio Off, in detail**
 - Off is deferred, without blocking the other keys, while Wi-Fi is the device's only network. It's retried only at

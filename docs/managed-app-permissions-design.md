@@ -1,6 +1,6 @@
 # Managed App Runtime Permissions
 
-**Status**: Implemented on `feat/managed-app-permissions`; PR review follow-up committed locally, awaiting push and final live validation
+**Status**: Implemented in v0.5.0 (protocol 1.6)
 **Created**: 2026-11-09
 **Scope**: A modern replacement for the inherited `appPermissions` configuration field. It does not revive the
 Headwind `/sync` behavior.
@@ -76,19 +76,21 @@ Add an optional `appPermissions` section to `config.apply`:
   section remains the intentional release signal.
 - A package omitted from a later document: release every override MDMesh recorded for that package to `DEFAULT`.
 - A permission omitted from a listed package: release that override to `DEFAULT`.
-- The agent validates package names, exact permission names, and states. It queries `PackageManager` and reports a
-  final non-error outcome such as `not-requested` when an installed package does not request a configured permission.
-  A package that is not installed is retryable rather than successful, so its rule is still applied after the normal
-  configuration-app install succeeds.
+- The agent applies only `grant` and `deny` (another state is reported `unsupported`). It queries `PackageManager`
+  and reports a final non-error outcome, `not-requested`, when an installed package does not request a configured
+  permission. A package that is not installed fails the document (retryable, not saved); as soon as `app.install`
+  installs or updates the package, the agent applies the delivered document again (or only that package's rules, when
+  it is already applied), so a new app's Deny holds from its first launch after install, and an update that starts
+  requesting a configured permission gets the rule too.
 - Add capability token `app.runtimePermissions`. The server sends the section only to agents advertising both
   `device.configApply` and `app.runtimePermissions`; older agents continue to receive the rest of their configuration.
 - Add result keys such as `appPermissions.<package>.<permission>` to the existing outcome map. Failed release/apply
   results remain retryable through `ConfigStateStore`, just like current policy release failures.
 
-This is additive-only: older agents receive a capability-specific document with the section removed and a distinct
-revision, so neither side can claim those rules were applied. Agents that support the section report requested
-dangerous runtime permissions for installed packages in telemetry. That inventory is a device/API-specific
-declaration list, not a claim that Android has currently granted each permission.
+This is additive-only (protocol 1.6): older agents receive a capability-specific document with the section removed
+and a distinct revision. The console compares such a device with that revision when the configuration has no rules
+(it is in sync), and with the full document's when it has some, so a device that can't enforce the rules never shows
+as in sync. A device-reported permission inventory is future work.
 
 ## Persistence And Server Shape
 
@@ -100,11 +102,14 @@ state.
 
 Configuration save validation must:
 
-1. reject duplicate rules and unknown states;
-2. require the application to remain assigned with install action;
-3. remove rules when that application is removed from the configuration; and
-4. preserve the rules when a save leaves the new collection absent, following the established `extensions`/
+1. reject duplicate rules, unknown states, names other than `android.permission.*` (at most 128 characters) and more
+   than 64 rules for one app;
+2. drop the rules of an application the save leaves out or doesn't install (another path, such as the Applications
+   page, can change a configuration's apps under the editor, so refusing would make it unsaveable);
+3. preserve the rules when a save leaves the collection absent, following the established `extensions`/
    `applicationSettings` compatibility rules until every console version sends it.
+
+Copying a configuration copies its rules.
 
 The console belongs in an application's row or detail panel in the configuration editor, not in the global Security
 section. The device Apps tab can display the last reported declared permissions and per-key apply outcome, but it
@@ -122,21 +127,20 @@ must distinguish *requested*, *configured*, and *Android currently granted* stat
 
 ## Verification
 
-1. Kotlin unit and protocol tests cover Device Owner/API guards, requested/unrequested permissions, Grant/Deny/Default,
-   release behavior, absent-section compatibility, strict decoding, capability advertisement, and result keys.
-2. Java tests cover configuration validation, desired-state canonicalization/revision, capability-gated check-in, and
-   persistence cleanup.
+1. Kotlin unit and protocol tests cover Grant/Deny/Default, release behavior, absent-section compatibility, decoding,
+   unknown states, not-installed retry and the apply after install.
+2. Java tests cover save validation and pruning, copying, the capability-specific document and revision, and the
+   console's sync revision for older agents.
 3. Console tests cover candidate filtering and, specifically, keep the expandable disclosure inside its app row rather
    than creating a separate table row. Typecheck and production builds pass.
 4. Live S8 validation passed for Samsung Camera: Deny blocked Camera as administrator, Grant restored use, and Default
    released the explicit MDMesh restriction. A representative media/files Deny → Default validation on File Manager
    also passed; app-specific handling after denial may return directly to launcher rather than opening Settings.
-5. Kotlin coverage verifies old-server omission, explicit-empty release, reset clearing, and retryable not-installed
-   packages. Java coverage verifies capability-specific desired documents/revisions. The additive device inventory
-   has Android unit coverage through telemetry assembly; it still needs a live current-Android device check.
+5. Still to check on a device: the apply right after a new app's install, and Android 12+ behavior for sensor
+   permissions (location, camera, microphone, body sensors).
 
 ## Decision
 
-Do not implement this as a small follow-up to Camera policy. It is a separate multi-plane feature with a new
-structured desired-state section, database persistence, capability/result behavior, and release semantics. Start
-only after the Default-versus-Ask product decision is accepted.
+Implemented as a separate multi-plane feature, not a follow-up to the Camera policy: a structured desired-state
+section, its own table, a capability token and per-rule outcomes. Default means the device-wide auto-grant baseline,
+not Ask; Ask stays deferred (above).

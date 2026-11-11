@@ -12,6 +12,9 @@
 #        ./setup.sh --native   # hand off to the native (non-Docker) installer
 #        ./setup.sh --allow-downgrade  # registry IMAGE_OWNER only: build and run a checkout older than the running
 #                              # release, or one with no readable release tag (both refused by default)
+#        ./setup.sh --update   # move this clone to the newest signed release (fetches the tags, verifies the
+#                              # release's signed manifest, checks out its tag), then run as usual; with
+#                              # --native, the native installer. Combine with the other options.
 #
 # A fresh setup's questions can be answered in advance with environment variables (MDMESH_MODE, MDMESH_HOST,
 # MDMESH_TUNNEL_TOKEN or MDMESH_ACME_EMAIL) or an answers file (MDMESH_ANSWERS); MDMESH_NONINTERACTIVE=1 never asks,
@@ -48,16 +51,122 @@ setenv() {
   if grep -q "^$1=" .env 2>/dev/null; then sed -i "s#^$1=.*#$1=$v#" .env; else printf '%s=%s\n' "$1" "$2" >> .env; fi
 }
 
-RESET=0; ALLOW_DOWNGRADE=0
-NATIVE=0; NATIVE_ARGS=()
+RESET=0; ALLOW_DOWNGRADE=0; UPDATE=0
+NATIVE=0; NATIVE_ARGS=(); PASS_ARGS=()
 for a in "$@"; do
+  [ "$a" = --update ] || PASS_ARGS+=("$a")
   case "$a" in
+    --update) UPDATE=1 ;;
     --native) NATIVE=1 ;;
     --reset)  RESET=1 ;;
     --allow-downgrade) ALLOW_DOWNGRADE=1 ;;   # Docker path only: the native installer has no apply to protect
     *)        NATIVE_ARGS+=("$a") ;;   # forwarded to the native installer (-y, -v)
   esac
 done
+# --update: move this clone to the newest signed release, then run the release's own setup.sh with the other options.
+# Release tags are vX.Y.Z (stable; pre-releases are skipped). The newest one is trusted only through its signed
+# manifest, checked as the quick start checks it (quickstart.sh's verification functions, with this clone's
+# release/minisign.pub): the signature, its version (the tag), and its commit (or, for a release from before manifests
+# recorded it, the SHA-256 of the files it lists) against what the tag points to. No signature, no update. The clone is
+# then on the tag, a detached HEAD: updates come from --update, never from `git pull`.
+update_to_release() {
+  local repo tag t best='' cur tgt d rc=0 f want got mcommit dry=${MDMESH_DRY_RUN:-0}
+  if ! command -v git >/dev/null || ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    err "--update needs a git clone: git clone https://github.com/MDMesh-app/MDMesh.git"; exit 1
+  fi
+  if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+    err "This clone has local changes (see git status). --update checks out a release tag, which would mix them in or"
+    err "fail: commit or stash them (git stash), then re-run. Nothing was changed."
+    exit 1
+  fi
+  repo=${GITHUB_REPO:-$(git remote get-url origin 2>/dev/null | sed -E 's#(git@|https?://)[^/:]+[/:]##; s#\.git$##' || true)}
+  case "$repo" in */*/*|*[!${_MDM_ALNUM}._/-]*|''|/*|*/) err "--update can't tell the GitHub repo of this clone (origin: $(git remote get-url origin 2>/dev/null || echo none)): set GITHUB_REPO=owner/name."; exit 1 ;; esac
+  case "$repo" in */*) ;; *) err "--update can't tell the GitHub repo of this clone: set GITHUB_REPO=owner/name."; exit 1 ;; esac
+  say "Fetching release tags from origin…"
+  git fetch -q --tags origin || { err "Could not fetch the tags from origin (git fetch --tags origin). Nothing was changed."; exit 1; }
+  while IFS= read -r t; do
+    [[ "$t" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
+    if [ -z "$best" ] || mdm_version_gt "${t#v}" "${best#v}"; then best=$t; fi
+  done < <(git tag -l 'v*')
+  [ -n "$best" ] || { err "No release tag (vX.Y.Z) in this clone's origin. Nothing was changed."; exit 1; }
+  tag=$best
+  tgt=$(git rev-parse --verify -q "${tag}^{commit}") || { err "Could not resolve ${tag}. Nothing was changed."; exit 1; }
+  say "Verifying release ${tag} of ${repo}…"
+  # quickstart.sh's own verification functions (scripts/release-manifest-check.sh runs them the same way).
+  # shellcheck source=/dev/null
+  . <(sed -n '/^# >>> release verification >>>$/,/^# <<< release verification <<<$/p' quickstart.sh)
+  command -v mdm_verify_manifest >/dev/null || { err "quickstart.sh in this clone has no release verification functions."; exit 1; }
+  d=$(mktemp -d)
+  if ! curl -fsSL -m 60 "https://github.com/${repo}/releases/download/${tag}/manifest.json" -o "$d/manifest.json" \
+     || ! curl -fsSL -m 60 "https://github.com/${repo}/releases/download/${tag}/manifest.json.minisig" -o "$d/manifest.json.minisig"; then
+    rm -f -- "$d/manifest.json" "$d/manifest.json.minisig"; rmdir -- "$d"
+    err "Could not download the signed manifest of ${tag} from github.com/${repo} (manifest.json and manifest.json.minisig)."
+    err "--update installs only a signed release. Nothing was changed."
+    exit 1
+  fi
+  mdm_verify_manifest "$(sed -n 2p release/minisign.pub)" "$d/manifest.json" "$d/manifest.json.minisig" || rc=$?
+  if [ "$rc" = 2 ]; then
+    err "Checking the release signature needs OpenSSL 3.0+ or minisign. Install minisign and re-run. Nothing was changed."
+  elif [ "$rc" != 0 ]; then
+    err "The manifest of ${tag} is not signed by the release key in release/minisign.pub (reason above). Nothing was changed."
+  elif [ "$(mdm_manifest_field "$d/manifest.json" version '[0-9A-Za-z.+-]+' || true)" != "${tag#v}" ]; then
+    err "The signed manifest is not the one of ${tag} (its version differs). Nothing was changed."; rc=1
+  else
+    # Bind the signed manifest to the code the tag points to.
+    mcommit=$(mdm_manifest_field "$d/manifest.json" commit '[0123456789abcdef]{40}' || true)
+    if [ -n "$mcommit" ]; then
+      [ "$mcommit" = "$tgt" ] || { err "${tag} points to ${tgt}, but its signed manifest names commit ${mcommit}. Nothing was changed."; rc=1; }
+    elif grep -q '^  "files": {$' "$d/manifest.json"; then
+      for f in $MDM_QUICKSTART_FILES; do
+        want=$(mdm_manifest_field "$d/manifest.json" "$f" "$MDM_SHA256_ERE" || true)
+        got=$(git show "${tag}:${f}" 2>/dev/null | openssl dgst -sha256 -r | cut -d' ' -f1)
+        if [ -z "$want" ] || [ "$got" != "$want" ]; then
+          err "${f} at ${tag} does not match the signed manifest. Nothing was changed."; rc=1; break
+        fi
+      done
+    elif mdm_legacy_file_sha "${tag#v}" install/lib/db.sh >/dev/null; then
+      # v0.4.0 predates "files" in the manifest: the hashes quickstart.sh records for it.
+      for f in $MDM_QUICKSTART_FILES; do
+        want=$(mdm_legacy_file_sha "${tag#v}" "$f" || true)
+        got=$(git show "${tag}:${f}" 2>/dev/null | openssl dgst -sha256 -r | cut -d' ' -f1)
+        if [ -z "$want" ] || [ "$got" != "$want" ]; then
+          err "${f} at ${tag} does not match the signed release. Nothing was changed."; rc=1; break
+        fi
+      done
+    else
+      err "The signed manifest of ${tag} records neither its commit nor its files, so the tag can't be checked. Nothing was changed."; rc=1
+    fi
+  fi
+  rm -f -- "$d/manifest.json" "$d/manifest.json.minisig"; rmdir -- "$d"
+  [ "$rc" = 0 ] || exit 1
+  cur=$(git rev-parse HEAD)
+  if [ "$cur" = "$tgt" ]; then
+    say "This clone is already on ${tag}, the newest signed release."
+  elif ! git merge-base --is-ancestor "$cur" "$tgt"; then
+    # HEAD has commits the release doesn't (main ahead of the release, or a newer local tag): checking out the release
+    # runs older code. Fine on a clone that installed nothing yet; over an install, only with --allow-downgrade.
+    if [ "$ALLOW_DOWNGRADE" != 1 ] && { [ -f .env ] || { [ "$NATIVE" = 1 ] && [ -e /opt/mdmesh-tc/conf/server.xml ]; }; }; then
+      err "This clone is at $(git describe --tags --always 2>/dev/null || echo "$cur"), which has commits the newest release ${tag} doesn't"
+      err "(for example main, ahead of the release). Checking out ${tag} would run older code over this install. Wait for the"
+      err "next release and run --update then, or re-run with --allow-downgrade to go to ${tag} now. Nothing was changed."
+      exit 1
+    fi
+  fi
+  if [ "$dry" = 1 ]; then
+    say "Dry run (MDMESH_DRY_RUN=1): ${tag} verifies. A run would check it out and then run its ./setup.sh ${PASS_ARGS[*]}"
+    exit 0
+  fi
+  if [ "$cur" != "$tgt" ]; then
+    git -c advice.detachedHead=false checkout -q --detach "$tgt" || { err "git checkout ${tag} failed (above). Nothing else was changed."; exit 1; }
+    say "Checked out ${tag} (signed release, verified)."
+  fi
+}
+if [ "$UPDATE" = 1 ]; then
+  update_to_release
+  # The release's own setup.sh, read afresh from the checked-out tag.
+  exec ./setup.sh "${PASS_ARGS[@]}"
+fi
+
 # Hand off to the native (non-Docker) installer, passing the remaining flags through so
 # `./setup.sh --native -y` really is unattended.
 if [ "$NATIVE" = 1 ]; then exec ./install/install-native.sh "${NATIVE_ARGS[@]}"; fi
@@ -141,7 +250,7 @@ version_preflight() {  # version_preflight <running>
     exit 1
   fi
   if mdm_version_gt "$1" "$REPO_VERSION"; then
-    err "Refusing to build older code over this stack: running $1, checkout is ${REPO_VERSION} — git pull first, or re-run with --allow-downgrade."
+    err "Refusing to build older code over this stack: running $1, checkout is ${REPO_VERSION} — run ./setup.sh --update, or re-run with --allow-downgrade."
     err "(--allow-downgrade builds and runs this checkout's code against the current database.)"
     exit 1
   fi
@@ -258,7 +367,7 @@ if [ -z "${GITHUB_REPO:-}" ]; then
 fi
 
 # Source builds (IMAGE_OWNER=local) cannot be updated by pulling images — keep the supervisor's one-click apply off
-# (updates = git pull && ./setup.sh). A registry owner (IMAGE_OWNER=<ghcr owner>) keeps it on. version_preflight above
+# (updates = ./setup.sh --update). A registry owner (IMAGE_OWNER=<ghcr owner>) keeps it on. version_preflight above
 # derived APPLY_SUPPORTED from the IMAGE_OWNER compose sees: the sourced .env on a re-run (quotes stripped, key missing →
 # unset) or the caller's env on a fresh .env (which the heredoc above wrote as ${IMAGE_OWNER:-local}) — same `:-local`
 # default as docker-compose.yml.
@@ -271,7 +380,7 @@ export APPLY_SUPPORTED
 # checkout, so CURRENT_VERSION (which the supervisor compares with GitHub's latest release; a stale or placeholder 0.0.0
 # shows a false "Update available") and the image tags SERVER/WEB/SUPERVISOR_VERSION (compose tags each `build:` result
 # with them) all follow the checkout's latest release tag (install/lib/version.sh, the native installer's rule) on EVERY
-# run, whoever owns the images. Without this a `git pull && ./setup.sh` builds new code into images named after an
+# run, whoever owns the images. Without this an update (./setup.sh --update) builds new code into images named after an
 # older version, and on a registry owner a re-run would build old code under apply.sh's newer release tag.
 # version_preflight (above) has already refused an older checkout, or an untagged one, on a registry owner unless
 # --allow-downgrade.

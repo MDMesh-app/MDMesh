@@ -89,6 +89,9 @@ node -e '
   if (t.version !== "9.8.7" || t.serverImage !== `ghcr.io/${o}/mdmesh-server:9.8.7` || t.webImage !== `ghcr.io/${o}/mdmesh-web:9.8.7`) process.exit(2);
   if (!apkAsset({ assets: [{ name: "agent.apk", browser_download_url: "https://x/agent.apk" }] }, m)) process.exit(3);
 ' "$ROOT" "$T/manifest.json" "$O" "$D1" "$D2" "$D3" || fail "supervisor/lib.js does not read the manifest as expected"
+# What setup.sh --update reads: the commit, which is the checkout's.
+[ "$(mdm_manifest_field "$T/manifest.json" commit '[0123456789abcdef]{40}' || true)" = "$(git -C "$ROOT" rev-parse HEAD)" ] \
+  || fail "the manifest's commit is not the checkout's HEAD, or setup.sh --update can't read it"
 # What install/lib/release.sh reads (setup.sh and the native installer).
 python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); a=m["components"]["apk"]; assert m["version"]=="9.8.7" and a["sha256"] and a["signatureChecksum"]=="CKSUM"' "$T/manifest.json" \
   || fail "the installers' fields changed"

@@ -49,7 +49,7 @@ jobs:
             edge: docker/Caddyfile, docker/web.Dockerfile, docker/web-entrypoint.sh, docker/edge-peers.sh, web/**, CHANGELOG.md, .dockerignore, docker-compose*.yml, docker/dev.env, scripts/edge-check.sh, supervisor/apply.sh
             # The installer scripts, and the signed manifest they and the supervisor read. Only the edge entry's cheap
             # quickstart.sh checks run on these, not its image work.
-            installers: quickstart.sh, setup.sh, install/**, release/**, supervisor/lib.js, scripts/release-manifest-check.sh, tests/installer-answers/**
+            installers: quickstart.sh, setup.sh, install/**, release/**, supervisor/lib.js, scripts/release-manifest-check.sh, tests/installer-answers/**, tests/setup-update/**
 
   build:
     name: ${{ matrix.name }}
@@ -176,6 +176,12 @@ jobs:
         run: |
           command -v minisign >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq minisign; }
           scripts/release-manifest-check.sh
+      # `./setup.sh --update` (source and native installs move to the newest signed release tag) against a fixture
+      # origin with releases signed by a throwaway key: unsigned, foreign-key, replayed, retargeted or dirty is refused.
+      # Clones in a temporary directory, curl and docker stubbed: nothing is installed. Needs minisign (step above).
+      - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).installers)
+        name: setup.sh --update (signed release tags)
+        run: tests/setup-update/run.sh
       - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).edge)
         name: Caddyfile modes + compose overlays
         run: scripts/edge-check.sh

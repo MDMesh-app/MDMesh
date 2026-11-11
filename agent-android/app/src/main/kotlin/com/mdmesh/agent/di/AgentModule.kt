@@ -87,6 +87,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import dagger.multibindings.IntoSet
 import javax.inject.Singleton
+import kotlinx.coroutines.Dispatchers
 
 /**
  * Assembles the device-specific capability graph and binds it to the `:core`
@@ -288,6 +289,7 @@ object AgentModule {
             journal = SharedPrefsExitJournal(context),
             // An exit cut off midway is never finished while the configuration says kiosk on.
             desiredKioskOn = { configStore.configuredKiosk() != null },
+            io = Dispatchers.IO,
             isLockTaskActive = { kiosk.isLocked(context) },
         )
     }

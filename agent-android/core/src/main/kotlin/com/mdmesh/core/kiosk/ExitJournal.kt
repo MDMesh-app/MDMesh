@@ -63,12 +63,12 @@ interface ExitJournal {
 
         /**
          * The decision, pure: [saved] is the kiosk saved now, [configuredOn] whether the server's configuration
-         * (the desired state) sets a kiosk. Anything unclear stays, or goes back, in kiosk.
+         * (the desired state) sets a kiosk, read only when it matters. Anything unclear stays, or goes back, in kiosk.
          */
-        fun decide(pending: Pending?, saved: KioskApplyPayload?, configuredOn: Boolean): Resume = when {
+        fun decide(pending: Pending?, saved: KioskApplyPayload?, configuredOn: () -> Boolean): Resume = when {
             pending == null -> Resume.NONE
             !pending.kiosk.matches(HEX) -> Resume.DISCARD
-            configuredOn ->
+            configuredOn() ->
                 if (saved != null && pending.kiosk == fingerprint(saved)) Resume.ROLL_BACK else Resume.DISCARD
             saved == null -> Resume.FINISH // got past clearing the state: only HOME is left to release
             pending.kiosk == fingerprint(saved) -> Resume.FINISH

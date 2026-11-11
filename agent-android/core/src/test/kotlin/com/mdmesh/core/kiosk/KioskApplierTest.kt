@@ -8,6 +8,7 @@ import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.proto.KioskApplyPayload
 import com.mdmesh.proto.KioskFeaturesDto
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -432,5 +433,42 @@ class KioskApplierTest {
         assertFalse(a.resumeInterruptedExit())
         assertEquals(kioskA, store.load())
         assertFalse(c.exited)
+    }
+
+    // --- Review 3 (S2, N1): off the main thread, nothing read or written when nothing is pending ---
+
+    /** S2: nothing pending, so the start doesn't read the configuration at all. */
+    @Test fun `with nothing pending the configuration isn't read`() = runTest {
+        var reads = 0
+        val store = InMemoryKioskStateStore(); store.save(kioskA)
+        val a = KioskApplier(FakeController(KioskResult.Ok), store, FakeHome(), home, journal = MemJournal(),
+            desiredKioskOn = { reads++; true }) { false }
+        assertFalse(a.resumeInterruptedExit())
+        assertEquals(0, reads)
+    }
+
+    /** N1: an entry writes the journal only to clear an entry that is there. */
+    @Test fun `entering with nothing pending doesn't write the journal`() = runTest {
+        var ends = 0
+        val j = object : ExitJournal by MemJournal() { override fun end() { ends++ } }
+        applier(store = InMemoryKioskStateStore(), j = j, configuredOn = false).enter(kioskA)
+        assertEquals(0, ends)
+    }
+
+    /** S2: the resume (journal and configuration reads, commits) runs on the injected I/O dispatcher. */
+    @Test fun `a start's resume runs on the I-O dispatcher`() = runTest {
+        val pool = java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "journal-io") }
+        val io = pool.asCoroutineDispatcher()
+        var readOn: String? = null
+        val j = object : ExitJournal by MemJournal() {
+            override fun pending(): ExitJournal.Pending? { readOn = Thread.currentThread().name; return null }
+        }
+        try {
+            KioskApplier(FakeController(KioskResult.Ok), InMemoryKioskStateStore(), FakeHome(), home, journal = j,
+                io = io) { false }.resumeInterruptedExit()
+        } finally {
+            pool.shutdown()
+        }
+        assertEquals("journal-io", readOn)
     }
 }

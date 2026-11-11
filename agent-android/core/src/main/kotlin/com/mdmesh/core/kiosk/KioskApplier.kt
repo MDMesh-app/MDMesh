@@ -10,6 +10,9 @@ import com.mdmesh.kiosk.safeModeBlocked
 import com.mdmesh.proto.KioskApplyPayload
 import android.util.Log
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.withLock
 
 /**
@@ -48,6 +51,11 @@ class KioskApplier(
      * against it. The default is for tests: "on", so a resume fails closed.
      */
     private val desiredKioskOn: () -> Boolean = { true },
+    /**
+     * Where the journal's disk I/O (and a start's resume) runs: Dispatchers.IO in production (AgentModule), never the
+     * main thread. The default runs it in place, for tests that drive the applier on a test scheduler.
+     */
+    private val io: CoroutineDispatcher = Dispatchers.Unconfined,
     /** Whether lock task is active now ([KioskController.isLocked]). Last, so a trailing lambda can only be this. */
     private val isLockTaskActive: () -> Boolean,
 ) {
@@ -59,8 +67,9 @@ class KioskApplier(
 
     /** [reassert]: skip the "already in this kiosk" short-circuit (a relock after a cut-off exit). */
     private suspend fun enterLocked(p: KioskApplyPayload, reassert: Boolean = false): KioskResult {
-        // Entering supersedes any exit a process death cut off: it must never be finished against this kiosk.
-        journal.end()
+        // Entering supersedes any exit a process death cut off: it must never be finished against this kiosk. Only an
+        // entry that is there is cleared: no disk write on every entry.
+        withContext(io) { if (journal.pending() != null) journal.end() }
         // Already in this kiosk: no re-entry or relaunch, but re-assert the volume lock and the Safe Mode block (either
         // may have failed before).
         val current = store.load()
@@ -139,10 +148,11 @@ class KioskApplier(
     }
 
     private suspend fun exitLocked(handBackHome: Boolean, force: Boolean): KioskResult {
-        journal.begin(ExitJournal.Pending(handBackHome, force, ExitJournal.fingerprint(store.load())))
+        val entry = ExitJournal.Pending(handBackHome, force, ExitJournal.fingerprint(store.load()))
+        withContext(io) { journal.begin(entry) }
         val r = kiosk.exit()
         if (r != KioskResult.Ok && !force) {
-            journal.end() // refused: nothing changed, nothing to finish later
+            withContext(io) { journal.end() } // refused: nothing changed, nothing to finish later
             return r
         }
         kiosk.setVolumeLocked(false) // best effort: lift the kiosk's volume lock (and its mute)
@@ -152,7 +162,7 @@ class KioskApplier(
             home.setClaimEnabled(false)
             home.showOemHome()
         }
-        journal.end()
+        withContext(io) { journal.end() }
         return r
     }
 
@@ -163,10 +173,15 @@ class KioskApplier(
      * an entry for another kiosk (one entered since) or one that can't be read is dropped. Fails closed: when unsure,
      * the device stays (or goes back) in kiosk. True when an exit was finished.
      */
-    suspend fun resumeInterruptedExit(): Boolean = mutex.withLock {
-        val pending = journal.pending()
+    suspend fun resumeInterruptedExit(): Boolean = withContext(io) {
+        mutex.withLock { resumeLocked() }
+    }
+
+    /** Off the main thread ([io]); reads the configuration only when an entry is there. */
+    private suspend fun resumeLocked(): Boolean {
+        val pending = journal.pending() ?: return false
         val saved = store.load()
-        when (ExitJournal.decide(pending, saved, desiredKioskOn())) {
+        return when (ExitJournal.decide(pending, saved, desiredKioskOn)) {
             ExitJournal.Resume.NONE -> false
             ExitJournal.Resume.FINISH -> {
                 val p = checkNotNull(pending)

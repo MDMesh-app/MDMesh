@@ -8,6 +8,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -64,13 +65,48 @@ class EnrollmentManagerTest {
     }
 
     @Test
-    fun `an unexpected failure is not dressed up as an enrollment problem`() = runTest {
-        val api = FakeMdmApi().apply { enrollThrows = IllegalStateException("bug") }
+    fun `an unexpected failure is a retryable enrollment failure with a generic message`() = runTest {
+        val bug = IllegalStateException("bug")
+        val api = FakeMdmApi().apply { enrollThrows = bug }
         try {
             manager(FakeIdentity(), api).ensureEnrolled()
-            fail("expected IllegalStateException")
-        } catch (e: IllegalStateException) {
-            assertEquals("bug", e.message)
+            fail("expected EnrollmentException")
+        } catch (e: EnrollmentException) {
+            assertEquals(
+                "Enrollment didn't go through (IllegalStateException: bug). Trying again automatically.",
+                e.message,
+            )
+            assertTrue("the cause is kept for the log", e.cause === bug)
+            listOf("token.used", "token.invalid", "token.expired", "enrollment.disabled").forEach {
+                assertFalse("retryable: $it", e.message!!.contains(it))
+            }
+        }
+    }
+
+    @Test
+    fun `a failure outside the request (reading capabilities) is worded the same way`() = runTest {
+        val broken = object : com.mdmesh.core.capability.CapabilitySource {
+            override fun matrix(deviceId: String) = throw IllegalArgumentException("no matrix")
+        }
+        try {
+            EnrollmentManager(FakeMdmApi(), FakeIdentity(), FakeTokenProvider("tok"), broken, NoopEventSink)
+                .ensureEnrolled()
+            fail("expected EnrollmentException")
+        } catch (e: EnrollmentException) {
+            assertTrue(e.message, e.message!!.startsWith("Enrollment didn't go through (IllegalArgumentException"))
+        }
+    }
+
+    @Test
+    fun `cancellation is never turned into an enrollment failure`() = runTest {
+        val api = FakeMdmApi().apply { enrollThrows = kotlinx.coroutines.CancellationException("stopped") }
+        try {
+            manager(FakeIdentity(), api).ensureEnrolled()
+            fail("expected CancellationException")
+        } catch (e: EnrollmentException) {
+            fail("cancellation was wrapped: ${e.message}")
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            assertEquals("stopped", e.message)
         }
     }
 

@@ -9,13 +9,12 @@ import com.mdmesh.core.telemetry.EventSink
 import com.mdmesh.proto.AgentEnrollRequest
 import com.mdmesh.proto.AgentEnrollResponse
 import com.mdmesh.proto.EventType
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.SerializationException
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import retrofit2.HttpException
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -51,7 +50,15 @@ class EnrollmentManager @Inject constructor(
         }
     }
 
-    private suspend fun enroll(): String {
+    /**
+     * The enrollment boundary: every failure leaves here as an [EnrollmentException] whose message is for the person
+     * holding the device (the agent's screen shows it while it isn't enrolled) and which the callers log and retry; an
+     * unexpected one reads "Enrollment didn't go through (…). Trying again automatically." Cancellation and VM errors
+     * pass through unchanged.
+     */
+    private suspend fun enroll(): String = runCatching { enrollOnce() }.getOrElse { throw asEnrollmentFailure(it) }
+
+    private suspend fun enrollOnce(): String {
         val token = tokenProvider.token()?.takeIf { it.isNotBlank() }
             ?: throw EnrollmentException(EnrollmentFailure.NO_CODE)
         val data = post(token, storedAttempt(token))
@@ -79,7 +86,7 @@ class EnrollmentManager @Inject constructor(
         null
     }
 
-    /** POSTs the enrollment; the server's answer, or an [EnrollmentException] that says why there is none. */
+    /** POSTs the enrollment; the server's answer (a refusal as an [EnrollmentException] naming its key). */
     private suspend fun post(token: String, attempt: String?): AgentEnrollResponse {
         // deviceId is unknown pre-enrollment; the server ignores it and issues one.
         val matrix = capabilitySource.matrix(deviceId = "")
@@ -91,7 +98,7 @@ class EnrollmentManager @Inject constructor(
             hardwareId = runCatching { environment.hardwareIdSource.get() }.getOrNull(),
             enrollAttempt = attempt,
         )
-        val response = runCatching { api.enroll(request) }.getOrElse { throw asEnrollmentFailure(it) }
+        val response = api.enroll(request)
         val data = response.data
         if (!response.isOk || data == null) {
             throw EnrollmentException(EnrollmentFailure.forServer(response.message))
@@ -100,14 +107,13 @@ class EnrollmentManager @Inject constructor(
     }
 
     /**
-     * Network, TLS, HTTP and parse failures become an [EnrollmentException] in words the person holding the device can
-     * act on (it's what the agent's screen shows while it isn't enrolled); the caller retries them. Anything else,
-     * cancellation first of all, passes through unchanged.
+     * A failure in words the person holding the device can act on ([EnrollmentFailure]: network, TLS, HTTP and parse
+     * failures are named, anything else is "didn't go through"); the callers retry it. An [EnrollmentException] (a
+     * server refusal, no code) is already worded; cancellation and VM errors pass through unchanged.
      */
     private fun asEnrollmentFailure(t: Throwable): Throwable = when (t) {
-        is IOException, is HttpException, is SerializationException ->
-            EnrollmentException(EnrollmentFailure.forException(t, host()), t)
-        else -> t
+        is CancellationException, is Error, is EnrollmentException -> t
+        else -> EnrollmentException(EnrollmentFailure.forException(t, host()), t)
     }
 
     /** The server's host for messages; the address itself when it isn't one. */

@@ -20,7 +20,14 @@ Upgrading
   supervisor, and one from before 0.5.0 keeps applying updates by tag. From source, or with `SUPERVISOR_VERSION` set by
   hand: [UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050).
 
+Heads-up
+- Native installs: `REPLACE_DATA` must be `yes` or `no`, and `ASSUME_YES` `1` or `0`. Any other value now stops the
+  installer before it changes anything, where it used to mean Keep or ask.
+
 New
+- Installers: every question can be answered in advance, with `MDMESH_*` variables or an answers file, and
+  `MDMESH_NONINTERACTIVE=1` runs with no questions at all. `MDMESH_DRY_RUN=1` checks the answers and shows what a run
+  would do. See [DEPLOY](https://github.com/MDMesh-app/MDMesh/blob/main/DEPLOY.md#answering-the-questions-in-advance).
 - Configurations can allow or block the camera. Block covers every app, kiosk apps too. Not managed after Block
   gives the camera back on agent 0.5.0; on older agents, choose Allow to lift a block (thanks @letternumber).
 - Kiosk: staff can tap Return to kiosk in the MDMesh Agent after leaving with the exit PIN, even offline. It shows
@@ -66,6 +73,8 @@ Fixes
   (thanks @letternumber).
 
 Under the hood
+- `install/options.json` lists the installers' questions and answers, for the website's install guide. CI checks it
+  against the scripts with dry runs.
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
 
 ## v0.4.0 — 2026-11-03

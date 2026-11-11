@@ -105,13 +105,14 @@ Both downloads cover x86_64 and arm64. On other architectures, install both runt
 The installer asks you to type `yes`, then asks for the base URL and the HTTP port. `-y` skips these
 questions (and answers Keep on an upgrade), and `-v` shows the full output:
 
-- **Base URL:** set `BASE_URL=https://mdm.example.com` to answer it in advance. `-y` requires it on a fresh
+- **Base URL:** set `MDMESH_BASE_URL=https://mdm.example.com` to answer it in advance. `-y` requires it on a fresh
   install; re-runs keep the current one unless you set it ([Upgrading](docs/UPGRADING.md#native-installs)).
-- **Port:** set `HTTP_PORT=9090` to answer it in advance. The default is the port the install already uses (8080 on a
-  fresh install), and `-y` takes that default.
+- **Port:** set `MDMESH_HTTP_PORT=9090` to answer it in advance. The default is the port the install already uses
+  (8080 on a fresh install), and `-y` takes that default.
 
 `--reset` and `--allow-downgrade` are Docker-only, and `--native` ignores them. To wipe a native install, choose
-Erase or set `REPLACE_DATA=yes`. In Docker mode, setup.sh rejects options it doesn't know.
+Erase or set `MDMESH_REPLACE_DATA=yes`. In Docker mode, setup.sh rejects options it doesn't know. The older names
+`BASE_URL`, `HTTP_PORT`, `REPLACE_DATA` and `ASSUME_YES` still work ([all the answers](#answering-the-questions-in-advance)).
 
 Pass other settings, such as SMTP and `LEGACY_DEVICE_API`, in the installer's environment
 ([configuration reference](docs/OPERATIONS.md#configuration-reference)).
@@ -134,6 +135,56 @@ The installer doesn't open ports 80/443, so put your own TLS proxy in front. If 
 the installer didn't start, it stops rather than kill that process.
 
 To upgrade, `git pull` and run the same command again ([Upgrading](docs/UPGRADING.md#native-installs)).
+
+## Answering the questions in advance
+
+Every question the installers ask can be answered before they run, with an environment variable or a line in an
+answers file. A question with an answer isn't asked; one without is asked as usual. Each answer is checked with the
+same rule as the question, and a wrong one stops the installer before it changes anything. The tunnel token is never
+printed.
+
+| Variable | Method | Answer | If not given |
+|---|---|---|---|
+| `MDMESH_MODE` | A, B | `tunnel` (Cloudflare Tunnel) or `domain` (your own domain); `1` and `2` work too | asked |
+| `MDMESH_HOST` | A, B | the public hostname only, e.g. `mdm.example.com` (no `https://`), optionally `:port` | asked |
+| `MDMESH_TUNNEL_TOKEN` | A, B | the Cloudflare Tunnel token (tunnel mode) | asked |
+| `MDMESH_ACME_EMAIL` | A, B | the email for Let's Encrypt (domain mode); empty for none | asked |
+| `MDMESH_REPO` | A | the GitHub repo to install from, `owner/name` | asked, default `MDMesh-app/MDMesh` |
+| `MDMESH_IMAGE_OWNER` | A | the GHCR owner of the images, lowercase | asked, default `mdmesh-app` |
+| `MDMESH_ASSUME_YES` | C | `1`: the same as `-y` | you're asked to type `yes` |
+| `MDMESH_BASE_URL` | C | the public base URL, `https://…` (`http://` works too) | asked; a re-run keeps the current one |
+| `MDMESH_HTTP_PORT` | C | the HTTP port, 1-65535 | asked, default 8080 or the current port |
+| `MDMESH_REPLACE_DATA` | C | `no` (Keep) or `yes` (Erase), when the database holds data | asked; `-y` keeps the data |
+
+setup.sh (B) asks only when it writes a new `.env`; a re-run reuses its `.env` and ignores these answers.
+
+- `MDMESH_ANSWERS=/full/path/answers.env` reads answers from a file of `KEY=VALUE` lines (`#` comments allowed;
+  never run as a script). A variable set in the environment wins over the file. Keep the file mode 600 when it holds
+  the tunnel token.
+- `MDMESH_NONINTERACTIVE=1` never asks: a missing answer with a default takes it, and any other stops the installer,
+  naming its variable. Use it whenever there is no terminal to answer on. The native installer also needs
+  `MDMESH_ASSUME_YES=1` (or `-y`).
+- `MDMESH_DRY_RUN=1` checks the answers, prints what a run would use and ask, and exits. It needs no root, Docker or
+  network, and changes nothing.
+
+A quick start on your own domain, with no questions: set these, then run the Option A command.
+
+```bash
+export MDMESH_MODE=domain MDMESH_HOST=mdm.example.com MDMESH_ACME_EMAIL=ops@example.com MDMESH_NONINTERACTIVE=1
+```
+
+With Cloudflare Tunnel, put the token in an answers file rather than on the command line:
+
+```bash
+umask 077
+printf '%s\n' MDMESH_MODE=tunnel MDMESH_HOST=mdm.example.com 'MDMESH_TUNNEL_TOKEN=<your token>' > answers.env
+export MDMESH_ANSWERS="$PWD/answers.env" MDMESH_NONINTERACTIVE=1
+```
+
+Native, from a clone: `sudo MDMESH_ASSUME_YES=1 MDMESH_BASE_URL=https://mdm.example.com ./setup.sh --native`.
+
+[`install/options.json`](install/options.json) lists each answer's variable, rule, default and question. The install
+guide on the website reads it from the release, and CI checks it against the installers.
 
 ## First login and enrolling devices
 

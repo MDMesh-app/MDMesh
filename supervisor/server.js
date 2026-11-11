@@ -7,7 +7,7 @@ const os = require('os');
 const cp = require('child_process');
 const path = require('path');
 const crypto = require('crypto');
-const { pickRelease, shapeStatus, imageTags, isTerminal, apkAsset, sha256Matches, recoveryPage, isPublishTemp, fetchAsset,
+const { pickRelease, shapeStatus, imageTags, imagePins, isTerminal, apkAsset, sha256Matches, recoveryPage, isPublishTemp, fetchAsset,
   envValue, applyLine, applyRefusal, deploymentAdminVerdict, legacyDeploymentAdmin } = require('./lib');
 
 const PORT = +(process.env.SUPERVISOR_PORT || 9000);
@@ -42,6 +42,11 @@ function readCurrentVersion(fallback = process.env.CURRENT_VERSION || '0.0.0') {
   catch (e) { console.log('[version] cannot read', PROJECT_ENV + ':', String((e && e.code) || e), '- using', fallback); return fallback; }
 }
 let currentVersion = readCurrentVersion();
+/** IMAGE_OWNER from the project .env: the GHCR owner compose pulls server/web/supervisor from (compose's default,
+ *  mdmesh-app, when unset). apply.sh pins exactly the digests the signed manifest names under that owner. */
+function readImageOwner() {
+  try { return envValue(fs.readFileSync(PROJECT_ENV, 'utf8'), 'IMAGE_OWNER'); } catch { return null; }
+}
 // Last verified manifest from poll() — the source of the image refs an apply will deploy.
 let lastManifest = null;
 // Downloadable APK for the latest verified release {version,versionCode,sha256,url,apiUrl}; null if none.
@@ -255,7 +260,8 @@ function maybeAutoApply() {
   const { version } = imageTags(lastManifest);
   if (version && version === skipVersion) return; // failed or rolled back from — don't loop
   console.log('[auto] verified update', version, '→ self-applying');
-  startApply('auto');
+  const r = startApply('auto');
+  if (!r.ok) console.log('[auto] not applying', version + ':', r.msg);
 }
 
 async function poll() {
@@ -314,13 +320,16 @@ function startApply(trigger) {
   if (apply && !isTerminal(apply.phase)) return { ok: false, code: 409, msg: 'apply already in progress' };
   // The refusal says what is true (no verified release / already running X / X failed: use Roll back), decided from
   // the verified manifest and `current` directly rather than the derived updateAvailable flag.
-  const refusal = applyRefusal({ manifest: lastManifest, current: currentVersion, skipVersion });
+  const imageOwner = readImageOwner();
+  const refusal = applyRefusal({ manifest: lastManifest, current: currentVersion, skipVersion, imageOwner });
   if (refusal) return { ok: false, code: 400, msg: refusal };
   const { version: toVersion } = imageTags(lastManifest);
+  // The signed digests apply.sh pins (applyRefusal has checked them; apply.sh checks them again against .env).
+  const pins = imagePins(lastManifest, imageOwner);
 
   apply = { phase: 'authorizing', fromVersion: currentVersion, toVersion, trigger, startedAt: Date.now(), finishedAt: null, error: null };
   state.apply = apply;
-  spawnPhases([APPLY_SCRIPT, toVersion], (code, final) => {
+  spawnPhases([APPLY_SCRIPT, toVersion, pins.server, pins.web, pins.supervisor], (code, final) => {
     // .env is the record of what is running now: toVersion on success, the restored version after apply.sh rolled back.
     currentVersion = readCurrentVersion(code === 0 ? toVersion : currentVersion);
     // apply.sh exits non-zero after any failure, ending at rolled_back or failed.

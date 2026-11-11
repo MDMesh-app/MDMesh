@@ -14,6 +14,9 @@ Upgrading
 - The database adds three columns to enrollment tokens on start (`maxUses`, `useCount`, `revokedAt`) and stores
   the tokens hashed. Existing codes stay single-use and keep working; on PostgreSQL older than 11 they stop
   instead, so make a new code on the Enroll page. After a downgrade, codes made on this version don't work.
+- Quick start: run `docker compose pull && docker compose up -d` once after this update. Updates never touch the
+  supervisor, and one from before 0.5.0 keeps applying updates by tag. From source, or with `SUPERVISOR_VERSION` set by
+  hand: [UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050).
 
 New
 - Configurations can allow or block the camera. Block covers every app, kiosk apps too. Not managed after Block
@@ -33,6 +36,9 @@ New
 - A wiped device shows as **Wiped** instead of Online and then Offline, and is left out of the counts, Needs attention
   and rollouts; the Devices list's Wiped filter shows it (thanks @Przemek-Magic).
 - Sync now and console commands say when the device isn't connected and will get it at its next check-in.
+- Updates and the quick start run exactly the images the signed release names, pinned by digest; the quick start
+  also checks each file it downloads, stops instead of falling back to `main`, and needs OpenSSL 3.0+, or an older
+  OpenSSL and `minisign`.
 
 Fixes
 - Audit log: on Docker installs, entries show the client's address instead of the edge container's (thanks

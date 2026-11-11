@@ -81,7 +81,8 @@ commit it checked out.
 builds & pushes the **server**, **web**, and **supervisor** images to GHCR as `:VERSION`, reads back each image's
 digest (`release/image-digest.sh`), builds a **minisign-signed manifest**, and publishes a **GitHub Release** with
 `mdmesh-agent.apk`, `manifest.json`, `manifest.json.minisig` and `quickstart.sh` (the tagged commit's copy, which the
-README's install command runs from `releases/latest/download/`). The fleet auto-updater consumes that signed manifest
+README's install command downloads from the latest release). Before the upload it checks that `quickstart.sh` is the
+file the signed manifest hashes, and after it reads the published asset back and checks it again. The fleet auto-updater consumes that signed manifest
 to apply/roll-out updates.
 
 The manifest (`release/build-manifest.sh`) keeps `components.serverImage`/`webImage` (the `:VERSION` tags, which
@@ -111,7 +112,12 @@ n=$(release/changelog-section.sh X.Y.Z) && git tag -f -a vX.Y.Z --cleanup=whites
 release/changelog-section.sh --check vX.Y.Z "$sha" && git push origin :refs/tags/vX.Y.Z && git push origin vX.Y.Z
 ```
 
-**If the job goes red after the GitHub Release step** (i.e. in "Move :latest to this release"): the
+**If "Published quickstart.sh matches the signed manifest" fails**, the published `quickstart.sh` asset was changed
+during the run: the checked install refuses it, but the shortcut would run it. Upload the tag's own copy over it
+(`gh release upload vX.Y.Z quickstart.sh --clobber -R MDMesh-app/MDMesh` from the tagged commit, then check its
+SHA-256 against the manifest) and find out who changed it; then move `:latest` by hand as below.
+
+**If the job goes red after the GitHub Release step** (the quickstart.sh readback, or "Move :latest to this release"): the
 Release and its `:VERSION` images are published and fine, but `:latest` may point at the previous release
 for some or all of the three images. Don't re-run the whole job (it would rebuild and re-push `:VERSION`
 and try to recreate the Release). Fix `:latest` by hand, logged in to GHCR with `write:packages`:
@@ -197,6 +203,12 @@ The updater fetches the GitHub Release, verifies `manifest.json` against the bak
 and web images by the digests it pins, and pins its own image the same way for its next start (an older supervisor
 pulls the `:VERSION` tags). A release published without the private minisign key fails verification and is
 refused, so a hijacked repo/account or a moved image tag alone can't push code to the fleet.
+
+**The `quickstart.sh` asset.** Anyone with write access to the repository can replace a release asset, without a PR
+or review, and the README's unchecked shortcut would run the replacement. So the README's install block checks the
+script before running it: the manifest's minisign signature against the release key, that the manifest is the latest
+release's, and the script's SHA-256 in its `files`. Only the private minisign key can make a script pass that; the
+shortcut trusts the repository's write access, as running `quickstart.sh` from `main` did.
 
 The quick start verifies the same signature with `openssl` against a copy of the key line in `quickstart.sh` (T0
 fails if it differs from `release/minisign.pub`), then the image digests and the downloaded files' SHA-256. **If you

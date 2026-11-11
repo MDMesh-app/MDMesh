@@ -84,15 +84,23 @@ APK.
 
 ## ■ Quick start
 
-On a Linux host with Docker, Docker Compose v2, `curl`, `openssl` 3.0+ (or an older `openssl` and `minisign`), and
-either a domain in Cloudflare (for a Cloudflare Tunnel) or a domain pointed at the host with ports 80 and 443 open:
+On a Linux host with Docker, Docker Compose v2, `curl`, `minisign`, `openssl` 3.0+ (or an older `openssl`), and
+either a domain in Cloudflare (for a Cloudflare Tunnel) or a domain pointed at the host with ports 80 and 443 open,
+this checks the latest release's `quickstart.sh` against its signed manifest and then runs it:
 
 ```bash
-bash <(curl -fsSL https://github.com/MDMesh-app/MDMesh/releases/latest/download/quickstart.sh)
+R=https://github.com/MDMesh-app/MDMesh/releases; V=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$R/latest"); V=${V##*/v}
+d=$(mktemp -d); for f in quickstart.sh manifest.json manifest.json.minisig; do curl -fsSL -o "$d/$f" "$R/download/v$V/$f" || break; done
+minisign -V -m "$d/manifest.json" -P RWQbf0pIhddaWnDsFknIG4X325wHR05pUxEQJmuuQRdBlQm3zi8/Eqcd &&
+  grep -qx "  \"version\": \"$V\"," "$d/manifest.json" &&
+  grep -qF "\"quickstart.sh\": \"$(sha256sum "$d/quickstart.sh" | cut -d' ' -f1)\"" "$d/manifest.json" &&
+  bash "$d/quickstart.sh"
 ```
 
-This runs the quick start of the latest release ([check it first](DEPLOY.md#check-the-quick-start-before-running-it)
-if you like), pulls the released images and sets up updates from the console. To build the images from source instead
+Without `minisign`, `bash <(curl -fsSL https://github.com/MDMesh-app/MDMesh/releases/latest/download/quickstart.sh)`
+runs the same script unchecked ([details](DEPLOY.md#option-a--quick-start-no-clone-published-images)).
+
+The quick start pulls the released images and sets up updates from the console. To build the images from source instead
 (`setup.sh` also needs `openssl`, and, if they are there, uses `python3` and `curl` to verify the latest release for
 the enrollment QR):
 

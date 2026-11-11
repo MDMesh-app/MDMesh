@@ -9,20 +9,37 @@ passwords, and the admin must set its own password on first login.
 
 | Method | Needs | Choose it when |
 |--------|-------|----------------|
-| [A. Quick start](#option-a--one-line-no-clone-published-images) | Docker with Compose v2, `curl`, `openssl` 3.0+ (or an older `openssl` and `minisign`) | You want the fastest path, with one-click updates and rollback. |
-| [B. From source](#option-b--from-source-clone--build) | Docker with Compose v2, `openssl`, `python3`, `curl`, a clone | You want to build the images yourself. |
+| [A. Quick start](#option-a--quick-start-no-clone-published-images) | Docker with Compose v2, `curl`, `minisign` to check the script, `openssl` 3.0+ (or an older `openssl` and `minisign`) | You want the fastest path, with one-click updates and rollback. |
+| [B. From source](#option-b--from-source-clone--build) | Docker with Compose v2, `openssl`, a clone (`python3` and `curl` to verify the release for the QR, optional) | You want to build the images yourself. |
 | [C. Native](#option-c--native-no-docker) | Debian 12/13 or Ubuntu 24.04, root, `git` | You don't want Docker, and you run your own TLS proxy. |
 
 Options A and B ask for the public hostname and set `BASE_URL=https://<hostname>`. Option C asks for the full base
 URL (`https://…`; `http://` is accepted too). See the [rules](docs/OPERATIONS.md#base-url-and-hostname-rules).
 
-## Option A — one line, no clone (published images)
+## Option A — quick start, no clone (published images)
+
+Run it from where you want `./mdmesh` created. This downloads `quickstart.sh` and the signed manifest from the latest
+release, checks the manifest's signature with `minisign` against the release key (the key line of
+`release/minisign.pub`), checks that the manifest is that release's and that it holds `quickstart.sh`'s SHA-256, and
+only then runs the script, which installs that release:
+
+```bash
+R=https://github.com/MDMesh-app/MDMesh/releases; V=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$R/latest"); V=${V##*/v}
+d=$(mktemp -d); for f in quickstart.sh manifest.json manifest.json.minisig; do curl -fsSL -o "$d/$f" "$R/download/v$V/$f" || break; done
+minisign -V -m "$d/manifest.json" -P RWQbf0pIhddaWnDsFknIG4X325wHR05pUxEQJmuuQRdBlQm3zi8/Eqcd &&
+  grep -qx "  \"version\": \"$V\"," "$d/manifest.json" &&
+  grep -qF "\"quickstart.sh\": \"$(sha256sum "$d/quickstart.sh" | cut -d' ' -f1)\"" "$d/manifest.json" &&
+  bash "$d/quickstart.sh"
+```
+
+Nothing runs if a check fails. This needs releases from 0.5.0 on (earlier ones don't publish `quickstart.sh`).
+
+Without `minisign`, the shortcut runs the same script **unchecked** (the script itself still verifies everything it
+downloads, but not itself):
 
 ```bash
 bash <(curl -fsSL https://github.com/MDMesh-app/MDMesh/releases/latest/download/quickstart.sh)
 ```
-
-This runs `quickstart.sh` from the latest release's assets, and the quick start installs that release.
 
 It needs Docker with Compose v2, curl, and OpenSSL 3.0 or newer to check the release signature. On a host with
 OpenSSL 1.1.1 (Ubuntu 20.04, RHEL/Alma/Rocky 8, Amazon Linux 2), install `minisign` first; the quick start then uses
@@ -43,27 +60,14 @@ digest (`0.5.0@sha256:…`). Updates are one click ([Upgrading](docs/UPGRADING.m
 Before using anything from the release, the quick start checks its `manifest.json` against the release signing key
 (minisign format, checked with `openssl` 3.0+, or with `minisign` when that is installed). The signed manifest holds
 the image digests and the SHA-256 of the compose files, the seed and `install/lib/db.sh`, which come from the
-release's tag; a file that doesn't match stops the install. The trust root is `quickstart.sh` itself, fetched over
-HTTPS from the release's assets, which carries a copy of `release/minisign.pub`. A fork with its own signing key sets
+release's tag; a file that doesn't match stops the install. The trust root is `quickstart.sh` itself, which carries
+a copy of `release/minisign.pub`: checked against the signed manifest by the block above, or taken on trust from the
+release's assets by the shortcut. A fork with its own signing key sets
 `MDMESH_RELEASE_PUBKEY` to the key line of its `release/minisign.pub`.
 
 If the latest release can't be looked up (GitHub API unreachable or rate-limited), the quick start stops and says so;
 it no longer falls back to `main` and `:latest`. Run it again later, or name the release:
 `MDMESH_VERSION=X.Y.Z bash <(curl -fsSL https://github.com/MDMesh-app/MDMesh/releases/latest/download/quickstart.sh)`.
-
-### Check the quick start before running it
-
-The signed manifest also holds the SHA-256 of `quickstart.sh` (releases from 0.5.0 on), so you can check the script
-before running it. With `minisign` installed, in an empty directory:
-
-```bash
-curl -fsSL --remote-name-all \
-  https://github.com/MDMesh-app/MDMesh/releases/latest/download/{quickstart.sh,manifest.json,manifest.json.minisig}
-minisign -V -m manifest.json -P RWQbf0pIhddaWnDsFknIG4X325wHR05pUxEQJmuuQRdBlQm3zi8/Eqcd   # release/minisign.pub
-grep -F "\"quickstart.sh\": \"$(sha256sum quickstart.sh | cut -d' ' -f1)\"" manifest.json   # prints the line if it matches
-```
-
-Then run it from where you want `./mdmesh` created: `bash /path/to/quickstart.sh`.
 
 ## Option B — from source (clone + build)
 

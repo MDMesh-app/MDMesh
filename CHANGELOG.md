@@ -42,9 +42,19 @@ Fixes
 - Agent rollout: when every device is in the canary, the rollout finishes once they've updated instead of staying
   open, and Settings stops offering the same agent again. If one can't update, it offers Finish instead of Promote
   (thanks @letternumber).
+- Console accessibility, to WCAG 2.2 AA in both themes: buttons, inputs, status dots and bars reach 3:1 contrast,
+  help and status text is darker, the selected tab, section and page are outlined, and disabled settings stay
+  readable.
+- Console: a toast stays while you point at it or tab into it, and a failure stays until you dismiss it.
+- Console on phones: device names and reasons wrap instead of being cut off, main buttons and menu items are 44px
+  tall, and the top bar no longer covers the field you tab to.
+- Console: the sign-in pages and a device that can't be found name the browser tab.
 
 Under the hood
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
+- Console: two new colour tokens for extensions, `--control-border` and `--alert-control`. `npm test` checks every
+  token pair's contrast and runs axe on each page; `scripts/shots/a11y.mjs` runs axe, a keyboard walk and reflow
+  checks on the built console in both themes at 1280, 640 and 320px.
 
 ## v0.4.0 — 2026-11-03
 

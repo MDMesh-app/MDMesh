@@ -3112,6 +3112,14 @@
         <rollback>ALTER TABLE agentEnrollmentToken DROP COLUMN revokedAt;</rollback>
     </changeSet>
 
+    <changeSet id="26.11.09-deviceState-kioskReturnGeneration" author="letter-number" context="common">
+        <comment>Columns,new: device_state kiosk command generation and durable on-device kiosk-return evidence</comment>
+        <sql>ALTER TABLE device_state ADD COLUMN kioskGeneration BIGINT NOT NULL DEFAULT 0;
+            ALTER TABLE device_state ADD COLUMN kioskReturnGeneration BIGINT;</sql>
+        <rollback>ALTER TABLE device_state DROP COLUMN kioskReturnGeneration;
+            ALTER TABLE device_state DROP COLUMN kioskGeneration;</rollback>
+    </changeSet>
+
     <changeSet id="26.11.10-devices-agentEnrollAttemptHash" author="lunacy" context="common">
         <comment>Column,new: devices#agentEnrollAttemptHash — SHA-256 of (enrollment token id, the agent's random enroll
             attempt id). An agent whose enroll response was lost retries with the same attempt id and gets this device

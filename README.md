@@ -84,8 +84,8 @@ APK.
 
 ## ■ Quick start
 
-On a Linux host with Docker, Docker Compose v2, `openssl` and `curl`, and either a domain in Cloudflare (for a
-Cloudflare Tunnel) or a domain pointed at the host with ports 80 and 443 open:
+On a Linux host with Docker, Docker Compose v2, `curl`, `openssl` 3.0+ (or an older `openssl` and `minisign`), and
+either a domain in Cloudflare (for a Cloudflare Tunnel) or a domain pointed at the host with ports 80 and 443 open:
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/quickstart.sh)

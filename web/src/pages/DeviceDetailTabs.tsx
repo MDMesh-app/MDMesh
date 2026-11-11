@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import type { CommandHistoryItem } from '../api/commands';
 import type { DeviceEvent } from '../api/events';
 import type { LocationFix } from '../api/deviceLocations';
@@ -391,6 +391,8 @@ export function LocationTab({
 }) {
   const titleId = useId();
   const inRange = rangePhrase(range);
+  // The list mounts only while it is open (up to 500 fixes).
+  const [listOpen, setListOpen] = useState(false);
   return (
     <Card aria-labelledby={titleId} gap={14} className="v2-device-loc">
       <CardHeader
@@ -448,21 +450,23 @@ export function LocationTab({
       {fixes && fixes.length > 0 ? (
         // The map's points open their details on a pointer only; the same fixes as text, for keyboards and screen
         // readers (2.1.1, 1.1.1).
-        <details className="v2-device-loclist">
-          <summary>Show the locations as a list</summary>
-          <Table<LocationFix>
-            aria-label="Reported locations"
-            edge={0}
-            rowPad={10}
-            rows={fixes}
-            rowKey={(f) => f.id ?? f.capturedAt}
-            columns={[
-              { key: 'when', header: 'When', cell: (f) => fmtDateTime(f.capturedAt) },
-              { key: 'where', header: 'Position', cell: (f) => <span className="v2-mono">{`${f.lat.toFixed(5)}, ${f.lon.toFixed(5)}`}</span> },
-              { key: 'acc', header: 'Accuracy', cell: (f) => (f.accuracy != null ? `±${Math.round(f.accuracy)} m` : DASH) },
-              { key: 'src', header: 'Source', cell: (f) => f.provider || DASH },
-            ]}
-          />
+        <details className="v2-device-loclist" onToggle={(e) => setListOpen(e.currentTarget.open)}>
+          <summary>Locations as a list ({fixes.length})</summary>
+          {listOpen ? (
+            <Table<LocationFix>
+              aria-label="Reported locations"
+              edge={0}
+              rowPad={10}
+              rows={fixes}
+              rowKey={(f) => f.id ?? f.capturedAt}
+              columns={[
+                { key: 'when', header: 'When', cell: (f) => fmtDateTime(f.capturedAt) },
+                { key: 'where', header: 'Position', cell: (f) => <span className="v2-mono">{`${f.lat.toFixed(5)}, ${f.lon.toFixed(5)}`}</span> },
+                { key: 'acc', header: 'Accuracy', cell: (f) => (f.accuracy != null ? `±${Math.round(f.accuracy)} m` : DASH) },
+                { key: 'src', header: 'Source', cell: (f) => f.provider || DASH },
+              ]}
+            />
+          ) : null}
         </details>
       ) : null}
     </Card>

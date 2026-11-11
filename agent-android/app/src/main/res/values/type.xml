@@ -30,12 +30,12 @@
         <item name="android:textColor">@color/mdm_text</item>
     </style>
 
-    <style name="TextAppearance.MdmAgent.BodyMedium" parent="TextAppearance.AppCompat" tools:ignore="UnusedResources">
+    <style name="TextAppearance.MdmAgent.BodyMedium" parent="TextAppearance.AppCompat">
         <item name="android:textSize">14sp</item>
         <item name="android:textColor">@color/mdm_text_2</item>
     </style>
 
-    <style name="TextAppearance.MdmAgent.BodySmall" parent="TextAppearance.AppCompat" tools:ignore="UnusedResources">
+    <style name="TextAppearance.MdmAgent.BodySmall" parent="TextAppearance.AppCompat">
         <item name="android:textSize">13sp</item>
         <item name="android:textColor">@color/mdm_secondary</item>
     </style>

@@ -47,7 +47,7 @@ const click = async (page, role, name, opts = {}) => {
 
 /**
  * The states: a route, who is signed in, optional REST overrides and a setup that drives the page into the state.
- * `mobile: false` skips it at 320 px; `gallery` needs a VITE_GALLERY=1 build.
+ * `mobile: false` skips it in the phone layout (≤ 860 px), `desktop: false` above it; `gallery` needs a VITE_GALLERY=1 build.
  */
 const STATES = [
   // ---- signed out ----
@@ -247,6 +247,8 @@ const STATES = [
   {
     name: 'settings-update-dialog',
     route: '/settings',
+    // Only an admin who runs the install may apply an update (v0.3.8).
+    user: { ...fx.user, deploymentAdmin: true },
     setup: async (p) => {
       await p.locator('#updates button:has-text("Update server and console")').click();
       await p.waitForTimeout(400);
@@ -377,8 +379,9 @@ async function sweep(browser, base) {
       for (const state of STATES) {
         if (only && !state.name.includes(only)) continue;
         if (vp.lightOnly && theme !== 'light') continue;
-        if (vp.width < 600 && state.mobile === false) continue;
-        if (vp.width >= 600 && state.desktop === false) continue;
+        // The shell's phone layout (drawer, top bar) starts at 860px.
+        if (vp.width <= 860 && state.mobile === false) continue;
+        if (vp.width > 860 && state.desktop === false) continue;
         const { context, page, errors, setupError } = await openState(browser, base, state, theme, vp);
         if (state.gallery && !(await page.locator('h1').count())) {
           await context.close();

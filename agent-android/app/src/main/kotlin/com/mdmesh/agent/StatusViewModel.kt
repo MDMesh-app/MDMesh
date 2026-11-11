@@ -1,9 +1,12 @@
 package com.mdmesh.agent
 
 import android.app.ActivityManager
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.mdmesh.agent.ui.StatusCopy
 import com.mdmesh.agent.ui.StatusUiState
 import com.mdmesh.core.config.ConfigApplier
 import com.mdmesh.core.config.ServerConfigStore
@@ -21,11 +24,16 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
@@ -54,11 +62,13 @@ class StatusViewModel @Inject constructor(
 
     private data class Facts(val deviceOwner: Boolean, val locked: Boolean, val configured: Boolean)
 
-    private data class Return(val running: Boolean = false, val failure: String? = null)
-
     /** Bumped by [refresh]: the system facts are read again. */
     private val refreshes = MutableStateFlow(0)
-    private val returning = MutableStateFlow(Return())
+    private val returning = MutableStateFlow(ReturnProgress())
+
+    /** What was just copied, shown as "Copied" for a moment. */
+    private val copied = MutableStateFlow<StatusCopy.Target?>(null)
+    private var copiedReset: Job? = null
 
     /**
      * Device Owner, lock task and the configured kiosk, read again whenever the kiosk or its configuration changes
@@ -67,6 +77,17 @@ class StatusViewModel @Inject constructor(
     private val facts = combine(configStore.configuredKioskFlow(), sources.kioskStore.flow(), refreshes) { _, _, _ ->
         readFacts()
     }.flowOn(Dispatchers.Default)
+        .distinctUntilChanged()
+        .onEach(::noteFacts)
+
+    private var lastFacts: Facts? = null
+
+    /** The device's state changed: an old return failure no longer applies. */
+    private fun noteFacts(f: Facts) {
+        val changed = lastFacts != null && lastFacts != f
+        lastFacts = f
+        returning.update { it.refreshed(changed) }
+    }
 
     /** Collected only while the screen is started (WhileSubscribed), kept through a rotation. */
     val state: StateFlow<StatusUiState> = combine(
@@ -74,7 +95,8 @@ class StatusViewModel @Inject constructor(
         sources.deviceIdStore.deviceId.map { Loaded(it) },
         sources.syncStatus.lastError,
         returning,
-    ) { f, id, error, r -> stateOf(f, id, error, r) }
+        copied,
+    ) { f, id, error, r, c -> stateOf(f, id, error, r).copy(copied = c) }
         // The first frame is drawn from the facts read now, as before; the device id follows from storage.
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), stateOf(readFacts()))
 
@@ -85,7 +107,7 @@ class StatusViewModel @Inject constructor(
         f: Facts,
         id: Loaded = Loaded(null, loaded = false),
         error: SyncStatus.Failure? = null,
-        r: Return = returning.value,
+        r: ReturnProgress = returning.value,
     ) = StatusUiState.of(
         deviceOwner = f.deviceOwner,
         locked = f.locked,
@@ -104,21 +126,41 @@ class StatusViewModel @Inject constructor(
         refreshes.value++
     }
 
+    /** The person left the status screen (not a rotation): an old return failure is dropped. */
+    fun screenLeft() {
+        returning.update { it.left() }
+    }
+
+    /** Copies [target]'s value to the clipboard and shows "Copied" for a moment. */
+    fun copy(target: StatusCopy.Target) {
+        val clipboard = app.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val done = StatusCopy.copy(state.value, target) { label, text ->
+            clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
+        }
+        if (!done) return
+        copied.value = target
+        copiedReset?.cancel()
+        copiedReset = viewModelScope.launch {
+            delay(COPIED_MS)
+            copied.value = null
+        }
+    }
+
     /** The kiosk Return to kiosk would enter now; null when there is none. */
     fun configuredKiosk(): KioskApplyPayload? = configStore.configuredKiosk()
 
     /** Enters [confirmed] (the kiosk the person confirmed); ignored while a return is already running. */
     fun returnToKiosk(confirmed: KioskApplyPayload) {
         if (returning.value.running) return
-        returning.value = Return(running = true)
+        returning.value = returning.value.started()
         viewModelScope.launch {
             try {
                 // Not cancelled with the screen: stopping mid-entry could leave a partial kiosk, HOME claimed and the
                 // allowlist set with nothing saved. The entry, its event and the check-in finish.
                 val failure = withContext(NonCancellable) { enterConfiguredKiosk(confirmed) }
-                returning.value = Return(failure = failure)
+                returning.value = returning.value.finished(failure)
             } finally {
-                if (returning.value.running) returning.value = Return()
+                if (returning.value.running) returning.value = returning.value.finished(null)
                 refresh()
             }
         }
@@ -164,5 +206,8 @@ class StatusViewModel @Inject constructor(
     private companion object {
         /** Keep collecting through a rotation, stop soon after the screen leaves. */
         const val STOP_TIMEOUT_MS = 5_000L
+
+        /** How long "Copied" shows. */
+        const val COPIED_MS = 2_000L
     }
 }

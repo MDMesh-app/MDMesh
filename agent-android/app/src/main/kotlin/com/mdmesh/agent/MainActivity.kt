@@ -38,7 +38,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_status)
-        val screen = StatusScreen(this, onReturn = ::confirmReturnToKiosk)
+        val screen = StatusScreen(this, onReturn = ::confirmReturnToKiosk, onCopy = model::copy)
         screen.render(model.state.value)
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -69,6 +69,12 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         model.refresh()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // Leaving the screen (not rotating): an old return failure no longer applies when the person comes back.
+        if (!isChangingConfigurations) model.screenLeft()
     }
 
     override fun onDestroy() {

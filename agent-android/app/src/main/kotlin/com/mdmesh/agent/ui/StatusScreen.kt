@@ -5,6 +5,7 @@ import android.graphics.drawable.ColorDrawable
 import android.view.View
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.ImageButton
 import android.widget.TextView
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.content.ContextCompat
@@ -17,7 +18,11 @@ import java.util.Date
  * The status screen's views (res/layout/activity_status.xml). [render] draws a whole [StatusUiState]; it is the
  * only code that changes these views after setup. [onReturn] is the Return to kiosk button.
  */
-class StatusScreen(private val activity: Activity, onReturn: () -> Unit) {
+class StatusScreen(
+    private val activity: Activity,
+    onReturn: () -> Unit,
+    onCopy: (StatusCopy.Target) -> Unit,
+) {
 
     private val deviceId: TextView = activity.findViewById(R.id.status_device_id)
     private val server: TextView = activity.findViewById(R.id.status_server)
@@ -27,6 +32,10 @@ class StatusScreen(private val activity: Activity, onReturn: () -> Unit) {
     private val kioskBody: TextView = activity.findViewById(R.id.status_kiosk_body)
     private val returnButton: Button = activity.findViewById(R.id.status_return)
     private val returnError = Callout(activity.findViewById(R.id.status_return_error))
+    private val copyDeviceId: ImageButton = activity.findViewById(R.id.status_copy_device_id)
+    private val copyServer: ImageButton = activity.findViewById(R.id.status_copy_server)
+    private val copiedDeviceId: View = activity.findViewById(R.id.status_copy_device_id_done)
+    private val copiedServer: View = activity.findViewById(R.id.status_copy_server_done)
     private var drawn: StatusUiState? = null
 
     init {
@@ -52,6 +61,11 @@ class StatusScreen(private val activity: Activity, onReturn: () -> Unit) {
         activity.findViewById<TextView>(R.id.status_version).text =
             activity.getString(R.string.status_agent_version, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE)
         returnButton.setOnClickListener { onReturn() }
+        copyDeviceId.setOnClickListener { onCopy(StatusCopy.Target.DEVICE_ID) }
+        copyServer.setOnClickListener { onCopy(StatusCopy.Target.SERVER) }
+        // Each copy icon sits on its value's first line, at any font size.
+        copyDeviceId.centerOnFirstLineOf(deviceId)
+        copyServer.centerOnFirstLineOf(server)
     }
 
     fun render(state: StatusUiState) {
@@ -61,6 +75,10 @@ class StatusScreen(private val activity: Activity, onReturn: () -> Unit) {
         if (before?.deviceId != state.deviceId) renderDeviceId(state.deviceId)
         if (before?.serverUrl != state.serverUrl) server.text = state.serverUrl
         if (before?.kiosk != state.kiosk) renderKiosk(state.kiosk)
+        // Nothing to copy until the server has issued an ID; INVISIBLE keeps the row's layout steady.
+        copyDeviceId.visibility = if (state.deviceId is StatusUiState.DeviceIdUi.Known) View.VISIBLE else View.INVISIBLE
+        copiedDeviceId.visibility = if (state.copied == StatusCopy.Target.DEVICE_ID) View.VISIBLE else View.GONE
+        copiedServer.visibility = if (state.copied == StatusCopy.Target.SERVER) View.VISIBLE else View.GONE
         if (state.returnFailure == null) {
             returnError.hide()
         } else {

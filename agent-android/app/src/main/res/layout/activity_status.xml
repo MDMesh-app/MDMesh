@@ -52,8 +52,9 @@
             android:text="@string/status_subtitle"
             android:textAppearance="@style/TextAppearance.MdmAgent.BodySmall" />
 
-        <!-- Device card -->
+        <!-- Device card: the managed callout, then one row per fact, a divider before each. -->
         <LinearLayout
+            android:id="@+id/status_device_card"
             style="@style/Widget.MdmAgent.Card"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -65,60 +66,151 @@
 
             <View style="@style/Widget.MdmAgent.Divider" />
 
-            <TextView
+            <LinearLayout
+                android:id="@+id/status_row_device_id"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/status_label_device_id"
-                android:textAppearance="@style/TextAppearance.MdmAgent.Eyebrow" />
+                android:baselineAligned="false"
+                android:orientation="horizontal">
 
-            <TextView
-                android:id="@+id/status_device_id"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/mdm_space_4"
-                android:text="@string/status_placeholder"
-                android:textAppearance="@style/TextAppearance.MdmAgent.Mono"
-                android:textIsSelectable="true" />
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
 
-            <include
-                android:id="@+id/status_enroll_error"
-                layout="@layout/view_callout"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/mdm_space_12"
-                android:visibility="gone" />
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/status_label_device_id"
+                        android:textAppearance="@style/TextAppearance.MdmAgent.Eyebrow" />
+
+                    <TextView
+                        android:id="@+id/status_device_id"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/mdm_space_4"
+                        android:textAppearance="@style/TextAppearance.MdmAgent.Mono"
+                        android:text="@string/status_placeholder" />
+
+                    <TextView
+                        android:id="@+id/status_copy_device_id_done"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/mdm_space_4"
+                        android:accessibilityLiveRegion="polite"
+                        android:text="@string/status_copied"
+                        android:textAppearance="@style/TextAppearance.MdmAgent.CalloutBody"
+                        android:textColor="@color/mdm_ok_ink"
+                        android:visibility="gone" />
+
+                    <include
+                        android:id="@+id/status_enroll_error"
+                        layout="@layout/view_callout"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/mdm_space_12"
+                        android:visibility="gone" />
+                </LinearLayout>
+
+                <!-- Copy (instead of selectable text, whose toolbar can open other apps inside the kiosk).
+                     Centred on the value's first line in StatusScreen; the target reaches 14dp into the card's
+                     padding, so the icon's edge is the card's content edge. -->
+                <ImageButton
+                    android:id="@+id/status_copy_device_id"
+                    android:layout_width="@dimen/mdm_touch_target"
+                    android:layout_height="@dimen/mdm_touch_target"
+                    android:layout_marginStart="@dimen/mdm_space_8"
+                    android:layout_marginEnd="-14dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/status_copy_device_id"
+                    android:padding="14dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_v2_copy"
+                    android:tint="@color/mdm_secondary" />
+            </LinearLayout>
 
             <View style="@style/Widget.MdmAgent.Divider" />
 
-            <TextView
+            <LinearLayout
+                android:id="@+id/status_row_version"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="@string/status_label_agent_version"
-                android:textAppearance="@style/TextAppearance.MdmAgent.Eyebrow" />
+                android:orientation="vertical">
 
-            <TextView
-                android:id="@+id/status_version"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/mdm_space_4"
-                android:textAppearance="@style/TextAppearance.MdmAgent.Mono"
-                tools:text="0.5.0 (build 500)" />
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/status_label_agent_version"
+                    android:textAppearance="@style/TextAppearance.MdmAgent.Eyebrow" />
 
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/mdm_space_16"
-                android:text="@string/status_label_server"
-                android:textAppearance="@style/TextAppearance.MdmAgent.Eyebrow" />
+                <TextView
+                    android:id="@+id/status_version"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/mdm_space_4"
+                    android:textAppearance="@style/TextAppearance.MdmAgent.Mono"
+                    tools:text="0.5.0 (build 500)" />
+            </LinearLayout>
 
-            <TextView
-                android:id="@+id/status_server"
+            <View style="@style/Widget.MdmAgent.Divider" />
+
+            <LinearLayout
+                android:id="@+id/status_row_server"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="@dimen/mdm_space_4"
-                android:textAppearance="@style/TextAppearance.MdmAgent.Mono"
-                android:textIsSelectable="true"
-                tools:text="https://mdm.example.com/" />
+                android:baselineAligned="false"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/status_label_server"
+                        android:textAppearance="@style/TextAppearance.MdmAgent.Eyebrow" />
+
+                    <TextView
+                        android:id="@+id/status_server"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/mdm_space_4"
+                        android:textAppearance="@style/TextAppearance.MdmAgent.Mono"
+                        tools:text="https://mdm.example.com/" />
+
+                    <TextView
+                        android:id="@+id/status_copy_server_done"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/mdm_space_4"
+                        android:accessibilityLiveRegion="polite"
+                        android:text="@string/status_copied"
+                        android:textAppearance="@style/TextAppearance.MdmAgent.CalloutBody"
+                        android:textColor="@color/mdm_ok_ink"
+                        android:visibility="gone" />
+                </LinearLayout>
+
+                <!-- Copy (instead of selectable text, whose toolbar can open other apps inside the kiosk).
+                     Centred on the value's first line in StatusScreen; the target reaches 14dp into the card's
+                     padding, so the icon's edge is the card's content edge. -->
+                <ImageButton
+                    android:id="@+id/status_copy_server"
+                    android:layout_width="@dimen/mdm_touch_target"
+                    android:layout_height="@dimen/mdm_touch_target"
+                    android:layout_marginStart="@dimen/mdm_space_8"
+                    android:layout_marginEnd="-14dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/status_copy_server"
+                    android:padding="14dp"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/ic_v2_copy"
+                    android:tint="@color/mdm_secondary" />
+            </LinearLayout>
+
         </LinearLayout>
 
         <!-- Kiosk card -->

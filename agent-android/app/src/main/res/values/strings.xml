@@ -20,6 +20,9 @@
     <string name="status_label_kiosk">Kiosk</string>
     <string name="status_label_agent_version">Agent version</string>
     <string name="status_label_server">Server</string>
+    <string name="status_copy_device_id">Copy device ID</string>
+    <string name="status_copy_server">Copy server address</string>
+    <string name="status_copied">Copied</string>
     <string name="status_managed_by">Managed by MDMesh</string>
     <string name="status_device_owner_active">Device Owner is active.</string>
     <string name="status_not_managed">Not managed</string>

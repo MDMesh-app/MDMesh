@@ -11,6 +11,8 @@ data class StatusUiState(
     val kiosk: KioskCardUi,
     /** Why the last Return to kiosk failed; shown in the Kiosk card while Return is offered. */
     val returnFailure: String?,
+    /** A value just copied ("Copied" shows under it). */
+    val copied: StatusCopy.Target? = null,
 ) {
     /** The Device ID line: not read yet, the server-issued id, or still enrolling (with the last error, if any). */
     sealed interface DeviceIdUi {

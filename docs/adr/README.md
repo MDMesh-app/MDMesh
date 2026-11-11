@@ -11,5 +11,5 @@ Short records of consequential, hard-to-reverse decisions. Format: Status · Con
 | [0005](0005-play-protect-permission-minimization.md) | Play-Protect permission-minimization policy | Accepted |
 | [0006](0006-protocol-versioning-capability-handshake.md) | Protocol versioning + capability handshake | Accepted |
 | [0007](0007-monorepo.md) | Monorepo layout | Accepted |
-| [0008](0008-licensing-and-rebrand.md) | Licensing & rebrand (Apache-2.0 base) | Accepted |
+| [0008](0008-licensing-and-rebrand.md) | Licensing & rebrand (Apache-2.0 base) | Accepted, amended (open source, not proprietary) |
 | [0009](0009-agent-v1-contract-stability.md) | Agent v1 wire-contract stability (additive-only, CI-gated) | Accepted |

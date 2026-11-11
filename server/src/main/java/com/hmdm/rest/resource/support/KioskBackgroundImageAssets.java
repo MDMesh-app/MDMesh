@@ -19,7 +19,10 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Locale;
@@ -46,6 +49,7 @@ public class KioskBackgroundImageAssets {
     static final String TOO_LARGE = "The background image is larger than 10 MB.";
     static final String TOO_MANY_PIXELS = "The background image is larger than 16 megapixels.";
     static final String NOT_FOUND = "The background image is not an uploaded file of this account.";
+    static final String IN_USE = "This image is used by a configuration. Choose another image there first, then delete it.";
     static final String STORAGE_FULL = "The image without its metadata doesn't fit in this account's file storage.";
     static final String NOT_STORED = "The server could not store the background image without its metadata. Try again.";
     static final String MISSING = "The background image file is missing on the server. Choose the image again.";
@@ -290,6 +294,138 @@ public class KioskBackgroundImageAssets {
         info.setName(KIOSK_PREFIX.matcher(path.substring(path.lastIndexOf('/') + 1)).replaceFirst(""));
         info.setUploadTime(resolved.file.getUploadTime());
         return info;
+    }
+
+    /** A configuration using an image (one the user may see). */
+    @lombok.Getter
+    @lombok.Setter
+    public static final class Use {
+        private int id;
+        private String name;
+    }
+
+    /** One image of the gallery: one per content (SHA-256), with every uploaded file holding it. */
+    @lombok.Getter
+    @lombok.Setter
+    public static final class GalleryItem extends KioskBackgroundImageInfo {
+        /** Every uploaded file with these bytes; {@link #getFileId()} is the one to use. */
+        private List<Integer> fileIds;
+        /** The configurations using it that the user may see. */
+        private List<Use> usedBy;
+        /** All configurations using it, seen or not. */
+        private int usedByCount;
+    }
+
+    @lombok.Getter
+    @lombok.Setter
+    public static final class GalleryPage {
+        private List<GalleryItem> items;
+        private int total;
+        private int page;
+        private int size;
+    }
+
+    private static final Pattern KIOSK_NAME = Pattern.compile("(^|/)kiosk-[0-9a-f]{12}-[^/]*$");
+
+    /**
+     * The current customer's kiosk background images: files hosted under the console's {@code kiosk-<hex>-} name and
+     * files a configuration uses, readable as images, once per content, newest first.
+     *
+     * @param usesByFile  configurations using each file id (all of the customer's)
+     * @param hiddenUses  configuration ids the user may not see: counted, not named
+     */
+    public GalleryPage gallery(Map<Integer, List<Use>> usesByFile, java.util.Set<Integer> hiddenUses, int page, int size) {
+        Map<String, List<KioskBackgroundImageInfo>> bySha = new LinkedHashMap<>();
+        Map<Integer, Long> uploaded = new java.util.HashMap<>();
+        for (UploadedFile f : uploadedFiles.getAll()) {
+            if (f.isExternal() || f.getFilePath() == null) continue;
+            boolean used = usesByFile.containsKey(f.getId());
+            if (!used && !KIOSK_NAME.matcher(f.getFilePath().replace('\\', '/')).find()) continue;
+            KioskBackgroundImageInfo info;
+            try {
+                info = describe(f.getId());
+            } catch (IllegalArgumentException e) {
+                continue; // not an image the agent would show, or missing
+            }
+            uploaded.put(f.getId(), f.getUploadTime() == null ? 0L : f.getUploadTime());
+            bySha.computeIfAbsent(info.getSha256(), k -> new ArrayList<>()).add(info);
+        }
+        List<GalleryItem> items = new ArrayList<>();
+        Map<GalleryItem, Long> newest = new java.util.HashMap<>();
+        for (List<KioskBackgroundImageInfo> same : bySha.values()) {
+            // The file to pick: the one most configurations use, then the newest.
+            same.sort((a, b) -> {
+                int ua = usesByFile.getOrDefault(a.getFileId(), Collections.emptyList()).size();
+                int ub = usesByFile.getOrDefault(b.getFileId(), Collections.emptyList()).size();
+                if (ua != ub) return Integer.compare(ub, ua);
+                return Long.compare(uploaded.get(b.getFileId()), uploaded.get(a.getFileId()));
+            });
+            GalleryItem item = new GalleryItem();
+            KioskBackgroundImageInfo pick = same.get(0);
+            item.setFileId(pick.getFileId());
+            item.setUrl(pick.getUrl());
+            item.setName(pick.getName());
+            item.setFormat(pick.getFormat());
+            item.setWidth(pick.getWidth());
+            item.setHeight(pick.getHeight());
+            item.setOrientation(pick.getOrientation());
+            item.setSize(pick.getSize());
+            item.setSha256(pick.getSha256());
+            item.setUploadTime(pick.getUploadTime());
+            item.setHasMetadata(pick.getHasMetadata());
+            List<Integer> ids = new ArrayList<>();
+            Map<Integer, Use> uses = new LinkedHashMap<>();
+            long latest = 0;
+            for (KioskBackgroundImageInfo i : same) {
+                ids.add(i.getFileId());
+                latest = Math.max(latest, uploaded.get(i.getFileId()));
+                for (Use u : usesByFile.getOrDefault(i.getFileId(), Collections.emptyList())) uses.putIfAbsent(u.getId(), u);
+            }
+            item.setFileIds(ids);
+            item.setUsedByCount(uses.size());
+            List<Use> visible = new ArrayList<>();
+            for (Use u : uses.values()) if (!hiddenUses.contains(u.getId())) visible.add(u);
+            item.setUsedBy(visible);
+            items.add(item);
+            newest.put(item, latest);
+        }
+        items.sort((a, b) -> Long.compare(newest.get(b), newest.get(a)));
+        GalleryPage out = new GalleryPage();
+        int from = Math.min(items.size(), Math.max(0, page) * Math.max(1, size));
+        out.setItems(new ArrayList<>(items.subList(from, Math.min(items.size(), from + Math.max(1, size)))));
+        out.setTotal(items.size());
+        out.setPage(page);
+        out.setSize(size);
+        return out;
+    }
+
+    /**
+     * Deletes an uploaded image of the current customer that nothing uses, under the same lock as hosting a cleaned
+     * copy (so a save can't pick it up meanwhile). The file goes too unless another record points at it.
+     *
+     * @param inUse whether a configuration (or any other part of the console) uses a file id
+     * @throws IllegalArgumentException NOT_FOUND for another customer's or an unknown file, IN_USE when used
+     */
+    public void deleteUnused(int fileId, java.util.function.IntPredicate inUse) {
+        synchronized (COPY_LOCK) {
+            UploadedFile file;
+            try {
+                file = uploadedFiles.getById(fileId);
+            } catch (com.hmdm.security.SecurityException e) {
+                throw new IllegalArgumentException(NOT_FOUND);
+            }
+            Customer customer = SecurityContext.get().getCurrentUser()
+                    .map(user -> customers.findById(user.getCustomerId()))
+                    .orElseThrow(() -> new IllegalArgumentException(NOT_FOUND));
+            if (file == null || file.isExternal() || customer == null || !Objects.equals(customer.getId(), file.getCustomerId())) {
+                throw new IllegalArgumentException(NOT_FOUND);
+            }
+            if (inUse.test(fileId)) throw new IllegalArgumentException(IN_USE);
+            uploadedFiles.remove(fileId);
+            if (file.getFilePath() != null && uploadedFiles.getByPath(customer.getId(), file.getFilePath()) == null) {
+                FileUtil.deleteFile(customer, filesDirectory, file.getFilePath());
+            }
+        }
     }
 
     private static KioskBackgroundImageInfo copy(KioskBackgroundImageInfo i) {

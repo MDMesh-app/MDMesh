@@ -159,6 +159,10 @@ public interface ConfigurationMapper {
     @Delete({"DELETE FROM configurations WHERE id=#{id}"})
     void removeConfigurationById(@Param("id") Integer id);
 
+    @Select("SELECT id, name, backgroundImageFileId FROM configurations " +
+            "WHERE customerId = #{customerId} AND backgroundImageFileId IS NOT NULL ORDER BY name")
+    List<Configuration> getBackgroundImageUses(@Param("customerId") int customerId);
+
     @Select("SELECT COUNT(*) FROM configurations WHERE backgroundImageFileId = #{fileId}")
     long countBackgroundImageFileReferences(@Param("fileId") int fileId);
 

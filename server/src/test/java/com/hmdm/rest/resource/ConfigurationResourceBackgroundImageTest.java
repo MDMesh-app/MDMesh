@@ -136,6 +136,29 @@ public class ConfigurationResourceBackgroundImageTest {
     }
 
     @Test
+    public void theGalleryNeedsTheConfigurationsPermission() {
+        SecurityContext.release();
+        SecurityContext.init(Fakes.user(5, 1, "devices"));
+        assertEquals(Response.PERMISSION_DENIED().getMessage(), resource.getBackgroundImages(0, 20).getMessage());
+    }
+
+    @Test
+    public void deletingFromTheGalleryAlsoNeedsEditFiles() {
+        Response r = resource.deleteBackgroundImage(42);
+        assertEquals(Response.PERMISSION_DENIED().getMessage(), r.getMessage());
+        assertEquals(0, files.reads);
+    }
+
+    @Test
+    public void deletingAnotherCustomersImageIsRefused() {
+        SecurityContext.release();
+        SecurityContext.init(Fakes.user(5, 1, "configurations", "edit_files"));
+        Response r = resource.deleteBackgroundImage(42);
+        assertEquals(Response.ResponseStatus.ERROR, r.getStatus());
+        assertTrue(r.getMessage(), r.getMessage().startsWith("The background image"));
+    }
+
+    @Test
     public void fitMustBeFillOrFit() {
         Configuration c = plain();
         c.setBackgroundImageFit("stretch");

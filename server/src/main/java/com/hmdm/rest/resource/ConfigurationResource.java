@@ -24,6 +24,9 @@ package com.hmdm.rest.resource;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
+import javax.ws.rs.POST;
+import javax.ws.rs.DefaultValue;
+import javax.ws.rs.QueryParam;
 import javax.ws.rs.*;
 import javax.ws.rs.core.MediaType;
 
@@ -49,6 +52,9 @@ import com.hmdm.rest.json.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.List;
 import java.util.HashSet;
 import java.util.Set;
@@ -556,6 +562,67 @@ public class ConfigurationResource {
             return Response.PERMISSION_DENIED();
         }
         return Response.OK(this.applicationDAO.populateRequestedPermissions(this.configurationDAO.getConfigurationApplications(id)));
+    }
+
+    private com.hmdm.persistence.ConfigurationFileDAO configurationFileDAO;
+    private com.hmdm.persistence.IconDAO iconDAO;
+
+    /** What else may use an uploaded file (configuration files, icons), checked before a gallery delete. */
+    @Inject
+    public void setFileUsers(com.hmdm.persistence.ConfigurationFileDAO configurationFileDAO, com.hmdm.persistence.IconDAO iconDAO) {
+        this.configurationFileDAO = configurationFileDAO;
+        this.iconDAO = iconDAO;
+    }
+
+    // =================================================================================================================
+    @ApiOperation(
+            value = "Kiosk background images",
+            notes = "The customer's kiosk background images, once per content (SHA-256), newest first, with the "
+                    + "configurations using each (the ones the user may see by name, all of them counted). Paged.",
+            response = KioskBackgroundImageAssets.GalleryPage.class
+    )
+    @GET
+    @Path("/backgroundImages")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getBackgroundImages(@QueryParam("page") @DefaultValue("0") int page,
+                                        @QueryParam("size") @DefaultValue("20") int size) {
+        if (!SecurityContext.get().hasPermission("configurations") || backgroundImages == null) {
+            return Response.PERMISSION_DENIED();
+        }
+        Map<Integer, List<KioskBackgroundImageAssets.Use>> uses = new HashMap<>();
+        Set<Integer> hidden = new HashSet<>();
+        for (Configuration c : configurationDAO.getBackgroundImageUses()) {
+            KioskBackgroundImageAssets.Use u = new KioskBackgroundImageAssets.Use();
+            u.setId(c.getId());
+            u.setName(c.getName());
+            uses.computeIfAbsent(c.getBackgroundImageFileId(), k -> new ArrayList<>()).add(u);
+            if (!configurationDAO.hasConfigurationAccess(c.getId())) hidden.add(c.getId());
+        }
+        return Response.OK(backgroundImages.gallery(uses, hidden, Math.max(0, page), Math.max(1, Math.min(100, size))));
+    }
+
+    // =================================================================================================================
+    @ApiOperation(
+            value = "Delete a kiosk background image",
+            notes = "Deletes an uploaded kiosk background image of the customer that no configuration (or configuration "
+                    + "file or icon) uses. Refused (ERROR with a message) while anything uses it."
+    )
+    @POST
+    @Path("/backgroundImages/{fileId}/delete")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response deleteBackgroundImage(@PathParam("fileId") Integer fileId) {
+        if (!SecurityContext.get().hasPermission("configurations") || !SecurityContext.get().hasPermission("edit_files")
+                || backgroundImages == null || fileId == null) {
+            return Response.PERMISSION_DENIED();
+        }
+        try {
+            backgroundImages.deleteUnused(fileId, id -> configurationDAO.isBackgroundImageFileUsed(id)
+                    || (configurationFileDAO != null && configurationFileDAO.isFileUsed(id))
+                    || (iconDAO != null && iconDAO.isFileUsed(id)));
+            return Response.OK();
+        } catch (IllegalArgumentException e) {
+            return Response.ERROR(e.getMessage());
+        }
     }
 
     // =================================================================================================================

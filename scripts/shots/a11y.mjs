@@ -6,7 +6,8 @@
 //   node scripts/shots/a11y.mjs [--dist <dir>] [--out <dir>] [--only <substring>] [--quick] [--keys] [--shots]
 //
 // --quick: light theme at 1280 only. --keys: also the keyboard walk. --shots: a screenshot per state.
-// Writes <out>/axe.json, <out>/summary.txt (and keys.json, aria/*.yml with --keys) and exits 1 on any axe violation.
+// Writes <out>/axe.json, <out>/summary.txt (and keys.json, aria/*.yml with --keys) and exits 1 on any axe violation
+// or any state whose setup failed.
 // The build must exist (`npm run build` in web/; VITE_GALLERY=1 adds the component gallery to the sweep).
 import { chromium } from 'playwright';
 import { AxeBuilder } from '@axe-core/playwright';
@@ -579,7 +580,8 @@ try {
     fs.writeFileSync(path.join(out, 'keys.json'), JSON.stringify(keys, null, 1));
   }
   console.log('\n' + summary.split('\n').slice(0, 3).join('\n') + `\n→ ${out}`);
-  process.exitCode = results.some((r) => r.violations.length) ? 1 : 0;
+  // A state whose setup failed was never checked: that fails the run as a violation does.
+  process.exitCode = results.some((r) => r.violations.length || r.setupError) ? 1 : 0;
 } finally {
   await browser.close();
   server.close();

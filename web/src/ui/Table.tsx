@@ -78,7 +78,7 @@ export function useScrollStop(wrap: { current: HTMLDivElement | null }): boolean
 
 /** The wrapper's attributes while it is a scroll stop: a named region in the Tab order. */
 export function scrollStopProps(stop: boolean, name?: string) {
-  return stop ? { tabIndex: 0, role: 'region', 'aria-label': name ? `${name} (scrolls sideways)` : 'Table (scrolls sideways)' } : {};
+  return stop ? { tabIndex: 0, role: 'region', 'aria-label': name ? `Scrollable: ${name}` : 'Scrollable table' } : {};
 }
 
 /** Clicks on these inside a row are theirs, not the row's. */

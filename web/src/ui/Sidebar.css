@@ -11,10 +11,13 @@
   color: var(--text);
 }
 
+/* 26px tall (the wordmark's line is 25.5), so the nav starts on whole pixels (y 70, then every 39px) and a page's
+   section nav lines up with it: PageHeader keeps the page column on the same rhythm. */
 .v2 .v2-sidebar__brand,
 .v2 .v2-sidebar__brand:hover {
   display: flex;
   align-items: center;
+  min-height: 26px;
   padding: 0 12px;
   text-decoration: none;
   color: var(--ink);

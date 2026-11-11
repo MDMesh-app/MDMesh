@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.res.Configuration
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.core.content.ContextCompat
@@ -151,7 +152,14 @@ class KioskLauncherActivity : ComponentActivity() {
             addAction(Intent.ACTION_PACKAGE_CHANGED)
             addDataScheme("package")
         }
-        ContextCompat.registerReceiver(this, packageChanges, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        // Package broadcasts are protected (only the system sends them). Not exported on 33+, where a flag is
+        // required; before 33 a plain registration, rather than ContextCompat's permission-guarded one.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(packageChanges, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            registerReceiver(packageChanges, filter)
+        }
     }
 
     /**

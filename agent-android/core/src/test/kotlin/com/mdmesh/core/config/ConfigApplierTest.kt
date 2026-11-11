@@ -204,7 +204,9 @@ class ConfigApplierTest {
         val result = applier(fixedToggles(), kiosk(FakeController()), {}, store, permissions).apply(
             ConfigApplyPayload(
                 revision = "p1",
-                appPermissions = listOf(ConfigAppPermissions("org.example", mapOf("android.permission.CAMERA" to "ask"))),
+                appPermissions = listOf(
+                    ConfigAppPermissions("org.example", mapOf("android.permission.CAMERA" to "ask")),
+                ),
             ),
         )
         assertEquals(ConfigOutcome.UNSUPPORTED, result.outcomes["appPermissions.org.example.android.permission.CAMERA"])

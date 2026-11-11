@@ -108,7 +108,8 @@ describe('assigned apps: search, filter and sort', () => {
       ],
     });
     await loaded();
-    const camera = screen.getByText('Camera').closest('label')!.querySelector('select')!;
+    const row = screen.getByText('Chrome', { selector: '.v2-cfged-app__name' }).closest('tr')!;
+    const camera = within(row).getByText('Camera').closest('label')!.querySelector('select')!;
     fireEvent.change(camera, { target: { value: 'default' } });
     expect(saveBar()?.textContent).toContain('1 unsaved change');
     // Deny again: the rule is back, now after RECORD_AUDIO in the list.

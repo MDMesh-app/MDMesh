@@ -91,8 +91,9 @@ class ConfigApplier(
      */
     suspend fun applyAfterInstall(packageName: String): ConfigApplyResult? = mutex.withLock {
         val doc = store.delivered ?: store.load() ?: return@withLock null
-        val rules = doc.appPermissions.orEmpty().filter { it.packageName == packageName }
-            .flatMap { entry -> entry.permissions.map { (permission, state) -> AppPermissionRule(packageName, permission, state) } }
+        val rules = doc.appPermissions.orEmpty().filter { it.packageName == packageName }.flatMap { entry ->
+            entry.permissions.map { (permission, state) -> AppPermissionRule(packageName, permission, state) }
+        }
         if (rules.isEmpty()) return@withLock null
         val applied = store.revision()
         if (applied != doc.revision && applied != ConfigStateStore.STALE_REVISION) {

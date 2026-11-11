@@ -20,7 +20,6 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.regex.Pattern;
-import java.util.zip.CRC32;
 
 /**
  * Removes the metadata of a PNG, JPEG or WebP image by rewriting its container, never its pixels: nothing is decoded,
@@ -37,9 +36,10 @@ import java.util.zip.CRC32;
  *
  * <p>Every pass is linear in the input, which is at most {@link KioskBackgroundImageAssets#MAX_BYTES}.</p>
  *
- * <p>The one tag kept is the EXIF orientation, rewritten as a minimal EXIF block with nothing else: removing it would
- * turn an upright phone photo on its side. The console already applies it to the pixels before uploading (so its
- * uploads have none left); a file uploaded through the API keeps it, and the agent applies it when it decodes.</p>
+ * <p>The one tag kept is a JPEG's EXIF orientation, rewritten as a minimal EXIF block with nothing else: removing it
+ * would turn an upright phone photo on its side, and the agent applies it when it decodes. Orientation is JPEG-only
+ * (the agent reads it from JPEG only): a PNG's eXIf and a WebP's EXIF go whole, orientation included, so the server,
+ * the console and the device all show such an image as stored.</p>
  */
 public final class KioskImageMetadata {
 
@@ -90,9 +90,8 @@ public final class KioskImageMetadata {
     public static int orientation(byte[] bytes) {
         try {
             if (bytes == null || bytes.length < 12 || bytes.length > KioskBackgroundImageAssets.MAX_BYTES) return 1;
-            if (isPng(bytes)) return pngOrientation(bytes);
+            // JPEG only: the agent applies a JPEG's EXIF orientation and nothing else's, so a PNG or WebP keeps none.
             if (u8(bytes, 0) == 0xFF && u8(bytes, 1) == 0xD8) return jpegOrientation(bytes);
-            if (ascii(bytes, 0, "RIFF") && ascii(bytes, 8, "WEBP")) return webpOrientation(bytes);
         } catch (IndexOutOfBoundsException e) {
             return 1;
         }
@@ -244,7 +243,6 @@ public final class KioskImageMetadata {
             "acTL", "fcTL", "fdAT"));
 
     private static byte[] png(byte[] b) {
-        int orientation = pngOrientation(b);
         ByteArrayOutputStream out = new ByteArrayOutputStream(b.length);
         out.write(b, 0, PNG_SIGNATURE.length);
         int i = PNG_SIGNATURE.length;
@@ -262,35 +260,13 @@ public final class KioskImageMetadata {
                 return null;                                 // an unknown critical chunk: not an image we can vouch for
             }
             if (critical || PNG_KEEP.contains(type)) out.write(b, i, total);
-            if (first && orientation != 1) pngChunk(out, "eXIf", minimalTiff(orientation));
             first = false;
             i += total;
             if ("IEND".equals(type)) return out.toByteArray();   // anything after it is dropped
         }
     }
 
-    private static int pngOrientation(byte[] b) {
-        int i = PNG_SIGNATURE.length;
-        while (i + 12 <= b.length) {
-            long length = be32(b, i);
-            if (length > b.length - i - 12) return 1;
-            if (ascii(b, i + 4, "eXIf")) return tiffOrientation(b, i + 8, i + 8 + (int) length);
-            if (ascii(b, i + 4, "IDAT") || ascii(b, i + 4, "IEND")) return 1;
-            i += 12 + (int) length;
-        }
-        return 1;
-    }
 
-    private static void pngChunk(ByteArrayOutputStream out, String type, byte[] data) {
-        byte[] typeBytes = type.getBytes(StandardCharsets.ISO_8859_1);
-        writeBe32(out, data.length);
-        out.write(typeBytes, 0, 4);
-        out.write(data, 0, data.length);
-        CRC32 crc = new CRC32();
-        crc.update(typeBytes);
-        crc.update(data);
-        writeBe32(out, crc.getValue());
-    }
 
     // ---- WebP -------------------------------------------------------------------------------------------------------
 
@@ -308,7 +284,6 @@ public final class KioskImageMetadata {
             if (!ascii(b, 12, "VP8 ") && !ascii(b, 12, "VP8L")) return null;
             return Arrays.copyOf(b, end);
         }
-        int orientation = webpOrientation(b);
         ByteArrayOutputStream out = new ByteArrayOutputStream(b.length);
         out.write(b, 0, 12);                                 // RIFF, size (fixed below), WEBP
         // VP8X: the first chunk, and only there. Its flags are patched in a copy of it and written once.
@@ -318,9 +293,7 @@ public final class KioskImageMetadata {
         int vp8xTotal = 8 + (int) (vp8xSize + (vp8xSize & 1));
         if (vp8xTotal > end - 12) return null;
         byte[] vp8x = Arrays.copyOfRange(b, 12, 12 + vp8xTotal);
-        int flags = (vp8x[8] & 0xFF) & ~(VP8X_XMP | VP8X_EXIF);
-        if (orientation != 1) flags |= VP8X_EXIF;
-        vp8x[8] = (byte) flags;
+        vp8x[8] = (byte) ((vp8x[8] & 0xFF) & ~(VP8X_XMP | VP8X_EXIF));
         out.write(vp8x, 0, vp8x.length);
         int i = 12 + vp8xTotal;
         boolean image = false;
@@ -339,16 +312,6 @@ public final class KioskImageMetadata {
             i += total;
         }
         if (!image) return null;
-        if (orientation != 1) {
-            byte[] tiff = minimalTiff(orientation);
-            out.write('E');
-            out.write('X');
-            out.write('I');
-            out.write('F');
-            writeLe32(out, tiff.length);
-            out.write(tiff, 0, tiff.length);
-            if ((tiff.length & 1) == 1) out.write(0);
-        }
         byte[] result = out.toByteArray();
         int size = result.length - 8;
         result[4] = (byte) size;
@@ -358,23 +321,6 @@ public final class KioskImageMetadata {
         return result;
     }
 
-    private static int webpOrientation(byte[] b) {
-        long riffSize = le32(b, 4);
-        int end = (int) Math.min(b.length, 8L + riffSize);
-        int i = 12;
-        while (i + 8 <= end) {
-            long size = le32(b, i + 4);
-            if (size > end - i - 8L) return 1;
-            if (ascii(b, i, "EXIF")) {
-                int data = i + 8;
-                // Some writers keep JPEG's "Exif\0\0" in front of the TIFF header.
-                if (size >= 6 && startsWith(b, data, EXIF_ID)) data += 6;
-                return tiffOrientation(b, data, i + 8 + (int) size);
-            }
-            i += 8 + (int) (size + (size & 1));
-        }
-        return 1;
-    }
 
     // ---- EXIF (TIFF) ------------------------------------------------------------------------------------------------
 
@@ -460,10 +406,4 @@ public final class KioskImageMetadata {
         out.write((int) v & 0xFF);
     }
 
-    private static void writeLe32(ByteArrayOutputStream out, long v) {
-        out.write((int) v & 0xFF);
-        out.write((int) (v >> 8) & 0xFF);
-        out.write((int) (v >> 16) & 0xFF);
-        out.write((int) (v >> 24) & 0xFF);
-    }
 }

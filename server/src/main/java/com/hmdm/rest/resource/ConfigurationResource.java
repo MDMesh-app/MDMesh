@@ -255,6 +255,8 @@ public class ConfigurationResource {
                     }
                     configuration.setDisableLocation(false);        // Not used but shouldn't be NULL
                     this.configurationDAO.insertConfiguration(configuration);
+                    // Saved: the copy is the configuration's now, whatever fails after this.
+                    imageApplied = null;
                     User user = SecurityContext.get().getCurrentUser().get();
                     if (!user.isAllConfigAvailable()) {
                         // User should get permissions to edit a configuration he created
@@ -277,6 +279,7 @@ public class ConfigurationResource {
                     }
                     log.info("Configuration " + configuration.getName() + " updated by user "  + SecurityContext.get().getCurrentUserName());
                     this.configurationDAO.updateConfiguration(configuration);
+                    imageApplied = null;
                     this.pushService.notifyDevicesOnUpdate(configuration.getId());
                 }
                 configuration = getConfiguration(configuration.getId());
@@ -335,10 +338,10 @@ public class ConfigurationResource {
         configuration.setManagedAppPermissions(kept);
     }
 
-    private static void undo(KioskBackgroundImageAssets.Applied applied) {
+    private void undo(KioskBackgroundImageAssets.Applied applied) {
         if (applied == null) return;
         try {
-            applied.undo();
+            applied.undo(fileId -> configurationDAO.isBackgroundImageFileUsed(fileId));
         } catch (RuntimeException e) {
             log.warn("Could not remove the background image copy of a failed save", e);
         }

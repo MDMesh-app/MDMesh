@@ -78,11 +78,21 @@ public class KioskBackgroundImageAssets {
             this.createdCopy = createdCopy;
         }
 
-        /** Removes a cleaned copy this save hosted (row and file); a copy found from an earlier save stays. */
-        public void undo() {
+        /**
+         * Removes a cleaned copy this save hosted (row and file), unless another save has picked it up since (it found
+         * the file and row) or a configuration references it ({@code inUse}, asked under the same lock). A copy found
+         * from an earlier save is never removed.
+         *
+         * @param inUse whether any configuration references a file id (ConfigurationDAO.isBackgroundImageFileUsed)
+         */
+        public void undo(java.util.function.IntPredicate inUse) {
             if (createdCopy == null) return;
-            owner.uploadedFiles.remove(createdCopy.getId());
-            FileUtil.deleteFile(customer, owner.filesDirectory, createdCopy.getFilePath());
+            synchronized (COPY_LOCK) {
+                int id = createdCopy.getId();
+                if (owner.reused.contains(id) || inUse.test(id)) return;
+                owner.uploadedFiles.remove(id);
+                FileUtil.deleteFile(customer, owner.filesDirectory, createdCopy.getFilePath());
+            }
         }
     }
 
@@ -318,8 +328,14 @@ public class KioskBackgroundImageAssets {
     }
 
     private static final Pattern KIOSK_PREFIX = Pattern.compile("^kiosk-[0-9a-f]{12}-");
-    /** Saves hosting a cleaned copy: one at a time, so two saves of one image find one file and one row. */
+    /**
+     * Saves hosting a cleaned copy, and undoing one: one at a time, so two saves of one image find one file and one
+     * row. Per JVM: MDMesh runs as a single server node (across nodes the atomic move keeps the file whole, but two
+     * rows for one path would be possible).
+     */
     private static final Object COPY_LOCK = new Object();
+    /** Copies another save picked up after the one that hosted them: never undone. */
+    private final java.util.Set<Integer> reused = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     /**
      * Hosts {@code clean} next to {@code original} as {@code kiosk-<12 hex of its SHA-256>-<name>}, or finds it there
@@ -359,7 +375,11 @@ public class KioskBackgroundImageAssets {
                     }
                 }
                 UploadedFile existing = uploadedFiles.getByPath(customer.getId(), copyPath);
-                if (existing != null && !existing.isExternal()) return existing;
+                if (existing != null && !existing.isExternal()) {
+                    // Another save uses it now: a failed save that hosted it must not take it back.
+                    reused.add(existing.getId());
+                    return existing;
+                }
                 UploadedFile copy = new UploadedFile();
                 copy.setCustomerId(customer.getId());
                 copy.setFilePath(copyPath);

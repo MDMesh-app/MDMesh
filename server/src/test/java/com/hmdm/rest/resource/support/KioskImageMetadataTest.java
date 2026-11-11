@@ -86,6 +86,7 @@ public class KioskImageMetadataTest {
         byte[] once = KioskImageMetadata.strip(phoneJpeg(image("jpg", 8, 8), 8));
         assertArrayEquals(once, KioskImageMetadata.strip(once));
         byte[] png = KioskImageMetadata.strip(phonePng(image("png", 8, 8), 3));
+        assertEquals(1, KioskImageMetadata.orientation(png));
         assertArrayEquals(png, KioskImageMetadata.strip(png));
         byte[] webp = KioskImageMetadata.strip(extendedWebp(true, 6));
         assertArrayEquals(webp, KioskImageMetadata.strip(webp));
@@ -130,13 +131,16 @@ public class KioskImageMetadataTest {
     // ---- PNG --------------------------------------------------------------------------------------------------------
 
     @Test
-    public void aPngLosesItsTextTimeAndExifButKeepsOrientationAndColour() throws Exception {
+    public void aPngLosesItsTextTimeAndExifOrientationIncludedButKeepsColour() throws Exception {
         byte[] plain = image("png", 12, 7);
         byte[] clean = KioskImageMetadata.strip(phonePng(plain, 8));
         assertNotNull(clean);
         assertAbsent(clean, SERIAL, GPS, "xmpmeta", "tIME", "tEXt", "iTXt", "AFTER-IEND");
         assertPresent(clean, "gAMA");
-        assertEquals(8, KioskImageMetadata.orientation(clean));
+        // Orientation is JPEG-only (the agent applies it to JPEG only): a PNG's eXIf goes with the rest.
+        assertAbsent(clean, "eXIf");
+        assertEquals(1, KioskImageMetadata.orientation(clean));
+        assertEquals(1, KioskImageMetadata.orientation(phonePng(plain, 8)));
         BufferedImage decoded = ImageIO.read(new ByteArrayInputStream(clean));   // CRCs and order still valid
         assertEquals(12, decoded.getWidth());
         assertEquals(7, decoded.getHeight());
@@ -174,11 +178,13 @@ public class KioskImageMetadataTest {
     }
 
     @Test
-    public void anExtendedWebpKeepsOnlyItsOrientation() {
+    public void anExtendedWebpLosesItsOrientationToo() {
+        // Orientation is JPEG-only: a WebP's EXIF goes whole, its flag cleared.
         byte[] clean = KioskImageMetadata.strip(extendedWebp(true, 6));
-        assertAbsent(clean, SERIAL, "xmpmeta");
-        assertEquals(6, KioskImageMetadata.orientation(clean));
-        assertEquals(0x08, clean[20] & 0x0C);
+        assertAbsent(clean, SERIAL, "xmpmeta", "EXIF");
+        assertEquals(1, KioskImageMetadata.orientation(clean));
+        assertEquals(1, KioskImageMetadata.orientation(extendedWebp(true, 6)));
+        assertEquals(0, clean[20] & 0x0C);
         assertEquals(clean.length - 8, le32(clean, 4));
     }
 

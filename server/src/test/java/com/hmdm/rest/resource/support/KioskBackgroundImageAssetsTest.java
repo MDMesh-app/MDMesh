@@ -345,15 +345,42 @@ public class KioskBackgroundImageAssetsTest {
         KioskBackgroundImageAssets.Applied applied = assets.apply(c, null);
         File copy = new File(tenant, files.inserted.get(0).getFilePath());
         assertTrue(copy.isFile());
-        applied.undo();
+        applied.undo(id -> false);
         assertFalse(copy.exists());
         assertEquals(java.util.Collections.singletonList(100), files.removed);
         // A copy an earlier save hosted is reused, and never taken back by a later failed save.
         Configuration again = replaceWith("photo.jpg", dirty);
         assets.apply(again, null);
         Configuration third = replaceWith("photo.jpg", dirty);
-        assets.apply(third, null).undo();
+        assets.apply(third, null).undo(id -> false);
         assertTrue(new File(tenant, files.inserted.get(1).getFilePath()).isFile());
+    }
+
+    /** Save A hosts the copy, save B reuses it, then A fails: B's copy stays, committed or not yet. */
+    @Test
+    public void aFailedSaveNeverTakesBackACopyAnotherSaveUses() throws Exception {
+        byte[] dirty = KioskImageMetadataTest.phoneJpeg(realImage("jpg", 8, 8), 1);
+        KioskBackgroundImageAssets.Applied a = assets.apply(replaceWith("photo.jpg", dirty), null);
+        Configuration b = replaceWith("photo.jpg", dirty);
+        assets.apply(b, null);
+        File copy = new File(tenant, files.inserted.get(0).getFilePath());
+        a.undo(id -> false);
+        assertTrue("B uses it", copy.isFile());
+        assertTrue(files.removed.isEmpty());
+        assertEquals(Integer.valueOf(100), b.getBackgroundImageFileId());
+    }
+
+    /** A copy a committed configuration already references is never removed. */
+    @Test
+    public void aFailedSaveNeverTakesBackACopyAConfigurationReferences() throws Exception {
+        byte[] dirty = KioskImageMetadataTest.phoneJpeg(realImage("jpg", 8, 8), 1);
+        KioskBackgroundImageAssets.Applied a = assets.apply(replaceWith("photo.jpg", dirty), null);
+        File copy = new File(tenant, files.inserted.get(0).getFilePath());
+        java.util.List<Integer> asked = new java.util.ArrayList<>();
+        a.undo(id -> { asked.add(id); return true; });
+        assertEquals(java.util.Collections.singletonList(100), asked);
+        assertTrue(copy.isFile());
+        assertTrue(files.removed.isEmpty());
     }
 
     @Test
@@ -410,6 +437,17 @@ public class KioskBackgroundImageAssetsTest {
         assertEquals(Long.valueOf(1_700_000_000_000L), info.getUploadTime());
         assertEquals(Boolean.TRUE, info.getHasMetadata());
         assertEquals("nothing is written to describe a file", 0, files.inserted.size());
+    }
+
+    @Test
+    public void describeNeverTurnsAPngOrWebp() throws Exception {
+        byte[] png = KioskImageMetadataTest.phonePng(realImage("png", 40, 30), 6);
+        java.nio.file.Files.write(new File(tenant, "turned.png").toPath(), png);
+        uploaded.setFilePath("turned.png");
+        KioskBackgroundImageInfo info = assets.describe(42);
+        assertEquals(40, info.getWidth());
+        assertEquals(30, info.getHeight());
+        assertEquals(1, info.getOrientation());
     }
 
     @Test

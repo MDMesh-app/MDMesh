@@ -3,6 +3,7 @@ package com.mdmesh.core.transport
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
 import okhttp3.Protocol
 import okhttp3.Request
@@ -15,6 +16,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
+import kotlin.random.Random
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TransportManagerTest {
@@ -46,7 +48,17 @@ class TransportManagerTest {
     private val scope = TestScope()
     private val sockets = FakeSockets()
     private val wakes = mutableListOf<WakeSignal>()
-    private val transport = TransportManager(sockets, { "https://mdm.example" }, scope)
+    private val logs = mutableListOf<String>()
+    private val transport = TransportManager(
+        sockets = sockets,
+        baseUrl = { "https://mdm.example" },
+        scope = scope,
+        clock = { scope.currentTime },
+        jitter = { it }, // the bound itself: deterministic
+        log = { logs += it },
+    )
+
+    private fun advance(ms: Long) { scope.advanceTimeBy(ms); scope.runCurrent() }
 
     private fun start() = transport.start("dev-1", "sek") { wakes += it }
 
@@ -119,5 +131,91 @@ class TransportManagerTest {
         sockets.opened[0].wake()
         scope.runCurrent()
         assertEquals(listOf(WakeSignal("commands")), wakes)
+    }
+
+    @Test
+    fun `the backoff doubles per failure up to five minutes`() {
+        start()
+        val waits = mutableListOf<Long>()
+        repeat(12) {
+            val before = scope.currentTime
+            sockets.opened.last().fail()
+            val count = sockets.opened.size
+            while (sockets.opened.size == count) advance(1_000)
+            waits += scope.currentTime - before
+        }
+        assertEquals(
+            listOf(1L, 2, 4, 8, 16, 32, 64, 128, 256, 300, 300, 300).map { it * 1_000 },
+            waits,
+        )
+    }
+
+    @Test
+    fun `a stable session resets the backoff, a short one does not`() {
+        start()
+        repeat(3) { sockets.opened.last().fail(); advance(10 * 60_000L) } // failures = 3
+        sockets.opened.last().open()
+        advance(5_000)
+        sockets.opened.last().fail()
+        assertTrue(logs.last(), logs.last().contains("retry in 8000ms"))
+
+        advance(10 * 60_000L)
+        sockets.opened.last().open()
+        advance(TransportManager.STABLE_SESSION_MS)
+        sockets.opened.last().fail()
+        assertTrue(logs.last(), logs.last().contains("retry in 1000ms"))
+    }
+
+    @Test
+    fun `network return cuts a backoff short`() {
+        start()
+        repeat(6) { sockets.opened.last().fail(); advance(10 * 60_000L) }
+        sockets.opened.last().fail() // next try in 64s
+        assertEquals("Backoff", transport.stateName)
+
+        transport.onNetworkAvailable()
+        assertEquals(8, sockets.opened.size)
+        assertEquals("Connecting", transport.stateName)
+        advance(10 * 60_000L)
+        assertEquals("the cancelled backoff must not connect again", 8, sockets.opened.size)
+    }
+
+    @Test
+    fun `network return does nothing unless backing off`() {
+        transport.onNetworkAvailable()
+        assertEquals("Stopped", transport.stateName)
+        start()
+        sockets.opened[0].open()
+        transport.onNetworkAvailable()
+        assertEquals(1, sockets.opened.size)
+        assertEquals("Connected", transport.stateName)
+    }
+
+    @Test
+    fun `transitions are logged without the device id or secret`() {
+        start()
+        sockets.opened[0].open()
+        sockets.opened[0].fail()
+        transport.stop()
+        assertEquals(
+            listOf(
+                "Stopped -> Connecting gen=1",
+                "Connecting -> Connected gen=1",
+                "Connected -> Backoff gen=2 retry in 1000ms failures=1",
+                "Backoff -> Stopped gen=3",
+            ),
+            logs,
+        )
+        assertTrue(logs.none { "dev-1" in it || "sek" in it || "mdm.example" in it })
+    }
+
+    @Test
+    fun `full jitter stays between the minimum and the bound`() {
+        val random = Random(42)
+        val bound = 64_000L
+        val picks = (1..1_000).map { TransportManager.fullJitter(bound, random) }
+        assertTrue(picks.all { it in TransportManager.MIN_BACKOFF_MS..bound })
+        assertTrue("spread, not lock-step", picks.toSet().size > 900)
+        assertEquals(TransportManager.MIN_BACKOFF_MS, TransportManager.fullJitter(1_000L))
     }
 }

@@ -8,6 +8,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.Network
 import android.os.BatteryManager
 import android.os.Build
 import android.os.PowerManager
@@ -76,6 +78,11 @@ class CheckInService : LifecycleService() {
         }
     }
 
+    // A device that gets its network back reconnects the wake socket now instead of sitting out its backoff.
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) = transport.onNetworkAvailable()
+    }
+
     @Suppress("DEPRECATION")
     override fun onCreate() {
         super.onCreate()
@@ -88,7 +95,12 @@ class CheckInService : LifecycleService() {
             addAction(Intent.ACTION_BATTERY_LOW)
         }
         ContextCompat.registerReceiver(this, powerReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        // Best effort: the system caps callbacks per app (API 30+ throws past it); the backoff still retries.
+        runCatching { connectivity().registerDefaultNetworkCallback(networkCallback) }
+            .onFailure { Log.w(TAG, "network callback not registered", it) }
     }
+
+    private fun connectivity() = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
@@ -185,6 +197,7 @@ class CheckInService : LifecycleService() {
 
     override fun onDestroy() {
         runCatching { unregisterReceiver(powerReceiver) }
+        runCatching { connectivity().unregisterNetworkCallback(networkCallback) }
         transport.stop()
         super.onDestroy()
     }

@@ -88,6 +88,8 @@ public class AuditRuleSpellingTest {
         sample(ResourceAuditInfo.DEVICE_COMMAND, "POST", "/rest/private/agent/v1/devices/h0001/commands");
         sample(ResourceAuditInfo.BULK_DEVICE_COMMAND, "POST", "/rest/private/agent/v1/bulk/commands");
         sample(ResourceAuditInfo.SYNC_DEVICE_APPS, "POST", "/rest/private/agent/v1/devices/h0001/syncApps");
+        sample(ResourceAuditInfo.MINT_ENROLL_TOKEN, "POST", "/rest/private/agent/v1/token");
+        sample(ResourceAuditInfo.REVOKE_ENROLL_TOKENS, "POST", "/rest/private/agent/v1/token/revoke-all");
     }
 
     private static void sample(ResourceAuditInfo rule, String method, String path) {

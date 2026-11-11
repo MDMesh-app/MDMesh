@@ -496,6 +496,11 @@ It never touches apt packages, your proxy or the git checkout.
   authorized callers (the recovery token, or the session of an admin who may update: a super-admin, or the org admin
   of a single-customer install). Apply and rollback only recreate `server` and `caddy`.
 - Setting a password ends that account's other sessions and API tokens. Password reset links work once, for 24 hours.
+- Enrollment codes are stored hashed. A code for a batch enrolls devices for anyone who has it until it expires or
+  its devices are used up. If one is shared further than meant, use **Stop all codes** on the Enroll page (or
+  `POST /rest/private/agent/v1/token/revoke-all`): every code of the customer that still works stops, and enrolled
+  devices stay enrolled. The server log names the token that enrolled each device, and the audit log records making
+  and stopping codes.
 - The console session cookie is `SameSite=Lax`, and `Secure` when `BASE_URL` is https.
 - Failed sign-ins are limited per address and per account ([Sign-in limits](#sign-in-limits)).
 - Responses carry no-framing, `nosniff`, `Referrer-Policy` and, on https, HSTS headers. A request path with a `;` or

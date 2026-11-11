@@ -48,6 +48,7 @@ import com.mdmesh.core.install.InstallManager
 import com.mdmesh.core.state.DeviceStateCollector
 import com.mdmesh.core.state.DeviceStateSource
 import com.mdmesh.core.store.ConfigStateStore
+import com.mdmesh.core.store.configuredKiosk
 import com.mdmesh.core.store.DataStoreKioskStateStore
 import com.mdmesh.core.store.KioskStateStore
 import com.mdmesh.core.store.SharedPrefsConfigStateStore
@@ -285,6 +286,8 @@ object AgentModule {
             kiosk, store, AndroidKioskHomeSwitch(context, home), home,
             safeMode = ConfiguredSafeModeSetting(configStore),
             journal = SharedPrefsExitJournal(context),
+            // An exit cut off midway is never finished while the configuration says kiosk on.
+            desiredKioskOn = { configStore.configuredKiosk() != null },
             isLockTaskActive = { kiosk.isLocked(context) },
         )
     }

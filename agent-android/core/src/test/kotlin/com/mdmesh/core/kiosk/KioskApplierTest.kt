@@ -275,7 +275,7 @@ class KioskApplierTest {
         assertEquals(listOf("claim:false", "oem"), h.log)
     }
 
-    // --- An interrupted exit is completed on the next start (F6) ---
+    // --- An interrupted exit (F6): finished only for the same kiosk, and never against a kiosk-on configuration ---
 
     private class MemJournal : ExitJournal {
         var saved: ExitJournal.Pending? = null
@@ -284,38 +284,124 @@ class KioskApplierTest {
         override fun end() { saved = null }
     }
 
-    @Test fun `an exit ends its journal entry`() = runTest {
-        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(KioskApplyPayload())
-        KioskApplier(FakeController(KioskResult.Ok), store, FakeHome(), home, journal = j) { true }.exit(force = true)
-        assertNull(j.saved)
+    private val kioskA = KioskApplyPayload(mode = "single", pinPackage = "com.a", allowedPackages = listOf("com.a"))
+    private val kioskB = KioskApplyPayload(mode = "single", pinPackage = "com.b", allowedPackages = listOf("com.b"))
+
+    private fun applier(
+        c: FakeController = FakeController(KioskResult.Ok),
+        store: KioskStateStore,
+        h: FakeHome = FakeHome(),
+        j: ExitJournal,
+        configuredOn: Boolean,
+    ) = KioskApplier(c, store, h, home, journal = j, desiredKioskOn = { configuredOn }) { false }
+
+    @Test fun `an exit journals the kiosk it exits and ends the entry when done`() = runTest {
+        val j = object : ExitJournal by MemJournal() {
+            val begun = mutableListOf<ExitJournal.Pending>()
+            var ended = 0
+            override fun begin(p: ExitJournal.Pending) { begun += p }
+            override fun end() { ended++ }
+        }
+        val store = InMemoryKioskStateStore(); store.save(kioskA)
+        applier(store = store, j = j, configuredOn = false).exit(force = true)
+        assertEquals(listOf(ExitJournal.Pending(true, true, ExitJournal.fingerprint(kioskA))), j.begun)
+        assertEquals(1, j.ended)
         assertNull(store.load())
     }
 
     @Test fun `a refused, unforced exit leaves nothing to resume`() = runTest {
-        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(KioskApplyPayload())
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
         val refusing = FakeController(KioskResult.Ok, exitResult = KioskResult.Failed("dpm"))
-        KioskApplier(refusing, store, FakeHome(), home, journal = j) { true }.exit()
+        applier(refusing, store, j = j, configuredOn = false).exit()
         assertNull(j.saved)
-        assertNotNull(store.load())
+        assertEquals(kioskA, store.load())
     }
 
-    @Test fun `an exit cut off after it began is completed by the next start`() = runTest {
-        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(KioskApplyPayload())
-        j.saved = ExitJournal.Pending(handBackHome = true, force = true) // begun, then the process died
+    @Test fun `an exit cut off for the same kiosk, configuration kiosk-off, is finished at the next start`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+        j.saved = ExitJournal.Pending(handBackHome = true, force = true, kiosk = ExitJournal.fingerprint(kioskA))
         val h = FakeHome()
-        val resumed = KioskApplier(FakeController(KioskResult.Ok), store, h, home, journal = j) { false }
-            .resumeInterruptedExit()
-        assertTrue(resumed)
+        assertTrue(applier(store = store, h = h, j = j, configuredOn = false).resumeInterruptedExit())
         assertNull("kiosk state cleared", store.load())
         assertEquals(listOf("claim:false", "oem"), h.log)
         assertNull(j.saved)
     }
 
+    @Test fun `a new kiosk entered before the next start drops the stale exit and stays locked`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+        j.saved = ExitJournal.Pending(handBackHome = true, force = true, kiosk = ExitJournal.fingerprint(kioskA))
+        val c = FakeController(KioskResult.Ok)
+        val a = applier(c, store, j = j, configuredOn = false)
+        a.enter(kioskB) // kiosk.enter, config.apply or the boot re-apply, before the launcher starts
+        assertNull("an entry clears the journal", j.saved)
+        assertFalse(a.resumeInterruptedExit())
+        assertEquals(kioskB, store.load())
+        assertFalse(c.exited)
+    }
+
+    @Test fun `a journal for another kiosk than the saved one is discarded, the kiosk stays`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskB)
+        j.saved = ExitJournal.Pending(handBackHome = true, force = true, kiosk = ExitJournal.fingerprint(kioskA))
+        val c = FakeController(KioskResult.Ok); val h = FakeHome()
+        assertFalse(applier(c, store, h, j, configuredOn = false).resumeInterruptedExit())
+        assertEquals(kioskB, store.load())
+        assertFalse(c.exited)
+        assertFalse("claim:false" in h.log)
+        assertNull(j.saved)
+    }
+
+    @Test fun `with the configuration saying kiosk on, an interrupted exit rolls back to the kiosk`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+        j.saved = ExitJournal.Pending(handBackHome = true, force = true, kiosk = ExitJournal.fingerprint(kioskA))
+        val c = FakeController(KioskResult.Ok); val h = FakeHome()
+        assertFalse(applier(c, store, h, j, configuredOn = true).resumeInterruptedExit())
+        assertEquals("kiosk kept", kioskA, store.load())
+        assertFalse(c.exited)
+        assertEquals("re-locked to the same kiosk", listOf(listOf("com.a")), c.enters)
+        assertFalse("claim:false" in h.log)
+        assertNull(j.saved)
+    }
+
+    @Test fun `a corrupted or unknown journal entry is ignored and the kiosk stays`() = runTest {
+        for (bad in listOf("", "not-a-fingerprint")) {
+            val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+            j.saved = ExitJournal.Pending(handBackHome = true, force = true, kiosk = bad)
+            val c = FakeController(KioskResult.Ok)
+            assertFalse(applier(c, store, j = j, configuredOn = false).resumeInterruptedExit())
+            assertEquals(kioskA, store.load())
+            assertFalse(c.exited)
+            assertNull(j.saved)
+        }
+    }
+
+    @Test fun `a cut-off exit that already cleared the kiosk state finishes releasing HOME`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore() // state already cleared, HOME not yet
+        j.saved = ExitJournal.Pending(handBackHome = true, force = true, kiosk = ExitJournal.fingerprint(kioskA))
+        val h = FakeHome()
+        assertTrue(applier(store = store, h = h, j = j, configuredOn = false).resumeInterruptedExit())
+        assertEquals(listOf("claim:false", "oem"), h.log)
+        assertNull(j.saved)
+    }
+
+    @Test fun `with the configuration saying kiosk on, a cut-off exit releases nothing`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore()
+        j.saved = ExitJournal.Pending(handBackHome = true, force = true, kiosk = ExitJournal.fingerprint(kioskA))
+        val h = FakeHome()
+        assertFalse(applier(store = store, h = h, j = j, configuredOn = true).resumeInterruptedExit())
+        assertTrue("HOME left to the re-apply of the kiosk-on configuration", h.log.isEmpty())
+        assertNull(j.saved)
+    }
+
     @Test fun `nothing pending, nothing done`() = runTest {
-        val store = InMemoryKioskStateStore(); val p = KioskApplyPayload(); store.save(p); val h = FakeHome()
-        assertFalse(KioskApplier(FakeController(KioskResult.Ok), store, h, home, journal = MemJournal()) { true }
-            .resumeInterruptedExit())
-        assertEquals(p, store.load())
+        val store = InMemoryKioskStateStore(); store.save(kioskA); val h = FakeHome()
+        assertFalse(applier(store = store, h = h, j = MemJournal(), configuredOn = false).resumeInterruptedExit())
+        assertEquals(kioskA, store.load())
         assertTrue(h.log.isEmpty())
+    }
+
+    @Test fun `the fingerprint tells kiosks apart and is stable`() {
+        assertEquals(ExitJournal.fingerprint(kioskA), ExitJournal.fingerprint(kioskA.copy()))
+        assertNotEquals(ExitJournal.fingerprint(kioskA), ExitJournal.fingerprint(kioskB))
+        assertNotEquals(ExitJournal.fingerprint(kioskA), ExitJournal.fingerprint(null))
     }
 }

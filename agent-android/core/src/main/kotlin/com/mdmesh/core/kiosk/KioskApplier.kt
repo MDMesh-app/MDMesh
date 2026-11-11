@@ -8,6 +8,7 @@ import com.mdmesh.kiosk.KioskToggles
 import com.mdmesh.kiosk.lockTaskFeatures
 import com.mdmesh.kiosk.safeModeBlocked
 import com.mdmesh.proto.KioskApplyPayload
+import android.util.Log
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -40,8 +41,13 @@ class KioskApplier(
      * default is for tests only: an applier built without it would treat an explicit Block as not managed.
      */
     private val safeMode: SafeModeSetting = SafeModeSetting.NotManaged,
-    /** Remembers an exit in progress, so one cut off by process death is finished on the next start. */
+    /** Remembers an exit in progress, so one cut off by process death is settled on the next start. */
     private val journal: ExitJournal = ExitJournal.None,
+    /**
+     * Whether the server's configuration (the desired state) has kiosk on. An interrupted exit is never finished
+     * against it. The default is for tests: "on", so a resume fails closed.
+     */
+    private val desiredKioskOn: () -> Boolean = { true },
     /** Whether lock task is active now ([KioskController.isLocked]). Last, so a trailing lambda can only be this. */
     private val isLockTaskActive: () -> Boolean,
 ) {
@@ -52,6 +58,8 @@ class KioskApplier(
     suspend fun enter(p: KioskApplyPayload): KioskResult = mutex.withLock { enterLocked(p) }
 
     private suspend fun enterLocked(p: KioskApplyPayload): KioskResult {
+        // Entering supersedes any exit a process death cut off: it must never be finished against this kiosk.
+        journal.end()
         // Already in this kiosk: no re-entry or relaunch, but re-assert the volume lock and the Safe Mode block (either
         // may have failed before).
         val current = store.load()
@@ -130,7 +138,7 @@ class KioskApplier(
     }
 
     private suspend fun exitLocked(handBackHome: Boolean, force: Boolean): KioskResult {
-        journal.begin(ExitJournal.Pending(handBackHome, force))
+        journal.begin(ExitJournal.Pending(handBackHome, force, ExitJournal.fingerprint(store.load())))
         val r = kiosk.exit()
         if (r != KioskResult.Ok && !force) {
             journal.end() // refused: nothing changed, nothing to finish later
@@ -148,19 +156,42 @@ class KioskApplier(
     }
 
     /**
-     * At start (the kiosk launcher, the boot re-apply): finish an exit that began but was cut off (process death
-     * between its steps), with the options it was started with. True when one was finished. Repeating a step is
-     * harmless: each one is idempotent.
+     * At start (the kiosk launcher, the boot re-apply): settle an exit that began but was cut off (process death
+     * between its steps). It is finished, with its original options, only for the same kiosk it was exiting and only
+     * while the server's configuration is kiosk-off; with the configuration kiosk-on the saved kiosk is locked again;
+     * an entry for another kiosk (one entered since) or one that can't be read is dropped. Fails closed: when unsure,
+     * the device stays (or goes back) in kiosk. True when an exit was finished.
      */
     suspend fun resumeInterruptedExit(): Boolean = mutex.withLock {
-        val pending = journal.pending() ?: return@withLock false
-        exitLocked(pending.handBackHome, pending.force)
-        true
+        val pending = journal.pending()
+        val saved = store.load()
+        when (ExitJournal.decide(pending, saved, desiredKioskOn())) {
+            ExitJournal.Resume.NONE -> false
+            ExitJournal.Resume.FINISH -> {
+                val p = checkNotNull(pending)
+                exitLocked(p.handBackHome, p.force)
+                true
+            }
+            ExitJournal.Resume.ROLL_BACK -> {
+                enterLocked(checkNotNull(saved)) // clears the journal first
+                false
+            }
+            ExitJournal.Resume.DISCARD -> {
+                // Best effort: logging must not stand in the way (the JVM unit tests have no android.util.Log).
+                runCatching { Log.w(TAG, "interrupted kiosk exit dropped: not for the kiosk saved now, or unreadable") }
+                journal.end()
+                false
+            }
+        }
     }
 
     /** At agent start: drop a volume lock left behind (e.g. by an interrupted exit) unless the kiosk wants it. */
     suspend fun releaseStaleVolumeLock(): Unit = mutex.withLock {
         if (store.load()?.features?.lockVolume != true) kiosk.setVolumeLocked(false)
+    }
+
+    private companion object {
+        const val TAG = "KioskApplier"
     }
 
     /** True when a kiosk payload is persisted (device believes it is / should be in kiosk). */

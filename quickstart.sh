@@ -4,7 +4,7 @@
 # latest release's copy (a release asset) and checks it against the signed manifest before running it; its unchecked
 # shortcut runs the copy at the latest release's tag (DEPLOY.md, Option A):
 #
-#   bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/vX.Y.Z/quickstart.sh)
+#   bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/refs/tags/vX.Y.Z/quickstart.sh)
 #
 # Each question can be answered in advance with an environment variable (MDMESH_MODE, MDMESH_HOST, …) or an answers
 # file (MDMESH_ANSWERS); MDMESH_NONINTERACTIVE=1 never asks, MDMESH_DRY_RUN=1 only checks the answers and prints the
@@ -539,7 +539,7 @@ if [ -n "${MDMESH_VERSION:-}" ]; then
   if [ "$((10#${BASH_REMATCH[1]}))" -eq 0 ] && [ "$((10#${BASH_REMATCH[2]}))" -lt 4 ]; then
     err "Releases before 0.4.0 can't be installed with this quick start: it verifies each download against the signed release,"
     err "which those releases don't record. Run the quickstart.sh from that release's tag instead:"
-    err "  bash <(curl -fsSL https://raw.githubusercontent.com/${REPO}/v${RELEASE}/quickstart.sh)"
+    err "  bash <(curl -fsSL https://raw.githubusercontent.com/${REPO}/refs/tags/v${RELEASE}/quickstart.sh)"
     exit 1
   fi
 else
@@ -548,7 +548,7 @@ fi
 if [ -z "$RELEASE" ]; then
   err "Could not resolve the latest release of ${GH_REPO} (GitHub API unreachable or rate-limited, or no release yet)."
   err "The quick start installs only a published, signed release. Try again in a few minutes, or name the release:"
-  err "  MDMESH_VERSION=X.Y.Z bash <(curl -fsSL https://raw.githubusercontent.com/${REPO}/vX.Y.Z/quickstart.sh)"
+  err "  MDMESH_VERSION=X.Y.Z bash <(curl -fsSL https://raw.githubusercontent.com/${REPO}/refs/tags/vX.Y.Z/quickstart.sh)"
   exit 1
 fi
 say "Verifying release v${RELEASE} of ${GH_REPO}…"

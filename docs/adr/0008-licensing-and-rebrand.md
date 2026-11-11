@@ -3,7 +3,7 @@
 **Status:** Accepted (2026-06-21)
 
 **Amended (2026-11-11):** MDMesh is not a proprietary product. It has been open source under Apache-2.0
-([LICENSE](../../LICENSE)) since its first public release (v0.1, 2026-06-25), including the components written for
+([LICENSE](../../LICENSE)) since its first public release (v0.1.0, 2026-07-01), including the components written for
 it, so what this record says about a proprietary product and keeping our code closed no longer applies. The
 obligations to the upstream code (headers, `NOTICE`, change notices, no use of the Headwind marks) still do;
 [NOTICE](../../NOTICE) has the current position.

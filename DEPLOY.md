@@ -21,25 +21,39 @@ URL (`https://…`; `http://` is accepted too). See the [rules](docs/OPERATIONS.
 Run it from where you want `./mdmesh` created. This downloads `quickstart.sh` and the signed manifest from the latest
 release, checks the manifest's signature with `minisign` against the release key (the key line of
 `release/minisign.pub`), checks that the manifest is that release's and that it holds `quickstart.sh`'s SHA-256, and
-only then runs the script, which installs that release:
+only then runs the script with `MDMESH_VERSION` set to that release, so it installs exactly the release it checked:
 
 ```bash
-R=https://github.com/MDMesh-app/MDMesh/releases; V=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$R/latest"); V=${V##*/v}
-d=$(mktemp -d); for f in quickstart.sh manifest.json manifest.json.minisig; do curl -fsSL -o "$d/$f" "$R/download/v$V/$f" || break; done
-minisign -V -m "$d/manifest.json" -P RWQbf0pIhddaWnDsFknIG4X325wHR05pUxEQJmuuQRdBlQm3zi8/Eqcd &&
-  grep -qx "  \"version\": \"$V\"," "$d/manifest.json" &&
-  grep -qF "\"quickstart.sh\": \"$(sha256sum "$d/quickstart.sh" | cut -d' ' -f1)\"" "$d/manifest.json" &&
-  bash "$d/quickstart.sh"
+(
+  R=https://github.com/MDMesh-app/MDMesh/releases
+  V=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$R/latest" | sed -n 's#^https://github\.com/MDMesh-app/MDMesh/releases/tag/v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$#\1#p')
+  d=$(mktemp -d) || exit 1; trap 'rm -f -- "$d"/*; rmdir -- "$d"' EXIT
+  for f in quickstart.sh manifest.json manifest.json.minisig; do
+    [ -n "$V" ] && curl -fsSL -o "$d/$f" "$R/download/v$V/$f" || V=
+  done
+  [ -n "$V" ] && minisign -V -m "$d/manifest.json" -P RWQbf0pIhddaWnDsFknIG4X325wHR05pUxEQJmuuQRdBlQm3zi8/Eqcd &&
+    grep -qxF "  \"version\": \"$V\"," "$d/manifest.json" &&
+    grep -qF "\"quickstart.sh\": \"$(sha256sum "$d/quickstart.sh" | cut -d' ' -f1)\"" "$d/manifest.json" ||
+    { echo "Not running quickstart.sh: a download or check failed (see above). Nothing was installed." >&2; exit 1; }
+  MDMESH_VERSION="$V" bash "$d/quickstart.sh"
+)
 ```
 
-Nothing runs if a check fails. This needs releases from 0.5.0 on (earlier ones don't publish `quickstart.sh`).
+If a download or check fails, it says so and nothing runs. It runs in a subshell and removes its temporary
+directory afterwards. This needs releases from 0.5.0 on (earlier ones don't publish `quickstart.sh`).
 
-**Unchecked shortcut.** Without `minisign`, this looks up the latest release's tag and runs `quickstart.sh` from that
-tag in the repository, **without checking it** (the script still verifies everything it downloads, but not itself;
-the `v*` tag ruleset is what keeps a tag's files from being changed, see [RELEASING.md](RELEASING.md)):
+**Unchecked shortcut.** Without `minisign`, this looks up the latest release's tag and runs `quickstart.sh` from
+`refs/tags/<tag>` in the repository, **without checking it** (the script still verifies everything it downloads, but
+not itself). It accepts only a `vX.Y.Z` release tag and stops otherwise; what protects that tag is in
+[RELEASING.md](RELEASING.md#how-a-deployment-trusts-a-release):
 
 ```bash
-bash <(curl -fsSL "https://raw.githubusercontent.com/MDMesh-app/MDMesh/$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/MDMesh-app/MDMesh/releases/latest | sed 's#.*/##')/quickstart.sh")
+(
+  t=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/MDMesh-app/MDMesh/releases/latest | sed -n 's#^https://github\.com/MDMesh-app/MDMesh/releases/tag/\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$#\1#p')
+  [ -n "$t" ] && q=$(curl -fsSL "https://raw.githubusercontent.com/MDMesh-app/MDMesh/refs/tags/$t/quickstart.sh") ||
+    { echo "Could not get the latest release's quickstart.sh. Nothing was installed." >&2; exit 1; }
+  bash -c "$q" quickstart.sh
+)
 ```
 
 It needs Docker with Compose v2, curl, and OpenSSL 3.0 or newer to check the release signature. On a host with
@@ -68,7 +82,7 @@ release's tag by the shortcut. A fork with its own signing key sets
 
 If the latest release can't be looked up (GitHub API unreachable or rate-limited), the quick start stops and says so;
 it no longer falls back to `main` and `:latest`. Run it again later, or name the release:
-`MDMESH_VERSION=X.Y.Z bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/vX.Y.Z/quickstart.sh)`
+`MDMESH_VERSION=X.Y.Z bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/refs/tags/vX.Y.Z/quickstart.sh)`
 (unchecked, like the shortcut).
 
 ## Option B — from source (clone + build)
@@ -193,7 +207,9 @@ setup.sh (B) asks only when it writes a new `.env`; a re-run reuses its `.env` a
 - `MDMESH_DRY_RUN=1` checks the answers, prints what a run would use and ask, and exits. It needs no root, Docker or
   network, and changes nothing.
 
-A quick start on your own domain, with no questions: set these, then run the Option A command.
+A quick start on your own domain, with no questions: set these, then run the checked install block in
+[Option A](#option-a--quick-start-no-clone-published-images). It passes them on to `quickstart.sh` (and sets
+`MDMESH_VERSION` to the release it checked, which wins over one in an answers file).
 
 ```bash
 export MDMESH_MODE=domain MDMESH_HOST=mdm.example.com MDMESH_ACME_EMAIL=ops@example.com MDMESH_NONINTERACTIVE=1
@@ -207,6 +223,8 @@ touch answers.env && chmod 600 answers.env
 nano answers.env    # MDMESH_MODE=tunnel, MDMESH_HOST=mdm.example.com and MDMESH_TUNNEL_TOKEN=<your token>, one per line
 export MDMESH_ANSWERS="$PWD/answers.env" MDMESH_NONINTERACTIVE=1
 ```
+
+Then run the same Option A block. To see what it would do first, add `MDMESH_DRY_RUN=1` to the exports.
 
 The installer never prints the token (nor with `bash -x`), and no program it starts sees it in its arguments or
 environment. Delete the file once the install is done.

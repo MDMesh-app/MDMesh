@@ -86,22 +86,35 @@ APK.
 
 On a Linux host with Docker, Docker Compose v2, `curl`, `minisign`, `openssl` 3.0+ (or an older `openssl`), and
 either a domain in Cloudflare (for a Cloudflare Tunnel) or a domain pointed at the host with ports 80 and 443 open,
-this checks the latest release's `quickstart.sh` against its signed manifest and then runs it:
+this checks the latest release's `quickstart.sh` against its signed manifest and then runs it to install exactly
+that release (nothing runs if a download or check fails):
 
 ```bash
-R=https://github.com/MDMesh-app/MDMesh/releases; V=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$R/latest"); V=${V##*/v}
-d=$(mktemp -d); for f in quickstart.sh manifest.json manifest.json.minisig; do curl -fsSL -o "$d/$f" "$R/download/v$V/$f" || break; done
-minisign -V -m "$d/manifest.json" -P RWQbf0pIhddaWnDsFknIG4X325wHR05pUxEQJmuuQRdBlQm3zi8/Eqcd &&
-  grep -qx "  \"version\": \"$V\"," "$d/manifest.json" &&
-  grep -qF "\"quickstart.sh\": \"$(sha256sum "$d/quickstart.sh" | cut -d' ' -f1)\"" "$d/manifest.json" &&
-  bash "$d/quickstart.sh"
+(
+  R=https://github.com/MDMesh-app/MDMesh/releases
+  V=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$R/latest" | sed -n 's#^https://github\.com/MDMesh-app/MDMesh/releases/tag/v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$#\1#p')
+  d=$(mktemp -d) || exit 1; trap 'rm -f -- "$d"/*; rmdir -- "$d"' EXIT
+  for f in quickstart.sh manifest.json manifest.json.minisig; do
+    [ -n "$V" ] && curl -fsSL -o "$d/$f" "$R/download/v$V/$f" || V=
+  done
+  [ -n "$V" ] && minisign -V -m "$d/manifest.json" -P RWQbf0pIhddaWnDsFknIG4X325wHR05pUxEQJmuuQRdBlQm3zi8/Eqcd &&
+    grep -qxF "  \"version\": \"$V\"," "$d/manifest.json" &&
+    grep -qF "\"quickstart.sh\": \"$(sha256sum "$d/quickstart.sh" | cut -d' ' -f1)\"" "$d/manifest.json" ||
+    { echo "Not running quickstart.sh: a download or check failed (see above). Nothing was installed." >&2; exit 1; }
+  MDMESH_VERSION="$V" bash "$d/quickstart.sh"
+)
 ```
 
-Without `minisign`, this unchecked shortcut runs the latest release tag's `quickstart.sh` without checking it
-([details](DEPLOY.md#option-a--quick-start-no-clone-published-images)):
+Without `minisign`, this unchecked shortcut runs `quickstart.sh` from the latest release's tag without checking it,
+and stops if it can't find that tag ([details](DEPLOY.md#option-a--quick-start-no-clone-published-images)):
 
 ```bash
-bash <(curl -fsSL "https://raw.githubusercontent.com/MDMesh-app/MDMesh/$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/MDMesh-app/MDMesh/releases/latest | sed 's#.*/##')/quickstart.sh")
+(
+  t=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/MDMesh-app/MDMesh/releases/latest | sed -n 's#^https://github\.com/MDMesh-app/MDMesh/releases/tag/\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$#\1#p')
+  [ -n "$t" ] && q=$(curl -fsSL "https://raw.githubusercontent.com/MDMesh-app/MDMesh/refs/tags/$t/quickstart.sh") ||
+    { echo "Could not get the latest release's quickstart.sh. Nothing was installed." >&2; exit 1; }
+  bash -c "$q" quickstart.sh
+)
 ```
 
 The quick start pulls the released images and sets up updates from the console. To build the images from source instead

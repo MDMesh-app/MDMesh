@@ -45,7 +45,7 @@ New
   default is still one device for 24 hours, the code to send to one person. **Stop all codes** ends every code that
   still works, and making a new code says when the one it replaces still works. Codes are stored hashed, making and
   stopping them is in the audit log, and the server log names the code each device enrolled with. The API takes
-  `maxUses` and `validHours` on `POST /private/agent/v1/token`, and `POST /private/agent/v1/token/revoke-all`
+  `maxUses` and `validHours` on `POST /rest/private/agent/v1/token`, and `POST /rest/private/agent/v1/token/revoke-all`
   (thanks @alessfi).
 - Configuration → Network can manage Android Location services independently of MDMesh location reporting on Android
   11+ Device Owner devices. Needs agent 0.5.0 (thanks @letternumber).
@@ -65,6 +65,10 @@ New
 - Updates and the quick start run exactly the images the signed release names, pinned by digest; the quick start
   also checks each file it downloads, stops instead of falling back to `main`, and needs OpenSSL 3.0+, or an older
   OpenSSL and `minisign`.
+- The README's install command checks `quickstart.sh` against the signed release before running it, and installs
+  exactly the release it checked; each release now publishes `quickstart.sh`, with its SHA-256 in the signed manifest.
+  Without `minisign`, a shortcut runs the latest release tag's `quickstart.sh` unchecked
+  ([DEPLOY.md](https://github.com/MDMesh-app/MDMesh/blob/main/DEPLOY.md#option-a--quick-start-no-clone-published-images)).
 
 Fixes
 - setup.sh re-runs read `.env` as `KEY=VALUE` lines instead of running it as a script, so `bash -x ./setup.sh` no

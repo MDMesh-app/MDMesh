@@ -19,12 +19,19 @@ Upgrading
 - Quick start: run `docker compose pull && docker compose up -d` once after this update. Updates never touch the
   supervisor, and one from before 0.5.0 keeps applying updates by tag. From source, or with `SUPERVISOR_VERSION` set by
   hand: [UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050).
+- From source and native: update with `./setup.sh --update` (native: `sudo ./setup.sh --update --native`) instead of
+  `git pull`. A clone that followed `main` is usually ahead of the newest release, so the first `--update` over an
+  install stops; run it after the next release, or add `--allow-downgrade` to go to the release now.
 
 Heads-up
 - Native installs: `REPLACE_DATA` must be `yes` or `no`, and `ASSUME_YES` `1` or `0`. Any other value now stops the
   installer before it changes anything, where it used to mean Keep or ask.
 
 New
+- From source and native: `./setup.sh --update` moves the clone to the newest release, checked against its signed
+  manifest like the quick start, then runs it. Unsigned releases and local changes stop it. Fresh installs clone and
+  run `./setup.sh --update` too.
+- The console's update steps for source and native installs show `./setup.sh --update`.
 - Installers: every question can be answered in advance, with `MDMESH_*` variables or an answers file, and
   `MDMESH_NONINTERACTIVE=1` runs with no questions at all. `MDMESH_DRY_RUN=1` checks the answers and shows what a run
   would do. See [DEPLOY](https://github.com/MDMesh-app/MDMesh/blob/main/DEPLOY.md#answering-the-questions-in-advance).
@@ -73,6 +80,8 @@ Fixes
   (thanks @letternumber).
 
 Under the hood
+- The release manifest records the tagged commit, which `setup.sh --update` checks the tag against. CI tests
+  `--update` against signed fixture releases.
 - `install/options.json` lists the installers' questions and answers, for the website's install guide. CI checks it
   against the scripts with dry runs.
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.

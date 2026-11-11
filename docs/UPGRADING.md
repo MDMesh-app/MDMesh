@@ -5,8 +5,8 @@
 | Install | Update with | One-click rollback |
 |---------|-------------|--------------------|
 | Quick start (Option A) | **Update** in the console, or automatic updates | Yes, from `/recovery` |
-| From source (Option B) | `git pull && ./setup.sh` | Only with a registry `IMAGE_OWNER` ([below](#from-source-docker-installs)) |
-| Native (Option C) | `git pull && sudo ./setup.sh --native` | No |
+| From source (Option B) | `./setup.sh --update` | Only with a registry `IMAGE_OWNER` ([below](#from-source-docker-installs)) |
+| Native (Option C) | `sudo ./setup.sh --update --native` | No |
 
 Before you update, read the [version notes](#version-notes) for each release you are moving past.
 
@@ -49,8 +49,13 @@ pinned. If you set `SUPERVISOR_VERSION` yourself, see [v0.5.0](#v050).
 ## From-source Docker installs
 
 ```bash
-git pull && ./setup.sh
+./setup.sh --update
 ```
+
+`--update` moves the clone to the newest signed release tag and runs its setup.sh (see
+[DEPLOY](../DEPLOY.md#option-b--from-source-clone--build)). A clone that followed `main` with `git pull` is usually ahead
+of the newest release: over an install, `--update` then stops rather than run older code. Wait for the next release
+and run it then, or pass `--allow-downgrade` to go to the release now.
 
 setup.sh takes no backup, so dump the database first ([command](OPERATIONS.md#backups-and-restore)). Don't use
 `docker compose up -d --build` alone: only setup.sh updates `CURRENT_VERSION` and the image tags from the
@@ -60,7 +65,7 @@ With a registry `IMAGE_OWNER`, one-click Update and rollback work as on the quic
 build in two cases:
 
 - **Older checkout.** The checkout is older than the running `CURRENT_VERSION`, for example
-  `running 0.4.0, checkout is 0.3.1 — git pull first, or re-run with --allow-downgrade`. Run `git pull`.
+  `running 0.4.0, checkout is 0.3.1 — run ./setup.sh --update, or re-run with --allow-downgrade`. Run `./setup.sh --update`.
   `--allow-downgrade` runs the older code on purpose, against the current database, which is not rolled back.
 - **No version.** setup.sh can't read a release tag (a source tarball, or tags not fetched). Build from a tagged
   checkout, or pass `--allow-downgrade`. setup.sh then keeps the versions in `.env`; on a fresh install that is
@@ -69,7 +74,7 @@ build in two cases:
 ## Native installs
 
 ```bash
-git pull && sudo ./setup.sh --native
+sudo ./setup.sh --update --native
 ```
 
 Choose **Keep** (the default) or **Erase** (type `ERASE`). Keep runs migrations and leaves all data and the
@@ -167,7 +172,7 @@ out of sync while a configuration has a rule). It also works with a 0.4.0 server
   - **Quick start:** apply 0.5.0 (**Settings → Updates**, or automatic updates), then run
     `docker compose pull && docker compose up -d` in the install directory. The quick start set
     `SUPERVISOR_VERSION=latest`; if you set a version in `.env` yourself, change it to `0.5.0` first.
-  - **From source with a registry `IMAGE_OWNER`:** `git pull && ./setup.sh`, also after applying 0.5.0 from the
+  - **From source with a registry `IMAGE_OWNER`:** `./setup.sh --update`, also after applying 0.5.0 from the
     console. setup.sh builds the supervisor and ties `SUPERVISOR_VERSION` to the checkout's release, so
     `docker compose pull` alone keeps the old one.
   - **Nothing to do:** a new 0.5.0 quick start is pinned from the start, and from-source installs with
@@ -194,7 +199,7 @@ The console is new: every page was rebuilt. This part is for everyone who runs M
 or add server plugins also read [v0.4.0 for forks](#v040-for-forks) below.
 
 - **Updating.** As the [table](#upgrading-mdmesh) at the top says: quick start, **Settings → Updates**; from source,
-  `git pull && ./setup.sh`; native, `git pull && sudo ./setup.sh --native`. There is nothing new to set: no new
+  `./setup.sh --update`; native, `sudo ./setup.sh --update --native`. There is nothing new to set: no new
   `.env` setting or server parameter, and no supervisor update.
 - **The database update is automatic.** On start, the server adds:
   - `configurations.extensions`, set to `{}` for every existing configuration;
@@ -341,8 +346,8 @@ plugin's screens to a console extension.
 ### v0.3.9
 
 A security release. Update every server. Devices need no new agent, and the supervisor is unchanged: quick-start
-installs apply it from **Settings → Updates**, from-source installs run `git pull && ./setup.sh`, and native installs
-`git pull && sudo ./setup.sh --native`.
+installs apply it from **Settings → Updates**, from-source installs run `./setup.sh --update`, and native installs
+`sudo ./setup.sh --update --native`.
 
 - **Sign-in limits.** Failed sign-ins are limited per address and per account, for the console, for API clients
   (`/rest/public/jwt/login`) and for the current-password check of a password or e-mail change. A browser or API

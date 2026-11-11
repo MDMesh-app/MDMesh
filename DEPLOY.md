@@ -53,8 +53,12 @@ it no longer falls back to `main` and `:latest`. Run it again later, or name the
 
 ```bash
 git clone https://github.com/MDMesh-app/MDMesh.git && cd MDMesh
-./setup.sh
+./setup.sh --update      # checks out the newest signed release, then sets it up
 ```
+
+`--update` fetches the release tags, checks the newest release's signed manifest (as the quick start does, with the
+clone's `release/minisign.pub`), checks out its tag and runs that release's setup.sh. It stops on an unsigned release
+and on local changes. Run the same command to update later; the clone stays on a release tag, so don't `git pull`.
 
 The wizard asks how to expose the server:
 
@@ -86,7 +90,7 @@ secrets. It is only safe on an empty database, so run `docker compose down -v` f
 ## Option C — Native (no Docker)
 
 ```bash
-sudo ./setup.sh --native      # → install/install-native.sh
+sudo ./setup.sh --update --native    # newest signed release, then install/install-native.sh
 ```
 
 Run it as root from a clone. It is tested on Debian 12, Debian 13 and Ubuntu 24.04 (`tests/native`). The
@@ -134,7 +138,7 @@ journalctl -u mdmesh-server -f        # follow Tomcat's stdout/stderr
 The installer doesn't open ports 80/443, so put your own TLS proxy in front. If the chosen port is held by a process
 the installer didn't start, it stops rather than kill that process.
 
-To upgrade, `git pull` and run the same command again ([Upgrading](docs/UPGRADING.md#native-installs)).
+To upgrade, run the same command again ([Upgrading](docs/UPGRADING.md#native-installs)).
 
 ## Answering the questions in advance
 
@@ -185,7 +189,7 @@ export MDMESH_ANSWERS="$PWD/answers.env" MDMESH_NONINTERACTIVE=1
 The installer never prints the token (nor with `bash -x`), and no program it starts sees it in its arguments or
 environment. Delete the file once the install is done.
 
-Native, from a clone: `sudo MDMESH_ASSUME_YES=1 MDMESH_BASE_URL=https://mdm.example.com ./setup.sh --native`.
+Native, from a clone: `sudo MDMESH_ASSUME_YES=1 MDMESH_BASE_URL=https://mdm.example.com ./setup.sh --update --native`.
 
 [`install/options.json`](install/options.json) lists each answer's variable, rule, default and question. The install
 guide on the website reads it from the release, and CI checks it against the installers.

@@ -368,7 +368,13 @@ public class AgentResource {
                 if (detail != null && detail.length() > MAX_EVENT_DETAIL_CHARS) {
                     detail = detail.substring(0, MAX_EVENT_DETAIL_CHARS);
                 }
-                commandDAO.insertEvent(deviceNumber, e.getType(), ts, detail);
+                if ("kioskReturn".equals(e.getType())) {
+                    // Timeline keeps the device timestamp. The durable proof is ordered by the server-owned kiosk
+                    // generation, so device clock skew cannot make it override a later kiosk command.
+                    commandDAO.recordKioskReturn(deviceNumber, ts, detail);
+                } else {
+                    commandDAO.insertEvent(deviceNumber, e.getType(), ts, detail);
+                }
                 kioskLockoutAlert.onEvent(device, e.getType(), detail);
             }
         }
@@ -478,7 +484,7 @@ public class AgentResource {
                 continue;
             }
             // Atomically claim it so a concurrent check-in can't deliver the same command twice.
-            if (commandDAO.claimForDelivery(stored.getId(), now)) {
+            if (commandDAO.claimForDelivery(stored, now)) {
                 commands.add(toWire(stored));
                 if (WIPE_COMMAND.equals(stored.getType())) {
                     commandDAO.markWiped(deviceNumber, now);

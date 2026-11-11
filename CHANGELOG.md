@@ -9,8 +9,9 @@ line under Unreleased.
 ## Unreleased
 
 Upgrading
-- The database adds four columns (`devices.wipedAt`, `configurations.camera`, `configurations.backgroundImageFileId`,
-  `configurations.backgroundImageSha256`) on start. Devices wiped before the update aren't marked.
+- The database adds columns on start: `devices.wipedAt`; `configurations.camera`, `configurations.locationServices`,
+  `configurations.backgroundImageFileId` and `configurations.backgroundImageSha256`; `device_state.kioskGeneration` and
+  `device_state.kioskReturnGeneration`. Devices wiped before the update aren't marked.
 - The database adds three columns to enrollment tokens on start (`maxUses`, `useCount`, `revokedAt`) and stores
   the tokens hashed. Existing codes stay single-use and keep working; on PostgreSQL older than 11 they stop
   instead, so make a new code on the Enroll page. After a downgrade, codes made on this version don't work.
@@ -31,6 +32,8 @@ New
   stopping them is in the audit log, and the server log names the code each device enrolled with. The API takes
   `maxUses` and `validHours` on `POST /private/agent/v1/token`, and `POST /private/agent/v1/token/revoke-all`
   (thanks @alessfi).
+- Configuration → Network can manage Android Location services independently of MDMesh location reporting on Android
+  11+ Device Owner devices. Needs agent 0.5.0 (thanks @letternumber).
 - Kiosk: a configuration can show a background image behind the kiosk launcher. Choose it in the Kiosk section: a
   PNG, JPEG or WebP image, at most 10 MB and 16 megapixels. Devices download it only over HTTPS (with an `http://`
   server address they keep the background color), check it by its SHA-256, and keep the color if it can't be shown.
@@ -45,6 +48,8 @@ New
   OpenSSL and `minisign`.
 
 Fixes
+- The console recognizes an on-device Return to kiosk and does not offer the same action again; a later kiosk exit,
+  custom kiosk, or configuration apply makes it available again.
 - Files: uploading a file again with the same name and the same content returns the file already there instead of an
   error.
 - Audit log: on Docker installs, entries show the client's address instead of the edge container's (thanks

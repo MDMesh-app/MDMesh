@@ -23,7 +23,26 @@ describe('saveConfiguration', () => {
     const fetch = stubApi(() => ({ id: 4, name: 'Warehouse copy' }));
     const template = { id: 3, name: 'Warehouse', qrCodeKey: 'k', applications: [], extensions: { demo: { on: true } } };
     await saveConfiguration(cloneForNew(template));
-    expect(sent(fetch)).toEqual({ name: 'Warehouse copy', applications: [], extensions: { demo: { on: true } } });
+    expect(sent(fetch)).toEqual({
+      name: 'Warehouse copy',
+      applications: [],
+      extensions: { demo: { on: true } },
+      locationServicesAction: 'notManaged',
+    });
+  });
+
+  it('sends an explicit Location-services action when saving a copy, because a new configuration has no stored policy', async () => {
+    const fetch = stubApi(() => ({ id: 4, name: 'Warehouse copy' }));
+    const template = { id: 3, name: 'Warehouse', applications: [], locationServices: true };
+    await saveConfiguration(cloneForNew(template));
+    expect(sent(fetch)).toMatchObject({ name: 'Warehouse copy', locationServices: true, locationServicesAction: 'on' });
+  });
+
+  it('retains an Off Location-services policy when saving an untouched copy', async () => {
+    const fetch = stubApi(() => ({ id: 4, name: 'Warehouse copy' }));
+    const template = { id: 3, name: 'Warehouse', applications: [], locationServices: false };
+    await saveConfiguration(cloneForNew(template));
+    expect(sent(fetch)).toMatchObject({ name: 'Warehouse copy', locationServices: false, locationServicesAction: 'off' });
   });
 
   it('puts the changed namespaces on top of the loaded extensions, so every other namespace goes back as stored', async () => {

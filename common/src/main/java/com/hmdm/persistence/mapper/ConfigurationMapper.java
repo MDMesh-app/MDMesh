@@ -142,6 +142,7 @@ public interface ConfigurationMapper {
             "disableFactoryReset=#{disableFactoryReset}, " +
             "disableSafeBoot=#{disableSafeBoot}, " +
             "wifiRadio=#{wifiRadio}, " +
+            "locationServices=#{locationServices}, " +
             "kioskLockVolume=#{kioskLockVolume}, " +
             "connectivityMode=#{connectivityMode}, " +
             "backgroundImageFileId=#{backgroundImageFileId}, " +

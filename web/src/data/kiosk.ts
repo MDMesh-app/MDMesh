@@ -183,15 +183,24 @@ export function configuredKioskState({
   history,
   kioskActive,
   inSync,
+  kioskGeneration,
+  kioskReturnGeneration,
   configuredIds,
 }: {
   history: CommandHistoryItem[];
   kioskActive: boolean | undefined;
   /** The device runs the configuration's current revision (configStatus.inSync). */
   inSync: boolean | undefined;
+  /** Server-owned generations, which are neither paged nor device-clock based. */
+  kioskGeneration: number | null | undefined;
+  kioskReturnGeneration: number | null | undefined;
   configuredIds: ReadonlySet<string>;
 }): ConfiguredKioskState {
   const last = lastKioskCommand(history);
+  // A local return records the current server-owned generation. A later Custom kiosk, exit, or configuration apply
+  // advances it, making Return available again. This avoids deriving state from a device-clock event or a paged list.
+  if (kioskGeneration != null && kioskReturnGeneration === kioskGeneration
+      && kioskActive === true && inSync === true) return 'active';
   if (!last) return 'ready';
   const fromConfig = last.type === 'config.apply';
   const configured = fromConfig || (last.type === 'kiosk.enter' && configuredIds.has(String(last.id)));

@@ -308,6 +308,22 @@ public class DesiredConfigBuilderTest {
     }
 
     @Test
+    public void location_services_is_its_own_tri_state_policy_not_location_reporting() {
+        Configuration legacy = policiesConfig();
+        legacy.setRequestUpdates(RequestUpdatesType.GPS);
+        assertFalse("null locationServices = services not managed", build(legacy, Collections.emptyList())
+                .getPolicies().containsKey("locationServices"));
+        assertEquals("GPS reporting stays active", "active", build(legacy, Collections.emptyList()).getLocation().getMode());
+
+        Configuration off = policiesConfig(); off.setLocationServices(false);
+        assertEquals(Boolean.FALSE, build(off, Collections.emptyList()).getPolicies().get("locationServices"));
+        assertEquals("telemetry mode is independent", "off", build(off, Collections.emptyList()).getLocation().getMode());
+
+        Configuration on = policiesConfig(); on.setLocationServices(true);
+        assertEquals(Boolean.TRUE, build(on, Collections.emptyList()).getPolicies().get("locationServices"));
+    }
+
+    @Test
     public void connectivity_is_sent_only_when_managed_and_null_keeps_the_revision() {
         // Existing configurations upgrade with a NULL column (protocol 1.5): no section, and no revision moves.
         DesiredConfig unmanaged = build(policiesConfig(), Collections.emptyList());

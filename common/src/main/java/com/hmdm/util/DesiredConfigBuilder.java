@@ -114,6 +114,7 @@ public final class DesiredConfigBuilder {
         // wifi = lock/allow the Wi-Fi settings only; wifiRadio (1.4) switches the radio itself.
         putIfManaged(p, "wifi", cfg.getWifi());
         putIfManaged(p, "wifiRadio", cfg.getWifiRadio());
+        putIfManaged(p, "locationServices", cfg.getLocationServices());
         putIfManaged(p, "bluetooth", cfg.getBluetooth());
         putIfManaged(p, "camera", cfg.getCamera());
         putIfManaged(p, "usbStorage", cfg.getUsbStorage());

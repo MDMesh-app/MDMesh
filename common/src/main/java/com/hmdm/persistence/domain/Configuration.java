@@ -128,6 +128,16 @@ public class Configuration implements CustomerData, Serializable {
     private Boolean kioskLockVolume;
     @ApiModelProperty("Wi-Fi radio: null = not managed, true = turn on, false = turn off (sent as policies.wifiRadio)")
     private Boolean wifiRadio;
+    @ApiModelProperty("Location services: null = not managed, true = turn on, false = turn off (sent as policies.locationServices)")
+    private Boolean locationServices;
+    /**
+     * Console-only instruction for changing Location-services management. Not persisted: omitted saves keep the
+     * stored policy so an older client cannot accidentally release it.
+     */
+    @ApiModelProperty(value = "How to update Location services: keep, on, off, or notManaged",
+            allowableValues = "keep,on,off,notManaged")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String locationServicesAction;
     @ApiModelProperty("Agent connectivity: null = not managed, adaptive = battery-saver, alwaysOn = always connected (connectivity.mode)")
     private String connectivityMode;
     @ApiModelProperty("Server plugins' and console extensions' data, by namespace (an extension id, or <id>.<name>), each "
@@ -975,6 +985,22 @@ public class Configuration implements CustomerData, Serializable {
         this.wifiRadio = wifiRadio;
     }
 
+    public Boolean getLocationServices() {
+        return locationServices;
+    }
+
+    public void setLocationServices(Boolean locationServices) {
+        this.locationServices = locationServices;
+    }
+
+    public String getLocationServicesAction() {
+        return locationServicesAction;
+    }
+
+    public void setLocationServicesAction(String locationServicesAction) {
+        this.locationServicesAction = locationServicesAction;
+    }
+
     public String getConnectivityMode() {
         return connectivityMode;
     }
@@ -1080,6 +1106,7 @@ public class Configuration implements CustomerData, Serializable {
         copy.setDisableSafeBoot(getDisableSafeBoot());
         copy.setKioskLockVolume(getKioskLockVolume());
         copy.setWifiRadio(getWifiRadio());
+        copy.setLocationServices(getLocationServices());
         copy.setConnectivityMode(getConnectivityMode());
         copy.setExtensions(getExtensions() == null ? null : getExtensions().deepCopy());
 

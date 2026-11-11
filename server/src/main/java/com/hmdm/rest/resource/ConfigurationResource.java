@@ -203,7 +203,9 @@ public class ConfigurationResource {
                     "With keep, an update keeps the stored image while backgroundImageUrl is left out or unchanged; " +
                     "another backgroundImageUrl is stored as the legacy launcher wallpaper and drops the managed image. " +
                     "A new configuration with a backgroundImageFileId gets that image. A refused image is HTTP 400 " +
-                    "with an ERROR whose message says why."
+                    "with an ERROR whose message says why. " +
+                    "locationServicesAction is keep (the default), on, off, or notManaged; " +
+                    "ordinary saves preserve the stored Location-services policy."
     )
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
@@ -237,6 +239,7 @@ public class ConfigurationResource {
                         return Response.PERMISSION_DENIED();
                     }
                     canonicalizeBackgroundImage(configuration, null);
+                    applyLocationServicesUpdate(configuration, null);
                     Response refused = refuseExtensions(configuration, null);
                     if (refused != null) return refused;
                     configuration.setDisableLocation(false);        // Not used but shouldn't be NULL
@@ -253,7 +256,9 @@ public class ConfigurationResource {
                                 "by user " + SecurityContext.get().getCurrentUserName());
                         return Response.PERMISSION_DENIED();
                     }
-                    canonicalizeBackgroundImage(configuration, configurationDAO.getConfigurationById(id));
+                    Configuration stored = configurationDAO.getConfigurationById(id);
+                    canonicalizeBackgroundImage(configuration, stored);
+                    applyLocationServicesUpdate(configuration, stored);
                     Response refused = refuseExtensions(configuration, storedExtensions(id, configuration));
                     if (refused != null) return refused;
                     log.info("Configuration " + configuration.getName() + " updated by user "  + SecurityContext.get().getCurrentUserName());
@@ -284,6 +289,29 @@ public class ConfigurationResource {
                     .entity(Response.ERROR(e.getMessage()))
                     .build());
         }
+    }
+
+    private static void applyLocationServicesUpdate(Configuration configuration, Configuration stored) {
+        String action = configuration.getLocationServicesAction();
+        if (action == null || "keep".equals(action)) {
+            // Keep protects a stored policy from a client that doesn't know the field. A new configuration has none
+            // stored, so it gets the value it was sent with (an API client, or a console copy without the action).
+            if (stored != null) configuration.setLocationServices(stored.getLocationServices());
+            return;
+        }
+        if ("on".equals(action)) {
+            configuration.setLocationServices(true);
+            return;
+        }
+        if ("off".equals(action)) {
+            configuration.setLocationServices(false);
+            return;
+        }
+        if ("notManaged".equals(action)) {
+            configuration.setLocationServices(null);
+            return;
+        }
+        throw new BadRequestException("locationServicesAction must be keep, on, off, or notManaged");
     }
 
     /**

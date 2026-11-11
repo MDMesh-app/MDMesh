@@ -33,6 +33,7 @@ import com.hmdm.persistence.mapper.DeviceEventMapper;
 import com.hmdm.persistence.mapper.DeviceStateMapper;
 
 import java.util.List;
+import org.mybatis.guice.transactional.Transactional;
 
 /**
  * <p>DAO for the opaque agent v1 command queue and the device capability column. The server never
@@ -55,6 +56,7 @@ public class AgentCommandDAO {
         this.eventMapper = eventMapper;
     }
 
+    @Transactional
     public void insert(AgentCommand command) {
         mapper.insert(command);
     }
@@ -81,6 +83,20 @@ public class AgentCommandDAO {
     /** Atomically claim a pending command for delivery. Returns true iff this caller claimed it. */
     public boolean claimForDelivery(Integer commandId, Long deliveredAt) {
         return mapper.claimForDelivery(commandId, deliveredAt) == 1;
+    }
+
+    /**
+     * Atomically claim a command for delivery and advance kiosk ordering only once the command is handed to the
+     * device. A queued command has not changed device state yet: a buffered on-device kioskReturn sent in the same
+     * check-in must remain evidence for the prior generation.
+     */
+    @Transactional
+    public boolean claimForDelivery(AgentCommand command, Long deliveredAt) {
+        boolean claimed = claimForDelivery(command.getId(), deliveredAt);
+        if (claimed && changesKiosk(command.getType())) {
+            stateMapper.advanceKioskGeneration(command.getDeviceNumber(), deliveredAt);
+        }
+        return claimed;
     }
 
     /**
@@ -139,6 +155,17 @@ public class AgentCommandDAO {
         e.setTs(ts);
         e.setDetail(detail);
         eventMapper.insert(e);
+    }
+
+    /** Store the audit event and durable current-generation evidence together. */
+    @Transactional
+    public void recordKioskReturn(String deviceNumber, Long deviceTs, String detail) {
+        insertEvent(deviceNumber, "kioskReturn", deviceTs, detail);
+        stateMapper.recordKioskReturn(deviceNumber, System.currentTimeMillis());
+    }
+
+    private static boolean changesKiosk(String type) {
+        return "kiosk.enter".equals(type) || "kiosk.exit".equals(type) || "config.apply".equals(type);
     }
 
     /** Event timeline for a device, newest first, at/after {@code since}. */

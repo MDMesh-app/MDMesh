@@ -88,7 +88,8 @@
 
 .v2 .v2-kbg__thumbs {
   list-style: none;
-  margin: 0;
+  /* Room for the selected device's ring (5 px) above the first row: it never touches the readout above. */
+  margin: 8px 0 0;
   padding: 0;
   display: grid;
   justify-content: start;

@@ -219,7 +219,8 @@ text needs one) and "Image dimmed 22%".
   with a letterbox, fit ignoring the focal point, and focal points that move a bright area under a label or away.
   Added after review (no change to the rules): a right edge inside a cell (`ceil`), texture that is busy only
   undimmed, two controls with one weak, a box past the window edge in fit (letterbox on the clipped box), and a box
-  edge exactly on a cell boundary under a non-terminating scale; a `#707070` background (white fallback), Android's
+  edge exactly on a cell boundary under a non-terminating scale, and one a hair below a boundary (`floor` and `ceil`
+  on the value as computed, never on a rounded one); a `#707070` background (white fallback), Android's
   green and darkgray; and a geometry case where `iw - cw` is a hair below 0.
 
 ## What 3.2 changes
@@ -236,4 +237,3 @@ text needs one) and "Image dimmed 22%".
 ## Not (yet) done
 
 - Swapping the text colour to the one that reads best on the image.
-- The status bar icon colour from the top strip of the image (agent only).

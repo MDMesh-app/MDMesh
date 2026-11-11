@@ -187,6 +187,7 @@ type TelemetrySnapshot
 type ToastApi
 type ToastKind
 token --alert
+token --alert-control
 token --alert-ink
 token --alert-line
 token --alert-soft
@@ -196,6 +197,7 @@ token --bar-idle
 token --border
 token --border-strong
 token --card-pad
+token --control-border
 token --disabled-bg
 token --disabled-ink
 token --faint

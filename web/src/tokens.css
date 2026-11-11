@@ -19,10 +19,12 @@
   --seg-selected: #ffffff; /* raised segment / tab / active section-nav item */
 
   /* ---- lines ---- */
-  --border: #e7e9ee; /* card and panel border, icon buttons, sidebar rule */
+  --border: #d9dde3; /* card and panel border, sidebar rule (decorative; same value as the Android agent) */
   --border-strong: #d6dae1; /* buttons, outline tags, select chrome in toolbars */
   --line-soft: #eef0f3; /* row dividers inside cards, bar tracks */
-  --input-border: #878f9c; /* text inputs, selects, textareas: 3:1 on white and on --app (#d6dae1 was under) */
+  --input-border: #838b99; /* text inputs, selects, textareas: 3:1 on white, --app and --surface-2 (#d6dae1 was under) */
+  --control-border: var(--input-border); /* secondary, icon and password-toggle buttons, colour picker: 3:1 (1.4.11) */
+  --alert-control: #c86e6e; /* danger button border: 3:1 on white and --app (matches the Android agent) */
 
   /* ---- ink + text ---- */
   --ink: #15181d; /* primary button, active text, focus ring, toggle on */
@@ -30,37 +32,37 @@
   --ink-hover: #23272f;
   --text: #1b2230;
   --text-2: #384152; /* labels in rows, subtitles, inactive nav */
-  --secondary: #586073; /* help, meta, table head */
+  --secondary: #4a5163; /* help, meta, table head: 7:1 on every neutral ground (matches the Android agent) */
   --muted: #6b7686; /* offline ring only: 4.30:1 on --app, never text off white */
   --faint: #9aa3b0; /* disabled text only (2.55:1) */
 
   /* ---- status: dot / ink / soft / line ---- */
-  --online: #1aa766;
-  --ok-ink: #0e7a47;
+  --online: #189c5f; /* dots and bar fills: 3:1 on every neutral ground and the bar track (board #1aa766 was 2.7) */
+  --ok-ink: #096139; /* status text: 7:1 on white (matches the Android agent) */
   --ok-soft: #e6f6ee;
   --ok-line: #bfe8d2;
   --ok-wash: #f7fcf9; /* success panel fill */
   --ok-mark: #8fd8b1; /* file glyph bars on the success panel */
 
-  --warn: #d98a2b;
-  --warn-ink: #8f5410;
+  --warn: #c07922; /* 3:1 on every neutral ground and the bar track (board #d98a2b was 2.4) */
+  --warn-ink: #77450c;
   --warn-soft: #fcf1e3;
   --warn-line: #f1d3ad;
 
   --alert: #d64545;
-  --alert-ink: #a92f2f;
+  --alert-ink: #902626;
   --alert-soft: #fbe9e9;
   --alert-line: #f0d4d4;
 
-  --offline: #b6bdc7; /* offline bar fill (always with a text legend) */
-  --idle-ink: #586073;
+  --offline: #7e8a9c; /* offline dot and bar fill: 3:1 on white, --app and the bar track (board #b6bdc7 was 1.7) */
+  --idle-ink: #4a5163;
   --idle-soft: #f1f2f5;
   --idle-line: #e7e9ee;
-  --bar-idle: #d6dae1; /* "not reported" segment in per-configuration bars */
+  --bar-idle: #d6dae1; /* "not reported" segment fill; the segment's 3:1 edge is a --muted ring (Bars.css) */
 
   /* ---- disabled ---- */
   --disabled-bg: #e7e9ee;
-  --disabled-ink: #586073; /* disabled primary (Promote, Set password) */
+  --disabled-ink: #4a5163; /* disabled primary (Promote, Set password) */
 
   /* ---- controls ---- */
   --switch-on: var(--ink);
@@ -158,17 +160,18 @@
   --hover: #1b1f28;
   --seg-selected: #2b313d; /* lighter than the track, so the selected segment still reads as raised */
 
-  --border: #272c37;
+  --border: #2e3440;
   --border-strong: #39404e;
   --line-soft: #21262f;
-  --input-border: #646c7a; /* 3.32:1 on --surface, 3.57:1 on --app */
+  --input-border: #727b8b; /* 3:1 on --surface, --app, --surface-2 and a raised segment */
+  --alert-control: #9a5257; /* danger button border: 3:1 on --surface and --app */
 
   --ink: #f2f4f8;
   --on-ink: #15181d;
   --ink-hover: #dfe3ea;
   --text: #e7ebf1;
   --text-2: #c4ccd7;
-  --secondary: #9aa3b0;
+  --secondary: #aeb6c1;
   --muted: #8b95a3;
   --faint: #6c7480;
 
@@ -185,18 +188,18 @@
   --warn-line: #4d3a20;
 
   --alert: #e25757;
-  --alert-ink: #f08a8a;
+  --alert-ink: #f4a0a0;
   --alert-soft: #2a1b1e;
   --alert-line: #45292d;
 
-  --offline: #4a5260;
-  --idle-ink: #9aa3b0;
+  --offline: #667184; /* 3:1 on --surface, --app and the bar track */
+  --idle-ink: #aeb6c1;
   --idle-soft: #1e222c;
   --idle-line: #272c37;
   --bar-idle: #39404e;
 
   --disabled-bg: #272c37;
-  --disabled-ink: #9aa3b0;
+  --disabled-ink: #aeb6c1;
 
   --switch-on-knob: #15181d;
   --switch-off: #39404e;

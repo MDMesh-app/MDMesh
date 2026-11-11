@@ -7,10 +7,12 @@ import android.text.InputFilter
 import android.text.Spanned
 import android.text.TextWatcher
 import android.text.method.PasswordTransformationMethod
+import android.view.ActionMode
 import android.view.KeyEvent
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
 import android.view.inputmethod.EditorInfo
-import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.TextView
 import androidx.appcompat.content.res.AppCompatResources
@@ -24,13 +26,14 @@ import com.mdmesh.agent.R
  * (or the keyboard's Done) hands the text to `onSubmit` (the launcher's `onPinEntered`), which renders the result
  * back with [render]. A wrong PIN keeps the dialog open; it closes only on [ExitPinUiState.Close] or Cancel.
  *
- * The typed PIN is never saved with the activity's state: after a rotation the launcher reopens the dialog empty.
+ * The typed PIN is never saved with the activity's state: after a rotation the launcher reopens the dialog empty
+ * (an in-place rebuild hands it over in memory). Shown or not, it can't be copied, shared or autofilled.
  * The wrong-PIN count and lockout live in ExitPinGate's persisted store, so neither resets with the dialog.
  */
 class ExitPinDialog private constructor(
     /** The dialog itself, for the activity's [DialogSlot]. */
     val dialog: MdmDialog,
-    private val field: EditText,
+    private val field: PinEditText,
     private val toggle: ImageButton,
     private val error: TextView,
 ) {
@@ -62,7 +65,9 @@ class ExitPinDialog private constructor(
     private fun toggleShown() {
         shown = !shown
         val selection = field.selectionStart to field.selectionEnd
-        field.transformationMethod = if (shown) null else PasswordTransformationMethod.getInstance()
+        // Shown is still a password transformation (one that changes nothing): TextView keeps treating the field as a
+        // password, so it offers no copy, cut or share and no suggestions while the PIN is readable.
+        field.transformationMethod = if (shown) ShownPin else PasswordTransformationMethod.getInstance()
         if (selection.first >= 0) field.setSelection(selection.first, selection.second)
         toggle.setImageResource(if (shown) R.drawable.ic_v2_eye_off else R.drawable.ic_v2_eye)
         toggle.contentDescription =
@@ -94,6 +99,10 @@ class ExitPinDialog private constructor(
         })
         // Keyboard and focus in the field as the dialog opens.
         dialog.setOnShown { field.requestFocus() }
+        // Nothing to select, copy, share, translate or autofill: no selection or insertion toolbar at all.
+        field.isLongClickable = false
+        field.customSelectionActionModeCallback = NoActionMode
+        field.customInsertionActionModeCallback = NoActionMode
         // One rule for every way to say "done", one try per press:
         // - A hardware keyboard's or scanner's Enter is a key event. It's taken here, before TextView turns it into
         //   an editor action (IME_NULL before API 34, the field's Done from 34; numpad Enter not at all on 24):
@@ -141,6 +150,19 @@ class ExitPinDialog private constructor(
             if (inserted.last() == '\n' || inserted.last() == '\r') onEnter()
             return inserted.filterNot { it == '\n' || it == '\r' }
         }
+    }
+
+    /** A password transformation that hides nothing: the shown PIN, still a password to TextView. */
+    private object ShownPin : PasswordTransformationMethod() {
+        override fun getTransformation(source: CharSequence, view: View): CharSequence = source
+    }
+
+    /** Refuses every selection or insertion toolbar (Copy, Cut, Share, Translate, Autofill, Paste...). */
+    private object NoActionMode : ActionMode.Callback {
+        override fun onCreateActionMode(mode: ActionMode?, menu: Menu?) = false
+        override fun onPrepareActionMode(mode: ActionMode?, menu: Menu?) = false
+        override fun onActionItemClicked(mode: ActionMode?, item: MenuItem?) = false
+        override fun onDestroyActionMode(mode: ActionMode?) = Unit
     }
 
     companion object {

@@ -8,21 +8,23 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
+    android:importantForAutofill="noExcludeDescendants"
     android:orientation="vertical"
+    tools:targetApi="o"
     android:paddingTop="@dimen/mdm_dialog_title_gap">
 
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
 
-        <EditText
+        <com.mdmesh.agent.ui.PinEditText
             android:id="@+id/exit_pin_field"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:hint="@string/kiosk_exit_pin_hint"
-            android:imeOptions="actionDone|flagNoExtractUi"
+            android:imeOptions="actionDone|flagNoExtractUi|flagNoPersonalizedLearning"
             android:importantForAutofill="no"
-            android:inputType="textPassword"
+            android:inputType="textPassword|textNoSuggestions"
             android:maxLines="1"
             android:paddingStart="@dimen/mdm_field_padding_h"
             android:paddingEnd="@dimen/mdm_touch_target"

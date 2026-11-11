@@ -62,13 +62,30 @@ class CheckInCoordinator @Inject constructor(
     private val mutex = Mutex()
 
     suspend fun runOnce(): Unit = withContext(ioDispatcher) {
-        mutex.withLock {
-            try {
-                cycle()
-            } catch (t: Throwable) {
-                if (t !is CancellationException) syncStatus.recordFailure(t)
-                throw t
-            }
+        mutex.withLock { recordedCycle() }
+    }
+
+    /**
+     * Like [runOnce], unless a cycle is already in flight: then it returns false at once instead of waiting. For the
+     * heartbeat, which must not queue behind a long cycle (an install holds it for minutes); the running cycle is the
+     * check-in it wanted anyway.
+     */
+    suspend fun runIfIdle(): Boolean = withContext(ioDispatcher) {
+        if (!mutex.tryLock()) return@withContext false
+        try {
+            recordedCycle()
+        } finally {
+            mutex.unlock()
+        }
+        true
+    }
+
+    private suspend fun recordedCycle() {
+        try {
+            cycle()
+        } catch (t: Throwable) {
+            if (t !is CancellationException) syncStatus.recordFailure(t)
+            throw t
         }
     }
 

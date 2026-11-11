@@ -226,6 +226,22 @@ class CheckInCoordinatorTest {
     }
 
     @Test
+    fun `runIfIdle skips while a cycle is in flight`() = runTest {
+        val api = FakeMdmApi().apply { checkInGate = CompletableDeferred() }
+        val coordinator = coordinator(api, PendingResults())
+
+        val first = launch { coordinator.runOnce() }
+        testScheduler.advanceUntilIdle()
+        assertFalse("must not queue behind the running cycle", coordinator.runIfIdle())
+        assertEquals(1, api.checkInRequests.size)
+
+        api.checkInGate!!.complete(Unit)
+        first.join()
+        assertTrue(coordinator.runIfIdle())
+        assertEquals(2, api.checkInRequests.size)
+    }
+
+    @Test
     fun `records the failure in SyncStatus and clears it on the next success`() = runTest {
         val api = FakeMdmApi().apply { checkInThrows = IOException("network down") }
         val syncStatus = SyncStatus()

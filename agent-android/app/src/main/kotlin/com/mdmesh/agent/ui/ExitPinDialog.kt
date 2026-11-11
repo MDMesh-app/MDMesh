@@ -3,6 +3,8 @@ package com.mdmesh.agent.ui
 import android.content.Context
 import android.graphics.Typeface
 import android.text.Editable
+import android.text.InputFilter
+import android.text.Spanned
 import android.text.TextWatcher
 import android.text.method.PasswordTransformationMethod
 import android.view.KeyEvent
@@ -76,6 +78,7 @@ class ExitPinDialog private constructor(
 
     private fun wire(onSubmit: (entered: String, dialog: ExitPinDialog) -> Unit) {
         val submit = { submit(onSubmit) }
+        submitHandler = submit
         // inputType textPassword switches the field to monospace, hint included; keep the dialog's sans.
         field.typeface = Typeface.DEFAULT
         // TalkBack: the error line is a polite live region (announced when it appears), and the field reports it as
@@ -91,13 +94,18 @@ class ExitPinDialog private constructor(
         })
         // Keyboard and focus in the field as the dialog opens.
         dialog.setOnShown { field.requestFocus() }
+        // One rule for every way to say "done", one try per press:
+        // - A hardware keyboard's or scanner's Enter is a key event. It's taken here, before TextView turns it into
+        //   an editor action (IME_NULL before API 34, the field's Done from 34; numpad Enter not at all on 24):
+        //   the first press submits, repeats and the release are swallowed.
+        // - The soft keyboard's Done is an editor action without a key event: it submits.
+        // - A scanner that types its Enter as text: the newline never reaches the PIN, and a trailing one submits.
+        field.setOnKeyListener { _, keyCode, event -> act(keyAction(keyCode, event.action, event.repeatCount)) }
         field.setOnEditorActionListener { _, actionId, event ->
-            when (editorAction(actionId, event?.action, event?.keyCode)) {
-                EditorAction.SUBMIT -> true.also { submit() }
-                EditorAction.CONSUME -> true
-                EditorAction.IGNORE -> false
-            }
+            act(if (event == null && actionId == EditorInfo.IME_ACTION_DONE) Input.SUBMIT else Input.IGNORE)
         }
+        // Posted: the filter runs before the text it returns is in the field.
+        field.filters = field.filters + NewlineFilter { field.post { submit() } }
         toggle.setOnClickListener { toggleShown() }
         field.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
@@ -109,22 +117,38 @@ class ExitPinDialog private constructor(
         })
     }
 
-    /** What a key or IME action in the PIN field does. */
-    internal enum class EditorAction { SUBMIT, CONSUME, IGNORE }
+    /** What a key or editor action in the PIN field does. */
+    internal enum class Input { SUBMIT, CONSUME, IGNORE }
+
+    private var submitHandler: (() -> Unit)? = null
+
+    /** Handles [input]; true when the field shouldn't process it further. */
+    private fun act(input: Input): Boolean = when (input) {
+        Input.SUBMIT -> true.also { submitHandler?.invoke() }
+        Input.CONSUME -> true
+        Input.IGNORE -> false
+    }
+
+    /**
+     * Drops CR and LF from what goes into the field: a PIN never has them, and a scanner that types its Enter as text
+     * would otherwise put one in the PIN. A newline at the end of the inserted text is that Enter: [onEnter], once.
+     */
+    private class NewlineFilter(private val onEnter: () -> Unit) : InputFilter {
+        override fun filter(source: CharSequence, start: Int, end: Int, dest: Spanned, dstart: Int, dend: Int):
+            CharSequence? {
+            val inserted = source.subSequence(start, end)
+            if (inserted.none { it == '\n' || it == '\r' }) return null
+            if (inserted.last() == '\n' || inserted.last() == '\r') onEnter()
+            return inserted.filterNot { it == '\n' || it == '\r' }
+        }
+    }
 
     companion object {
-        /**
-         * The soft keyboard's Done submits, and so does Enter on a hardware keyboard or a scanner, which arrives as
-         * IME_NULL with its key event: on the press, once; the release is swallowed so it can't count again.
-         */
-        internal fun editorAction(actionId: Int, keyAction: Int?, keyCode: Int?): EditorAction {
-            val enter = keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
-            return when {
-                actionId == EditorInfo.IME_ACTION_DONE -> EditorAction.SUBMIT
-                actionId != EditorInfo.IME_NULL || !enter -> EditorAction.IGNORE
-                keyAction == KeyEvent.ACTION_DOWN -> EditorAction.SUBMIT
-                else -> EditorAction.CONSUME
-            }
+        /** A hardware key in the field: Enter submits on its first press; its repeats and release do nothing. */
+        internal fun keyAction(keyCode: Int, action: Int, repeatCount: Int): Input = when {
+            keyCode != KeyEvent.KEYCODE_ENTER && keyCode != KeyEvent.KEYCODE_NUMPAD_ENTER -> Input.IGNORE
+            action == KeyEvent.ACTION_DOWN && repeatCount == 0 -> Input.SUBMIT
+            else -> Input.CONSUME
         }
 
         /** Whether the field's text is worth handing to the PIN check: an empty string can never match a PIN. */

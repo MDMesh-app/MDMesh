@@ -1,10 +1,12 @@
 package com.mdmesh.core.sync
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onSubscription
+import kotlinx.coroutines.launch
 
 /** The device id and check-in secret, once both exist. */
 data class Credentials(val deviceId: String, val secret: String) {
@@ -25,12 +27,12 @@ data class Credentials(val deviceId: String, val secret: String) {
 
 /** Waits for credentials ([Credentials.await]) at most once at a time. */
 class CredentialsWatch {
-    private var job: kotlinx.coroutines.Job? = null
+    private var job: Job? = null
 
     /** Starts a wait in [scope] unless one is already running; returns whether it started one. */
     @Synchronized
     fun startIfIdle(
-        scope: kotlinx.coroutines.CoroutineScope,
+        scope: CoroutineScope,
         checkIns: SharedFlow<Unit>,
         read: suspend () -> Pair<String?, String?>,
         onReady: (Credentials) -> Unit,

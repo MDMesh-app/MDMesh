@@ -38,6 +38,49 @@ public class ConfigReconcilerPermissionCapabilityTest {
         @Override public List<ManagedAppPermission> getManagedAppPermissions(Integer id) { return permissions; }
     }
 
+    private static ConfigReconciler reconciler(List<ManagedAppPermission> rules) {
+        Configuration configuration = new Configuration();
+        configuration.setId(7);
+        configuration.setCustomerId(1);
+        Application app = new Application();
+        app.setId(4); app.setPkg("org.example.camera"); app.setAction(DesiredConfigBuilder.ACTION_INSTALL);
+        return new ConfigReconciler(new FakeUnsecureDAO(configuration, Collections.singletonList(app), rules),
+                null, Fakes.noExtensionPoints());
+    }
+
+    private static Device device() {
+        Device device = new Device(); device.setConfigurationId(7);
+        return device;
+    }
+
+    private static final Set<String> OLD_AGENT = Collections.singleton(DesiredConfigBuilder.CAPABILITY);
+    private static final Set<String> NEW_AGENT = new java.util.HashSet<String>(java.util.Arrays.asList(
+            DesiredConfigBuilder.CAPABILITY, DesiredConfigBuilder.APP_PERMISSIONS_CAPABILITY));
+
+    /** A server update must not show every older agent out of sync: a configuration without rules asks nothing new. */
+    @Test
+    public void anOlderAgentIsInSyncWithAConfigurationWithoutRules() {
+        ConfigReconciler reconciler = reconciler(Collections.<ManagedAppPermission>emptyList());
+        String sentToOldAgent = reconciler.currentDocument(device(), OLD_AGENT).getRevision();
+        assertEquals(sentToOldAgent, reconciler.currentRevision(device(), OLD_AGENT));
+        String sentToNewAgent = reconciler.currentDocument(device(), NEW_AGENT).getRevision();
+        assertEquals(sentToNewAgent, reconciler.currentRevision(device(), NEW_AGENT));
+        // The new agent gets the explicit empty section (it releases earlier rules), under its own revision.
+        assertNotEquals(sentToOldAgent, sentToNewAgent);
+    }
+
+    /** An older agent can't enforce the rules: it applies the rest, and never shows in sync. */
+    @Test
+    public void anOlderAgentIsNeverInSyncWithAConfigurationWithRules() {
+        ManagedAppPermission rule = new ManagedAppPermission();
+        rule.setApplicationId(4); rule.setPermission("android.permission.CAMERA"); rule.setState("deny");
+        ConfigReconciler reconciler = reconciler(Collections.singletonList(rule));
+        String sentToOldAgent = reconciler.currentDocument(device(), OLD_AGENT).getRevision();
+        assertNotEquals(sentToOldAgent, reconciler.currentRevision(device(), OLD_AGENT));
+        assertEquals(reconciler.currentDocument(device(), NEW_AGENT).getRevision(),
+                reconciler.currentRevision(device(), NEW_AGENT));
+    }
+
     @Test
     public void omitsPermissionRulesAndUsesDifferentRevisionForAnOlderAgent() {
         Configuration configuration = new Configuration();

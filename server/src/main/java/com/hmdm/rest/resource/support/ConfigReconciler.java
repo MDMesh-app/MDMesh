@@ -6,6 +6,7 @@ import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.Application;
 import com.hmdm.persistence.domain.Configuration;
 import com.hmdm.persistence.domain.Device;
+import com.hmdm.rest.json.agent.DesiredAppPermissions;
 import com.hmdm.rest.json.agent.DesiredConfig;
 import com.hmdm.util.AgentCapabilityTokens;
 import com.hmdm.util.ConfigReconcileDecision;
@@ -68,26 +69,52 @@ public class ConfigReconciler {
         return DesiredConfigBuilder.build(cfg, apps, extensionPoints.contributors(cfg.getCustomerId()));
     }
 
-    /** A capability-specific document has its own revision: an older agent must never acknowledge rules it cannot apply. */
+    /**
+     * The document as this device receives it. An agent without {@code app.runtimePermissions} gets it without the
+     * appPermissions section, under the revision of what it gets: it can't apply the rules, and must not be sent the
+     * same document again and again for reporting a revision it never had.
+     */
     DesiredConfig currentDocument(Device device, Set<String> deviceTokens) {
         DesiredConfig doc = currentDocument(device);
-        if (doc != null && !AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.APP_PERMISSIONS_CAPABILITY, deviceTokens)
-                && doc.getAppPermissions() != null) {
+        if (doc != null && doc.getAppPermissions() != null && !managesAppPermissions(deviceTokens)) {
             doc.setAppPermissions(null);
             doc.setRevision(DesiredConfigBuilder.revision(doc));
         }
         return doc;
     }
 
+    private static boolean managesAppPermissions(Set<String> deviceTokens) {
+        return AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.APP_PERMISSIONS_CAPABILITY, deviceTokens);
+    }
+
     /**
-     * The current revision, for the console's sync status; null when the device has no configuration, or when a server
-     * plugin's contributor fails on it (logged as reconcile does), so one broken plugin doesn't take down the status
-     * of every configuration.
+     * The revision the console compares with the one the device applied, for its sync status. An agent that can apply
+     * app permission rules must have applied the whole document. One that can't is in sync with the document it gets
+     * when the configuration has no rules (nothing is missing), and never when it has some: its device doesn't enforce
+     * them, so it must not show as in sync.
+     *
+     * @param doc the configuration's document ({@link #statusDocument}), left as it was; null gives null
      */
-    public String currentRevision(Device device) {
+    public static String statusRevision(DesiredConfig doc, Set<String> deviceTokens) {
+        if (doc == null) return null;
+        List<DesiredAppPermissions> rules = doc.getAppPermissions();
+        if (rules == null || !rules.isEmpty() || managesAppPermissions(deviceTokens)) return doc.getRevision();
+        doc.setAppPermissions(null);
         try {
-            DesiredConfig d = currentDocument(device);
-            return d == null ? null : d.getRevision();
+            return DesiredConfigBuilder.revision(doc);
+        } finally {
+            doc.setAppPermissions(rules);
+        }
+    }
+
+    /**
+     * The configuration's full document, for the console's sync status; null when the device has no configuration, or
+     * when a server plugin's contributor fails on it (logged as reconcile does), so one broken plugin doesn't take down
+     * the status of every configuration.
+     */
+    public DesiredConfig statusDocument(Device device) {
+        try {
+            return currentDocument(device);
         } catch (IllegalStateException e) {
             Integer cfgId = device.getConfigurationId();
             if (shouldWarn(cfgId == null ? Integer.valueOf(-1) : cfgId, System.currentTimeMillis())) {
@@ -97,6 +124,17 @@ public class ConfigReconciler {
             }
             return null;
         }
+    }
+
+    /** The full document's revision ({@link #statusDocument}): what an agent that applies every section reports. */
+    public String currentRevision(Device device) {
+        DesiredConfig doc = statusDocument(device);
+        return doc == null ? null : doc.getRevision();
+    }
+
+    /** {@link #statusRevision} of the device's configuration ({@link #statusDocument}). */
+    public String currentRevision(Device device, Set<String> deviceTokens) {
+        return statusRevision(statusDocument(device), deviceTokens);
     }
 
     /**

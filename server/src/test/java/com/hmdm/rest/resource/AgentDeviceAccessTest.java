@@ -153,7 +153,12 @@ public class AgentDeviceAccessTest {
             @Override public int enqueueConfigApps(Device d) { sideEffects.add("syncApps " + d.getNumber()); return 1; }
         };
         ConfigReconciler reconciler = new ConfigReconciler(unsecureDAO, commandDAO, Fakes.noExtensionPoints()) {
-            @Override public String currentRevision(Device d) { revisionReads++; return "rev"; }
+            @Override public com.hmdm.rest.json.agent.DesiredConfig statusDocument(Device d) {
+                revisionReads++;
+                com.hmdm.rest.json.agent.DesiredConfig doc = new com.hmdm.rest.json.agent.DesiredConfig();
+                doc.setRevision("rev");
+                return doc;
+            }
         };
 
         RolloutDAO rolloutDAO = new RolloutDAO(null) {

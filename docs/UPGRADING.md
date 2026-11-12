@@ -198,6 +198,13 @@ resumed.
   must use the current release workflow ([RELEASING.md](../RELEASING.md)). An install that follows upstream releases
   with its own `IMAGE_OWNER` sets `GITHUB_REPO` to the repository that publishes its images, or `IMAGE_OWNER` to
   `mdmesh-app`.
+- **Going back to 0.4.0: enrollment codes.** The update stores enrollment codes hashed, the existing ones included
+  (on PostgreSQL older than 11 it marks those used instead). A one-click rollback, and the restores in
+  [Backups and restore](OPERATIONS.md#backups-and-restore), bring back the database from before the update, with its
+  codes as they were. A 0.4.0 server started on the 0.5.0 database instead (`--allow-downgrade`, say) finds none of
+  them: every code made before the downgrade is refused as unknown, including one already printed or in a QR. Make a
+  new code on the Enroll page. If you then update that same database to 0.5.0 again, codes made while 0.4.0 ran don't
+  work either: make new ones.
 - **App permissions (agent 0.5.0):** a configuration can Grant or Deny an installed app's runtime permissions. Devices
   on an older agent, or not Device Owner, can't apply them: they get the rest of the configuration and show as out of
   sync while it has a rule, until their agent is updated. Configurations without rules stay in sync on every agent.

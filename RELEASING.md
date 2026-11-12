@@ -90,10 +90,29 @@ file the signed manifest hashes, and after it reads the published asset back and
 to apply/roll-out updates.
 
 The manifest (`release/build-manifest.sh`) keeps `components.serverImage`/`webImage` (the `:VERSION` tags, which
-supervisors before 0.5.0 read) and adds `components.images`, the three images as `repo@sha256:…`, and `files`, the
-SHA-256 of each file the quick start downloads from the tag and of `quickstart.sh` itself (the release asset). A 0.5.0+ supervisor and the quick start run exactly those
-digests and refuse a manifest without them, so a fork that publishes its own releases must use this workflow (or write
-the same fields). `scripts/release-manifest-check.sh` (T0) checks the manifest against what its readers expect.
+supervisors before 0.5.0 read) and `components.apk`, and from 0.5.0 adds:
+
+- `components.images`: the server, web and supervisor images as `repo@sha256:…` (keys `server`, `web`,
+  `supervisor`);
+- `files`: the SHA-256 of each file the quick start downloads from the tag, and of `quickstart.sh` itself (the
+  release asset);
+- `commit`: the tagged commit.
+
+Who reads what:
+
+- A 0.5.0+ **supervisor** runs exactly those digests, and refuses a manifest without them or with them under another
+  owner than its `IMAGE_OWNER`.
+- The **quick start** does the same and checks each downloaded file against `files`. The one release it takes
+  without them is v0.4.0, whose file hashes it carries itself: it runs that release's `:0.4.0` server and web tags
+  and the `:latest` supervisor.
+- **`./setup.sh --update`** (and `--update --native`) reads the signature, `version` and `commit`, and moves the
+  clone only to a tag whose signed manifest names that tag's commit, so it never moves to a release before 0.5.0. It
+  builds from that checkout and reads neither `images` nor `files`.
+- **setup.sh and the native installer** check the latest release's APK against `components.apk.sha256` before the
+  QR uses it (`install/lib/release.sh`), and the **supervisor** checks it before serving its APK mirror.
+
+So a fork that publishes its own releases must use this workflow (or write the same fields).
+`scripts/release-manifest-check.sh` (T0) checks the manifest against what its readers expect.
 
 `:latest` moves **last**: only after the anonymous-pull check, the manifest signing and the GitHub Release
 have all succeeded does the final step retag each image's `:latest` to the release's `:VERSION` (same
@@ -255,5 +274,6 @@ python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["files"]["quicks
 sha256sum "$d/quickstart.sh"                      # = that, and the same as quickstart.sh at the tag
 ```
 
-`components.images`, `files` and the `quickstart.sh` asset exist from 0.5.0 on; a manifest from an earlier release has
-only `components.serverImage`/`webImage` (the `:VERSION` tags) and `components.apk`.
+`components.images`, `files`, `commit` and the `quickstart.sh` asset exist from 0.5.0 on; a manifest from an earlier
+release (v0.4.0's, say) has only `version`, `channel`, `components.serverImage`/`webImage` (the `:VERSION` tags),
+`components.apk` and `compat`.

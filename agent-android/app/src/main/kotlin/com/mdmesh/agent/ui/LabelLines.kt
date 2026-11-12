@@ -16,8 +16,15 @@ import android.widget.TextView
 object LabelLines {
     const val ELLIPSIS = "\u2026"
 
+    /** Only this many code points of a label are laid out (labels come from installed apps, any length). */
+    const val MAX_CODE_POINTS = 256
+
+    /**
+     * The lines of [text] in a [box] wide, at most [maxLines]. Bounded: at most [MAX_CODE_POINTS] code points are
+     * looked at, whatever the label's length, and an ellipsis is found by bisection.
+     */
     fun lines(text: String, box: Double, maxLines: Int, measure: (String) -> Double): List<String> {
-        val pieces = pieces(normalize(text))
+        val pieces = pieces(normalize(cap(text)))
         val out = mutableListOf<String>()
         var current = ""
         var i = 0
@@ -81,15 +88,59 @@ object LabelLines {
         return s.toString()
     }
 
-    /** [s] as it is when it fits, else its longest prefix (trailing spaces off) that fits with `…`, then `…`. */
+    /** The first [MAX_CODE_POINTS] code points of [text], cut between code points (never inside a surrogate pair). */
+    fun cap(text: String): String {
+        var end = 0
+        var count = 0
+        while (end < text.length && count < MAX_CODE_POINTS) {
+            end += Character.charCount(text.codePointAt(end))
+            count++
+        }
+        return if (end >= text.length) text else text.substring(0, end)
+    }
+
+    /**
+     * [s] as it is when it fits, else its longest prefix (trailing spaces off) that fits with `…`, then `…`; a prefix
+     * ends where a cut is allowed ([cuts]). Found by bisection: a prefix's width grows with its length.
+     */
     fun ellipsize(s: String, box: Double, measure: (String) -> Double): String {
         if (measure(s) <= box) return s
         val ellipsis = measure(ELLIPSIS)
-        val prefix = (s.length downTo 1).asSequence()
-            .map { s.substring(0, it).trimEnd(' ') }
-            .firstOrNull { it.isNotEmpty() && measure(it) + ellipsis <= box }
-        return (prefix ?: "") + ELLIPSIS
+        val cuts = cuts(s)
+        // Monotone in k (an empty prefix measures 0): bisection finds the longest cut that fits.
+        fun fits(k: Int): Boolean = measure(s.substring(0, cuts[k]).trimEnd(' ')) + ellipsis <= box
+        var lo = -1 // the longest cut known to fit (-1: none)
+        var hi = cuts.size // the shortest cut known not to
+        while (hi - lo > 1) {
+            val mid = (lo + hi) ushr 1
+            if (fits(mid)) lo = mid else hi = mid
+        }
+        // Nothing fits, or only spaces (a shorter prefix of spaces is empty too): the ellipsis alone.
+        return if (lo < 0) ELLIPSIS else s.substring(0, cuts[lo]).trimEnd(' ') + ELLIPSIS
     }
+
+    /**
+     * Where [s] may be cut for an ellipsis, shortest first: after each code point that isn't followed by a combining
+     * mark, a zero-width joiner or an emoji presentation selector (a mark never loses its letter).
+     */
+    private fun cuts(s: String): IntArray {
+        val out = IntArray(s.length)
+        var n = 0
+        var i = 0
+        while (i < s.length) {
+            i += Character.charCount(s.codePointAt(i))
+            if (i >= s.length || !joinsPrevious(s.codePointAt(i))) out[n++] = i
+        }
+        return out.copyOf(n)
+    }
+
+    private fun joinsPrevious(cp: Int): Boolean = when (Character.getType(cp).toByte()) {
+        Character.NON_SPACING_MARK, Character.ENCLOSING_MARK, Character.COMBINING_SPACING_MARK -> true
+        else -> cp == ZERO_WIDTH_JOINER || cp == EMOJI_PRESENTATION
+    }
+
+    private const val ZERO_WIDTH_JOINER = 0x200D
+    private const val EMOJI_PRESENTATION = 0xFE0F
 
     /** A line may break after [c] inside a word: a hyphen, a slash, or a CJK character. */
     private fun breaksAfter(c: Char): Boolean = c == '-' || c == '/' || isCjk(c)
@@ -102,8 +153,9 @@ object LabelLines {
 }
 
 /**
- * An app label laid out by [LabelLines]: on every measure, for the width it gets, the label's [label] becomes those
- * lines (each already fits, so the platform never breaks one again), at its own size.
+ * An app label laid out by [LabelLines]: for the width it gets, the label's [label] becomes those lines (each already
+ * fits, so the platform never breaks one again), at its own size. The lines are worked out once per label, width,
+ * text size and typeface: a measure again (a relayout, a scroll pass) does no layout work.
  */
 @SuppressLint("AppCompatCustomView", "ViewConstructor") // a plain framework TextView, made in code only
 class LabelView(context: Context, private val maxLabelLines: Int) : TextView(context) {
@@ -113,8 +165,12 @@ class LabelView(context: Context, private val maxLabelLines: Int) : TextView(con
         set(value) {
             if (field.toString() == value.toString()) return
             field = value
+            capped = LabelLines.cap(value.toString())
             requestLayout()
         }
+
+    /** [label] as laid out: its first [LabelLines.MAX_CODE_POINTS] code points. */
+    private var capped = ""
 
     init {
         maxLines = maxLabelLines
@@ -127,15 +183,29 @@ class LabelView(context: Context, private val maxLabelLines: Int) : TextView(con
         }
     }
 
+    private data class Key(val label: String, val box: Int, val textSize: Float, val typeface: Any?)
+
+    private var laidFor: Key? = null
+
+    /** How many times the lines were worked out (for tests: a measure at the same width must not). */
+    internal var layouts = 0
+        private set
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val box = MeasureSpec.getSize(widthMeasureSpec) - totalPaddingLeft - totalPaddingRight
-        if (box > 0) {
-            val laid = LabelLines.lines(label.toString(), box.toDouble(), maxLabelLines) {
-                paint.measureText(it).toDouble()
-            }
+        val key = Key(capped, box, paint.textSize, paint.typeface)
+        if (box > 0 && key != laidFor) {
+            laidFor = key
+            layouts++
+            val laid = LabelLines.lines(key.label, box.toDouble(), maxLabelLines) { paint.measureText(it).toDouble() }
             val joined = laid.joinToString("\n")
             if (text.toString() != joined) setText(joined)
         }
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration?) {
+        super.onConfigurationChanged(newConfig)
+        laidFor = null // a new font scale or locale: lay out again
     }
 }

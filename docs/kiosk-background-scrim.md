@@ -184,7 +184,10 @@ In dp, from the laid-out text views; padding is applied with negative margins, s
 An app label breaks into lines at word boundaries only, never inside a word, at its own size (it is never shrunk:
 large fonts must stay large). The same rule with or without an image. In order:
 
-1. **Text**: the app's label with every run of whitespace (U+0009, U+000A, U+000D, U+0020) turned into one U+0020,
+0. **Cap**: only the label's first 256 code points are laid out (cut at a code-point boundary, never inside a
+   surrogate pair). Labels come from installed apps and can be any length; 256 is far more than 3 lines can show, and
+   it bounds the work below.
+1. **Text**: the capped label with every run of whitespace (U+0009, U+000A, U+000D, U+0020) turned into one U+0020,
    trimmed. Other spaces, such as U+00A0, are part of a word. Empty: no lines.
 2. **Pieces**: the words (split at U+0020), each split further at its break points: after a hyphen `-` (U+002D) or a
    slash `/` (U+002F) that has another character after it in the word, and before and after every CJK character
@@ -205,9 +208,11 @@ large fonts must stay large). The same rule with or without an image. In order:
 
    When `maxLines - 1` lines are finished, the last line is everything left (the current line and every remaining
    piece, with their spaces), ellipsized (5).
-5. **Ellipsis**: a line at most `box` wide stays as it is. Otherwise it becomes its longest prefix (by characters) whose
-   width, with trailing spaces removed, plus the width of `…` (U+2026, measured with the same paint) is at most `box`,
-   followed by `…`; when not even one character fits, `…` alone.
+5. **Ellipsis**: a line at most `box` wide stays as it is. Otherwise it becomes its longest prefix whose width, with
+   trailing spaces removed, plus the width of `…` (U+2026, measured with the same paint) is at most `box`, followed by
+   `…`; when not even one character fits, `…` alone. A prefix ends at a code-point boundary that is not followed by a
+   combining mark (general category M), U+200D or U+FE0F, so a mark never loses its letter. A prefix's width grows
+   with its length, so the longest one can be found by bisection over those boundaries.
 6. **Direction**: lines are made in logical order; the platform's bidirectional layout shows each line (an RTL label
    reads right to left, its ellipsis at the logical end, on the left).
 
@@ -272,7 +277,8 @@ text needs one) and "Image dimmed 22%".
   to the `expected` lines (strings, `…` included). Cases: fits, two words that just fit and just don't, a single word
   wider than the box, an over-wide first word then a second, three words overflowing two lines, a hyphen, a slash, a
   hyphen at the end of a word, CJK text without spaces, Latin then CJK, a long word with no spaces, a right-to-left
-  label, three lines, and a box narrower than one character and the ellipsis.
+  label, three lines, a label longer than the 256-code-point cap, combining marks at the ellipsis, and a box narrower
+  than one character and the ellipsis. Combining marks have width 0 in the vectors.
 
 ## What 3.2 changes
 
@@ -287,7 +293,7 @@ text needs one) and "Image dimmed 22%".
 
 ## What 3.3 changes
 
-- Label lines: word boundaries only (and after a hyphen or slash inside a word, and between CJK characters), a word
+- Label lines: capped at 256 code points; word boundaries only (and after a hyphen or slash inside a word, and between CJK characters), a word
   wider than its box ellipsized on its own line, never split; greedy fill; the last line takes the rest, ellipsized.
   Before, a label wrapped as the platform's text layout chose, which split words that didn't fit ("Timesheet / s").
 - The grid leaves room for the Exit button at the end of its scroll, at any font scale.

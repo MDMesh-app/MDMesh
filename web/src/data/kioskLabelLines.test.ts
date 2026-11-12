@@ -87,8 +87,14 @@ describe('placeholder letter vectors (3.6, Label lines 7, shared with the agent)
 });
 
 describe('bidi table', () => {
-  it('is Unicode 15.1, with strong classes only, and unassigned code points in none', () => {
-    expect(BIDI_UNICODE_VERSION).toBe('15.1.0');
+  it('is the Unicode version the spec vectors follow', () => {
+    const doc = readFileSync(resolve(import.meta.dirname, '../../../docs/kiosk-background-scrim.md'), 'utf8');
+    const assumed = /The expected results follow UAX #29 of Unicode (\d+\.\d+)/.exec(doc)?.[1];
+    expect(assumed).toBe('15.1');
+    expect(BIDI_UNICODE_VERSION).toBe(`${assumed}.0`);
+  });
+
+  it('has strong classes only, and unassigned code points in none', () => {
     expect(strongBidiClass(0x41)).toBe('L'); // A
     expect(strongBidiClass(0x5d0)).toBe('R'); // Hebrew alef
     expect(strongBidiClass(0x627)).toBe('R'); // Arabic alef (AL)

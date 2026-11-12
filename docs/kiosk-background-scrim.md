@@ -192,8 +192,8 @@ large fonts must stay large). The same rule with or without an image. In order:
 0. **Cap**: only the label's first 256 code points are laid out, cut at the last grapheme cut (5) at or before the
    256th code point, so the cap never splits a cluster (or a surrogate pair). When there is no grapheme cut at or
    before it (a single cluster longer than the cap), the cut is right after the 256th code point. Labels come from installed apps and can
-   be any length; 256 is far more than 3 lines can show, and it bounds the work below (only the clusters around the
-   cut are looked at).
+   be any length; 256 is far more than 3 lines can show, and it bounds the work below (the cap segments the first 256
+   code points and a short lookahead after them, whatever the label's length).
 1. **Text**: the capped label with every run of whitespace (U+0009, U+000A, U+000D, U+0020) turned into one U+0020,
    trimmed. Other spaces, such as U+00A0, are part of a word. Empty: no lines.
 2. **Pieces**: the words (split at U+0020), each split further at its break points: after a hyphen `-` (U+002D) or a

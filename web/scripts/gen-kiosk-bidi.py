@@ -10,6 +10,14 @@ import os
 import sys
 import unicodedata
 
+# The version docs/kiosk-background-scrim.md's vectors follow (UAX #29 and the bidi classes of Unicode 15.1; Python 3.13
+# has it).
+UNICODE = '15.1.0'
+if unicodedata.unidata_version != UNICODE:
+    sys.exit(f'gen-kiosk-bidi.py: this Python has Unicode {unicodedata.unidata_version}; the table must be Unicode '
+             f'{UNICODE}, the version the spec vectors assume. Run it with a Python that has {UNICODE}, '
+             f'or change UNICODE together with the spec.')
+
 runs = []  # (first, last, 'L' | 'R')
 prev, start = None, 0
 for cp in range(0x110000):

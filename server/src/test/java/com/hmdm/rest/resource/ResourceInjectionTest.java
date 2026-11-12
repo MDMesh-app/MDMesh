@@ -5,6 +5,9 @@ import com.google.inject.Guice;
 import com.google.inject.Injector;
 import com.google.inject.name.Names;
 import com.hmdm.notification.PushService;
+import com.hmdm.persistence.AgentCommandDAO;
+import com.hmdm.persistence.AgentEnrollmentDAO;
+import com.hmdm.persistence.AgentEnrollmentTokenDAO;
 import com.hmdm.persistence.ApplicationDAO;
 import com.hmdm.persistence.ConfigurationDAO;
 import com.hmdm.persistence.ConfigurationFileDAO;
@@ -13,7 +16,13 @@ import com.hmdm.persistence.IconDAO;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.UploadedFileDAO;
 import com.hmdm.persistence.UserDAO;
+import com.hmdm.rest.resource.support.AppReconciler;
+import com.hmdm.rest.resource.support.ConfigAppInstaller;
+import com.hmdm.rest.resource.support.ConfigReconciler;
 import com.hmdm.rest.resource.support.ExtensionPoints;
+import com.hmdm.rest.resource.support.InstallHashes;
+import com.hmdm.rest.resource.support.KioskLockoutAlert;
+import com.hmdm.rest.resource.support.RolloutRequeuer;
 import com.hmdm.rest.resource.support.KioskBackgroundImageAssets;
 import com.hmdm.service.MailchimpService;
 import com.hmdm.testsupport.Fakes;
@@ -42,6 +51,10 @@ public class ResourceInjectionTest {
             new KioskBackgroundImageAssets(null, null, "https://mdm.example", "/tmp");
     private static final ConfigurationFileDAO CONFIGURATION_FILES = new ConfigurationFileDAO(null, null, null);
     private static final IconDAO ICONS = new IconDAO(null);
+    /** AgentResource's enrollment DAO (#188): one instance, so the test can tell Guice's from any other. */
+    private static final AgentEnrollmentDAO ENROLLMENTS = new AgentEnrollmentDAO(null, null, null, null);
+    /** The injector of the last build(), to compare with what Guice itself provides. */
+    private static Injector lastInjector;
 
     private static Object build(Class<?> resource) {
         ApplicationHandler app = new ApplicationHandler(new ResourceConfig(resource).register(MultiPartFeature.class));
@@ -65,11 +78,22 @@ public class ResourceInjectionTest {
                 bind(UploadedFileDAO.class).toInstance(new UploadedFileDAO(null, null, null, "unused"));
                 bind(APKFileAnalyzer.class).toInstance(new APKFileAnalyzer("aapt"));
                 bind(MailchimpService.class).toInstance(new MailchimpService("https://mdm.example", "", ""));
+                // AgentResource's collaborators: never called here, only injected.
+                bind(AgentEnrollmentTokenDAO.class).toInstance(new AgentEnrollmentTokenDAO(null));
+                bind(AgentCommandDAO.class).toInstance(new AgentCommandDAO(null, null, null, null));
+                bind(ConfigAppInstaller.class).toInstance(new ConfigAppInstaller(null, null, null, null));
+                bind(ConfigReconciler.class).toInstance(new ConfigReconciler(null, null, null));
+                bind(AppReconciler.class).toInstance(new AppReconciler(null, null, null, null));
+                bind(RolloutRequeuer.class).toInstance(new RolloutRequeuer(null));
+                bind(InstallHashes.class).toInstance(new InstallHashes(null, null));
+                bind(KioskLockoutAlert.class).toInstance(new KioskLockoutAlert(null, null, "https://mdm.example"));
+                bind(AgentEnrollmentDAO.class).toInstance(ENROLLMENTS);
             }
         });
         // As HMDMApplication does on container startup.
         GuiceBridge.getGuiceBridge().initializeGuiceBridge(locator);
         locator.getService(GuiceIntoHK2Bridge.class).bridgeGuiceInjector(injector);
+        lastInjector = injector;
         // The instance Jersey serves requests with: the @Singleton resource its ApplicationHandler bound, built on
         // first use (after startup, as in production).
         Object instance = locator.getService(resource);
@@ -96,6 +120,16 @@ public class ResourceInjectionTest {
         Object r = build(FilesResource.class);
         assertSame(ASSETS, field(r, "kioskImages"));
         assertNotNull(field(r, "configurationDAO"));
+    }
+
+    /** #188's enrollment DAO reaches AgentResource from Guice, through its javax.inject constructor. */
+    @Test
+    public void agentResourceGetsTheGuiceEnrollmentDAO() throws Exception {
+        Object r = build(AgentResource.class);
+        Object enrollments = field(r, "enrollments");
+        assertNotNull(enrollments);
+        assertSame(lastInjector.getInstance(AgentEnrollmentDAO.class), enrollments);
+        assertSame(ENROLLMENTS, enrollments);
     }
 
     @Test

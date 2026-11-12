@@ -32,7 +32,8 @@ public class AgentProtocolVersionTest {
     /**
      * Versions in AWAITING_BUMP whose bump is due (the row below them is documented) but deliberately held, each with
      * why. While held the test passes and prints the due message; it can't be held without a reason, and a held
-     * version that is already the protocol version fails (empty both sets then).
+     * version that is already the protocol version fails (empty both sets then). A release clears every hold first
+     * (RELEASING.md, step 2).
      */
     private static final Map<String, String> BUMP_HELD = Collections.singletonMap("1.10",
             "1.9 is on main (#188); the merge order of feat/kiosk-background-console and feat/agent-ui-p4-p5 decides "
@@ -70,7 +71,8 @@ public class AgentProtocolVersionTest {
             String held = BUMP_HELD.get(pending);
             if (due && held != null) {
                 assertFalse("a held bump needs its reason", held.trim().isEmpty());
-                System.err.println("AgentProtocolVersionTest: " + message + ". Held: " + held + ".");
+                System.err.println("AgentProtocolVersionTest: " + message + ". Held: " + held + ". Clear the hold "
+                        + "before a release (RELEASING.md, step 2).");
             } else {
                 assertFalse(message, due);
             }

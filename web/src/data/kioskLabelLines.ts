@@ -159,7 +159,8 @@ const CAP_LOOKAHEAD = 64;
 /**
  * The first {@link LABEL_MAX_CODE_POINTS} code points, moved back to the last grapheme cut at or before that, so the cap
  * never splits a cluster (or a surrogate pair). With no grapheme cut at or before it (one cluster longer than the
- * cap), the spec's hard cut right after the 256th code point. Only the clusters around the cut are looked at.
+ * cap), the spec's hard cut right after the 256th code point. It segments the capped prefix and a short lookahead
+ * after it ({@link CAP_LOOKAHEAD}), whatever the label's length.
  */
 export function capLabel(text: string, useSegmenter = true): string {
   let i = 0;

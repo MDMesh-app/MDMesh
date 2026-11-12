@@ -56,7 +56,7 @@ public class CommandHistoryView {
      * Never throws; the payload parsing rules live in {@link CommandPayloads#packageNameOf}.
      */
     public static String subjectOf(String type, String payloadJson) {
-        if (!"app.install".equals(type) && !"app.uninstall".equals(type)) return null;
+        if (!"app.install".equals(type) && !"app.uninstall".equals(type) && !"app.setHidden".equals(type)) return null;
         return CommandPayloads.packageNameOf(payloadJson);
     }
 }

@@ -23,6 +23,9 @@ Upgrading
   hand: [UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050).
 
 New
+- Device Apps: scan all installed packages, including non-launchable and hidden apps. Each row offers confirmed
+  Uninstall and reversible Disable / Enable actions; the agent protects management, essential and kiosk apps.
+  Requires the updated agent. Disabling hides an app while retaining its package and data.
 - Enroll: devices that enroll while the page is open show under the code, with a link, first as getting their
   configuration and then Online (or that one hasn't checked in after 10 minutes), so you see the device you just set
   up arrive without going to Devices. The page stops looking after 30 minutes until you ask it to look again. Needs
@@ -59,6 +62,8 @@ New
   OpenSSL and `minisign`.
 
 Fixes
+- Device Apps refreshes after successful install, uninstall and visibility commands, using the page's existing
+  command-history poll. Delivered scans and app changes request result sync without waiting for the periodic check-in.
 - The console recognizes an on-device Return to kiosk and does not offer the same action again; a later kiosk exit,
   custom kiosk, or configuration apply makes it available again.
 - Files: uploading a file again with the same name and the same content returns the file already there instead of an

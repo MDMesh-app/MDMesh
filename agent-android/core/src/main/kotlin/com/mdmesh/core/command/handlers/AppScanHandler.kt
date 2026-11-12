@@ -3,6 +3,7 @@ package com.mdmesh.core.command.handlers
 import com.mdmesh.core.command.CommandHandler
 import com.mdmesh.core.command.CommandResults
 import com.mdmesh.core.device.AppInventoryCollector
+import com.mdmesh.proto.AppScanRequest
 import com.mdmesh.proto.AppScanResult
 import com.mdmesh.proto.CommandEnvelope
 import com.mdmesh.proto.CommandResult
@@ -21,7 +22,14 @@ class AppScanHandler(
     override val type: String = "apps.scan"
 
     override suspend fun handle(command: CommandEnvelope): CommandResult {
-        val result = runCatching { AppScanResult(inventory.scan()) }
+        val result = runCatching {
+            val request = command.payload?.let {
+                ProtocolJson.json.decodeFromJsonElement(AppScanRequest.serializer(), it)
+            } ?: AppScanRequest()
+            AppScanResult(
+                inventory.scan(request.includeAll), includeAll = request.includeAll, appActions = request.includeAll,
+            )
+        }
             .getOrElse { return CommandResults.failed(command, "scan failed: ${it.message}") }
         val json = ProtocolJson.json.encodeToString(AppScanResult.serializer(), result)
         return CommandResults.done(command, json)

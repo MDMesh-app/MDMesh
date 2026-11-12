@@ -5,6 +5,18 @@ import org.junit.Test
 
 class AppInventoryTest {
 
+    @Test fun `full inventory and action metadata are additive and explicit`() {
+        assertEquals(false, ProtocolJson.json.decodeFromString(AppScanRequest.serializer(), "{}").includeAll)
+        assertEquals(false, ProtocolJson.json.decodeFromString(AppScanResult.serializer(), "{\"apps\":[]}").appActions)
+        val full = AppScanResult(
+            listOf(AppInfo("com.example.hidden", "Hidden", hidden = true, protectedReason = "Protected")),
+            includeAll = true, appActions = true,
+        )
+        assertEquals(full, ProtocolJson.json.decodeFromString(
+            AppScanResult.serializer(), ProtocolJson.json.encodeToString(AppScanResult.serializer(), full),
+        ))
+    }
+
     @Test
     fun `scan result round-trips`() {
         val r = AppScanResult(

@@ -400,6 +400,42 @@
 }
 
 /* ---- apps tab ---- */
+.v2 .v2-shell__main:has(.v2-device-apps) {
+  max-width: none;
+}
+@media (min-width: 1100px) {
+  .v2 .v2-device-cols:has(.v2-device-apps) > .v2-device-rail {
+    flex: 0 0 260px;
+  }
+  .v2 .v2-device-cols:has(.v2-device-apps) > .v2-device-main {
+    flex-grow: 1;
+  }
+}
+.v2 .v2-device-apps__text {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.v2 .v2-device-apps__text.is-system {
+  color: #c64b2a;
+}
+.v2 .v2-device-apps__text.is-disabled {
+  color: #aeb4bc;
+}
+[data-theme='dark'] .v2 .v2-device-apps__text.is-system {
+  color: #f58262;
+}
+[data-theme='dark'] .v2 .v2-device-apps__text.is-disabled {
+  color: #89919e;
+}
+.v2 .v2-device-apps__actions {
+  display: flex;
+  gap: 6px;
+}
+.v2 .v2-device-apps__legend {
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+
 .v2 .v2-device-apps__body {
   display: flex;
   flex-direction: column;

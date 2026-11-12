@@ -22,12 +22,19 @@ data class AppInfo(
     val launchable: Boolean = false,
     val versionName: String? = null,
     val versionCode: Long? = null,
+    val hidden: Boolean = false,
+    val protectedReason: String? = null,
 )
+
+@Serializable
+data class AppScanRequest(val includeAll: Boolean = false)
 
 /** Result payload of `apps.scan` (carried as JSON in the command-result `detail`). */
 @Serializable
 data class AppScanResult(
     val apps: List<AppInfo> = emptyList(),
+    val includeAll: Boolean = false,
+    val appActions: Boolean = false,
 )
 
 /** Payload of the `apps.icons` command: the packages whose icons the console wants rendered. */

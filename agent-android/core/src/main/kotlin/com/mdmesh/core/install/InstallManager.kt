@@ -199,7 +199,8 @@ class InstallManager @Inject constructor(
     /** Silently uninstalls [packageName], awaiting the platform's result. */
     @SuppressLint("MissingPermission") // Device Owner holds DELETE_PACKAGES (declared in the app)
     suspend fun uninstall(packageName: String): InstallOutcome {
-        if (installedVersionCode(packageName) == null) {
+        // Hidden packages are still installed; default PackageManager queries cannot see them.
+        if (installedVersionCode(packageName, includeHidden = true) == null) {
             return InstallOutcome.Skipped("not installed: $packageName")
         }
         // Reuse a stable session id derived from the package so the PendingIntent is unique.
@@ -312,9 +313,11 @@ class InstallManager @Inject constructor(
         return dest
     }
 
-    private fun installedVersionCode(packageName: String): Long? = runCatching {
+    private fun installedVersionCode(packageName: String, includeHidden: Boolean = false): Long? = runCatching {
         @Suppress("DEPRECATION")
-        val info: PackageInfo = context.packageManager.getPackageInfo(packageName, 0)
+        val info: PackageInfo = context.packageManager.getPackageInfo(
+            packageName, if (includeHidden) PackageManager.MATCH_UNINSTALLED_PACKAGES else 0,
+        )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             info.longVersionCode
         } else {

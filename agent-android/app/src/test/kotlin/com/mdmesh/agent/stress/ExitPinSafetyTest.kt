@@ -171,6 +171,50 @@ class ExitPinSafetyTest : KioskHarness() {
         assertEquals("no exit recorded", 0, events("kioskExit"))
     }
 
+    private fun lockedMessage(): String =
+        textsOf(lockedDialog()!!.window!!.decorView).first { it.startsWith("Too many") }
+
+    private fun textsOf(v: android.view.View): List<String> = when (v) {
+        is android.widget.TextView -> listOf(v.text.toString())
+        is android.view.ViewGroup -> (0 until v.childCount).flatMap { textsOf(v.getChildAt(it)) }
+        else -> emptyList()
+    }
+
+    private fun idle(seconds: Long) {
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idleFor(Duration.ofSeconds(seconds))
+        settle()
+    }
+
+    /** PR #192 N4: "Try again in N" counts down while it is shown, and the dialog closes when the lockout ends. */
+    @Test fun exitLockedCountsDownAndClosesWhenTheLockoutEnds() {
+        launch(grid)
+        tapExitKiosk()
+        repeat(3) { submitPin("0000") }
+        assertTrue(lockedMessage(), lockedMessage().endsWith("30 s."))
+        idle(10)
+        assertTrue(lockedMessage(), lockedMessage().endsWith("20 s."))
+        idle(21)
+        assertNull("closed once the exit can be tried again", lockedDialog())
+    }
+
+    /** PR #192 N4: a long lockout's dialog doesn't stay over the kiosk for good: it closes as the PIN prompt does. */
+    @Test fun exitLockedClosesAfterAMinuteOfALongLockout() {
+        launch(grid)
+        tapExitKiosk()
+        repeat(3) { submitPin("0000") }
+        lockedDialog()!!.dismiss(); settle()
+        idle(31)
+        tapExitKiosk()
+        submitPin("0000") // the 4th: locked for a minute
+        lockedDialog()!!.dismiss(); settle()
+        idle(61)
+        tapExitKiosk()
+        submitPin("0000") // the 5th: locked for 5 minutes
+        assertTrue(lockedMessage(), lockedMessage().endsWith("5 min."))
+        idle(IDLE_MS / 1000 + 1)
+        assertNull(lockedDialog())
+    }
+
     // --- F9 / F10: what a rebuild keeps --------------------------------------------------------------------------
 
     @Test fun triesLeftWarningSurvivesRotation() {

@@ -72,8 +72,9 @@ New
   kiosk was turned off meanwhile. Needs agent 0.5.0.
 - Agent: Exit kiosk is easier to use. A wrong PIN shows in the dialog, which stays open and says how many tries are
   left before the exit locks; the PIN can be shown while typing, but not copied or shared. The prompt closes, and
-  what was typed with it, when the screen goes off or another app opens, or after a minute without typing. Needs
-  agent 0.5.0.
+  what was typed with it, when the screen goes off or another app opens, or after a minute without typing. After too
+  many wrong PINs, Exit locked counts down to when the exit can be tried again, and closes then (or after a minute).
+  Needs agent 0.5.0.
 - Agent: its notifications have sharp MDMesh status bar icons, and its app icon follows themed icons on Android 13
   and later. Needs agent 0.5.0.
 - Agent: the MDMesh status screen follows the device's light or dark setting and uses the console's look: a device

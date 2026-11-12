@@ -489,14 +489,30 @@ class KioskLauncherActivity : ComponentActivity() {
         CheckInWorker.scheduleNow(applicationContext)
     }
 
+    /**
+     * "Exit locked, try again in N": N counts down while it is shown, and the dialog closes when the lockout ends (the
+     * exit can be tried again) or, for a long lockout, after the PIN prompt's idle time, so it never stays over the
+     * kiosk for good. Both from the gate's own clock, so a rebuilt or restored dialog says the same.
+     */
     private fun showExitLocked(remainingMs: Long) {
+        fun message(ms: Long) = getString(R.string.kiosk_exit_locked_message, ExitPinGate.describe(ms))
         val spec = MdmDialog.Spec(
             title = getString(R.string.kiosk_exit_locked_title),
-            message = getString(R.string.kiosk_exit_locked_message, ExitPinGate.describe(remainingMs)),
+            message = message(remainingMs),
             confirm = getString(R.string.action_ok),
             icon = R.drawable.ic_v2_lock,
         )
-        dialogs.show(KioskExitDialogs.LOCKED, MdmDialog.create(this, spec) { it.dismiss() })
+        val dialog = MdmDialog.create(this, spec) { it.dismiss() }
+        val closeAt = SystemClock.elapsedRealtime() + ExitPinDialog.idleTimeoutMs(this)
+        dialog.everyWhileShown(LOCKED_TICK_MS) {
+            val left = pinGate.remainingLockMs()
+            if (left == null || SystemClock.elapsedRealtime() >= closeAt) {
+                dialog.dismiss()
+            } else {
+                dialog.setMessage(message(left))
+            }
+        }
+        dialogs.show(KioskExitDialogs.LOCKED, dialog)
     }
 
     /**
@@ -528,5 +544,8 @@ class KioskLauncherActivity : ComponentActivity() {
 
     private companion object {
         const val TAG = "KioskLauncher"
+
+        /** How often the "Exit locked" countdown is redrawn (its finest unit is a second). */
+        const val LOCKED_TICK_MS = 1_000L
     }
 }

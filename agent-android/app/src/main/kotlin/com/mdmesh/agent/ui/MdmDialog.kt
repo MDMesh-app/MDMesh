@@ -36,6 +36,7 @@ class MdmDialog private constructor(
     private val alert: AlertDialog,
     /** The inflated [Spec.body], if any. */
     val body: View?,
+    private val message: TextView,
 ) : SlotDialog {
 
     override val builtFor: Configuration = Configuration(alert.context.resources.configuration)
@@ -100,6 +101,36 @@ class MdmDialog private constructor(
     /** [block] runs each time the dialog is shown (focus a field, say). */
     fun setOnShown(block: () -> Unit) = alert.setOnShowListener { block() }
 
+    /** Replaces the message (a countdown). */
+    fun setMessage(text: CharSequence) {
+        message.text = text
+        message.visibility = if (text.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    /**
+     * Runs [tick] every [periodMs] while the dialog is on screen, the first time one period after it shows; stops for
+     * good when its window goes (dismissed, or the activity destroyed). [tick] may dismiss the dialog.
+     */
+    fun everyWhileShown(periodMs: Long, tick: () -> Unit) {
+        val runner = object : Runnable {
+            override fun run() {
+                if (!message.isAttachedToWindow) return
+                tick()
+                if (message.isAttachedToWindow) message.postDelayed(this, periodMs)
+            }
+        }
+        message.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) {
+                v.removeCallbacks(runner)
+                v.postDelayed(runner, periodMs)
+            }
+
+            override fun onViewDetachedFromWindow(v: View) {
+                v.removeCallbacks(runner)
+            }
+        })
+    }
+
     companion object {
 
         /** Builds (doesn't show) the dialog on [context]: an activity, never the application context (the theme). */
@@ -111,7 +142,7 @@ class MdmDialog private constructor(
             val title = root.findViewById<TextView>(R.id.mdm_dialog_title)
             title.text = spec.title
             ViewCompat.setAccessibilityHeading(title, true)
-            root.findViewById<TextView>(R.id.mdm_dialog_message).apply {
+            val message = root.findViewById<TextView>(R.id.mdm_dialog_message).apply {
                 text = spec.message
                 visibility = if (spec.message.isNullOrEmpty()) View.GONE else View.VISIBLE
             }
@@ -142,7 +173,7 @@ class MdmDialog private constructor(
             (if (spec.danger) filled else danger).visibility = View.GONE
             confirm.visibility = View.VISIBLE
             confirm.text = spec.confirm
-            val dialog = MdmDialog(alert, body)
+            val dialog = MdmDialog(alert, body, message)
             confirm.setOnClickListener { onConfirm(dialog) }
             spec.cancel?.let { label ->
                 root.findViewById<Button>(R.id.mdm_dialog_cancel).apply {

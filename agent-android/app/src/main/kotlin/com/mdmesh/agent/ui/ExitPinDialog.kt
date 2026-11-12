@@ -174,17 +174,7 @@ class ExitPinDialog private constructor(
     /** Closes the prompt (and with it whatever was typed) a while after the last input. */
     private val idle = Runnable { dialog.dismiss() }
 
-    /** [IDLE_TIMEOUT_MS], or longer if the user set a longer "Time to take action" (accessibility, API 29+). */
-    private fun idleTimeoutMs(): Long {
-        val a11y = field.context.getSystemService(AccessibilityManager::class.java)
-        val recommended = if (a11y != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val flags = AccessibilityManager.FLAG_CONTENT_CONTROLS or AccessibilityManager.FLAG_CONTENT_TEXT
-            a11y.getRecommendedTimeoutMillis(IDLE_TIMEOUT_MS.toInt(), flags).toLong()
-        } else {
-            IDLE_TIMEOUT_MS
-        }
-        return recommended.coerceAtLeast(IDLE_TIMEOUT_MS)
-    }
+    private fun idleTimeoutMs(): Long = idleTimeoutMs(field.context)
 
     /** When [idle] runs (SystemClock.uptimeMillis); null until the prompt is shown. */
     private var idleDeadline: Long? = null
@@ -248,6 +238,18 @@ class ExitPinDialog private constructor(
          * to clear it, see KioskLauncherActivity.onStop).
          */
         const val IDLE_TIMEOUT_MS = 60_000L
+
+        /** [IDLE_TIMEOUT_MS], or longer if the user set a longer "Time to take action" (accessibility, API 29+). */
+        fun idleTimeoutMs(context: Context): Long {
+            val a11y = context.getSystemService(AccessibilityManager::class.java)
+            val recommended = if (a11y != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val flags = AccessibilityManager.FLAG_CONTENT_CONTROLS or AccessibilityManager.FLAG_CONTENT_TEXT
+                a11y.getRecommendedTimeoutMillis(IDLE_TIMEOUT_MS.toInt(), flags).toLong()
+            } else {
+                IDLE_TIMEOUT_MS
+            }
+            return recommended.coerceAtLeast(IDLE_TIMEOUT_MS)
+        }
 
         /** A hardware key in the field: Enter submits on its first press; its repeats and release do nothing. */
         internal fun keyAction(keyCode: Int, action: Int, repeatCount: Int): Input = when {

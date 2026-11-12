@@ -143,11 +143,18 @@ class BackdropCells(val width: Int, val height: Int, private val mins: IntArray,
 sealed interface Decoded {
     class Ready(val bitmap: Bitmap, val info: BackdropInfo) : Decoded
 
-    /** The file isn't an image this device can read (or is gone, or cut short): the store decides which. */
+    /**
+     * Not an image this device can read: its header (format and size) doesn't decode, or the file is gone. The
+     * store decides which: a file that still matches its hash is a bad image for good.
+     */
     data object Undecodable : Decoded
 
-    /** Not enough memory, even at half the size: show nothing new, keep what is shown. */
-    data object OutOfMemory : Decoded
+    /**
+     * An image whose header reads, but whose pixels couldn't be decoded now, even at half the size: memory short
+     * (BitmapFactory returns null as often as it throws), a read error, a decoder failure. Nothing is remembered: show
+     * nothing new, keep what is shown, and try again on the next want.
+     */
+    data object Transient : Decoded
 }
 
 /**
@@ -156,43 +163,65 @@ sealed interface Decoded {
  * for the cells), never larger than [DecodeLimits] allow, upright by a JPEG's EXIF orientation. The whole image, at a
  * power-of-two sample: fill or fit, the focal point and the window's shape (a rotation) are placed when drawn
  * ([BackdropGeometry]), from the same bitmap.
+ *
+ * The legibility cells are always worked out from the very pixels that are drawn: 8 bits a channel, or on a low-RAM
+ * device the 2-byte (RGB_565) copy it draws, read back. So the one level of allowance the contrast rule keeps for
+ * the GPU is never spent on a format change.
  */
 object BackdropDecoder {
 
     /**
      * Decodes [file] whole, for a screen whose long edge is [screenLong] px, over [background]. Off the main thread.
      * The window's shape doesn't matter: fill or fit, focal point and rotation are drawn from the same bitmap.
+     * [pixels] is BitmapFactory's full decode, a seam for tests (the header is always read by BitmapFactory).
      */
-    fun decode(file: File, screenLong: Int, background: Int, limits: DecodeLimits): Decoded {
-        val request = Request(file, maxOf(1, screenLong), background, limits)
-        return try {
-            decodeOrNull(request, extraSample = 1) ?: Decoded.Undecodable
-        } catch (_: OutOfMemoryError) {
-            try {
-                decodeOrNull(request, extraSample = 2) ?: Decoded.Undecodable
+    fun decode(
+        file: File,
+        screenLong: Int,
+        background: Int,
+        limits: DecodeLimits,
+        pixels: (String, BitmapFactory.Options) -> Bitmap? = BitmapFactory::decodeFile,
+    ): Decoded {
+        val request = Request(file, maxOf(1, screenLong), background, limits, pixels)
+        // Only a header that doesn't read is the image's fault; everything after it is "not now".
+        val bounds = boundsOf(file) ?: return Decoded.Undecodable
+        for (extraSample in EXTRA_SAMPLES) {
+            val decoded = try {
+                decodeSized(request, bounds, extraSample)
             } catch (_: OutOfMemoryError) {
-                Decoded.OutOfMemory
+                null
+            } catch (_: Exception) {
+                null
             }
-        } catch (_: Exception) {
-            Decoded.Undecodable
+            if (decoded != null) return decoded
         }
+        return Decoded.Transient
     }
 
-    private class Request(val file: File, val screenLong: Int, val background: Int, val limits: DecodeLimits)
+    /** Full size, then half: a null or a failure at full size may be only the memory it needed. */
+    private val EXTRA_SAMPLES = intArrayOf(1, 2)
 
-    private fun decodeOrNull(r: Request, extraSample: Int): Decoded? {
-        if (!r.file.isFile) return null // gone (the cache was cleared): the store fetches it again
+    private class Request(
+        val file: File,
+        val screenLong: Int,
+        val background: Int,
+        val limits: DecodeLimits,
+        val pixels: (String, BitmapFactory.Options) -> Bitmap?,
+    )
+
+    /** The header (format and size), or null when [file] is gone or isn't an image BitmapFactory reads. */
+    private fun boundsOf(file: File): BitmapFactory.Options? = runCatching {
+        if (!file.isFile) return@runCatching null // gone (the cache was cleared): the store fetches it again
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(r.file.path, bounds)
-        return if (bounds.outWidth > 0 && bounds.outHeight > 0) decodeSized(r, bounds, extraSample) else null
-    }
+        BitmapFactory.decodeFile(file.path, bounds)
+        bounds.takeIf { it.outWidth > 0 && it.outHeight > 0 }
+    }.getOrNull()
 
-    private fun decodeSized(r: Request, bounds: BitmapFactory.Options, extraSample: Int): Decoded? {
+    private fun decodeSized(r: Request, bounds: BitmapFactory.Options, extraSample: Int): Decoded.Ready? {
         val orientation = exifOrientation(r.file, bounds.outMimeType)
         val options = BitmapFactory.Options().apply {
             inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, r.screenLong, r.limits.maxEdge) * extraSample
-            // 8 bits a channel: the legibility cells are worked out from these exact sRGB values (RGB_565 would round
-            // by more than the rule's one-level allowance). The drawn copy may be RGB_565 after that.
+            // 8 bits a channel, the sRGB values the console's rule reads.
             inPreferredConfig = Bitmap.Config.ARGB_8888
             inMutable = false
             // An embedded profile (Display P3 included) converted to sRGB; Android 7 ignores profiles, the same as
@@ -201,17 +230,16 @@ object BackdropDecoder {
                 inPreferredColorSpace = ColorSpace.get(ColorSpace.Named.SRGB)
             }
         }
-        val sampled = BitmapFactory.decodeFile(r.file.path, options) ?: return null
+        val sampled = r.pixels(r.file.path, options) ?: return null
         val full = orientation.apply(sampled)
-        val info = infoOf(full, r.background)
-        // Drawn at 2 bytes a pixel when it has no transparency and is a JPEG, or memory is short.
-        val opaqueFormat = bounds.outMimeType == "image/jpeg"
-        val bitmap = if ((opaqueFormat || r.limits.lowMemory) && !full.hasAlpha()) {
+        // A low-RAM device draws a picture without transparency at 2 bytes a pixel (already capped at 1280 px), and
+        // its cells come from that copy: the colours it draws. Elsewhere the 8-bit bitmap is drawn as decoded.
+        val drawn = if (r.limits.lowMemory && !full.hasAlpha()) {
             full.copy(Bitmap.Config.RGB_565, false)?.also { full.recycle() } ?: full
         } else {
             full
         }
-        return Decoded.Ready(bitmap, info)
+        return Decoded.Ready(drawn, infoOf(drawn, r.background))
     }
 
     /**

@@ -98,7 +98,7 @@ class KioskBackdrop(
                 is Obtained.Ready -> when (val decoded = decode(now.file, key)) {
                     is Decoded.Ready -> null.also { show(key, decoded) }
                     Decoded.Undecodable -> store.undecodable(image)
-                    Decoded.OutOfMemory -> null // keep what is shown; the next want tries again
+                    Decoded.Transient -> null // keep what is shown; the next want tries again
                 }
                 is Obtained.Retry -> {
                     showLastGood(key)

@@ -3,6 +3,7 @@ package com.mdmesh.agent.ui
 import android.app.ActivityManager
 import android.app.Application
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import androidx.test.core.app.ApplicationProvider
@@ -85,25 +86,53 @@ open class BackdropDecoderMatrixTest {
         }
     }
 
-    @Test fun jpegIsRgb565AndLowRamOpaquePngToo() {
-        assertEquals(Bitmap.Config.RGB_565, ready("opaque.jpg", DecodeLimits.NORMAL).bitmap.config)
-        assertEquals(Bitmap.Config.RGB_565, ready("opaque.png", DecodeLimits.LOW_MEMORY).bitmap.config)
+    /** S3: only a low-RAM device draws at 2 bytes a pixel (an opaque picture); everything else at 8 bits a channel. */
+    @Test fun onlyLowRamDrawsAt565() {
+        for (name in listOf("opaque.jpg", "opaque.png", "lossy.webp")) {
+            assertEquals(name, Bitmap.Config.ARGB_8888, ready(name, DecodeLimits.NORMAL).bitmap.config)
+            assertEquals(name, Bitmap.Config.RGB_565, ready(name, DecodeLimits.LOW_MEMORY).bitmap.config)
+        }
         val alpha = ready("alpha.png", DecodeLimits.LOW_MEMORY)
         assertEquals("transparency kept", Bitmap.Config.ARGB_8888, alpha.bitmap.config)
     }
 
-    @Test fun cellsComeFromEightBitColoursEvenWhenDrawnAt565() {
-        val odd = Color.rgb(0x13, 0x57, 0x9B) // 565 would round every channel
+    /** A flat 64 x 32 picture in [colour], as [format]. */
+    private fun flat(colour: Int, format: Bitmap.CompressFormat, name: String): File {
         val src = Bitmap.createBitmap(64, 32, Bitmap.Config.ARGB_8888).apply {
-            eraseColor(odd)
-            setHasAlpha(false) // an opaque PNG
+            eraseColor(colour)
+            setHasAlpha(false)
         }
-        val file = File(app.cacheDir, "fixture-odd.png")
-        file.outputStream().use { src.compress(Bitmap.CompressFormat.PNG, 100, it) }
-        val d = decode(file, limits = DecodeLimits.LOW_MEMORY) as Decoded.Ready
-        assertEquals("drawn at 2 bytes a pixel", Bitmap.Config.RGB_565, d.bitmap.config)
-        val all = box(d, 0.0, 0.0, 64.0, 32.0)
-        assertEquals(ColourBox(odd, odd), all)
+        return File(app.cacheDir, "fixture-$name").apply { outputStream().use { src.compress(format, 100, it) } }
+    }
+
+    /**
+     * S3: the 4.5:1 and 3:1 plates are worked out from the cells, with one level of allowance for the GPU. So the
+     * cells must hold the colours actually drawn: every drawn pixel lies inside its cell's bounds, normal and
+     * low-RAM, for the formats a photo comes in. (Drawing a JPEG at 565 while the cells came from its 8-bit pixels
+     * put the drawn colour several levels outside them.)
+     */
+    @Test fun everyDrawnPixelIsInsideTheCellsTheContrastIsWorkedOutFrom() {
+        val odd = Color.rgb(0x13, 0x57, 0x9B) // every channel off the 565 grid
+        val files = listOf(
+            flat(odd, Bitmap.CompressFormat.JPEG, "odd.jpg"),
+            flat(odd, Bitmap.CompressFormat.PNG, "odd.png"),
+            fixture("opaque.jpg"),
+            fixture("lossy.webp"),
+        )
+        for (limits in listOf(DecodeLimits.NORMAL, DecodeLimits.LOW_MEMORY)) for (file in files) {
+            val d = decode(file, limits = limits) as Decoded.Ready
+            assertEquals(1, d.info.cells.cellSize)
+            for (y in 0 until d.bitmap.height) for (x in 0 until d.bitmap.width) {
+                val b = box(d, x + 0.25, y + 0.25, 0.5, 0.5)
+                val px = d.bitmap.getPixel(x, y)
+                val where = "${file.name} low=${limits.lowMemory} ($x,$y) ${Integer.toHexString(px)} not in " +
+                    "${Integer.toHexString(b.min)}..${Integer.toHexString(b.max)}"
+                for (shift in intArrayOf(16, 8, 0)) {
+                    val v = (px shr shift) and 0xFF
+                    assertTrue(where, v >= ((b.min shr shift) and 0xFF) && v <= ((b.max shr shift) and 0xFF))
+                }
+            }
+        }
     }
 
     @Test fun exifOrientationIsApplied() {
@@ -120,6 +149,39 @@ open class BackdropDecoderMatrixTest {
     @Test fun anythingUndecodableIsUndecodable() {
         assertEquals(Decoded.Undecodable, decode(fixture("garbage.png")))
         assertEquals(Decoded.Undecodable, decode(File(app.cacheDir, "fixture-missing.png")))
+    }
+
+    // --- S2: once the header reads, a failed pixel decode is "not now", never "this image is bad" ---
+
+    private fun decodeWith(pixels: (String, BitmapFactory.Options) -> Bitmap?) =
+        BackdropDecoder.decode(fixture("opaque.jpg"), 48, background, DecodeLimits.NORMAL, pixels)
+
+    /** BitmapFactory returns null, not OOM, when it can't allocate: the half-size retry runs, and it decodes. */
+    @Test fun aNullFullDecodeIsRetriedAtHalfSize() {
+        val samples = mutableListOf<Int>()
+        val d = decodeWith { path, o ->
+            samples += o.inSampleSize
+            if (samples.size == 1) null else BitmapFactory.decodeFile(path, o)
+        }
+        assertEquals(listOf(1, 2), samples)
+        assertTrue("$d", d is Decoded.Ready)
+        assertEquals("half size", 48, (d as Decoded.Ready).bitmap.width)
+    }
+
+    /** Null, OOM or an error at both sizes: transient (nothing remembered), never Undecodable (Invalid for good). */
+    @Test fun aFailedPixelDecodeAfterGoodBoundsIsTransient() {
+        val failures = listOf<(String, BitmapFactory.Options) -> Bitmap?>(
+            { _, _ -> null },
+            { _, _ -> throw OutOfMemoryError("pixels") },
+            { _, _ -> throw java.io.IOException("read") },
+            { _, _ -> throw IllegalStateException("decoder") },
+        )
+        for (fail in failures) {
+            var calls = 0
+            val d = decodeWith { p, o -> calls++; fail(p, o) }
+            assertEquals(Decoded.Transient, d)
+            assertEquals("both sizes tried", 2, calls)
+        }
     }
 
     @Test fun largeImagesAreCappedAndLowRamHalvedAgain() {

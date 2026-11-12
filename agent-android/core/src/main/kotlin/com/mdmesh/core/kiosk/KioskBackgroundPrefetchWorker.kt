@@ -47,6 +47,19 @@ class KioskBackgroundPrefetchWorker @AssistedInject constructor(
             is KioskBackgroundImageStore.Obtained.Retry -> Result.retry()
         }
 
+        /**
+         * Follows the kiosk's image: a prefetch of [image] replaces any of an earlier one; no image (a kiosk without
+         * one, or none at all) cancels it, so an image nothing will show isn't downloaded or retried for hours.
+         */
+        fun follow(context: Context, image: KioskBackgroundImageDto?) {
+            if (image == null) cancel(context) else enqueue(context, image)
+        }
+
+        /** Stops any prefetch (and its retries). */
+        fun cancel(context: Context) {
+            WorkManager.getInstance(context).cancelUniqueWork(NAME)
+        }
+
         /** Replaces any prefetch of an earlier image. */
         fun enqueue(context: Context, image: KioskBackgroundImageDto) {
             val request = OneTimeWorkRequestBuilder<KioskBackgroundPrefetchWorker>()

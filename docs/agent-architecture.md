@@ -138,8 +138,11 @@ alone: a new URL for the same file (a server that moved) causes no re-download a
 - Decoding: BitmapFactory only (JPEG, PNG, WebP lossy, lossless and with transparency, on Android 7 and up), never
   a hardware bitmap, off the main thread, once per image, window size and background color (again after a
   rotation), upright by the JPEG's EXIF orientation, cropped to what the window shows. At most 2560 px on the long
-  edge, 1280 px and 2 bytes a pixel on a low-RAM device or one with a heap class of 128 MB or less; on running out of
-  memory, once more at half size, then the launcher keeps what it shows.
+  edge, 1280 px and 2 bytes a pixel on a low-RAM device or one with a heap class of 128 MB or less (its plates are
+  worked out from those drawn pixels). When the pixels can't be decoded (memory short, a read error), once more at
+  half size, then the launcher keeps what it shows and tries again on its next return to the front; only a file whose
+  header doesn't read is a bad image. One download of an image at a time, whether the launcher or the prefetch asks;
+  leaving the kiosk, or dropping its image, cancels the prefetch.
 - Readability: the dim and the text plates of [kiosk-background-scrim.md](kiosk-background-scrim.md), shared with
   the console's preview and its test vectors.
 - App labels break into at most 2 lines (3 at larger font sizes) at word boundaries only, never inside a word; a

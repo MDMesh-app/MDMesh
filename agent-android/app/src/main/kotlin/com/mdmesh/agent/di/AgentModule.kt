@@ -294,7 +294,8 @@ object AgentModule {
             // An exit cut off midway is never finished while the configuration says kiosk on.
             desiredKioskOn = { configStore.configuredKiosk() != null },
             io = Dispatchers.IO,
-            onEntered = { p -> p.theme.backgroundImage?.let { KioskBackgroundPrefetchWorker.enqueue(context, it) } },
+            onEntered = { p -> KioskBackgroundPrefetchWorker.follow(context, p.theme.backgroundImage) },
+            onExited = { KioskBackgroundPrefetchWorker.cancel(context) },
             bootId = { Boot.count(context) },
             isLockTaskActive = { kiosk.isLocked(context) },
         )

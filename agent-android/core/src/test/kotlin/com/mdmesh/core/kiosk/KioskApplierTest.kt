@@ -796,4 +796,16 @@ class KioskApplierTest {
         assertTrue(c.exited)
         assertNull(store.load())
     }
+
+    /** S4: leaving the kiosk stops its image's prefetch; a refused exit (still in kiosk) doesn't. */
+    @Test fun `an exit hands on that the kiosk is gone, a refused one does not`() = runTest {
+        var exits = 0
+        val store = InMemoryKioskStateStore(); store.save(kioskA)
+        val refusing = FakeController(KioskResult.Ok, exitResult = KioskResult.Failed("dpm"))
+        KioskApplier(refusing, store, FakeHome(), home, onExited = { exits++ }) { true }.exit()
+        assertEquals(0, exits)
+        KioskApplier(FakeController(KioskResult.Ok), store, FakeHome(), home, onExited = { exits++ }) { true }
+            .exit(force = true)
+        assertEquals(1, exits)
+    }
 }

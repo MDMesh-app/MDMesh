@@ -17,8 +17,12 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.min
 import kotlin.math.roundToLong
 import kotlin.random.Random
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import com.mdmesh.core.store.KioskStateStore
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
@@ -37,6 +41,12 @@ import okhttp3.Request
  * - An image that matches its hash but can't be decoded ([undecodable]) is remembered as [Obtained.Invalid]: no
  *   retries, ever, for that hash.
  * - The last image that was ready ([lastGood]) stays available while a new one is not, e.g. deleted on the server.
+ * - One download per image at a time, whoever asks (the launcher, the prefetch worker): a second request waits for
+ *   the first and takes its result (the cached file, or its backoff), so an image is fetched and a failure counted
+ *   once.
+ * - Only the kiosk's current image ([isCurrent]) prunes the cache and becomes the last good one: a download of an
+ *   image replaced meanwhile that completes late changes neither.
+ * - A download is bounded in time as a whole ([DOWNLOAD_TIMEOUT_MS]), not only per read.
  */
 @Singleton
 class KioskBackgroundImageStore internal constructor(
@@ -45,6 +55,8 @@ class KioskBackgroundImageStore internal constructor(
     private val bounds: (File) -> Pair<Int, Int>?,
     private val failures: FailureMemory,
     private val clocks: Clocks,
+    /** Whether an image hash is the one the saved kiosk shows now (production: the kiosk state). */
+    private val isCurrent: suspend (hash: String) -> Boolean,
 ) {
     /** Time and chance, injected for tests. */
     class Clocks(
@@ -56,12 +68,17 @@ class KioskBackgroundImageStore internal constructor(
         val jitter: () -> Double,
     )
 
-    @Inject constructor(@ApplicationContext context: Context, @DownloadHttpClient http: OkHttpClient) : this(
+    @Inject constructor(
+        @ApplicationContext context: Context,
+        @DownloadHttpClient http: OkHttpClient,
+        kiosk: KioskStateStore,
+    ) : this(
         dir = { File(context.filesDir, DIR) },
         fetch = HttpsFetch(http)::open,
         bounds = ::bitmapBounds,
         failures = PrefsFailureMemory(context),
         clocks = Clocks(SystemClock::elapsedRealtime, System::currentTimeMillis) { Random.nextDouble(-1.0, 1.0) },
+        isCurrent = { hash -> kiosk.load()?.theme?.backgroundImage?.sha256?.trim()?.lowercase() == hash },
     )
 
     /** What [obtain] found. */
@@ -82,8 +99,19 @@ class KioskBackgroundImageStore internal constructor(
     /** Cached files whose hash was checked in this process, by name, size and time. */
     private val checked = ConcurrentHashMap<String, Pair<Long, Long>>()
 
-    /** The image [image] names, from the cache or downloaded and verified. Off the main thread; never throws. */
-    suspend fun obtain(image: KioskBackgroundImageDto): Obtained = guarded(image) { obtainOrRetry(it) }
+    /** One lock per image hash: one download (or cache check) of an image at a time. A few hashes per process. */
+    private val inFlight = ConcurrentHashMap<String, Mutex>()
+
+    /** The current image whose readiness is already recorded (prefs written, cache pruned) in this process. */
+    @Volatile private var noted: String? = null
+
+    /**
+     * The image [image] names, from the cache or downloaded and verified. Off the main thread; never throws. A request
+     * for an image already being fetched waits for that download and shares its outcome.
+     */
+    suspend fun obtain(image: KioskBackgroundImageDto): Obtained = guarded(image) { request ->
+        inFlight.getOrPut(request.hash) { Mutex() }.withLock { obtainOrRetry(request) }
+    }
 
     /**
      * The launcher could not decode [image]'s file. If the file still matches its hash, the image itself is bad:
@@ -92,6 +120,7 @@ class KioskBackgroundImageStore internal constructor(
     suspend fun undecodable(image: KioskBackgroundImageDto): Obtained = guarded(image) { request ->
         val target = File(dir(), "${request.hash}.image")
         checked.remove(target.name)
+        if (noted == request.hash) noted = null
         if (target.isFile && sha256(target) == request.hash) {
             failures.markInvalid(request.hash)
             Obtained.Invalid
@@ -108,7 +137,10 @@ class KioskBackgroundImageStore internal constructor(
         }.getOrNull()
     }
 
-    private suspend fun guarded(image: KioskBackgroundImageDto, block: (BackgroundRequest) -> Obtained): Obtained =
+    private suspend fun guarded(
+        image: KioskBackgroundImageDto,
+        block: suspend (BackgroundRequest) -> Obtained,
+    ): Obtained =
         withContext(Dispatchers.IO) {
             val request = validRequest(image) ?: return@withContext Obtained.Invalid
             runCatching { block(request) }.getOrElse {
@@ -117,7 +149,7 @@ class KioskBackgroundImageStore internal constructor(
             }
         }
 
-    private fun obtainOrRetry(request: BackgroundRequest): Obtained {
+    private suspend fun obtainOrRetry(request: BackgroundRequest): Obtained {
         val dir = dir()
         val target = File(dir, "${request.hash}.image")
         val wait = (notBefore[request.source] ?: 0L) - clocks.elapsed()
@@ -128,7 +160,16 @@ class KioskBackgroundImageStore internal constructor(
             wait > 0 -> Obtained.Retry(wait)
             else -> {
                 target.delete()
-                download(request, target)?.let { ready(dir, it, request.hash) } ?: failed(request)
+                when (val got = download(request, target)) {
+                    Download.Done -> ready(dir, target, request.hash)
+                    Download.Failed -> failed(request)
+                    Download.NeverValid -> {
+                        // The verified file is the image the server names, and it is over the caps (or has no size):
+                        // it can never be used, so it isn't fetched again either.
+                        failures.markInvalid(request.hash)
+                        Obtained.Invalid
+                    }
+                }
             }
         }
     }
@@ -142,12 +183,18 @@ class KioskBackgroundImageStore internal constructor(
         return intact
     }
 
-    private fun ready(dir: File, file: File, hash: String): Obtained {
+    private suspend fun ready(dir: File, file: File, hash: String): Obtained {
         notBefore.keys.removeAll { it.startsWith(hash) }
-        failures.succeeded(hash)
         checked[file.name] = file.length() to file.lastModified()
-        // Only the current image is kept: an older one (up to 10 MB each) would stay in private storage forever.
-        pruneBackgroundCache(dir, keep = file, nowMs = clocks.wallNow())
+        // Recorded once per process for the current image (a cache hit is every screen-on: no prefs write, no
+        // directory scan each time). An image replaced meanwhile (a download that completed late) records nothing:
+        // it would prune the current image and come back as the stand-in while that can't be had.
+        if (noted != hash && isCurrent(hash)) {
+            failures.succeeded(hash)
+            // Only the current image is kept: an older one (up to 10 MB each) would stay in private storage forever.
+            pruneBackgroundCache(dir, keep = file, nowMs = clocks.wallNow())
+            noted = hash
+        }
         return Obtained.Ready(file)
     }
 
@@ -157,6 +204,8 @@ class KioskBackgroundImageStore internal constructor(
      * whichever of the launcher or the prefetch worker asks.
      */
     private fun failed(request: BackgroundRequest): Obtained {
+        // A failure since it was noted ready (its file gone, fetched again): the next success records itself again.
+        if (noted == request.hash) noted = null
         val key = request.source
         val count = failures.failures(key) + 1
         val base = min(FIRST_RETRY_MS * (1L shl min(count - 1, MAX_DOUBLINGS)), MAX_RETRY_MS)
@@ -166,15 +215,21 @@ class KioskBackgroundImageStore internal constructor(
         return Obtained.Retry(wait)
     }
 
-    private fun download(request: BackgroundRequest, target: File): File? {
-        // Each request gets a private staging name: launchers can overlap (a recreate, a re-apply), and a shared
-        // temporary file would let one request truncate another's verified bytes. Created inside the guard: a full
-        // disk or a cache path that isn't a directory is a failed download, not a crash.
+    private enum class Download { Done, Failed, NeverValid }
+
+    private fun download(request: BackgroundRequest, target: File): Download {
+        // Each download gets a private staging name (a temporary file a killed process left is never used), created
+        // inside the guard: a full disk or a cache path that isn't a directory is a failed download, not a crash.
         var temporary: File? = null
         return try {
             temporary = File.createTempFile(".${request.hash}.", ".download", target.parentFile)
             val digest = fetch(request.url)?.let { copyAndDigest(it, temporary) }
-            if (digest == request.hash && validImage(temporary) && temporary.renameTo(target)) target else null
+            when {
+                digest != request.hash -> Download.Failed
+                !validImage(temporary) -> Download.NeverValid
+                temporary.renameTo(target) -> Download.Done
+                else -> Download.Failed
+            }
         } finally {
             temporary?.delete()
         }
@@ -226,7 +281,7 @@ class KioskBackgroundImageStore internal constructor(
 
     /** HTTPS only: no switch to HTTP on a redirect. The response closes with the stream. */
     private class HttpsFetch(http: OkHttpClient) {
-        private val client: OkHttpClient by lazy { http.newBuilder().followSslRedirects(false).build() }
+        private val client: OkHttpClient by lazy { downloadClient(http) }
 
         fun open(url: String): InputStream? {
             val response = client.newCall(Request.Builder().url(url).get().build()).execute()
@@ -261,6 +316,18 @@ class KioskBackgroundImageStore internal constructor(
         const val MAX_RETRY_MS = 6L * 60 * 60 * 1000
         const val MAX_DOUBLINGS = 20
         const val JITTER = 0.2
+
+        /**
+         * A whole download, connect to last byte: 10 MB in 10 minutes is 17 KB/s, below which a link is too poor
+         * anyway. Per-read timeouts alone let a server trickling a byte every few seconds hold a thread for ever.
+         */
+        const val DOWNLOAD_TIMEOUT_MS = 10L * 60 * 1000
+
+        /** The image download's client: [http] with no switch from HTTPS on a redirect, and an overall time limit. */
+        fun downloadClient(http: OkHttpClient): OkHttpClient = http.newBuilder()
+            .followSslRedirects(false)
+            .callTimeout(DOWNLOAD_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .build()
 
         fun sha256(file: File): String {
             val digest = MessageDigest.getInstance("SHA-256")

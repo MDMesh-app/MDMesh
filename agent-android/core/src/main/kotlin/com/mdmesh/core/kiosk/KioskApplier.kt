@@ -64,6 +64,11 @@ class KioskApplier(
      * launcher next shows. Must not block.
      */
     private val onEntered: (KioskApplyPayload) -> Unit = {},
+    /**
+     * Called once the kiosk is left (its state cleared): production cancels its background image's prefetch, so an
+     * image nothing shows any more isn't downloaded or retried. Must not block.
+     */
+    private val onExited: () -> Unit = {},
     /** Which boot this is (Settings.Global.BOOT_COUNT): written into a journal entry, for the logs. */
     private val bootId: () -> Long = { 0L },
     /** Whether lock task is active now ([KioskController.isLocked]). Last, so a trailing lambda can only be this. */
@@ -234,6 +239,7 @@ class KioskApplier(
         }
         kiosk.setVolumeLocked(false) // best effort: lift the kiosk's volume lock (and its mute)
         store.save(null)
+        onExited()
         safeModeSetter.set(inKiosk = false) // best effort, like the volume lock
         if (handBackHome) {
             home.setClaimEnabled(false)

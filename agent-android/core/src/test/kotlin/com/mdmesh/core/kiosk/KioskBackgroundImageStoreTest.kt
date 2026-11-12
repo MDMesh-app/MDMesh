@@ -7,7 +7,13 @@ import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.security.MessageDigest
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
+import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -27,6 +33,10 @@ class KioskBackgroundImageStoreTest {
     private var wallMs = 1_700_000_000_000L
     private var fetches = 0
     private var serve: () -> InputStream? = { ByteArrayInputStream(bytes) }
+    /** The kiosk's image now (null: no kiosk or no image); null here means every image is the current one. */
+    private var current: String? = null
+    /** The pixel size a file's header gives. */
+    private var size: Pair<Int, Int> = 100 to 100
     private val memory = MemFailures()
     private lateinit var dir: File
 
@@ -34,9 +44,11 @@ class KioskBackgroundImageStoreTest {
         var entry: Pair<String, Int>? = null
         val invalid = mutableSetOf<String>()
         var good: String? = null
+        /** Every write, in order: what a cache hit costs in prefs commits. */
+        val writes = mutableListOf<String>()
         override fun failures(source: String) = entry?.takeIf { it.first == source }?.second ?: 0
-        override fun failed(source: String, count: Int) { entry = source to count }
-        override fun succeeded(hash: String) { entry = null; good = hash }
+        override fun failed(source: String, count: Int) { writes += "failed $count"; entry = source to count }
+        override fun succeeded(hash: String) { writes += "succeeded"; entry = null; good = hash }
         override fun isInvalid(hash: String) = hash in invalid
         override fun markInvalid(hash: String) { invalid += hash }
         override fun lastGood() = good
@@ -47,9 +59,10 @@ class KioskBackgroundImageStoreTest {
     ) = KioskBackgroundImageStore(
         dir = { dirFile },
         fetch = { fetches++; serve() },
-        bounds = { f -> if (f.length() > 0) 100 to 100 else null },
+        bounds = { f -> if (f.length() > 0) size else null },
         failures = memory,
         clocks = KioskBackgroundImageStore.Clocks(elapsed = { nowMs }, wallNow = { wallMs }, jitter = { 0.0 }),
+        isCurrent = { h -> current == null || current == h },
     )
 
     private fun sha(b: ByteArray) =
@@ -223,11 +236,91 @@ class KioskBackgroundImageStoreTest {
             bounds = { f -> if (f.length() > 0) 100 to 100 else null },
             failures = memory,
             clocks = KioskBackgroundImageStore.Clocks(elapsed = { nowMs }, wallNow = { wallMs }, jitter = { 0.0 }),
+            isCurrent = { true },
         )
         val old = image.copy(url = "https://old.example/kiosk.png")
         runBlocking { s.obtain(old) } // the launcher, trying the dead URL just now
         val moved = image.copy(url = "https://new.example/kiosk.png")
         assertTrue("the new URL is tried at once", runBlocking { s.obtain(moved) } is Obtained.Ready)
         assertEquals("https://new.example/kiosk.png", urlsTried.last())
+    }
+
+    // --- PR #192 final review (S4, N8-N10): one download per image, a late one never undoes the current image ---
+
+    /** A source that blocks until [release], counting the streams opened. */
+    private fun gated(release: CountDownLatch, payload: ByteArray = bytes): () -> InputStream? = {
+        release.await(10, TimeUnit.SECONDS)
+        ByteArrayInputStream(payload)
+    }
+
+    /** The launcher and the prefetch worker ask for the same image at once: one download, both get it. */
+    @Test fun `concurrent requests for one image download it once`() = runBlocking {
+        val release = CountDownLatch(1)
+        serve = gated(release)
+        val s = store()
+        val asks = (1..4).map { async(Dispatchers.IO) { s.obtain(image) } }
+        Thread.sleep(200) // every request is in, one is downloading
+        release.countDown()
+        val got = asks.awaitAll()
+        assertEquals("one download", 1, fetches)
+        assertTrue(got.all { it == Obtained.Ready(File(dir, "$hash.image")) })
+    }
+
+    /** Both fail at once: one download, one failure counted, one backoff for both. */
+    @Test fun `concurrent requests that fail count one failure`() = runBlocking {
+        val release = CountDownLatch(1)
+        serve = { release.await(10, TimeUnit.SECONDS); null }
+        val s = store()
+        val asks = (1..3).map { async(Dispatchers.IO) { s.obtain(image) } }
+        Thread.sleep(200)
+        release.countDown()
+        val got = asks.awaitAll()
+        assertEquals(1, fetches)
+        assertEquals(1, memory.failures("$hash ${image.url}"))
+        assertTrue(got.all { it is Obtained.Retry })
+    }
+
+    /**
+     * Image A is mid-download when the kiosk switches to B, and B is ready. A's download then completes: it must not
+     * prune B's file nor make A the last good image (which would put A back up while B can't be had).
+     */
+    @Test fun `a replaced image's late download never prunes the current image or becomes the last good`() {
+        val bBytes = "image b".toByteArray()
+        val b = KioskBackgroundImageDto(image.url, sha(bBytes))
+        val s = store()
+        current = b.sha256
+        serve = { ByteArrayInputStream(bBytes) }
+        assertTrue(runBlocking { s.obtain(b) } is Obtained.Ready)
+        assertEquals(b.sha256, memory.good)
+        serve = { ByteArrayInputStream(bytes) }
+        runBlocking { s.obtain(image) } // A's download, finishing late
+        assertTrue("B kept", File(dir, "${b.sha256}.image").isFile)
+        assertEquals("B is still the last good image", b.sha256, memory.good)
+        assertEquals(File(dir, "${b.sha256}.image"), runBlocking { s.lastGood() })
+    }
+
+    /** N10: a cache hit (every screen-on) writes nothing and prunes nothing once the image is noted ready. */
+    @Test fun `repeated cache hits write the prefs once`() {
+        val s = store()
+        repeat(5) { obtain(s) }
+        assertEquals(listOf("succeeded"), memory.writes)
+    }
+
+    /** N9: a file that matches its hash but is over the pixel cap can never work: Invalid, not re-downloaded. */
+    @Test fun `a hash-matching file over the size caps is invalid, not retried`() {
+        size = 5000 to 5000 // 25 MP
+        val s = store()
+        assertEquals(Obtained.Invalid, obtain(s))
+        nowMs += 7L * 60 * 60 * 1000
+        assertEquals(Obtained.Invalid, obtain(store()))
+        assertEquals("downloaded once", 1, fetches)
+        assertTrue(dir.list()!!.none { it.endsWith(".image") })
+    }
+
+    /** N8: a server trickling bytes can't hold a download (and its thread) for ever. */
+    @Test fun `downloads have an overall time limit`() {
+        val client = KioskBackgroundImageStore.downloadClient(OkHttpClient())
+        assertEquals(KioskBackgroundImageStore.DOWNLOAD_TIMEOUT_MS, client.callTimeoutMillis.toLong())
+        assertFalse("no switch from HTTPS on a redirect", client.followSslRedirects)
     }
 }

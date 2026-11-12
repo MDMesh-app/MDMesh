@@ -230,7 +230,8 @@ public class ConfigurationResource {
                     "With keep, an update keeps the stored image while backgroundImageUrl is left out or unchanged; " +
                     "another backgroundImageUrl is stored as the legacy launcher wallpaper and drops the managed image. " +
                     "A new configuration with a backgroundImageFileId gets that image. A refused image is HTTP 400 " +
-                    "with an ERROR whose message says why. " +
+                    "with an ERROR whose message says why. backgroundImageFit and backgroundImageFocalX/Y left out " +
+                    "keep the stored ones, except that a replace without a focal point centres it. " +
                     "locationServicesAction is keep (the default), on, off, or notManaged; " +
                     "ordinary saves preserve the stored Location-services policy."
     )
@@ -404,10 +405,15 @@ public class ConfigurationResource {
         }
     }
 
-    /** What a client doesn't send of fit and the focal point (an older console or API client) keeps its stored value. */
+    /**
+     * What a client doesn't send of fit and the focal point (an older console or API client) keeps its stored value,
+     * except the focal point on a {@code replace}: it belongs to the old image, so another image starts at the centre
+     * unless the client sends one (as the console does). Fill or Fit stays as chosen.
+     */
     private static void keepBackgroundImageFit(Configuration c, Configuration stored) {
         if (stored == null) return;
         if (c.getBackgroundImageFit() == null) c.setBackgroundImageFit(stored.getBackgroundImageFit());
+        if ("replace".equals(c.getBackgroundImageAction())) return;
         if (c.getBackgroundImageFocalX() == null) c.setBackgroundImageFocalX(stored.getBackgroundImageFocalX());
         if (c.getBackgroundImageFocalY() == null) c.setBackgroundImageFocalY(stored.getBackgroundImageFocalY());
     }

@@ -285,6 +285,38 @@ public class ConfigurationResourceBackgroundImageTest {
         }
     }
 
+    private ConfigurationResource withoutImageAssets() {
+        return new ConfigurationResource(dao, null, new PushService(null, null, null, null, false), null, null,
+                "https://mdm.example.com", Fakes.extensionPoints(Collections.emptySet(), Collections.emptySet()), null);
+    }
+
+    /** Another image starts at the centre unless the client says where: the old image's focal point is for the old one. */
+    @Test
+    public void replacingTheImageWithoutAFocalPointCentresIt() {
+        dao.stored = plain();
+        dao.stored.setBackgroundImageFit("fit");
+        dao.stored.setBackgroundImageFocalX(0.25);
+        dao.stored.setBackgroundImageFocalY(0.75);
+        withoutImageAssets().updateConfiguration(replacing());
+        Configuration saved = dao.updated.get(0);
+        assertEquals("Fill or Fit stays as chosen", "fit", saved.getBackgroundImageFit());
+        assertEquals(null, saved.getBackgroundImageFocalX());
+        assertEquals(null, saved.getBackgroundImageFocalY());
+    }
+
+    @Test
+    public void replacingTheImageWithAFocalPointSavesIt() {
+        dao.stored = plain();
+        dao.stored.setBackgroundImageFocalX(0.25);
+        dao.stored.setBackgroundImageFocalY(0.75);
+        Configuration c = replacing();
+        c.setBackgroundImageFocalX(0.1);
+        withoutImageAssets().updateConfiguration(c);
+        Configuration saved = dao.updated.get(0);
+        assertEquals(Double.valueOf(0.1), saved.getBackgroundImageFocalX());
+        assertEquals("one coordinate given: the other is the centre's", null, saved.getBackgroundImageFocalY());
+    }
+
     @Test
     public void fitMustBeFillOrFit() {
         Configuration c = plain();

@@ -24,6 +24,7 @@ package com.hmdm.rest.resource;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hmdm.persistence.AgentCommandDAO;
+import com.hmdm.persistence.AgentEnrollmentDAO;
 import com.hmdm.persistence.AgentEnrollmentTokenDAO;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentCommand;
@@ -100,6 +101,35 @@ public class AgentResource {
     // next ones. Past this count the server stops and reports how many it took (resultsAccepted), so the agent
     // resends the remainder rather than losing it. Older agents that send everything at once never get near it.
     static final int MAX_RESULTS_PER_CHECKIN = 1000;
+    /**
+     * The enroll failed on the server; its transaction rolled back, so nothing was kept and the code's use is not spent.
+     * Agents retry it (it matches none of their final markers: token.used/invalid/expired, enrollment.disabled).
+     */
+    static final String ENROLLMENT_FAILED = "error.agent.enrollment.failed";
+    /**
+     * The enrollment couldn't get its locks in time (its code's, held by another enrollment with it, often the request
+     * this one retries; the customer's, held by another device being added; or a row a console transaction held), or
+     * too many enrollments with its code are running. Retryable like {@link #ENROLLMENT_FAILED}: nothing was kept, and
+     * the next retry resumes or goes through.
+     */
+    static final String ENROLLMENT_IN_PROGRESS = "error.agent.enrollment.inProgress";
+    /**
+     * The token's customer has as many devices as its limit allows (installs with several customers). Agents retry it
+     * (no final marker), so the device enrolls once there is room.
+     */
+    static final String DEVICE_LIMIT = "error.agent.enrollment.deviceLimit";
+    /**
+     * A resume-only request (the agent's credential recovery) found no device of its attempt to resume: deleted,
+     * checked in, or past the retry window. Final for the recovery; nothing was created and no use taken.
+     */
+    static final String NOT_RESUMABLE = "error.agent.enrollment.notResumable";
+    /**
+     * Enrollments of one code allowed at once (waiting on its lock), per server instance (the count lives in this JVM);
+     * more get ENROLLMENT_IN_PROGRESS at once. It bounds one code's burst, not the pool: see PerKeyLimit.
+     */
+    static final int MAX_ENROLLS_PER_CODE = 8;
+    private static final com.hmdm.rest.resource.support.PerKeyLimit<Integer> enrollsPerCode =
+            new com.hmdm.rest.resource.support.PerKeyLimit<>(MAX_ENROLLS_PER_CODE);
     // Details are short diagnostics, except apps.scan / apps.icons, which return JSON: the console asks for icons in
     // batches of 24 (96 px PNG, base64), well under 1 MiB even for incompressible icons. A larger detail is not
     // stored (cut JSON would be useless); the command is marked failed with a short note instead.
@@ -116,6 +146,7 @@ public class AgentResource {
     private com.hmdm.rest.resource.support.RolloutRequeuer rolloutRequeuer;
     private com.hmdm.rest.resource.support.InstallHashes installHashes;
     private com.hmdm.rest.resource.support.KioskLockoutAlert kioskLockoutAlert;
+    private AgentEnrollmentDAO enrollments;
 
     /**
      * <p>A constructor required by Swagger.</p>
@@ -132,7 +163,8 @@ public class AgentResource {
                          com.hmdm.rest.resource.support.AppReconciler appReconciler,
                          com.hmdm.rest.resource.support.RolloutRequeuer rolloutRequeuer,
                          com.hmdm.rest.resource.support.InstallHashes installHashes,
-                         com.hmdm.rest.resource.support.KioskLockoutAlert kioskLockoutAlert) {
+                         com.hmdm.rest.resource.support.KioskLockoutAlert kioskLockoutAlert,
+                         AgentEnrollmentDAO enrollments) {
         this.unsecureDAO = unsecureDAO;
         this.tokenDAO = tokenDAO;
         this.commandDAO = commandDAO;
@@ -142,6 +174,7 @@ public class AgentResource {
         this.rolloutRequeuer = rolloutRequeuer;
         this.installHashes = installHashes;
         this.kioskLockoutAlert = kioskLockoutAlert;
+        this.enrollments = enrollments;
     }
 
     // =================================================================================================================
@@ -157,82 +190,144 @@ public class AgentResource {
 
         AgentEnrollmentToken token = tokenDAO.findByToken(request.getEnrollToken());
         if (token == null) {
+            // A code that was never made, was made on another server, or mistyped. DEBUG: scanners would fill the log.
+            logger.debug("Agent enroll refused: unknown code");
             return Response.ERROR("error.agent.token.invalid");
         }
-        // Friendly pre-checks for good error messages; the CLAIM below is the actual guard.
         if (token.getRevokedAt() != null) {
-            // Stopped by an admin. Answered as used up: every agent, older ones too, stops retrying on that (an
-            // unknown error would be retried forever), and it says what matters, that this code enrolls nothing more.
+            // Stopped by an admin, and not resumed either. Answered as used up: every agent, older ones too, stops
+            // retrying on that (an unknown error would be retried forever), and it says what matters, that this code
+            // enrolls nothing more. Every refusal is logged with its reason, never the code.
             logger.info("Agent enroll refused: token {} was stopped", token.getId());
             return Response.ERROR("error.agent.token.used");
         }
-        if (token.isUsed()) {
-            return Response.ERROR("error.agent.token.used");
-        }
-        if (token.getExpiresAt() != null && token.getExpiresAt() <= System.currentTimeMillis()) {
-            return Response.ERROR("error.agent.token.expired");
-        }
-        // Atomically consume the token BEFORE creating anything: with N concurrent enrolls
-        // (freshly-provisioned agents fire several racing check-in engines) exactly one wins;
-        // the blind mark-used-after-create used here before let every racer mint its own
-        // device row, leaving permanent ghost devices.
-        if (!tokenDAO.claim(token.getId())) {
-            // Used up, stopped or expired since the pre-checks, or another enroll took the last use.
-            return Response.ERROR("error.agent.token.used");
-        }
 
-        String deviceId = UUID.randomUUID().toString();
-        Device device = null;
+        String hardwareId = request.getHardwareId() == null || request.getHardwareId().trim().isEmpty()
+                ? null : request.getHardwareId().trim();
+        // Enrolls of one code wait on its lock one after another, each holding a pooled connection: past a few, turn
+        // the rest away now (retryable) instead of letting one code's burst take the pool.
+        if (!enrollsPerCode.tryEnter(token.getId())) {
+            logger.info("Agent enroll with token {}: {} already running, asked to retry", token.getId(),
+                    MAX_ENROLLS_PER_CODE);
+            return Response.ERROR(ENROLLMENT_IN_PROGRESS);
+        }
+        AgentEnrollmentDAO.Outcome outcome;
         try {
-            // The device lands in the token's customer, and in the token's configuration when the
-            // admin bound one at mint time (else the customer's settings default).
-            device = unsecureDAO.createNewDeviceForToken(
-                    deviceId, token.getCustomerId(), token.getConfigurationId());
-            if (device == null) {
-                // Named error (not a generic internal one) — this exact failure cost a debugging
-                // session: valid token, reachable server, no device row.
-                logger.warn("Agent enroll: on-demand device creation is disabled by settings (token {})", token.getId());
-                return Response.ERROR("error.agent.enrollment.disabled");
+            // One transaction (AgentEnrollmentDAO): all of it or nothing, enrolls of this token one after another.
+            // The device's secret is the DAO's: returned once, below, and only its hash is stored.
+            outcome = enrollments.enroll(token.getId(), token.getCustomerId(), token.getConfigurationId(),
+                    UUID.randomUUID().toString(), capabilitiesJson(request.getCapabilities()), hardwareId,
+                    request.getEnrollAttempt(), Boolean.TRUE.equals(request.getResumeOnly()));
+        } catch (AgentEnrollmentDAO.CreationRefusedException e) {
+            // Named error (not a generic internal one) — this exact failure cost a debugging
+            // session: valid token, reachable server, no device row.
+            logger.warn("Agent enroll: on-demand device creation is disabled by settings (token {})", token.getId());
+            return Response.ERROR("error.agent.enrollment.disabled");
+        } catch (AgentEnrollmentDAO.DeviceLimitException e) {
+            // Retryable for the agent: once an admin raises the limit or removes a device, the device enrolls.
+            logger.warn("Agent enroll refused: customer {} has reached its device limit ({}) (token {})",
+                    token.getCustomerId(), e.limit, token.getId());
+            return Response.ERROR(DEVICE_LIMIT);
+        } catch (RuntimeException e) {
+            if (isLockTimeout(e)) {
+                logger.info("Agent enroll with token {}: the enrollment couldn't get its locks in time; asked to retry",
+                        token.getId());
+                return Response.ERROR(ENROLLMENT_IN_PROGRESS);
             }
-
-            // Mint a per-device secret; persist only its SHA-256 hash. The plaintext is
-            // returned exactly once (below) and is required as a bearer token on /checkin.
-            String deviceSecret = UUID.randomUUID().toString().replace("-", "")
-                    + UUID.randomUUID().toString().replace("-", "");
-            commandDAO.updateDeviceSecretHash(deviceId, CryptoUtil.getSHA256String(deviceSecret));
-            commandDAO.updateDeviceCapabilities(deviceId, capabilitiesJson(request.getCapabilities()));
-            // Record the agent's stable hardware id so duplicate enrollments of the same physical
-            // device can be detected/flagged in the admin UI (we still create a fresh row per enroll).
-            if (request.getHardwareId() != null && !request.getHardwareId().trim().isEmpty()) {
-                commandDAO.updateHardwareId(deviceId, request.getHardwareId().trim());
-            }
-            commandDAO.touchLastUpdate(deviceId);
-            commandDAO.recordEnrollTime(deviceId);
-
-            String configurationName = null;
-            if (device.getConfigurationId() != null) {
-                Configuration configuration = unsecureDAO.getConfigurationById(device.getConfigurationId());
-                if (configuration != null) {
-                    configurationName = configuration.getName();
-                }
-            }
-
-            // Best-effort: queue the configuration's action=install apps so a config acts as a
-            // golden image. Failures are logged inside; enrollment itself must not fail on this.
-            int queuedApps = configAppInstaller.enqueueConfigApps(device);
-
-            // The token id says which code enrolled the device: with a code for a batch, what to look for when it
-            // leaked (the mint and revoke-all are in the audit log).
-            logger.info("Agent enrolled device {} with token {} (configuration {}, {} config apps queued)",
-                    deviceId, token.getId(), device.getConfigurationId(), queuedApps);
-            return Response.OK(new AgentEnrollResponse(deviceId, configurationName, deviceSecret));
+            // Rolled back: nothing kept, the use not spent; the agent retries. The class and SQL state only (a driver
+            // message can echo values).
+            logger.error("Agent enroll with token {} failed and was rolled back: {}{}", token.getId(),
+                    e.getClass().getSimpleName(), sqlState(e).map(st -> " (SQL state " + st + ")").orElse(""));
+            return Response.ERROR(ENROLLMENT_FAILED);
         } finally {
-            // A server-side failure (settings rejection, SQL error) must not burn the use it took
-            // — the agent retries and succeeds once the operator fixes the condition. A token
-            // stopped meanwhile stays stopped (the claim checks revokedAt, which release leaves).
-            if (device == null) {
-                tokenDAO.release(token.getId());
+            enrollsPerCode.exit(token.getId());
+        }
+
+        switch (outcome.kind) {
+            case NOT_RESUMABLE:
+                // The agent's recovery found nothing of its own to resume: final for the recovery, no use taken.
+                logger.info("Agent enroll refused: nothing to resume for this attempt (token {})", token.getId());
+                return Response.ERROR(NOT_RESUMABLE);
+            case NO_USE:
+                if (token.getExpiresAt() != null && token.getExpiresAt() <= System.currentTimeMillis()
+                        && !token.isUsed()) {
+                    logger.info("Agent enroll refused: token {} expired at {}", token.getId(),
+                            java.time.Instant.ofEpochMilli(token.getExpiresAt()));
+                    return Response.ERROR("error.agent.token.expired");
+                }
+                logger.info("Agent enroll refused: token {} has no use left (all {} used, or stopped or expired since)",
+                        token.getId(), token.getMaxUses() == null ? 1 : token.getMaxUses());
+                return Response.ERROR("error.agent.token.used");
+            case RESUMED: {
+                logger.info("Agent enroll retried: device {} (token {}) gets its credentials again",
+                        outcome.deviceNumber, token.getId());
+                Device device = unsecureDAO.getDeviceByNumber(outcome.deviceNumber);
+                return Response.OK(resumable(new AgentEnrollResponse(outcome.deviceNumber,
+                        device == null ? null : configurationName(device), outcome.secret)));
             }
+            case CREATED:
+            default: {
+                Device device = outcome.device;
+                // After the commit, best effort: queue the configuration's action=install apps so a config acts as a
+                // golden image. Failures are logged inside; the enrollment stands either way.
+                int queuedApps = 0;
+                try {
+                    queuedApps = configAppInstaller.enqueueConfigApps(device);
+                } catch (RuntimeException e) {
+                    logger.warn("Agent enroll: config apps for device {} not queued: {}", device.getNumber(),
+                            e.getClass().getSimpleName());
+                }
+                // The token id says which code enrolled the device: with a code for a batch, what to look for when it
+                // leaked (the mint and revoke-all are in the audit log).
+                logger.info("Agent enrolled device {} with token {} (configuration {}, {} config apps queued)",
+                        device.getNumber(), token.getId(), device.getConfigurationId(), queuedApps);
+                return Response.OK(resumable(new AgentEnrollResponse(device.getNumber(), configurationName(device),
+                        outcome.secret)));
+            }
+        }
+    }
+
+    /** Tells the agent this server resumes enrollments (resumeOnly, protocol 1.9), so it may recover credentials. */
+    private static AgentEnrollResponse resumable(AgentEnrollResponse response) {
+        response.setResumeSupported(Boolean.TRUE);
+        return response;
+    }
+
+    /** A PostgreSQL lock_timeout (SQL state 55P03) anywhere in the cause chain. */
+    static boolean isLockTimeout(Throwable e) {
+        return sqlState(e).map("55P03"::equals).orElse(false);
+    }
+
+    private static java.util.Optional<String> sqlState(Throwable e) {
+        for (Throwable t = e; t != null && t.getCause() != t; t = t.getCause()) {
+            if (t instanceof java.sql.SQLException && ((java.sql.SQLException) t).getSQLState() != null) {
+                return java.util.Optional.of(((java.sql.SQLException) t).getSQLState());
+            }
+        }
+        return java.util.Optional.empty();
+    }
+
+    /**
+     * What identifies a retryable enrollment: the SHA-256 of the token id and the agent's attempt id, so the stored
+     * value reveals neither and an attempt id only resumes enrollments made with the same code.
+     *
+     * @return the hash, or null when the request carries no usable attempt id
+     */
+    static String enrollAttemptHash(Integer tokenId, String attempt) {
+        return AgentEnrollmentDAO.attemptHash(tokenId, attempt);
+    }
+
+    /** The device's configuration name for the enroll response; best effort (the response is still useful without). */
+    private String configurationName(Device device) {
+        if (device.getConfigurationId() == null) {
+            return null;
+        }
+        try {
+            Configuration configuration = unsecureDAO.getConfigurationById(device.getConfigurationId());
+            return configuration == null ? null : configuration.getName();
+        } catch (RuntimeException e) {
+            logger.warn("Agent enroll: configuration {} name not read: {}", device.getConfigurationId(), e.getClass().getSimpleName());
+            return null;
         }
     }
 

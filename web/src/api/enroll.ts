@@ -8,6 +8,8 @@ import { apiClient } from './client';
 export interface EnrollTokenResponse {
   token?: string;
   expiresAt?: number;
+  /** When the server made it (server clock, ms). */
+  createdAt?: number;
   /** How many devices the token enrolls; absent from a server that predates it, whose tokens are single-use. */
   maxUses?: number;
   [key: string]: unknown;
@@ -39,4 +41,36 @@ export async function mintEnrollToken(
  */
 export async function revokeAllEnrollTokens(): Promise<{ revoked?: number }> {
   return (await apiClient.post<{ revoked?: number } | undefined>('/private/agent/v1/token/revoke-all', {})) ?? {};
+}
+
+/** A device that enrolled since a code was made: GET /rest/private/agent/v1/devices/enrolled (server 0.5+). */
+export interface EnrolledDevice {
+  number: string;
+  description?: string;
+  /** Server time, ms. */
+  enrollTime: number;
+  /** Server time, ms: equal to enrollTime until the device's first check-in. */
+  lastUpdate?: number;
+}
+
+/** The answer of GET /private/agent/v1/devices/enrolled: the devices, and the server's clock when it answered. */
+export interface EnrolledSince {
+  devices: EnrolledDevice[];
+  /** Server time, ms: what the devices' times are compared with (never the browser's clock). */
+  serverTime: number;
+}
+
+/**
+ * The devices (this user may see) enrolled at or after `since` (server time), newest first, at most `limit`. A server
+ * that predates it answers 404.
+ */
+export async function listEnrolledSince(since: number, limit = 25, signal?: AbortSignal): Promise<EnrolledSince> {
+  const res = await apiClient.get<Partial<EnrolledSince> | null>(
+    `/private/agent/v1/devices/enrolled?since=${encodeURIComponent(String(since))}&limit=${limit}`,
+    signal,
+  );
+  return {
+    devices: Array.isArray(res?.devices) ? res.devices : [],
+    serverTime: typeof res?.serverTime === 'number' ? res.serverTime : Date.now(),
+  };
 }

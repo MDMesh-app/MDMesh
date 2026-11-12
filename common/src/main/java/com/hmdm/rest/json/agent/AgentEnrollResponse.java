@@ -48,6 +48,12 @@ public class AgentEnrollResponse {
      */
     private String deviceSecret;
 
+    /**
+     * True from servers that resume enrollments (protocol 1.9): the agent may then recover refused credentials with a
+     * resume-only enroll of the same attempt. Absent from older servers.
+     */
+    private Boolean resumeSupported;
+
     public AgentEnrollResponse() {
     }
 

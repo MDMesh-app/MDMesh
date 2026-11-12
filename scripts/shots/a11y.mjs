@@ -213,6 +213,40 @@ const STATES = [
   { name: 'enroll', route: '/enroll' },
   { name: 'enroll-token', route: '/enroll', setup: (p) => click(p, 'tab', 'Token') },
   { name: 'enroll-fullscreen', route: '/enroll', setup: (p) => click(p, 'button', 'Full screen') },
+  {
+    // Devices enrolled while the page is open, one in each state (#188): setting up, online, silent, offline.
+    name: 'enroll-arrivals',
+    route: '/enroll',
+    rest: {
+      '**/rest/private/agent/v1/devices/enrolled*': () => {
+        const t = Date.now();
+        const server = t + 15 * 60_000;
+        return env({
+          serverTime: server,
+          devices: [
+            { number: 'WH-SCAN-21', description: 'Dock 4 scanner', enrollTime: server - 2 * 60_000, lastUpdate: server - 2 * 60_000 },
+            { number: 'WH-SCAN-20', enrollTime: server - 5 * 60_000, lastUpdate: server - 30_000 },
+            { number: 'WH-SCAN-19', enrollTime: t, lastUpdate: t },
+            { number: 'WH-SCAN-18', enrollTime: t, lastUpdate: t + 60_000 },
+          ],
+        });
+      },
+    },
+    setup: (p) => p.getByRole('list', { name: 'Enrolled while this page is open' }).getByRole('link').nth(3).waitFor({ timeout: 8000 }),
+  },
+  {
+    // A Wi-Fi the device can't join (#188): left out of the code, with the reason.
+    name: 'enroll-wifi-issue',
+    route: '/enroll',
+    setup: async (p) => {
+      const sw = p.getByRole('switch', { name: 'Join Wi-Fi during setup' });
+      if ((await sw.getAttribute('aria-checked')) !== 'true') await sw.click();
+      await p.getByLabel('Network name').fill('Office');
+      await p.getByLabel('Security').selectOption('WPA');
+      await p.getByLabel('Wi-Fi password').fill('short');
+      await p.locator('#v2-enroll-wifi-issue').waitFor({ timeout: 5000 });
+    },
+  },
   // ---- settings ----
   { name: 'settings', route: '/settings' },
   { name: 'settings-change-password', route: '/settings', setup: (p) => click(p, 'button', /Change password/) },

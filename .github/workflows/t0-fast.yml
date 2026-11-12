@@ -68,6 +68,24 @@ jobs:
       fail-fast: false
       matrix:
         name: [server, web, agent, supervisor, edge]
+    # PostgreSQL for the server entry's database-backed tests (AgentEnrollmentTransactionTest: the enroll transaction,
+    # its row locks and rollback). The same major version as docker-compose.yml. An empty image skips the service, so
+    # it starts only for the server entry, and only when the server paths changed (when its steps run). Published on a
+    # random host port: a shared runner may run several jobs at once.
+    services:
+      postgres:
+        image: ${{ (matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)) && 'postgres:14' || '' }}
+        env:
+          POSTGRES_USER: mdmesh_test
+          POSTGRES_PASSWORD: mdmesh_test
+          POSTGRES_DB: mdmesh_test
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U mdmesh_test -d mdmesh_test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
@@ -82,9 +100,16 @@ jobs:
         name: Provide build.properties
         run: cp server/build.properties.example server/build.properties
       - if: matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)
-        name: Contract + unit tests (DB-free)
+        name: Contract + unit tests, and the PostgreSQL-backed enroll tests
         # :common tests (incl. AgentV1ContractTest — the backward-compat gate) and the DB-free :server tests need no
-        # database. The package step skips tests (they just ran); DB-backed behaviour is T1's (t1-e2e.yml).
+        # database; AgentEnrollmentTransactionTest uses the postgres service above (its own schema, dropped after) and,
+        # with MDMESH_TEST_PG_REQUIRED set, fails instead of skipping when it can't. The package step skips tests (they
+        # just ran); the rest of the DB-backed behaviour is T1's (t1-e2e.yml).
+        env:
+          MDMESH_TEST_PG_URL: jdbc:postgresql://localhost:${{ job.services.postgres.ports['5432'] }}/mdmesh_test
+          MDMESH_TEST_PG_USER: mdmesh_test
+          MDMESH_TEST_PG_PASSWORD: mdmesh_test
+          MDMESH_TEST_PG_REQUIRED: "true"
         run: mvn -B -pl server -am test
       - if: matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)
         name: Build WAR

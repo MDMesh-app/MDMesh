@@ -1,5 +1,6 @@
 package com.mdmesh.core.sync
 
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
@@ -29,6 +30,9 @@ class SyncStatus @Inject constructor(private val lastCheckIn: LastCheckIn) {
 
     /** Wall clock of the last successful check-in; null when none yet. */
     val lastSuccessAtMs: Long? get() = lastCheckIn.okAtMs
+
+    /** [lastSuccessAtMs] now, then each time a check-in succeeds (the status screen follows it while open). */
+    val lastSuccessAtMsChanges: Flow<Long?> get() = lastCheckIn.okAtMsChanges
 
     fun recordSuccess() {
         _lastError.value = null

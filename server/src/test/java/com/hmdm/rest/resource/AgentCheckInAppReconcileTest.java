@@ -133,7 +133,7 @@ public class AgentCheckInAppReconcileTest {
                 },
                 new AppReconciler(unsecureDAO, commandDAO, rolloutDAO, installer),
                 new RolloutRequeuer(null) { @Override public boolean requeue(Device d, long now) { return false; } },
-                new InstallHashes(hashes, unsecureDAO), new KioskLockoutAlert(null, null, null));
+                new InstallHashes(hashes, unsecureDAO), new KioskLockoutAlert(null, null, null), null);
         addApp(10, "com.a");
         // An enrolled device's row as the update that added appsRevision left it: com.a's set stored.
         state = new DeviceState();

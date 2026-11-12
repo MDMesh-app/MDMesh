@@ -127,8 +127,8 @@
                 </LinearLayout>
 
                 <!-- The server no longer accepts this device's credentials (#188): its own stop, read out when it
-                     appears; body text in the warning ink (4.5:1 on the card in light and dark). The copy button
-                     still copies the ID alone. 14dp back from the row's reach into the card padding. -->
+                     appears, right after the ID and before its copy button in TalkBack's order; body text in the
+                     warning ink (4.5:1 on the card in light and dark). The copy button still copies the ID alone. 14dp back from the row's reach into the card padding. -->
                 <TextView
                     android:id="@+id/status_credentials_lost"
                     android:layout_width="match_parent"
@@ -136,6 +136,8 @@
                     android:layout_marginTop="@dimen/mdm_space_8"
                     android:layout_marginEnd="14dp"
                     android:accessibilityLiveRegion="polite"
+                    android:accessibilityTraversalAfter="@id/status_device_id_group"
+                    android:accessibilityTraversalBefore="@id/status_copy_device_id"
                     android:text="@string/status_credentials_lost"
                     android:textAppearance="@style/TextAppearance.MdmAgent.BodyMedium"
                     android:textColor="@color/mdm_warn_ink"

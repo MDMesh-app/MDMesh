@@ -25,6 +25,19 @@ abstract class LabelLineVectorsTest {
     @Test fun everyLabelLineVector() = checkLabelLineVectors()
 
     @Test fun everyDirectionVector() = checkDirectionVectors()
+
+    @Test fun everyIconLetterVector() = checkIconLetterVectors()
+}
+
+/** Every `iconLetter` vector against [iconLetter] with the platform's own grapheme data. */
+fun checkIconLetterVectors() {
+    val cases = vectors()["iconLetter"]!!.jsonArray
+    check(cases.size >= 12)
+    for (e in cases) {
+        val v = e.jsonObject
+        val want = v["expected"]?.takeUnless { it is kotlinx.serialization.json.JsonNull }?.jsonPrimitive?.content
+        assertEquals(v["name"].toString(), want, iconLetter(v["label"]!!.jsonPrimitive.content, IcuGraphemes))
+    }
 }
 
 private fun vectors(): JsonObject {

@@ -1,6 +1,6 @@
 {
- "$comment": "Kiosk background legibility test vectors, version 3: per-cell min/max bounds, a light dim for controls, a plate per text (solid over texture). Shared by the console (web/src/data/kioskScrim.test.ts) and the agent. Rules: docs/kiosk-background-scrim.md. image.cells are [min, max] per cell, row-major; element boxes are dp in the window; elements with the same row are the labels of one grid row (version 3.1: they share the row's highest plate step). Colours by kind: text = palette text, secondary = palette secondary, control = palette text (the outlined Exit button's 1 dp border; it gets no plate, its step is always 0). ratio values rounded to 2 decimals (compare within 0.01). Version 3.3 adds labelLines: how an app label breaks into lines (at word boundaries only), from per-character widths, so the cases are font-independent. Version 3.4: labelLines widths are per UTF-16 code unit (a surrogate pair's width on its high half, 0 on its low half), and the cap and every ellipsis cut at grapheme cluster boundaries with the spec's guards. Version 3.5: grapheme cuts keep Indic conjuncts and prepended marks whole; direction cases give a label's text to ltr or rtl (UAX #9 P2 with unassigned code points and isolates skipped).",
- "version": 3.5,
+ "$comment": "Kiosk background legibility test vectors, version 3: per-cell min/max bounds, a light dim for controls, a plate per text (solid over texture). Shared by the console (web/src/data/kioskScrim.test.ts) and the agent. Rules: docs/kiosk-background-scrim.md. image.cells are [min, max] per cell, row-major; element boxes are dp in the window; elements with the same row are the labels of one grid row (version 3.1: they share the row's highest plate step). Colours by kind: text = palette text, secondary = palette secondary, control = palette text (the outlined Exit button's 1 dp border; it gets no plate, its step is always 0). ratio values rounded to 2 decimals (compare within 0.01). Version 3.3 adds labelLines: how an app label breaks into lines (at word boundaries only), from per-character widths, so the cases are font-independent. Version 3.4: labelLines widths are per UTF-16 code unit (a surrogate pair's width on its high half, 0 on its low half), and the cap and every ellipsis cut at grapheme cluster boundaries with the spec's guards. Version 3.5: grapheme cuts keep Indic conjuncts and prepended marks whole; direction cases give a label's text to ltr or rtl (UAX #9 P2 with unassigned code points and isolates skipped). Version 3.6: iconLetter cases give a label to its placeholder letter (the first grapheme with a visible code point, upper-cased), or null.",
+ "version": 3.6,
  "steps": 50,
  "dimMaxStep": 15,
  "textMin": 4.5,
@@ -29539,6 +29539,78 @@
    "name": "arabic",
    "text": "المخزون",
    "expected": "rtl"
+  }
+ ],
+ "iconLetter": [
+  {
+   "name": "devanagari-conjunct",
+   "label": "क्षत्रिय प्रबंधन",
+   "expected": "क्ष"
+  },
+  {
+   "name": "devanagari-conjunct-vowel",
+   "label": "स्टॉक",
+   "expected": "स्टॉ"
+  },
+  {
+   "name": "flag",
+   "label": "🇩🇪 Shop",
+   "expected": "🇩🇪"
+  },
+  {
+   "name": "zwj-family",
+   "label": "👨‍👩‍👧 Family",
+   "expected": "👨‍👩‍👧"
+  },
+  {
+   "name": "skin-tone",
+   "label": "👍🏽 Votes",
+   "expected": "👍🏽"
+  },
+  {
+   "name": "rlm-then-hebrew",
+   "label": "‏מלאי",
+   "expected": "מ"
+  },
+  {
+   "name": "isolated-hebrew",
+   "label": "⁧מלאי⁩",
+   "expected": "מ"
+  },
+  {
+   "name": "leading-space-and-lrm",
+   "label": " ‎ inventory",
+   "expected": "I"
+  },
+  {
+   "name": "zwj-only",
+   "label": "‍",
+   "expected": null
+  },
+  {
+   "name": "only-format-and-space",
+   "label": "‏ ⁦⁩",
+   "expected": null
+  },
+  {
+   "name": "empty",
+   "label": "",
+   "expected": null
+  },
+  {
+   "name": "combining-accent",
+   "label": "élan",
+   "expected": "É"
+  },
+  {
+   "name": "latin",
+   "label": "inventory",
+   "expected": "I"
+  },
+  {
+   "name": "sharp-s",
+   "label": "ßauna",
+   "expected": "SS"
   }
  ]
 }

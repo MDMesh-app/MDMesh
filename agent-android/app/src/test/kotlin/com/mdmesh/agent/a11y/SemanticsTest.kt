@@ -139,6 +139,9 @@ class SemanticsTest {
         assertEquals(str(R.string.status_credentials_lost), warning.text.toString())
         assertEquals(View.ACCESSIBILITY_LIVE_REGION_POLITE, warning.accessibilityLiveRegion)
         assertTrue("not merged into the Device ID stop", warning.isImportantForAccessibility)
+        // Read right after "Device ID, …", before "Copy device ID".
+        assertEquals(R.id.status_device_id_group, warning.accessibilityTraversalAfter)
+        assertEquals(R.id.status_copy_device_id, warning.accessibilityTraversalBefore)
         val clear = s.status(null, s.statusState(credentialsLost = false))
         assertEquals(View.GONE, clear.findViewById<TextView>(R.id.status_credentials_lost).visibility)
     }

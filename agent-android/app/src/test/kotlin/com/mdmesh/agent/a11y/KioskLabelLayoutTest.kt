@@ -111,6 +111,8 @@ class KioskLabelLayoutPortraitTest : KioskLabelLayoutTest(1f) {
     @Test fun everyLabelLineVectorOnAndroid15() = com.mdmesh.agent.ui.checkLabelLineVectors()
 
     @Test fun everyDirectionVectorOnAndroid15() = com.mdmesh.agent.ui.checkDirectionVectors()
+
+    @Test fun everyIconLetterVectorOnAndroid15() = com.mdmesh.agent.ui.checkIconLetterVectors()
 }
 
 @Config(sdk = [35], qualifiers = "w891dp-h411dp-land-notnight-420dpi")
@@ -124,3 +126,7 @@ class KioskLabelLayoutLandscapeLargeFontTest : KioskLabelLayoutTest(2f)
 
 @Config(sdk = [26], qualifiers = "w360dp-h640dp-port-notnight-xhdpi")
 class KioskLabelLayout26Test : KioskLabelLayoutTest(1f)
+
+/** A narrow window at font scale 2: the Exit button wraps at the width the root gives it (less its side margins). */
+@Config(sdk = [35], qualifiers = "w180dp-h640dp-port-notnight-mdpi")
+class KioskLabelLayoutNarrowLargeFontTest : KioskLabelLayoutTest(2f)

@@ -104,11 +104,11 @@ Who reads what:
   owner than its `IMAGE_OWNER`.
 - The **quick start** does the same and checks each downloaded file against `files`. The one release it takes
   without them is v0.4.0, whose file hashes it carries itself and whose `:0.4.0` tags it runs.
-- **`./setup.sh --update`** (native too) reads the signature, `version` and `commit`, and moves the clone only to a
+- **`./setup.sh --update`** (and `--update --native`) reads the signature, `version` and `commit`, and moves the clone only to a
   tag whose signed manifest names that tag's commit, so it never moves to a release before 0.5.0. It builds from that
   checkout and reads neither `images` nor `files`.
 - **setup.sh and the native installer** check the latest release's APK against `components.apk.sha256` before the
-  QR uses it (`install/lib/release.sh`).
+  QR uses it (`install/lib/release.sh`), and the **supervisor** checks it before serving its APK mirror.
 
 So a fork that publishes its own releases must use this workflow (or write the same fields).
 `scripts/release-manifest-check.sh` (T0) checks the manifest against what its readers expect.

@@ -7,8 +7,8 @@
   },
   "installers": [
     { "id": "quickstart.sh", "path": "quickstart.sh", "title": "Quick start (published images, Docker)", "root": false, "flags": [] },
-    { "id": "setup.sh", "path": "setup.sh", "title": "From source (Docker)", "root": false, "flags": ["--reset", "--allow-downgrade", "--native"] },
-    { "id": "install-native.sh", "path": "install/install-native.sh", "title": "Native (Debian 12/13, Ubuntu 24.04)", "root": true, "flags": ["-y", "-v"] }
+    { "id": "setup.sh", "path": "setup.sh", "title": "From source (Docker)", "root": false, "flags": ["--update", "--native", "--reset", "--allow-downgrade"] },
+    { "id": "install-native.sh", "path": "install/install-native.sh", "title": "Native (Debian 12/13, Ubuntu 24.04)", "root": true, "flags": ["-y", "--yes", "-v", "--verbose"] }
   ],
   "settings": [
     {

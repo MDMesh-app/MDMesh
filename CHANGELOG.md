@@ -35,7 +35,9 @@ Heads-up
 New
 - From source and native: `./setup.sh --update` moves the clone to the newest release, checked against its signed
   manifest like the quick start, then runs it. A manifest that doesn't verify, or names no commit, and local changes
-  stop it; a release that isn't published yet is skipped. Fresh installs clone and run `./setup.sh --update` too.
+  stop it; a release that isn't published yet is skipped. Fresh installs clone and run `./setup.sh --update` too. It
+  needs `git`, `curl` and `openssl` 3.0+ (or `minisign`), and says which are missing first; as root with `--native`
+  it installs them.
 - Installers check answers typed at a question with the same rules as answers given in advance, and ask again.
 - The console's update steps for source and native installs show `./setup.sh --update`.
 - Installers: every question can be answered in advance, with `MDMESH_*` variables or an answers file, and

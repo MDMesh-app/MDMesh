@@ -95,6 +95,7 @@ _upd_get() {
   local code rc n
   for n in 1 2 3; do
     rc=0; code=$(curl -sSL --connect-timeout 10 -m 30 -o "$2" -w '%{http_code}' "$1" 2>/dev/null) || rc=$?
+    case "$rc" in 126|127) _upd_stop "--update could not run curl (exit $rc). Reinstall it (Debian/Ubuntu: apt-get install curl), then re-run." ;; esac
     case "$code" in
       200) [ "$rc" != 0 ] || return 0; _upd_why="curl error $rc after HTTP 200" ;;
       404) return 4 ;;
@@ -118,6 +119,34 @@ _upd_get() {
 # --native. /opt/mdmesh-tc itself is visible to any user (its contents are not: mode 700). (tests/setup-update checks
 # the path below is exactly this.)
 _upd_has_install() { [ -f .env ] || [ -d /opt/mdmesh-tc ]; }
+# update_tools [installed]: what --update runs, checked before it does anything: git, curl, awk, sort, and openssl 3.0+ or minisign
+# to check the release signature (with quickstart.sh's functions, loaded here). As root with --native on an apt system,
+# missing ones are installed, as the native installer installs its packages anyway; otherwise it stops, naming them and
+# how to install them.
+update_tools() {
+  local missing='' pkgs='' c
+  for c in git curl awk sort; do
+    command -v "$c" >/dev/null 2>&1 || { missing="$missing, $c"; pkgs="$pkgs $c"; }
+  done
+  # quickstart.sh's own verification functions (scripts/release-manifest-check.sh runs them the same way).
+  # shellcheck source=/dev/null
+  . <(sed -n '/^# >>> release verification >>>$/,/^# <<< release verification <<<$/p' quickstart.sh)
+  command -v mdm_verify_manifest >/dev/null || _upd_stop "quickstart.sh in this clone has no release verification functions."
+  if ! mdm_openssl_can_verify 2>/dev/null && ! command -v minisign >/dev/null 2>&1; then
+    missing="$missing, openssl 3.0+ or minisign"; pkgs="$pkgs openssl"
+  fi
+  [ -n "$missing" ] || return 0
+  pkgs=${pkgs/ awk/ mawk}
+  if [ "${1:-}" != installed ] && [ "$NATIVE" = 1 ] && [ "$EUID" = 0 ] && [ "${MDMESH_DRY_RUN:-0}" != 1 ] \
+     && command -v apt-get >/dev/null 2>&1; then
+    say "Installing what --update needs:${pkgs}…"
+    # shellcheck disable=SC2086  # one package per word
+    { apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $pkgs; } >/dev/null \
+      || _upd_stop "Could not install${pkgs} (apt-get above)."
+    update_tools installed; return 0
+  fi
+  _upd_stop "--update needs ${missing#, }, which this host lacks. Install them first (Debian/Ubuntu: sudo apt-get install${pkgs}), then re-run."
+}
 update_to_release() {
   local repo gerr refs list ver t sha tag='' tgt='' skipped='' cur curver rc mcommit dry=${MDMESH_DRY_RUN:-0} have=0 walked=0 f
   # --native changes this host's install, which needs root: stop before anything is looked up or checked out, rather
@@ -125,7 +154,7 @@ update_to_release() {
   if [ "$NATIVE" = 1 ] && [ "$EUID" != 0 ] && [ "$dry" != 1 ]; then
     _upd_stop "--update --native updates this host's native install, which needs root: run sudo ./setup.sh --update --native"
   fi
-  command -v git >/dev/null || _upd_stop "--update needs git."
+  update_tools
   gerr=$(git rev-parse --is-inside-work-tree 2>&1) || _upd_stop "--update needs a git clone of MDMesh, and git refuses this directory: ${gerr}"
   if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
     _upd_stop "This clone has local changes (see git status). --update checks out a release tag, which would mix them in or fail: commit or stash them (git stash), then re-run."
@@ -136,15 +165,12 @@ update_to_release() {
     */*) ;;
     *) _upd_stop "--update can't tell the GitHub repo of this clone: set GITHUB_REPO=owner/name." ;;
   esac
-  # quickstart.sh's own verification functions (scripts/release-manifest-check.sh runs them the same way).
-  # shellcheck source=/dev/null
-  . <(sed -n '/^# >>> release verification >>>$/,/^# <<< release verification <<<$/p' quickstart.sh)
-  command -v mdm_verify_manifest >/dev/null || _upd_stop "quickstart.sh in this clone has no release verification functions."
   say "Looking up the release tags of origin…"
   refs=$(git ls-remote --tags origin 2>&1) || _upd_stop "Could not list origin's tags (git ls-remote --tags origin): ${refs}"
-  # "X.Y.Z vX.Y.Z <commit>" per release tag (an annotated tag's ^{} line names its commit), newest first.
+  # "X.Y.Z vX.Y.Z <commit>" per release tag (an annotated tag's ^{} line names its commit), newest first. POSIX awk
+  # only: mawk, Debian 12's and Ubuntu's default, has no {n} intervals.
   list=$(printf '%s\n' "$refs" | awk -F'\t' '
-    $2 ~ /^refs\/tags\/v[0-9]+\.[0-9]+\.[0-9]+(\^\{\})?$/ && $1 ~ /^[0-9a-f]{40}$/ {
+    $2 ~ /^refs\/tags\/v[0-9]+\.[0-9]+\.[0-9]+(\^\{\})?$/ && length($1) == 40 && $1 ~ /^[0-9a-f]+$/ {
       t = $2; sub(/^refs\/tags\//, "", t); p = sub(/\^\{\}$/, "", t); if (p || !(t in c)) c[t] = $1 }
     END { for (t in c) print substr(t, 2), t, c[t] }' | sort -t. -k1,1nr -k2,2nr -k3,3nr)
   [ -n "$list" ] || _upd_stop "origin has no release tag (vX.Y.Z)."

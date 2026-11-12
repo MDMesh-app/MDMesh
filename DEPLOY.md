@@ -10,8 +10,8 @@ passwords, and the admin must set its own password on first login.
 | Method | Needs | Choose it when |
 |--------|-------|----------------|
 | [A. Quick start](#option-a--quick-start-no-clone-published-images) | Docker with Compose v2, `curl`, `minisign` to check the script, `openssl` 3.0+ (or an older `openssl` and `minisign`) | You want the fastest path, with one-click updates and rollback. |
-| [B. From source](#option-b--from-source-clone--build) | Docker with Compose v2, `openssl`, a clone (`python3` and `curl` to verify the release for the QR, optional) | You want to build the images yourself. |
-| [C. Native](#option-c--native-no-docker) | Debian 12/13 or Ubuntu 24.04, root, `git` | You don't want Docker, and you run your own TLS proxy. |
+| [B. From source](#option-b--from-source-clone--build) | Docker with Compose v2, a clone, and for `./setup.sh --update`: `git`, `curl`, `openssl` 3.0+ (or `minisign`). `python3` to verify the release for the QR (optional) | You want to build the images yourself. |
+| [C. Native](#option-c--native-no-docker) | Debian 12/13 or Ubuntu 24.04, root, `git` (`--update` installs `curl` and `openssl` when they are missing) | You don't want Docker, and you run your own TLS proxy. |
 
 Options A and B ask for the public hostname and set `BASE_URL=https://<hostname>`. Option C asks for the full base
 URL (`https://…`; `http://` is accepted too). See the [rules](docs/OPERATIONS.md#base-url-and-hostname-rules).
@@ -143,7 +143,8 @@ Run it as root from a clone. It is tested on Debian 12, Debian 13 and Ubuntu 24.
 installer never calls `sudo`, so on a root-only host (a Proxmox LXC container, a minimal Debian image) run
 `./setup.sh --native` as root.
 
-The only prerequisite is `git`; the rest comes from apt. Two runtimes the distros don't all ship are downloaded into
+The only prerequisite is `git`; the rest comes from apt (`sudo ./setup.sh --update --native` first installs `curl`
+and `openssl` when they are missing, to check the release). Two runtimes the distros don't all ship are downloaded into
 `/opt/mdmesh-runtime`, at pinned versions checked against SHA-256s:
 
 - **Node 24**, unless a Node 24 that the `mdmesh` service account can run is already on `PATH`. Your system Node is left alone.

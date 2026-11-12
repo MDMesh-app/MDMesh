@@ -207,6 +207,15 @@ jobs:
       - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).installers)
         name: setup.sh --update (signed release tags)
         run: tests/setup-update/run.sh
+      # Both installer suites again with the tools of the distributions the installers support, not the runner's: mawk
+      # (Debian 12's 1.3.4-20200120 has no regex intervals), and busybox's awk. Throwaway containers (--rm), unprivileged,
+      # the checkout mounted read-only.
+      - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).installers)
+        name: Installer suites on Debian 12, Ubuntu 24.04 and busybox awk
+        run: |
+          tests/installer-answers/in-container.sh debian:12
+          tests/installer-answers/in-container.sh ubuntu:24.04
+          tests/installer-answers/in-container.sh debian:12 busybox-awk
       - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).edge)
         name: Caddyfile modes + compose overlays
         run: scripts/edge-check.sh

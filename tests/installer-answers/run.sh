@@ -133,6 +133,17 @@ for inst in $(installer_ids); do
   done
 done
 
+# Each installer's flags in options.json are exactly the ones its argument loop accepts (the "-x|--xx)" patterns of its
+# for a in "$@" loop; none for an installer without one).
+for inst in $(installer_ids); do
+  f="$REPO/$(installer_path "$inst")"
+  got=$(awk '/^for a in "\$@"; do/ { f = 1 } f && /^done/ { f = 0 } f' "$f" \
+    | { grep -oE '^[[:space:]]*-[-a-zA-Z|]+\)' || true; } | tr -d ' )' | tr '|' '\n' | sort -u)
+  want=$(jq -r --arg i "$inst" '.installers[] | select(.id == $i) | .flags[]' "$CONTRACT" | sort -u)
+  [ "$got" = "$want" ] || fail "$inst accepts the flags [$(tr "\n" " " <<< "$got")], options.json lists [$(tr "\n" " " <<< "$want")]"
+  ok
+done
+
 lib_keys=$(sed -nE 's/^_MDM_ANSWER_KEYS="(.*)"$/\1/p' "$REPO/install/lib/answers.sh" | tr ' ' '\n' | grep . | sort)
 contract_keys=$(jq -r '(.options[].env), (.settings[].env)' "$CONTRACT" | sort)
 [ "$lib_keys" = "$contract_keys" ] || fail "install/lib/answers.sh _MDM_ANSWER_KEYS differs from options.json's variables: $(diff <(echo "$lib_keys") <(echo "$contract_keys") | grep '^[<>]' | tr '\n' ' ')"

@@ -49,6 +49,7 @@ if [ -n "${CURL_FLAKY:-}" ]; then
 fi
 case "${CURL_FAULT:-}" in
   "${rel%%/*}":28) code 000; exit 28 ;; "${rel%%/*}":7) code 000; exit 7 ;; "${rel%%/*}":503) code 503; exit 0 ;;
+  "${rel%%/*}":127) exit 127 ;;
 esac
 f="$REL_DIR/$rel"
 if [ -f "$f" ] && [ -n "$out" ]; then cp "$f" "$out"; code 200; exit 0; fi
@@ -219,6 +220,37 @@ upd nat-user ok -- --native
 ok
 upd nat-user ok MDMESH_DRY_RUN=1 -- --native
 { [ "$RC" = 0 ] && head_is nat-user "$cmain" && grep -q 'v9.1.0 verifies' "$WORK/out"; } || { fail "a dry run of --update --native needs root"; show; }
+ok
+# The tools --update needs are checked before it does anything: without curl, or without openssl 3.0+ and minisign, it
+# stops at once, naming them and how to install them, and never as "could not reach GitHub". (A PATH of every command
+# on this host except those; the stubs without curl.) A curl that can't run (exit 127) isn't a network failure either.
+nopath() {  # nopath DIR CMD...: DIR holds a link to every command on PATH except CMD...
+  local d=$1 f n skip; shift; skip=" $* "; mkdir -p "$d"
+  local IFS=:; for f in $PATH; do
+    for n in "$f"/*; do
+      { [ -f "$n" ] && [ -x "$n" ]; } || continue
+      case "$skip" in *" ${n##*/} "*) continue ;; esac
+      [ -e "$d/${n##*/}" ] || ln -s "$n" "$d/${n##*/}"
+    done
+  done
+}
+mkdir -p "$WORK/stubs-nocurl"; for c in "$WORK"/stubs/*; do [ "${c##*/}" = curl ] || cp -- "$c" "$WORK/stubs-nocurl/"; done
+nopath "$WORK/bin-nocurl" curl
+nopath "$WORK/bin-noverify" openssl minisign
+clone tools
+upd tools ok PATH="$WORK/stubs-nocurl:$WORK/bin-nocurl" --
+{ [ "$RC" != 0 ] && head_is tools "$cmain" && grep -qF 'needs curl' "$WORK/out" && grep -qF 'apt-get install' "$WORK/out" \
+  && ! grep -q 'Could not reach GitHub\|Looking up' "$WORK/out"; } || { fail "--update without curl does not stop at once naming it"; show; }
+ok
+clone tools2
+upd tools2 ok PATH="$WORK/stubs:$WORK/bin-noverify" --
+{ [ "$RC" != 0 ] && head_is tools2 "$cmain" && grep -qF 'openssl 3.0+ or minisign' "$WORK/out" && ! grep -q 'Looking up' "$WORK/out"; } \
+  || { fail "--update without openssl or minisign does not stop at once naming them"; show; }
+ok
+clone tools3
+upd tools3 ok CURL_FAULT=v9.1.0:127 --
+{ [ "$RC" != 0 ] && head_is tools3 "$cmain" && grep -qF 'could not run curl' "$WORK/out" && ! grep -q 'Could not reach GitHub' "$WORK/out"; } \
+  || { fail "a curl that can't run is reported as a network failure"; show; }
 ok
 # ... and gives up after the 5 newest tags.
 clone capped v9.0.0 "$WORK/origin3"

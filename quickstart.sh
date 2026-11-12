@@ -523,7 +523,7 @@ DIR="${MDMESH_DIR:-mdmesh}"
 # through and the rest would run in the wrong directory.
 mkdir -p -- "$DIR"
 cd -P -- "$DIR"
-[ -f .env ] && { err "An .env already exists in $(pwd) — refusing to overwrite. Remove it to re-run."; exit 1; }
+{ [ -e .env ] || [ -L .env ]; } && { err "An .env already exists in $(pwd) — refusing to overwrite. Remove it to re-run."; exit 1; }
 
 say "== MDMesh quick start (published images) =="
 echo "Installing into: $(pwd)"
@@ -726,7 +726,7 @@ SMTP_HOST=
 SMTP_PORT=25
 SMTP_FROM=mdm@${HOST}
 EOF
-mv -fT -- "$ENV_TMP" .env
+mv -f -- "$ENV_TMP" .env   # no -T (GNU only): nothing named .env exists here (checked above)
 ENV_TMP=''; trap - INT TERM
 say "Wrote .env (secrets generated). docker compose reads COMPOSE_FILE/PROFILES from it."
 

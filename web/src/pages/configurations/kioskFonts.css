@@ -1,0 +1,44 @@
+/* Roboto, Android's default UI font, for the kiosk preview only: the device draws its labels in it, so the preview
+   measures and draws them in it too (the same line breaks and ellipses). Self-hosted from @fontsource/roboto (SIL OFL
+   1.1, pinned in package.json; public/licenses/Roboto-OFL-1.1.txt). The weights the agent uses: 400 for app labels
+   (KioskViews LABEL_SP 14sp, default sans-serif) and 500 for the header and the Exit button (sans-serif-medium).
+   Latin and latin-ext only; other scripts (CJK, Arabic, Hebrew…) fall back to the browser's fonts, as a device falls
+   back to its Noto fonts. Its own family name, so a Roboto installed on the viewer's machine never stands in.
+   A face downloads only when text in it is drawn, i.e. once the preview shows. `block`: the preview waits briefly
+   for the face instead of laying labels out in another font. */
+@font-face {
+  font-family: 'Kiosk Roboto';
+  font-style: normal;
+  font-display: block;
+  font-weight: 400;
+  src: url('@fontsource/roboto/files/roboto-latin-400-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F,
+    U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Kiosk Roboto';
+  font-style: normal;
+  font-display: block;
+  font-weight: 400;
+  src: url('@fontsource/roboto/files/roboto-latin-ext-400-normal.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF,
+    U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Kiosk Roboto';
+  font-style: normal;
+  font-display: block;
+  font-weight: 500;
+  src: url('@fontsource/roboto/files/roboto-latin-500-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F,
+    U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Kiosk Roboto';
+  font-style: normal;
+  font-display: block;
+  font-weight: 500;
+  src: url('@fontsource/roboto/files/roboto-latin-ext-500-normal.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF,
+    U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}

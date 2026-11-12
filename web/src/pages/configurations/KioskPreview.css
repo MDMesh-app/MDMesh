@@ -162,7 +162,8 @@
   border-radius: var(--kbg-corner);
   background: var(--kbg-bg);
   color: var(--kbg-text);
-  font-family: Roboto, 'IBM Plex Sans', system-ui, sans-serif;
+  /* The device's font (kioskFonts.css); data/kioskLauncherLayout KIOSK_FONT measures with the same stack. */
+  font-family: 'Kiosk Roboto', system-ui, sans-serif;
   line-height: normal;
 }
 
@@ -201,14 +202,15 @@
 }
 
 .v2 .v2-kbg__header {
-  font-weight: 700;
+  /* sans-serif-medium, as the agent's header (KioskRenderer: TITLE_SP, medium). */
+  font-weight: 500;
   white-space: nowrap;
 }
 
 .v2 .v2-kbg__icon {
   display: grid;
   place-items: center;
-  font-weight: 600;
+  font-weight: 500;
   background: var(--kbg-text);
   color: var(--kbg-bg);
 }

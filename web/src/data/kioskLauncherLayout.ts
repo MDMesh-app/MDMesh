@@ -230,7 +230,16 @@ export function launcherLayout(
   };
 }
 
-/** Text width from the font when the browser can measure it, else an estimate (jsdom). */
+/**
+ * The kiosk preview's font: Roboto, Android's default (pages/configurations/kioskFonts.css), then the browser's fonts
+ * for other scripts. The preview's screen draws with the same stack.
+ */
+export const KIOSK_FONT = `"Kiosk Roboto", system-ui, sans-serif`;
+
+/**
+ * Text width from the font when the browser can measure it, else an estimate (jsdom). Unrounded, as Android's
+ * Paint.measureText, which the agent's label lines use.
+ */
 export function browserMeasure(): Measure {
   let ctx: OffscreenCanvasRenderingContext2D | null = null;
   try {
@@ -240,8 +249,7 @@ export function browserMeasure(): Measure {
   }
   return (text, size, weight) => {
     if (!ctx) return Math.ceil(text.length * size * 0.55);
-    // Android's system font; the preview draws with the same stack.
-    ctx.font = `${weight} ${size}px Roboto, "IBM Plex Sans", system-ui, sans-serif`;
-    return Math.ceil(ctx.measureText(text).width);
+    ctx.font = `${weight} ${size}px ${KIOSK_FONT}`;
+    return ctx.measureText(text).width;
   };
 }

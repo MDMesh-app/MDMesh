@@ -3,7 +3,7 @@
 // and Rotate, and four thumbnails that select it. Same rules and functions as the agent: data/kioskScrim.ts,
 // data/kioskLauncherLayout.ts, data/kioskLabelLines.ts, docs/kiosk-background-scrim.md (version 3.3).
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
-import { browserMeasure, launcherLayout, PLATE_RADIUS, type LauncherLayout, type Measure } from '../../data/kioskLauncherLayout';
+import { browserMeasure, KIOSK_FONT, launcherLayout, PLATE_RADIUS, type LauncherLayout, type Measure } from '../../data/kioskLauncherLayout';
 import {
   CONTROL_MIN,
   DIM_MAX_STEP,
@@ -22,6 +22,7 @@ import {
   type Legibility,
 } from '../../data/kioskScrim';
 import { Button, Callout, IconCheckSmall, IconCrossSmall, IconInfo, IconSync, IconWarning, Segmented } from '../../ui';
+import './kioskFonts.css';
 import './KioskPreview.css';
 
 /** The devices the preview shows, by their short and long side in dp. */
@@ -147,6 +148,8 @@ export function KioskBackgroundPreview({
     if (!fonts || measure) return;
     let live = true;
     const bump = () => live && setFontEpoch((e) => e + 1);
+    // Load the device font's two weights now (they would load only once text in them is drawn), then measure again.
+    Promise.all([fonts.load(`400 14px ${KIOSK_FONT}`), fonts.load(`500 14px ${KIOSK_FONT}`)]).then(bump, bump);
     fonts.ready.then(bump, () => undefined);
     fonts.addEventListener?.('loadingdone', bump);
     return () => {
@@ -376,7 +379,11 @@ export function KioskBackgroundPreview({
           );
         })}
       </ul>
-      <p className="v2-kbg__footnote">Text contrast is the worst case: against every pixel under each text.</p>
+      <p className="v2-kbg__footnote">
+        Text contrast is the worst case: against every pixel under each text. Layout shown at 360 dp wide for phones, in
+        Roboto, Android’s default font; real devices vary in width and font, and other scripts (such as Chinese or Arabic)
+        are shown in this browser’s fonts.
+      </p>
     </details>
   );
 }

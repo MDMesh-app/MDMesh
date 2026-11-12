@@ -110,8 +110,8 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
     /** Everything that follows the layout: row plates, the dim, plate opacities, the bar icons. */
     private fun updatePlates(scan: TextPlates.Scan) {
         val s = screen ?: return
-        val painted =
-            TextPlates.update(root, scan, backdropInfo.takeIf { onImage }, s.palette, placement, navBar) ?: return
+        val look = TextPlates.Look(s.palette, placement, navBar)
+        val painted = TextPlates.update(root, scan, backdropInfo.takeIf { onImage }, look) ?: return
         activity.updateSystemBarIcons(painted.statusBar, painted.navigationBar)
     }
 

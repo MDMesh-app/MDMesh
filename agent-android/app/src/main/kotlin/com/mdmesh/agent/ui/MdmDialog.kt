@@ -102,7 +102,7 @@ class MdmDialog private constructor(
     fun setOnShown(block: () -> Unit) = alert.setOnShowListener { block() }
 
     /** Replaces the message (a countdown). */
-    fun setMessage(text: CharSequence) {
+    fun updateMessage(text: CharSequence) {
         message.text = text
         message.visibility = if (text.isEmpty()) View.GONE else View.VISIBLE
     }

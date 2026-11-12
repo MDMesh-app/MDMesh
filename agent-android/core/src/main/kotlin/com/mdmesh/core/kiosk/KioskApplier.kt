@@ -82,58 +82,81 @@ class KioskApplier(
 
     /** [reassert]: skip the "already in this kiosk" short-circuit (a relock after a cut-off exit). */
     private suspend fun enterLocked(p: KioskApplyPayload, reassert: Boolean = false): KioskResult {
-        // Already in this kiosk: no re-entry or relaunch, but re-assert the volume lock and the Safe Mode block (either
-        // may have failed before).
         val current = store.load()
         val pending = withContext(io) { journal.pending() }
-        if (!reassert && p.sameKioskAs(current) && isLockTaskActive()) {
-            // Locked in this very kiosk: an exit cut off before it is settled in kiosk already. Only an entry that is
-            // there is cleared: no disk write on every entry.
-            if (pending != null) clearJournal("re-entry of the kiosk it was exiting")
-            // The same kiosk, perhaps with a new look (colours, image, fit, focal point, or the image at a new URL):
-            // saved in place, the launcher redraws it; nothing is entered or relaunched.
-            if (current != p || current?.theme?.backgroundImage?.url != p.theme.backgroundImage?.url) {
-                store.save(p)
-                onEntered(p)
-            }
-            return applySafeMode(applyVolume(p, KioskResult.Ok))
+        return when {
+            !reassert && p.sameKioskAs(current) && isLockTaskActive() -> stayIn(p, current, pending)
+            !supersede(pending, reassert) -> KioskResult.Failed("kiosk exit journal not writable")
+            else -> lockIn(p, current, pending)
         }
-        // Entering supersedes an exit a process death cut off, but the entry is cleared only once this kiosk is
-        // locked and saved: until then a death must leave something for the next start to settle. So it is first
-        // marked "settle in kiosk" (never finish: the device is being put in a kiosk, not taken out), which relocks
-        // whichever kiosk is saved when the process died. A mark that can't be made durable refuses a new kiosk (the
-        // old entry could otherwise be finished as an exit); a relock goes on regardless, locking is fail-closed.
-        if (pending != null && !pending.failed && !withContext(io) { journal.begin(pending.copy(failed = true)) }) {
-            warn("could not mark a cut-off kiosk exit as superseded")
-            if (!reassert) return KioskResult.Failed("kiosk exit journal not writable")
+    }
+
+    /**
+     * Already in this kiosk: no re-entry or relaunch, but re-assert the volume lock and the Safe Mode block (either may
+     * have failed before).
+     */
+    private suspend fun stayIn(
+        p: KioskApplyPayload,
+        current: KioskApplyPayload?,
+        pending: ExitJournal.Pending?,
+    ): KioskResult {
+        // Locked in this very kiosk: an exit cut off before it is settled in kiosk already. Only an entry that is there
+        // is cleared: no disk write on every entry.
+        if (pending != null) clearJournal("re-entry of the kiosk it was exiting")
+        // The same kiosk, perhaps with a new look (colours, image, fit, focal point, or the image at a new URL): saved
+        // in place, the launcher redraws it; nothing is entered or relaunched.
+        if (current != p || current?.theme?.backgroundImage?.url != p.theme.backgroundImage?.url) {
+            store.save(p)
+            onEntered(p)
         }
+        return applySafeMode(applyVolume(p, KioskResult.Ok))
+    }
+
+    /**
+     * Entering supersedes an exit a process death cut off, but the entry is cleared only once this kiosk is locked and
+     * saved ([lockIn]): until then a death must leave something for the next start to settle. So it is first marked
+     * "settle in kiosk" (never finish: the device is being put in a kiosk, not taken out), which relocks whichever
+     * kiosk is saved when the process died. False when the mark can't be made durable for a new kiosk, which is then
+     * refused (the old entry could otherwise be finished as an exit); a relock ([reassert]) goes on regardless,
+     * locking is fail-closed.
+     */
+    private suspend fun supersede(pending: ExitJournal.Pending?, reassert: Boolean): Boolean {
+        if (pending == null || pending.failed || withContext(io) { journal.begin(pending.copy(failed = true)) }) {
+            return true
+        }
+        warn("could not mark a cut-off kiosk exit as superseded")
+        return reassert
+    }
+
+    private suspend fun lockIn(
+        p: KioskApplyPayload,
+        current: KioskApplyPayload?,
+        pending: ExitJournal.Pending?,
+    ): KioskResult {
         home.setClaimEnabled(true)
-        return when (val r = lockTo(p)) {
-            KioskResult.Ok -> {
-                // The device IS in kiosk now, so the state says so even if the volume lock fails below: a failed
-                // volume lock is reported (the config document is then not persisted and is re-applied), and the
-                // short-circuit above re-asserts it without relaunching the kiosk.
-                store.save(p)
-                // Locked and saved: nothing is left to settle. Not before: see the mark above.
-                if (pending != null) clearJournal("kiosk locked")
-                home.showLauncher()
-                onEntered(p)
-                applySafeMode(applyVolume(p, r))
-            }
-            else -> {
-                // A marked entry, if any, is kept: the next start settles it in kiosk (or, with no kiosk saved, drops
-                // it and releases HOME, as below).
-                if (current == null) {
-                    home.setClaimEnabled(false) // never leave a non-kiosk device claiming HOME
-                } else {
-                    // A device in kiosk stays in it: the failed entry may already have replaced the allowlist, so
-                    // put back the kiosk it had, and keep HOME, or a restart would boot to the phone's own launcher.
-                    lockTo(current)
-                    applySafeMode(r) // its result is r again, already Failed: the device keeps its kiosk and the block
-                }
-                r
-            }
+        val r = lockTo(p)
+        if (r == KioskResult.Ok) {
+            // The device IS in kiosk now, so the state says so even if the volume lock fails below: a failed volume
+            // lock is reported (the config document is then not persisted and is re-applied), and [stayIn]
+            // re-asserts it without relaunching the kiosk.
+            store.save(p)
+            // Locked and saved: nothing is left to settle. Not before: see [supersede].
+            if (pending != null) clearJournal("kiosk locked")
+            home.showLauncher()
+            onEntered(p)
+            return applySafeMode(applyVolume(p, r))
         }
+        // A marked entry, if any, is kept: the next start settles it in kiosk (or, with no kiosk saved, drops it and
+        // releases HOME, as below).
+        if (current == null) {
+            home.setClaimEnabled(false) // never leave a non-kiosk device claiming HOME
+        } else {
+            // A device in kiosk stays in it: the failed entry may already have replaced the allowlist, so put back the
+            // kiosk it had, and keep HOME, or a restart would boot to the phone's own launcher.
+            lockTo(current)
+            applySafeMode(r) // its result is r again, already Failed: the device keeps its kiosk and the block
+        }
+        return r
     }
 
     private fun lockTo(p: KioskApplyPayload): KioskResult {

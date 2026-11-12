@@ -122,16 +122,22 @@ open class BackdropDecoderMatrixTest {
         for (limits in listOf(DecodeLimits.NORMAL, DecodeLimits.LOW_MEMORY)) for (file in files) {
             val d = decode(file, limits = limits) as Decoded.Ready
             assertEquals(1, d.info.cells.cellSize)
-            for (y in 0 until d.bitmap.height) for (x in 0 until d.bitmap.width) {
-                val b = box(d, x + 0.25, y + 0.25, 0.5, 0.5)
-                val px = d.bitmap.getPixel(x, y)
-                val where = "${file.name} low=${limits.lowMemory} ($x,$y) ${Integer.toHexString(px)} not in " +
-                    "${Integer.toHexString(b.min)}..${Integer.toHexString(b.max)}"
-                for (shift in intArrayOf(16, 8, 0)) {
-                    val v = (px shr shift) and 0xFF
-                    assertTrue(where, v >= ((b.min shr shift) and 0xFF) && v <= ((b.max shr shift) and 0xFF))
-                }
-            }
+            assertEveryPixelInsideCells(d, "${file.name} low=${limits.lowMemory}")
+        }
+    }
+
+    private fun assertEveryPixelInsideCells(d: Decoded.Ready, what: String) {
+        for (y in 0 until d.bitmap.height) for (x in 0 until d.bitmap.width) assertDrawnInsideCells(d, x, y, what)
+    }
+
+    private fun assertDrawnInsideCells(d: Decoded.Ready, x: Int, y: Int, what: String) {
+        val b = box(d, x + 0.25, y + 0.25, 0.5, 0.5)
+        val px = d.bitmap.getPixel(x, y)
+        val where = "$what ($x,$y) ${Integer.toHexString(px)} not in " +
+            "${Integer.toHexString(b.min)}..${Integer.toHexString(b.max)}"
+        for (shift in intArrayOf(16, 8, 0)) {
+            val v = (px shr shift) and 0xFF
+            assertTrue(where, v >= ((b.min shr shift) and 0xFF) && v <= ((b.max shr shift) and 0xFF))
         }
     }
 
@@ -170,12 +176,9 @@ open class BackdropDecoderMatrixTest {
 
     /** Null, OOM or an error at both sizes: transient (nothing remembered), never Undecodable (Invalid for good). */
     @Test fun aFailedPixelDecodeAfterGoodBoundsIsTransient() {
-        val failures = listOf<(String, BitmapFactory.Options) -> Bitmap?>(
-            { _, _ -> null },
-            { _, _ -> throw OutOfMemoryError("pixels") },
-            { _, _ -> throw java.io.IOException("read") },
-            { _, _ -> throw IllegalStateException("decoder") },
-        )
+        val thrown = listOf(OutOfMemoryError("pixels"), java.io.IOException("read"), IllegalStateException("decoder"))
+        val failures = listOf<(String, BitmapFactory.Options) -> Bitmap?>({ _, _ -> null }) +
+            thrown.map { e -> { _: String, _: BitmapFactory.Options -> throw e } }
         for (fail in failures) {
             var calls = 0
             val d = decodeWith { p, o -> calls++; fail(p, o) }

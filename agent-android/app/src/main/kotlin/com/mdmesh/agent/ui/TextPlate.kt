@@ -188,29 +188,29 @@ object TextPlates {
         return scan
     }
 
+    /** What [update] draws with: the kiosk's colours, the image's placement, and where the navigation bar is. */
+    class Look(
+        val palette: KioskPalette,
+        val placement: Placement,
+        /** The window's navigation-bar insets (none before Android 15). */
+        val navBar: Insets = Insets.NONE,
+    )
+
     /**
      * [root] is drawn over the image described by [info] (null: no image, no plates) by the root's
-     * [BackdropDrawable] in [palette] and [placement]. Works out the dim from the controls, then every plate's
+     * [BackdropDrawable] in [look]'s palette and placement. Works out the dim from the controls, then every plate's
      * opacity, from where each one is now (scrolled or not); `docs/kiosk-background-scrim.md`. Null without an
      * image. An image decoded over another background colour (a recolour; a new decode is on its way) is only
      * trusted where it has no transparency; otherwise every plate is solid and the dim at its cap until then.
      */
-    fun update(
-        root: ViewGroup,
-        scan: Scan,
-        info: BackdropInfo?,
-        palette: KioskPalette,
-        placement: Placement,
-        /** Where the navigation bar is: the window's navigation-bar insets (none before Android 15). */
-        navBar: Insets = Insets.NONE,
-    ): Painted? =
+    fun update(root: ViewGroup, scan: Scan, info: BackdropInfo?, look: Look): Painted? =
         when {
             info == null || root.width == 0 || root.height == 0 -> {
                 scan.plates.forEach { it.second.step = 0 }
                 null
             }
-            !info.validFor(palette.background) -> provisional(root, scan, palette)
-            else -> measured(root, scan, info, palette, placement, navBar)
+            !info.validFor(look.palette.background) -> provisional(root, scan, look.palette)
+            else -> measured(root, scan, info, look)
         }
 
     /** Until an image with transparency is decoded over the new colour: every plate solid, the dim at its cap. */
@@ -220,18 +220,12 @@ object TextPlates {
         return Painted(LegibilityV3.DIM_MAX_STEP, palette.background, palette.background)
     }
 
-    private fun measured(
-        root: ViewGroup,
-        scan: Scan,
-        info: BackdropInfo,
-        palette: KioskPalette,
-        placement: Placement,
-        navBar: Insets,
-    ): Painted {
+    private fun measured(root: ViewGroup, scan: Scan, info: BackdropInfo, look: Look): Painted {
+        val palette = look.palette
         root.getLocationInWindow(scan.origin)
         val w = root.width.toDouble()
         val h = root.height.toDouble()
-        val image = BackdropGeometry.rect(info.cells.width, info.cells.height, w, h, placement)
+        val image = BackdropGeometry.rect(info.cells.width, info.cells.height, w, h, look.placement)
         /** The bounds under [r], given in [v]'s coordinates. */
         fun bounds(v: View, r: RectF): ColourBox {
             v.getLocationInWindow(scan.at)
@@ -267,25 +261,8 @@ object TextPlates {
         }
         scan.rect.set(0f, 0f, root.width.toFloat(), maxOf(1, root.paddingTop).toFloat())
         val statusBar = under(scan.rect)
-        val navigationBar = under(navigationStrip(root.width, root.height, navBar, scan.rect))
+        val navigationBar = under(navigationStrip(root.width, root.height, look.navBar, scan.rect))
         return Painted(dim, statusBar, navigationBar)
-    }
-
-    /**
-     * The strip under the navigation bar in a [width] x [height] root drawn under the bars: along the edge of the
-     * largest [nav] inset (bottom with gesture or 3-button navigation, left or right with a 3-button bar on a
-     * landscape phone). No navigation bar reported: the bottom pixel row, where a gesture handle would be.
-     */
-    internal fun navigationStrip(width: Int, height: Int, nav: Insets, into: RectF): RectF {
-        val w = width.toFloat()
-        val h = height.toFloat()
-        val side = maxOf(nav.left, nav.right)
-        return when {
-            nav.bottom >= side && nav.bottom > 0 -> into.apply { set(0f, h - nav.bottom, w, h) }
-            nav.right >= nav.left && nav.right > 0 -> into.apply { set(w - nav.right, 0f, w, h) }
-            nav.left > 0 -> into.apply { set(0f, 0f, nav.left.toFloat(), h) }
-            else -> into.apply { set(0f, h - 1f, w, h) }
-        }
     }
 
     private fun dim(rule: BackdropRule, palette: KioskPalette, controls: List<ColourBox>): Int {
@@ -342,4 +319,21 @@ object TextPlates {
     fun radius(density: Float): Float = (RADIUS_DP * density).roundToInt().toFloat()
 
     const val RADIUS_DP = 10
+}
+
+/**
+ * The strip under the navigation bar in a [width] x [height] root drawn under the bars: along the edge of the
+ * largest [nav] inset (bottom with gesture or 3-button navigation, left or right with a 3-button bar on a
+ * landscape phone). No navigation bar reported: the bottom pixel row, where a gesture handle would be.
+ */
+internal fun navigationStrip(width: Int, height: Int, nav: Insets, into: RectF): RectF {
+    val w = width.toFloat()
+    val h = height.toFloat()
+    val side = maxOf(nav.left, nav.right)
+    return when {
+        nav.bottom >= side && nav.bottom > 0 -> into.apply { set(0f, h - nav.bottom, w, h) }
+        nav.right >= nav.left && nav.right > 0 -> into.apply { set(w - nav.right, 0f, w, h) }
+        nav.left > 0 -> into.apply { set(0f, 0f, nav.left.toFloat(), h) }
+        else -> into.apply { set(0f, h - 1f, w, h) }
+    }
 }

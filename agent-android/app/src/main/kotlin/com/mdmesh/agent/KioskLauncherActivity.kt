@@ -469,7 +469,7 @@ class KioskLauncherActivity : ComponentActivity() {
         dialog.render(ExitPinUiState.of(outcome))
         when (outcome) {
             // Open implies a PIN, so a kiosk: the exit is bound to it.
-            ExitPinGate.Outcome.Open -> kiosk?.let(::doExit)
+            ExitPinGate.Outcome.Open -> doExit(kiosk ?: return)
             is ExitPinGate.Outcome.Locked -> {
                 if (outcome.started) reportLockout(outcome)
                 showExitLocked(outcome.remainingMs)
@@ -509,7 +509,7 @@ class KioskLauncherActivity : ComponentActivity() {
             if (left == null || SystemClock.elapsedRealtime() >= closeAt) {
                 dialog.dismiss()
             } else {
-                dialog.setMessage(message(left))
+                dialog.updateMessage(message(left))
             }
         }
         dialogs.show(KioskExitDialogs.LOCKED, dialog)

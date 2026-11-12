@@ -29,7 +29,7 @@ class ContrastTest {
         )
     }
 
-    /** PR #192 N1: the looked-up transfer is the WCAG formula itself, to the last bit, on every level of every channel. */
+    /** PR #192 N1: the looked-up transfer is the WCAG formula itself, to the last bit, on every channel level. */
     @Test fun `luminance is exactly the WCAG formula on every level`() {
         fun linear(level: Int): Double {
             val c = level / 255.0

@@ -160,7 +160,7 @@ class KioskBackgroundImageStore internal constructor(
             wait > 0 -> Obtained.Retry(wait)
             else -> {
                 target.delete()
-                when (val got = download(request, target)) {
+                when (download(request, target)) {
                     Download.Done -> ready(dir, target, request.hash)
                     Download.Failed -> failed(request)
                     Download.NeverValid -> {

@@ -79,20 +79,28 @@ class BackdropCells(val width: Int, val height: Int, private val mins: IntArray,
             val i1 = minOf(cols - 1, ceil(x1 / cellSize).toInt())
             val j0 = maxOf(0, floor(y0 / cellSize).toInt() - 1)
             val j1 = minOf(rows - 1, ceil(y1 / cellSize).toInt())
-            // Per channel, in place: one box at the end, not one per cell (this runs for every plate on every frame).
-            val lo = IntArray(CHANNELS) { BYTE }
-            val hi = IntArray(CHANNELS)
-            for (j in j0..j1) for (i in i0..i1) {
-                val k = j * cols + i
-                for (ch in 0 until CHANNELS) {
-                    lo[ch] = minOf(lo[ch], (mins[k] shr SHIFTS[ch]) and BYTE)
-                    hi[ch] = maxOf(hi[ch], (maxs[k] shr SHIFTS[ch]) and BYTE)
-                }
-            }
-            box = ColourBox(packed(lo), packed(hi))
+            box = span(i0..i1, j0..j1)
         }
         if (reachesLetterbox(rect, windowW, windowH, r) || !any) box += background
         return box
+    }
+
+    /**
+     * The per-channel range of the cells in [cols] x [rows], worked out in place: one box at the end, not one per
+     * cell (this runs for every plate on every frame).
+     */
+    private fun span(cols: IntRange, rows: IntRange): ColourBox {
+        val lo = IntArray(CHANNELS) { BYTE }
+        val hi = IntArray(CHANNELS)
+        for (j in rows) for (i in cols) widen(lo, hi, j * this.cols + i)
+        return ColourBox(packed(lo), packed(hi))
+    }
+
+    private fun widen(lo: IntArray, hi: IntArray, k: Int) {
+        for (ch in 0 until CHANNELS) {
+            lo[ch] = minOf(lo[ch], (mins[k] shr SHIFTS[ch]) and BYTE)
+            hi[ch] = maxOf(hi[ch], (maxs[k] shr SHIFTS[ch]) and BYTE)
+        }
     }
 
     /** [r], clipped to the window, reaches outside the image's rectangle. */
@@ -198,21 +206,20 @@ object BackdropDecoder {
         val request = Request(file, maxOf(1, screenLong), background, limits, pixels)
         // Only a header that doesn't read is the image's fault; everything after it is "not now".
         val bounds = boundsOf(file) ?: return Decoded.Undecodable
-        for (extraSample in EXTRA_SAMPLES) {
-            val decoded = try {
-                decodeSized(request, bounds, extraSample)
-            } catch (_: OutOfMemoryError) {
-                null
-            } catch (_: Exception) {
-                null
-            }
-            if (decoded != null) return decoded
-        }
-        return Decoded.Transient
+        return EXTRA_SAMPLES.firstNotNullOfOrNull { attempt(request, bounds, it) } ?: Decoded.Transient
+    }
+
+    /** One decode at [extraSample]; null when it failed in any way (memory, I/O, the decoder). */
+    private fun attempt(r: Request, bounds: BitmapFactory.Options, extraSample: Int): Decoded.Ready? = try {
+        decodeSized(r, bounds, extraSample)
+    } catch (_: OutOfMemoryError) {
+        null
+    } catch (_: Exception) {
+        null
     }
 
     /** Full size, then half: a null or a failure at full size may be only the memory it needed. */
-    private val EXTRA_SAMPLES = intArrayOf(1, 2)
+    private val EXTRA_SAMPLES = listOf(1, 2)
 
     private class Request(
         val file: File,

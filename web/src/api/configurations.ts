@@ -108,6 +108,11 @@ export interface KioskBackgroundImageInfo {
   uploadTime?: number | null;
   /** The uploaded file still carries metadata (location, camera), which saving removes. */
   hasMetadata?: boolean;
+  /**
+   * Another account's file that this configuration uses (one copied from the main account's template): devices get it
+   * as it is hosted there. Absent for the account's own files.
+   */
+  fromAnotherAccount?: boolean;
 }
 
 /** Describes an uploaded background image file; refused (ApiError with a readable message) as a save would. */

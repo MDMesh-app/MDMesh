@@ -622,12 +622,15 @@ public class ConfigurationResource {
         }
         Map<Integer, List<KioskBackgroundImageAssets.Use>> uses = new HashMap<>();
         Set<Integer> hidden = new HashSet<>();
+        // Which of them the user may open: one query, not an access check per configuration.
+        Set<Integer> accessible = new HashSet<>();
+        for (Configuration c : configurationDAO.getAccessibleBackgroundImageUses()) accessible.add(c.getId());
         for (Configuration c : configurationDAO.getBackgroundImageUses()) {
             KioskBackgroundImageAssets.Use u = new KioskBackgroundImageAssets.Use();
             u.setId(c.getId());
             u.setName(c.getName());
             uses.computeIfAbsent(c.getBackgroundImageFileId(), k -> new ArrayList<>()).add(u);
-            if (!configurationDAO.hasConfigurationAccess(c.getId())) hidden.add(c.getId());
+            if (!accessible.contains(c.getId())) hidden.add(c.getId());
         }
         return Response.OK(backgroundImages.gallery(uses, hidden, Math.max(0, page), Math.max(1, Math.min(100, size))));
     }
@@ -673,7 +676,10 @@ public class ConfigurationResource {
             return Response.PERMISSION_DENIED();
         }
         try {
-            return Response.OK(backgroundImages.describe(fileId));
+            // Another account's file only when a configuration of this account the user may open uses it (one copied
+            // from the main account's template): its editor then shows the image's facts, not an alert.
+            return Response.OK(backgroundImages.describe(fileId, id -> configurationDAO.getAccessibleBackgroundImageUses()
+                    .stream().anyMatch(c -> Integer.valueOf(id).equals(c.getBackgroundImageFileId()))));
         } catch (IllegalArgumentException e) {
             return Response.ERROR(e.getMessage());
         }

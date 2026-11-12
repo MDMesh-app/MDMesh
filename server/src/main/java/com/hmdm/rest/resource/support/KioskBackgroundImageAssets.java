@@ -169,16 +169,21 @@ public class KioskBackgroundImageAssets {
         return Applied.NOTHING;
     }
 
-    /** An uploaded file of the current customer, resolved and access-checked; not read yet. */
+    /**
+     * An uploaded file, resolved and access-checked; not read yet. {@code customer} is the file's own account: the
+     * current one, or for {@code fromAnotherAccount} the account whose file a configuration of the current one uses.
+     */
     private static final class Resolved {
         final UploadedFile file;
         final Customer customer;
         final File hosted;
+        final boolean fromAnotherAccount;
 
-        Resolved(UploadedFile file, Customer customer, File hosted) {
+        Resolved(UploadedFile file, Customer customer, File hosted, boolean fromAnotherAccount) {
             this.file = file;
             this.customer = customer;
             this.hosted = hosted;
+            this.fromAnotherAccount = fromAnotherAccount;
         }
     }
 
@@ -199,23 +204,52 @@ public class KioskBackgroundImageAssets {
         }
     }
 
+    /** A file of the current customer (a save may use only those). */
     private Resolved resolve(int fileId) {
+        return resolve(fileId, id -> false);
+    }
+
+    /**
+     * A file of the current customer, or another account's file that {@code usedByOwnConfiguration} says a
+     * configuration of the current customer uses (one copied from the main account's template uses the main account's
+     * image). Any other file is NOT_FOUND, whether it exists or not.
+     */
+    private Resolved resolve(int fileId, java.util.function.IntPredicate usedByOwnConfiguration) {
         UploadedFile file;
+        boolean foreign = false;
         try {
             file = uploadedFiles.getById(fileId);
         } catch (com.hmdm.security.SecurityException e) {
-            // Another customer's file.
-            throw new IllegalArgumentException(NOT_FOUND);
+            file = null;
+            foreign = true;
+        }
+        Customer customer = null;
+        if (!foreign && file != null) {
+            customer = currentCustomer();
+            if (customer == null) throw new IllegalArgumentException(NOT_FOUND);
+            if (!Objects.equals(customer.getId(), file.getCustomerId())) foreign = true;
+        }
+        if (foreign) {
+            if (!usedByOwnConfiguration.test(fileId)) throw new IllegalArgumentException(NOT_FOUND);
+            file = uploadedFiles.getByIdUnsecure(fileId);
+            customer = file == null ? null : customers.findById(file.getCustomerId());
+            if (customer == null) throw new IllegalArgumentException(NOT_FOUND);
         }
         if (file == null || file.isExternal() || file.getFilePath() == null) {
             throw new IllegalArgumentException(NOT_FOUND);
         }
-        Customer customer = SecurityContext.get().getCurrentUser()
+        return hosted(file, customer, foreign);
+    }
+
+    /** The current user's account; throws without one. */
+    private Customer currentCustomer() {
+        return SecurityContext.get().getCurrentUser()
                 .map(user -> customers.findById(user.getCustomerId()))
                 .orElseThrow(() -> new IllegalArgumentException("authenticated customer is required"));
-        if (customer == null || !Objects.equals(customer.getId(), file.getCustomerId())) {
-            throw new IllegalArgumentException(NOT_FOUND);
-        }
+    }
+
+    /** {@code file} of {@code customer} on disk, checked to be there and within the agent's size. */
+    private Resolved hosted(UploadedFile file, Customer customer, boolean foreign) {
         File hosted;
         try {
             hosted = FileUtil.resolveFile(customer, filesDirectory, null, file.getFilePath());
@@ -228,7 +262,7 @@ public class KioskBackgroundImageAssets {
         if (hosted.length() > MAX_BYTES) {
             throw new IllegalArgumentException(TOO_LARGE);
         }
-        return new Resolved(file, customer, hosted);
+        return new Resolved(file, customer, hosted, foreign);
     }
 
     private final java.util.concurrent.atomic.AtomicInteger reads = new java.util.concurrent.atomic.AtomicInteger();
@@ -393,10 +427,14 @@ public class KioskBackgroundImageAssets {
         }
     }
 
-    /** Describe results by file and its modification: a GET doesn't read and strip up to 10 MB again. */
-    private final Map<String, KioskBackgroundImageInfo> described = new LinkedHashMap<String, KioskBackgroundImageInfo>(16, 0.75f, true) {
+    /**
+     * Describe results by file and its modification: a GET doesn't read and strip up to 10 MB again. A file a save
+     * would refuse is remembered too (its message), so a large file that isn't an image isn't read on every gallery
+     * open either.
+     */
+    private final Map<String, Object> described = new LinkedHashMap<String, Object>(16, 0.75f, true) {
         @Override
-        protected boolean removeEldestEntry(Map.Entry<String, KioskBackgroundImageInfo> eldest) {
+        protected boolean removeEldestEntry(Map.Entry<String, Object> eldest) {
             // Small entries (no pixels): enough for every kiosk image of a large customer, so the gallery reads a file
             // once per change, not once per page.
             return size() > 4096;
@@ -410,16 +448,43 @@ public class KioskBackgroundImageAssets {
      * @throws IllegalArgumentException with a message for the admin, as a save would refuse the file
      */
     public KioskBackgroundImageInfo describe(int fileId) {
-        Resolved resolved = resolve(fileId);
+        return describe(fileId, id -> false);
+    }
+
+    /**
+     * {@link #describe(int)}, also for another account's file that a configuration of the current account uses as its
+     * background image ({@code usedByOwnConfiguration}, asked only for such a file): a configuration copied from the
+     * main account's template uses the main account's image, and its editor shows that image's facts (so Fill/Fit, the
+     * focal point and the preview), at the URL config.apply sends, marked {@code fromAnotherAccount}. Such a file is
+     * only described: a save can't choose it, and the gallery doesn't list or delete it.
+     */
+    public KioskBackgroundImageInfo describe(int fileId, java.util.function.IntPredicate usedByOwnConfiguration) {
+        return describe(resolve(fileId, usedByOwnConfiguration));
+    }
+
+    private KioskBackgroundImageInfo describe(Resolved resolved) {
         String key = resolved.file.getId() + "|" + resolved.hosted.getPath() + "|" + resolved.hosted.lastModified()
                 + "|" + resolved.hosted.length();
-        KioskBackgroundImageInfo cached;
+        Object cached;
         synchronized (described) {
             cached = described.get(key);
         }
-        KioskBackgroundImageInfo info = cached != null ? copy(cached) : null;
+        if (cached instanceof String) throw new IllegalArgumentException((String) cached);
+        KioskBackgroundImageInfo info = cached != null ? copy((KioskBackgroundImageInfo) cached) : null;
         if (info == null) {
-            Read read = read(resolved);
+            Read read;
+            try {
+                read = read(resolved);
+            } catch (IllegalArgumentException e) {
+                // Refused by its bytes (not an image, too large): the same answer until the file changes. A read that
+                // failed (MISSING) isn't remembered: it may work next time.
+                if (!MISSING.equals(e.getMessage())) {
+                    synchronized (described) {
+                        described.put(key, e.getMessage());
+                    }
+                }
+                throw e;
+            }
             info = new KioskBackgroundImageInfo();
             info.setFormat(read.header.format);
             int orientation = KioskImageMetadata.orientation(read.clean);
@@ -439,6 +504,7 @@ public class KioskBackgroundImageAssets {
         String path = resolved.file.getFilePath().replace('\\', '/');
         info.setName(KIOSK_PREFIX.matcher(path.substring(path.lastIndexOf('/') + 1)).replaceFirst(""));
         info.setUploadTime(resolved.file.getUploadTime());
+        if (resolved.fromAnotherAccount) info.setFromAnotherAccount(true);
         return info;
     }
 
@@ -483,13 +549,16 @@ public class KioskBackgroundImageAssets {
     public GalleryPage gallery(Map<Integer, List<Use>> usesByFile, java.util.Set<Integer> hiddenUses, int page, int size) {
         Map<String, List<KioskBackgroundImageInfo>> bySha = new LinkedHashMap<>();
         Map<Integer, Long> uploaded = new java.util.HashMap<>();
+        // The list holds the account's files with their rows: no lookup per file, and the account read once.
+        Customer customer = currentCustomer();
+        if (customer == null) throw new IllegalArgumentException(NOT_FOUND);
         for (UploadedFile f : uploadedFiles.getAll()) {
-            if (f.isExternal() || f.getFilePath() == null) continue;
+            if (f.isExternal() || f.getFilePath() == null || !Objects.equals(customer.getId(), f.getCustomerId())) continue;
             boolean used = usesByFile.containsKey(f.getId());
             if (!used && !KIOSK_NAME.matcher(f.getFilePath().replace('\\', '/')).find()) continue;
             KioskBackgroundImageInfo info;
             try {
-                info = describe(f.getId());
+                info = describe(hosted(f, customer, false));
             } catch (IllegalArgumentException e) {
                 continue; // not an image the agent would show, or missing
             }
@@ -537,8 +606,11 @@ public class KioskBackgroundImageAssets {
         }
         items.sort((a, b) -> Long.compare(newest.get(b), newest.get(a)));
         GalleryPage out = new GalleryPage();
-        int from = Math.min(items.size(), Math.max(0, page) * Math.max(1, size));
-        out.setItems(new ArrayList<>(items.subList(from, Math.min(items.size(), from + Math.max(1, size)))));
+        // In long: a page * size beyond int is a page past the end, not a negative index.
+        long pageSize = Math.max(1, size);
+        int from = (int) Math.min(items.size(), Math.max(0, page) * pageSize);
+        int to = (int) Math.min(items.size(), from + pageSize);
+        out.setItems(new ArrayList<>(items.subList(from, to)));
         out.setTotal(items.size());
         out.setPage(page);
         out.setSize(size);

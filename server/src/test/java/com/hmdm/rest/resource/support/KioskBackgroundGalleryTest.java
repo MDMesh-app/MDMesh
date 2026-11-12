@@ -33,6 +33,7 @@ public class KioskBackgroundGalleryTest {
     @Rule public TemporaryFolder temp = new TemporaryFolder();
 
     private File tenant;
+    private File main;
     private Uploaded files;
     private KioskBackgroundImageAssets assets;
 
@@ -40,9 +41,15 @@ public class KioskBackgroundGalleryTest {
         final Map<Integer, UploadedFile> byId = new HashMap<>();
         final List<Integer> removed = new ArrayList<>();
         Uploaded() { super(null, null, null, "unused"); }
+        int byIdReads;
         @Override public UploadedFile getById(Integer id) {
+            byIdReads++;
             UploadedFile f = byId.get(id);
             if (f != null && f.getCustomerId() != 1) throw SecurityException.onAdminDataAccessViolation("foreign");
+            return f == null || removed.contains(id) ? null : f;
+        }
+        @Override public UploadedFile getByIdUnsecure(Integer id) {
+            UploadedFile f = byId.get(id);
             return f == null || removed.contains(id) ? null : f;
         }
         @Override public List<UploadedFile> getAll() {
@@ -66,12 +73,17 @@ public class KioskBackgroundGalleryTest {
     }
 
     private static final class Customers extends CustomerDAO {
+        int reads;
         Customers() { super(null, null, null, null, null, null, null, "unused", 0, null); }
         @Override public Customer findById(int id) {
-            Customer c = new Customer(); c.setId(1); c.setFilesDir("acme");
+            reads++;
+            // 1: the user's account; 2: the main (master) account, whose files are under "main".
+            Customer c = new Customer(); c.setId(id); c.setFilesDir(id == 2 ? "main" : "acme"); c.setMaster(id == 2);
             return c;
         }
     }
+
+    private Customers customers;
 
     @Before
     public void setUp() throws Exception {
@@ -79,14 +91,17 @@ public class KioskBackgroundGalleryTest {
         tenant = new File(root, "acme");
         tenant.mkdirs();
         files = new Uploaded();
-        assets = new KioskBackgroundImageAssets(files, new Customers(), "https://mdm.example", root.getAbsolutePath());
+        customers = new Customers();
+        main = new File(root, "main");
+        main.mkdirs();
+        assets = new KioskBackgroundImageAssets(files, customers, "https://mdm.example", root.getAbsolutePath());
         SecurityContext.init(Fakes.user(1, 1, "configurations", "edit_files"));
     }
 
     @After public void tearDown() { SecurityContext.release(); }
 
     private void host(int id, String path, byte[] bytes, long uploadTime, int customer) throws Exception {
-        Files.write(new File(tenant, path).toPath(), bytes);
+        Files.write(new File(customer == 2 ? main : tenant, path).toPath(), bytes);
         UploadedFile f = new UploadedFile();
         f.setId(id); f.setCustomerId(customer); f.setFilePath(path); f.setExternal(false); f.setUploadTime(uploadTime);
         files.byId.put(id, f);
@@ -434,6 +449,109 @@ public class KioskBackgroundGalleryTest {
         files.byId.put(2, twin);
         assets.deleteUnused(1, id -> false);
         assertTrue(new File(tenant, "kiosk-aaaaaaaaaaaa-beach.jpg").exists());
+    }
+
+    /**
+     * A configuration copied from the main account's template uses the main account's image: its editor reads the
+     * image's facts (so it offers Fill/Fit, focal point and the preview) at the URL devices get, built for that account.
+     */
+    @Test
+    public void describesTheMainAccountsImageThatAConfigurationOfTheUserUses() throws Exception {
+        host(6, "kiosk-dddddddddddd-x.png", KioskImageMetadataTest.image("png", 40, 30), 7, 2);
+        KioskBackgroundImageInfo info = assets.describe(6, id -> id == 6);
+        assertEquals(Integer.valueOf(6), info.getFileId());
+        assertEquals("https://mdm.example/files/main/kiosk-dddddddddddd-x.png", info.getUrl());
+        assertEquals(40, info.getWidth());
+        assertEquals(30, info.getHeight());
+        assertEquals("x.png", info.getName());
+        assertTrue(info.getFromAnotherAccount());
+        assertEquals(KioskBackgroundImageAssets.validate(KioskImageMetadataTest.image("png", 40, 30)), info.getSha256());
+    }
+
+    /** Only one a configuration of the user's uses: any other file of another account stays unknown. */
+    @Test
+    public void anotherAccountsImageNoConfigurationOfTheUserUsesIsNotDescribed() throws Exception {
+        host(6, "kiosk-dddddddddddd-x.png", KioskImageMetadataTest.image("png", 40, 30), 7, 2);
+        for (java.util.function.IntPredicate used : Arrays.<java.util.function.IntPredicate>asList(id -> false, id -> id == 7)) {
+            try {
+                assets.describe(6, used);
+                fail("expected a refusal");
+            } catch (IllegalArgumentException e) {
+                assertEquals(KioskBackgroundImageAssets.NOT_FOUND, e.getMessage());
+            }
+        }
+        try {
+            assets.describe(6);
+            fail("expected a refusal");
+        } catch (IllegalArgumentException e) {
+            assertEquals(KioskBackgroundImageAssets.NOT_FOUND, e.getMessage());
+        }
+    }
+
+    /** The account's own images aren't marked as another account's. */
+    @Test
+    public void anOwnImageIsNotFromAnotherAccount() throws Exception {
+        host(1, "kiosk-aaaaaaaaaaaa-beach.jpg", KioskImageMetadataTest.image("jpg", 4, 4), 1, 1);
+        assertEquals(null, assets.describe(1, id -> true).getFromAnotherAccount());
+    }
+
+    /** Still not choosable: a save picking another account's file is refused as before. */
+    @Test
+    public void anotherAccountsImageCantBeChosen() throws Exception {
+        host(6, "kiosk-dddddddddddd-x.png", KioskImageMetadataTest.image("png", 4, 4), 7, 2);
+        try {
+            assets.apply(replace(6), null);
+            fail("expected a refusal");
+        } catch (IllegalArgumentException e) {
+            assertEquals(KioskBackgroundImageAssets.NOT_FOUND, e.getMessage());
+        }
+    }
+
+    /** A page past the end, however far (page * size beyond int), is empty, not an error. */
+    @Test
+    public void aPageFarPastTheEndIsEmpty() throws Exception {
+        host(1, "kiosk-aaaaaaaaaaaa-beach.jpg", KioskImageMetadataTest.image("jpg", 4, 4), 1, 1);
+        KioskBackgroundImageAssets.GalleryPage far = assets.gallery(Collections.emptyMap(), Collections.emptySet(),
+                21474837, 100);
+        assertEquals(1, far.getTotal());
+        assertTrue(far.getItems().isEmpty());
+        KioskBackgroundImageAssets.GalleryPage max = assets.gallery(Collections.emptyMap(), Collections.emptySet(),
+                Integer.MAX_VALUE, Integer.MAX_VALUE);
+        assertTrue(max.getItems().isEmpty());
+    }
+
+    /**
+     * Opening the gallery costs no lookup per file: the files come with the list and the account is read once. A file
+     * that isn't an image the agent shows is read once per change too, not on every open.
+     */
+    @Test
+    public void theGalleryReadsEachFileOncePerChangeWithoutALookupPerFile() throws Exception {
+        for (int i = 0; i < 5; i++) {
+            host(20 + i, "kiosk-eeeeeeeeeee" + i + "-p" + i + ".png", KioskImageMetadataTest.image("png", 2 + i, 2), 100 + i, 1);
+        }
+        host(30, "kiosk-ffffffffffff-notes.png", "not an image".getBytes(StandardCharsets.UTF_8), 1, 1);
+        int lookups = files.byIdReads;
+        int accounts = customers.reads;
+        assertEquals(5, assets.gallery(Collections.emptyMap(), Collections.emptySet(), 0, 20).getTotal());
+        assertEquals("no lookup per file", lookups, files.byIdReads);
+        assertEquals("the account is read once", accounts + 1, customers.reads);
+        int reads = assets.reads();
+        assertEquals(6, reads);
+        assertEquals(5, assets.gallery(Collections.emptyMap(), Collections.emptySet(), 0, 20).getTotal());
+        assertEquals("nothing read again", reads, assets.reads());
+        try {
+            assets.describe(30);
+            fail("expected a refusal");
+        } catch (IllegalArgumentException e) {
+            assertEquals(KioskBackgroundImageAssets.NOT_AN_IMAGE, e.getMessage());
+        }
+        assertEquals("the refusal is remembered too", reads, assets.reads());
+        // Changed: read again.
+        File notes = new File(tenant, "kiosk-ffffffffffff-notes.png");
+        Files.write(notes.toPath(), KioskImageMetadataTest.image("png", 9, 9));
+        notes.setLastModified(notes.lastModified() + 5000);
+        assertEquals(6, assets.gallery(Collections.emptyMap(), Collections.emptySet(), 0, 20).getTotal());
+        assertEquals(reads + 1, assets.reads());
     }
 
     /** A cleaned copy C that an earlier save hosted for the photo at id 1: its id. */

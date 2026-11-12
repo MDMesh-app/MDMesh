@@ -163,6 +163,14 @@ public interface ConfigurationMapper {
             "WHERE customerId = #{customerId} AND backgroundImageFileId IS NOT NULL ORDER BY name")
     List<Configuration> getBackgroundImageUses(@Param("customerId") int customerId);
 
+    /** Of getBackgroundImageUses, the configurations the user may open (the access rule of checkConfigurationAccess). */
+    @Select("SELECT configurations.id, configurations.name, configurations.backgroundImageFileId FROM configurations " +
+            "INNER JOIN users ON users.id = #{userId} " +
+            "LEFT JOIN userConfigurationAccess access ON configurations.id = access.configurationId AND access.userId = users.id " +
+            "WHERE configurations.customerId = #{customerId} AND configurations.backgroundImageFileId IS NOT NULL " +
+            "AND (users.allConfigAvailable = TRUE OR NOT access.id IS NULL) ORDER BY configurations.name")
+    List<Configuration> getAccessibleBackgroundImageUses(@Param("customerId") int customerId, @Param("userId") int userId);
+
     @Select("SELECT COUNT(*) FROM configurations WHERE backgroundImageFileId = #{fileId}")
     long countBackgroundImageFileReferences(@Param("fileId") int fileId);
 

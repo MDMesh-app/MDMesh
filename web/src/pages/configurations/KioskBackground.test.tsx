@@ -109,6 +109,15 @@ describe('KioskBackgroundField (viewer)', () => {
     expect(screen.getByRole('button', { name: 'Remove' })).toBeTruthy();
   });
 
+  it('shows the main account’s image a configuration copied from its template uses, without an alert', async () => {
+    field({ info: { ...INFO, hasMetadata: false, fromAnotherAccount: true } });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByRole('img', { name: /Current kiosk background: beach\.jpg/ })).toBeTruthy();
+    expect(screen.getByText(/main account/)).toBeTruthy();
+    expect(screen.queryByText(/removed when you save/)).toBeNull();
+    expect(await violations()).toEqual([]);
+  });
+
   it('is read-only on a locked configuration', () => {
     field({ readOnly: true });
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Replace image' }).disabled).toBe(true);

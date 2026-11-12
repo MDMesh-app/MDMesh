@@ -179,7 +179,12 @@ export function KioskBackgroundSummary({ info }: { info: KioskBackgroundImageInf
             },
           ]}
         />
-        {info.hasMetadata ? (
+        {info.fromAnotherAccount ? (
+          <p className="v2-kbg__note">
+            <IconInfo size={14} /> An image of the main account, which this configuration was copied from. Replace it
+            to use one of this account’s images.
+          </p>
+        ) : info.hasMetadata ? (
           <p className="v2-kbg__note">
             <IconInfo size={14} /> Its location and camera details are removed when you save.
           </p>

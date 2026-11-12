@@ -39,19 +39,30 @@ public class ConfigurationResourceBackgroundImageTest {
             super(null, null, null, null, "https://mdm.example.com", System.getProperty("java.io.tmpdir"), null);
         }
         @Override public Configuration getConfigurationByName(String name) { return null; }
-        @Override public boolean hasConfigurationAccess(int id) { return access; }
         @Override public void updateConfiguration(Configuration c) { updated.add(c); }
         @Override public Configuration getConfigurationById(Integer id) { return stored != null ? stored : new Configuration(); }
         @Override public Configuration getConfigurationByIdFull(Integer id) { return stored != null ? stored : new Configuration(); }
         final List<Configuration> inserted = new ArrayList<>();
         @Override public void insertConfiguration(Configuration c) { inserted.add(c); }
         @Override public List<Application> getPlainConfigurationApplications(Integer id) { return new ArrayList<>(); }
+        /** Configurations of the account with a managed image. */
+        final List<Configuration> uses = new ArrayList<>();
+        /** Of those, the ones the user may open. */
+        final List<Configuration> accessibleUses = new ArrayList<>();
+        int accessChecks;
+        @Override public List<Configuration> getBackgroundImageUses() { return uses; }
+        @Override public List<Configuration> getAccessibleBackgroundImageUses() { return accessibleUses; }
+        @Override public boolean hasConfigurationAccess(int id) { accessChecks++; return access; }
     }
 
     private static final class ForeignFiles extends UploadedFileDAO {
         int reads;
         boolean deleted;
         ForeignFiles() { super(null, null, null, "unused"); }
+        /** The main account's file 42, hosted as main/kiosk-dddddddddddd-x.png. */
+        UploadedFile foreign;
+        @Override public UploadedFile getByIdUnsecure(Integer id) { return foreign != null && foreign.getId().equals(id) ? foreign : null; }
+        @Override public List<UploadedFile> getAll() { return new ArrayList<>(); }
         @Override public UploadedFile getById(Integer id) {
             reads++;
             if (deleted) return null;
@@ -69,7 +80,14 @@ public class ConfigurationResourceBackgroundImageTest {
         dao = new FakeConfigurationDAO();
         files = new ForeignFiles();
         KioskBackgroundImageAssets assets = new KioskBackgroundImageAssets(files,
-                new CustomerDAO(null, null, null, null, null, null, null, "unused", 0, null),
+                new CustomerDAO(null, null, null, null, null, null, null, "unused", 0, null) {
+                    @Override public com.hmdm.persistence.domain.Customer findById(int id) {
+                        com.hmdm.persistence.domain.Customer c = new com.hmdm.persistence.domain.Customer();
+                        c.setId(id);
+                        c.setFilesDir("acme");
+                        return c;
+                    }
+                },
                 "https://mdm.example.com", System.getProperty("java.io.tmpdir"));
         resource = new ConfigurationResource(dao, null, new PushService(null, null, null, null, false), null, null,
                 "https://mdm.example.com", Fakes.extensionPoints(Collections.emptySet(), Collections.emptySet()), assets);
@@ -192,6 +210,79 @@ public class ConfigurationResourceBackgroundImageTest {
         Response r = resource.copyConfiguration(request);
         assertEquals(Response.ResponseStatus.OK, r.getStatus());
         assertEquals(Integer.valueOf(42), dao.inserted.get(0).getBackgroundImageFileId());
+    }
+
+    /** A page past the end is an empty page, even where page * size is beyond int (it was HTTP 500). */
+    @Test
+    public void aGalleryPageFarPastTheEndIsEmpty() {
+        Response r = resource.getBackgroundImages(21474837, 100);
+        assertEquals(Response.ResponseStatus.OK, r.getStatus());
+        assertTrue(((KioskBackgroundImageAssets.GalleryPage) r.getData()).getItems().isEmpty());
+    }
+
+    /** Which uses the user may not see comes from one query, not one access check per configuration. */
+    @Test
+    public void theGalleryChecksAccessOnceNotPerConfiguration() {
+        for (int i = 1; i <= 3; i++) {
+            Configuration c = plain();
+            c.setId(i);
+            c.setName("c" + i);
+            c.setBackgroundImageFileId(40 + i);
+            dao.uses.add(c);
+            if (i != 2) dao.accessibleUses.add(c);
+        }
+        assertEquals(Response.ResponseStatus.OK, resource.getBackgroundImages(0, 20).getStatus());
+        assertEquals(0, dao.accessChecks);
+    }
+
+    /**
+     * A configuration copied from the main account's template uses that account's image: its editor gets the image's
+     * facts (Fill/Fit, focal point and the preview), not "not an uploaded file of this account".
+     */
+    @Test
+    public void describingTheMainAccountsImageThatAConfigurationOfTheUserUsesWorks() throws Exception {
+        java.io.File root = java.nio.file.Files.createTempDirectory("kbg-main").toFile();
+        java.io.File dir = new java.io.File(root, "main");
+        dir.mkdirs();
+        byte[] png = java.util.Base64.getDecoder().decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGMQUDAAIgYIBQAKDgGBVjPu8wAAAABJRU5ErkJggg==");
+        java.nio.file.Files.write(new java.io.File(dir, "kiosk-dddddddddddd-x.png").toPath(), png);
+        try {
+            UploadedFile f = new UploadedFile();
+            f.setId(42);
+            f.setCustomerId(2);
+            f.setFilePath("kiosk-dddddddddddd-x.png");
+            f.setExternal(false);
+            files.foreign = f;
+            CustomerDAO customers = new CustomerDAO(null, null, null, null, null, null, null, "unused", 0, null) {
+                @Override public com.hmdm.persistence.domain.Customer findById(int id) {
+                    com.hmdm.persistence.domain.Customer c = new com.hmdm.persistence.domain.Customer();
+                    c.setId(id);
+                    c.setFilesDir(id == 2 ? "main" : "acme");
+                    return c;
+                }
+            };
+            KioskBackgroundImageAssets assets = new KioskBackgroundImageAssets(files, customers,
+                    "https://mdm.example.com", root.getAbsolutePath());
+            ConfigurationResource r = new ConfigurationResource(dao, null, new PushService(null, null, null, null, false),
+                    null, null, "https://mdm.example.com", Fakes.extensionPoints(Collections.emptySet(), Collections.emptySet()),
+                    assets);
+            // Not used by a configuration the user may open: unknown, as before.
+            Configuration hidden = plain();
+            hidden.setBackgroundImageFileId(42);
+            dao.uses.add(hidden);
+            assertEquals(Response.ResponseStatus.ERROR, r.getBackgroundImage(42).getStatus());
+            dao.accessibleUses.add(hidden);
+            Response described = r.getBackgroundImage(42);
+            assertEquals(described.getMessage(), Response.ResponseStatus.OK, described.getStatus());
+            com.hmdm.rest.resource.support.KioskBackgroundImageInfo info =
+                    (com.hmdm.rest.resource.support.KioskBackgroundImageInfo) described.getData();
+            assertEquals("https://mdm.example.com/files/main/kiosk-dddddddddddd-x.png", info.getUrl());
+            assertEquals(2, info.getWidth());
+            assertTrue(info.getFromAnotherAccount());
+        } finally {
+            org.apache.commons.io.FileUtils.deleteDirectory(root);
+        }
     }
 
     @Test

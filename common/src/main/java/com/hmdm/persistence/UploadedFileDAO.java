@@ -103,6 +103,14 @@ public class UploadedFileDAO extends AbstractDAO<UploadedFile> {
         return getSingleRecord(() -> this.fileMapper.findById(id), SecurityException::onUploadedFileAccessViolation);
     }
 
+    /**
+     * A file of any account, without the account check: only for a file a configuration of the current account
+     * references (its kiosk background image, from the main account's template), which the caller checks first.
+     */
+    public UploadedFile getByIdUnsecure(Integer id) {
+        return id == null ? null : this.fileMapper.findById(id);
+    }
+
     public UploadedFile getByPath(Integer customerId, String filePath) {
         return getSingleRecord(() -> this.fileMapper.findByPath(customerId, filePath), SecurityException::onUploadedFileAccessViolation);
     }

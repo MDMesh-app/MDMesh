@@ -62,7 +62,7 @@ APK.
   Safe Mode. Devices apply it at their next check-in, and the device page shows the result for each setting. Apps
   added to a configuration install on its devices at their next check-in.
 - **Kiosk mode:** locks a device to one app or to a grid of chosen apps, in the colours the configuration sets. Safe
-  Mode is blocked in kiosk unless the configuration allows it. If the kiosk app closes, the launcher opens it again;
+  Mode is blocked in kiosk unless the configuration allows it. If a one-app kiosk's app closes, the launcher opens it again;
   if it closes more than 3 times within a minute, the device stays in kiosk and shows an "Open again" button. An exit
   PIN can end kiosk on the device; too many wrong PINs lock the exit for a while and, when email is set up, email the
   administrators.

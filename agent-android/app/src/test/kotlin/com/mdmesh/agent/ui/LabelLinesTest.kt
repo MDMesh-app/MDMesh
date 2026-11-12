@@ -85,4 +85,16 @@ class LabelLinesTest {
             assertEquals("'$s' in $box", linear(s, box, measure()), LabelLines.ellipsize(s, box, graphemes, measure()))
         }
     }
+
+    /**
+     * The ellipsis is measured with its text, as it is drawn: here "W…" kerns 3 wider than its parts (shaping), so a
+     * prefix ending in W that fits by the sum of its parts doesn't fit as drawn.
+     */
+    @Test fun `an ellipsis is measured together with the text before it`() {
+        val kerning: (String) -> Double = { s ->
+            measure()(s) + if (s.endsWith("W" + LabelLines.ELLIPSIS)) 3.0 else 0.0
+        }
+        val box = measure()("abW") + measure()(LabelLines.ELLIPSIS) // abW… fits by its parts, not as drawn
+        assertEquals("ab" + LabelLines.ELLIPSIS, LabelLines.ellipsize("abWxyz", box, graphemes, kerning))
+    }
 }

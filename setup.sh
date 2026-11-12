@@ -46,6 +46,9 @@ err()  { printf '\033[1;31m%s\033[0m\n' "$*" >&2; }
 # mdm_load_env: reads .env as sourcing it would, without running it (install/lib/dotenv.sh).
 # shellcheck source=install/lib/dotenv.sh
 . ./install/lib/dotenv.sh
+# mdm_apt: apt-get, non-interactive, waiting for another apt run's lock (install/lib/apt.sh).
+# shellcheck source=install/lib/apt.sh
+. ./install/lib/apt.sh
 rand() { mdm_rand; }
 # Update KEY in .env in place (or append it) — persists values discovered after .env was written
 # (GITHUB_REPO autodetection, the release QR build args) so compose substitution + the supervisor
@@ -84,12 +87,6 @@ mdm_answers_load
 # that is GitHub out of reach, not a release missing. A manifest that is there but does not verify stops it too.
 # MDMESH_DRY_RUN=1 does all the checking, then stops before anything is fetched or checked out. Updates come from
 # --update, never from `git pull`.
-# mdm_apt ARGS...: apt-get, non-interactive (keeping changed config files, never prompting), waiting up to 5 minutes for
-# another apt run's lock (a fresh VM's first-boot updates hold it for minutes) instead of failing at once.
-mdm_apt() {
-  DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 -o Dpkg::Options::=--force-confdef \
-    -o Dpkg::Options::=--force-confold "$@"
-}
 _upd_dir=''; _upd_installed=''
 _upd_clean() { [ -z "$_upd_dir" ] || { rm -f -- "$_upd_dir/manifest.json" "$_upd_dir/manifest.json.minisig"; rmdir -- "$_upd_dir" 2>/dev/null || true; }; }
 _upd_stop() {
@@ -162,8 +159,9 @@ update_tools() {
   [ -n "$missing" ] || return 0
   if [ "${1:-}" != installed ] && [ "$NATIVE" = 1 ] && [ "$EUID" = 0 ] && [ "${MDMESH_DRY_RUN:-0}" != 1 ] \
      && command -v apt-get >/dev/null 2>&1; then
-    say "Installing what --update needs:${pkgs}. If another apt run holds its lock (a new VM's first-boot updates, say), this waits for it, up to 5 minutes."
-    mdm_apt update -q || warn "(some apt sources failed to refresh — continuing)"
+    say "Installing what --update needs:${pkgs}."
+    # A source that fails to refresh (a broken third-party repository) is no reason to stop; apt still locked is.
+    mdm_apt update -q || { [ $? != "$MDM_APT_LOCKED" ] || _upd_stop "Could not refresh the package lists."; warn "(some apt sources failed to refresh — continuing)"; }
     # shellcheck disable=SC2086  # one package per word
     mdm_apt install -y -q $pkgs || _upd_stop "Could not install${pkgs} (apt-get above)."
     _upd_installed=$pkgs
@@ -566,7 +564,9 @@ if [ -n "${GITHUB_REPO:-}" ] && command -v python3 >/dev/null && command -v curl
   # otherwise the warning below says how.
   if ! command -v minisign >/dev/null 2>&1 && [ "$(id -u)" = 0 ] && command -v apt-get >/dev/null 2>&1; then
     say "Installing minisign (verifies the release manifest)…"
-    { mdm_apt install -y -qq minisign || { mdm_apt update -qq && mdm_apt install -y -qq minisign; }; } >/dev/null 2>&1 || true
+    # apt's output is hidden (it goes to stdout); mdm_apt's own lines, saying it waits for another apt run, are not.
+    # (Not again after another apt run held its lock to the end: that would wait twice more.)
+    { mdm_apt install -y -qq minisign || { [ $? != "$MDM_APT_LOCKED" ] && mdm_apt update -qq && mdm_apt install -y -qq minisign; }; } >/dev/null || true
   fi
   # Still no minisign on the host: verify with the one the supervisor image ships (docker/supervisor.Dockerfile), building
   # that image now (the `up --build` below reuses it). The container gets no network and only the key and the release

@@ -38,6 +38,9 @@ REPO="$PWD"   # repo root — used for absolute paths inside subshells (e.g. exp
 . "$REPO/install/lib/release.sh"
 # shellcheck source=lib/answers.sh
 . "$REPO/install/lib/answers.sh"
+# mdm_apt: apt-get, non-interactive, waiting for another apt run's lock.
+# shellcheck source=lib/apt.sh
+. "$REPO/install/lib/apt.sh"
 
 # Answers given in advance (install/lib/answers.sh, install/options.json), all checked here, before anything else.
 mdm_answers_load
@@ -607,15 +610,24 @@ command -v mvn     >/dev/null || PKGS+=(maven)
 command -v curl    >/dev/null || PKGS+=(curl)
 command -v python3 >/dev/null || PKGS+=(python3)
 command -v aapt    >/dev/null || PKGS+=(aapt)
+# The apt steps below run under `run`, whose output goes to the log (or the spinner line): mdm_apt's lines saying it
+# waits for another apt run's lock go to fd 3, the terminal, instead. fd 3 is open only for these steps, so nothing
+# started later (Tomcat, say) holds the terminal.
+exec 3>&1
+mdm_apt_say() { if [ "$TTY" = 1 ]; then printf '\r\033[K' >&3; fi; info "$1" >&3; printf '%s\n' "$1" >> "$LOGFILE"; }
 APT_UPDATED=0
+# apt_refresh: apt-get update. Tolerates an unrelated broken third-party APT source (e.g. a Docker repo on a codename
+# Docker doesn't publish for → "does not have a Release file") — the native install only needs base Debian packages —
+# but not another apt run still holding apt's lock at the end of the wait.
+apt_refresh() {
+  local rc=0
+  mdm_apt update -y || rc=$?
+  [ "$rc" != "$MDM_APT_LOCKED" ] || return "$rc"
+  [ "$rc" = 0 ] || echo '(some apt sources failed to refresh — continuing)'
+}
 apt_update() {
   [ "$APT_UPDATED" = 1 ] && return 0
-  # Tolerate an unrelated broken third-party APT source (e.g. a Docker repo on a codename Docker doesn't
-  # publish for → "does not have a Release file") — the native install only needs base Debian packages.
-  # apt waits up to 5 minutes for another apt run's lock (a new VM's first-boot updates hold it for minutes), and never
-  # prompts (changed config files are kept).
-  info "If another apt run holds its lock (a new VM's first-boot updates, say), apt waits for it, up to 5 minutes"
-  run "Refreshing package lists" bash -c "apt-get -o DPkg::Lock::Timeout=300 update -y || echo '(some apt sources failed to refresh — continuing)'"
+  run "Refreshing package lists" apt_refresh
   APT_UPDATED=1
 }
 FETCH_JDK17=0
@@ -628,11 +640,12 @@ if [ ${#PKGS[@]} -eq 0 ]; then
   ok "all packaged dependencies already present — nothing to install"
 else
   apt_update
-  run "$(IFS=,; echo "${PKGS[*]}" | sed 's/,/, /g')" bash -c "DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold install -y ${PKGS[*]}"
+  run "$(IFS=,; echo "${PKGS[*]}" | sed 's/,/, /g')" mdm_apt install -y "${PKGS[@]}"
 fi
 # minisign verifies release-manifest signatures for the updater supervisor. Best-effort: without it
 # the supervisor still runs but reports releases as unverified (and never mirrors an APK).
-DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold install -y minisign >> "$LOGFILE" 2>&1 || info "minisign unavailable — updater will report releases as unverified"
+mdm_apt install -y minisign >> "$LOGFILE" 2>&1 || info "minisign unavailable — updater will report releases as unverified"
+exec 3>&-
 if host_node_ok; then
   ok "Node $(node -v) from this host"
 else

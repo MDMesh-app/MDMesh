@@ -49,7 +49,7 @@ jobs:
             edge: docker/Caddyfile, docker/web.Dockerfile, docker/web-entrypoint.sh, docker/edge-peers.sh, web/**, CHANGELOG.md, .dockerignore, docker-compose*.yml, docker/dev.env, scripts/edge-check.sh, supervisor/apply.sh
             # The installer scripts, and the signed manifest they and the supervisor read. Only the edge entry's cheap
             # quickstart.sh checks run on these, not its image work.
-            installers: quickstart.sh, setup.sh, install/**, release/**, supervisor/lib.js, scripts/release-manifest-check.sh, tests/installer-answers/**, tests/setup-update/**
+            installers: quickstart.sh, setup.sh, install/**, release/**, supervisor/lib.js, scripts/release-manifest-check.sh, tests/installer-answers/**, tests/setup-update/**, tests/apt-lock/**
 
   build:
     name: ${{ matrix.name }}
@@ -216,6 +216,14 @@ jobs:
           tests/installer-answers/in-container.sh debian:12
           tests/installer-answers/in-container.sh ubuntu:24.04
           tests/installer-answers/in-container.sh debian:12 busybox-awk
+      # The installers' apt-get while another apt run holds apt's locks (a new VM's first-boot apt-daily, say): it waits,
+      # then refreshes and installs; held past the wait, it stops saying so. Throwaway root containers (--rm), starting
+      # with only git and empty package lists.
+      - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).installers)
+        name: Installer apt-get under a held apt lock (Debian 12, Ubuntu 24.04)
+        run: |
+          tests/apt-lock/run.sh debian:12
+          tests/apt-lock/run.sh ubuntu:24.04
       - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).edge)
         name: Caddyfile modes + compose overlays
         run: scripts/edge-check.sh

@@ -134,7 +134,7 @@
                 WHEN 'MDM_MODE' = #{sortBy} THEN COALESCE(devices.infojson -&gt;&gt; 'mdmMode', '')::VARCHAR(100)
                 WHEN 'KIOSK_MODE' = #{sortBy} THEN COALESCE(devices.infojson -&gt;&gt; 'kioskMode', '')::VARCHAR(100)
                 WHEN 'ANDROID_VERSION' = #{sortBy} THEN COALESCE(devices.infojson -&gt;&gt; 'androidVersion', '')::VARCHAR(100)
-                WHEN 'ENROLLMENT_DATE' = #{sortBy} THEN devices.enrollTime::VARCHAR(100)
+                WHEN 'ENROLLMENT_DATE' = #{sortBy} THEN COALESCE(devices.enrollTime, 0)::VARCHAR(100)
                 WHEN 'SERIAL' = #{sortBy} THEN COALESCE(devices.infojson -&gt;&gt; 'serial', '')::VARCHAR(100)
                 WHEN 'PUBLICIP' = #{sortBy} THEN COALESCE(devices.publicIp, '')::VARCHAR(100)
                 WHEN 'CUSTOM1' = #{sortBy} THEN LOWER(devices.custom1)::VARCHAR(100)

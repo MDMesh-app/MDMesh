@@ -37,7 +37,7 @@ class CheckInWorker @AssistedInject constructor(
             Log.w(TAG, "check-in failed", t)
             // Terminal server rejections (burned/expired token, enrollment off) can never succeed
             // by retrying — fail so WorkManager doesn't hammer the enroll endpoint. Everything else
-            // (IO/timeout/5xx, and "no enrollment token available" — the token may be persisted
+            // (IO/timeout/5xx, and "no enrollment code" — the token may be persisted
             // milliseconds later by the compliance activity) retries with exponential backoff.
             if (isTerminalEnrollmentRejection(t)) Result.failure() else Result.retry()
         },

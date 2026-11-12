@@ -137,6 +137,41 @@
 }
 
 /* Stop all codes: a quiet row at the end of card 2. */
+/* ---- devices enrolled while the page is open ---- */
+.v2 .v2-enroll__arrivals {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
+}
+.v2 .v2-enroll__arrivallist {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.v2 .v2-enroll__arrivallist li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+  min-width: 0;
+}
+.v2 .v2-enroll__arrivallist a {
+  overflow-wrap: anywhere;
+}
+.v2 .v2-enroll__arrival {
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+.v2 .v2-enroll__arrival--online {
+  color: var(--ok-ink);
+}
+
 .v2 .v2-enroll__stop {
   display: flex;
   flex-wrap: wrap;

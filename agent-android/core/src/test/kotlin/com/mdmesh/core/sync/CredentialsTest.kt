@@ -1,55 +1,62 @@
 package com.mdmesh.core.sync
 
-import kotlinx.coroutines.async
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CredentialsTest {
-
-    @Test
-    fun `stored credentials are returned at once`() = runTest {
-        val checkIns = MutableSharedFlow<Unit>()
-        assertEquals(Credentials("dev-1", "sek"), Credentials.await(checkIns) { "dev-1" to "sek" })
-    }
 
     @Test
     fun `credentials an enrolling check-in saves are picked up when it succeeds`() = runTest {
         // A service the heartbeat revived before the device ever enrolled: the heartbeat's own check-in enrolls it.
         val checkIns = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
         var stored: Pair<String?, String?> = null to null
-        val got = async { Credentials.await(checkIns) { stored } }
-        testScheduler.advanceUntilIdle()
-        assertFalse(got.isCompleted)
+        val seen = mutableListOf<Credentials>()
+        val watch = launch(Dispatchers.Unconfined) { Credentials.changes(checkIns) { stored }.collect { seen += it } }
 
         checkIns.tryEmit(Unit) // a check-in that did not enroll (still nothing stored)
-        testScheduler.advanceUntilIdle()
-        assertFalse(got.isCompleted)
+        stored = "dev-1" to null
+        checkIns.tryEmit(Unit) // half-saved never counts
+        assertEquals(emptyList<Credentials>(), seen)
 
         stored = "dev-1" to "sek"
         checkIns.tryEmit(Unit)
-        assertEquals(Credentials("dev-1", "sek"), got.await())
+        assertEquals(listOf(Credentials("dev-1", "sek")), seen)
+        watch.cancel()
     }
 
     @Test
-    fun `one wait at a time, however often the service is started`() = runTest {
+    fun `a recovered secret is picked up, and unchanged credentials are not repeated`() = runTest {
+        // A refused enrollment recovered by resuming it: same device, the secret the server holds.
         val checkIns = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-        var stored: Pair<String?, String?> = null to null
-        val ready = mutableListOf<Credentials>()
-        val watch = CredentialsWatch()
-        val scope = this
-        assertTrue(watch.startIfIdle(scope, checkIns, { stored }) { ready += it })
-        testScheduler.advanceUntilIdle()
-        repeat(5) { assertFalse(watch.startIfIdle(scope, checkIns, { stored }) { ready += it }) }
+        var stored: Pair<String?, String?> = "dev-1" to "sek-dead"
+        val seen = mutableListOf<Credentials>()
+        val watch = launch(Dispatchers.Unconfined) { Credentials.changes(checkIns) { stored }.collect { seen += it } }
 
-        stored = "dev-1" to "sek"
         checkIns.tryEmit(Unit)
-        testScheduler.advanceUntilIdle()
-        assertEquals(listOf(Credentials("dev-1", "sek")), ready)
-        assertTrue("a new wait once that one is done", watch.startIfIdle(scope, checkIns, { stored }) { ready += it })
-        testScheduler.advanceUntilIdle()
+        checkIns.tryEmit(Unit) // every heartbeat succeeds; nothing changed
+        stored = "dev-1" to "sek-live"
+        checkIns.tryEmit(Unit)
+        checkIns.tryEmit(Unit)
+
+        assertEquals(listOf(Credentials("dev-1", "sek-dead"), Credentials("dev-1", "sek-live")), seen)
+        watch.cancel()
+    }
+
+    @Test
+    fun `nothing is read before a check-in succeeds`() = runTest {
+        // The service reads the identity itself after its first sync; this only follows check-ins.
+        val checkIns = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+        var reads = 0
+        val watch = launch(Dispatchers.Unconfined) {
+            Credentials.changes(checkIns) { reads++; "dev-1" to "sek" }.collect {}
+        }
+        assertEquals(0, reads)
+        checkIns.tryEmit(Unit)
+        assertEquals(1, reads)
+        watch.cancel()
     }
 }

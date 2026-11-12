@@ -1,6 +1,7 @@
 package com.mdmesh.core.sync
 
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -37,6 +38,9 @@ class SyncStatus @Inject constructor(private val lastCheckIn: LastCheckIn) {
         MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     /** Emits on each successful check-in (no replay): the server is reachable right now. */
     val successes: SharedFlow<Unit> = _successes
+
+    /** [lastSuccessAtMs] now, then each time a check-in succeeds (the status screen follows it while open). */
+    val lastSuccessAtMsChanges: Flow<Long?> get() = lastCheckIn.okAtMsChanges
 
     fun recordSuccess() {
         _lastError.value = null

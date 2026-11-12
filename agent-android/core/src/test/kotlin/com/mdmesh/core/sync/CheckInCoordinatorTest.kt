@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -82,14 +83,19 @@ class CheckInCoordinatorTest {
         // Virtual-time tests run the cycle on the test scheduler; one test checks the real dispatcher.
         ioDispatcher: CoroutineDispatcher = StandardTestDispatcher(testScheduler),
         events: com.mdmesh.core.telemetry.EventSink? = null,
+        tokens: FakeTokenProvider = FakeTokenProvider("t"),
+        identity: FakeIdentity = FakeIdentity(initialId = identityId, initialSecret = "sek-1"),
     ): CheckInCoordinator {
-        val identity = FakeIdentity(initialId = identityId, initialSecret = "sek-1")
         val eventSink = events ?: object : com.mdmesh.core.telemetry.EventSink {
             override fun record(type: String, detail: String?) {}
             override fun drain() = emptyList<com.mdmesh.proto.TelemetryEventDto>()
             override fun restore(events: List<com.mdmesh.proto.TelemetryEventDto>) {}
         }
-        val enrollment = EnrollmentManager(api, identity, FakeTokenProvider("t"), FakeCapabilitySource(), eventSink)
+        // One SyncStatus for both, as in production (a singleton): enrollment reads the check-ins the cycle records.
+        val enrollment = EnrollmentManager(
+            api, identity, tokens, FakeCapabilitySource(), eventSink,
+            EnrollmentEnvironment(syncStatus = syncStatus),
+        )
         return CheckInCoordinator(
             api = api,
             enrollment = enrollment,
@@ -589,5 +595,106 @@ class CheckInCoordinatorTest {
         assertEquals(listOf(listOf("a", "b", "c"), listOf("b", "c")),
             api.checkInRequests.map { r -> r.results.map { it.commandId } })
         assertEquals(listOf("c"), pending.drain().map { it.commandId })
+    }
+
+    /** A [LastCheckIn] that remembers the thread each success was recorded on. */
+    private class ThreadRecordingLastCheckIn(private val inner: InMemoryLastCheckIn = InMemoryLastCheckIn()) :
+        LastCheckIn by inner {
+        @Volatile var writtenOn: Thread? = null
+        override var okAtMs: Long?
+            get() = inner.okAtMs
+            set(v) {
+                writtenOn = Thread.currentThread()
+                inner.okAtMs = v
+            }
+    }
+
+    @Test
+    fun `a check-in on the background path ends a lost-credentials state and tells its watchers`() = runTest {
+        // Marked lost before any check-in succeeded; the cycle runs on the real IO dispatcher, as from the service.
+        val tokens = FakeTokenProvider("t").apply { credentialsLostMark = CredentialsLost.NO_SUCCESS }
+        val last = ThreadRecordingLastCheckIn()
+        val syncStatus = SyncStatus(last)
+        val coordinator = coordinator(
+            FakeMdmApi(), PendingResults(), syncStatus = syncStatus, tokens = tokens, ioDispatcher = Dispatchers.IO,
+        )
+        val seen = mutableListOf<Long?>()
+        val watcher = launch(Dispatchers.Unconfined) { syncStatus.lastSuccessAtMsChanges.collect { seen += it } }
+        val announced = async(Dispatchers.Unconfined) { syncStatus.successes.first() }
+        assertTrue("lost before", CredentialsLost.stillLost(tokens.credentialsLostMark, syncStatus.lastSuccessAtMs))
+
+        val caller = Thread.currentThread()
+        coordinator.runOnce()
+
+        assertNotSame("recorded off the caller's thread", caller, last.writtenOn)
+        announced.await() // the wake channel's "server reachable" hint
+        val success = syncStatus.lastSuccessAtMs
+        assertNotNull(success)
+        assertEquals("the status screen got the success", listOf(null, success), seen)
+        assertFalse(
+            "the screen stops showing it at once",
+            CredentialsLost.stillLost(tokens.credentialsLostMark, syncStatus.lastSuccessAtMs),
+        )
+
+        coordinator.runOnce()
+        assertNull("the next cycle clears the stored mark", tokens.credentialsLostMark)
+        watcher.cancel()
+    }
+
+    @Test
+    fun `a mark made at the last success stays until a later check-in succeeds`() = runTest {
+        // Marker equality, not clocks: a mark stores the success current when it was made, and only a newer success
+        // (a cycle on the background path) ends it.
+        val tokens = FakeTokenProvider("t")
+        val syncStatus = SyncStatus(InMemoryLastCheckIn())
+        val coordinator = coordinator(
+            FakeMdmApi(), PendingResults(), syncStatus = syncStatus, tokens = tokens, ioDispatcher = Dispatchers.IO,
+        )
+        coordinator.runOnce()
+        val markedAt = syncStatus.lastSuccessAtMs
+        tokens.credentialsLostMark = CredentialsLost.markerOf(markedAt)
+        Thread.sleep(2) // the next success is stamped later, as on a device
+
+        coordinator.runOnce() // its enrollment step reads the mark while the success it was made at is still the last
+        assertEquals("kept: no newer success when it was read", markedAt, tokens.credentialsLostMark)
+        assertFalse(
+            "this cycle's success ends it on screen",
+            CredentialsLost.stillLost(markedAt, syncStatus.lastSuccessAtMs),
+        )
+
+        coordinator.runOnce()
+        assertNull("and in the store at the next cycle", tokens.credentialsLostMark)
+    }
+
+    @Test
+    fun `a check-in recovering the server's credential sends it and announces the success`() = runTest {
+        // The first check-in is refused (the server holds another secret); the next cycle resumes the enrollment,
+        // saves the credential the server holds and checks in with it, on the background path.
+        val tokens = FakeTokenProvider("t", attempt = "attempt-0123456789abcdef").apply { resumable = true }
+        val identity = FakeIdentity(initialId = "dev-1", initialSecret = "sek-dead")
+        val syncStatus = SyncStatus()
+        val api = FakeMdmApi().apply {
+            checkInResponse = ResponseEnvelope(status = "ERROR", message = "error.agent.unauthorized")
+            enrollResponse = ResponseEnvelope(
+                status = "OK",
+                data = com.mdmesh.proto.AgentEnrollResponse(
+                    deviceId = "dev-1", deviceSecret = "sek-live", resumeSupported = true,
+                ),
+            )
+        }
+        val coordinator = coordinator(
+            api, PendingResults(), syncStatus = syncStatus, tokens = tokens, identity = identity,
+            ioDispatcher = Dispatchers.IO,
+        )
+        runCatching { coordinator.runOnce() }
+        api.checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse())
+        val announced = async(Dispatchers.Unconfined) { syncStatus.successes.first() }
+
+        coordinator.runOnce()
+
+        announced.await()
+        assertEquals(listOf("Bearer sek-dead", "Bearer sek-live"), api.checkInAuth)
+        // What the wake channel reads when that success arrives (Credentials.changes): the recovered secret.
+        assertEquals("sek-live", identity.secret())
     }
 }

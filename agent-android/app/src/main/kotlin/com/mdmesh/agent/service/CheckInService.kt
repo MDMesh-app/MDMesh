@@ -24,7 +24,7 @@ import com.mdmesh.core.install.InstallManager
 import com.mdmesh.core.power.PowerModeStore
 import com.mdmesh.core.store.DeviceIdentity
 import com.mdmesh.core.sync.CheckInCoordinator
-import com.mdmesh.core.sync.CredentialsWatch
+import com.mdmesh.core.sync.Credentials
 import com.mdmesh.core.sync.SyncStatus
 import com.mdmesh.core.telemetry.EventLog
 import com.mdmesh.core.transport.TransportManager
@@ -58,7 +58,6 @@ class CheckInService : LifecycleService() {
     @Inject lateinit var notificationPermission: NotificationPermissionAccess
     @Inject lateinit var installManager: InstallManager
     @Inject lateinit var syncStatus: SyncStatus
-    private val credentialsWatch = CredentialsWatch()
 
     @Volatile private var started = false
     @Volatile private var interactiveUntil = 0L
@@ -103,6 +102,19 @@ class CheckInService : LifecycleService() {
             .onFailure { Log.w(TAG, "network callback not registered", it) }
         // An APK a dead process left behind would otherwise wait for the next install.
         lifecycleScope.launch { installManager.sweepLeftoverDownloads() }
+        // For the service's lifetime, subscribed before any start reads the identity: a check-in that saves new
+        // credentials (the one that enrolls a device a start found unenrolled, or one that recovers the secret the
+        // server holds) moves the wake socket onto them at once, instead of it dialling with none or a refused one.
+        lifecycleScope.launch {
+            Credentials.changes(syncStatus.successes) { identity.current() to identity.secret() }
+                .collect { saved ->
+                    if (saved.deviceId != deviceId || saved.secret != secret) {
+                        deviceId = saved.deviceId
+                        secret = saved.secret
+                        reevaluateSocket()
+                    }
+                }
+        }
     }
 
     private val connectivity: ConnectivityManager
@@ -141,21 +153,9 @@ class CheckInService : LifecycleService() {
                 // until the process restarts.
                 deviceId = identity.current()
                 secret = identity.secret()
+                // Not enrolled yet (e.g. revived before the first enrollment, so no check-in of its own): the
+                // credentials collector in onCreate picks them up as soon as a check-in saves them.
                 reevaluateSocket()
-                if (deviceId.isNullOrBlank() || secret.isNullOrBlank()) {
-                    // Not enrolled yet (e.g. revived before the first enrollment, so no check-in of its own): pick
-                    // the credentials up as soon as a check-in saves them, so always-on gets its socket promptly.
-                    // One wait at a time, however many starts find no credentials.
-                    credentialsWatch.startIfIdle(
-                        lifecycleScope,
-                        syncStatus.successes,
-                        { identity.current() to identity.secret() },
-                    ) { saved ->
-                        deviceId = saved.deviceId
-                        secret = saved.secret
-                        reevaluateSocket()
-                    }
-                }
             }
         }
         return START_STICKY

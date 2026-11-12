@@ -431,4 +431,66 @@ class TransportManagerTest {
         assertEquals("Backoff", transport.stateName)
         assertTrue(sockets.opened.isEmpty())
     }
+
+    @Test
+    fun `the same credentials again leave the running socket alone`() {
+        start()
+        sockets.opened[0].open()
+        start()
+        assertEquals(1, sockets.opened.size)
+        assertEquals(listOf(sockets.opened[0]), sockets.live)
+    }
+
+    @Test
+    fun `new credentials replace the open socket at once`() {
+        // A recovered enrollment: same device, the secret the server holds now.
+        start()
+        sockets.opened[0].open()
+        transport.start("dev-1", "sek-2") { wakes += it }
+        assertEquals(2, sockets.opened.size)
+        assertEquals("one socket, on the new secret", listOf(sockets.opened[1]), sockets.live)
+        assertEquals("Bearer sek-2", sockets.opened[1].request().header("Authorization"))
+        assertEquals("Connecting", transport.stateName)
+        sockets.opened[0].fail() // the old one's late report changes nothing
+        assertEquals("Connecting", transport.stateName)
+        assertTrue(logs.none { "dev-1" in it || "sek" in it })
+    }
+
+    @Test
+    fun `new credentials end a refused secret's long backoff with a fresh one`() {
+        // The old secret was refused (1008) a few times, so its retry waits minutes; the recovered one dials now.
+        start()
+        repeat(3) {
+            sockets.opened.last().open()
+            sockets.opened.last().serverClose(1008, "unauthorized")
+            advance(lastRetryMs())
+        }
+        sockets.opened.last().open()
+        sockets.opened.last().serverClose(1008, "unauthorized")
+        assertEquals("Backoff", transport.stateName)
+        val before = sockets.opened.size
+
+        transport.start("dev-1", "sek-2") { wakes += it }
+        assertEquals("dialled at once", before + 1, sockets.opened.size)
+        assertEquals("Bearer sek-2", sockets.opened.last().request().header("Authorization"))
+        advance(10 * 60_000L)
+        assertEquals("the old backoff never fires", before + 1, sockets.opened.size)
+
+        sockets.opened.last().fail()
+        assertEquals("a fresh backoff for the new secret", 1_000L, lastBoundMs())
+    }
+
+    @Test
+    fun `new credentials while stopped connect with them and a fresh backoff`() {
+        start()
+        sockets.opened[0].open()
+        sockets.opened[0].serverClose(1008, "unauthorized")
+        transport.stop()
+        transport.start("dev-2", "sek-2") { wakes += it }
+        assertEquals(listOf(sockets.opened.last()), sockets.live)
+        assertTrue(sockets.opened.last().request().url.toString().endsWith("/agent/ws/dev-2"))
+        sockets.opened.last().fail()
+        assertEquals(1_000L, lastBoundMs())
+    }
 }
+

@@ -1,44 +1,24 @@
 package com.mdmesh.core.sync
 
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.onSubscription
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.mapNotNull
 
 /** The device id and check-in secret, once both exist. */
 data class Credentials(val deviceId: String, val secret: String) {
     companion object {
         /**
-         * Suspends until [read] returns both, reading now and again after each successful check-in ([checkIns]):
-         * the check-in that enrolls a device is the one that saves them. It subscribes before the first read, so a
-         * check-in that completes in between is not missed.
+         * The saved credentials after each successful check-in ([checkIns]), when both exist, each time they differ
+         * from the last ones emitted. A check-in is what changes them: the one that enrolls a device saves them, and
+         * one that recovers a refused enrollment ([EnrollmentManager]) saves the secret the server holds. Collected
+         * for the wake channel's lifetime, subscribed before anything is read, so no such check-in is missed.
          */
-        suspend fun await(checkIns: SharedFlow<Unit>, read: suspend () -> Pair<String?, String?>): Credentials =
+        fun changes(checkIns: Flow<Unit>, read: suspend () -> Pair<String?, String?>): Flow<Credentials> =
             checkIns
-                .onSubscription { emit(Unit) }
-                .map { read() }
-                .first { (id, secret) -> !id.isNullOrBlank() && !secret.isNullOrBlank() }
-                .let { (id, secret) -> Credentials(id!!, secret!!) }
-    }
-}
-
-/** Waits for credentials ([Credentials.await]) at most once at a time. */
-class CredentialsWatch {
-    private var job: Job? = null
-
-    /** Starts a wait in [scope] unless one is already running; returns whether it started one. */
-    @Synchronized
-    fun startIfIdle(
-        scope: CoroutineScope,
-        checkIns: SharedFlow<Unit>,
-        read: suspend () -> Pair<String?, String?>,
-        onReady: (Credentials) -> Unit,
-    ): Boolean {
-        if (job?.isActive == true) return false
-        job = scope.launch { onReady(Credentials.await(checkIns, read)) }
-        return true
+                .mapNotNull {
+                    val (id, secret) = read()
+                    if (id.isNullOrBlank() || secret.isNullOrBlank()) null else Credentials(id, secret)
+                }
+                .distinctUntilChanged()
     }
 }

@@ -103,12 +103,26 @@ class TransportManager internal constructor(
 
     internal val stateName: String get() = synchronized(this) { state.name }
 
-    /** Start (or restart) the wake channel for this device. Idempotent while running. */
+    /**
+     * Start (or restart) the wake channel for this device. Idempotent while running with the same credentials.
+     *
+     * New credentials (a recovered enrollment's secret, a re-enrollment) replace the running socket or pending
+     * reconnect at once, with a fresh backoff: its failures were the old credentials' (a refused secret is closed
+     * 1008, which waits minutes), and the socket must not keep dialling, or stay open, with a dropped secret.
+     */
     @Synchronized
     fun start(deviceId: String, secret: String, onWake: suspend (WakeSignal) -> Unit) {
+        val changed = deviceId != this.deviceId || secret != this.secret
         this.deviceId = deviceId
         this.secret = secret
         this.onWake = onWake
+        if (changed) {
+            failures = 0
+            if (state != State.Stopped) {
+                log("credentials changed, reconnecting")
+                stop() // re-entrant lock
+            }
+        }
         if (state == State.Stopped) connect()
     }
 

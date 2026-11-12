@@ -79,7 +79,17 @@ class BackdropCells(val width: Int, val height: Int, private val mins: IntArray,
             val i1 = minOf(cols - 1, ceil(x1 / cellSize).toInt())
             val j0 = maxOf(0, floor(y0 / cellSize).toInt() - 1)
             val j1 = minOf(rows - 1, ceil(y1 / cellSize).toInt())
-            for (j in j0..j1) for (i in i0..i1) box += ColourBox(mins[j * cols + i], maxs[j * cols + i])
+            // Per channel, in place: one box at the end, not one per cell (this runs for every plate on every frame).
+            val lo = IntArray(CHANNELS) { BYTE }
+            val hi = IntArray(CHANNELS)
+            for (j in j0..j1) for (i in i0..i1) {
+                val k = j * cols + i
+                for (ch in 0 until CHANNELS) {
+                    lo[ch] = minOf(lo[ch], (mins[k] shr SHIFTS[ch]) and BYTE)
+                    hi[ch] = maxOf(hi[ch], (maxs[k] shr SHIFTS[ch]) and BYTE)
+                }
+            }
+            box = ColourBox(packed(lo), packed(hi))
         }
         if (reachesLetterbox(rect, windowW, windowH, r) || !any) box += background
         return box
@@ -122,6 +132,9 @@ class BackdropCells(val width: Int, val height: Int, private val mins: IntArray,
             val n = cols * rows
             return BackdropCells(width, height, IntArray(n) { pack(lo, it) }, IntArray(n) { pack(hi, it) })
         }
+
+        private fun packed(c: IntArray) =
+            OPAQUE or (c[0] shl SHIFTS[0]) or (c[1] shl SHIFTS[1]) or (c[2] shl SHIFTS[2])
 
         /** Cell [i]'s per-channel range grown to hold [px]. */
         private fun widen(lo: Array<IntArray>, hi: Array<IntArray>, i: Int, px: Int) {

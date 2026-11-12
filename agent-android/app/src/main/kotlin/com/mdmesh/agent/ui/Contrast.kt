@@ -25,9 +25,13 @@ object Contrast {
     fun luminance(argb: Int): Double =
         R * channel(argb shr RED_SHIFT) + G * channel(argb shr GREEN_SHIFT) + B * channel(argb)
 
-    private fun channel(shifted: Int): Double {
-        val c = (shifted and BYTE_MASK) / BYTE_MAX
-        return if (c <= LINEAR_LIMIT) c / LINEAR_DIVISOR else ((c + GAMMA_OFFSET) / GAMMA_DIVISOR).pow(GAMMA)
+    /** A channel's linear value, looked up: the plates work out thousands of luminances a frame. */
+    private fun channel(shifted: Int): Double = LINEAR[shifted and BYTE_MASK]
+
+    /** The sRGB transfer of each 8-bit level, exactly as computed per call before (the same doubles). */
+    private val LINEAR = DoubleArray(BYTE_MASK + 1) { level ->
+        val c = level / BYTE_MAX
+        if (c <= LINEAR_LIMIT) c / LINEAR_DIVISOR else ((c + GAMMA_OFFSET) / GAMMA_DIVISOR).pow(GAMMA)
     }
 
     private const val RED_SHIFT = 16

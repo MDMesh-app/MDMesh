@@ -171,6 +171,7 @@ object TextPlates {
         internal val origin = IntArray(2)
         internal val at = IntArray(2)
         internal val rect = RectF()
+        internal val visible = android.graphics.Rect()
     }
 
     /** After a layout: finds the plated texts and controls under [root] and places the row plates ([LabelRows]). */
@@ -244,10 +245,13 @@ object TextPlates {
         (root.background as? BackdropDrawable)?.dim = dim
         for ((view, plate) in scan.plates) {
             plate.plateRect(scan.rect)
-            plate.step = if (scan.rect.isEmpty || !view.isShown) {
-                0
-            } else {
-                rule.plateStep(view.currentTextColor, palette.background, bounds(view, scan.rect), dim)
+            when {
+                scan.rect.isEmpty || !view.isShown -> plate.step = 0
+                // Off screen (scrolled out of the grid's viewport): nothing of it is drawn, so it isn't worked out on
+                // this frame; the frame that scrolls it into view does (the scroll callback updates at once).
+                !view.getGlobalVisibleRect(scan.visible) -> Unit
+                else -> plate.step =
+                    rule.plateStep(view.currentTextColor, palette.background, bounds(view, scan.rect), dim)
             }
         }
         // The labels of a grid row are plated alike: the row's step for each of them.

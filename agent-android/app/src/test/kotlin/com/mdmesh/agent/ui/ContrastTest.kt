@@ -28,4 +28,21 @@ class ContrastTest {
             0.0001,
         )
     }
+
+    /** PR #192 N1: the looked-up transfer is the WCAG formula itself, to the last bit, on every level of every channel. */
+    @Test fun `luminance is exactly the WCAG formula on every level`() {
+        fun linear(level: Int): Double {
+            val c = level / 255.0
+            return if (c <= 0.04045) c / 12.92 else Math.pow((c + 0.055) / 1.055, 2.4)
+        }
+        for (r in 0..255 step 3) for (g in 0..255 step 5) for (b in 0..255 step 7) {
+            val expected = 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+            assertEquals(expected, Contrast.luminance((0xFF shl 24) or (r shl 16) or (g shl 8) or b), 0.0)
+        }
+        for (v in 0..255) {
+            assertEquals(0.2126 * linear(v), Contrast.luminance((0xFF shl 24) or (v shl 16)), 0.0)
+            assertEquals(0.7152 * linear(v), Contrast.luminance((0xFF shl 24) or (v shl 8)), 0.0)
+            assertEquals(0.0722 * linear(v), Contrast.luminance((0xFF shl 24) or v), 0.0)
+        }
+    }
 }

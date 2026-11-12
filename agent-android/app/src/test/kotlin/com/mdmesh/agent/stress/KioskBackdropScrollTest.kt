@@ -155,6 +155,35 @@ class KioskBackdropScrollTest : KioskHarness() {
         assertEquals("scrolled back: as a fresh layout", steps(), back)
     }
 
+    /**
+     * PR #192 N1: each scroll frame works out only the plates on screen (about a screenful of 60 labels), not every
+     * label in the grid; one that scrolls into view is worked out in that same frame.
+     */
+    @Test fun aScrollFrameWorksOutOnlyThePlatesOnScreen() {
+        launch(manyApps())
+        val sv = scrollView(decor)!!
+        val all = labels(decor)
+        val window = android.graphics.Rect()
+        fun onScreen(l: TextView) = l.getGlobalVisibleRect(window)
+        val off = all.filterNot(::onScreen)
+        assertTrue("some labels are off screen (${off.size} of ${all.size})", off.size > all.size / 2)
+        val sentinel = -1 // never a step the rule gives
+        all.forEach { (it.background as TextPlate).step = sentinel }
+        sv.scrollTo(0, 1)
+        frames(1)
+        assertTrue("off-screen plates left alone", off.filterNot(::onScreen).all {
+            (it.background as TextPlate).step == sentinel
+        })
+        assertTrue("on-screen plates worked out", all.filter(::onScreen).none {
+            (it.background as TextPlate).step == sentinel
+        })
+        val later = off.last()
+        sv.scrollTo(0, sv.getChildAt(0).height)
+        frames(1)
+        assertTrue("now on screen", onScreen(later))
+        assertTrue("worked out as it came into view", (later.background as TextPlate).step != sentinel)
+    }
+
     private companion object {
         const val FRAME_MS = 17L
         /** The image's white half ends at 320 px in this 640 px window; keep clear of the edge cells. */

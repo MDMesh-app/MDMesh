@@ -43,7 +43,9 @@ object KioskScrim {
 
     /** Some channel spans more than [BUSY_LEVELS] from [lo] to [hi]. */
     fun busy(lo: Int, hi: Int): Boolean =
-        listOf(RED, GREEN, BLUE).any { ((hi shr it) and BYTE) - ((lo shr it) and BYTE) > BUSY_LEVELS }
+        spread(lo, hi, RED) > BUSY_LEVELS || spread(lo, hi, GREEN) > BUSY_LEVELS || spread(lo, hi, BLUE) > BUSY_LEVELS
+
+    private fun spread(lo: Int, hi: Int, shift: Int): Int = ((hi shr shift) and BYTE) - ((lo shr shift) and BYTE)
 
     /** [argb] (any alpha, not premultiplied) over the opaque [background]: `floor((c*a + b*(255-a) + 127) / 255)`. */
     fun over(argb: Int, background: Int): Int {

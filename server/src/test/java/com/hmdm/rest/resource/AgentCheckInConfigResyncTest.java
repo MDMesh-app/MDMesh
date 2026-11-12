@@ -245,7 +245,7 @@ public class AgentCheckInConfigResyncTest {
         resource = new AgentResource(unsecureDAO, null, commandDAO, null,
                 new ConfigReconciler(unsecureDAO, commandDAO, Fakes.noExtensionPoints()),
                 new AppReconciler(null, null, null, null), noRollout,
-                new InstallHashes(null, unsecureDAO), new KioskLockoutAlert(null, null, null));
+                new InstallHashes(null, unsecureDAO), new KioskLockoutAlert(null, null, null), null);
     }
 
     /** One agent check-in; the agent acks every command it receives as done on the following check-in. */

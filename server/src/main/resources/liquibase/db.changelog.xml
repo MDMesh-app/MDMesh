@@ -3159,6 +3159,43 @@
         <rollback>ALTER TABLE applicationVersions DROP COLUMN requestedPermissions;</rollback>
     </changeSet>
 
+    <changeSet id="26.11.10-devices-agentEnrollAttemptHash" author="lunacy" context="common">
+        <comment>Column,new: devices#agentEnrollAttemptHash — SHA-256 of (enrollment token id, the agent's random enroll
+            attempt id). An agent whose enroll response was lost retries with the same attempt id and gets this device
+            back with the same secret, instead of the code being used up. Cleared at the device's first check-in. NULL for
+            existing devices and for agents that don't send an attempt id.</comment>
+        <sql>
+            ALTER TABLE devices ADD COLUMN agentEnrollAttemptHash VARCHAR(64);
+            CREATE INDEX devices_agentEnrollAttemptHash_idx ON devices (agentEnrollAttemptHash)
+                WHERE agentEnrollAttemptHash IS NOT NULL;
+        </sql>
+        <rollback>
+            DROP INDEX IF EXISTS devices_agentEnrollAttemptHash_idx;
+            ALTER TABLE devices DROP COLUMN agentEnrollAttemptHash;
+        </rollback>
+    </changeSet>
+
+    <changeSet id="26.11.10-devices-customerId-enrollTime-idx" author="lunacy" context="common">
+        <comment>Index,new: devices (customerId, enrollTime), for the Enroll page's "devices enrolled since this code
+            was made" (a bounded, newest-first read it repeats every few seconds while a code is shown).</comment>
+        <sql>CREATE INDEX devices_customerId_enrollTime_idx ON devices (customerId, enrollTime);</sql>
+        <rollback>DROP INDEX IF EXISTS devices_customerId_enrollTime_idx;</rollback>
+    </changeSet>
+
+    <changeSet id="26.11.11-agentEnrollmentKey" author="lunacy" context="common">
+        <comment>Table,new: agentEnrollmentKey, one row: the server-only key agent enrollment secrets are derived with
+            (32 random bytes as hex). The server makes it on first use; nothing to set. Deleting the row (then restarting)
+            rotates it, which only affects enrollments still inside their 24 h retry window.</comment>
+        <sql>
+            CREATE TABLE agentEnrollmentKey (
+                id INT PRIMARY KEY CHECK (id = 1),
+                keyHex VARCHAR(64) NOT NULL,
+                createdAt BIGINT NOT NULL
+            );
+        </sql>
+        <rollback>DROP TABLE agentEnrollmentKey;</rollback>
+    </changeSet>
+
     <changeSet id="26.11.11-configurations-backgroundImageFitFocal" author="letter-number" context="common">
         <validCheckSum>9:cb0e74fa797947549547ac1d31d0a37f</validCheckSum>
         <comment>Kiosk background image fit (fill = cropped, the default; fit = whole, letterboxed) and focal point

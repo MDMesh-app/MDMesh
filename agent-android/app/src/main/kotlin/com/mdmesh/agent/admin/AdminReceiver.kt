@@ -84,25 +84,6 @@ class AdminReceiver : DeviceAdminReceiver() {
     }
 
     /**
-     * Set a fleet-wide, constant organization id so [DevicePolicyManager.getEnrollmentSpecificId]
-     * returns a stable per-device id. The enrollment-specific id is derived from this org id + our
-     * DPC package + a hardware identifier, and — unlike `ANDROID_ID` — is **stable across factory
-     * resets**, which is what lets the server de-duplicate a wiped-and-re-enrolled device. Using one
-     * constant id for the whole fleet keeps each physical device's id stable while still differing
-     * between devices. Idempotent: it can only be set once per owner session, so a repeat call
-     * throws and is swallowed. API 31+.
-     */
-    private fun setStableOrganizationId(context: Context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
-        runCatching {
-            val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager
-                ?: return
-            if (!dpm.isDeviceOwnerApp(context.packageName)) return
-            dpm.setOrganizationId(ORGANIZATION_ID)
-        }
-    }
-
-    /**
      * As Device Owner, silently grant location permission (incl. background) and turn location
      * services on, so the agent can report device location for telemetry without any user prompt.
      */
@@ -174,6 +155,24 @@ class AdminReceiver : DeviceAdminReceiver() {
 
         /** Constant fleet org id feeding the factory-reset-stable enrollment-specific id. */
         const val ORGANIZATION_ID = "mdmesh-fleet"
+
+        /**
+         * Set a fleet-wide, constant organization id so [DevicePolicyManager.getEnrollmentSpecificId]
+         * returns a stable per-device id. The enrollment-specific id is derived from this org id + our
+         * DPC package + a hardware identifier, and — unlike `ANDROID_ID` — is **stable across factory
+         * resets**, which is what lets the server de-duplicate a wiped-and-re-enrolled device. Using one
+         * constant id for the whole fleet keeps each physical device's id stable while still differing
+         * between devices. It must be set before the first enroll reports the hardware id, so every
+         * provisioning entry point calls it. Idempotent: it can only be set once per owner session, so a
+         * repeat call throws and is swallowed. API 31+.
+         */
+        fun setStableOrganizationId(context: Context) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+            runCatching {
+                val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as? DevicePolicyManager
+                if (dpm != null && dpm.isDeviceOwnerApp(context.packageName)) dpm.setOrganizationId(ORGANIZATION_ID)
+            }
+        }
 
         /** This agent's admin component, used wherever a [ComponentName] is needed. */
         fun componentName(context: Context): ComponentName =

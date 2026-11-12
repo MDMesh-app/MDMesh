@@ -610,10 +610,10 @@ public class UnsecureDAO {
         }
     }
 
+    @Transactional
     public Device createNewDeviceOnDemand(String deviceId, DeviceCreateOptions createOptions) {
         int customerId = DEFAULT_CUSTOMER_ID;
         int deviceLimit = 0;
-        int deviceCount = 0;
         if (!isSingleCustomer()) {
             if (createOptions.getCustomer() == null) {
                 logger.warn("Customer is not set, device not created");
@@ -627,15 +627,6 @@ public class UnsecureDAO {
                 return null;
             }
             deviceLimit = customer.getDeviceLimit();
-            Long deviceCountLong = deviceMapper.countAllDevicesForCustomer(customerId);
-            if (deviceCountLong != null) {
-                deviceCount = deviceCountLong.intValue();
-            }
-        }
-
-        if (deviceLimit != 0 && deviceCount >= deviceLimit) {
-            logger.warn("New device " + deviceId + " not created by customer " + customerId + ": license limit");
-            return null;
         }
 
         Settings settings = getSettings(customerId);
@@ -699,6 +690,16 @@ public class UnsecureDAO {
             }
         }
 
+        // The limit, counted under the per-customer lock every device-adding path shares (CustomerDeviceLimit), in
+        // this method's transaction with the insert: concurrent adds can't together pass it.
+        final int limitCustomerId = customerId;
+        if (!CustomerDeviceLimit.roomForOne(deviceLimit, () -> deviceMapper.lockCustomerDevices(limitCustomerId), () -> {
+            Long n = deviceMapper.countAllDevicesForCustomer(limitCustomerId);
+            return n == null ? 0L : n;
+        })) {
+            logger.warn("New device " + deviceId + " not created by customer " + customerId + ": license limit");
+            return null;
+        }
         newDevice.setNumber(deviceId);
         newDevice.setLastUpdate(0L);
         insertDevice(newDevice);

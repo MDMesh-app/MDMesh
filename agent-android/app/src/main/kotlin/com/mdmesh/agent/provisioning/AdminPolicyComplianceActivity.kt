@@ -35,6 +35,9 @@ class AdminPolicyComplianceActivity : Activity() {
         // Server URL first (synchronous SharedPreferences), so no check-in scheduled below can
         // ever run against the baked fallback. save() is a no-op for an absent/blank extra.
         ServerConfigStore(ctx).save(extrasString(AdminReceiver.EXTRA_SERVER_URL))
+        // Before the first enroll: it reports the enrollment-specific id, which needs the org id. On Android 12+ this
+        // activity can run before the admin receiver's callbacks that also set it.
+        AdminReceiver.setStableOrganizationId(ctx)
         CheckInWorker.schedule(ctx) // periodic reconcile
         applyBaselinePolicy(ctx)
 
@@ -43,11 +46,16 @@ class AdminPolicyComplianceActivity : Activity() {
             // Independent scope so the save completes even though we finish() immediately;
             // the check-in is scheduled only after the token persists (avoids a race).
             CoroutineScope(Dispatchers.IO).launch {
-                EnrollTokenStore(ctx).save(token)
-                CheckInWorker.scheduleNow(ctx)
-                // Open the instant channel now that the token is saved (its first sync enrolls); otherwise it only
-                // started from the app's screens or a reboot, and commands waited for the periodic check-in.
-                CheckInService.start(ctx)
+                try {
+                    EnrollTokenStore(ctx).save(token)
+                } finally {
+                    // Even if the save failed: the check-in then reports "no enrollment code" on the device's screen
+                    // instead of nothing happening at all.
+                    CheckInWorker.scheduleNow(ctx)
+                    // Open the instant channel now that the token is saved (its first sync enrolls); otherwise it
+                    // only started from the app's screens or a reboot, and commands waited for the periodic check-in.
+                    CheckInService.start(ctx)
+                }
             }
         } else {
             CheckInWorker.scheduleNow(ctx)

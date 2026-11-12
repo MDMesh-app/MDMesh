@@ -12,8 +12,10 @@ Upgrading
 - The database adds columns on start: `devices.wipedAt`; `configurations.camera`, `configurations.locationServices`,
   `configurations.backgroundImageFileId`, `configurations.backgroundImageSha256`, `configurations.backgroundImageFit`,
   `configurations.backgroundImageFocalX` and `configurations.backgroundImageFocalY`; `device_state.kioskGeneration` and
-  `device_state.kioskReturnGeneration`; `applicationVersions.requestedPermissions`; and the
-  `configurationAppPermissions` table. Devices wiped before the update aren't marked.
+  `device_state.kioskReturnGeneration`; `applicationVersions.requestedPermissions`; the `configurationAppPermissions`
+  table; `devices.agentEnrollAttemptHash`, with an index on it and one on each customer's devices by enrollment
+  time; and the `agentEnrollmentKey` table, whose one row the server fills with a random key on first use. Devices
+  wiped before the update aren't marked.
 - The database adds three columns to enrollment tokens on start (`maxUses`, `useCount`, `revokedAt`) and stores
   the tokens hashed. Existing codes stay single-use and keep working; on PostgreSQL older than 11 they stop
   instead, so make a new code on the Enroll page. After a downgrade, codes made on this version don't work.
@@ -22,6 +24,10 @@ Upgrading
   hand: [UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050).
 
 New
+- Enroll: devices that enroll while the page is open show under the code, with a link, first as getting their
+  configuration and then Online (or that one hasn't checked in after 10 minutes), so you see the device you just set
+  up arrive without going to Devices. The page stops looking after 30 minutes until you ask it to look again. Needs
+  this server.
 - Configurations can allow or block the camera. Block covers every app, kiosk apps too. Not managed after Block
   gives the camera back on agent 0.5.0; on older agents, choose Allow to lift a block (thanks @letternumber).
 - Kiosk: staff can tap Return to kiosk in the MDMesh Agent after leaving with the exit PIN, even offline. It shows
@@ -66,6 +72,36 @@ Fixes
   custom kiosk, or configuration apply makes it available again.
 - Files: uploading a file again with the same name and the same content returns the file already there instead of an
   error.
+- Enroll: the page warns before you hand out a QR code devices can't use: the console is open at localhost, over
+  `http://`, at a local address, or at another address than the server's `BASE_URL` (devices keep the address in the
+  code until a factory reset). Wi-Fi a device can't join from a QR code (a secured network entered without its
+  password, a WPA password that isn't 8 to 63 characters, a WEP key of the wrong length, enterprise EAP) is left out of
+  the code with the reason, instead of stopping setup at the Wi-Fi step.
+- Agent: on Android 12 and later, a device enrolled by QR reports the same hardware id from its first contact, so
+  re-enrolling it after a factory reset is flagged as the same device. Needs agent 0.5.0.
+- Agent: while a device can't enroll, its screen says why and what to do (code used up or expired, server not
+  found, certificate not trusted, device date wrong, Wi-Fi asking for a sign-in, `http://` address) instead of an
+  error key or exception text. Needs agent 0.5.0.
+- Agent: a server address in the QR with spaces, a trailing slash, no `https://` or a path now works, and one that
+  isn't an address is reported on the device instead of the agent quietly trying a placeholder host. Needs agent
+  0.5.0.
+- Enroll: the server log says why it refused a device's enrollment (unknown, expired, used up or stopped code), so
+  "my code doesn't work" can be answered from the log.
+- Enroll: when the network drops just as a device enrolls, or the agent gives up waiting and tries again while the
+  server is still enrolling it, it no longer stays on "Enrolling…" with a code that reads as already used, or takes a
+  second device's place on a batch code. Its retry gets the device it already created, with the same credential, so a
+  late duplicate of the request can't lock it out; a stopped code resumes nothing. If the server refuses a new
+  device's credentials before its first check-in, the agent gets them back by resuming its enrollment (never by
+  making another device); if that isn't possible, the agent's screen says the device has to be enrolled again, until
+  a check-in succeeds. Needs agent 0.5.0 and this server;
+  older agents enroll as before.
+- Enroll: each enrollment is now one database transaction. A server error, restart or lost database connection part-way
+  through no longer leaves a device in the list that can never check in, or uses up the enrollment code: nothing is
+  kept and the agent tries again.
+- Enroll: on an install with several customers, enrolling with a code now respects the customer's device limit, as
+  other ways of adding devices already did, and devices added at the same moment through the console, enrollment or
+  on-demand creation can no longer together pass it. A device over the limit isn't added and says the organisation has
+  reached its device limit; it enrolls by itself once there is room (agent 0.5.0; older agents just keep trying).
 - Audit log: on Docker installs, entries show the client's address instead of the edge container's (thanks
   @Przemek-Magic).
 - Kiosk: after someone leaves kiosk on the device with the exit PIN, the agent checks in right away, so the console
@@ -83,6 +119,10 @@ Under the hood
   `docs/kiosk-background-scrim.md`, with test vectors (`proto/vectors/kiosk-scrim.json`) the console and the agent
   both pass. `GET /private/configurations/backgroundImage/{fileId}` describes an image as devices will get it.
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
+- Agent protocol 1.9 (additive): the enroll request's optional `enrollAttempt` and `resumeOnly`, the enroll response's
+  `resumeSupported`, `error.agent.enrollment.notResumable`, and the retryable enroll errors
+  `error.agent.enrollment.failed`, `error.agent.enrollment.inProgress` and `error.agent.enrollment.deviceLimit`. New
+  console API: `GET /private/agent/v1/devices/enrolled`.
 
 ## v0.4.0 — 2026-11-03
 

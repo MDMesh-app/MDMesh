@@ -22,6 +22,12 @@ data class AgentEnrollRequest(
     /** Stable, permission-free device id (enrollment-specific id / ANDROID_ID) so the server
      *  can recognise a re-enrolling physical device and flag duplicate rows. */
     val hardwareId: String? = null,
+    /** Random id of this enrollment, kept until the first check-in succeeds and sent again on every retry, so a retry
+     *  whose response was lost gets the same device back (protocol 1.9; older servers ignore it). */
+    val enrollAttempt: String? = null,
+    /** True on the agent's credential recovery: the server only resumes this attempt's device, never makes one
+     *  (protocol 1.9; sent only to servers that answered [AgentEnrollResponse.resumeSupported]). */
+    val resumeOnly: Boolean? = null,
 )
 
 /**
@@ -35,6 +41,8 @@ data class AgentEnrollResponse(
     val deviceId: String,
     val configurationName: String? = null,
     val deviceSecret: String? = null,
+    /** True from servers that resume enrollments (protocol 1.9): the agent may recover refused credentials. */
+    val resumeSupported: Boolean? = null,
 )
 
 /** POST /checkin body: re-advertise capabilities, ack prior commands, pull the next batch. */

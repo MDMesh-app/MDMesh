@@ -64,9 +64,8 @@ public class AgentEnrollmentTokenDAO {
     }
 
     /**
-     * Stops every token of the customer that has not expired, used up or not: a use given back by
-     * {@link #release} cannot bring a stopped token back, since {@link #claim} refuses one with {@code revokedAt}
-     * set whatever its count.
+     * Stops every token of the customer that has not expired, used up or not: the claim refuses a token with
+     * {@code revokedAt} set whatever its count.
      *
      * @return how many tokens were stopped.
      */
@@ -79,13 +78,4 @@ public class AgentEnrollmentTokenDAO {
         return CryptoUtil.getSHA256String(token);
     }
 
-    /** Atomically claims one use of the token; true = this caller owns that use. */
-    public boolean claim(Integer id) {
-        return mapper.claim(id, System.currentTimeMillis()) == 1;
-    }
-
-    /** Gives back the use a claim took, after a server-side enrollment failure. */
-    public void release(Integer id) {
-        mapper.release(id);
-    }
 }

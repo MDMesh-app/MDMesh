@@ -103,10 +103,13 @@ class TextPlate(
 }
 
 /**
- * Works a launcher root's plates out again whenever what is under them may have moved: after any layout (rotation,
- * new apps, a restored scroll position) and any scroll it [follow]s (drag, fling, programmatic), or when told
- * ([changed]: a new image or look). At most once a frame, in the frame's pre-draw, so they always match what is drawn.
- * The views are scanned once per layout; a scroll frame only moves positions (no tree walk, few allocations).
+ * Works a launcher root's plates out again whenever what is under them may have moved:
+ * - after any layout (rotation, new apps, a restored scroll position) or when told ([changed]: a new image or look),
+ *   in the next frame's pre-draw, at most once a frame;
+ * - at once on every scroll it [follow]s. A fling moves in the scroller's `computeScroll`, inside the draw pass and
+ *   after the pre-draw, so a deferred update would draw each frame with the last frame's plates; updated in the scroll
+ *   callback, they are invalidated before the scroll view records its children and drawn in the same frame.
+ * The views are scanned once per layout; a scroll only moves positions (no tree walk, few allocations).
  */
 class PlateFrames(private val root: ViewGroup, private val update: (TextPlates.Scan) -> Unit) {
     private var scan: TextPlates.Scan? = null
@@ -137,9 +140,12 @@ class PlateFrames(private val root: ViewGroup, private val update: (TextPlates.S
         changed()
     }
 
-    /** [scroller] moves text over the (fixed) image. */
+    /** [scroller] moves text over the (fixed) image: its plates follow in the same frame. */
     fun follow(scroller: View) {
-        scroller.setOnScrollChangeListener { _, _, _, _, _ -> changed() }
+        scroller.setOnScrollChangeListener { _, _, _, _, _ ->
+            val now = scan
+            if (now != null && !dirty) update(now) else changed()
+        }
     }
 }
 

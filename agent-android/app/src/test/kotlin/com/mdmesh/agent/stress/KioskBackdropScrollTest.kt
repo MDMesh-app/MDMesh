@@ -81,6 +81,8 @@ class KioskBackdropScrollTest : KioskHarness() {
         launch(manyApps())
         val sv = scrollView(decor)!!
         assertTrue("the grid scrolls", sv.getChildAt(0).height > sv.height)
+        // No stretch or glow: text is drawn where it scrolled to.
+        assertEquals(View.OVER_SCROLL_NEVER, sv.overScrollMode)
         sv.scrollTo(0, 400)
         frames(1)
         val now = overWhite()
@@ -98,6 +100,32 @@ class KioskBackdropScrollTest : KioskHarness() {
         settle()
         frames(1)
         assertEquals("the same as a fresh layout", steps(), afterScroll)
+    }
+
+    /**
+     * A real fling, frame by frame: its scroller moves in `computeScroll`, inside the draw pass after the pre-draw. At
+     * each drawn frame (no pre-draw in between) every label's plate already matches where the label is drawn.
+     */
+    @Test fun platesMatchEveryDrawnFrameOfAFling() {
+        launch(manyApps())
+        val sv = scrollView(decor)!!
+        sv.fling(6000)
+        var moved = 0
+        repeat(60) {
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(FRAME_MS))
+            val before = sv.scrollY
+            sv.computeScroll() // what this frame's draw does
+            if (sv.scrollY != before) moved++
+            for (l in labels(decor)) {
+                val y = IntArray(2).also(l::getLocationInWindow)[1]
+                val step = (l.background as TextPlate).step
+                if (y >= 0 && y + l.height < WHITE_END) assertTrue("frame $it: '${l.text}' over white at $y", step > 0)
+                if (y > BLACK_START && y + l.height < decor.height) {
+                    assertEquals("frame $it: '${l.text}' over black", 0, step)
+                }
+            }
+        }
+        assertTrue("the fling ran ($moved frames moved)", moved > 5)
     }
 
     @Test fun platesFollowAFlingAndScrollingBack() {
@@ -129,5 +157,8 @@ class KioskBackdropScrollTest : KioskHarness() {
 
     private companion object {
         const val FRAME_MS = 17L
+        /** The image's white half ends at 320 px in this 640 px window; keep clear of the edge cells. */
+        const val WHITE_END = 300
+        const val BLACK_START = 340
     }
 }

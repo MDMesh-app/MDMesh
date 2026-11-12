@@ -11,6 +11,7 @@ import android.widget.ScrollView
 import androidx.activity.ComponentActivity
 import androidx.core.view.ViewCompat
 import com.mdmesh.agent.R
+import kotlin.math.roundToInt
 
 /**
  * Draws [KioskScreen]s into the kiosk launcher. It owns one root view, set once, and changes only its children:
@@ -149,6 +150,9 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
             addView(column)
             // The image stays put while the grid scrolls over it.
             plates.follow(this)
+            // No stretch (Android 12+) or glow at the ends: a stretch moves the drawn text without a scroll, so the
+            // plates would be worked out for where it isn't.
+            overScrollMode = View.OVER_SCROLL_NEVER
         }
     }
 
@@ -210,9 +214,9 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
                 val button = v.outlinedButton(activity.getString(R.string.kiosk_exit_button)).apply {
                     tag = TextPlates.CONTROL // the dim brings it to 3:1 over the image
                     setOnClickListener { actions.requestExit() }
-                    // The grid ends with room for the button as laid out (taller at large font scales): at the end of
-                    // the scroll no label or plate is under it.
-                    addOnLayoutChangeListener { b, _, _, _, _, _, _, _, _ -> grid?.column?.let { roomFor(b, it, v) } }
+                    // The grid ends with room for the button as measured (taller at large font scales): at the end of
+                    // the scroll no label or plate is under it. Worked out in the column's own measure pass.
+                    (grid?.column as? GridColumn)?.exit = this
                 }
                 root.addView(
                     button,
@@ -289,7 +293,21 @@ private class GridColumn(context: Context) : LinearLayout(context) {
         clipToPadding = false // the header's plate reaches into the top padding
     }
 
+    /** The floating Exit button, if any: the column ends with room for it. */
+    var exit: View? = null
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        exit?.let { button ->
+            // As the root will measure it (WRAP_CONTENT): its height plus its bottom margin plus 8dp of air. Set here,
+            // before this column measures, so no layout pass is ever repeated for it.
+            button.measure(
+                MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.AT_MOST),
+                MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
+            )
+            val margin = (button.layoutParams as? MarginLayoutParams)?.bottomMargin ?: 0
+            val room = button.measuredHeight + margin + (EXIT_AIR_DP * resources.displayMetrics.density).roundToInt()
+            if (paddingBottom != room) setPadding(paddingLeft, paddingTop, paddingRight, room)
+        }
         val g = grid
         if (g != null) {
             val start = g.iconStart(MeasureSpec.getSize(widthMeasureSpec) - paddingStart - paddingEnd, iconPx)
@@ -320,14 +338,5 @@ private fun KioskViews.splash(activity: ComponentActivity, s: KioskScreen.Splash
 
 private const val SPLASH_TEXT_SP = 16f
 private const val SPLASH_GAP_DP = 16
-
-/** [column]'s bottom padding: [button]'s height and bottom margin plus 8dp of air. */
-private fun roomFor(button: View, column: View, v: KioskViews) {
-    val margin = (button.layoutParams as? ViewGroup.MarginLayoutParams)?.bottomMargin ?: 0
-    val room = button.height + margin + v.dp(EXIT_AIR_DP)
-    if (button.height > 0 && column.paddingBottom != room) {
-        column.setPadding(column.paddingLeft, column.paddingTop, column.paddingRight, room)
-    }
-}
 
 private const val EXIT_AIR_DP = 8

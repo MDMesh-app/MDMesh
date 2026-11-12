@@ -34,8 +34,18 @@ strong character, and pins the cap when no cut is near it (see "What 3.5 changes
 and says exactly what skipping unassigned code points does and doesn't guarantee (see "What 3.6 changes").
 
 The console is the **reference**: it reads the image at full size, 8-bit sRGB, so its bounds contain every pixel. A
-device that samples the image (for memory) sees ranges that are subsets of those, so its plates are never stronger
-than the preview's, and the preview never promises a plate the device won't draw.
+device that reads the image the same way works out the same cells, plates and dim. A device may read it less
+exactly, and then its ranges can differ a little from the preview's, either way:
+
+- It samples a large image (for memory) and sizes its cells in sampled pixels, so a cell covers a slightly different
+  part of the image: a 6000 x 4000 photo sampled by 4 has 13 px cells, 52 full-size pixels, where the console's are
+  50, so the device reads x in [936, 1456) where the console reads [950, 1450).
+- A low-RAM device draws a picture without transparency at 2 bytes a pixel (RGB_565) and works its cells out from
+  those drawn pixels.
+
+Each side keeps its own text at 4.5:1, and the Exit button's border at 3:1, against the pixels it draws itself. So a
+device can draw a plate or a stronger dim that the preview doesn't show, or the other way round, but never less than
+its own pixels need.
 
 ## Parsing
 
@@ -77,9 +87,11 @@ Once per image, in image pixels:
 - **Decode**: the image as 8-bit sRGB, ARGB_8888, after its EXIF orientation. Orientation is **JPEG-only** (the server
   removes it from PNG and WebP, so those are shown as stored). An embedded colour profile is converted to sRGB (Display
   P3 included): on Android 8+ decode with `inPreferredColorSpace = SRGB`; older Android ignores profiles, the same as
-  treating the pixels as sRGB. The cell source is ARGB_8888 even when the bitmap drawn is RGB_565.
+  treating the pixels as sRGB. The cells come from the pixels that are drawn: the ARGB_8888 bitmap, or, on a low-RAM
+  device that draws an opaque image as RGB_565, that bitmap read back (each channel widened to 8 bits as Android
+  draws it).
 - **Size**: full size (the console), or the device's power-of-two sample (`inSampleSize`), with `iw`, `ih` and the
-  cells taken from the sampled bitmap. Sampling only narrows the ranges (see the reference note above).
+  cells taken from the sampled bitmap. Sampling can change the ranges a little (see the reference note above).
 - **Cells**: square, `cellSize = max(1, ceil(max(iw, ih) / 120))` px; `cols = ceil(iw / cellSize)`,
   `rows = ceil(ih / cellSize)`. Cell `(i, j)` (row-major) covers `x` in `[i * cellSize, min((i + 1) * cellSize, iw))`
   and the same for `y`.
@@ -180,7 +192,8 @@ In dp, from the laid-out text views; padding is applied with negative margins, s
 - **Corner radius**: 10 dp (the console's small radius, `--radius-sm`).
 - **Header**: one plate around the title text only, not the full row.
 - **App labels**: all labels of a grid row share one width (see Label rows); each centred under its icon.
-- **Other text** (hold screen, splash): one plate per text view.
+- **Other text** (hold screen, splash): one plate per text view. A single-app kiosk is previewed as its pinned app
+  over the image; the splash and hold screens aren't measured.
 - **No plate**: buttons (the outlined Exit button, Open again) and the empty-state callout, which have their own fill.
 - A plate's box is its region: its bounds come from the cells under it (plus the margin).
 
@@ -297,7 +310,7 @@ text needs one) and "Image dimmed 22%".
 
 ## Vectors
 
-`proto/vectors/kiosk-scrim.json` version 3.3:
+`proto/vectors/kiosk-scrim.json` version 3.6:
 
 - `parsing`: stored value to colour, or null (ASCII-only hex, `Locale.ROOT` names).
 - `palette`: stored colours to background, text, secondary (ties and the black/white fallback included).

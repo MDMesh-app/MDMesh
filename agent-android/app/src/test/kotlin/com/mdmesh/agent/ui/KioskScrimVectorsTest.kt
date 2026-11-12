@@ -15,7 +15,7 @@ import org.junit.Test
 import java.io.File
 
 /**
- * The shared legibility vectors (`proto/vectors/kiosk-scrim.json`, version 3.2, also run by the console): parsing,
+ * The shared legibility vectors (`proto/vectors/kiosk-scrim.json`, version 3.6, also run by the console): parsing,
  * palettes, blends, geometry (6 decimals), label rows, and layouts (dim, plate steps and busy exactly, ratios within
  * 0.01).
  */

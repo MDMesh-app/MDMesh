@@ -57,8 +57,11 @@ object JpegOrientation {
 
     /** The orientation in an APP1 segment, if it is EXIF and has one. */
     private fun orientationIn(s: Segment): Int? {
-        val ifd = if (s.isExif()) TIFF + s.u32(TIFF + IFD_OFFSET) else -1
-        if (ifd < TIFF || ifd + LENGTH_BYTES > s.size) return null
+        if (!s.isExif()) return null
+        // The offset is unsigned 32-bit: checked as a Long, so one near or past the Int range can't wrap into range.
+        val at = TIFF + s.u32(TIFF + IFD_OFFSET)
+        if (at + LENGTH_BYTES > s.size) return null
+        val ifd = at.toInt()
         return (0 until s.u16(ifd)).asSequence()
             .map { ifd + LENGTH_BYTES + it * ENTRY }
             .takeWhile { it + ENTRY <= s.size }
@@ -83,8 +86,11 @@ object JpegOrientation {
 
         fun u16(i: Int): Int = if (little) u8(i) or (u8(i + 1) shl BITS) else (u8(i) shl BITS) or u8(i + 1)
 
-        fun u32(i: Int): Int =
-            if (little) u16(i) or (u16(i + 2) shl (2 * BITS)) else (u16(i) shl (2 * BITS)) or u16(i + 2)
+        /** Unsigned, so never negative. */
+        fun u32(i: Int): Long {
+            val (low, high) = if (little) u16(i) to u16(i + 2) else u16(i + 2) to u16(i)
+            return (high.toLong() shl (2 * BITS)) or low.toLong()
+        }
     }
 
     private object NotJpeg : Exception()

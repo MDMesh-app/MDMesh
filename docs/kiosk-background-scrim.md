@@ -323,7 +323,7 @@ text needs one) and "Image dimmed 22%".
   above; the agent passes them with Android 7's, 8's, 11's and 15's own data.
 - `direction` (3.5): a label's `text` to `ltr` or `rtl`: Latin first, Hebrew first, RLM, ALM, LRM then Hebrew, a flag
   then Hebrew, a Roman numeral then Hebrew, RLE then Latin, digits first, neutral only, an isolate around Hebrew, an
-  isolate left open, a stray PDI, an emoji newer than Unicode 8 then Hebrew, and Arabic.
+  isolate left open, a stray PDI, a stray PDI before an isolate, an emoji newer than Unicode 8 then Hebrew, and Arabic.
 
 ## What 3.2 changes
 

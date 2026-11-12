@@ -55,4 +55,20 @@ class LabelViewTest {
         assertEquals(View.TEXT_DIRECTION_LTR, view("POS \u05de\u05dc\u05d0\u05d9").textDirection)
         assertEquals("no strong character: left to right", View.TEXT_DIRECTION_LTR, view("123 456").textDirection)
     }
+
+    /** The label's view takes the pinned rule (UAX #9 P2 as the spec says), not the platform's heuristic. */
+    @Test fun everyDirectionVectorReachesTheView() {
+        val root = generateSequence(java.io.File("").absoluteFile) { it.parentFile }
+            .first { java.io.File(it, "proto/vectors/kiosk-scrim.json").isFile }
+        val vectors = kotlinx.serialization.json.Json.parseToJsonElement(
+            java.io.File(root, "proto/vectors/kiosk-scrim.json").readText(),
+        ).let { it as kotlinx.serialization.json.JsonObject }
+        for (e in vectors["direction"] as kotlinx.serialization.json.JsonArray) {
+            val v = e as kotlinx.serialization.json.JsonObject
+            val text = (v["text"] as kotlinx.serialization.json.JsonPrimitive).content
+            val rtl = (v["expected"] as kotlinx.serialization.json.JsonPrimitive).content == "rtl"
+            val want = if (rtl) View.TEXT_DIRECTION_RTL else View.TEXT_DIRECTION_LTR
+            assertEquals(v["name"].toString(), want, view(text).textDirection)
+        }
+    }
 }

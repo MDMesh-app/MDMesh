@@ -29526,6 +29526,11 @@
    "expected": "rtl"
   },
   {
+   "name": "stray-pdi-then-isolate",
+   "text": "⁩⁧abc⁩ שלום",
+   "expected": "rtl"
+  },
+  {
    "name": "new-emoji-then-hebrew",
    "text": "🫠 שלום",
    "expected": "rtl"

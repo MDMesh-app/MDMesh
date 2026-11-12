@@ -77,13 +77,14 @@ class KioskApplier(
 
     /** [reassert]: skip the "already in this kiosk" short-circuit (a relock after a cut-off exit). */
     private suspend fun enterLocked(p: KioskApplyPayload, reassert: Boolean = false): KioskResult {
-        // Entering supersedes any exit a process death cut off: it must never be finished against this kiosk. Only an
-        // entry that is there is cleared: no disk write on every entry.
-        withContext(io) { if (journal.pending() != null) journal.end() }
         // Already in this kiosk: no re-entry or relaunch, but re-assert the volume lock and the Safe Mode block (either
         // may have failed before).
         val current = store.load()
+        val pending = withContext(io) { journal.pending() }
         if (!reassert && p.sameKioskAs(current) && isLockTaskActive()) {
+            // Locked in this very kiosk: an exit cut off before it is settled in kiosk already. Only an entry that is
+            // there is cleared: no disk write on every entry.
+            if (pending != null) clearJournal("re-entry of the kiosk it was exiting")
             // The same kiosk, perhaps with a new look (colours, image, fit, focal point, or the image at a new URL):
             // saved in place, the launcher redraws it; nothing is entered or relaunched.
             if (current != p || current?.theme?.backgroundImage?.url != p.theme.backgroundImage?.url) {
@@ -92,6 +93,15 @@ class KioskApplier(
             }
             return applySafeMode(applyVolume(p, KioskResult.Ok))
         }
+        // Entering supersedes an exit a process death cut off, but the entry is cleared only once this kiosk is
+        // locked and saved: until then a death must leave something for the next start to settle. So it is first
+        // marked "settle in kiosk" (never finish: the device is being put in a kiosk, not taken out), which relocks
+        // whichever kiosk is saved when the process died. A mark that can't be made durable refuses a new kiosk (the
+        // old entry could otherwise be finished as an exit); a relock goes on regardless, locking is fail-closed.
+        if (pending != null && !pending.failed && !withContext(io) { journal.begin(pending.copy(failed = true)) }) {
+            warn("could not mark a cut-off kiosk exit as superseded")
+            if (!reassert) return KioskResult.Failed("kiosk exit journal not writable")
+        }
         home.setClaimEnabled(true)
         return when (val r = lockTo(p)) {
             KioskResult.Ok -> {
@@ -99,11 +109,15 @@ class KioskApplier(
                 // volume lock is reported (the config document is then not persisted and is re-applied), and the
                 // short-circuit above re-asserts it without relaunching the kiosk.
                 store.save(p)
+                // Locked and saved: nothing is left to settle. Not before: see the mark above.
+                if (pending != null) clearJournal("kiosk locked")
                 home.showLauncher()
                 onEntered(p)
                 applySafeMode(applyVolume(p, r))
             }
             else -> {
+                // A marked entry, if any, is kept: the next start settles it in kiosk (or, with no kiosk saved, drops
+                // it and releases HOME, as below).
                 if (current == null) {
                     home.setClaimEnabled(false) // never leave a non-kiosk device claiming HOME
                 } else {
@@ -174,14 +188,21 @@ class KioskApplier(
     ): KioskResult {
         val entry = resumed
             ?: ExitJournal.Pending(handBackHome, force, ExitJournal.fingerprint(store.load()), boot = bootId())
-        withContext(io) { journal.begin(entry) }
+        // No durable entry, no exit: a death between its steps would leave a half-exited kiosk nothing settles (the
+        // same rule as PinAttemptStore). Nothing has been touched yet, so the device simply stays in kiosk.
+        if (!withContext(io) { journal.begin(entry) }) {
+            warn("kiosk exit not started: its journal entry could not be written")
+            return KioskResult.Failed("kiosk exit journal not writable")
+        }
         var completed = false
         try {
             return exitSteps(handBackHome, force).also { completed = true }
         } finally {
             // A step threw with the agent running (not a process death): the entry stays, marked, and the next start
             // settles it in kiosk instead of finishing it later.
-            if (!completed) withContext(NonCancellable + io) { journal.begin(entry.copy(failed = true)) }
+            if (!completed && !withContext(NonCancellable + io) { journal.begin(entry.copy(failed = true)) }) {
+                warn("kiosk exit step threw and its entry could not be marked; the next start settles it as written")
+            }
         }
     }
 
@@ -191,7 +212,7 @@ class KioskApplier(
             // Refused, but maybe partway (the allowlist already dropped when a later step failed): settle in kiosk
             // by locking the saved kiosk again, so the device is in the kiosk its state says.
             val saved = store.load()
-            if (saved != null) relock(saved, "exit refused") else withContext(io) { journal.end() }
+            if (saved != null) relock(saved, "exit refused") else clearJournal("exit refused, no kiosk saved")
             return r
         }
         kiosk.setVolumeLocked(false) // best effort: lift the kiosk's volume lock (and its mute)
@@ -201,7 +222,7 @@ class KioskApplier(
             home.setClaimEnabled(false)
             home.showOemHome()
         }
-        withContext(io) { journal.end() }
+        clearJournal("exit finished")
         return r
     }
 
@@ -240,7 +261,7 @@ class KioskApplier(
                     // unless the configuration sets a kiosk, whose re-apply then claims it again anyway.
                     if (!desiredKioskOn()) home.setClaimEnabled(false)
                     warn("interrupted kiosk exit dropped: no kiosk saved")
-                    journal.end()
+                    clearJournal("no kiosk saved")
                 }
                 false
             }
@@ -253,8 +274,9 @@ class KioskApplier(
     }
 
     /**
-     * Lock [saved] again after a cut-off exit: allowlist, lock task and HOME claim, as a fresh entry (which also
-     * clears the journal). A failed relock leaves the device half out of kiosk, so it is logged loudly.
+     * Lock [saved] again after a cut-off exit: allowlist, lock task and HOME claim, as a fresh entry (which clears the
+     * journal once the kiosk is locked, never before). A failed relock leaves the device half out of kiosk, so it is
+     * logged loudly.
      */
     private suspend fun relock(saved: KioskApplyPayload, why: String) {
         val r = enterLocked(saved, reassert = true)
@@ -263,9 +285,17 @@ class KioskApplier(
         } else {
             // The device may be half out of kiosk: keep a (failed) entry so the next start tries the relock again.
             val retry = ExitJournal.Pending(true, false, ExitJournal.fingerprint(saved), boot = bootId(), failed = true)
-            withContext(io) { journal.begin(retry) }
+            if (!withContext(io) { journal.begin(retry) }) warn("could not keep the failed relock's journal entry")
             warn("kiosk exit not finished ($why), and locking the kiosk again failed: $r; tried again at next start")
         }
+    }
+
+    /**
+     * Clears the journal, last: every caller has already done what the entry stood for. A clear that doesn't reach the
+     * disk leaves the entry, which the next start settles in kiosk (fail closed), so it is only logged.
+     */
+    private suspend fun clearJournal(why: String) {
+        if (!withContext(io) { journal.end() }) warn("kiosk exit journal not cleared ($why); the next start settles it")
     }
 
     /** Best effort: logging must not stand in the way (the JVM unit tests have no android.util.Log). */

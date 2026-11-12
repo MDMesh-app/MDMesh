@@ -30,11 +30,18 @@ interface ExitJournal {
 
     fun pending(): Pending?
 
-    /** Written durably before the exit's first step. */
-    fun begin(p: Pending)
+    /**
+     * Written durably before the exit's first step. False when it could not be made durable: the caller must not go
+     * on as if it were (an exit then doesn't start).
+     */
+    fun begin(p: Pending): Boolean
 
-    /** Cleared durably after its last step, when it stopped without exiting, or when a kiosk is entered. */
-    fun end()
+    /**
+     * Cleared durably after its last step, when it stopped without exiting, or once a kiosk entered over it is
+     * locked. False when the clear didn't reach the disk: the entry is then still there for the next start, which
+     * settles it in kiosk (fail closed), so callers only log it.
+     */
+    fun end(): Boolean
 
     /** What the next start does with a [Pending] exit. */
     enum class Resume {
@@ -93,8 +100,8 @@ interface ExitJournal {
     /** No journal: for tests and callers that don't need resuming. */
     object None : ExitJournal {
         override fun pending(): Pending? = null
-        override fun begin(p: Pending) = Unit
-        override fun end() = Unit
+        override fun begin(p: Pending) = true
+        override fun end() = true
     }
 }
 
@@ -118,15 +125,12 @@ class SharedPrefsExitJournal(context: Context) : ExitJournal {
             )
         }
 
-    override fun begin(p: ExitJournal.Pending) {
+    override fun begin(p: ExitJournal.Pending): Boolean =
         prefs.edit().putBoolean(KEY_PENDING, true).putBoolean(KEY_HOME, p.handBackHome)
             .putBoolean(KEY_FORCE, p.force).putString(KEY_KIOSK, p.kiosk).putLong(KEY_BOOT, p.boot)
             .putInt(KEY_ATTEMPTS, p.attempts).putBoolean(KEY_FAILED, p.failed).commit()
-    }
 
-    override fun end() {
-        prefs.edit().clear().commit()
-    }
+    override fun end(): Boolean = prefs.edit().clear().commit()
 
     private companion object {
         const val FILE = "mdm_kiosk_exit"

@@ -19,6 +19,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -87,6 +88,11 @@ class KioskLauncherActivity : ComponentActivity() {
 
     /** The hold screen is showing (so its event is recorded once per hold). */
     private var holding = false
+    private var remoteViewProbeStatus: TextView? = null
+
+    private val remoteViewConsent = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result -> RemoteViewFeasibilityProbe.onConsentResult(this, result.resultCode, result.data) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -100,6 +106,11 @@ class KioskLauncherActivity : ComponentActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 store.flow().distinctUntilChanged().collect(::applyState)
+            }
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                RemoteViewFeasibilityProbe.state.collect(::showRemoteViewProbeState)
             }
         }
     }
@@ -212,6 +223,17 @@ class KioskLauncherActivity : ComponentActivity() {
         if (!holding) events.record("kioskCrashLoop", "kiosk app closed repeatedly; kiosk stays on, app not reopened")
         holding = true
         setContentView(holdView(p))
+    }
+
+    private fun showRemoteViewProbeState(state: RemoteViewFeasibilityState) {
+        val status = remoteViewProbeStatus ?: return
+        if (!RemoteViewFeasibilityProbe.isAvailable() || state.message.isBlank()) {
+            status.visibility = View.GONE
+            return
+        }
+        status.visibility = View.VISIBLE
+        status.text = state.message
+        status.setTextColor(if (state.active) SIGNAL else MUTED)
     }
 
     private fun startLockTaskSafely() {
@@ -345,6 +367,24 @@ class KioskLauncherActivity : ComponentActivity() {
             )
         }
         column.addView(grid)
+        if (RemoteViewFeasibilityProbe.isAvailable()) {
+            column.addView(
+                Button(this).apply {
+                    text = "Test screen-share consent"
+                    isAllCaps = false
+                    setOnClickListener {
+                        RemoteViewFeasibilityProbe.requestConsent(this@KioskLauncherActivity, remoteViewConsent)
+                    }
+                },
+            )
+            remoteViewProbeStatus = text("", 13f, MUTED).apply {
+                visibility = View.GONE
+                setPadding(0, dp(6), 0, 0)
+            }
+            column.addView(remoteViewProbeStatus)
+        } else {
+            remoteViewProbeStatus = null
+        }
 
         val root = frame(bg)
         root.addView(

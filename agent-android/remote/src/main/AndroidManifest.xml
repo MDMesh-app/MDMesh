@@ -11,9 +11,10 @@
     <application>
 
         <!--
-            Input-injection service for remote-control "control" tier. Disabled by
-            default (android:enabled="false") and only enabled at runtime once a
-            remote-control session of mode=control is authorised.
+            Input-injection service for a future remote-control tier. Its component
+            is disabled by default. Exposing a component is not Accessibility
+            consent: the local user must still enable the service in Android
+            Settings, and a session may only make an already-enabled service active.
         -->
         <service
             android:name="com.mdmesh.remote.InputInjectionService"

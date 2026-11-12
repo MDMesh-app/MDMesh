@@ -16,6 +16,7 @@ import android.widget.TextView
 import android.widget.Toast
 import android.content.Intent
 import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.Lifecycle
@@ -71,8 +72,14 @@ class MainActivity : ComponentActivity() {
     private lateinit var credentialsLostValue: TextView
     private lateinit var kioskValue: TextView
     private lateinit var returnButton: Button
+    private lateinit var remoteViewProbeButton: Button
+    private lateinit var remoteViewProbeStatus: TextView
     private var returningToKiosk = false
     private var confirmDialog: AlertDialog? = null
+
+    private val remoteViewConsent = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result -> RemoteViewFeasibilityProbe.onConsentResult(this, result.resultCode, result.data) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -93,6 +100,11 @@ class MainActivity : ComponentActivity() {
                     lastSuccess = syncStatus.lastSuccessAtMsChanges,
                     lastError = syncStatus.lastError,
                 ).collect { show(it) }
+            }
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                RemoteViewFeasibilityProbe.state.collect(::showRemoteViewProbeState)
             }
         }
         // Grant our own POST_NOTIFICATIONS as Device Owner BEFORE starting the foreground
@@ -126,6 +138,17 @@ class MainActivity : ComponentActivity() {
         returnButton.visibility = if (canReturn) View.VISIBLE else View.GONE
         returnButton.isEnabled = canReturn && !returningToKiosk
         returnButton.text = if (returningToKiosk) "Returning…" else "Return to kiosk"
+        remoteViewProbeButton.visibility = if (RemoteViewFeasibilityProbe.isAvailable()) View.VISIBLE else View.GONE
+    }
+
+    private fun showRemoteViewProbeState(state: RemoteViewFeasibilityState) {
+        if (!RemoteViewFeasibilityProbe.isAvailable() || state.message.isBlank()) {
+            remoteViewProbeStatus.visibility = View.GONE
+            return
+        }
+        remoteViewProbeStatus.visibility = View.VISIBLE
+        remoteViewProbeStatus.text = state.message
+        remoteViewProbeStatus.setTextColor(if (state.active) SIGNAL else MUTED)
     }
 
     /** The DEVICE ID area: the id (mono, alone, so it can be copied as it is) and, under it, any warning. */
@@ -243,6 +266,20 @@ class MainActivity : ComponentActivity() {
         root.addView(kioskValue)
         returnButton = kioskReturnButton()
         root.addView(returnButton)
+        root.addView(spacer())
+
+        remoteViewProbeButton = Button(this).apply {
+            text = "Test screen-share consent"
+            isAllCaps = false
+            setOnClickListener { RemoteViewFeasibilityProbe.requestConsent(this@MainActivity, remoteViewConsent) }
+            visibility = View.GONE
+        }
+        root.addView(remoteViewProbeButton)
+        remoteViewProbeStatus = text("", 13f, MUTED).apply {
+            visibility = View.GONE
+            setPadding(0, dp(6), 0, 0)
+        }
+        root.addView(remoteViewProbeStatus)
         root.addView(spacer())
 
         root.addView(label("AGENT VERSION"))

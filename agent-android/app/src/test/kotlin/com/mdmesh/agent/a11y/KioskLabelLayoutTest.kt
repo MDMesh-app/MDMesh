@@ -106,7 +106,10 @@ abstract class KioskLabelLayoutTest(private val fontScale: Float) {
 }
 
 @Config(sdk = [35], qualifiers = "w411dp-h891dp-port-notnight-420dpi")
-class KioskLabelLayoutPortraitTest : KioskLabelLayoutTest(1f)
+class KioskLabelLayoutPortraitTest : KioskLabelLayoutTest(1f) {
+    /** The shared label-line vectors with Android 15's ICU (Unicode 15); 24 and 26 run in LabelLineVectors*Test. */
+    @Test fun everyLabelLineVectorOnAndroid15() = com.mdmesh.agent.ui.checkLabelLineVectors()
+}
 
 @Config(sdk = [35], qualifiers = "w891dp-h411dp-land-notnight-420dpi")
 class KioskLabelLayoutLandscapeTest : KioskLabelLayoutTest(1f)

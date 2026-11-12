@@ -40,8 +40,8 @@ class KioskScrimVectorsTest {
 
     private fun double(o: JsonObject, key: String) = o[key]!!.jsonPrimitive.double
 
-    @Test fun `version 3_3 with the documented constants`() {
-        assertEquals("3.3", vectors["version"]!!.jsonPrimitive.content)
+    @Test fun `version 3_4 with the documented constants`() {
+        assertEquals("3.4", vectors["version"]!!.jsonPrimitive.content)
         assertEquals(KioskScrim.STEPS, int(vectors, "steps"))
         assertEquals(LegibilityV3.DIM_MAX_STEP, int(vectors, "dimMaxStep"))
         assertEquals(Contrast.TEXT_MIN, double(vectors, "textMin"), 0.0)
@@ -115,22 +115,6 @@ class KioskScrimVectorsTest {
                 assertEquals("${v["name"]} $i x", double(w, "x"), got[i].x, 1e-9)
                 assertEquals("${v["name"]} $i w", double(w, "w"), got[i].w, 1e-9)
             }
-        }
-    }
-
-    @Test fun `every label line vector`() {
-        val cases = vectors["labelLines"]!!.jsonArray
-        check(cases.isNotEmpty())
-        for (e in cases) {
-            val v = e.jsonObject
-            val text = v["text"]!!.jsonPrimitive.content
-            val widths = v["widths"]!!.jsonArray.map { it.jsonPrimitive.double }
-            val widthOf = text.indices.associate { text[it] to widths[it] } +
-                (LabelLines.ELLIPSIS[0] to double(v, "ellipsisWidth"))
-            val box = double(v, "box")
-            val got = LabelLines.lines(text, box, int(v, "maxLines")) { s -> s.sumOf { widthOf.getValue(it) } }
-            val want = v["expected"]!!.jsonArray.map { it.jsonPrimitive.content }
-            assertEquals(v["name"].toString(), want, got)
         }
     }
 

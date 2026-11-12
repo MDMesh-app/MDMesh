@@ -203,14 +203,14 @@ class KioskBackgroundImageStore internal constructor(
         private val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
         override fun failures(source: String): Int =
-            if (prefs.getString(KEY_HASH, null) == source) prefs.getInt(KEY_COUNT, 0) else 0
+            if (prefs.getString(KEY_SOURCE, null) == source) prefs.getInt(KEY_COUNT, 0) else 0
 
         override fun failed(source: String, count: Int) {
-            prefs.edit().putString(KEY_HASH, source).putInt(KEY_COUNT, count).apply()
+            prefs.edit().putString(KEY_SOURCE, source).putInt(KEY_COUNT, count).apply()
         }
 
         override fun succeeded(hash: String) {
-            prefs.edit().remove(KEY_HASH).remove(KEY_COUNT).putString(KEY_LAST_GOOD, hash).apply()
+            prefs.edit().remove(KEY_SOURCE).remove(KEY_COUNT).putString(KEY_LAST_GOOD, hash).apply()
         }
 
         override fun isInvalid(hash: String): Boolean = hash in prefs.getStringSet(KEY_INVALID, emptySet()).orEmpty()
@@ -247,7 +247,8 @@ class KioskBackgroundImageStore internal constructor(
 
         const val DIR = "kiosk-background"
         private const val PREFS = "mdm_kiosk_background"
-        private const val KEY_HASH = "failed_hash"
+        /** The failing source, "<sha256> <url>" (it was the hash alone before; such an entry reads as no failures). */
+        private const val KEY_SOURCE = "failed_source"
         private const val KEY_COUNT = "failures"
         private const val KEY_INVALID = "invalid_hashes"
         private const val KEY_LAST_GOOD = "last_good"

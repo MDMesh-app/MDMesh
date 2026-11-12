@@ -5,13 +5,23 @@ import android.content.Context
 import android.graphics.text.LineBreaker
 import android.os.Build
 import android.text.Layout
+import android.text.TextDirectionHeuristics
 import android.widget.TextView
 
 /**
- * How an app label breaks into lines (`docs/kiosk-background-scrim.md`, Label lines, 3.3): at word boundaries only
+ * Where a string may be cut without breaking a character as a reader sees it: extended grapheme cluster boundaries
+ * (UAX #29), as offsets after each cluster, shortest first.
+ */
+fun interface Graphemes {
+    fun ends(s: String): IntArray
+}
+
+/**
+ * How an app label breaks into lines (`docs/kiosk-background-scrim.md`, Label lines, 3.4): at word boundaries only
  * (and after a hyphen or slash inside a word, and between CJK characters), never inside a word; a word wider than the
- * box is ellipsized on its own line; greedy fill; the last line takes the rest, ellipsized. Pure Kotlin: [measure]
- * gives a string's width (the label's paint on the device, per-character widths in the vectors).
+ * box is ellipsized on its own line; greedy fill; the last line takes the rest, ellipsized; the cap and every
+ * ellipsis cut at grapheme cluster boundaries ([Graphemes]). Pure Kotlin: [measure] gives a string's width (the
+ * label's paint on the device, per-character widths in the vectors).
  */
 object LabelLines {
     const val ELLIPSIS = "\u2026"
@@ -23,20 +33,26 @@ object LabelLines {
      * The lines of [text] in a [box] wide, at most [maxLines]. Bounded: at most [MAX_CODE_POINTS] code points are
      * looked at, whatever the label's length, and an ellipsis is found by bisection.
      */
-    fun lines(text: String, box: Double, maxLines: Int, measure: (String) -> Double): List<String> {
-        val pieces = pieces(normalize(cap(text)))
+    fun lines(
+        text: String,
+        box: Double,
+        maxLines: Int,
+        graphemes: Graphemes,
+        measure: (String) -> Double,
+    ): List<String> {
+        val pieces = pieces(normalize(cap(text, graphemes)))
         val out = mutableListOf<String>()
         var current = ""
         var i = 0
         while (i < pieces.size && maxLines > 0) {
             if (out.size == maxLines - 1) {
-                out += ellipsize(rest(current, pieces, i), box, measure)
+                out += ellipsize(rest(current, pieces, i), box, graphemes, measure)
                 return out
             }
             val (piece, spaced) = pieces[i]
             val joined = if (spaced && current.isNotEmpty()) "$current $piece" else current + piece
             when {
-                current.isEmpty() && measure(piece) > box -> out += ellipsize(piece, box, measure)
+                current.isEmpty() && measure(piece) > box -> out += ellipsize(piece, box, graphemes, measure)
                 current.isEmpty() || measure(joined) <= box -> current = joined
                 else -> {
                     out += current
@@ -88,27 +104,35 @@ object LabelLines {
         return s.toString()
     }
 
-    /** The first [MAX_CODE_POINTS] code points of [text], cut between code points (never inside a surrogate pair). */
-    fun cap(text: String): String {
+    /**
+     * [text] cut to at most [MAX_CODE_POINTS] code points, and back to the last grapheme cluster boundary at or before
+     * that, so the cap never splits a cluster (or a surrogate pair). The work is bounded: only the clusters around the
+     * cut are looked at, whatever the label's length.
+     */
+    fun cap(text: String, graphemes: Graphemes): String {
         var end = 0
         var count = 0
         while (end < text.length && count < MAX_CODE_POINTS) {
             end += Character.charCount(text.codePointAt(end))
             count++
         }
-        return if (end >= text.length) text else text.substring(0, end)
+        if (end >= text.length) return text
+        // The clusters of a window around the cut: a cluster longer than the window is cut at a code point (bounded).
+        val window = text.substring(0, minOf(text.length, end + CAP_LOOKAHEAD))
+        return text.substring(0, graphemes.ends(window).lastOrNull { it <= end } ?: end)
     }
 
     /**
-     * [s] as it is when it fits, else its longest prefix (trailing spaces off) that fits with `…`, then `…`; a prefix
-     * ends where a cut is allowed ([cuts]). Found by bisection: a prefix's width grows with its length.
+     * [s] as it is when it fits, else its longest prefix (trailing spaces off) that fits with `…` (measured together,
+     * as it is drawn), then `…`; a prefix ends at a grapheme cluster boundary. Found by bisection: a prefix's width
+     * grows with its length.
      */
-    fun ellipsize(s: String, box: Double, measure: (String) -> Double): String {
+    fun ellipsize(s: String, box: Double, graphemes: Graphemes, measure: (String) -> Double): String {
         if (measure(s) <= box) return s
-        val ellipsis = measure(ELLIPSIS)
-        val cuts = cuts(s)
-        // Monotone in k (an empty prefix measures 0): bisection finds the longest cut that fits.
-        fun fits(k: Int): Boolean = measure(s.substring(0, cuts[k]).trimEnd(' ')) + ellipsis <= box
+        val cuts = graphemes.ends(s)
+        fun candidate(k: Int) = s.substring(0, cuts[k]).trimEnd(' ')
+        // Monotone in k: bisection finds the longest cut that fits.
+        fun fits(k: Int): Boolean = measure(candidate(k) + ELLIPSIS) <= box
         var lo = -1 // the longest cut known to fit (-1: none)
         var hi = cuts.size // the shortest cut known not to
         while (hi - lo > 1) {
@@ -116,31 +140,10 @@ object LabelLines {
             if (fits(mid)) lo = mid else hi = mid
         }
         // Nothing fits, or only spaces (a shorter prefix of spaces is empty too): the ellipsis alone.
-        return if (lo < 0) ELLIPSIS else s.substring(0, cuts[lo]).trimEnd(' ') + ELLIPSIS
+        return if (lo < 0) ELLIPSIS else candidate(lo) + ELLIPSIS
     }
 
-    /**
-     * Where [s] may be cut for an ellipsis, shortest first: after each code point that isn't followed by a combining
-     * mark, a zero-width joiner or an emoji presentation selector (a mark never loses its letter).
-     */
-    private fun cuts(s: String): IntArray {
-        val out = IntArray(s.length)
-        var n = 0
-        var i = 0
-        while (i < s.length) {
-            i += Character.charCount(s.codePointAt(i))
-            if (i >= s.length || !joinsPrevious(s.codePointAt(i))) out[n++] = i
-        }
-        return out.copyOf(n)
-    }
-
-    private fun joinsPrevious(cp: Int): Boolean = when (Character.getType(cp).toByte()) {
-        Character.NON_SPACING_MARK, Character.ENCLOSING_MARK, Character.COMBINING_SPACING_MARK -> true
-        else -> cp == ZERO_WIDTH_JOINER || cp == EMOJI_PRESENTATION
-    }
-
-    private const val ZERO_WIDTH_JOINER = 0x200D
-    private const val EMOJI_PRESENTATION = 0xFE0F
+    private const val CAP_LOOKAHEAD = 64
 
     /** A line may break after [c] inside a word: a hyphen, a slash, or a CJK character. */
     private fun breaksAfter(c: Char): Boolean = c == '-' || c == '/' || isCjk(c)
@@ -154,8 +157,11 @@ object LabelLines {
 
 /**
  * An app label laid out by [LabelLines]: for the width it gets, the label's [label] becomes those lines (each already
- * fits, so the platform never breaks one again), at its own size. The lines are worked out once per label, width,
- * text size and typeface: a measure again (a relayout, a scroll pass) does no layout work.
+ * fits, so the platform never breaks one again), at its own size, in one direction for the whole label (its first
+ * strong character), whatever each line holds. The lines are worked out once per label, width and paint (size,
+ * typeface, letter spacing, locale): a measure again (a relayout, a scroll pass) does no layout work, and a change to
+ * any of those lays it out again. A configuration change (font scale, density) rebuilds the launcher's views
+ * ([KioskRenderer.rebuild]), so a new LabelView is measured with the new paint and line count.
  */
 @SuppressLint("AppCompatCustomView", "ViewConstructor") // a plain framework TextView, made in code only
 class LabelView(context: Context, private val maxLabelLines: Int) : TextView(context) {
@@ -165,11 +171,16 @@ class LabelView(context: Context, private val maxLabelLines: Int) : TextView(con
         set(value) {
             if (field.toString() == value.toString()) return
             field = value
-            capped = LabelLines.cap(value.toString())
+            capped = LabelLines.cap(value.toString(), IcuGraphemes)
+            textDirection = if (TextDirectionHeuristics.FIRSTSTRONG_LTR.isRtl(capped, 0, capped.length)) {
+                TEXT_DIRECTION_RTL
+            } else {
+                TEXT_DIRECTION_LTR
+            }
             requestLayout()
         }
 
-    /** [label] as laid out: its first [LabelLines.MAX_CODE_POINTS] code points. */
+    /** [label] as laid out: its first [LabelLines.MAX_CODE_POINTS] code points, whole clusters. */
     private var capped = ""
 
     init {
@@ -183,7 +194,14 @@ class LabelView(context: Context, private val maxLabelLines: Int) : TextView(con
         }
     }
 
-    private data class Key(val label: String, val box: Int, val textSize: Float, val typeface: Any?)
+    private data class Key(
+        val label: String,
+        val box: Int,
+        val textSize: Float,
+        val typeface: Any?,
+        val letterSpacing: Float,
+        val locale: Any?,
+    )
 
     private var laidFor: Key? = null
 
@@ -192,20 +210,27 @@ class LabelView(context: Context, private val maxLabelLines: Int) : TextView(con
         private set
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val box = MeasureSpec.getSize(widthMeasureSpec) - totalPaddingLeft - totalPaddingRight
-        val key = Key(capped, box, paint.textSize, paint.typeface)
-        if (box > 0 && key != laidFor) {
+        // The grid always measures a cell's label EXACTLY. Unbounded (UNSPECIFIED: a parent that lets it be as wide as
+        // it likes), the box is endless: the label on one line.
+        val box = if (MeasureSpec.getMode(widthMeasureSpec) == MeasureSpec.UNSPECIFIED) {
+            Int.MAX_VALUE
+        } else {
+            MeasureSpec.getSize(widthMeasureSpec) - totalPaddingLeft - totalPaddingRight
+        }
+        val key = Key(capped, box, paint.textSize, paint.typeface, paint.letterSpacing, textLocale)
+        if (key != laidFor) {
             laidFor = key
             layouts++
-            val laid = LabelLines.lines(key.label, box.toDouble(), maxLabelLines) { paint.measureText(it).toDouble() }
+            val laid = if (box <= 0) {
+                emptyList()
+            } else {
+                LabelLines.lines(capped, box.toDouble(), maxLabelLines, IcuGraphemes) {
+                    paint.measureText(it).toDouble()
+                }
+            }
             val joined = laid.joinToString("\n")
             if (text.toString() != joined) setText(joined)
         }
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
-    }
-
-    override fun onConfigurationChanged(newConfig: android.content.res.Configuration?) {
-        super.onConfigurationChanged(newConfig)
-        laidFor = null // a new font scale or locale: lay out again
     }
 }

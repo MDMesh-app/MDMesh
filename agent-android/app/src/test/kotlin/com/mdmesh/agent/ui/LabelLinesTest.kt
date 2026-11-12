@@ -8,6 +8,17 @@ import kotlin.random.Random
 /** The label-line rule is bounded whatever the label (they come from installed apps), and bisection is exact. */
 class LabelLinesTest {
 
+    /** Code points as clusters, with the spec's conditions (the JVM has no Android ICU; the vectors use it). */
+    private val graphemes = Graphemes { s ->
+        val ends = mutableListOf<Int>()
+        var i = 0
+        while (i < s.length) {
+            i += Character.charCount(s.codePointAt(i))
+            ends += i
+        }
+        GraphemeGuards.apply(s, ends.toIntArray())
+    }
+
     /** A width per code point, positive, so a prefix's width grows with its length; marks are 0. */
     private fun widthOf(cp: Int): Double = when (Character.getType(cp).toByte()) {
         Character.NON_SPACING_MARK, Character.ENCLOSING_MARK, Character.COMBINING_SPACING_MARK -> 0.0
@@ -29,7 +40,7 @@ class LabelLinesTest {
     private fun bounded(label: String) {
         val calls = IntArray(1)
         val start = System.nanoTime()
-        val lines = LabelLines.lines(label, 120.0, 3, measure(calls))
+        val lines = LabelLines.lines(label, 120.0, 3, graphemes, measure(calls))
         val ms = (System.nanoTime() - start) / 1_000_000
         assertTrue("${label.take(12)}…: $ms ms", ms < 250)
         assertTrue("${calls[0]} measures", calls[0] < 2_000)
@@ -47,41 +58,31 @@ class LabelLinesTest {
 
     @Test fun `the cap counts code points and never splits a surrogate pair`() {
         val emoji = "😀"
-        val capped = LabelLines.cap(emoji.repeat(300))
+        val capped = LabelLines.cap(emoji.repeat(300), graphemes)
         assertEquals(LabelLines.MAX_CODE_POINTS * 2, capped.length)
-        assertEquals("a".repeat(10), LabelLines.cap("a".repeat(10)))
+        assertEquals("a".repeat(10), LabelLines.cap("a".repeat(10), graphemes))
+        val accent = "a".repeat(255) + "e\u0301"
+        assertEquals("the cap moves back before a cut-off accent", "a".repeat(255), LabelLines.cap(accent, graphemes))
     }
 
     /** The plain rule: try every allowed cut, longest first. */
     private fun linear(s: String, box: Double, measure: (String) -> Double): String {
         if (measure(s) <= box) return s
-        val ell = measure(LabelLines.ELLIPSIS)
-        var found: String? = null
-        var n = s.length
-        while (n > 0 && found == null) {
-            val atBoundary = !Character.isLowSurrogate(s.getOrElse(n) { 'x' }) || !Character.isHighSurrogate(s[n - 1])
-            val next = if (n < s.length) s.codePointAt(n) else -1
-            val joins = next >= 0 && (
-                Character.getType(next).toByte() in listOf(
-                    Character.NON_SPACING_MARK, Character.ENCLOSING_MARK, Character.COMBINING_SPACING_MARK,
-                ) || next == 0x200D || next == 0xFE0F
-                )
-            if (atBoundary && !joins) {
-                val p = s.substring(0, n).trimEnd(' ')
-                if (p.isNotEmpty() && measure(p) + ell <= box) found = p + LabelLines.ELLIPSIS
-            }
-            n--
-        }
-        return found ?: LabelLines.ELLIPSIS
+        val found = graphemes.ends(s).reversed().map { s.substring(0, it).trimEnd(' ') }
+            .firstOrNull { measure(it + LabelLines.ELLIPSIS) <= box }
+        return if (found.isNullOrEmpty()) LabelLines.ELLIPSIS else found + LabelLines.ELLIPSIS
     }
 
     @Test fun `bisection gives the same ellipsis as trying every cut`() {
         val random = Random(17)
-        val alphabet = listOf("a", "W", " ", "-", "́", "在", "😀", "‍", "️", "א")
+        val alphabet = listOf(
+            "a", "W", " ", "-", "\u0301", "\u5728", "\uD83D\uDE00", "\u200D", "\uFE0F", "\u05d0",
+            "\uD83C\uDDE9", "\uD83C\uDFFD", "\u1100", "\u1161",
+        )
         repeat(3_000) {
             val s = (0 until random.nextInt(1, 40)).joinToString("") { alphabet[random.nextInt(alphabet.size)] }
             val box = random.nextDouble(0.0, 200.0)
-            assertEquals("'$s' in $box", linear(s, box, measure()), LabelLines.ellipsize(s, box, measure()))
+            assertEquals("'$s' in $box", linear(s, box, measure()), LabelLines.ellipsize(s, box, graphemes, measure()))
         }
     }
 }

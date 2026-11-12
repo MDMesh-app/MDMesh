@@ -130,4 +130,33 @@ class KioskAppearanceStressTest : KioskHarness() {
         assertTrue("the 4th return in a row still trips the hold", holdShowing())
         assertEquals(0, pinnedStarts())
     }
+
+    /**
+     * A live font-scale change on a running launcher (handled in place: fontScale is in configChanges): every label
+     * is laid out again for the new size, with 3 lines allowed above scale 1.
+     */
+    @Test fun aLiveFontScaleChangeLaysEveryLabelOutAgain() {
+        launch(grid)
+        fun labels(v: android.view.View): List<com.mdmesh.agent.ui.LabelView> = when (v) {
+            is com.mdmesh.agent.ui.LabelView -> listOf(v)
+            is android.view.ViewGroup -> (0 until v.childCount).flatMap { labels(v.getChildAt(it)) }
+            else -> emptyList()
+        }
+        val before = labels(decor)
+        assertTrue(before.isNotEmpty() && before.all { it.maxLines == 2 })
+        val size = before.first().textSize
+        org.robolectric.RuntimeEnvironment.setFontScale(2f)
+        ctl!!.configurationChange(Configuration(activity.resources.configuration).apply { fontScale = 2f })
+        settle()
+        val after = labels(decor)
+        assertTrue("3 lines allowed", after.isNotEmpty() && after.all { it.maxLines == 3 })
+        assertTrue("the larger size", after.all { it.textSize > size * 1.5f })
+        for (l in after) {
+            val lines = com.mdmesh.agent.ui.LabelLines.lines(
+                l.label.toString(), (l.width - l.totalPaddingLeft - l.totalPaddingRight).toDouble(), 3,
+                com.mdmesh.agent.ui.IcuGraphemes,
+            ) { l.paint.measureText(it).toDouble() }
+            assertEquals("'${l.label}' laid out at the new paint", lines.joinToString("\n"), l.text.toString())
+        }
+    }
 }

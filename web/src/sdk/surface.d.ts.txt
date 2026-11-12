@@ -140,6 +140,9 @@ export interface ConfigStatus {
     kioskBackgroundImage?: {
         url: string;
         sha256: string;
+        fit?: 'fit';
+        focalX?: number;
+        focalY?: number;
     } | null;
 }
 

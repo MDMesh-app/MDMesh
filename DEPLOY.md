@@ -101,8 +101,10 @@ can't be reached (a timeout, DNS, TLS or a server error, each retried twice), it
 stops on a manifest that doesn't verify (or, from before 0.5.0, names no commit) and on local changes. Run the same
 command to update later; the clone stays on a release tag, so don't `git pull`.
 
-Installs from 0.4.x have no `--update` yet: update to 0.5.0 the old way once, `git pull && ./setup.sh` (native:
-`git pull && sudo ./setup.sh --native`), then use `./setup.sh --update` from then on.
+A clone from 0.4.x has no `--update` yet. Move it to 0.5.0 once, whether it is on `main` or on a release tag:
+`git fetch --tags && git checkout v0.5.0 && ./setup.sh --update` (native: `git fetch --tags && git checkout v0.5.0 && sudo ./setup.sh --update --native`). Git refuses the checkout if it
+would overwrite local changes, and `--update` stops on any it would carry along. From then on, `./setup.sh --update`
+is enough.
 
 The wizard asks how to expose the server:
 
@@ -182,8 +184,8 @@ journalctl -u mdmesh-server -f        # follow Tomcat's stdout/stderr
 The installer doesn't open ports 80/443, so put your own TLS proxy in front. If the chosen port is held by a process
 the installer didn't start, it stops rather than kill that process.
 
-To upgrade, run the same command again ([Upgrading](docs/UPGRADING.md#native-installs)). From 0.4.x, update to 0.5.0
-once with `git pull && sudo ./setup.sh --native` first: 0.4.x has no `--update`.
+To upgrade, run the same command again ([Upgrading](docs/UPGRADING.md#native-installs)). A clone from 0.4.x has no
+`--update` yet: move it to 0.5.0 once with `git fetch --tags && git checkout v0.5.0 && sudo ./setup.sh --update --native`.
 
 ## Answering the questions in advance
 

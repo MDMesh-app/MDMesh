@@ -176,7 +176,7 @@ update_to_release() {
     [ "$(mdm_manifest_field "$_upd_dir/manifest.json" version '[0-9A-Za-z.+-]+' || true)" = "$ver" ] \
       || _upd_stop "The signed manifest at ${t} is not that release's (its version differs)."
     mcommit=$(mdm_manifest_field "$_upd_dir/manifest.json" commit '[0123456789abcdef]{40}' || true)
-    [ -n "$mcommit" ] || _upd_stop "The signed manifest of ${t} records no commit (releases before 0.5.0 don't), so --update can't tie the tag to signed code. Update to 0.5.0 the old way once (git pull && ./setup.sh; native: git pull && sudo ./setup.sh --native), then use --update."
+    [ -n "$mcommit" ] || _upd_stop "The signed manifest of ${t} records no commit (releases before 0.5.0 don't), so --update can't tie the tag to signed code. --update needs a release from 0.5.0 on: wait for one, or check out a release tag yourself (git checkout vX.Y.Z) and run ./setup.sh."
     [ "$mcommit" = "$sha" ] || _upd_stop "${t} points to ${sha}, but its signed manifest names commit ${mcommit}."
     tag=$t; tgt=$sha
     break

@@ -174,12 +174,12 @@ upd fallback-fail ok CURL_FAILFLAG=1 --
 head_is fallback-fail "$c910" || { fail "a 404 with curl exit 22 is not treated as a 404"; show; }
 ok
 # A network failure is not "not published": a timeout or a 5xx stops, saying GitHub could not be reached, and never
-# falls back (nor tells you to update the old way). Tags skipped before it are listed first.
+# falls back (nor reports an older release's manifest). Tags skipped before it are listed first.
 for f in "v9.1.0:28|timed out" "v9.1.0:7|connection refused" "v9.1.0:503|HTTP 503"; do
   clone "net-${f%%:*}-${f#*:}" v9.0.0 "$WORK/origin2"
   upd "net-${f%%:*}-${f#*:}" ok CURL_FAULT="${f%%|*}" --
   { [ "$RC" != 0 ] && head_is "net-${f%%:*}-${f#*:}" "$c900" && grep -qF "Could not reach GitHub" "$WORK/out" \
-    && grep -qF "${f#*|}" "$WORK/out" && ! grep -q 'old way' "$WORK/out" \
+    && grep -qF "${f#*|}" "$WORK/out" && ! grep -q 'records no commit' "$WORK/out" \
     && [ "$(grep -n 'v9.1.1: no published release yet' "$WORK/out" | cut -d: -f1)" -lt "$(grep -n 'Could not reach GitHub' "$WORK/out" | cut -d: -f1)" ]; } \
     || { fail "a ${f#*|} is not reported as a network failure after the skipped tags"; show; }
   ok

@@ -19,9 +19,10 @@ Upgrading
 - Quick start: run `docker compose pull && docker compose up -d` once after this update. Updates never touch the
   supervisor, and one from before 0.5.0 keeps applying updates by tag. From source, or with `SUPERVISOR_VERSION` set by
   hand: [UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050).
-- From source and native: update to 0.5.0 the old way, once: `git pull && ./setup.sh` (native: `git pull && sudo
-  ./setup.sh --native`). 0.4.x has no `--update`. From 0.5.0 on, update with `./setup.sh --update` (native:
-  `sudo ./setup.sh --update --native`).
+- From source and native: 0.4.x has no `--update`, so move the clone to 0.5.0 once with
+  `git fetch --tags && git checkout v0.5.0 && ./setup.sh --update` (native:
+  `git fetch --tags && git checkout v0.5.0 && sudo ./setup.sh --update --native`). From then on, update with `./setup.sh --update`
+  (native: `sudo ./setup.sh --update --native`).
 - Native: the installer now stops on an option it doesn't take, instead of ignoring it.
 - Answers files (`MDMESH_ANSWERS`) must belong to you and be private (mode 600), or they are refused.
 

@@ -186,6 +186,11 @@ resumed.
   API clients: `PUT /private/configurations` takes `managedAppPermissions` (`[{applicationId, permission, state}]`,
   state `grant` or `deny`); leaving it out keeps the stored rules, and rules for apps the save doesn't install are
   dropped.
+- **One config.apply after the upgrade, for some kiosk configurations.** A configuration's kiosk background image
+  address is now built from the current `BASE_URL` whenever it is sent. Where the stored address differs (the image
+  was picked before `BASE_URL` moved to HTTPS or another domain; a trailing slash alone doesn't count), the
+  configuration gets a new revision on upgrade, and its devices get one config.apply with the new address. Nothing to
+  do; the devices show the image again if the old address was one they refused.
 - **Return to kiosk on the device (agent 0.5.0):** after someone leaves a kiosk with the exit PIN, the MDMesh Agent
   offers **Return to kiosk**, offline too, while the device's configuration enables kiosk. A console **Exit kiosk**
   (`kiosk.exit`) leaves that option on the device; to remove it, turn kiosk off in the configuration. Older agents

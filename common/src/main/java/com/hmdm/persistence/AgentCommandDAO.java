@@ -185,26 +185,26 @@ public class AgentCommandDAO {
         return deviceMapper.getDeviceCapabilities(deviceNumber);
     }
 
-    public void updateDeviceSecretHash(String deviceNumber, String secretHash) {
-        deviceMapper.updateDeviceSecretHash(deviceNumber, secretHash);
-    }
-
     public void updateHardwareId(String deviceNumber, String hardwareId) {
         deviceMapper.updateHardwareId(deviceNumber, hardwareId);
+    }
+
+    /** The customer's devices the user may see, enrolled since {@code since}, newest first, at most {@code limit}. */
+    public List<com.hmdm.persistence.domain.Device> listEnrolledSince(int customerId, int userId, boolean superAdmin,
+                                                                      long since, int limit) {
+        return deviceMapper.listEnrolledSince(customerId, userId, superAdmin, since, limit);
     }
 
     public String getDeviceSecretHash(String deviceNumber) {
         return deviceMapper.getDeviceSecretHash(deviceNumber);
     }
 
-    /** Stamp the device's last-seen time (drives the admin UI's online/offline state). */
+    /**
+     * Stamp the device's last-seen time at an authenticated check-in (drives the admin UI's online/offline state). The
+     * device has its credentials then, so this also closes its enrollment's retry window.
+     */
     public void touchLastUpdate(String deviceNumber) {
-        deviceMapper.updateLastUpdate(deviceNumber, System.currentTimeMillis());
-    }
-
-    /** Stamp the device's enrollment time (the console's "Enrolled"), keeping one already set. */
-    public void recordEnrollTime(String deviceNumber) {
-        deviceMapper.updateEnrollTime(deviceNumber, System.currentTimeMillis());
+        deviceMapper.markCheckedIn(deviceNumber, System.currentTimeMillis());
     }
 
     /** Mark the device wiped (the console's "Wiped") at {@code at}: the delivery time of the wipe just sent. */

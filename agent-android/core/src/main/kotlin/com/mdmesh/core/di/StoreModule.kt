@@ -1,6 +1,8 @@
 package com.mdmesh.core.di
 
 import android.content.Context
+import com.mdmesh.core.config.ServerAddress
+import com.mdmesh.core.config.ServerConfigStore
 import com.mdmesh.core.store.DeviceIdStore
 import com.mdmesh.core.store.DeviceIdentity
 import com.mdmesh.core.store.EnrollTokenProvider
@@ -34,4 +36,7 @@ object StoreModule {
 
     @Provides
     fun provideEnrollTokenProvider(store: EnrollTokenStore): EnrollTokenProvider = store
+
+    @Provides
+    fun provideServerAddress(store: ServerConfigStore): ServerAddress = store
 }

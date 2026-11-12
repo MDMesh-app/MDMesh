@@ -42,8 +42,34 @@ class FakeIdentity(
     }
 }
 
-class FakeTokenProvider(private val token: String?) : EnrollTokenProvider {
+class FakeTokenProvider(private val token: String?, private val attempt: String? = null) : EnrollTokenProvider {
+    val attemptRequests = mutableListOf<String>()
+    var attemptCleared = 0
+        private set
     override suspend fun token(): String? = token
+    override suspend fun enrollAttempt(token: String): String? {
+        attemptRequests += token
+        return attempt
+    }
+    override suspend fun clearEnrollAttempt() {
+        attemptCleared++
+    }
+    var resumable = false
+    /** The stored lost-credentials mark, or null. */
+    var credentialsLostMark: Long? = null
+    val credentialsLost: Boolean get() = credentialsLostMark != null
+    var lostWrites = 0
+        private set
+    override suspend fun setAttemptResumable(resumable: Boolean) {
+        this.resumable = resumable
+    }
+    override suspend fun setCredentialsLost(mark: Long?) {
+        lostWrites++
+        credentialsLostMark = mark
+    }
+    override suspend fun credentialsLostMark(): Long? = credentialsLostMark
+    override suspend fun resumableAttempt(token: String): String? =
+        if (attemptCleared == 0 && resumable) attempt else null
 }
 
 class FakeCapabilitySource(
@@ -69,12 +95,15 @@ class FakeMdmApi : MdmApi {
     var checkInGate: CompletableDeferred<Unit>? = null
 
     val enrollRequests = mutableListOf<AgentEnrollRequest>()
+    /** When set, enroll throws it (after recording the request): a request the server may have handled. */
+    var enrollThrows: Throwable? = null
     val checkInRequests = mutableListOf<AgentCheckInRequest>()
     val checkInAuth = mutableListOf<String>()
 
     override suspend fun enroll(request: AgentEnrollRequest): ResponseEnvelope<AgentEnrollResponse> {
         enrollRequests += request
         enrollGate?.await()
+        enrollThrows?.let { throw it }
         return enrollResponse
     }
 

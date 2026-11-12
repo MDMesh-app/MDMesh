@@ -8,6 +8,8 @@
   "properties": {
     "protocolVersion": { "type": "string", "pattern": "^\\d+\\.\\d+$" },
     "enrollToken": { "type": "string", "description": "Server-issued enrollment token from the QR provisioning bundle. It enrolls up to the number of devices it was minted for (one by default) until it expires or an admin stops it; the server answers error.agent.token.used once it enrolls no more." },
+    "enrollAttempt": { "type": "string", "pattern": "^[A-Za-z0-9_-]{16,128}$", "description": "Optional (protocol 1.9). A random id the agent generates for this enrollment, stores before the first request, sends again on every retry and deletes once its first check-in succeeds. A retry (or a late duplicate of the request) gets the same device back with the same secret, before that device's first check-in and within 24 h; servers that predate it ignore it." },
+    "resumeOnly": { "type": "boolean", "description": "Optional (protocol 1.9). true on the agent's credential recovery: the server only resumes the device enrollAttempt already made (not checked in yet, within 24 h) and otherwise answers error.agent.enrollment.notResumable, creating nothing and taking no use of the code. Sent only to servers whose enroll response had resumeSupported." },
     "agent": { "$ref": "capability-matrix.schema.json#/properties/agent" },
     "device": {
       "type": "object",

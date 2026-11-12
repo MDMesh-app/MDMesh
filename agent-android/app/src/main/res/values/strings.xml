@@ -5,4 +5,7 @@
     <string name="checkin_notification_channel">Device management</string>
     <string name="checkin_notification_title">Device management active</string>
     <string name="checkin_notification_text">Keeping this device in sync with your organisation.</string>
+    <string name="status_enrolling">Enrolling…</string>
+    <string name="status_enrolling_error">Enrolling… (last error: %1$s at %2$s)</string>
+    <string name="status_credentials_lost">The server no longer accepts this device\'s credentials and can\'t restore them. Factory-reset the device and scan a new QR code to enroll it again.</string>
 </resources>

@@ -171,6 +171,15 @@
             </plugin>
             <!-- The legacy AngularJS admin UI (grunt/bower via frontend-maven-plugin) was removed;
                  the React console in web/ is the UI now and the server is a pure REST API. -->
+            <plugin>
+                <!-- Guice 4's AOP (mybatis-guice @Transactional) needs this on JDK 17, as Tomcat gets it in production
+                     (CATALINA_OPTS); AgentEnrollmentTransactionTest builds the real injector. -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <argLine>--add-opens java.base/java.lang=ALL-UNNAMED</argLine>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 

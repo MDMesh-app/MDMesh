@@ -75,7 +75,7 @@ const LOCK_BUTTONS_HELP = 'Block the power menu in kiosk. Volume buttons are a s
 const LOCK_VOLUME_HELP = 'Applies in kiosk mode, with agent 0.3.4 or later: blocks volume changes. Android mutes the device while volume is locked, so Ring device is silent on it; the lock is lifted when kiosk ends.';
 const CONNECTIVITY_HELP = 'Needs agent 0.4.0 or later; older agents ignore it. Battery-saver holds the live connection only while the screen is on or the device is charging, so a command sent to a locked phone on battery waits for the next heartbeat (about 10 minutes, longer in deep Doze) or for the screen to come on. Always-on keeps the connection up 24/7, so commands such as Lock, Ring or Wipe reach a locked phone without waiting for the heartbeat, at a battery cost. The mode set here is applied again when the configuration changes, the device restarts or the agent updates, so a mode set on a device page lasts only until then. To keep a lost device on Always-on, set its configuration to Always-on (or move the device to one that is). To switch devices back, choose Battery-saver; — (not managed) leaves each device as it is.';
 const LOCATION_HELP = 'Do not track collects no location with agent 0.3.4 or later, and the server drops any location an older agent still reports. Last known (passive) reports the location the device already has at each check-in; GPS (fresh fix) asks for a new fix each time (more accurate, more battery).';
-const LOCATION_SERVICES_HELP = 'Needs agent support on Android 11 or later. On turns Android Location services on; Off turns them off. While managed, the user cannot change the setting. Not managed restores the user setting control but leaves Location services in their current state. This is separate from Location reporting, which controls what MDMesh collects.';
+const LOCATION_SERVICES_HELP = 'Needs agent 0.5.0 or later on an Android 11+ Device Owner device; older agents report it unsupported. On turns Android Location services on; Off turns them off. While managed, the user cannot change the setting. Not managed restores the user setting control but leaves Location services in their current state. This is separate from Location reporting, which controls what MDMesh collects.';
 
 export const GROUP_ORDER: FieldGroup[] = [
   'Identity', 'Apps', 'Kiosk', 'Kiosk appearance', 'Network', 'Restrictions', 'Enrollment',
@@ -86,8 +86,8 @@ export const GROUP_ORDER: FieldGroup[] = [
 export const GROUP_NOTES: Partial<Record<FieldGroup, string>> = {
   Kiosk: 'Everything below kiosk mode applies only while kiosk mode is on.',
   'Kiosk appearance': 'The look of the MDMesh kiosk launcher. Applies only while kiosk mode is on.',
-  Network: 'Not managed leaves the device as it is, including a block applied earlier. Wi-Fi radio is the exception: Not managed lifts its lock.',
-  Restrictions: 'Not managed normally leaves the device as it is, including a block applied earlier. Camera is an exception on agent 0.5.0 or later: it restores access after an MDMesh camera block.',
+  Network: 'Not managed leaves the device as it is, including a block applied earlier. Wi-Fi radio and Location services are the exceptions: Not managed lifts their lock.',
+  Restrictions: 'Not managed normally leaves the device as it is, including a block applied earlier. Camera is an exception on agent 0.5.0 or later: it restores access after an MDMesh camera block. Safe Mode is another: see its setting.',
   Enrollment: 'Not sent to devices. The Enroll page can load this Wi-Fi into the enrollment QR so a new device joins it during setup.',
 };
 

@@ -58,6 +58,7 @@ reference/hmdm-android/
 .env
 .env.local
 .env.*.local
+.env.new.*
 
 # OS / editor / build cruft
 # Python bytecode (e.g. from running the vendored ci-kit's changed-paths tests; scripts/vendor.sh copies it)

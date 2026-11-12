@@ -14,8 +14,8 @@ Remote screen view + control. **The only module that references Accessibility.**
 
 Accessibility (`BIND_ACCESSIBILITY_SERVICE`, the accessibility `<service>` and its
 `@xml/input_injection_service` config) is declared **only in this module's
-manifest** and is merged into the final APK solely when `:remote` is included. The
-base `:app` manifest never mentions accessibility. The service ships
+manifest** and is merged into the final APK only through `:remote`, which `:app`
+currently always includes. The base `:app` manifest never mentions accessibility. The service ships
 `android:enabled="false"` and is toggled on only for an authorised control session.
 
 ## What real remote control adds later

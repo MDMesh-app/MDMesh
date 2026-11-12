@@ -9,7 +9,7 @@ you edit it, run `docker compose up -d`.
 
 **Native:** pass a setting to `sudo ./setup.sh --native` in its environment. The installer writes it to
 `/opt/mdmesh-tc/conf/Catalina/localhost/ROOT.xml` or `/etc/mdmesh/supervisor.env`. Later runs keep `BASE_URL`,
-`SMTP_*`, `LEGACY_DEVICE_API`, `GITHUB_REPO` and `GITHUB_TOKEN` until you pass a new value. `HTTP_PORT` follows the
+`SMTP_*`, `LEGACY_DEVICE_API`, `PROXY_ADDRESSES`, `GITHUB_REPO` and `GITHUB_TOKEN` until you pass a new value. `HTTP_PORT` follows the
 port the install serves on, `REPLACE_DATA` applies to one run, and the rest of `supervisor.env` is rewritten on every
 run: only `GITHUB_REPO` and `GITHUB_TOKEN` survive a hand edit there (a hand-edited `GITHUB_REPO` also needs
 `GITHUB_REPO_FROM=setting`, or the next run follows `origin` again).
@@ -30,6 +30,7 @@ run: only `GITHUB_REPO` and `GITHUB_TOKEN` survive a hand edit there (a hand-edi
 | `SMTP_FROM` | same | `mdm@<hostname>` (Docker), `mdm@localhost` (native) | Sender address. |
 | `SMTP_USERNAME`, `SMTP_PASSWORD` | same | empty | Mail login. |
 | `SMTP_SSL`, `SMTP_STARTTLS` | same | `false` | `SMTP_SSL=true` for port 465, `SMTP_STARTTLS=true` for 587. |
+| `PROXY_ADDRESSES` | native env → `ROOT.xml` `proxy.addresses` | empty | Reverse proxies on other hosts whose `X-Forwarded-For` the server believes, comma-separated ([details](#the-client-address)). |
 
 **Kiosk alerts.** When too many wrong exit PINs lock a device's kiosk exit (agent 0.3.6 or later), the server emails
 the users of that device's customer who have an email address, may edit devices (or are super-admins) and can see the

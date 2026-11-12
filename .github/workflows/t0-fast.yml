@@ -8,7 +8,8 @@
 # runs scripts/edge-check.sh: the Caddyfile in every hosting mode under the web image's own caddy, its /healthz
 # routes against stub upstreams, plus `docker compose config` for every compose file/overlay/profile combination; then
 # it builds the web image (docker/web.Dockerfile), which nothing else builds before a release. When the installers change,
-# the edge entry also checks that quickstart.sh's inline BASE_URL check is still install/lib/url.sh's, byte for byte.
+# the edge entry also checks that quickstart.sh's inline BASE_URL check and answers functions are still install/lib's,
+# byte for byte, and that install/options.json (the installers' answers contract) matches the scripts.
 name: t0-fast
 
 on:
@@ -48,7 +49,7 @@ jobs:
             edge: docker/Caddyfile, docker/web.Dockerfile, docker/web-entrypoint.sh, docker/edge-peers.sh, web/**, CHANGELOG.md, .dockerignore, docker-compose*.yml, docker/dev.env, scripts/edge-check.sh, supervisor/apply.sh
             # The installer scripts, and the signed manifest they and the supervisor read. Only the edge entry's cheap
             # quickstart.sh checks run on these, not its image work.
-            installers: quickstart.sh, setup.sh, install/**, release/**, supervisor/lib.js, scripts/release-manifest-check.sh
+            installers: quickstart.sh, setup.sh, install/**, release/**, supervisor/lib.js, scripts/release-manifest-check.sh, tests/installer-answers/**, tests/setup-update/**, tests/apt-lock/**
 
   build:
     name: ${{ matrix.name }}
@@ -168,20 +169,31 @@ jobs:
       # --- edge: the Cloudflare-mode Caddyfile break (empty ACME_EMAIL) shipped because nothing parsed it. Validates
       # docker/Caddyfile in every hosting mode with the caddy image web.Dockerfile builds FROM, and every compose combo;
       # then checks /healthz and /healthz/supervisor report their upstream's health (503, never the SPA's 200). ---
-      # quickstart.sh carries a verbatim copy of install/lib/url.sh's functions (the region between the ">>> url.sh
-      # functions" and "<<< url.sh functions" markers): it runs from main but fetches install/lib from the release it
-      # installs, which may predate url.sh (see quickstart.sh). Fail when the copies differ.
+      # quickstart.sh carries a verbatim copy of install/lib/url.sh's and install/lib/answers.sh's functions (the region
+      # between each file's ">>> <name> functions" and "<<< <name> functions" markers): it runs from main but fetches
+      # install/lib from the release it installs, which may predate them (see quickstart.sh). Fail when the copies differ.
       - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).installers)
-        name: quickstart.sh's BASE_URL check matches install/lib/url.sh
+        name: quickstart.sh's BASE_URL check and answers functions match install/lib
         run: |
-          fn() { sed -n '/^# >>> url.sh functions /,/^# <<< url.sh functions <<<$/p' "$1"; }
-          lib=$(fn install/lib/url.sh); qs=$(fn quickstart.sh)
-          if [ -z "$lib" ] || [ "$lib" != "$qs" ]; then
-            echo "::error file=quickstart.sh::the url.sh functions in quickstart.sh are not a verbatim copy of install/lib/url.sh's (or one is missing). Copy the region between the markers into quickstart.sh."
-            diff -u <(printf '%s\n' "$lib") <(printf '%s\n' "$qs") || true
-            exit 1
-          fi
-          echo "quickstart.sh's url.sh functions are identical to install/lib/url.sh's"
+          rc=0
+          for n in url.sh answers.sh; do
+            fn() { sed -n "/^# >>> $n functions /,/^# <<< $n functions <<<\$/p" "$1"; }
+            lib=$(fn "install/lib/$n"); qs=$(fn quickstart.sh)
+            if [ -z "$lib" ] || [ "$lib" != "$qs" ]; then
+              echo "::error file=quickstart.sh::the $n functions in quickstart.sh are not a verbatim copy of install/lib/$n's (or one is missing). Copy the region between the markers into quickstart.sh."
+              diff -u <(printf '%s\n' "$lib") <(printf '%s\n' "$qs") || true
+              rc=1
+            else
+              echo "quickstart.sh's $n functions are identical to install/lib/$n's"
+            fi
+          done
+          exit "$rc"
+      # install/options.json is the installers' answers contract, which the website's install wizard reads: every question
+      # has an entry and every entry a question, with the same variable, rule, default and prompt text, and a full set of
+      # answers runs without asking. Dry runs only (MDMESH_DRY_RUN=1), in a temporary copy: nothing is installed.
+      - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).installers)
+        name: Installer answers contract (install/options.json)
+        run: tests/installer-answers/run.sh
       # The signed manifest's contract: release/build-manifest.sh writes it; quickstart.sh's own verification functions
       # (signature, image digests, file hashes) and supervisor/lib.js read it; its key copy matches release/minisign.pub.
       - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).installers)
@@ -189,6 +201,29 @@ jobs:
         run: |
           command -v minisign >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq minisign; }
           scripts/release-manifest-check.sh
+      # `./setup.sh --update` (source and native installs move to the newest signed release tag) against a fixture
+      # origin with releases signed by a throwaway key: unsigned, foreign-key, replayed, retargeted or dirty is refused.
+      # Clones in a temporary directory, curl and docker stubbed: nothing is installed. Needs minisign (step above).
+      - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).installers)
+        name: setup.sh --update (signed release tags)
+        run: tests/setup-update/run.sh
+      # Both installer suites again with the tools of the distributions the installers support, not the runner's: mawk
+      # (Debian 12's 1.3.4-20200120 has no regex intervals), and busybox's awk. Throwaway containers (--rm), unprivileged,
+      # the checkout mounted read-only.
+      - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).installers)
+        name: Installer suites on Debian 12, Ubuntu 24.04 and busybox awk
+        run: |
+          tests/installer-answers/in-container.sh debian:12
+          tests/installer-answers/in-container.sh ubuntu:24.04
+          tests/installer-answers/in-container.sh debian:12 busybox-awk
+      # The installers' apt-get while another apt run holds apt's locks (a new VM's first-boot apt-daily, say): it waits,
+      # then refreshes and installs; held past the wait, it stops saying so. Throwaway root containers (--rm), starting
+      # with only git and empty package lists.
+      - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).installers)
+        name: Installer apt-get under a held apt lock (Debian 12, Ubuntu 24.04)
+        run: |
+          tests/apt-lock/run.sh debian:12
+          tests/apt-lock/run.sh ubuntu:24.04
       - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).edge)
         name: Caddyfile modes + compose overlays
         run: scripts/edge-check.sh

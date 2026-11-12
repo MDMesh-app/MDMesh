@@ -1,7 +1,9 @@
-// How an app label breaks into lines: docs/kiosk-background-scrim.md, "Label lines" (3.4). Word boundaries only (and
+// How an app label breaks into lines: docs/kiosk-background-scrim.md, "Label lines" (3.5). Word boundaries only (and
 // after a hyphen or slash inside a word, and between kana/Han characters), greedy, at most `maxLines`; a word wider
 // than the box goes on its own line, ellipsized; the last line takes the rest, ellipsized. The agent's LabelLines
 // follows the same text; the shared vectors (proto/vectors/kiosk-scrim.json, labelLines) hold both to it.
+
+import { BIDI_UNICODE_VERSION, strongBidiClass } from './kioskBidi';
 
 /** Only this many code points of a label are laid out: far more than 3 lines show, and it bounds the work. */
 export const LABEL_MAX_CODE_POINTS = 256;
@@ -44,10 +46,13 @@ function segmentedEnds(s: string, seg: GraphemeSegmenter): number[] {
 
 /**
  * Without `Intl.Segmenter` (Firefox before 125): every code point ends a cluster, and the guards below alone keep
- * marks, ZWJ sequences, skin tones, tags, variation selectors and flags whole. What this gives up: clusters UAX #29
- * makes from rules the guards don't restate. Conjoining Hangul jamo (a syllable spelled as L V T code points) and
- * prepended or spacing characters of some Indic scripts may be cut between their parts; precomposed Hangul (the usual
- * form) and every Latin, Cyrillic, Greek, Arabic and Hebrew label with its accents are cut exactly as with it.
+ * marks, ZWJ sequences, skin tones, tags, variation selectors, flags, prepended concatenation marks and the conjuncts
+ * of the six Indic scripts the spec lists (Devanagari, Bengali, Gujarati, Oriya, Telugu, Malayalam) whole. What this
+ * gives up: clusters UAX #29 makes from rules the guards don't restate. Conjoining Hangul jamo (a syllable spelled as
+ * L V T code points) may be cut between its parts, and so may a conjunct of another Indic script (Tamil, Kannada,
+ * Gurmukhi and the like, whose viramas aren't in the spec's table). Thai and Lao are unaffected: their vowel and tone
+ * marks are combining marks (kept), and their leading vowels are cut before as UAX #29 does. Precomposed Hangul (the
+ * usual form) and Latin, Cyrillic, Greek, Arabic, Hebrew and Thai labels with their marks cut exactly as with it.
  */
 export function codePointEnds(s: string): number[] {
   const out: number[] = [];
@@ -59,6 +64,36 @@ export function codePointEnds(s: string): number[] {
 }
 
 const ZWJ = 0x200d;
+/** Prepended concatenation marks (GB9b), the spec's fixed list: a cut never goes right after one. */
+const PREPENDED = new Set([0x0600, 0x0601, 0x0602, 0x0603, 0x0604, 0x0605, 0x06dd, 0x070f, 0x0890, 0x0891, 0x08e2, 0x110bd, 0x110cd]);
+/** Conjunct linkers (GB9c): the viramas of Devanagari, Bengali, Gujarati, Oriya, Telugu and Malayalam. */
+const LINKERS = new Set([0x094d, 0x09cd, 0x0acd, 0x0b4d, 0x0c4d, 0x0d4d]);
+/** Conjunct consonants of the same six scripts, the spec's fixed table (inclusive ranges). */
+const CONSONANTS: readonly (readonly [number, number])[] = [
+  [0x0915, 0x0939], [0x0958, 0x095f], [0x0978, 0x097f],
+  [0x0995, 0x09a8], [0x09aa, 0x09b0], [0x09b2, 0x09b2], [0x09b6, 0x09b9], [0x09dc, 0x09dd], [0x09df, 0x09df], [0x09f0, 0x09f1],
+  [0x0a95, 0x0aa8], [0x0aaa, 0x0ab0], [0x0ab2, 0x0ab3], [0x0ab5, 0x0ab9], [0x0af9, 0x0af9],
+  [0x0b15, 0x0b28], [0x0b2a, 0x0b30], [0x0b32, 0x0b33], [0x0b35, 0x0b39], [0x0b5c, 0x0b5d], [0x0b5f, 0x0b5f], [0x0b71, 0x0b71],
+  [0x0c15, 0x0c28], [0x0c2a, 0x0c39], [0x0c58, 0x0c5a],
+  [0x0d15, 0x0d3a],
+];
+const isConsonant = (cp: number) => CONSONANTS.some(([a, b]) => cp >= a && cp <= b);
+/** A conjunct extender: general category Mn or Me (the browser's own Unicode data), or U+200D. */
+const EXTENDER = /^[\p{Mn}\p{Me}]/u;
+const isExtender = (cp: number) => cp === ZWJ || EXTENDER.test(String.fromCodePoint(cp));
+/** At `e`: consonant (extender|linker)* linker (extender|linker)* × consonant. */
+function insideConjunct(s: string, e: number): boolean {
+  if (!isConsonant(s.codePointAt(e)!)) return false;
+  let k = e;
+  let linked = false;
+  while (k > 0) {
+    const cp = codePointBefore(s, k);
+    if (LINKERS.has(cp)) linked = true;
+    else if (!isExtender(cp)) return linked && isConsonant(cp);
+    k -= cp > 0xffff ? 2 : 1;
+  }
+  return false;
+}
 const isRegional = (cp: number) => cp >= 0x1f1e6 && cp <= 0x1f1ff;
 const MARK = /^\p{M}/u;
 /** Joins the code point before it: a combining mark, ZWJ, VS16, a skin tone or a tag. A cut never goes before one. */
@@ -71,16 +106,19 @@ function codePointBefore(s: string, i: number): number {
 }
 
 /**
- * The spec's conditions on cluster ends: none right after U+200D; none before a combining mark, U+200D, U+FE0F, a skin
- * tone or a tag; inside a run of regional indicators a cut after every second one and nowhere else. On current
- * Unicode data they change nothing but a ZWJ before a non-emoji; they make older data (and no segmenter) cut the same.
+ * The spec's conditions on cluster ends: none right after U+200D or a prepended concatenation mark; none before a
+ * combining mark, U+200D, U+FE0F, a skin tone or a tag; none inside an Indic conjunct (GB9c, fixed tables); between
+ * two regional indicators a cut after every second one counted from the start of their run and nowhere else (after
+ * the last one of a run, as any other boundary). On current Unicode data they change nothing but a ZWJ before a
+ * non-emoji; they make older data (and no segmenter) cut the same.
  */
 function guard(s: string, clusterEnds: readonly number[]): number[] {
   const out = new Set<number>();
   for (const e of clusterEnds) {
     if (e >= s.length) continue;
     if (e <= 0 || (isLow(s.charCodeAt(e)) && isHigh(s.charCodeAt(e - 1)))) continue;
-    if (codePointBefore(s, e) === ZWJ || joinsPrevious(s.codePointAt(e)!)) continue;
+    const before = codePointBefore(s, e);
+    if (before === ZWJ || PREPENDED.has(before) || joinsPrevious(s.codePointAt(e)!) || insideConjunct(s, e)) continue;
     out.add(e);
   }
   // Regional indicators pair from the start of their run.
@@ -108,12 +146,16 @@ export function graphemeCuts(s: string, useSegmenter = true): number[] {
   return guard(s, seg ? segmentedEnds(s, seg) : codePointEnds(s));
 }
 
-/** Lookahead for the cap's clusters: a cluster longer than this at the cap is cut at a code point (bounded work). */
+/**
+ * How much text after the cap point the cap segments. A boundary depends only on the text before it and the code point
+ * after it, so the cuts at or before the cap point are exactly the full label's; the window only bounds the work.
+ */
 const CAP_LOOKAHEAD = 64;
 
 /**
  * The first {@link LABEL_MAX_CODE_POINTS} code points, moved back to the last grapheme cut at or before that, so the cap
- * never splits a cluster (or a surrogate pair). Only the clusters around the cut are looked at.
+ * never splits a cluster (or a surrogate pair). With no grapheme cut at or before it (one cluster longer than the
+ * cap), the spec's hard cut right after the 256th code point. Only the clusters around the cut are looked at.
  */
 export function capLabel(text: string, useSegmenter = true): string {
   let i = 0;
@@ -134,22 +176,28 @@ export function capLabel(text: string, useSegmenter = true): string {
   return text.slice(0, end);
 }
 
+const LRI = 0x2066;
+const FSI = 0x2068;
+const PDI = 0x2069;
 /**
- * The label's one direction (Label lines, 6): its first strong character's, left to right when it has none. Letters
- * of the right-to-left scripts (Hebrew, Arabic, Syriac, Thaana, N'Ko and the like, and their presentation forms) are
- * strong right to left, every other letter strong left to right; digits, marks, punctuation and symbols are not strong.
+ * The label's one direction (Label lines, 6; UAX #9 rule P2): going through its code points, unassigned ones are
+ * skipped; an isolate initiator (LRI, RLI, FSI) skips to its matching PDI (to the end when none); a stray PDI is
+ * skipped; the first of bidi class L makes it left to right, R or AL right to left. Embeddings and overrides are not
+ * strong. None: left to right. Bidi classes and unassigned code points come from one generated table
+ * ({@link BIDI_UNICODE_VERSION}), so the answer is the same in every browser.
  */
 export function labelDirection(text: string): 'ltr' | 'rtl' {
-  const m = /\p{L}/u.exec(text);
-  if (!m) return 'ltr';
-  const cp = m[0].codePointAt(0)!;
-  const rtl =
-    (cp >= 0x0590 && cp <= 0x08ff) ||
-    (cp >= 0xfb1d && cp <= 0xfdff) ||
-    (cp >= 0xfe70 && cp <= 0xfeff) ||
-    (cp >= 0x10800 && cp <= 0x10fff) ||
-    (cp >= 0x1e800 && cp <= 0x1efff);
-  return rtl ? 'rtl' : 'ltr';
+  let depth = 0;
+  for (const ch of text) {
+    const cp = ch.codePointAt(0)!;
+    if (cp >= LRI && cp <= FSI) depth++;
+    else if (cp === PDI) depth = Math.max(0, depth - 1);
+    else if (depth === 0) {
+      const c = strongBidiClass(cp);
+      if (c) return c === 'R' ? 'rtl' : 'ltr';
+    }
+  }
+  return 'ltr';
 }
 
 /** Every run of tab, line feed, carriage return and space becomes one space; trimmed. Other spaces are word characters. */

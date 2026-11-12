@@ -1,4 +1,4 @@
-# Kiosk background image: keeping the launcher legible (version 3.4)
+# Kiosk background image: keeping the launcher legible (version 3.5)
 
 A kiosk background image sits under the launcher's text (header, app labels, empty-state and hold text) and its
 controls (the Exit button). A photo can be any brightness, so the launcher does two things, both with the kiosk
@@ -16,7 +16,7 @@ The console's preview computes the same, so what it shows is what the device dra
   `web/src/data/kioskLauncherLayout.ts` (the plate geometry) and the preview, `web/src/pages/configurations/
   KioskPreview.tsx`.
 - Agent: a `BackdropRule` alongside `KioskPalette` (agent branch).
-- Shared test vectors: [`proto/vectors/kiosk-scrim.json`](../proto/vectors/kiosk-scrim.json), version 3.4, generated
+- Shared test vectors: [`proto/vectors/kiosk-scrim.json`](../proto/vectors/kiosk-scrim.json), version 3.5, generated
   by an independent implementation. The console passes them; agent implementations must pass them too (the agent
   isn't released with images until it does). A change to these rules changes the vectors.
 
@@ -29,7 +29,8 @@ plate at the cell width less 8 dp, and settles every rounding and tie (see "What
 the grid leaves for the Exit button (see "What 3.3 changes" at the end). 3.4 makes the cap and every ellipsis cut
 between grapheme clusters (never inside a flag, an emoji sequence or a letter and its accent), measures an ellipsis
 with its text, gives a label one direction, and pins one text box for labels with or without an image (see "What 3.4
-changes").
+changes"). 3.5 keeps Indic conjuncts and prepended marks whole at a cut, pins the label's direction to UAX #9's first
+strong character, and pins the cap when no cut is near it (see "What 3.5 changes").
 
 The console is the **reference**: it reads the image at full size, 8-bit sRGB, so its bounds contain every pixel. A
 device that samples the image (for memory) sees ranges that are subsets of those, so its plates are never stronger
@@ -188,7 +189,8 @@ An app label breaks into lines at word boundaries only, never inside a word, at 
 large fonts must stay large). The same rule with or without an image. In order:
 
 0. **Cap**: only the label's first 256 code points are laid out, cut at the last grapheme cut (5) at or before the
-   256th code point, so the cap never splits a cluster (or a surrogate pair). Labels come from installed apps and can
+   256th code point, so the cap never splits a cluster (or a surrogate pair). When there is no grapheme cut at or
+   before it (a single cluster longer than the cap), the cut is right after the 256th code point. Labels come from installed apps and can
    be any length; 256 is far more than 3 lines can show, and it bounds the work below (only the clusters around the
    cut are looked at).
 1. **Text**: the capped label with every run of whitespace (U+0009, U+000A, U+000D, U+0020) turned into one U+0020,
@@ -217,18 +219,38 @@ large fonts must stay large). The same rule with or without an image. In order:
    `box`; when no prefix fits (or only spaces do), `…` alone. A prefix ends at a **grapheme cut**: an extended grapheme
    cluster boundary (UAX #29) that is also
    - not right after U+200D;
+   - not right after a prepended concatenation mark: U+0600 to U+0605, U+06DD, U+070F, U+0890, U+0891, U+08E2,
+     U+110BD, U+110CD (3.5);
    - not right before a combining mark (general category M), U+200D, U+FE0F, a skin tone (U+1F3FB to U+1F3FF) or a
      tag (U+E0020 to U+E007F);
-   - in a run of regional indicators, only after an even number of them from the start of the run (and always there).
+   - not inside an Indic conjunct (3.5, as Unicode 15.1's GB9c): not before a consonant that follows a consonant, then
+     any run of linkers and extenders with at least one linker in it (consonant (extender|linker)* linker
+     (extender|linker)* × consonant). Linkers are the viramas U+094D (Devanagari), U+09CD (Bengali), U+0ACD
+     (Gujarati), U+0B4D (Oriya), U+0C4D (Telugu) and U+0D4D (Malayalam); extenders are general category Mn or Me and
+     U+200D; consonants are U+0915 to U+0939, U+0958 to U+095F, U+0978 to U+097F; U+0995 to U+09A8, U+09AA to
+     U+09B0, U+09B2, U+09B6 to U+09B9, U+09DC, U+09DD, U+09DF, U+09F0, U+09F1; U+0A95 to U+0AA8, U+0AAA to U+0AB0,
+     U+0AB2, U+0AB3, U+0AB5 to U+0AB9, U+0AF9; U+0B15 to U+0B28, U+0B2A to U+0B30, U+0B32, U+0B33, U+0B35 to U+0B39,
+     U+0B5C, U+0B5D, U+0B5F, U+0B71; U+0C15 to U+0C28, U+0C2A to U+0C39, U+0C58 to U+0C5A; U+0D15 to U+0D3A;
+   - between two regional indicators, only after an even number of them counted from the start of their run (and
+     always there); after the last one of a run, as any other boundary.
 
-   On current Unicode data the extra conditions only add "no cut after U+200D before a non-emoji"; they also make
-   older data cut the same (Android 7 ships Unicode 8, which splits emoji ZWJ sequences and skin tones and joins all
-   regional indicators). The console uses `Intl.Segmenter` with `granularity: "grapheme"`, the agent
-   `android.icu.text.BreakIterator.getCharacterInstance`, each with these conditions. A prefix's width grows with its
-   length, so the longest one can be found by bisection over the cuts.
-6. **Direction**: lines are made in logical order, and the whole label has one direction: its first strong character
-   (left to right when it has none), for every line, whatever a line holds. A Hebrew label with a Latin word on its
-   second line still reads right to left there; its ellipsis is at the logical end, on the left.
+   General categories and boundaries come from the platform's own Unicode data (on Android `android.icu`, for both).
+   On current data the conditions add only "no cut after U+200D before a non-emoji"; on older data they keep emoji
+   sequences, flags, skin tones, conjuncts and prepended marks as current Unicode does. So, given these conditions,
+   the cuts are the same on every platform for the scripts and sequences the vectors cover; a script or sequence they
+   don't cover can still differ between Unicode versions. The console uses `Intl.Segmenter` with
+   `granularity: "grapheme"`, the agent `android.icu.text.BreakIterator.getCharacterInstance`, each with these
+   conditions. A prefix's width grows with its length, so the longest one can be found by bisection over the cuts.
+6. **Direction** (3.5: UAX #9 rule P2, pinned): lines are made in logical order, and the whole label has one
+   direction, for every line, whatever a line holds. Going through the capped label's code points in order:
+   - skip unassigned code points (general category Cn), so a device's Unicode version can't change the answer;
+   - an isolate initiator (U+2066, U+2067, U+2068) skips everything up to its matching U+2069 (to the end when there
+     is none); a U+2069 with no initiator open is skipped;
+   - the first code point of bidi class L makes the label left to right, R or AL right to left. Embeddings and
+     overrides (U+202A to U+202E) are not strong; digits, punctuation and symbols aren't either.
+
+   With none, the label is left to right. A Hebrew label with a Latin word on its second line still reads right to
+   left there; its ellipsis is at the logical end, on the left. Vectors: `direction`.
 
 The agent lays the label out with exactly these lines (each one already fits, so the platform never breaks one
 again). Why `cellWidth - 24` stays: the row plate may be at most the cell less 8 dp (8 dp between plates), and 8 dp of
@@ -247,8 +269,9 @@ lays out (and measures) its own text, with the same rules.
 
 **The Exit button** floats at the bottom centre, 24 dp above the bottom of the content area (above the navigation bar
 or gesture area). The grid's scrolling content ends with room for it: the button's laid-out height (taller at large
-font scales) plus 24 dp plus 8 dp. So at the end of the scroll no label or plate is under it; mid-scroll it may float
-over the grid, as a floating control does. A grid that doesn't scroll ends well above it. The console's preview draws
+font scales; measured at the width it is given, the content width less its own side margins) plus 24 dp plus 8 dp. So
+at the end of the scroll no label or plate is under it; mid-scroll it may float over the grid, as a floating control
+does. A grid that doesn't scroll ends well above it. The console's preview draws
 the button where the device does and leaves the same room.
 
 ## What the console shows
@@ -295,8 +318,12 @@ text needs one) and "Image dimmed 22%".
   label, three lines, a label longer than the 256-code-point cap, combining marks at the ellipsis, and a box narrower
   than one character and the ellipsis. Combining marks have width 0 in the vectors. 3.4 adds three flags (a cut after
   a whole flag only), an emoji ZWJ family, a skin tone, conjoining Hangul jamo, a ZWJ between letters and the cap
-  landing inside a cluster. The expected results follow UAX #29 of Unicode 15.1 with the conditions above; they are
-  the same under every Unicode version from 8 on once the conditions are applied.
+  landing inside a cluster. 3.5 adds Hindi and Marathi conjuncts, a Bengali and a Malayalam conjunct, a prepended
+  mark and a cluster longer than the cap. The expected results follow UAX #29 of Unicode 15.1 with the conditions
+  above; the agent passes them with Android 7's, 8's, 11's and 15's own data.
+- `direction` (3.5): a label's `text` to `ltr` or `rtl`: Latin first, Hebrew first, RLM, ALM, LRM then Hebrew, a flag
+  then Hebrew, a Roman numeral then Hebrew, RLE then Latin, digits first, neutral only, an isolate around Hebrew, an
+  isolate left open, a stray PDI, a stray PDI before an isolate, an emoji newer than Unicode 8 then Hebrew, and Arabic.
 
 ## What 3.2 changes
 
@@ -315,6 +342,15 @@ text needs one) and "Image dimmed 22%".
   wider than its box ellipsized on its own line, never split; greedy fill; the last line takes the rest, ellipsized.
   Before, a label wrapped as the platform's text layout chose, which split words that didn't fit ("Timesheet / s").
 - The grid leaves room for the Exit button at the end of its scroll, at any font scale.
+
+## What 3.5 changes
+
+- Grapheme cuts also keep Indic conjuncts (as Unicode 15.1's GB9c, with fixed tables) and prepended concatenation
+  marks (GB9b) whole, so older platforms cut like current ones there; categories come from the platform's own data.
+- Direction is UAX #9's first strong character, with unassigned code points and isolates skipped.
+- The cap when no grapheme cut is at or before code point 256: right after it.
+- The Exit button's room is measured at the width the button is given (less its side margins).
+- The claim that cuts are the same on every Unicode version is now limited to what the vectors cover.
 
 ## What 3.4 changes
 

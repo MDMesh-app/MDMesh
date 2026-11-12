@@ -13,6 +13,7 @@ import {
   labelLines,
   normalizeLabel,
 } from './kioskLabelLines';
+import { BIDI_UNICODE_VERSION, strongBidiClass } from './kioskBidi';
 
 interface LabelCase {
   name: string;
@@ -27,6 +28,7 @@ interface LabelCase {
 
 const VECTORS = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../proto/vectors/kiosk-scrim.json'), 'utf8')) as {
   labelLines: LabelCase[];
+  direction: { name: string; text: string; expected: 'ltr' | 'rtl' }[];
 };
 
 /** The vectors' measure: the sum of the per-character widths (the same character always has the same width). */
@@ -45,13 +47,38 @@ function vectorMeasure(c: LabelCase): (s: string) => number {
   };
 }
 
-describe('label lines vectors (3.4, shared with the agent)', () => {
-  it('has all 23 cases', () => {
-    expect(VECTORS.labelLines).toHaveLength(23);
+describe('label lines vectors (3.5, shared with the agent)', () => {
+  it('has all 29 cases', () => {
+    expect(VECTORS.labelLines).toHaveLength(29);
   });
   it.each(VECTORS.labelLines.map((c) => [c.name, c] as const))('%s', (_, c) => {
     expect(c.widths).toHaveLength(c.text.length);
     expect(labelLines(c.text, c.box, c.maxLines, vectorMeasure(c))).toEqual(c.expected);
+  });
+});
+
+describe('direction vectors (3.5, UAX #9 P2, shared with the agent)', () => {
+  it('has all 16 cases', () => {
+    expect(VECTORS.direction).toHaveLength(16);
+  });
+  it.each(VECTORS.direction.map((c) => [c.name, c] as const))('%s', (_, c) => {
+    expect(labelDirection(c.text)).toBe(c.expected);
+  });
+});
+
+describe('bidi table', () => {
+  it('is Unicode 15.1, with strong classes only, and unassigned code points in none', () => {
+    expect(BIDI_UNICODE_VERSION).toBe('15.1.0');
+    expect(strongBidiClass(0x41)).toBe('L'); // A
+    expect(strongBidiClass(0x5d0)).toBe('R'); // Hebrew alef
+    expect(strongBidiClass(0x627)).toBe('R'); // Arabic alef (AL)
+    expect(strongBidiClass(0x200f)).toBe('R'); // RLM
+    expect(strongBidiClass(0x200e)).toBe('L'); // LRM
+    expect(strongBidiClass(0x31)).toBeNull(); // a digit
+    expect(strongBidiClass(0x202b)).toBeNull(); // RLE: embeddings aren't strong
+    expect(strongBidiClass(0x378)).toBeNull(); // unassigned
+    expect(strongBidiClass(0x10ffff)).toBeNull();
+    expect(strongBidiClass(0x2160)).toBe('L'); // Roman numeral one
   });
 });
 
@@ -89,6 +116,20 @@ describe('label lines building blocks', () => {
     const m = (s: string) => [...s].length * 10 - (s.endsWith(`o${ELLIPSIS}`) ? 3 : 0);
     expect(ellipsize('Photos', 37, m)).toBe(`Pho${ELLIPSIS}`);
     expect(ellipsize('Photos', 36, m)).toBe(`Ph${ELLIPSIS}`);
+  });
+
+  it('keeps Indic conjuncts and prepended marks whole, with or without Intl.Segmenter', () => {
+    const kshatriya = cp(0x915, 0x94d, 0x937, 0x924, 0x94d, 0x930, 0x93f, 0x92f); // a Hindi word: ksha-tri-ya
+    for (const useSegmenter of [true, false]) {
+      // The first cluster is the whole conjunct (ka, virama, ssa), never "ka, virama".
+      expect(graphemeCuts(kshatriya, useSegmenter)[0]).toBe(3);
+      expect(graphemeCuts(cp(0x600, 0x661, 0x662), useSegmenter)[0]).toBe(2); // the mark stays with its digit
+    }
+  });
+
+  it('hard-cuts right after the 256th code point when no cut is at or before it', () => {
+    const giant = 'a' + cp(0x301).repeat(400);
+    expect(capLabel(giant)).toBe('a' + cp(0x301).repeat(255));
   });
 
   it('caps at a grapheme cut: never inside a flag or an emoji sequence', () => {
@@ -136,15 +177,27 @@ function rng(seed: number) {
   };
 }
 
+const cp = (...c: number[]) => String.fromCodePoint(...c);
 const PARTS = [
-  'a', 'b', 'é', 'é', 'ṇ̃', ' ', ' ', '-', '/', '在', 'ש', 'ب',
-  '\u{1F1FA}', '\u{1F1F8}', '\u{1F1EF}\u{1F1F5}', // regional indicators, alone and paired
-  '\u{1F44D}\u{1F3FD}', '\u{1F3FF}', // a skin tone on its emoji, and a stray one
-  '\u{1F468}\u200d\u{1F469}\u200d\u{1F467}', '\u200d', '\u2764\ufe0f', // a ZWJ family, a stray ZWJ, VS16
-  '\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}', // a tag sequence (Scotland)
-  '각', '가', 'ᆨ', // conjoining Hangul jamo: LVT, LV, a stray T
-  '각', // a precomposed syllable
+  'a', 'b', cp(0xe9), cp(0x65, 0x301), cp(0x6e, 0x303, 0x323), ' ', ' ', '-', '/', cp(0x5728), cp(0x5e9), cp(0x628),
+  cp(0x1f1fa), cp(0x1f1f8), cp(0x1f1ef, 0x1f1f5), // regional indicators, alone and paired
+  cp(0x1f44d, 0x1f3fd), cp(0x1f3ff), // a skin tone on its emoji, and a stray one
+  cp(0x1f468, 0x200d, 0x1f469, 0x200d, 0x1f467), cp(0x200d), cp(0x2764, 0xfe0f), // a ZWJ family, a stray ZWJ, VS16
+  cp(0x1f3f4, 0xe0067, 0xe0062, 0xe0073, 0xe0063, 0xe0074, 0xe007f), // a tag sequence (Scotland)
+  cp(0x1100, 0x1161, 0x11a8), cp(0x1100, 0x1161), cp(0x11a8), // conjoining Hangul jamo: LVT, LV, a stray T
+  cp(0xac01), // a precomposed syllable
+  // Indic (3.5): consonants, viramas (linkers), a nukta (extender), a vowel sign, ZWJ inside a conjunct.
+  cp(0x915), cp(0x937), cp(0x924), cp(0x94d), cp(0x93c), cp(0x93f), cp(0x915, 0x94d, 0x200d, 0x937),
+  cp(0x995, 0x9cd, 0x9b7), cp(0x9cd), cp(0xd15, 0xd4d, 0xd37), cp(0xa95, 0xacd), cp(0xb15, 0xb4d, 0xb37), cp(0xc15, 0xc4d, 0xc37),
+  cp(0x600), cp(0x6dd), cp(0x661, 0x662), cp(0x110bd), // prepended concatenation marks, then digits
+  cp(0xe01, 0xe31), cp(0xe40), cp(0xe01, 0xe48), // Thai: a vowel mark, a leading vowel, a tone mark
 ];
+/**
+ * Left out of the fallback's equality check: conjoining jamo, which it doesn't restate (see codePointEnds); and a
+ * skin tone that follows no emoji, which newer Unicode (16 on, as Node's ICU) counts as a conjunct extender where the
+ * spec's table (Mn, Me, ZWJ) doesn't: a sequence the vectors don't cover, which may differ between versions.
+ */
+const FALLBACK_GAPS = /[\u1100-\u11FF]|(?<!\u{1F44D})[\u{1F3FB}-\u{1F3FF}]/gu;
 const randomLabel = (r: () => number, n: number) => Array.from({ length: n }, () => PARTS[Math.floor(r() * PARTS.length)]).join('');
 /** Widths that grow with length and differ per code point, with a kerning pair before the ellipsis. */
 const widthOf = (s: string) => {
@@ -221,7 +274,7 @@ describe('grapheme cuts', () => {
     const r = rng(4);
     for (let n = 0; n < 2000; n++) {
       // Conjoining jamo aside (below), the fallback cuts exactly where Intl.Segmenter does.
-      const s = randomLabel(r, 1 + Math.floor(r() * 12)).replace(/[ᄀ-ᇿ]/gu, 'k');
+      const s = randomLabel(r, 1 + Math.floor(r() * 12)).replace(FALLBACK_GAPS, 'k');
       expect(graphemeCuts(s, false), JSON.stringify(s)).toEqual(graphemeCuts(s));
     }
     // What it gives up: conjoining jamo, which UAX #29 joins into one syllable, can be cut between its parts.

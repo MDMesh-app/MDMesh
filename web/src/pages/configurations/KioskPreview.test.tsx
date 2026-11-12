@@ -169,6 +169,13 @@ describe('KioskBackgroundPreview', () => {
     expect(icons).toEqual([flag, 'N']);
   });
 
+  it('draws the placeholder icon from the first cluster by the label cut rule: a whole Indic conjunct', async () => {
+    const kshatriya = String.fromCodePoint(0x915, 0x94d, 0x937, 0x924, 0x94d, 0x930, 0x93f, 0x92f);
+    preview({ apps: [kshatriya] });
+    await waitFor(() => expect(liveText()).toMatch(/Text|Contrast|Measuring/));
+    expect(large().querySelector<HTMLElement>('.v2-kbg__icon')!.textContent).toBe(String.fromCodePoint(0x915, 0x94d, 0x937));
+  });
+
   it('offers no scroll when the grid fits', async () => {
     preview();
     await waitFor(() => expect(liveText()).toMatch(/Text|Contrast|Measuring/));

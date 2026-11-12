@@ -1,5 +1,5 @@
 // The kiosk launcher's grid screen in dp, as the agent lays it out (agent ui/KioskRenderer, AppGridLayout, KioskViews),
-// with the plate geometry and label lines of docs/kiosk-background-scrim.md (3.4). The console's preview draws from it and
+// with the plate geometry and label lines of docs/kiosk-background-scrim.md (3.5). The console's preview draws from it and
 // computes the dim and the plates over exactly these boxes, so a label is cut where the device cuts it.
 import { cachedLabelLines, capLabel, labelDirection } from './kioskLabelLines';
 import type { Box, LegibilityElement } from './kioskScrim';
@@ -178,7 +178,8 @@ export function launcherLayout(
 
   let exit: LauncherLayout['exit'] = null;
   if (opts.exitVisible) {
-    const bw = Math.max(BUTTON_MIN_WIDTH, measure('Exit kiosk', EXIT_SP, 500) + 2 * BUTTON_PAD_H);
+    // At the width the device gives it: the content width less its own 24 dp side margins (spec 3.5, Drawing).
+    const bw = Math.min(Math.max(BUTTON_MIN_WIDTH, measure('Exit kiosk', EXIT_SP, 500) + 2 * BUTTON_PAD_H), Math.max(0, W - 2 * EXIT_MARGIN));
     // 40 dp visible inside the 48 dp target, 24 dp above the bottom edge.
     const button = { x: W / 2 - bw / 2, y: H - EXIT_MARGIN - BUTTON_INSET - BUTTON_HEIGHT, w: bw, h: BUTTON_HEIGHT };
     exit = { button, size: EXIT_SP };

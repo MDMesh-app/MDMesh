@@ -3160,10 +3160,12 @@
     </changeSet>
 
     <changeSet id="26.11.11-configurations-backgroundImageFitFocal" author="letter-number" context="common">
+        <validCheckSum>9:cb0e74fa797947549547ac1d31d0a37f</validCheckSum>
         <comment>Kiosk background image fit (fill = cropped, the default; fit = whole, letterboxed) and focal point
             (0..1 of the image, what a fill crop keeps in view). NULL = the default (fill, centre), so existing
             configurations keep their document and revision; older agents ignore the new fields. IF NOT EXISTS: a
-            database that ran an earlier build of this change (recorded under another author) has the columns.</comment>
+            database that ran an earlier build of this change (recorded under another author) has the columns.
+            validCheckSum: builds 2f60d172 to ba627ad1 recorded this changeSet with the SQL before IF NOT EXISTS.</comment>
         <sql>ALTER TABLE configurations ADD COLUMN IF NOT EXISTS backgroundImageFit VARCHAR(8) DEFAULT NULL
                 CHECK (backgroundImageFit IS NULL OR backgroundImageFit IN ('fill', 'fit'));
             ALTER TABLE configurations ADD COLUMN IF NOT EXISTS backgroundImageFocalX DOUBLE PRECISION DEFAULT NULL

@@ -244,7 +244,7 @@ export function KioskBackgroundPreview({
       <div className="v2-kbg__toolbar">
         <Segmented
           aria-label="Device"
-          size="sm"
+          size="md"
           options={[
             { value: 'phone', label: 'Phone' },
             { value: 'tablet', label: 'Tablet' },

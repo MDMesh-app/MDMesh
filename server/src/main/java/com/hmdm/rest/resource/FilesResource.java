@@ -110,6 +110,24 @@ public class FilesResource {
                          APKFileAnalyzer apkFileAnalyzer,
                          ConfigurationFileDAO configurationFileDAO,
                          IconDAO iconDAO,
+                         PushService pushService,
+                         com.hmdm.rest.resource.support.KioskBackgroundImageAssets kioskImages) {
+        this(filesDirectory, baseUrl, customerDAO, unsecureDAO, applicationDAO, configurationDAO, uploadedFileDAO,
+                apkFileAnalyzer, configurationFileDAO, iconDAO, pushService);
+        this.kioskImages = kioskImages;
+    }
+
+    /** Tests that don't involve kiosk background images. */
+    public FilesResource(String filesDirectory,
+                         String baseUrl,
+                         CustomerDAO customerDAO,
+                         UnsecureDAO unsecureDAO,
+                         ApplicationDAO applicationDAO,
+                         ConfigurationDAO configurationDAO,
+                         UploadedFileDAO uploadedFileDAO,
+                         APKFileAnalyzer apkFileAnalyzer,
+                         ConfigurationFileDAO configurationFileDAO,
+                         IconDAO iconDAO,
                          PushService pushService) {
         this.filesDirectory = filesDirectory;
         this.baseDirectory = new File(filesDirectory);
@@ -174,13 +192,11 @@ public class FilesResource {
         ).orElse(Response.PERMISSION_DENIED());
     }
 
+    /** The kiosk background images, whose saves hold their file until written (see removeFile). */
     private com.hmdm.rest.resource.support.KioskBackgroundImageAssets kioskImages;
 
-    /** The kiosk background images, whose saves hold their file until written (see removeFile). */
-    // Guice's own annotation: an optional setter Guice fills in production, which Jersey (HK2) leaves alone when a
-    // test registers an instance.
-    @com.google.inject.Inject(optional = true)
-    public void setKioskImages(com.hmdm.rest.resource.support.KioskBackgroundImageAssets kioskImages) {
+    /** Tests: the kiosk background images (the injected constructor sets them in the server). */
+    void setKioskImages(com.hmdm.rest.resource.support.KioskBackgroundImageAssets kioskImages) {
         this.kioskImages = kioskImages;
     }
 
@@ -243,9 +259,15 @@ public class FilesResource {
                 return createExternalFileInternal(uploadedFile);
             }
         } else if (kioskImages != null && uploadedFile.getId() != null) {
-            // Not while a configuration save holds the file: it has hashed these bytes. A file a configuration already
-            // uses as its background is refused below in any case (its digest is pinned).
-            return kioskImages.unlessHeld(uploadedFile.getId(), () -> updateFileInternal(uploadedFile), Response.FILE_USED());
+            // Not while a configuration save holds the file: it has hashed these bytes. While the edit runs (its file
+            // I/O outside the lock), no save can take hold of it. A file a configuration already uses as its
+            // background is refused below in any case (its digest is pinned).
+            if (!kioskImages.beginEdit(uploadedFile.getId())) return Response.FILE_USED();
+            try {
+                return updateFileInternal(uploadedFile);
+            } finally {
+                kioskImages.endEdit(uploadedFile.getId());
+            }
         } else {
             return updateFileInternal(uploadedFile);
         }

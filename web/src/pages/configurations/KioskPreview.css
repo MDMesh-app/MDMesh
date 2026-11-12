@@ -2,8 +2,13 @@
    in both themes) at absolute dp positions scaled by the component; the console's own colours come from tokens.css. */
 
 .v2 .v2-kbg__preview {
-  display: grid;
-  gap: 16px;
+  display: block;
+}
+
+/* A <details> lays its content out in a slot, so a grid gap on it never reaches the children: space them with margins
+   (more specific than the children's own margin: 0). */
+.v2 details.v2-kbg__preview > * + * {
+  margin-top: 12px;
 }
 
 .v2 .v2-kbg__preview > summary {
@@ -33,7 +38,8 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  align-items: center;
+  /* Both controls take the row's height (the taller one's), so their tops, bottoms and text line up exactly. */
+  align-items: stretch;
 }
 
 /* ---- large view ---- */

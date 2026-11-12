@@ -90,6 +90,22 @@ public class ConfigurationResource {
                                  UserDAO userDAO,
                                  @Named("base.url") String baseUrl,
                                  ExtensionPoints extensionPoints,
+                                 KioskBackgroundImageAssets backgroundImages,
+                                 com.hmdm.persistence.ConfigurationFileDAO configurationFileDAO,
+                                 com.hmdm.persistence.IconDAO iconDAO) {
+        this(configurationDAO, applicationDAO, pushService, customerDAO, userDAO, baseUrl, extensionPoints, backgroundImages);
+        this.configurationFileDAO = configurationFileDAO;
+        this.iconDAO = iconDAO;
+    }
+
+    /** Tests: no configuration-file or icon users to check before a gallery delete. */
+    public ConfigurationResource(ConfigurationDAO configurationDAO,
+                                 ApplicationDAO applicationDAO,
+                                 PushService pushService,
+                                 CustomerDAO customerDAO,
+                                 UserDAO userDAO,
+                                 String baseUrl,
+                                 ExtensionPoints extensionPoints,
                                  KioskBackgroundImageAssets backgroundImages) {
         this.configurationDAO = configurationDAO;
         this.applicationDAO = applicationDAO;
@@ -512,7 +528,7 @@ public class ConfigurationResource {
                 try {
                     held = backgroundImages.holdExisting(copy.getBackgroundImageFileId(), true);
                 } catch (IllegalArgumentException e) {
-                    return Response.ERROR(e.getMessage());
+                    return Response.ERROR(KioskBackgroundImageAssets.COPY_SOURCE_DELETED);
                 }
             }
             try {
@@ -583,17 +599,9 @@ public class ConfigurationResource {
         return Response.OK(this.applicationDAO.populateRequestedPermissions(this.configurationDAO.getConfigurationApplications(id)));
     }
 
+    /** What else may use an uploaded file (configuration files, icons), checked before a gallery delete. */
     private com.hmdm.persistence.ConfigurationFileDAO configurationFileDAO;
     private com.hmdm.persistence.IconDAO iconDAO;
-
-    /** What else may use an uploaded file (configuration files, icons), checked before a gallery delete. */
-    // Guice's own annotation: an optional setter Guice fills in production, which Jersey (HK2) leaves alone when a
-    // test registers an instance.
-    @com.google.inject.Inject(optional = true)
-    public void setFileUsers(com.hmdm.persistence.ConfigurationFileDAO configurationFileDAO, com.hmdm.persistence.IconDAO iconDAO) {
-        this.configurationFileDAO = configurationFileDAO;
-        this.iconDAO = iconDAO;
-    }
 
     // =================================================================================================================
     @ApiOperation(

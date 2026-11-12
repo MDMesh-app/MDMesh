@@ -350,8 +350,8 @@ public class FilesResourceCommitTest {
         uploadedFileDAO.existing = hosted(5, "kiosk-aaaaaaaaaaaa-beach.jpg");
         resource.setKioskImages(new com.hmdm.rest.resource.support.KioskBackgroundImageAssets(uploadedFileDAO,
                 new FakeCustomerDAO(customer), "https://mdm.example.com", filesDir.getAbsolutePath()) {
-            @Override public <T> T unlessHeld(int fileId, java.util.function.Supplier<T> action, T whenHeld) {
-                return fileId == 5 ? whenHeld : action.get();
+            @Override public boolean beginEdit(int fileId) {
+                return fileId != 5;
             }
         });
         UploadedFile edit = hosted(5, "kiosk-aaaaaaaaaaaa-beach.jpg");

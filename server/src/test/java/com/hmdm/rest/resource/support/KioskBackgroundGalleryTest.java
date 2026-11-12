@@ -321,6 +321,54 @@ public class KioskBackgroundGalleryTest {
         }
     }
 
+    /** A configuration copied from the master account's template uses the master's file: it can still be copied. */
+    @Test
+    public void anotherAccountsFileUsedByATemplateCopyIsHeldNotTreatedAsDeleted() throws Exception {
+        host(6, "kiosk-dddddddddddd-x.png", KioskImageMetadataTest.image("png", 4, 4), 1, 2);
+        KioskBackgroundImageAssets.Applied copy = assets.holdExisting(6, true);
+        assertTrue(assets.isHeld(6));
+        copy.release();
+        assertFalse(assets.isHeld(6));
+    }
+
+    /** Keep: a delete between reading the stored configuration and taking the hold refuses the save, never dangles. */
+    @Test
+    public void keepingAnImageDeletedBeforeTheHoldIsRefused() throws Exception {
+        host(1, "kiosk-aaaaaaaaaaaa-beach.jpg", KioskImageMetadataTest.image("jpg", 4, 4), 1, 1);
+        com.hmdm.persistence.domain.Configuration stored = new com.hmdm.persistence.domain.Configuration();
+        stored.setBackgroundImageFileId(1);
+        stored.setBackgroundImageUrl("https://mdm.example/files/acme/kiosk-aaaaaaaaaaaa-beach.jpg");
+        stored.setBackgroundImageSha256("ab");
+        assets.beforeHold = () -> assets.deleteUnused(1, id -> false);
+        try {
+            assets.apply(new com.hmdm.persistence.domain.Configuration(), stored);
+            fail("expected a refusal");
+        } catch (IllegalArgumentException e) {
+            assertEquals(KioskBackgroundImageAssets.DELETED, e.getMessage());
+        }
+        assertFalse(assets.isHeld(1));
+    }
+
+    /** Files → edit and saves exclude each other, with only the check under the lock. */
+    @Test
+    public void filesEditAndSavesExcludeEachOther() throws Exception {
+        host(1, "kiosk-aaaaaaaaaaaa-beach.jpg", KioskImageMetadataTest.image("jpg", 4, 4), 1, 1);
+        assertTrue(assets.beginEdit(1));
+        try {
+            assets.apply(replace(1), null);
+            fail("expected a refusal");
+        } catch (IllegalArgumentException e) {
+            assertEquals(KioskBackgroundImageAssets.BEING_EDITED, e.getMessage());
+        } finally {
+            assets.endEdit(1);
+        }
+        KioskBackgroundImageAssets.Applied save = assets.apply(replace(1), null);
+        assertFalse(assets.beginEdit(1));
+        save.release();
+        assertTrue(assets.beginEdit(1));
+        assets.endEdit(1);
+    }
+
     @Test
     public void deletesOnlyWhatTheGalleryLists() throws Exception {
         host(5, "notes.png", KioskImageMetadataTest.image("png", 4, 4), 1, 1);

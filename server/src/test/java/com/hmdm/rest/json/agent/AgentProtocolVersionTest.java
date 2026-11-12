@@ -30,7 +30,7 @@ public class AgentProtocolVersionTest {
     public void theConstantIsTheHighestDocumentedVersion() throws Exception {
         Path doc = Paths.get("..", "proto", "VERSIONING.md");
         if (!Files.exists(doc)) doc = Paths.get("proto", "VERSIONING.md");
-        Matcher m = Pattern.compile("(?m)^\\| (\\d+)\\.(\\d+) \\|").matcher(new String(Files.readAllBytes(doc), StandardCharsets.UTF_8));
+        Matcher m = Pattern.compile("(?m)^\\|\\s*(\\d+)\\.(\\d+)\\s*\\|").matcher(new String(Files.readAllBytes(doc), StandardCharsets.UTF_8));
         List<int[]> rows = new ArrayList<>();
         while (m.find()) rows.add(new int[]{Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2))});
         assertTrue("rows found", rows.size() > 3);
@@ -42,6 +42,16 @@ public class AgentProtocolVersionTest {
                 if (highestPending == null || compare(r, highestPending) > 0) highestPending = r;
             } else if (highest == null || compare(r, highest) > 0) {
                 highest = r;
+            }
+        }
+        // An exception may only wait for the row just below it: once that row is documented (#188's 1.9 merged before
+        // this branch's 1.10), the bump is due, and so is emptying AWAITING_BUMP.
+        for (String pending : AWAITING_BUMP) {
+            String[] p = pending.split("\\.");
+            int[] below = {Integer.parseInt(p[0]), Integer.parseInt(p[1]) - 1};
+            for (int[] r : rows) {
+                assertTrue(pending + " can be the protocol version now (" + below[0] + "." + below[1] + " is documented): "
+                        + "set AgentProtocol.VERSION and empty AWAITING_BUMP", compare(r, below) != 0);
             }
         }
         assertEquals(highest[0] + "." + highest[1], AgentProtocol.VERSION);

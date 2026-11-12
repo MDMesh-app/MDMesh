@@ -50,9 +50,11 @@ public class ConfigurationResourceBackgroundImageTest {
 
     private static final class ForeignFiles extends UploadedFileDAO {
         int reads;
+        boolean deleted;
         ForeignFiles() { super(null, null, null, "unused"); }
         @Override public UploadedFile getById(Integer id) {
             reads++;
+            if (deleted) return null;
             throw SecurityException.onAdminDataAccessViolation("read another customer's file");
         }
     }
@@ -163,6 +165,7 @@ public class ConfigurationResourceBackgroundImageTest {
     /** A copy holds the source's image until written; one deleted meanwhile is refused with a clear message. */
     @Test
     public void copyingAConfigurationWhoseImageWasDeletedIsRefused() {
+        files.deleted = true;
         SecurityContext.release();
         SecurityContext.init(Fakes.user(5, 1, "copy_config"));
         dao.stored = plain();
@@ -172,8 +175,23 @@ public class ConfigurationResourceBackgroundImageTest {
         request.setName("lobby copy");
         Response r = resource.copyConfiguration(request);
         assertEquals(Response.ResponseStatus.ERROR, r.getStatus());
-        assertTrue(r.getMessage(), r.getMessage().startsWith("That image was deleted"));
+        assertEquals(KioskBackgroundImageAssets.COPY_SOURCE_DELETED, r.getMessage());
         assertTrue(dao.inserted.isEmpty());
+    }
+
+    /** A configuration copied into this account from the master's template uses the master's image: copy still works. */
+    @Test
+    public void copyingAConfigurationThatUsesTheMasterAccountsImageWorks() {
+        SecurityContext.release();
+        SecurityContext.init(Fakes.user(5, 1, "copy_config"));
+        dao.stored = plain();
+        dao.stored.setBackgroundImageFileId(42);    // ForeignFiles: another customer's file
+        Configuration request = new Configuration();
+        request.setId(3);
+        request.setName("lobby copy");
+        Response r = resource.copyConfiguration(request);
+        assertEquals(Response.ResponseStatus.OK, r.getStatus());
+        assertEquals(Integer.valueOf(42), dao.inserted.get(0).getBackgroundImageFileId());
     }
 
     @Test

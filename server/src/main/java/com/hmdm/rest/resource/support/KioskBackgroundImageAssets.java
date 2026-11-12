@@ -49,6 +49,9 @@ public class KioskBackgroundImageAssets {
     static final String TOO_LARGE = "The background image is larger than 10 MB.";
     static final String TOO_MANY_PIXELS = "The background image is larger than 16 megapixels.";
     static final String NOT_FOUND = "The background image is not an uploaded file of this account.";
+    /** A configuration copy whose source's image was deleted meanwhile. */
+    public static final String COPY_SOURCE_DELETED = "That configuration's background image was deleted meanwhile. Try again.";
+    static final String BEING_EDITED = "That image is being changed in Files right now. Try again in a moment.";
     static final String DELETED = "That image was deleted meanwhile. Choose or upload an image again.";
     static final String NOT_A_GALLERY_IMAGE = "Only kiosk background images can be deleted here. Use Files for other files.";
     static final String IN_USE = "This image is used by a configuration. Choose another image there first, then delete it.";
@@ -156,8 +159,10 @@ public class KioskBackgroundImageAssets {
                 && (sent == null || sent.equals(stored.getBackgroundImageUrl()))) {
             setImage(configuration, stored.getBackgroundImageUrl(), stored.getBackgroundImageFileId(),
                     stored.getBackgroundImageSha256());
-            // Kept, and held until written like a new choice (a concurrent replace + delete can't leave it dangling).
-            return holdExisting(stored.getBackgroundImageFileId(), false);
+            // Kept, and held until written like a new choice. Strict: the hold re-checks under the lock that the file is
+            // still there, so a replace and delete that ran after the stored configuration was read refuse this save
+            // instead of letting it write an id that points at nothing.
+            return holdExisting(stored.getBackgroundImageFileId(), true);
         }
         // A legacy wallpaper URL, as sent: the admin set it over the managed image (if any), so that one is dropped.
         setImage(configuration, sent, null, null);
@@ -300,16 +305,19 @@ public class KioskBackgroundImageAssets {
     private boolean hold(int fileId, boolean strict) {
         if (beforeHold != null) beforeHold.run();
         synchronized (COPY_LOCK) {
-            UploadedFile still;
+            boolean exists;
             try {
-                still = uploadedFiles.getById(fileId);
+                exists = uploadedFiles.getById(fileId) != null;
             } catch (com.hmdm.security.SecurityException e) {
-                still = null;
+                // Another account's file: the row exists. A configuration copied from the master account's template
+                // uses the master's image, as released versions do; holding it by id reads and shows nothing of it.
+                exists = true;
             }
-            if (still == null) {
+            if (!exists) {
                 if (strict) throw new IllegalArgumentException(DELETED);
                 return false;
             }
+            if (editing.contains(fileId)) throw new IllegalArgumentException(BEING_EDITED);
             holdLocked(fileId);
             return true;
         }
@@ -332,6 +340,24 @@ public class KioskBackgroundImageAssets {
         java.util.concurrent.atomic.AtomicInteger n = held.get(fileId);
         int mine = self != null && self.heldId != null && self.heldId == fileId && !self.released ? 1 : 0;
         return n != null && n.get() > mine;
+    }
+
+    /** Files being changed through Files → edit: no save takes hold of them meanwhile. */
+    private final java.util.Set<Integer> editing = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /**
+     * Starts a Files → edit of {@code fileId}: refused (false) while a save holds it; otherwise no save can take hold of
+     * it until {@link #endEdit}. Only this check runs under the lock; the edit's file I/O runs outside it.
+     */
+    public boolean beginEdit(int fileId) {
+        synchronized (COPY_LOCK) {
+            if (heldByOthers(fileId, null) || !editing.add(fileId)) return false;
+            return true;
+        }
+    }
+
+    public void endEdit(int fileId) {
+        editing.remove(fileId);
     }
 
     /** A save not written yet holds the file. */

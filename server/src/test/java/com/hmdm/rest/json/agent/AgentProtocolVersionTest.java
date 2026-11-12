@@ -18,6 +18,8 @@ import java.util.regex.Pattern;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /** The protocol version the server advertises is the highest row of proto/VERSIONING.md (compared as numbers). */
@@ -80,6 +82,50 @@ public class AgentProtocolVersionTest {
         assertEquals(highest[0] + "." + highest[1], AgentProtocol.VERSION);
         // Numeric, not string, order: "1.10" is above "1.9" and "1.7".
         if (highestPending != null) assertTrue(compare(highestPending, highest) > 0);
+    }
+
+    /**
+     * A release never ships with a bump held: the CHANGELOG line announcing a held version must still be under
+     * Unreleased. The release PR moves Unreleased into its version's section (RELEASING.md, step 2), so this fails on
+     * that PR, before anything is tagged, until the hold is cleared.
+     */
+    @Test
+    public void aHeldBumpIsStillUnreleased() throws Exception {
+        Path changelog = Paths.get("..", "CHANGELOG.md");
+        if (!Files.exists(changelog)) changelog = Paths.get("CHANGELOG.md");
+        String text = new String(Files.readAllBytes(changelog), StandardCharsets.UTF_8);
+        for (String held : BUMP_HELD.keySet()) {
+            String problem = heldBumpProblem(text, held);
+            assertNull(problem, problem);
+        }
+    }
+
+    @Test
+    public void aHeldBumpInAReleasedSectionIsCaught() {
+        String unreleased = "# Changelog\n\n## Unreleased\n\nUnder the hood\n- Protocol 1.10: `fit` (additive).\n\n"
+                + "## v0.4.0 — 2026-11-03\n\n- Agent protocol 1.8\n";
+        assertNull(heldBumpProblem(unreleased, "1.10"));
+        // The release PR: Unreleased moved to ## v0.5.0, with the hold still there.
+        String releasing = "# Changelog\n\n## Unreleased\n\n## v0.5.0 — 2026-11-24\n\nUnder the hood\n"
+                + "- Protocol 1.10: `fit` (additive).\n\n## v0.4.0 — 2026-11-03\n";
+        assertNotNull(heldBumpProblem(releasing, "1.10"));
+        assertNotNull("no Unreleased section", heldBumpProblem("# Changelog\n\n## v0.5.0\n- Protocol 1.10\n", "1.10"));
+        assertNotNull("another version is not this one",
+                heldBumpProblem("## Unreleased\n- Protocol 1.100 and protocol 11.10\n", "1.10"));
+        assertNull("agent protocol 1.10 counts", heldBumpProblem("## Unreleased\n- Agent protocol 1.10 (additive)\n", "1.10"));
+    }
+
+    /** Why a held version isn't announced under Unreleased in {@code changelog}; null when it is. */
+    static String heldBumpProblem(String changelog, String version) {
+        Matcher unreleased = Pattern.compile("(?m)^## Unreleased\\s*$").matcher(changelog);
+        if (!unreleased.find()) return "CHANGELOG.md has no \"## Unreleased\" section to announce held protocol " + version;
+        Matcher next = Pattern.compile("(?m)^## ").matcher(changelog);
+        int end = next.find(unreleased.end()) ? next.start() : changelog.length();
+        String section = changelog.substring(unreleased.end(), end);
+        boolean announced = Pattern.compile("(?i)\\bprotocol " + Pattern.quote(version) + "(?![0-9])").matcher(section).find();
+        return announced ? null : "Agent protocol " + version + " is held (BUMP_HELD) but not announced under ## Unreleased "
+                + "in CHANGELOG.md: a release section has it, so clear the hold first (RELEASING.md, step 2: empty "
+                + "AWAITING_BUMP and BUMP_HELD, set AgentProtocol.VERSION), or announce it under Unreleased";
     }
 
     private static int compare(int[] a, int[] b) {

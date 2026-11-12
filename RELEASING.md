@@ -20,7 +20,8 @@
    `release/changelog-section.sh X.Y.Z`.
    Clear any agent protocol hold: in `server/src/test/java/com/hmdm/rest/json/agent/AgentProtocolVersionTest.java`
    empty `AWAITING_BUMP` and `BUMP_HELD`, and set `AgentProtocol.VERSION` to the highest row of
-   `proto/VERSIONING.md`. A release never ships with a protocol bump held.
+   `proto/VERSIONING.md`. A release never ships with a protocol bump held: once Unreleased is moved, the server test
+   `AgentProtocolVersionTest.aHeldBumpIsStillUnreleased` fails on the release PR until the hold is cleared.
 3. **Review and CI.** The PR's code review, green CI, and the native install matrix on the release branch, all nine
    jobs (T2; see "T2 native rig" in [docs/DEV.md](docs/DEV.md)). Pull requests run T2 only when the installers
    change, so this is what catches a server change that breaks a native upgrade:

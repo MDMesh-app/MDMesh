@@ -142,6 +142,9 @@ alone: a new URL for the same file (a server that moved) causes no re-download a
   memory, once more at half size, then the launcher keeps what it shows.
 - Readability: the dim and the text plates of [kiosk-background-scrim.md](kiosk-background-scrim.md), shared with
   the console's preview and its test vectors.
+- App labels break into at most 2 lines (3 at larger font sizes) at word boundaries only, never inside a word; a
+  word too long for its cell ends in an ellipsis (Label lines in the same document). The grid's scroll ends with room
+  for the Exit button as laid out, so no label is under it at the end of the scroll.
 - Failures keep the last good image, else the background color. A download retries with backoff on the elapsed-time
   clock (30 s doubling to 6 h, with jitter; a new image starts over, a restart may try once at once), and the
   launcher looks again every time it comes to the foreground. A download is only used once its SHA-256 matches; a

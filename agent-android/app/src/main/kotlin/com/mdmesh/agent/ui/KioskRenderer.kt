@@ -48,7 +48,7 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
         }
     private var grid: GridViews? = null
 
-    private class GridViews(val views: KioskViews, val cells: AppGridLayout, val empty: View)
+    private class GridViews(val views: KioskViews, val cells: AppGridLayout, val empty: View, val column: View)
 
     /** Plates follow the text wherever it is drawn: after any layout and any scroll, at most once a frame. */
     private val plates = PlateFrames(root, ::updatePlates)
@@ -143,7 +143,7 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
             addView(v.inGutter(empty, v.dp(SPACE_16)))
             addView(cells)
         }
-        grid = GridViews(v, cells, empty).also { showApps(it, s.apps) }
+        grid = GridViews(v, cells, empty, column).also { showApps(it, s.apps) }
         return ScrollView(activity).apply {
             layoutParams = ViewGroup.LayoutParams(MATCH, MATCH)
             addView(column)
@@ -210,6 +210,9 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
                 val button = v.outlinedButton(activity.getString(R.string.kiosk_exit_button)).apply {
                     tag = TextPlates.CONTROL // the dim brings it to 3:1 over the image
                     setOnClickListener { actions.requestExit() }
+                    // The grid ends with room for the button as laid out (taller at large font scales): at the end of
+                    // the scroll no label or plate is under it.
+                    addOnLayoutChangeListener { b, _, _, _, _, _, _, _, _ -> grid?.column?.let { roomFor(b, it, v) } }
                 }
                 root.addView(
                     button,
@@ -317,3 +320,14 @@ private fun KioskViews.splash(activity: ComponentActivity, s: KioskScreen.Splash
 
 private const val SPLASH_TEXT_SP = 16f
 private const val SPLASH_GAP_DP = 16
+
+/** [column]'s bottom padding: [button]'s height and bottom margin plus 8dp of air. */
+private fun roomFor(button: View, column: View, v: KioskViews) {
+    val margin = (button.layoutParams as? ViewGroup.MarginLayoutParams)?.bottomMargin ?: 0
+    val room = button.height + margin + v.dp(EXIT_AIR_DP)
+    if (button.height > 0 && column.paddingBottom != room) {
+        column.setPadding(column.paddingLeft, column.paddingTop, column.paddingRight, room)
+    }
+}
+
+private const val EXIT_AIR_DP = 8

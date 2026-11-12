@@ -10,7 +10,6 @@ import android.graphics.drawable.LayerDrawable
 import android.graphics.drawable.RippleDrawable
 import android.graphics.drawable.StateListDrawable
 import android.text.Layout
-import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -38,7 +37,7 @@ import kotlin.math.roundToInt
  * text that isn't on a fill of its own gets a [TextPlate] (drawn only where the scrim alone leaves it under 4.5:1).
  * A plated text's padding sits in negative margins ([plated]), so the text itself stays where it is without one.
  */
-class KioskViews(private val context: Context, val palette: KioskPalette, private val onImage: Boolean = false) {
+class KioskViews(internal val context: Context, val palette: KioskPalette, internal val onImage: Boolean = false) {
 
     private val density = context.resources.displayMetrics.density
 
@@ -61,21 +60,7 @@ class KioskViews(private val context: Context, val palette: KioskPalette, privat
 
     /** A text; over the image ([onImage]) with a [plate]. */
     fun text(s: CharSequence, sizeSp: Float, color: Int, medium: Boolean = false, plate: Plate = Plate.OWN): TextView =
-        TextView(context).apply {
-            text = s
-            // No hyphens: line breaks then match the console's preview (Android 6 to 12 hyphenate by default).
-            hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NONE
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
-            setTextColor(color)
-            if (medium) typeface = Typeface.create(MEDIUM, Typeface.NORMAL)
-            if (onImage && plate != Plate.NONE) {
-                val padH = dp(PLATE_PAD_H_DP)
-                background = TextPlate(this, palette.background, TextPlates.radius(density), padH, plate == Plate.ROW)
-                // A label's text box is its cell less 24dp (the row plate's at most the cell less 8dp, less padding).
-                val inset = if (plate == Plate.ROW) dp(LabelRows.GAP_DP / 2 + LabelRows.PAD_DP) else padH
-                setPadding(inset, dp(PLATE_PAD_V_DP), inset, dp(PLATE_PAD_V_DP))
-            }
-        }
+        styled(TextView(context).apply { text = s }, sizeSp, color, medium, plate)
 
     /** A centred column filling its parent, for the splash, hold and idle screens. */
     fun centredColumn(): LinearLayout = LinearLayout(context).apply {
@@ -130,11 +115,11 @@ class KioskViews(private val context: Context, val palette: KioskPalette, privat
                 layoutParams = LinearLayout.LayoutParams(iconPx, iconPx)
             },
         )
+        // Lines break at word boundaries only, never inside a word ([LabelLines]).
+        val label = LabelView(context, labelLines(context.resources.configuration.fontScale))
         addView(
-            text("", LABEL_SP, palette.text, plate = Plate.ROW).apply {
+            styled(label, LABEL_SP, palette.text, false, Plate.ROW).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
-                maxLines = labelLines(context.resources.configuration.fontScale)
-                ellipsize = TextUtils.TruncateAt.END
                 // The cell is announced once, by its content description.
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 layoutParams = plated(
@@ -150,7 +135,7 @@ class KioskViews(private val context: Context, val palette: KioskPalette, privat
         // A copy per cell: the cached Drawable itself is never attached to a view (a Drawable has one owner).
         val icon = app.icon.constantState?.newDrawable(context.resources)?.mutate() ?: app.icon
         (parts.getChildAt(0) as ImageView).setImageDrawable(icon)
-        (parts.getChildAt(1) as TextView).text = app.label
+        (parts.getChildAt(1) as LabelView).label = app.label
         cell.contentDescription = app.label
     }
 
@@ -306,3 +291,27 @@ fun <T : ViewGroup.MarginLayoutParams> View.plated(lp: T): T = lp.apply {
         bottomMargin -= v
     }
 }
+
+/** [view] in the launcher's text style; over the image ([onImage]) with a [plate]. */
+internal fun <T : TextView> KioskViews.styled(
+    view: T,
+    sizeSp: Float,
+    color: Int,
+    medium: Boolean,
+    plate: KioskViews.Plate,
+): T =
+    view.apply {
+        // No hyphens: line breaks then match the console's preview (Android 6 to 12 hyphenate by default).
+        hyphenationFrequency = Layout.HYPHENATION_FREQUENCY_NONE
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
+        setTextColor(color)
+        if (medium) typeface = Typeface.create(KioskViews.MEDIUM, Typeface.NORMAL)
+        if (onImage && plate != KioskViews.Plate.NONE) {
+            val padH = dp(KioskViews.PLATE_PAD_H_DP)
+            val radius = TextPlates.radius(context.resources.displayMetrics.density)
+            background = TextPlate(this, palette.background, radius, padH, plate == KioskViews.Plate.ROW)
+            // A label's text box is its cell less 24dp (the row plate's at most the cell less 8dp, less padding).
+            val inset = if (plate == KioskViews.Plate.ROW) dp(LabelRows.GAP_DP / 2 + LabelRows.PAD_DP) else padH
+            setPadding(inset, dp(KioskViews.PLATE_PAD_V_DP), inset, dp(KioskViews.PLATE_PAD_V_DP))
+        }
+    }

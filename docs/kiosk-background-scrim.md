@@ -1,4 +1,4 @@
-# Kiosk background image: keeping the launcher legible (version 3.2)
+# Kiosk background image: keeping the launcher legible (version 3.3)
 
 A kiosk background image sits under the launcher's text (header, app labels, empty-state and hold text) and its
 controls (the Exit button). A photo can be any brightness, so the launcher does two things, both with the kiosk
@@ -16,7 +16,7 @@ The console's preview computes the same, so what it shows is what the device dra
   `web/src/data/kioskLauncherLayout.ts` (the plate geometry) and the preview, `web/src/pages/configurations/
   KioskPreview.tsx`.
 - Agent: a `BackdropRule` alongside `KioskPalette` (agent branch).
-- Shared test vectors: [`proto/vectors/kiosk-scrim.json`](../proto/vectors/kiosk-scrim.json), version 3.2, generated
+- Shared test vectors: [`proto/vectors/kiosk-scrim.json`](../proto/vectors/kiosk-scrim.json), version 3.3, generated
   by an independent implementation. The console passes them; agent implementations must pass them too (the agent
   isn't released with images until it does). A change to these rules changes the vectors.
 
@@ -25,6 +25,8 @@ replaced by version 3: the bounds are now the worst pixel (per-cell minimum and 
 3.1 adds row uniformity (the labels of a grid row share one plate step) and states the Exit button's outlined model.
 3.2 adds the fit mode and the focal point, pins the decode the cells come from, makes orientation JPEG-only, caps a row
 plate at the cell width less 8 dp, and settles every rounding and tie (see "What 3.2 changes" at the end).
+3.3 pins how an app label breaks into lines (word boundaries only, never inside a word; "Label lines") and the room
+the grid leaves for the Exit button (see "What 3.3 changes" at the end).
 
 The console is the **reference**: it reads the image at full size, 8-bit sRGB, so its bounds contain every pixel. A
 device that samples the image (for memory) sees ranges that are subsets of those, so its plates are never stronger
@@ -167,7 +169,7 @@ In dp, from the laid-out text views; padding is applied with negative margins, s
 - **Height**: the full text-view height plus 4 dp above and below the text.
 - **Label rows** (3.2): the shared row width is the widest label line plus padding, but at most the **cell width less
   8 dp**, so neighbouring plates are always at least 8 dp apart. The label's text box is that maximum less the padding
-  (`cellWidth - 8 - 16` dp; labels wrap and ellipsize in it). Each plate is centred under its icon, then kept inside
+  (`cellWidth - 8 - 16` dp; labels break into lines in it as "Label lines" says). Each plate is centred under its icon, then kept inside
   the grid's content edges (`left` = the first cell's start, `right` = the last cell's end):
   `x = min(max(iconCentre - width / 2, left), right - width)`. Vectors: `rowPlates`.
 - **Corner radius**: 10 dp (the console's small radius, `--radius-sm`).
@@ -176,6 +178,43 @@ In dp, from the laid-out text views; padding is applied with negative margins, s
 - **Other text** (hold screen, splash): one plate per text view.
 - **No plate**: buttons (the outlined Exit button, Open again) and the empty-state callout, which have their own fill.
 - A plate's box is its region: its bounds come from the cells under it (plus the margin).
+
+## Label lines (3.3)
+
+An app label breaks into lines at word boundaries only, never inside a word, at its own size (it is never shrunk:
+large fonts must stay large). The same rule with or without an image. In order:
+
+1. **Text**: the app's label with every run of whitespace (U+0009, U+000A, U+000D, U+0020) turned into one U+0020,
+   trimmed. Other spaces, such as U+00A0, are part of a word. Empty: no lines.
+2. **Pieces**: the words (split at U+0020), each split further at its break points: after a hyphen `-` (U+002D) or a
+   slash `/` (U+002F) that has another character after it in the word, and before and after every CJK character
+   (U+3040 to U+30FF, U+3400 to U+4DBF, U+4E00 to U+9FFF, U+F900 to U+FAFF: kana and Han, which are written without
+   spaces). A run of characters in any other script with no space is one piece, however long ("Supercalifragilistic",
+   "Timesheets"). Hangul, Thai and the like are not split (Hangul uses spaces; Thai needs a dictionary).
+3. **Width**: `measure(s)`, the width of a string as the platform's text measure gives it with the label's paint (on
+   Android `Paint.measureText`; in the console the canvas `measureText` with the label's font). The vectors give a
+   width per character instead, and `measure(s)` is then the sum over the characters of `s`.
+4. **Greedy fill**, at most `maxLines` lines (2; the agent allows 3 above font scale 1, see Drawing), in a text box
+   `box` wide (`cellWidth - 24` dp, as above). Each piece in turn: a piece that starts a word follows a space, one
+   that continues a word follows nothing. While the lines so far are fewer than `maxLines - 1`:
+   - the current line is empty and the piece alone is wider than `box`: the piece becomes a line of its own,
+     ellipsized (5);
+   - the current line is empty: the piece starts it;
+   - the current line plus the piece (with its space) is at most `box`: the piece joins it;
+   - otherwise the current line is finished and the piece is tried again on a new line.
+
+   When `maxLines - 1` lines are finished, the last line is everything left (the current line and every remaining
+   piece, with their spaces), ellipsized (5).
+5. **Ellipsis**: a line at most `box` wide stays as it is. Otherwise it becomes its longest prefix (by characters) whose
+   width, with trailing spaces removed, plus the width of `…` (U+2026, measured with the same paint) is at most `box`,
+   followed by `…`; when not even one character fits, `…` alone.
+6. **Direction**: lines are made in logical order; the platform's bidirectional layout shows each line (an RTL label
+   reads right to left, its ellipsis at the logical end, on the left).
+
+The agent lays the label out with exactly these lines (each one already fits, so the platform never breaks one
+again). Why `cellWidth - 24` stays: the row plate may be at most the cell less 8 dp (8 dp between plates), and 8 dp of
+plate padding either side leaves 24 dp; a wider text box would need a narrower padding or plates that touch. Vectors:
+`labelLines`.
 
 ## Drawing
 
@@ -186,6 +225,12 @@ Everything is recomputed when any input changes: the image, the colours, the fit
 configuration), the window size (rotation, fold, split screen), the font scale, or the text layout. The vectors and
 the console's preview are at the default font size (1.0); at a larger font scale the agent allows 3 label lines and
 lays out (and measures) its own text, with the same rules.
+
+**The Exit button** floats at the bottom centre, 24 dp above the bottom of the content area (above the navigation bar
+or gesture area). The grid's scrolling content ends with room for it: the button's laid-out height (taller at large
+font scales) plus 24 dp plus 8 dp. So at the end of the scroll no label or plate is under it; mid-scroll it may float
+over the grid, as a floating control does. A grid that doesn't scroll ends well above it. The console's preview draws
+the button where the device does and leaves the same room.
 
 ## What the console shows
 
@@ -198,7 +243,7 @@ text needs one) and "Image dimmed 22%".
 
 ## Vectors
 
-`proto/vectors/kiosk-scrim.json` version 3.2:
+`proto/vectors/kiosk-scrim.json` version 3.3:
 
 - `parsing`: stored value to colour, or null (ASCII-only hex, `Locale.ROOT` names).
 - `palette`: stored colours to background, text, secondary (ties and the black/white fallback included).
@@ -222,6 +267,12 @@ text needs one) and "Image dimmed 22%".
   edge exactly on a cell boundary under a non-terminating scale, and one a hair below a boundary (`floor` and `ceil`
   on the value as computed, never on a rounded one); a `#707070` background (white fallback), Android's
   green and darkgray; and a geometry case where `iw - cw` is a hair below 0.
+- `labelLines` (3.3): a label's `text` (already normalized), the `widths` of its characters (one number per UTF-16
+  character, in order; the same character always has the same width), the `ellipsisWidth`, the `box` and `maxLines`,
+  to the `expected` lines (strings, `…` included). Cases: fits, two words that just fit and just don't, a single word
+  wider than the box, an over-wide first word then a second, three words overflowing two lines, a hyphen, a slash, a
+  hyphen at the end of a word, CJK text without spaces, Latin then CJK, a long word with no spaces, a right-to-left
+  label, three lines, and a box narrower than one character and the ellipsis.
 
 ## What 3.2 changes
 
@@ -233,6 +284,13 @@ text needs one) and "Image dimmed 22%".
   clamped to the grid's content edges.
 - Settled: half-up blending, `busy` as a span over 48, doubles throughout, ASCII hex and `Locale.ROOT` names, the
   palette ties, the dim before the plates, controls never plated, recompute triggers, font scale 1.0 in the vectors.
+
+## What 3.3 changes
+
+- Label lines: word boundaries only (and after a hyphen or slash inside a word, and between CJK characters), a word
+  wider than its box ellipsized on its own line, never split; greedy fill; the last line takes the rest, ellipsized.
+  Before, a label wrapped as the platform's text layout chose, which split words that didn't fit ("Timesheet / s").
+- The grid leaves room for the Exit button at the end of its scroll, at any font scale.
 
 ## Not (yet) done
 

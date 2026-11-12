@@ -193,6 +193,10 @@ resumed.
 - **The agent is called MDMesh on devices (agent 0.5.0):** it was MDM Agent, and its icon is a white square on dark
   (was a white shield on blue). It's the same app, so it updates in place and keeps Device Owner. Update staff
   instructions that name it or show its icon.
+- **Kiosk text colour (agent 0.5.0):** a kiosk text colour with less than 4.5:1 contrast on its background is
+  replaced on the device by a readable one, so some brand pairs show dark text (white on a bright red, for example).
+  The kiosk background is always drawn solid; its transparency is ignored. Check kiosk configurations whose text and
+  background colours are close.
 
 ### v0.4.0
 

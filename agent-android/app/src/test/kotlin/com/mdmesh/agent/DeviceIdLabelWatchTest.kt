@@ -12,6 +12,7 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import java.io.IOException
 
 /** The status screen's DEVICE ID area while the screen is open: it follows the stored state as it changes. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -19,14 +20,14 @@ class DeviceIdLabelWatchTest {
 
     private val ids = MutableStateFlow<String?>("dev-1")
     private val marks = MutableStateFlow<Long?>(null)
-    private val successes = MutableStateFlow<Long?>(null)
-    private val errors = MutableStateFlow<SyncStatus.Failure?>(null)
+    private val syncStatus = SyncStatus() // the real one, over an in-memory last check-in
 
     /** What the open screen has shown, in order (MainActivity collects the same stream while STARTED). */
     private fun TestScope.openScreen(): List<DeviceIdLabel.Status> {
         val shown = mutableListOf<DeviceIdLabel.Status>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
-            DeviceIdLabel.watch(ids, marks, successes, errors).collect { shown += it }
+            DeviceIdLabel.watch(ids, marks, syncStatus.lastSuccessAtMsChanges, syncStatus.lastError)
+                .collect { shown += it }
         }
         return shown
     }
@@ -37,7 +38,7 @@ class DeviceIdLabelWatchTest {
         assertEquals(Enrolled("dev-1", credentialsLost = false), shown.last())
 
         // A background recovery gets a final answer and marks the credentials lost.
-        marks.value = CredentialsLost.markerOf(successes.value)
+        marks.value = CredentialsLost.markerOf(syncStatus.lastSuccessAtMs)
 
         assertEquals(Enrolled("dev-1", credentialsLost = true), shown.last())
     }
@@ -48,7 +49,7 @@ class DeviceIdLabelWatchTest {
         val shown = openScreen()
         assertEquals(Enrolled("dev-1", credentialsLost = true), shown.last())
 
-        successes.value = 1_000L
+        syncStatus.recordSuccess() // a check-in reached the server
 
         assertEquals(Enrolled("dev-1", credentialsLost = false), shown.last())
     }
@@ -67,7 +68,7 @@ class DeviceIdLabelWatchTest {
     @Test
     fun `a change that doesn't change what is shown redraws nothing`() = runTest {
         val shown = openScreen()
-        errors.value = SyncStatus.Failure("timeout", 5L) // enrolled: the last error isn't shown here
+        syncStatus.recordFailure(IOException("timeout")) // enrolled: the last error isn't shown here
         assertEquals(1, shown.size)
     }
 }

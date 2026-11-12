@@ -30,7 +30,6 @@ import com.mdmesh.core.store.DeviceIdStore
 import com.mdmesh.core.store.EnrollTokenStore
 import com.mdmesh.core.store.KioskStateStore
 import com.mdmesh.core.sync.CheckInWorker
-import com.mdmesh.core.sync.LastCheckIn
 import com.mdmesh.core.sync.SyncStatus
 import com.mdmesh.core.telemetry.EventLog
 import com.mdmesh.kiosk.KioskResult
@@ -67,7 +66,6 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var kioskStore: KioskStateStore
     @Inject lateinit var events: EventLog
     @Inject lateinit var enrollTokens: EnrollTokenStore
-    @Inject lateinit var lastCheckIn: LastCheckIn
 
     private lateinit var deviceIdValue: TextView
     private lateinit var credentialsLostValue: TextView
@@ -92,7 +90,7 @@ class MainActivity : ComponentActivity() {
                 DeviceIdLabel.watch(
                     deviceIds = deviceIdStore.deviceId,
                     marks = enrollTokens.credentialsLostMarks,
-                    lastSuccess = lastCheckIn.okAtMsChanges,
+                    lastSuccess = syncStatus.lastSuccessAtMsChanges,
                     lastError = syncStatus.lastError,
                 ).collect { show(it) }
             }

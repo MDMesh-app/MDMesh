@@ -116,12 +116,12 @@ class MainActivity : ComponentActivity() {
         returnButton.text = if (returningToKiosk) "Returning…" else "Return to kiosk"
         lifecycleScope.launch {
             val id = deviceIdStore.current()
-            val lostAt = try {
-                enrollTokens.credentialsLostAt()
+            val lostMark = try {
+                enrollTokens.credentialsLostMark()
             } catch (ignored: java.io.IOException) {
                 null // unreadable store: show the id; the state is written again on the next recovery
             }
-            show(DeviceIdLabel.of(id, lostAt, syncStatus.lastSuccessAtMs, syncStatus.lastError.value))
+            show(DeviceIdLabel.of(id, lostMark, syncStatus.lastSuccessAtMs, syncStatus.lastError.value))
         }
     }
 

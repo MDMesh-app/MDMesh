@@ -176,8 +176,44 @@ class EnrollmentManagerTest {
     }
 
     @Test
+    fun `a success after the clock moved back still clears a lost-credentials state`() = runTest {
+        for (restart in listOf(false, true)) {
+            val tokens = FakeTokenProvider("tok-123", attempt = "attempt-0123456789abcdef")
+            val lastCheckIn = InMemoryLastCheckIn()
+            val status = SyncStatus(lastCheckIn)
+            val identity = FakeIdentity()
+            val api = FakeMdmApi().apply { enrollResponse = resumableAnswer("sek-1") }
+            val manager = recovering(api, tokens, status, identity)
+            manager.ensureEnrolled()
+            api.enrollResponse =
+                com.mdmesh.core.net.ResponseEnvelope(status = "ERROR", message = "error.agent.token.used")
+            status.recordFailure(CheckInException("error.agent.unauthorized"))
+            manager.ensureEnrolled()
+            assertTrue("marked lost", tokens.credentialsLost)
+
+            // The clock ran ahead when the mark was made; NTP has since pulled it back, so this real success is
+            // stamped earlier than the mark. It is still a new success.
+            status.recordSuccess()
+            lastCheckIn.okAtMs = 1L
+            (if (restart) recovering(api, tokens, status, identity) else manager).ensureEnrolled()
+            assertTrue("restart=$restart: cleared", !tokens.credentialsLost)
+        }
+    }
+
+    @Test
+    fun `a success from before the mark, stamped by a clock that ran ahead, doesn't clear it`() = runTest {
+        // Marked lost while the last success read 5_000_000 (a clock that ran ahead); nothing has succeeded since.
+        val tokens = FakeTokenProvider("tok-123").apply { credentialsLostMark = 5_000_000L }
+        val status = SyncStatus(InMemoryLastCheckIn().apply { okAtMs = 5_000_000L })
+        recovering(FakeMdmApi(), tokens, status, FakeIdentity("dev-1", "sek-1")).ensureEnrolled()
+        assertTrue("still lost", tokens.credentialsLost)
+        assertEquals("nothing written", 0, tokens.lostWrites)
+    }
+
+    @Test
     fun `a successful enrollment clears a lost-credentials state`() = runTest {
-        val tokens = FakeTokenProvider("tok-123", attempt = "attempt-0123456789abcdef").apply { credentialsLostAt = 1L }
+        val tokens = FakeTokenProvider("tok-123", attempt = "attempt-0123456789abcdef")
+            .apply { credentialsLostMark = 1L }
         manager(FakeIdentity(), tokens = tokens).ensureEnrolled()
         assertTrue(!tokens.credentialsLost)
     }

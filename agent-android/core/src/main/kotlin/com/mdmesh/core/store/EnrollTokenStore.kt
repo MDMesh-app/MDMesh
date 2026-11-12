@@ -40,13 +40,14 @@ interface EnrollTokenProvider {
     suspend fun setAttemptResumable(resumable: Boolean) {}
 
     /**
-     * The server refused this device's credentials and had nothing to resume. Persistent, so the status screen can
+     * The server refused this device's credentials and had nothing to resume: [mark] is the success marker of that
+     * moment ([com.mdmesh.core.sync.CredentialsLost.markerOf]); null clears it. Persistent, so the status screen can
      * say so whatever later check-ins report, until a check-in succeeds again or the device enrolls again.
      */
-    suspend fun setCredentialsLost(lost: Boolean) {}
+    suspend fun setCredentialsLost(mark: Long?) {}
 
-    /** When the credentials were marked lost (wall clock, ms), or null when they are not. */
-    suspend fun credentialsLostAt(): Long? = null
+    /** The stored mark (see [setCredentialsLost]), or null when the credentials were not marked lost. */
+    suspend fun credentialsLostMark(): Long? = null
 
     /**
      * The attempt id held for [token] when the server that took it resumes enrollments, without making one; null
@@ -95,14 +96,14 @@ class EnrollTokenStore(private val context: Context) : EnrollTokenProvider {
         context.enrollTokenDataStore.edit { it[KEY_ATTEMPT_RESUMABLE] = resumable }
     }
 
-    override suspend fun setCredentialsLost(lost: Boolean) {
+    override suspend fun setCredentialsLost(mark: Long?) {
         context.enrollTokenDataStore.edit {
-            if (lost) it[KEY_CREDENTIALS_LOST_AT] = System.currentTimeMillis() else it.remove(KEY_CREDENTIALS_LOST_AT)
+            if (mark != null) it[KEY_CREDENTIALS_LOST_MARK] = mark else it.remove(KEY_CREDENTIALS_LOST_MARK)
         }
     }
 
-    override suspend fun credentialsLostAt(): Long? =
-        context.enrollTokenDataStore.data.first()[KEY_CREDENTIALS_LOST_AT]
+    override suspend fun credentialsLostMark(): Long? =
+        context.enrollTokenDataStore.data.first()[KEY_CREDENTIALS_LOST_MARK]
 
     override suspend fun resumableAttempt(token: String): String? {
         val prefs = context.enrollTokenDataStore.data.first()
@@ -124,6 +125,6 @@ class EnrollTokenStore(private val context: Context) : EnrollTokenProvider {
         val KEY_ATTEMPT = stringPreferencesKey("enroll_attempt")
         val KEY_ATTEMPT_FOR = stringPreferencesKey("enroll_attempt_for")
         val KEY_ATTEMPT_RESUMABLE = booleanPreferencesKey("enroll_attempt_resumable")
-        val KEY_CREDENTIALS_LOST_AT = longPreferencesKey("credentials_lost_at")
+        val KEY_CREDENTIALS_LOST_MARK = longPreferencesKey("credentials_lost_mark")
     }
 }

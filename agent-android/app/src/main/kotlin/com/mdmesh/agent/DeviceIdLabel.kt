@@ -1,5 +1,6 @@
 package com.mdmesh.agent
 
+import com.mdmesh.core.sync.CredentialsLost
 import com.mdmesh.core.sync.SyncStatus
 
 /**
@@ -17,18 +18,18 @@ object DeviceIdLabel {
     }
 
     /**
-     * [credentialsLostAt] is when the credentials were marked lost (null: they weren't); a check-in that succeeded at
-     * or after it ([lastSuccessAtMs]) shows they work again, so the warning goes at once.
+     * [credentialsLostMark] is the stored lost-credentials mark (null: none); any check-in that succeeded since the
+     * mark ([lastSuccessAtMs] changed) shows they work again, so the warning goes at once. The rule is
+     * [CredentialsLost.stillLost], the one the agent uses to clear the mark: no clock comparison.
      */
     fun of(
         deviceId: String?,
-        credentialsLostAt: Long?,
+        credentialsLostMark: Long?,
         lastSuccessAtMs: Long?,
         lastError: SyncStatus.Failure?,
     ): Status = if (deviceId.isNullOrBlank()) {
         Status.Enrolling(lastError)
     } else {
-        val lost = credentialsLostAt != null && (lastSuccessAtMs == null || lastSuccessAtMs < credentialsLostAt)
-        Status.Enrolled(deviceId, lost)
+        Status.Enrolled(deviceId, CredentialsLost.stillLost(credentialsLostMark, lastSuccessAtMs))
     }
 }

@@ -55,19 +55,19 @@ class FakeTokenProvider(private val token: String?, private val attempt: String?
         attemptCleared++
     }
     var resumable = false
-    /** When the credentials were marked lost (ms), or null. */
-    var credentialsLostAt: Long? = null
-    val credentialsLost: Boolean get() = credentialsLostAt != null
+    /** The stored lost-credentials mark, or null. */
+    var credentialsLostMark: Long? = null
+    val credentialsLost: Boolean get() = credentialsLostMark != null
     var lostWrites = 0
         private set
     override suspend fun setAttemptResumable(resumable: Boolean) {
         this.resumable = resumable
     }
-    override suspend fun setCredentialsLost(lost: Boolean) {
+    override suspend fun setCredentialsLost(mark: Long?) {
         lostWrites++
-        credentialsLostAt = if (lost) System.currentTimeMillis() else null
+        credentialsLostMark = mark
     }
-    override suspend fun credentialsLostAt(): Long? = credentialsLostAt
+    override suspend fun credentialsLostMark(): Long? = credentialsLostMark
     override suspend fun resumableAttempt(token: String): String? =
         if (attemptCleared == 0 && resumable) attempt else null
 }

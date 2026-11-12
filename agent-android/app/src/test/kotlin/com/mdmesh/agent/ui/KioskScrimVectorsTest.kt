@@ -40,8 +40,8 @@ class KioskScrimVectorsTest {
 
     private fun double(o: JsonObject, key: String) = o[key]!!.jsonPrimitive.double
 
-    @Test fun `version 3_4 with the documented constants`() {
-        assertEquals("3.4", vectors["version"]!!.jsonPrimitive.content)
+    @Test fun `version 3_5 with the documented constants`() {
+        assertEquals("3.5", vectors["version"]!!.jsonPrimitive.content)
         assertEquals(KioskScrim.STEPS, int(vectors, "steps"))
         assertEquals(LegibilityV3.DIM_MAX_STEP, int(vectors, "dimMaxStep"))
         assertEquals(Contrast.TEXT_MIN, double(vectors, "textMin"), 0.0)

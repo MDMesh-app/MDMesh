@@ -15,25 +15,42 @@ import org.robolectric.annotation.Config
 import java.io.File
 
 /**
- * The shared `labelLines` vectors with the platform's own grapheme data: Android 7 (ICU with Unicode 8), 8 and 15.
+ * The shared `labelLines` and `direction` vectors with the platform's own Unicode data: Android 7 (ICU with Unicode
+ * 8), 8, 11 and 15.
  * The spec's conditions on top of UAX #29 make the cuts the same on all of them.
  */
 @RunWith(RobolectricTestRunner::class)
 abstract class LabelLineVectorsTest {
 
     @Test fun everyLabelLineVector() = checkLabelLineVectors()
+
+    @Test fun everyDirectionVector() = checkDirectionVectors()
+}
+
+private fun vectors(): JsonObject {
+    val root = generateSequence(File("").absoluteFile) { it.parentFile }
+        .first { File(it, "proto/vectors/kiosk-scrim.json").isFile }
+    return Json.parseToJsonElement(File(root, "proto/vectors/kiosk-scrim.json").readText()).jsonObject
+}
+
+/** Every `direction` vector against [LabelDirection] with the platform's own Unicode data. */
+fun checkDirectionVectors() {
+    val cases = vectors()["direction"]!!.jsonArray
+    check(cases.size >= 15)
+    for (e in cases) {
+        val v = e.jsonObject
+        val text = v["text"]!!.jsonPrimitive.content
+        val want = v["expected"]!!.jsonPrimitive.content == "rtl"
+        assertEquals(v["name"].toString(), want, LabelDirection.isRtl(text))
+    }
 }
 
 /** Every `labelLines` vector against [LabelLines] with the platform's ICU ([IcuGraphemes]). */
 fun checkLabelLineVectors() {
-    val vectors: JsonObject = run {
-        val root = generateSequence(File("").absoluteFile) { it.parentFile }
-            .first { File(it, "proto/vectors/kiosk-scrim.json").isFile }
-        Json.parseToJsonElement(File(root, "proto/vectors/kiosk-scrim.json").readText()).jsonObject
-    }
+    val vectors = vectors()
     run {
         val cases = vectors["labelLines"]!!.jsonArray
-        check(cases.size >= 23)
+        check(cases.size >= 29)
         for (e in cases) {
             val v = e.jsonObject
             val text = v["text"]!!.jsonPrimitive.content
@@ -56,6 +73,10 @@ class LabelLineVectors24Test : LabelLineVectorsTest()
 /** Android 8: Unicode 9. */
 @Config(sdk = [26])
 class LabelLineVectors26Test : LabelLineVectorsTest()
+
+/** Android 11: Unicode 13. */
+@Config(sdk = [30])
+class LabelLineVectors30Test : LabelLineVectorsTest()
 
 // Android 15 (Unicode 15) runs the same check in KioskLabelLayoutPortraitTest: an SDK 35 class of its own here fails
 // to start under Robolectric 4.14 (FileSystemAlreadyExistsException copying the native runtime's fonts).

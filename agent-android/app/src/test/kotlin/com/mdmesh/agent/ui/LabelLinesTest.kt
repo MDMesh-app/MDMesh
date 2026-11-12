@@ -16,7 +16,7 @@ class LabelLinesTest {
             i += Character.charCount(s.codePointAt(i))
             ends += i
         }
-        GraphemeGuards.apply(s, ends.toIntArray())
+        GraphemeGuards.apply(s, ends.toIntArray(), Character::getType)
     }
 
     /** A width per code point, positive, so a prefix's width grows with its length; marks are 0. */

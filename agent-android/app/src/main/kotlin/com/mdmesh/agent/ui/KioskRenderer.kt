@@ -300,11 +300,15 @@ private class GridColumn(context: Context) : LinearLayout(context) {
         exit?.let { button ->
             // As the root will measure it (WRAP_CONTENT): its height plus its bottom margin plus 8dp of air. Set here,
             // before this column measures, so no layout pass is ever repeated for it.
+            // At the width the root gives it: the column's (the root's content) less the button's own side margins.
+            val lp = button.layoutParams as? MarginLayoutParams
+            val sides = (lp?.leftMargin ?: 0) + (lp?.rightMargin ?: 0)
+            val width = maxOf(0, MeasureSpec.getSize(widthMeasureSpec) - sides)
             button.measure(
-                MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.AT_MOST),
+                MeasureSpec.makeMeasureSpec(width, MeasureSpec.AT_MOST),
                 MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
             )
-            val margin = (button.layoutParams as? MarginLayoutParams)?.bottomMargin ?: 0
+            val margin = lp?.bottomMargin ?: 0
             val room = button.measuredHeight + margin + (EXIT_AIR_DP * resources.displayMetrics.density).roundToInt()
             if (paddingBottom != room) setPadding(paddingLeft, paddingTop, paddingRight, room)
         }

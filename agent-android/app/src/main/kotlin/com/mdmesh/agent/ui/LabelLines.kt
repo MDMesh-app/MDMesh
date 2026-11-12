@@ -5,7 +5,6 @@ import android.content.Context
 import android.graphics.text.LineBreaker
 import android.os.Build
 import android.text.Layout
-import android.text.TextDirectionHeuristics
 import android.widget.TextView
 
 /**
@@ -117,7 +116,8 @@ object LabelLines {
             count++
         }
         if (end >= text.length) return text
-        // The clusters of a window around the cut: a cluster longer than the window is cut at a code point (bounded).
+        // The clusters of a window around the cut (bounded work). No grapheme cut at or before the 256th code
+        // point (one cluster longer than the cap): the spec's hard cut right after it.
         val window = text.substring(0, minOf(text.length, end + CAP_LOOKAHEAD))
         return text.substring(0, graphemes.ends(window).lastOrNull { it <= end } ?: end)
     }
@@ -172,7 +172,7 @@ class LabelView(context: Context, private val maxLabelLines: Int) : TextView(con
             if (field.toString() == value.toString()) return
             field = value
             capped = LabelLines.cap(value.toString(), IcuGraphemes)
-            textDirection = if (TextDirectionHeuristics.FIRSTSTRONG_LTR.isRtl(capped, 0, capped.length)) {
+            textDirection = if (LabelDirection.isRtl(capped)) {
                 TEXT_DIRECTION_RTL
             } else {
                 TEXT_DIRECTION_LTR

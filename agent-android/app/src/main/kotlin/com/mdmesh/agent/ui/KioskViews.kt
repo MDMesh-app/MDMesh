@@ -94,7 +94,6 @@ class KioskViews(internal val context: Context, val palette: KioskPalette, inter
         orientation = LinearLayout.VERTICAL
         clipToPadding = false // a label's plate reaches 4dp into the cell's padding
         gravity = Gravity.CENTER_HORIZONTAL
-        setPadding(dp(CELL_PAD_H_DP), dp(CELL_PAD_V_DP), dp(CELL_PAD_H_DP), dp(CELL_PAD_V_DP))
         isClickable = true
         isFocusable = true
         background = LayerDrawable(
@@ -107,6 +106,9 @@ class KioskViews(internal val context: Context, val palette: KioskPalette, inter
                 focusRing(rounded(dp(CELL_RADIUS_DP + CELL_INSET_DP), TRANSPARENT), palette.focus),
             ),
         )
+        // After the background: setting a background with padding of its own (the InsetDrawable's 4dp) replaces the
+        // view's padding, so the geometry never depends on what a drawable reports.
+        setPadding(dp(CELL_PAD_H_DP), dp(CELL_PAD_V_DP), dp(CELL_PAD_H_DP), dp(CELL_PAD_V_DP))
         ViewCompat.setAccessibilityDelegate(this, ButtonRole)
         addView(
             ImageView(context).apply {
@@ -122,9 +124,7 @@ class KioskViews(internal val context: Context, val palette: KioskPalette, inter
                 gravity = Gravity.CENTER_HORIZONTAL
                 // The cell is announced once, by its content description.
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-                layoutParams = plated(
-                    LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(LABEL_GAP_DP) },
-                )
+                labelGeometry(this)
             },
         )
     }
@@ -219,11 +219,11 @@ class KioskViews(internal val context: Context, val palette: KioskPalette, inter
         private const val TRANSPARENT = 0
         private const val WHITE = 0xFFFFFFFF.toInt()
         private const val SPINNER_DP = 40
-        private const val CELL_PAD_H_DP = 8
+        const val CELL_PAD_H_DP = 8
         private const val CELL_PAD_V_DP = 12
         private const val CELL_INSET_DP = 4
         private const val CELL_RADIUS_DP = 14
-        private const val LABEL_GAP_DP = 8
+        const val LABEL_GAP_DP = 8
         private const val CALLOUT_PAD_H_DP = 12
         private const val CALLOUT_PAD_V_DP = 10
         private const val CALLOUT_RADIUS_DP = 10
@@ -310,8 +310,26 @@ internal fun <T : TextView> KioskViews.styled(
             val padH = dp(KioskViews.PLATE_PAD_H_DP)
             val radius = TextPlates.radius(context.resources.displayMetrics.density)
             background = TextPlate(this, palette.background, radius, padH, plate == KioskViews.Plate.ROW)
-            // A label's text box is its cell less 24dp (the row plate's at most the cell less 8dp, less padding).
-            val inset = if (plate == KioskViews.Plate.ROW) dp(LabelRows.GAP_DP / 2 + LabelRows.PAD_DP) else padH
-            setPadding(inset, dp(KioskViews.PLATE_PAD_V_DP), inset, dp(KioskViews.PLATE_PAD_V_DP))
+            // A label's padding is its cell's geometry, with or without a plate (appCell); other texts pad their plate.
+            if (plate == KioskViews.Plate.OWN) {
+                setPadding(padH, dp(KioskViews.PLATE_PAD_V_DP), padH, dp(KioskViews.PLATE_PAD_V_DP))
+            }
         }
     }
+
+/**
+ * One text box for every app label, with or without an image, so adding one never changes how a label breaks:
+ * the label spans its cell (its 8dp margins reach over the cell's padding) and is padded 12dp either side, so its
+ * text box is the cell less 24dp ([LabelRows.textBox]): the row plate is at most the cell less 8dp, with 8dp of
+ * padding around the text. Set after any background, and in margins, so nothing a drawable reports moves it.
+ */
+internal fun KioskViews.labelGeometry(label: TextView) {
+    val inset = dp(LabelRows.GAP_DP / 2 + LabelRows.PAD_DP)
+    label.setPadding(inset, dp(KioskViews.PLATE_PAD_V_DP), inset, dp(KioskViews.PLATE_PAD_V_DP))
+    label.layoutParams = LinearLayout.LayoutParams(KioskViews.MATCH, KioskViews.WRAP).apply {
+        leftMargin = -dp(KioskViews.CELL_PAD_H_DP)
+        rightMargin = -dp(KioskViews.CELL_PAD_H_DP)
+        topMargin = dp(KioskViews.LABEL_GAP_DP) - dp(KioskViews.PLATE_PAD_V_DP)
+        bottomMargin = -dp(KioskViews.PLATE_PAD_V_DP)
+    }
+}

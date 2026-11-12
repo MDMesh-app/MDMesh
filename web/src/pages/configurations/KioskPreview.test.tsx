@@ -153,6 +153,22 @@ describe('KioskBackgroundPreview', () => {
     expect(large().querySelector<HTMLElement>('.v2-kbg__header')!.style.top).toBe(firstTop);
   });
 
+  it('sets each label’s one direction on its element', async () => {
+    const he = String.fromCodePoint(0x5e0, 0x5d9, 0x5d4, 0x5d5, 0x5dc);
+    preview({ apps: [`${he} POS`, 'Notes'] });
+    await waitFor(() => expect(liveText()).toMatch(/Text|Contrast|Measuring/));
+    const labels = [...large().querySelectorAll<HTMLElement>('.v2-kbg__label')];
+    expect(labels.map((l) => l.getAttribute('dir'))).toEqual(['rtl', 'ltr']);
+  });
+
+  it('draws a placeholder icon from the first whole grapheme of the name', async () => {
+    const flag = String.fromCodePoint(0x1f1fa, 0x1f1f8);
+    preview({ apps: [`${flag} Travel`, 'notes'] });
+    await waitFor(() => expect(liveText()).toMatch(/Text|Contrast|Measuring/));
+    const icons = [...large().querySelectorAll<HTMLElement>('.v2-kbg__icon')].map((i) => i.textContent);
+    expect(icons).toEqual([flag, 'N']);
+  });
+
   it('offers no scroll when the grid fits', async () => {
     preview();
     await waitFor(() => expect(liveText()).toMatch(/Text|Contrast|Measuring/));

@@ -1,7 +1,18 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ELLIPSIS, LABEL_MAX_CODE_POINTS, cachedLabelLines, capLabel, ellipsize, labelLines, normalizeLabel } from './kioskLabelLines';
+import {
+  ELLIPSIS,
+  LABEL_MAX_CODE_POINTS,
+  cachedLabelLines,
+  capLabel,
+  codePointEnds,
+  ellipsize,
+  graphemeCuts,
+  labelDirection,
+  labelLines,
+  normalizeLabel,
+} from './kioskLabelLines';
 
 interface LabelCase {
   name: string;
@@ -34,9 +45,9 @@ function vectorMeasure(c: LabelCase): (s: string) => number {
   };
 }
 
-describe('label lines vectors (3.3, shared with the agent)', () => {
-  it('has all 17 cases', () => {
-    expect(VECTORS.labelLines).toHaveLength(17);
+describe('label lines vectors (3.4, shared with the agent)', () => {
+  it('has all 23 cases', () => {
+    expect(VECTORS.labelLines).toHaveLength(23);
   });
   it.each(VECTORS.labelLines.map((c) => [c.name, c] as const))('%s', (_, c) => {
     expect(c.widths).toHaveLength(c.text.length);
@@ -62,12 +73,39 @@ describe('label lines building blocks', () => {
   });
 
   it('never cuts a ZWJ sequence or a variation selector off its character', () => {
-    const family = '\u{1F468}‍\u{1F469}';
-    const heart = '❤️';
-    const m = (s: string) => [...s].filter((ch) => ch !== '‍' && ch !== '️').length * 10;
+    const family = '\u{1F468}\u200d\u{1F469}';
+    const heart = '\u2764\ufe0f';
+    const m = (s: string) =>
+      [...s].filter((ch) => ch !== '\u200d' && ch !== '\ufe0f' && ch !== ELLIPSIS).length * 10 + (s.endsWith(ELLIPSIS) ? 6 : 0);
     expect(ellipsize(`ab${family}cd`, 36, m)).toBe(`ab${ELLIPSIS}`);
-    expect(ellipsize(`ab${heart}cd`, 36, m)).toBe(`ab${ELLIPSIS}`);
-    expect(ellipsize(`ab${heart}cd`, 46, m)).toBe(`ab${heart}${ELLIPSIS}`);
+    expect(ellipsize(`ab${family}cd`, 45, m)).toBe(`ab${ELLIPSIS}`); // the whole family or none of it
+    expect(ellipsize(`ab${family}cd`, 46, m)).toBe(`ab${family}${ELLIPSIS}`);
+    expect(ellipsize(`ab${heart}cd`, 35, m)).toBe(`ab${ELLIPSIS}`); // the heart with its VS16, or neither
+    expect(ellipsize(`ab${heart}cd`, 36, m)).toBe(`ab${heart}${ELLIPSIS}`);
+  });
+
+  it('measures the ellipsis with the text before it (kerning)', () => {
+    // A pair that kerns: "o…" is narrower than "o" plus "…".
+    const m = (s: string) => [...s].length * 10 - (s.endsWith(`o${ELLIPSIS}`) ? 3 : 0);
+    expect(ellipsize('Photos', 37, m)).toBe(`Pho${ELLIPSIS}`);
+    expect(ellipsize('Photos', 36, m)).toBe(`Ph${ELLIPSIS}`);
+  });
+
+  it('caps at a grapheme cut: never inside a flag or an emoji sequence', () => {
+    const flag = '\u{1F1FA}\u{1F1F8}';
+    // 255 letters, then a flag: the 256th code point is the flag's first half, so the cap moves back before it.
+    expect(capLabel('a'.repeat(255) + flag + 'b')).toBe('a'.repeat(255));
+    expect(capLabel('a'.repeat(254) + flag + 'b')).toBe('a'.repeat(254) + flag);
+    const family = '\u{1F468}\u200d\u{1F469}\u200d\u{1F467}';
+    expect(capLabel('a'.repeat(253) + family + 'b')).toBe('a'.repeat(253));
+  });
+
+  it('gives a label one direction, from its first strong character', () => {
+    expect(labelDirection('ניהול')).toBe('rtl');
+    expect(labelDirection('123 مخزن')).toBe('rtl');
+    expect(labelDirection('POS ניהול')).toBe('ltr');
+    expect(labelDirection('ְab')).toBe('ltr'); // a Hebrew point isn't strong
+    expect(labelDirection('123 !')).toBe('ltr');
   });
 
   it('caches per font, size, box and label', () => {
@@ -85,6 +123,114 @@ describe('label lines building blocks', () => {
   });
 });
 
+// ---- grapheme cuts, with and without Intl.Segmenter ----
+
+/** A tiny random generator (mulberry32), so a failure can be replayed by its seed. */
+function rng(seed: number) {
+  return () => {
+    seed |= 0;
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const PARTS = [
+  'a', 'b', 'é', 'é', 'ṇ̃', ' ', ' ', '-', '/', '在', 'ש', 'ب',
+  '\u{1F1FA}', '\u{1F1F8}', '\u{1F1EF}\u{1F1F5}', // regional indicators, alone and paired
+  '\u{1F44D}\u{1F3FD}', '\u{1F3FF}', // a skin tone on its emoji, and a stray one
+  '\u{1F468}\u200d\u{1F469}\u200d\u{1F467}', '\u200d', '\u2764\ufe0f', // a ZWJ family, a stray ZWJ, VS16
+  '\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}', // a tag sequence (Scotland)
+  '각', '가', 'ᆨ', // conjoining Hangul jamo: LVT, LV, a stray T
+  '각', // a precomposed syllable
+];
+const randomLabel = (r: () => number, n: number) => Array.from({ length: n }, () => PARTS[Math.floor(r() * PARTS.length)]).join('');
+/** Widths that grow with length and differ per code point, with a kerning pair before the ellipsis. */
+const widthOf = (s: string) => {
+  let w = 0;
+  for (const ch of s) w += ch === ELLIPSIS ? 6 : /\p{M}|\u200d|\ufe0f/u.test(ch) ? 0 : 4 + (ch.codePointAt(0)! % 7);
+  return w - (s.endsWith(`a${ELLIPSIS}`) ? 1 : 0);
+};
+const RI = /[\u{1F1E6}-\u{1F1FF}]/u;
+const insideRegionalRun = (s: string, c: number) => RI.test(s.slice(Math.max(0, c - 2), c)) && RI.test(s.slice(c, c + 2));
+
+describe('grapheme cuts', () => {
+  // The test environment's own UAX #29 (Node's ICU); the app's tsconfig lib predates Intl.Segmenter's types.
+  type Seg = { segment(s: string): Iterable<{ index: number; segment: string }> };
+  const seg = new (Intl as unknown as { Segmenter: new (l: undefined, o: { granularity: 'grapheme' }) => Seg }).Segmenter(undefined, {
+    granularity: 'grapheme',
+  });
+  const clusterEnds = (s: string) => new Set([...seg.segment(s)].map((g) => g.index + g.segment.length));
+
+  it('are UAX #29 cluster ends: never inside a flag, family, skin tone, tag sequence or syllable', () => {
+    const r = rng(1);
+    for (let n = 0; n < 2000; n++) {
+      const s = randomLabel(r, 1 + Math.floor(r() * 12));
+      const ends = clusterEnds(s);
+      for (const c of graphemeCuts(s)) {
+        // Every cut is a cluster end, except the pair cuts inside a run of regional indicators.
+        if (!insideRegionalRun(s, c)) expect(ends.has(c), `${JSON.stringify(s)} cut at ${c}`).toBe(true);
+        if (c < s.length) {
+          expect(s.codePointAt(c - 1)).not.toBe(0x200d);
+          expect(/^[\p{M}\u200d\ufe0f\u{1F3FB}-\u{1F3FF}\u{E0020}-\u{E007F}]/u.test(s.slice(c))).toBe(false);
+        }
+      }
+    }
+  });
+
+  it('pair regional indicators from the start of their run', () => {
+    for (let n = 1; n <= 7; n++) {
+      const cuts = graphemeCuts(`x${'\u{1F1FA}'.repeat(n)}y`);
+      const inside = cuts.filter((c) => c > 1 && c < 1 + 2 * n);
+      expect(inside).toEqual(Array.from({ length: Math.floor((n - 1) / 2) }, (_, k) => 1 + 4 * (k + 1)));
+    }
+  });
+
+  it('the ellipsis is the longest prefix at a cut that fits: bisection is exact', () => {
+    const r = rng(2);
+    for (let n = 0; n < 2000; n++) {
+      const s = normalizeLabel(randomLabel(r, 2 + Math.floor(r() * 14)));
+      if (!s) continue;
+      const box = 6 + Math.floor(r() * 60);
+      for (const useSegmenter of [true, false]) {
+        let want = s;
+        if (widthOf(s) > box) {
+          want = ELLIPSIS;
+          for (const c of graphemeCuts(s, useSegmenter)) {
+            const p = s.slice(0, c).replace(/ +$/, '') + ELLIPSIS;
+            if (widthOf(p) <= box) want = p;
+          }
+        }
+        expect(ellipsize(s, box, widthOf, useSegmenter), `${JSON.stringify(s)} in ${box}`).toBe(want);
+      }
+    }
+  });
+
+  it('the cap never splits a cluster', () => {
+    const r = rng(3);
+    for (let n = 0; n < 300; n++) {
+      const s = randomLabel(r, 150 + Math.floor(r() * 200));
+      const capped = capLabel(s);
+      expect([...capped].length).toBeLessThanOrEqual(LABEL_MAX_CODE_POINTS);
+      if (capped.length < s.length) expect(graphemeCuts(s.slice(0, capped.length + 64))).toContain(capped.length);
+    }
+  });
+
+  it('without Intl.Segmenter: the guards alone keep marks, flags, ZWJ sequences, skin tones and tags whole', () => {
+    const r = rng(4);
+    for (let n = 0; n < 2000; n++) {
+      // Conjoining jamo aside (below), the fallback cuts exactly where Intl.Segmenter does.
+      const s = randomLabel(r, 1 + Math.floor(r() * 12)).replace(/[ᄀ-ᇿ]/gu, 'k');
+      expect(graphemeCuts(s, false), JSON.stringify(s)).toEqual(graphemeCuts(s));
+    }
+    // What it gives up: conjoining jamo, which UAX #29 joins into one syllable, can be cut between its parts.
+    expect(graphemeCuts('각')).toEqual([3]);
+    expect(graphemeCuts('각', false)).toEqual([1, 2, 3]);
+    expect(codePointEnds('a\u{1F600}b')).toEqual([1, 3, 4]);
+  });
+});
+
 describe('bounded work for long labels', () => {
   const long: [string, string][] = [
     ['one word', 'a'.repeat(100_000)],
@@ -93,6 +239,9 @@ describe('bounded work for long labels', () => {
     ['combining marks', 'é'.repeat(50_000)],
     ['hyphens', 'a-'.repeat(50_000)],
     ['surrogate pairs', '\u{1F600}'.repeat(50_000)],
+    ['flags', '\u{1F1FA}\u{1F1F8}'.repeat(25_000)],
+    ['ZWJ families', '\u{1F468}\u200d\u{1F469}\u200d\u{1F467}'.repeat(12_500)],
+    ['one giant cluster', 'e' + '́'.repeat(100_000)],
   ];
   it.each(long)('%s: 100k characters', (_, label) => {
     expect(label.length).toBeGreaterThanOrEqual(100_000);

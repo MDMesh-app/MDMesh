@@ -1,7 +1,7 @@
 // The kiosk background image's preview: the launcher over the image as the agent draws it (centre crop, a light dim
 // for the Exit button, a plate behind each text that needs one), in one large view at device scale with Phone/Tablet
 // and Rotate, and four thumbnails that select it. Same rules and functions as the agent: data/kioskScrim.ts,
-// data/kioskLauncherLayout.ts, data/kioskLabelLines.ts, docs/kiosk-background-scrim.md (version 3.3).
+// data/kioskLauncherLayout.ts, data/kioskLabelLines.ts, docs/kiosk-background-scrim.md (version 3.4).
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { browserMeasure, FALLBACK_FONT, KIOSK_FONT, launcherLayout, PLATE_RADIUS, type LauncherLayout, type Measure } from '../../data/kioskLauncherLayout';
 import {
@@ -22,6 +22,7 @@ import {
   type Legibility,
 } from '../../data/kioskScrim';
 import { Button, Callout, IconCheckSmall, IconCrossSmall, IconInfo, IconSync, IconWarning, Segmented } from '../../ui';
+import { graphemeCuts } from '../../data/kioskLabelLines';
 import './kioskFonts.css';
 import './KioskPreview.css';
 
@@ -404,6 +405,12 @@ export function KioskBackgroundPreview({
   );
 }
 
+/** The placeholder icon's letter: the name's first grapheme (a whole flag or emoji, never half a surrogate pair). */
+function firstGrapheme(name: string): string {
+  const s = name.trim();
+  return s.slice(0, graphemeCuts(s)[0] ?? 0);
+}
+
 /** Whether the element is on screen (true where the browser can't tell, e.g. jsdom). */
 function useInView(ref: RefObject<HTMLElement | null>): boolean {
   const [inView, setInView] = useState(() => typeof IntersectionObserver !== 'function');
@@ -628,10 +635,11 @@ function ScaledScreen({
       {layout.cells.map((c, i) => (
         <span key={`cell-${i}`}>
           <span className="v2-kbg__icon" style={{ ...px(c.icon, s), borderRadius: 14 * s, fontSize: c.icon.w * 0.42 * s }}>
-            {c.name.slice(0, 1).toUpperCase()}
+            {firstGrapheme(c.name).toUpperCase()}
           </span>
           <span
             className="v2-kbg__label"
+            dir={c.dir}
             style={{ ...px(c.label, s), fontSize: layout.labelSize * s, lineHeight: `${layout.labelLineHeight * s}px` }}
           >
             {c.lines.map((line, k) =>

@@ -16,6 +16,13 @@ describe('labels (docs/kiosk-background-scrim.md, Label lines)', () => {
     expect(l.cells[4].lines).toEqual(['Superca…', 'Expiali…']);
     for (const c of l.cells) for (const line of c.lines) expect(measure(line, 14, 400)).toBeLessThanOrEqual(c.label.w);
   });
+  it('gives each label one direction, from its first strong character, for every line', () => {
+    const he = String.fromCodePoint(0x5e0, 0x5d9, 0x5d4, 0x5d5, 0x5dc);
+    const l = phone([`${he} POS Terminal`, 'POS Terminal']);
+    expect(l.cells[0].dir).toBe('rtl');
+    expect(l.cells[0].lines.length).toBe(2);
+    expect(l.cells[1].dir).toBe('ltr');
+  });
   it('is the same at every scale: it works in dp', () => {
     expect(phone(['Signage Player Pro']).cells[0].lines).toEqual(phone(['Signage Player Pro']).cells[0].lines);
   });

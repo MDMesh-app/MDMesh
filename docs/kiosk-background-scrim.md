@@ -1,4 +1,4 @@
-# Kiosk background image: keeping the launcher legible (version 3.3)
+# Kiosk background image: keeping the launcher legible (version 3.4)
 
 A kiosk background image sits under the launcher's text (header, app labels, empty-state and hold text) and its
 controls (the Exit button). A photo can be any brightness, so the launcher does two things, both with the kiosk
@@ -16,7 +16,7 @@ The console's preview computes the same, so what it shows is what the device dra
   `web/src/data/kioskLauncherLayout.ts` (the plate geometry) and the preview, `web/src/pages/configurations/
   KioskPreview.tsx`.
 - Agent: a `BackdropRule` alongside `KioskPalette` (agent branch).
-- Shared test vectors: [`proto/vectors/kiosk-scrim.json`](../proto/vectors/kiosk-scrim.json), version 3.3, generated
+- Shared test vectors: [`proto/vectors/kiosk-scrim.json`](../proto/vectors/kiosk-scrim.json), version 3.4, generated
   by an independent implementation. The console passes them; agent implementations must pass them too (the agent
   isn't released with images until it does). A change to these rules changes the vectors.
 
@@ -26,7 +26,10 @@ replaced by version 3: the bounds are now the worst pixel (per-cell minimum and 
 3.2 adds the fit mode and the focal point, pins the decode the cells come from, makes orientation JPEG-only, caps a row
 plate at the cell width less 8 dp, and settles every rounding and tie (see "What 3.2 changes" at the end).
 3.3 pins how an app label breaks into lines (word boundaries only, never inside a word; "Label lines") and the room
-the grid leaves for the Exit button (see "What 3.3 changes" at the end).
+the grid leaves for the Exit button (see "What 3.3 changes" at the end). 3.4 makes the cap and every ellipsis cut
+between grapheme clusters (never inside a flag, an emoji sequence or a letter and its accent), measures an ellipsis
+with its text, gives a label one direction, and pins one text box for labels with or without an image (see "What 3.4
+changes").
 
 The console is the **reference**: it reads the image at full size, 8-bit sRGB, so its bounds contain every pixel. A
 device that samples the image (for memory) sees ranges that are subsets of those, so its plates are never stronger
@@ -184,9 +187,10 @@ In dp, from the laid-out text views; padding is applied with negative margins, s
 An app label breaks into lines at word boundaries only, never inside a word, at its own size (it is never shrunk:
 large fonts must stay large). The same rule with or without an image. In order:
 
-0. **Cap**: only the label's first 256 code points are laid out (cut at a code-point boundary, never inside a
-   surrogate pair). Labels come from installed apps and can be any length; 256 is far more than 3 lines can show, and
-   it bounds the work below.
+0. **Cap**: only the label's first 256 code points are laid out, cut at the last grapheme cut (5) at or before the
+   256th code point, so the cap never splits a cluster (or a surrogate pair). Labels come from installed apps and can
+   be any length; 256 is far more than 3 lines can show, and it bounds the work below (only the clusters around the
+   cut are looked at).
 1. **Text**: the capped label with every run of whitespace (U+0009, U+000A, U+000D, U+0020) turned into one U+0020,
    trimmed. Other spaces, such as U+00A0, are part of a word. Empty: no lines.
 2. **Pieces**: the words (split at U+0020), each split further at its break points: after a hyphen `-` (U+002D) or a
@@ -198,7 +202,7 @@ large fonts must stay large). The same rule with or without an image. In order:
    Android `Paint.measureText`; in the console the canvas `measureText` with the label's font). The vectors give a
    width per character instead, and `measure(s)` is then the sum over the characters of `s`.
 4. **Greedy fill**, at most `maxLines` lines (2; the agent allows 3 above font scale 1, see Drawing), in a text box
-   `box` wide (`cellWidth - 24` dp, as above). Each piece in turn: a piece that starts a word follows a space, one
+   `box` wide (`cellWidth - 24` dp, as above, with or without an image). Each piece in turn: a piece that starts a word follows a space, one
    that continues a word follows nothing. While the lines so far are fewer than `maxLines - 1`:
    - the current line is empty and the piece alone is wider than `box`: the piece becomes a line of its own,
      ellipsized (5);
@@ -208,13 +212,23 @@ large fonts must stay large). The same rule with or without an image. In order:
 
    When `maxLines - 1` lines are finished, the last line is everything left (the current line and every remaining
    piece, with their spaces), ellipsized (5).
-5. **Ellipsis**: a line at most `box` wide stays as it is. Otherwise it becomes its longest prefix whose width, with
-   trailing spaces removed, plus the width of `…` (U+2026, measured with the same paint) is at most `box`, followed by
-   `…`; when not even one character fits, `…` alone. A prefix ends at a code-point boundary that is not followed by a
-   combining mark (general category M), U+200D or U+FE0F, so a mark never loses its letter. A prefix's width grows
-   with its length, so the longest one can be found by bisection over those boundaries.
-6. **Direction**: lines are made in logical order; the platform's bidirectional layout shows each line (an RTL label
-   reads right to left, its ellipsis at the logical end, on the left).
+5. **Ellipsis**: a line at most `box` wide stays as it is. Otherwise it becomes its longest prefix, trailing spaces
+   removed, such that the prefix followed by `…` (U+2026), measured as one string with the same paint, is at most
+   `box`; when no prefix fits (or only spaces do), `…` alone. A prefix ends at a **grapheme cut**: an extended grapheme
+   cluster boundary (UAX #29) that is also
+   - not right after U+200D;
+   - not right before a combining mark (general category M), U+200D, U+FE0F, a skin tone (U+1F3FB to U+1F3FF) or a
+     tag (U+E0020 to U+E007F);
+   - in a run of regional indicators, only after an even number of them from the start of the run (and always there).
+
+   On current Unicode data the extra conditions only add "no cut after U+200D before a non-emoji"; they also make
+   older data cut the same (Android 7 ships Unicode 8, which splits emoji ZWJ sequences and skin tones and joins all
+   regional indicators). The console uses `Intl.Segmenter` with `granularity: "grapheme"`, the agent
+   `android.icu.text.BreakIterator.getCharacterInstance`, each with these conditions. A prefix's width grows with its
+   length, so the longest one can be found by bisection over the cuts.
+6. **Direction**: lines are made in logical order, and the whole label has one direction: its first strong character
+   (left to right when it has none), for every line, whatever a line holds. A Hebrew label with a Latin word on its
+   second line still reads right to left there; its ellipsis is at the logical end, on the left.
 
 The agent lays the label out with exactly these lines (each one already fits, so the platform never breaks one
 again). Why `cellWidth - 24` stays: the row plate may be at most the cell less 8 dp (8 dp between plates), and 8 dp of
@@ -272,13 +286,17 @@ text needs one) and "Image dimmed 22%".
   edge exactly on a cell boundary under a non-terminating scale, and one a hair below a boundary (`floor` and `ceil`
   on the value as computed, never on a rounded one); a `#707070` background (white fallback), Android's
   green and darkgray; and a geometry case where `iw - cw` is a hair below 0.
-- `labelLines` (3.3): a label's `text` (already normalized), the `widths` of its characters (one number per UTF-16
-  character, in order; the same character always has the same width), the `ellipsisWidth`, the `box` and `maxLines`,
+- `labelLines` (3.3, 3.4): a label's `text` (already normalized), the `widths` of its UTF-16 code units, in order (a
+  surrogate pair's width on its high half, 0 on its low half; the same unit always has the same width), the
+  `ellipsisWidth`, the `box` and `maxLines`,
   to the `expected` lines (strings, `…` included). Cases: fits, two words that just fit and just don't, a single word
   wider than the box, an over-wide first word then a second, three words overflowing two lines, a hyphen, a slash, a
   hyphen at the end of a word, CJK text without spaces, Latin then CJK, a long word with no spaces, a right-to-left
   label, three lines, a label longer than the 256-code-point cap, combining marks at the ellipsis, and a box narrower
-  than one character and the ellipsis. Combining marks have width 0 in the vectors.
+  than one character and the ellipsis. Combining marks have width 0 in the vectors. 3.4 adds three flags (a cut after
+  a whole flag only), an emoji ZWJ family, a skin tone, conjoining Hangul jamo, a ZWJ between letters and the cap
+  landing inside a cluster. The expected results follow UAX #29 of Unicode 15.1 with the conditions above; they are
+  the same under every Unicode version from 8 on once the conditions are applied.
 
 ## What 3.2 changes
 
@@ -298,6 +316,19 @@ text needs one) and "Image dimmed 22%".
   Before, a label wrapped as the platform's text layout chose, which split words that didn't fit ("Timesheet / s").
 - The grid leaves room for the Exit button at the end of its scroll, at any font scale.
 
+## What 3.4 changes
+
+- The cap and the ellipsis cut at grapheme cuts (UAX #29 clusters plus the conditions in Label lines, 5): a flag, an
+  emoji ZWJ sequence, a skin tone, a letter and its accents and a Hangul syllable are never split.
+- An ellipsis is measured together with the text before it (shaping between the two can add a fraction of a pixel).
+- A label has one direction, from its first strong character, on every line.
+- One text box for every app label, with or without an image: `cellWidth - 24` dp, so adding an image never changes
+  how a label breaks (the agent padded labels on an image only, which made the box the cell less 16 dp, and less 8 dp
+  without one).
+
 ## Not (yet) done
 
 - Swapping the text colour to the one that reads best on the image.
+- Japanese line-breaking rules (kinsoku): a line may start with a long-vowel mark (U+30FC) or a small kana. Halfwidth
+  katakana (U+FF66 to U+FF9F) and CJK Extension B and later are not CJK under Label lines (2), so a label in them is one
+  unbreakable word, ellipsized.

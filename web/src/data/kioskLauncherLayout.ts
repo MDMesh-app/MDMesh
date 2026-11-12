@@ -1,7 +1,7 @@
 // The kiosk launcher's grid screen in dp, as the agent lays it out (agent ui/KioskRenderer, AppGridLayout, KioskViews),
-// with the plate geometry and label lines of docs/kiosk-background-scrim.md (3.3). The console's preview draws from it and
+// with the plate geometry and label lines of docs/kiosk-background-scrim.md (3.4). The console's preview draws from it and
 // computes the dim and the plates over exactly these boxes, so a label is cut where the device cuts it.
-import { cachedLabelLines } from './kioskLabelLines';
+import { cachedLabelLines, capLabel, labelDirection } from './kioskLabelLines';
 import type { Box, LegibilityElement } from './kioskScrim';
 
 /** Plate padding: 8 dp left and right, 4 dp top and bottom. */
@@ -49,6 +49,8 @@ export interface LauncherCell {
   /** The label's text view (cell width less padding, its laid-out lines). */
   label: Box;
   lines: string[];
+  /** The label's one direction, from its first strong character (Label lines, 6), for every line. */
+  dir: 'ltr' | 'rtl';
   /** The widest laid-out line. */
   lineWidth: number;
 }
@@ -132,7 +134,7 @@ export function launcherLayout(
   const measureLabel = (s: string) => measure(s, LABEL_SP, 400);
   const laid = apps.map((name) => {
     const lines = cachedLabelLines(measure, LABEL_SP, 400, name, labelW, LABEL_LINES);
-    return { name, lines, lineWidth: Math.min(labelW, Math.max(0, ...lines.map(measureLabel))) };
+    return { name, lines, dir: labelDirection(capLabel(name)), lineWidth: Math.min(labelW, Math.max(0, ...lines.map(measureLabel))) };
   });
   const gridY = header.y + header.h + 8;
   const cells: LauncherCell[] = [];
@@ -151,6 +153,7 @@ export function launcherLayout(
         icon: { x: x + Math.floor((cellW - icon) / 2), y: rowY + CELL_PAD_V, w: icon, h: icon },
         label: { x: x + (cellW - labelW) / 2, y: rowY + CELL_PAD_V + icon + LABEL_GAP, w: labelW, h: a.lines.length * labelLine },
         lines: a.lines,
+        dir: a.dir,
         lineWidth: a.lineWidth,
       });
     });

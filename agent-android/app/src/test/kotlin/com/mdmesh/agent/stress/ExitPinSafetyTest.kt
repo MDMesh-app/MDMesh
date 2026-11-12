@@ -152,6 +152,25 @@ class ExitPinSafetyTest : KioskHarness() {
         assertEquals(pin, field().text.toString())
     }
 
+    /**
+     * PR #192 S5: the right PIN for kiosk A is submitted just as a kiosk.enter of B lands (B is saved, its delivery to
+     * the launcher not yet run). The exit was for A: it must not take the device out of B.
+     */
+    @Test fun pinExitForAKioskReplacedAsItRunsLeavesTheNewKioskLocked() {
+        launch(grid)
+        tapExitKiosk()
+        val d = pinDialog()!!
+        edit(d.window!!.decorView)!!.setText(pin)
+        val replacement = grid.copy(allowedPackages = listOf(other))
+        saveKiosk(replacement) // the store has B; the launcher still shows A (the main looper hasn't run)
+        button(d.window!!.decorView, s(R.string.kiosk_exit_confirm))!!.performClick()
+        settle()
+        assertEquals("the new kiosk is kept", replacement, storedKiosk())
+        assertEquals("still locked", ActivityManager.LOCK_TASK_MODE_LOCKED, lockTaskState())
+        assertTrue("the launcher stays", !activity.isFinishing)
+        assertEquals("no exit recorded", 0, events("kioskExit"))
+    }
+
     // --- F9 / F10: what a rebuild keeps --------------------------------------------------------------------------
 
     @Test fun triesLeftWarningSurvivesRotation() {

@@ -175,8 +175,25 @@ class KioskApplier(
      * @param handBackHome release the HOME claim and show the OEM launcher (false: the agent stays HOME).
      * @param force clear local state and the volume lock even when the controller could not exit (on-device exits:
      *   the user must get out).
+     * @param expected the kiosk this exit was authorized for (the on-device PIN exit: the kiosk its PIN was checked
+     *   against). Checked inside the lock, so an exit that waited behind the entry of another kiosk (a `kiosk.enter`
+     *   or `config.apply` landing as the PIN was submitted) is refused with [EXIT_SUPERSEDED] and leaves that kiosk
+     *   untouched. A new look for the same kiosk ([sameKioskAs]) doesn't change it. Null: exit whatever kiosk is
+     *   saved (`kiosk.exit`, `config.apply` kiosk-off).
+     * @param beforeSteps run inside the lock, in the caller's context, once the exit is going ahead and before its
+     *   first step (the launcher leaves lock task here, so the OEM home can come up); never for a refused exit.
      */
-    suspend fun exit(handBackHome: Boolean = true, force: Boolean = false): KioskResult = mutex.withLock {
+    suspend fun exit(
+        handBackHome: Boolean = true,
+        force: Boolean = false,
+        expected: KioskApplyPayload? = null,
+        beforeSteps: () -> Unit = {},
+    ): KioskResult = mutex.withLock {
+        if (expected != null && !expected.sameKioskAs(store.load())) {
+            warn("kiosk exit refused: the kiosk it was asked for has been replaced")
+            return@withLock KioskResult.Failed(EXIT_SUPERSEDED)
+        }
+        beforeSteps()
         exitLocked(handBackHome, force)
     }
 
@@ -303,8 +320,11 @@ class KioskApplier(
         runCatching { Log.w(TAG, message) }
     }
 
-    private companion object {
-        const val TAG = "KioskApplier"
+    companion object {
+        private const val TAG = "KioskApplier"
+
+        /** [exit]'s reason when the kiosk it was asked for was replaced before it ran: nothing was changed. */
+        const val EXIT_SUPERSEDED = "kiosk replaced before the exit ran"
     }
 
     /** True when a kiosk payload is persisted (device believes it is / should be in kiosk). */

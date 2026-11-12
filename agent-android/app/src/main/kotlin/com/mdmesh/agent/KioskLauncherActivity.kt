@@ -39,6 +39,7 @@ import com.mdmesh.core.telemetry.EventSink
 import com.mdmesh.kiosk.CrashLoopGuard
 import com.mdmesh.kiosk.Boot
 import com.mdmesh.kiosk.ExitPinGate
+import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.kiosk.HoldStore
 import com.mdmesh.kiosk.KioskController
 import com.mdmesh.kiosk.KioskReturnPolicy
@@ -462,11 +463,13 @@ class KioskLauncherActivity : ComponentActivity() {
      * [dialog] only shows the result: it closes on Open and Locked, and shows Wrong and Unavailable under the field.
      */
     private fun onPinEntered(entered: String, dialog: ExitPinDialog) {
-        val pin = KioskExitDialogs.onDevicePin(active)
+        val kiosk = active
+        val pin = KioskExitDialogs.onDevicePin(kiosk)
         val outcome = pinGate.attempt(entered, pin)
         dialog.render(ExitPinUiState.of(outcome))
         when (outcome) {
-            ExitPinGate.Outcome.Open -> doExit()
+            // Open implies a PIN, so a kiosk: the exit is bound to it.
+            ExitPinGate.Outcome.Open -> kiosk?.let(::doExit)
             is ExitPinGate.Outcome.Locked -> {
                 if (outcome.started) reportLockout(outcome)
                 showExitLocked(outcome.remainingMs)
@@ -496,21 +499,30 @@ class KioskLauncherActivity : ComponentActivity() {
         dialogs.show(KioskExitDialogs.LOCKED, MdmDialog.create(this, spec) { it.dismiss() })
     }
 
-    private fun doExit() {
-        runCatching { if (isFinishing.not()) stopLockTask() }
-        events.record("kioskExit", "exited on-device")
+    /**
+     * Exits [kiosk], the kiosk the PIN was checked against, and only it: the applier refuses inside its lock when
+     * another kiosk was entered first (a `kiosk.enter` landing as the PIN was submitted), and then nothing here
+     * changes either: lock task is left inside the applier's lock, only once the exit is going ahead.
+     */
+    private fun doExit(kiosk: KioskApplyPayload) {
         // Same exit as the remote kiosk.exit: releases the lock-task policy, the volume lock and the HOME claim,
         // then hands off to the OEM launcher. Forced: the admin PIN was entered, the user must get out.
         // NonCancellable: the launcher may be destroyed meanwhile (a recreate, the system); the exit still finishes,
         // or it would stop between its steps. A process death mid-exit is finished at the next start (ExitJournal).
         lifecycleScope.launch {
-            withContext(NonCancellable) {
-                applier.exit(handBackHome = true, force = true)
+            val exited = withContext(NonCancellable) {
+                val r = applier.exit(handBackHome = true, force = true, expected = kiosk) {
+                    runCatching { if (isFinishing.not()) stopLockTask() }
+                    events.record("kioskExit", "exited on-device")
+                }
+                if (r == KioskResult.Failed(KioskApplier.EXIT_SUPERSEDED)) return@withContext false
                 // The launcher has already left lock task; publish that state without waiting for the periodic
                 // check-in.
                 CheckInWorker.scheduleAfterCurrent(applicationContext)
+                true
             }
-            finish()
+            // Superseded: the new kiosk's delivery redraws the launcher (and closes the prompt) as usual.
+            if (exited) finish()
         }
     }
 

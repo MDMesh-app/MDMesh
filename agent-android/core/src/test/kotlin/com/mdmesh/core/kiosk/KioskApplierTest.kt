@@ -764,4 +764,36 @@ class KioskApplierTest {
         assertTrue("nothing locked", c.enters.isEmpty())
         assertEquals(kioskA, store.load())
     }
+
+    // --- PR #192 final review (S5): an exit is bound to the kiosk it was asked for ---
+
+    /** S5: a PIN exit verified against kiosk A, queued behind kiosk.enter of B, must not take the device out of B. */
+    @Test fun `an exit for a kiosk replaced while it waited for the lock is refused`() = runTest {
+        val store = GatedFirstLoadStore(); store.save(kioskA)
+        val c = FakeController(KioskResult.Ok); val h = FakeHome(); val j = MemJournal()
+        val a = KioskApplier(c, store, h, home, journal = j, desiredKioskOn = { false }) { true }
+        launch { a.enter(kioskB) } // holds the lock, parked on its first read
+        advanceUntilIdle()
+        var exited: KioskResult? = null
+        launch { exited = a.exit(handBackHome = true, force = true, expected = kioskA) }
+        advanceUntilIdle()
+        store.gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(KioskResult.Failed(KioskApplier.EXIT_SUPERSEDED), exited)
+        assertFalse("no exit step ran", c.exited)
+        assertEquals(kioskB, store.load())
+        assertFalse("HOME kept", "claim:false" in h.log)
+        assertNull("nothing journalled", j.saved)
+    }
+
+    /** S5: a new look for the same kiosk (colours, image) is the same kiosk: its PIN exit still goes ahead. */
+    @Test fun `an exit for a kiosk only restyled meanwhile goes ahead`() = runTest {
+        val store = InMemoryKioskStateStore()
+        store.save(kioskA.copy(theme = KioskThemeDto(backgroundColor = "#112233")))
+        val c = FakeController(KioskResult.Ok)
+        val r = KioskApplier(c, store, FakeHome(), home) { true }.exit(force = true, expected = kioskA)
+        assertEquals(KioskResult.Ok, r)
+        assertTrue(c.exited)
+        assertNull(store.load())
+    }
 }

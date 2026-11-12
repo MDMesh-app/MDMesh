@@ -436,6 +436,81 @@ public class KioskBackgroundGalleryTest {
         assertTrue(new File(tenant, "kiosk-aaaaaaaaaaaa-beach.jpg").exists());
     }
 
+    /** A cleaned copy C that an earlier save hosted for the photo at id 1: its id. */
+    private int hostedCleanCopy() throws Exception {
+        host(1, "photo.jpg", KioskImageMetadataTest.phoneJpeg(KioskImageMetadataTest.image("jpg", 8, 8), 1), 1, 1);
+        com.hmdm.persistence.domain.Configuration first = replace(1);
+        assets.apply(first, null).release();
+        int copy = first.getBackgroundImageFileId();
+        assertTrue("a cleaned copy was hosted", copy != 1);
+        return copy;
+    }
+
+    /**
+     * A save of the original never reuses the cleaned copy while a Files → edit is changing it (the edit's file I/O runs
+     * outside the lock): it would pin the clean bytes' SHA-256 on a file that is about to hold other bytes or move.
+     */
+    @Test
+    public void aSaveDoesNotReuseACleanedCopyBeingEdited() throws Exception {
+        int copy = hostedCleanCopy();
+        assertEquals(KioskBackgroundImageAssets.EditStart.STARTED, assets.beginEdit(copy));
+        try {
+            assets.apply(replace(1), null);
+            fail("expected a refusal");
+        } catch (IllegalArgumentException e) {
+            assertEquals(KioskBackgroundImageAssets.BEING_EDITED, e.getMessage());
+        } finally {
+            assets.endEdit(copy);
+        }
+        assertFalse(assets.isHeld(copy));
+        assertFalse(assets.isHeld(1));
+        // Once the edit is done, the next save finds the copy again.
+        com.hmdm.persistence.domain.Configuration again = replace(1);
+        assets.apply(again, null).release();
+        assertEquals(Integer.valueOf(copy), again.getBackgroundImageFileId());
+    }
+
+    /**
+     * The same race with the edit's delete first, on two threads: the save must not write the clean bytes into the
+     * gap, where the edit's move would then find a file in its way.
+     */
+    @Test
+    public void aSaveDoesNotFillTheGapOfACleanedCopyAnEditDeleted() throws Exception {
+        int copy = hostedCleanCopy();
+        File hosted = new File(tenant, files.byId.get(copy).getFilePath());
+        java.util.concurrent.CountDownLatch deleted = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch saved = new java.util.concurrent.CountDownLatch(1);
+        Throwable[] failed = new Throwable[1];
+        Thread edit = new Thread(() -> {
+            if (assets.beginEdit(copy) != KioskBackgroundImageAssets.EditStart.STARTED) return;
+            try {
+                // FilesResource.updateFileInternal: the old content goes, then the new one is moved in.
+                assertTrue(hosted.delete());
+                deleted.countDown();
+                assertTrue(saved.await(10, java.util.concurrent.TimeUnit.SECONDS));
+                Files.write(hosted.toPath(), KioskImageMetadataTest.image("png", 3, 3), java.nio.file.StandardOpenOption.CREATE_NEW);
+            } catch (Throwable e) {
+                failed[0] = e;
+            } finally {
+                assets.endEdit(copy);
+            }
+        });
+        edit.start();
+        assertTrue("the edit started", deleted.await(10, java.util.concurrent.TimeUnit.SECONDS));
+        try {
+            assets.apply(replace(1), null);
+            fail("expected a refusal");
+        } catch (IllegalArgumentException e) {
+            assertEquals(KioskBackgroundImageAssets.BEING_EDITED, e.getMessage());
+        } finally {
+            assertFalse("nothing was written into the gap", hosted.exists());
+            saved.countDown();
+            edit.join(10_000);
+        }
+        assertEquals("the edit's move found no file in its way", null, failed[0]);
+        assertFalse(assets.isHeld(copy));
+    }
+
     private static List<Integer> sorted(List<Integer> l) {
         List<Integer> c = new ArrayList<>(l);
         Collections.sort(c);

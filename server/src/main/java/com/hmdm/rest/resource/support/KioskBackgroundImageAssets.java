@@ -646,6 +646,11 @@ public class KioskBackgroundImageAssets {
         String copyPath = dir + "kiosk-" + sha256.substring(0, 12) + "-" + stem + ext;
         synchronized (COPY_LOCK) {
             try {
+                // Never a copy a Files → edit is changing: its file I/O runs outside this lock, so the bytes compared
+                // below could be replaced, or the file moved, right after this save pinned their SHA-256 on it (and
+                // with its delete done first, this save would write into the gap its move then finds taken). Checked
+                // before the file is read, under the lock beginEdit takes, as every other hold does.
+                refuseWhileEdited(uploadedFiles.getByPath(customer.getId(), copyPath));
                 File target = FileUtil.resolveFile(customer, filesDirectory, null, copyPath);
                 boolean wrote = false;
                 if (target.isFile()) {
@@ -664,6 +669,7 @@ public class KioskBackgroundImageAssets {
                     }
                 }
                 UploadedFile existing = uploadedFiles.getByPath(customer.getId(), copyPath);
+                refuseWhileEdited(existing);
                 if (existing != null && !existing.isExternal()) {
                     // Another save uses it now: a failed save that hosted it must not take it back.
                     reused.add(existing.getId());
@@ -685,6 +691,11 @@ public class KioskBackgroundImageAssets {
                 throw new IllegalArgumentException(NOT_STORED, e);
             }
         }
+    }
+
+    /** BEING_EDITED while a Files → edit of {@code file} runs. Call under COPY_LOCK. */
+    private void refuseWhileEdited(UploadedFile file) {
+        if (file != null && editing.contains(file.getId())) throw new IllegalArgumentException(BEING_EDITED);
     }
 
     /** The account's file storage limit (multi-tenant installs), as Files enforces it on upload. */

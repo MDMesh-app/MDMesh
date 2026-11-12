@@ -1,6 +1,7 @@
 // The kiosk launcher's grid screen in dp, as the agent lays it out (agent ui/KioskRenderer, AppGridLayout, KioskViews),
-// with the plate geometry of docs/kiosk-background-scrim.md (3.2). The console's preview draws from it and
+// with the plate geometry and label lines of docs/kiosk-background-scrim.md (3.3). The console's preview draws from it and
 // computes the dim and the plates over exactly these boxes, so a label is cut where the device cuts it.
+import { cachedLabelLines } from './kioskLabelLines';
 import type { Box, LegibilityElement } from './kioskScrim';
 
 /** Plate padding: 8 dp left and right, 4 dp top and bottom. */
@@ -25,6 +26,12 @@ const BUTTON_MIN_WIDTH = 120;
 const BUTTON_PAD_H = 16;
 const BUTTON_HEIGHT = 40;
 const BUTTON_INSET = 4;
+/** Space between the Exit button and the bottom of the content area. */
+const EXIT_MARGIN = 24;
+/** Air between the grid's last row and the Exit button at the end of the scroll. */
+const EXIT_AIR = 8;
+/** The grid's bottom padding without an Exit button. */
+const GRID_BOTTOM = 24;
 /** A TextView's line height, from its text size. */
 const lineHeight = (sp: number) => Math.round(sp * 1.33);
 const ICON: Record<string, number> = { SMALL: 56, MEDIUM: 72, LARGE: 96 };
@@ -61,8 +68,16 @@ export interface LauncherLayout {
    * its region for the dim, which brings the border to 3:1.
    */
   exit: { button: Box; size: number } | null;
-  /** What kioskLegibility protects: the header, each label, and the Exit button. */
+  /**
+   * What kioskLegibility protects: the header, each label and the Exit button that are on screen at this scroll,
+   * clipped to the window (the image is under the window only).
+   */
   elements: LegibilityElement[];
+  /** The scrolling content's height: the grid's rows, then room for the Exit button (or 24 dp without one). */
+  contentHeight: number;
+  /** How far the grid scrolls (0 when it fits), and where this layout is scrolled to (dp). */
+  maxScroll: number;
+  scrollY: number;
 }
 
 /**
@@ -81,46 +96,10 @@ export function rowPlates(
   return centres.map((c) => ({ x: Math.min(Math.max(c - w / 2, contentLeft), contentRight - w), w }));
 }
 
-/**
- * `text` in at most `maxLines` lines of `width` dp, broken at spaces (a word wider than a line is broken by
- * character), the last line ended with "…" when the text doesn't fit (TextView's END ellipsize).
- */
-export function wrapLines(text: string, width: number, maxLines: number, measure: (s: string) => number): string[] {
-  const words = text.split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let current = '';
-  const pushWord = (word: string) => {
-    const candidate = current ? `${current} ${word}` : word;
-    if (measure(candidate) <= width) {
-      current = candidate;
-      return;
-    }
-    if (current) lines.push(current);
-    current = '';
-    // A word wider than the line: break it by character.
-    let rest = word;
-    while (measure(rest) > width && rest.length > 1) {
-      let n = rest.length - 1;
-      while (n > 1 && measure(rest.slice(0, n)) > width) n--;
-      lines.push(rest.slice(0, n));
-      rest = rest.slice(n);
-    }
-    current = rest;
-  };
-  for (const w of words) pushWord(w);
-  if (current) lines.push(current);
-  if (lines.length <= maxLines) return lines;
-  const kept = lines.slice(0, maxLines);
-  let last = `${kept[maxLines - 1]} ${lines.slice(maxLines).join(' ')}`;
-  while (last.length > 1 && measure(`${last}…`) > width) last = last.slice(0, -1).trimEnd();
-  kept[maxLines - 1] = `${last}…`;
-  return kept;
-}
-
 export function launcherLayout(
   window: { w: number; h: number },
   apps: readonly string[],
-  opts: { iconSize?: string | null; exitVisible: boolean },
+  opts: { iconSize?: string | null; exitVisible: boolean; scrollY?: number },
   measure: Measure,
 ): LauncherLayout {
   const { w: W, h: H } = window;
@@ -152,7 +131,7 @@ export function launcherLayout(
   const labelLine = lineHeight(LABEL_SP);
   const measureLabel = (s: string) => measure(s, LABEL_SP, 400);
   const laid = apps.map((name) => {
-    const lines = wrapLines(name, labelW, LABEL_LINES, measureLabel);
+    const lines = cachedLabelLines(measure, LABEL_SP, 400, name, labelW, LABEL_LINES);
     return { name, lines, lineWidth: Math.min(labelW, Math.max(0, ...lines.map(measureLabel))) };
   });
   const gridY = header.y + header.h + 8;
@@ -161,7 +140,6 @@ export function launcherLayout(
   for (let r = 0; r * columns < laid.length; r++) {
     const row = laid.slice(r * columns, (r + 1) * columns);
     const rowH = Math.max(...row.map((a) => CELL_PAD_V + icon + LABEL_GAP + a.lines.length * labelLine + CELL_PAD_V));
-    if (rowY >= H) break;
     row.forEach((a, c) => {
       const x = cellLeft(c);
       cells.push({
@@ -199,14 +177,57 @@ export function launcherLayout(
   if (opts.exitVisible) {
     const bw = Math.max(BUTTON_MIN_WIDTH, measure('Exit kiosk', EXIT_SP, 500) + 2 * BUTTON_PAD_H);
     // 40 dp visible inside the 48 dp target, 24 dp above the bottom edge.
-    const button = { x: W / 2 - bw / 2, y: H - 24 - BUTTON_INSET - BUTTON_HEIGHT, w: bw, h: BUTTON_HEIGHT };
+    const button = { x: W / 2 - bw / 2, y: H - EXIT_MARGIN - BUTTON_INSET - BUTTON_HEIGHT, w: bw, h: BUTTON_HEIGHT };
     exit = { button, size: EXIT_SP };
   }
 
-  const elements: LegibilityElement[] = [{ id: 'header', kind: 'text', box: headerPlate }];
-  labelPlates.forEach((p, i) => elements.push({ id: `label-${i}`, kind: 'text', row: `row-${Math.floor(i / columns)}`, box: p }));
+  // The scrolling content ends with room for the Exit button: its laid-out height (the 48 dp target) + 24 + 8 dp
+  // (docs/kiosk-background-scrim.md, Drawing). So at the end of the scroll no label or plate is under it.
+  const contentHeight = rowY + (exit ? BUTTON_HEIGHT + 2 * BUTTON_INSET + EXIT_MARGIN + EXIT_AIR : GRID_BOTTOM);
+  const maxScroll = Math.max(0, contentHeight - H);
+  // Everything scrolls with the grid (the header too); the image, the dim and the Exit button stay.
+  const shift = Math.min(Math.max(0, opts.scrollY ?? 0), maxScroll);
+  if (shift > 0) {
+    const up = <B extends Box>(b: B): B => ({ ...b, y: b.y - shift });
+    header.y -= shift;
+    Object.assign(headerPlate, up(headerPlate));
+    cells.forEach((c) => {
+      c.y -= shift;
+      c.icon = up(c.icon);
+      c.label = up(c.label);
+    });
+    labelPlates.forEach((p, i) => (labelPlates[i] = up(p)));
+  }
+
+  // Only what is on screen, clipped to the window: the image is under the window only.
+  const onScreen = (b: Box): Box | null => {
+    const top = Math.max(0, b.y);
+    const bottom = Math.min(H, b.y + b.h);
+    return bottom > top ? { x: b.x, y: top, w: b.w, h: bottom - top } : null;
+  };
+  const elements: LegibilityElement[] = [];
+  const headerBox = onScreen(headerPlate);
+  if (headerBox) elements.push({ id: 'header', kind: 'text', box: headerBox });
+  labelPlates.forEach((p, i) => {
+    const box = onScreen(p);
+    if (box) elements.push({ id: `label-${i}`, kind: 'text', row: `row-${Math.floor(i / columns)}`, box });
+  });
   if (exit) elements.push({ id: 'exit', kind: 'control', box: exit.button });
-  return { window, header, headerPlate, columns, cells, labelPlates, labelSize: LABEL_SP, labelLineHeight: labelLine, exit, elements };
+  return {
+    window,
+    header,
+    headerPlate,
+    columns,
+    cells,
+    labelPlates,
+    labelSize: LABEL_SP,
+    labelLineHeight: labelLine,
+    exit,
+    elements,
+    contentHeight,
+    maxScroll,
+    scrollY: shift,
+  };
 }
 
 /** Text width from the font when the browser can measure it, else an estimate (jsdom). */

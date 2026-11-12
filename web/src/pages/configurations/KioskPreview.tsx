@@ -1,7 +1,7 @@
 // The kiosk background image's preview: the launcher over the image as the agent draws it (centre crop, a light dim
 // for the Exit button, a plate behind each text that needs one), in one large view at device scale with Phone/Tablet
 // and Rotate, and four thumbnails that select it. Same rules and functions as the agent: data/kioskScrim.ts,
-// data/kioskLauncherLayout.ts, docs/kiosk-background-scrim.md (version 3).
+// data/kioskLauncherLayout.ts, data/kioskLabelLines.ts, docs/kiosk-background-scrim.md (version 3.3).
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { browserMeasure, launcherLayout, PLATE_RADIUS, type LauncherLayout, type Measure } from '../../data/kioskLauncherLayout';
 import {
@@ -138,7 +138,24 @@ export function KioskBackgroundPreview({
   const [view, setView] = useState<View>(THUMBNAILS[0]);
   const [lastTablet, setLastTablet] = useState<Model>('tablet43');
   const [turning, setTurning] = useState<View | null>(null);
-  const measureFn = useMemo(() => measure ?? browserMeasure(), [measure]);
+  /** The large view scrolled to the end of the grid (where the room for the Exit button is). */
+  const [atEnd, setAtEnd] = useState(false);
+  // Labels are laid out with the font's own widths: measure again once web fonts have loaded.
+  const [fontEpoch, setFontEpoch] = useState(0);
+  useEffect(() => {
+    const fonts = typeof document !== 'undefined' ? (document as Document & { fonts?: FontFaceSet }).fonts : undefined;
+    if (!fonts || measure) return;
+    let live = true;
+    const bump = () => live && setFontEpoch((e) => e + 1);
+    fonts.ready.then(bump, () => undefined);
+    fonts.addEventListener?.('loadingdone', bump);
+    return () => {
+      live = false;
+      fonts.removeEventListener?.('loadingdone', bump);
+    };
+  }, [measure]);
+  // fontEpoch: a new measure (so a new label cache) per font load.
+  const measureFn = useMemo(() => measure ?? browserMeasure(), [measure, fontEpoch]);
   const apps = useMemo(() => (appNames.length ? appNames.slice(0, 24) : ['Camera', 'Notes', 'Browser', 'Scanner']), [appNames]);
 
   const layouts = useMemo(() => {
@@ -179,6 +196,21 @@ export function KioskBackgroundPreview({
     return out;
   }, [source, colours, layouts, imageFit]);
 
+  // The large view at the end of its scroll: the grid moves up, the image and the Exit button stay.
+  const key = viewKey(view);
+  const scrolled = atEnd && layouts[key].maxScroll > 0;
+  const largeLayout = useMemo(
+    () => (scrolled ? launcherLayout(viewWindow(view), apps, { iconSize, exitVisible, scrollY: Infinity }, measureFn) : layouts[key]),
+    [scrolled, view, apps, iconSize, exitVisible, measureFn, layouts, key],
+  );
+  const largeMeasured = useMemo((): Measured | undefined => {
+    if (!scrolled) return measured?.[key];
+    if (!source) return undefined;
+    if (!source.loaded) return { kind: 'unloaded' };
+    if (!source.cells) return { kind: 'unreadable' };
+    return { kind: 'ok', legibility: kioskLegibility(source.cells, viewWindow(view), colours, largeLayout.elements, imageFit) };
+  }, [scrolled, measured, key, source, view, colours, largeLayout, imageFit]);
+
   const turnTimer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(turnTimer.current), []);
 
@@ -205,8 +237,7 @@ export function KioskBackgroundPreview({
 
   const [thumbList, thumbsWidth] = useWidth<HTMLUListElement>();
   const thumbs = thumbnailGrid(thumbsWidth);
-  const key = viewKey(view);
-  const current = measured?.[key];
+  const current = largeMeasured;
   const big = current?.kind === 'ok' ? readout(current.legibility) : null;
   const weakExit = (v: View) => {
     const m = measured?.[viewKey(v)];
@@ -260,19 +291,35 @@ export function KioskBackgroundPreview({
         >
           <IconSync size={14} /> Rotate
         </Button>
+        {layouts[key].maxScroll > 0 ? (
+          <Segmented
+            aria-label="Grid scroll"
+            size="md"
+            options={[
+              { value: 'top', label: 'Top' },
+              { value: 'end', label: 'End of list' },
+            ]}
+            value={atEnd ? 'end' : 'top'}
+            onChange={(v) => setAtEnd(v === 'end')}
+          />
+        ) : null}
       </div>
       <LargeScreen
         image={{ w: width, h: height }}
         fit={imageFit}
         view={view}
         next={turning}
-        layout={layouts[key]}
+        layout={largeLayout}
         legibility={current?.kind === 'ok' ? current.legibility : null}
         src={src}
         colours={colours}
+        scrolled={scrolled}
       >
         <p className="v2-kbg__large-readout" aria-live="polite">
-          <span className="v2-kbg__shape-name">{viewLabel(view)}</span>
+          <span className="v2-kbg__shape-name">
+            {viewLabel(view)}
+            {scrolled ? ', end of list' : ''}
+          </span>
           {big ? (
             <>
               <Readout r={big} />
@@ -392,7 +439,10 @@ function LargeScreen({
   children,
   image,
   fit,
+  scrolled,
 }: {
+  /** Scrolled to the end of the grid. */
+  scrolled: boolean;
   image: { w: number; h: number };
   fit: { mode: FitMode; focal: FocalPoint };
   view: View;
@@ -427,7 +477,7 @@ function LargeScreen({
   const boxH = Math.max(h * scale, nextBox?.h ?? 0);
   const r = legibility ? readout(legibility) : null;
   const how = fit.mode === 'fit' ? 'the whole image, letterboxed' : 'the image filling the screen, cropped around its focal point';
-  const description = `${viewLabel(view)}: ${how}${r ? `, ${r.dim.toLowerCase()}, ${r.text.toLowerCase()}` : ''}`;
+  const description = `${viewLabel(view)}${scrolled ? ', scrolled to the end of the list' : ''}: ${how}${r ? `, ${r.dim.toLowerCase()}, ${r.text.toLowerCase()}` : ''}`;
   return (
     <div ref={frame} className="v2-kbg__large">
       <div className="v2-kbg__large-figure" style={{ width: Math.floor(boxW + 2 * LARGE_BEZEL) }}>

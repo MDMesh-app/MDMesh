@@ -127,6 +127,38 @@ describe('KioskBackgroundPreview', () => {
     expect(liveText()).toMatch(/on plate/);
   });
 
+  it('scrolls the large view to the end of a long grid, clear of the Exit button, and back', async () => {
+    sampling.paint = WHITE;
+    const apps = Array.from({ length: 24 }, (_, i) => (i % 3 === 0 ? 'Maintenance Requests' : i % 3 === 1 ? 'Point-of-Sale' : 'Timesheets'));
+    preview({ apps });
+    await waitFor(() => expect(liveText()).toMatch(/Text \d\.\d:1/));
+    const scroll = screen.getByRole('radiogroup', { name: 'Grid scroll' });
+    const firstTop = large().querySelector<HTMLElement>('.v2-kbg__header')!.style.top;
+    fireEvent.click(within(scroll).getByRole('radio', { name: 'End of list' }));
+    await waitFor(() => expect(liveText()).toMatch(/^Phone, portrait, end of list/));
+    expect(large().getAttribute('aria-label')).toMatch(/^Phone, portrait, scrolled to the end of the list:/);
+    expect(large().querySelector<HTMLElement>('.v2-kbg__header')!.style.top).not.toBe(firstTop);
+    // The last label ends above the Exit button's touch target, with 8 dp of air (px here: the same scale).
+    const exit = large().querySelector<HTMLElement>('.v2-kbg__exit')!;
+    const labels = [...large().querySelectorAll<HTMLElement>('.v2-kbg__label')];
+    const last = labels[labels.length - 1];
+    expect(parseFloat(last.style.top) + parseFloat(last.style.height)).toBeLessThan(parseFloat(exit.style.top));
+    // Lines are never broken inside a word.
+    // (A 62 dp text box at 7 dp per character.)
+    const lines = new Set([...large().querySelectorAll('.v2-kbg__label-line')].map((l) => l.textContent));
+    expect([...lines].sort()).toEqual(['Mainten…', 'Point-', 'Requests', 'Timeshe…', 'of-Sale']);
+    expect(await violations()).toEqual([]);
+    fireEvent.click(within(scroll).getByRole('radio', { name: 'Top' }));
+    await waitFor(() => expect(liveText()).toMatch(/^Phone, portrait(?!, end)/));
+    expect(large().querySelector<HTMLElement>('.v2-kbg__header')!.style.top).toBe(firstTop);
+  });
+
+  it('offers no scroll when the grid fits', async () => {
+    preview();
+    await waitFor(() => expect(liveText()).toMatch(/Text|Contrast|Measuring/));
+    expect(screen.queryByRole('radiogroup', { name: 'Grid scroll' })).toBeNull();
+  });
+
   it('rotates: re-crops for the turned window and recomputes the dim and plates', async () => {
     const restore = reducedMotion(false);
     sampling.paint = BRIGHT_BAND;

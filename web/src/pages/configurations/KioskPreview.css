@@ -229,10 +229,14 @@
   margin-inline: 0;
 }
 
-/* The lines come laid out from kioskLauncherLayout, cut where the device cuts them. */
+/* The lines come laid out from kioskLabelLines, cut where the device cuts them: the browser never breaks, hyphenates or
+   collapses them again. */
 .v2 .v2-kbg__label-line {
   display: block;
-  white-space: nowrap;
+  white-space: pre;
+  hyphens: none;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 /* Outlined, as on the device: the kiosk background colour, a 1 dp edge and the label in the text colour. */

@@ -41,7 +41,8 @@ New
   server address they keep the background color), check it by its SHA-256, and keep the color if it can't be shown.
   The editor shows the current image (size, upload date, short SHA-256) with Replace and Remove, and previews the
   launcher over it on a phone and a tablet, turned either way, with the text contrast it reaches: text sits on a plate
-  of the background color where the image behind it is bright or busy, and the image is dimmed by at most 30%. Fill
+  of the background color where the image behind it is bright or busy, and the image is dimmed by at most 30%. App
+  labels break between words as on the device, and End of list shows the grid scrolled to its end, clear of Exit. Fill
   (cropped around a focal point you set by clicking, dragging or with the arrow keys) or Fit (the whole image,
   letterboxed); an agent without fit and focal point support fills from the centre. Choose from uploaded images reuses one
   without uploading it again, and deletes ones nothing uses. Large photos are scaled to at most 3840 px before upload, and

@@ -1,23 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { LABEL_LINES, PLATE_GAP, PLATE_PAD_X, PLATE_PAD_Y, launcherLayout, rowPlates, wrapLines, type Measure } from './kioskLauncherLayout';
+import { PLATE_GAP, PLATE_PAD_X, PLATE_PAD_Y, launcherLayout, rowPlates, type Measure } from './kioskLauncherLayout';
 
 /** Half the size per character: 7 dp per character at 14 sp. */
 const measure: Measure = (text, size) => text.length * (size / 2);
-const m14 = (s: string) => measure(s, 14, 400);
 
-describe('wrapLines (TextView, maxLines, END ellipsize)', () => {
-  it('fits on one line when it can', () => {
-    expect(wrapLines('Notes', 64, 2, m14)).toEqual(['Notes']);
-  });
-  it('breaks at spaces, then ellipsizes the last line', () => {
-    expect(wrapLines('Signage Player', 64, 2, m14)).toEqual(['Signage', 'Player']);
-    expect(wrapLines('Inventory management tool', 64, 2, m14)).toEqual(['Inventory', 'manageme…']);
-    expect(wrapLines('Safety Check Pro Max', 64, 2, m14)).toEqual(['Safety', 'Check Pr…']);
+describe('labels (docs/kiosk-background-scrim.md, Label lines)', () => {
+  const phone = (names: string[]) => launcherLayout({ w: 360, h: 780 }, names, { iconSize: 'SMALL', exitVisible: true }, measure);
+  it('breaks between words only, never inside one', () => {
+    // Text box 86 - 24 = 62 dp, 7 dp per character.
+    const l = phone(['Signage Player', 'Timesheets', 'Maintenance Requests', 'Point-of-Sale', 'Supercalifragilistic Expialidocious']);
+    expect(l.cells[0].lines).toEqual(['Signage', 'Player']);
+    expect(l.cells[1].lines).toEqual(['Timeshe…']);
+    expect(l.cells[2].lines).toEqual(['Mainten…', 'Requests']);
+    expect(l.cells[3].lines).toEqual(['Point-', 'of-Sale']);
+    expect(l.cells[4].lines).toEqual(['Superca…', 'Expiali…']);
+    for (const c of l.cells) for (const line of c.lines) expect(measure(line, 14, 400)).toBeLessThanOrEqual(c.label.w);
   });
   it('is the same at every scale: it works in dp', () => {
-    const a = wrapLines('Signage Player Pro', 64, LABEL_LINES, m14);
-    const b = wrapLines('Signage Player Pro', 64, LABEL_LINES, m14);
-    expect(a).toEqual(b);
+    expect(phone(['Signage Player Pro']).cells[0].lines).toEqual(phone(['Signage Player Pro']).cells[0].lines);
   });
 });
 
@@ -125,10 +125,44 @@ describe('launcherLayout (agent KioskRenderer)', () => {
     expect(landscape.exit!.button.y).toBeLessThan(portrait.exit!.button.y);
   });
 
-  it('leaves out rows below the window', () => {
-    const many = Array.from({ length: 60 }, (_, i) => `App ${i}`);
-    const l = launcherLayout({ w: 360, h: 300 }, many, { iconSize: 'SMALL', exitVisible: false }, measure);
-    for (const c of l.cells) expect(c.y).toBeLessThan(300);
-    expect(l.elements.filter((e) => e.id.startsWith('label')).length).toBe(l.cells.length);
+  it('ends the scrolling content with room for the Exit button: its 48 dp height + 24 + 8 dp', () => {
+    const many = Array.from({ length: 40 }, (_, i) => `App ${i}`);
+    const top = launcherLayout({ w: 360, h: 640 }, many, { iconSize: 'SMALL', exitVisible: true }, measure);
+    const last = top.cells[top.cells.length - 1];
+    expect(top.contentHeight).toBe(last.y + last.h + 80);
+    expect(top.maxScroll).toBe(top.contentHeight - 640);
+    expect(top.scrollY).toBe(0);
+    const end = launcherLayout({ w: 360, h: 640 }, many, { iconSize: 'SMALL', exitVisible: true, scrollY: 1e6 }, measure);
+    expect(end.scrollY).toBe(top.maxScroll);
+    const endLast = end.cells[end.cells.length - 1];
+    const target = end.exit!.button.y - 4; // the 48 dp touch target's top
+    expect(target - (endLast.y + endLast.h)).toBe(8);
+    for (const p of end.labelPlates) expect(p.y + p.h).toBeLessThanOrEqual(end.exit!.button.y);
+    // Without an Exit button the grid ends 24 dp below its last row.
+    const none = launcherLayout({ w: 360, h: 640 }, many, { iconSize: 'SMALL', exitVisible: false }, measure);
+    expect(none.contentHeight).toBe(last.y + last.h + 24);
+    // A grid that fits doesn't scroll.
+    expect(launcherLayout({ w: 360, h: 780 }, apps, { iconSize: 'SMALL', exitVisible: true, scrollY: 50 }, measure).scrollY).toBe(0);
+  });
+
+  it('scrolls everything but the image and the Exit button, and protects only what is on screen, clipped', () => {
+    const many = Array.from({ length: 40 }, (_, i) => `App ${i}`);
+    const top = launcherLayout({ w: 360, h: 640 }, many, { iconSize: 'SMALL', exitVisible: true }, measure);
+    for (const e of top.elements) {
+      expect(e.box.y).toBeGreaterThanOrEqual(0);
+      expect(e.box.y + e.box.h).toBeLessThanOrEqual(640);
+    }
+    expect(top.elements.filter((e) => e.id.startsWith('label')).length).toBeLessThan(top.cells.length);
+    const mid = launcherLayout({ w: 360, h: 640 }, many, { iconSize: 'SMALL', exitVisible: true, scrollY: 100 }, measure);
+    expect(mid.header.y).toBe(top.header.y - 100);
+    expect(mid.cells[0].y).toBe(top.cells[0].y - 100);
+    expect(mid.labelPlates[0].y).toBe(top.labelPlates[0].y - 100);
+    expect(mid.exit).toEqual(top.exit);
+    expect(mid.elements.find((e) => e.id === 'header')).toBeUndefined();
+    // A plate partly above the window is protected over its visible part.
+    const cut = launcherLayout({ w: 360, h: 640 }, many, { iconSize: 'SMALL', exitVisible: true, scrollY: top.labelPlates[0].y + 5 }, measure);
+    const p0 = cut.labelPlates[0];
+    expect(p0.y).toBe(-5);
+    expect(cut.elements.find((e) => e.id === 'label-0')!.box).toEqual({ x: p0.x, y: 0, w: p0.w, h: p0.h - 5 });
   });
 });

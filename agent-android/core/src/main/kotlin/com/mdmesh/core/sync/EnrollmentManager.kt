@@ -47,6 +47,10 @@ class EnrollmentManager @Inject constructor(
     /** The held attempt id was forgotten after the first successful check-in (this process). */
     @Volatile private var attemptForgotten = false
 
+    /** When this device's credentials were marked lost (as stored), once read; see [afterCheckIn]. */
+    @Volatile private var lostAt: Long? = null
+    @Volatile private var lostAtRead = false
+
     /** The refused check-in the last recovery acted on: each refusal is recovered once, whatever path runs next. */
     @Volatile private var recoveredFailure: SyncStatus.Failure? = null
 
@@ -58,7 +62,7 @@ class EnrollmentManager @Inject constructor(
     suspend fun ensureEnrolled(): String {
         identity.current()?.takeIf { it.isNotBlank() }?.let { id ->
             if (!credentialsRejectedBeforeFirstCheckIn()) {
-                forgetAttemptOnceCheckedIn()
+                afterCheckIn()
                 return id
             }
         }
@@ -109,6 +113,8 @@ class EnrollmentManager @Inject constructor(
                     // Persistent, for the status screen: later check-ins replace the last error, not this.
                     bestEffort { tokenProvider.setCredentialsLost(true) }
                 }
+                lostAt = System.currentTimeMillis()
+                lostAtRead = true
             }
             null
         }
@@ -116,11 +122,26 @@ class EnrollmentManager @Inject constructor(
         return data?.deviceId ?: current
     }
 
-    /** After the first successful check-in the attempt can recover nothing: drop it. */
-    private suspend fun forgetAttemptOnceCheckedIn() {
-        if (attemptForgotten || environment.syncStatus.lastSuccessAtMs == null) return
-        bestEffort { tokenProvider.clearEnrollAttempt() }
-        attemptForgotten = true
+    /**
+     * Housekeeping once a check-in has succeeded: the attempt can recover nothing any more (dropped once), and
+     * credentials marked lost before that success evidently work again (whatever refused them was fixed), so the mark
+     * goes. Both reads are cached for the process, so a healthy device writes nothing.
+     */
+    private suspend fun afterCheckIn() {
+        val success = environment.syncStatus.lastSuccessAtMs ?: return
+        if (!attemptForgotten) {
+            bestEffort { tokenProvider.clearEnrollAttempt() }
+            attemptForgotten = true
+        }
+        if (!lostAtRead) {
+            lostAt = try { tokenProvider.credentialsLostAt() } catch (ignored: IOException) { null }
+            lostAtRead = true
+        }
+        val at = lostAt
+        if (at != null && success >= at) {
+            withContext(NonCancellable) { bestEffort { tokenProvider.setCredentialsLost(false) } }
+            lostAt = null
+        }
     }
 
     /**
@@ -149,6 +170,8 @@ class EnrollmentManager @Inject constructor(
             identity.saveCredentials(data.deviceId, data.deviceSecret)
             // Credentials the server accepts again: whatever was lost is not any more.
             bestEffort { tokenProvider.setCredentialsLost(false) }
+            lostAt = null
+            lostAtRead = true
             // A new enrollment's answer decides whether its attempt can be resumed (an older server: no).
             resumeSupported?.let { bestEffort { tokenProvider.setAttemptResumable(it) } }
         }

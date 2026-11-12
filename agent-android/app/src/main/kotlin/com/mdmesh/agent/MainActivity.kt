@@ -3,7 +3,6 @@ package com.mdmesh.agent
 import android.app.ActivityManager
 import android.app.AlertDialog
 import android.content.res.ColorStateList
-import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Bundle
 import android.util.TypedValue
@@ -69,6 +68,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var enrollTokens: EnrollTokenStore
 
     private lateinit var deviceIdValue: TextView
+    private lateinit var credentialsLostValue: TextView
     private lateinit var kioskValue: TextView
     private lateinit var returnButton: Button
     private var returningToKiosk = false
@@ -116,13 +116,31 @@ class MainActivity : ComponentActivity() {
         returnButton.text = if (returningToKiosk) "Returning…" else "Return to kiosk"
         lifecycleScope.launch {
             val id = deviceIdStore.current()
-            val lost = try {
-                enrollTokens.credentialsLost()
+            val lostAt = try {
+                enrollTokens.credentialsLostAt()
             } catch (ignored: java.io.IOException) {
-                false // unreadable store: show the id; the state is written again on the next recovery
+                null // unreadable store: show the id; the state is written again on the next recovery
             }
-            deviceIdValue.text = DeviceIdLabel.of(id, lost, syncStatus.lastError.value) {
-                DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(it))
+            show(DeviceIdLabel.of(id, lostAt, syncStatus.lastSuccessAtMs, syncStatus.lastError.value))
+        }
+    }
+
+    /** The DEVICE ID area: the id (mono, alone, so it can be copied as it is) and, under it, any warning. */
+    private fun show(status: DeviceIdLabel.Status) {
+        when (status) {
+            is DeviceIdLabel.Status.Enrolling -> {
+                val failure = status.lastError
+                deviceIdValue.text = if (failure == null) {
+                    getString(R.string.status_enrolling)
+                } else {
+                    val at = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(failure.atMillis))
+                    getString(R.string.status_enrolling_error, failure.message, at)
+                }
+                credentialsLostValue.visibility = View.GONE
+            }
+            is DeviceIdLabel.Status.Enrolled -> {
+                deviceIdValue.text = status.deviceId
+                credentialsLostValue.visibility = if (status.credentialsLost) View.VISIBLE else View.GONE
             }
         }
     }
@@ -208,6 +226,13 @@ class MainActivity : ComponentActivity() {
         root.addView(label("DEVICE ID"))
         deviceIdValue = text("…", 14f, TEXT, mono = true)
         root.addView(deviceIdValue)
+        // Its own view, in the body font: a warning to read, announced when it appears, never part of the id.
+        credentialsLostValue = text(getString(R.string.status_credentials_lost), 14f, ALERT).apply {
+            visibility = View.GONE
+            setPadding(0, dp(WARNING_GAP), 0, 0)
+            accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        }
+        root.addView(credentialsLostValue)
         root.addView(spacer())
 
         root.addView(label("KIOSK"))
@@ -288,12 +313,13 @@ class MainActivity : ComponentActivity() {
     private companion object {
         const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         const val RETURN_BUTTON_GAP = 12
-        val INK = Color.parseColor("#0E1117")
-        val TEXT = Color.parseColor("#E8EEF4")
-        val MUTED = Color.parseColor("#8693A4")
-        val FAINT = Color.parseColor("#5C6675")
-        val SIGNAL = Color.parseColor("#F4B942")
-        val OK = Color.parseColor("#3FD08A")
-        val ALERT = Color.parseColor("#F2545B")
+        const val WARNING_GAP = 6
+        const val INK = MainActivityColors.INK
+        const val TEXT = MainActivityColors.TEXT
+        const val MUTED = MainActivityColors.MUTED
+        const val FAINT = MainActivityColors.FAINT
+        const val SIGNAL = MainActivityColors.SIGNAL
+        const val OK = MainActivityColors.OK
+        const val ALERT = MainActivityColors.ALERT
     }
 }

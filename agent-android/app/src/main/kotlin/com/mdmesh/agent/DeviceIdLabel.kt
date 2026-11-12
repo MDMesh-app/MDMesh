@@ -1,26 +1,34 @@
 package com.mdmesh.agent
 
-import com.mdmesh.core.sync.EnrollmentFailure
 import com.mdmesh.core.sync.SyncStatus
 
-/** The status screen's DEVICE ID line, from the persisted state (pure, so it is tested as the screen shows it). */
+/**
+ * What the status screen's DEVICE ID area shows, decided from the persisted state (pure, so it is tested with the state
+ * production shows it in). The words are string resources; MainActivity formats them.
+ */
 object DeviceIdLabel {
 
+    sealed interface Status {
+        /** Not enrolled yet; [lastError] is the last failed sync, if any. */
+        data class Enrolling(val lastError: SyncStatus.Failure?) : Status
+
+        /** Enrolled as [deviceId]; [credentialsLost]: the server refused its credentials and could restore nothing. */
+        data class Enrolled(val deviceId: String, val credentialsLost: Boolean) : Status
+    }
+
     /**
-     * [deviceId] (null before enrollment), [credentialsLost] (persisted: the server refused this device's credentials
-     * and had nothing to resume), [lastError] (the last failed sync, replaced by every later one), [time] formats a
-     * failure's time.
+     * [credentialsLostAt] is when the credentials were marked lost (null: they weren't); a check-in that succeeded at
+     * or after it ([lastSuccessAtMs]) shows they work again, so the warning goes at once.
      */
     fun of(
         deviceId: String?,
-        credentialsLost: Boolean,
+        credentialsLostAt: Long?,
+        lastSuccessAtMs: Long?,
         lastError: SyncStatus.Failure?,
-        time: (Long) -> String,
-    ): String =
-        when {
-            deviceId.isNullOrBlank() ->
-                lastError?.let { "Enrolling… (last error: ${it.message} at ${time(it.atMillis)})" } ?: "Enrolling…"
-            credentialsLost -> "$deviceId\n${EnrollmentFailure.CREDENTIALS_LOST}"
-            else -> deviceId
-        }
+    ): Status = if (deviceId.isNullOrBlank()) {
+        Status.Enrolling(lastError)
+    } else {
+        val lost = credentialsLostAt != null && (lastSuccessAtMs == null || lastSuccessAtMs < credentialsLostAt)
+        Status.Enrolled(deviceId, lost)
+    }
 }

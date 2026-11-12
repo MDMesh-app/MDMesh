@@ -83,7 +83,8 @@ Fixes
   second device's place on a batch code. Its retry gets the device it already created, with the same credential, so a
   late duplicate of the request can't lock it out; a stopped code resumes nothing. If the server refuses a new
   device's credentials before its first check-in, the agent gets them back by resuming its enrollment (never by
-  making another device). Needs agent 0.5.0 and this server;
+  making another device); if that isn't possible, the agent's screen says the device has to be enrolled again, until
+  a check-in succeeds. Needs agent 0.5.0 and this server;
   older agents enroll as before.
 - Enroll: each enrollment is now one database transaction. A server error, restart or lost database connection part-way
   through no longer leaves a device in the list that can never check in, or uses up the enrollment code: nothing is

@@ -154,8 +154,30 @@ class EnrollmentManagerTest {
     }
 
     @Test
+    fun `a successful check-in clears a lost-credentials state`() = runTest {
+        val tokens = FakeTokenProvider("tok-123", attempt = "attempt-0123456789abcdef")
+        val status = SyncStatus()
+        val api = FakeMdmApi().apply { enrollResponse = resumableAnswer("sek-1") }
+        val manager = recovering(api, tokens, status)
+        manager.ensureEnrolled()
+        api.enrollResponse = com.mdmesh.core.net.ResponseEnvelope(status = "ERROR", message = "error.agent.token.used")
+        status.recordFailure(CheckInException("error.agent.unauthorized"))
+        manager.ensureEnrolled()
+        assertTrue("marked lost", tokens.credentialsLost)
+
+        // Whatever refused the credentials (a proxy stripping the header, say) is fixed: a check-in succeeds.
+        status.recordSuccess()
+        manager.ensureEnrolled()
+        assertTrue("cleared", !tokens.credentialsLost)
+
+        val writes = tokens.lostWrites
+        manager.ensureEnrolled()
+        assertEquals("no write when it is already clear", writes, tokens.lostWrites)
+    }
+
+    @Test
     fun `a successful enrollment clears a lost-credentials state`() = runTest {
-        val tokens = FakeTokenProvider("tok-123", attempt = "attempt-0123456789abcdef").apply { credentialsLost = true }
+        val tokens = FakeTokenProvider("tok-123", attempt = "attempt-0123456789abcdef").apply { credentialsLostAt = 1L }
         manager(FakeIdentity(), tokens = tokens).ensureEnrolled()
         assertTrue(!tokens.credentialsLost)
     }

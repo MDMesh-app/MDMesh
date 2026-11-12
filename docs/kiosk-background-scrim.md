@@ -1,4 +1,4 @@
-# Kiosk background image: keeping the launcher legible (version 3.5)
+# Kiosk background image: keeping the launcher legible (version 3.6)
 
 A kiosk background image sits under the launcher's text (header, app labels, empty-state and hold text) and its
 controls (the Exit button). A photo can be any brightness, so the launcher does two things, both with the kiosk
@@ -16,7 +16,7 @@ The console's preview computes the same, so what it shows is what the device dra
   `web/src/data/kioskLauncherLayout.ts` (the plate geometry) and the preview, `web/src/pages/configurations/
   KioskPreview.tsx`.
 - Agent: a `BackdropRule` alongside `KioskPalette` (agent branch).
-- Shared test vectors: [`proto/vectors/kiosk-scrim.json`](../proto/vectors/kiosk-scrim.json), version 3.5, generated
+- Shared test vectors: [`proto/vectors/kiosk-scrim.json`](../proto/vectors/kiosk-scrim.json), version 3.6, generated
   by an independent implementation. The console passes them; agent implementations must pass them too (the agent
   isn't released with images until it does). A change to these rules changes the vectors.
 
@@ -30,7 +30,8 @@ the grid leaves for the Exit button (see "What 3.3 changes" at the end). 3.4 mak
 between grapheme clusters (never inside a flag, an emoji sequence or a letter and its accent), measures an ellipsis
 with its text, gives a label one direction, and pins one text box for labels with or without an image (see "What 3.4
 changes"). 3.5 keeps Indic conjuncts and prepended marks whole at a cut, pins the label's direction to UAX #9's first
-strong character, and pins the cap when no cut is near it (see "What 3.5 changes").
+strong character, and pins the cap when no cut is near it (see "What 3.5 changes"). 3.6 adds the placeholder letter
+and says exactly what skipping unassigned code points does and doesn't guarantee (see "What 3.6 changes").
 
 The console is the **reference**: it reads the image at full size, 8-bit sRGB, so its bounds contain every pixel. A
 device that samples the image (for memory) sees ranges that are subsets of those, so its plates are never stronger
@@ -230,7 +231,9 @@ large fonts must stay large). The same rule with or without an image. In order:
      U+200D; consonants are U+0915 to U+0939, U+0958 to U+095F, U+0978 to U+097F; U+0995 to U+09A8, U+09AA to
      U+09B0, U+09B2, U+09B6 to U+09B9, U+09DC, U+09DD, U+09DF, U+09F0, U+09F1; U+0A95 to U+0AA8, U+0AAA to U+0AB0,
      U+0AB2, U+0AB3, U+0AB5 to U+0AB9, U+0AF9; U+0B15 to U+0B28, U+0B2A to U+0B30, U+0B32, U+0B33, U+0B35 to U+0B39,
-     U+0B5C, U+0B5D, U+0B5F, U+0B71; U+0C15 to U+0C28, U+0C2A to U+0C39, U+0C58 to U+0C5A; U+0D15 to U+0D3A;
+     U+0B5C, U+0B5D, U+0B5F, U+0B71; U+0C15 to U+0C28, U+0C2A to U+0C39, U+0C58 to U+0C5A; U+0D15 to U+0D3A.
+     (Unicode's own extenders for this rule also take a few spacing vowel signs; that differs only for a vowel sign
+     right after a virama, which is not valid text);
    - between two regional indicators, only after an even number of them counted from the start of their run (and
      always there); after the last one of a run, as any other boundary.
 
@@ -243,7 +246,10 @@ large fonts must stay large). The same rule with or without an image. In order:
    conditions. A prefix's width grows with its length, so the longest one can be found by bisection over the cuts.
 6. **Direction** (3.5: UAX #9 rule P2, pinned): lines are made in logical order, and the whole label has one
    direction, for every line, whatever a line holds. Going through the capped label's code points in order:
-   - skip unassigned code points (general category Cn), so a device's Unicode version can't change the answer;
+   - skip unassigned code points (general category Cn): a code point newer than the device's Unicode data (a new
+     emoji, say) is never taken as strong, so it can't change the answer. A label whose first strong letter is in a
+     script newer than the device's data (Arabic Extended-B or Hanifi Rohingya on older Android, for instance) is
+     unassigned there too, so it is skipped, and the label can still read left to right on that device;
    - an isolate initiator (U+2066, U+2067, U+2068) skips everything up to its matching U+2069 (to the end when there
      is none); a U+2069 with no initiator open is skipped;
    - the first code point of bidi class L makes the label left to right, R or AL right to left. Embeddings and
@@ -251,6 +257,12 @@ large fonts must stay large). The same rule with or without an image. In order:
 
    With none, the label is left to right. A Hebrew label with a Latin word on its second line still reads right to
    left there; its ellipsis is at the logical end, on the left. Vectors: `direction`.
+7. **Placeholder letter** (3.6): where an app is shown without its own icon (the console's preview draws a lettered
+   tile; on the device PackageManager always gives an icon), the tile shows the capped label's first grapheme
+   (between the cuts of 5) that holds a visible code point, in upper case where the script has case (the default
+   full case mapping, so `ß` becomes `SS`). Clusters made only of format characters (general category Cf: LRM, RLM,
+   ALM, isolates, embeddings, ZWJ, ZWNJ and the like), whitespace (Zs, Zl, Zp) or controls (Cc) are skipped. With no
+   visible code point, there is no letter: the tile stays blank. Vectors: `iconLetter`.
 
 The agent lays the label out with exactly these lines (each one already fits, so the platform never breaks one
 again). Why `cellWidth - 24` stays: the row plate may be at most the cell less 8 dp (8 dp between plates), and 8 dp of
@@ -324,6 +336,9 @@ text needs one) and "Image dimmed 22%".
 - `direction` (3.5): a label's `text` to `ltr` or `rtl`: Latin first, Hebrew first, RLM, ALM, LRM then Hebrew, a flag
   then Hebrew, a Roman numeral then Hebrew, RLE then Latin, digits first, neutral only, an isolate around Hebrew, an
   isolate left open, a stray PDI, a stray PDI before an isolate, an emoji newer than Unicode 8 then Hebrew, and Arabic.
+- `iconLetter` (3.6): a `label` to its placeholder letter, or null: a Devanagari conjunct, a conjunct with a vowel
+  sign, a flag, a ZWJ family, a skin tone, RLM then Hebrew, an isolated Hebrew word, a leading space and LRM, ZWJ
+  alone, format characters and spaces only, an empty label, a Latin letter with a combining accent, and `ß`.
 
 ## What 3.2 changes
 
@@ -342,6 +357,13 @@ text needs one) and "Image dimmed 22%".
   wider than its box ellipsized on its own line, never split; greedy fill; the last line takes the rest, ellipsized.
   Before, a label wrapped as the platform's text layout chose, which split words that didn't fit ("Timesheet / s").
 - The grid leaves room for the Exit button at the end of its scroll, at any font scale.
+
+## What 3.6 changes
+
+- The placeholder letter (Label lines, 7), with vectors.
+- Direction: skipping unassigned code points keeps a newer code point from becoming strong, but a label that starts
+  with a letter of a script newer than the device's data can still read left to right there. Said exactly.
+- A sentence on the conjunct rule's extenders and spacing vowel signs (no change to the rule).
 
 ## What 3.5 changes
 

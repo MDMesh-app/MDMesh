@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   ELLIPSIS,
   LABEL_MAX_CODE_POINTS,
@@ -9,6 +9,7 @@ import {
   codePointEnds,
   ellipsize,
   graphemeCuts,
+  iconLetter,
   labelDirection,
   labelLines,
   normalizeLabel,
@@ -29,6 +30,7 @@ interface LabelCase {
 const VECTORS = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../proto/vectors/kiosk-scrim.json'), 'utf8')) as {
   labelLines: LabelCase[];
   direction: { name: string; text: string; expected: 'ltr' | 'rtl' }[];
+  iconLetter: { name: string; label: string; expected: string | null }[];
 };
 
 /** The vectors' measure: the sum of the per-character widths (the same character always has the same width). */
@@ -63,6 +65,24 @@ describe('direction vectors (3.5, UAX #9 P2, shared with the agent)', () => {
   });
   it.each(VECTORS.direction.map((c) => [c.name, c] as const))('%s', (_, c) => {
     expect(labelDirection(c.text)).toBe(c.expected);
+  });
+});
+
+describe('placeholder letter vectors (3.6, Label lines 7, shared with the agent)', () => {
+  it('has all 14 cases', () => {
+    expect(VECTORS.iconLetter).toHaveLength(14);
+  });
+  it.each(VECTORS.iconLetter.map((c) => [c.name, c] as const))('%s', (_, c) => {
+    expect(iconLetter(c.label)).toBe(c.expected);
+  });
+  it('ignores the viewer\'s locale (a Turkish one would make i into a dotted I)', () => {
+    const toLocale = vi.spyOn(String.prototype, 'toLocaleUpperCase');
+    expect(iconLetter('inventory')).toBe('I');
+    expect(toLocale).not.toHaveBeenCalled();
+    toLocale.mockRestore();
+  });
+  it('is the same without Intl.Segmenter for these cases', () => {
+    for (const c of VECTORS.iconLetter) expect(iconLetter(c.label, false), c.name).toBe(c.expected);
   });
 });
 

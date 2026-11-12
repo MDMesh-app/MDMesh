@@ -1,4 +1,4 @@
-// How an app label breaks into lines: docs/kiosk-background-scrim.md, "Label lines" (3.5). Word boundaries only (and
+// How an app label breaks into lines: docs/kiosk-background-scrim.md, "Label lines" (3.6). Word boundaries only (and
 // after a hyphen or slash inside a word, and between kana/Han characters), greedy, at most `maxLines`; a word wider
 // than the box goes on its own line, ellipsized; the last line takes the rest, ellipsized. The agent's LabelLines
 // follows the same text; the shared vectors (proto/vectors/kiosk-scrim.json, labelLines) hold both to it.
@@ -78,7 +78,11 @@ const CONSONANTS: readonly (readonly [number, number])[] = [
   [0x0d15, 0x0d3a],
 ];
 const isConsonant = (cp: number) => CONSONANTS.some(([a, b]) => cp >= a && cp <= b);
-/** A conjunct extender: general category Mn or Me (the browser's own Unicode data), or U+200D. */
+/**
+ * A conjunct extender: general category Mn or Me (the browser's own Unicode data), or U+200D. Unicode's own extenders
+ * for GB9c also take a few spacing vowel signs; that differs only for a vowel sign right after a virama, which is
+ * not valid text.
+ */
 const EXTENDER = /^[\p{Mn}\p{Me}]/u;
 const isExtender = (cp: number) => cp === ZWJ || EXTENDER.test(String.fromCodePoint(cp));
 /** At `e`: consonant (extender|linker)* linker (extender|linker)* × consonant. */
@@ -184,7 +188,9 @@ const PDI = 0x2069;
  * skipped; an isolate initiator (LRI, RLI, FSI) skips to its matching PDI (to the end when none); a stray PDI is
  * skipped; the first of bidi class L makes it left to right, R or AL right to left. Embeddings and overrides are not
  * strong. None: left to right. Bidi classes and unassigned code points come from one generated table
- * ({@link BIDI_UNICODE_VERSION}), so the answer is the same in every browser.
+ * ({@link BIDI_UNICODE_VERSION}): a code point newer than it is never strong, so it can't change the answer, but a
+ * label whose first strong letter is in a script newer than the table is skipped there too, and reads left to right.
+ * The table is the same in every browser, so the answer is too.
  */
 export function labelDirection(text: string): 'ltr' | 'rtl' {
   let depth = 0;
@@ -198,6 +204,26 @@ export function labelDirection(text: string): 'ltr' | 'rtl' {
     }
   }
   return 'ltr';
+}
+
+/** Format characters (Cf: LRM, RLM, ALM, isolates, embeddings, ZWJ, ZWNJ...), whitespace (Zs, Zl, Zp) and controls (Cc). */
+const INVISIBLE = /^[\p{Cf}\p{Zs}\p{Zl}\p{Zp}\p{Cc}]$/u;
+
+/**
+ * The placeholder letter (Label lines, 7) for an app shown without its own icon: the capped label's first grapheme
+ * (between the cuts of 5) that holds a visible code point, upper-cased with the default full case mapping
+ * (`toUpperCase`, never the viewer's locale: `\u00df` becomes `SS` and `i` becomes `I` everywhere). Clusters of only
+ * format characters, whitespace or controls are skipped. Null when nothing is visible: the tile stays blank.
+ */
+export function iconLetter(label: string, useSegmenter = true): string | null {
+  const capped = capLabel(label, useSegmenter);
+  let start = 0;
+  for (const end of graphemeCuts(capped, useSegmenter)) {
+    const cluster = capped.slice(start, end);
+    start = end;
+    for (const ch of cluster) if (!INVISIBLE.test(ch)) return cluster.toUpperCase();
+  }
+  return null;
 }
 
 /** Every run of tab, line feed, carriage return and space becomes one space; trimmed. Other spaces are word characters. */

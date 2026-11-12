@@ -169,6 +169,14 @@ describe('KioskBackgroundPreview', () => {
     expect(icons).toEqual([flag, 'N']);
   });
 
+  it('skips invisible clusters for the placeholder letter, and leaves the tile blank when nothing is visible', async () => {
+    const he = String.fromCodePoint(0x5de, 0x5dc, 0x5d0, 0x5d9);
+    preview({ apps: [String.fromCodePoint(0x2067) + he + String.fromCodePoint(0x2069), String.fromCodePoint(0x200f, 0x20), String.fromCodePoint(0xdf) + 'auna'] });
+    await waitFor(() => expect(liveText()).toMatch(/Text|Contrast|Measuring/));
+    const icons = [...large().querySelectorAll<HTMLElement>('.v2-kbg__icon')].map((i) => i.textContent);
+    expect(icons).toEqual([String.fromCodePoint(0x5de), '', 'SS']);
+  });
+
   it('draws the placeholder icon from the first cluster by the label cut rule: a whole Indic conjunct', async () => {
     const kshatriya = String.fromCodePoint(0x915, 0x94d, 0x937, 0x924, 0x94d, 0x930, 0x93f, 0x92f);
     preview({ apps: [kshatriya] });

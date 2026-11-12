@@ -81,7 +81,7 @@ const VECTORS = JSON.parse(
 
 describe('kiosk legibility vectors (shared with the agent)', () => {
   it('uses the same constants', () => {
-    expect(VECTORS.version).toBe(3.5);
+    expect(VECTORS.version).toBe(3.6);
     expect(VECTORS.steps).toBe(SCRIM_STEPS);
     expect(VECTORS.dimMaxStep).toBe(DIM_MAX_STEP);
     expect(VECTORS.textMin).toBe(TEXT_MIN);

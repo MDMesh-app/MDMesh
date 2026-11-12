@@ -22,7 +22,7 @@ import {
   type Legibility,
 } from '../../data/kioskScrim';
 import { Button, Callout, IconCheckSmall, IconCrossSmall, IconInfo, IconSync, IconWarning, Segmented } from '../../ui';
-import { graphemeCuts } from '../../data/kioskLabelLines';
+import { iconLetter } from '../../data/kioskLabelLines';
 import './kioskFonts.css';
 import './KioskPreview.css';
 
@@ -405,12 +405,6 @@ export function KioskBackgroundPreview({
   );
 }
 
-/** The placeholder icon's letter: the name's first grapheme (a whole flag or emoji, never half a surrogate pair). */
-function firstGrapheme(name: string): string {
-  const s = name.trim();
-  return s.slice(0, graphemeCuts(s)[0] ?? 0);
-}
-
 /** Whether the element is on screen (true where the browser can't tell, e.g. jsdom). */
 function useInView(ref: RefObject<HTMLElement | null>): boolean {
   const [inView, setInView] = useState(() => typeof IntersectionObserver !== 'function');
@@ -635,7 +629,7 @@ function ScaledScreen({
       {layout.cells.map((c, i) => (
         <span key={`cell-${i}`}>
           <span className="v2-kbg__icon" style={{ ...px(c.icon, s), borderRadius: 14 * s, fontSize: c.icon.w * 0.42 * s }}>
-            {firstGrapheme(c.name).toUpperCase()}
+            {iconLetter(c.name) ?? ''}
           </span>
           <span
             className="v2-kbg__label"

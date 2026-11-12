@@ -235,12 +235,14 @@ export function launcherLayout(
  * for other scripts. The preview's screen draws with the same stack.
  */
 export const KIOSK_FONT = `"Kiosk Roboto", system-ui, sans-serif`;
+/** Before the preview is shown: the browser's fonts, so measuring loads nothing. */
+export const FALLBACK_FONT = 'system-ui, sans-serif';
 
 /**
  * Text width from the font when the browser can measure it, else an estimate (jsdom). Unrounded, as Android's
  * Paint.measureText, which the agent's label lines use.
  */
-export function browserMeasure(): Measure {
+export function browserMeasure(font: string = KIOSK_FONT): Measure {
   let ctx: OffscreenCanvasRenderingContext2D | null = null;
   try {
     ctx = typeof OffscreenCanvas === 'function' ? new OffscreenCanvas(1, 1).getContext('2d') : null;
@@ -249,7 +251,7 @@ export function browserMeasure(): Measure {
   }
   return (text, size, weight) => {
     if (!ctx) return Math.ceil(text.length * size * 0.55);
-    ctx.font = `${weight} ${size}px ${KIOSK_FONT}`;
+    ctx.font = `${weight} ${size}px ${font}`;
     return ctx.measureText(text).width;
   };
 }

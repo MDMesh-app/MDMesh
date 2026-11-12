@@ -34,6 +34,28 @@
   color: var(--secondary);
 }
 
+/* Shown (open and on screen): the device's font (kioskFonts.css); data/kioskLauncherLayout KIOSK_FONT measures with
+   the same stack. Only from then on is a face downloaded. */
+.v2 .v2-kbg__preview.is-shown .v2-kbg__screen {
+  font-family: 'Kiosk Roboto', system-ui, sans-serif;
+}
+
+/* Each option wider than its label in either weight (the selected one is bolder): choosing one never moves the
+   controls after it. */
+.v2 .v2-kbg__toolbar .v2-seg__opt {
+  min-width: 68px;
+}
+
+/* The grid scroll control keeps its place while hidden: the toolbar never moves. Hidden, it isn't focusable or
+   announced. */
+.v2 .v2-kbg__scroll-slot {
+  display: flex;
+}
+
+.v2 .v2-kbg__scroll-slot.is-hidden {
+  visibility: hidden;
+}
+
 .v2 .v2-kbg__toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -162,8 +184,8 @@
   border-radius: var(--kbg-corner);
   background: var(--kbg-bg);
   color: var(--kbg-text);
-  /* The device's font (kioskFonts.css); data/kioskLauncherLayout KIOSK_FONT measures with the same stack. */
-  font-family: 'Kiosk Roboto', system-ui, sans-serif;
+  /* The browser's fonts until the preview is shown, then the device's (below). */
+  font-family: system-ui, sans-serif;
   line-height: normal;
 }
 

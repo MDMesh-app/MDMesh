@@ -4,8 +4,10 @@
    (KioskViews LABEL_SP 14sp, default sans-serif) and 500 for the header and the Exit button (sans-serif-medium).
    Latin and latin-ext only; other scripts (CJK, Arabic, Hebrew…) fall back to the browser's fonts, as a device falls
    back to its Noto fonts. Its own family name, so a Roboto installed on the viewer's machine never stands in.
-   A face downloads only when text in it is drawn, i.e. once the preview shows. `block`: the preview waits briefly
-   for the face instead of laying labels out in another font. */
+   Only the preview's screens use this family, and only once the preview is shown (its section open and on screen,
+   `.v2-kbg__preview.is-shown`); KioskPreview then loads both weights with document.fonts.load and lays the labels out
+   again. Until then nothing downloads. `block`: the preview waits briefly for the face instead of drawing labels in
+   another font. */
 @font-face {
   font-family: 'Kiosk Roboto';
   font-style: normal;

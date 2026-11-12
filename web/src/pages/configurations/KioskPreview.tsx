@@ -3,7 +3,7 @@
 // and Rotate, and four thumbnails that select it. Same rules and functions as the agent: data/kioskScrim.ts,
 // data/kioskLauncherLayout.ts, data/kioskLabelLines.ts, docs/kiosk-background-scrim.md (version 3.3).
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
-import { browserMeasure, KIOSK_FONT, launcherLayout, PLATE_RADIUS, type LauncherLayout, type Measure } from '../../data/kioskLauncherLayout';
+import { browserMeasure, FALLBACK_FONT, KIOSK_FONT, launcherLayout, PLATE_RADIUS, type LauncherLayout, type Measure } from '../../data/kioskLauncherLayout';
 import {
   CONTROL_MIN,
   DIM_MAX_STEP,
@@ -141,11 +141,18 @@ export function KioskBackgroundPreview({
   const [turning, setTurning] = useState<View | null>(null);
   /** The large view scrolled to the end of the grid (where the room for the Exit button is). */
   const [atEnd, setAtEnd] = useState(false);
-  // Labels are laid out with the font's own widths: measure again once web fonts have loaded.
+  // The device font (Roboto, kioskFonts.css) is used, so loaded, only once the preview is shown: its section open
+  // and on screen. Until then the screens use the browser's fonts and nothing downloads.
+  const [open, setOpen] = useState(true);
+  const section = useRef<HTMLDetailsElement>(null);
+  const inView = useInView(section);
+  const [seen, setSeen] = useState(false);
+  if (!seen && open && inView) setSeen(true); // once shown, it stays in the device font
+  // Labels are laid out with the font's own widths: measure again once its faces have loaded.
   const [fontEpoch, setFontEpoch] = useState(0);
   useEffect(() => {
     const fonts = typeof document !== 'undefined' ? (document as Document & { fonts?: FontFaceSet }).fonts : undefined;
-    if (!fonts || measure) return;
+    if (!fonts || measure || !seen) return;
     let live = true;
     const bump = () => live && setFontEpoch((e) => e + 1);
     // Load the device font's two weights now (they would load only once text in them is drawn), then measure again.
@@ -156,9 +163,9 @@ export function KioskBackgroundPreview({
       live = false;
       fonts.removeEventListener?.('loadingdone', bump);
     };
-  }, [measure]);
+  }, [measure, seen]);
   // fontEpoch: a new measure (so a new label cache) per font load.
-  const measureFn = useMemo(() => measure ?? browserMeasure(), [measure, fontEpoch]);
+  const measureFn = useMemo(() => measure ?? browserMeasure(seen ? KIOSK_FONT : FALLBACK_FONT), [measure, seen, fontEpoch]);
   const apps = useMemo(() => (appNames.length ? appNames.slice(0, 24) : ['Camera', 'Notes', 'Browser', 'Scanner']), [appNames]);
 
   const layouts = useMemo(() => {
@@ -201,7 +208,10 @@ export function KioskBackgroundPreview({
 
   // The large view at the end of its scroll: the grid moves up, the image and the Exit button stay.
   const key = viewKey(view);
-  const scrolled = atEnd && layouts[key].maxScroll > 0;
+  const scrollable = layouts[key].maxScroll > 0;
+  // Hidden with a view that doesn't scroll, the choice goes back to Top: coming back never lands on End unasked.
+  if (atEnd && !scrollable) setAtEnd(false);
+  const scrolled = atEnd && scrollable;
   const largeLayout = useMemo(
     () => (scrolled ? launcherLayout(viewWindow(view), apps, { iconSize, exitVisible, scrollY: Infinity }, measureFn) : layouts[key]),
     [scrolled, view, apps, iconSize, exitVisible, measureFn, layouts, key],
@@ -258,7 +268,12 @@ export function KioskBackgroundPreview({
           : null;
 
   return (
-    <details className="v2-kbg__preview" open>
+    <details
+      ref={section}
+      className={`v2-kbg__preview${seen ? ' is-shown' : ''}`}
+      open={open}
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+    >
       <summary id={headingId}>Preview on devices</summary>
       <p className="v2-kbg__lede">
         {fit === 'fit' ? 'The whole image is shown, letterboxed with the background color.' : 'The image fills the screen, cropped around its focal point.'} Text sits on a plate of the background color where the image
@@ -294,7 +309,8 @@ export function KioskBackgroundPreview({
         >
           <IconSync size={14} /> Rotate
         </Button>
-        {layouts[key].maxScroll > 0 ? (
+        {/* Its place is kept while hidden (a view that doesn't scroll), so nothing in the row moves. */}
+        <div className={`v2-kbg__scroll-slot${scrollable ? '' : ' is-hidden'}`} inert={!scrollable} aria-hidden={!scrollable || undefined}>
           <Segmented
             aria-label="Grid scroll"
             size="md"
@@ -305,7 +321,7 @@ export function KioskBackgroundPreview({
             value={atEnd ? 'end' : 'top'}
             onChange={(v) => setAtEnd(v === 'end')}
           />
-        ) : null}
+        </div>
       </div>
       <LargeScreen
         image={{ w: width, h: height }}
@@ -386,6 +402,19 @@ export function KioskBackgroundPreview({
       </p>
     </details>
   );
+}
+
+/** Whether the element is on screen (true where the browser can't tell, e.g. jsdom). */
+function useInView(ref: RefObject<HTMLElement | null>): boolean {
+  const [inView, setInView] = useState(() => typeof IntersectionObserver !== 'function');
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver !== 'function') return;
+    const io = new IntersectionObserver((entries) => setInView(entries.some((e) => e.isIntersecting)));
+    io.observe(el);
+    return () => io.disconnect();
+  }, [ref]);
+  return inView;
 }
 
 /** The width of an element as laid out (640 until known, e.g. in jsdom). */

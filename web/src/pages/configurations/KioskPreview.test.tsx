@@ -1,7 +1,7 @@
 // The kiosk background preview: one large view at device scale with Phone/Tablet and Rotate, four thumbnails that
 // select it, the dim and plates the agent draws, and the readouts; free of axe violations. jsdom has no canvas, so the
 // image's cells come from a colour function of the position in image pixels.
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import axe from 'axe-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { KioskBackgroundImageInfo } from '../../api/configurations';
@@ -157,6 +157,66 @@ describe('KioskBackgroundPreview', () => {
     preview();
     await waitFor(() => expect(liveText()).toMatch(/Text|Contrast|Measuring/));
     expect(screen.queryByRole('radiogroup', { name: 'Grid scroll' })).toBeNull();
+  });
+
+  it('goes back to Top when it switches to a view that doesn’t scroll, and keeps the toolbar in place', async () => {
+    sampling.paint = WHITE;
+    // Long enough to scroll on a phone, short enough to fit on a tablet.
+    const apps = Array.from({ length: 24 }, (_, i) => `App ${i}`);
+    preview({ apps });
+    await waitFor(() => expect(liveText()).toMatch(/Text \d\.\d:1/));
+    const slot = () => document.querySelector<HTMLElement>('.v2-kbg__scroll-slot')!;
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Grid scroll' })).getByRole('radio', { name: 'End of list' }));
+    await waitFor(() => expect(liveText()).toMatch(/end of list/));
+    fireEvent.click(screen.getByRole('radio', { name: 'Tablet' }));
+    await waitFor(() => expect(liveText()).toMatch(/^Tablet 4:3, portrait/));
+    // Hidden but in place: not focusable, not announced.
+    expect(slot()).not.toBeNull();
+    expect(slot().hasAttribute('inert')).toBe(true);
+    expect(screen.queryByRole('radiogroup', { name: 'Grid scroll' })).toBeNull();
+    fireEvent.click(screen.getByRole('radio', { name: 'Phone' }));
+    await waitFor(() => expect(liveText()).toMatch(/^Phone, portrait/));
+    expect(liveText()).not.toMatch(/end of list/);
+    expect(within(screen.getByRole('radiogroup', { name: 'Grid scroll' })).getByRole('radio', { name: 'Top' }).getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('loads the device font only once the preview is open and on screen', async () => {
+    const load = vi.fn(async () => []);
+    const fonts = Object.assign(new EventTarget(), { load, ready: Promise.resolve() });
+    Object.defineProperty(document, 'fonts', { configurable: true, value: fonts });
+    let report: (on: boolean) => void = () => undefined;
+    const IO = vi.fn(function (this: unknown, cb: IntersectionObserverCallback) {
+      report = (on) => cb([{ isIntersecting: on } as IntersectionObserverEntry], this as IntersectionObserver);
+      return { observe() {}, disconnect() {}, unobserve() {}, takeRecords: () => [] };
+    });
+    vi.stubGlobal('IntersectionObserver', IO);
+    try {
+      render(
+        <div className="v2">
+          <KioskBackgroundPreview src="/x.jpg" width={3840} height={2160} colours={kioskColours(null, null)} appNames={['Notes']} exitVisible loadImage={fakeImage} />
+        </div>,
+      );
+      const details = document.querySelector('details')!;
+      // Open but not on screen yet: nothing loads.
+      await new Promise((r) => setTimeout(r, 0));
+      expect(load).not.toHaveBeenCalled();
+      expect(details.classList.contains('is-shown')).toBe(false);
+      // Closed, then scrolled into view: still nothing.
+      details.open = false;
+      fireEvent(details, new Event('toggle'));
+      act(() => report(true));
+      await new Promise((r) => setTimeout(r, 0));
+      expect(load).not.toHaveBeenCalled();
+      // Opened while on screen: both weights load, and the screens switch to the device font.
+      details.open = true;
+      fireEvent(details, new Event('toggle'));
+      await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+      expect(load.mock.calls.map((c) => (c as unknown[])[0])).toEqual(['400 14px "Kiosk Roboto", system-ui, sans-serif', '500 14px "Kiosk Roboto", system-ui, sans-serif']);
+      expect(details.classList.contains('is-shown')).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+      delete (document as { fonts?: unknown }).fonts;
+    }
   });
 
   it('rotates: re-crops for the turned window and recomputes the dim and plates', async () => {

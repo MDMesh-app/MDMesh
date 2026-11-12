@@ -133,16 +133,60 @@ for inst in $(installer_ids); do
   done
 done
 
-# Each installer's flags in options.json are exactly the ones its argument loop accepts (the "-x|--xx)" patterns of its
-# for a in "$@" loop; none for an installer without one).
+# Each installer's flags in options.json are exactly the ones its argument parser accepts. The one parser form this
+# understands is a top-level `for VAR in "$@"; do … done` loop, read for its case patterns (-x|--xx), "--quoted",
+# --opt=*) …) and its [ "$VAR" = --x ] tests; an installer without one takes no flags. Any other parser (getopts, a
+# while/shift loop over $#, a case on $1 or "$@" at the top level, a second loop) fails the test, so that a new form
+# can't hide its flags. setup.sh's "forwards" are the flags it hands to the native installer with --native.
+# parsed_flags FILE: the flags FILE's parser accepts, one per line, or UNRECOGNISED.
+parsed_flags() {
+  local loops var
+  loops=$(grep -cE '^for [A-Za-z_][A-Za-z0-9_]* in "\$@"; do$' "$1" || true)
+  if [ "$loops" -gt 1 ] || grep -nE 'getopts|^[^#[:space:]][^#]*\$#|^(while|until|case)[^#]*"?\$[1@*]|^for [A-Za-z_][A-Za-z0-9_]*; do' "$1" \
+       | grep -vE '^[0-9]+:[[:space:]]*#' | grep -q .; then
+    echo UNRECOGNISED; return
+  fi
+  [ "$loops" = 1 ] || return 0
+  var=$(sed -nE 's/^for ([A-Za-z_][A-Za-z0-9_]*) in "\$@"; do$/\1/p' "$1")
+  awk '/^for [A-Za-z_][A-Za-z0-9_]* in "\$@"; do$/ { f = 1; next } f && /^done/ { f = 0 } f' "$1" > "$WORK/parser.txt"
+  {
+    # case patterns: up to the first ")", each alternative that starts with - (quotes removed)
+    sed -nE 's/^[[:space:]]*\(?(["'"'"']?-[^)]*)\).*/\1/p' "$WORK/parser.txt" | tr '|' '\n' | tr -d "\"' "
+    # [ "$VAR" = --x ] tests
+    { grep -oE "\"\\\$$var\" = [\"']?-[^] \"']*" "$WORK/parser.txt" || true; } | sed -E "s/.* = [\"']?//"
+  } | { grep -E '^-' || true; } | sort -u
+}
 for inst in $(installer_ids); do
   f="$REPO/$(installer_path "$inst")"
-  got=$(awk '/^for a in "\$@"; do/ { f = 1 } f && /^done/ { f = 0 } f' "$f" \
-    | { grep -oE '^[[:space:]]*-[-a-zA-Z|]+\)' || true; } | tr -d ' )' | tr '|' '\n' | sort -u)
+  got=$(parsed_flags "$f")
+  [ "$got" != UNRECOGNISED ] || { fail "$inst: its argument parser is not one this test can read (see parsed_flags)"; continue; }
   want=$(jq -r --arg i "$inst" '.installers[] | select(.id == $i) | .flags[]' "$CONTRACT" | sort -u)
   [ "$got" = "$want" ] || fail "$inst accepts the flags [$(tr "\n" " " <<< "$got")], options.json lists [$(tr "\n" " " <<< "$want")]"
+  to=$(jq -r --arg i "$inst" '.installers[] | select(.id == $i) | .forwards.to // ""' "$CONTRACT")
+  # An installer that hands its other arguments to another one (exec ./install/install-native.sh "${ARGS[@]}") says so.
+  if grep -qE 'exec \./install/install-native\.sh "\$\{[A-Za-z_]+\[@\]\}"' "$f"; then
+    [ "$to" = install-native.sh ] || fail "$inst passes flags on to install-native.sh, but options.json has no forwards for it"
+  fi
+  if [ -n "$to" ]; then
+    fw=$(jq -r --arg i "$inst" '.installers[] | select(.id == $i) | .forwards.flags[]' "$CONTRACT" | sort -u)
+    tf=$(jq -r --arg i "$to" '.installers[] | select(.id == $i) | .flags[]' "$CONTRACT" | sort -u)
+    [ "$fw" = "$tf" ] || fail "$inst forwards [$(tr "\n" " " <<< "$fw")] to $to, which takes [$(tr "\n" " " <<< "$tf")]"
+  fi
   ok
 done
+# The extraction itself reads every form it claims to, and refuses the ones it doesn't know.
+# shellcheck disable=SC2016  # the parsers below are text, not code to expand
+printf '%s\n' '#!/bin/bash' 'for a in "$@"; do' '  [ "$a" = --first ] || x=1' '  case "$a" in' '    -a|--all) ;;' \
+  '    "--quoted") ;;' "    '-s'|--single) ;;" '    --opt=*) ;;' '    --v2) ;;' '    *) exit 2 ;;' '  esac' 'done' > "$WORK/p1.sh"
+[ "$(parsed_flags "$WORK/p1.sh" | tr '\n' ' ')" = "--all --first --opt=* --quoted --single --v2 -a -s " ] \
+  || fail "parsed_flags misreads a parser: $(parsed_flags "$WORK/p1.sh" | tr '\n' ' ')"
+# shellcheck disable=SC2016  # as above
+for form in 'while getopts yv o; do :; done' 'while [ $# -gt 0 ]; do shift; done' 'case "$1" in -y) ;; esac' \
+            'for a; do :; done'; do
+  printf '#!/bin/bash\n%s\n' "$form" > "$WORK/p2.sh"
+  [ "$(parsed_flags "$WORK/p2.sh")" = UNRECOGNISED ] || fail "parsed_flags does not refuse: $form"
+done
+ok
 
 lib_keys=$(sed -nE 's/^_MDM_ANSWER_KEYS="(.*)"$/\1/p' "$REPO/install/lib/answers.sh" | tr ' ' '\n' | grep . | sort)
 contract_keys=$(jq -r '(.options[].env), (.settings[].env)' "$CONTRACT" | sort)

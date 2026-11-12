@@ -726,7 +726,10 @@ SMTP_HOST=
 SMTP_PORT=25
 SMTP_FROM=mdm@${HOST}
 EOF
-mv -f -- "$ENV_TMP" .env   # no -T (GNU only): nothing named .env exists here (checked above)
+# No -T (GNU only): so check again, just before, that nothing named .env has appeared since the start (a directory or a
+# link to one would get the file inside it).
+if [ -e .env ] || [ -L .env ]; then err "Something named .env appeared in $(pwd) during the install: not overwriting it. Remove it and re-run."; exit 1; fi
+mv -f -- "$ENV_TMP" .env
 ENV_TMP=''; trap - INT TERM
 say "Wrote .env (secrets generated). docker compose reads COMPOSE_FILE/PROFILES from it."
 

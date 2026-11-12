@@ -141,7 +141,7 @@ sudo ./setup.sh --update --native    # newest signed release, then install/insta
 
 Run it as root from a clone. It is tested on Debian 12, Debian 13 and Ubuntu 24.04 (`tests/native`). The
 installer never calls `sudo`, so on a root-only host (a Proxmox LXC container, a minimal Debian image) run
-`./setup.sh --native` as root.
+`./setup.sh --update --native` as root.
 
 The only prerequisite is `git`; the rest comes from apt (`sudo ./setup.sh --update --native` first installs `curl`
 and `openssl` when they are missing, to check the release). Two runtimes the distros don't all ship are downloaded into

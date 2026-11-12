@@ -84,9 +84,19 @@ mdm_answers_load
 # that is GitHub out of reach, not a release missing. A manifest that is there but does not verify stops it too.
 # MDMESH_DRY_RUN=1 does all the checking, then stops before anything is fetched or checked out. Updates come from
 # --update, never from `git pull`.
-_upd_dir=''
+# mdm_apt ARGS...: apt-get, non-interactive (keeping changed config files, never prompting), waiting up to 5 minutes for
+# another apt run's lock (a fresh VM's first-boot updates hold it for minutes) instead of failing at once.
+mdm_apt() {
+  DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 -o Dpkg::Options::=--force-confdef \
+    -o Dpkg::Options::=--force-confold "$@"
+}
+_upd_dir=''; _upd_installed=''
 _upd_clean() { [ -z "$_upd_dir" ] || { rm -f -- "$_upd_dir/manifest.json" "$_upd_dir/manifest.json.minisig"; rmdir -- "$_upd_dir" 2>/dev/null || true; }; }
-_upd_stop() { _upd_clean; err "$@"; err "Nothing was changed."; exit 1; }
+_upd_stop() {
+  _upd_clean; err "$@"
+  if [ -n "$_upd_installed" ]; then err "Nothing else was changed (it installed${_upd_installed} above)."; else err "Nothing was changed."; fi
+  exit 1
+}
 # _upd_get URL FILE: downloads URL to FILE. 0 when done, 4 on HTTP 404 (not published), 1 on anything else (a timeout,
 # DNS, TLS, a 5xx: retried twice, with short timeouts), with the reason in _upd_why.
 # The HTTP code decides first: a curl set to fail on HTTP errors (`fail` in a .curlrc) exits 22 on a 404 too. (No -q:
@@ -95,7 +105,12 @@ _upd_get() {
   local code rc n
   for n in 1 2 3; do
     rc=0; code=$(curl -sSL --connect-timeout 10 -m 30 -o "$2" -w '%{http_code}' "$1" 2>/dev/null) || rc=$?
-    case "$rc" in 126|127) _upd_stop "--update could not run curl (exit $rc). Reinstall it (Debian/Ubuntu: apt-get install curl), then re-run." ;; esac
+    case "$rc" in
+      126|127) _upd_stop "--update could not run curl (exit $rc). Reinstall it (Debian/Ubuntu: apt-get install curl), then re-run." ;;
+      # A TLS set-up problem on this host, not GitHub out of reach: not retried.
+      77) _upd_stop "curl has no CA certificates to check GitHub's (curl exit 77). Install them (Debian/Ubuntu: apt-get install ca-certificates), then re-run." ;;
+      60) _upd_stop "curl does not trust GitHub's TLS certificate (curl exit 60): this host's CA certificates are missing or out of date (Debian/Ubuntu: apt-get install ca-certificates), or a proxy intercepts TLS." ;;
+    esac
     case "$code" in
       200) [ "$rc" != 0 ] || return 0; _upd_why="curl error $rc after HTTP 200" ;;
       404) return 4 ;;
@@ -106,7 +121,6 @@ _upd_get() {
           7) _upd_why="connection refused" ;;
           28) _upd_why="timed out" ;;
           35) _upd_why="TLS handshake failed" ;;
-          60) _upd_why="TLS certificate not trusted" ;;
           *) _upd_why="curl error $rc" ;;
         esac ;;
       *) _upd_why="HTTP $code"; return 1 ;;
@@ -124,28 +138,40 @@ _upd_has_install() { [ -f .env ] || [ -d /opt/mdmesh-tc ]; }
 # missing ones are installed, as the native installer installs its packages anyway; otherwise it stops, naming them and
 # how to install them.
 update_tools() {
-  local missing='' pkgs='' c
+  local missing='' pkgs='' c n=0 sudo=''
   for c in git curl awk sort; do
-    command -v "$c" >/dev/null 2>&1 || { missing="$missing, $c"; pkgs="$pkgs $c"; }
+    command -v "$c" >/dev/null 2>&1 && continue
+    missing="$missing, $c"; n=$((n + 1))
+    case "$c" in
+      curl) pkgs="$pkgs curl ca-certificates" ;;   # without recommends curl comes without CA certificates (exit 77)
+      awk) pkgs="$pkgs mawk" ;;
+      sort) pkgs="$pkgs coreutils" ;;
+      *) pkgs="$pkgs $c" ;;
+    esac
   done
   # quickstart.sh's own verification functions (scripts/release-manifest-check.sh runs them the same way).
   # shellcheck source=/dev/null
   . <(sed -n '/^# >>> release verification >>>$/,/^# <<< release verification <<<$/p' quickstart.sh)
   command -v mdm_verify_manifest >/dev/null || _upd_stop "quickstart.sh in this clone has no release verification functions."
   if ! mdm_openssl_can_verify 2>/dev/null && ! command -v minisign >/dev/null 2>&1; then
-    missing="$missing, openssl 3.0+ or minisign"; pkgs="$pkgs openssl"
+    missing="$missing, openssl 3.0+ or minisign"; n=$((n + 1))
+    # An openssl that is there but can't check minisign signatures (1.1.1, or no BLAKE2b): installing it again would
+    # change nothing, minisign does the job.
+    if command -v openssl >/dev/null 2>&1; then pkgs="$pkgs minisign"; else pkgs="$pkgs openssl"; fi
   fi
   [ -n "$missing" ] || return 0
-  pkgs=${pkgs/ awk/ mawk}
   if [ "${1:-}" != installed ] && [ "$NATIVE" = 1 ] && [ "$EUID" = 0 ] && [ "${MDMESH_DRY_RUN:-0}" != 1 ] \
      && command -v apt-get >/dev/null 2>&1; then
-    say "Installing what --update needs:${pkgs}…"
+    say "Installing what --update needs:${pkgs}. If another apt run holds its lock (a new VM's first-boot updates, say), this waits for it, up to 5 minutes."
+    mdm_apt update -q || warn "(some apt sources failed to refresh — continuing)"
     # shellcheck disable=SC2086  # one package per word
-    { apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $pkgs; } >/dev/null \
-      || _upd_stop "Could not install${pkgs} (apt-get above)."
+    mdm_apt install -y -q $pkgs || _upd_stop "Could not install${pkgs} (apt-get above)."
+    _upd_installed=$pkgs
     update_tools installed; return 0
   fi
-  _upd_stop "--update needs ${missing#, }, which this host lacks. Install them first (Debian/Ubuntu: sudo apt-get install${pkgs}), then re-run."
+  [ "$EUID" = 0 ] || sudo='sudo '
+  if [ "$n" = 1 ]; then n=it; else n=them; fi
+  _upd_stop "--update needs ${missing#, }, which this host lacks. Install $n first (Debian/Ubuntu: ${sudo}apt-get install${pkgs}), then re-run."
 }
 update_to_release() {
   local repo gerr refs list ver t sha tag='' tgt='' skipped='' cur curver rc mcommit dry=${MDMESH_DRY_RUN:-0} have=0 walked=0 f
@@ -237,6 +263,13 @@ update_downgrade_check() {
   _upd_has_install || return 0
   _upd_stop "This clone is at $(git describe --tags --always 2>/dev/null || echo "$1"), which has commits the newest release $3 doesn't (for example main, ahead of the release). Checking out $3 would run older code over this install. Wait for the next release and run --update then, or re-run with --allow-downgrade to go to $3 now."
 }
+# Docker mode takes no other flag: a typo (--alow-downgrade) must not be silently ignored, nor, with --update, found
+# only after the clone has moved. (With --native the native installer checks the rest.)
+if [ "$NATIVE" != 1 ] && [ "${#NATIVE_ARGS[@]}" -gt 0 ]; then
+  err "Unknown option: ${NATIVE_ARGS[0]}"
+  sed -n '/^# Usage:/,/^set -euo pipefail/p' "$(basename "$0")" | sed '$d; s/^# \{0,1\}//' >&2
+  exit 2
+fi
 if [ "$UPDATE" = 1 ]; then
   update_to_release
   # The release's own setup.sh, read afresh from the checked-out tag. The tunnel token, kept out of the environment of
@@ -249,12 +282,6 @@ fi
 # `./setup.sh --native -y` really is unattended.
 # The native installer has no tunnel: the token is not passed on.
 if [ "$NATIVE" = 1 ]; then unset MDMESH_TUNNEL_TOKEN; exec ./install/install-native.sh "${NATIVE_ARGS[@]}"; fi
-# Docker mode takes no other flag: a typo (--alow-downgrade) must not be silently ignored.
-if [ "${#NATIVE_ARGS[@]}" -gt 0 ]; then
-  err "Unknown option: ${NATIVE_ARGS[0]}"
-  sed -n '/^# Usage:/,/^set -euo pipefail/p' "$(basename "$0")" | sed '$d; s/^# \{0,1\}//' >&2
-  exit 2
-fi
 
 # Answers given in advance (install/lib/answers.sh, install/options.json), all checked here, before anything else.
 # Only a fresh .env asks questions: a re-run reuses its .env, and then they are not used. (The file was read above.)
@@ -539,8 +566,7 @@ if [ -n "${GITHUB_REPO:-}" ] && command -v python3 >/dev/null && command -v curl
   # otherwise the warning below says how.
   if ! command -v minisign >/dev/null 2>&1 && [ "$(id -u)" = 0 ] && command -v apt-get >/dev/null 2>&1; then
     say "Installing minisign (verifies the release manifest)…"
-    { DEBIAN_FRONTEND=noninteractive apt-get install -y -qq minisign \
-      || { apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq minisign; }; } >/dev/null 2>&1 || true
+    { mdm_apt install -y -qq minisign || { mdm_apt update -qq && mdm_apt install -y -qq minisign; }; } >/dev/null 2>&1 || true
   fi
   # Still no minisign on the host: verify with the one the supervisor image ships (docker/supervisor.Dockerfile), building
   # that image now (the `up --build` below reuses it). The container gets no network and only the key and the release

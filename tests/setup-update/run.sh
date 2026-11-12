@@ -49,7 +49,7 @@ if [ -n "${CURL_FLAKY:-}" ]; then
 fi
 case "${CURL_FAULT:-}" in
   "${rel%%/*}":28) code 000; exit 28 ;; "${rel%%/*}":7) code 000; exit 7 ;; "${rel%%/*}":503) code 503; exit 0 ;;
-  "${rel%%/*}":127) exit 127 ;;
+  "${rel%%/*}":127) exit 127 ;; "${rel%%/*}":77) code 000; exit 77 ;;
 esac
 f="$REL_DIR/$rel"
 if [ -f "$f" ] && [ -n "$out" ]; then cp "$f" "$out"; code 200; exit 0; fi
@@ -251,6 +251,18 @@ clone tools3
 upd tools3 ok CURL_FAULT=v9.1.0:127 --
 { [ "$RC" != 0 ] && head_is tools3 "$cmain" && grep -qF 'could not run curl' "$WORK/out" && ! grep -q 'Could not reach GitHub' "$WORK/out"; } \
   || { fail "a curl that can't run is reported as a network failure"; show; }
+ok
+# A curl without CA certificates (exit 77: what a curl installed without recommends does) is a TLS set-up problem, not
+# GitHub out of reach, and is not retried.
+upd tools3 ok CURL_FAULT=v9.1.0:77 --
+{ [ "$RC" != 0 ] && head_is tools3 "$cmain" && grep -qF 'ca-certificates' "$WORK/out" && ! grep -q 'Could not reach GitHub' "$WORK/out"; } \
+  || { fail "curl exit 77 is not reported as missing CA certificates"; show; }
+ok
+# A mistyped option stops before the clone moves (without --native; with it the native installer checks them).
+clone typo
+upd typo ok -- --alow-downgrade
+{ [ "$RC" = 2 ] && head_is typo "$cmain" && grep -qF 'Unknown option: --alow-downgrade' "$WORK/out" && ! grep -q 'Looking up' "$WORK/out"; } \
+  || { fail "--update with a mistyped option moves the clone before saying so"; show; }
 ok
 # ... and gives up after the 5 newest tags.
 clone capped v9.0.0 "$WORK/origin3"

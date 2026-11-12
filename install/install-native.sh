@@ -612,7 +612,10 @@ apt_update() {
   [ "$APT_UPDATED" = 1 ] && return 0
   # Tolerate an unrelated broken third-party APT source (e.g. a Docker repo on a codename Docker doesn't
   # publish for → "does not have a Release file") — the native install only needs base Debian packages.
-  run "Refreshing package lists" bash -c "apt-get update -y || echo '(some apt sources failed to refresh — continuing)'"
+  # apt waits up to 5 minutes for another apt run's lock (a new VM's first-boot updates hold it for minutes), and never
+  # prompts (changed config files are kept).
+  info "If another apt run holds its lock (a new VM's first-boot updates, say), apt waits for it, up to 5 minutes"
+  run "Refreshing package lists" bash -c "apt-get -o DPkg::Lock::Timeout=300 update -y || echo '(some apt sources failed to refresh — continuing)'"
   APT_UPDATED=1
 }
 FETCH_JDK17=0
@@ -625,11 +628,11 @@ if [ ${#PKGS[@]} -eq 0 ]; then
   ok "all packaged dependencies already present — nothing to install"
 else
   apt_update
-  run "$(IFS=,; echo "${PKGS[*]}" | sed 's/,/, /g')" bash -c "DEBIAN_FRONTEND=noninteractive apt-get install -y ${PKGS[*]}"
+  run "$(IFS=,; echo "${PKGS[*]}" | sed 's/,/, /g')" bash -c "DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold install -y ${PKGS[*]}"
 fi
 # minisign verifies release-manifest signatures for the updater supervisor. Best-effort: without it
 # the supervisor still runs but reports releases as unverified (and never mirrors an APK).
-DEBIAN_FRONTEND=noninteractive apt-get install -y minisign >> "$LOGFILE" 2>&1 || info "minisign unavailable — updater will report releases as unverified"
+DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold install -y minisign >> "$LOGFILE" 2>&1 || info "minisign unavailable — updater will report releases as unverified"
 if host_node_ok; then
   ok "Node $(node -v) from this host"
 else

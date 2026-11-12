@@ -201,4 +201,94 @@ class KioskApplierCrashSafetyTest {
             .exit(force = true)
         assertEquals(1, exits)
     }
+
+    // --- PR #192 re-review (S1', N1', N3') ---
+
+    /** S1': an exit whose journal entry can't be written changes nothing, not even the caller's first step. */
+    @Test fun `an exit whose entry can't be written never runs its first step`() = runTest {
+        val j = object : ExitJournal by MemJournal() { override fun begin(p: ExitJournal.Pending) = false }
+        val store = InMemoryKioskStateStore(); store.save(kioskA)
+        val c = FakeController(KioskResult.Ok); val h = FakeHome()
+        var leftLockTask = false
+        val r = KioskApplier(c, store, h, home, journal = j) { true }
+            .exit(handBackHome = true, force = true, expected = kioskA) { leftLockTask = true }
+        assertTrue(r is KioskResult.Failed)
+        assertFalse("lock task not left, no exit recorded", leftLockTask)
+        assertFalse(c.exited)
+        assertEquals(kioskA, store.load())
+        assertFalse("claim:false" in h.log)
+    }
+
+    /** S1': the caller's first step runs once the entry is committed, before the exit's own first step. */
+    @Test fun `an exit runs its first step after the entry is committed`() = runTest {
+        val mem = MemJournal(); val order = mutableListOf<String>()
+        val j = object : ExitJournal by mem {
+            override fun begin(p: ExitJournal.Pending): Boolean { order += "journal"; return mem.begin(p) }
+        }
+        val store = InMemoryKioskStateStore(); store.save(kioskA)
+        val c = object : com.mdmesh.kiosk.KioskController by FakeController(KioskResult.Ok) {
+            override fun exit(): KioskResult { order += "dpm"; return KioskResult.Ok }
+        }
+        KioskApplier(c, store, FakeHome(), home, journal = j) { true }
+            .exit(force = true, expected = kioskA) { order += "before" }
+        assertEquals(listOf("journal", "before", "dpm"), order)
+    }
+
+    /** N1': the same kiosk re-sent over a failed relock locks it again before clearing the marker, without relaunch. */
+    @Test fun `re-entering the kiosk a relock failed for locks it again before clearing the entry`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+        j.saved = ExitJournal.Pending(true, false, ExitJournal.fingerprint(kioskA), failed = true)
+        val c = FakeController(KioskResult.Ok); val h = FakeHome()
+        assertEquals(KioskResult.Ok, KioskApplier(c, store, h, home, journal = j) { true }.enter(kioskA))
+        assertEquals("allowlist and HOME re-asserted", listOf(listOf("com.a")), c.enters)
+        assertTrue("claim:true" in h.log)
+        assertFalse("not relaunched", "launcher" in h.log)
+        assertNull(j.saved)
+    }
+
+    /** N1': if that lock fails, the entry stays (failed), so the next start relocks. */
+    @Test fun `re-entering the kiosk a relock failed for keeps the entry when the lock fails again`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+        j.saved = ExitJournal.Pending(true, false, ExitJournal.fingerprint(kioskA), failed = true)
+        val c = FakeController(KioskResult.Ok).apply { failFor = listOf("com.a") }
+        val r = KioskApplier(c, store, FakeHome(), home, journal = j) { true }.enter(kioskA)
+        assertTrue(r is KioskResult.Failed)
+        assertEquals(true, j.saved?.failed)
+        assertEquals(kioskA, store.load())
+    }
+
+    /** N1': a cut-off (unmarked) exit under the same kiosk is marked before that lock, so a death there relocks. */
+    @Test fun `re-entering the same kiosk marks a cut-off exit before locking`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+        j.saved = ExitJournal.Pending(true, true, ExitJournal.fingerprint(kioskA))
+        var atLock: ExitJournal.Pending? = null
+        val c = FakeController(KioskResult.Ok).apply { beforeEnter = { atLock = j.saved } }
+        KioskApplier(c, store, FakeHome(), home, journal = j) { true }.enter(kioskA)
+        assertEquals(true, atLock?.failed)
+        assertNull(j.saved)
+    }
+
+    /** N3': a throwing hand-on (the prefetch queue) never skips the volume lock or the Safe Mode block. */
+    @Test fun `a throwing onEntered still locks volume and blocks Safe Mode`() = runTest {
+        val c = FakeController(KioskResult.Ok)
+        val k = kioskA.copy(features = kioskA.features.copy(lockVolume = true))
+        val a = KioskApplier(c, InMemoryKioskStateStore(), FakeHome(), home, onEntered = { error("workmanager") }) {
+            false
+        }
+        assertEquals(KioskResult.Ok, a.enter(k))
+        assertEquals(listOf(true), c.volume)
+        assertEquals(listOf(true), c.safeMode)
+    }
+
+    /** N3': a throwing onExited never skips the Safe Mode lift, the HOME release or the journal clear. */
+    @Test fun `a throwing onExited still finishes the exit`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+        val c = FakeController(KioskResult.Ok); val h = FakeHome()
+        val r = KioskApplier(c, store, h, home, journal = j, onExited = { error("workmanager") }) { true }
+            .exit(force = true)
+        assertEquals(KioskResult.Ok, r)
+        assertEquals(listOf(false), c.safeMode)
+        assertEquals(listOf("claim:false", "oem"), h.log)
+        assertNull(j.saved)
+    }
 }

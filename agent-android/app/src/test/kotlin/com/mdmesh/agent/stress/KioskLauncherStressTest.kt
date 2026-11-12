@@ -215,6 +215,33 @@ class KioskLauncherStressTest : KioskHarness() {
         assertEquals(1, events("kioskExit"))
     }
 
+    /**
+     * PR #192 re-review S1': right PIN, but the exit's journal entry can't be written (a full disk). The exit doesn't
+     * start, so the launcher neither leaves lock task, nor records "exited on-device", nor finishes.
+     */
+    @Test fun rightPinWithAnUnwritableExitJournalStaysInKiosk() {
+        launch(grid)
+        val dpm = app.getSystemService(android.app.admin.DevicePolicyManager::class.java)
+        val admin = android.content.ComponentName(app, com.mdmesh.agent.admin.AdminReceiver::class.java)
+        val homeAlias = android.content.ComponentName(app, "com.mdmesh.agent.KioskHomeAlias")
+        val full = object : com.mdmesh.core.kiosk.ExitJournal {
+            override fun pending(): com.mdmesh.core.kiosk.ExitJournal.Pending? = null
+            override fun begin(p: com.mdmesh.core.kiosk.ExitJournal.Pending) = false
+            override fun end() = true
+        }
+        activity.applier = com.mdmesh.core.kiosk.KioskApplier(
+            com.mdmesh.kiosk.LockTaskKioskController(dpm, admin), activity.store,
+            com.mdmesh.core.kiosk.AndroidKioskHomeSwitch(app, homeAlias), homeAlias,
+            journal = full, io = kotlinx.coroutines.Dispatchers.IO,
+        ) { true }
+        tapExitKiosk()
+        submitPin(pin)
+        assertEquals(grid, storedKiosk())
+        assertEquals(ActivityManager.LOCK_TASK_MODE_LOCKED, lockTaskState())
+        assertFalse(activity.isFinishing)
+        assertEquals(0, events("kioskExit"))
+    }
+
     /** Right PIN, then the activity is destroyed before the exit finished (rotation on polish, system kill). */
     @Test fun exitFinishesEvenIfActivityDestroyedRightAfterPin() {
         launch(grid)

@@ -39,7 +39,6 @@ import com.mdmesh.core.telemetry.EventSink
 import com.mdmesh.kiosk.CrashLoopGuard
 import com.mdmesh.kiosk.Boot
 import com.mdmesh.kiosk.ExitPinGate
-import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.kiosk.HoldStore
 import com.mdmesh.kiosk.KioskController
 import com.mdmesh.kiosk.KioskReturnPolicy
@@ -517,8 +516,9 @@ class KioskLauncherActivity : ComponentActivity() {
 
     /**
      * Exits [kiosk], the kiosk the PIN was checked against, and only it: the applier refuses inside its lock when
-     * another kiosk was entered first (a `kiosk.enter` landing as the PIN was submitted), and then nothing here
-     * changes either: lock task is left inside the applier's lock, only once the exit is going ahead.
+     * another kiosk was entered first (a `kiosk.enter` landing as the PIN was submitted), or when the exit's journal
+     * entry can't be written (a full disk), and then nothing here changes either: lock task is left and the exit
+     * recorded inside the applier's lock, only once the exit is going ahead, and only then does the launcher finish.
      */
     private fun doExit(kiosk: KioskApplyPayload) {
         // Same exit as the remote kiosk.exit: releases the lock-task policy, the volume lock and the HOME claim,
@@ -527,17 +527,21 @@ class KioskLauncherActivity : ComponentActivity() {
         // or it would stop between its steps. A process death mid-exit is finished at the next start (ExitJournal).
         lifecycleScope.launch {
             val exited = withContext(NonCancellable) {
-                val r = applier.exit(handBackHome = true, force = true, expected = kiosk) {
+                var started = false
+                applier.exit(handBackHome = true, force = true, expected = kiosk) {
+                    started = true
                     runCatching { if (isFinishing.not()) stopLockTask() }
                     events.record("kioskExit", "exited on-device")
                 }
-                if (r == KioskResult.Failed(KioskApplier.EXIT_SUPERSEDED)) return@withContext false
+                // Refused before it started: still in this kiosk (or the one that replaced it), still pinned.
+                if (!started) return@withContext false
                 // The launcher has already left lock task; publish that state without waiting for the periodic
                 // check-in.
                 CheckInWorker.scheduleAfterCurrent(applicationContext)
                 true
             }
-            // Superseded: the new kiosk's delivery redraws the launcher (and closes the prompt) as usual.
+            // Superseded: the new kiosk's delivery redraws the launcher (and closes the prompt) as usual. Journal not
+            // writable: the device stays in this kiosk, on this launcher (the failure is logged by the applier).
             if (exited) finish()
         }
     }

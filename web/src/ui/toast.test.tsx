@@ -2,8 +2,12 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider, useToast, type ToastApi } from './toast';
 
+const REAL_MATCH_MEDIA = Object.getOwnPropertyDescriptor(window, 'matchMedia')!;
+
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  Object.defineProperty(window, 'matchMedia', REAL_MATCH_MEDIA);
   vi.useRealTimers();
 });
 
@@ -28,9 +32,14 @@ const toastTitles = () =>
 const toastNode = (title: string) =>
   Array.from(document.querySelectorAll('.toast')).find((t) => t.querySelector('.t-title')?.firstChild?.textContent === title) ?? null;
 /** The pointer over the stack, as the browser's :hover reports it (jsdom tracks no hover). */
-function hover(on: boolean) {
+function hover(on: boolean, { canHover = true } = {}) {
   const el = stack();
   vi.spyOn(el, 'matches').mockImplementation((sel: string) => (sel === ':hover' ? on : Element.prototype.matches.call(el, sel)));
+  const real = REAL_MATCH_MEDIA.value as typeof window.matchMedia;
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    value: (q: string) => (q === '(hover: hover)' ? { ...real(q), matches: canHover } : real(q)),
+  });
 }
 
 describe('ToastProvider', () => {
@@ -240,6 +249,29 @@ describe('ToastProvider', () => {
     expect(toastTitles()).toEqual(['Oldest']);
     act(() => vi.advanceTimersByTime(1000));
     expect(toastTitles()).toEqual([]);
+  });
+
+  it('a success waiting behind "N more" runs out on schedule instead of showing late', () => {
+    vi.useFakeTimers();
+    const { api } = renderProvider();
+    act(() => api.push('ok', 'Saved', ''));
+    for (const t of ['A', 'B', 'C']) act(() => api.push('err', t, ''));
+    expect(toastTitles()).toEqual(['A', 'B', 'C']);
+    expect(stack().textContent).toContain('1 more');
+    act(() => vi.advanceTimersByTime(5000));
+    expect(stack().textContent).not.toContain('more');
+    // The failures go after their 30 s; "Saved" does not turn up after them.
+    act(() => vi.advanceTimersByTime(25_000));
+    expect(toastTitles()).toEqual([]);
+  });
+
+  it('on a touch screen, the :hover a tap leaves behind holds nothing', () => {
+    vi.useFakeTimers();
+    const { api } = renderProvider();
+    act(() => api.push('ok', 'Saved', ''));
+    hover(true, { canHover: false });
+    act(() => vi.advanceTimersByTime(5000));
+    expect(toastNode('Saved')).toBeNull();
   });
 
   it('a new toast never pushes the focused one out of view', () => {

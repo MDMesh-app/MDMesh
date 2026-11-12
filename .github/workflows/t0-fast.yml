@@ -267,6 +267,7 @@ jobs:
           path: |
             a11y-out/summary.txt
             a11y-out/axe.json
+            a11y-out/failures.txt
           if-no-files-found: ignore
 
   # NOTE: an emulator-based instrumentation matrix (the "version-treadmill guard" — boot the agent

@@ -76,9 +76,15 @@ export function useScrollStop(wrap: { current: HTMLDivElement | null }): boolean
   return stop;
 }
 
-/** The wrapper's attributes while it is a scroll stop: a named region in the Tab order. */
-export function scrollStopProps(stop: boolean, name?: string) {
-  return stop ? { tabIndex: 0, role: 'region', 'aria-label': name ? `Scrollable: ${name}` : 'Scrollable table' } : {};
+/**
+ * The wrapper's attributes while it is a scroll stop: a named region in the Tab order, named after the table: its
+ * `aria-label` ("Scrollable: Devices"), else the element its `aria-labelledby` points at, else "Scrollable table".
+ */
+export function scrollStopProps(stop: boolean, name?: string, labelledBy?: string) {
+  if (!stop) return {};
+  if (name) return { tabIndex: 0, role: 'region', 'aria-label': `Scrollable: ${name}` };
+  if (labelledBy) return { tabIndex: 0, role: 'region', 'aria-labelledby': labelledBy };
+  return { tabIndex: 0, role: 'region', 'aria-label': 'Scrollable table' };
 }
 
 /** Clicks on these inside a row are theirs, not the row's. */
@@ -110,13 +116,13 @@ export function Table<Row>({
   const colCount = columns.length + (selection ? 1 : 0);
   const wrapRef = useRef<HTMLDivElement>(null);
   const scrollStop = useScrollStop(wrapRef);
-  const name = (aria as { 'aria-label'?: string })['aria-label'];
+  const { 'aria-label': name, 'aria-labelledby': labelledBy } = aria as { 'aria-label'?: string; 'aria-labelledby'?: string };
 
   return (
     <div
       ref={wrapRef}
       className={cx('v2-tablewrap', className)}
-      {...scrollStopProps(scrollStop, name)}
+      {...scrollStopProps(scrollStop, name, labelledBy)}
     >
       <table
         className={cx('v2-table', `v2-table--edge${edge}`, rowPad === 10 && 'v2-table--pad10', onRowClick && 'v2-table--rowclick')}

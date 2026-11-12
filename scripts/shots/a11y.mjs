@@ -1,7 +1,9 @@
 // Accessibility sweep of the REAL built console against the shot fixtures: axe-core (WCAG 2.0/2.1/2.2 A + AA rules) on
 // every route and the key states (dialogs and menus open, validation errors, empty and error answers, device tabs), in
 // the light and dark themes at 1280 and 320 CSS px; plus reflow (no horizontal scroll at 320), page titles, small
-// targets and a keyboard walk (Tab order, visible and unobscured focus, Escape and focus return in dialogs).
+// targets and a keyboard walk (Tab order, visible and unobscured focus, Escape and focus return in dialogs). The walk
+// runs in both themes and every viewport, and Tabs through each page until focus wraps to its first stop (at most
+// TAB_CAP presses).
 //
 //   node scripts/shots/a11y.mjs [--dist <dir>] [--out <dir>] [--only <substring>] [--quick] [--keys] [--shots]
 //
@@ -451,7 +453,16 @@ async function sweep(browser, base) {
   return results;
 }
 
-/** Tab through a page: what gets focus, in what order, whether the focus indicator shows and is not covered. */
+/**
+ * Most Tab presses per page in the keyboard walk. A walk ends when focus comes back to its first stop, so this only
+ * cuts a page longer than any today (the config editor is the longest); a cut page says so in the log.
+ */
+const TAB_CAP = 400;
+
+/**
+ * Tab through a page, in each theme and viewport: what gets focus, in what order, whether the focus indicator shows
+ * and is not covered.
+ */
 async function keyboardWalk(browser, base) {
   const walks = [];
   const routes = [
@@ -467,18 +478,23 @@ async function keyboardWalk(browser, base) {
   ];
   fs.mkdirSync(path.join(out, 'aria'), { recursive: true });
   fs.mkdirSync(path.join(out, 'focus'), { recursive: true });
-  for (const vp of VIEWPORTS) {
+  for (const theme of THEMES) for (const vp of VIEWPORTS) {
+    if (vp.lightOnly && theme !== 'light') continue;
     for (const [name, route, user] of routes) {
       if (only && !name.includes(only)) continue;
-      const { context, page } = await openState(browser, base, { route, user }, 'light', vp);
-      if (vp.name === '1280') fs.writeFileSync(path.join(out, 'aria', `${name}.yml`), await page.locator('body').ariaSnapshot());
+      const { context, page } = await openState(browser, base, { route, user }, theme, vp);
+      if (vp.name === '1280' && theme === 'light') fs.writeFileSync(path.join(out, 'aria', `${name}.yml`), await page.locator('body').ariaSnapshot());
       await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
       const steps = [];
-      for (let i = 0; i < 80; i++) {
+      let wrapped = false;
+      for (let i = 0; i < TAB_CAP; i++) {
         await page.keyboard.press('Tab');
         const info = await page.evaluate(() => {
           const el = document.activeElement;
           if (!el || el === document.body) return null;
+          // Back at the first stop: the whole page has been walked.
+          if (window.__a11yFirstStop === el) return { wrapped: true };
+          window.__a11yFirstStop ??= el;
           const s = getComputedStyle(el);
           const r = el.getBoundingClientRect();
           const cx = Math.min(Math.max(r.left + r.width / 2, 0), innerWidth - 1);
@@ -509,21 +525,27 @@ async function keyboardWalk(browser, base) {
           steps.push({ tag: 'body' });
           continue;
         }
+        if (info.wrapped) {
+          wrapped = true;
+          break;
+        }
         steps.push(info);
         if (steps.length > 3 && steps.length % 25 === 0) {
-          await page.screenshot({ path: path.join(out, 'focus', `${name}-${vp.name}-${steps.length}.png`) });
+          await page.screenshot({ path: path.join(out, 'focus', `${name}-${theme}-${vp.name}-${steps.length}.png`) });
         }
       }
-      walks.push({ page: name, viewport: vp.name, steps });
+      walks.push({ page: name, theme, viewport: vp.name, steps, wrapped });
       const bad = steps.filter((s) => s.tag !== 'body' && (!s.visibleRing || s.covered || !s.inView));
-      console.log(`keys ${name.padEnd(16)} ${vp.name}: ${steps.length} stops, ${bad.length} without a visible/unobscured ring`);
+      console.log(`keys ${name.padEnd(16)} ${theme.padEnd(5)} ${vp.name}: ${steps.length} stops${wrapped ? '' : ` (cut at ${TAB_CAP})`}, ${bad.length} without a visible/unobscured ring`);
       await context.close();
     }
   }
 
-  // Dialogs: Escape closes and focus returns to the trigger.
+  // Dialogs, menus and the inline rename: the trigger opens it with focus inside, Escape closes it and focus returns
+  // to the trigger. `open` is what the trigger opens (a dialog or menu unless said).
+  const POPUP = 'dialog[open], [role=menu]';
   const dialogs = [
-    ['/devices/WH-SCAN-07', 'button', 'Rename device'],
+    ['/devices/WH-SCAN-07', 'button', 'Rename device', 'form.v2-device-rename'],
     ['/devices/WH-SCAN-07', 'button', 'Send alert…'],
     ['/devices', 'button', 'More actions for KIOSK-FRONT'],
     ['/configurations', 'button', 'New configuration'],
@@ -532,7 +554,7 @@ async function keyboardWalk(browser, base) {
     ['/settings', 'button', /Change password/],
   ];
   const escapes = [];
-  for (const [route, role, label] of dialogs) {
+  for (const [route, role, label, open = POPUP] of dialogs) {
     const { context, page } = await openState(browser, base, { route }, 'light', VIEWPORTS[0]);
     const trigger = page.getByRole(role, { name: label }).first();
     let result;
@@ -540,11 +562,11 @@ async function keyboardWalk(browser, base) {
       await trigger.focus();
       await page.keyboard.press('Enter');
       await page.waitForTimeout(400);
-      const opened = await page.evaluate(() => !!document.querySelector('dialog[open], [role=menu]'));
-      const focusInside = await page.evaluate(() => !!document.activeElement?.closest('dialog[open], [role=menu]'));
+      const opened = await page.evaluate((sel) => !!document.querySelector(sel), open);
+      const focusInside = await page.evaluate((sel) => !!document.activeElement?.closest(sel), open);
       await page.keyboard.press('Escape');
       await page.waitForTimeout(400);
-      const closed = await page.evaluate(() => !document.querySelector('dialog[open], [role=menu]'));
+      const closed = await page.evaluate((sel) => !document.querySelector(sel), open);
       const returned = await trigger.evaluate((el) => el === document.activeElement);
       result = { route, label: String(label), opened, focusInside, closed, returned };
     } catch (e) {
@@ -612,7 +634,8 @@ const EXCEPTIONS = new Set([]);
  * Everything that fails the run: axe violations; a state whose setup failed (never checked); and the layout and
  * keyboard checks the sweep measures: horizontal scroll (1.4.10), text clipped by WCAG text spacing (1.4.12), an
  * uncaught page error, and with --keys a Tab stop without a visible, in-view, uncovered ring (2.4.7/2.4.11) or a
- * dialog/menu that Escape doesn't close or that doesn't return focus.
+ * dialog/menu/inline editor whose trigger doesn't open it with focus inside, that Escape doesn't close, or that
+ * doesn't return focus to its trigger.
  */
 function failures(results, keys) {
   const out = [];
@@ -629,10 +652,14 @@ function failures(results, keys) {
   }
   for (const w of keys?.walks ?? []) {
     const bad = w.steps.filter((s) => s.tag !== 'body' && (!s.visibleRing || s.covered || !s.inView));
-    for (const s of bad) add(`keys ${w.page}/${w.viewport}`, `focus not visible or covered: ${s.tag} "${s.name}"`);
+    for (const s of bad) add(`keys ${w.page}/${w.theme}/${w.viewport}`, `focus not visible or covered: ${s.tag} "${s.name}"`);
   }
   for (const e of keys?.escapes ?? []) {
-    if (e.error || !e.closed || !e.returned) add(`esc ${e.route}`, `${e.label}: ${e.error ?? `closed=${e.closed} returned=${e.returned}`}`);
+    const ok = !e.error && e.opened && e.focusInside && e.closed && e.returned;
+    if (!ok) {
+      const facts = `opened=${e.opened} focusInside=${e.focusInside} closed=${e.closed} returned=${e.returned}`;
+      add(`esc ${e.route}`, `${e.label}: ${e.error ?? facts}`);
+    }
   }
   return out;
 }

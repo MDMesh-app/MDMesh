@@ -38,6 +38,8 @@ const VISIBLE = 3;
 /** On a screen this narrow, two, so the stack leaves most of the focused field in view. */
 const NARROW_QUERY = '(max-width: 360px)';
 const VISIBLE_NARROW = 2;
+/** A pointer that hovers (a mouse or trackpad, not a finger). */
+const HOVER_QUERY = '(hover: hover)';
 /** How long an announcement stays in its live region (it has been read by then; the toast stays on screen). */
 const ANNOUNCE_MS = 7000;
 
@@ -47,7 +49,8 @@ const ANNOUNCE_MS = 7000;
  * Each message is announced once as it arrives, failures from one assertive live region and the rest from one polite
  * region (4.1.3; plain aria-live, so the empty regions add no alert/status roles to every page); the stack itself is
  * not live. A repeated message shows as one toast with a count, announced again; three show at once (two at 360px or less), in
- * arrival order.
+ * arrival order. A failure waiting behind "N more" gets its full time once it shows; a success or warning runs out on
+ * schedule even out of view (it was announced; shown late it would be out of context). Only a hovering pointer holds.
  */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -65,9 +68,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   // Asked when a toast comes due, never remembered: a toast removed under the pointer or with focus fires no
   // pointerleave or blur, so stored flags could hold the stack for good.
+  // The pointer holds only where there is one: a touch browser leaves :hover on whatever was last tapped, which would
+  // hold the stack after a tap on Dismiss until the next tap elsewhere.
   const held = useCallback(() => {
     const wrap = wrapRef.current;
-    return !!wrap && (wrap.matches(':hover') || wrap.contains(document.activeElement));
+    if (!wrap) return false;
+    const hovered = !!window.matchMedia?.(HOVER_QUERY).matches && wrap.matches(':hover');
+    return hovered || wrap.contains(document.activeElement);
   }, []);
 
   // Each shown toast's running timer, by a token: a toast that goes out of view (behind "N more") drops its token, so
@@ -166,20 +173,22 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     focusedToast && !toasts.slice(-cap).includes(focusedToast)
       ? [focusedToast, ...toasts.filter((t) => t !== focusedToast).slice(-(cap - 1))]
       : toasts.slice(-cap);
-  // A toast's time runs only while it shows: one waiting behind "N more" can't expire unread.
-  const shownIds = shown.map((t) => `${t.id}:${t.kind}`).join(',');
+  // A failure's time runs only while it shows: one waiting behind "N more" can't expire unread. A success or warning
+  // keeps its time out of view too, so it never shows long after the newer messages it came before.
+  const timed = toasts.filter((t) => t.kind !== 'err' || shown.includes(t));
+  const timedIds = timed.map((t) => `${t.id}:${t.kind}`).join(',');
   useEffect(() => {
-    const ids = new Set(shown.map((t) => t.id));
+    const ids = new Set(timed.map((t) => t.id));
     for (const id of [...running.current.keys()]) if (!ids.has(id)) running.current.delete(id);
-    for (const t of shown) {
+    for (const t of timed) {
       if (running.current.has(t.id)) continue;
       const token = {};
       running.current.set(t.id, token);
       expire(t.id, TOAST_MS[t.kind], token);
     }
-    // shownIds stands for `shown`, which is a new array every render
+    // timedIds stands for `timed`, which is a new array every render
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shownIds, expire]);
+  }, [timedIds, expire]);
   const more = toasts.length - shown.length;
   const render = (t: Toast) => (
     <div key={t.id} data-toast={t.id} className={`toast ${t.kind}`}>

@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ApiError } from '../api/client';
 import { listEnrolledSince, type EnrolledDevice } from '../api/enroll';
-import { isOnline } from '../data/presence';
+import { isOnline, ONLINE_WINDOW_MS } from '../data/presence';
 
 /** How often the page looks for new devices while it is visible. */
 export const ARRIVALS_POLL_MS = 5_000;
@@ -134,4 +134,42 @@ export function useArrivals(since: number | undefined): ArrivalsWatch {
 export function arrivalChanges(prev: readonly Arrival[], next: readonly Arrival[]): Arrival[] {
   const before = new Map(prev.map((a) => [a.number, a.state]));
   return next.filter((a) => before.get(a.number) !== a.state);
+}
+
+/** What the page says of a device in each state: its pill, and the announcement of one device. */
+export const ARRIVAL_LABEL: Record<ArrivalState, string> = {
+  settingUp: 'Enrolled, getting its configuration…',
+  online: 'Online',
+  silent: 'Enrolled, hasn’t checked in yet',
+  offline: `Enrolled, but not heard from in the last ${ONLINE_WINDOW_MS / 60_000} minutes`,
+};
+
+/** The same, said of several devices at once ("2 devices are online."). */
+const ARRIVAL_PLURAL: Record<ArrivalState, string> = {
+  settingUp: 'are getting their configuration',
+  online: 'are online',
+  silent: 'haven’t checked in yet',
+  offline: `haven’t been heard from in the last ${ONLINE_WINDOW_MS / 60_000} minutes`,
+};
+
+/**
+ * What a screen reader hears after a look, as sentences: one device by name, several counted (a batch code can
+ * bring dozens in one look, and a sentence each would bury the page). New devices first, then changes of state,
+ * grouped by state in the order they come.
+ */
+export function arrivalNews(prev: readonly Arrival[], next: readonly Arrival[]): string[] {
+  const one = (a: Arrival) => `${a.name}: ${ARRIVAL_LABEL[a.state]}.`;
+  const known = new Set(prev.map((a) => a.number));
+  const changed = arrivalChanges(prev, next);
+  const fresh = changed.filter((a) => !known.has(a.number));
+  const moved = changed.filter((a) => known.has(a.number));
+  const lines: string[] = [];
+  if (fresh.length === 1) lines.push(one(fresh[0]));
+  else if (fresh.length > 1) lines.push(`${fresh.length} devices enrolled.`);
+  const byState = new Map<ArrivalState, Arrival[]>();
+  for (const a of moved) byState.set(a.state, [...(byState.get(a.state) ?? []), a]);
+  for (const [state, list] of byState) {
+    lines.push(list.length === 1 ? one(list[0]) : `${list.length} devices ${ARRIVAL_PLURAL[state]}.`);
+  }
+  return lines;
 }

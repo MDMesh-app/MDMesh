@@ -4,7 +4,7 @@ import { getConfigurations, type Configuration } from '../api/configurations';
 import { mintEnrollToken, revokeAllEnrollTokens } from '../api/enroll';
 import { getUpdateStatus, type UpdateStatus } from '../api/updates';
 import { Link } from 'react-router';
-import { arrivalChanges, useArrivals, type Arrival, type ArrivalState } from '../enroll/arrivals';
+import { ARRIVAL_LABEL, arrivalNews, useArrivals, type Arrival } from '../enroll/arrivals';
 import { addressProblem, wifiProblem } from '../enroll/checks';
 import { agentApkUrl, buildProvisioningPayload, serverBaseUrl, type WifiSecurity } from '../enroll/provisioning';
 import {
@@ -173,31 +173,48 @@ function qrSteps(wifiInCode: boolean): ReactNode[] {
   ];
 }
 
-const ARRIVAL_LABEL: Record<ArrivalState, string> = {
-  settingUp: 'Enrolled, getting its configuration…',
-  online: 'Online',
-  silent: 'Enrolled, hasn’t checked in yet',
-  offline: 'Enrolled, but not heard from since',
-};
+/** How long a piece of arrival news stays in the live region: read by then, and not left for browse mode to find. */
+const NEWS_MS = 7000;
+
+interface News {
+  id: number;
+  text: string;
+  /** When it leaves the live region. */
+  until: number;
+}
 
 /**
- * What a screen reader hears about the devices enrolling: each new device or change of state once, as it happens, and
- * that the page stopped looking. `active` false (no code yet, a server without the list): nothing.
+ * What a screen reader hears about the devices enrolling: each new device or change of state once, as it happens
+ * (several at once counted), and that the page stopped looking. Each piece is its own keyed node that leaves after
+ * {@link NEWS_MS}, as the toasts' announcements do: the same sentence twice (a second stop, two "Scanner: Online."
+ * looks apart) is a new node, so it is read again. `active` false (no code yet, a server without the list): nothing.
+ * `clear` empties it (Look again: the stop it says no longer holds).
  */
-function useArrivalNews(arrivals: Arrival[], active: boolean, watching: boolean): string {
-  const [news, setNews] = useState('');
+function useArrivalNews(arrivals: Arrival[], active: boolean, watching: boolean): { news: News[]; clear: () => void } {
+  const [news, setNews] = useState<News[]>([]);
+  const seq = useRef(0);
   const seen = useRef<Arrival[]>([]);
   const wasWatching = useRef(watching);
   useEffect(() => {
     if (!active) return;
-    const changed = arrivalChanges(seen.current, arrivals);
+    const lines = arrivalNews(seen.current, arrivals);
     seen.current = arrivals;
-    const lines = changed.map((a) => `${a.name}: ${ARRIVAL_LABEL[a.state]}.`);
     if (wasWatching.current && !watching) lines.push('Stopped looking for new devices after 30 minutes.');
     wasWatching.current = watching;
-    if (lines.length) setNews(lines.join(' '));
+    if (!lines.length) return;
+    const id = ++seq.current;
+    setNews((n) => [...n.slice(-4), { id, text: lines.join(' '), until: Date.now() + NEWS_MS }]);
   }, [arrivals, active, watching]);
-  return news;
+  useEffect(() => {
+    if (!news.length) return;
+    const t = setTimeout(
+      () => setNews((n) => n.filter((x) => x.until > Date.now())),
+      Math.max(0, news[0].until - Date.now()) + 1,
+    );
+    return () => clearTimeout(t);
+  }, [news]);
+  const clear = useCallback(() => setNews([]), []);
+  return { news, clear };
 }
 
 /** Enroll. Classic: pages/EnrollPage.tsx. */
@@ -239,9 +256,10 @@ export function EnrollPage() {
   /** Server time of the first code made on this visit: devices enrolled since then show up on the page. */
   const [since, setSince] = useState<number | undefined>(undefined);
   const { arrivals, watching, unsupported: arrivalsUnsupported, watchAgain } = useArrivals(since);
-  const arrivalNews = useArrivalNews(arrivals, since != null && !arrivalsUnsupported, watching);
+  const { news: arrivalSaid, clear: clearArrivalNews } = useArrivalNews(arrivals, since != null && !arrivalsUnsupported, watching);
   const arrivalsHead = useRef<HTMLHeadingElement>(null);
   const lookAgain = () => {
+    clearArrivalNews();
     watchAgain();
     // "Look again" goes away when the page looks again: keep focus on the list instead of losing it to the page.
     arrivalsHead.current?.focus();
@@ -724,9 +742,11 @@ export function EnrollPage() {
         </div>
       ) : null}
       {/* Not the list: a look every 5 s would re-read all of it. Each new device or change of state, once. */}
-      <span className="v2-visually-hidden" role="status">
-        {arrivalNews}
-      </span>
+      <div className="v2-visually-hidden" role="status">
+        {arrivalSaid.map((n) => (
+          <p key={n.id}>{n.text}</p>
+        ))}
+      </div>
       <div className="v2-enroll__stop">
         <span className="v2-enroll__help">
           A code shared further than meant? Stop every code that still works; enrolled devices stay enrolled.

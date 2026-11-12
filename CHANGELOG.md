@@ -103,7 +103,12 @@ Fixes
 - Console accessibility: inputs, icon buttons, toggles, status dots and bars reach 3:1 contrast in both themes, help
   and status text is darker, the selected tab, section and page are outlined, and disabled settings stay readable.
 - Console: a toast waits while you point at it or tab into it, can be dismissed (Escape too), and a failure stays 30
-  seconds. A repeated message shows once with a count, at most three show at once, and they sit above the Save bar.
+  seconds. A repeated message shows once with a count. Three show at once (two on a phone 360px wide or less) and the
+  rest wait behind "N more": a failure gets its full 30 seconds once it shows, a success or warning goes on time. They
+  sit above the Save bar.
+- Enroll, for screen readers: each device that enrolls or changes state is announced once (several at once are
+  counted), and so is the page stopping looking, each time. The Wi-Fi notes are read as they change, including when
+  Security goes from Open to WPA.
 - Console: the device's Location tab lists its locations under the map, for keyboards and screen readers, and a
   table that scrolls sideways can be reached with Tab.
 - Console on phones: device names and reasons wrap instead of being cut off, main buttons and menu items are 44px

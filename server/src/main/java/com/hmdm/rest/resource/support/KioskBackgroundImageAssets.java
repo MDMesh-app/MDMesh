@@ -51,7 +51,7 @@ public class KioskBackgroundImageAssets {
     static final String NOT_FOUND = "The background image is not an uploaded file of this account.";
     /** A configuration copy whose source's image was deleted meanwhile. */
     public static final String COPY_SOURCE_DELETED = "That configuration's background image was deleted meanwhile. Try again.";
-    static final String BEING_EDITED = "That image is being changed in Files right now. Try again in a moment.";
+    public static final String BEING_EDITED = "That image is being changed in Files right now. Try again in a moment.";
     static final String DELETED = "That image was deleted meanwhile. Choose or upload an image again.";
     static final String NOT_A_GALLERY_IMAGE = "Only kiosk background images can be deleted here. Use Files for other files.";
     static final String IN_USE = "This image is used by a configuration. Choose another image there first, then delete it.";
@@ -345,14 +345,25 @@ public class KioskBackgroundImageAssets {
     /** Files being changed through Files → edit: no save takes hold of them meanwhile. */
     private final java.util.Set<Integer> editing = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
+    /** How a {@link #beginEdit} went. */
+    public enum EditStart {
+        /** The edit may run; call {@link #endEdit} when it is done. */
+        STARTED,
+        /** A configuration save holds the file. */
+        HELD,
+        /** Another edit of the file is running. */
+        EDITING
+    }
+
     /**
-     * Starts a Files → edit of {@code fileId}: refused (false) while a save holds it; otherwise no save can take hold of
-     * it until {@link #endEdit}. Only this check runs under the lock; the edit's file I/O runs outside it.
+     * Starts a Files → edit of {@code fileId}: refused while a save holds it or another edit runs; otherwise no save
+     * can take hold of it, and no delete removes it, until {@link #endEdit}. Only this check runs under the lock; the
+     * edit's file I/O runs outside it. The caller checks first that the file belongs to the current account.
      */
-    public boolean beginEdit(int fileId) {
+    public EditStart beginEdit(int fileId) {
         synchronized (COPY_LOCK) {
-            if (heldByOthers(fileId, null) || !editing.add(fileId)) return false;
-            return true;
+            if (heldByOthers(fileId, null)) return EditStart.HELD;
+            return editing.add(fileId) ? EditStart.STARTED : EditStart.EDITING;
         }
     }
 
@@ -371,11 +382,13 @@ public class KioskBackgroundImageAssets {
      * Runs {@code action} under the lock saves take hold of files with, unless a save holds {@code fileId}: the Files
      * page's Remove goes through here, so it can't remove a file a save is about to commit.
      *
-     * @return the action's result, or {@code whenHeld} (nothing run) when a save holds the file
+     * @return the action's result, {@code whenHeld} (nothing run) when a save holds the file, or {@code whenEditing}
+     * (nothing run) while a Files → edit of it runs
      */
-    public <T> T unlessHeld(int fileId, java.util.function.Supplier<T> action, T whenHeld) {
+    public <T> T unlessHeld(int fileId, java.util.function.Supplier<T> action, T whenHeld, T whenEditing) {
         synchronized (COPY_LOCK) {
             if (heldByOthers(fileId, null)) return whenHeld;
+            if (editing.contains(fileId)) return whenEditing;
             return action.get();
         }
     }
@@ -559,6 +572,7 @@ public class KioskBackgroundImageAssets {
             if (!KIOSK_NAME.matcher(file.getFilePath() == null ? "" : file.getFilePath().replace('\\', '/')).find()) {
                 throw new IllegalArgumentException(NOT_A_GALLERY_IMAGE);
             }
+            if (editing.contains(fileId)) throw new IllegalArgumentException(BEING_EDITED);
             if (heldByOthers(fileId, null) || inUse.test(fileId)) throw new IllegalArgumentException(IN_USE);
             uploadedFiles.remove(fileId);
             if (file.getFilePath() != null && uploadedFiles.getByPath(customer.getId(), file.getFilePath()) == null) {

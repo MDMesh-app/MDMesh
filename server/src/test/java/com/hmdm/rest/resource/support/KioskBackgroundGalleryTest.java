@@ -232,11 +232,11 @@ public class KioskBackgroundGalleryTest {
         c.setBackgroundImageFileId(1);
         KioskBackgroundImageAssets.Applied save = assets.apply(c, null);
         boolean[] ran = {false};
-        assertEquals("held", assets.unlessHeld(1, () -> { ran[0] = true; return "removed"; }, "held"));
+        assertEquals("held", assets.unlessHeld(1, () -> { ran[0] = true; return "removed"; }, "held", "editing"));
         assertFalse(ran[0]);
         save.release();
         save.release(); // idempotent
-        assertEquals("removed", assets.unlessHeld(1, () -> { ran[0] = true; return "removed"; }, "held"));
+        assertEquals("removed", assets.unlessHeld(1, () -> { ran[0] = true; return "removed"; }, "held", "editing"));
     }
 
     private static com.hmdm.persistence.domain.Configuration replace(int fileId) {
@@ -353,7 +353,7 @@ public class KioskBackgroundGalleryTest {
     @Test
     public void filesEditAndSavesExcludeEachOther() throws Exception {
         host(1, "kiosk-aaaaaaaaaaaa-beach.jpg", KioskImageMetadataTest.image("jpg", 4, 4), 1, 1);
-        assertTrue(assets.beginEdit(1));
+        assertEquals(KioskBackgroundImageAssets.EditStart.STARTED, assets.beginEdit(1));
         try {
             assets.apply(replace(1), null);
             fail("expected a refusal");
@@ -363,10 +363,43 @@ public class KioskBackgroundGalleryTest {
             assets.endEdit(1);
         }
         KioskBackgroundImageAssets.Applied save = assets.apply(replace(1), null);
-        assertFalse(assets.beginEdit(1));
+        assertEquals(KioskBackgroundImageAssets.EditStart.HELD, assets.beginEdit(1));
         save.release();
-        assertTrue(assets.beginEdit(1));
+        assertEquals(KioskBackgroundImageAssets.EditStart.STARTED, assets.beginEdit(1));
+        // A second edit of the same file waits for the first, and doesn't end it.
+        assertEquals(KioskBackgroundImageAssets.EditStart.EDITING, assets.beginEdit(1));
         assets.endEdit(1);
+    }
+
+    /** A gallery delete never removes a file a Files → edit is changing. */
+    @Test
+    public void refusesToDeleteAnImageBeingEdited() throws Exception {
+        host(1, "kiosk-aaaaaaaaaaaa-beach.jpg", KioskImageMetadataTest.image("jpg", 4, 4), 1, 1);
+        assertEquals(KioskBackgroundImageAssets.EditStart.STARTED, assets.beginEdit(1));
+        try {
+            assets.deleteUnused(1, id -> false);
+            fail("expected a refusal");
+        } catch (IllegalArgumentException e) {
+            assertEquals(KioskBackgroundImageAssets.BEING_EDITED, e.getMessage());
+        } finally {
+            assets.endEdit(1);
+        }
+        assertTrue(files.removed.isEmpty());
+        assertTrue(new File(tenant, "kiosk-aaaaaaaaaaaa-beach.jpg").exists());
+        assets.deleteUnused(1, id -> false);
+        assertEquals(Collections.singletonList(1), files.removed);
+    }
+
+    /** The Files page's Remove waits for a Files → edit of the same file as well. */
+    @Test
+    public void filesRemoveWaitsForAnEditOfTheFile() throws Exception {
+        host(1, "kiosk-aaaaaaaaaaaa-beach.jpg", KioskImageMetadataTest.image("jpg", 4, 4), 1, 1);
+        assets.beginEdit(1);
+        boolean[] ran = {false};
+        assertEquals("editing", assets.unlessHeld(1, () -> { ran[0] = true; return "removed"; }, "held", "editing"));
+        assertFalse(ran[0]);
+        assets.endEdit(1);
+        assertEquals("removed", assets.unlessHeld(1, () -> { ran[0] = true; return "removed"; }, "held", "editing"));
     }
 
     @Test

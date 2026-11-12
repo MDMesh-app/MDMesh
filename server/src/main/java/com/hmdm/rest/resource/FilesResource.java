@@ -184,12 +184,28 @@ public class FilesResource {
             return Response.PERMISSION_DENIED();
         }
 
+        // Only a file of this account, checked before anything below looks at the file's state.
+        if (file.getId() == null || !isOwnFile(file.getId())) {
+            return Response.PERMISSION_DENIED();
+        }
+
         return SecurityContext.get().getCurrentUser().map(u -> kioskImages == null
                 ? removeUnlessUsed(u, file)
                 // Under the lock a configuration save takes hold of its background image with: never a file a save
-                // is about to commit.
-                : kioskImages.unlessHeld(file.getId(), () -> removeUnlessUsed(u, file), Response.FILE_USED())
+                // is about to commit, or one a Files → edit is changing.
+                : kioskImages.unlessHeld(file.getId(), () -> removeUnlessUsed(u, file), Response.FILE_USED(),
+                        Response.ERROR(com.hmdm.rest.resource.support.KioskBackgroundImageAssets.BEING_EDITED))
         ).orElse(Response.PERMISSION_DENIED());
+    }
+
+    /** The file is a row of the current account (the DAO refuses another account's row). */
+    private boolean isOwnFile(int fileId) {
+        try {
+            return uploadedFileDAO.getById(fileId) != null;
+        } catch (SecurityException e) {
+            logger.warn("Refused file {}: not a file of this customer", fileId);
+            return false;
+        }
     }
 
     /** The kiosk background images, whose saves hold their file until written (see removeFile). */
@@ -262,7 +278,13 @@ public class FilesResource {
             // Not while a configuration save holds the file: it has hashed these bytes. While the edit runs (its file
             // I/O outside the lock), no save can take hold of it. A file a configuration already uses as its
             // background is refused below in any case (its digest is pinned).
-            if (!kioskImages.beginEdit(uploadedFile.getId())) return Response.FILE_USED();
+            // Only a file of this account, checked before the edit looks at or marks the file's state.
+            if (!isOwnFile(uploadedFile.getId())) return Response.PERMISSION_DENIED();
+            switch (kioskImages.beginEdit(uploadedFile.getId())) {
+                case HELD: return Response.FILE_USED();
+                case EDITING: return Response.ERROR(com.hmdm.rest.resource.support.KioskBackgroundImageAssets.BEING_EDITED);
+                default: break;
+            }
             try {
                 return updateFileInternal(uploadedFile);
             } finally {

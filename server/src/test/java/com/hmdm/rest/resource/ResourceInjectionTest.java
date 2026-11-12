@@ -70,7 +70,11 @@ public class ResourceInjectionTest {
         // As HMDMApplication does on container startup.
         GuiceBridge.getGuiceBridge().initializeGuiceBridge(locator);
         locator.getService(GuiceIntoHK2Bridge.class).bridgeGuiceInjector(injector);
-        return locator.createAndInitialize(resource);
+        // The instance Jersey serves requests with: the @Singleton resource its ApplicationHandler bound, built on
+        // first use (after startup, as in production).
+        Object instance = locator.getService(resource);
+        if (instance == null) throw new AssertionError(resource.getSimpleName() + " is not bound by Jersey");
+        return instance;
     }
 
     private static Object field(Object o, String name) throws Exception {

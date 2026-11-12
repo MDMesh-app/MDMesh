@@ -59,10 +59,13 @@ class KioskReturnPolicy(
         return if (held) Action.HOLD else check()
     }
 
-    /** Someone chose to open the app again, or the kiosk ended: start counting afresh. */
+    /**
+     * Someone chose to open the app again, or the kiosk ended: start counting afresh. Writes only what there is to
+     * clear: the launcher calls this on every no-kiosk state, on the main thread.
+     */
     fun retry() {
         guard.reset()
-        holds.writeHeld(null)
+        if (holds.heldBoot != null) holds.writeHeld(null)
     }
 
     private fun check(): Action {

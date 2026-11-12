@@ -151,4 +151,32 @@ class KioskReturnPolicyTest {
         uptime = 30_000L
         assertEquals(Action.REOPEN, noBootCount().onApplied(changed = false))
     }
+
+    /**
+     * PR #192 N3: the launcher calls retry() on every no-kiosk delivery, on the main thread; with nothing counted or
+     * held it must write nothing (each write is a synchronous commit).
+     */
+    @Test
+    fun `retry with nothing counted or held writes nothing`() {
+        var writes = 0
+        val faults = object : FaultStore by store {
+            override fun write(counter: Int, lastFaultTime: Long) { writes++; store.write(counter, lastFaultTime) }
+        }
+        val holdStore = InMemoryHoldStore()
+        val holds = object : HoldStore by holdStore {
+            override fun writeHeld(boot: Long?, elapsed: Long) { writes++; holdStore.writeHeld(boot, elapsed) }
+        }
+        val p = KioskReturnPolicy(CrashLoopGuard(faults) { nowMs }, holds)
+        repeat(3) { p.retry() }
+        assertEquals("idle deliveries write nothing", 0, writes)
+        repeat(CrashLoopGuard.LOOP_CRASHES + 1) { nowMs += 1_000; p.onReturned() }
+        assertTrue(p.held)
+        writes = 0
+        p.retry()
+        assertFalse(p.held)
+        assertEquals("one reset, one hold cleared", 2, writes)
+        writes = 0
+        p.retry()
+        assertEquals(0, writes)
+    }
 }

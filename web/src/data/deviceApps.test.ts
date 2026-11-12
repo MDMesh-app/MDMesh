@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CommandHistoryItem } from '../api/commands';
-import { appsCsv, byLabel, csvField, filterApps, latestScan, normaliseApps, scanProgress } from './deviceApps';
+import { appsCsv, byLabel, csvField, filterApps, latestScan, normaliseApps, scanProgress, appChange, appResultPending } from './deviceApps';
 
 const scan = (id: number, status: string, detail: string | null, completedAt?: number): CommandHistoryItem => ({
   id,
@@ -26,9 +26,9 @@ describe('normaliseApps', () => {
   });
 
   it('drops entries without a package, and a second entry for the same one', () => {
-    expect(normaliseApps([null, 'a', { label: 'L' }, { pkg: '' }, { pkg: 3 }, { pkg: 'a', label: 'A' }, { pkg: 'a', label: 'B' }])).toEqual([
-      { pkg: 'a', label: 'A', system: false, versionName: undefined, versionCode: undefined },
-    ]);
+    expect(normaliseApps([null, 'a', { label: 'L' }, { pkg: '' }, { pkg: 3 }, { pkg: 'a', label: 'A' }, { pkg: 'a', label: 'B' }])).toEqual(
+      [{ pkg: 'a', label: 'A', system: false, versionName: undefined, versionCode: undefined }],
+    );
     expect(normaliseApps({ pkg: 'a' })).toEqual([]);
   });
 });
@@ -120,5 +120,33 @@ describe('CSV export', () => {
       { pkg: 'com.s', label: '=cmd', system: true },
     ]);
     expect(appsCsv(apps)).toBe('name,package,versionName,versionCode,system\r\n"A, the app",com.a,1.0,3,no\r\n\'=cmd,com.s,,,yes\r\n');
+  });
+});
+
+describe('full inventory and refresh', () => {
+  it('prefers a complete scan to a newer kiosk scan and keeps hidden apps', () => {
+    const full = scan(
+      1,
+      'done',
+      JSON.stringify({ includeAll: true, appActions: true, apps: [{ pkg: 'com.hidden', hidden: true, protectedReason: 'Kiosk' }] }),
+      100,
+    );
+    const got = latestScan([scan(2, 'done', result([{ pkg: 'com.launcher' }]), 200), full], true);
+    expect(got?.includeAll).toBe(true);
+    expect(got?.apps[0]).toMatchObject({ pkg: 'com.hidden', hidden: true, protectedReason: 'Kiosk' });
+  });
+  it('only successful install, removal and hiding changes request a scan', () => {
+    for (const type of ['app.install', 'app.uninstall', 'app.setHidden']) {
+      for (const status of ['pending', 'delivered', 'failed', 'unsupported'])
+        expect(appChange([{ id: 1, type, status, completedAt: 20 }], 10)).toBeUndefined();
+      expect(appChange([{ id: 1, type, status: 'done', completedAt: 20 }], 10)?.id).toBe(1);
+      expect(appChange([{ id: 1, type, status: 'done', completedAt: 20 }], 30)).toBeUndefined();
+    }
+  });
+  it('delivered app operations and the requested scan need result sync, unrelated commands do not', () => {
+    expect(appResultPending([{ id: 3, type: 'app.setHidden', status: 'delivered', deliveredAt: 20 }], 10, null)).toBe(true);
+    expect(appResultPending([{ id: 3, type: 'app.install', status: 'delivered', deliveredAt: 5 }], 10, null)).toBe(false);
+    expect(appResultPending([{ id: 3, type: 'apps.scan', status: 'delivered' }], 10, '3')).toBe(true);
+    expect(appResultPending([{ id: 3, type: 'device.lock', status: 'delivered', deliveredAt: 20 }], 10, null)).toBe(false);
   });
 });

@@ -1,5 +1,6 @@
 package com.mdmesh.core.capability
 
+import com.mdmesh.proto.AppManagement
 import com.mdmesh.proto.DeviceAction
 import com.mdmesh.proto.OemCapability
 import com.mdmesh.proto.RemoteControlCapability
@@ -14,14 +15,18 @@ import org.junit.Test
  */
 class CapabilityCollectorTest {
 
-    private fun collector(deviceActionKeys: List<String> = listOf("lock"), isDeviceOwner: () -> Boolean) = CapabilityCollector(
+    private fun collector(
+        deviceActionKeys: List<String> = listOf("lock"),
+        appKeys: List<String> = listOf("silentInstall"),
+        isDeviceOwner: () -> Boolean,
+    ) = CapabilityCollector(
         agentVersion = "0.2.5",
         agentPackage = "com.mdmesh.agent",
         isDeviceOwner = isDeviceOwner,
         policyKeys = { listOf("wifi", "bluetooth") },
         remoteControl = { RemoteControlCapability() },
         oem = { OemCapability() },
-        deviceOwnerAppManagementKeys = listOf("silentInstall"),
+        deviceOwnerAppManagementKeys = appKeys,
         deviceActionKeys = deviceActionKeys,
         buildInfo = BuildInfo(sdkInt = 33, release = "13", manufacturer = "Test", model = "Unit"),
     )
@@ -41,6 +46,18 @@ class CapabilityCollectorTest {
         assertTrue(after.device.isDeviceOwner)
         assertEquals(listOf("silentInstall"), after.capabilities.appManagement)
         assertEquals(2, probes)
+    }
+
+    @Test
+    fun `device owner advertises app actions and runtime permissions together after enrollment`() {
+        var deviceOwner = false
+        val collector = collector(appKeys = AppManagement.DEVICE_OWNER_KEYS) { deviceOwner }
+        assertTrue(collector.collect("dev-merged").capabilities.appManagement.isEmpty())
+        deviceOwner = true
+        assertEquals(
+            setOf("silentInstall", "silentUninstall", "setHidden", "runtimePermissions"),
+            collector.collect("dev-merged").capabilities.appManagement.toSet(),
+        )
     }
 
     @Test

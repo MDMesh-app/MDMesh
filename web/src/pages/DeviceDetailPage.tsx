@@ -670,7 +670,7 @@ export function DeviceDetailPage() {
     [queue],
   );
 
-  const appScan = useAppScan(number, history, queue);
+  const appScan = useAppScan(number, history, queue, canEdit);
 
   function runAction(t: CommandTemplateExt) {
     if (t.key === 'kiosk-enter') {
@@ -963,7 +963,7 @@ export function DeviceDetailPage() {
           </>
         ),
         telemetry: <TelemetryTab telemetry={tele} loaded={teleLoaded} reportedAt={ds?.updatedAt} />,
-        apps: <AppsTab number={device.number} history={history} loaded={historyLoaded} scan={canEdit && !wiped ? appScan : undefined} />,
+        apps: <AppsTab number={device.number} history={history} loaded={historyLoaded} scan={canEdit && !wiped ? appScan : undefined} queue={canEdit && !wiped ? queue : undefined} />,
         activity: (
           <ActivityTab events={events} eventsLoaded={eventsLoaded} commands={history} commandsLoaded={historyLoaded} now={now} />
         ),

@@ -214,7 +214,7 @@ export interface DeviceState {
 export interface CommandHistoryItem {
   id: number | string; type: string; status: string;
   detail?: string | null; createdAt?: number; deliveredAt?: number; completedAt?: number;
-  /** Server-derived package name for app.install / app.uninstall; absent otherwise. Payloads are never returned. */
+  /** Server-derived package name for app.install / app.uninstall / app.setHidden; absent otherwise. Payloads are never returned. */
   subject?: string | null;
 }
 
@@ -235,8 +235,8 @@ export async function listCommandHistory(
  * Wake the device to check in now. `connected` is false when it has no live connection, so the wake goes nowhere
  * and it picks its commands up at its next check-in; undefined when the server does not say (an older one).
  */
-export async function forceSync(deviceId: number | string): Promise<{ connected?: boolean }> {
-  const res = await apiClient.post<{ connected?: unknown } | null>(`/private/agent/v1/devices/${deviceId}/sync`, {});
+export async function forceSync(deviceId: number | string, signal?: AbortSignal): Promise<{ connected?: boolean }> {
+  const res = await apiClient.post<{ connected?: unknown } | null>(`/private/agent/v1/devices/${deviceId}/sync`, {}, signal);
   return typeof res?.connected === 'boolean' ? { connected: res.connected } : {};
 }
 

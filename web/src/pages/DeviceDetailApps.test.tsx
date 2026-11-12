@@ -7,6 +7,7 @@ import type { CommandHistoryItem } from '../api/commands';
 import { AppRoutes } from '../App';
 import { ROLES, renderInConsole, stubApi } from '../test/console';
 
+const LOAD = { timeout: 3000 };
 const DEVICE = { id: 7, number: 'WH-1', description: 'Front desk', configurationId: 3, lastUpdate: Date.now() };
 
 const scan = (id: number, status: string, apps?: unknown, detail?: string): CommandHistoryItem => ({
@@ -30,7 +31,11 @@ const APPS = [
  * DEVICE's API with `history` as its command history. A queued apps.scan (id 42) is answered with `answer` in the
  * next history read, if given.
  */
-function openApps({ history = [] as CommandHistoryItem[], answer = undefined as CommandHistoryItem | undefined, user = ROLES.superAdmin } = {}) {
+function openApps({
+  history = [] as CommandHistoryItem[],
+  answer = undefined as CommandHistoryItem | undefined,
+  user = ROLES.superAdmin,
+} = {}) {
   let rows = history;
   const fetch = stubApi((path, init) => {
     const p = new URL(path, 'http://console').pathname.replace('/rest/private', '');
@@ -87,11 +92,15 @@ describe('the Apps tab', () => {
   });
 
   it('Scan now queues apps.scan and shows its result from the history', async () => {
-    const fetch = openApps({ answer: scan(42, 'done', [{ pkg: 'com.fresh', label: 'Fresh' }]) });
-    fireEvent.click(await screen.findByRole('button', { name: 'Scan now' }));
-    await waitFor(() => expect(appNames()).toEqual(['Fresh']));
-    const posts = fetch.mock.calls.filter(([input, init]) => String(input).endsWith(`/devices/${DEVICE.number}/commands`) && init?.method === 'POST');
-    expect(posts.map(([, init]) => JSON.parse(String(init?.body)))).toEqual([{ type: 'apps.scan' }]);
+    const fetch = openApps({ answer: fullScan(42, [{ pkg: 'com.fresh', label: 'Fresh' }]) });
+    fireEvent.click(await screen.findByRole('button', { name: 'Scan now' }, LOAD));
+    await waitFor(() => expect(appNames()).toEqual(['Fresh']), LOAD);
+    const posts = fetch.mock.calls.filter(
+      ([input, init]) => String(input).endsWith(`/devices/${DEVICE.number}/commands`) && init?.method === 'POST',
+    );
+    expect(posts.map(([, init]) => JSON.parse(String(init?.body)))).toEqual([
+      { type: 'apps.scan', payload: JSON.stringify({ includeAll: true }) },
+    ]);
   });
 
   it('Scan now shows why the device gave no list', async () => {
@@ -99,5 +108,68 @@ describe('the Apps tab', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Scan now' }));
     expect((await within(panel()).findByRole('alert')).textContent).toBe('Scan refused');
     expect(within(panel()).getByRole('button', { name: 'Scan now' })).toBeTruthy();
+  });
+});
+
+function fullScan(id: number, apps: unknown): CommandHistoryItem {
+  return scan(id, 'done', apps, JSON.stringify({ apps, includeAll: true, appActions: true }));
+}
+const commandPosts = (fetch: ReturnType<typeof stubApi>) =>
+  fetch.mock.calls
+    .filter(([input, init]) => String(input).endsWith(`/devices/${DEVICE.number}/commands`) && init?.method === 'POST')
+    .map(([, init]) => JSON.parse(String(init?.body)));
+
+describe('per-app management', () => {
+  it('shows Uninstall and Disable on a full action-capable scan; Cancel sends nothing', async () => {
+    const fetch = openApps({ history: [fullScan(9, [{ pkg: 'com.acme.scanner', label: 'Scanner' }])] });
+    const uninstall = await screen.findByRole('button', { name: 'Uninstall' }, LOAD);
+    expect((uninstall as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(uninstall);
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog.textContent).toContain(DEVICE.number);
+    expect(dialog.textContent).toContain('com.acme.scanner');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(commandPosts(fetch)).toEqual([]);
+  });
+  it('a confirmed removal sends the selected package with the dedicated capability', async () => {
+    const fetch = openApps({ history: [fullScan(9, [{ pkg: 'com.acme.scanner', label: 'Scanner' }])] });
+    fireEvent.click(await screen.findByRole('button', { name: 'Uninstall' }, LOAD));
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Confirm' }));
+    await waitFor(() =>
+      expect(commandPosts(fetch)).toEqual([
+        { type: 'app.uninstall', requiresCapability: 'app.silentUninstall', payload: JSON.stringify({ packageName: 'com.acme.scanner' }) },
+      ]),
+    );
+  });
+  it.each([false, true])('hiding/restoring an app requires confirmation (hidden=%s)', async (hidden) => {
+    const fetch = openApps({ history: [fullScan(9, [{ pkg: 'com.acme.scanner', label: 'Scanner', hidden }])] });
+    fireEvent.click(await screen.findByRole('button', { name: hidden ? 'Enable' : 'Disable' }, LOAD));
+    expect(commandPosts(fetch)).toEqual([]);
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Confirm' }));
+    await waitFor(() =>
+      expect(commandPosts(fetch)).toEqual([
+        {
+          type: 'app.setHidden',
+          requiresCapability: 'app.setHidden',
+          payload: JSON.stringify({ packageName: 'com.acme.scanner', hidden: !hidden }),
+        },
+      ]),
+    );
+  });
+  it('an observer sees the list without mutation controls', async () => {
+    openApps({ user: ROLES.observer, history: [fullScan(9, APPS)] });
+    await within(await screen.findByRole('tabpanel', undefined, LOAD)).findByRole('table', undefined, LOAD);
+    expect(screen.queryByRole('button', { name: 'Uninstall' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Disable' })).toBeNull();
+  });
+  it('protects device-marked packages and disables management for older scans', async () => {
+    openApps({ history: [fullScan(9, [{ pkg: 'com.mdmesh.agent', label: 'MDMesh', protectedReason: 'Management agent' }])] });
+    expect(((await screen.findByRole('button', { name: 'Uninstall' }, LOAD)) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Disable' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+  it('an older agent response is labelled partial and cannot enable app actions', async () => {
+    openApps({ history: [scan(9, 'done', [{ pkg: 'com.acme.scanner', label: 'Scanner' }])] });
+    expect(((await screen.findByRole('button', { name: 'Uninstall' }, LOAD)) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText('Launcher apps from an older scan.', { exact: false })).toBeTruthy();
   });
 });

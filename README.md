@@ -118,8 +118,8 @@ and stops if it can't find that tag ([details](DEPLOY.md#option-a--quick-start-n
 ```
 
 The quick start pulls the released images and sets up updates from the console. To build the images from source instead
-(`./setup.sh --update` needs `git`, `curl`, and `openssl` 3.0+ or `minisign`; `python3` is optional, to verify the
-release for the enrollment QR):
+(`./setup.sh --update` needs `git`, `curl`, and `openssl` 3.0+, or an older `openssl` and `minisign`; `python3` is
+optional, to verify the release for the enrollment QR):
 
 ```bash
 git clone https://github.com/MDMesh-app/MDMesh.git && cd MDMesh

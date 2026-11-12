@@ -10,7 +10,7 @@ passwords, and the admin must set its own password on first login.
 | Method | Needs | Choose it when |
 |--------|-------|----------------|
 | [A. Quick start](#option-a--quick-start-no-clone-published-images) | Docker with Compose v2, `curl`, `minisign` to check the script, `openssl` 3.0+ (or an older `openssl` and `minisign`) | You want the fastest path, with one-click updates and rollback. |
-| [B. From source](#option-b--from-source-clone--build) | Docker with Compose v2, a clone, and for `./setup.sh --update`: `git`, `curl`, `openssl` 3.0+ (or `minisign`). `python3` to verify the release for the QR (optional) | You want to build the images yourself. |
+| [B. From source](#option-b--from-source-clone--build) | Docker with Compose v2, a clone, and for `./setup.sh --update`: `git`, `curl`, `openssl` 3.0+ (or an older `openssl` and `minisign`). `python3` to verify the release for the QR (optional) | You want to build the images yourself. |
 | [C. Native](#option-c--native-no-docker) | Debian 12/13 or Ubuntu 24.04, root, `git` (`--update` installs `curl` and `openssl` when they are missing) | You don't want Docker, and you run your own TLS proxy. |
 
 Options A and B ask for the public hostname and set `BASE_URL=https://<hostname>`. Option C asks for the full base

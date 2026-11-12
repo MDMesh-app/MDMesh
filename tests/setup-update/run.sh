@@ -32,7 +32,8 @@ G=(git -c user.name=t -c user.email=t@example.com -c init.defaultBranch=main -c 
 # Stubs: curl serves https://github.com/test/repo/releases/download/<tag>/<name> from $REL_DIR/<tag>/<name>, answering
 # -w '%{http_code}' (404 for a missing file; with CURL_FAILFLAG=1, as with `fail` in a .curlrc, also curl exit 22);
 # CURL_FAULT=<tag>:28 makes it time out for that tag (curl exit 28, code 000), <tag>:7 refuse the connection (exit 7),
-# <tag>:503 answer HTTP 503; CURL_FLAKY=N makes its first N calls time out. docker (and anything else that could
+# <tag>:503 answer HTTP 503, <tag>:127 not run, <tag>:77 or <tag>:60 fail its TLS set-up (no CA certificates, an
+# untrusted certificate); CURL_FLAKY=N makes its first N calls time out. docker (and anything else that could
 # install) fails.
 mkdir -p "$WORK/stubs"
 cat > "$WORK/stubs/curl" <<'EOF'
@@ -49,7 +50,7 @@ if [ -n "${CURL_FLAKY:-}" ]; then
 fi
 case "${CURL_FAULT:-}" in
   "${rel%%/*}":28) code 000; exit 28 ;; "${rel%%/*}":7) code 000; exit 7 ;; "${rel%%/*}":503) code 503; exit 0 ;;
-  "${rel%%/*}":127) exit 127 ;; "${rel%%/*}":77) code 000; exit 77 ;;
+  "${rel%%/*}":127) exit 127 ;; "${rel%%/*}":77) code 000; exit 77 ;; "${rel%%/*}":60) code 000; exit 60 ;;
 esac
 f="$REL_DIR/$rel"
 if [ -f "$f" ] && [ -n "$out" ]; then cp "$f" "$out"; code 200; exit 0; fi
@@ -257,6 +258,13 @@ ok
 upd tools3 ok CURL_FAULT=v9.1.0:77 --
 { [ "$RC" != 0 ] && head_is tools3 "$cmain" && grep -qF 'ca-certificates' "$WORK/out" && ! grep -q 'Could not reach GitHub' "$WORK/out"; } \
   || { fail "curl exit 77 is not reported as missing CA certificates"; show; }
+ok
+# A certificate curl doesn't trust (exit 60: CA certificates out of date, or a proxy intercepting TLS) is that too: it
+# stops at once, with the first download.
+upd tools3 ok CURL_FAULT=v9.1.0:60 --
+{ [ "$RC" != 0 ] && head_is tools3 "$cmain" && grep -qF "does not trust GitHub's TLS certificate (curl exit 60)" "$WORK/out" \
+    && ! grep -q 'Could not reach GitHub' "$WORK/out" && [ "$(grep -c '^REL_DIR=' "$WORK/env.log")" = 1 ]; } \
+  || { fail "curl exit 60 is not reported as an untrusted certificate, or is retried"; show; }
 ok
 # A mistyped option stops before the clone moves (without --native; with it the native installer checks them).
 clone typo

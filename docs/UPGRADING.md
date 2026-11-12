@@ -53,9 +53,9 @@ pinned. If you set `SUPERVISOR_VERSION` yourself, see [v0.5.0](#v050).
 ```
 
 `--update` moves the clone to the newest signed release tag and runs its setup.sh (see
-[DEPLOY](../DEPLOY.md#option-b--from-source-clone--build)). It needs `git`, `curl` and `openssl` 3.0+ (or `minisign`),
-and says which are missing before it does anything (Debian/Ubuntu: `sudo apt-get install git curl openssl`); as root
-with `--native` it installs them itself. It comes with 0.5.0: a clone from 0.4.x moves to it once
+[DEPLOY](../DEPLOY.md#option-b--from-source-clone--build)). It needs `git`, `curl` and `openssl` 3.0+ (or an older
+`openssl` and `minisign`), and says which are missing before it does anything (Debian/Ubuntu:
+`sudo apt-get install git curl openssl`); as root with `--native` it installs them itself. It comes with 0.5.0: a clone from 0.4.x moves to it once
 with `git fetch --tags && git checkout v0.5.0 && ./setup.sh --update` ([v0.5.0](#v050)). A clone that is on `main` and
 already has `--update` can be ahead of the newest release: over an install, `--update` then stops rather than run
 older code. Wait for the next release and run it then, or pass `--allow-downgrade` to go to the release now.

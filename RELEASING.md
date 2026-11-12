@@ -11,6 +11,10 @@
 - **[CHANGELOG.md](CHANGELOG.md) is the release notes.** Each PR adds its line under Unreleased. A version's section
   is its tag annotation and its GitHub release notes, word for word; the workflow refuses a tag whose annotation
   differs.
+- **A new `setup.sh` flag goes in the notes as a run of its own, after `./setup.sh --update`.** The previous release's
+  setup.sh is the one that runs `--update`, and it stops on a flag it doesn't know (exit 2) before it moves the clone.
+  So `./setup.sh --update --newflag` fails on every older clone; write `./setup.sh --update`, then `./setup.sh
+  --newflag`.
 
 1. **Freeze and release PR.** Branch `release/vX.Y.Z` from `main` and open a PR. Rebase it onto any fix that
    lands during the freeze.

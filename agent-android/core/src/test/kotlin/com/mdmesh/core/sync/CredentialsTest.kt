@@ -29,20 +29,23 @@ class CredentialsTest {
     }
 
     @Test
-    fun `a recovered secret is picked up, and unchanged credentials are not repeated`() = runTest {
-        // A refused enrollment recovered by resuming it: same device, the secret the server holds.
+    fun `a recovered secret is picked up, and every success reports what is saved`() = runTest {
+        // A refused enrollment recovered by resuming it: same device, the secret the server holds. Unchanged
+        // credentials are reported again: the collector compares them with what it holds, so a stale value it was
+        // handed elsewhere is corrected at the next success (CredentialsFollowerTest).
         val checkIns = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
         var stored: Pair<String?, String?> = "dev-1" to "sek-dead"
         val seen = mutableListOf<Credentials>()
         val watch = launch(Dispatchers.Unconfined) { Credentials.changes(checkIns) { stored }.collect { seen += it } }
 
         checkIns.tryEmit(Unit)
-        checkIns.tryEmit(Unit) // every heartbeat succeeds; nothing changed
         stored = "dev-1" to "sek-live"
         checkIns.tryEmit(Unit)
-        checkIns.tryEmit(Unit)
+        checkIns.tryEmit(Unit) // every heartbeat succeeds; nothing changed
 
-        assertEquals(listOf(Credentials("dev-1", "sek-dead"), Credentials("dev-1", "sek-live")), seen)
+        val dead = Credentials("dev-1", "sek-dead")
+        val live = Credentials("dev-1", "sek-live")
+        assertEquals(listOf(dead, live, live), seen)
         watch.cancel()
     }
 

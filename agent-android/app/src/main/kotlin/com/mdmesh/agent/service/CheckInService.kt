@@ -24,7 +24,7 @@ import com.mdmesh.core.install.InstallManager
 import com.mdmesh.core.power.PowerModeStore
 import com.mdmesh.core.store.DeviceIdentity
 import com.mdmesh.core.sync.CheckInCoordinator
-import com.mdmesh.core.sync.Credentials
+import com.mdmesh.core.sync.CredentialsFollower
 import com.mdmesh.core.sync.SyncStatus
 import com.mdmesh.core.telemetry.EventLog
 import com.mdmesh.core.transport.TransportManager
@@ -61,8 +61,8 @@ class CheckInService : LifecycleService() {
 
     @Volatile private var started = false
     @Volatile private var interactiveUntil = 0L
-    @Volatile private var deviceId: String? = null
-    @Volatile private var secret: String? = null
+    /** The credentials the wake socket dials with; built in onCreate, before any start reads the identity. */
+    private lateinit var wake: CredentialsFollower
     @Volatile private var fastSyncJob: Job? = null
     // Reachability grace: hold the socket for a window after service start even on idle
     // battery, so a device that just booted / self-updated is instantly commandable — a reboot
@@ -76,7 +76,7 @@ class CheckInService : LifecycleService() {
             DeviceEvents.eventFor(intent?.action, isInitialStickyBroadcast)?.let { event ->
                 runCatching { eventLog.record(event) }
             }
-            reevaluateSocket() // also for the initial sticky one: brings the socket up as soon as the service starts
+            wake.reevaluate() // also for the initial sticky one: brings the socket up as soon as the service starts
         }
     }
 
@@ -88,6 +88,10 @@ class CheckInService : LifecycleService() {
     @Suppress("DEPRECATION")
     override fun onCreate() {
         super.onCreate()
+        // First, as the receivers below use it. For the service's lifetime, a check-in that saves new credentials (the
+        // one that enrolls a device a start found unenrolled, or one that recovers the secret the server holds) moves
+        // the wake socket onto them at once.
+        wake = CredentialsFollower(lifecycleScope, syncStatus.successes, identity, transport, ::socketWanted, ::onWake)
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_SCREEN_OFF)
@@ -102,19 +106,6 @@ class CheckInService : LifecycleService() {
             .onFailure { Log.w(TAG, "network callback not registered", it) }
         // An APK a dead process left behind would otherwise wait for the next install.
         lifecycleScope.launch { installManager.sweepLeftoverDownloads() }
-        // For the service's lifetime, subscribed before any start reads the identity: a check-in that saves new
-        // credentials (the one that enrolls a device a start found unenrolled, or one that recovers the secret the
-        // server holds) moves the wake socket onto them at once, instead of it dialling with none or a refused one.
-        lifecycleScope.launch {
-            Credentials.changes(syncStatus.successes) { identity.current() to identity.secret() }
-                .collect { saved ->
-                    if (saved.deviceId != deviceId || saved.secret != secret) {
-                        deviceId = saved.deviceId
-                        secret = saved.secret
-                        reevaluateSocket()
-                    }
-                }
-        }
     }
 
     private val connectivity: ConnectivityManager
@@ -133,13 +124,13 @@ class CheckInService : LifecycleService() {
                 hasIntent = intent != null,
                 fromHeartbeat = intent?.getBooleanExtra(EXTRA_FROM_HEARTBEAT, false) == true,
             ),
-            hasCredentials = !deviceId.isNullOrBlank() && !secret.isNullOrBlank(),
+            hasCredentials = wake.current != null,
         )
         if (plan.grace) {
             graceUntil = System.currentTimeMillis() + REACHABILITY_GRACE_MS
             lifecycleScope.launch {
                 delay(REACHABILITY_GRACE_MS + 1_000L)
-                reevaluateSocket() // drop back to adaptive gating once the grace window lapses
+                wake.reevaluate() // drop back to adaptive gating once the grace window lapses
             }
         }
         if (plan.loadCredentials) {
@@ -151,38 +142,18 @@ class CheckInService : LifecycleService() {
                 // Read identity AFTER the initial sync: on a fresh device that runOnce just
                 // enrolled, so reading before it would leave blank credentials and no socket
                 // until the process restarts.
-                deviceId = identity.current()
-                secret = identity.secret()
+                wake.load()
                 // Not enrolled yet (e.g. revived before the first enrollment, so no check-in of its own): the
-                // credentials collector in onCreate picks them up as soon as a check-in saves them.
-                reevaluateSocket()
+                // credentials follower built in onCreate picks them up as soon as a check-in saves them.
+                wake.reevaluate()
             }
         }
         return START_STICKY
     }
 
     /** Hold the socket when always-on, screen-on, or charging; otherwise drop it (heartbeat covers idle). */
-    private fun reevaluateSocket() {
-        val id = deviceId
-        val sec = secret
-        if (id.isNullOrBlank() || sec.isNullOrBlank()) {
-            // Enrollment may have completed elsewhere (worker/heartbeat) since we cached these —
-            // refresh once and re-evaluate if credentials appeared.
-            lifecycleScope.launch {
-                deviceId = identity.current()
-                secret = identity.secret()
-                if (!deviceId.isNullOrBlank() && !secret.isNullOrBlank()) reevaluateSocket()
-            }
-            return
-        }
-        val hot = powerModeStore.isAlwaysOn() || isInteractive() || isCharging()
-                || System.currentTimeMillis() < graceUntil
-        if (hot) {
-            transport.start(id, sec) { signal -> onWake(signal) }
-        } else {
-            transport.stop()
-        }
-    }
+    private fun socketWanted(): Boolean =
+        powerModeStore.isAlwaysOn() || isInteractive() || isCharging() || System.currentTimeMillis() < graceUntil
 
     private suspend fun onWake(signal: WakeSignal) {
         when (signal.kind) {
@@ -193,7 +164,7 @@ class CheckInService : LifecycleService() {
             else -> runCatching { coordinator.runOnce() }
                 .onFailure { Log.w(TAG, "wake check-in failed", it) }
         }
-        reevaluateSocket() // a device.powerMode command may have just changed the mode
+        wake.reevaluate() // a device.powerMode command may have just changed the mode
     }
 
     /** Start the 2.5s fast-sync loop unless one is already running — repeat "interactive"

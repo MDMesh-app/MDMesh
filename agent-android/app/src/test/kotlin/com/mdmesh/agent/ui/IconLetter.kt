@@ -5,7 +5,8 @@ import java.util.Locale
 /**
  * The placeholder letter of `docs/kiosk-background-scrim.md` (Label lines, 7): the capped label's first grapheme with a
  * visible code point, upper-cased; null when there is none. The agent itself never draws one (PackageManager always
- * gives an app an icon); the console's preview does, and so does the render harness. Kept here, beside the vectors.
+ * gives an app an icon); the console's preview does. It lives here, test-only, so the shared vectors check the agent's
+ * graphemes and case mapping against the console's rule.
  */
 fun iconLetter(label: String, graphemes: Graphemes): String? {
     val text = LabelLines.cap(label, graphemes)

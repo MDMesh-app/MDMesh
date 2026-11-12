@@ -63,9 +63,13 @@ class DeviceIdLabelTest {
             val colours = Regex("""<color name="(\w+)">#([0-9A-Fa-f]{6})</color>""")
                 .findAll(java.io.File(res, "$dir/colors_v2.xml").readText())
                 .associate { it.groupValues[1] to (0xFF000000L or it.groupValues[2].toLong(16)).toInt() }
+            // Read as plain #RRGGBB values: say so when one stops being one (an @color/ alias, an alpha), rather than
+            // failing on a missing map key.
+            fun colour(name: String): Int = colours[name]
+                ?: throw AssertionError("$dir/colors_v2.xml: $name is not a plain #RRGGBB colour; read it another way")
             for (card in listOf("mdm_surface", "mdm_surface_2")) {
                 // WCAG 2.x contrast for body text: at least 4.5:1.
-                val ratio = Wcag.contrast(colours.getValue("mdm_warn_ink"), colours.getValue(card))
+                val ratio = Wcag.contrast(colour("mdm_warn_ink"), colour(card))
                 assertTrue("$dir warn ink on $card: $ratio", ratio >= 4.5)
             }
         }

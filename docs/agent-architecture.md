@@ -118,7 +118,9 @@ as a cleaned copy, the original file is never rewritten), and stores its SHA-256
 cleaned file) and a URL in `backgroundImageUrl`; the browser's values are never used. The console scales images over
 3840 px along the long edge before uploading them, drawn upright (`normalizeKioskImage`), and the commit of such an upload is
 cleaned before it is hosted. `kiosk.theme.backgroundImage` is `{url, sha256}`, sent only for a managed image; its URL
-is built from the server's current `base.url` each time the document is built (`KioskBackgroundImageUrls`), so a move
+is built from the server's current `base.url` each time the document is built (`KioskBackgroundImageUrls`), and a
+queued `kiosk.enter` whose theme carries a configuration's managed image (its bytes, at its stored or current address)
+gets the same URL (`KioskCommandImages`, for console and API, single and bulk), so a move
 to HTTPS or another domain reaches devices as a new revision; the stored URL is only the fallback. Agent 0.5.0
 downloads it over HTTPS only (no redirect to HTTP), up to 10 MB, checks the SHA-256 and the 16-megapixel bound before
 caching it in private storage (only the current image is kept), and draws it behind the launcher grid, the splash

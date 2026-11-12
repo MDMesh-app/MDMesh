@@ -114,8 +114,9 @@ Under the hood
 - Protocol 1.10: `theme.backgroundImage` may carry `fit` and `focalX`/`focalY`, sent only when not the default
   (additive). `GET /private/configurations/backgroundImages` lists a customer's kiosk images and
   `POST /private/configurations/backgroundImages/{fileId}/delete` deletes an unused one.
-- The kiosk background image's address is built from the server's current address each time a configuration is sent,
-  so moving the server to HTTPS or another domain needs no new pick of the image. The adaptive scrim is documented in
+- The kiosk background image's address is built from the server's current address each time a configuration is sent
+  (config.apply) and each time Enter kiosk is queued (`kiosk.enter`, one device or many), so moving the server to HTTPS
+  or another domain needs no new pick of the image. The adaptive scrim is documented in
   `docs/kiosk-background-scrim.md`, with test vectors (`proto/vectors/kiosk-scrim.json`) the console and the agent
   both pass. `GET /private/configurations/backgroundImage/{fileId}` describes an image as devices will get it.
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.

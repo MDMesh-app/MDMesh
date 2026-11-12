@@ -253,6 +253,14 @@ public class UnsecureDAO {
         return this.configurationMapper.getConfigurationById(id);
     }
 
+    /**
+     * The customer's configurations whose managed kiosk background image has these bytes: id, customer and the image
+     * columns only (KioskCommandImages).
+     */
+    public List<Configuration> getManagedBackgroundImageConfigurations(int customerId, String sha256) {
+        return this.configurationMapper.getManagedBackgroundImageConfigurations(customerId, sha256);
+    }
+
     public List<ManagedAppPermission> getManagedAppPermissions(Integer configurationId) {
         return this.configurationMapper.getManagedAppPermissions(configurationId);
     }

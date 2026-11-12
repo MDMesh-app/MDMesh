@@ -266,9 +266,14 @@ export function kioskTheme(configuration: Configuration | undefined): KioskTheme
   const imageSha256 = typeof configuration.backgroundImageSha256 === 'string'
     ? configuration.backgroundImageSha256.trim().toLowerCase()
     : '';
-  // Never turn a legacy arbitrary backgroundImageUrl into an agent download. The descriptor is
-  // valid only when the server supplied both a HTTPS URL and the canonical digest it calculated.
-  const backgroundImage = imageUrl.startsWith('https://') && /^[0-9a-f]{64}$/.test(imageSha256)
+  // Only a managed image, as config.apply sends it (DesiredConfigBuilder): an uploaded file with the digest the server
+  // computed; never a legacy backgroundImageUrl (the Headwind wallpaper, no file and no digest). The stored URL goes
+  // out whatever its scheme: it is the address of the day the image was picked, and the server replaces it with the
+  // one built from its current base URL as it queues kiosk.enter (KioskCommandImages), as config.apply does. Agents
+  // download over HTTPS only and keep the color otherwise.
+  const managed = typeof configuration.backgroundImageFileId === 'number' && imageUrl !== ''
+    && /^[0-9a-f]{64}$/.test(imageSha256);
+  const backgroundImage = managed
     ? { url: imageUrl, sha256: imageSha256, ...imagePlacement(configuration) }
     : undefined;
   const theme = {

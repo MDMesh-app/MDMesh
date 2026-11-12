@@ -38,6 +38,7 @@ import com.hmdm.rest.json.agent.CommandHistoryView;
 import com.hmdm.rest.json.agent.ConfigStatusView;
 import com.hmdm.rest.json.agent.ConfigSyncSummary;
 import com.hmdm.rest.resource.support.InstallHashes;
+import com.hmdm.rest.resource.support.KioskCommandImages;
 import com.hmdm.rest.json.agent.DesiredConfig;
 import com.hmdm.rest.resource.support.ConfigReconciler;
 import com.hmdm.security.SecurityContext;
@@ -90,6 +91,7 @@ public class AgentAdminResource {
     private com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller;
     private ConfigReconciler configReconciler;
     private InstallHashes installHashes;
+    private KioskCommandImages kioskImages;
 
     /**
      * <p>A constructor required by Swagger.</p>
@@ -105,7 +107,8 @@ public class AgentAdminResource {
                               AgentWakeHub wakeHub,
                               com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller,
                               ConfigReconciler configReconciler,
-                              InstallHashes installHashes) {
+                              InstallHashes installHashes,
+                              KioskCommandImages kioskImages) {
         this.tokenDAO = tokenDAO;
         this.commandDAO = commandDAO;
         this.unsecureDAO = unsecureDAO;
@@ -114,6 +117,7 @@ public class AgentAdminResource {
         this.configAppInstaller = configAppInstaller;
         this.configReconciler = configReconciler;
         this.installHashes = installHashes;
+        this.kioskImages = kioskImages;
     }
 
     /**
@@ -307,8 +311,13 @@ public class AgentAdminResource {
         }
     }
 
-    /** The payload to queue: an {@code app.install} gets its APK's SHA-256 (see {@link InstallIntegrity}). */
+    /**
+     * The payload to queue: an {@code app.install} gets its APK's SHA-256 (see {@link InstallIntegrity}), and a
+     * {@code kiosk.enter} its managed background image's current URL (see {@link KioskCommandImages}). Single and bulk
+     * commands both come through here.
+     */
     private String payloadToQueue(String type, String payload, int customerId) throws CommandRejectedException {
+        if (kioskImages != null) payload = kioskImages.forCommand(type, payload, customerId);
         try {
             return InstallIntegrity.forCommand(type, payload, installHashes.forCustomer(customerId));
         } catch (InstallIntegrity.LookupFailedException e) {

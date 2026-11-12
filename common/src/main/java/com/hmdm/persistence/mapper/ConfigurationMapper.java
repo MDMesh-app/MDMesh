@@ -166,6 +166,13 @@ public interface ConfigurationMapper {
     @Select("SELECT COUNT(*) FROM configurations WHERE backgroundImageFileId = #{fileId}")
     long countBackgroundImageFileReferences(@Param("fileId") int fileId);
 
+    /** The customer's configurations whose managed kiosk background image has these bytes (lowercase hex SHA-256). */
+    @Select("SELECT id, customerId, backgroundImageFileId, backgroundImageUrl, backgroundImageSha256 FROM configurations " +
+            "WHERE customerId = #{customerId} AND backgroundImageSha256 = #{sha256} " +
+            "AND backgroundImageFileId IS NOT NULL ORDER BY id")
+    List<Configuration> getManagedBackgroundImageConfigurations(@Param("customerId") int customerId,
+                                                                @Param("sha256") String sha256);
+
     @Select({"SELECT * " +
             "FROM configurations " +
             "WHERE customerId=#{customerId} " +

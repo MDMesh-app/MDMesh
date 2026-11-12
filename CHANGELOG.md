@@ -48,10 +48,10 @@ New
   The editor shows the current image (size, upload date, short SHA-256) with Replace and Remove, and previews the
   launcher over it on a phone and a tablet, turned either way, with the text contrast it reaches: text sits on a plate
   of the background color where the image behind it is bright or busy, and the image is dimmed by at most 30%. The
-  grid is the device's (every app of the kiosk, in its order), app labels break between words as on the device, and
-  End of list shows the grid scrolled to its end, clear of Exit; a single-app kiosk shows its pinned app over the
-  image. Fill
-  (cropped around a focal point you set by clicking, dragging or with the arrow keys) or Fit (the whole image,
+  preview grid has the configuration's apps in the device's order, named as in the configuration (a device leaves out
+  apps that aren't installed and shows each app's own label). Labels break between words as on the device, End of
+  list shows the grid scrolled to its end, clear of Exit, and a single-app kiosk shows its pinned app over the image.
+  Fill (cropped around a focal point you set by clicking, dragging or with the arrow keys) or Fit (the whole image,
   letterboxed); an agent without fit and focal point support fills from the centre. Choose from uploaded images reuses one
   without uploading it again, and deletes ones nothing uses. Large photos are scaled to at most 3840 px before upload, and
   their location, camera details and other metadata are removed before devices get them. The device page

@@ -37,7 +37,9 @@ jobs:
         uses: ./.github/actions/ci-kit/changed-paths
         with:
           filters: |
-            server: pom.xml, common/**, jwt/**, notification/**, plugins/**, server/**
+            # CHANGELOG.md and proto/VERSIONING.md are read by AgentProtocolVersionTest: the advertised protocol version is
+            # VERSIONING.md's highest row, and a held bump must still be under Unreleased (so a release PR runs it).
+            server: pom.xml, common/**, jwt/**, notification/**, plugins/**, server/**, CHANGELOG.md, proto/VERSIONING.md
             # CHANGELOG.md is built into the console (What's new) and its tests read every release's section, checked
             # against release/changelog-section.sh.
             web: web/**, CHANGELOG.md, release/changelog-section.sh

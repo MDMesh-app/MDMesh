@@ -670,7 +670,10 @@ public class ConfigurationResource {
             value = "Describe a kiosk background image",
             notes = "An uploaded image as devices get it once a configuration is saved with it: name, format, displayed "
                     + "width and height, size and SHA-256 of the file without metadata, upload time, current URL. "
-                    + "Refuses (ERROR with a message) a file a save would refuse.",
+                    + "Refuses (ERROR with a message) a file a save would refuse. Another account's file is described "
+                    + "only when a configuration of this account that the user may open uses it (one copied from the "
+                    + "main account's template); it comes back with fromAnotherAccount true, and a save can't choose it. "
+                    + "Any other account's file gets the same ERROR as a file that doesn't exist.",
             response = KioskBackgroundImageInfo.class
     )
     @GET

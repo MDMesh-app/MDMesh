@@ -13,8 +13,10 @@ import org.slf4j.LoggerFactory;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import java.io.IOException;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -89,14 +91,21 @@ public class KioskCommandImages {
     /**
      * The current URL of the account's managed image with these bytes, when {@code sent} is its stored or current
      * address; null when no configuration of the account has it there.
+     *
+     * <p>Stored addresses are compared first, without a lookup. Only then is each file resolved (2 lookups), once per
+     * file id: configurations sharing a file get the same built URL, and where one falls back to its own stored URL,
+     * that already failed to match above. So N configurations sharing one image cost 2 lookups, not 2N.</p>
      */
     private String currentUrl(int customerId, String sent, String sha256) {
         List<Configuration> candidates = unsecureDAO.getManagedBackgroundImageConfigurations(customerId, sha256);
         for (Configuration c : candidates) {
+            if (BaseUrl.sameAddress(sent, c.getBackgroundImageUrl())) return urls.current(c);
+        }
+        Set<Integer> resolved = new HashSet<>();
+        for (Configuration c : candidates) {
+            if (!resolved.add(c.getBackgroundImageFileId())) continue;
             String current = urls.current(c);
-            if (BaseUrl.sameAddress(sent, c.getBackgroundImageUrl()) || BaseUrl.sameAddress(sent, current)) {
-                return current;
-            }
+            if (BaseUrl.sameAddress(sent, current)) return current;
         }
         return null;
     }

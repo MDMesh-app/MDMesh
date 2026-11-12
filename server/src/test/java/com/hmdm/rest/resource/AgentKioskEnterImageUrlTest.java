@@ -55,6 +55,7 @@ public class AgentKioskEnterImageUrlTest {
     private final Map<Integer, Configuration> configurations = new HashMap<>();
     private final List<AgentCommand> queued = new ArrayList<>();
     private final List<String> shaLookups = new ArrayList<>();
+    private final List<Integer> fileLookups = new ArrayList<>();
     private UploadedFile file;
     private AgentAdminResource resource;
     private ConfigReconciler reconciler;
@@ -109,6 +110,7 @@ public class AgentKioskEnterImageUrlTest {
                 return out;
             }
             @Override public UploadedFile getUploadedFileById(Integer id) {
+                fileLookups.add(id);
                 return file != null && file.getId().equals(id) ? file : null;
             }
             @Override public Customer getCustomerByIdUnsecure(Integer id) {
@@ -230,6 +232,24 @@ public class AgentKioskEnterImageUrlTest {
         String payload = consolePayload("https://cdn.example/beach.jpg");
         resource.queueCommand("A", enter(payload));
         assertEquals(payload, queued.get(0).getPayload());
+    }
+
+    /**
+     * Many configurations sharing one image (gallery reuse, copies): the file is resolved once per command, whether
+     * the sent address is one's stored address or nobody's.
+     */
+    @Test
+    public void configurationsSharingAnImageResolveItOnce() throws Exception {
+        for (int id = 8; id < 13; id++) configurations.put(id, managed(id, 1));
+        resource.queueCommand("A", enter(consolePayload(STORED)));
+        assertEquals(CURRENT, image(queued.get(0)).path("url").asText());
+        assertEquals(Collections.singletonList(42), fileLookups);
+
+        fileLookups.clear();
+        String elsewhere = consolePayload("https://cdn.example/beach.jpg");
+        resource.queueCommand("A", enter(elsewhere));
+        assertEquals(elsewhere, queued.get(1).getPayload());
+        assertEquals(Collections.singletonList(42), fileLookups);
     }
 
     /** Only the current account's configurations say where an image lives. */

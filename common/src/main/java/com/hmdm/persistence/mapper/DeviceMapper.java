@@ -108,6 +108,10 @@ public interface DeviceMapper {
             "WHERE customerId = #{customerId}"})
     Long countAllDevicesForCustomer(@Param("customerId") Integer customerId);
 
+    /** Serialises device counting for the customer until the transaction ends (see CustomerDeviceLimit). */
+    @Select({com.hmdm.persistence.CustomerDeviceLimit.LOCK_SQL})
+    Integer lockCustomerDevices(@Param("customerId") int customerId);
+
     @Select({"SELECT COUNT(*) " +
             "FROM devices"})
     Long countTotalDevices();

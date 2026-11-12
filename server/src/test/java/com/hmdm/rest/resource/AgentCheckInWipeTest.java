@@ -100,7 +100,7 @@ public class AgentCheckInWipeTest {
         InstallHashes hashes = new InstallHashes(new ApkHashResolver(files, "https://mdm.example.com"), unsecureDAO);
         resource = new AgentResource(unsecureDAO, null, commands,
                 new ConfigAppInstaller(null, null, null, null), reconciler, new AppReconciler(null, null, null, null),
-                requeuer, hashes, new KioskLockoutAlert(null, null, null));
+                requeuer, hashes, new KioskLockoutAlert(null, null, null), null);
     }
 
     private List<com.hmdm.rest.json.agent.AgentCommand> checkIn(AgentCommandResult... results) {

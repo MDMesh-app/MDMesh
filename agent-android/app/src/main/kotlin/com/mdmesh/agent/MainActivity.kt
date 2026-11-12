@@ -3,7 +3,6 @@ package com.mdmesh.agent
 import android.app.ActivityManager
 import android.app.AlertDialog
 import android.content.res.ColorStateList
-import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Bundle
 import android.util.TypedValue
@@ -28,6 +27,7 @@ import com.mdmesh.core.config.ConfigApplier
 import com.mdmesh.core.store.ConfigStateStore
 import com.mdmesh.core.store.configuredKiosk
 import com.mdmesh.core.store.DeviceIdStore
+import com.mdmesh.core.store.EnrollTokenStore
 import com.mdmesh.core.store.KioskStateStore
 import com.mdmesh.core.sync.CheckInWorker
 import com.mdmesh.core.sync.SyncStatus
@@ -65,8 +65,10 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var configStore: ConfigStateStore
     @Inject lateinit var kioskStore: KioskStateStore
     @Inject lateinit var events: EventLog
+    @Inject lateinit var enrollTokens: EnrollTokenStore
 
     private lateinit var deviceIdValue: TextView
+    private lateinit var credentialsLostValue: TextView
     private lateinit var kioskValue: TextView
     private lateinit var returnButton: Button
     private var returningToKiosk = false
@@ -79,6 +81,18 @@ class MainActivity : ComponentActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 combine(configStore.configuredKioskFlow(), kioskStore.flow()) { _, _ -> Unit }
                     .collect { refresh() }
+            }
+        }
+        // The DEVICE ID area follows the stored state while the screen is visible: a background recovery that marks
+        // the credentials lost, a check-in that succeeds, an enrollment. Nothing is collected while stopped.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                DeviceIdLabel.watch(
+                    deviceIds = deviceIdStore.deviceId,
+                    marks = enrollTokens.credentialsLostMarks,
+                    lastSuccess = syncStatus.lastSuccessAtMsChanges,
+                    lastError = syncStatus.lastError,
+                ).collect { show(it) }
             }
         }
         // Grant our own POST_NOTIFICATIONS as Device Owner BEFORE starting the foreground
@@ -112,9 +126,25 @@ class MainActivity : ComponentActivity() {
         returnButton.visibility = if (canReturn) View.VISIBLE else View.GONE
         returnButton.isEnabled = canReturn && !returningToKiosk
         returnButton.text = if (returningToKiosk) "Returning…" else "Return to kiosk"
-        lifecycleScope.launch {
-            val id = deviceIdStore.current()
-            deviceIdValue.text = if (id.isNullOrBlank()) enrollingLabel() else id
+    }
+
+    /** The DEVICE ID area: the id (mono, alone, so it can be copied as it is) and, under it, any warning. */
+    private fun show(status: DeviceIdLabel.Status) {
+        when (status) {
+            is DeviceIdLabel.Status.Enrolling -> {
+                val failure = status.lastError
+                deviceIdValue.text = if (failure == null) {
+                    getString(R.string.status_enrolling)
+                } else {
+                    val at = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(failure.atMillis))
+                    getString(R.string.status_enrolling_error, failure.message, at)
+                }
+                credentialsLostValue.visibility = View.GONE
+            }
+            is DeviceIdLabel.Status.Enrolled -> {
+                deviceIdValue.text = status.deviceId
+                credentialsLostValue.visibility = if (status.credentialsLost) View.VISIBLE else View.GONE
+            }
         }
     }
 
@@ -168,13 +198,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** "Enrolling…" plus the last sync error (if any), so a stuck enrollment is diagnosable on-device. */
-    private fun enrollingLabel(): String {
-        val failure = syncStatus.lastError.value ?: return "Enrolling…"
-        val at = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(failure.atMillis))
-        return "Enrolling… (last error: ${failure.message} at $at)"
-    }
-
     private fun isLocked(): Boolean {
         val am = getSystemService(ACTIVITY_SERVICE) as ActivityManager
         return am.lockTaskModeState == ActivityManager.LOCK_TASK_MODE_LOCKED
@@ -206,6 +229,13 @@ class MainActivity : ComponentActivity() {
         root.addView(label("DEVICE ID"))
         deviceIdValue = text("…", 14f, TEXT, mono = true)
         root.addView(deviceIdValue)
+        // Its own view, in the body font: a warning to read, announced when it appears, never part of the id.
+        credentialsLostValue = text(getString(R.string.status_credentials_lost), 14f, ALERT).apply {
+            visibility = View.GONE
+            setPadding(0, dp(WARNING_GAP), 0, 0)
+            accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        }
+        root.addView(credentialsLostValue)
         root.addView(spacer())
 
         root.addView(label("KIOSK"))
@@ -286,12 +316,13 @@ class MainActivity : ComponentActivity() {
     private companion object {
         const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         const val RETURN_BUTTON_GAP = 12
-        val INK = Color.parseColor("#0E1117")
-        val TEXT = Color.parseColor("#E8EEF4")
-        val MUTED = Color.parseColor("#8693A4")
-        val FAINT = Color.parseColor("#5C6675")
-        val SIGNAL = Color.parseColor("#F4B942")
-        val OK = Color.parseColor("#3FD08A")
-        val ALERT = Color.parseColor("#F2545B")
+        const val WARNING_GAP = 6
+        const val INK = MainActivityColors.INK
+        const val TEXT = MainActivityColors.TEXT
+        const val MUTED = MainActivityColors.MUTED
+        const val FAINT = MainActivityColors.FAINT
+        const val SIGNAL = MainActivityColors.SIGNAL
+        const val OK = MainActivityColors.OK
+        const val ALERT = MainActivityColors.ALERT
     }
 }

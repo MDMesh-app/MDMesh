@@ -44,19 +44,87 @@ public interface AgentDeviceMapper {
     @Select({"SELECT agentCapabilities FROM devices WHERE number = #{deviceNumber}"})
     String getDeviceCapabilities(@Param("deviceNumber") String deviceNumber);
 
-    @Update({"UPDATE devices SET agentSecretHash = #{secretHash} WHERE number = #{deviceNumber}"})
-    void updateDeviceSecretHash(@Param("deviceNumber") String deviceNumber,
-                                @Param("secretHash") String secretHash);
-
     @Select({"SELECT agentSecretHash FROM devices WHERE number = #{deviceNumber}"})
     String getDeviceSecretHash(@Param("deviceNumber") String deviceNumber);
 
-    @Update({"UPDATE devices SET lastUpdate = #{ts} WHERE number = #{deviceNumber}"})
-    void updateLastUpdate(@Param("deviceNumber") String deviceNumber, @Param("ts") long ts);
+    /**
+     * Completes an agent enrollment, inside its transaction ({@link com.hmdm.persistence.AgentEnrollmentDAO}): the
+     * secret hash that lets the device authenticate, its capabilities, its hardware id (an absent one keeps what is
+     * there), last-seen and the enrollment time (kept when already set), and the attempt that may resume it.
+     *
+     * @return rows updated: 1, or 0 when the device row is gone
+     */
+    @Update({"UPDATE devices SET agentSecretHash = #{secretHash}, agentCapabilities = #{capabilitiesJson}, " +
+            "hardwareid = COALESCE(#{hardwareId}, hardwareid), lastUpdate = #{ts}, " +
+            "enrollTime = COALESCE(enrollTime, #{ts}), agentEnrollAttemptHash = #{attemptHash} " +
+            "WHERE number = #{deviceNumber}"})
+    int completeEnrollment(@Param("deviceNumber") String deviceNumber,
+                           @Param("secretHash") String secretHash,
+                           @Param("capabilitiesJson") String capabilitiesJson,
+                           @Param("hardwareId") String hardwareId,
+                           @Param("attemptHash") String attemptHash,
+                           @Param("ts") long ts);
 
-    /** The console's "Enrolled". Set once: a time already there is kept. */
-    @Update({"UPDATE devices SET enrollTime = COALESCE(enrollTime, #{ts}) WHERE number = #{deviceNumber}"})
-    void updateEnrollTime(@Param("deviceNumber") String deviceNumber, @Param("ts") long ts);
+    /**
+     * The device an enroll attempt created, while that enrollment can still be retried: completed (it has a secret),
+     * not checked in since ({@link #markCheckedIn} clears the hash) and enrolled at or after {@code since}.
+     */
+    @Select({"SELECT number FROM devices WHERE agentEnrollAttemptHash = #{attemptHash} AND enrollTime >= #{since} " +
+            "AND agentSecretHash IS NOT NULL LIMIT 1"})
+    String findEnrollRetry(@Param("attemptHash") String attemptHash, @Param("since") long since);
+
+    /**
+     * The secret of a resumed enrollment, stored when it differs from the stored one (the enrollment key changed in the
+     * window); only while the attempt still owns the device (no check-in yet). Last-seen is left at the enrollment time:
+     * the device has not checked in.
+     */
+    @Update({"UPDATE devices SET agentSecretHash = #{secretHash} " +
+            "WHERE number = #{deviceNumber} AND agentEnrollAttemptHash = #{attemptHash} AND agentSecretHash IS NOT NULL"})
+    int reissueSecret(@Param("deviceNumber") String deviceNumber,
+                      @Param("attemptHash") String attemptHash,
+                      @Param("secretHash") String secretHash);
+
+    /** The customer's device limit as the console applies it: 0 (none) for a master customer; null when not found. */
+    @Select({"SELECT CASE WHEN master THEN 0 ELSE deviceLimit END FROM customers WHERE id = #{customerId}"})
+    Integer customerDeviceLimit(@Param("customerId") int customerId);
+
+    /**
+     * Serialises the device-limit check of one customer until the transaction ends ({@link
+     * com.hmdm.persistence.CustomerDeviceLimit#LOCK_SQL}, which console and on-demand device creation take too).
+     */
+    @Select({com.hmdm.persistence.CustomerDeviceLimit.LOCK_SQL})
+    Integer lockCustomerEnrollments(@Param("customerId") int customerId);
+
+    /** The customer's devices, as on-demand creation counts them (UnsecureDAO.createNewDeviceOnDemand). */
+    @Select({"SELECT COUNT(*) FROM devices WHERE customerId = #{customerId}"})
+    long countCustomerDevices(@Param("customerId") int customerId);
+
+    /** Whether the install has customers beyond the first: device limits apply only then, as for on-demand creation. */
+    @Select({"SELECT EXISTS (SELECT 1 FROM customers WHERE id > 1)"})
+    boolean hasSeveralCustomers();
+
+    /**
+     * The customer's devices enrolled at or after {@code since} that the user may see, newest first, at most
+     * {@code limit} (the Enroll page). Access is filtered here, before the LIMIT, with the console's rule
+     * ({@link DeviceMapper#USER_DEVICE_ACCESS}; a super admin sees all). Uses the (customerId, enrollTime) index.
+     */
+    @Select({"SELECT devices.id, devices.number, devices.description, devices.customerId, devices.enrollTime, " +
+            "devices.lastUpdate FROM devices INNER JOIN users ON users.id = #{userId} " +
+            "WHERE devices.customerId = #{customerId} AND devices.enrollTime >= #{since} " +
+            "AND (#{superAdmin} OR " + DeviceMapper.USER_DEVICE_ACCESS + ") " +
+            "ORDER BY devices.enrollTime DESC LIMIT #{limit}"})
+    List<com.hmdm.persistence.domain.Device> listEnrolledSince(@Param("customerId") int customerId,
+                                                              @Param("userId") int userId,
+                                                              @Param("superAdmin") boolean superAdmin,
+                                                              @Param("since") long since,
+                                                              @Param("limit") int limit);
+
+    /**
+     * An authenticated check-in: last-seen, and the device has its credentials, so its enrollment can no longer be
+     * retried.
+     */
+    @Update({"UPDATE devices SET lastUpdate = #{ts}, agentEnrollAttemptHash = NULL WHERE number = #{deviceNumber}"})
+    void markCheckedIn(@Param("deviceNumber") String deviceNumber, @Param("ts") long ts);
 
     /**
      * The console's "Wiped": when the latest device.wipe was delivered. {@code ts} is also that command's deliveredAt,

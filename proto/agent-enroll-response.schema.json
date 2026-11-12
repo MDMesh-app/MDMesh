@@ -9,6 +9,7 @@
   "properties": {
     "protocolVersion": { "type": "string", "pattern": "^\\d+\\.\\d+$" },
     "deviceId": { "type": "string", "description": "Server-issued opaque device id. The agent stores this and uses it as identity forever." },
+    "resumeSupported": { "type": "boolean", "description": "Optional (protocol 1.9). true from servers that resume enrollments: the agent may then recover credentials the server refuses before its first check-in with a resumeOnly enroll of the same attempt. Absent from older servers." },
     "configurationName": { "type": "string" }
   }
 }

@@ -2,6 +2,9 @@ package com.mdmesh.agent
 
 import com.mdmesh.core.sync.CredentialsLost
 import com.mdmesh.core.sync.SyncStatus
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 /**
  * What the status screen's DEVICE ID area shows, decided from the persisted state (pure, so it is tested with the state
@@ -32,4 +35,16 @@ object DeviceIdLabel {
     } else {
         Status.Enrolled(deviceId, CredentialsLost.stillLost(credentialsLostMark, lastSuccessAtMs))
     }
+
+    /**
+     * [of], kept current: a new value whenever the stored id, lost-credentials mark, last success or last error
+     * changes what is shown (a background recovery, a check-in, an enrollment), and only then. The screen collects it
+     * while started; the same stream backs a view model's state.
+     */
+    fun watch(
+        deviceIds: Flow<String?>,
+        marks: Flow<Long?>,
+        lastSuccess: Flow<Long?>,
+        lastError: Flow<SyncStatus.Failure?>,
+    ): Flow<Status> = combine(deviceIds, marks, lastSuccess, lastError, ::of).distinctUntilChanged()
 }

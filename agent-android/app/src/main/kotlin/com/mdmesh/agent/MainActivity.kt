@@ -30,6 +30,7 @@ import com.mdmesh.core.store.DeviceIdStore
 import com.mdmesh.core.store.EnrollTokenStore
 import com.mdmesh.core.store.KioskStateStore
 import com.mdmesh.core.sync.CheckInWorker
+import com.mdmesh.core.sync.LastCheckIn
 import com.mdmesh.core.sync.SyncStatus
 import com.mdmesh.core.telemetry.EventLog
 import com.mdmesh.kiosk.KioskResult
@@ -66,6 +67,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var kioskStore: KioskStateStore
     @Inject lateinit var events: EventLog
     @Inject lateinit var enrollTokens: EnrollTokenStore
+    @Inject lateinit var lastCheckIn: LastCheckIn
 
     private lateinit var deviceIdValue: TextView
     private lateinit var credentialsLostValue: TextView
@@ -81,6 +83,18 @@ class MainActivity : ComponentActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 combine(configStore.configuredKioskFlow(), kioskStore.flow()) { _, _ -> Unit }
                     .collect { refresh() }
+            }
+        }
+        // The DEVICE ID area follows the stored state while the screen is visible: a background recovery that marks
+        // the credentials lost, a check-in that succeeds, an enrollment. Nothing is collected while stopped.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                DeviceIdLabel.watch(
+                    deviceIds = deviceIdStore.deviceId,
+                    marks = enrollTokens.credentialsLostMarks,
+                    lastSuccess = lastCheckIn.okAtMsChanges,
+                    lastError = syncStatus.lastError,
+                ).collect { show(it) }
             }
         }
         // Grant our own POST_NOTIFICATIONS as Device Owner BEFORE starting the foreground
@@ -114,15 +128,6 @@ class MainActivity : ComponentActivity() {
         returnButton.visibility = if (canReturn) View.VISIBLE else View.GONE
         returnButton.isEnabled = canReturn && !returningToKiosk
         returnButton.text = if (returningToKiosk) "Returning…" else "Return to kiosk"
-        lifecycleScope.launch {
-            val id = deviceIdStore.current()
-            val lostMark = try {
-                enrollTokens.credentialsLostMark()
-            } catch (ignored: java.io.IOException) {
-                null // unreadable store: show the id; the state is written again on the next recovery
-            }
-            show(DeviceIdLabel.of(id, lostMark, syncStatus.lastSuccessAtMs, syncStatus.lastError.value))
-        }
     }
 
     /** The DEVICE ID area: the id (mono, alone, so it can be copied as it is) and, under it, any warning. */

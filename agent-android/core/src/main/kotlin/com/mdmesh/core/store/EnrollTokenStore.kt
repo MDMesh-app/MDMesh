@@ -9,8 +9,12 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.mdmesh.core.BuildConfig
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import java.io.IOException
 
 /**
  * Supplies the single-use enrollment token presented on `/enroll`.
@@ -104,6 +108,12 @@ class EnrollTokenStore(private val context: Context) : EnrollTokenProvider {
 
     override suspend fun credentialsLostMark(): Long? =
         context.enrollTokenDataStore.data.first()[KEY_CREDENTIALS_LOST_MARK]
+
+    /** [credentialsLostMark] now, then each time it changes; an unreadable store reads as no mark. */
+    val credentialsLostMarks: Flow<Long?> = context.enrollTokenDataStore.data
+        .map { it[KEY_CREDENTIALS_LOST_MARK] }
+        .catch { if (it is IOException) emit(null) else throw it }
+        .distinctUntilChanged()
 
     override suspend fun resumableAttempt(token: String): String? {
         val prefs = context.enrollTokenDataStore.data.first()

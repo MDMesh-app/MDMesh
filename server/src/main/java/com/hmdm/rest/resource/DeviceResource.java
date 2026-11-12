@@ -277,10 +277,10 @@ public class DeviceResource {
                     if (!unsecureDAO.isSingleCustomer()) {
                         commonDAO.loadCustomerSettings(settings);
                     }
-                    if (settings.getDeviceLimit() == 0 || settings.getDeviceCount() < settings.getDeviceLimit()) {
-                        device.setLastUpdate(0L);
-                        this.deviceDAO.insertDevice(device);
-                    } else {
+                    // Counted and inserted under the per-customer lock all device-adding paths share (agent enrollment
+                    // too), so concurrent adds can't together pass the limit.
+                    device.setLastUpdate(0L);
+                    if (!this.deviceDAO.insertDeviceWithinLimit(device, settings.getDeviceLimit())) {
                         log.warn("New device {} not added by customer {} due to the license limit", device.getNumber(),
                                 SecurityContext.get().getCurrentCustomerId().get());
                         return Response.ERROR();

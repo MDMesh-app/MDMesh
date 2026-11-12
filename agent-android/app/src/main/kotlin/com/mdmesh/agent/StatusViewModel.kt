@@ -12,6 +12,7 @@ import com.mdmesh.core.config.ConfigApplier
 import com.mdmesh.core.config.ServerConfigStore
 import com.mdmesh.core.store.ConfigStateStore
 import com.mdmesh.core.store.DeviceIdStore
+import com.mdmesh.core.store.EnrollTokenStore
 import com.mdmesh.core.store.KioskStateStore
 import com.mdmesh.core.store.configuredKiosk
 import com.mdmesh.core.sync.CheckInWorker
@@ -27,6 +28,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -92,34 +94,34 @@ class StatusViewModel @Inject constructor(
     /** Collected only while the screen is started (WhileSubscribed), kept through a rotation. */
     val state: StateFlow<StatusUiState> = combine(
         facts,
-        sources.deviceIdStore.deviceId.map { Loaded(it) },
-        sources.syncStatus.lastError,
+        deviceIds(
+            sources.deviceIdStore.deviceId,
+            sources.enrollTokens.credentialsLostMarks,
+            sources.syncStatus.lastSuccessAtMsChanges,
+            sources.syncStatus.lastError,
+        ),
         returning,
         copied,
-    ) { f, id, error, r, c -> stateOf(f, id, error, r).copy(copied = c) }
+    ) { f, id, r, c -> stateOf(f, id, r).copy(copied = c) }
         // The first frame is drawn from the facts read now, as before; the device id follows from storage.
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), stateOf(readFacts()))
 
-    /** The stored device id, once storage has answered ([loaded]). */
-    private data class Loaded(val id: String?, val loaded: Boolean = true)
-
     private fun stateOf(
         f: Facts,
-        id: Loaded = Loaded(null, loaded = false),
-        error: SyncStatus.Failure? = null,
+        id: StatusUiState.DeviceIdUi = StatusUiState.DeviceIdUi.Loading,
         r: ReturnProgress = returning.value,
     ) = StatusUiState.of(
         deviceOwner = f.deviceOwner,
         locked = f.locked,
         configured = f.configured,
-        deviceId = id.id,
-        deviceIdLoaded = id.loaded,
-        lastError = error?.message,
-        lastErrorAtMs = error?.atMillis,
+        deviceId = null,
+        deviceIdLoaded = false,
+        lastError = null,
+        lastErrorAtMs = null,
         serverUrl = serverConfig.baseUrl(),
         returning = r.running,
         returnFailure = r.failure,
-    )
+    ).copy(deviceId = id)
 
     /** Reads the system facts again (the screen resumed, or a kiosk change may have locked or unlocked it). */
     fun refresh() {
@@ -201,13 +203,32 @@ class StatusViewModel @Inject constructor(
         val syncStatus: SyncStatus,
         val configStore: ConfigStateStore,
         val kioskStore: KioskStateStore,
+        val enrollTokens: EnrollTokenStore,
     )
 
-    private companion object {
+    companion object {
+        /**
+         * The Device ID as the screen shows it, kept current (#188's [DeviceIdLabel.watch]): a new value whenever the
+         * stored id, the lost-credentials mark, the last success or the last error changes what is shown.
+         */
+        fun deviceIds(
+            ids: Flow<String?>,
+            marks: Flow<Long?>,
+            lastSuccess: Flow<Long?>,
+            lastError: Flow<SyncStatus.Failure?>,
+        ): Flow<StatusUiState.DeviceIdUi> = DeviceIdLabel.watch(ids, marks, lastSuccess, lastError).map { label ->
+            when (label) {
+                is DeviceIdLabel.Status.Enrolled ->
+                    StatusUiState.DeviceIdUi.Known(label.deviceId, label.credentialsLost)
+                is DeviceIdLabel.Status.Enrolling ->
+                    StatusUiState.DeviceIdUi.Enrolling(label.lastError?.message, label.lastError?.atMillis)
+            }
+        }.distinctUntilChanged()
+
         /** Keep collecting through a rotation, stop soon after the screen leaves. */
-        const val STOP_TIMEOUT_MS = 5_000L
+        private const val STOP_TIMEOUT_MS = 5_000L
 
         /** How long "Copied" shows. */
-        const val COPIED_MS = 2_000L
+        private const val COPIED_MS = 2_000L
     }
 }

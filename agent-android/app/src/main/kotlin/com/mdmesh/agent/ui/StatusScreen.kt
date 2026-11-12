@@ -31,6 +31,7 @@ class StatusScreen(
     private val server: TextView = activity.findViewById(R.id.status_server)
     private val management = Callout(activity.findViewById(R.id.status_management))
     private val enrollError = Callout(activity.findViewById(R.id.status_enroll_error), announce = true)
+    private val credentialsLost: TextView = activity.findViewById(R.id.status_credentials_lost)
     private val kioskPill: TextView = activity.findViewById(R.id.status_kiosk_pill)
     private val kioskBody: TextView = activity.findViewById(R.id.status_kiosk_body)
     private val returnButton: Button = activity.findViewById(R.id.status_return)
@@ -127,6 +128,9 @@ class StatusScreen(
         // TalkBack reads the value itself, not the display text with its break hints.
         val spoken = (id as? StatusUiState.DeviceIdUi.Known)?.id ?: deviceId.text
         describe(R.id.status_device_id_group, R.string.status_label_device_id, spoken)
+        // The server refused the credentials and could restore nothing: its own line under the ID.
+        val lost = (id as? StatusUiState.DeviceIdUi.Known)?.credentialsLost == true
+        credentialsLost.visibility = if (lost) View.VISIBLE else View.GONE
         val error = (id as? StatusUiState.DeviceIdUi.Enrolling)?.lastError
         if (error == null) {
             enrollError.hide()

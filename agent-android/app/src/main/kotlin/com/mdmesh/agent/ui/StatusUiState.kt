@@ -17,7 +17,8 @@ data class StatusUiState(
     /** The Device ID line: not read yet, the server-issued id, or still enrolling (with the last error, if any). */
     sealed interface DeviceIdUi {
         data object Loading : DeviceIdUi
-        data class Known(val id: String) : DeviceIdUi
+        /** [credentialsLost]: the server refused this device's credentials and could restore nothing (#188). */
+        data class Known(val id: String, val credentialsLost: Boolean = false) : DeviceIdUi
         data class Enrolling(val lastError: String?, val lastErrorAtMs: Long?) : DeviceIdUi
     }
 
@@ -34,13 +35,14 @@ data class StatusUiState(
             serverUrl: String,
             returning: Boolean,
             returnFailure: String?,
+            credentialsLost: Boolean = false,
         ): StatusUiState {
             val kiosk = KioskCardUi.of(deviceOwner, locked, configured, returning)
             return StatusUiState(
                 deviceOwner = deviceOwner,
                 deviceId = when {
                     !deviceIdLoaded -> DeviceIdUi.Loading
-                    !deviceId.isNullOrBlank() -> DeviceIdUi.Known(deviceId)
+                    !deviceId.isNullOrBlank() -> DeviceIdUi.Known(deviceId, credentialsLost)
                     else -> DeviceIdUi.Enrolling(lastError, lastErrorAtMs.takeIf { lastError != null })
                 },
                 serverUrl = serverUrl,

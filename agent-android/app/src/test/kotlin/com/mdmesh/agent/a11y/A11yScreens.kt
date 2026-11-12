@@ -131,6 +131,7 @@ class A11yScreens {
         returning: Boolean = false,
         returnFailure: String? = null,
         copied: StatusCopy.Target? = null,
+        credentialsLost: Boolean = false,
     ): StatusUiState = StatusUiState.of(
         deviceOwner = deviceOwner,
         locked = locked,
@@ -142,6 +143,7 @@ class A11yScreens {
         serverUrl = "https://mdm.example.com/",
         returning = returning,
         returnFailure = returnFailure,
+        credentialsLost = credentialsLost,
     ).copy(copied = copied)
 
     fun returnDialog(kiosk: KioskApplyPayload): Dialog {

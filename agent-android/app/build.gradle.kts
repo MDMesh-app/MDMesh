@@ -134,6 +134,7 @@ dependencies {
     testImplementation(libs.accessibility.test.framework) {
         exclude(group = "androidx.test.espresso")
     }
+    testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.test.runner)
 }

@@ -97,6 +97,9 @@ abstract class AtfScreensTest(private val fontScale: Float = 1f) {
         s.status(null, s.statusState(deviceId = null, lastError = "Unable to resolve host")).window.decorView,
     )
 
+    @Test fun statusCredentialsLost() =
+        check("credentials lost", s.status(null, s.statusState(credentialsLost = true)).window.decorView)
+
     @Test fun statusKioskReady() =
         check("kiosk ready", s.status(s.kiosk, s.statusState(configured = true)).window.decorView)
 

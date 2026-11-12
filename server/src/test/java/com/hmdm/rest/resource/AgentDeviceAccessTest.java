@@ -80,6 +80,7 @@ public class AgentDeviceAccessTest {
     private final Set<String> wiped = new HashSet<>();
     private String appliedRevision = "rev";
     private int revisionReads;
+    private final List<String> enrolledQuery = new ArrayList<>();
 
     private static Device device(int id, String number) {
         Device d = new Device();
@@ -130,6 +131,19 @@ public class AgentDeviceAccessTest {
             @Override public List listLocations(String n, long s, int l) { return new ArrayList<>(); }
             @Override public String getDeviceCapabilities(String n) { return null; }
             @Override public AgentCommand findLatestOfType(String n, String t) { return null; }
+            @Override public List<Device> listEnrolledSince(int customerId, int userId, boolean superAdmin, long since,
+                                                            int limit) {
+                enrolledQuery.add(customerId + ":" + userId + ":" + since + ":" + limit);
+                List<Device> rows = new ArrayList<>();
+                for (Device d : devices.values()) {
+                    if (!allDevices && d.getId() != VISIBLE_ID) continue; // what the query's access filter does
+                    Device copy = device(d.getId(), d.getNumber());
+                    copy.setEnrollTime(since + 1);
+                    copy.setLastUpdate(since + 1);
+                    rows.add(copy);
+                }
+                return rows;
+            }
             @Override public List<DeviceSyncRow> listDevicesForSync(int customerId) {
                 List<DeviceSyncRow> rows = new ArrayList<>();
                 for (String n : Arrays.asList(VISIBLE, HIDDEN)) {
@@ -377,6 +391,33 @@ public class AgentDeviceAccessTest {
         assertEquals(1, data.get("queued"));
         assertEquals(Collections.singletonList(HIDDEN_ID), data.get("skipped"));
         assertTrue(sideEffects.toString(), sideEffects.stream().noneMatch(s -> s.endsWith(HIDDEN)));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void devicesEnrolledSinceListOnlyTheUsersDevicesWithABoundedQuery() {
+        Response r = resource.listEnrolledSince(1000L, 500);
+
+        assertEquals(Response.ResponseStatus.OK, r.getStatus());
+        Map<String, Object> body = (Map<String, Object>) r.getData();
+        assertTrue("with the server's time", body.get("serverTime") instanceof Long);
+        List<com.hmdm.rest.json.agent.EnrolledDeviceView> rows =
+                (List<com.hmdm.rest.json.agent.EnrolledDeviceView>) body.get("devices");
+        assertEquals(1, rows.size());
+        assertEquals(VISIBLE, rows.get(0).getNumber());
+        assertEquals(Long.valueOf(1001L), rows.get(0).getEnrollTime());
+        assertEquals("the customer's, for this user, since then, at most 50", "1:9:1000:50", enrolledQuery.get(0));
+    }
+
+    @Test
+    public void devicesEnrolledSinceIsAnIndexedQuery() {
+        String sql = Fakes.sqlOf(com.hmdm.persistence.mapper.AgentDeviceMapper.class, "listEnrolledSince")
+                .replaceAll("\\s+", " ").toLowerCase();
+        String where = Fakes.whereOf(sql);
+        assertTrue(where, where.contains("devices.customerid = #{customerid}"));
+        assertTrue(where, where.contains("devices.enrolltime >= #{since}"));
+        assertTrue("access filtered before the limit: " + where, where.contains("users.alldevicesavailable = true"));
+        assertTrue(sql, sql.contains("order by devices.enrolltime desc limit #{limit}"));
     }
 
     @Test

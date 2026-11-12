@@ -37,6 +37,7 @@
     <string name="status_enrolling_error_title">Enrolment hasn\'t finished</string>
     <!-- %1$s = the last sync error, %2$s = its time. -->
     <string name="status_enrolling_error">Last error: %1$s at %2$s</string>
+    <string name="status_credentials_lost">The server no longer accepts this device\'s credentials and can\'t restore them. Factory-reset the device and scan a new QR code to enroll it again.</string>
     <string name="kiosk_return_failed_title">Couldn\'t return to the kiosk</string>
 
     <!-- Return to kiosk (MainActivity + KioskReturnPrompt). OfflineKioskReturnTest finds these by text. -->

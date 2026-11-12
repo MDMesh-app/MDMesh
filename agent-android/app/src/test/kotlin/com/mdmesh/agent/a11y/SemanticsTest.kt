@@ -132,6 +132,17 @@ class SemanticsTest {
         assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_NO, spinner.importantForAccessibility)
     }
 
+    @Test fun `the credentials-lost warning is its own stop, read out when it appears`() {
+        val a = s.status(null, s.statusState(credentialsLost = true))
+        val warning = a.findViewById<TextView>(R.id.status_credentials_lost)
+        assertEquals(View.VISIBLE, warning.visibility)
+        assertEquals(str(R.string.status_credentials_lost), warning.text.toString())
+        assertEquals(View.ACCESSIBILITY_LIVE_REGION_POLITE, warning.accessibilityLiveRegion)
+        assertTrue("not merged into the Device ID stop", warning.isImportantForAccessibility)
+        val clear = s.status(null, s.statusState(credentialsLost = false))
+        assertEquals(View.GONE, clear.findViewById<TextView>(R.id.status_credentials_lost).visibility)
+    }
+
     @Test fun `app cells are buttons`() {
         val cell = cells(s.kioskScreen(grid()).window.decorView).getChildAt(0)
         assertEquals(Button::class.java.name, cell.createAccessibilityNodeInfo().className)

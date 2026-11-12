@@ -30,7 +30,13 @@ class NetworkModuleTest {
     private fun serverConfig(url: String): ServerConfigStore {
         val prefs = Proxy.newProxyInstance(
             javaClass.classLoader, arrayOf(SharedPreferences::class.java),
-        ) { _, method, _ -> if (method.name == "getString") url else null } as SharedPreferences
+        ) { _, method, args ->
+            when (method.name) {
+                "getString" -> url
+                "getInt" -> args?.get(1) // the default, as for a key that isn't there
+                else -> null
+            }
+        } as SharedPreferences
         val context = object : ContextWrapper(null) {
             override fun getSharedPreferences(name: String?, mode: Int): SharedPreferences = prefs
         }

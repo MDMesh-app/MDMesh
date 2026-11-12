@@ -28,14 +28,14 @@ fun Activity.colorSystemBars(@ColorInt background: Int) {
 }
 
 /**
- * Android 15+: dark or light bar icons for a new [background] after [SystemBars.fit] set them for the first one
- * (the kiosk launcher changes colours with the kiosk). Earlier versions: see [colorSystemBars].
+ * Android 15+: dark or light bar icons after [SystemBars.fit] set them for the first background (the kiosk launcher
+ * changes colours with the kiosk, and its bars lie over an image): each bar from the colour under it, [statusBar]
+ * under the status bar and [navigationBar] under the navigation bar. Earlier versions: see [colorSystemBars].
  */
-fun Activity.updateSystemBarIcons(@ColorInt background: Int) {
+fun Activity.updateSystemBarIcons(@ColorInt statusBar: Int, @ColorInt navigationBar: Int = statusBar) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) return
-    val light = SystemBars.isLight(background)
     WindowCompat.getInsetsController(window, window.decorView).apply {
-        isAppearanceLightStatusBars = light
-        isAppearanceLightNavigationBars = light
+        isAppearanceLightStatusBars = SystemBars.isLight(statusBar)
+        isAppearanceLightNavigationBars = SystemBars.isLight(navigationBar)
     }
 }

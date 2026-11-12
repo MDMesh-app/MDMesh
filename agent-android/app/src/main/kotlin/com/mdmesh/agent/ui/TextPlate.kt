@@ -10,6 +10,7 @@ import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import androidx.core.graphics.Insets
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 
@@ -155,8 +156,8 @@ object TextPlates {
     /** The tag of a control the dim serves (the Exit button): it has its own fill and gets no plate. */
     val CONTROL = Any()
 
-    /** What [update] worked out: the dim, and the colour under the status bar (for its icons). */
-    data class Painted(val dim: Int, val statusBar: Int)
+    /** What [update] worked out: the dim, and the colours under the status and navigation bars (for their icons). */
+    data class Painted(val dim: Int, val statusBar: Int, val navigationBar: Int)
 
     /**
      * What a layout pass found under a launcher root: the plated texts, the controls, and the grid rows (by layout
@@ -199,6 +200,8 @@ object TextPlates {
         info: BackdropInfo?,
         palette: KioskPalette,
         placement: Placement,
+        /** Where the navigation bar is: the window's navigation-bar insets (none before Android 15). */
+        navBar: Insets = Insets.NONE,
     ): Painted? =
         when {
             info == null || root.width == 0 || root.height == 0 -> {
@@ -206,14 +209,14 @@ object TextPlates {
                 null
             }
             !info.validFor(palette.background) -> provisional(root, scan, palette)
-            else -> measured(root, scan, info, palette, placement)
+            else -> measured(root, scan, info, palette, placement, navBar)
         }
 
     /** Until an image with transparency is decoded over the new colour: every plate solid, the dim at its cap. */
     private fun provisional(root: ViewGroup, scan: Scan, palette: KioskPalette): Painted {
         scan.plates.forEach { it.second.step = KioskScrim.STEPS }
         (root.background as? BackdropDrawable)?.dim = LegibilityV3.DIM_MAX_STEP
-        return Painted(LegibilityV3.DIM_MAX_STEP, palette.background)
+        return Painted(LegibilityV3.DIM_MAX_STEP, palette.background, palette.background)
     }
 
     private fun measured(
@@ -222,6 +225,7 @@ object TextPlates {
         info: BackdropInfo,
         palette: KioskPalette,
         placement: Placement,
+        navBar: Insets,
     ): Painted {
         root.getLocationInWindow(scan.origin)
         val w = root.width.toDouble()
@@ -251,11 +255,33 @@ object TextPlates {
             val shared = rule.rowStep(row.map { it.second.step })
             row.forEach { it.second.step = shared }
         }
-        // Under the status bar: the strip as tall as the top inset.
+        // Each bar's icons from the pixels under that bar, dimmed as drawn: the status bar's strip is as tall as the
+        // top inset, the navigation bar's lies along its own edge (the bottom, or a side in landscape).
+        fun under(strip: RectF): Int {
+            val bar = bounds(root, strip)
+            return KioskScrim.blend(palette.background, KioskScrim.blend(bar.min, bar.max, KioskScrim.STEPS / 2), dim)
+        }
         scan.rect.set(0f, 0f, root.width.toFloat(), maxOf(1, root.paddingTop).toFloat())
-        val bar = bounds(root, scan.rect)
-        val barMiddle = KioskScrim.blend(bar.min, bar.max, KioskScrim.STEPS / 2)
-        return Painted(dim, KioskScrim.blend(palette.background, barMiddle, dim))
+        val statusBar = under(scan.rect)
+        val navigationBar = under(navigationStrip(root.width, root.height, navBar, scan.rect))
+        return Painted(dim, statusBar, navigationBar)
+    }
+
+    /**
+     * The strip under the navigation bar in a [width] x [height] root drawn under the bars: along the edge of the
+     * largest [nav] inset (bottom with gesture or 3-button navigation, left or right with a 3-button bar on a
+     * landscape phone). No navigation bar reported: the bottom pixel row, where a gesture handle would be.
+     */
+    internal fun navigationStrip(width: Int, height: Int, nav: Insets, into: RectF): RectF {
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val side = maxOf(nav.left, nav.right)
+        return when {
+            nav.bottom >= side && nav.bottom > 0 -> into.apply { set(0f, h - nav.bottom, w, h) }
+            nav.right >= nav.left && nav.right > 0 -> into.apply { set(w - nav.right, 0f, w, h) }
+            nav.left > 0 -> into.apply { set(0f, 0f, nav.left.toFloat(), h) }
+            else -> into.apply { set(0f, h - 1f, w, h) }
+        }
     }
 
     private fun dim(rule: BackdropRule, palette: KioskPalette, controls: List<ColourBox>): Int {

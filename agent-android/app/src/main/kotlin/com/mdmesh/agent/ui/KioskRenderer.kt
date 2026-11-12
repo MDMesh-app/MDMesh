@@ -9,7 +9,9 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import androidx.activity.ComponentActivity
+import androidx.core.graphics.Insets
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.mdmesh.agent.R
 import kotlin.math.roundToInt
 
@@ -51,13 +53,24 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
 
     private class GridViews(val views: KioskViews, val cells: AppGridLayout, val empty: View, val column: View)
 
+    /** The window's navigation-bar insets, from the last insets dispatch (Android 15+; none before). */
+    private var navBar: Insets = Insets.NONE
+
     /** Plates follow the text wherever it is drawn: after any layout and any scroll, at most once a frame. */
     private val plates = PlateFrames(root, ::updatePlates)
 
     init {
         activity.setContentView(root)
         // Android 15 draws edge to edge: the kiosk background runs under the bars, the content stays clear of them.
-        SystemBars.fit(activity, root, KioskPalette.DEFAULT.background)
+        SystemBars.fit(activity, root, KioskPalette.DEFAULT.background) { insets ->
+            // Where the navigation bar is now (a rotation moves a 3-button bar to a side): its icons follow the
+            // image under it.
+            val nav = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
+            if (nav != navBar) {
+                navBar = nav
+                plates.changed()
+            }
+        }
     }
 
     fun render(next: KioskScreen) {
@@ -97,8 +110,9 @@ class KioskRenderer(private val activity: ComponentActivity, private val actions
     /** Everything that follows the layout: row plates, the dim, plate opacities, the bar icons. */
     private fun updatePlates(scan: TextPlates.Scan) {
         val s = screen ?: return
-        val painted = TextPlates.update(root, scan, backdropInfo.takeIf { onImage }, s.palette, placement) ?: return
-        activity.updateSystemBarIcons(painted.statusBar)
+        val painted =
+            TextPlates.update(root, scan, backdropInfo.takeIf { onImage }, s.palette, placement, navBar) ?: return
+        activity.updateSystemBarIcons(painted.statusBar, painted.navigationBar)
     }
 
     private fun build(s: KioskScreen) {

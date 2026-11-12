@@ -19,9 +19,15 @@ object SystemBars {
     /**
      * Pads [root] (on top of its own padding) by the system bar and cutout insets, so its background runs under the
      * bars and its content stays clear of them. On Android 15+ the bar icons are also set dark or light to read on
-     * [background], the colour behind them.
+     * [background], the colour behind them. [onInsets] gets every insets dispatch after the padding is set (the
+     * kiosk launcher reads where the navigation bar is, to colour its icons from the image under it).
      */
-    fun fit(activity: Activity, root: View, @ColorInt background: Int) {
+    fun fit(
+        activity: Activity,
+        root: View,
+        @ColorInt background: Int,
+        onInsets: (WindowInsetsCompat) -> Unit = {},
+    ) {
         val left = root.paddingLeft
         val top = root.paddingTop
         val right = root.paddingRight
@@ -29,6 +35,7 @@ object SystemBars {
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             view.setPadding(left + bars.left, top + bars.top, right + bars.right, bottom + bars.bottom)
+            onInsets(insets)
             insets
         }
         ViewCompat.requestApplyInsets(root)

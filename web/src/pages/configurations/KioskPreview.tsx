@@ -97,7 +97,7 @@ export function readout(l: Legibility): { text: string; dim: string; pass: boole
   return { text, dim, pass };
 }
 
-type Measured = { kind: 'ok'; legibility: Legibility } | { kind: 'unreadable' } | { kind: 'unloaded' };
+type Measured = { kind: 'ok'; legibility: Legibility } | { kind: 'unreadable' } | { kind: 'unloaded' } | { kind: 'pinned' };
 
 function prefersReducedMotion(): boolean {
   try {
@@ -114,6 +114,7 @@ export function KioskBackgroundPreview({
   height,
   colours,
   appNames,
+  pinned,
   exitVisible,
   iconSize,
   fit = 'fill',
@@ -125,7 +126,16 @@ export function KioskBackgroundPreview({
   width: number;
   height: number;
   colours: KioskColours;
+  /**
+   * The grid's apps as the device lists them (configuredKiosk: the main app first, then by package, each once), all
+   * of them: the device has no limit, so End of list ends on the last one.
+   */
   appNames: readonly string[];
+  /**
+   * A single-app kiosk: the name of the app it pins. The device opens that app over the image, so there is no grid;
+   * the image shows only behind the splash and the hold screen.
+   */
+  pinned?: string | null;
   exitVisible: boolean;
   iconSize?: string | null;
   /** Fill (cropped around the focal point) or fit (whole, letterboxed). */
@@ -167,13 +177,16 @@ export function KioskBackgroundPreview({
   }, [measure, seen]);
   // fontEpoch: a new measure (so a new label cache) per font load.
   const measureFn = useMemo(() => measure ?? browserMeasure(seen ? KIOSK_FONT : FALLBACK_FONT), [measure, seen, fontEpoch]);
-  const apps = useMemo(() => (appNames.length ? appNames.slice(0, 24) : ['Camera', 'Notes', 'Browser', 'Scanner']), [appNames]);
+  const isPinned = pinned != null;
+  // The device's own list, every app of it; none for a pinned app (it covers the screen).
+  const apps = useMemo(() => (isPinned ? [] : [...appNames]), [appNames, isPinned]);
+  const gridExit = exitVisible && !isPinned;
 
   const layouts = useMemo(() => {
     const out: Record<string, LauncherLayout> = {};
-    for (const v of ALL_VIEWS) out[viewKey(v)] = launcherLayout(viewWindow(v), apps, { iconSize, exitVisible }, measureFn);
+    for (const v of ALL_VIEWS) out[viewKey(v)] = launcherLayout(viewWindow(v), apps, { iconSize, exitVisible: gridExit }, measureFn);
     return out;
-  }, [apps, iconSize, exitVisible, measureFn]);
+  }, [apps, iconSize, gridExit, measureFn]);
 
   // The image's cells: read once per image (and background colour), then every view is placed from them.
   const [source, setSource] = useState<{ cells: ImageCells | null; loaded: boolean } | null>(null);
@@ -200,12 +213,14 @@ export function KioskBackgroundPreview({
       const key = viewKey(v);
       out[key] = !source.loaded
         ? { kind: 'unloaded' }
-        : source.cells
+        : isPinned
+          ? { kind: 'pinned' }
+          : source.cells
           ? { kind: 'ok', legibility: kioskLegibility(source.cells, viewWindow(v), colours, layouts[key].elements, imageFit) }
           : { kind: 'unreadable' };
     }
     return out;
-  }, [source, colours, layouts, imageFit]);
+  }, [source, colours, layouts, imageFit, isPinned]);
 
   // The large view at the end of its scroll: the grid moves up, the image and the Exit button stay.
   const key = viewKey(view);
@@ -214,8 +229,8 @@ export function KioskBackgroundPreview({
   if (atEnd && !scrollable) setAtEnd(false);
   const scrolled = atEnd && scrollable;
   const largeLayout = useMemo(
-    () => (scrolled ? launcherLayout(viewWindow(view), apps, { iconSize, exitVisible, scrollY: Infinity }, measureFn) : layouts[key]),
-    [scrolled, view, apps, iconSize, exitVisible, measureFn, layouts, key],
+    () => (scrolled ? launcherLayout(viewWindow(view), apps, { iconSize, exitVisible: gridExit, scrollY: Infinity }, measureFn) : layouts[key]),
+    [scrolled, view, apps, iconSize, gridExit, measureFn, layouts, key],
   );
   const largeMeasured = useMemo((): Measured | undefined => {
     if (!scrolled) return measured?.[key];
@@ -266,7 +281,9 @@ export function KioskBackgroundPreview({
         ? 'The image could not be loaded to measure it'
         : m.kind === 'unreadable'
           ? 'Contrast unavailable in this browser'
-          : null;
+          : m.kind === 'pinned'
+            ? `${pinned} pinned`
+            : null;
 
   return (
     <details
@@ -276,10 +293,23 @@ export function KioskBackgroundPreview({
       onToggle={(e) => setOpen(e.currentTarget.open)}
     >
       <summary id={headingId}>Preview on devices</summary>
-      <p className="v2-kbg__lede">
-        {fit === 'fit' ? 'The whole image is shown, letterboxed with the background color.' : 'The image fills the screen, cropped around its focal point.'} Text sits on a plate of the background color where the image
-        behind it is too bright or busy (solid over texture), and the image is dimmed by at most 30% for the Exit button.
-      </p>
+      {isPinned ? (
+        <p className="v2-kbg__lede">
+          This kiosk pins {pinned}, which opens over the image and covers the screen, so devices show the image only
+          behind the splash while it opens and the hold screen if it keeps closing.{' '}
+          {fit === 'fit' ? 'There the whole image is shown, letterboxed with the background color.' : 'There the image fills the screen, cropped around its focal point.'}
+        </p>
+      ) : (
+        <p className="v2-kbg__lede">
+          {fit === 'fit' ? 'The whole image is shown, letterboxed with the background color.' : 'The image fills the screen, cropped around its focal point.'} Text sits on a plate of the background color where the image
+          behind it is too bright or busy (solid over texture), and the image is dimmed by at most 30% for the Exit button.
+        </p>
+      )}
+      {!isPinned && apps.length === 0 ? (
+        <Callout tone="info" icon={<IconInfo size={16} />}>
+          This kiosk has no apps shown in kiosk yet, so devices show only the title and a note to add apps.
+        </Callout>
+      ) : null}
       {Math.min(width, height) < SOFT_EDGE ? (
         <Callout tone="info" icon={<IconInfo size={16} />}>
           The image is {Math.min(width, height)} px on its short side, so it may look soft on large tablets.
@@ -334,6 +364,7 @@ export function KioskBackgroundPreview({
         src={src}
         colours={colours}
         scrolled={scrolled}
+        pinned={pinned ?? null}
       >
         <p className="v2-kbg__large-readout" aria-live="polite">
           <span className="v2-kbg__shape-name">
@@ -378,6 +409,7 @@ export function KioskBackgroundPreview({
                   src={src}
                   colours={colours}
                   scale={(thumbs.height - 2 * THUMB_BEZEL) / viewWindow(t).h}
+                  pinned={pinned ?? null}
                 />
                 <span className="v2-kbg__caption">
                   <span className="v2-kbg__shape-name">{viewLabel(t)}</span>
@@ -396,11 +428,13 @@ export function KioskBackgroundPreview({
           );
         })}
       </ul>
-      <p className="v2-kbg__footnote">
-        Text contrast is the worst case: against every pixel under each text. Layout shown at 360 dp wide for phones, in
-        Roboto, Android’s default font; real devices vary in width and font, and other scripts (such as Chinese or Arabic)
-        are shown in this browser’s fonts.
-      </p>
+      {isPinned ? null : (
+        <p className="v2-kbg__footnote">
+          Text contrast is the worst case: against every pixel under each text. Layout shown at 360 dp wide for phones, in
+          Roboto, Android’s default font; real devices vary in width and font, and other scripts (such as Chinese or Arabic)
+          are shown in this browser’s fonts.
+        </p>
+      )}
     </details>
   );
 }
@@ -477,9 +511,12 @@ function LargeScreen({
   image,
   fit,
   scrolled,
+  pinned,
 }: {
   /** Scrolled to the end of the grid. */
   scrolled: boolean;
+  /** The app a single-app kiosk pins, drawn instead of the grid; null for the launcher. */
+  pinned: string | null;
   image: { w: number; h: number };
   fit: { mode: FitMode; focal: FocalPoint };
   view: View;
@@ -514,7 +551,9 @@ function LargeScreen({
   const boxH = Math.max(h * scale, nextBox?.h ?? 0);
   const r = legibility ? readout(legibility) : null;
   const how = fit.mode === 'fit' ? 'the whole image, letterboxed' : 'the image filling the screen, cropped around its focal point';
-  const description = `${viewLabel(view)}${scrolled ? ', scrolled to the end of the list' : ''}: ${how}${r ? `, ${r.dim.toLowerCase()}, ${r.text.toLowerCase()}` : ''}`;
+  const description = pinned != null
+    ? `${viewLabel(view)}: ${pinned} pinned, open over ${how}`
+    : `${viewLabel(view)}${scrolled ? ', scrolled to the end of the list' : ''}: ${how}${r ? `, ${r.dim.toLowerCase()}, ${r.text.toLowerCase()}` : ''}`;
   return (
     <div ref={frame} className="v2-kbg__large">
       <div className="v2-kbg__large-figure" style={{ width: Math.floor(boxW + 2 * LARGE_BEZEL) }}>
@@ -531,6 +570,7 @@ function LargeScreen({
               fit={fit}
               bezel={LARGE_BEZEL}
               camera={cameraOf(view)}
+              pinned={pinned}
             />
           </div>
         </div>
@@ -554,7 +594,10 @@ function ScaledScreen({
   fit,
   bezel,
   camera,
+  pinned = null,
 }: {
+  /** The app a single-app kiosk pins: drawn over the image instead of the launcher's header, grid and Exit. */
+  pinned?: string | null;
   /** The device frame around the screen, px. */
   bezel: number;
   /** A phone's front camera hole, at the top in portrait and the left in landscape; none on tablets. */
@@ -617,6 +660,45 @@ function ScaledScreen({
       ) : null}
     <div className="v2-kbg__screen" style={style} {...(label ? { role: 'img', 'aria-label': label } : { 'aria-hidden': true })}>
       <img className="v2-kbg__img" src={src} alt="" style={px(placed, s)} />
+      {pinned != null ? (
+        // The pinned app, open over the image: its own surface, not text on the image (nothing to plate or dim).
+        <span
+          className="v2-kbg__pinned"
+          style={{ left: 24 * s, right: 24 * s, top: h * 0.3 * s, bottom: h * 0.3 * s, borderRadius: 16 * s, padding: 12 * s }}
+        >
+          <span className="v2-kbg__icon v2-kbg__pinned-icon" style={{ width: 56 * s, height: 56 * s, borderRadius: 14 * s, fontSize: 56 * 0.42 * s }}>
+            {iconLetter(pinned) ?? ''}
+          </span>
+          <span className="v2-kbg__pinned-name" style={{ fontSize: 16 * s, marginTop: 8 * s }}>
+            {tiny(16) ? bar(Math.min(w - 72, measureText(pinned, 16)), 22) : pinned}
+          </span>
+        </span>
+      ) : (
+        <PlacedLauncher layout={layout} legibility={legibility} s={s} plate={plate} tiny={tiny} bar={bar} />
+      )}
+    </div>
+    </div>
+  );
+}
+
+/** The launcher's dim, plates, header, grid and Exit button, at `s` px per dp. */
+function PlacedLauncher({
+  layout,
+  legibility,
+  s,
+  plate,
+  tiny,
+  bar,
+}: {
+  layout: LauncherLayout;
+  legibility: Legibility | null;
+  s: number;
+  plate: (id: string, box: Box) => ReactNode;
+  tiny: (sp: number) => boolean;
+  bar: (width: number, lineH: number, key?: number) => ReactNode;
+}) {
+  return (
+    <>
       <div className="v2-kbg__dim" data-dim={legibility?.dim ?? 0} style={{ opacity: (legibility?.dim ?? 0) / SCRIM_STEPS }} />
       {plate('header', layout.headerPlate)}
       {layout.labelPlates.map((p, i) => plate(`label-${i}`, p))}
@@ -662,7 +744,9 @@ function ScaledScreen({
           {tiny(layout.exit.size) ? bar(layout.exit.button.w * 0.5, layout.exit.button.h * 0.5) : 'Exit kiosk'}
         </span>
       ) : null}
-    </div>
-    </div>
+    </>
   );
 }
+
+/** A rough text width in dp, for the bar a thumbnail draws instead of text too small to read. */
+const measureText = (text: string, sp: number) => text.length * sp * 0.55;

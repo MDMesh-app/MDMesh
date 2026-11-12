@@ -35,6 +35,7 @@ import {
   isLocked,
   locationServicesAction,
 } from '../data/configurationRules';
+import { configuredKiosk } from '../data/kiosk';
 import { kioskAffectingChanges } from '../data/kioskChanges';
 import { manageableAppPermissions, managedAppPermissionLabel } from '../data/managedAppPermissions';
 import {
@@ -706,11 +707,11 @@ function Editor({
 
   const backgroundFileId = draft.backgroundImageFileId as number | null | undefined;
   const backgroundInfo = useKioskBackgroundInfo(kioskOn ? backgroundFileId : null);
-  // The kiosk's apps by name, for the preview's grid: installed and shown in kiosk, as the launcher lists them.
-  const kioskAppNames = allowed
-    .filter((a) => (a.action ?? 1) === 1 && a.showIcon !== false)
-    .map((a) => apps.find((x) => x.id === a.id)?.name ?? (a as { name?: string }).name ?? '')
-    .filter((n) => n !== '');
+  // The preview's apps are the device's: the kiosk this draft sends (configuredKiosk, as config.apply builds it), so the
+  // main app first, then by package, each package once, all of them; a single-app kiosk pins its app instead of a grid.
+  const draftKiosk = useMemo(() => (kioskOn ? configuredKiosk(draft as Configuration, allowed) : null), [kioskOn, draft, allowed]);
+  const kioskAppNames = useMemo(() => draftKiosk?.apps.map((a) => a.name) ?? [], [draftKiosk]);
+  const pinnedApp = draftKiosk?.payload.mode === 'single' ? (draftKiosk.apps[0]?.name ?? draftKiosk.payload.pinPackage) : undefined;
 
   const imageFitMode: FitMode = draft.backgroundImageFit === 'fit' ? 'fit' : 'fill';
   const focalX = typeof draft.backgroundImageFocalX === 'number' ? draft.backgroundImageFocalX : 0.5;
@@ -742,6 +743,7 @@ function Editor({
             height={backgroundInfo.info.height}
             colours={kioskColours(draft.backgroundColor as string | undefined, draft.textColor as string | undefined)}
             appNames={kioskAppNames}
+            pinned={pinnedApp}
             exitVisible={draft.kioskExit === true}
             iconSize={draft.iconSize as string | undefined}
             fit={imageFitMode}

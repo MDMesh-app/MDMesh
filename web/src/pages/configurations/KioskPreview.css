@@ -304,3 +304,31 @@
 .v2 .v2-kbg__readout.is-warn {
   color: var(--warn-ink);
 }
+
+/* A single-app kiosk: the pinned app open over the image (its own surface, so neither plated nor dimmed). */
+.v2 .v2-kbg__pinned {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--kbg-bg);
+  color: var(--kbg-text);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.v2 .v2-kbg__pinned .v2-kbg__pinned-icon {
+  position: static;
+  flex: none;
+}
+
+.v2 .v2-kbg__pinned-name {
+  font-weight: 500;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}

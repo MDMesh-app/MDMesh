@@ -76,7 +76,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-const preview = (opts: { colours?: ReturnType<typeof kioskColours>; exitVisible?: boolean; apps?: string[] } = {}) =>
+const preview = (opts: { colours?: ReturnType<typeof kioskColours>; exitVisible?: boolean; apps?: string[]; pinned?: string } = {}) =>
   render(
     <div className="v2">
       <KioskBackgroundPreview
@@ -85,6 +85,7 @@ const preview = (opts: { colours?: ReturnType<typeof kioskColours>; exitVisible?
         height={2160}
         colours={opts.colours ?? kioskColours(null, null)}
         appNames={opts.apps ?? ['Scanner', 'Notes', 'Inventory', 'Maps', 'Browser']}
+        pinned={opts.pinned}
         exitVisible={opts.exitVisible ?? true}
         loadImage={fakeImage}
         measure={measure}
@@ -366,6 +367,43 @@ describe('KioskBackgroundPreview', () => {
   });
 });
 
+describe('the device’s grid', () => {
+  it('draws every app of the kiosk, however many: End of list ends on the last one', async () => {
+    sampling.paint = WHITE;
+    const apps = Array.from({ length: 30 }, (_, i) => `App ${String(i + 1).padStart(2, '0')}`);
+    preview({ apps });
+    await waitFor(() => expect(liveText()).toMatch(/Text \d\.\d:1/));
+    expect(large().querySelectorAll('.v2-kbg__label')).toHaveLength(30);
+    fireEvent.click(within(screen.getByRole('radiogroup', { name: 'Grid scroll' })).getByRole('radio', { name: 'End of list' }));
+    await waitFor(() => expect(liveText()).toMatch(/end of list/));
+    const labels = [...large().querySelectorAll<HTMLElement>('.v2-kbg__label')];
+    expect(labels[labels.length - 1].textContent).toBe('App 30');
+  });
+
+  it('draws no made-up apps for a kiosk that has none, and says what the device shows', async () => {
+    preview({ apps: [] });
+    await waitFor(() => expect(liveText()).toMatch(/Text|Contrast|Measuring/));
+    expect(large().querySelectorAll('.v2-kbg__icon')).toHaveLength(0);
+    expect(screen.getByText(/no apps shown in kiosk yet/)).toBeTruthy();
+  });
+
+  it('shows a single-app kiosk as its pinned app over the image, not a launcher grid', async () => {
+    sampling.paint = WHITE;
+    preview({ pinned: 'Signage Player' });
+    await waitFor(() => expect(large().getAttribute('aria-label')).toMatch(/^Phone, portrait: Signage Player pinned/));
+    expect(large().querySelector('.v2-kbg__header')).toBeNull();
+    expect(large().querySelectorAll('.v2-kbg__label')).toHaveLength(0);
+    expect(large().querySelector('.v2-kbg__exit')).toBeNull();
+    expect(large().querySelector('.v2-kbg__pinned')?.textContent).toMatch(/Signage Player/);
+    expect(screen.getByText(/only behind the splash while it opens and the hold screen/)).toBeTruthy();
+    // No launcher text to measure: no contrast readout, and no Top / End of list.
+    expect(liveText()).not.toMatch(/Text \d/);
+    expect(liveText()).toMatch(/Signage Player pinned/);
+    expect(document.querySelector('.v2-kbg__scroll-slot')?.classList.contains('is-hidden')).toBe(true);
+    expect(await violations()).toEqual([]);
+  });
+});
+
 describe('fit and focal point', () => {
   /** Bright left third of the 3840 x 2160 image. */
   const BRIGHT_LEFT: Paint = (x) => (x < 1280 ? 0xffffff : 0x141414);
@@ -509,7 +547,7 @@ describe('readout', () => {
 });
 
 describe('the configuration editor', () => {
-  function open(configuration: Record<string, unknown>) {
+  function open(configuration: Record<string, unknown>, assigned: Record<string, unknown>[] = []) {
     const calls: string[] = [];
     vi.stubGlobal(
       'fetch',
@@ -518,7 +556,7 @@ describe('the configuration editor', () => {
         calls.push(p);
         let data: unknown = null;
         if (p === '/private/configurations/7') data = { id: 7, name: 'Lobby', kioskMode: true, extensions: {}, ...configuration };
-        else if (p === '/private/configurations/applications/7') data = [];
+        else if (p === '/private/configurations/applications/7') data = assigned;
         else if (p === '/private/configurations/backgroundImage/42') data = INFO;
         else if (p === '/private/configurations/backgroundImage/43') data = { ...INFO, fileId: 43, name: 'night.jpg' };
         else if (p === '/private/configurations/backgroundImages') {
@@ -554,6 +592,32 @@ describe('the configuration editor', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Use night.jpg' }));
     await waitFor(() => expect(screen.getByRole('slider', { name: 'Focal point' }).getAttribute('aria-valuetext')).toBe('50% across, 50% down'));
     expect(screen.getByRole('radio', { name: 'Fill' }).getAttribute('aria-checked')).toBe('true');
+  });
+
+  const row = (id: number, name: string, pkg: string, extra: Record<string, unknown> = {}) => ({
+    id, name, pkg, usedVersionId: 100 + id, action: 1, showIcon: true, selected: true, ...extra,
+  });
+  const withImage = { backgroundImageFileId: 42, backgroundImageUrl: INFO.url, backgroundImageSha256: INFO.sha256 };
+
+  it('previews the device’s grid: the main app first, then by package, each package once', async () => {
+    open({ ...withImage, mainAppId: 103 }, [
+      row(1, 'Zebra Scan', 'com.example.zebra'),
+      row(2, 'Atlas', 'com.example.atlas'),
+      row(3, 'Main Menu', 'com.example.menu'),
+      row(4, 'Atlas (2)', 'com.example.atlas'),           // a second row of the same package
+      row(5, 'Hidden', 'com.example.hidden', { showIcon: false }),
+      row(6, 'Removed', 'com.example.removed', { action: 2 }),
+    ]);
+    await screen.findByRole('img', { name: /^Phone, portrait: the image filling the screen/ });
+    const labels = () => [...document.querySelectorAll('.v2-kbg__large [role="img"] .v2-kbg__label')]
+      .map((l) => [...l.querySelectorAll('.v2-kbg__label-line')].map((line) => line.textContent).join(' '));
+    await waitFor(() => expect(labels()).toEqual(['Main Menu', 'Atlas', 'Zebra Scan']));
+  });
+
+  it('previews a single-app kiosk as the pinned app', async () => {
+    open({ ...withImage, mainAppId: 101 }, [row(1, 'Signage Player', 'com.example.signage')]);
+    expect(await screen.findByRole('img', { name: /^Phone, portrait: Signage Player pinned/ })).toBeTruthy();
+    expect(document.querySelector('.v2-kbg__large .v2-kbg__header')).toBeNull();
   });
 
   it('asks for nothing without an image', async () => {

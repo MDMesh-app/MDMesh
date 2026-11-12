@@ -109,6 +109,24 @@ describe('KioskBackgroundField (viewer)', () => {
     expect(screen.getByRole('button', { name: 'Remove' })).toBeTruthy();
   });
 
+  it('shows a thumbnail again once the image is replaced, after one failed to load', () => {
+    const view = (info: KioskBackgroundImageInfo) => (
+      <KioskBackgroundField fileId={info.fileId} info={info} error={null} readOnly={false} uploading={false}
+        onFile={() => undefined} onRemove={() => undefined} />
+    );
+    const { rerender } = render(view(INFO));
+    fireEvent.error(screen.getByRole('img', { name: /Current kiosk background/ }));
+    expect(screen.getByText('Preview unavailable')).toBeTruthy();
+    const next = { ...INFO, fileId: 43, url: 'https://mdm.example/files/acme/kiosk-fedcba987654-dunes.jpg', name: 'dunes.jpg' };
+    rerender(view(next));
+    expect(screen.queryByText('Preview unavailable')).toBeNull();
+    expect(screen.getByRole('img', { name: /Current kiosk background: dunes\.jpg/ }).getAttribute('src'))
+      .toBe('/files/acme/kiosk-fedcba987654-dunes.jpg');
+    // The one that failed still shows as failed when it comes back.
+    rerender(view(INFO));
+    expect(screen.getByText('Preview unavailable')).toBeTruthy();
+  });
+
   it('shows the main account’s image a configuration copied from its template uses, without an alert', async () => {
     field({ info: { ...INFO, hasMetadata: false, fromAnotherAccount: true } });
     expect(screen.queryByRole('alert')).toBeNull();
@@ -140,5 +158,19 @@ describe('DeviceKioskBackground', () => {
     expect(screen.getByText(/isn’t reported yet/)).toBeTruthy();
     expect(screen.getByRole('img', { name: 'Kiosk background image' }).getAttribute('src')).toBe('/files/acme/kiosk-0123456789ab-beach.jpg');
     expect(await violations()).toEqual([]);
+  });
+
+  it('shows the thumbnail of a new image after the previous one failed to load', () => {
+    const card = (url: string) => (
+      <MemoryRouter>
+        <DeviceKioskBackground image={{ url, sha256: INFO.sha256 }} configurationId={7} configName="Lobby" />
+      </MemoryRouter>
+    );
+    const { rerender } = render(card(INFO.url));
+    fireEvent.error(screen.getByRole('img', { name: 'Kiosk background image' }));
+    expect(screen.queryByRole('img', { name: 'Kiosk background image' })).toBeNull();
+    rerender(card('https://mdm.example/files/acme/kiosk-fedcba987654-dunes.jpg'));
+    expect(screen.getByRole('img', { name: 'Kiosk background image' }).getAttribute('src'))
+      .toBe('/files/acme/kiosk-fedcba987654-dunes.jpg');
   });
 });

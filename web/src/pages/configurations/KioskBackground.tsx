@@ -141,9 +141,18 @@ export function KioskBackgroundField({
   );
 }
 
+/**
+ * Whether the thumbnail at `url` failed to load. Tied to the URL that failed, so another image (a replace, or a
+ * gallery pick) gets its own thumbnail instead of "Preview unavailable" from the one before.
+ */
+function useBrokenImage(url: string): [boolean, () => void] {
+  const [brokenUrl, setBrokenUrl] = useState<string | null>(null);
+  return [brokenUrl === url, () => setBrokenUrl(url)];
+}
+
 /** Thumbnail and facts of the current image. */
 export function KioskBackgroundSummary({ info }: { info: KioskBackgroundImageInfo }) {
-  const [broken, setBroken] = useState(false);
+  const [broken, setBroken] = useBrokenImage(info.url);
   const dims = `${info.width} × ${info.height}`;
   return (
     <div className="v2-kbg__summary">
@@ -157,7 +166,7 @@ export function KioskBackgroundSummary({ info }: { info: KioskBackgroundImageInf
           width={160}
           height={100}
           loading="lazy"
-          onError={() => setBroken(true)}
+          onError={setBroken}
         />
       )}
       <div className="v2-kbg__facts">
@@ -209,7 +218,7 @@ export function DeviceKioskBackground({
   configName: string | undefined;
 }) {
   const titleId = useId();
-  const [broken, setBroken] = useState(false);
+  const [broken, setBroken] = useBrokenImage(image.url);
   const name = configName ?? 'Its configuration';
   return (
     <Card aria-labelledby={titleId} className="v2-kbg-device">
@@ -221,7 +230,7 @@ export function DeviceKioskBackground({
           width={72}
           height={48}
           loading="lazy"
-          onError={() => setBroken(true)}
+          onError={setBroken}
         />
       )}
       <div className="v2-kbg-device__body">

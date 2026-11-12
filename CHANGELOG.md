@@ -21,8 +21,28 @@ Upgrading
 - Quick start: run `docker compose pull && docker compose up -d` once after this update. Updates never touch the
   supervisor, and one from before 0.5.0 keeps applying updates by tag. From source, or with `SUPERVISOR_VERSION` set by
   hand: [UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050).
+- From source and native: 0.4.x has no `--update`, so move the clone to 0.5.0 once with
+  `git fetch --tags && git checkout v0.5.0 && ./setup.sh --update` (native:
+  `git fetch --tags && git checkout v0.5.0 && sudo ./setup.sh --update --native`). From then on, update with `./setup.sh --update`
+  (native: `sudo ./setup.sh --update --native`).
+- Native: the installer now stops on an option it doesn't take, instead of ignoring it.
+- Answers files (`MDMESH_ANSWERS`) must belong to you and be private (mode 600), or they are refused.
+
+Heads-up
+- Native installs: `REPLACE_DATA` must be `yes` or `no`, and `ASSUME_YES` `1` or `0`. Any other value now stops the
+  installer before it changes anything, where it used to mean Keep or ask.
 
 New
+- From source and native: `./setup.sh --update` moves the clone to the newest release, checked against its signed
+  manifest like the quick start, then runs it. A manifest that doesn't verify, or names no commit, and local changes
+  stop it; a release that isn't published yet is skipped. Fresh installs clone and run `./setup.sh --update` too. It
+  needs `git`, `curl` and `openssl` 3.0+ (or an older `openssl` and `minisign`), and says which are missing first; as
+  root with `--native` it installs them, waiting for another apt run that holds apt's lock (up to 5 minutes).
+- Installers check answers typed at a question with the same rules as answers given in advance, and ask again.
+- The console's update steps for source and native installs show `./setup.sh --update`.
+- Installers: every question can be answered in advance, with `MDMESH_*` variables or an answers file, and
+  `MDMESH_NONINTERACTIVE=1` runs with no questions at all. `MDMESH_DRY_RUN=1` checks the answers and shows what a run
+  would do. See [DEPLOY](https://github.com/MDMesh-app/MDMesh/blob/main/DEPLOY.md#answering-the-questions-in-advance).
 - Enroll: devices that enroll while the page is open show under the code, with a link, first as getting their
   configuration and then Online (or that one hasn't checked in after 10 minutes), so you see the device you just set
   up arrive without going to Devices. The page stops looking after 30 minutes until you ask it to look again. Needs
@@ -37,7 +57,7 @@ New
   default is still one device for 24 hours, the code to send to one person. **Stop all codes** ends every code that
   still works, and making a new code says when the one it replaces still works. Codes are stored hashed, making and
   stopping them is in the audit log, and the server log names the code each device enrolled with. The API takes
-  `maxUses` and `validHours` on `POST /private/agent/v1/token`, and `POST /private/agent/v1/token/revoke-all`
+  `maxUses` and `validHours` on `POST /rest/private/agent/v1/token`, and `POST /rest/private/agent/v1/token/revoke-all`
   (thanks @alessfi).
 - Configuration → Network can manage Android Location services independently of MDMesh location reporting on Android
   11+ Device Owner devices. Needs agent 0.5.0 (thanks @letternumber).
@@ -57,8 +77,17 @@ New
 - Updates and the quick start run exactly the images the signed release names, pinned by digest; the quick start
   also checks each file it downloads, stops instead of falling back to `main`, and needs OpenSSL 3.0+, or an older
   OpenSSL and `minisign`.
+- The README's install command checks `quickstart.sh` against the signed release before running it, and installs
+  exactly the release it checked; each release now publishes `quickstart.sh`, with its SHA-256 in the signed manifest.
+  Without `minisign`, a shortcut runs the latest release tag's `quickstart.sh` unchecked
+  ([DEPLOY.md](https://github.com/MDMesh-app/MDMesh/blob/main/DEPLOY.md#option-a--quick-start-no-clone-published-images)).
 
 Fixes
+- The installers create .env and other files holding secrets readable only by their owner from the start, and a
+  setup.sh re-run makes an existing .env owner-only again.
+- setup.sh re-runs read `.env` without running it as a script, so `bash -x ./setup.sh` no longer prints its
+  passwords and secrets. Values are read as before, quotes and escapes included; a line whose value the shell would
+  compute (a `$` or backquote) stops setup.sh, naming the line.
 - The console recognizes an on-device Return to kiosk and does not offer the same action again; a later kiosk exit,
   custom kiosk, or configuration apply makes it available again.
 - Files: uploading a file again with the same name and the same content returns the file already there instead of an
@@ -102,6 +131,10 @@ Fixes
   (thanks @letternumber).
 
 Under the hood
+- The release manifest records the tagged commit, which `setup.sh --update` checks the tag against. CI tests
+  `--update` against signed fixture releases.
+- `install/options.json` lists the installers' questions and answers, for the website's install guide. CI checks it
+  against the scripts with dry runs.
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
 - Agent protocol 1.9 (additive): the enroll request's optional `enrollAttempt` and `resumeOnly`, the enroll response's
   `resumeSupported`, `error.agent.enrollment.notResumable`, and the retryable enroll errors

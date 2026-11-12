@@ -12,12 +12,21 @@
 #        ./setup.sh --native   # hand off to the native (non-Docker) installer
 #        ./setup.sh --allow-downgrade  # registry IMAGE_OWNER only: build and run a checkout older than the running
 #                              # release, or one with no readable release tag (both refused by default)
+#        ./setup.sh --update   # move this clone to the newest signed release (fetches the tags, verifies the
+#                              # release's signed manifest, checks out its tag), then run as usual; with
+#                              # --native, the native installer. Combine with the other options.
+#
+# A fresh setup's questions can be answered in advance with environment variables (MDMESH_MODE, MDMESH_HOST,
+# MDMESH_TUNNEL_TOKEN or MDMESH_ACME_EMAIL) or an answers file (MDMESH_ANSWERS); MDMESH_NONINTERACTIVE=1 never asks,
+# MDMESH_DRY_RUN=1 only checks the answers and prints the plan. See install/options.json and DEPLOY.md.
 set -euo pipefail
 # An exported CDPATH makes cd (here and in every child, e.g. `bash -c 'cd web && …'`) resolve a relative path against
 # CDPATH's directories, not the current one — silently building or reading from a same-named directory elsewhere. Unset
 # it for this script and its children.
 unset CDPATH
-cd -P -- "$(dirname -- "$0")"
+# The script's directory without running dirname: no program may start before the answers are loaded (the tunnel token
+# would be in its environment).
+case "$0" in */*) cd -P -- "${0%/*}" ;; esac
 
 say()  { printf '\033[1;36m%s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m%s\033[0m\n' "$*"; }
@@ -32,6 +41,14 @@ err()  { printf '\033[1;31m%s\033[0m\n' "$*" >&2; }
 . ./install/lib/url.sh
 # shellcheck source=install/lib/release.sh
 . ./install/lib/release.sh
+# shellcheck source=install/lib/answers.sh
+. ./install/lib/answers.sh
+# mdm_load_env: reads .env as sourcing it would, without running it (install/lib/dotenv.sh).
+# shellcheck source=install/lib/dotenv.sh
+. ./install/lib/dotenv.sh
+# mdm_apt: apt-get, non-interactive, waiting for another apt run's lock (install/lib/apt.sh).
+# shellcheck source=install/lib/apt.sh
+. ./install/lib/apt.sh
 rand() { mdm_rand; }
 # Update KEY in .env in place (or append it) — persists values discovered after .env was written
 # (GITHUB_REPO autodetection, the release QR build args) so compose substitution + the supervisor
@@ -42,24 +59,260 @@ setenv() {
   if grep -q "^$1=" .env 2>/dev/null; then sed -i "s#^$1=.*#$1=$v#" .env; else printf '%s=%s\n' "$1" "$2" >> .env; fi
 }
 
-RESET=0; ALLOW_DOWNGRADE=0
-NATIVE=0; NATIVE_ARGS=()
+RESET=0; ALLOW_DOWNGRADE=0; UPDATE=0
+NATIVE=0; NATIVE_ARGS=(); PASS_ARGS=()
 for a in "$@"; do
+  [ "$a" = --update ] || PASS_ARGS+=("$a")
   case "$a" in
+    --update) UPDATE=1 ;;
     --native) NATIVE=1 ;;
     --reset)  RESET=1 ;;
     --allow-downgrade) ALLOW_DOWNGRADE=1 ;;   # Docker path only: the native installer has no apply to protect
     *)        NATIVE_ARGS+=("$a") ;;   # forwarded to the native installer (-y, -v)
   esac
 done
-# Hand off to the native (non-Docker) installer, passing the remaining flags through so
-# `./setup.sh --native -y` really is unattended.
-if [ "$NATIVE" = 1 ]; then exec ./install/install-native.sh "${NATIVE_ARGS[@]}"; fi
-# Docker mode takes no other flag: a typo (--alow-downgrade) must not be silently ignored.
-if [ "${#NATIVE_ARGS[@]}" -gt 0 ]; then
+# Answers given in advance (install/lib/answers.sh, install/options.json): the file is read and checked here, before
+# --update or --native hand over, so MDMESH_DRY_RUN from it counts for them too, and the tunnel token is out of the
+# environment before any other program runs.
+mdm_answers_load
+
+# --update: move this clone to the newest signed release, then run the release's own setup.sh with the other options.
+# The release tags (vX.Y.Z; pre-releases are skipped) are listed with git ls-remote, newest first. A release is trusted
+# only through its signed manifest, checked as the quick start checks it (quickstart.sh's verification functions, with
+# this clone's release/minisign.pub): the signature, the version (the tag), and the commit, which must be the one the tag
+# points to; the clone is then checked out at that commit (a detached HEAD), so the code that runs is the signed one.
+# Manifests from before 0.5.0 record no commit and are refused. A newest tag whose release has no published manifest yet
+# (HTTP 404: still publishing, or failed) is skipped, saying so; with an install, the walk stops below the release this
+# clone is on (going back is the downgrade check's business); it always stops after the 5 newest tags. Any other download failure (a timeout, DNS, TLS, a 5xx; each retried twice) stops the update:
+# that is GitHub out of reach, not a release missing. A manifest that is there but does not verify stops it too.
+# MDMESH_DRY_RUN=1 does all the checking, then stops before anything is fetched or checked out. Updates come from
+# --update, never from `git pull`.
+_upd_dir=''; _upd_installed=''
+_upd_clean() { [ -z "$_upd_dir" ] || { rm -f -- "$_upd_dir/manifest.json" "$_upd_dir/manifest.json.minisig"; rmdir -- "$_upd_dir" 2>/dev/null || true; }; }
+_upd_stop() {
+  _upd_clean; err "$@"
+  if [ -n "$_upd_installed" ]; then err "Nothing else was changed (it installed${_upd_installed} above)."; else err "Nothing was changed."; fi
+  exit 1
+}
+# _upd_get URL FILE: downloads URL to FILE. 0 when done, 4 on HTTP 404 (not published), 1 on anything else (a timeout,
+# DNS, TLS, a 5xx: retried twice, with short timeouts), with the reason in _upd_why.
+# The HTTP code decides first: a curl set to fail on HTTP errors (`fail` in a .curlrc) exits 22 on a 404 too. (No -q:
+# a proxy set in .curlrc must still be used.)
+_upd_get() {
+  local code rc n
+  for n in 1 2 3; do
+    rc=0; code=$(curl -sSL --connect-timeout 10 -m 30 -o "$2" -w '%{http_code}' "$1" 2>/dev/null) || rc=$?
+    case "$rc" in
+      126|127) _upd_stop "--update could not run curl (exit $rc). Reinstall it (Debian/Ubuntu: apt-get install curl), then re-run." ;;
+      # A TLS set-up problem on this host, not GitHub out of reach: not retried.
+      77) _upd_stop "curl has no CA certificates to check GitHub's (curl exit 77). Install them (Debian/Ubuntu: apt-get install ca-certificates), then re-run." ;;
+      60) _upd_stop "curl does not trust GitHub's TLS certificate (curl exit 60): this host's CA certificates are missing or out of date (Debian/Ubuntu: apt-get install ca-certificates), or a proxy intercepts TLS." ;;
+    esac
+    case "$code" in
+      200) [ "$rc" != 0 ] || return 0; _upd_why="curl error $rc after HTTP 200" ;;
+      404) return 4 ;;
+      408|429|5??) _upd_why="HTTP $code" ;;
+      000|'')
+        case "$rc" in
+          6) _upd_why="DNS lookup failed" ;;
+          7) _upd_why="connection refused" ;;
+          28) _upd_why="timed out" ;;
+          35) _upd_why="TLS handshake failed" ;;
+          *) _upd_why="curl error $rc" ;;
+        esac ;;
+      *) _upd_why="HTTP $code"; return 1 ;;
+    esac
+    [ "$n" = 3 ] || sleep "$n"
+  done
+  return 1
+}
+# _upd_has_install: this host runs an install from this clone: a Docker .env, or a native install, with or without
+# --native. /opt/mdmesh-tc itself is visible to any user (its contents are not: mode 700). (tests/setup-update checks
+# the path below is exactly this.)
+_upd_has_install() { [ -f .env ] || [ -d /opt/mdmesh-tc ]; }
+# update_tools [installed]: what --update runs, checked before it does anything: git, curl, awk, sort, and openssl 3.0+ or minisign
+# to check the release signature (with quickstart.sh's functions, loaded here). As root with --native on an apt system,
+# missing ones are installed, as the native installer installs its packages anyway; otherwise it stops, naming them and
+# how to install them.
+update_tools() {
+  local missing='' pkgs='' c n=0 sudo=''
+  for c in git curl awk sort; do
+    command -v "$c" >/dev/null 2>&1 && continue
+    missing="$missing, $c"; n=$((n + 1))
+    case "$c" in
+      curl) pkgs="$pkgs curl ca-certificates" ;;   # without recommends curl comes without CA certificates (exit 77)
+      awk) pkgs="$pkgs mawk" ;;
+      sort) pkgs="$pkgs coreutils" ;;
+      *) pkgs="$pkgs $c" ;;
+    esac
+  done
+  # quickstart.sh's own verification functions (scripts/release-manifest-check.sh runs them the same way).
+  # shellcheck source=/dev/null
+  . <(sed -n '/^# >>> release verification >>>$/,/^# <<< release verification <<<$/p' quickstart.sh)
+  command -v mdm_verify_manifest >/dev/null || _upd_stop "quickstart.sh in this clone has no release verification functions."
+  if ! mdm_openssl_can_verify 2>/dev/null && ! command -v minisign >/dev/null 2>&1; then
+    missing="$missing, openssl 3.0+ or minisign"; n=$((n + 1))
+    # An openssl that is there but can't check minisign signatures (1.1.1, or no BLAKE2b): installing it again would
+    # change nothing, minisign does the job.
+    if command -v openssl >/dev/null 2>&1; then pkgs="$pkgs minisign"; else pkgs="$pkgs openssl"; fi
+  fi
+  [ -n "$missing" ] || return 0
+  if [ "${1:-}" != installed ] && [ "$NATIVE" = 1 ] && [ "$EUID" = 0 ] && [ "${MDMESH_DRY_RUN:-0}" != 1 ] \
+     && command -v apt-get >/dev/null 2>&1; then
+    say "Installing what --update needs:${pkgs}."
+    # A source that fails to refresh (a broken third-party repository) is no reason to stop; apt still locked is.
+    mdm_apt update -q || { [ $? != "$MDM_APT_LOCKED" ] || _upd_stop "Could not refresh the package lists."; warn "(some apt sources failed to refresh — continuing)"; }
+    # shellcheck disable=SC2086  # one package per word
+    mdm_apt install -y -q $pkgs || _upd_stop "Could not install${pkgs} (apt-get above)."
+    _upd_installed=$pkgs
+    update_tools installed; return 0
+  fi
+  [ "$EUID" = 0 ] || sudo='sudo '
+  if [ "$n" = 1 ]; then n=it; else n=them; fi
+  _upd_stop "--update needs ${missing#, }, which this host lacks. Install $n first (Debian/Ubuntu: ${sudo}apt-get install${pkgs}), then re-run."
+}
+update_to_release() {
+  local repo gerr refs list ver t sha tag='' tgt='' skipped='' cur curver rc mcommit dry=${MDMESH_DRY_RUN:-0} have=0 walked=0 f
+  # --native changes this host's install, which needs root: stop before anything is looked up or checked out, rather
+  # than move the clone and leave the install behind it.
+  if [ "$NATIVE" = 1 ] && [ "$EUID" != 0 ] && [ "$dry" != 1 ]; then
+    _upd_stop "--update --native updates this host's native install, which needs root: run sudo ./setup.sh --update --native"
+  fi
+  update_tools
+  gerr=$(git rev-parse --is-inside-work-tree 2>&1) || _upd_stop "--update needs a git clone of MDMesh, and git refuses this directory: ${gerr}"
+  if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+    _upd_stop "This clone has local changes (see git status). --update checks out a release tag, which would mix them in or fail: commit or stash them (git stash), then re-run."
+  fi
+  repo=${GITHUB_REPO:-$(git remote get-url origin 2>/dev/null | sed -E 's#(git@|https?://)[^/:]+[/:]##; s#\.git$##' || true)}
+  case "$repo" in
+    */*/*|*[!${_MDM_ALNUM}._/-]*|''|/*|*/) _upd_stop "--update can't tell the GitHub repo of this clone (origin: $(git remote get-url origin 2>/dev/null || echo none)): set GITHUB_REPO=owner/name." ;;
+    */*) ;;
+    *) _upd_stop "--update can't tell the GitHub repo of this clone: set GITHUB_REPO=owner/name." ;;
+  esac
+  say "Looking up the release tags of origin…"
+  refs=$(git ls-remote --tags origin 2>&1) || _upd_stop "Could not list origin's tags (git ls-remote --tags origin): ${refs}"
+  # "X.Y.Z vX.Y.Z <commit>" per release tag (an annotated tag's ^{} line names its commit), newest first. POSIX awk
+  # only: mawk, Debian 12's and Ubuntu's default, has no {n} intervals.
+  list=$(printf '%s\n' "$refs" | awk -F'\t' '
+    $2 ~ /^refs\/tags\/v[0-9]+\.[0-9]+\.[0-9]+(\^\{\})?$/ && length($1) == 40 && $1 ~ /^[0-9a-f]+$/ {
+      t = $2; sub(/^refs\/tags\//, "", t); p = sub(/\^\{\}$/, "", t); if (p || !(t in c)) c[t] = $1 }
+    END { for (t in c) print substr(t, 2), t, c[t] }' | sort -t. -k1,1nr -k2,2nr -k3,3nr)
+  [ -n "$list" ] || _upd_stop "origin has no release tag (vX.Y.Z)."
+  # With an install, the release this clone is on (or the nearest one before it); a fresh clone has nothing to protect.
+  curver=''; if _upd_has_install; then curver=$(mdm_repo_version .); fi
+  _upd_dir=$(mktemp -d) || _upd_stop "Could not make a temporary directory."
+  while read -r ver t sha; do
+    if [ -n "$skipped" ]; then
+      [ "$walked" -lt 5 ] || _upd_stop "None of the 5 newest release tags has a published release yet (skipped:${skipped}). Try again later."
+      if [ -n "$curver" ] && mdm_version_gt "$curver" "$ver"; then
+        _upd_stop "No release newer than this clone's v${curver} is published yet (skipped:${skipped}). Try again later."
+      fi
+    fi
+    walked=$((walked + 1))
+    rm -f -- "$_upd_dir/manifest.json" "$_upd_dir/manifest.json.minisig"
+    for f in manifest.json manifest.json.minisig; do
+      rc=0; _upd_get "https://github.com/${repo}/releases/download/${t}/${f}" "$_upd_dir/$f" || rc=$?
+      [ "$rc" != 1 ] || _upd_stop "Could not reach GitHub for the ${f} of ${t} (${_upd_why}). Check this host's network and re-run."
+      [ "$rc" = 0 ] || break
+    done
+    if [ "$rc" = 4 ]; then
+      warn "${t}: no published release yet (HTTP 404 for its ${f}; it may still be publishing, or it failed). Trying the next."
+      skipped="$skipped $t"; continue
+    fi
+    say "Verifying release ${t} of ${repo}…"
+    rc=0; mdm_verify_manifest "$(sed -n 2p release/minisign.pub)" "$_upd_dir/manifest.json" "$_upd_dir/manifest.json.minisig" || rc=$?
+    [ "$rc" != 2 ] || _upd_stop "Checking the release signature needs OpenSSL 3.0+ or minisign. Install minisign and re-run."
+    [ "$rc" = 0 ] || _upd_stop "The manifest of ${t} is not signed by the release key in release/minisign.pub (reason above)."
+    [ "$(mdm_manifest_field "$_upd_dir/manifest.json" version '[0-9A-Za-z.+-]+' || true)" = "$ver" ] \
+      || _upd_stop "The signed manifest at ${t} is not that release's (its version differs)."
+    mcommit=$(mdm_manifest_field "$_upd_dir/manifest.json" commit '[0123456789abcdef]{40}' || true)
+    [ -n "$mcommit" ] || _upd_stop "The signed manifest of ${t} records no commit (releases before 0.5.0 don't), so --update can't tie the tag to signed code. --update needs a release from 0.5.0 on: wait for one, or check out a release tag yourself (git checkout vX.Y.Z) and run ./setup.sh."
+    [ "$mcommit" = "$sha" ] || _upd_stop "${t} points to ${sha}, but its signed manifest names commit ${mcommit}."
+    tag=$t; tgt=$sha
+    break
+  done <<< "$list"
+  [ -n "$tag" ] || _upd_stop "No release tag of origin has a published, signed manifest (skipped:${skipped}). A release may still be publishing: try again later."
+  [ -z "$skipped" ] || warn "Using ${tag}, the newest release that is published."
+  _upd_clean
+  cur=$(git rev-parse HEAD)
+  git cat-file -e "${tgt}^{commit}" 2>/dev/null && have=1
+  if [ "$dry" = 1 ]; then
+    if [ "$cur" = "$tgt" ]; then say "Dry run (MDMESH_DRY_RUN=1): this clone is already on ${tag}, which verifies. A run would run its ./setup.sh ${PASS_ARGS[*]}"
+    else
+      [ "$have" = 0 ] || update_downgrade_check "$cur" "$tgt" "$tag"
+      say "Dry run (MDMESH_DRY_RUN=1): ${tag} verifies. A run would fetch it, check it out and run its ./setup.sh ${PASS_ARGS[*]}"
+      [ "$have" = 1 ] || echo "(Whether that goes back from this checkout is checked once the tag is fetched.)"
+    fi
+    exit 0
+  fi
+  if [ "$cur" = "$tgt" ]; then say "This clone is already on ${tag}, the newest signed release."; return 0; fi
+  git fetch -q --no-tags origin "refs/tags/${tag}:refs/tags/${tag}" \
+    || _upd_stop "Could not fetch ${tag} from origin (above). If this clone has a different ${tag}, remove it (git tag -d ${tag}) and re-run."
+  [ "$(git rev-parse --verify -q "${tag}^{commit}")" = "$tgt" ] || _upd_stop "${tag} in this clone is not the commit origin and the signed manifest name."
+  update_downgrade_check "$cur" "$tgt" "$tag"
+  git -c advice.detachedHead=false checkout -q --detach "$tgt" || _upd_stop "git checkout ${tag} failed (above)."
+  say "Checked out ${tag} (signed release, verified)."
+}
+# update_downgrade_check CUR TGT TAG: stop when CUR has commits TAG doesn't (main ahead of the release, or a newer local
+# tag) and this clone runs an install: checking out TAG would run older code over it. --allow-downgrade allows it.
+update_downgrade_check() {
+  git merge-base --is-ancestor "$1" "$2" && return 0
+  [ "$ALLOW_DOWNGRADE" != 1 ] || return 0
+  _upd_has_install || return 0
+  _upd_stop "This clone is at $(git describe --tags --always 2>/dev/null || echo "$1"), which has commits the newest release $3 doesn't (for example main, ahead of the release). Checking out $3 would run older code over this install. Wait for the next release and run --update then, or re-run with --allow-downgrade to go to $3 now."
+}
+# Docker mode takes no other flag: a typo (--alow-downgrade) must not be silently ignored, nor, with --update, found
+# only after the clone has moved. (With --native the native installer checks the rest.)
+if [ "$NATIVE" != 1 ] && [ "${#NATIVE_ARGS[@]}" -gt 0 ]; then
   err "Unknown option: ${NATIVE_ARGS[0]}"
   sed -n '/^# Usage:/,/^set -euo pipefail/p' "$(basename "$0")" | sed '$d; s/^# \{0,1\}//' >&2
   exit 2
+fi
+if [ "$UPDATE" = 1 ]; then
+  update_to_release
+  # The release's own setup.sh, read afresh from the checked-out tag. The tunnel token, kept out of the environment of
+  # everything --update ran, goes to it alone (it takes it out again at once).
+  if [ -n "${MDMESH_TUNNEL_TOKEN+x}" ]; then export MDMESH_TUNNEL_TOKEN; fi
+  exec ./setup.sh "${PASS_ARGS[@]}"
+fi
+
+# Hand off to the native (non-Docker) installer, passing the remaining flags through so
+# `./setup.sh --native -y` really is unattended.
+# The native installer has no tunnel: the token is not passed on.
+if [ "$NATIVE" = 1 ]; then unset MDMESH_TUNNEL_TOKEN; exec ./install/install-native.sh "${NATIVE_ARGS[@]}"; fi
+
+# Answers given in advance (install/lib/answers.sh, install/options.json), all checked here, before anything else.
+# Only a fresh .env asks questions: a re-run reuses its .env, and then they are not used. (The file was read above.)
+mdm_answer mode MODE mode MDMESH_MODE
+mdm_answer host HOST hostname MDMESH_HOST
+mdm_answer tunnel-token TUNNEL_TOKEN tunnel-token MDMESH_TUNNEL_TOKEN
+mdm_answer acme-email ACME_EMAIL email MDMESH_ACME_EMAIL
+if mdm_given mode; then
+  if [ "$MODE" = 1 ]; then mdm_unused acme-email "in tunnel mode"; else mdm_unused tunnel-token "in domain mode"; fi
+fi
+REUSE_ENV=0
+if [ -f .env ] && [ "$RESET" != 1 ]; then REUSE_ENV=1; fi
+if [ "$REUSE_ENV" = 1 ] && mdm_any_answered; then
+  warn "The MDMESH_* answers are not used: an .env exists here, and a re-run reuses it (--reset starts over)."
+fi
+if [ "$REUSE_ENV" = 0 ]; then
+  mdm_need mode; mdm_need host
+  if mdm_given mode && [ "$MODE" = 1 ]; then mdm_need tunnel-token; fi
+fi
+if [ "${MDMESH_DRY_RUN:-0}" = 1 ]; then
+  say "== MDMesh setup: dry run (MDMESH_DRY_RUN=1) =="
+  echo "The answers check out. Nothing on this host was checked or changed. What a run would do:"
+  if [ "$REUSE_ENV" = 1 ]; then
+    echo "Reuse the .env here (no questions), then build the images from this checkout and start them with Docker."
+    exit 0
+  fi
+  mdm_plan_line mode ''
+  mdm_plan_line host ''
+  if ! mdm_given mode; then mdm_plan_line tunnel-token ''; mdm_plan_line acme-email ''
+  elif [ "$MODE" = 1 ]; then mdm_plan_line tunnel-token ''; mdm_plan_row acme-email - unused
+  else mdm_plan_row tunnel-token - unused; mdm_plan_line acme-email ''; fi
+  echo "Then: write a new .env here$(if mdm_given host; then echo " with the base URL https://${HOST}"; fi), build the images from this checkout and start them with Docker."
+  exit 0
 fi
 
 command -v docker >/dev/null || { err "Docker is required (or run ./setup.sh --native)."; exit 1; }
@@ -100,19 +353,35 @@ version_preflight() {  # version_preflight <running>
     exit 1
   fi
   if mdm_version_gt "$1" "$REPO_VERSION"; then
-    err "Refusing to build older code over this stack: running $1, checkout is ${REPO_VERSION} — git pull first, or re-run with --allow-downgrade."
+    err "Refusing to build older code over this stack: running $1, checkout is ${REPO_VERSION} — run ./setup.sh --update, or re-run with --allow-downgrade."
     err "(--allow-downgrade builds and runs this checkout's code against the current database.)"
     exit 1
   fi
 }
 
-if [ -f .env ] && [ "$RESET" != 1 ]; then
+if [ "$REUSE_ENV" = 1 ]; then
   # RE-RUN: reuse the existing .env verbatim — never regenerate secrets over a live deployment.
   # The pgdata volume keeps the ORIGINAL DB password (Postgres only reads POSTGRES_PASSWORD on
   # first init), so a fresh DB_PASSWORD would brick the stack; a fresh HASH_SECRET would likewise
   # invalidate every enrolled device's token. --reset opts out (see the header for when that's safe).
   say "Existing .env found — reusing it (secrets + hosting mode kept; use --reset to start over)."
-  set -a; . ./.env; set +a
+  # It holds the secrets: owner-only, also when an older version or a hand edit left it looser. (Not ours to change when
+  # another user owns it: say so instead.)
+  if [ -O .env ]; then chmod go= .env
+  elif [ -n "$(find -L .env -prune \( -perm -040 -o -perm -004 \) -print 2>/dev/null)" ]; then   # the file, not a link
+    warn ".env is readable by other users, and owned by another one: run chmod 600 .env as its owner."
+  fi
+  if [ ! -r .env ]; then
+    _envmode=$(stat -L -c %a .env 2>/dev/null || echo '?'); case "$_envmode" in *[!0-9]*) ;; *) _envmode=$(printf '%03d' "$_envmode") ;; esac
+    if [ -O .env ]; then
+      err "This user ($(id -un)) can't read .env (mode ${_envmode}), its own file: make it readable to you only with chmod 600 .env, then re-run."
+    else
+      err "This user ($(id -un)) can't read .env: it belongs to $(stat -L -c %U .env 2>/dev/null || echo another user), mode ${_envmode}."
+      err "Run ./setup.sh as that user (or with sudo if root owns it)."
+    fi
+    exit 1
+  fi
+  mdm_load_env .env
   version_preflight "${CURRENT_VERSION:-${SERVER_VERSION:-}}"
   _env_base_url=${BASE_URL:-}
   mdm_check_base_url BASE_URL || { err "Fix BASE_URL in .env, then re-run."; exit 1; }
@@ -133,23 +402,28 @@ else
     warn "run 'docker compose down -v' first for a genuinely clean slate."
   fi
   version_preflight ""
-  echo "Hosting mode:"
-  echo "  1) Cloudflare Tunnel   (no open ports; Cloudflare manages TLS — needs a domain in Cloudflare)"
-  echo "  2) Your own domain     (open 80/443; Caddy auto-provisions a Let's Encrypt cert)"
-  MODE=""
-  while [ "$MODE" != "1" ] && [ "$MODE" != "2" ]; do
-    read -rp "Choose [1/2]: " MODE || { err "No selection (non-interactive run?). Aborting."; exit 1; }
-    case "$MODE" in 1|2) ;; *) warn "Please enter 1 or 2." ;; esac
-  done
+  if ! mdm_answered mode; then
+    echo "Hosting mode:"
+    echo "  1) Cloudflare Tunnel   (no open ports; Cloudflare manages TLS — needs a domain in Cloudflare)"
+    echo "  2) Your own domain     (open 80/443; Caddy auto-provisions a Let's Encrypt cert)"
+    MODE=""
+    while [ "$MODE" != "1" ] && [ "$MODE" != "2" ]; do
+      read -rp "Choose [1/2]: " MODE || { err "No selection (non-interactive run?). Aborting."; exit 1; }   # answer: mode
+      case "$MODE" in 1|2) ;; *) warn "Please enter 1 or 2." ;; esac
+    done
+  fi
 
   DB_PASSWORD=$(rand)
   HASH_SECRET=$(rand)
   if [ -n "$REPO_VERSION" ]; then CURRENT_VERSION=$REPO_VERSION; fi   # else the heredoc's ${CURRENT_VERSION:-0.0.0}
 
   if [ "$MODE" = "1" ]; then
-    read -rp "Public hostname devices will use (e.g. mdm.example.com): " HOST
+    mdm_answered host || read -rp "Public hostname devices will use (e.g. mdm.example.com): " HOST   # answer: host
     mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
-    read -rp "Cloudflare Tunnel token (Zero Trust → Tunnels → your tunnel): " TUNNEL_TOKEN
+    while :; do
+      mdm_answered tunnel-token || read -rp "Cloudflare Tunnel token (Zero Trust → Tunnels → your tunnel): " TUNNEL_TOKEN   # answer: tunnel-token
+      mdm_prompt_ok tunnel-token TUNNEL_TOKEN && break
+    done
     BASE_URL="https://${HOST}"
     SITE_ADDRESS=":80"
     ACME_EMAIL=""
@@ -158,9 +432,12 @@ else
     COMPOSE_PROFILES="cloudflare"
     EXTRA_NOTE="In Cloudflare, route the tunnel's public hostname ($HOST) to http://caddy:80."
   else
-    read -rp "Your domain (DNS already pointing here, e.g. mdm.example.com): " HOST
+    mdm_answered host || read -rp "Your domain (DNS already pointing here, e.g. mdm.example.com): " HOST   # answer: host
     mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
-    read -rp "Email for Let's Encrypt: " ACME_EMAIL
+    while :; do
+      mdm_answered acme-email || read -rp "Email for Let's Encrypt: " ACME_EMAIL   # answer: acme-email
+      mdm_prompt_ok acme-email ACME_EMAIL && break
+    done
     BASE_URL="https://${HOST}"
     SITE_ADDRESS="${HOST}"
     TUNNEL_TOKEN=""
@@ -172,7 +449,13 @@ else
   # Checked before .env is written (install/lib/url.sh), so a mistyped hostname leaves nothing behind.
   mdm_check_base_url BASE_URL || { err "Check the hostname you entered (the name only, e.g. mdm.example.com), then re-run."; exit 1; }
 
-  cat > .env <<EOF
+  # Owner-only from the start: written to a new mode-600 file (mktemp), then renamed over .env, so no other user can
+  # read the secrets at any moment, and a --reset over a looser old .env does not keep its mode.
+  # A failed write or an interrupt removes it (it holds the new secrets).
+  _envtmp=''
+  trap '[ -z "$_envtmp" ] || rm -f -- "$_envtmp"' EXIT; trap 'exit 130' INT; trap 'exit 143' TERM
+  _envtmp=$(mktemp .env.new.XXXXXX)
+  cat > "$_envtmp" <<EOF
 DB_NAME=mdmesh
 DB_USER=mdmesh
 DB_PASSWORD=${DB_PASSWORD}
@@ -202,7 +485,10 @@ SMTP_HOST=
 SMTP_PORT=25
 SMTP_FROM=mdm@${HOST}
 EOF
-  chmod 600 .env
+  # --reset as root (sudo) over someone's .env keeps it theirs, so their later re-runs can still read it.
+  if [ "$EUID" = 0 ] && [ -f .env ]; then chown --reference=.env -- "$_envtmp"; fi
+  mv -fT -- "$_envtmp" .env
+  _envtmp=''; trap - INT TERM
   say "Wrote .env (secrets generated)."
 fi
 
@@ -215,8 +501,8 @@ if [ -z "${GITHUB_REPO:-}" ]; then
 fi
 
 # Source builds (IMAGE_OWNER=local) cannot be updated by pulling images — keep the supervisor's one-click apply off
-# (updates = git pull && ./setup.sh). A registry owner (IMAGE_OWNER=<ghcr owner>) keeps it on. version_preflight above
-# derived APPLY_SUPPORTED from the IMAGE_OWNER compose sees: the sourced .env on a re-run (quotes stripped, key missing →
+# (updates = ./setup.sh --update). A registry owner (IMAGE_OWNER=<ghcr owner>) keeps it on. version_preflight above
+# derived APPLY_SUPPORTED from the IMAGE_OWNER compose sees: the loaded .env on a re-run (quotes stripped, key missing →
 # unset) or the caller's env on a fresh .env (which the heredoc above wrote as ${IMAGE_OWNER:-local}) — same `:-local`
 # default as docker-compose.yml.
 # Persist AND export: a re-run has already exported the OLD .env value (set -a above), and compose gives the shell
@@ -228,7 +514,7 @@ export APPLY_SUPPORTED
 # checkout, so CURRENT_VERSION (which the supervisor compares with GitHub's latest release; a stale or placeholder 0.0.0
 # shows a false "Update available") and the image tags SERVER/WEB/SUPERVISOR_VERSION (compose tags each `build:` result
 # with them) all follow the checkout's latest release tag (install/lib/version.sh, the native installer's rule) on EVERY
-# run, whoever owns the images. Without this a `git pull && ./setup.sh` builds new code into images named after an
+# run, whoever owns the images. Without this an update (./setup.sh --update) builds new code into images named after an
 # older version, and on a registry owner a re-run would build old code under apply.sh's newer release tag.
 # version_preflight (above) has already refused an older checkout, or an untagged one, on a registry owner unless
 # --allow-downgrade.
@@ -270,7 +556,7 @@ say "Checking GitHub Releases for the signed agent APK…"
 VITE_AGENT_PACKAGE=""; VITE_AGENT_CHECKSUM=""; VITE_AGENT_APK_URL=""
 if [ -n "${GITHUB_REPO:-}" ] && command -v python3 >/dev/null && command -v curl >/dev/null; then
   # agent_ck_ok CK: CK looks like an APK signing-certificate checksum (unpadded base64url of a SHA-256: 43 characters of
-  # A-Z a-z 0-9 _ -). It is written to .env, which this script sources as root on every re-run, so nothing else from a
+  # A-Z a-z 0-9 _ -). It is written to .env, which this script reads as root on every re-run, so nothing else from a
   # download may go there.
   # (The letters are spelled out: a range like A-Z follows the locale and matches non-ASCII letters under en_US.UTF-8.)
   agent_ck_ok() { case "$1" in *[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-]*) return 1 ;; esac; [ "${#1}" -eq 43 ]; }
@@ -278,8 +564,9 @@ if [ -n "${GITHUB_REPO:-}" ] && command -v python3 >/dev/null && command -v curl
   # otherwise the warning below says how.
   if ! command -v minisign >/dev/null 2>&1 && [ "$(id -u)" = 0 ] && command -v apt-get >/dev/null 2>&1; then
     say "Installing minisign (verifies the release manifest)…"
-    { DEBIAN_FRONTEND=noninteractive apt-get install -y -qq minisign \
-      || { apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq minisign; }; } >/dev/null 2>&1 || true
+    # apt's output is hidden (it goes to stdout); mdm_apt's own lines, saying it waits for another apt run, are not.
+    # (Not again after another apt run held its lock to the end: that would wait twice more.)
+    { mdm_apt install -y -qq minisign || { [ $? != "$MDM_APT_LOCKED" ] && mdm_apt update -qq && mdm_apt install -y -qq minisign; }; } >/dev/null || true
   fi
   # Still no minisign on the host: verify with the one the supervisor image ships (docker/supervisor.Dockerfile), building
   # that image now (the `up --build` below reuses it). The container gets no network and only the key and the release

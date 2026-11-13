@@ -39,6 +39,7 @@
           "permissions": { "type": "object", "additionalProperties": { "enum": ["grant", "deny"] } }
         }
       }
-    }
+    },
+    "systemUpdate": { "type": "object", "required": ["policy"], "properties": { "policy": { "enum": ["automatic", "windowed", "postpone"], "description": "1.11: how the device installs OS updates (DevicePolicyManager.setSystemUpdatePolicy). automatic = as soon as one is available; windowed = only between windowStart and windowEnd; postpone = up to 30 days (device makers or carriers might exempt important security updates). Absent = Default: not managed; an agent that set a policy for an earlier document clears it. Older agents ignore the section." }, "windowStart": { "type": "integer", "minimum": 0, "maximum": 1439, "description": "windowed only: minutes after the device's local midnight" }, "windowEnd": { "type": "integer", "minimum": 0, "maximum": 1439, "description": "windowed only: differs from windowStart; the window may cross midnight" } } }
   }
 }

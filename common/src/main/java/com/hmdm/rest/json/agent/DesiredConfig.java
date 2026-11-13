@@ -54,4 +54,10 @@ public class DesiredConfig {
     private DesiredConnectivity connectivity;
     /** Null for a legacy configuration row; empty means release all managed app permission overrides. */
     private List<DesiredAppPermissions> appPermissions;
+    /**
+     * Present (1.11) = the configuration sets how the device installs OS updates. Absent (null) = Default: the device
+     * decides (an agent that set a policy for an earlier document clears it), and documents without it keep their
+     * revision.
+     */
+    private DesiredSystemUpdate systemUpdate;
 }

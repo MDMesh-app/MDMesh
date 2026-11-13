@@ -71,6 +71,33 @@ class ConfigCommandTest {
                 """{"revision":"r","appPermissions":[]}""",
             ).appPermissions,
         )
-        assertEquals("1.10", ProtocolJson.PROTOCOL_VERSION)
+        assertEquals("1.11", ProtocolJson.PROTOCOL_VERSION)
+    }
+
+    private fun systemUpdate(section: String): ConfigSystemUpdate? = ProtocolJson.json
+        .decodeFromString(ConfigApplyPayload.serializer(), """{"revision":"r","systemUpdate":$section}""")
+        .systemUpdate
+
+    @Test
+    fun `systemUpdate decodes each policy and is absent by default (protocol 1_11)`() {
+        assertEquals(ConfigSystemUpdate(ConfigSystemUpdate.AUTOMATIC), systemUpdate("""{"policy":"automatic"}"""))
+        assertEquals(
+            ConfigSystemUpdate(ConfigSystemUpdate.WINDOWED, windowStart = 1320, windowEnd = 240),
+            systemUpdate("""{"policy":"windowed","windowStart":1320,"windowEnd":240}"""),
+        )
+        assertEquals(ConfigSystemUpdate(ConfigSystemUpdate.POSTPONE), systemUpdate("""{"policy":"postpone"}"""))
+        val absent = ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), """{"revision":"r"}""")
+        assertNull(absent.systemUpdate)
+        assertEquals("1.11", ProtocolJson.PROTOCOL_VERSION)
+    }
+
+    @Test
+    fun `a systemUpdate the agent can't honour still decodes, so only that section is refused`() {
+        // The applier reports these unsupported; failing the decode would refuse the whole document.
+        assertEquals("none", systemUpdate("""{"policy":"none"}""")?.policy)
+        val noTimes = systemUpdate("""{"policy":"windowed"}""")
+        assertNull(noTimes?.windowStart)
+        assertNull(noTimes?.windowEnd)
+        assertEquals("", systemUpdate("""{"future":1}""")?.policy)
     }
 }

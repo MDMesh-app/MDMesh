@@ -11,6 +11,7 @@ import com.mdmesh.policy.AppRuntimePermissions
 import com.mdmesh.policy.AppPermissionOutcome
 import com.mdmesh.policy.UnsupportedAppRuntimePermissions
 import com.mdmesh.policy.safeboot.SafeBootPolicy
+import com.mdmesh.policy.systemupdate.SystemUpdateControl
 import com.mdmesh.policy.wifi.WifiRadioPolicy
 import com.mdmesh.proto.ConfigApplyPayload
 import com.mdmesh.proto.ConfigApplyResult
@@ -23,7 +24,8 @@ import kotlinx.coroutines.sync.withLock
 /**
  * Converges the device to a desired-state document. Each present section is applied through the code that
  * already serves the imperative commands (toggle strategies, [KioskApplier], location mode, connectivity mode), so
- * `config.apply` adds no new device behavior — only orchestration and reporting.
+ * `config.apply` adds no new device behavior — only orchestration and reporting. The exception is the OS update
+ * policy (`systemUpdate`, 1.11): no command sets it, only a configuration ([SystemUpdateControl]).
  *
  * Idempotent: applying the same document twice is a no-op at the OS level. The document is persisted (and its
  * revision reported to the server) only when no section failed; `unsupported` is final and `deferred` (1.4) is
@@ -38,8 +40,11 @@ import kotlinx.coroutines.sync.withLock
  *   never unsupported, so the document is not saved and the server re-sends it; it is never applied or released.
  * @param setPowerMode sets the live-connection mode for the `connectivity` section (1.5), as `device.powerMode` does.
  *   Only called with a mode this agent knows; another one is reported unsupported.
+ * @param systemUpdate sets the OS update policy for the `systemUpdate` section (1.11), and clears it once a document
+ *   stops managing it. Null (tests that don't need it): the section is unsupported, as a toggle without a strategy.
  */
-@Suppress("TooManyFunctions") // Coordinator for independently releasable desired-state sections.
+// Coordinator for independently releasable desired-state sections: one dependency per section.
+@Suppress("TooManyFunctions", "LongParameterList")
 class ConfigApplier(
     private val toggles: () -> ResolvedToggles,
     private val kiosk: KioskApplier,
@@ -47,6 +52,7 @@ class ConfigApplier(
     private val store: ConfigStateStore,
     private val setPowerMode: (String) -> Unit,
     private val appPermissions: AppRuntimePermissions = UnsupportedAppRuntimePermissions,
+    private val systemUpdate: SystemUpdateControl? = null,
 ) {
     private val mutex = Mutex()
 
@@ -126,6 +132,7 @@ class ConfigApplier(
 
     private fun manages(doc: ConfigApplyPayload, outcomeKey: String): Boolean = when {
         outcomeKey == KIOSK -> doc.kiosk != null
+        outcomeKey == SYSTEM_UPDATE -> doc.systemUpdate != null
         outcomeKey.startsWith(POLICIES) -> outcomeKey.removePrefix(POLICIES) in doc.policies
         outcomeKey.startsWith(APP_PERMISSIONS) -> appPermissionKeys(doc).contains(outcomeKey)
         else -> true
@@ -181,6 +188,7 @@ class ConfigApplier(
             }
         }
         applyAppPermissions(doc, previous, unreleased, outcomes)
+        systemUpdateOutcome(systemUpdate, doc, previous, unreleased)?.let { outcomes[SYSTEM_UPDATE] = it }
         val result = ConfigApplyResult(doc.revision, outcomes)
         if (persist && succeeded(result)) store.save(doc)
         return result
@@ -324,6 +332,7 @@ class ConfigApplier(
         private const val CONNECTIVITY = "connectivity"
         private const val APP_PERMISSIONS = "appPermissions."
         private const val NOT_REQUESTED = "not-requested"
+        private const val SYSTEM_UPDATE = "systemUpdate"
         private val POWER_MODES = setOf(DeviceAction.POWER_ADAPTIVE, DeviceAction.POWER_ALWAYS_ON)
 
         private fun appPermissionKey(packageName: String, permission: String): String =
@@ -339,6 +348,26 @@ class ConfigApplier(
         private const val NO_REVISION = ""
 
         fun succeeded(r: ConfigApplyResult): Boolean = r.outcomes.values.none(ConfigOutcome::isFailed)
+
+        /**
+         * The `systemUpdate` outcome, or null when there is none to report (the key is then omitted). Absent = not
+         * managed: a policy that a previous document set, or whose clear failed, goes back to the device default. As
+         * for a policy release, only a failed clear is reported, which keeps it in [ConfigStateStore.unreleased].
+         */
+        private fun systemUpdateOutcome(
+            control: SystemUpdateControl?,
+            doc: ConfigApplyPayload,
+            previous: List<ConfigApplyPayload>,
+            unreleased: Set<String>,
+        ): String? {
+            val section = doc.systemUpdate
+            return when {
+                section != null -> toOutcome(control?.apply(section))
+                previous.any { it.systemUpdate != null } || SYSTEM_UPDATE in unreleased ->
+                    toOutcome(control?.release()).takeIf(ConfigOutcome::isFailed)
+                else -> null
+            }
+        }
     }
 }
 

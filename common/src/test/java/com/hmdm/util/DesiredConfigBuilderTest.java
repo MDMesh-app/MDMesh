@@ -386,6 +386,54 @@ public class DesiredConfigBuilderTest {
     }
 
     @Test
+    public void system_update_is_sent_only_when_set_and_default_keeps_the_revision() {
+        // Existing configurations upgrade with systemUpdateType 0 (Default, protocol 1.11): no section, no revision moves.
+        DesiredConfig byDefault = build(policiesConfig(), Collections.emptyList());
+        assertNull("Default = not managed", byDefault.getSystemUpdate());
+        assertFalse(DesiredConfigBuilder.canonicalJson(byDefault).contains("systemUpdate"));
+        assertEquals(resource("desired-config-kiosk.sha256"),
+                build(kioskConfig(), Arrays.asList(app(5, 505, "com.acme.pos", 1))).getRevision());
+
+        Configuration immediately = policiesConfig(); immediately.setSystemUpdateType(1);
+        DesiredConfig d = build(immediately, Collections.emptyList());
+        assertTrue(DesiredConfigBuilder.canonicalJson(d).contains("\"systemUpdate\":{\"policy\":\"automatic\"}"));
+        assertNotEquals(byDefault.getRevision(), d.getRevision());
+
+        Configuration postponed = policiesConfig(); postponed.setSystemUpdateType(3);
+        assertEquals("postpone", build(postponed, Collections.emptyList()).getSystemUpdate().getPolicy());
+
+        // Scheduled: the HH:MM window in minutes, which may cross midnight; the times only count for Scheduled.
+        Configuration night = policiesConfig(); night.setSystemUpdateType(2);
+        night.setSystemUpdateFrom("22:00"); night.setSystemUpdateTo("04:30");
+        DesiredConfig w = build(night, Collections.emptyList());
+        assertTrue(DesiredConfigBuilder.canonicalJson(w),
+                DesiredConfigBuilder.canonicalJson(w).contains(
+                        "\"systemUpdate\":{\"policy\":\"windowed\",\"windowEnd\":270,\"windowStart\":1320}"));
+        Configuration immediatelyWithTimes = policiesConfig(); immediatelyWithTimes.setSystemUpdateType(1);
+        immediatelyWithTimes.setSystemUpdateFrom("22:00"); immediatelyWithTimes.setSystemUpdateTo("04:30");
+        assertEquals(d.getRevision(), build(immediatelyWithTimes, Collections.emptyList()).getRevision());
+    }
+
+    @Test
+    public void a_window_or_type_the_server_does_not_accept_is_sent_as_default() {
+        DesiredConfig byDefault = build(policiesConfig(), Collections.emptyList());
+        for (String[] window : new String[][]{{null, "04:00"}, {"22:00", ""}, {"24:00", "04:00"}, {"7:00", "09:00"},
+                {"08:60", "09:00"}, {"08:00", "08:00"}}) {
+            Configuration c = policiesConfig(); c.setSystemUpdateType(2);
+            c.setSystemUpdateFrom(window[0]); c.setSystemUpdateTo(window[1]);
+            assertNull(Arrays.toString(window), build(c, Collections.emptyList()).getSystemUpdate());
+        }
+        Configuration unknown = policiesConfig(); unknown.setSystemUpdateType(7);
+        DesiredConfig u = build(unknown, Collections.emptyList());
+        assertNull(u.getSystemUpdate());
+        assertEquals(byDefault.getRevision(), u.getRevision());
+
+        assertEquals(Integer.valueOf(0), DesiredConfigBuilder.minutesOfDay("00:00"));
+        assertEquals(Integer.valueOf(1439), DesiredConfigBuilder.minutesOfDay("23:59"));
+        assertEquals(Integer.valueOf(615), DesiredConfigBuilder.minutesOfDay(" 10:15 "));
+    }
+
+    @Test
     public void kiosk_volume_lock_is_its_own_opt_in_not_part_of_lock_buttons() {
         // Android mutes the device while volume is locked: lockButtons=true configurations must not start muting.
         Configuration buttons = kioskConfig(); buttons.setKioskLockButtons(true);

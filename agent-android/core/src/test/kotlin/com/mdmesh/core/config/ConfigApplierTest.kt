@@ -16,6 +16,9 @@ import com.mdmesh.policy.AppPermissionOutcome
 import com.mdmesh.policy.ReleasablePolicy
 import com.mdmesh.policy.ResolvedToggles
 import com.mdmesh.policy.TogglePolicy
+import com.mdmesh.policy.systemupdate.SystemUpdateControl
+import com.mdmesh.policy.systemupdate.SystemUpdateInstall
+import com.mdmesh.policy.systemupdate.SystemUpdatePlatform
 import com.mdmesh.policy.wifi.InMemoryWifiRadioOffState
 import com.mdmesh.policy.wifi.WifiRadio
 import com.mdmesh.policy.wifi.WifiRadioPolicy
@@ -24,6 +27,7 @@ import com.mdmesh.proto.ConfigConnectivity
 import com.mdmesh.proto.ConfigLocation
 import com.mdmesh.proto.ConfigAppPermissions
 import com.mdmesh.proto.ConfigOutcome
+import com.mdmesh.proto.ConfigSystemUpdate
 import com.mdmesh.proto.KioskApplyPayload
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
@@ -550,5 +554,130 @@ class ConfigApplierTest {
         assertEquals(ConfigOutcome.UNSUPPORTED, r.outcomes["connectivity"])
         assertTrue(modes.isEmpty())
         assertEquals("unsupported is final: the document is saved", "c5", store.revision())
+    }
+
+    /** Records what the platform was asked to set (null = cleared); [refusal] makes every call fail. */
+    private class FakeUpdatePlatform : SystemUpdatePlatform {
+        val calls = mutableListOf<SystemUpdateInstall?>()
+        var refusal: String? = null
+        override fun set(install: SystemUpdateInstall?) {
+            refusal?.let { error(it) }
+            calls += install
+        }
+    }
+
+    private fun updateApplier(
+        store: ConfigStateStore,
+        platform: SystemUpdatePlatform,
+        deviceOwner: Boolean = true,
+        toggles: () -> ResolvedToggles = fixedToggles(),
+    ) = ConfigApplier(
+        toggles, kiosk(FakeController()), {}, store, setPowerMode = {},
+        systemUpdate = SystemUpdateControl(platform) { deviceOwner },
+    )
+
+    private val automatic = ConfigSystemUpdate(ConfigSystemUpdate.AUTOMATIC)
+
+    @Test fun `systemUpdate sets each policy and reports it applied`() = runTest {
+        val store = InMemoryConfigStateStore(); val platform = FakeUpdatePlatform()
+        val a = updateApplier(store, platform)
+        val sections = listOf(
+            automatic,
+            ConfigSystemUpdate(ConfigSystemUpdate.WINDOWED, windowStart = 1320, windowEnd = 240),
+            ConfigSystemUpdate(ConfigSystemUpdate.POSTPONE),
+        )
+        for ((i, section) in sections.withIndex()) {
+            val r = a.apply(ConfigApplyPayload(revision = "u$i", systemUpdate = section))
+            assertEquals(mapOf("systemUpdate" to ConfigOutcome.APPLIED), r.outcomes)
+            assertEquals("u$i", store.revision())
+        }
+        val expected = listOf(SystemUpdateInstall.Automatic, SystemUpdateInstall.Windowed(1320, 240),
+            SystemUpdateInstall.Postpone)
+        assertEquals(expected, platform.calls)
+    }
+
+    @Test fun `a systemUpdate the agent can't honour is unsupported, sets nothing, and the document is saved`() =
+        runTest {
+            val refused = listOf(
+                ConfigSystemUpdate("none"),
+                ConfigSystemUpdate(ConfigSystemUpdate.WINDOWED), // no times
+                ConfigSystemUpdate(ConfigSystemUpdate.WINDOWED, windowStart = 1320, windowEnd = 1440),
+                ConfigSystemUpdate(ConfigSystemUpdate.WINDOWED, windowStart = 600, windowEnd = 600),
+            )
+            for ((i, section) in refused.withIndex()) {
+                val store = InMemoryConfigStateStore(); val platform = FakeUpdatePlatform()
+                val r = updateApplier(store, platform)
+                    .apply(ConfigApplyPayload(revision = "n$i", systemUpdate = section))
+                assertEquals("$section", ConfigOutcome.UNSUPPORTED, r.outcomes["systemUpdate"])
+                assertTrue(platform.calls.isEmpty())
+                assertEquals("unsupported is final", "n$i", store.revision())
+            }
+        }
+
+    @Test fun `systemUpdate is unsupported without Device Owner, or without a system update control`() = runTest {
+        val platform = FakeUpdatePlatform()
+        val doc = ConfigApplyPayload(revision = "o1", systemUpdate = automatic)
+        val notOwner = updateApplier(InMemoryConfigStateStore(), platform, deviceOwner = false).apply(doc)
+        assertEquals(ConfigOutcome.UNSUPPORTED, notOwner.outcomes["systemUpdate"])
+        assertTrue(platform.calls.isEmpty())
+        val none = applier(fixedToggles(), kiosk(FakeController()), {}, InMemoryConfigStateStore()).apply(doc)
+        assertEquals(ConfigOutcome.UNSUPPORTED, none.outcomes["systemUpdate"])
+    }
+
+    @Test fun `a systemUpdate the platform refuses fails with its reason and the document is not saved`() = runTest {
+        val store = InMemoryConfigStateStore(); val platform = FakeUpdatePlatform().apply { refusal = "dpm said no" }
+        val r = updateApplier(store, platform).apply(ConfigApplyPayload(revision = "f1", systemUpdate = automatic))
+        assertEquals(ConfigOutcome.failed("dpm said no"), r.outcomes["systemUpdate"])
+        assertFalse(ConfigApplier.succeeded(r))
+        assertNull(store.revision())
+    }
+
+    @Test fun `a document without systemUpdate clears a policy an earlier one set, once`() = runTest {
+        val store = InMemoryConfigStateStore(); val platform = FakeUpdatePlatform()
+        val a = updateApplier(store, platform)
+        a.apply(ConfigApplyPayload(revision = "s1", systemUpdate = automatic))
+        val r = a.apply(ConfigApplyPayload(revision = "s2"))
+        assertFalse("a clear that worked is not reported", r.outcomes.containsKey("systemUpdate"))
+        assertEquals(listOf(SystemUpdateInstall.Automatic, null), platform.calls)
+        assertEquals("s2", store.revision())
+        a.apply(ConfigApplyPayload(revision = "s3"))
+        assertEquals("not managed before either: nothing to clear", 2, platform.calls.size)
+    }
+
+    @Test fun `a document without systemUpdate leaves a device it never managed alone`() = runTest {
+        val store = InMemoryConfigStateStore(); val platform = FakeUpdatePlatform()
+        val r = updateApplier(store, platform).apply(ConfigApplyPayload(revision = "x1"))
+        assertFalse(r.outcomes.containsKey("systemUpdate"))
+        assertTrue("nothing set, nothing cleared", platform.calls.isEmpty())
+        assertEquals("x1", store.revision())
+    }
+
+    @Test fun `a failed systemUpdate clear is reported and retried by the re-send of the same document`() = runTest {
+        // Saved A has no systemUpdate; B sets one but bluetooth fails, so B is never saved; C drops it and its clear
+        // fails. The re-send of C must clear again, though neither A nor C has the section.
+        val store = InMemoryConfigStateStore(); val platform = FakeUpdatePlatform()
+        val bt = FakeToggle("bluetooth", PolicyOutcome.Failed("dpm said no"))
+        val a = updateApplier(store, platform, toggles = fixedToggles("bluetooth" to bt))
+        a.apply(ConfigApplyPayload(revision = "A"))
+        a.apply(ConfigApplyPayload(revision = "B", policies = mapOf("bluetooth" to false), systemUpdate = automatic))
+        platform.refusal = "busy"
+        val c = ConfigApplyPayload(revision = "C")
+        val failed = a.apply(c)
+        assertEquals(ConfigOutcome.failed("busy"), failed.outcomes["systemUpdate"])
+        assertEquals("A", store.revision())
+        platform.refusal = null
+        assertTrue(ConfigApplier.succeeded(a.apply(c)))
+        assertEquals("cleared on the re-send", listOf(SystemUpdateInstall.Automatic, null), platform.calls)
+        assertEquals("C", store.revision())
+        a.apply(c)
+        assertEquals("and only until it worked", 2, platform.calls.size)
+    }
+
+    @Test fun `after boot the saved systemUpdate is set again`() = runTest {
+        val store = InMemoryConfigStateStore(); val platform = FakeUpdatePlatform()
+        store.save(ConfigApplyPayload(revision = "b1", systemUpdate = automatic))
+        val r = updateApplier(store, platform).reapplyPersisted()
+        assertEquals(ConfigOutcome.APPLIED, r?.outcomes?.get("systemUpdate"))
+        assertEquals(listOf(SystemUpdateInstall.Automatic), platform.calls)
     }
 }

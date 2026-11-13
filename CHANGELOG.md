@@ -28,6 +28,11 @@ Upgrading
   `git fetch --tags && git checkout v0.5.0 && ./setup.sh --update` (native:
   `git fetch --tags && git checkout v0.5.0 && sudo ./setup.sh --update --native`). From then on, update with `./setup.sh --update`
   (native: `sudo ./setup.sh --update --native`).
+- Check each configuration's System updates before rolling out agent 0.5.0: the setting now reaches devices. Immediately
+  (now Install automatically) makes Android install any update already waiting at once, with its restart, so those
+  devices can start installing when the new agent arrives. Configurations on Device default don't change.
+- A daily window with blank, equal or invalid times is sent as Device default. Other edits to that configuration still
+  save; changing System updates or its times needs a valid window.
 - Native: the installer now stops on an option it doesn't take, instead of ignoring it.
 - Answers files (`MDMESH_ANSWERS`) must belong to you and be private (mode 600), or they are refused.
 
@@ -126,6 +131,10 @@ New
   exactly the release it checked; each release now publishes `quickstart.sh`, with its SHA-256 in the signed manifest.
   Without `minisign`, a shortcut runs the latest release tag's `quickstart.sh` unchecked
   ([DEPLOY.md](https://github.com/MDMesh-app/MDMesh/blob/main/DEPLOY.md#option-a--quick-start-no-clone-published-images)).
+- System updates now apply to devices: install automatically, in a daily window, or postpone (device makers or carriers
+  might exempt important security updates). Android installs an update your device maker offers; MDMesh can't make it
+  download one now. Needs agent 0.5.0 (thanks @Przemek-Magic).
+- The device page's Telemetry shows an OS update waiting on the device, if its updater reports one.
 
 Fixes
 - The installers create .env and other files holding secrets readable only by their owner from the start, and a
@@ -235,6 +244,8 @@ Under the hood
 - Protocol 1.10: `theme.backgroundImage` may carry `fit` and `focalX`/`focalY`, sent only when not the default
   (additive). `GET /private/configurations/backgroundImages` lists a customer's kiosk images and
   `POST /private/configurations/backgroundImages/{fileId}/delete` deletes an unused one.
+- Agent protocol 1.11, additive: the config.apply `systemUpdate` section and outcome, the `systemUpdatePolicy` policy
+  capability, and telemetry `security.pendingSystemUpdateAt` and `security.pendingSystemUpdateSecurityPatch`.
 
 ## v0.4.0 — 2026-11-03
 

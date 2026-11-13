@@ -127,7 +127,6 @@
     <ID>ReturnCount:PolicyManager.kt$PolicyManager$fun setKeyguardDisabled(disabled: Boolean): PolicyOutcome</ID>
     <ID>ReturnCount:PolicyManager.kt$PolicyManager$fun setPermissionAutoGrant(): PolicyOutcome</ID>
     <ID>ReturnCount:PolicyManager.kt$PolicyManager$fun setStatusBarDisabled(disabled: Boolean): PolicyOutcome</ID>
-    <ID>ReturnCount:PolicyManager.kt$PolicyManager$fun setSystemUpdateAutomatic(): PolicyOutcome</ID>
     <ID>ReturnCount:ResetPasswordTokenStore.kt$ResetPasswordTokenStore$fun ensureToken(): ByteArray</ID>
     <ID>ReturnCount:VersionPolicy.kt$VersionPolicy$fun shouldInstall(installedVersionCode: Long?, requestedVersionCode: Long?): Decision</ID>
     <ID>SwallowedException:LockTaskKioskController.kt$LockTaskKioskController$t: Throwable</ID>

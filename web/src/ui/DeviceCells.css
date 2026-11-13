@@ -141,3 +141,29 @@
 .v2 .v2-battery__pct.is-low {
   color: var(--alert-ink);
 }
+
+/* Narrow screens (320 CSS px, or 400% zoom): names, numbers and configuration names wrap instead of being cut off
+   with an ellipsis, so no part of them is lost (1.4.10). */
+@media (max-width: 480px) {
+  .v2 .v2-devid--card .v2-devid__name,
+  .v2 .v2-devid--card .v2-devid__sub,
+  .v2 .v2-cfgsync__name {
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: break-word; /* whole words first; a word breaks only when it can't fit a line on its own */
+    text-overflow: clip;
+  }
+  /* The reason keeps whole words: it is never narrower than its longest word, and moves under the pill when the
+     row can't fit both ("anywhere" let it shrink to one letter: "Configura|tion"). */
+  .v2 .v2-presence--inline {
+    flex-wrap: wrap;
+  }
+  .v2 .v2-presence--inline .v2-presence__reason {
+    display: block;
+    flex: 1 1 9em;
+    min-width: min-content;
+    -webkit-line-clamp: unset;
+    line-clamp: none;
+    overflow-wrap: break-word;
+  }
+}

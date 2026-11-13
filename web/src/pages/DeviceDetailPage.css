@@ -617,3 +617,20 @@
     vertical-align: top;
   }
 }
+
+/* Location tab: the fixes as a list under the map (the map's points are pointer-only). */
+/* A list item, so the disclosure triangle (and its open/closed state) shows. */
+.v2 .v2-device-loclist > summary {
+  display: list-item;
+  width: fit-content;
+  padding: 2px 0;
+  line-height: 20px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.v2 .v2-device-loclist[open] > summary {
+  margin-bottom: 8px;
+}

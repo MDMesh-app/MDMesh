@@ -570,7 +570,8 @@ export function DeviceDetailPage() {
   }, [ds?.powerMode, powerRequested]);
 
   /* ---- document title ---- */
-  const docName = device ? device.description || device.number : null;
+  // A device that can't be shown still names the page (2.4.2).
+  const docName = device ? device.description || device.number : error ? `Device ${id}` : null;
   useEffect(() => {
     if (!docName) return;
     const prev = document.title;
@@ -817,6 +818,7 @@ export function DeviceDetailPage() {
     return (
       <>
         <Breadcrumb items={[{ label: 'Devices', to: paths.devices }, { label: id, mono: true }]} />
+        <h1 className="v2-visually-hidden">Device {id}</h1>
         <Callout tone="alert" role="alert" icon={<IconWarning size={16} />}>
           {error ?? 'Device not found.'}
         </Callout>

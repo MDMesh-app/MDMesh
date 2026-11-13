@@ -198,16 +198,30 @@ resumed.
   must use the current release workflow ([RELEASING.md](../RELEASING.md)). An install that follows upstream releases
   with its own `IMAGE_OWNER` sets `GITHUB_REPO` to the repository that publishes its images, or `IMAGE_OWNER` to
   `mdmesh-app`.
+- **Going back to 0.4.0: enrollment codes.** The update stores enrollment codes hashed, the existing ones included
+  (on PostgreSQL older than 11 it marks those used instead). A one-click rollback, and the restores in
+  [Backups and restore](OPERATIONS.md#backups-and-restore), bring back the database from before the update, with its
+  codes as they were. A 0.4.0 server started on the 0.5.0 database instead (`--allow-downgrade`, say) finds none of
+  them: every code made before the downgrade is refused as unknown, including one already printed or in a QR. Make a
+  new code on the Enroll page. If you then update that same database to 0.5.0 again, codes made while 0.4.0 ran don't
+  work either: make new ones.
 - **App permissions (agent 0.5.0):** a configuration can Grant or Deny an installed app's runtime permissions. Devices
   on an older agent, or not Device Owner, can't apply them: they get the rest of the configuration and show as out of
   sync while it has a rule, until their agent is updated. Configurations without rules stay in sync on every agent.
   API clients: `PUT /private/configurations` takes `managedAppPermissions` (`[{applicationId, permission, state}]`,
   state `grant` or `deny`); leaving it out keeps the stored rules, and rules for apps the save doesn't install are
   dropped.
-- **Return to kiosk on the device (agent 0.5.0):** after someone leaves a kiosk with the exit PIN, the MDMesh Agent
+- **Return to kiosk on the device (agent 0.5.0):** after someone leaves a kiosk with the exit PIN, the MDMesh app
   offers **Return to kiosk**, offline too, while the device's configuration enables kiosk. A console **Exit kiosk**
   (`kiosk.exit`) leaves that option on the device; to remove it, turn kiosk off in the configuration. Older agents
   don't show it.
+- **The agent is called MDMesh on devices (agent 0.5.0):** it was MDM Agent, and its icon is a white square on dark
+  (was a white shield on blue). It's the same app, so it updates in place and keeps Device Owner. Update staff
+  instructions that name it or show its icon.
+- **Kiosk text colour (agent 0.5.0):** a kiosk text colour with less than 4.5:1 contrast on its background is
+  replaced on the device by a readable one, so some brand pairs show dark text (white on a bright red, for example).
+  The kiosk background is always drawn solid; its transparency is ignored. Check kiosk configurations whose text and
+  background colours are close.
 
 ### v0.4.0
 

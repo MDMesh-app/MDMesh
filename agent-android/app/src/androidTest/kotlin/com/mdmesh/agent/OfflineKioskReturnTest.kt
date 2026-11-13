@@ -152,14 +152,14 @@ class OfflineKioskReturnTest {
         openAgent()
         awaitCondition { node("Return to kiosk") != null }
         assertTrue(ConfigApplier.succeeded(configApplier.apply(ConfigApplyPayload(revision = "test-off"))))
-        awaitCondition { node("KIOSK") != null && node("Return to kiosk") == null }
+        awaitCondition { node("Kiosk") != null && node("Return to kiosk") == null }
         assertNull(config.configuredKiosk())
     }
 
     @Test
     fun noConfigurationDoesNotOfferReturnOrCreateADefaultKiosk() = runBlocking {
         openAgent()
-        awaitCondition { node("KIOSK") != null }
+        awaitCondition { node("Kiosk") != null }
         assertNull(node("Return to kiosk"))
         assertTrue(configApplier.returnToConfiguredKiosk() is KioskResult.Failed)
         assertNull(store.load())

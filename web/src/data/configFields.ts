@@ -104,7 +104,7 @@ export const CONFIG_FIELDS: FieldDef[] = [
   // ── Kiosk ─────────────────────────────────────────────────────────────────
   { key: 'kioskMode', label: 'Kiosk mode', type: 'switch', group: 'Kiosk', enforced: true, help: 'Lock the device to the main app, or to the apps shown in kiosk.' },
   { key: 'kioskExit', label: 'Kiosk exit', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, flagLabels: ['Hidden gesture', 'Visible button'], help: 'How to reach the exit PIN prompt: 7 taps in the top-right corner, or a visible exit button.' },
-  { key: 'password', label: 'Kiosk exit PIN', type: 'password', group: 'Kiosk', enforced: true, kioskOnly: true, help: 'Asked for when someone leaves kiosk mode on the device. With agent 0.3.6 or later: leave it empty and the device has no exit (end kiosk from the console), and 3 wrong PINs lock the exit for 30 s, then for longer after each wrong PIN, and administrators get an email. Older agents let anyone leave a kiosk that has no PIN. Stored as entered.' },
+  { key: 'password', label: 'Kiosk exit PIN', type: 'password', group: 'Kiosk', enforced: true, kioskOnly: true, help: 'Asked for when someone leaves kiosk mode on the device. With agent 0.3.6 or later: leave it empty and the device has no exit (end kiosk from the console), and 3 wrong PINs lock the exit for 30 s, then for longer after each wrong PIN, and administrators get an email if the server can send email (SMTP). Older agents let anyone leave a kiosk that has no PIN. Stored as entered.' },
   { key: 'kioskHome', label: 'Home button', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: 'Allow the Home button in kiosk.' },
   { key: 'kioskRecents', label: 'Recents button', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: 'Allow the Recent-apps button in kiosk. Needs Home button on (Android requires it).' },
   { key: 'kioskNotifications', label: 'Notifications', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: 'Allow the notification shade in kiosk. Needs Home button on (Android requires it).' },
@@ -117,8 +117,8 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'showWifi', label: 'Show Wi-Fi on error', type: 'tri', group: 'Kiosk', help: 'Headwind launcher showed Wi-Fi settings when it could not reach the server.' },
 
   // ── Kiosk appearance ──────────────────────────────────────────────────────
-  { key: 'backgroundColor', label: 'Background color', type: 'color', group: 'Kiosk appearance', enforced: true, kioskOnly: true, help: 'Kiosk launcher background.' },
-  { key: 'textColor', label: 'Text color', type: 'color', group: 'Kiosk appearance', enforced: true, kioskOnly: true, help: 'Kiosk launcher text.' },
+  { key: 'backgroundColor', label: 'Background color', type: 'color', group: 'Kiosk appearance', enforced: true, kioskOnly: true, help: 'Kiosk launcher background. Always solid: transparency is ignored.' },
+  { key: 'textColor', label: 'Text color', type: 'color', group: 'Kiosk appearance', enforced: true, kioskOnly: true, help: 'Kiosk launcher text. It needs at least 4.5:1 contrast with the background color; with less, the device uses a readable color instead.' },
   { key: 'iconSize', label: 'Icon size', type: 'enum', group: 'Kiosk appearance', enforced: true, kioskOnly: true, help: 'App icon size in the kiosk launcher.', options: [
     { value: 'SMALL', label: 'Small' }, { value: 'MEDIUM', label: 'Medium' }, { value: 'LARGE', label: 'Large' },
   ] },

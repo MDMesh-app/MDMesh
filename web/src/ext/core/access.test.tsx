@@ -319,7 +319,7 @@ describe.each([
   it('F-Droid: Add to library', async () => {
     open('/apps?source=fdroid', user);
     await main().findByText('org.example.maps');
-    has(main().queryAllByRole('button', { name: 'Add Maps to library' }), add);
+    has(main().queryAllByRole('button', { name: 'Add to library: Maps' }), add);
   });
 
   it('Custom APK: the upload and Add to library', async () => {

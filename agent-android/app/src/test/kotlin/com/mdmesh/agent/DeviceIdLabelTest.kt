@@ -54,10 +54,24 @@ class DeviceIdLabelTest {
         assertEquals(DeviceIdLabel.Status.Enrolling(failure), DeviceIdLabel.of("", null, null, failure))
     }
 
+    /** The colours the status screen really draws the warning in: warning ink on the card, light and dark. */
     @Test
-    fun `the warning colour reads on the screen background`() {
-        // WCAG 2.x contrast for body text: at least 4.5:1.
-        val ratio = Wcag.contrast(MainActivityColors.ALERT, MainActivityColors.INK)
-        assertTrue("contrast $ratio", ratio >= 4.5)
+    fun `the warning colour reads on the card, light and dark`() {
+        val res = generateSequence(java.io.File("").absoluteFile) { it.parentFile }
+            .map { java.io.File(it, "app/src/main/res") }.first { it.isDirectory }
+        for (dir in listOf("values", "values-night")) {
+            val colours = Regex("""<color name="(\w+)">#([0-9A-Fa-f]{6})</color>""")
+                .findAll(java.io.File(res, "$dir/colors_v2.xml").readText())
+                .associate { it.groupValues[1] to (0xFF000000L or it.groupValues[2].toLong(16)).toInt() }
+            // Read as plain #RRGGBB values: say so when one stops being one (an @color/ alias, an alpha), rather than
+            // failing on a missing map key.
+            fun colour(name: String): Int = colours[name]
+                ?: throw AssertionError("$dir/colors_v2.xml: $name is not a plain #RRGGBB colour; read it another way")
+            for (card in listOf("mdm_surface", "mdm_surface_2")) {
+                // WCAG 2.x contrast for body text: at least 4.5:1.
+                val ratio = Wcag.contrast(colour("mdm_warn_ink"), colour(card))
+                assertTrue("$dir warn ink on $card: $ratio", ratio >= 4.5)
+            }
+        }
     }
 }

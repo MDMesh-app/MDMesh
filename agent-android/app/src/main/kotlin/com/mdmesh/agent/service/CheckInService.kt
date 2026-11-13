@@ -211,7 +211,8 @@ class CheckInService : LifecycleService() {
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.checkin_notification_title))
             .setContentText(getString(R.string.checkin_notification_text))
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_stat_mdmesh)
+            .setColor(ContextCompat.getColor(this, R.color.mdm_notification_ink))
             .setOngoing(true)
             .build()
 

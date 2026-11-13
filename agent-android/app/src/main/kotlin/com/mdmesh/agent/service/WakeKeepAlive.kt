@@ -5,6 +5,8 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.SystemClock
+import androidx.annotation.VisibleForTesting
 import java.util.concurrent.TimeUnit
 
 /**
@@ -22,13 +24,20 @@ object WakeKeepAlive {
     /** Schedule the next heartbeat. Idempotent (FLAG_UPDATE_CURRENT replaces any pending alarm). */
     fun schedule(context: Context) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val triggerAt = System.currentTimeMillis() + INTERVAL_MS
         val pi = pendingIntent(context)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
-        } else {
-            am.set(AlarmManager.RTC_WAKEUP, triggerAt, pi)
-        }
+        // Inexact and allowed while idle: fires in Doze maintenance windows without the exact-alarm permission.
+        arm(SystemClock.elapsedRealtime()) { type, triggerAt -> am.setAndAllowWhileIdle(type, triggerAt, pi) }
+    }
+
+    /**
+     * Picks the clock, trigger time and Doze allowance for the next heartbeat; [set] schedules it. The elapsed clock,
+     * not wall time: a device that boots with a wrong clock which NTP then moves back would otherwise wait out the
+     * correction. [now] is `elapsedRealtime()`. An alarm an older agent set on the wall clock uses the same
+     * PendingIntent, so the first schedule here replaces it.
+     */
+    @VisibleForTesting
+    internal fun arm(now: Long, set: (type: Int, triggerAt: Long) -> Unit) {
+        set(AlarmManager.ELAPSED_REALTIME_WAKEUP, now + INTERVAL_MS)
     }
 
     private fun pendingIntent(context: Context): PendingIntent {

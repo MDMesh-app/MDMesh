@@ -32,6 +32,8 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Process
+import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.mdmesh.core.di.DownloadHttpClient
 import kotlinx.coroutines.Dispatchers
@@ -42,6 +44,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
 import java.security.MessageDigest
+import java.util.Collections
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -142,6 +145,8 @@ class InstallManager @Inject constructor(
     private val packageInstaller: PackageInstaller
         get() = context.packageManager.packageInstaller
 
+    private val downloads = DownloadCache({ context.cacheDir }, owner = Process.myPid())
+
     /**
      * Downloads (or reads) the APK, applies the version policy, then performs a silent
      * install and awaits the platform's result. Returns the mapped [InstallOutcome].
@@ -164,12 +169,15 @@ class InstallManager @Inject constructor(
         // 2. Obtain every part (single APK, or base + splits of a bundle), verifying each
         // part's checksum. All parts install together in one session (step 3).
         val parts = req.apkParts
-        val fetched = ArrayList<FetchedApk>(parts.size)
+        val fetched = ArrayList<File>(parts.size)
+        // Every file we download, recorded as soon as it is named, so it is released even when this is cancelled
+        // between the download and the line that would have kept it. Never a caller-provided APK.
+        val downloaded: MutableList<File> = Collections.synchronizedList(mutableListOf())
         try {
             for (part in parts) {
-                val file = runCatching { obtainPart(part) }
+                val file = runCatching { obtainPart(part, downloaded) }
                     .getOrElse { return InstallOutcome.Failure(null, "apk fetch failed: ${it.message}") }
-                fetched += FetchedApk(file, downloaded = part.url != null)
+                fetched += file
                 part.sha256?.trim()?.let { expected ->
                     val actual = sha256Of(file)
                     if (!actual.equals(expected, ignoreCase = true)) {
@@ -179,7 +187,7 @@ class InstallManager @Inject constructor(
             }
 
             // 3. Create + write EVERY part into ONE session + commit, awaiting the broadcast result.
-            val outcome = runCatching { commitInstall(req.packageName, fetched.map { it.file }) }
+            val outcome = runCatching { commitInstall(req.packageName, fetched) }
                 .getOrElse { return InstallOutcome.Failure(null, "install session error: ${it.message}") }
 
             // 4. Optionally launch the app on success.
@@ -188,13 +196,23 @@ class InstallManager @Inject constructor(
             }
             return outcome
         } finally {
-            // Only clean up files we downloaded; never delete a caller-provided APK.
-            fetched.forEach { if (it.downloaded) it.file.delete() }
+            synchronized(downloaded) { downloaded.forEach(downloads::release) }
         }
     }
 
-    /** A fetched part plus whether we downloaded it (and therefore own its cleanup). */
-    private data class FetchedApk(val file: File, val downloaded: Boolean)
+    /**
+     * Deletes APK downloads a dead process left behind (a download also does this when it starts), and this process's
+     * own that no install holds and that are past [DownloadSweep.MIN_AGE_MS]. At service start, so a leftover doesn't
+     * wait for the next install; [ifDue] for the heartbeat, which lists the cache at most every
+     * [DownloadSweep.PERIOD_MS], so a leftover of this process goes soon after that age while the agent keeps running.
+     * Never throws.
+     */
+    suspend fun sweepLeftoverDownloads(ifDue: Boolean = false) = withContext(Dispatchers.IO) {
+        runCatching { if (ifDue) downloads.sweepIfDue() else downloads.sweep() }
+            .onSuccess { if (it.isNotEmpty()) Log.i(TAG, "removed ${it.size} leftover APK download(s)") }
+            .onFailure { Log.w(TAG, "leftover APK sweep failed", it) }
+        Unit
+    }
 
     /** Silently uninstalls [packageName], awaiting the platform's result. */
     @SuppressLint("MissingPermission") // Device Owner holds DELETE_PACKAGES (declared in the app)
@@ -293,20 +311,19 @@ class InstallManager @Inject constructor(
             else -> InstallOutcome.Failure(event.status, event.message ?: statusName(event.status))
         }
 
-    private suspend fun obtainPart(part: ApkPart): File {
+    private suspend fun obtainPart(part: ApkPart, downloaded: MutableList<File>): File {
         part.localPath?.let { return File(it) }
         val url = requireNotNull(part.url) { "install part needs either url or localPath" }
-        return withContext(Dispatchers.IO) { download(url) }
+        return withContext(Dispatchers.IO) { download(url, downloaded) }
     }
 
-    private fun download(url: String): File {
-        val dest = File(context.cacheDir, "mdm-install-${System.nanoTime()}.apk")
+    /** Protected from the sweep before its first byte; [install] releases it (also when this fails). */
+    private fun download(url: String, downloaded: MutableList<File>): File {
+        val dest = downloads.newFile()
+        downloaded += dest
         httpClient.newCall(Request.Builder().url(url).build()).execute().use { response ->
-            if (!response.isSuccessful) {
-                dest.delete()
-                error("HTTP ${response.code} for $url")
-            }
-            val body = response.body ?: run { dest.delete(); error("empty response body for $url") }
+            if (!response.isSuccessful) error("HTTP ${response.code} for $url")
+            val body = response.body ?: error("empty response body for $url")
             body.byteStream().use { input -> dest.outputStream().use { input.copyTo(it) } }
         }
         return dest
@@ -329,7 +346,8 @@ class InstallManager @Inject constructor(
         }
     }
 
-    private fun sha256Of(file: File): String {
+    /** Reads the whole APK (can be hundreds of MB), so never on the caller's thread. */
+    private suspend fun sha256Of(file: File): String = withContext(Dispatchers.IO) {
         val digest = MessageDigest.getInstance("SHA-256")
         FileInputStream(file).use { stream: InputStream ->
             val buffer = ByteArray(64 * 1024)
@@ -339,7 +357,7 @@ class InstallManager @Inject constructor(
                 digest.update(buffer, 0, read)
             }
         }
-        return digest.digest().joinToString("") { "%02x".format(it) }
+        digest.digest().joinToString("") { "%02x".format(it) }
     }
 
     private fun statusName(status: Int): String = when (status) {
@@ -356,5 +374,6 @@ class InstallManager @Inject constructor(
     private companion object {
         /** How long a committed session may take to report back before the install counts as failed. */
         const val RESULT_TIMEOUT_MS = 10 * 60_000L
+        const val TAG = "InstallManager"
     }
 }

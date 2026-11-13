@@ -92,7 +92,8 @@ class LocationCollector @Inject constructor(
         val latch = CountDownLatch(1)
         val ref = AtomicReference<Location?>()
         val cancel = CancellationSignal()
-        // Delivered on the binder thread, not the main executor: the caller may itself be on Main (CheckInService).
+        // Delivered on the binder thread, not the main executor: this thread blocks on the latch below, and must not
+        // depend on a thread that might be busy or be this one.
         lm.getCurrentLocation(provider, cancel, Runnable::run) { loc ->
             ref.set(loc); latch.countDown()
         }

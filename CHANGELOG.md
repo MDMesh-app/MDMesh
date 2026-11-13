@@ -41,6 +41,10 @@ Heads-up
   with its background (the minimum for readable text), the device uses a readable color instead, so some brand
   pairs show dark text (white on a bright red, for example). The background is always drawn solid (transparency is
   ignored). Needs agent 0.5.0.
+- Agent 0.5.0: when the server has been unreachable for a while, a device's instant connection can take up to 5
+  minutes to come back (it was up to 1 minute), so Sync now may say the device isn't connected a little longer. It
+  comes back right away when the device's network returns or its next check-in gets through, and devices retry at
+  random times so they don't all reconnect at once after a server restart. Check-ins are not affected.
 
 New
 - From source and native: `./setup.sh --update` moves the clone to the newest release, checked against its signed
@@ -172,6 +176,24 @@ Fixes
 - Agent rollout: when every device is in the canary, the rollout finishes once they've updated instead of staying
   open, and Settings stops offering the same agent again. If one can't update, it offers Finish instead of Promote
   (thanks @letternumber).
+- Agent: commands like an app scan, app icons or an install no longer run on the thread the kiosk home screen uses, so
+  the kiosk stays responsive while they run. Needs agent 0.5.0.
+- Agent: after the screen turns off and on, or the network drops, the agent keeps one connection to the server
+  instead of sometimes opening a second one or leaving one open. Needs agent 0.5.0.
+- Agent: the 10-minute heartbeat keeps its pace when the device's clock is corrected, for example right after setup.
+  Needs agent 0.5.0.
+- Agent: device events (boot, app installed, and so on) are no longer lost when two arrive at once or when the agent
+  is stopped during a check-in. Needs agent 0.5.0.
+- Agent: a 10-minute heartbeat that arrives while an install or another check-in is still running no longer keeps
+  Android waiting, which could get the agent stopped. The device stays awake for up to about 10 minutes while the
+  install finishes, so its result usually reaches the console right away. Needs agent 0.5.0.
+- Agent: a device deleted in the console no longer reconnects to the server about once a minute forever; it waits
+  longer each time, up to 5 minutes. Needs agent 0.5.0.
+- Agent: if Android stops the agent's service, it comes back within 10 minutes (with its notification). Needs agent
+  0.5.0.
+- Agent: APK downloads left behind by an interrupted install are removed when the agent next starts or installs an
+  app, and otherwise by the agent's regular heartbeat once they are an hour old. Needs agent 0.5.0.
+- Agent: the device timeline no longer shows a network change each time the agent's service starts. Needs agent 0.5.0.
 - Console accessibility: inputs, icon buttons, toggles, status dots and bars reach 3:1 contrast in both themes, help
   and status text is darker, the selected tab, section and page are outlined, and disabled settings stay readable.
 - Console: a toast waits while you point at it or tab into it, can be dismissed (Escape too), and a failure stays 30

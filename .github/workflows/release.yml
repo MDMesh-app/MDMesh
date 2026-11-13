@@ -222,6 +222,14 @@ jobs:
       # The manifest pins the three images by the digests read back from GHCR right after each push (*_REF above), and
       # the quick start's downloads by SHA-256 (release/build-manifest.sh). A 0.5.0+ supervisor and the quick start run
       # exactly those digests; the :VERSION tags stay in it for older supervisors.
+      - name: Extract web static assets & package mdmesh-web.zip
+        run: |
+          CID=$(docker create "$WEB_IMG")
+          mkdir -p ./web_dist
+          docker cp "$CID:/srv/." ./web_dist
+          docker rm "$CID"
+          python3 -c "import shutil; shutil.make_archive('mdmesh-web', 'zip', 'web_dist')"
+
       - name: Build + sign manifest
         env:
           MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
@@ -233,7 +241,7 @@ jobs:
           sudo apt-get update -y && sudo apt-get install -y minisign
           release/build-manifest.sh "$VERSION" stable \
             "$SERVER_IMG" "$WEB_IMG" mdmesh-agent.apk "$CODE" "$CK" "$PROTO" \
-            "$SERVER_REF" "$WEB_REF" "$SUPERVISOR_REF"
+            "$SERVER_REF" "$WEB_REF" "$SUPERVISOR_REF" mdmesh-web.zip
           release/sign-manifest.sh manifest.json
 
       # --- Publish ---
@@ -264,6 +272,7 @@ jobs:
           # release and checks it against its SHA-256 in the signed manifest's files (build-manifest.sh).
           files: |
             mdmesh-agent.apk
+            mdmesh-web.zip
             manifest.json
             manifest.json.minisig
             quickstart.sh

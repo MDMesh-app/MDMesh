@@ -28,7 +28,7 @@
 
 # >>> answers.sh functions (quickstart.sh keeps a verbatim copy) >>>
 # The keys an answers file may set: every answer and setting in install/options.json (CI checks the two match).
-_MDM_ANSWER_KEYS=" MDMESH_MODE MDMESH_REPO MDMESH_IMAGE_OWNER MDMESH_HOST MDMESH_TUNNEL_TOKEN MDMESH_ACME_EMAIL MDMESH_BASE_URL MDMESH_HTTP_PORT MDMESH_REPLACE_DATA MDMESH_ASSUME_YES MDMESH_DIR MDMESH_VERSION MDMESH_RELEASE_PUBKEY MDMESH_NONINTERACTIVE MDMESH_DRY_RUN "
+_MDM_ANSWER_KEYS=" MDMESH_MODE MDMESH_REPO MDMESH_IMAGE_OWNER MDMESH_HOST MDMESH_SERVER_PORT MDMESH_SUPERVISOR_PORT MDMESH_TUNNEL_TOKEN MDMESH_ACME_EMAIL MDMESH_BASE_URL MDMESH_HTTP_PORT MDMESH_REPLACE_DATA MDMESH_ASSUME_YES MDMESH_DIR MDMESH_VERSION MDMESH_RELEASE_PUBKEY MDMESH_NONINTERACTIVE MDMESH_DRY_RUN "
 _MDM_SECRET_KEYS=" MDMESH_TUNNEL_TOKEN "
 _MDM_ANS_GIVEN=" "       # ids of the questions answered in advance
 _MDM_ANS_FROM_FILE=" "   # keys set from the answers file
@@ -91,8 +91,12 @@ _mdm_answer_check() {
   _MDM_WHY=''; _MDM_SHOW=$v
   case "$1" in
     mode)
-      case "$v" in tunnel|1) _MDM_V=1; _MDM_SHOW=tunnel ;; domain|2) _MDM_V=2; _MDM_SHOW=domain ;;
-        *) _MDM_WHY='must be tunnel or domain' ;; esac ;;
+      case "$v" in
+        tunnel|1) _MDM_V=1; _MDM_SHOW=tunnel ;;
+        domain|2) _MDM_V=2; _MDM_SHOW=domain ;;
+        host-nginx|3|nginx) _MDM_V=3; _MDM_SHOW=host-nginx ;;
+        *) _MDM_WHY='must be tunnel, domain or host-nginx' ;;
+      esac ;;
     hostname)
       u="https://$v"
       { mdm_check_host _MDM_V && mdm_check_base_url u; } || _MDM_WHY=' ' ;;

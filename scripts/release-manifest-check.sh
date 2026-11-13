@@ -16,7 +16,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 T=$(mktemp -d)
 cleanup() {
   rm -f -- "$T/manifest.json" "$T/manifest.json.minisig" "$T/k.pub" "$T/k.key" "$T/x.pub" "$T/x.key" \
-    "$T/agent.apk" "$T/tampered.json" "$T/qs.sh"
+    "$T/agent.apk" "$T/mdmesh-web.zip" "$T/tampered.json" "$T/qs.sh"
   rmdir -- "$T" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -25,8 +25,10 @@ fail() { echo "release-manifest-check: $*" >&2; exit 1; }
 O=example-owner
 D1=sha256:$(printf '1%.0s' $(seq 64)); D2=sha256:$(printf '2%.0s' $(seq 64)); D3=sha256:$(printf '3%.0s' $(seq 64))
 head -c 4096 /dev/urandom > "$T/agent.apk"
+head -c 8192 /dev/urandom > "$T/mdmesh-web.zip"
 ( cd "$T" && "$ROOT/release/build-manifest.sh" 9.8.7 stable "ghcr.io/$O/mdmesh-server:9.8.7" "ghcr.io/$O/mdmesh-web:9.8.7" \
-    agent.apk 90807 CKSUM 1.5 "ghcr.io/$O/mdmesh-server@$D1" "ghcr.io/$O/mdmesh-web@$D2" "ghcr.io/$O/mdmesh-supervisor@$D3" ) >/dev/null
+    agent.apk 90807 CKSUM 1.5 "ghcr.io/$O/mdmesh-server@$D1" "ghcr.io/$O/mdmesh-web@$D2" "ghcr.io/$O/mdmesh-supervisor@$D3" \
+    mdmesh-web.zip ) >/dev/null
 # A ref outside the image's repository, or not a digest, is refused at build time.
 ( cd "$T" && ! "$ROOT/release/build-manifest.sh" 9.8.7 stable "ghcr.io/$O/mdmesh-server:9.8.7" "ghcr.io/$O/mdmesh-web:9.8.7" \
     agent.apk 90807 CKSUM 1.5 "ghcr.io/other/mdmesh-server@$D1" "ghcr.io/$O/mdmesh-web@$D2" "ghcr.io/$O/mdmesh-supervisor@$D3" ) 2>/dev/null \
@@ -48,8 +50,8 @@ sed -n '/^# >>> release verification >>>$/,/^# <<< release verification <<<$/p' 
 [ "$MDM_RELEASE_PUBKEY_DEFAULT" = "$(sed -n 2p "$ROOT/release/minisign.pub")" ] \
   || fail "quickstart.sh's MDM_RELEASE_PUBKEY_DEFAULT is not the key line of release/minisign.pub: copy it over"
 want_files=$(python3 -c 'import re,sys; s=open(sys.argv[1]).read(); print(" ".join(re.search(r"QUICKSTART_FILES = \[(.*?)\]", s, re.S).group(1).replace("\"","").replace(",","").split()))' "$ROOT/release/build-manifest.sh")
-[ "$want_files" = "$MDM_QUICKSTART_FILES" ] \
-  || fail "quickstart.sh's MDM_QUICKSTART_FILES ($MDM_QUICKSTART_FILES) differ from build-manifest.sh's QUICKSTART_FILES ($want_files)"
+[ "$want_files" = "$MDM_QUICKSTART_FILES $MDM_NGINX_FILES" ] \
+  || fail "build-manifest.sh's QUICKSTART_FILES ($want_files) differ from quickstart.sh's downloads ($MDM_QUICKSTART_FILES $MDM_NGINX_FILES)"
 
 PK=$(sed -n 2p "$T/k.pub")
 mdm_minisign_verify "$PK" "$T/manifest.json" "$T/manifest.json.minisig" || fail "a good signature was refused"
@@ -74,8 +76,9 @@ mdm_verify_manifest "$PK" "$T/manifest.json" "$T/manifest.json.minisig" || fail 
 [ "$(mdm_manifest_field "$T/manifest.json" server "$MDM_IMAGE_REF_ERE")" = "ghcr.io/$O/mdmesh-server@$D1" ] || fail "server ref not read"
 [ "$(mdm_manifest_field "$T/manifest.json" web "$MDM_IMAGE_REF_ERE")" = "ghcr.io/$O/mdmesh-web@$D2" ] || fail "web ref not read"
 [ "$(mdm_manifest_field "$T/manifest.json" supervisor "$MDM_IMAGE_REF_ERE")" = "ghcr.io/$O/mdmesh-supervisor@$D3" ] || fail "supervisor ref not read"
+[ "$(mdm_manifest_webzip_sha "$T/manifest.json")" = "$(mdm_sha256 "$T/mdmesh-web.zip")" ] || fail "web zip sha256 not read"
 grep -q '^  "files": {$' "$T/manifest.json" || fail "quickstart.sh would not find the files block"
-for f in $MDM_QUICKSTART_FILES quickstart.sh; do
+for f in $MDM_QUICKSTART_FILES $MDM_NGINX_FILES quickstart.sh; do
   [ "$(mdm_manifest_field "$T/manifest.json" "$f" "$MDM_SHA256_ERE")" = "$(mdm_sha256 "$ROOT/$f")" ] || fail "sha256 of $f not read or wrong"
 done
 # The release asset quickstart.sh, which the README's checked install block downloads, is in the files: list of

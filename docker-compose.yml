@@ -77,6 +77,7 @@ services:
         VITE_AGENT_CHECKSUM: ${VITE_AGENT_CHECKSUM:-}
         VITE_AGENT_APK_URL: ${VITE_AGENT_APK_URL:-}
     restart: unless-stopped
+    profiles: ["caddy", "cloudflare", "default", ""]
     depends_on:
       - server
       - supervisor

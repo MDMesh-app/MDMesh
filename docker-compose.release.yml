@@ -61,6 +61,7 @@ services:
   caddy:
     image: ghcr.io/${IMAGE_OWNER:-mdmesh-app}/mdmesh-web:${WEB_VERSION:-latest}
     restart: unless-stopped
+    profiles: ["caddy", "cloudflare", "default", ""]
     depends_on:
       - server
       - supervisor

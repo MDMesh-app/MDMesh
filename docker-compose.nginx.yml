@@ -1,0 +1,13 @@
+# Host Nginx overlay: publish server (Tomcat API) and supervisor host ports to 127.0.0.1
+# so host Nginx can reverse proxy to them.
+# Use with:
+#   docker compose -f docker-compose.yml -f docker-compose.nginx.yml up -d
+
+services:
+  server:
+    ports:
+      - "127.0.0.1:${SERVER_PORT:-8080}:8080"
+
+  supervisor:
+    ports:
+      - "127.0.0.1:${SUPERVISOR_PORT:-9000}:9000"

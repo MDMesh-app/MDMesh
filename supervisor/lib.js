@@ -176,6 +176,19 @@ function envValue(text, key) {
   return v || null;
 }
 
+/** Resolve downloadable webZip asset if present in release/manifest. */
+function webZipAsset(release, manifest) {
+  const webZip = manifest && manifest.components && manifest.components.webZip;
+  if (!webZip || !webZip.file || !webZip.sha256) return null;
+  const asset = ((release && release.assets) || []).find((a) => a.name === webZip.file);
+  if (!asset || !asset.browser_download_url) return null;
+  return {
+    file: webZip.file,
+    sha256: webZip.sha256,
+    url: asset.browser_download_url,
+  };
+}
+
 // Apply is a linear state machine the console + recovery page poll. The happy path advances
 // authorizing → backup → pull → recreate → healthcheck → done. On any failure apply.sh jumps to
 // `rollback` (transient) and ends at `rolled_back` or, if rollback itself fails, `failed`.
@@ -266,6 +279,6 @@ function legacyDeploymentAdmin(body) {
 module.exports = {
   parseSemver, semverGt, pickRelease, shapeStatus,
   imageTags, imagePins, nextPhase, isTerminal, APPLY_PHASES, APPLY_TERMINAL,
-  apkAsset, sha256Matches, recoveryPage, isPublishTemp, assetRequest, fetchAsset, envValue, applyLine, applyRefusal,
+  apkAsset, webZipAsset, sha256Matches, recoveryPage, isPublishTemp, assetRequest, fetchAsset, envValue, applyLine, applyRefusal,
   deploymentAdminVerdict, legacyDeploymentAdmin,
 };

@@ -7,7 +7,8 @@ FROM node:24-alpine
 # minisign verifies the signed manifest; docker-cli + the compose plugin let the supervisor drive
 # `docker compose pull/up` against the host daemon (socket mounted in compose) to apply updates.
 # postgresql-client gives apply.sh pg_dump/psql for the pre-update backup + rollback restore.
-RUN apk add --no-cache minisign docker-cli docker-cli-compose postgresql-client bash curl
+# unzip extracts the signed mdmesh-web.zip that host-Nginx installs serve.
+RUN apk add --no-cache minisign docker-cli docker-cli-compose postgresql-client bash curl unzip
 WORKDIR /app
 COPY supervisor/ /app/
 COPY release/minisign.pub /app/minisign.pub

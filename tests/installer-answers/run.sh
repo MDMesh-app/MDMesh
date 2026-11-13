@@ -228,7 +228,7 @@ dry() {
 show() { sed 's/^/    | /' "$WORK/out/o" "$WORK/out/e" >&2; }
 # plan_field ID: "<value> <source>" from the plan line of ID.
 plan_field() { awk -v id="$1" '$1 == id { print $2, $NF; exit }' "$WORK/out/o"; }
-modes_of() { if options_of "$1" | grep -qx mode; then echo tunnel domain; else echo -; fi; }
+modes_of() { if options_of "$1" | grep -qx mode; then echo tunnel domain host-nginx; else echo -; fi; }
 # opt_m ID MODE: y when option ID is asked in MODE ("-": an installer without modes), else n.
 opt_m() { jq -r --arg o "$1" --arg m "$2" '.options[] | select(.id == $o) | if .when == null or $m == "-" then "y" elif .when.mode == $m then "y" else "n" end' "$CONTRACT"; }
 # answers INSTALLER MODE [required]: NAME=VALUE for each answer (the first valid example; mode = MODE), all or only the

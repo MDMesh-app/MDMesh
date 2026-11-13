@@ -1,0 +1,156 @@
+# Nginx configuration for MDMesh (Host Nginx)
+# Server domain: __HOST__
+# Web static root: __WEB_ROOT__
+# Server proxy port: __SERVER_PORT__
+# Supervisor proxy port: __SUPERVISOR_PORT__
+
+server {
+    server_name __HOST__;
+
+    listen [::]:443 ssl; # managed by Certbot
+    listen 443 ssl; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/__HOST__/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/__HOST__/privkey.pem; # managed by Certbot
+
+    root __WEB_ROOT__;
+    index index.html;
+
+    client_max_body_size 500M;
+
+    # Health probes for uptime monitors. Without these routes /healthz falls through to the SPA's
+    # index.html and answers 200 even when the server or the supervisor is down. Each probe checks
+    # its service and returns 503 when it is unavailable. Exact locations, not a regex: nginx refuses
+    # `proxy_pass` with a URI inside a regex location. Each path is listed with and without its
+    # trailing slash (nothing below them), so /healthz/ cannot fall through to the SPA's 200 either.
+    location = /healthz {
+        proxy_pass http://127.0.0.1:__SERVER_PORT__/rest/public/name;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header CF-Connecting-IP "";
+        proxy_intercept_errors on;
+        error_page 500 502 503 504 = @server_unavailable;
+    }
+
+    location = /healthz/ {
+        proxy_pass http://127.0.0.1:__SERVER_PORT__/rest/public/name;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header CF-Connecting-IP "";
+        proxy_intercept_errors on;
+        error_page 500 502 503 504 = @server_unavailable;
+    }
+
+    location = /healthz/supervisor {
+        proxy_pass http://127.0.0.1:__SUPERVISOR_PORT__/healthz;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header CF-Connecting-IP "";
+        proxy_intercept_errors on;
+        error_page 500 502 503 504 = @supervisor_unavailable;
+    }
+
+    location = /healthz/supervisor/ {
+        proxy_pass http://127.0.0.1:__SUPERVISOR_PORT__/healthz;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header CF-Connecting-IP "";
+        proxy_intercept_errors on;
+        error_page 500 502 503 504 = @supervisor_unavailable;
+    }
+
+    location @server_unavailable {
+        return 503 "server unavailable";
+    }
+
+    location @supervisor_unavailable {
+        return 503 "supervisor unavailable";
+    }
+
+    # Static web app files
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # API and uploaded files -> Tomcat server
+    location /rest/ {
+        proxy_pass http://127.0.0.1:__SERVER_PORT__/rest/;
+        # Send exactly one client address and drop a client-sent CF-Connecting-IP: the server trusts
+        # that header (and X-Forwarded-For) from its private Docker peer, so a device could otherwise
+        # choose the public IP recorded for it. Same rule as docker/Caddyfile.
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header CF-Connecting-IP "";
+    }
+
+    location /files/ {
+        # Canonical agent APK route goes to supervisor mirror
+        location = /files/agent.apk {
+            proxy_pass http://127.0.0.1:__SUPERVISOR_PORT__/update/agent.apk;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $remote_addr;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header CF-Connecting-IP "";
+        }
+
+        proxy_pass http://127.0.0.1:__SERVER_PORT__/files/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header CF-Connecting-IP "";
+    }
+
+    # Agent wake WebSocket
+    location /agent/ws/ {
+        proxy_pass http://127.0.0.1:__SERVER_PORT__/agent/ws/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header CF-Connecting-IP "";
+    }
+
+    # Updater & recovery -> supervisor
+    location /update/ {
+        proxy_pass http://127.0.0.1:__SUPERVISOR_PORT__/update/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header CF-Connecting-IP "";
+    }
+
+    location /recovery {
+        proxy_pass http://127.0.0.1:__SUPERVISOR_PORT__/recovery;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header CF-Connecting-IP "";
+    }
+}
+server {
+    if ($host = __HOST__) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
+
+
+    listen 80;
+    listen [::]:80;
+    server_name __HOST__;
+    return 404; # managed by Certbot
+
+
+}

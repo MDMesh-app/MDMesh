@@ -122,8 +122,17 @@ mdm_manifest_field() {
 MDM_SHA256_ERE='[0123456789abcdef]{64}'
 MDM_IMAGE_REF_ERE='[abcdefghijklmnopqrstuvwxyz0123456789._/-]+@sha256:[0123456789abcdef]{64}'
 
+# mdm_manifest_webzip_sha FILE: the SHA-256 of components.webZip in the manifest FILE (the mdmesh-web.zip asset of a
+# host-Nginx release), or nothing when the release has no web zip. Read only from a manifest whose signature verified.
+# mdm_manifest_field cannot do it: the manifest has several "sha256" lines (the agent APK has one too).
+mdm_manifest_webzip_sha() {
+  LC_ALL=C sed -n '/"webZip": *{/,/}/ s/.*"sha256": "\([0123456789abcdef]\{64\}\)".*/\1/p' "$1" | head -1
+}
+
 # The files downloaded from the release's tag, as named in the manifest's "files" (release/build-manifest.sh).
 MDM_QUICKSTART_FILES="docker-compose.release.yml docker-compose.domain.yml install/sql/hmdm_init.en.sql install/sql/post_seed.sql install/lib/db.sh"
+# Extra files downloaded and verified only for host-Nginx installs (new releases record their hashes too).
+MDM_NGINX_FILES="docker-compose.nginx.yml docker/nginx.conf.template"
 
 # mdm_legacy_file_sha VERSION FILE: the SHA-256 of FILE at the tag of a release published before the manifest recorded
 # them (v0.4.0), taken from that tag in git. Fails for any other release. Remove once the latest release has "files".
@@ -232,13 +241,29 @@ mdm_check_host() {
   printf 'Invalid hostname %s: %s.\n' "${h:-(empty)}" "$why" >&2
   return 1
 }
+# mdm_check_port VAR: checks that the variable named VAR holds a TCP port: digits only, 1-65535, no leading zero.
+# Otherwise it prints why to stderr and fails. The host-Nginx prompts use it for the loopback backend ports.
+mdm_check_port() {
+  local p=${!1-} why=''
+  case "$p" in
+    '')                  why='it is empty' ;;
+    *[!${_MDM_DIGITS}]*) why='it is not a number' ;;
+    0*)                  why='a port is 1-65535, with no leading zero' ;;
+  esac
+  # Length first, so the numeric compare never sees a value too big for the shell's integer.
+  [ -n "$why" ] || { [ "${#p}" -le 5 ] && [ "$p" -ge 1 ] && [ "$p" -le 65535 ]; } || why='a port is 1-65535'
+  [ -z "$why" ] && return 0
+  case "$p" in *[![:print:]]*) p=$(printf '%q' "$p") ;; esac
+  printf 'Invalid port %s: %s.\n' "${p:-(empty)}" "$why" >&2
+  return 1
+}
 # <<< url.sh functions <<<
 
 # Answers given in advance (see install/lib/answers.sh and install/options.json): a verbatim copy of the functions
 # between the markers, for the same reason as url.sh's above. CI (t0-fast, edge entry) fails if the copies differ.
 # >>> answers.sh functions (quickstart.sh keeps a verbatim copy) >>>
 # The keys an answers file may set: every answer and setting in install/options.json (CI checks the two match).
-_MDM_ANSWER_KEYS=" MDMESH_MODE MDMESH_REPO MDMESH_IMAGE_OWNER MDMESH_HOST MDMESH_TUNNEL_TOKEN MDMESH_ACME_EMAIL MDMESH_BASE_URL MDMESH_HTTP_PORT MDMESH_REPLACE_DATA MDMESH_ASSUME_YES MDMESH_DIR MDMESH_VERSION MDMESH_RELEASE_PUBKEY MDMESH_NONINTERACTIVE MDMESH_DRY_RUN "
+_MDM_ANSWER_KEYS=" MDMESH_MODE MDMESH_REPO MDMESH_IMAGE_OWNER MDMESH_HOST MDMESH_SERVER_PORT MDMESH_SUPERVISOR_PORT MDMESH_TUNNEL_TOKEN MDMESH_ACME_EMAIL MDMESH_BASE_URL MDMESH_HTTP_PORT MDMESH_REPLACE_DATA MDMESH_ASSUME_YES MDMESH_DIR MDMESH_VERSION MDMESH_RELEASE_PUBKEY MDMESH_NONINTERACTIVE MDMESH_DRY_RUN "
 _MDM_SECRET_KEYS=" MDMESH_TUNNEL_TOKEN "
 _MDM_ANS_GIVEN=" "       # ids of the questions answered in advance
 _MDM_ANS_FROM_FILE=" "   # keys set from the answers file
@@ -301,8 +326,12 @@ _mdm_answer_check() {
   _MDM_WHY=''; _MDM_SHOW=$v
   case "$1" in
     mode)
-      case "$v" in tunnel|1) _MDM_V=1; _MDM_SHOW=tunnel ;; domain|2) _MDM_V=2; _MDM_SHOW=domain ;;
-        *) _MDM_WHY='must be tunnel or domain' ;; esac ;;
+      case "$v" in
+        tunnel|1) _MDM_V=1; _MDM_SHOW=tunnel ;;
+        domain|2) _MDM_V=2; _MDM_SHOW=domain ;;
+        host-nginx|3|nginx) _MDM_V=3; _MDM_SHOW=host-nginx ;;
+        *) _MDM_WHY='must be tunnel, domain or host-nginx' ;;
+      esac ;;
     hostname)
       u="https://$v"
       { mdm_check_host _MDM_V && mdm_check_base_url u; } || _MDM_WHY=' ' ;;
@@ -487,10 +516,18 @@ mdm_answer mode MODE mode MDMESH_MODE
 mdm_answer repo GH_REPO github-repo MDMESH_REPO
 mdm_answer image-owner IMAGE_OWNER image-owner MDMESH_IMAGE_OWNER
 mdm_answer host HOST hostname MDMESH_HOST
+mdm_answer server-port SERVER_PORT port MDMESH_SERVER_PORT
+mdm_answer supervisor-port SUPERVISOR_PORT port MDMESH_SUPERVISOR_PORT
 mdm_answer tunnel-token TUNNEL_TOKEN tunnel-token MDMESH_TUNNEL_TOKEN
 mdm_answer acme-email ACME_EMAIL email MDMESH_ACME_EMAIL
 if mdm_given mode; then
-  if [ "$MODE" = 1 ]; then mdm_unused acme-email "in tunnel mode"; else mdm_unused tunnel-token "in domain mode"; fi
+  case "$MODE" in
+    1) mdm_unused acme-email "in tunnel mode"
+       mdm_unused server-port "in tunnel mode"; mdm_unused supervisor-port "in tunnel mode" ;;
+    2) mdm_unused tunnel-token "in domain mode"
+       mdm_unused server-port "in domain mode"; mdm_unused supervisor-port "in domain mode" ;;
+    3) mdm_unused acme-email "in host-Nginx mode"; mdm_unused tunnel-token "in host-Nginx mode" ;;
+  esac
 fi
 mdm_need mode; mdm_need host
 if mdm_given mode && [ "$MODE" = 1 ]; then mdm_need tunnel-token; fi
@@ -501,9 +538,19 @@ if [ "${MDMESH_DRY_RUN:-0}" = 1 ]; then
   mdm_plan_line repo "$REPO"
   mdm_plan_line image-owner "$IMAGE_OWNER_DEFAULT"
   mdm_plan_line host ''
-  if ! mdm_given mode; then mdm_plan_line tunnel-token ''; mdm_plan_line acme-email ''
-  elif [ "$MODE" = 1 ]; then mdm_plan_line tunnel-token ''; mdm_plan_row acme-email - unused
-  else mdm_plan_row tunnel-token - unused; mdm_plan_line acme-email ''; fi
+  if ! mdm_given mode; then
+    mdm_plan_line server-port 8080; mdm_plan_line supervisor-port 9000
+    mdm_plan_line tunnel-token ''; mdm_plan_line acme-email ''
+  elif [ "$MODE" = 1 ]; then
+    mdm_plan_row server-port - unused; mdm_plan_row supervisor-port - unused
+    mdm_plan_line tunnel-token ''; mdm_plan_row acme-email - unused
+  elif [ "$MODE" = 2 ]; then
+    mdm_plan_row server-port - unused; mdm_plan_row supervisor-port - unused
+    mdm_plan_row tunnel-token - unused; mdm_plan_line acme-email ''
+  else
+    mdm_plan_line server-port 8080; mdm_plan_line supervisor-port 9000
+    mdm_plan_row tunnel-token - unused; mdm_plan_row acme-email - unused
+  fi
   [ -z "${MDMESH_RELEASE_PUBKEY:-}" ] || mdm_plan_row release-pubkey '(custom)' MDMESH_RELEASE_PUBKEY
   _dir=${MDMESH_DIR:-mdmesh}; case "$_dir" in /*) ;; *) _dir="$PWD/$_dir" ;; esac
   _repo=$REPO; if mdm_given repo && [ -n "$GH_REPO" ]; then _repo=$GH_REPO; fi
@@ -532,11 +579,16 @@ if ! mdm_answered mode; then
   echo "Hosting mode:"
   echo "  1) Cloudflare Tunnel   (no open ports; Cloudflare manages TLS — needs a domain in Cloudflare)"
   echo "  2) Your own domain     (open 80/443; Caddy auto-provisions a Let's Encrypt cert)"
+  echo "  3) Host Nginx          (use existing Nginx on host; reverse-proxies to Docker backend)"
   MODE=""
-  while [ "$MODE" != "1" ] && [ "$MODE" != "2" ]; do
-    read -rp "Choose [1/2]: " MODE || { err "No selection (non-interactive run?). Aborting."; exit 1; }   # answer: mode
-    case "$MODE" in 1|2) ;; *) warn "Please enter 1 or 2." ;; esac
+  while [ "$MODE" != "1" ] && [ "$MODE" != "2" ] && [ "$MODE" != "3" ]; do
+    read -rp "Choose [1/2/3]: " MODE || { err "No selection (non-interactive run?). Aborting."; exit 1; }   # answer: mode
+    case "$MODE" in 1|2|3) ;; *) warn "Please enter 1, 2 or 3." ;; esac
   done
+fi
+
+if [ "$MODE" = "3" ]; then
+  command -v nginx >/dev/null || { err "Nginx command not found on host! Aborting installation for Host Nginx mode."; exit 1; }
 fi
 
 while :; do
@@ -639,6 +691,10 @@ say "Installing release v${RELEASE} of ${GH_REPO}."
 
 DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
 
+SERVER_PORT="${SERVER_PORT:-8080}"
+SUPERVISOR_PORT="${SUPERVISOR_PORT:-9000}"
+HOST_NGINX=0
+
 if [ "$MODE" = "1" ]; then
   mdm_answered host || read -rp "Public hostname devices will use (e.g. mdm.example.com): " HOST   # answer: host
   mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
@@ -649,7 +705,7 @@ if [ "$MODE" = "1" ]; then
   BASE_URL="https://${HOST}"; SITE_ADDRESS=":80"; ACME_EMAIL=""
   COMPOSE_FILE="docker-compose.yml"; COMPOSE_PROFILES="cloudflare"
   EXTRA_NOTE="In Cloudflare, route the tunnel's public hostname ($HOST) to http://caddy:80."
-else
+elif [ "$MODE" = "2" ]; then
   mdm_answered host || read -rp "Your domain (DNS already pointing here, e.g. mdm.example.com): " HOST   # answer: host
   mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
   while :; do
@@ -659,6 +715,20 @@ else
   BASE_URL="https://${HOST}"; SITE_ADDRESS="${HOST}"; TUNNEL_TOKEN=""
   COMPOSE_FILE="docker-compose.yml:docker-compose.domain.yml"; COMPOSE_PROFILES=""
   EXTRA_NOTE="Make sure ${HOST} resolves to this server and ports 80/443 are open."
+else
+  mdm_answered host || read -rp "Your domain (DNS already pointing here, e.g. mdm.example.com): " HOST   # answer: host
+  mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
+  mdm_answered server-port || read -rp "Backend Server port [8080]: " INP_SERVER_PORT   # answer: server-port
+  mdm_answered supervisor-port || read -rp "Backend Supervisor port [9000]: " INP_SUPERVISOR_PORT   # answer: supervisor-port
+  SERVER_PORT="${INP_SERVER_PORT:-${SERVER_PORT:-8080}}"
+  SUPERVISOR_PORT="${INP_SUPERVISOR_PORT:-${SUPERVISOR_PORT:-9000}}"
+  mdm_check_port SERVER_PORT || { err "The backend server port must be a number from 1 to 65535."; exit 1; }
+  mdm_check_port SUPERVISOR_PORT || { err "The backend supervisor port must be a number from 1 to 65535."; exit 1; }
+  [ "$SERVER_PORT" != "$SUPERVISOR_PORT" ] || { err "The backend server and supervisor ports must differ."; exit 1; }
+  HOST_NGINX=1
+  BASE_URL="https://${HOST}"; SITE_ADDRESS="${HOST}"; ACME_EMAIL=""; TUNNEL_TOKEN=""
+  COMPOSE_FILE="docker-compose.yml:docker-compose.nginx.yml"; COMPOSE_PROFILES="none"
+  EXTRA_NOTE="Nginx configured at /etc/nginx/sites-available/mdmesh.conf."
 fi
 mdm_check_base_url BASE_URL || { err "Check the hostname you entered (the name only, e.g. mdm.example.com), then re-run."; exit 1; }
 
@@ -668,8 +738,10 @@ say "Downloading the pull-only compose + seed…"
 # unverified ever runs.
 HAS_FILES=0
 grep -q '^  "files": {$' "$MANIFEST" && HAS_FILES=1
+DOWNLOAD_FILES="$MDM_QUICKSTART_FILES"
+[ "${HOST_NGINX:-0}" = 1 ] && DOWNLOAD_FILES="$DOWNLOAD_FILES $MDM_NGINX_FILES"
 n=0
-for f in $MDM_QUICKSTART_FILES; do
+for f in $DOWNLOAD_FILES; do
   n=$((n + 1))
   if [ "$HAS_FILES" = 1 ]; then want=$(mdm_manifest_field "$MANIFEST" "$f" "$MDM_SHA256_ERE" || true)
   else want=$(mdm_legacy_file_sha "$RELEASE" "$f" || true); fi
@@ -681,7 +753,7 @@ for f in $MDM_QUICKSTART_FILES; do
   fi
 done
 n=0
-for f in $MDM_QUICKSTART_FILES; do
+for f in $DOWNLOAD_FILES; do
   n=$((n + 1))
   dest=$f; [ "$f" = docker-compose.release.yml ] && dest=docker-compose.yml
   mkdir -p -- "$(dirname -- "$dest")"
@@ -722,6 +794,9 @@ AUTO_UPDATE=0
 COMPOSE_PROJECT_NAME=mdmesh
 COMPOSE_FILE=${COMPOSE_FILE}
 COMPOSE_PROFILES=${COMPOSE_PROFILES}
+SERVER_PORT=${SERVER_PORT}
+SUPERVISOR_PORT=${SUPERVISOR_PORT}
+HOST_NGINX=${HOST_NGINX}
 SMTP_HOST=
 SMTP_PORT=25
 SMTP_FROM=mdm@${HOST}
@@ -785,6 +860,96 @@ if ! mdm_seed "admin@${HOST}" install/sql/hmdm_init.en.sql "$ADMIN_PASSWORD" "$R
 fi
 if ! mdm_post_seed install/sql/post_seed.sql; then
   err "Post-seed repairs failed — device enrollment would not work. Fix the error above and re-run."; exit 1
+fi
+
+# Configure host Nginx if in Host Nginx mode
+if [ "${HOST_NGINX:-0}" = "1" ]; then
+  say "Setting up Host Nginx web assets and configuration…"
+  WEB_DIR="$(pwd)/web_dist"
+  STAGE_DIR="$(pwd)/.web_dist.new"
+  rm -rf -- "$STAGE_DIR"
+  mkdir -p -- "$STAGE_DIR"
+
+  # Serve the console that belongs to release v${RELEASE}: its signed manifest names mdmesh-web.zip and the asset's
+  # SHA-256 (components.webZip). Download from this release's tag (never /releases/latest: MDMESH_VERSION may select an
+  # older release) and verify it before extracting, so a replaced asset cannot inject JavaScript into the console.
+  WEB_ZIP_SHA=$(mdm_manifest_webzip_sha "$MANIFEST" || true)
+  CONSOLE_OK=0
+  if [ -n "$WEB_ZIP_SHA" ]; then
+    TMP_ZIP=$(mktemp)
+    if curl -fsSL -m 300 "${REL_URL}/mdmesh-web.zip" -o "$TMP_ZIP"; then
+      if [ "$(mdm_sha256 "$TMP_ZIP")" != "$WEB_ZIP_SHA" ]; then
+        rm -f -- "$TMP_ZIP" "$STAGE_DIR"/* 2>/dev/null || true
+        rmdir -- "$STAGE_DIR" 2>/dev/null || true
+        err "mdmesh-web.zip for v${RELEASE} does not match the SHA-256 in the signed manifest. Nothing was installed."
+        exit 1
+      fi
+      if command -v unzip >/dev/null; then
+        unzip -q -o "$TMP_ZIP" -d "$STAGE_DIR" && CONSOLE_OK=1
+      elif command -v python3 >/dev/null; then
+        python3 -c "import zipfile; zipfile.ZipFile('$TMP_ZIP').extractall('$STAGE_DIR')" && CONSOLE_OK=1
+      fi
+    fi
+    rm -f -- "$TMP_ZIP"
+  fi
+
+  if [ "$CONSOLE_OK" != 1 ]; then
+    say "Extracting web static assets from the verified mdmesh-web image…"
+    WEB_IMAGE="${WEB_REF:-ghcr.io/${IMAGE_OWNER}/mdmesh-web:${WEB_TAG:-latest}}"
+    # COMPOSE_PROFILES=none keeps `docker compose pull` from fetching the caddy service's image, so fetch it here.
+    docker pull --quiet "$WEB_IMAGE" >/dev/null 2>&1 || true
+    CID=$(docker create "$WEB_IMAGE" 2>/dev/null || true)
+    if [ -n "$CID" ]; then
+      docker cp "$CID:/srv/." "$STAGE_DIR" && CONSOLE_OK=1
+      docker rm "$CID" >/dev/null 2>&1 || true
+    fi
+  fi
+
+  if [ "$CONSOLE_OK" != 1 ] || [ ! -s "$STAGE_DIR/index.html" ]; then
+    rm -rf -- "$STAGE_DIR"
+    err "Could not prepare the console files (from mdmesh-web.zip or the mdmesh-web image). Nothing was installed."
+    exit 1
+  fi
+  # Nginx workers are unprivileged: the served tree must be readable and traversable whatever the caller's umask.
+  chmod -R a+rX "$STAGE_DIR" || { rm -rf -- "$STAGE_DIR"; err "Could not set the console file permissions. Nothing was installed."; exit 1; }
+  rm -rf -- "$WEB_DIR"
+  mv -- "$STAGE_DIR" "$WEB_DIR"
+
+  # Certbot check
+  if command -v certbot >/dev/null; then
+    say "Running certbot to configure SSL/TLS..."
+    certbot -d "$HOST" || warn "Certbot failed or was cancelled. Please configure HTTPS manually."
+  else
+    warn "certbot was not found. Please configure SSL/TLS certificates for ${HOST} in Nginx manually."
+  fi
+
+  # Generate Nginx configuration
+  NGINX_CONF_AVAILABLE="/etc/nginx/sites-available/mdmesh.conf"
+  NGINX_CONF_ENABLED="/etc/nginx/sites-enabled/mdmesh.conf"
+
+  TMP_NGINX_CONF=$(mktemp)
+  sed -e "s#__HOST__#${HOST}#g" \
+      -e "s#__WEB_ROOT__#${WEB_DIR}#g" \
+      -e "s#__SERVER_PORT__#${SERVER_PORT:-8080}#g" \
+      -e "s#__SUPERVISOR_PORT__#${SUPERVISOR_PORT:-9000}#g" \
+      docker/nginx.conf.template > "$TMP_NGINX_CONF"
+
+  if [ -w "/etc/nginx/sites-available" ] || [ "$EUID" -eq 0 ]; then
+    mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
+    cp "$TMP_NGINX_CONF" "$NGINX_CONF_AVAILABLE"
+    ln -sf "$NGINX_CONF_AVAILABLE" "$NGINX_CONF_ENABLED"
+    rm -f "$TMP_NGINX_CONF"
+    if command -v nginx >/dev/null; then
+      nginx -t && (systemctl reload nginx 2>/dev/null || nginx -s reload 2>/dev/null || true)
+    fi
+  else
+    say "Root permissions required to write /etc/nginx/sites-available/mdmesh.conf."
+    say "Writing generated configuration to ./mdmesh.nginx.conf..."
+    cp "$TMP_NGINX_CONF" ./mdmesh.nginx.conf
+    rm -f "$TMP_NGINX_CONF"
+    warn "Please copy ./mdmesh.nginx.conf to /etc/nginx/sites-available/mdmesh.conf, link to sites-enabled, and reload Nginx."
+  fi
+
 fi
 
 echo

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# apply.sh <target-version> <server-ref> <web-ref> <supervisor-ref>
+# apply.sh <target-version> <server-ref> <web-ref> <supervisor-ref> [web-zip-url] [web-zip-sha256]
 #
 # The refs are the signed manifest's components.images, ghcr.io/<owner>/mdmesh-<name>@sha256:<digest> (server.js passes
 # them after verifying the manifest). The images are pinned by digest: .env gets
@@ -7,12 +7,19 @@
 # becomes repo:tag@digest, which docker pulls and runs by the digest alone (the tag is ignored). A release whose refs are
 # missing, malformed or under another owner than IMAGE_OWNER is refused before anything changes.
 #
+# In host-Nginx mode (HOST_NGINX=1) the optional web-zip-url is the release's mdmesh-web.zip asset and web-zip-sha256 is
+# its SHA-256 from the same signed manifest (components.webZip); the archive is verified against that hash before its
+# static files are staged into web_dist for the host Nginx. Without a verified zip, the files are copied out of the
+# pinned web image. Either way the current web_dist is saved with the backup and restored on rollback, and the live
+# directory is only replaced once the new files are complete.
+#
 # This is the copy baked into the RUNNING supervisor image (server.js runs its own /app/apply.sh), so an update is
 # applied by the supervisor already installed, never by the release being installed: a supervisor before 0.5.0 applies
 # by tag as it always did, and pinning starts once a 0.5.0+ supervisor runs.
 #
 # Runs inside the supervisor container (project mounted at /project, docker.sock mounted). Applies a VERIFIED
-# update to the `server` + `caddy` services with a pre-update DB backup and AUTOMATIC ROLLBACK on any
+# update to the `server` + `caddy` services (or only `server` plus host-Nginx web assets when HOST_NGINX=1)
+# with a pre-update DB backup and AUTOMATIC ROLLBACK on any
 # failure. Emits `PHASE <name>` / `ERR <msg>` / `OK <version>` lines on stdout — server.js parses these
 # to drive /update/status. It NEVER touches `supervisor` or `postgres` (no self-destruct, no data loss).
 #
@@ -28,13 +35,16 @@ set -uo pipefail   # deliberately NOT -e: failures are handled explicitly so we 
 # and restore.log sit beside it. (The host .env is only rewritten in place: sed -i and >> keep its mode and owner.)
 umask 077
 
-VERSION="${1:?usage: apply.sh <version> <server-ref> <web-ref> <supervisor-ref>}"
+VERSION="${1:?usage: apply.sh <version> <server-ref> <web-ref> <supervisor-ref> [web-zip-url] [web-zip-sha256]}"
 SERVER_REF="${2:-}"
 WEB_REF="${3:-}"
 SUPERVISOR_REF="${4:-}"
+WEB_ZIP_URL="${5:-}"
+WEB_ZIP_SHA256="${6:-}"
 PROJECT_DIR="${COMPOSE_PROJECT_DIR:-/project}"
 ENV_FILE="$PROJECT_DIR/.env"
 BACKUP_DIR="${BACKUP_DIR:-/backups}"
+WEB_DIR="$PROJECT_DIR/web_dist"
 DB_USER="${DB_USER:-mdmesh}"
 DB_NAME="${DB_NAME:-mdmesh}"
 HEALTH_URL="${HEALTH_URL:-http://server:8080/rest/public/name}"
@@ -43,6 +53,48 @@ HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-180}"
 phase() { echo "PHASE $1"; }
 errln() { echo "ERR $1" >&2; }
 dc()    { docker compose "$@"; }
+sha256_file() { sha256sum "$1" | awk '{print $1}'; }
+
+# Make a prepared console directory servable. The host Nginx workers usually run as an unprivileged user, so every
+# directory must be traversable and every file readable by others. This script runs under umask 077 (its backups stay
+# private), which makes the staged tree and anything extracted into it 0700/0600; without this the swap would leave
+# Nginx answering 403 while the server-only health check still reports success.
+publish_web_dir() {  # publish_web_dir <dir>
+  local bad
+  chmod -R a+rX "$1" 2>/dev/null || { errln "could not make the console files readable ($1)"; return 1; }
+  # Verify the bits rather than [ -r ]: the script runs as root, which can read anything.
+  bad=$(find "$1" -type d ! -perm -005 -print -quit 2>/dev/null; find "$1" -type f ! -perm -004 -print -quit 2>/dev/null)
+  if [ -n "$bad" ]; then
+    errln "the console files would not be readable by the Nginx user ($bad)"
+    return 1
+  fi
+}
+
+# Replace web_dist with a fully prepared directory; on failure the previous contents are put back. The host Nginx
+# serves WEB_DIR directly, so the old files stay in place until the new ones are complete.
+swap_web_dir() {  # swap_web_dir <staged-dir>
+  local stage="$1" old="$PROJECT_DIR/.web_dist.old"
+  rm -rf "$old"
+  if [ -d "$WEB_DIR" ] && ! mv "$WEB_DIR" "$old"; then
+    errln "could not move the current console files aside ($WEB_DIR)"
+    return 1
+  fi
+  if ! mv "$stage" "$WEB_DIR"; then
+    errln "could not move the new console files into place ($WEB_DIR)"
+    [ -d "$old" ] && mv "$old" "$WEB_DIR"
+    return 1
+  fi
+  rm -rf "$old"
+}
+
+# In host-Nginx mode there is no caddy container: the host serves the built SPA and proxies to `server`.
+recreate_apps() {
+  if [ "$(get_env HOST_NGINX)" = "1" ]; then
+    dc up -d --no-deps server
+  else
+    dc up -d --no-deps server caddy
+  fi
+}
 
 cd "$PROJECT_DIR" || { errln "cannot cd $PROJECT_DIR"; phase failed; exit 1; }
 
@@ -162,6 +214,8 @@ OLD_CURRENT="$(get_env CURRENT_VERSION)"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP_SQL="$BACKUP_DIR/$STAMP.sql"
 BACKUP_ENV="$BACKUP_DIR/$STAMP.env"
+WEB_BACKUP="$BACKUP_DIR/$STAMP.web.tar.gz"
+HOST_NGINX="$(get_env HOST_NGINX)"
 
 # --- rollback [env-only]: stop the server, restore the DB, then point .env back at the previous versions, start the
 # old server and re-health-check. env-only just resets .env. env-only is for a failed pull: no container changed yet, so there is nothing
@@ -171,6 +225,47 @@ restore_env() {
   set_env WEB_VERSION "$OLD_WEB"
   set_env CURRENT_VERSION "$OLD_CURRENT"
 }
+
+# Put the pre-update console files back in web_dist, from the snapshot this update took. When no snapshot exists (an
+# install from before host-Nginx updates recorded one), extract them from the previous pinned web image instead.
+# Returns non-zero (after an ERR line) when neither source is available: the rollback must not claim success with the
+# console still on the failed release.
+restore_web() {
+  local stage="$PROJECT_DIR/.web_dist.rollback" img cid
+  rm -rf "$stage"
+  if [ -s "$WEB_BACKUP" ]; then
+    mkdir -p "$stage"
+    if ! tar -C "$stage" -xzf "$WEB_BACKUP"; then
+      errln "could not restore the console files from ${WEB_BACKUP}"
+      rm -rf "$stage"
+      return 1
+    fi
+  else
+    img="ghcr.io/${IMAGE_OWNER_NOW}/mdmesh-web:${OLD_WEB:-latest}"
+    cid=$(docker create "$img" 2>/dev/null || true)
+    if [ -z "$cid" ]; then
+      errln "no saved console files and the previous web image ${img} is not available, so the console was not restored"
+      return 1
+    fi
+    mkdir -p "$stage"
+    if ! docker cp "$cid:/srv/." "$stage" 2>/dev/null; then
+      errln "could not copy the previous console files out of ${img}"
+      docker rm "$cid" >/dev/null 2>&1 || true
+      rm -rf "$stage"
+      return 1
+    fi
+    docker rm "$cid" >/dev/null 2>&1 || true
+  fi
+  if ! publish_web_dir "$stage"; then
+    rm -rf "$stage"
+    return 1
+  fi
+  if ! swap_web_dir "$stage"; then
+    rm -rf "$stage"
+    return 1
+  fi
+}
+
 rollback() {
   phase rollback
   if [ "${1:-}" = env-only ]; then restore_env; phase rolled_back; return; fi
@@ -178,8 +273,13 @@ rollback() {
     restore_db "$BACKUP_SQL" "$BACKUP_DIR/$STAMP.restore.log" || { phase failed; return; }
   fi
   restore_env   # only now: .env must keep naming the version the database belongs to until the restore succeeded
-  if ! dc up -d --no-deps server caddy; then
-    errln "could not start the old server (see the log above); .env names the old versions and the database is restored: run 'docker compose up -d server caddy' in the install directory, or Roll back again from /recovery."
+  if [ "$HOST_NGINX" = "1" ] && ! restore_web; then
+    errln "the old server and database are restored, but the console files could not be restored: fix the cause above, then Roll back again from /recovery."
+    phase failed
+    return
+  fi
+  if ! recreate_apps; then
+    errln "could not start the old server (see the log above); .env names the old versions and the database is restored: run 'docker compose up -d' in the install directory, or Roll back again from /recovery."
     phase failed
     return
   fi
@@ -196,6 +296,15 @@ if ! dc exec -T postgres pg_dump --clean --if-exists -U "$DB_USER" "$DB_NAME" > 
   phase failed
   exit 1
 fi
+# The host Nginx serves WEB_DIR directly: snapshot it before the update so a rollback can put the matching console back.
+if [ "$HOST_NGINX" = "1" ] && [ -d "$WEB_DIR" ] && [ -n "$(ls -A "$WEB_DIR" 2>/dev/null)" ]; then
+  if ! tar -C "$WEB_DIR" -czf "$WEB_BACKUP" .; then
+    errln "could not save the current console files — aborting before any change"
+    rm -f "$WEB_BACKUP"
+    phase failed
+    exit 1
+  fi
+fi
 echo "$STAMP" > "$BACKUP_DIR/latest"   # pointer the recovery page / rollback read
 
 # ---------------- pull ----------------
@@ -203,10 +312,25 @@ phase pull
 set_env SERVER_VERSION "$SERVER_PIN"
 set_env WEB_VERSION "$WEB_PIN"
 set_env CURRENT_VERSION "$VERSION"
-if ! dc pull --quiet server caddy; then   # --quiet: no per-layer progress; errors still print
-  errln "image pull failed"
-  rollback env-only
-  exit 1
+if [ "$(get_env HOST_NGINX)" = "1" ]; then
+  if ! dc pull --quiet server; then   # --quiet: no per-layer progress; errors still print
+    errln "image pull failed"
+    rollback env-only
+    exit 1
+  fi
+  # caddy is not run in host-Nginx mode, but its web image is still needed to extract the static assets when the
+  # release has no mdmesh-web.zip. Pull it by the signed digest so the check below (and the extraction) uses it.
+  if ! docker pull --quiet "$WEB_REF"; then
+    errln "web image pull failed"
+    rollback env-only
+    exit 1
+  fi
+else
+  if ! dc pull --quiet server caddy; then
+    errln "image pull failed"
+    rollback env-only
+    exit 1
+  fi
 fi
 # Pulled by digest, so docker checked the content against it; confirm the local images carry exactly the signed digests.
 for ref in "$SERVER_REF" "$WEB_REF"; do
@@ -220,10 +344,64 @@ done
 
 # ---------------- recreate ----------------
 phase recreate
-if ! dc up -d --no-deps server caddy; then
-  errln "recreate failed"
-  rollback
-  exit 1
+if [ "$HOST_NGINX" = "1" ]; then
+  if ! dc up -d --no-deps server; then
+    errln "recreate failed"
+    rollback
+    exit 1
+  fi
+
+  # Prepare the new console in a separate directory: web_dist keeps serving the current files until the replacement is
+  # complete, so a failed download or a full disk cannot leave the host Nginx with an empty console.
+  STAGE_DIR="$PROJECT_DIR/.web_dist.new"
+  rm -rf "$STAGE_DIR"
+  mkdir -p "$STAGE_DIR"
+  UPDATED_WEB=0
+  if [ -n "$WEB_ZIP_URL" ] && [ -n "$WEB_ZIP_SHA256" ]; then
+    TMP_ZIP=$(mktemp)
+    if curl -fsSL -m 300 "$WEB_ZIP_URL" -o "$TMP_ZIP" 2>/dev/null; then
+      if [ "$(sha256_file "$TMP_ZIP")" = "$WEB_ZIP_SHA256" ]; then
+        unzip -q -o "$TMP_ZIP" -d "$STAGE_DIR" 2>/dev/null && UPDATED_WEB=1
+      else
+        errln "mdmesh-web.zip does not match the sha256 in the signed manifest; using the pinned web image instead"
+      fi
+    fi
+    rm -f "$TMP_ZIP"
+  elif [ -n "$WEB_ZIP_URL" ]; then
+    errln "no sha256 for mdmesh-web.zip from the signed manifest; using the pinned web image instead"
+  fi
+
+  if [ "$UPDATED_WEB" != 1 ]; then
+    # Fallback: copy the static assets out of the pinned web image.
+    CID=$(docker create "$WEB_REF" 2>/dev/null || true)
+    if [ -n "$CID" ]; then
+      docker cp "$CID:/srv/." "$STAGE_DIR" 2>/dev/null && UPDATED_WEB=1
+      docker rm "$CID" >/dev/null 2>&1 || true
+    fi
+  fi
+
+  if [ "$UPDATED_WEB" != 1 ] || [ ! -s "$STAGE_DIR/index.html" ]; then
+    errln "could not prepare the console files (neither a verified mdmesh-web.zip nor the pinned web image produced them)"
+    rm -rf "$STAGE_DIR"
+    rollback
+    exit 1
+  fi
+  if ! publish_web_dir "$STAGE_DIR"; then
+    rm -rf "$STAGE_DIR"
+    rollback
+    exit 1
+  fi
+  if ! swap_web_dir "$STAGE_DIR"; then
+    rm -rf "$STAGE_DIR"
+    rollback
+    exit 1
+  fi
+else
+  if ! dc up -d --no-deps server caddy; then
+    errln "recreate failed"
+    rollback
+    exit 1
+  fi
 fi
 
 # ---------------- healthcheck ----------------

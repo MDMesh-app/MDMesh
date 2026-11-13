@@ -104,4 +104,20 @@ mdm_check_host() {
   printf 'Invalid hostname %s: %s.\n' "${h:-(empty)}" "$why" >&2
   return 1
 }
+# mdm_check_port VAR: checks that the variable named VAR holds a TCP port: digits only, 1-65535, no leading zero.
+# Otherwise it prints why to stderr and fails. The host-Nginx prompts use it for the loopback backend ports.
+mdm_check_port() {
+  local p=${!1-} why=''
+  case "$p" in
+    '')                  why='it is empty' ;;
+    *[!${_MDM_DIGITS}]*) why='it is not a number' ;;
+    0*)                  why='a port is 1-65535, with no leading zero' ;;
+  esac
+  # Length first, so the numeric compare never sees a value too big for the shell's integer.
+  [ -n "$why" ] || { [ "${#p}" -le 5 ] && [ "$p" -ge 1 ] && [ "$p" -le 65535 ]; } || why='a port is 1-65535'
+  [ -z "$why" ] && return 0
+  case "$p" in *[![:print:]]*) p=$(printf '%q' "$p") ;; esac
+  printf 'Invalid port %s: %s.\n' "${p:-(empty)}" "$why" >&2
+  return 1
+}
 # <<< url.sh functions <<<

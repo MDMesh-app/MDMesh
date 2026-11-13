@@ -210,6 +210,8 @@ Fixes
 - Console: the sign-in pages and a device that can't be found name the browser tab.
 - Kiosk: a single-app kiosk reopens its app once when it is closed, instead of starting it twice, and rotating the
   device or changing the font or display size no longer restarts the kiosk screen. Needs agent 0.5.0.
+- Kiosk: when the exit PIN is right but the device can't leave kiosk just then (its storage is full), the launcher
+  says so instead of doing nothing. Needs agent 0.5.0.
 
 Under the hood
 - The release manifest records the tagged commit, which `setup.sh --update` checks the tag against. CI tests

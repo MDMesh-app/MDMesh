@@ -228,6 +228,31 @@ class ExitPinSafetyTest : KioskHarness() {
         assertNotNull("'1 try left' warning gone after rotation", findText(pinDialog()!!.window!!.decorView, warn))
     }
 
+    /** N1'': "Exit isn't available" (right PIN, journal not writable) is rebuilt on rotation, like Exit locked. */
+    @Test fun exitUnavailableSurvivesRotationAndRecreation() {
+        launch(grid)
+        exitJournalFull()
+        tapExitKiosk()
+        submitPin(pin)
+        assertNotNull(unavailableDialog())
+        rotate()
+        assertNotNull("'Exit isn't available' gone after rotation", unavailableDialog())
+        recreate()
+        assertNotNull("'Exit isn't available' gone after a recreation", unavailableDialog())
+        assertEquals(1, ShadowDialog.getShownDialogs().count { it.isShowing })
+    }
+
+    /** Nobody acknowledged it: it doesn't stay over the kiosk for good, it closes as the PIN prompt does. */
+    @Test fun exitUnavailableClosesAfterTheIdleTime() {
+        launch(grid)
+        exitJournalFull()
+        tapExitKiosk()
+        submitPin(pin)
+        assertNotNull(unavailableDialog())
+        idle(IDLE_MS / 1000 + 1)
+        assertNull(unavailableDialog())
+    }
+
     @Test fun triesLeftWarningShownWhenThePromptIsOpenedAgain() {
         launch(grid)
         tapExitKiosk()

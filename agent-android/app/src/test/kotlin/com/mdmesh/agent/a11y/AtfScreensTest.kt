@@ -177,6 +177,8 @@ abstract class AtfScreensTest(private val fontScale: Float = 1f) {
 
     @Test fun exitLocked() = check("exit locked", s.exitLockedDialog())
 
+    @Test fun exitUnavailable() = check("exit unavailable", s.exitUnavailableDialog())
+
     private companion object {
         const val WHITE = 0xFFFFFFFF.toInt()
         const val BLACK = 0xFF000000.toInt()

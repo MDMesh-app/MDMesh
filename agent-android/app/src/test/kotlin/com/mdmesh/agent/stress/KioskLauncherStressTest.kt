@@ -217,29 +217,49 @@ class KioskLauncherStressTest : KioskHarness() {
 
     /**
      * PR #192 re-review S1': right PIN, but the exit's journal entry can't be written (a full disk). The exit doesn't
-     * start, so the launcher neither leaves lock task, nor records "exited on-device", nor finishes.
+     * start, so the launcher neither leaves lock task, nor records "exited on-device", nor finishes. The PIN prompt
+     * closed on the right PIN, so the launcher says why nothing happened (N1'').
      */
     @Test fun rightPinWithAnUnwritableExitJournalStaysInKiosk() {
         launch(grid)
-        val dpm = app.getSystemService(android.app.admin.DevicePolicyManager::class.java)
-        val admin = android.content.ComponentName(app, com.mdmesh.agent.admin.AdminReceiver::class.java)
-        val homeAlias = android.content.ComponentName(app, "com.mdmesh.agent.KioskHomeAlias")
-        val full = object : com.mdmesh.core.kiosk.ExitJournal {
-            override fun pending(): com.mdmesh.core.kiosk.ExitJournal.Pending? = null
-            override fun begin(p: com.mdmesh.core.kiosk.ExitJournal.Pending) = false
-            override fun end() = true
-        }
-        activity.applier = com.mdmesh.core.kiosk.KioskApplier(
-            com.mdmesh.kiosk.LockTaskKioskController(dpm, admin), activity.store,
-            com.mdmesh.core.kiosk.AndroidKioskHomeSwitch(app, homeAlias), homeAlias,
-            journal = full, io = kotlinx.coroutines.Dispatchers.IO,
-        ) { true }
+        exitJournalFull()
         tapExitKiosk()
         submitPin(pin)
         assertEquals(grid, storedKiosk())
         assertEquals(ActivityManager.LOCK_TASK_MODE_LOCKED, lockTaskState())
         assertFalse(activity.isFinishing)
         assertEquals(0, events("kioskExit"))
+        assertNull("the PIN prompt closed on the right PIN", pinDialog())
+        val d = unavailableDialog()
+        assertNotNull("silent: the right PIN did nothing visible", d)
+        button(d!!.window!!.decorView, s(R.string.action_ok))!!.performClick()
+        settle()
+        assertNull(unavailableDialog())
+        tapExitKiosk()
+        assertNotNull("the exit can be tried again", pinDialog())
+    }
+
+    /**
+     * The right PIN for a kiosk that another kiosk replaced as it ran (EXIT_SUPERSEDED): nothing is said, the new
+     * kiosk's delivery redraws the launcher. Every dialog shown counts, not only the last, so one shown and then
+     * closed by that delivery fails too.
+     */
+    @Test fun rightPinForAReplacedKioskShowsNoUnavailableMessage() {
+        launch(grid)
+        tapExitKiosk()
+        val d = pinDialog()!!
+        edit(d.window!!.decorView)!!.setText(pin)
+        val replacement = grid.copy(allowedPackages = listOf(other))
+        saveKiosk(replacement) // the store has the new kiosk; its delivery to the launcher hasn't run yet
+        button(d.window!!.decorView, s(R.string.kiosk_exit_confirm))!!.performClick()
+        settle()
+        assertEquals(replacement, storedKiosk())
+        assertEquals(ActivityManager.LOCK_TASK_MODE_LOCKED, lockTaskState())
+        assertFalse(activity.isFinishing)
+        assertTrue(
+            "unavailable shown for a superseded exit",
+            org.robolectric.shadows.ShadowDialog.getShownDialogs().none(::isUnavailable),
+        )
     }
 
     /** Right PIN, then the activity is destroyed before the exit finished (rotation on polish, system kill). */

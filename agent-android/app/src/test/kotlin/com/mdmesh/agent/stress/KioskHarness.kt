@@ -159,6 +159,15 @@ abstract class KioskHarness {
     protected fun lockedDialog(): Dialog? =
         showingDialog()?.takeIf { findText(it.window!!.decorView, s(R.string.kiosk_exit_locked_title)) != null }
 
+    /** "Exit isn't available right now" in its own dialog (not under the PIN field: that one has the field). */
+    protected fun unavailableDialog(): Dialog? = showingDialog()?.takeIf { isUnavailable(it) }
+
+    /** Whether [d] is the "Exit isn't available" dialog, shown or not. */
+    protected fun isUnavailable(d: Dialog): Boolean {
+        val root = d.window?.decorView ?: return false
+        return edit(root) == null && findText(root, s(R.string.kiosk_exit_unavailable)) != null
+    }
+
     /** The first view under [v] (depth first, [v] included) that [match]es. */
     private fun <T : View> first(v: View, type: Class<T>, match: (T) -> Boolean = { true }): T? = when {
         type.isInstance(v) && match(type.cast(v)!!) -> type.cast(v)
@@ -196,6 +205,26 @@ abstract class KioskHarness {
         edit(d.window!!.decorView)!!.setText(entered)
         button(d.window!!.decorView, s(R.string.kiosk_exit_confirm))!!.performClick()
         settle()
+    }
+
+    /**
+     * The exit journal can't be written (a full disk): the launcher's applier is swapped for one whose journal refuses
+     * every entry, so an exit is refused before its first step.
+     */
+    protected fun exitJournalFull() {
+        val dpm = app.getSystemService(DevicePolicyManager::class.java)
+        val admin = ComponentName(app, AdminReceiver::class.java)
+        val homeAlias = ComponentName(app, "com.mdmesh.agent.KioskHomeAlias")
+        val full = object : com.mdmesh.core.kiosk.ExitJournal {
+            override fun pending(): com.mdmesh.core.kiosk.ExitJournal.Pending? = null
+            override fun begin(p: com.mdmesh.core.kiosk.ExitJournal.Pending) = false
+            override fun end() = true
+        }
+        activity.applier = com.mdmesh.core.kiosk.KioskApplier(
+            com.mdmesh.kiosk.LockTaskKioskController(dpm, admin), activity.store,
+            com.mdmesh.core.kiosk.AndroidKioskHomeSwitch(app, homeAlias), homeAlias,
+            journal = full, io = kotlinx.coroutines.Dispatchers.IO,
+        ) { true }
     }
 
     // --- State probes --------------------------------------------------------------------------------------------

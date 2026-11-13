@@ -40,7 +40,10 @@ const to = () => screen.getByLabelText<HTMLInputElement>('Window to');
 const rowOff = (input: HTMLElement) => input.closest('fieldset')?.disabled === true;
 const saveBar = () => screen.queryByRole('region', { name: 'Unsaved changes' });
 const network = () => within(screen.getByRole('navigation', { name: 'Sections' })).getByRole('link', { name: /^Network/ });
-const toastText = () => screen.getAllByRole('status').map((t) => t.textContent).join(' | ');
+const toastText = () =>
+  Array.from(screen.getByRole('region', { name: 'Notifications' }).querySelectorAll('.toast'))
+    .map((t) => t.textContent)
+    .join(' | ');
 const alertIn = (id: string) => within(document.getElementById(id)!).queryByRole('alert')?.textContent;
 
 async function save() {

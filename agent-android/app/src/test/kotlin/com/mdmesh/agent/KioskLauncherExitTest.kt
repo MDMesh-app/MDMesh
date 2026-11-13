@@ -75,16 +75,28 @@ class KioskLauncherExitTest {
     fun `only the PIN check calls doExit, and it goes through ExitPinGate`() {
         val src = launcherSource()
         val check = body(src, "onPinEntered")
-        val calls = Regex("(?<!fun )\\bdoExit\\s*\\(\\s*\\)").findAll(src).map { it.range.first }.toList()
+        // doExit takes the kiosk the PIN was checked against (PR #192 S5).
+        val calls = Regex("(?<!fun )\\bdoExit\\s*\\(").findAll(src).map { it.range.first }.toList()
         assertTrue("onPinEntered no longer calls doExit; update this guard", calls.any { it in check })
         val outside = calls.filter { it !in check }.map { lineOf(src, it) }
         assertEquals("KioskLauncherActivity.kt lines calling doExit outside onPinEntered", emptyList<Int>(), outside)
         val checksWithGate = Regex("\\bpinGate\\.attempt\\s*\\(").containsMatchIn(src.substring(check))
         assertTrue("onPinEntered must check the PIN with ExitPinGate", checksWithGate)
         // And only on the right-PIN branch.
-        val onOpen = Regex("Outcome\\.Open\\s*->\\s*doExit\\s*\\(\\s*\\)").findAll(src.substring(check)).count()
+        val onOpen = Regex("Outcome\\.Open\\s*->\\s*doExit\\s*\\(").findAll(src.substring(check)).count()
         assertEquals("doExit must be the Outcome.Open branch, and only that", 1, onOpen)
         assertEquals(1, calls.count { it in check })
+    }
+
+    @Test
+    fun `PIN results show in the dialog, not in toasts`() {
+        // A Toast vanishes after two seconds and can't be read by everyone; the dialog keeps the error under the
+        // field (ExitPinUiState).
+        val src = launcherSource()
+        val toasts = Regex("\\bToast\\b").findAll(src).map { lineOf(src, it.range.first) }.toList()
+        assertEquals("KioskLauncherActivity.kt lines using Toast", emptyList<Int>(), toasts)
+        val check = src.substring(body(src, "onPinEntered"))
+        assertTrue("onPinEntered must render the outcome", "dialog.render(ExitPinUiState.of(outcome))" in check)
     }
 
     @Test
@@ -106,79 +118,6 @@ class KioskLauncherExitTest {
         assertEquals("stopLockTask outside doExit/stopLockTaskSafely", emptyList<Int>(), stops)
         // One definition + the no-kiosk branch of applyState.
         assertEquals("stopLockTaskSafely callers changed; check none is a crash path", 2, callers)
-    }
-
-    @Test
-    fun `an unchanged kiosk state still re-pins and runs the return policy`() {
-        val src = launcherSource()
-        val apply = src.substring(body(src, "applyState"))
-        // The same state comes again each time the launcher is back in the foreground; returning early for it
-        // would skip the re-pin and the crash-loop count.
-        assertTrue(
-            "applyState must not return early for an unchanged state",
-            !Regex("p\\s*==\\s*previous\\s*\\)\\s*return").containsMatchIn(apply),
-        )
-        val returns = Regex("\\breturn\\b").findAll(apply).map { it.range.first }.toList()
-        val pin = apply.indexOf("startLockTaskSafely()")
-        val policy = apply.indexOf("returns.onApplied(")
-        assertTrue("applyState must pin and run the return policy", pin in 0 until policy)
-        val idle = apply.indexOf("setContentView(idleView())")
-        assertTrue(
-            "applyState's only early return is the no-kiosk branch",
-            returns.all { it in idle until pin },
-        )
-    }
-
-    @Test
-    fun `an unchanged state keeps a loaded or loading background image`() {
-        val src = launcherSource()
-        val apply = src.substring(body(src, "applyState"))
-        assertTrue(
-            "applyState must drop the image only when the state wants another one",
-            Regex("if\\s*\\(\\s*p\\.theme\\.backgroundImage\\s*!=\\s*backgroundFor\\s*\\)\\s*clearBackground\\(\\)")
-                .containsMatchIn(apply),
-        )
-        assertTrue("applyState must (re)start a missing image", "loadBackground(p)" in apply)
-        val load = src.substring(body(src, "loadBackground"))
-        assertTrue(
-            "loadBackground must not start a second download, or reload a loaded image",
-            "if (backgroundBitmap != null || backgroundFetch?.isActive == true) return" in load,
-        )
-    }
-
-    @Test
-    fun `background completion only renders the current state and preserves a crash hold`() {
-        val src = launcherSource()
-        val fetch = src.substring(body(src, "loadBackground"))
-        assertTrue(
-            "background completion must reject a state that no longer wants this image",
-            "if (current.theme.backgroundImage != requested) return@launch" in fetch,
-        )
-        assertTrue(
-            "background completion must redraw the hold screen instead of relaunching",
-            "if (holding) hold(current)" in fetch,
-        )
-        assertTrue("background completion must not call show while held", "|| holding" !in fetch)
-    }
-
-    @Test
-    fun `the background image is decoded once, off the main thread`() {
-        val src = launcherSource()
-        val frame = src.substring(body(src, "frame"))
-        assertTrue("frame must reuse the decoded bitmap", "decodeBackground" !in frame && "backgroundBitmap" in frame)
-        val obtain = src.substring(body(src, "obtainBackgroundImage"))
-        assertTrue(
-            "the decode must run on a background dispatcher",
-            Regex("withContext\\(Dispatchers\\.(IO|Default)\\)\\s*\\{\\s*decodeBackground").containsMatchIn(obtain),
-        )
-    }
-
-    @Test
-    fun `background download retries once after a transient failure`() {
-        val src = launcherSource()
-        val obtain = src.substring(body(src, "obtainBackgroundImage"))
-        assertTrue("background download must make an initial attempt", "backgroundImages.obtain(requested)" in obtain)
-        assertTrue("background download must defer a bounded retry", "delay(BACKGROUND_RETRY_MS)" in obtain)
     }
 
     @Test

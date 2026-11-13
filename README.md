@@ -58,13 +58,14 @@ APK.
 - **Device page:** tabs for remote actions, telemetry (hardware, battery, storage, network), apps, activity and
   location. The Apps tab lists the device's apps that have a launcher icon, from its latest scan, with search and a
   CSV export.
-- **Configurations:** a configuration sets up to 23 device settings, from kiosk options to Wi-Fi, factory reset and
+- **Configurations:** a configuration sets up to 25 device settings, from kiosk options to Wi-Fi, factory reset and
   Safe Mode. Devices apply it at their next check-in, and the device page shows the result for each setting. Apps
   added to a configuration install on its devices at their next check-in.
 - **Kiosk mode:** locks a device to one app or to a grid of chosen apps, in the colours the configuration sets. Safe
-  Mode is blocked in kiosk unless the configuration allows it. If the kiosk app stops, the device stays in kiosk
-  and shows an "Open again" button. An exit PIN can end kiosk on the device; too many wrong PINs lock the exit for a
-  while and email the administrators.
+  Mode is blocked in kiosk unless the configuration allows it. If a one-app kiosk's app closes, the launcher opens it
+  again; if it closes more than 3 times within a minute, the device stays in kiosk and shows an "Open again" button.
+  An exit PIN can end kiosk on the device; too many wrong PINs lock the exit for a while and, when email is set up,
+  email the administrators.
 - **Apps:** add apps from your own APK uploads, from the F-Droid catalog or by a link to the APK. Every install is
   checked against the app's SHA-256: uploads and F-Droid apps have one already, and for a link you add it. The agent
   installs apps without asking the device's user.
@@ -84,23 +85,49 @@ APK.
 
 ## ■ Quick start
 
-On a Linux host with Docker, Docker Compose v2, `curl`, `openssl` 3.0+ (or an older `openssl` and `minisign`), and
-either a domain in Cloudflare (for a Cloudflare Tunnel) or a domain pointed at the host with ports 80 and 443 open:
+On a Linux host with Docker, Docker Compose v2, `curl`, `minisign`, `openssl` 3.0+ (or an older `openssl`), and
+either a domain in Cloudflare (for a Cloudflare Tunnel) or a domain pointed at the host with ports 80 and 443 open,
+this checks the latest release's `quickstart.sh` against its signed manifest and then runs it to install exactly
+that release (nothing runs if a download or check fails):
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/main/quickstart.sh)
+(
+  R=https://github.com/MDMesh-app/MDMesh/releases
+  V=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$R/latest" | sed -n 's#^https://github\.com/MDMesh-app/MDMesh/releases/tag/v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$#\1#p')
+  d=$(mktemp -d) || exit 1; trap 'rm -f -- "$d"/*; rmdir -- "$d"' EXIT
+  for f in quickstart.sh manifest.json manifest.json.minisig; do
+    [ -n "$V" ] && curl -fsSL -o "$d/$f" "$R/download/v$V/$f" || V=
+  done
+  [ -n "$V" ] && minisign -V -m "$d/manifest.json" -P RWQbf0pIhddaWnDsFknIG4X325wHR05pUxEQJmuuQRdBlQm3zi8/Eqcd &&
+    grep -qxF "  \"version\": \"$V\"," "$d/manifest.json" &&
+    grep -qF "\"quickstart.sh\": \"$(sha256sum "$d/quickstart.sh" | cut -d' ' -f1)\"" "$d/manifest.json" ||
+    { echo "Not running quickstart.sh: a download or check failed (see above). Nothing was installed." >&2; exit 1; }
+  MDMESH_VERSION="$V" bash "$d/quickstart.sh"
+)
 ```
 
-This pulls the released images and sets up updates from the console. To build the images from source instead
-(`setup.sh` also needs `openssl`, and, if they are there, uses `python3` and `curl` to verify the latest release for
-the enrollment QR):
+Without `minisign`, this unchecked shortcut runs `quickstart.sh` from the latest release's tag without checking it,
+and stops if it can't find that tag ([details](DEPLOY.md#option-a--quick-start-no-clone-published-images)):
+
+```bash
+(
+  t=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/MDMesh-app/MDMesh/releases/latest | sed -n 's#^https://github\.com/MDMesh-app/MDMesh/releases/tag/\(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$#\1#p')
+  [ -n "$t" ] && q=$(curl -fsSL "https://raw.githubusercontent.com/MDMesh-app/MDMesh/refs/tags/$t/quickstart.sh") ||
+    { echo "Could not get the latest release's quickstart.sh. Nothing was installed." >&2; exit 1; }
+  bash -c "$q" quickstart.sh
+)
+```
+
+The quick start pulls the released images and sets up updates from the console. To build the images from source instead
+(`./setup.sh --update` needs `git`, `curl`, and `openssl` 3.0+, or an older `openssl` and `minisign`; `python3` is
+optional, to verify the release for the enrollment QR):
 
 ```bash
 git clone https://github.com/MDMesh-app/MDMesh.git && cd MDMesh
-./setup.sh
+./setup.sh --update      # checks out the newest signed release, then sets it up
 ```
 
-Without Docker, run `sudo ./setup.sh --native` from the clone on Debian 12/13 or Ubuntu 24.04. It only needs `git`
+Without Docker, run `sudo ./setup.sh --update --native` from the clone on Debian 12/13 or Ubuntu 24.04. It only needs `git`
 and brings the rest ([native install](DEPLOY.md#option-c--native-no-docker)). Each installer prints the console URL
 and a temporary admin password. Then enroll a device:
 

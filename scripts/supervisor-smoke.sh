@@ -95,8 +95,8 @@ rollback_501()   { [ "$(code -X POST -H 'X-MDMesh-Console: 1' http://127.0.0.1:9
 recovery_noapply() { local b; b="$(body http://127.0.0.1:9000/recovery)"
   grep -q '<body data-apply="0">' <<<"$b" \
     && grep -qF 'body[data-apply="0"] #rbcard{display:none}' <<<"$b" \
-    && grep -qF 'git pull &amp;&amp; ./setup.sh' <<<"$b" \
-    && grep -qF 'git pull &amp;&amp; sudo ./setup.sh --native' <<<"$b"; }
+    && grep -qF './setup.sh --update<' <<<"$b" \
+    && grep -qF 'sudo ./setup.sh --update --native' <<<"$b"; }
 check "APPLY_SUPPORTED=0: /update/status reports applySupported:false" status_noapply
 check "APPLY_SUPPORTED=0: /update/apply refused with 501" apply_501
 check "APPLY_SUPPORTED=0: /update/rollback refused with 501" rollback_501

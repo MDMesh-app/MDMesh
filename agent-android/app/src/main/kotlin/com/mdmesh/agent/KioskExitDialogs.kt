@@ -2,6 +2,7 @@ package com.mdmesh.agent
 
 import com.mdmesh.kiosk.KioskExit
 import com.mdmesh.proto.KioskApplyPayload
+import com.mdmesh.proto.KioskThemeDto
 
 /** What the kiosk launcher shows after it applies a kiosk state. */
 internal enum class LauncherScreen {
@@ -38,6 +39,13 @@ internal object KioskExitDialogs {
      * ([KioskExit.onDevice]). The one answer for the affordance, the prompt and the PIN check, read at each use.
      */
     fun onDevicePin(kiosk: KioskApplyPayload?): String? = kiosk?.takeIf(KioskExit::onDevice)?.password
+
+    /**
+     * The kiosk an "Exit isn't available" belongs to, as kept in saved state so a recreation reopens it only on that
+     * kiosk: what [com.mdmesh.proto.sameKioskAs] compares, less the look and the exit PIN. The PIN (or anything
+     * derived from it) is never written to saved state, so a kiosk that differs only in its PIN counts as the same.
+     */
+    fun identityOf(kiosk: KioskApplyPayload): String = kiosk.copy(password = null, theme = KioskThemeDto()).toString()
 
     /** The dialog to reopen on [screen], given the [tag] that was open before the recreation; null for none. */
     fun reopenOn(screen: LauncherScreen, tag: String?): String? = when {

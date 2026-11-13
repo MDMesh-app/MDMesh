@@ -19,6 +19,8 @@ import com.mdmesh.core.command.handlers.AppScanHandler
 import com.mdmesh.core.command.handlers.AppUninstallHandler
 import com.mdmesh.core.command.handlers.ConfigApplyHandler
 import com.mdmesh.core.command.handlers.ConfigSyncHandler
+import com.mdmesh.core.command.handlers.RemoteStartSessionHandler
+import com.mdmesh.core.command.handlers.RemoteStopSessionHandler
 import com.mdmesh.core.command.handlers.DeviceAlertHandler
 import com.mdmesh.core.command.handlers.DeviceLockHandler
 import com.mdmesh.core.command.handlers.DeviceLockscreenMessageHandler
@@ -78,6 +80,8 @@ import com.mdmesh.policy.wifi.AndroidWifiRadio
 import com.mdmesh.policy.wifi.DpmHandle
 import com.mdmesh.policy.wifi.SharedPrefsWifiRadioOffState
 import com.mdmesh.remote.RemoteControlTierDetector
+import com.mdmesh.remote.RemoteControlSession
+import com.mdmesh.remote.StubRemoteControlSession
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -127,6 +131,10 @@ object AgentModule {
             screenCaptureAvailable = false,
             inputInjectionAvailable = false,
         )
+
+    @Provides
+    @Singleton
+    fun provideRemoteControlSession(): RemoteControlSession = StubRemoteControlSession()
 
     @Provides
     @Singleton
@@ -371,5 +379,14 @@ object AgentModule {
 
     @Provides
     @IntoSet
-    fun provideConfigApplyHandler(applier: ConfigApplier): CommandHandler = ConfigApplyHandler(applier)
+    fun provideConfigApplyHandler(applier: ConfigApplier, session: RemoteControlSession): CommandHandler =
+        ConfigApplyHandler(applier, session::stopForConfigurationChange)
+
+    @Provides
+    @IntoSet
+    fun provideRemoteStartSessionHandler(session: RemoteControlSession): CommandHandler = RemoteStartSessionHandler(session)
+
+    @Provides
+    @IntoSet
+    fun provideRemoteStopSessionHandler(session: RemoteControlSession): CommandHandler = RemoteStopSessionHandler(session)
 }

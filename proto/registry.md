@@ -105,7 +105,7 @@ string, except `configApply`.
 | `device.powerMode` | `device.powerMode` | `{ mode: "adaptive" \| "alwaysOn" }` |
 | `device.locationMode` | `device.locationMode` (`device.locationOff` for `off`) | `{ mode: "passive" \| "active" \| "off" }`; `off` (1.4) reads no location at all |
 | `app.launch` | — | `{ packageName, activity? }`. Planned: no agent handler yet (a device replies `unsupported`). |
-| `remote.startSession` | `remote.view` or `remote.control` | `{ sessionId, signaling: {...}, mode: "view"\|"control" }`. Planned: no agent handler yet. |
-| `remote.stopSession` | — | `{ sessionId }`. Planned: no agent handler yet. |
+| `remote.startSession` | `remote.view` | `{ sessionId, mode: "view", expiresAt, signaling: { endpoint, credential } }`; accepted means awaiting local Android consent, not connected. No current agent advertises `remote.view` until capture/transport land. |
+| `remote.stopSession` | — | `{ sessionId, reason? }`; idempotently ends a matching active session. |
 
 Per-type payload JSON Schemas go in `proto/payloads/` as the registry grows.

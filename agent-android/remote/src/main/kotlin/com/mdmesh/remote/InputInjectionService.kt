@@ -6,7 +6,7 @@ import android.view.accessibility.AccessibilityEvent
 /**
  * The ONE place in the whole agent that uses Accessibility.
  *
- * During a remote-control session of [RemoteControlSession.Mode.CONTROL], the
+ * During a future control-mode remote session, the
  * admin's taps/swipes are replayed on the device via
  * [AccessibilityService.dispatchGesture] (enabled by `canPerformGestures="true"`
  * in `res/xml/input_injection_service.xml`).
@@ -15,9 +15,9 @@ import android.view.accessibility.AccessibilityEvent
  * channel — see README). The service deliberately observes nothing —
  * [onAccessibilityEvent] is a no-op — because it injects, it does not snoop.
  *
- * It is declared `android:enabled="false"` and is only enabled at runtime once a
- * control-mode session is authorised; it must be disabled again when the session
- * ends so the device never carries a latent always-on accessibility surface.
+ * Its component is declared `android:enabled="false"`. Exposing it later does
+ * not enable Accessibility: Android Settings still requires explicit local-user
+ * consent, and session state only controls whether an enabled service accepts input.
  */
 class InputInjectionService : AccessibilityService() {
 

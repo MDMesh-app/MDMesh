@@ -8,13 +8,18 @@ class StubRemoteControlSession : RemoteControlSession {
 
     @Volatile private var activeSessionId: String? = null
 
-    override suspend fun start(sessionId: String, mode: RemoteControlSession.Mode): Result<Unit> {
-        activeSessionId = sessionId
+    override suspend fun start(request: com.mdmesh.proto.RemoteStartSessionPayload): Result<Unit> {
+        activeSessionId = request.sessionId
         return Result.success(Unit)
     }
 
-    override suspend fun stop(sessionId: String): Result<Unit> {
+    override suspend fun stop(sessionId: String, reason: String): Result<Unit> {
         if (activeSessionId == sessionId) activeSessionId = null
+        return Result.success(Unit)
+    }
+
+    override suspend fun stopForConfigurationChange(): Result<Unit> {
+        activeSessionId = null
         return Result.success(Unit)
     }
 

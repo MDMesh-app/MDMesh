@@ -1,5 +1,7 @@
 package com.mdmesh.remote
 
+import com.mdmesh.proto.RemoteStartSessionPayload
+
 /**
  * A live remote-control session between an administrator and this device.
  *
@@ -13,13 +15,14 @@ package com.mdmesh.remote
  */
 interface RemoteControlSession {
 
-    enum class Mode { VIEW, CONTROL }
-
-    /** Begin a session. [sessionId] is server-issued and echoed in results. */
-    suspend fun start(sessionId: String, mode: Mode): Result<Unit>
+    /** Begin a view session after validating its server-issued opaque id and expiry. */
+    suspend fun start(request: RemoteStartSessionPayload): Result<Unit>
 
     /** Tear down the session and release capture/injection resources. */
-    suspend fun stop(sessionId: String): Result<Unit>
+    suspend fun stop(sessionId: String, reason: String = "stopped"): Result<Unit>
+
+    /** A new desired configuration is a management boundary and ends any active view. */
+    suspend fun stopForConfigurationChange(): Result<Unit>
 
     /** True while a session is active. */
     fun isActive(): Boolean

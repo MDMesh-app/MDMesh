@@ -16,7 +16,10 @@ import com.mdmesh.proto.ProtocolJson
  * applied now on purpose, with the reason; revision now persisted and reported in check-ins); `failed` = at least
  * one key failed (server retries after a backoff).
  */
-class ConfigApplyHandler(private val applier: ConfigApplier) : CommandHandler {
+class ConfigApplyHandler(
+    private val applier: ConfigApplier,
+    private val beforeApply: suspend () -> Result<Unit> = { Result.success(Unit) },
+) : CommandHandler {
     override val type: String = DeviceAction.CONFIG_APPLY
 
     override suspend fun handle(command: CommandEnvelope): CommandResult {
@@ -24,6 +27,9 @@ class ConfigApplyHandler(private val applier: ConfigApplier) : CommandHandler {
         val doc = runCatching { ProtocolJson.json.decodeFromJsonElement(ConfigApplyPayload.serializer(), payload) }
             .getOrElse { return CommandResults.failed(command, "bad payload: ${it.message}") }
         if (doc.revision.isBlank()) return CommandResults.failed(command, "config.apply requires a revision")
+        beforeApply().exceptionOrNull()?.let {
+            return CommandResults.failed(command, "could not end remote session before configuration apply: ${it.message}")
+        }
         val result = applier.apply(doc)
         val detail = ProtocolJson.json.encodeToString(ConfigApplyResult.serializer(), result)
         return if (ConfigApplier.succeeded(result)) CommandResults.done(command, detail) else CommandResults.failed(command, detail)

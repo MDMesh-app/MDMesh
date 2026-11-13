@@ -58,6 +58,13 @@ class ExitPinGate(
         }
     }
 
+    /**
+     * How many more wrong PINs the exit takes before it locks, as the last wrong PIN said ([Outcome.Wrong]); null
+     * when there's nothing to warn about: no wrong PIN yet, or past the free tries (then the next wrong PIN locks
+     * again, and a lockout shows as Exit locked). Read from the store, so a rebuilt prompt can say it again.
+     */
+    fun attemptsLeft(): Int? = store.failures.takeIf { it in 1 until FREE_ATTEMPTS }?.let { FREE_ATTEMPTS - it }
+
     /** Check [entered] against the kiosk's current [pin]. */
     fun attempt(entered: String, pin: String?): Outcome {
         val locked = remainingLockMs()

@@ -48,8 +48,10 @@
 .v2 .v2-secnav__item:hover {
   color: var(--ink);
 }
+/* The current section: white on the page is 1.1:1, so a 1px control-border ring marks it at 3:1 (1.4.11). */
 .v2 .v2-secnav__item.is-current {
   background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--control-border);
   color: var(--ink);
   font-weight: 600;
 }

@@ -31,9 +31,10 @@
 .v2 .v2-tabs__tab:not(.is-selected):not(:disabled):hover {
   color: var(--ink);
 }
+/* As the segmented control: a 1px control-border ring marks the selected tab at 3:1 (1.4.11). */
 .v2 .v2-tabs__tab.is-selected {
   background: var(--seg-selected);
-  box-shadow: var(--shadow-seg);
+  box-shadow: var(--shadow-seg), inset 0 0 0 1px var(--control-border);
   color: var(--ink);
   font-weight: 600;
 }

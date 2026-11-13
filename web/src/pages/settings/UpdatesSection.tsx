@@ -35,8 +35,8 @@ const PHASE_STEP: Record<(typeof PHASES)[number], string> = {
 };
 /** Source installs (APPLY_SUPPORTED=0) update from the shell: the documented commands (README, classic Settings). */
 const MANUAL_STEPS = [
-  { label: 'Docker, installed from source', cmd: 'git pull && ./setup.sh' },
-  { label: 'Native install', cmd: 'git pull && sudo ./setup.sh --native' },
+  { label: 'Docker, installed from source', cmd: './setup.sh --update' },
+  { label: 'Native install', cmd: 'sudo ./setup.sh --update --native' },
 ] as const;
 
 const DONE_NOTICE_MS = 24 * 60 * 60 * 1000;

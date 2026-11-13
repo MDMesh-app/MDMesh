@@ -66,11 +66,15 @@ class DataStoreKioskStateStore(private val context: Context) : KioskStateStore {
 class InMemoryKioskStateStore(initial: KioskApplyPayload? = null) : KioskStateStore {
     private val state = MutableStateFlow(initial)
 
+    /** As saved: a StateFlow keeps the old value for an equal new one (an image's new URL, same SHA-256). */
+    private var latest = initial
+
     override suspend fun save(payload: KioskApplyPayload?) {
+        latest = payload
         state.value = payload
     }
 
-    override suspend fun load(): KioskApplyPayload? = state.value
+    override suspend fun load(): KioskApplyPayload? = latest
 
     override fun flow(): Flow<KioskApplyPayload?> = state
 }

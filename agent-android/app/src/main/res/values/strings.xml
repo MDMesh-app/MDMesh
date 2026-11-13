@@ -1,11 +1,84 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">MDM Agent</string>
+    <!-- Launcher, Settings > Apps, device-admin list. Only the label: package, signing and component names
+         don't depend on it (see AppIdentityTest). -->
+    <string name="app_name" translatable="false">MDMesh</string>
     <string name="device_admin_description">Lets this organisation manage the device: apply policies, manage apps, and run remote support.</string>
     <string name="checkin_notification_channel">Device management</string>
     <string name="checkin_notification_title">Device management active</string>
     <string name="checkin_notification_text">Keeping this device in sync with your organisation.</string>
+
+    <!-- Shared -->
+    <string name="brand_name" translatable="false">MDMesh</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_ok">OK</string>
+
+    <!-- Status screen (MainActivity). Eyebrow labels are shown in caps (the text stays sentence case for TalkBack). -->
+    <string name="status_subtitle">Device agent</string>
+    <string name="status_placeholder" translatable="false">…</string>
+    <string name="status_label_device_id">Device ID</string>
+    <string name="status_label_kiosk">Kiosk</string>
+    <string name="status_label_agent_version">Agent version</string>
+    <string name="status_label_server">Server</string>
+    <string name="status_copy_device_id">Copy device ID</string>
+    <string name="status_copy_server">Copy server address</string>
+    <string name="status_copied">Copied</string>
+    <string name="status_managed_by">Managed by MDMesh</string>
+    <string name="status_device_owner_active">Device Owner is active.</string>
+    <string name="status_not_managed">Not managed</string>
+    <string name="status_not_managed_body">MDMesh isn\'t the Device Owner, so it can\'t manage this device.</string>
+    <string name="status_kiosk_on">Active</string>
+    <string name="status_kiosk_off">Off</string>
+    <string name="status_kiosk_body_locked">This device is locked to the kiosk.</string>
+    <string name="status_kiosk_body_ready">A kiosk is set up for this device but isn\'t running.</string>
+    <string name="status_kiosk_body_off">No kiosk is running on this device.</string>
+    <string name="status_agent_version">%1$s (build %2$d)</string>
     <string name="status_enrolling">Enrolling…</string>
-    <string name="status_enrolling_error">Enrolling… (last error: %1$s at %2$s)</string>
+    <string name="status_enrolling_error_title">Enrolment hasn\'t finished</string>
+    <!-- %1$s = the last sync error, %2$s = its time. -->
+    <string name="status_enrolling_error">Last error: %1$s at %2$s</string>
     <string name="status_credentials_lost">The server no longer accepts this device\'s credentials and can\'t restore them. Factory-reset the device and scan a new QR code to enroll it again.</string>
+    <string name="kiosk_return_failed_title">Couldn\'t return to the kiosk</string>
+
+    <!-- Return to kiosk (MainActivity + KioskReturnPrompt). OfflineKioskReturnTest finds these by text. -->
+    <string name="kiosk_return_action">Return to kiosk</string>
+    <string name="kiosk_return_busy">Returning…</string>
+    <string name="kiosk_return_title">Return to kiosk?</string>
+    <string name="kiosk_return_message">The device locks to the kiosk again. To leave it, you\'ll need the exit PIN.</string>
+    <string name="kiosk_return_no_exit_title">Lock with no way out here?</string>
+    <string name="kiosk_return_no_exit_message">This kiosk has no exit on the device. Once it locks, only an admin in the MDMesh console can unlock it, and only while the device is online.</string>
+    <string name="kiosk_return_no_exit_confirm">Lock anyway</string>
+    <string name="kiosk_return_failed">Could not restore kiosk. Please try again.</string>
+    <string name="kiosk_return_unsupported">Kiosk is not supported on this device.</string>
+
+    <!-- Kiosk launcher -->
+    <string name="kiosk_header">MDMesh Kiosk</string>
+    <string name="kiosk_loading">Loading…</string>
+    <!-- Splash while the single kiosk app opens; %1$s = the app's name. -->
+    <string name="kiosk_opening">Opening %1$s…</string>
+    <string name="kiosk_empty">No apps to show. Add installed apps to this kiosk\'s allowed list in the console.</string>
+    <!-- Single-app kiosk whose app isn't installed or is disabled; %1$s = its package name. -->
+    <string name="kiosk_app_missing">%1$s isn\'t installed on this device. The kiosk opens it as soon as it is.</string>
+    <string name="kiosk_idle_subtitle">Managed device</string>
+    <string name="kiosk_hold_title">App closed</string>
+    <string name="kiosk_hold_message">The app closed several times in a row, so it wasn\'t opened again.</string>
+    <string name="kiosk_hold_retry">Open again</string>
+
+    <!-- Kiosk exit -->
+    <string name="kiosk_exit_button">Exit kiosk</string>
+    <string name="kiosk_exit_title">Exit kiosk</string>
+    <string name="kiosk_exit_message">Enter the exit PIN to leave the kiosk.</string>
+    <string name="kiosk_exit_pin_hint">Exit PIN</string>
+    <string name="kiosk_exit_pin_show">Show PIN</string>
+    <string name="kiosk_exit_pin_hide">Hide PIN</string>
+    <string name="kiosk_exit_confirm">Exit</string>
+    <!-- Under the PIN field; %d = wrong PINs left before the exit locks (1 or 2). -->
+    <plurals name="kiosk_exit_wrong_pin">
+        <item quantity="one">Wrong PIN. %d more wrong PIN locks the exit.</item>
+        <item quantity="other">Wrong PIN. %d more wrong PINs lock the exit.</item>
+    </plurals>
+    <string name="kiosk_exit_unavailable">Exit isn\'t available right now. Try again.</string>
+    <string name="kiosk_exit_locked_title">Exit locked</string>
+    <!-- %1$s = how long, from ExitPinGate.describe ("5 minutes"). -->
+    <string name="kiosk_exit_locked_message">Too many wrong PINs. Try again in %1$s.</string>
 </resources>

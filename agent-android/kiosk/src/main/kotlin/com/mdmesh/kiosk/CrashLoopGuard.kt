@@ -80,8 +80,9 @@ class CrashLoopGuard(
         return store.counter > LOOP_CRASHES
     }
 
-    /** Forget every recorded fault, as if none had happened. */
+    /** Forget every recorded fault, as if none had happened. Nothing recorded: nothing written (no commit). */
     fun reset() {
+        if (store.counter == 0 && store.lastFaultTime == -1L) return
         store.write(counter = 0, lastFaultTime = -1L)
     }
 

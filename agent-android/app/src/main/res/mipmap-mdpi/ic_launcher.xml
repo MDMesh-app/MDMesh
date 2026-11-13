@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Pre-API-26 launcher fallback (no adaptive-icon support). A plain layer-list
-    over the brand background with the shield foreground. Real density-specific PNGs
-    can replace this later; vector layers keep the scaffold asset-free.
+    Pre-API-26 launcher fallback (no adaptive-icon support): the white mark on the v2 ink background, as the
+    adaptive icon in mipmap-anydpi-v26. Vector layers, so one file serves every density.
 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@color/ic_launcher_background" />

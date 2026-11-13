@@ -1,4 +1,4 @@
-# MDM Agent (Android)
+# MDMesh agent (Android)
 
 A new, self-hosted **custom DPC** (Device Owner) Android MDM agent, with some parts ported from
 Headwind MDM's agent (see [NOTICE](../NOTICE)).
@@ -40,18 +40,22 @@ to the same server without special-casing. Unknown command types degrade to
 
 ### Permission minimization (Play Protect)
 
-- Base `:app` manifest has **no** `READ_SMS` and **no** `QUERY_ALL_PACKAGES`;
-  package visibility is scoped via `<queries>`.
-- **Accessibility / input injection lives only in `:remote`** (and merges in only
-  for builds that include it). Its `AccessibilityService` ships
+- Base `:app` manifest has **no** `READ_SMS`. It does request `QUERY_ALL_PACKAGES`
+  (with a `<queries>` LAUNCHER entry): a sideloaded Device Owner agent manages arbitrary
+  packages. A Play-distributed build would have to scope this to explicit `<queries>`
+  ([ADR 0005](../docs/adr/0005-play-protect-permission-minimization.md)).
+- **Accessibility / input injection lives only in `:remote`.** `:app` currently always
+  includes `:remote`, so the service is in every APK, but its `AccessibilityService` ships
   `android:enabled="false"` and is toggled on only for an authorised control session.
-- No phone-state / device-identifier permissions — identity is server-issued.
+- `READ_PHONE_STATE` / `READ_PHONE_NUMBERS` are requested for telemetry only; they are
+  never used as identity, which is server-issued
+  ([ADR 0003](../docs/adr/0003-server-issued-device-ids.md)).
 
 ## Build
 
 ```bash
 ./gradlew assembleDebug                                      # app/build/outputs/apk/debug/app-debug.apk
-./gradlew detekt assembleDebug lintDebug testDebugUnitTest   # what CI runs (T0)
+./gradlew detekt assembleDebug lintDebug testDebugUnitTest :proto:test   # what CI runs (T0)
 ```
 
 > The Gradle wrapper is committed (`gradlew`, `gradlew.bat`, `gradle/wrapper/gradle-wrapper.jar`

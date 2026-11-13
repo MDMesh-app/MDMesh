@@ -196,6 +196,7 @@ token --bar-idle
 token --border
 token --border-strong
 token --card-pad
+token --control-border
 token --disabled-bg
 token --disabled-ink
 token --faint

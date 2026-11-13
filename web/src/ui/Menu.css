@@ -1,9 +1,13 @@
 .v2 .v2-menu {
   display: inline-flex;
 }
-/* The 05 rail "More actions" trigger: icon-only text button, 9×12 */
+/* The 05 rail "More actions" trigger: icon-only text button, 9×12. Icon-only, so the 3:1 --control-border edge of
+   every icon button (a text button's soft edge relies on its label). */
 .v2 .v2-menu__iconbtn {
   padding-inline: 12px;
+}
+.v2 .v2-btn.v2-menu__iconbtn:not(:disabled) {
+  border-color: var(--control-border);
 }
 .v2 .v2-menu__popup {
   position: fixed;

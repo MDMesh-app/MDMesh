@@ -1,7 +1,8 @@
-import type { Key, ReactNode } from 'react';
+import { useRef, type Key, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { StatusPill, StatusText, type StatusKind, type StatusShape, type StatusTone } from './Status';
 import { cx } from './cx';
+import { scrollStopProps, useScrollStop } from './Table';
 import './Table.css';
 import './Lists.css';
 
@@ -119,8 +120,10 @@ export interface CommandItem {
 }
 
 export function CommandList({ items, 'aria-label': ariaLabel }: { items: ReadonlyArray<CommandItem>; 'aria-label'?: string }) {
+  const wrap = useRef<HTMLDivElement>(null);
+  const scrollStop = useScrollStop(wrap);
   return (
-    <div className="v2-tablewrap">
+    <div ref={wrap} className="v2-tablewrap" {...scrollStopProps(scrollStop, ariaLabel)}>
       <table className="v2-cmds" aria-label={ariaLabel}>
         <tbody>
           {items.map((it) => (

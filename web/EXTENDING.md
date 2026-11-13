@@ -483,6 +483,15 @@ release. Style with the design tokens (the `.v2` custom properties in `web/src/t
 the names, not a version: they are stable, and no later console renames them for a "v3". `npm run dev` serves the
 component gallery at `/_gallery`.
 
+The console is built to WCAG 2.2 AA, and an extension's pages should be too. The tokens are paired so that text
+tokens (`--text`, `--text-2`, `--secondary`, the `--*-ink` status colours) reach 4.5:1 on the surfaces, and
+`--input-border` (inputs and selects), `--control-border` (icon-only buttons, a selected item's ring) and the status
+dot colours reach 3:1. Text buttons keep soft edges, since their label identifies them: secondary `--border-strong`,
+subtle `--border`, danger `--alert-line`. Use the shared `Select` and `IconButton` rather than bare elements.
+`web/src/a11y/contrastPairs.ts` lists each pair and `componentEdges.test.ts` which edges must be 3:1. Use those
+rather than your own colours, give every control a name, and run axe over your page in a test, as
+`web/src/a11y/routes.a11y.test.tsx` does for core's.
+
 ## Server plugin
 
 ### Add one

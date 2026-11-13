@@ -112,3 +112,11 @@
     box-shadow: var(--shadow-float);
   }
 }
+
+/* The sticky 52px mobile bar must never cover the focused element (2.4.11): scrolling to focus (Shift+Tab going
+   back up the page) leaves room for it. */
+@media (max-width: 860px) {
+  html:has(.v2-mobilebar) {
+    scroll-padding-top: 60px;
+  }
+}

@@ -27,6 +27,9 @@ class ConfigReapplyWorker @AssistedInject constructor(
     private val kiosk: KioskApplier,
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
+        // An on-device or remote exit cut off by a reboot is finished first, so the re-apply below doesn't build on it.
+        runCatching { kiosk.resumeInterruptedExit() }
+            .onFailure { Log.w(TAG, "interrupted kiosk exit not finished", it) }
         runCatching { kiosk.releaseStaleVolumeLock() }
             .onFailure { Log.w(TAG, "stale volume lock release failed", it) }
         runCatching { applier.reapplyPersisted() }

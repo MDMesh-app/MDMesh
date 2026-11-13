@@ -801,14 +801,32 @@ public class FilesResource {
                 if (!base.endsWith(".apk")) continue;
                 // Output name is generated (not the entry name), so a malicious entry path can't escape.
                 File out = FileUtil.createUploadFile(customer, "bundlepart");
-                try (InputStream is = zipFile.getInputStream(entry);
-                     java.io.OutputStream os = new java.io.BufferedOutputStream(new java.io.FileOutputStream(out))) {
-                    byte[] buf = new byte[64 * 1024];
-                    int n;
-                    while ((n = is.read(buf)) >= 0) os.write(buf, 0, n);
+                try {
+                    java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+                    long size = 0;
+                    try (InputStream is = zipFile.getInputStream(entry);
+                         java.io.OutputStream os = new java.io.BufferedOutputStream(new java.io.FileOutputStream(out))) {
+                        byte[] buf = new byte[64 * 1024];
+                        int n;
+                        while ((n = is.read(buf)) >= 0) {
+                            os.write(buf, 0, n);
+                            crc.update(buf, 0, n);
+                            size += n;
+                        }
+                    }
+                    if (size != entry.getSize() || crc.getValue() != entry.getCrc()) {
+                        throw new IOException("Invalid size or CRC for zip entry " + entry.getName());
+                    }
+                } catch (IOException e) {
+                    out.delete();
+                    throw e;
                 }
                 if (base.equals("universal.apk")) universal = out; else parts.add(out);
             }
+        } catch (IOException e) {
+            if (universal != null) universal.delete();
+            for (File part : parts) part.delete();
+            throw e;
         }
         if (universal != null) {
             for (File f : parts) f.delete(); // discard splits; the universal APK stands alone

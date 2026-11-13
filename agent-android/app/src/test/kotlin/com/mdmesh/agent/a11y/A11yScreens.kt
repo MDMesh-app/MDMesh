@@ -222,6 +222,37 @@ class A11yScreens {
         return d
     }
 
+    /**
+     * "Exit isn't available": the right PIN, with the exit's journal not writable (a full disk), so the exit is
+     * refused before its first step.
+     */
+    fun exitUnavailableDialog(): Dialog {
+        val a = launcher(kiosk)
+        val dpm = app.getSystemService(DevicePolicyManager::class.java)
+        val homeAlias = ComponentName(app, "com.mdmesh.agent.KioskHomeAlias")
+        val full = object : com.mdmesh.core.kiosk.ExitJournal {
+            override fun pending(): com.mdmesh.core.kiosk.ExitJournal.Pending? = null
+            override fun begin(p: com.mdmesh.core.kiosk.ExitJournal.Pending) = false
+            override fun end() = true
+        }
+        a.applier = com.mdmesh.core.kiosk.KioskApplier(
+            com.mdmesh.kiosk.LockTaskKioskController(dpm, ComponentName(app, AdminReceiver::class.java)), a.store,
+            com.mdmesh.core.kiosk.AndroidKioskHomeSwitch(app, homeAlias), homeAlias, journal = full,
+        ) { true }
+        button(a.window.decorView, app.getString(R.string.kiosk_exit_button))!!.performClick()
+        idle()
+        val d = showing()!!
+        edit(d.window!!.decorView)!!.setText(kiosk.password)
+        button(d.window!!.decorView, app.getString(R.string.kiosk_exit_confirm))!!.performClick()
+        // The applier reads the kiosk state from DataStore, on its own thread.
+        repeat(UNAVAILABLE_WAIT_STEPS) {
+            idle()
+            showing()?.takeIf { edit(it.window!!.decorView) == null }?.let { return it }
+            Thread.sleep(UNAVAILABLE_WAIT_STEP_MS)
+        }
+        error("no 'Exit isn't available' dialog")
+    }
+
     // ---- views ----
 
     fun showing(): Dialog? = ShadowDialog.getLatestDialog()?.takeIf { it.isShowing }
@@ -256,6 +287,8 @@ class A11yScreens {
     private companion object {
         const val ERROR_AT_MS = 1_762_800_000_000L
         const val MAX_TRIES = 12
+        const val UNAVAILABLE_WAIT_STEPS = 80
+        const val UNAVAILABLE_WAIT_STEP_MS = 25L
     }
 }
 

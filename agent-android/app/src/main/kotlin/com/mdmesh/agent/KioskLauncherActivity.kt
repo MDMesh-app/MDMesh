@@ -41,6 +41,7 @@ import com.mdmesh.kiosk.Boot
 import com.mdmesh.kiosk.ExitPinGate
 import com.mdmesh.kiosk.HoldStore
 import com.mdmesh.kiosk.KioskController
+import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.kiosk.KioskReturnPolicy
 import com.mdmesh.proto.KioskApplyPayload
 import com.mdmesh.proto.sameKioskAs
@@ -101,10 +102,16 @@ class KioskLauncherActivity : ComponentActivity() {
     /** The screen showing now. */
     private var screen: KioskScreen = KioskScreen.Idle
 
+    /**
+     * [KioskExitDialogs.identityOf] the kiosk the open (or restored, not yet reopened) "Exit isn't available" was
+     * shown for; saved with it, so a recreation reopens it only on that kiosk.
+     */
+    private var unavailableFor: String? = null
+
     /** Loads the grid's apps or the splash's app name for the screen showing; replaced with it. */
     private var loading: Job? = null
 
-    /** Exit PIN or Exit locked; reopened after the activity is recreated, once the kiosk state is back. */
+    /** Exit PIN, Exit locked or Exit unavailable; reopened after a recreation, once the kiosk state is back. */
     private val dialogs = DialogSlot("exitDialog")
 
     /** Acts once per return to the front, whichever of onResume and the kiosk delivery comes first. */
@@ -137,6 +144,7 @@ class KioskLauncherActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         dialogs.restore(savedInstanceState)
+        unavailableFor = savedInstanceState?.getString(UNAVAILABLE_FOR_KEY)
         // A kiosk device boots straight into HOME (this); keep the command channel alive even if
         // the user never opens the status screen.
         ContextCompat.startForegroundService(this, Intent(this, CheckInService::class.java))
@@ -221,6 +229,9 @@ class KioskLauncherActivity : ComponentActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         dialogs.save(outState)
+        if (dialogs.savedTag() == KioskExitDialogs.UNAVAILABLE) {
+            unavailableFor?.let { outState.putString(UNAVAILABLE_FOR_KEY, it) }
+        }
     }
 
     override fun onDestroy() {
@@ -334,6 +345,8 @@ class KioskLauncherActivity : ComponentActivity() {
         when (tag) {
             KioskExitDialogs.PIN -> promptExit(p, typed)
             KioskExitDialogs.LOCKED -> pinGate.remainingLockMs()?.let(::showExitLocked)
+            // Only on the kiosk it was shown for: another kiosk entered before a recreation doesn't get it.
+            KioskExitDialogs.UNAVAILABLE -> if (unavailableFor == KioskExitDialogs.identityOf(p)) showExitUnavailable(p)
         }
     }
 
@@ -515,10 +528,30 @@ class KioskLauncherActivity : ComponentActivity() {
     }
 
     /**
+     * The right PIN, but the exit couldn't start (its journal entry couldn't be written: a full disk). The PIN prompt
+     * has already closed, so this says why nothing happened. Like Exit locked, it closes after the PIN prompt's idle
+     * time, so it never stays over the kiosk for good.
+     */
+    private fun showExitUnavailable(kiosk: KioskApplyPayload) {
+        unavailableFor = KioskExitDialogs.identityOf(kiosk)
+        val spec = MdmDialog.Spec(
+            title = getString(R.string.kiosk_exit_title),
+            message = getString(R.string.kiosk_exit_unavailable),
+            confirm = getString(R.string.action_ok),
+            icon = R.drawable.ic_v2_warning,
+        )
+        val dialog = MdmDialog.create(this, spec) { it.dismiss() }
+        dialog.everyWhileShown(ExitPinDialog.idleTimeoutMs(this)) { dialog.dismiss() }
+        dialogs.show(KioskExitDialogs.UNAVAILABLE, dialog)
+    }
+
+    /**
      * Exits [kiosk], the kiosk the PIN was checked against, and only it: the applier refuses inside its lock when
      * another kiosk was entered first (a `kiosk.enter` landing as the PIN was submitted), or when the exit's journal
      * entry can't be written (a full disk), and then nothing here changes either: lock task is left and the exit
      * recorded inside the applier's lock, only once the exit is going ahead, and only then does the launcher finish.
+     * Refused for a full disk, the launcher says so ([showExitUnavailable]); refused for another kiosk, it says
+     * nothing: that kiosk's delivery redraws the launcher.
      */
     private fun doExit(kiosk: KioskApplyPayload) {
         // Same exit as the remote kiosk.exit: releases the lock-task policy, the volume lock and the HOME claim,
@@ -526,23 +559,33 @@ class KioskLauncherActivity : ComponentActivity() {
         // NonCancellable: the launcher may be destroyed meanwhile (a recreate, the system); the exit still finishes,
         // or it would stop between its steps. A process death mid-exit is finished at the next start (ExitJournal).
         lifecycleScope.launch {
-            val exited = withContext(NonCancellable) {
+            // Null once the exit ran; otherwise why it was refused.
+            val refused = withContext(NonCancellable) {
                 var started = false
-                applier.exit(handBackHome = true, force = true, expected = kiosk) {
+                val result = applier.exit(handBackHome = true, force = true, expected = kiosk) {
                     started = true
                     runCatching { if (isFinishing.not()) stopLockTask() }
-                    events.record("kioskExit", "exited on-device")
+                    // Lock task is already left: a failed log write must not throw out between the exit's steps
+                    // (the next start would settle the half-exited kiosk back in kiosk). The exit goes on without it.
+                    runCatching { events.record("kioskExit", "exited on-device") }
+                        .onFailure { Log.w(TAG, "recording the on-device kiosk exit failed", it) }
                 }
                 // Refused before it started: still in this kiosk (or the one that replaced it), still pinned.
-                if (!started) return@withContext false
+                if (!started) return@withContext result
                 // The launcher has already left lock task; publish that state without waiting for the periodic
                 // check-in.
                 CheckInWorker.scheduleAfterCurrent(applicationContext)
-                true
+                null
             }
-            // Superseded: the new kiosk's delivery redraws the launcher (and closes the prompt) as usual. Journal not
-            // writable: the device stays in this kiosk, on this launcher (the failure is logged by the applier).
-            if (exited) finish()
+            when {
+                refused == null -> finish()
+                // Superseded: the new kiosk's delivery redraws the launcher (and closes the prompt) as usual.
+                refused == KioskResult.Failed(KioskApplier.EXIT_SUPERSEDED) -> Unit
+                // Journal not writable (logged by the applier): the device stays in this kiosk, on this launcher. Said
+                // only while that kiosk is still the one applied: a remote exit or another kiosk delivered before the
+                // refusal got here means the message is about a kiosk that's gone (one delivered later closes it).
+                else -> if (active?.sameKioskAs(kiosk) == true) showExitUnavailable(kiosk)
+            }
         }
     }
 
@@ -551,5 +594,8 @@ class KioskLauncherActivity : ComponentActivity() {
 
         /** How often the "Exit locked" countdown is redrawn (its finest unit is a second). */
         const val LOCKED_TICK_MS = 1_000L
+
+        /** Saved-state key of [unavailableFor]. */
+        const val UNAVAILABLE_FOR_KEY = "exitUnavailableFor"
     }
 }

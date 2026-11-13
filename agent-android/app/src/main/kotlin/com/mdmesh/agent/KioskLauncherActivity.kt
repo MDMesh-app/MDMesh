@@ -569,8 +569,10 @@ class KioskLauncherActivity : ComponentActivity() {
                 refused == null -> finish()
                 // Superseded: the new kiosk's delivery redraws the launcher (and closes the prompt) as usual.
                 refused == KioskResult.Failed(KioskApplier.EXIT_SUPERSEDED) -> Unit
-                // Journal not writable (logged by the applier): the device stays in this kiosk, on this launcher.
-                else -> showExitUnavailable()
+                // Journal not writable (logged by the applier): the device stays in this kiosk, on this launcher. Said
+                // only while that kiosk is still the one applied: a remote exit or another kiosk delivered before the
+                // refusal got here means the message is about a kiosk that's gone (one delivered later closes it).
+                else -> if (active?.sameKioskAs(kiosk) == true) showExitUnavailable()
             }
         }
     }

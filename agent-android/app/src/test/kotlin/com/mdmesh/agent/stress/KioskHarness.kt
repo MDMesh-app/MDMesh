@@ -209,15 +209,19 @@ abstract class KioskHarness {
 
     /**
      * The exit journal can't be written (a full disk): the launcher's applier is swapped for one whose journal refuses
-     * every entry, so an exit is refused before its first step.
+     * every entry, so an exit is refused before its first step. [beforeRefusing] runs on the applier's I/O thread as
+     * the entry is refused (to hold the refusal while something else lands first).
      */
-    protected fun exitJournalFull() {
+    protected fun exitJournalFull(beforeRefusing: () -> Unit = {}) {
         val dpm = app.getSystemService(DevicePolicyManager::class.java)
         val admin = ComponentName(app, AdminReceiver::class.java)
         val homeAlias = ComponentName(app, "com.mdmesh.agent.KioskHomeAlias")
         val full = object : com.mdmesh.core.kiosk.ExitJournal {
             override fun pending(): com.mdmesh.core.kiosk.ExitJournal.Pending? = null
-            override fun begin(p: com.mdmesh.core.kiosk.ExitJournal.Pending) = false
+            override fun begin(p: com.mdmesh.core.kiosk.ExitJournal.Pending): Boolean {
+                beforeRefusing()
+                return false
+            }
             override fun end() = true
         }
         activity.applier = com.mdmesh.core.kiosk.KioskApplier(

@@ -239,6 +239,60 @@ class KioskLauncherStressTest : KioskHarness() {
         assertNotNull("the exit can be tried again", pinDialog())
     }
 
+    /** A remote kiosk.exit or another kiosk landing while "Exit isn't available" is open closes it. */
+    @Test fun kioskChangeAfterTheUnavailableMessageClosesIt() {
+        for (next in listOf(null, grid.copy(allowedPackages = listOf(other)))) {
+            launch(grid)
+            exitJournalFull()
+            tapExitKiosk()
+            submitPin(pin)
+            assertNotNull(unavailableDialog())
+            saveKiosk(next)
+            settle()
+            assertNull("'Exit isn't available' left over ${next ?: "kiosk off"}", unavailableDialog())
+            ctl!!.pause().stop().destroy()
+            settle()
+        }
+    }
+
+    /**
+     * The exit is refused (journal not writable), but a remote kiosk.exit or another kiosk reaches the launcher
+     * before the refusal does: the message was about a kiosk that is gone, so it isn't shown at all.
+     */
+    @Test fun kioskChangeBeforeTheRefusalArrivesShowsNoUnavailableMessage() {
+        for (next in listOf(null, grid.copy(allowedPackages = listOf(other)))) {
+            org.robolectric.shadows.ShadowDialog.reset()
+            launch(grid)
+            val refusing = java.util.concurrent.CountDownLatch(1)
+            val release = java.util.concurrent.CountDownLatch(1)
+            exitJournalFull {
+                refusing.countDown()
+                release.await(5, java.util.concurrent.TimeUnit.SECONDS)
+            }
+            tapExitKiosk()
+            val d = pinDialog()!!
+            edit(d.window!!.decorView)!!.setText(pin)
+            button(d.window!!.decorView, s(R.string.kiosk_exit_confirm))!!.performClick()
+            // The exit resumes on the main thread between its reads, so the main looper is run while it gets there.
+            repeat(200) {
+                if (refusing.count == 0L) return@repeat
+                org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+                Thread.sleep(10)
+            }
+            assertEquals("the exit never reached its journal", 0L, refusing.count)
+            saveKiosk(next)
+            settle() // the change is delivered while the refusal is held
+            release.countDown()
+            settle()
+            assertTrue(
+                "'Exit isn't available' shown over ${next ?: "kiosk off"}",
+                org.robolectric.shadows.ShadowDialog.getShownDialogs().none(::isUnavailable),
+            )
+            ctl!!.pause().stop().destroy()
+            settle()
+        }
+    }
+
     /**
      * The right PIN for a kiosk that another kiosk replaced as it ran (EXIT_SUPERSEDED): nothing is said, the new
      * kiosk's delivery redraws the launcher. Every dialog shown counts, not only the last, so one shown and then

@@ -66,6 +66,7 @@ public class PublicRouteInventoryTest {
     private static final List<String> KEPT_PUBLIC = Arrays.asList(
             "/rest/public/agent/v1",            // MDMesh agent: enroll + check-in (token / per-device secret)
             "/agent/ws/{deviceNumber}",         // MDMesh agent wake socket (per-device secret)
+            "/remote/ws/{role}/{sessionId}",    // remote-view signaling: console session or device+one-time secret
             "/files",                           // APK and file downloads referenced by the QR / configs
             "/rest/public/auth",                // console sign-in
             "/rest/public/jwt",                 // API client sign-in

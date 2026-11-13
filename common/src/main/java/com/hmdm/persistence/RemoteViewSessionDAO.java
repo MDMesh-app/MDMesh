@@ -17,6 +17,11 @@ public class RemoteViewSessionDAO {
         mapper.insertAudit(session.getId(), session.getState(), session.getCreatedAt(), session.getRequesterUserId(), detail);
     }
     public RemoteViewSession find(UUID id) { return mapper.find(id); }
+    @Transactional public boolean transition(UUID id, String fromState, String toState, long at, Integer actor, String detail) {
+        if (mapper.transition(id, fromState, toState) != 1) return false;
+        mapper.insertAudit(id, toState, at, actor, detail);
+        return true;
+    }
     @Transactional public boolean end(UUID id, String state, long at, String reason) {
         RemoteViewSession session = mapper.find(id);
         if (session == null || mapper.end(id, state, at, reason) != 1) return false;

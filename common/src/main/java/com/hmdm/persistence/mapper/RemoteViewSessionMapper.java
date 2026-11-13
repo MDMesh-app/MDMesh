@@ -21,4 +21,6 @@ public interface RemoteViewSessionMapper {
     List<RemoteViewSession> findActiveByDevice(@Param("deviceNumber") String deviceNumber);
     @Update("UPDATE remoteViewSession SET state=#{state}, endedAt=#{endedAt}, endReason=#{reason} WHERE id=#{id} AND endedAt IS NULL")
     int end(@Param("id") UUID id, @Param("state") String state, @Param("endedAt") long endedAt, @Param("reason") String reason);
+    @Update("UPDATE remoteViewSession SET state=#{toState} WHERE id=#{id} AND state=#{fromState} AND endedAt IS NULL")
+    int transition(@Param("id") UUID id, @Param("fromState") String fromState, @Param("toState") String toState);
 }

@@ -27,7 +27,9 @@ public class AgentWakeBootstrap implements ServletContextListener {
         }
         try {
             ((ServerContainer) attr).addEndpoint(AgentWakeEndpoint.class);
+            ((ServerContainer) attr).addEndpoint(RemoteViewSignalingEndpoint.class);
             log.info("Agent wake WebSocket endpoint registered at /agent/ws/{deviceNumber}");
+            log.info("Remote-view signaling endpoints registered at /remote/ws/{role}/{sessionId}");
         } catch (Exception e) {
             log.error("Agent wake: failed to register WebSocket endpoint", e);
         }

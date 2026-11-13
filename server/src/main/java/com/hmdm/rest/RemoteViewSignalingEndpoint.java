@@ -1,0 +1,53 @@
+package com.hmdm.rest;
+
+import com.hmdm.remote.RemoteViewSignalingHub;
+import java.io.IOException;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import javax.servlet.http.HttpSession;
+import javax.websocket.CloseReason;
+import javax.websocket.HandshakeResponse;
+import javax.websocket.OnClose;
+import javax.websocket.OnMessage;
+import javax.websocket.OnOpen;
+import javax.websocket.Session;
+import javax.websocket.server.HandshakeRequest;
+import javax.websocket.server.PathParam;
+import javax.websocket.server.ServerEndpoint;
+import javax.websocket.server.ServerEndpointConfig;
+
+/** Separate browser/agent WebSocket signaling endpoints. No media, commands, or credentials are relayed. */
+@ServerEndpoint(value = "/remote/ws/{role}/{sessionId}", configurator = RemoteViewSignalingEndpoint.Auth.class)
+public class RemoteViewSignalingEndpoint {
+    private static final String HTTP_SESSION = "remote.httpSession";
+    private static final String AUTH = "remote.authorization";
+    private static final String JOIN = "remote.joinSecret";
+    private static final String DEVICE = "remote.device";
+    public static final class Auth extends ServerEndpointConfig.Configurator {
+        @Override public void modifyHandshake(ServerEndpointConfig config, HandshakeRequest request, HandshakeResponse response) {
+            config.getUserProperties().put(HTTP_SESSION, request.getHttpSession());
+            put(config, AUTH, header(request.getHeaders(), "Authorization"));
+            put(config, JOIN, header(request.getHeaders(), "X-MDMesh-Remote-Session"));
+            put(config, DEVICE, header(request.getHeaders(), "X-MDMesh-Device"));
+        }
+        private static void put(ServerEndpointConfig c, String key, String value) { if (value != null) c.getUserProperties().put(key, value); }
+    }
+    @OnOpen public void open(Session socket, @PathParam("role") String role, @PathParam("sessionId") String raw) {
+        UUID id = id(raw); RemoteViewSignalingHub hub = RemoteViewSignalingHub.INSTANCE;
+        boolean allowed = false;
+        if (id != null && hub != null && "browser".equals(role)) allowed = hub.joinBrowser(id, (HttpSession) socket.getUserProperties().get(HTTP_SESSION), socket);
+        if (id != null && hub != null && "agent".equals(role)) allowed = hub.joinAgent(id, string(socket, DEVICE), bearer(string(socket, AUTH)), string(socket, JOIN), socket);
+        if (!allowed) close(socket, "unauthorized");
+    }
+    @OnMessage public void message(Session socket, String text, @PathParam("role") String role, @PathParam("sessionId") String raw) {
+        UUID id = id(raw); if (id == null || !("browser".equals(role) || "agent".equals(role)) || RemoteViewSignalingHub.INSTANCE == null) { close(socket, "invalid session"); return; }
+        RemoteViewSignalingHub.INSTANCE.relay(id, "browser".equals(role), text);
+    }
+    @OnClose public void closed(Session socket, @PathParam("sessionId") String raw) { UUID id = id(raw); if (id != null && RemoteViewSignalingHub.INSTANCE != null) RemoteViewSignalingHub.INSTANCE.disconnect(id, socket); }
+    private static UUID id(String raw) { try { return UUID.fromString(raw); } catch (Exception ignored) { return null; } }
+    private static String string(Session s, String key) { Object v=s.getUserProperties().get(key); return v instanceof String ? (String)v : null; }
+    private static String header(Map<String,List<String>> headers, String wanted) { if(headers!=null) for(Map.Entry<String,List<String>> e:headers.entrySet()) if(wanted.equalsIgnoreCase(e.getKey()) && e.getValue()!=null && !e.getValue().isEmpty()) return e.getValue().get(0); return null; }
+    private static String bearer(String value) { if(value == null || !value.regionMatches(true,0,"Bearer ",0,7)) return null; String token=value.substring(7).trim(); return token.isEmpty()?null:token; }
+    private static void close(Session socket, String message) { try { socket.close(new CloseReason(CloseReason.CloseCodes.VIOLATED_POLICY, message)); } catch (IOException ignored) {} }
+}

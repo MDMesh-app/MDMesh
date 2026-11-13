@@ -22,6 +22,15 @@ public class RemoteViewSessionServiceTest {
         assertEquals("stopped", dao.sessions.get(created.session.getId()).getState());
     }
 
+    @Test public void agentJoinSecretIsBoundToDeviceAndCannotBeReplayed() {
+        FakeDao dao = new FakeDao(); RemoteViewSessionService service = new RemoteViewSessionService(dao);
+        RemoteViewSessionService.Created created = service.create("device-1", 7, 1000L);
+        assertNull(service.claimAgentJoin(created.session.getId(), "other-device", created.agentJoinSecret, 1001L));
+        assertNotNull(service.claimAgentJoin(created.session.getId(), "device-1", created.agentJoinSecret, 1001L));
+        assertNull(service.claimAgentJoin(created.session.getId(), "device-1", created.agentJoinSecret, 1002L));
+        assertTrue(service.isSignalingLive(created.session.getId(), 1002L));
+    }
+
     private static final class FakeDao extends RemoteViewSessionDAO {
         final Map<UUID, RemoteViewSession> sessions = new HashMap<>();
         FakeDao() { super(null); }
@@ -30,6 +39,9 @@ public class RemoteViewSessionServiceTest {
         @Override public boolean end(UUID id, String state, long at, String reason) {
             RemoteViewSession s = sessions.get(id); if (s == null || s.getEndedAt() != null) return false;
             s.setState(state); s.setEndedAt(at); s.setEndReason(reason); return true;
+        }
+        @Override public boolean transition(UUID id, String from, String to, long at, Integer actor, String detail) {
+            RemoteViewSession s = sessions.get(id); if (s == null || !from.equals(s.getState())) return false; s.setState(to); return true;
         }
         @Override public int expire(long now, String reason) { return 0; }
         @Override public int endForDevice(String device, String state, long at, String reason) { return 0; }

@@ -85,11 +85,12 @@ class AdminReceiver : DeviceAdminReceiver() {
 
     /**
      * An OS update became pending, or stopped being pending (API 26+): check in now, so the console sees it in the
-     * telemetry (`pendingSystemUpdateAt`) instead of at the next periodic check-in.
+     * telemetry (`pendingSystemUpdateAt`) instead of at the next periodic check-in. After any running check-in, not
+     * into it: that one may already have read its telemetry.
      */
     override fun onSystemUpdatePending(context: Context, intent: Intent, receivedTime: Long) {
         super.onSystemUpdatePending(context, intent, receivedTime)
-        CheckInWorker.scheduleNow(context)
+        CheckInWorker.scheduleAfterCurrent(context)
     }
 
     /**

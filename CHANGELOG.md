@@ -24,15 +24,15 @@ Upgrading
 - Quick start: run `docker compose pull && docker compose up -d` once after this update. Updates never touch the
   supervisor, and one from before 0.5.0 keeps applying updates by tag. From source, or with `SUPERVISOR_VERSION` set by
   hand: [UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050).
+- From source and native: 0.4.x has no `--update`, so move the clone to 0.5.0 once with
+  `git fetch --tags && git checkout v0.5.0 && ./setup.sh --update` (native:
+  `git fetch --tags && git checkout v0.5.0 && sudo ./setup.sh --update --native`). From then on, update with `./setup.sh --update`
+  (native: `sudo ./setup.sh --update --native`).
 - Check each configuration's System updates before rolling out agent 0.5.0: the setting now reaches devices. Immediately
   (now Install automatically) makes Android install any update already waiting at once, with its restart, so those
   devices can start installing when the new agent arrives. Configurations on Device default don't change.
 - A daily window with blank, equal or invalid times is sent as Device default. Other edits to that configuration still
   save; changing System updates or its times needs a valid window.
-- From source and native: 0.4.x has no `--update`, so move the clone to 0.5.0 once with
-  `git fetch --tags && git checkout v0.5.0 && ./setup.sh --update` (native:
-  `git fetch --tags && git checkout v0.5.0 && sudo ./setup.sh --update --native`). From then on, update with `./setup.sh --update`
-  (native: `sudo ./setup.sh --update --native`).
 - Native: the installer now stops on an option it doesn't take, instead of ignoring it.
 - Answers files (`MDMESH_ANSWERS`) must belong to you and be private (mode 600), or they are refused.
 

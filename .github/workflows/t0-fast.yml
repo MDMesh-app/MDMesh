@@ -42,6 +42,9 @@ jobs:
             # CHANGELOG.md is built into the console (What's new) and its tests read every release's section, checked
             # against release/changelog-section.sh.
             web: web/**, CHANGELOG.md, release/changelog-section.sh
+            # The console's browser accessibility sweep (scripts/shots/a11y.mjs) reads the built console and the
+            # shots fixtures; CHANGELOG.md is built into the console.
+            a11y: web/**, scripts/shots/**, CHANGELOG.md
             agent: agent-android/**, proto/**
             supervisor: supervisor/**, docker/supervisor.Dockerfile, release/minisign.pub, scripts/supervisor-smoke.sh, .dockerignore
             # Listed explicitly: the kit's fail-closed **/Dockerfile* does not match docker/web.Dockerfile. web/**,
@@ -247,6 +250,71 @@ jobs:
       - if: always() && matrix.name == 'edge'
         name: Remove the per-run web image
         run: docker rmi -f "$WEB_IMG" >/dev/null 2>&1 || true
+
+  # The console's accessibility sweep in a real browser: axe (WCAG 2.0-2.2 A/AA) on every page and its key states
+  # (dialogs, menus, errors, empty lists), plus horizontal scroll, page titles and text spacing, in the light theme
+  # at 1280 px (`--quick`). It fails on any violation and on any state it could not open. npm test (the web entry)
+  # already checks the token contrast pairs and runs axe in jsdom; this adds real layout and colour. The full sweep
+  # (both themes, 640 and 320 px, keyboard walk) is a manual run: `node scripts/shots/a11y.mjs --keys`.
+  a11y:
+    name: a11y
+    needs: paths
+    if: needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).a11y
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      # setup-node directly (not ci-kit/setup-npm): the npm cache key covers both lock files.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version-file: web/package.json
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            scripts/shots/package-lock.json
+      - name: Install the console and the shots harness
+        run: |
+          npm ci --prefix web
+          npm ci --prefix scripts/shots
+      - name: Build the console with the component gallery
+        working-directory: web
+        env:
+          VITE_GALLERY: "1"
+        run: npm run build
+      - id: pw
+        name: Playwright version
+        working-directory: scripts/shots
+        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+      - id: pw-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}-chromium
+      - if: steps.pw-cache.outputs.cache-hit != 'true'
+        name: Download Chromium
+        working-directory: scripts/shots
+        run: npx playwright install chromium
+      # System libraries only when Chromium can't start without them: hosted Ubuntu images have them, and a
+      # self-hosted runner (vars.CI_RUNNER) may have them but no sudo for apt.
+      - name: Chromium starts (system libraries only if it doesn't)
+        working-directory: scripts/shots
+        run: |
+          probe() { node -e "require('playwright').chromium.launch().then((b) => b.close())"; }
+          if probe; then exit 0; fi
+          echo "Chromium needs system libraries; installing them (needs apt and sudo)."
+          npx playwright install-deps chromium
+          probe
+      - name: Accessibility sweep (axe, light, 1280 px)
+        run: node scripts/shots/a11y.mjs --quick --out a11y-out
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: a11y-sweep
+          path: |
+            a11y-out/summary.txt
+            a11y-out/axe.json
+            a11y-out/failures.txt
+          if-no-files-found: ignore
 
   # NOTE: an emulator-based instrumentation matrix (the "version-treadmill guard" — boot the agent
   # across API levels so SDK_INT-gated breakage surfaces in CI) is deferred until real instrumented

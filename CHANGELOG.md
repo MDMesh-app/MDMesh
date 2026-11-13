@@ -165,6 +165,20 @@ Fixes
 - Agent rollout: when every device is in the canary, the rollout finishes once they've updated instead of staying
   open, and Settings stops offering the same agent again. If one can't update, it offers Finish instead of Promote
   (thanks @letternumber).
+- Console accessibility: inputs, icon buttons, toggles, status dots and bars reach 3:1 contrast in both themes, help
+  and status text is darker, the selected tab, section and page are outlined, and disabled settings stay readable.
+- Console: a toast waits while you point at it or tab into it, can be dismissed (Escape too), and a failure stays 30
+  seconds. A repeated message shows once with a count. Three show at once (two on a phone 360px wide or less) and the
+  rest wait behind "N more": a failure gets its full 30 seconds once it shows, a success or warning goes on time. They
+  sit above the Save bar.
+- Enroll, for screen readers: each device that enrolls or changes state is announced once (several at once are
+  counted), and so is the page stopping looking, each time. The Wi-Fi notes are read as they change, including when
+  Security goes from Open to WPA.
+- Console: the device's Location tab lists its locations under the map, for keyboards and screen readers, and a
+  table that scrolls sideways can be reached with Tab.
+- Console on phones: device names and reasons wrap instead of being cut off, main buttons and menu items are 44px
+  tall, and the top bar no longer covers the field you tab to.
+- Console: the sign-in pages and a device that can't be found name the browser tab.
 - Kiosk: a single-app kiosk reopens its app once when it is closed, instead of starting it twice, and rotating the
   device or changing the font or display size no longer restarts the kiosk screen. Needs agent 0.5.0.
 
@@ -174,6 +188,10 @@ Under the hood
 - `install/options.json` lists the installers' questions and answers, for the website's install guide. CI checks it
   against the scripts with dry runs.
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
+- Console: a new colour token for extensions, `--control-border`, the 3:1 edge for icon buttons and selected
+  items. `npm test` checks every token pair's contrast, which component edges must be 3:1, and runs axe on each page;
+  `scripts/shots/a11y.mjs` runs axe, a keyboard walk and reflow checks on the built console in both themes at 1280,
+  640 and 320px, and CI runs its quick pass.
 - Agent: the APK carries English resources only (about 90 KB smaller), and its screen text lives in string
   resources.
 - Agent protocol 1.9 (additive): the enroll request's optional `enrollAttempt` and `resumeOnly`, the enroll response's

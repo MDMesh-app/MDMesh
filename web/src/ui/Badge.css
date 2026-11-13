@@ -97,7 +97,8 @@
   text-decoration: none;
 }
 
-/* Chip: a Badge you can press (link or button). Keeps its tone colour on hover. */
+/* Chip: a Badge you can press (link or button). Keeps its tone colour on hover. A labelled button, so it keeps the
+   soft tone line (see the text-button note in Button.css). */
 .v2 .v2-chip {
   font-family: inherit;
   line-height: var(--lh-body);

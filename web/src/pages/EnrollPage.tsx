@@ -4,7 +4,7 @@ import { getConfigurations, type Configuration } from '../api/configurations';
 import { mintEnrollToken, revokeAllEnrollTokens } from '../api/enroll';
 import { getUpdateStatus, type UpdateStatus } from '../api/updates';
 import { Link } from 'react-router';
-import { useArrivals, type ArrivalState } from '../enroll/arrivals';
+import { ARRIVAL_LABEL, arrivalNews, useArrivals, type Arrival } from '../enroll/arrivals';
 import { addressProblem, wifiProblem } from '../enroll/checks';
 import { agentApkUrl, buildProvisioningPayload, serverBaseUrl, type WifiSecurity } from '../enroll/provisioning';
 import {
@@ -173,12 +173,49 @@ function qrSteps(wifiInCode: boolean): ReactNode[] {
   ];
 }
 
-const ARRIVAL_LABEL: Record<ArrivalState, string> = {
-  settingUp: 'Enrolled, getting its configuration…',
-  online: 'Online',
-  silent: 'Enrolled, hasn’t checked in yet',
-  offline: 'Enrolled, but not heard from since',
-};
+/** How long a piece of arrival news stays in the live region: read by then, and not left for browse mode to find. */
+const NEWS_MS = 7000;
+
+interface News {
+  id: number;
+  text: string;
+  /** When it leaves the live region. */
+  until: number;
+}
+
+/**
+ * What a screen reader hears about the devices enrolling: each new device or change of state once, as it happens
+ * (several at once counted), and that the page stopped looking. Each piece is its own keyed node that leaves after
+ * {@link NEWS_MS}, as the toasts' announcements do: the same sentence twice (a second stop, two "Scanner: Online."
+ * looks apart) is a new node, so it is read again. `active` false (no code yet, a server without the list): nothing.
+ * `clear` empties it (Look again: the stop it says no longer holds).
+ */
+function useArrivalNews(arrivals: Arrival[], active: boolean, watching: boolean): { news: News[]; clear: () => void } {
+  const [news, setNews] = useState<News[]>([]);
+  const seq = useRef(0);
+  const seen = useRef<Arrival[]>([]);
+  const wasWatching = useRef(watching);
+  useEffect(() => {
+    if (!active) return;
+    const lines = arrivalNews(seen.current, arrivals);
+    seen.current = arrivals;
+    if (wasWatching.current && !watching) lines.push('Stopped looking for new devices after 30 minutes.');
+    wasWatching.current = watching;
+    if (!lines.length) return;
+    const id = ++seq.current;
+    setNews((n) => [...n.slice(-4), { id, text: lines.join(' '), until: Date.now() + NEWS_MS }]);
+  }, [arrivals, active, watching]);
+  useEffect(() => {
+    if (!news.length) return;
+    const t = setTimeout(
+      () => setNews((n) => n.filter((x) => x.until > Date.now())),
+      Math.max(0, news[0].until - Date.now()) + 1,
+    );
+    return () => clearTimeout(t);
+  }, [news]);
+  const clear = useCallback(() => setNews([]), []);
+  return { news, clear };
+}
 
 /** Enroll. Classic: pages/EnrollPage.tsx. */
 export function EnrollPage() {
@@ -219,6 +256,14 @@ export function EnrollPage() {
   /** Server time of the first code made on this visit: devices enrolled since then show up on the page. */
   const [since, setSince] = useState<number | undefined>(undefined);
   const { arrivals, watching, unsupported: arrivalsUnsupported, watchAgain } = useArrivals(since);
+  const { news: arrivalSaid, clear: clearArrivalNews } = useArrivalNews(arrivals, since != null && !arrivalsUnsupported, watching);
+  const arrivalsHead = useRef<HTMLHeadingElement>(null);
+  const lookAgain = () => {
+    clearArrivalNews();
+    watchAgain();
+    // "Look again" goes away when the page looks again: keep focus on the list instead of losing it to the page.
+    arrivalsHead.current?.focus();
+  };
 
   const [update, setUpdate] = useState<UpdateStatus | null>(null);
 
@@ -512,7 +557,11 @@ export function EnrollPage() {
                 />
               </Field>
               <Field label="Security" size="sm">
-                <Select value={wifiSec} onChange={(e) => setWifiSec(e.target.value as WifiSecurity)}>
+                <Select
+                  value={wifiSec}
+                  aria-describedby={wifiIssue ? 'v2-enroll-wifi-issue' : undefined}
+                  onChange={(e) => setWifiSec(e.target.value as WifiSecurity)}
+                >
                   <option value="WPA">WPA / WPA2</option>
                   <option value="WEP">WEP</option>
                   <option value="NONE">Open</option>
@@ -526,19 +575,24 @@ export function EnrollPage() {
                     value={wifiPass}
                     onChange={(e) => setWifiPass(e.target.value)}
                     autoComplete="new-password"
+                    aria-describedby={wifiIssue ? 'v2-enroll-wifi-issue' : undefined}
                   />
                 </Field>
               ) : null}
             </div>
-            {wifiIssue ? (
-              <Callout tone="warn" icon={<IconWarning size={16} />} role="status">
-                {wifiIssue}
-              </Callout>
-            ) : wifiSec !== 'NONE' ? (
-              <Callout tone="warn" icon={<IconWarning size={16} />}>
-                The Wi-Fi password is written into the QR code. Anyone who photographs the code can read it.
-              </Callout>
-            ) : null}
+            {/* One live region for both notes, there while Wi-Fi is on: a note that appears or changes as the admin
+                types is read out, which a region created with its text often is not. */}
+            <div role="status" id={wifiIssue ? 'v2-enroll-wifi-issue' : undefined} className="v2-enroll__wifinote">
+              {wifiIssue ? (
+                <Callout tone="warn" icon={<IconWarning size={16} />}>
+                  {wifiIssue}
+                </Callout>
+              ) : wifiSec !== 'NONE' ? (
+                <Callout tone="warn" icon={<IconWarning size={16} />}>
+                  The Wi-Fi password is written into the QR code. Anyone who photographs the code can read it.
+                </Callout>
+              ) : null}
+            </div>
             <span className="v2-enroll__help">
               {wifiFrom ? `Filled in from ${wifiFrom}. ` : ''}Changes here only affect this code.
             </span>
@@ -659,12 +713,14 @@ export function EnrollPage() {
         )}
       </TabPanel>
       {since != null && !arrivalsUnsupported ? (
-        <div className="v2-enroll__arrivals" role="status" aria-live="polite">
-          <span className="v2-enroll__wifilabel">Enrolled while this page is open</span>
+        <div className="v2-enroll__arrivals">
+          <h3 id="v2-enroll-arrivals" className="v2-enroll__arrivalshead" tabIndex={-1} ref={arrivalsHead}>
+            Enrolled while this page is open
+          </h3>
           {!watching ? (
             <span className="v2-enroll__help">
               Stopped looking for new devices after 30 minutes.{' '}
-              <LinkButton tone="inline" onClick={watchAgain}>
+              <LinkButton tone="inline" onClick={lookAgain}>
                 Look again
               </LinkButton>
             </span>
@@ -674,7 +730,7 @@ export function EnrollPage() {
               <span className="v2-enroll__help">No device yet. A device shows here within seconds of enrolling.</span>
             ) : null
           ) : (
-            <ul className="v2-enroll__arrivallist">
+            <ul className="v2-enroll__arrivallist" aria-labelledby="v2-enroll-arrivals">
               {arrivals.map((a) => (
                 <li key={a.number}>
                   <Link to={paths.device(a.number)}>{a.name}</Link>
@@ -685,6 +741,12 @@ export function EnrollPage() {
           )}
         </div>
       ) : null}
+      {/* Not the list: a look every 5 s would re-read all of it. Each new device or change of state, once. */}
+      <div className="v2-visually-hidden" role="status">
+        {arrivalSaid.map((n) => (
+          <p key={n.id}>{n.text}</p>
+        ))}
+      </div>
       <div className="v2-enroll__stop">
         <span className="v2-enroll__help">
           A code shared further than meant? Stop every code that still works; enrolled devices stay enrolled.

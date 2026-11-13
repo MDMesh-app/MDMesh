@@ -145,6 +145,17 @@
   padding-top: 16px;
   border-top: 1px solid var(--line-soft);
 }
+.v2 .v2-enroll__arrivalshead {
+  margin: 0;
+  font-size: inherit;
+  font-weight: 500;
+  line-height: inherit;
+}
+/* Empty, the Wi-Fi note's live region leaves the layout (no box, no flex gap) but stays in the accessibility tree:
+   with display: none, its first text (Open → WPA) would be a region added with its content, which is often not read. */
+.v2 .v2-enroll__wifinote:empty {
+  position: absolute;
+}
 .v2 .v2-enroll__arrivallist {
   display: flex;
   flex-direction: column;

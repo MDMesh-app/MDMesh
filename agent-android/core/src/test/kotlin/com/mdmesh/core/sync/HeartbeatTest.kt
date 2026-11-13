@@ -15,10 +15,15 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import com.mdmesh.core.install.DownloadCache
 import java.io.IOException
 
 class HeartbeatTest {
+
+    @get:Rule val cacheDir = TemporaryFolder()
 
     private val scope = TestScope()
     private var finishedAt: Long? = null
@@ -194,5 +199,47 @@ class HeartbeatTest {
         heartbeat.join()
         assertEquals(1, api.checkInRequests.size)
         assertEquals(listOf("handed-off check-in did not run; the next heartbeat retries"), logs)
+    }
+
+    @Test
+    fun `each heartbeat tidies before its check-in, also when the server is unreachable`() = runTest {
+        val api = FakeMdmApi().apply { checkInThrows = IOException("offline") }
+        val order = mutableListOf<String>()
+        val result = runCatching {
+            Heartbeat.checkIn(coordinator(api), {}, { testScheduler.currentTime }, tidy = { order += "tidy" }) {
+                order += "heal"
+            }
+        }
+        assertEquals("offline", result.exceptionOrNull()?.message)
+        assertEquals(listOf("tidy", "heal"), order)
+    }
+
+    @Test
+    fun `a tidy that fails is logged and the check-in still runs`() = runTest {
+        val api = FakeMdmApi()
+        val logs = mutableListOf<String>()
+        Heartbeat.checkIn(coordinator(api), { logs += it }, { testScheduler.currentTime }, tidy = {
+            throw IOException("disk")
+        }) {}
+        assertEquals(1, api.checkInRequests.size)
+        assertEquals(listOf("tidy failed: disk"), logs)
+    }
+
+    @Test
+    fun `heartbeats remove this process's old APK leftover with no install or restart`() = runTest {
+        var wall = 10 * 60 * 60_000L
+        val downloads = DownloadCache({ cacheDir.root }, owner = 123, now = { wall })
+        val leftover = cacheDir.newFile("mdm-install-123-5.apk").apply { setLastModified(wall) }
+        val coordinator = coordinator(FakeMdmApi())
+        suspend fun heartbeat() =
+            Heartbeat.checkIn(coordinator, {}, { testScheduler.currentTime }, tidy = { downloads.sweepIfDue() }) {}
+
+        heartbeat()
+        assertTrue("too fresh for this process's own file", leftover.exists())
+        repeat(6) { // ten-minute heartbeats for the next hour
+            wall += 10 * 60_000L
+            heartbeat()
+        }
+        assertFalse(leftover.exists())
     }
 }

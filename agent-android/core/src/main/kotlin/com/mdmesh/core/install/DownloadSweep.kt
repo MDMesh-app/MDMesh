@@ -2,6 +2,7 @@ package com.mdmesh.core.install
 
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Removes APK downloads a dead process left behind. An install deletes its own download when it ends, but a process
@@ -11,12 +12,15 @@ import java.util.concurrent.ConcurrentHashMap
  * named files without it) is a dead process's, since the agent runs in one process: it goes at once, however fresh,
  * so the sweep at the next start is enough. A file of this process goes only when no install is using it AND it
  * hasn't been written for [MIN_AGE_MS], longer than any download or commit takes, so a file in use is never touched
- * even if the bookkeeping were wrong. (A reused process id only makes a leftover wait for that age rule.)
+ * even if the bookkeeping were wrong. (A reused process id only makes a leftover wait for that age rule.) The
+ * heartbeat sweeps every [PERIOD_MS] or so, so such a file goes soon after that age without another start or install.
  */
 internal object DownloadSweep {
     const val PREFIX = "mdm-install-"
     const val SUFFIX = ".apk"
     const val MIN_AGE_MS = 60 * 60_000L
+    /** How often the periodic sweep may list the cache: a few heartbeats apart. */
+    const val PERIOD_MS = 15 * 60_000L
 
     fun name(owner: Int, id: Long): String = "$PREFIX$owner-${java.lang.Long.toUnsignedString(id)}$SUFFIX"
 
@@ -38,7 +42,8 @@ internal object DownloadSweep {
 
 /**
  * The APK downloads of this process: names each one, protects it from the sweep from before its first byte until
- * [release], and sweeps what a dead process left whenever a new download starts.
+ * [release], and sweeps what a dead process left whenever a new download starts and, through [sweepIfDue], from the
+ * heartbeat.
  */
 internal class DownloadCache(
     private val dir: () -> File,
@@ -47,6 +52,8 @@ internal class DownloadCache(
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     private val inUse: MutableSet<File> = ConcurrentHashMap.newKeySet()
+    /** When the cache was last swept; [Long.MIN_VALUE] for never. */
+    private val lastSweepAt = AtomicLong(Long.MIN_VALUE)
 
     /** Blocking (it lists and deletes files): call it off the main thread. */
     fun newFile(): File {
@@ -60,5 +67,24 @@ internal class DownloadCache(
     }
 
     /** Returns the leftovers it deleted. */
-    fun sweep(): List<File> = DownloadSweep.sweep(dir(), inUse.toSet(), now(), owner)
+    fun sweep(): List<File> {
+        val at = now()
+        lastSweepAt.set(at)
+        return DownloadSweep.sweep(dir(), inUse.toSet(), at, owner)
+    }
+
+    /**
+     * [sweep], unless the cache was swept less than [DownloadSweep.PERIOD_MS] ago (by any sweep). A wall clock set back
+     * makes it due at once rather than for the length of the change. Of concurrent calls, at most one sweeps.
+     */
+    fun sweepIfDue(): List<File> {
+        val at = now()
+        val last = lastSweepAt.get()
+        val due = last == Long.MIN_VALUE || at < last || at - last >= DownloadSweep.PERIOD_MS
+        return if (due && lastSweepAt.compareAndSet(last, at)) {
+            DownloadSweep.sweep(dir(), inUse.toSet(), at, owner)
+        } else {
+            emptyList()
+        }
+    }
 }

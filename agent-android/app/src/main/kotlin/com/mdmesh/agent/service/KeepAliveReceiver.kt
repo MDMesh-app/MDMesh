@@ -7,6 +7,7 @@ import android.os.PowerManager
 import android.util.Log
 import com.mdmesh.core.config.ConfigApplier
 import com.mdmesh.core.di.AgentScope
+import com.mdmesh.core.install.InstallManager
 import com.mdmesh.core.sync.CheckInCoordinator
 import com.mdmesh.core.sync.Heartbeat
 import com.mdmesh.core.sync.SyncStatus
@@ -35,6 +36,7 @@ class KeepAliveReceiver : BroadcastReceiver() {
     @Inject lateinit var coordinator: CheckInCoordinator
     @Inject lateinit var configApplier: ConfigApplier
     @Inject lateinit var syncStatus: SyncStatus
+    @Inject lateinit var installManager: InstallManager
     @Inject @AgentScope lateinit var scope: CoroutineScope
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -57,7 +59,13 @@ class KeepAliveReceiver : BroadcastReceiver() {
                 keepAwake = { timeoutMs -> wakeLock(context, timeoutMs) },
             ),
         ) {
-            Heartbeat.checkIn(coordinator, { Log.i(TAG, it) }) {
+            // Removes an APK leftover of this process once it is old enough (rate-limited), so that doesn't wait
+            // for another install or a restart.
+            Heartbeat.checkIn(
+                coordinator,
+                { Log.i(TAG, it) },
+                tidy = { installManager.sweepLeftoverDownloads(ifDue = true) },
+            ) {
                 try {
                     configApplier.selfHealWifiRadio { syncStatus.lastSuccessAtMs }
                 } catch (e: CancellationException) {

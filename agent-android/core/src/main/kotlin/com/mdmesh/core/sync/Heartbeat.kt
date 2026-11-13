@@ -75,17 +75,27 @@ object Heartbeat {
     }
 
     /**
-     * The heartbeat's work: the Wi-Fi self-heal, then a check-in. If one is already running it hands the request to
-     * it and waits for the check-in that serves it, so that check-in also runs under the heartbeat's wakelock. [clock]
-     * is monotonic milliseconds.
+     * The heartbeat's work: local upkeep ([tidy], such as removing APK leftovers; it runs even when the server is out
+     * of reach, and its failure is only logged), the Wi-Fi self-heal, then a check-in. If one is already running it
+     * hands the request to it and waits for the check-in that serves it, so that check-in also runs under the
+     * heartbeat's wakelock. [clock] is monotonic milliseconds.
      */
+    @Suppress("TooGenericExceptionCaught") // upkeep never stops the check-in
     suspend fun checkIn(
         coordinator: CheckInCoordinator,
         log: (String) -> Unit,
         clock: () -> Long = { TimeUnit.NANOSECONDS.toMillis(System.nanoTime()) },
+        tidy: suspend () -> Unit = {},
         selfHeal: suspend () -> Unit,
     ) {
         val start = clock()
+        try {
+            tidy()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log("tidy failed: ${e.message}")
+        }
         selfHeal()
         // Never queue behind a running cycle (an install holds it for minutes): it checks in for us when it can.
         when (coordinator.runOrHandOff()) {

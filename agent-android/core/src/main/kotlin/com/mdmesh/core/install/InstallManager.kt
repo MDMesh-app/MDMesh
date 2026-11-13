@@ -201,11 +201,14 @@ class InstallManager @Inject constructor(
     }
 
     /**
-     * Deletes APK downloads a dead process left behind (a download also does this when it starts). For service start,
-     * so a leftover doesn't wait for the next install.
+     * Deletes APK downloads a dead process left behind (a download also does this when it starts), and this process's
+     * own that no install holds and that are past [DownloadSweep.MIN_AGE_MS]. At service start, so a leftover doesn't
+     * wait for the next install; [ifDue] for the heartbeat, which lists the cache at most every
+     * [DownloadSweep.PERIOD_MS], so a leftover of this process goes soon after that age while the agent keeps running.
+     * Never throws.
      */
-    suspend fun sweepLeftoverDownloads() = withContext(Dispatchers.IO) {
-        runCatching { downloads.sweep() }
+    suspend fun sweepLeftoverDownloads(ifDue: Boolean = false) = withContext(Dispatchers.IO) {
+        runCatching { if (ifDue) downloads.sweepIfDue() else downloads.sweep() }
             .onSuccess { if (it.isNotEmpty()) Log.i(TAG, "removed ${it.size} leftover APK download(s)") }
             .onFailure { Log.w(TAG, "leftover APK sweep failed", it) }
         Unit

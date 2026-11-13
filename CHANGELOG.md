@@ -182,8 +182,8 @@ Fixes
   longer each time, up to 5 minutes. Needs agent 0.5.0.
 - Agent: if Android stops the agent's service, it comes back within 10 minutes (with its notification). Needs agent
   0.5.0.
-- Agent: APK downloads left behind when the agent was stopped during an install are removed when the agent next
-  starts or installs an app. Needs agent 0.5.0.
+- Agent: APK downloads left behind by an interrupted install are removed when the agent next starts or installs an
+  app, and otherwise by the agent's regular heartbeat once they are an hour old. Needs agent 0.5.0.
 - Agent: the device timeline no longer shows a network change each time the agent's service starts. Needs agent 0.5.0.
 - Console accessibility: inputs, icon buttons, toggles, status dots and bars reach 3:1 contrast in both themes, help
   and status text is darker, the selected tab, section and page are outlined, and disabled settings stay readable.

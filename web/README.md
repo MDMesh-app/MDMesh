@@ -38,6 +38,7 @@ src/
   api/          REST calls
   auth/         session, sign-in guard, safe return paths
   enroll/       enrollment QR payload
+  whatsnew/     the What's new dialog, built from CHANGELOG.md
   tokens.css    design tokens and base styles; fonts.css self-hosts IBM Plex
 ```
 

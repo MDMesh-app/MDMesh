@@ -10,13 +10,21 @@ import com.mdmesh.proto.CommandResult
 import com.mdmesh.proto.CommandStatus
 import com.mdmesh.core.net.ResponseEnvelope
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -36,6 +44,25 @@ class CheckInCoordinatorTest {
         override suspend fun handle(command: CommandEnvelope): CommandResult = awaitCancellation()
     }
 
+    /** Runs until its gate opens, like an install waiting on the platform. */
+    private class GateHandler(@Volatile var gate: CompletableDeferred<Unit> = CompletableDeferred()) : CommandHandler {
+        override val type: String = "test.gate"
+        override suspend fun handle(command: CommandEnvelope): CommandResult {
+            gate.await()
+            return CommandResults.done(command)
+        }
+    }
+
+    /** Remembers the thread its command ran on. */
+    private open class ThreadProbeHandler : CommandHandler {
+        override val type: String = "test.thread"
+        @Volatile var ranOn: Thread? = null
+        override suspend fun handle(command: CommandEnvelope): CommandResult {
+            ranOn = Thread.currentThread()
+            return CommandResults.done(command)
+        }
+    }
+
     /** Stands in for SharedPreferences: what a new process would read back. */
     private class FakeBackup : PendingResults.Backup {
         var raw: String? = null
@@ -43,32 +70,45 @@ class CheckInCoordinatorTest {
         override fun write(raw: String?) { this.raw = raw }
     }
 
-    private fun coordinator(
+    // A test factory: every parameter past the first two is an optional override with a working default.
+    @Suppress("LongParameterList")
+    private fun TestScope.coordinator(
         api: FakeMdmApi,
         pending: PendingResults,
-        identityId: String = "dev-1",
+        identityId: String? = "dev-1",
         syncStatus: SyncStatus = SyncStatus(),
         installIntegrity: InstallIntegrityPolicy = InstallIntegrityPolicy(),
+        probe: ThreadProbeHandler = ThreadProbeHandler(),
+        gate: GateHandler = GateHandler(),
+        // Virtual-time tests run the cycle on the test scheduler; one test checks the real dispatcher.
+        ioDispatcher: CoroutineDispatcher = StandardTestDispatcher(testScheduler),
+        events: com.mdmesh.core.telemetry.EventSink? = null,
+        tokens: FakeTokenProvider = FakeTokenProvider("t"),
+        identity: FakeIdentity = FakeIdentity(initialId = identityId, initialSecret = "sek-1"),
     ): CheckInCoordinator {
-        val identity = FakeIdentity(initialId = identityId, initialSecret = "sek-1")
-        val eventSink = object : com.mdmesh.core.telemetry.EventSink {
+        val eventSink = events ?: object : com.mdmesh.core.telemetry.EventSink {
             override fun record(type: String, detail: String?) {}
             override fun drain() = emptyList<com.mdmesh.proto.TelemetryEventDto>()
             override fun restore(events: List<com.mdmesh.proto.TelemetryEventDto>) {}
         }
-        val enrollment = EnrollmentManager(api, identity, FakeTokenProvider("t"), FakeCapabilitySource(), eventSink)
+        // One SyncStatus for both, as in production (a singleton): enrollment reads the check-ins the cycle records.
+        val enrollment = EnrollmentManager(
+            api, identity, tokens, FakeCapabilitySource(), eventSink,
+            EnrollmentEnvironment(syncStatus = syncStatus),
+        )
         return CheckInCoordinator(
             api = api,
             enrollment = enrollment,
             identity = identity,
             capabilitySource = FakeCapabilitySource(),
-            dispatcher = CommandDispatcher(listOf(TestHandler(), HangingHandler())),
+            dispatcher = CommandDispatcher(listOf(TestHandler(), HangingHandler(), probe, gate)),
             pending = pending,
             stateSource = { null },
             telemetrySource = { null },
             eventSink = eventSink,
             syncStatus = syncStatus,
             installIntegrity = installIntegrity,
+            ioDispatcher = ioDispatcher,
         )
     }
 
@@ -96,6 +136,51 @@ class CheckInCoordinatorTest {
         assertEquals(1, buffered.size)
         assertEquals("c1", buffered.first().commandId)
         assertEquals(CommandStatus.DONE, buffered.first().status)
+    }
+
+    @Test
+    fun `the cycle and its commands run off the caller's thread`() = runTest {
+        // The foreground service calls runOnce from the main thread, which the kiosk HOME shares: an apps.scan,
+        // apps.icons or APK hash there must not block it.
+        val api = FakeMdmApi().apply {
+            checkInResponse = ResponseEnvelope(
+                status = "OK",
+                data = AgentCheckInResponse(commands = listOf(command("c1").copy(type = "test.thread"))),
+            )
+        }
+        val probe = ThreadProbeHandler()
+        val caller = Thread.currentThread()
+
+        coordinator(api, PendingResults(), probe = probe, ioDispatcher = Dispatchers.IO).runOnce()
+
+        val ranOn = probe.ranOn
+        assertNotNull("the command ran", ranOn)
+        assertNotSame("command ran on the caller's thread", caller, ranOn)
+        assertEquals(1, api.checkInRequests.size)
+    }
+
+    /** Survives a "process restart": a new EventLog on the same store. */
+    private class FakeEventStore : com.mdmesh.core.telemetry.EventLog.Store {
+        val values = mutableMapOf<String, String>()
+        override fun get(key: String): String? = values[key]
+        override fun put(vararg changes: Pair<String, String?>) {
+            for ((key, value) in changes) if (value == null) values.remove(key) else values[key] = value
+        }
+        override fun flush() = Unit
+    }
+
+    @Test
+    fun `buffered events are kept until a check-in carrying them succeeds`() = runTest {
+        val store = FakeEventStore()
+        com.mdmesh.core.telemetry.EventLog(store).record("boot")
+        val api = FakeMdmApi().apply { checkInThrows = IOException("network down") }
+
+        runCatching { coordinator(api, PendingResults(), events = com.mdmesh.core.telemetry.EventLog(store)).runOnce() }
+        api.checkInThrows = null
+        coordinator(api, PendingResults(), events = com.mdmesh.core.telemetry.EventLog(store)).runOnce()
+
+        assertEquals(listOf("boot"), api.checkInRequests.last().events.map { it.type })
+        assertTrue("gone once delivered", com.mdmesh.core.telemetry.EventLog(store).drain().isEmpty())
     }
 
     @Test
@@ -158,6 +243,234 @@ class CheckInCoordinatorTest {
         assertEquals("second cycle must wait for the in-flight one", 1, api.checkInRequests.size)
         api.checkInGate!!.complete(Unit)
         joinAll(first, second)
+        assertEquals(2, api.checkInRequests.size)
+    }
+
+    @Test
+    fun `a turned-away request is handed to the running cycle and returns once served`() = runTest {
+        val gate = GateHandler()
+        val api = FakeMdmApi().apply {
+            checkInResponse = ResponseEnvelope(
+                status = "OK",
+                data = AgentCheckInResponse(commands = listOf(command("c1").copy(type = "test.gate"))),
+            )
+        }
+        val coordinator = coordinator(api, PendingResults(), gate = gate)
+
+        val running = launch { coordinator.runOnce() } // an install is running in it
+        testScheduler.advanceUntilIdle()
+        val heartbeats = (1..3).map { async { coordinator.runOrHandOff() } }
+        testScheduler.advanceUntilIdle()
+        assertEquals("no cycle of their own while one runs", 1, api.checkInRequests.size)
+        assertTrue("they wait to be served", heartbeats.none { it.isCompleted })
+
+        api.checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse())
+        gate.gate.complete(Unit)
+        running.join()
+        assertEquals(List(3) { CheckInOutcome.SERVED }, heartbeats.awaitAll())
+        assertEquals("one trailing check-in serves them all", 2, api.checkInRequests.size)
+        assertEquals("it carries the install's result", listOf("c1"),
+            api.checkInRequests.last().results.map { it.commandId })
+    }
+
+    @Test
+    fun `an idle coordinator runs the request itself`() = runTest {
+        val api = FakeMdmApi()
+        assertEquals(CheckInOutcome.RAN, coordinator(api, PendingResults()).runOrHandOff())
+        assertEquals(1, api.checkInRequests.size)
+    }
+
+    @Test
+    fun `a request turned away during the trailing cycle gets one more`() = runTest {
+        val gate = GateHandler()
+        val api = FakeMdmApi().apply {
+            checkInResponse = ResponseEnvelope(
+                status = "OK",
+                data = AgentCheckInResponse(commands = listOf(command("c1").copy(type = "test.gate"))),
+            )
+        }
+        val coordinator = coordinator(api, PendingResults(), gate = gate)
+        val running = launch { coordinator.runOnce() }
+        testScheduler.advanceUntilIdle()
+        val first = async { coordinator.runOrHandOff() }
+        testScheduler.advanceUntilIdle()
+
+        api.checkInResponse = ResponseEnvelope(
+            status = "OK",
+            data = AgentCheckInResponse(commands = listOf(command("c2").copy(type = "test.gate"))),
+        )
+        val firstGate = gate.gate
+        gate.gate = CompletableDeferred()
+        firstGate.complete(Unit) // the trailing cycle starts, and gets a second install
+        testScheduler.advanceUntilIdle()
+        val second = async { coordinator.runOrHandOff() }
+        testScheduler.advanceUntilIdle()
+
+        api.checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse())
+        gate.gate.complete(Unit)
+        running.join()
+        assertEquals(List(2) { CheckInOutcome.SERVED }, listOf(first.await(), second.await()))
+        assertEquals(3, api.checkInRequests.size)
+        assertEquals(listOf("c2"), api.checkInRequests.last().results.map { it.commandId })
+    }
+
+    @Test
+    fun `trailing cycles are bounded`() = runTest {
+        // Every cycle gets a command, and every command brings another request: the holder still lets go.
+        lateinit var coordinator: CheckInCoordinator
+        val waiters = mutableListOf<kotlinx.coroutines.Deferred<CheckInOutcome>>()
+        val api = FakeMdmApi().apply {
+            checkInResponse = ResponseEnvelope(
+                status = "OK",
+                data = AgentCheckInResponse(commands = listOf(command("c").copy(type = "test.thread"))),
+            )
+        }
+        val probe = object : ThreadProbeHandler() {
+            var next = 0
+            override suspend fun handle(command: CommandEnvelope): CommandResult {
+                // A new command id each time: the dispatcher never runs the same command twice.
+                api.checkInResponse = ResponseEnvelope(
+                    status = "OK",
+                    data = AgentCheckInResponse(commands = listOf(command("c${++next}").copy(type = "test.thread"))),
+                )
+                waiters += async { coordinator.runOrHandOff() }
+                repeat(5) { kotlinx.coroutines.yield() } // let it start, switch dispatchers and be turned away
+                return CommandResults.done(command)
+            }
+        }
+        coordinator = coordinator(api, PendingResults(), probe = probe)
+        coordinator.runOnce()
+        testScheduler.advanceUntilIdle()
+
+        assertEquals("one cycle plus at most three trailing", 1 + CheckInCoordinator.MAX_TRAILING_CYCLES,
+            api.checkInRequests.size)
+        assertTrue("every waiter returned", waiters.all { it.isCompleted })
+    }
+
+    @Test
+    fun `a waiter is let go, unserved, when the running cycle fails`() = runTest {
+        val api = FakeMdmApi().apply {
+            checkInGate = CompletableDeferred()
+            checkInThrows = IOException("network down")
+        }
+        val coordinator = coordinator(api, PendingResults())
+        val running = launch { runCatching { coordinator.runOnce() } }
+        testScheduler.advanceUntilIdle()
+        val waiter = async { coordinator.runOrHandOff() }
+        testScheduler.advanceUntilIdle()
+
+        api.checkInGate!!.complete(Unit)
+        testScheduler.advanceUntilIdle()
+        assertTrue("released, not left waiting forever", waiter.isCompleted)
+        assertEquals(CheckInOutcome.NOT_SERVED, waiter.await())
+        assertEquals("no trailing cycle after a failed one", 1, api.checkInRequests.size)
+        running.join()
+    }
+
+    @Test
+    fun `a waiter is let go, unserved, when the running cycle is cancelled`() = runTest {
+        val api = FakeMdmApi().apply { checkInGate = CompletableDeferred() }
+        val coordinator = coordinator(api, PendingResults())
+        val running = launch { coordinator.runOnce() } // a worker WorkManager stops, or the service's scope
+        testScheduler.advanceUntilIdle()
+        val waiter = async { coordinator.runOrHandOff() }
+        testScheduler.advanceUntilIdle()
+
+        running.cancel()
+        testScheduler.advanceUntilIdle()
+        assertTrue("released, not left waiting forever", waiter.isCompleted)
+        assertEquals(CheckInOutcome.NOT_SERVED, waiter.await())
+        assertEquals(1, api.checkInRequests.size)
+    }
+
+    @Test
+    fun `a request that finds the lock held but no cycle open runs its own once it can`() = runTest {
+        // The moment a holder opens or lets go: nothing to hand off to, so it must not count as served.
+        val api = FakeMdmApi()
+        val coordinator = coordinator(api, PendingResults())
+        coordinator.mutex.lock()
+        val request = async { coordinator.runOrHandOff() }
+        testScheduler.advanceTimeBy(1_000)
+        testScheduler.runCurrent()
+        assertFalse("waits for the lock instead of pretending", request.isCompleted)
+        assertTrue(api.checkInRequests.isEmpty())
+
+        coordinator.mutex.unlock()
+        assertEquals(CheckInOutcome.RAN, request.await())
+        assertEquals(1, api.checkInRequests.size)
+    }
+
+    @Test
+    fun `a request that arrives before the running cycle has sent joins it instead of adding one`() = runTest {
+        // A cold start by the alarm: the start-up check-in is still enrolling or building its request when the
+        // heartbeat asks; that same request serves both.
+        val api = FakeMdmApi().apply { enrollGate = CompletableDeferred() }
+        val coordinator = coordinator(api, PendingResults(), identityId = null)
+        val running = launch { coordinator.runOnce() }
+        testScheduler.advanceUntilIdle()
+        assertTrue("still enrolling, nothing sent", api.checkInRequests.isEmpty())
+        val waiter = async { coordinator.runOrHandOff() }
+        testScheduler.advanceUntilIdle()
+
+        api.enrollGate!!.complete(Unit)
+        running.join()
+        assertEquals(CheckInOutcome.SERVED, waiter.await())
+        assertEquals("one check-in for both", 1, api.checkInRequests.size)
+    }
+
+    @Test
+    fun `a request that joined a cycle which then ran commands gets their results delivered`() = runTest {
+        // A cold start picks up a queued install while the heartbeat waits: joining saves a check-in only when the
+        // joined one has nothing to report afterwards.
+        val gate = GateHandler()
+        val api = FakeMdmApi().apply {
+            enrollGate = CompletableDeferred()
+            checkInResponse = ResponseEnvelope(
+                status = "OK",
+                data = AgentCheckInResponse(commands = listOf(command("c1").copy(type = "test.gate"))),
+            )
+        }
+        val coordinator = coordinator(api, PendingResults(), identityId = null, gate = gate)
+        val running = launch { coordinator.runOnce() }
+        testScheduler.advanceUntilIdle()
+        val waiter = async { coordinator.runOrHandOff() }
+        testScheduler.advanceUntilIdle()
+
+        api.enrollGate!!.complete(Unit) // the joined cycle sends, and gets c1
+        testScheduler.advanceUntilIdle()
+        api.checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse())
+        gate.gate.complete(Unit)
+        running.join()
+
+        assertEquals(CheckInOutcome.SERVED, waiter.await())
+        assertEquals("one trailing check-in for the results", 2, api.checkInRequests.size)
+        assertEquals(listOf("c1"), api.checkInRequests.last().results.map { it.commandId })
+    }
+
+    @Test
+    fun `a request that joined a cycle which failed before sending is not served`() = runTest {
+        val api = FakeMdmApi().apply {
+            enrollGate = CompletableDeferred()
+            enrollResponse = ResponseEnvelope(status = "ERROR", message = "token used")
+        }
+        val coordinator = coordinator(api, PendingResults(), identityId = null)
+        val running = launch { runCatching { coordinator.runOnce() } }
+        testScheduler.advanceUntilIdle()
+        val waiter = async { coordinator.runOrHandOff() }
+        testScheduler.advanceUntilIdle()
+
+        api.enrollGate!!.complete(Unit)
+        running.join()
+        assertEquals(CheckInOutcome.NOT_SERVED, waiter.await())
+        assertTrue(api.checkInRequests.isEmpty())
+    }
+
+    @Test
+    fun `without a turned-away request there is no extra check-in`() = runTest {
+        val api = FakeMdmApi()
+        val coordinator = coordinator(api, PendingResults())
+        coordinator.runOnce()
+        coordinator.runOnce()
         assertEquals(2, api.checkInRequests.size)
     }
 
@@ -282,5 +595,106 @@ class CheckInCoordinatorTest {
         assertEquals(listOf(listOf("a", "b", "c"), listOf("b", "c")),
             api.checkInRequests.map { r -> r.results.map { it.commandId } })
         assertEquals(listOf("c"), pending.drain().map { it.commandId })
+    }
+
+    /** A [LastCheckIn] that remembers the thread each success was recorded on. */
+    private class ThreadRecordingLastCheckIn(private val inner: InMemoryLastCheckIn = InMemoryLastCheckIn()) :
+        LastCheckIn by inner {
+        @Volatile var writtenOn: Thread? = null
+        override var okAtMs: Long?
+            get() = inner.okAtMs
+            set(v) {
+                writtenOn = Thread.currentThread()
+                inner.okAtMs = v
+            }
+    }
+
+    @Test
+    fun `a check-in on the background path ends a lost-credentials state and tells its watchers`() = runTest {
+        // Marked lost before any check-in succeeded; the cycle runs on the real IO dispatcher, as from the service.
+        val tokens = FakeTokenProvider("t").apply { credentialsLostMark = CredentialsLost.NO_SUCCESS }
+        val last = ThreadRecordingLastCheckIn()
+        val syncStatus = SyncStatus(last)
+        val coordinator = coordinator(
+            FakeMdmApi(), PendingResults(), syncStatus = syncStatus, tokens = tokens, ioDispatcher = Dispatchers.IO,
+        )
+        val seen = mutableListOf<Long?>()
+        val watcher = launch(Dispatchers.Unconfined) { syncStatus.lastSuccessAtMsChanges.collect { seen += it } }
+        val announced = async(Dispatchers.Unconfined) { syncStatus.successes.first() }
+        assertTrue("lost before", CredentialsLost.stillLost(tokens.credentialsLostMark, syncStatus.lastSuccessAtMs))
+
+        val caller = Thread.currentThread()
+        coordinator.runOnce()
+
+        assertNotSame("recorded off the caller's thread", caller, last.writtenOn)
+        announced.await() // the wake channel's "server reachable" hint
+        val success = syncStatus.lastSuccessAtMs
+        assertNotNull(success)
+        assertEquals("the status screen got the success", listOf(null, success), seen)
+        assertFalse(
+            "the screen stops showing it at once",
+            CredentialsLost.stillLost(tokens.credentialsLostMark, syncStatus.lastSuccessAtMs),
+        )
+
+        coordinator.runOnce()
+        assertNull("the next cycle clears the stored mark", tokens.credentialsLostMark)
+        watcher.cancel()
+    }
+
+    @Test
+    fun `a mark made at the last success stays until a later check-in succeeds`() = runTest {
+        // Marker equality, not clocks: a mark stores the success current when it was made, and only a newer success
+        // (a cycle on the background path) ends it.
+        val tokens = FakeTokenProvider("t")
+        val syncStatus = SyncStatus(InMemoryLastCheckIn())
+        val coordinator = coordinator(
+            FakeMdmApi(), PendingResults(), syncStatus = syncStatus, tokens = tokens, ioDispatcher = Dispatchers.IO,
+        )
+        coordinator.runOnce()
+        val markedAt = syncStatus.lastSuccessAtMs
+        tokens.credentialsLostMark = CredentialsLost.markerOf(markedAt)
+        Thread.sleep(2) // the next success is stamped later, as on a device
+
+        coordinator.runOnce() // its enrollment step reads the mark while the success it was made at is still the last
+        assertEquals("kept: no newer success when it was read", markedAt, tokens.credentialsLostMark)
+        assertFalse(
+            "this cycle's success ends it on screen",
+            CredentialsLost.stillLost(markedAt, syncStatus.lastSuccessAtMs),
+        )
+
+        coordinator.runOnce()
+        assertNull("and in the store at the next cycle", tokens.credentialsLostMark)
+    }
+
+    @Test
+    fun `a check-in recovering the server's credential sends it and announces the success`() = runTest {
+        // The first check-in is refused (the server holds another secret); the next cycle resumes the enrollment,
+        // saves the credential the server holds and checks in with it, on the background path.
+        val tokens = FakeTokenProvider("t", attempt = "attempt-0123456789abcdef").apply { resumable = true }
+        val identity = FakeIdentity(initialId = "dev-1", initialSecret = "sek-dead")
+        val syncStatus = SyncStatus()
+        val api = FakeMdmApi().apply {
+            checkInResponse = ResponseEnvelope(status = "ERROR", message = "error.agent.unauthorized")
+            enrollResponse = ResponseEnvelope(
+                status = "OK",
+                data = com.mdmesh.proto.AgentEnrollResponse(
+                    deviceId = "dev-1", deviceSecret = "sek-live", resumeSupported = true,
+                ),
+            )
+        }
+        val coordinator = coordinator(
+            api, PendingResults(), syncStatus = syncStatus, tokens = tokens, identity = identity,
+            ioDispatcher = Dispatchers.IO,
+        )
+        runCatching { coordinator.runOnce() }
+        api.checkInResponse = ResponseEnvelope(status = "OK", data = AgentCheckInResponse())
+        val announced = async(Dispatchers.Unconfined) { syncStatus.successes.first() }
+
+        coordinator.runOnce()
+
+        announced.await()
+        assertEquals(listOf("Bearer sek-dead", "Bearer sek-live"), api.checkInAuth)
+        // What the wake channel reads when that success arrives (Credentials.changes): the recovered secret.
+        assertEquals("sek-live", identity.secret())
     }
 }

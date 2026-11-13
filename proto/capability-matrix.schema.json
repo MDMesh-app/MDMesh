@@ -48,6 +48,11 @@
           "items": { "type": "string" },
           "description": "e.g. silentInstall, silentUninstall, splitApk, fdroidCatalog"
         },
+        "device": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Device-action keys, e.g. lock, wipe; flattened server-side to device.<key> (registry.md)."
+        },
         "remoteControl": {
           "type": "object",
           "additionalProperties": true,

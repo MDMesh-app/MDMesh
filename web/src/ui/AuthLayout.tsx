@@ -25,6 +25,17 @@ export function AuthLayout({
   onSubmit?: FormEventHandler<HTMLFormElement>;
   className?: string;
 }) {
+  // The tab names the page ("Sign in · MDMesh"), as PageHeader does for the signed-in pages (2.4.2).
+  const doc = typeof title === 'string' ? title : undefined;
+  useEffect(() => {
+    if (!doc) return;
+    const prev = document.title;
+    document.title = `${doc} · MDMesh`;
+    return () => {
+      document.title = prev;
+    };
+  }, [doc]);
+
   const body = (
     <>
       <Wordmark size={18} />

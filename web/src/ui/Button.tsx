@@ -97,22 +97,27 @@ export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonEle
   label: string;
   /** `sm` 30×30 r8 (cards, remove, rename) · `md` 32×32 r9 (table rows) · `lg` 34×34 r9 (sidebar). */
   size?: IconButtonSize;
-  /** `strong` uses the control border (#D6DAE1) instead of the card border, for icon buttons beside inputs. */
+  /**
+   * @deprecated Every icon button now has the 3:1 control border (`--control-border`), so `strong` changes nothing.
+   * Kept so existing callers still compile.
+   */
   tone?: 'default' | 'strong';
   children: ReactNode;
 }
 
 /** Square icon-only button. Pass the icon as children. */
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
-  { label, size = 'md', tone = 'default', className, type = 'button', children, ...rest },
+  { label, size = 'md', className, type = 'button', children, ...props },
   ref,
 ) {
+  // `tone` is deprecated and does nothing; taken out here so it never reaches the DOM.
+  const { tone: _deprecated, ...rest } = props;
   return (
     <button
       ref={ref}
       type={type}
       aria-label={label}
-      className={cx('v2-iconbtn', `v2-iconbtn--${size}`, tone === 'strong' && 'v2-iconbtn--strong', className)}
+      className={cx('v2-iconbtn', `v2-iconbtn--${size}`, className)}
       {...rest}
     >
       {children}

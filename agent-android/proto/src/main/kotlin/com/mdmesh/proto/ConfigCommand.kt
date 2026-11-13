@@ -13,7 +13,7 @@ import kotlinx.serialization.Serializable
  * @property location capture cadence (`passive`, `active`, or `off` since 1.4), see [DeviceAction.LOCATION_MODE].
  * @property connectivity (1.5) present = set the live-connection mode (`adaptive` or `alwaysOn`), the same modes as
  *   [DeviceAction.POWER_MODE]; absent = not managed, the device keeps its mode.
- * @property systemUpdate (1.8) present = set the OS update policy; absent = not managed, and a policy the agent set
+ * @property systemUpdate (1.11) present = set the OS update policy; absent = not managed, and a policy the agent set
  *   for an earlier document is cleared (see ConfigApplier).
  */
 @Serializable
@@ -43,7 +43,7 @@ data class ConfigAppPermissions(
 )
 
 /**
- * The `systemUpdate` section (1.8): how the device installs OS updates.
+ * The `systemUpdate` section (1.11): how the device installs OS updates.
  *
  * @property policy [AUTOMATIC], [WINDOWED] or [POSTPONE]; another value is reported unsupported.
  * @property windowStart [WINDOWED] only: minutes after local midnight (0..1439).

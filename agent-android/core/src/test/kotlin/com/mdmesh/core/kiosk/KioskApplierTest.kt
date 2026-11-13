@@ -6,8 +6,10 @@ import com.mdmesh.core.store.KioskStateStore
 import com.mdmesh.kiosk.KioskController
 import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.proto.KioskApplyPayload
+import com.mdmesh.proto.KioskBackgroundImageDto
+import com.mdmesh.proto.KioskThemeDto
 import com.mdmesh.proto.KioskFeaturesDto
-import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -15,36 +17,6 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class KioskApplierTest {
-    private class FakeController(
-        private var enterResult: KioskResult,
-        private val exitResult: KioskResult = KioskResult.Ok,
-        var volumeResult: KioskResult = KioskResult.Ok,
-    ) : KioskController {
-        var entered: List<String>? = null; var exited = false
-        /** Every enter call's allowlist, in order; [failFor] makes an enter with that allowlist fail. */
-        val enters = mutableListOf<List<String>>()
-        var failFor: List<String>? = null
-        /** Every setVolumeLocked call, in order. */
-        val volume = mutableListOf<Boolean>()
-        /** Every setSafeModeBlocked call, in order. */
-        val safeMode = mutableListOf<Boolean>()
-        var safeModeResult: KioskResult = KioskResult.Ok
-        override fun setSafeModeBlocked(blocked: Boolean): KioskResult { safeMode += blocked; return safeModeResult }
-        override fun enter(homeComponent: ComponentName, allowedPackages: List<String>, features: Int): KioskResult {
-            entered = allowedPackages; enters += allowedPackages
-            return if (allowedPackages == failFor) KioskResult.Failed("dpm") else enterResult
-        }
-        override fun exit(): KioskResult { exited = true; return exitResult }
-        override fun setVolumeLocked(locked: Boolean): KioskResult { volume += locked; return volumeResult }
-        override fun isLocked(context: android.content.Context): Boolean = false
-        override fun allowedPackages(): List<String> = entered ?: emptyList()
-    }
-    private class FakeHome : KioskHomeSwitch {
-        val log = mutableListOf<String>()
-        override fun setClaimEnabled(enabled: Boolean) { log += "claim:$enabled" }
-        override fun showLauncher() { log += "launcher" }
-        override fun showOemHome() { log += "oem" }
-    }
     private val home = ComponentName("com.mdmesh.agent", "com.mdmesh.agent.KioskHomeAlias")
     private fun setting(value: Boolean?) = object : SafeModeSetting { override fun current() = value }
 
@@ -57,6 +29,78 @@ class KioskApplierTest {
         assertEquals("com.a", store.load()?.pinPackage)
         assertEquals(listOf("claim:true", "launcher"), h.log)
     }
+    @Test fun `a new kiosk is handed on (background prefetch), a repeated or failed entry is not`() = runTest {
+        val p = KioskApplyPayload(mode = "single", pinPackage = "com.a", allowedPackages = listOf("com.a"))
+        val handed = mutableListOf<KioskApplyPayload>()
+        var locked = false
+        val c = FakeController(KioskResult.Ok)
+        val a = KioskApplier(c, InMemoryKioskStateStore(), FakeHome(), home, onEntered = { handed += it }) { locked }
+        a.enter(p)
+        assertEquals(listOf(p), handed)
+        locked = true
+        a.enter(p) // already in this kiosk: nothing new to fetch
+        assertEquals(1, handed.size)
+        c.failFor = listOf("com.b")
+        a.enter(KioskApplyPayload(mode = "single", pinPackage = "com.b", allowedPackages = listOf("com.b")))
+        assertEquals("a failed entry hands nothing on", 1, handed.size)
+    }
+    @Test fun `the same kiosk with its image at a new URL is not entered again, but the URL is kept`() = runTest {
+        val sha = "a".repeat(64)
+        val p = KioskApplyPayload(
+            mode = "single", pinPackage = "com.a", allowedPackages = listOf("com.a"),
+            theme = KioskThemeDto(backgroundImage = KioskBackgroundImageDto("https://old.example/1.png", sha)),
+        )
+        val image = KioskBackgroundImageDto("https://new.example/1.png", sha)
+        val moved = p.copy(theme = KioskThemeDto(backgroundImage = image))
+        val c = FakeController(KioskResult.Ok); val h = FakeHome(); val store = InMemoryKioskStateStore()
+        val handed = mutableListOf<KioskApplyPayload>()
+        var locked = false
+        val a = KioskApplier(c, store, h, home, onEntered = { handed += it }) { locked }
+        a.enter(p)
+        locked = true
+        h.log.clear()
+        a.enter(moved)
+        assertEquals("not re-entered", 1, c.enters.size)
+        assertEquals("no relaunch", emptyList<String>(), h.log)
+        assertEquals("https://new.example/1.png", store.load()?.theme?.backgroundImage?.url)
+        assertEquals("prefetch from the new URL", "https://new.example/1.png", handed.last().theme.backgroundImage?.url)
+    }
+    @Test fun `a new look for the same kiosk is saved in place, never entered again`() = runTest {
+        val p = KioskApplyPayload(mode = "single", pinPackage = "com.a", allowedPackages = listOf("com.a"))
+        val c = FakeController(KioskResult.Ok); val h = FakeHome(); val store = InMemoryKioskStateStore()
+        var locked = false
+        val a = KioskApplier(c, store, h, home) { locked }
+        a.enter(p)
+        locked = true
+        h.log.clear()
+        val looks = listOf(
+            KioskThemeDto(backgroundColor = "#FFFFFF"),
+            KioskThemeDto(iconSize = "LARGE"),
+            KioskThemeDto(backgroundImage = KioskBackgroundImageDto("https://x/1.png", "c".repeat(64), fit = "fit")),
+        )
+        for (look in looks) {
+            val next = p.copy(theme = look)
+            assertEquals(KioskResult.Ok, a.enter(next))
+            assertEquals("$look: saved", next, store.load())
+        }
+        assertEquals("entered once", 1, c.enters.size)
+        assertEquals("no relaunch", emptyList<String>(), h.log)
+    }
+
+    @Test fun `new lock-task features for the same apps enter again with the new flags, lock task on`() = runTest {
+        val p = KioskApplyPayload(mode = "single", pinPackage = "com.a", allowedPackages = listOf("com.a"))
+        val c = FakeController(KioskResult.Ok); val store = InMemoryKioskStateStore()
+        var locked = false
+        val a = KioskApplier(c, store, FakeHome(), home) { locked }
+        a.enter(p)
+        locked = true
+        val next = p.copy(features = p.features.copy(home = true, notifications = true, systemInfo = true))
+        a.enter(next)
+        assertEquals("entered again", 2, c.enters.size)
+        org.junit.Assert.assertNotEquals("with the new flags", c.featureFlags[0], c.featureFlags[1])
+        assertEquals(next, store.load())
+    }
+
     @Test fun `enter unsupported reverts the home claim and persists nothing`() = runTest {
         val h = FakeHome(); val store = InMemoryKioskStateStore()
         val r = KioskApplier(FakeController(KioskResult.Unsupported), store, h, home) { false }
@@ -216,12 +260,13 @@ class KioskApplierTest {
         assertTrue("the agent stays HOME", h.log.isEmpty())
     }
 
-    @Test fun `a non-forced failed exit leaves state and volume alone`() = runTest {
+    @Test fun `a non-forced failed exit keeps the state and never releases the volume lock`() = runTest {
         val c = FakeController(KioskResult.Ok, exitResult = KioskResult.Failed("dpm"))
         val store = InMemoryKioskStateStore()
         store.save(KioskApplyPayload(features = KioskFeaturesDto(lockVolume = true)))
         assertEquals(KioskResult.Failed("dpm"), KioskApplier(c, store, FakeHome(), home) { true }.exit())
-        assertTrue(c.volume.isEmpty())
+        // The kiosk is locked again as it is (review 4, N1), its volume lock re-asserted, never lifted.
+        assertFalse(false in c.volume)
         assertNotNull(store.load())
     }
 
@@ -237,19 +282,6 @@ class KioskApplierTest {
         store.save(KioskApplyPayload(features = KioskFeaturesDto(lockVolume = true)))
         KioskApplier(c, store, FakeHome(), home) { true }.releaseStaleVolumeLock()
         assertEquals("kiosk with lockVolume -> left locked", listOf(false, false), c.volume)
-    }
-
-    /** Delegates to [InMemoryKioskStateStore]; the first load() reads, then holds that value until [gate] completes. */
-    private class GatedFirstLoadStore(
-        private val inner: KioskStateStore = InMemoryKioskStateStore(),
-    ) : KioskStateStore by inner {
-        val gate = CompletableDeferred<Unit>()
-        private var loads = 0
-        override suspend fun load(): KioskApplyPayload? {
-            val v = inner.load()
-            if (loads++ == 0) gate.await()
-            return v
-        }
     }
 
     @Test fun `stale volume release cannot wipe the lock a concurrent kiosk enter sets`() = runTest {
@@ -273,5 +305,280 @@ class KioskApplierTest {
         assertEquals(KioskResult.Ok, a.exit())
         assertFalse(a.isPersisted())
         assertEquals(listOf("claim:false", "oem"), h.log)
+    }
+
+    // --- An interrupted exit (F6): finished only for the same kiosk, and never against a kiosk-on configuration ---
+
+    private val kioskA = KioskApplyPayload(mode = "single", pinPackage = "com.a", allowedPackages = listOf("com.a"))
+    private val kioskB = KioskApplyPayload(mode = "single", pinPackage = "com.b", allowedPackages = listOf("com.b"))
+
+    private fun applier(
+        c: FakeController = FakeController(KioskResult.Ok),
+        store: KioskStateStore,
+        h: FakeHome = FakeHome(),
+        j: ExitJournal,
+        configuredOn: Boolean,
+    ) = KioskApplier(c, store, h, home, journal = j, desiredKioskOn = { configuredOn }) { false }
+
+    @Test fun `an exit journals the kiosk it exits and ends the entry when done`() = runTest {
+        val j = object : ExitJournal by MemJournal() {
+            val begun = mutableListOf<ExitJournal.Pending>()
+            var ended = 0
+            override fun begin(p: ExitJournal.Pending): Boolean { begun += p; return true }
+            override fun end(): Boolean { ended++; return true }
+        }
+        val store = InMemoryKioskStateStore(); store.save(kioskA)
+        applier(store = store, j = j, configuredOn = false).exit(force = true)
+        assertEquals(listOf(ExitJournal.Pending(true, true, ExitJournal.fingerprint(kioskA))), j.begun)
+        assertEquals(1, j.ended)
+        assertNull(store.load())
+    }
+
+    @Test fun `a refused, unforced exit leaves nothing to resume`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+        val refusing = FakeController(KioskResult.Ok, exitResult = KioskResult.Failed("dpm"))
+        applier(refusing, store, j = j, configuredOn = false).exit()
+        assertNull(j.saved)
+        assertEquals(kioskA, store.load())
+    }
+
+    @Test fun `an exit cut off for the same kiosk, configuration kiosk-off, is finished at the next start`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+        j.saved = ExitJournal.Pending(handBackHome = true, force = true, kiosk = ExitJournal.fingerprint(kioskA))
+        val h = FakeHome()
+        assertTrue(applier(store = store, h = h, j = j, configuredOn = false).resumeInterruptedExit())
+        assertNull("kiosk state cleared", store.load())
+        assertEquals(listOf("claim:false", "oem"), h.log)
+        assertNull(j.saved)
+    }
+
+    @Test fun `a new kiosk entered before the next start drops the stale exit and stays locked`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+        j.saved = ExitJournal.Pending(handBackHome = true, force = true, kiosk = ExitJournal.fingerprint(kioskA))
+        val c = FakeController(KioskResult.Ok)
+        val a = applier(c, store, j = j, configuredOn = false)
+        a.enter(kioskB) // kiosk.enter, config.apply or the boot re-apply, before the launcher starts
+        assertNull("an entry clears the journal", j.saved)
+        assertFalse(a.resumeInterruptedExit())
+        assertEquals(kioskB, store.load())
+        assertFalse(c.exited)
+    }
+
+    @Test fun `a journal for another kiosk than the saved one is dropped, the saved kiosk locked again`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskB)
+        j.saved = ExitJournal.Pending(handBackHome = true, force = true, kiosk = ExitJournal.fingerprint(kioskA))
+        val c = FakeController(KioskResult.Ok); val h = FakeHome()
+        assertFalse(applier(c, store, h, j, configuredOn = false).resumeInterruptedExit())
+        assertEquals(kioskB, store.load())
+        assertFalse(c.exited)
+        assertFalse("claim:false" in h.log)
+        assertEquals("re-asserted, not assumed", listOf(listOf("com.b")), c.enters)
+        assertNull(j.saved)
+    }
+
+    @Test fun `with the configuration saying kiosk on, an interrupted exit rolls back to the kiosk`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+        j.saved = ExitJournal.Pending(handBackHome = true, force = true, kiosk = ExitJournal.fingerprint(kioskA))
+        val c = FakeController(KioskResult.Ok); val h = FakeHome()
+        assertFalse(applier(c, store, h, j, configuredOn = true).resumeInterruptedExit())
+        assertEquals("kiosk kept", kioskA, store.load())
+        assertFalse(c.exited)
+        assertEquals("re-locked to the same kiosk", listOf(listOf("com.a")), c.enters)
+        assertFalse("claim:false" in h.log)
+        assertNull(j.saved)
+    }
+
+    @Test fun `a corrupted or unknown journal entry is ignored and the kiosk stays`() = runTest {
+        for (bad in listOf("", "not-a-fingerprint")) {
+            val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+            j.saved = ExitJournal.Pending(handBackHome = true, force = true, kiosk = bad)
+            val c = FakeController(KioskResult.Ok)
+            assertFalse(applier(c, store, j = j, configuredOn = false).resumeInterruptedExit())
+            assertEquals(kioskA, store.load())
+            assertFalse(c.exited)
+            assertEquals("the saved kiosk is locked again", listOf(listOf("com.a")), c.enters)
+            assertNull(j.saved)
+        }
+    }
+
+    @Test fun `a cut-off exit that already cleared the kiosk state finishes releasing HOME`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore() // state already cleared, HOME not yet
+        j.saved = ExitJournal.Pending(handBackHome = true, force = true, kiosk = ExitJournal.fingerprint(kioskA))
+        val h = FakeHome()
+        assertTrue(applier(store = store, h = h, j = j, configuredOn = false).resumeInterruptedExit())
+        assertEquals(listOf("claim:false", "oem"), h.log)
+        assertNull(j.saved)
+    }
+
+    @Test fun `with the configuration saying kiosk on, a cut-off exit releases nothing`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore()
+        j.saved = ExitJournal.Pending(handBackHome = true, force = true, kiosk = ExitJournal.fingerprint(kioskA))
+        val h = FakeHome()
+        assertFalse(applier(store = store, h = h, j = j, configuredOn = true).resumeInterruptedExit())
+        assertTrue("HOME left to the re-apply of the kiosk-on configuration", h.log.isEmpty())
+        assertNull(j.saved)
+    }
+
+    @Test fun `nothing pending, nothing done`() = runTest {
+        val store = InMemoryKioskStateStore(); store.save(kioskA); val h = FakeHome()
+        assertFalse(applier(store = store, h = h, j = MemJournal(), configuredOn = false).resumeInterruptedExit())
+        assertEquals(kioskA, store.load())
+        assertTrue(h.log.isEmpty())
+    }
+
+    @Test fun `the fingerprint tells kiosks apart and is stable`() {
+        assertEquals(ExitJournal.fingerprint(kioskA), ExitJournal.fingerprint(kioskA.copy()))
+        assertNotEquals(ExitJournal.fingerprint(kioskA), ExitJournal.fingerprint(kioskB))
+        assertNotEquals(ExitJournal.fingerprint(kioskA), ExitJournal.fingerprint(null))
+    }
+
+    // --- Review 3 (R4, R5) ---
+
+    /** R5: process death after kiosk.exit() dropped the allowlist, before the state was cleared; entry unreadable. */
+    @Test fun `an unreadable entry over a half-exited kiosk re-asserts the saved kiosk`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+        j.saved = ExitJournal.Pending(handBackHome = true, force = true, kiosk = "")
+        val c = FakeController(KioskResult.Ok); val h = FakeHome()
+        assertFalse(applier(c, store, h, j, configuredOn = false).resumeInterruptedExit())
+        assertEquals(listOf(listOf("com.a")), c.enters)
+        assertTrue("HOME claimed again", "claim:true" in h.log)
+        assertEquals(kioskA, store.load())
+        assertNull(j.saved)
+    }
+
+    /** R4: kiosk.enter of the kiosk already showing (the short-circuit) still clears a cut-off exit. */
+    @Test fun `re-entering the same kiosk, already locked, clears a cut-off exit`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+        j.saved = ExitJournal.Pending(handBackHome = true, force = true, kiosk = ExitJournal.fingerprint(kioskA))
+        val c = FakeController(KioskResult.Ok)
+        val a = KioskApplier(c, store, FakeHome(), home, journal = j, desiredKioskOn = { false }) { true }
+        a.enter(kioskA)
+        assertNull(j.saved)
+        assertFalse(a.resumeInterruptedExit())
+        assertEquals(kioskA, store.load())
+        assertFalse(c.exited)
+    }
+
+    // --- Review 3 (S2, N1): off the main thread, nothing read or written when nothing is pending ---
+
+    /** S2: nothing pending, so the start doesn't read the configuration at all. */
+    @Test fun `with nothing pending the configuration isn't read`() = runTest {
+        var reads = 0
+        val store = InMemoryKioskStateStore(); store.save(kioskA)
+        val a = KioskApplier(FakeController(KioskResult.Ok), store, FakeHome(), home, journal = MemJournal(),
+            desiredKioskOn = { reads++; true }) { false }
+        assertFalse(a.resumeInterruptedExit())
+        assertEquals(0, reads)
+    }
+
+    /** N1: an entry writes the journal only to clear an entry that is there. */
+    @Test fun `entering with nothing pending doesn't write the journal`() = runTest {
+        var ends = 0
+        val j = object : ExitJournal by MemJournal() { override fun end(): Boolean { ends++; return true } }
+        applier(store = InMemoryKioskStateStore(), j = j, configuredOn = false).enter(kioskA)
+        assertEquals(0, ends)
+    }
+
+    /** S2: the resume (journal and configuration reads, commits) runs on the injected I/O dispatcher. */
+    @Test fun `a start's resume runs on the I-O dispatcher`() = runTest {
+        val pool = java.util.concurrent.Executors.newSingleThreadExecutor { Thread(it, "journal-io") }
+        val io = pool.asCoroutineDispatcher()
+        var readOn: String? = null
+        val j = object : ExitJournal by MemJournal() {
+            override fun pending(): ExitJournal.Pending? { readOn = Thread.currentThread().name; return null }
+        }
+        try {
+            KioskApplier(FakeController(KioskResult.Ok), InMemoryKioskStateStore(), FakeHome(), home, journal = j,
+                io = io) { false }.resumeInterruptedExit()
+        } finally {
+            pool.shutdown()
+        }
+        assertEquals("journal-io", readOn)
+    }
+
+    // --- Review 3 (S3): one try per entry, failures settle in kiosk ---
+
+    private class ThrowingExit : KioskController by FakeController(KioskResult.Ok) {
+        var exits = 0
+        override fun exit(): KioskResult { exits++; error("dpm") }
+    }
+
+    @Test fun `an entry a start already tried is settled in kiosk, not tried again`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+        j.saved = ExitJournal.Pending(true, true, ExitJournal.fingerprint(kioskA), attempts = 1)
+        val c = FakeController(KioskResult.Ok)
+        assertFalse(applier(c, store, j = j, configuredOn = false).resumeInterruptedExit())
+        assertFalse(c.exited)
+        assertEquals(listOf(listOf("com.a")), c.enters)
+        assertEquals(kioskA, store.load())
+        assertNull(j.saved)
+    }
+
+    @Test fun `a step that throws while running marks the entry, which settles in kiosk`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+        val throwing = ThrowingExit()
+        val a = KioskApplier(throwing, store, FakeHome(), home, journal = j, desiredKioskOn = { false }) { false }
+        assertTrue(runCatching { a.exit(force = true) }.isFailure)
+        assertTrue("entry kept, marked", j.saved?.failed == true)
+        val c = FakeController(KioskResult.Ok)
+        assertFalse(applier(c, store, j = j, configuredOn = false).resumeInterruptedExit())
+        assertFalse(c.exited)
+        assertEquals(listOf(listOf("com.a")), c.enters)
+        assertNull(j.saved)
+    }
+
+    @Test fun `a start counts its attempt before the first step`() = runTest {
+        val begun = mutableListOf<ExitJournal.Pending>()
+        val j = object : ExitJournal {
+            var saved: ExitJournal.Pending? = ExitJournal.Pending(true, true, ExitJournal.fingerprint(kioskA))
+            override fun pending() = saved
+            override fun begin(p: ExitJournal.Pending): Boolean { begun += p; saved = p; return true }
+            override fun end(): Boolean { saved = null; return true }
+        }
+        val store = InMemoryKioskStateStore(); store.save(kioskA)
+        assertTrue(applier(store = store, j = j, configuredOn = false).resumeInterruptedExit())
+        assertEquals(1, begun.first().attempts)
+    }
+
+    @Test fun `an entry records the boot it was written in`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+        val begun = mutableListOf<ExitJournal.Pending>()
+        val recording = object : ExitJournal by j {
+            override fun begin(p: ExitJournal.Pending): Boolean { begun += p; return true }
+        }
+        KioskApplier(FakeController(KioskResult.Ok), store, FakeHome(), home, journal = recording, bootId = { 7L }) {
+            false
+        }.exit(force = true)
+        assertEquals(7L, begun.single().boot)
+    }
+
+    // --- Review 4 (N1-N3): an unsettled exit ends in kiosk or with HOME released; a failed relock is retried ---
+
+    @Test fun `an unforced exit refused partway locks the saved kiosk again`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+        val partial = FakeController(KioskResult.Ok, exitResult = KioskResult.Failed("features"))
+        val r = applier(partial, store, j = j, configuredOn = false).exit()
+        assertEquals(KioskResult.Failed("features"), r)
+        assertEquals("relocked to the saved kiosk", listOf(listOf("com.a")), partial.enters)
+        assertEquals(kioskA, store.load())
+        assertNull(j.saved)
+    }
+
+    @Test fun `dropping an entry with no kiosk saved releases HOME`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore()
+        j.saved = ExitJournal.Pending(true, true, ExitJournal.fingerprint(kioskA), failed = true)
+        val h = FakeHome()
+        assertFalse(applier(store = store, h = h, j = j, configuredOn = false).resumeInterruptedExit())
+        assertEquals(listOf("claim:false"), h.log)
+        assertNull(j.saved)
+    }
+
+    @Test fun `a relock that fails keeps an entry, so the next start tries again`() = runTest {
+        val j = MemJournal(); val store = InMemoryKioskStateStore(); store.save(kioskA)
+        j.saved = ExitJournal.Pending(true, true, ExitJournal.fingerprint(kioskA), attempts = 1)
+        val c = FakeController(KioskResult.Ok).apply { failFor = listOf("com.a") }
+        assertFalse(applier(c, store, j = j, configuredOn = false).resumeInterruptedExit())
+        assertEquals(true, j.saved?.failed)
+        assertEquals(ExitJournal.fingerprint(kioskA), j.saved?.kiosk)
     }
 }

@@ -1,0 +1,334 @@
+/* Kiosk background preview. The mock launcher draws in the kiosk's own colours (set per screen, as the launcher does
+   in both themes) at absolute dp positions scaled by the component; the console's own colours come from tokens.css. */
+
+.v2 .v2-kbg__preview {
+  display: block;
+}
+
+/* A <details> lays its content out in a slot, so a grid gap on it never reaches the children: space them with margins
+   (more specific than the children's own margin: 0). */
+.v2 details.v2-kbg__preview > * + * {
+  margin-top: 12px;
+}
+
+.v2 .v2-kbg__preview > summary {
+  cursor: pointer;
+  width: fit-content;
+  padding: 4px 0;
+  line-height: 24px;
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  border-radius: var(--radius-xs);
+}
+
+.v2 .v2-kbg__preview > summary:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.v2 .v2-kbg__lede,
+.v2 .v2-kbg__footnote {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+
+/* Shown (open and on screen): the device's font (kioskFonts.css); data/kioskLauncherLayout KIOSK_FONT measures with
+   the same stack. Only from then on is a face downloaded. */
+.v2 .v2-kbg__preview.is-shown .v2-kbg__screen {
+  font-family: 'Kiosk Roboto', system-ui, sans-serif;
+}
+
+/* Each option wider than its label in either weight (the selected one is bolder): choosing one never moves the
+   controls after it. */
+.v2 .v2-kbg__toolbar .v2-seg__opt {
+  min-width: 68px;
+}
+
+/* The grid scroll control keeps its place while hidden: the toolbar never moves. Hidden, it isn't focusable or
+   announced. */
+.v2 .v2-kbg__scroll-slot {
+  display: flex;
+}
+
+.v2 .v2-kbg__scroll-slot.is-hidden {
+  visibility: hidden;
+}
+
+.v2 .v2-kbg__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  /* Both controls take the row's height (the taller one's), so their tops, bottoms and text line up exactly. */
+  align-items: stretch;
+}
+
+/* ---- large view ---- */
+
+.v2 .v2-kbg__large {
+  display: flex;
+  justify-content: flex-start;
+  min-width: 0;
+}
+
+.v2 .v2-kbg__large-figure {
+  display: grid;
+  gap: 8px;
+  max-width: 100%;
+}
+
+/* The turn stays inside the stage: it never draws over the toolbar or the notices above. */
+.v2 .v2-kbg__large-stage {
+  display: flex;
+  justify-content: flex-start;
+  align-items: flex-start;
+  overflow: clip;
+}
+
+.v2 .v2-kbg__large-turn {
+  transform-origin: center center;
+  transition: none;
+}
+
+/* Only the way there is animated: at the end the turned view replaces it in place, without a transition back. */
+.v2 .v2-kbg__large-turn.is-turning {
+  transition: transform var(--kbg-turn-ms) ease-in-out;
+  transform: translate(var(--kbg-turn-dx), var(--kbg-turn-dy)) rotate(-90deg) scale(var(--kbg-turn-fit));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v2 .v2-kbg__large-turn.is-turning {
+    transition: none;
+  }
+}
+
+.v2 .v2-kbg__large-readout {
+  margin: 0;
+  display: grid;
+  justify-items: start;
+  gap: 4px 12px;
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+
+/* ---- thumbnails ---- */
+
+.v2 .v2-kbg__thumbs {
+  list-style: none;
+  /* Room for the selected device's ring (5 px) above the first row: it never touches the readout above. */
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  justify-content: start;
+  gap: 16px;
+  align-items: start;
+}
+
+.v2 .v2-kbg__thumbs > li {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.v2 .v2-kbg__thumb-button {
+  display: grid;
+  width: fit-content;
+  align-content: start;
+  gap: 8px;
+  justify-items: start;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* Selected: a ring around the device itself, not around the caption's width. */
+.v2 .v2-kbg__thumb-button[aria-pressed='true'] .v2-kbg__device {
+  box-shadow: 0 0 0 1px var(--border-strong), 0 0 0 3px var(--surface), 0 0 0 5px var(--ink);
+}
+
+.v2 .v2-kbg__thumb-button:hover .v2-kbg__device {
+  box-shadow: 0 0 0 1px var(--border-strong), 0 0 0 3px var(--surface), 0 0 0 5px var(--border-strong);
+}
+
+.v2 .v2-kbg__thumb-button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+
+/* ---- the mock screen ---- */
+
+/* The device: a dark bezel (the same in both themes, as hardware is) with a hairline edge that reads on dark pages.
+   Everything on the screen sits at dp x scale from the screen's own edge. */
+.v2 .v2-kbg__device {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  padding: var(--kbg-bezel);
+  border-radius: calc(var(--kbg-corner) + var(--kbg-bezel));
+  background: #16181d;
+  box-shadow: 0 0 0 1px var(--border-strong);
+  line-height: 0;
+}
+
+.v2 .v2-kbg__screen {
+  box-sizing: content-box;
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--kbg-corner);
+  background: var(--kbg-bg);
+  color: var(--kbg-text);
+  /* The browser's fonts until the preview is shown, then the device's (below). */
+  font-family: system-ui, sans-serif;
+  line-height: normal;
+}
+
+.v2 .v2-kbg__camera {
+  position: absolute;
+  border-radius: 50%;
+  background: #050506;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.v2 .v2-kbg__dim {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Placed by the component (fill or fit, around the focal point), the same geometry as the device. */
+.v2 .v2-kbg__img {
+  position: absolute;
+  max-width: none;
+}
+
+.v2 .v2-kbg__dim,
+.v2 .v2-kbg__plate {
+  background: var(--kbg-bg);
+}
+
+.v2 .v2-kbg__plate,
+.v2 .v2-kbg__header,
+.v2 .v2-kbg__icon,
+.v2 .v2-kbg__label,
+.v2 .v2-kbg__exit {
+  position: absolute;
+  box-sizing: border-box;
+}
+
+.v2 .v2-kbg__header {
+  /* sans-serif-medium, as the agent's header (KioskRenderer: TITLE_SP, medium). */
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.v2 .v2-kbg__icon {
+  display: grid;
+  place-items: center;
+  font-weight: 500;
+  background: var(--kbg-text);
+  color: var(--kbg-bg);
+}
+
+.v2 .v2-kbg__label {
+  text-align: center;
+  overflow: hidden;
+}
+
+.v2 .v2-kbg__text-bar {
+  display: block;
+  margin-inline: auto;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.v2 .v2-kbg__header .v2-kbg__text-bar {
+  margin-inline: 0;
+}
+
+/* The lines come laid out from kioskLabelLines, cut where the device cuts them: the browser never breaks, hyphenates or
+   collapses them again. */
+.v2 .v2-kbg__label-line {
+  display: block;
+  white-space: pre;
+  hyphens: none;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+/* Outlined, as on the device: the kiosk background colour, a 1 dp edge and the label in the text colour. */
+.v2 .v2-kbg__exit {
+  text-align: center;
+  font-weight: 500;
+  background: var(--kbg-bg);
+  color: var(--kbg-text);
+  border: solid var(--kbg-text);
+}
+
+/* ---- captions ---- */
+
+.v2 .v2-kbg__caption {
+  display: grid;
+  gap: 4px;
+  font-size: var(--fs-small);
+  color: var(--secondary);
+}
+
+.v2 .v2-kbg__shape-name {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.v2 .v2-kbg__readout {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  color: var(--text);
+}
+
+.v2 .v2-kbg__readout.is-pass svg {
+  color: var(--ok-ink);
+}
+
+.v2 .v2-kbg__readout.is-fail {
+  color: var(--alert-ink);
+}
+
+.v2 .v2-kbg__readout.is-warn {
+  color: var(--warn-ink);
+}
+
+/* A single-app kiosk: the pinned app open over the image (its own surface, so neither plated nor dimmed). */
+.v2 .v2-kbg__pinned {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--kbg-bg);
+  color: var(--kbg-text);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.v2 .v2-kbg__pinned .v2-kbg__pinned-icon {
+  position: static;
+  flex: none;
+}
+
+.v2 .v2-kbg__pinned-name {
+  font-weight: 500;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}

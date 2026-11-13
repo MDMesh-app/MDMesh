@@ -46,3 +46,9 @@ Third-party fonts bundled with the web console (web/):
   the @fontsource/ibm-plex-sans and @fontsource/ibm-plex-mono packages; the
   licence ships with the console at /licenses/IBM-Plex-OFL-1.1.txt
   (web/public/licenses/IBM-Plex-OFL-1.1.txt).
+
+  Roboto, Copyright 2011 The Roboto Project Authors, licensed under the SIL
+  Open Font License, Version 1.1. Self-hosted from the @fontsource/roboto
+  package for the kiosk background preview; the licence ships with the
+  console at /licenses/Roboto-OFL-1.1.txt
+  (web/public/licenses/Roboto-OFL-1.1.txt).

@@ -10,12 +10,17 @@ line under Unreleased.
 
 Upgrading
 - The database adds columns on start: `devices.wipedAt`; `configurations.camera`, `configurations.locationServices`,
-  `configurations.backgroundImageFileId` and `configurations.backgroundImageSha256`; `device_state.kioskGeneration` and
-  `device_state.kioskReturnGeneration`; `applicationVersions.requestedPermissions`; and the
-  `configurationAppPermissions` table. Devices wiped before the update aren't marked.
+  `configurations.backgroundImageFileId`, `configurations.backgroundImageSha256`, `configurations.backgroundImageFit`,
+  `configurations.backgroundImageFocalX` and `configurations.backgroundImageFocalY`; `device_state.kioskGeneration` and
+  `device_state.kioskReturnGeneration`; `applicationVersions.requestedPermissions`; the `configurationAppPermissions`
+  table; `devices.agentEnrollAttemptHash`, with an index on it and one on each customer's devices by enrollment
+  time; and the `agentEnrollmentKey` table, whose one row the server fills with a random key on first use. Devices
+  wiped before the update aren't marked.
 - The database adds three columns to enrollment tokens on start (`maxUses`, `useCount`, `revokedAt`) and stores
   the tokens hashed. Existing codes stay single-use and keep working; on PostgreSQL older than 11 they stop
-  instead, so make a new code on the Enroll page. After a downgrade, codes made on this version don't work.
+  instead, so make a new code on the Enroll page. A 0.4.0 server on the upgraded database accepts no code made
+  before the downgrade; a rollback that restores the pre-update backup is fine
+  ([UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050)).
 - Quick start: run `docker compose pull && docker compose up -d` once after this update. Updates never touch the
   supervisor, and one from before 0.5.0 keeps applying updates by tag. From source, or with `SUPERVISOR_VERSION` set by
   hand: [UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050).
@@ -24,11 +29,46 @@ Upgrading
   devices can start installing when the new agent arrives. Configurations on Device default don't change.
 - A daily window with blank, equal or invalid times is sent as Device default. Other edits to that configuration still
   save; changing System updates or its times needs a valid window.
+- From source and native: 0.4.x has no `--update`, so move the clone to 0.5.0 once with
+  `git fetch --tags && git checkout v0.5.0 && ./setup.sh --update` (native:
+  `git fetch --tags && git checkout v0.5.0 && sudo ./setup.sh --update --native`). From then on, update with `./setup.sh --update`
+  (native: `sudo ./setup.sh --update --native`).
+- Native: the installer now stops on an option it doesn't take, instead of ignoring it.
+- Answers files (`MDMESH_ANSWERS`) must belong to you and be private (mode 600), or they are refused.
+
+Heads-up
+- Native installs: `REPLACE_DATA` must be `yes` or `no`, and `ASSUME_YES` `1` or `0`. Any other value now stops the
+  installer before it changes anything, where it used to mean Keep or ask.
+- The agent is now called **MDMesh** on the device (was MDM Agent): in the app drawer, Settings → Apps, the
+  device admin list and the device's Apps tab in the console. Its icon is new too: a white square on dark (was a white
+  shield on blue). It's the same app, so it updates in place. Needs agent 0.5.0.
+- Kiosk: the launcher keeps its text readable. If a configuration's kiosk text color has less than 4.5:1 contrast
+  with its background (the minimum for readable text), the device uses a readable color instead, so some brand
+  pairs show dark text (white on a bright red, for example). The background is always drawn solid (transparency is
+  ignored). Needs agent 0.5.0.
+- Agent 0.5.0: when the server has been unreachable for a while, a device's instant connection can take up to 5
+  minutes to come back (it was up to 1 minute), so Sync now may say the device isn't connected a little longer. It
+  comes back right away when the device's network returns or its next check-in gets through, and devices retry at
+  random times so they don't all reconnect at once after a server restart. Check-ins are not affected.
 
 New
+- From source and native: `./setup.sh --update` moves the clone to the newest release, checked against its signed
+  manifest like the quick start, then runs it. A manifest that doesn't verify, or names no commit, and local changes
+  stop it; a release that isn't published yet is skipped. Fresh installs clone and run `./setup.sh --update` too. It
+  needs `git`, `curl` and `openssl` 3.0+ (or an older `openssl` and `minisign`), and says which are missing first; as
+  root with `--native` it installs them, waiting for another apt run that holds apt's lock (up to 5 minutes).
+- Installers check answers typed at a question with the same rules as answers given in advance, and ask again.
+- The console's update steps for source and native installs show `./setup.sh --update`.
+- Installers: every question can be answered in advance, with `MDMESH_*` variables or an answers file, and
+  `MDMESH_NONINTERACTIVE=1` runs with no questions at all. `MDMESH_DRY_RUN=1` checks the answers and shows what a run
+  would do. See [DEPLOY](https://github.com/MDMesh-app/MDMesh/blob/main/DEPLOY.md#answering-the-questions-in-advance).
+- Enroll: devices that enroll while the page is open show under the code, with a link, first as getting their
+  configuration and then Online (or that one hasn't checked in after 10 minutes), so you see the device you just set
+  up arrive without going to Devices. The page stops looking after 30 minutes until you ask it to look again. Needs
+  this server.
 - Configurations can allow or block the camera. Block covers every app, kiosk apps too. Not managed after Block
   gives the camera back on agent 0.5.0; on older agents, choose Allow to lift a block (thanks @letternumber).
-- Kiosk: staff can tap Return to kiosk in the MDMesh Agent after leaving with the exit PIN, even offline. It shows
+- Kiosk: staff can tap Return to kiosk in the MDMesh app after leaving with the exit PIN, even offline. It shows
   only when the device's configuration enables kiosk, asks first (and warns when that kiosk has no exit on the
   device), and tells the server at once when online. Needs agent 0.5.0; no server update needed (thanks @tisign).
 - Enroll: one code can set up a batch. Choose Devices (one, or up to 10, 25 or 100) and Valid for (24 hours to 30
@@ -36,14 +76,26 @@ New
   default is still one device for 24 hours, the code to send to one person. **Stop all codes** ends every code that
   still works, and making a new code says when the one it replaces still works. Codes are stored hashed, making and
   stopping them is in the audit log, and the server log names the code each device enrolled with. The API takes
-  `maxUses` and `validHours` on `POST /private/agent/v1/token`, and `POST /private/agent/v1/token/revoke-all`
+  `maxUses` and `validHours` on `POST /rest/private/agent/v1/token`, and `POST /rest/private/agent/v1/token/revoke-all`
   (thanks @alessfi).
 - Configuration → Network can manage Android Location services independently of MDMesh location reporting on Android
   11+ Device Owner devices. Needs agent 0.5.0 (thanks @letternumber).
 - Kiosk: a configuration can show a background image behind the kiosk launcher. Choose it in the Kiosk section: a
   PNG, JPEG or WebP image, at most 10 MB and 16 megapixels. Devices download it only over HTTPS (with an `http://`
   server address they keep the background color), check it by its SHA-256, and keep the color if it can't be shown.
-  Needs agent 0.5.0 (thanks @letternumber).
+  The editor shows the current image (size, upload date, short SHA-256) with Replace and Remove, and previews the
+  launcher over it on a phone and a tablet, turned either way, with the text contrast it reaches. The launcher dims
+  the image only lightly (at most 30%, as much as the Exit button needs to stand out at 3:1) and puts a plate of the
+  background color behind each text that needs one to read at 4.5:1, solid over busy texture. The preview grid has
+  the configuration's apps in the device's order, named as in the configuration (a device leaves out apps that aren't
+  installed and shows each app's own label). Labels break between words as on the device, End of list shows the grid
+  scrolled to its end, clear of Exit, and a single-app kiosk shows its pinned app over the image. Fill (cropped around
+  a focal point you set by clicking, dragging or with the arrow keys) or Fit (the whole image, letterboxed in the
+  background color). Agents before 0.5.0 ignore the image and keep the background color.
+  Choose from uploaded images reuses one without uploading it again, and deletes ones nothing uses. Large photos are
+  scaled to at most 3840 px before upload, and their location, camera details and other metadata are removed before
+  devices get them. The device page names the image its configuration sets. The download starts as soon as the kiosk
+  is applied, so the image is usually ready when the launcher shows. Needs agent 0.5.0 (thanks @letternumber).
 - Configurations can Grant or Deny an app's runtime permissions (camera, location, microphone, contacts, SMS and
   more), under each installed app in the editor; Default removes MDMesh's override. The choices come from the APK
   uploaded to the server. Needs agent 0.5.0 on a Device Owner device: a device on an older agent applies the rest of
@@ -53,31 +105,147 @@ New
 - A wiped device shows as **Wiped** instead of Online and then Offline, and is left out of the counts, Needs attention
   and rollouts; the Devices list's Wiped filter shows it (thanks @Przemek-Magic).
 - Sync now and console commands say when the device isn't connected and will get it at its next check-in.
+- Agent: its dialogs (Return to kiosk, Exit kiosk, Exit locked) follow the device's light or dark setting and use
+  the console's look, the same on every phone. An open dialog comes back after the device is rotated, unless
+  kiosk was turned off meanwhile. Needs agent 0.5.0.
+- Agent: Exit kiosk is easier to use. A wrong PIN shows in the dialog, which stays open and says how many tries are
+  left before the exit locks; the PIN can be shown while typing, but not copied or shared. The prompt closes, and
+  what was typed with it, when the screen goes off or another app opens, or after a minute without typing. After too
+  many wrong PINs, Exit locked counts down to when the exit can be tried again, and closes then (or after a minute).
+  Needs agent 0.5.0.
+- Agent: its notifications have sharp MDMesh status bar icons, and its app icon follows themed icons on Android 13
+  and later. Needs agent 0.5.0.
+- Agent: the MDMesh status screen follows the device's light or dark setting and uses the console's look: a device
+  card, a Kiosk card with Return to kiosk, and a callout that stays on screen when a return fails (it was a
+  short-lived message). Needs agent 0.5.0.
+- Kiosk: the launcher grid has pressed highlights, two-line app names (three with a larger font) and as many
+  columns as fit, also after rotating; its empty, loading, "App closed" and idle screens and the Exit kiosk button
+  use the kiosk's own colours and stay readable on any background. Needs agent 0.5.0.
+- Agent: the status screen, dialogs and kiosk launcher are easier to read and use: darker secondary and status text,
+  no text under 13sp, a visible focus ring for keyboards and D-pads, full-size copy buttons, and TalkBack reads
+  headings, each fact with its label, and a failed return or stuck enrolment as it appears. Needs agent 0.5.0.
 - Updates and the quick start run exactly the images the signed release names, pinned by digest; the quick start
   also checks each file it downloads, stops instead of falling back to `main`, and needs OpenSSL 3.0+, or an older
   OpenSSL and `minisign`.
+- The README's install command checks `quickstart.sh` against the signed release before running it, and installs
+  exactly the release it checked; each release now publishes `quickstart.sh`, with its SHA-256 in the signed manifest.
+  Without `minisign`, a shortcut runs the latest release tag's `quickstart.sh` unchecked
+  ([DEPLOY.md](https://github.com/MDMesh-app/MDMesh/blob/main/DEPLOY.md#option-a--quick-start-no-clone-published-images)).
 - System updates now apply to devices: install automatically, in a daily window, or postpone (device makers or carriers
   might exempt important security updates). Android installs an update your device maker offers; MDMesh can't make it
   download one now. Needs agent 0.5.0 (thanks @Przemek-Magic).
 - The device page's Telemetry shows an OS update waiting on the device, if its updater reports one.
 
 Fixes
+- The installers create .env and other files holding secrets readable only by their owner from the start, and a
+  setup.sh re-run makes an existing .env owner-only again.
+- setup.sh re-runs read `.env` without running it as a script, so `bash -x ./setup.sh` no longer prints its
+  passwords and secrets. Values are read as before, quotes and escapes included; a line whose value the shell would
+  compute (a `$` or backquote) stops setup.sh, naming the line.
 - The console recognizes an on-device Return to kiosk and does not offer the same action again; a later kiosk exit,
   custom kiosk, or configuration apply makes it available again.
 - Files: uploading a file again with the same name and the same content returns the file already there instead of an
   error.
+- Enroll: the page warns before you hand out a QR code devices can't use: the console is open at localhost, over
+  `http://`, at a local address, or at another address than the server's `BASE_URL` (devices keep the address in the
+  code until a factory reset). Wi-Fi a device can't join from a QR code (a secured network entered without its
+  password, a WPA password that isn't 8 to 63 characters, a WEP key of the wrong length, enterprise EAP) is left out of
+  the code with the reason, instead of stopping setup at the Wi-Fi step.
+- Agent: on Android 12 and later, a device enrolled by QR reports the same hardware id from its first contact, so
+  re-enrolling it after a factory reset is flagged as the same device. Needs agent 0.5.0.
+- Agent: while a device can't enroll, its screen says why and what to do (code used up or expired, server not
+  found, certificate not trusted, device date wrong, Wi-Fi asking for a sign-in, `http://` address) instead of an
+  error key or exception text. Needs agent 0.5.0.
+- Agent: a server address in the QR with spaces, a trailing slash, no `https://` or a path now works, and one that
+  isn't an address is reported on the device instead of the agent quietly trying a placeholder host. Needs agent
+  0.5.0.
+- Enroll: the server log says why it refused a device's enrollment (unknown, expired, used up or stopped code), so
+  "my code doesn't work" can be answered from the log.
+- Enroll: when the network drops just as a device enrolls, or the agent gives up waiting and tries again while the
+  server is still enrolling it, it no longer stays on "Enrolling…" with a code that reads as already used, or takes a
+  second device's place on a batch code. Its retry gets the device it already created, with the same credential, so a
+  late duplicate of the request can't lock it out; a stopped code resumes nothing. If the server refuses a new
+  device's credentials before its first check-in, the agent gets them back by resuming its enrollment (never by
+  making another device); if that isn't possible, the agent's screen says the device has to be enrolled again, until
+  a check-in succeeds. Needs agent 0.5.0 and this server;
+  older agents enroll as before.
+- Enroll: each enrollment is now one database transaction. A server error, restart or lost database connection part-way
+  through no longer leaves a device in the list that can never check in, or uses up the enrollment code: nothing is
+  kept and the agent tries again.
+- Enroll: on an install with several customers, enrolling with a code now respects the customer's device limit, as
+  other ways of adding devices already did, and devices added at the same moment through the console, enrollment or
+  on-demand creation can no longer together pass it. A device over the limit isn't added and says the organisation has
+  reached its device limit; it enrolls by itself once there is room (agent 0.5.0; older agents just keep trying).
 - Audit log: on Docker installs, entries show the client's address instead of the edge container's (thanks
   @Przemek-Magic).
+- Agent: on Android 15 the status screen and the kiosk no longer draw under the status and navigation bars, where
+  the kiosk's Exit kiosk button could be hard to reach. Needs agent 0.5.0.
 - Kiosk: after someone leaves kiosk on the device with the exit PIN, the agent checks in right away, so the console
   shows kiosk off without waiting for the next heartbeat. Needs agent 0.5.0 (thanks @letternumber).
 - Agent rollout: when every device is in the canary, the rollout finishes once they've updated instead of staying
   open, and Settings stops offering the same agent again. If one can't update, it offers Finish instead of Promote
   (thanks @letternumber).
+- Agent: commands like an app scan, app icons or an install no longer run on the thread the kiosk home screen uses, so
+  the kiosk stays responsive while they run. Needs agent 0.5.0.
+- Agent: after the screen turns off and on, or the network drops, the agent keeps one connection to the server
+  instead of sometimes opening a second one or leaving one open. Needs agent 0.5.0.
+- Agent: the 10-minute heartbeat keeps its pace when the device's clock is corrected, for example right after setup.
+  Needs agent 0.5.0.
+- Agent: device events (boot, app installed, and so on) are no longer lost when two arrive at once or when the agent
+  is stopped during a check-in. Needs agent 0.5.0.
+- Agent: a 10-minute heartbeat that arrives while an install or another check-in is still running no longer keeps
+  Android waiting, which could get the agent stopped. The device stays awake for up to about 10 minutes while the
+  install finishes, so its result usually reaches the console right away. Needs agent 0.5.0.
+- Agent: a device deleted in the console no longer reconnects to the server about once a minute forever; it waits
+  longer each time, up to 5 minutes. Needs agent 0.5.0.
+- Agent: if Android stops the agent's service, it comes back within 10 minutes (with its notification). Needs agent
+  0.5.0.
+- Agent: APK downloads left behind by an interrupted install are removed when the agent next starts or installs an
+  app, and otherwise by the agent's regular heartbeat once they are an hour old. Needs agent 0.5.0.
+- Agent: the device timeline no longer shows a network change each time the agent's service starts. Needs agent 0.5.0.
+- Console accessibility: inputs, icon buttons, toggles, status dots and bars reach 3:1 contrast in both themes, help
+  and status text is darker, the selected tab, section and page are outlined, and disabled settings stay readable.
+- Console: a toast waits while you point at it or tab into it, can be dismissed (Escape too), and a failure stays 30
+  seconds. A repeated message shows once with a count. Three show at once (two on a phone 360px wide or less) and the
+  rest wait behind "N more": a failure gets its full 30 seconds once it shows, a success or warning goes on time. They
+  sit above the Save bar.
+- Enroll, for screen readers: each device that enrolls or changes state is announced once (several at once are
+  counted), and so is the page stopping looking, each time. The Wi-Fi notes are read as they change, including when
+  Security goes from Open to WPA.
+- Console: the device's Location tab lists its locations under the map, for keyboards and screen readers, and a
+  table that scrolls sideways can be reached with Tab.
+- Console on phones: device names and reasons wrap instead of being cut off, main buttons and menu items are 44px
+  tall, and the top bar no longer covers the field you tab to.
+- Console: the sign-in pages and a device that can't be found name the browser tab.
+- Kiosk: a single-app kiosk reopens its app once when it is closed, instead of starting it twice, and rotating the
+  device or changing the font or display size no longer restarts the kiosk screen. Needs agent 0.5.0.
 
 Under the hood
-- Agent protocol 1.8, additive: the config.apply `systemUpdate` section and outcome, the `systemUpdatePolicy` policy
-  capability, and telemetry `security.pendingSystemUpdateAt` and `security.pendingSystemUpdateSecurityPatch`.
+- The release manifest records the tagged commit, which `setup.sh --update` checks the tag against. CI tests
+  `--update` against signed fixture releases.
+- `install/options.json` lists the installers' questions and answers, for the website's install guide. CI checks it
+  against the scripts with dry runs.
+- The kiosk background image's address is built from the server's current address each time a configuration is sent
+  (config.apply) and each time Enter kiosk is queued (`kiosk.enter`, one device or many), so moving the server to HTTPS
+  or another domain needs no new pick of the image. The adaptive scrim is documented in
+  `docs/kiosk-background-scrim.md`, with test vectors (`proto/vectors/kiosk-scrim.json`) the console and the agent
+  both pass. `GET /private/configurations/backgroundImage/{fileId}` describes an image as devices will get it.
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
+- Console: a new colour token for extensions, `--control-border`, the 3:1 edge for icon buttons and selected
+  items. `npm test` checks every token pair's contrast, which component edges must be 3:1, and runs axe on each page;
+  `scripts/shots/a11y.mjs` runs axe, a keyboard walk and reflow checks on the built console in both themes at 1280,
+  640 and 320px, and CI runs its quick pass.
+- Agent: the APK carries English resources only (about 90 KB smaller), and its screen text lives in string
+  resources.
+- Agent protocol 1.9 (additive): the enroll request's optional `enrollAttempt` and `resumeOnly`, the enroll response's
+  `resumeSupported`, `error.agent.enrollment.notResumable`, and the retryable enroll errors
+  `error.agent.enrollment.failed`, `error.agent.enrollment.inProgress` and `error.agent.enrollment.deviceLimit`. New
+  console API: `GET /private/agent/v1/devices/enrolled`.
+- Protocol 1.10: `theme.backgroundImage` may carry `fit` and `focalX`/`focalY`, sent only when not the default
+  (additive). `GET /private/configurations/backgroundImages` lists a customer's kiosk images and
+  `POST /private/configurations/backgroundImages/{fileId}/delete` deletes an unused one.
+- Agent protocol 1.11, additive: the config.apply `systemUpdate` section and outcome, the `systemUpdatePolicy` policy
+  capability, and telemetry `security.pendingSystemUpdateAt` and `security.pendingSystemUpdateSecurityPatch`.
 
 ## v0.4.0 — 2026-11-03
 

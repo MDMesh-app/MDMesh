@@ -8,7 +8,8 @@
 # runs scripts/edge-check.sh: the Caddyfile in every hosting mode under the web image's own caddy, its /healthz
 # routes against stub upstreams, plus `docker compose config` for every compose file/overlay/profile combination; then
 # it builds the web image (docker/web.Dockerfile), which nothing else builds before a release. When the installers change,
-# the edge entry also checks that quickstart.sh's inline BASE_URL check is still install/lib/url.sh's, byte for byte.
+# the edge entry also checks that quickstart.sh's inline BASE_URL check and answers functions are still install/lib's,
+# byte for byte, and that install/options.json (the installers' answers contract) matches the scripts.
 name: t0-fast
 
 on:
@@ -37,10 +38,15 @@ jobs:
         uses: ./.github/actions/ci-kit/changed-paths
         with:
           filters: |
-            server: pom.xml, common/**, jwt/**, notification/**, plugins/**, server/**
+            # CHANGELOG.md and proto/VERSIONING.md are read by AgentProtocolVersionTest: the advertised protocol version is
+            # VERSIONING.md's highest row, and a held bump must still be under Unreleased (so a release PR runs it).
+            server: pom.xml, common/**, jwt/**, notification/**, plugins/**, server/**, CHANGELOG.md, proto/VERSIONING.md
             # CHANGELOG.md is built into the console (What's new) and its tests read every release's section, checked
             # against release/changelog-section.sh.
             web: web/**, CHANGELOG.md, release/changelog-section.sh
+            # The console's browser accessibility sweep (scripts/shots/a11y.mjs) reads the built console and the
+            # shots fixtures; CHANGELOG.md is built into the console.
+            a11y: web/**, scripts/shots/**, CHANGELOG.md
             agent: agent-android/**, proto/**
             supervisor: supervisor/**, docker/supervisor.Dockerfile, release/minisign.pub, scripts/supervisor-smoke.sh, .dockerignore
             # Listed explicitly: the kit's fail-closed **/Dockerfile* does not match docker/web.Dockerfile. web/**,
@@ -48,7 +54,7 @@ jobs:
             edge: docker/Caddyfile, docker/web.Dockerfile, docker/web-entrypoint.sh, docker/edge-peers.sh, web/**, CHANGELOG.md, .dockerignore, docker-compose*.yml, docker/dev.env, scripts/edge-check.sh, supervisor/apply.sh
             # The installer scripts, and the signed manifest they and the supervisor read. Only the edge entry's cheap
             # quickstart.sh checks run on these, not its image work.
-            installers: quickstart.sh, setup.sh, install/**, release/**, supervisor/lib.js, scripts/release-manifest-check.sh
+            installers: quickstart.sh, setup.sh, install/**, release/**, supervisor/lib.js, scripts/release-manifest-check.sh, tests/installer-answers/**, tests/setup-update/**, tests/apt-lock/**
 
   build:
     name: ${{ matrix.name }}
@@ -65,6 +71,24 @@ jobs:
       fail-fast: false
       matrix:
         name: [server, web, agent, supervisor, edge]
+    # PostgreSQL for the server entry's database-backed tests (AgentEnrollmentTransactionTest: the enroll transaction,
+    # its row locks and rollback). The same major version as docker-compose.yml. An empty image skips the service, so
+    # it starts only for the server entry, and only when the server paths changed (when its steps run). Published on a
+    # random host port: a shared runner may run several jobs at once.
+    services:
+      postgres:
+        image: ${{ (matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)) && 'postgres:14' || '' }}
+        env:
+          POSTGRES_USER: mdmesh_test
+          POSTGRES_PASSWORD: mdmesh_test
+          POSTGRES_DB: mdmesh_test
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U mdmesh_test -d mdmesh_test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
@@ -79,9 +103,16 @@ jobs:
         name: Provide build.properties
         run: cp server/build.properties.example server/build.properties
       - if: matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)
-        name: Contract + unit tests (DB-free)
+        name: Contract + unit tests, and the PostgreSQL-backed enroll tests
         # :common tests (incl. AgentV1ContractTest — the backward-compat gate) and the DB-free :server tests need no
-        # database. The package step skips tests (they just ran); DB-backed behaviour is T1's (t1-e2e.yml).
+        # database; AgentEnrollmentTransactionTest uses the postgres service above (its own schema, dropped after) and,
+        # with MDMESH_TEST_PG_REQUIRED set, fails instead of skipping when it can't. The package step skips tests (they
+        # just ran); the rest of the DB-backed behaviour is T1's (t1-e2e.yml).
+        env:
+          MDMESH_TEST_PG_URL: jdbc:postgresql://localhost:${{ job.services.postgres.ports['5432'] }}/mdmesh_test
+          MDMESH_TEST_PG_USER: mdmesh_test
+          MDMESH_TEST_PG_PASSWORD: mdmesh_test
+          MDMESH_TEST_PG_REQUIRED: "true"
         run: mvn -B -pl server -am test
       - if: matrix.name == 'server' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).server)
         name: Build WAR
@@ -118,6 +149,17 @@ jobs:
         with:
           java-version: "17"
       - if: matrix.name == 'agent' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).agent)
+        name: Cache Robolectric SDK jars
+        # The Robolectric unit tests run on several API levels; Robolectric downloads one android-all jar per level
+        # (85-190 MB each) into ~/.m2, which the Gradle cache doesn't cover. Keyed on the version catalog (the pinned
+        # Robolectric version) and app/src/test/robolectric-sdks.txt (the API levels; RobolectricSdksTest keeps it
+        # in step with the tests' @Config), so a new version or level saves a new cache, and test edits don't.
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ runner.os }}-${{ hashFiles('agent-android/gradle/libs.versions.toml', 'agent-android/app/src/test/robolectric-sdks.txt') }}
+          restore-keys: robolectric-${{ runner.os }}-
+      - if: matrix.name == 'agent' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).agent)
         name: Detekt + assemble + lint + unit tests
         # The repo now carries a committed Gradle wrapper, and the kit's setup-gradle action is
         # built around wrapper caches rather than installing a standalone `gradle` on PATH (the
@@ -143,20 +185,31 @@ jobs:
       # --- edge: the Cloudflare-mode Caddyfile break (empty ACME_EMAIL) shipped because nothing parsed it. Validates
       # docker/Caddyfile in every hosting mode with the caddy image web.Dockerfile builds FROM, and every compose combo;
       # then checks /healthz and /healthz/supervisor report their upstream's health (503, never the SPA's 200). ---
-      # quickstart.sh carries a verbatim copy of install/lib/url.sh's functions (the region between the ">>> url.sh
-      # functions" and "<<< url.sh functions" markers): it runs from main but fetches install/lib from the release it
-      # installs, which may predate url.sh (see quickstart.sh). Fail when the copies differ.
+      # quickstart.sh carries a verbatim copy of install/lib/url.sh's and install/lib/answers.sh's functions (the region
+      # between each file's ">>> <name> functions" and "<<< <name> functions" markers): it runs from main but fetches
+      # install/lib from the release it installs, which may predate them (see quickstart.sh). Fail when the copies differ.
       - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).installers)
-        name: quickstart.sh's BASE_URL check matches install/lib/url.sh
+        name: quickstart.sh's BASE_URL check and answers functions match install/lib
         run: |
-          fn() { sed -n '/^# >>> url.sh functions /,/^# <<< url.sh functions <<<$/p' "$1"; }
-          lib=$(fn install/lib/url.sh); qs=$(fn quickstart.sh)
-          if [ -z "$lib" ] || [ "$lib" != "$qs" ]; then
-            echo "::error file=quickstart.sh::the url.sh functions in quickstart.sh are not a verbatim copy of install/lib/url.sh's (or one is missing). Copy the region between the markers into quickstart.sh."
-            diff -u <(printf '%s\n' "$lib") <(printf '%s\n' "$qs") || true
-            exit 1
-          fi
-          echo "quickstart.sh's url.sh functions are identical to install/lib/url.sh's"
+          rc=0
+          for n in url.sh answers.sh; do
+            fn() { sed -n "/^# >>> $n functions /,/^# <<< $n functions <<<\$/p" "$1"; }
+            lib=$(fn "install/lib/$n"); qs=$(fn quickstart.sh)
+            if [ -z "$lib" ] || [ "$lib" != "$qs" ]; then
+              echo "::error file=quickstart.sh::the $n functions in quickstart.sh are not a verbatim copy of install/lib/$n's (or one is missing). Copy the region between the markers into quickstart.sh."
+              diff -u <(printf '%s\n' "$lib") <(printf '%s\n' "$qs") || true
+              rc=1
+            else
+              echo "quickstart.sh's $n functions are identical to install/lib/$n's"
+            fi
+          done
+          exit "$rc"
+      # install/options.json is the installers' answers contract, which the website's install wizard reads: every question
+      # has an entry and every entry a question, with the same variable, rule, default and prompt text, and a full set of
+      # answers runs without asking. Dry runs only (MDMESH_DRY_RUN=1), in a temporary copy: nothing is installed.
+      - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).installers)
+        name: Installer answers contract (install/options.json)
+        run: tests/installer-answers/run.sh
       # The signed manifest's contract: release/build-manifest.sh writes it; quickstart.sh's own verification functions
       # (signature, image digests, file hashes) and supervisor/lib.js read it; its key copy matches release/minisign.pub.
       - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).installers)
@@ -164,6 +217,29 @@ jobs:
         run: |
           command -v minisign >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq minisign; }
           scripts/release-manifest-check.sh
+      # `./setup.sh --update` (source and native installs move to the newest signed release tag) against a fixture
+      # origin with releases signed by a throwaway key: unsigned, foreign-key, replayed, retargeted or dirty is refused.
+      # Clones in a temporary directory, curl and docker stubbed: nothing is installed. Needs minisign (step above).
+      - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).installers)
+        name: setup.sh --update (signed release tags)
+        run: tests/setup-update/run.sh
+      # Both installer suites again with the tools of the distributions the installers support, not the runner's: mawk
+      # (Debian 12's 1.3.4-20200120 has no regex intervals), and busybox's awk. Throwaway containers (--rm), unprivileged,
+      # the checkout mounted read-only.
+      - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).installers)
+        name: Installer suites on Debian 12, Ubuntu 24.04 and busybox awk
+        run: |
+          tests/installer-answers/in-container.sh debian:12
+          tests/installer-answers/in-container.sh ubuntu:24.04
+          tests/installer-answers/in-container.sh debian:12 busybox-awk
+      # The installers' apt-get while another apt run holds apt's locks (a new VM's first-boot apt-daily, say): it waits,
+      # then refreshes and installs; held past the wait, it stops saying so. Throwaway root containers (--rm), starting
+      # with only git and empty package lists.
+      - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).installers)
+        name: Installer apt-get under a held apt lock (Debian 12, Ubuntu 24.04)
+        run: |
+          tests/apt-lock/run.sh debian:12
+          tests/apt-lock/run.sh ubuntu:24.04
       - if: matrix.name == 'edge' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).edge)
         name: Caddyfile modes + compose overlays
         run: scripts/edge-check.sh
@@ -176,6 +252,71 @@ jobs:
       - if: always() && matrix.name == 'edge'
         name: Remove the per-run web image
         run: docker rmi -f "$WEB_IMG" >/dev/null 2>&1 || true
+
+  # The console's accessibility sweep in a real browser: axe (WCAG 2.0-2.2 A/AA) on every page and its key states
+  # (dialogs, menus, errors, empty lists), plus horizontal scroll, page titles and text spacing, in the light theme
+  # at 1280 px (`--quick`). It fails on any violation and on any state it could not open. npm test (the web entry)
+  # already checks the token contrast pairs and runs axe in jsdom; this adds real layout and colour. The full sweep
+  # (both themes, 640 and 320 px, keyboard walk) is a manual run: `node scripts/shots/a11y.mjs --keys`.
+  a11y:
+    name: a11y
+    needs: paths
+    if: needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).a11y
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      # setup-node directly (not ci-kit/setup-npm): the npm cache key covers both lock files.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version-file: web/package.json
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            scripts/shots/package-lock.json
+      - name: Install the console and the shots harness
+        run: |
+          npm ci --prefix web
+          npm ci --prefix scripts/shots
+      - name: Build the console with the component gallery
+        working-directory: web
+        env:
+          VITE_GALLERY: "1"
+        run: npm run build
+      - id: pw
+        name: Playwright version
+        working-directory: scripts/shots
+        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+      - id: pw-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}-chromium
+      - if: steps.pw-cache.outputs.cache-hit != 'true'
+        name: Download Chromium
+        working-directory: scripts/shots
+        run: npx playwright install chromium
+      # System libraries only when Chromium can't start without them: hosted Ubuntu images have them, and a
+      # self-hosted runner (vars.CI_RUNNER) may have them but no sudo for apt.
+      - name: Chromium starts (system libraries only if it doesn't)
+        working-directory: scripts/shots
+        run: |
+          probe() { node -e "require('playwright').chromium.launch().then((b) => b.close())"; }
+          if probe; then exit 0; fi
+          echo "Chromium needs system libraries; installing them (needs apt and sudo)."
+          npx playwright install-deps chromium
+          probe
+      - name: Accessibility sweep (axe, light, 1280 px)
+        run: node scripts/shots/a11y.mjs --quick --out a11y-out
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: a11y-sweep
+          path: |
+            a11y-out/summary.txt
+            a11y-out/axe.json
+            a11y-out/failures.txt
+          if-no-files-found: ignore
 
   # NOTE: an emulator-based instrumentation matrix (the "version-treadmill guard" — boot the agent
   # across API levels so SDK_INT-gated breakage surfaces in CI) is deferred until real instrumented

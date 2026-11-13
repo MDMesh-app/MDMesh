@@ -5,8 +5,8 @@
 | Install | Update with | One-click rollback |
 |---------|-------------|--------------------|
 | Quick start (Option A) | **Update** in the console, or automatic updates | Yes, from `/recovery` |
-| From source (Option B) | `git pull && ./setup.sh` | Only with a registry `IMAGE_OWNER` ([below](#from-source-docker-installs)) |
-| Native (Option C) | `git pull && sudo ./setup.sh --native` | No |
+| From source (Option B) | `./setup.sh --update` (from 0.4.x, first [move to 0.5.0 once](#v050)) | Only with a registry `IMAGE_OWNER` ([below](#from-source-docker-installs)) |
+| Native (Option C) | `sudo ./setup.sh --update --native` (from 0.4.x, first [move to 0.5.0 once](#v050)) | No |
 
 Before you update, read the [version notes](#version-notes) for each release you are moving past.
 
@@ -49,8 +49,16 @@ pinned. If you set `SUPERVISOR_VERSION` yourself, see [v0.5.0](#v050).
 ## From-source Docker installs
 
 ```bash
-git pull && ./setup.sh
+./setup.sh --update
 ```
+
+`--update` moves the clone to the newest signed release tag and runs its setup.sh (see
+[DEPLOY](../DEPLOY.md#option-b--from-source-clone--build)). It needs `git`, `curl` and `openssl` 3.0+ (or an older
+`openssl` and `minisign`), and says which are missing before it does anything (Debian/Ubuntu:
+`sudo apt-get install git curl openssl`); as root with `--native` it installs them itself. It comes with 0.5.0: a clone from 0.4.x moves to it once
+with `git fetch --tags && git checkout v0.5.0 && ./setup.sh --update` ([v0.5.0](#v050)). A clone that is on `main` and
+already has `--update` can be ahead of the newest release: over an install, `--update` then stops rather than run
+older code. Wait for the next release and run it then, or pass `--allow-downgrade` to go to the release now.
 
 setup.sh takes no backup, so dump the database first ([command](OPERATIONS.md#backups-and-restore)). Don't use
 `docker compose up -d --build` alone: only setup.sh updates `CURRENT_VERSION` and the image tags from the
@@ -60,7 +68,7 @@ With a registry `IMAGE_OWNER`, one-click Update and rollback work as on the quic
 build in two cases:
 
 - **Older checkout.** The checkout is older than the running `CURRENT_VERSION`, for example
-  `running 0.4.0, checkout is 0.3.1 — git pull first, or re-run with --allow-downgrade`. Run `git pull`.
+  `running 0.4.0, checkout is 0.3.1 — run ./setup.sh --update, or re-run with --allow-downgrade`. Run `./setup.sh --update`.
   `--allow-downgrade` runs the older code on purpose, against the current database, which is not rolled back.
 - **No version.** setup.sh can't read a release tag (a source tarball, or tags not fetched). Build from a tagged
   checkout, or pass `--allow-downgrade`. setup.sh then keeps the versions in `.env`; on a fresh install that is
@@ -69,8 +77,10 @@ build in two cases:
 ## Native installs
 
 ```bash
-git pull && sudo ./setup.sh --native
+sudo ./setup.sh --update --native
 ```
+
+From 0.4.x, move the clone to 0.5.0 once with `git fetch --tags && git checkout v0.5.0 && sudo ./setup.sh --update --native` ([v0.5.0](#v050)): 0.4.x has no `--update`.
 
 Choose **Keep** (the default) or **Erase** (type `ERASE`). Keep runs migrations and leaves all data and the
 enrollment secret alone, after a `pg_dump` to `/opt/mdmesh/backups/` ([restore](OPERATIONS.md#backups-and-restore)).
@@ -80,7 +90,7 @@ enrollment secret alone, after a `pg_dump` to `/opt/mdmesh/backups/` ([restore](
 - **Unattended (`-y`):** never erases unless you set `REPLACE_DATA=yes`. It keeps the current port unless you set
   `HTTP_PORT`.
 - **Interrupted run:** run the same command again. It picks up where the last run stopped.
-- **Settings:** SMTP, `LEGACY_DEVICE_API`, `GITHUB_REPO` and `GITHUB_TOKEN` carry over from earlier runs, Erase
+- **Settings:** SMTP, `LEGACY_DEVICE_API`, `PROXY_ADDRESSES`, `GITHUB_REPO` and `GITHUB_TOKEN` carry over from earlier runs, Erase
   included. Pass one to change it; `GITHUB_TOKEN=` removes the token ([how](OPERATIONS.md#updater-supervisor)). On the
   first upgrade from v0.3.1 or older they are still kept, but that run's agent APK download can't read the old
   settings file in time: pass `GITHUB_TOKEN` and `GITHUB_REPO` once more if that download needs them.
@@ -153,21 +163,32 @@ available).
 Agent 0.4.0 speaks protocol 1.5: it applies a configuration's connectivity mode, which older agents ignore. It also
 works with a 0.3.9 server.
 
-Agent 0.5.0 speaks protocol 1.7: it applies a configuration's Location services setting (1.6) and app permissions
-(1.7). Older agents report Location services unsupported, and can't apply app permissions (their devices show as
-out of sync while a configuration has a rule). It also works with a 0.4.0 server, which sends neither.
+Agent 0.5.0 speaks protocol 1.10: it applies a configuration's Location services setting (1.6) and app permissions
+(1.7), resumes an enrollment whose answer was lost (1.9: it sends an enroll attempt id, and gets back the device
+it already created instead of a used-up code), and draws a kiosk background image with its fit and focal point (1.10).
+Older agents report Location services unsupported, can't apply app permissions (their devices show as out of sync
+while a configuration has a rule), and ignore the background image. It also works with a 0.4.0 server, which sends
+none of these and ignores the attempt id: an enrollment there works as before, it just can't be resumed.
 
 ## Version notes
 
 ### v0.5.0
 
+- **From source and native: move the clone to 0.5.0 once.** 0.4.x has no `./setup.sh --update`. Run
+  `git fetch --tags && git checkout v0.5.0 && ./setup.sh --update` (native:
+  `git fetch --tags && git checkout v0.5.0 && sudo ./setup.sh --update --native`). It works on a clone of `main` and on one checked
+  out at a release tag (where `git pull` fails), and leaves the clone on the release tag `--update` works from; that
+  `--update` checks the release's signature and runs its setup.sh (or moves on to a newer release, if there is one).
+  Git refuses the checkout if it would overwrite local changes, and `--update` stops on any it would carry along. Then
+  use `./setup.sh --update` (native: `sudo ./setup.sh --update --native`) for every later release. On 0.4.x itself,
+  `./setup.sh --update` is refused as an unknown option, and with `--native` it would install 0.4.x again.
 - **Update the supervisor once, or updates stay unpinned.** Updates now run the images the signed release names, by
   digest ([how](#quick-start-installs)). The supervisor you run does that, and updates never touch it, so one from
   before 0.5.0 applies 0.5.0 by tag and goes on doing so for every later release, without a message.
   - **Quick start:** apply 0.5.0 (**Settings → Updates**, or automatic updates), then run
     `docker compose pull && docker compose up -d` in the install directory. The quick start set
     `SUPERVISOR_VERSION=latest`; if you set a version in `.env` yourself, change it to `0.5.0` first.
-  - **From source with a registry `IMAGE_OWNER`:** `git pull && ./setup.sh`, also after applying 0.5.0 from the
+  - **From source with a registry `IMAGE_OWNER`:** the move to 0.5.0 above, also after applying 0.5.0 from the
     console. setup.sh builds the supervisor and ties `SUPERVISOR_VERSION` to the checkout's release, so
     `docker compose pull` alone keeps the old one.
   - **Nothing to do:** a new 0.5.0 quick start is pinned from the start, and from-source installs with
@@ -177,16 +198,35 @@ out of sync while a configuration has a rule). It also works with a 0.4.0 server
   must use the current release workflow ([RELEASING.md](../RELEASING.md)). An install that follows upstream releases
   with its own `IMAGE_OWNER` sets `GITHUB_REPO` to the repository that publishes its images, or `IMAGE_OWNER` to
   `mdmesh-app`.
+- **Going back to 0.4.0: enrollment codes.** The update stores enrollment codes hashed, the existing ones included
+  (on PostgreSQL older than 11 it marks those used instead). A one-click rollback, and the restores in
+  [Backups and restore](OPERATIONS.md#backups-and-restore), bring back the database from before the update, with its
+  codes as they were. A 0.4.0 server started on the 0.5.0 database instead (`--allow-downgrade`, say) finds none of
+  them: every code made before the downgrade is refused as unknown, including one already printed or in a QR. Make a
+  new code on the Enroll page. If you then update that same database to 0.5.0 again, codes made while 0.4.0 ran don't
+  work either: make new ones.
 - **App permissions (agent 0.5.0):** a configuration can Grant or Deny an installed app's runtime permissions. Devices
   on an older agent, or not Device Owner, can't apply them: they get the rest of the configuration and show as out of
   sync while it has a rule, until their agent is updated. Configurations without rules stay in sync on every agent.
   API clients: `PUT /private/configurations` takes `managedAppPermissions` (`[{applicationId, permission, state}]`,
   state `grant` or `deny`); leaving it out keeps the stored rules, and rules for apps the save doesn't install are
   dropped.
-- **Return to kiosk on the device (agent 0.5.0):** after someone leaves a kiosk with the exit PIN, the MDMesh Agent
+- **One config.apply after the upgrade, for some kiosk configurations.** A configuration's kiosk background image
+  address is now built from the current `BASE_URL` whenever it is sent. Where the stored address differs (the image
+  was picked before `BASE_URL` moved to HTTPS or another domain; a trailing slash alone doesn't count), the
+  configuration gets a new revision on upgrade, and its devices get one config.apply with the new address. Nothing to
+  do; the devices show the image again if the old address was one they refused.
+- **Return to kiosk on the device (agent 0.5.0):** after someone leaves a kiosk with the exit PIN, the MDMesh app
   offers **Return to kiosk**, offline too, while the device's configuration enables kiosk. A console **Exit kiosk**
   (`kiosk.exit`) leaves that option on the device; to remove it, turn kiosk off in the configuration. Older agents
   don't show it.
+- **The agent is called MDMesh on devices (agent 0.5.0):** it was MDM Agent, and its icon is a white square on dark
+  (was a white shield on blue). It's the same app, so it updates in place and keeps Device Owner. Update staff
+  instructions that name it or show its icon.
+- **Kiosk text colour (agent 0.5.0):** a kiosk text colour with less than 4.5:1 contrast on its background is
+  replaced on the device by a readable one, so some brand pairs show dark text (white on a bright red, for example).
+  The kiosk background is always drawn solid; its transparency is ignored. Check kiosk configurations whose text and
+  background colours are close.
 
 ### v0.4.0
 
@@ -194,7 +234,7 @@ The console is new: every page was rebuilt. This part is for everyone who runs M
 or add server plugins also read [v0.4.0 for forks](#v040-for-forks) below.
 
 - **Updating.** As the [table](#upgrading-mdmesh) at the top says: quick start, **Settings → Updates**; from source,
-  `git pull && ./setup.sh`; native, `git pull && sudo ./setup.sh --native`. There is nothing new to set: no new
+  `./setup.sh --update`; native, `sudo ./setup.sh --update --native`. There is nothing new to set: no new
   `.env` setting or server parameter, and no supervisor update.
 - **The database update is automatic.** On start, the server adds:
   - `configurations.extensions`, set to `{}` for every existing configuration;
@@ -341,8 +381,8 @@ plugin's screens to a console extension.
 ### v0.3.9
 
 A security release. Update every server. Devices need no new agent, and the supervisor is unchanged: quick-start
-installs apply it from **Settings → Updates**, from-source installs run `git pull && ./setup.sh`, and native installs
-`git pull && sudo ./setup.sh --native`.
+installs apply it from **Settings → Updates**, from-source installs run `./setup.sh --update`, and native installs
+`sudo ./setup.sh --update --native`.
 
 - **Sign-in limits.** Failed sign-ins are limited per address and per account, for the console, for API clients
   (`/rest/public/jwt/login`) and for the current-password check of a password or e-mail change. A browser or API

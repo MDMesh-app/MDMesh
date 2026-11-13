@@ -25,7 +25,7 @@ import kotlinx.coroutines.sync.withLock
  * Converges the device to a desired-state document. Each present section is applied through the code that
  * already serves the imperative commands (toggle strategies, [KioskApplier], location mode, connectivity mode), so
  * `config.apply` adds no new device behavior — only orchestration and reporting. The exception is the OS update
- * policy (`systemUpdate`, 1.8): no command sets it, only a configuration ([SystemUpdateControl]).
+ * policy (`systemUpdate`, 1.11): no command sets it, only a configuration ([SystemUpdateControl]).
  *
  * Idempotent: applying the same document twice is a no-op at the OS level. The document is persisted (and its
  * revision reported to the server) only when no section failed; `unsupported` is final and `deferred` (1.4) is
@@ -40,7 +40,7 @@ import kotlinx.coroutines.sync.withLock
  *   never unsupported, so the document is not saved and the server re-sends it; it is never applied or released.
  * @param setPowerMode sets the live-connection mode for the `connectivity` section (1.5), as `device.powerMode` does.
  *   Only called with a mode this agent knows; another one is reported unsupported.
- * @param systemUpdate sets the OS update policy for the `systemUpdate` section (1.8), and clears it once a document
+ * @param systemUpdate sets the OS update policy for the `systemUpdate` section (1.11), and clears it once a document
  *   stops managing it. Null (tests that don't need it): the section is unsupported, as a toggle without a strategy.
  */
 // Coordinator for independently releasable desired-state sections: one dependency per section.

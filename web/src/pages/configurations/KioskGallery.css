@@ -1,0 +1,109 @@
+/* "Uploaded images": one row per image on the 8 px rhythm. Console tokens only. */
+
+.v2 .v2-kgal {
+  display: grid;
+  gap: 16px;
+}
+
+.v2 .v2-kgal__status:empty {
+  display: none;
+}
+
+.v2 .v2-kgal__status,
+.v2 .v2-kgal__empty {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+
+.v2 .v2-kgal__error {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--alert-ink);
+}
+
+.v2 .v2-kgal__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+
+.v2 .v2-kgal__item {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: start;
+  padding: 16px 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.v2 .v2-kgal__item:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.v2 .v2-kgal__thumb {
+  width: 96px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: var(--radius-seg);
+  border: 1px solid var(--border);
+  background: var(--surface-sunken);
+}
+
+.v2 .v2-kgal__facts {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.v2 .v2-kgal__name {
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.v2 .v2-kgal__meta {
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+
+.v2 .v2-kgal__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.v2 .v2-kgal__current {
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+
+@media (max-width: 600px) {
+  .v2 .v2-kgal__item {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .v2 .v2-kgal__thumb {
+    width: 72px;
+    height: 48px;
+  }
+
+  .v2 .v2-kgal__actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+}
+
+.v2 .v2-kgal__confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.v2 .v2-kgal__list:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 4px;
+}

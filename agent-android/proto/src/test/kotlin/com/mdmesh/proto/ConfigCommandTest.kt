@@ -71,7 +71,7 @@ class ConfigCommandTest {
                 """{"revision":"r","appPermissions":[]}""",
             ).appPermissions,
         )
-        assertEquals("1.8", ProtocolJson.PROTOCOL_VERSION)
+        assertEquals("1.11", ProtocolJson.PROTOCOL_VERSION)
     }
 
     private fun systemUpdate(section: String): ConfigSystemUpdate? = ProtocolJson.json
@@ -79,7 +79,7 @@ class ConfigCommandTest {
         .systemUpdate
 
     @Test
-    fun `systemUpdate decodes each policy and is absent by default (protocol 1_8)`() {
+    fun `systemUpdate decodes each policy and is absent by default (protocol 1_11)`() {
         assertEquals(ConfigSystemUpdate(ConfigSystemUpdate.AUTOMATIC), systemUpdate("""{"policy":"automatic"}"""))
         assertEquals(
             ConfigSystemUpdate(ConfigSystemUpdate.WINDOWED, windowStart = 1320, windowEnd = 240),
@@ -88,7 +88,7 @@ class ConfigCommandTest {
         assertEquals(ConfigSystemUpdate(ConfigSystemUpdate.POSTPONE), systemUpdate("""{"policy":"postpone"}"""))
         val absent = ProtocolJson.json.decodeFromString(ConfigApplyPayload.serializer(), """{"revision":"r"}""")
         assertNull(absent.systemUpdate)
-        assertEquals("1.8", ProtocolJson.PROTOCOL_VERSION)
+        assertEquals("1.11", ProtocolJson.PROTOCOL_VERSION)
     }
 
     @Test

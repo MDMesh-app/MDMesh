@@ -54,6 +54,7 @@ import {
   type KeyValueItem,
 } from '../ui';
 import { ActionDialog, CommandsCard, ConfigPanel, RemoteActions, TEMPLATE, type KioskReturnOffer } from './DeviceDetailControl';
+import { DeviceKioskBackground } from './configurations/KioskBackground';
 import { ActivityTab, LocationTab, TelemetryTab } from './DeviceDetailTabs';
 import { AppsTab, useAppScan } from './DeviceDetailApps';
 import { ConfiguredKioskDialog, DeviceKioskDialog } from './DeviceKioskDialog';
@@ -570,7 +571,8 @@ export function DeviceDetailPage() {
   }, [ds?.powerMode, powerRequested]);
 
   /* ---- document title ---- */
-  const docName = device ? device.description || device.number : null;
+  // A device that can't be shown still names the page (2.4.2).
+  const docName = device ? device.description || device.number : error ? `Device ${id}` : null;
   useEffect(() => {
     if (!docName) return;
     const prev = document.title;
@@ -817,6 +819,7 @@ export function DeviceDetailPage() {
     return (
       <>
         <Breadcrumb items={[{ label: 'Devices', to: paths.devices }, { label: id, mono: true }]} />
+        <h1 className="v2-visually-hidden">Device {id}</h1>
         <Callout tone="alert" role="alert" icon={<IconWarning size={16} />}>
           {error ?? 'Device not found.'}
         </Callout>
@@ -934,6 +937,13 @@ export function DeviceDetailPage() {
                 busy={busy}
                 onRetry={canEdit && !wiped ? () => void syncNow() : undefined}
                 now={now}
+              />
+            ) : null}
+            {cfgLoaded && cfgStatus?.kioskBackgroundImage ? (
+              <DeviceKioskBackground
+                image={cfgStatus.kioskBackgroundImage}
+                configurationId={cfgStatus.configurationId}
+                configName={configName}
               />
             ) : null}
             {canEdit ? (

@@ -37,6 +37,8 @@ import com.mdmesh.core.command.handlers.KioskExitHandler
 import com.mdmesh.core.kiosk.AndroidKioskHomeSwitch
 import com.mdmesh.core.kiosk.ConfiguredSafeModeSetting
 import com.mdmesh.core.kiosk.KioskApplier
+import com.mdmesh.core.kiosk.KioskBackgroundPrefetchWorker
+import com.mdmesh.core.kiosk.SharedPrefsExitJournal
 import com.mdmesh.core.command.handlers.PolicyApplyHandler
 import com.mdmesh.core.device.AppInventoryCollector
 import com.mdmesh.core.device.HardwareIdCollector
@@ -47,6 +49,7 @@ import com.mdmesh.core.install.InstallManager
 import com.mdmesh.core.state.DeviceStateCollector
 import com.mdmesh.core.state.DeviceStateSource
 import com.mdmesh.core.store.ConfigStateStore
+import com.mdmesh.core.store.configuredKiosk
 import com.mdmesh.core.store.DataStoreKioskStateStore
 import com.mdmesh.core.store.KioskStateStore
 import com.mdmesh.core.store.SharedPrefsConfigStateStore
@@ -61,6 +64,9 @@ import com.mdmesh.core.telemetry.TelemetrySource
 import com.mdmesh.proto.AppManagement
 import com.mdmesh.proto.DeviceAction
 import com.mdmesh.kiosk.CrashLoopGuard
+import com.mdmesh.kiosk.Boot
+import com.mdmesh.kiosk.HoldStore
+import com.mdmesh.kiosk.SharedPrefsHoldStore
 import com.mdmesh.kiosk.ExitPinGate
 import com.mdmesh.kiosk.FaultStore
 import com.mdmesh.kiosk.KioskController
@@ -85,6 +91,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import dagger.multibindings.IntoSet
 import javax.inject.Singleton
+import kotlinx.coroutines.Dispatchers
 
 /**
  * Assembles the device-specific capability graph and binds it to the `:core`
@@ -223,6 +230,11 @@ object AgentModule {
     @Singleton
     fun provideCrashLoopGuard(store: FaultStore): CrashLoopGuard = CrashLoopGuard(store)
 
+    /** The kiosk launcher's crash-loop hold, saved next to the crash counter so it outlives the activity. */
+    @Provides
+    @Singleton
+    fun provideHoldStore(@ApplicationContext context: Context): HoldStore = SharedPrefsHoldStore(context)
+
     @Provides
     @Singleton
     fun providePinAttemptStore(@ApplicationContext context: Context): PinAttemptStore =
@@ -278,6 +290,13 @@ object AgentModule {
         return KioskApplier(
             kiosk, store, AndroidKioskHomeSwitch(context, home), home,
             safeMode = ConfiguredSafeModeSetting(configStore),
+            journal = SharedPrefsExitJournal(context),
+            // An exit cut off midway is never finished while the configuration says kiosk on.
+            desiredKioskOn = { configStore.configuredKiosk() != null },
+            io = Dispatchers.IO,
+            onEntered = { p -> KioskBackgroundPrefetchWorker.follow(context, p.theme.backgroundImage) },
+            onExited = { KioskBackgroundPrefetchWorker.cancel(context) },
+            bootId = { Boot.count(context) },
             isLockTaskActive = { kiosk.isLocked(context) },
         )
     }

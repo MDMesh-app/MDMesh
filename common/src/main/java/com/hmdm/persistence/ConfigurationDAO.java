@@ -116,6 +116,17 @@ public class ConfigurationDAO extends AbstractLinkedDAO<Configuration, Applicati
         return c != null;
     }
 
+    /** The current customer's configurations that have a managed background image: id, name and file id only. */
+    public List<Configuration> getBackgroundImageUses() {
+        return getListWithCurrentUser(currentUser -> this.mapper.getBackgroundImageUses(currentUser.getCustomerId()));
+    }
+
+    /** Of {@link #getBackgroundImageUses()}, the configurations the current user may open: one query for all. */
+    public List<Configuration> getAccessibleBackgroundImageUses() {
+        return getListWithCurrentUser(currentUser ->
+                this.mapper.getAccessibleBackgroundImageUses(currentUser.getCustomerId(), currentUser.getId()));
+    }
+
     /** True when an uploaded file is the managed background image of at least one configuration. */
     public boolean isBackgroundImageFileUsed(int fileId) {
         return this.mapper.countBackgroundImageFileReferences(fileId) > 0;

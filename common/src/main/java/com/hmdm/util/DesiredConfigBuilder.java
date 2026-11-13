@@ -129,10 +129,10 @@ public final class DesiredConfigBuilder {
     }
 
     /**
-     * The configuration's system update policy (protocol 1.8), from the Headwind-era columns: Immediately = automatic,
+     * The configuration's system update policy (protocol 1.11), from the Headwind-era columns: Immediately = automatic,
      * Scheduled = windowed between systemUpdateFrom and systemUpdateTo (HH:MM, device local time, may cross midnight),
      * Postponed = postpone. Null for Default (the section is left out, so the document and its revision are what they
-     * were before 1.8), and for a type or window this server doesn't accept, which ConfigurationResource refuses on a
+     * were before 1.11), and for a type or window this server doesn't accept, which ConfigurationResource refuses on a
      * save that changes it: a value saved before then is sent as Default rather than guessed at.
      */
     public static DesiredSystemUpdate systemUpdate(int type, String from, String to) {
@@ -323,6 +323,17 @@ public final class DesiredConfigBuilder {
             DesiredKioskBackgroundImage image = new DesiredKioskBackgroundImage();
             image.setUrl(cfg.getBackgroundImageUrl());
             image.setSha256(cfg.getBackgroundImageSha256());
+            // 1.10, sent only when not the default, so existing documents and revisions don't move.
+            if ("fit".equals(cfg.getBackgroundImageFit())) {
+                image.setFit("fit");
+            } else {
+                double fx = cfg.getBackgroundImageFocalX() == null ? 0.5 : cfg.getBackgroundImageFocalX();
+                double fy = cfg.getBackgroundImageFocalY() == null ? 0.5 : cfg.getBackgroundImageFocalY();
+                if (fx != 0.5 || fy != 0.5) {
+                    image.setFocalX(fx);
+                    image.setFocalY(fy);
+                }
+            }
             t.setBackgroundImage(image);
         }
         k.setTheme(t);

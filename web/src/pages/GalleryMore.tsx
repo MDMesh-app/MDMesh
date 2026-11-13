@@ -38,6 +38,7 @@ import {
   StatCell,
   StatGrid,
   Stepper,
+  TabPanel,
   Tabs,
   type CardPadding,
   type MenuEntry,
@@ -197,6 +198,7 @@ export function GalleryMore() {
           <Tabs
             size="md"
             aria-label="Method"
+            idBase="gal-method"
             value={qr}
             onChange={setQr}
             items={[
@@ -204,6 +206,10 @@ export function GalleryMore() {
               { key: 'token', label: 'Token' },
             ]}
           />
+          {/* A tab names the panel it controls (aria-controls), so the demo renders one. */}
+          <TabPanel idBase="gal-method" tabKey={qr}>
+            {qr === 'qr' ? 'Scan the code' : 'Type the token'}
+          </TabPanel>
         </Row>
       </Section>
 

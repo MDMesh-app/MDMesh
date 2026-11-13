@@ -101,7 +101,7 @@ public class AgentCheckInKioskAlertTest {
                 },
                 new AppReconciler(null, null, null, null),
                 new RolloutRequeuer(null) { @Override public boolean requeue(Device d, long now) { return false; } },
-                new InstallHashes(null, null), alert);
+                new InstallHashes(null, null), alert, null);
     }
 
     @Before

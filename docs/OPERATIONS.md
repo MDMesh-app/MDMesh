@@ -9,7 +9,7 @@ you edit it, run `docker compose up -d`.
 
 **Native:** pass a setting to `sudo ./setup.sh --native` in its environment. The installer writes it to
 `/opt/mdmesh-tc/conf/Catalina/localhost/ROOT.xml` or `/etc/mdmesh/supervisor.env`. Later runs keep `BASE_URL`,
-`SMTP_*`, `LEGACY_DEVICE_API`, `GITHUB_REPO` and `GITHUB_TOKEN` until you pass a new value. `HTTP_PORT` follows the
+`SMTP_*`, `LEGACY_DEVICE_API`, `PROXY_ADDRESSES`, `GITHUB_REPO` and `GITHUB_TOKEN` until you pass a new value. `HTTP_PORT` follows the
 port the install serves on, `REPLACE_DATA` applies to one run, and the rest of `supervisor.env` is rewritten on every
 run: only `GITHUB_REPO` and `GITHUB_TOKEN` survive a hand edit there (a hand-edited `GITHUB_REPO` also needs
 `GITHUB_REPO_FROM=setting`, or the next run follows `origin` again).
@@ -18,10 +18,10 @@ run: only `GITHUB_REPO` and `GITHUB_TOKEN` survive a hand edit there (a hand-edi
 
 | Setting | Where | Default | Meaning |
 |---------|-------|---------|---------|
-| `BASE_URL` | `.env`; native: env or prompt → `ROOT.xml` | none | Public address of the server, also put in the enrollment QR ([rules](#base-url-and-hostname-rules)). |
+| `BASE_URL` | `.env`; native: env or prompt → `ROOT.xml` | none | Public address of the server ([rules](#base-url-and-hostname-rules)). Open the console there to make enrollment QR codes: a code carries the address the console is open at, and Enroll warns when that isn't `BASE_URL`. |
 | `HTTP_PORT` | native env | current port; fresh install `8080` | Tomcat's HTTP port. |
 | `REPLACE_DATA` | native env | asks; `-y`: keep | `yes` erases existing data on a re-run. |
-| `DB_PASSWORD`, `HASH_SECRET` | `.env`; native: `ROOT.xml` | generated | Don't change them: the database keeps its original password, and a new `HASH_SECRET` invalidates every enrolled device's token. |
+| `DB_PASSWORD`, `HASH_SECRET` | `.env`; native: `ROOT.xml` | generated | Don't change them: the database keeps its original password, and a new `HASH_SECRET` breaks devices running the legacy Headwind launcher (MDMesh agents don't use it). |
 | `SERVER_JWT_SECRET` | `.env`; native: `ROOT.xml` `jwt.secretkey` | generated | API token signing key ([details](#api-signing-key-jwt)). |
 | `SERVER_JAVA_OPTS` | `.env` (native: `JAVA_OPTS` in a `systemctl edit mdmesh-server` drop-in) | empty | Extra JVM flags, e.g. `-Xmx1g`. |
 | `LEGACY_DEVICE_API` | `.env`; native env → `ROOT.xml` | `0` | `1` re-enables the Headwind launcher's device routes. |
@@ -30,6 +30,7 @@ run: only `GITHUB_REPO` and `GITHUB_TOKEN` survive a hand edit there (a hand-edi
 | `SMTP_FROM` | same | `mdm@<hostname>` (Docker), `mdm@localhost` (native) | Sender address. |
 | `SMTP_USERNAME`, `SMTP_PASSWORD` | same | empty | Mail login. |
 | `SMTP_SSL`, `SMTP_STARTTLS` | same | `false` | `SMTP_SSL=true` for port 465, `SMTP_STARTTLS=true` for 587. |
+| `PROXY_ADDRESSES` | native env → `ROOT.xml` `proxy.addresses` | empty | Reverse proxies on other hosts whose `X-Forwarded-For` the server believes, comma-separated ([details](#the-client-address)). |
 
 **Kiosk alerts.** When too many wrong exit PINs lock a device's kiosk exit (agent 0.3.6 or later), the server emails
 the users of that device's customer who have an email address, may edit devices (or are super-admins) and can see the
@@ -335,6 +336,25 @@ limit. Nothing logs this. If your domain has an AAAA record, either turn on IPv6
 (Docker's [IPv6 guide](https://docs.docker.com/engine/daemon/ipv6/)), or remove the AAAA record so clients use IPv4.
 The Cloudflare tunnel mode is not affected.
 
+## Enrollment under load
+
+Each enrollment is one database transaction that waits for its code's lock (and, on an install with several
+customers and a device limit, the customer's), at most 15 s, holding one of the server's 30 database connections
+meanwhile. A burst on one code (a batch of devices switched on together) runs one enrollment at a time; past 8 at once
+per code the server answers the rest "try again" at once, and the agents retry with backoff. That limit is per server
+instance: with several behind a load balancer each allows 8 per code. Nothing is kept from an enrollment that had to
+retry.
+
+### Enrollment key
+
+An agent that enrolls with an attempt id (MDMesh agent 0.5.0 and later) gets a device secret derived from that attempt
+with a key only the server has: 32 random bytes the server makes the first time a device enrolls, kept in the
+database (table `agentEnrollmentKey`, one row) and in its backups. It is in no setting, file, log or API answer.
+Deriving it this way gives every retry of one enrollment the same secret, so a late duplicate of a request can't lock
+a device out. To rotate it, delete the row and restart the server: devices already enrolled keep working; one still
+inside its 24 h retry window gets a secret derived with the new key on its next retry (or recovers it, on a refused
+check-in).
+
 ## Backups and restore
 
 **Docker.** One-click updates dump the database first, and a rollback restores that dump
@@ -500,7 +520,8 @@ It never touches apt packages, your proxy or the git checkout.
 - Enrollment codes are stored hashed. A code for a batch enrolls devices for anyone who has it until it expires or
   its devices are used up. If one is shared further than meant, use **Stop all codes** on the Enroll page (or
   `POST /rest/private/agent/v1/token/revoke-all`): every code of the customer that still works stops, and enrolled
-  devices stay enrolled. The server log names the token that enrolled each device, and the audit log records making
+  devices stay enrolled. The server log names the token that enrolled each device, and logs each refused enrollment
+  with its reason (unknown, expired, used up or stopped code; never the code itself). The audit log records making
   and stopping codes.
 - The console session cookie is `SameSite=Lax`, and `Secure` when `BASE_URL` is https.
 - Failed sign-ins are limited per address and per account ([Sign-in limits](#sign-in-limits)).

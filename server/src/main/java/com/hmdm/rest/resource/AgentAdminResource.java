@@ -28,6 +28,7 @@ import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.AgentEnrollmentToken;
 import com.hmdm.persistence.domain.Device;
+import com.hmdm.rest.json.agent.EnrolledDeviceView;
 import com.hmdm.persistence.domain.DeviceState;
 import com.hmdm.persistence.domain.DeviceSyncRow;
 import com.hmdm.notification.AgentWakeHub;
@@ -37,6 +38,7 @@ import com.hmdm.rest.json.agent.CommandHistoryView;
 import com.hmdm.rest.json.agent.ConfigStatusView;
 import com.hmdm.rest.json.agent.ConfigSyncSummary;
 import com.hmdm.rest.resource.support.InstallHashes;
+import com.hmdm.rest.resource.support.KioskCommandImages;
 import com.hmdm.rest.json.agent.DesiredConfig;
 import com.hmdm.rest.resource.support.ConfigReconciler;
 import com.hmdm.security.SecurityContext;
@@ -89,6 +91,7 @@ public class AgentAdminResource {
     private com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller;
     private ConfigReconciler configReconciler;
     private InstallHashes installHashes;
+    private KioskCommandImages kioskImages;
 
     /**
      * <p>A constructor required by Swagger.</p>
@@ -104,7 +107,8 @@ public class AgentAdminResource {
                               AgentWakeHub wakeHub,
                               com.hmdm.rest.resource.support.ConfigAppInstaller configAppInstaller,
                               ConfigReconciler configReconciler,
-                              InstallHashes installHashes) {
+                              InstallHashes installHashes,
+                              KioskCommandImages kioskImages) {
         this.tokenDAO = tokenDAO;
         this.commandDAO = commandDAO;
         this.unsecureDAO = unsecureDAO;
@@ -113,6 +117,7 @@ public class AgentAdminResource {
         this.configAppInstaller = configAppInstaller;
         this.configReconciler = configReconciler;
         this.installHashes = installHashes;
+        this.kioskImages = kioskImages;
     }
 
     /**
@@ -306,8 +311,13 @@ public class AgentAdminResource {
         }
     }
 
-    /** The payload to queue: an {@code app.install} gets its APK's SHA-256 (see {@link InstallIntegrity}). */
+    /**
+     * The payload to queue: an {@code app.install} gets its APK's SHA-256 (see {@link InstallIntegrity}), and a
+     * {@code kiosk.enter} its managed background image's current URL (see {@link KioskCommandImages}). Single and bulk
+     * commands both come through here.
+     */
     private String payloadToQueue(String type, String payload, int customerId) throws CommandRejectedException {
+        if (kioskImages != null) payload = kioskImages.forCommand(type, payload, customerId);
         try {
             return InstallIntegrity.forCommand(type, payload, installHashes.forCustomer(customerId));
         } catch (InstallIntegrity.LookupFailedException e) {
@@ -420,6 +430,37 @@ public class AgentAdminResource {
         return Response.OK(commandDAO.getState(deviceId));
     }
 
+    /** The most devices one "enrolled since" answer lists (the Enroll page shows the newest). */
+    static final int MAX_ENROLLED_SINCE = 50;
+
+    // =================================================================================================================
+    @ApiOperation(value = "Devices enrolled since", notes = "The devices of the customer the user may access that "
+            + "enrolled at or after `since` (server time, ms), newest first, at most `limit` (1 to 50, default 25), with "
+            + "the server's time: {serverTime, devices}. The Enroll page polls it while a code is shown.")
+    @GET
+    @Path("/devices/enrolled")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response listEnrolledSince(@QueryParam("since") Long since, @QueryParam("limit") Integer limit) {
+        Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
+        if (!customerId.isPresent()) return Response.PERMISSION_DENIED();
+        Optional<com.hmdm.persistence.domain.User> user = SecurityContext.get().getCurrentUser();
+        if (!user.isPresent()) return Response.PERMISSION_DENIED();
+        long now = System.currentTimeMillis();
+        long from = since == null ? now : since;
+        int max = limit == null ? 25 : Math.max(1, Math.min(limit, MAX_ENROLLED_SINCE));
+        // Access is filtered in the query, before its LIMIT, so a user limited to some groups still gets theirs.
+        List<EnrolledDeviceView> out = new ArrayList<>();
+        for (Device d : commandDAO.listEnrolledSince(customerId.get(), user.get().getId(), user.get().isSuperAdmin(),
+                from, max)) {
+            out.add(new EnrolledDeviceView(d));
+        }
+        // The server's clock with the list: the page compares it with these server times, never the browser's clock.
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("serverTime", now);
+        body.put("devices", out);
+        return Response.OK(body);
+    }
+
     // =================================================================================================================
     @ApiOperation(value = "Device configuration status", notes = "Desired-state revision vs the revision the agent last applied.")
     @GET
@@ -435,7 +476,9 @@ public class AgentAdminResource {
         ConfigStatusView v = new ConfigStatusView();
         v.setConfigurationId(device.getConfigurationId());
         Set<String> tokens = AgentCapabilityTokens.flatten(commandDAO.getDeviceCapabilities(deviceId));
-        v.setCurrentRevision(configReconciler.currentRevision(device, tokens));
+        DesiredConfig doc = configReconciler.statusDocument(device);
+        v.setCurrentRevision(ConfigReconciler.statusRevision(doc, tokens));
+        v.setKioskBackgroundImageFrom(doc);
         DeviceState state = commandDAO.getState(deviceId);
         if (state != null) { v.setAppliedRevision(state.getAppliedConfigRevision()); v.setAppliedAt(state.getAppliedConfigAt()); }
         boolean supported = AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, tokens);

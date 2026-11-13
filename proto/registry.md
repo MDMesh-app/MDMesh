@@ -28,7 +28,7 @@ Advertised only when the device has a working strategy for it (`CapabilityRegist
 | `mobileData` | mobile data toggle | 24 | Planned: not advertised yet. |
 | `kioskLockTask` | COSU lock-task kiosk | 24 | Planned: not advertised; kiosk commands are ungated (see below). |
 | `passwordComplexity` | password policy | 31 | Planned: not advertised yet. setRequiredPasswordComplexity (setPasswordQuality deprecated @26) |
-| `systemUpdatePolicy` | OS update policy | 24 | 1.8. Advertised to a Device Owner. config.apply `systemUpdate`: `setSystemUpdatePolicy` automatic / windowed / postpone; a document without the section clears a policy the agent set. |
+| `systemUpdatePolicy` | OS update policy | 24 | 1.11. Advertised to a Device Owner. config.apply `systemUpdate`: `setSystemUpdatePolicy` automatic / windowed / postpone; a document without the section clears a policy the agent set. |
 | `factoryResetProtection` | FRP policy | 30 | setFactoryResetProtectionPolicy; does not *prevent* a wipe, it decides whether a wiped device demands a Google account. Not implemented. |
 
 A config.apply document can also carry a server plugin's keys, `x.<pluginId>.<key>` (`policies.x.netaccess.vpn`,
@@ -92,7 +92,7 @@ string, except `configApply`.
 | `app.uninstall` | — | `{ packageName }`; no console or server sender yet |
 | `apps.scan` | — | none; result detail is `{ apps: [...] }` |
 | `apps.icons` | — | `{ packages: [...] }`; result detail is `{ icons: [{ pkg, pngBase64 }] }` |
-| `kiosk.enter` | — | `{ mode, allowedPackages, pinPackage, features, exitMode, password, theme }` (`KioskApplyPayload`); `features.lockButtons` blocks the power menu, `features.lockVolume` (1.4) blocks volume changes and mutes while in kiosk; `theme.backgroundImage` `{ url, sha256 }` (agent 0.5.0) is an HTTPS image the agent checks by SHA-256 (at most 10 MB and 16 megapixels) and draws behind the launcher, keeping `theme.backgroundColor` on any failure |
+| `kiosk.enter` | — | `{ mode, allowedPackages, pinPackage, features, exitMode, password, theme }` (`KioskApplyPayload`); `features.lockButtons` blocks the power menu, `features.lockVolume` (1.4) blocks volume changes and mutes while in kiosk; `theme.backgroundImage` `{ url, sha256 }` (agent 0.5.0) is an image the agent downloads only over HTTPS (an `http://` URL, which the server queues as-is on an HTTP-only install, is refused and the agent keeps `theme.backgroundColor`), checks by SHA-256 (at most 10 MB and 16 megapixels) and draws behind the launcher, keeping `theme.backgroundColor` on any failure; 1.10 adds optional `fit` (`fit`) and `focalX`/`focalY` (0..1), sent only when not the default (fill, centre) |
 | `kiosk.exit` | — | none |
 | `device.lock` | `device.lock` | none |
 | `device.reboot` | `device.reboot` | none (DO) |

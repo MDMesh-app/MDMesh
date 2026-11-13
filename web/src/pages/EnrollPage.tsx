@@ -3,6 +3,9 @@ import { ApiError } from '../api/client';
 import { getConfigurations, type Configuration } from '../api/configurations';
 import { mintEnrollToken, revokeAllEnrollTokens } from '../api/enroll';
 import { getUpdateStatus, type UpdateStatus } from '../api/updates';
+import { Link } from 'react-router';
+import { ARRIVAL_LABEL, arrivalNews, useArrivals, type Arrival } from '../enroll/arrivals';
+import { addressProblem, wifiProblem } from '../enroll/checks';
 import { agentApkUrl, buildProvisioningPayload, serverBaseUrl, type WifiSecurity } from '../enroll/provisioning';
 import {
   Button,
@@ -28,6 +31,7 @@ import {
   LinkButton,
   Modal,
 } from '../ui';
+import { paths } from '../routes';
 // Not from the barrel: QrPanel pulls in `qrcode`, which stays in this page's chunk.
 import { QrPanel } from '../ui/QrPanel';
 import './EnrollPage.css';
@@ -47,6 +51,8 @@ type Method = 'qr' | 'token';
 interface Minted {
   value: string;
   expiresAt?: number;
+  /** When the server made it (server clock). */
+  createdAt?: number;
   /** The devices it enrolls, as the server says (1 from a server whose tokens are all single-use). */
   maxUses: number;
   /** The server applied the chosen devices and validity; false: it predates them, and made a single-use 24 h code. */
@@ -163,8 +169,52 @@ function qrSteps(wifiInCode: boolean): ReactNode[] {
     wifiInCode
       ? 'Scan this code when the camera opens.'
       : 'Scan this code when the camera opens. Connect to Wi-Fi if the device asks.',
-    'Wait a few minutes while the agent installs. The device then appears under Devices.',
+    'Wait a few minutes while the agent installs. The device then appears below, and under Devices.',
   ];
+}
+
+/** How long a piece of arrival news stays in the live region: read by then, and not left for browse mode to find. */
+const NEWS_MS = 7000;
+
+interface News {
+  id: number;
+  text: string;
+  /** When it leaves the live region. */
+  until: number;
+}
+
+/**
+ * What a screen reader hears about the devices enrolling: each new device or change of state once, as it happens
+ * (several at once counted), and that the page stopped looking. Each piece is its own keyed node that leaves after
+ * {@link NEWS_MS}, as the toasts' announcements do: the same sentence twice (a second stop, two "Scanner: Online."
+ * looks apart) is a new node, so it is read again. `active` false (no code yet, a server without the list): nothing.
+ * `clear` empties it (Look again: the stop it says no longer holds).
+ */
+function useArrivalNews(arrivals: Arrival[], active: boolean, watching: boolean): { news: News[]; clear: () => void } {
+  const [news, setNews] = useState<News[]>([]);
+  const seq = useRef(0);
+  const seen = useRef<Arrival[]>([]);
+  const wasWatching = useRef(watching);
+  useEffect(() => {
+    if (!active) return;
+    const lines = arrivalNews(seen.current, arrivals);
+    seen.current = arrivals;
+    if (wasWatching.current && !watching) lines.push('Stopped looking for new devices after 30 minutes.');
+    wasWatching.current = watching;
+    if (!lines.length) return;
+    const id = ++seq.current;
+    setNews((n) => [...n.slice(-4), { id, text: lines.join(' '), until: Date.now() + NEWS_MS }]);
+  }, [arrivals, active, watching]);
+  useEffect(() => {
+    if (!news.length) return;
+    const t = setTimeout(
+      () => setNews((n) => n.filter((x) => x.until > Date.now())),
+      Math.max(0, news[0].until - Date.now()) + 1,
+    );
+    return () => clearTimeout(t);
+  }, [news]);
+  const clear = useCallback(() => setNews([]), []);
+  return { news, clear };
 }
 
 /** Enroll. Classic: pages/EnrollPage.tsx. */
@@ -203,6 +253,17 @@ export function EnrollPage() {
   const [stopping, setStopping] = useState(false);
   const [stopError, setStopError] = useState<string | null>(null);
   const now = useNow(30_000, token?.expiresAt);
+  /** Server time of the first code made on this visit: devices enrolled since then show up on the page. */
+  const [since, setSince] = useState<number | undefined>(undefined);
+  const { arrivals, watching, unsupported: arrivalsUnsupported, watchAgain } = useArrivals(since);
+  const { news: arrivalSaid, clear: clearArrivalNews } = useArrivalNews(arrivals, since != null && !arrivalsUnsupported, watching);
+  const arrivalsHead = useRef<HTMLHeadingElement>(null);
+  const lookAgain = () => {
+    clearArrivalNews();
+    watchAgain();
+    // "Look again" goes away when the page looks again: keep focus on the list instead of losing it to the page.
+    arrivalsHead.current?.focus();
+  };
 
   const [update, setUpdate] = useState<UpdateStatus | null>(null);
 
@@ -295,9 +356,11 @@ export function EnrollPage() {
       const applied = typeof res.maxUses === 'number';
       const devices = typeof res.maxUses === 'number' ? res.maxUses : 1;
       if (res.token) {
-        const next = { value: res.token, expiresAt: res.expiresAt, maxUses: devices, limitsApplied: applied };
+        const createdAt = typeof res.createdAt === 'number' ? res.createdAt : undefined;
+        const next = { value: res.token, expiresAt: res.expiresAt, createdAt, maxUses: devices, limitsApplied: applied };
         shown.current = next;
         setToken(next);
+        if (createdAt != null) setSince((s) => s ?? createdAt);
       } else setTokError('The server did not return a token.');
     } catch (err) {
       if (seq === mintSeq.current) setTokError(tokenError(err));
@@ -369,7 +432,15 @@ export function EnrollPage() {
     devicesHelp = `Anyone with this code can enroll up to ${uses} devices until it expires, or until you stop all codes. Share it only with whoever sets them up.`;
   }
   const ssid = wifiSsid.trim();
-  const wifiInCode = wifiOn && !!ssid;
+  const wifiIssue = wifiOn ? wifiProblem({ ssid: wifiSsid, password: wifiPass, security: wifiSec }) : null;
+  const wifiInCode = wifiOn && !!ssid && !wifiIssue;
+  // The code carries this page's address (see enroll/provisioning.ts); compare it with the server's own setting, which
+  // every configuration carries.
+  const serverSetting = useMemo(
+    () => configs?.map((c) => c.baseUrl).find((v): v is string => typeof v === 'string' && v.trim() !== '') ?? null,
+    [configs],
+  );
+  const address = useMemo(() => addressProblem(serverBaseUrl(), serverSetting), [serverSetting]);
   const expired = !!token?.expiresAt && token.expiresAt <= now;
   const payload = useMemo(
     () =>
@@ -392,7 +463,9 @@ export function EnrollPage() {
   }
   const facts = (withWifi: boolean): KeyValueItem[] => [
     { key: 'gives', label: 'Gives', value: <span className="v2-enroll__gives">{givesName}</span> },
-    ...(withWifi && wifiOn ? [{ key: 'wifi', label: 'Joins Wi-Fi', value: ssid || 'No network name yet' }] : []),
+    ...(withWifi && wifiOn
+      ? [{ key: 'wifi', label: 'Joins Wi-Fi', value: wifiIssue ? 'Not in the code (see Wi-Fi above)' : ssid || 'No network name yet' }]
+      : []),
     { key: 'use', label: 'Use', value: usesText(token?.maxUses ?? uses) },
     { key: 'expires', label: 'Expires', value: expiresValue },
   ];
@@ -484,7 +557,11 @@ export function EnrollPage() {
                 />
               </Field>
               <Field label="Security" size="sm">
-                <Select value={wifiSec} onChange={(e) => setWifiSec(e.target.value as WifiSecurity)}>
+                <Select
+                  value={wifiSec}
+                  aria-describedby={wifiIssue ? 'v2-enroll-wifi-issue' : undefined}
+                  onChange={(e) => setWifiSec(e.target.value as WifiSecurity)}
+                >
                   <option value="WPA">WPA / WPA2</option>
                   <option value="WEP">WEP</option>
                   <option value="NONE">Open</option>
@@ -498,15 +575,24 @@ export function EnrollPage() {
                     value={wifiPass}
                     onChange={(e) => setWifiPass(e.target.value)}
                     autoComplete="new-password"
+                    aria-describedby={wifiIssue ? 'v2-enroll-wifi-issue' : undefined}
                   />
                 </Field>
               ) : null}
             </div>
-            {wifiSec !== 'NONE' ? (
-              <Callout tone="warn" icon={<IconWarning size={16} />}>
-                The Wi-Fi password is written into the QR code. Anyone who photographs the code can read it.
-              </Callout>
-            ) : null}
+            {/* One live region for both notes, there while Wi-Fi is on: a note that appears or changes as the admin
+                types is read out, which a region created with its text often is not. */}
+            <div role="status" id={wifiIssue ? 'v2-enroll-wifi-issue' : undefined} className="v2-enroll__wifinote">
+              {wifiIssue ? (
+                <Callout tone="warn" icon={<IconWarning size={16} />}>
+                  {wifiIssue}
+                </Callout>
+              ) : wifiSec !== 'NONE' ? (
+                <Callout tone="warn" icon={<IconWarning size={16} />}>
+                  The Wi-Fi password is written into the QR code. Anyone who photographs the code can read it.
+                </Callout>
+              ) : null}
+            </div>
             <span className="v2-enroll__help">
               {wifiFrom ? `Filled in from ${wifiFrom}. ` : ''}Changes here only affect this code.
             </span>
@@ -562,6 +648,11 @@ export function EnrollPage() {
           />
         }
       />
+      {address ? (
+        <Callout tone={address.tone} icon={<IconWarning size={16} />} role="status">
+          {address.text}
+        </Callout>
+      ) : null}
       {tokError ? (
         <Callout tone="alert" role="alert">
           {tokError}{' '}
@@ -621,6 +712,41 @@ export function EnrollPage() {
           </div>
         )}
       </TabPanel>
+      {since != null && !arrivalsUnsupported ? (
+        <div className="v2-enroll__arrivals">
+          <h3 id="v2-enroll-arrivals" className="v2-enroll__arrivalshead" tabIndex={-1} ref={arrivalsHead}>
+            Enrolled while this page is open
+          </h3>
+          {!watching ? (
+            <span className="v2-enroll__help">
+              Stopped looking for new devices after 30 minutes.{' '}
+              <LinkButton tone="inline" onClick={lookAgain}>
+                Look again
+              </LinkButton>
+            </span>
+          ) : null}
+          {arrivals.length === 0 ? (
+            watching ? (
+              <span className="v2-enroll__help">No device yet. A device shows here within seconds of enrolling.</span>
+            ) : null
+          ) : (
+            <ul className="v2-enroll__arrivallist" aria-labelledby="v2-enroll-arrivals">
+              {arrivals.map((a) => (
+                <li key={a.number}>
+                  <Link to={paths.device(a.number)}>{a.name}</Link>
+                  <span className={`v2-enroll__arrival v2-enroll__arrival--${a.state}`}>{ARRIVAL_LABEL[a.state]}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
+      {/* Not the list: a look every 5 s would re-read all of it. Each new device or change of state, once. */}
+      <div className="v2-visually-hidden" role="status">
+        {arrivalSaid.map((n) => (
+          <p key={n.id}>{n.text}</p>
+        ))}
+      </div>
       <div className="v2-enroll__stop">
         <span className="v2-enroll__help">
           A code shared further than meant? Stop every code that still works; enrolled devices stay enrolled.

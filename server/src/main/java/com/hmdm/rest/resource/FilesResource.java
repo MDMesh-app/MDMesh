@@ -28,6 +28,7 @@ import javax.inject.Named;
 import com.hmdm.notification.PushService;
 import com.hmdm.persistence.*;
 import com.hmdm.persistence.domain.*;
+import com.hmdm.rest.resource.support.KioskImageMetadata;
 import com.hmdm.rest.json.*;
 import com.hmdm.rest.json.view.FileView;
 import com.hmdm.util.APKFileAnalyzer;
@@ -109,6 +110,24 @@ public class FilesResource {
                          APKFileAnalyzer apkFileAnalyzer,
                          ConfigurationFileDAO configurationFileDAO,
                          IconDAO iconDAO,
+                         PushService pushService,
+                         com.hmdm.rest.resource.support.KioskBackgroundImageAssets kioskImages) {
+        this(filesDirectory, baseUrl, customerDAO, unsecureDAO, applicationDAO, configurationDAO, uploadedFileDAO,
+                apkFileAnalyzer, configurationFileDAO, iconDAO, pushService);
+        this.kioskImages = kioskImages;
+    }
+
+    /** Tests that don't involve kiosk background images. */
+    public FilesResource(String filesDirectory,
+                         String baseUrl,
+                         CustomerDAO customerDAO,
+                         UnsecureDAO unsecureDAO,
+                         ApplicationDAO applicationDAO,
+                         ConfigurationDAO configurationDAO,
+                         UploadedFileDAO uploadedFileDAO,
+                         APKFileAnalyzer apkFileAnalyzer,
+                         ConfigurationFileDAO configurationFileDAO,
+                         IconDAO iconDAO,
                          PushService pushService) {
         this.filesDirectory = filesDirectory;
         this.baseDirectory = new File(filesDirectory);
@@ -165,41 +184,72 @@ public class FilesResource {
             return Response.PERMISSION_DENIED();
         }
 
-        return SecurityContext.get().getCurrentUser().map(u -> {
-            Customer customer = customerDAO.findById(u.getCustomerId());
+        // Only a file of this account, checked before anything below looks at the file's state.
+        if (file.getId() == null || !isOwnFile(file.getId())) {
+            return Response.PERMISSION_DENIED();
+        }
 
-            // Check if file is not used
-            if (this.configurationFileDAO.isFileUsed(file.getId())) {
-                return Response.FILE_USED();
-            } else if (this.iconDAO.isFileUsed(file.getId())) {
-                return Response.FILE_USED();
-            } else if (this.configurationDAO != null && this.configurationDAO.isBackgroundImageFileUsed(file.getId())) {
-                // A kiosk image is hash-pinned in desired state. It must be explicitly replaced from the
-                // configuration editor, never deleted behind an active configuration's back.
-                return Response.FILE_USED();
-            }
+        return SecurityContext.get().getCurrentUser().map(u -> kioskImages == null
+                ? removeUnlessUsed(u, file)
+                // Under the lock a configuration save takes hold of its background image with: never a file a save
+                // is about to commit, or one a Files → edit is changing.
+                : kioskImages.unlessHeld(file.getId(), () -> removeUnlessUsed(u, file), Response.FILE_USED(),
+                        Response.ERROR(com.hmdm.rest.resource.support.KioskBackgroundImageAssets.BEING_EDITED))
+        ).orElse(Response.PERMISSION_DENIED());
+    }
 
-            if (!file.isExternal()) {
-                // Delete the file the record points at, never a path taken from the request.
-                UploadedFile dbFile = uploadedFileDAO.getById(file.getId());
-                if (dbFile == null) {
-                    return Response.PERMISSION_DENIED();
-                }
-                String recordedPath = dbFile.getFilePath();
-                logger.info("File {} is removed by user {}", recordedPath, SecurityContext.get().getCurrentUserName());
-                uploadedFileDAO.remove(file.getId());
-                if (recordedPath != null && !recordedPath.isEmpty()
-                        && uploadedFileDAO.getByPath(customer.getId(), recordedPath) == null) {
-                    FileUtil.deleteFile(customer, filesDirectory, recordedPath);
-                }
-                return Response.OK();
-            } else {
-                logger.info("External file {} ({}) is removed by user {}",
-                        file.getDescription(), file.getUrl(), SecurityContext.get().getCurrentUserName());
-                uploadedFileDAO.remove(file.getId());
-                return Response.OK();
+    /** The file is a row of the current account (the DAO refuses another account's row). */
+    private boolean isOwnFile(int fileId) {
+        try {
+            return uploadedFileDAO.getById(fileId) != null;
+        } catch (SecurityException e) {
+            logger.warn("Refused file {}: not a file of this customer", fileId);
+            return false;
+        }
+    }
+
+    /** The kiosk background images, whose saves hold their file until written (see removeFile). */
+    private com.hmdm.rest.resource.support.KioskBackgroundImageAssets kioskImages;
+
+    /** Tests: the kiosk background images (the injected constructor sets them in the server). */
+    void setKioskImages(com.hmdm.rest.resource.support.KioskBackgroundImageAssets kioskImages) {
+        this.kioskImages = kioskImages;
+    }
+
+    private Response removeUnlessUsed(User u, FileView file) {
+        Customer customer = customerDAO.findById(u.getCustomerId());
+
+        // Check if file is not used
+        if (this.configurationFileDAO.isFileUsed(file.getId())) {
+            return Response.FILE_USED();
+        } else if (this.iconDAO.isFileUsed(file.getId())) {
+            return Response.FILE_USED();
+        } else if (this.configurationDAO != null && this.configurationDAO.isBackgroundImageFileUsed(file.getId())) {
+            // A kiosk image is hash-pinned in desired state. It must be explicitly replaced from the
+            // configuration editor, never deleted behind an active configuration's back.
+            return Response.FILE_USED();
+        }
+
+        if (!file.isExternal()) {
+            // Delete the file the record points at, never a path taken from the request.
+            UploadedFile dbFile = uploadedFileDAO.getById(file.getId());
+            if (dbFile == null) {
+                return Response.PERMISSION_DENIED();
             }
-        }).orElse(Response.PERMISSION_DENIED());
+            String recordedPath = dbFile.getFilePath();
+            logger.info("File {} is removed by user {}", recordedPath, SecurityContext.get().getCurrentUserName());
+            uploadedFileDAO.remove(file.getId());
+            if (recordedPath != null && !recordedPath.isEmpty()
+                    && uploadedFileDAO.getByPath(customer.getId(), recordedPath) == null) {
+                FileUtil.deleteFile(customer, filesDirectory, recordedPath);
+            }
+            return Response.OK();
+        } else {
+            logger.info("External file {} ({}) is removed by user {}",
+                    file.getDescription(), file.getUrl(), SecurityContext.get().getCurrentUserName());
+            uploadedFileDAO.remove(file.getId());
+            return Response.OK();
+        }
     }
 
     // =================================================================================================================
@@ -223,6 +273,22 @@ public class FilesResource {
                 return createFileInternal(uploadedFile);
             } else {
                 return createExternalFileInternal(uploadedFile);
+            }
+        } else if (kioskImages != null && uploadedFile.getId() != null) {
+            // Not while a configuration save holds the file: it has hashed these bytes. While the edit runs (its file
+            // I/O outside the lock), no save can take hold of it. A file a configuration already uses as its
+            // background is refused below in any case (its digest is pinned).
+            // Only a file of this account, checked before the edit looks at or marks the file's state.
+            if (!isOwnFile(uploadedFile.getId())) return Response.PERMISSION_DENIED();
+            switch (kioskImages.beginEdit(uploadedFile.getId())) {
+                case HELD: return Response.FILE_USED();
+                case EDITING: return Response.ERROR(com.hmdm.rest.resource.support.KioskBackgroundImageAssets.BEING_EDITED);
+                default: break;
+            }
+            try {
+                return updateFileInternal(uploadedFile);
+            } finally {
+                kioskImages.endEdit(uploadedFile.getId());
             }
         } else {
             return updateFileInternal(uploadedFile);
@@ -258,6 +324,15 @@ public class FilesResource {
         return SecurityContext.get().getCurrentUser().map(u -> {
             Customer customer = customerDAO.findById(u.getCustomerId());
             try {
+                try {
+                    // A kiosk background is served publicly: its location and camera data go before it is hosted.
+                    if (KioskImageMetadata.stripUpload(new File(uploadedFile.getTmpPath()), fileName)) {
+                        logger.info("Removed the metadata of kiosk image {}", fileName);
+                    }
+                } catch (IOException e) {
+                    // Hosted as uploaded; saving it as a background then hosts a cleaned copy instead.
+                    logger.warn("Could not remove the metadata of kiosk image {}: {}", fileName, e.getMessage());
+                }
                 File movedFile = FileUtil.moveFile(customer, filesDirectory, uploadedFile.getSubdir(), uploadedFile.getTmpPath(), fileName);
                 if (movedFile != null) {
                     List<FileView> result = new LinkedList<>();

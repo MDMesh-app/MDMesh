@@ -28,6 +28,9 @@ Upgrading
   `git fetch --tags && git checkout v0.5.0 && ./setup.sh --update` (native:
   `git fetch --tags && git checkout v0.5.0 && sudo ./setup.sh --update --native`). From then on, update with `./setup.sh --update`
   (native: `sudo ./setup.sh --update --native`).
+- Quick start, rolling back to 0.4.0: update the supervisor first (`docker compose pull supervisor && docker compose up
+  -d supervisor`). One from before 0.5.0 can't restore over 0.5.0's new tables: its rollback stops with the database
+  unchanged and the server stopped ([UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050)).
 - Native: the installer now stops on an option it doesn't take, instead of ignoring it.
 - Answers files (`MDMESH_ANSWERS`) must belong to you and be private (mode 600), or they are refused.
 
@@ -128,6 +131,10 @@ New
   ([DEPLOY.md](https://github.com/MDMesh-app/MDMesh/blob/main/DEPLOY.md#option-a--quick-start-no-clone-published-images)).
 
 Fixes
+- Rollback and restore: the database is emptied before the backup is loaded, in the same transaction. The dump's own
+  DROPs failed when the update had added a table that refers to an older one, so the rollback stopped (nothing
+  changed). The by-hand restores in the docs, and the command the native installer prints next to each dump, do the
+  same.
 - The installers create .env and other files holding secrets readable only by their owner from the start, and a
   setup.sh re-run makes an existing .env owner-only again.
 - setup.sh re-runs read `.env` without running it as a script, so `bash -x ./setup.sh` no longer prints its

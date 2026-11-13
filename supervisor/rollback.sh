@@ -41,12 +41,21 @@ healthy() {
 }
 
 # --- restore_db <dump> <log>: put the database back to the pre-update dump. Returns non-zero after ERR lines. ---
-# The dump is plain SQL from `pg_dump --clean --if-exists`: it drops and recreates every object. So:
+# The dump is plain SQL from `pg_dump` of the database before the update. So:
 #  1. the server is STOPPED first: it holds pooled connections whose locks would block (or race) the drops, and
 #     whatever runs next must not see a half-restored schema. caddy keeps running, so /recovery stays up;
-#  2. ONE psql session, ONE transaction (--single-transaction wraps the -c's and the -f in a single BEGIN/COMMIT, in
-#     order): first a bounded lock_timeout, then every other session on the database is ended (a stray client or a
-#     stuck backend holding a lock), then the dump. Same session, so no gap for a new lock to slip in between;
+#  2. ONE psql session, ONE transaction, in order: BEGIN, a bounded lock_timeout, every other session on the database
+#     ended (a stray client or a stuck backend holding a lock), the schema reset, the dump, COMMIT. Same session, so no
+#     gap for a new lock to slip in between. The COMMIT is the last line of the stream, and only when the whole dump
+#     went in: awk adds it after the dump's closing `-- PostgreSQL database dump complete` line. A dump cut short gets
+#     a RAISE instead (a loud failure), and a stream that just stops (awk failed) ends the session without a COMMIT,
+#     which rolls back (pipefail then fails the step). Never --single-transaction: it commits whatever arrived, and
+#     after the reset that would be an emptied database;
+#  2b. the schema reset: `public` is dropped with everything in it and made again, empty, with the same owner and
+#     grants, so the dump restores into a clean schema (its own --clean DROPs then find nothing). The DROPs alone
+#     only know the objects from before the update: one the update added that depends on them (0.5.0's foreign key
+#     to configurations) made them fail, and the whole restore with it. The role must own `public`: on the quick
+#     start's postgres it is the bootstrap user (DB_USER), on PostgreSQL 15+ the database owner (pg_database_owner);
 #  3. the bound (60s) holds for the whole dump: its preamble says `SET lock_timeout = 0;`, which would cancel an earlier SET,
 #     so that one line (the preamble's, never data) is rewritten on the way in. A lock that cannot be ended (e.g. a prepared transaction) is then a loud
 #     "lock timeout" failure instead of a restore that hangs forever;
@@ -60,6 +69,7 @@ healthy() {
 # fixed; docs/UPGRADING.md ("Restoring by hand") has the by-hand restore.
 restore_db() {
   local sql="$1" log="$2" running lt=60s   # the lock bound: a constant, never taken from the environment (it goes into SQL)
+  local reset="DO \$reset\$ DECLARE o regrole; a aclitem[]; g record; BEGIN SELECT nspowner::regrole, nspacl INTO o, a FROM pg_namespace WHERE nspname = 'public'; DROP SCHEMA public CASCADE; EXECUTE format('CREATE SCHEMA public AUTHORIZATION %s', o); FOR g IN SELECT grantee, privilege_type FROM aclexplode(a) WHERE grantee <> o LOOP EXECUTE format('GRANT %s ON SCHEMA public TO %s', g.privilege_type, CASE g.grantee WHEN 0 THEN 'PUBLIC' ELSE g.grantee::regrole::text END); END LOOP; END \$reset\$"
   running="$(grep -E '^CURRENT_VERSION=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2-)"
   if ! dc stop server; then
     errln "could not stop the server, so the database was NOT restored and nothing was changed: .env still names ${running:-the running version}, which may still be running (a failed recreate can leave it stopped). Fix the cause (see the log above), then Roll back again from /recovery."
@@ -67,14 +77,18 @@ restore_db() {
   fi
   # Rewrite the preamble's `SET lock_timeout = 0;` (first match only, and only while still in the preamble: blank,
   # `--`, `\` meta-command, SET and set_config lines). A COPY row or function-body line with the same text is data.
+  # Then COMMIT, or the RAISE for a dump cut short (see 2).
   if ! awk -v q="'" -v lt="$lt" '
          !body && $0 == "SET lock_timeout = 0;" { print "SET lock_timeout = " q lt q ";"; body = 1; next }
          !body && !($0 == "" || /^--/ || /^\\/ || /^SET / || /^SELECT pg_catalog\.set_config\(/) { body = 1 }
-         { print }' "$sql" \
-     | dc exec -T postgres psql -X -q -v ON_ERROR_STOP=1 --single-transaction -U "$DB_USER" -d "$DB_NAME" -o /dev/null \
-         -c "SET lock_timeout = '$lt'" \
+         $0 == "-- PostgreSQL database dump complete" { complete = 1 }
+         { print }
+         END { if (complete) print "COMMIT;"
+               else print "DO $x$ BEGIN RAISE EXCEPTION " q "the backup is incomplete (it does not end like a pg_dump)" q "; END $x$;" }' "$sql" \
+     | dc exec -T postgres psql -X -q -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" -o /dev/null \
+         -c BEGIN -c "SET lock_timeout = '$lt'" \
          -c "DO \$restore\$ DECLARE n int; BEGIN SELECT count(pg_terminate_backend(pid)) INTO n FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid(); RAISE NOTICE 'ended % other session(s)', n; END \$restore\$" \
-         -f - > "$log" 2>&1; then
+         -c "$reset" -f - > "$log" 2>&1; then
     # The psql text goes to the supervisor log as a plain line (and stays in $log); the ERR line reaches the public
     # /update/status, so it only points at the file.
     echo "psql: $(grep -m1 -E 'ERROR|FATAL' "$log" || tail -n1 "$log")" >&2

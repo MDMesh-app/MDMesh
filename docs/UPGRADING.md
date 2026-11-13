@@ -136,23 +136,27 @@ From the install directory:
 STAMP=$(docker compose exec -T supervisor cat /backups/latest)
 docker compose exec -T supervisor cat "/backups/$STAMP.env"   # the pre-update versions
 docker compose stop server
-docker compose exec -T supervisor cat "/backups/$STAMP.sql" \
+{ docker compose exec -T supervisor cat "/backups/$STAMP.sql" && printf 'COMMIT;\n\\echo Restored.\n'; } \
   | sed "1,/^SET lock_timeout = 0;\$/s/^SET lock_timeout = 0;\$/SET lock_timeout = '60s';/" \
-  | docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 --single-transaction -U mdmesh -d mdmesh \
-      -c "SET lock_timeout = '60s'" \
+  | docker compose exec -T postgres psql -X -q -v ON_ERROR_STOP=1 -o /dev/null -U mdmesh -d mdmesh \
+      -c BEGIN -c "SET lock_timeout = '60s'" \
       -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()" \
+      -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO PUBLIC" \
       -f -
 ```
 
 Then:
 
 ```bash
-# only if that succeeded: copy SERVER_VERSION, WEB_VERSION and CURRENT_VERSION from the .env snapshot above into .env
+# only if it printed Restored.: copy SERVER_VERSION, WEB_VERSION and CURRENT_VERSION from the .env snapshot above into .env
 docker compose up -d --no-deps server caddy
 ```
 
-The restore ends other sessions and gives up after 60 seconds without a lock. Keep the `sed`: without it, the dump's
-own `SET lock_timeout = 0;` removes that limit.
+The restore ends other sessions, empties the database and loads the dump, all in one transaction, and prints
+`Restored.` when it committed. Anything else (an error, or no `Restored.`) means nothing changed: the database is as it
+was. It gives up after 60 seconds without a lock. Keep the `sed`: without it, the dump's own `SET lock_timeout = 0;`
+removes that limit. Keep the `DROP SCHEMA` line too: the dump's own DROPs only know the tables from before the update,
+and one the update added that refers to them makes the restore fail.
 
 ## Agent compatibility
 
@@ -198,6 +202,14 @@ none of these and ignores the attempt id: an enrollment there works as before, i
   must use the current release workflow ([RELEASING.md](../RELEASING.md)). An install that follows upstream releases
   with its own `IMAGE_OWNER` sets `GITHUB_REPO` to the repository that publishes its images, or `IMAGE_OWNER` to
   `mdmesh-app`.
+- **Going back to 0.4.0: update the supervisor first.** A supervisor from before 0.5.0 can't roll 0.5.0 back: its
+  restore stops at `cannot drop constraint configurations_pr_key ... because other objects depend on it` (0.5.0 adds a
+  table that refers to configurations). Nothing changes: the database stays as it was, and `server` is left stopped.
+  The 0.5.0 supervisor restores into an emptied schema instead. So, on a quick start, run
+  `docker compose pull supervisor && docker compose up -d supervisor` (once 0.5.0 is applied, as above), then
+  **Roll back** from `/recovery`. If a rollback, or a failed update's automatic one, already stopped there, the same
+  command and **Roll back** again finish it; it uses the same backup. To stay on 0.5.0 instead, run
+  `docker compose up -d server`. By hand: [Restoring by hand](#restoring-by-hand).
 - **Going back to 0.4.0: enrollment codes.** The update stores enrollment codes hashed, the existing ones included
   (on PostgreSQL older than 11 it marks those used instead). A one-click rollback, and the restores in
   [Backups and restore](OPERATIONS.md#backups-and-restore), bring back the database from before the update, with its

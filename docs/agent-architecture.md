@@ -126,7 +126,8 @@ after the image go; only the EXIF orientation stays, as a minimal EXIF block; an
 as a cleaned copy, the original file is never rewritten), and stores its SHA-256 in `backgroundImageSha256` (of the
 cleaned file) and a URL in `backgroundImageUrl`; the browser's values are never used. The console scales images over
 3840 px along the long edge before uploading them, drawn upright (`normalizeKioskImage`), and the commit of such an upload is
-cleaned before it is hosted. `kiosk.theme.backgroundImage` is `{url, sha256}`, sent only for a managed image; its URL
+cleaned before it is hosted. `kiosk.theme.backgroundImage` is `{url, sha256}`, plus `fit` and `focalX`/`focalY` when
+not the default (fill around the centre; protocol 1.10), sent only for a managed image; its URL
 is built from the server's current `base.url` each time the document is built (`KioskBackgroundImageUrls`), and a
 queued `kiosk.enter` whose theme carries a configuration's managed image (its bytes, at its stored or current address)
 gets the same URL (`KioskCommandImages`, for console and API, single and bulk), so a move

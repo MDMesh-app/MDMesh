@@ -86,7 +86,7 @@ New
   installed and shows each app's own label). Labels break between words as on the device, End of list shows the grid
   scrolled to its end, clear of Exit, and a single-app kiosk shows its pinned app over the image. Fill (cropped around
   a focal point you set by clicking, dragging or with the arrow keys) or Fit (the whole image, letterboxed in the
-  background color); an agent without fit and focal point support (before protocol 1.10) fills from the centre.
+  background color). Agents before 0.5.0 ignore the image and keep the background color.
   Choose from uploaded images reuses one without uploading it again, and deletes ones nothing uses. Large photos are
   scaled to at most 3840 px before upload, and their location, camera details and other metadata are removed before
   devices get them. The device page names the image its configuration sets. The download starts as soon as the kiosk

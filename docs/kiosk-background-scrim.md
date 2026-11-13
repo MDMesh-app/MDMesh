@@ -10,13 +10,13 @@ controls (the Exit button). A photo can be any brightness, so the launcher does 
    that text reaches **4.5:1** (WCAG AA; the launcher has no large text) against **every** pixel under it, and solid
    over texture. Text over a calm part of the image gets no plate. Plates carry the text, so the image stays visible.
 
-The console's preview computes the same, so what it shows is what a device that reads the image at full size draws
-(see the reference note below).
+The console's preview computes the same, so what it shows is what a device that reads the image at full size and 8
+bits a channel draws (see the reference note below).
 
 - Console: `web/src/data/kioskScrim.ts` (`parseColor`, `kioskColours`, `imageCells`, `kioskLegibility`),
   `web/src/data/kioskLauncherLayout.ts` (the plate geometry) and the preview, `web/src/pages/configurations/
   KioskPreview.tsx`.
-- Agent: a `BackdropRule` alongside `KioskPalette` (agent branch).
+- Agent: a `BackdropRule` alongside `KioskPalette`.
 - Shared test vectors: [`proto/vectors/kiosk-scrim.json`](../proto/vectors/kiosk-scrim.json), version 3.6, generated
   by an independent implementation. The console passes them; agent implementations must pass them too (the agent
   isn't released with images until it does). A change to these rules changes the vectors.

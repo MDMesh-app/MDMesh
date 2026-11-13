@@ -121,6 +121,9 @@ public class SyncResponse implements Serializable, SyncResponseInt {
     @ApiModelProperty("New server URL used to migrate to another server")
     private String newServerUrl;
 
+    @ApiModelProperty("DNS IP address or hostname for automatic DNS configuration")
+    private String dns;
+
     @ApiModelProperty("Flag disabling safe settings")
     private Boolean lockSafeSettings;
 
@@ -785,6 +788,15 @@ public class SyncResponse implements Serializable, SyncResponseInt {
 
     public void setNewServerUrl(String newServerUrl) {
         this.newServerUrl = newServerUrl;
+    }
+
+    @Override
+    public String getDns() {
+        return dns;
+    }
+
+    public void setDns(String dns) {
+        this.dns = dns;
     }
 
     @Override

@@ -386,6 +386,32 @@ public class DesiredConfigBuilderTest {
     }
 
     @Test
+    public void dns_is_sent_only_when_set_and_an_emptied_host_clears_it() {
+        // A NULL column (every existing configuration) omits the section, so no revision moves on upgrade.
+        DesiredConfig unmanaged = build(policiesConfig(), Collections.emptyList());
+        assertNull(unmanaged.getDns());
+        assertFalse(DesiredConfigBuilder.canonicalJson(unmanaged).contains("\"dns\""));
+        assertEquals(resource("desired-config-kiosk.sha256"),
+                build(kioskConfig(), Arrays.asList(app(5, 505, "com.acme.pos", 1))).getRevision());
+
+        Configuration managed = policiesConfig();
+        managed.setDns("  dns.google  ");
+        DesiredConfig d = build(managed, Collections.emptyList());
+        assertEquals("dns.google", d.getDns());
+        assertTrue(DesiredConfigBuilder.canonicalJson(d).contains("\"dns\":\"dns.google\""));
+        assertNotEquals(unmanaged.getRevision(), d.getRevision());
+
+        // The console stores "" when an admin empties a field that had a value: the agent clears to opportunistic.
+        Configuration cleared = policiesConfig();
+        cleared.setDns("");
+        DesiredConfig c = build(cleared, Collections.emptyList());
+        assertEquals("", c.getDns());
+        assertTrue(DesiredConfigBuilder.canonicalJson(c).contains("\"dns\":\"\""));
+        assertNotEquals(unmanaged.getRevision(), c.getRevision());
+        assertNotEquals(d.getRevision(), c.getRevision());
+    }
+
+    @Test
     public void kiosk_volume_lock_is_its_own_opt_in_not_part_of_lock_buttons() {
         // Android mutes the device while volume is locked: lockButtons=true configurations must not start muting.
         Configuration buttons = kioskConfig(); buttons.setKioskLockButtons(true);

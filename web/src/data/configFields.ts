@@ -134,6 +134,7 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'connectivityMode', label: 'Connectivity', type: 'enum', group: 'Network', enforced: true, help: CONNECTIVITY_HELP, options: [
     { value: 'adaptive', label: 'Battery-saver' }, { value: 'alwaysOn', label: 'Always-on' },
   ] },
+  { key: 'dns', label: 'Private DNS host', type: 'text', group: 'Network', enforced: true, help: 'Global private DNS hostname (e.g. dns.google, one.one.one.one, dns.adguard-dns.com). Needs device owner; leave empty to keep the device default.' },
   { key: 'mobileData', label: 'Mobile data', type: 'tri', group: 'Network', help: 'Headwind launcher switched mobile data (needed system-app rights).' },
   { key: 'gps', label: 'GPS / location', type: 'tri', group: 'Network', help: 'Headwind launcher switched the location setting.' },
   { key: 'mobileEnrollment', label: 'Enroll over mobile data', type: 'switch', group: 'Network', help: "Read only by Headwind's server QR. The MDMesh enrollment QR ignores it." },

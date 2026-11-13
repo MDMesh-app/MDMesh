@@ -33,11 +33,12 @@ Upgrading
 - There is a new agent, 0.5.0: roll it out from Settings → Agent rollout. Much of this release needs it, and devices
   on older agents keep working ([UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050)).
 - Native: the installer now stops on an option it doesn't take, instead of ignoring it.
-- Answers files (`MDMESH_ANSWERS`) must belong to you and be private (mode 600), or they are refused.
+- Answers files (`MDMESH_ANSWERS`) must be owned by you or root and give no access to group or others (for example
+  `chmod 600`), or they are refused.
 
 Heads-up
-- Native installs: `REPLACE_DATA` must be `yes` or `no`, and `ASSUME_YES` `1` or `0`. Any other value now stops the
-  installer before it changes anything, where it used to mean Keep or ask.
+- Native installs: `REPLACE_DATA` must be `yes` or `no`, and `ASSUME_YES` `1` or `0`; empty means not set (the
+  default). Any other value now stops the installer before it changes anything, where it used to mean Keep or ask.
 - The agent is now called **MDMesh** on the device (was MDM Agent): in the app drawer, Settings → Apps, the
   device admin list and the device's Apps tab in the console. Its icon is new too: a white square on dark (was a white
   shield on blue). It's the same app, so it updates in place. Needs agent 0.5.0.
@@ -226,7 +227,7 @@ Under the hood
   (config.apply) and each time Enter kiosk is queued (`kiosk.enter`, one device or many), so moving the server to HTTPS
   or another domain needs no new pick of the image. The adaptive scrim is documented in
   `docs/kiosk-background-scrim.md`, with test vectors (`proto/vectors/kiosk-scrim.json`) the console and the agent
-  both pass. `GET /private/configurations/backgroundImage/{fileId}` describes an image as devices will get it.
+  both pass. `GET /rest/private/configurations/backgroundImage/{fileId}` describes an image as devices will get it.
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
 - Console: a new colour token for extensions, `--control-border`, the 3:1 edge for icon buttons and selected
   items. `npm test` checks every token pair's contrast, which component edges must be 3:1, and runs axe on each page;
@@ -239,13 +240,14 @@ Under the hood
 - Agent protocol 1.9 (additive): the enroll request's optional `enrollAttempt` and `resumeOnly`, the enroll response's
   `resumeSupported`, `error.agent.enrollment.notResumable`, and the retryable enroll errors
   `error.agent.enrollment.failed`, `error.agent.enrollment.inProgress` and `error.agent.enrollment.deviceLimit`. New
-  console API: `GET /private/agent/v1/devices/enrolled`.
+  console API: `GET /rest/private/agent/v1/devices/enrolled`.
 - Protocol 1.10: `theme.backgroundImage` may carry `fit` and `focalX`/`focalY`, sent only when not the default
-  (additive). `GET /private/configurations/backgroundImages` lists a customer's kiosk images and
-  `POST /private/configurations/backgroundImages/{fileId}/delete` deletes an unused one.
-- Dependencies: Room 2.8.5, WorkManager 2.12.0, Retrofit 3.0.0, AppCompat 1.8.0 (agent); Jackson 2.22.4, Guava 33.8.0,
-  commons-codec 1.23.0, ActiveMQ 5.19.12 (server); vite 8.3.6, vitest 5.1.0, jsdom 31.0.0 (console); Caddy 2.11.9;
-  docker/login-action 4.8.0, setup-java 6.2.0.
+  (additive). `GET /rest/private/configurations/backgroundImages` lists a customer's kiosk images and
+  `POST /rest/private/configurations/backgroundImages/{fileId}/delete` deletes an unused one.
+- Dependencies: Room 2.8.5, WorkManager 2.12.0, Retrofit 3.0.0, AppCompat 1.8.0, desugar_jdk_libs 2.1.5 (agent);
+  Jackson 2.22.4, Guava 33.8.0, commons-codec 1.23.0, ActiveMQ 5.19.12, classgraph 4.8.200 (server); vite 8.3.6,
+  @vitejs/plugin-react 6.2.1, vitest 5.1.0, jsdom 31.0.0 (console); Caddy 2.11.9; docker/login-action 4.8.0,
+  setup-java 6.2.0, softprops/action-gh-release 3.0.4.
 
 ## v0.4.0 — 2026-11-03
 

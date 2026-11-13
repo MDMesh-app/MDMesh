@@ -137,6 +137,13 @@ export interface ConfigStatus {
         createdAt?: number;
         completedAt?: number;
     } | null;
+    kioskBackgroundImage?: {
+        url: string;
+        sha256: string;
+        fit?: 'fit';
+        focalX?: number;
+        focalY?: number;
+    } | null;
 }
 
 // ---- api/configurations ----

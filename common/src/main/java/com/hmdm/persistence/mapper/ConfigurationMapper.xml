@@ -24,7 +24,7 @@
 <mapper namespace="com.hmdm.persistence.mapper.ConfigurationMapper">
 
     <insert id="insertConfiguration" parameterType="Configuration" useGeneratedKeys="true" keyColumn="id" keyProperty="id">
-        INSERT INTO configurations (name, description, type, password, backgroundColor, textColor, backgroundImageUrl, backgroundImageFileId, backgroundImageSha256,
+        INSERT INTO configurations (name, description, type, password, backgroundColor, textColor, backgroundImageUrl, backgroundImageFileId, backgroundImageSha256, backgroundImageFit, backgroundImageFocalX, backgroundImageFocalY,
                                     iconSize, desktopHeader, desktopHeaderTemplate, displayStatus, useDefaultDesignSettings, customerId,
                                     gps, bluetooth, camera, wifi, mobileData, usbStorage, requestUpdates, disableLocation, appPermissions,
                                     pushOptions, keepaliveTime, autoBrightness, brightness, manageTimeout, timeout,
@@ -36,7 +36,7 @@
                                     blockStatusBar, systemUpdateType, systemUpdateFrom, systemUpdateTo,
                                     scheduleAppUpdate, appUpdateFrom, appUpdateTo, downloadUpdates, defaultFilePath, disableFactoryReset, disableSafeBoot, wifiRadio, locationServices, kioskLockVolume, connectivityMode,
                                     extensions)
-        VALUES (#{name}, #{description}, #{type}, #{password}, #{backgroundColor}, #{textColor}, #{backgroundImageUrl}, #{backgroundImageFileId}, #{backgroundImageSha256},
+        VALUES (#{name}, #{description}, #{type}, #{password}, #{backgroundColor}, #{textColor}, #{backgroundImageUrl}, #{backgroundImageFileId}, #{backgroundImageSha256}, #{backgroundImageFit}, #{backgroundImageFocalX}, #{backgroundImageFocalY},
                 #{iconSize}, #{desktopHeader}, #{desktopHeaderTemplate}, #{displayStatus}, #{useDefaultDesignSettings}, #{customerId},
                 #{gps}, #{bluetooth}, #{camera}, #{wifi}, #{mobileData}, #{usbStorage}, #{requestUpdates}, #{disableLocation}, #{appPermissions},
                 #{pushOptions}, #{keepaliveTime}, #{autoBrightness}, #{brightness}, #{manageTimeout}, #{timeout},

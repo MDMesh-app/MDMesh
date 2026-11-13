@@ -23,4 +23,9 @@ import lombok.Setter;
 public class DesiredKioskBackgroundImage {
     private String url;
     private String sha256;
+    /** Protocol 1.10: {@code fit} (whole, letterboxed); absent = fill (cropped). Agents before 0.5.0 ignore the whole image. */
+    private String fit;
+    /** Protocol 1.10: the focal point a fill crop keeps in view, 0..1 of the image; absent = the centre. */
+    private Double focalX;
+    private Double focalY;
 }

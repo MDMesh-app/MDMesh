@@ -10,7 +10,8 @@ line under Unreleased.
 
 Upgrading
 - The database adds columns on start: `devices.wipedAt`; `configurations.camera`, `configurations.locationServices`,
-  `configurations.backgroundImageFileId` and `configurations.backgroundImageSha256`; `device_state.kioskGeneration` and
+  `configurations.backgroundImageFileId`, `configurations.backgroundImageSha256`, `configurations.backgroundImageFit`,
+  `configurations.backgroundImageFocalX` and `configurations.backgroundImageFocalY`; `device_state.kioskGeneration` and
   `device_state.kioskReturnGeneration`; `applicationVersions.requestedPermissions`; the `configurationAppPermissions`
   table; `devices.agentEnrollAttemptHash`, with an index on it and one on each customer's devices by enrollment
   time; and the `agentEnrollmentKey` table, whose one row the server fills with a random key on first use. Devices
@@ -77,11 +78,19 @@ New
 - Kiosk: a configuration can show a background image behind the kiosk launcher. Choose it in the Kiosk section: a
   PNG, JPEG or WebP image, at most 10 MB and 16 megapixels. Devices download it only over HTTPS (with an `http://`
   server address they keep the background color), check it by its SHA-256, and keep the color if it can't be shown.
-  The download starts as soon as the kiosk is applied, so the image is usually ready when the launcher shows.
-  The launcher dims the image only lightly (at most 30 %, as much as the Exit button needs to stand out at 3:1) and
-  puts a plate of the background color behind each text that needs one to read at 4.5:1, solid over busy texture;
-  the console's preview shows the same. The image fills the screen around a chosen focal point, or fits whole with
-  the background color around it (agent reads both from protocol 1.10). Needs agent 0.5.0 (thanks @letternumber).
+  The editor shows the current image (size, upload date, short SHA-256) with Replace and Remove, and previews the
+  launcher over it on a phone and a tablet, turned either way, with the text contrast it reaches. The launcher dims
+  the image only lightly (at most 30%, as much as the Exit button needs to stand out at 3:1) and puts a plate of the
+  background color behind each text that needs one to read at 4.5:1, solid over busy texture. The preview grid has
+  the configuration's apps in the device's order, named as in the configuration (a device leaves out apps that aren't
+  installed and shows each app's own label). Labels break between words as on the device, End of list shows the grid
+  scrolled to its end, clear of Exit, and a single-app kiosk shows its pinned app over the image. Fill (cropped around
+  a focal point you set by clicking, dragging or with the arrow keys) or Fit (the whole image, letterboxed in the
+  background color). Agents before 0.5.0 ignore the image and keep the background color.
+  Choose from uploaded images reuses one without uploading it again, and deletes ones nothing uses. Large photos are
+  scaled to at most 3840 px before upload, and their location, camera details and other metadata are removed before
+  devices get them. The device page names the image its configuration sets. The download starts as soon as the kiosk
+  is applied, so the image is usually ready when the launcher shows. Needs agent 0.5.0 (thanks @letternumber).
 - Configurations can Grant or Deny an app's runtime permissions (camera, location, microphone, contacts, SMS and
   more), under each installed app in the editor; Default removes MDMesh's override. The choices come from the APK
   uploaded to the server. Needs agent 0.5.0 on a Device Owner device: a device on an older agent applies the rest of
@@ -207,6 +216,11 @@ Under the hood
   `--update` against signed fixture releases.
 - `install/options.json` lists the installers' questions and answers, for the website's install guide. CI checks it
   against the scripts with dry runs.
+- The kiosk background image's address is built from the server's current address each time a configuration is sent
+  (config.apply) and each time Enter kiosk is queued (`kiosk.enter`, one device or many), so moving the server to HTTPS
+  or another domain needs no new pick of the image. The adaptive scrim is documented in
+  `docs/kiosk-background-scrim.md`, with test vectors (`proto/vectors/kiosk-scrim.json`) the console and the agent
+  both pass. `GET /private/configurations/backgroundImage/{fileId}` describes an image as devices will get it.
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
 - Console: a new colour token for extensions, `--control-border`, the 3:1 edge for icon buttons and selected
   items. `npm test` checks every token pair's contrast, which component edges must be 3:1, and runs axe on each page;
@@ -218,6 +232,9 @@ Under the hood
   `resumeSupported`, `error.agent.enrollment.notResumable`, and the retryable enroll errors
   `error.agent.enrollment.failed`, `error.agent.enrollment.inProgress` and `error.agent.enrollment.deviceLimit`. New
   console API: `GET /private/agent/v1/devices/enrolled`.
+- Protocol 1.10: `theme.backgroundImage` may carry `fit` and `focalX`/`focalY`, sent only when not the default
+  (additive). `GET /private/configurations/backgroundImages` lists a customer's kiosk images and
+  `POST /private/configurations/backgroundImages/{fileId}/delete` deletes an unused one.
 
 ## v0.4.0 — 2026-11-03
 

@@ -163,12 +163,12 @@ available).
 Agent 0.4.0 speaks protocol 1.5: it applies a configuration's connectivity mode, which older agents ignore. It also
 works with a 0.3.9 server.
 
-Agent 0.5.0 speaks protocol 1.9: it applies a configuration's Location services setting (1.6) and app permissions
-(1.7), and resumes an enrollment whose answer was lost (1.9: it sends an enroll attempt id, and gets back the device
-it already created instead of a used-up code). Older agents report Location services unsupported, and can't apply
-app permissions (their devices show as out of sync while a configuration has a rule). It also works with a 0.4.0
-server, which sends neither and ignores the attempt id: an enrollment there works as before, it just can't be
-resumed.
+Agent 0.5.0 speaks protocol 1.10: it applies a configuration's Location services setting (1.6) and app permissions
+(1.7), resumes an enrollment whose answer was lost (1.9: it sends an enroll attempt id, and gets back the device
+it already created instead of a used-up code), and draws a kiosk background image with its fit and focal point (1.10).
+Older agents report Location services unsupported, can't apply app permissions (their devices show as out of sync
+while a configuration has a rule), and ignore the background image. It also works with a 0.4.0 server, which sends
+none of these and ignores the attempt id: an enrollment there works as before, it just can't be resumed.
 
 ## Version notes
 
@@ -211,6 +211,11 @@ resumed.
   API clients: `PUT /private/configurations` takes `managedAppPermissions` (`[{applicationId, permission, state}]`,
   state `grant` or `deny`); leaving it out keeps the stored rules, and rules for apps the save doesn't install are
   dropped.
+- **One config.apply after the upgrade, for some kiosk configurations.** A configuration's kiosk background image
+  address is now built from the current `BASE_URL` whenever it is sent. Where the stored address differs (the image
+  was picked before `BASE_URL` moved to HTTPS or another domain; a trailing slash alone doesn't count), the
+  configuration gets a new revision on upgrade, and its devices get one config.apply with the new address. Nothing to
+  do; the devices show the image again if the old address was one they refused.
 - **Return to kiosk on the device (agent 0.5.0):** after someone leaves a kiosk with the exit PIN, the MDMesh app
   offers **Return to kiosk**, offline too, while the device's configuration enables kiosk. A console **Exit kiosk**
   (`kiosk.exit`) leaves that option on the device; to remove it, turn kiosk off in the configuration. Older agents

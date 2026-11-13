@@ -24,6 +24,9 @@ package com.hmdm.rest.resource;
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
+import javax.ws.rs.POST;
+import javax.ws.rs.DefaultValue;
+import javax.ws.rs.QueryParam;
 import javax.ws.rs.*;
 import javax.ws.rs.core.MediaType;
 
@@ -37,6 +40,7 @@ import com.hmdm.rest.json.LookupItem;
 import com.hmdm.rest.json.UpgradeConfigurationApplicationRequest;
 import com.hmdm.rest.resource.support.ExtensionPoints;
 import com.hmdm.rest.resource.support.KioskBackgroundImageAssets;
+import com.hmdm.rest.resource.support.KioskBackgroundImageInfo;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.util.DesiredConfigBuilder;
 import com.hmdm.util.FileUtil;
@@ -48,6 +52,9 @@ import com.hmdm.rest.json.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.List;
 import java.util.HashSet;
 import java.util.Set;
@@ -82,6 +89,22 @@ public class ConfigurationResource {
                                  CustomerDAO customerDAO,
                                  UserDAO userDAO,
                                  @Named("base.url") String baseUrl,
+                                 ExtensionPoints extensionPoints,
+                                 KioskBackgroundImageAssets backgroundImages,
+                                 com.hmdm.persistence.ConfigurationFileDAO configurationFileDAO,
+                                 com.hmdm.persistence.IconDAO iconDAO) {
+        this(configurationDAO, applicationDAO, pushService, customerDAO, userDAO, baseUrl, extensionPoints, backgroundImages);
+        this.configurationFileDAO = configurationFileDAO;
+        this.iconDAO = iconDAO;
+    }
+
+    /** Tests: no configuration-file or icon users to check before a gallery delete. */
+    public ConfigurationResource(ConfigurationDAO configurationDAO,
+                                 ApplicationDAO applicationDAO,
+                                 PushService pushService,
+                                 CustomerDAO customerDAO,
+                                 UserDAO userDAO,
+                                 String baseUrl,
                                  ExtensionPoints extensionPoints,
                                  KioskBackgroundImageAssets backgroundImages) {
         this.configurationDAO = configurationDAO;
@@ -207,7 +230,8 @@ public class ConfigurationResource {
                     "With keep, an update keeps the stored image while backgroundImageUrl is left out or unchanged; " +
                     "another backgroundImageUrl is stored as the legacy launcher wallpaper and drops the managed image. " +
                     "A new configuration with a backgroundImageFileId gets that image. A refused image is HTTP 400 " +
-                    "with an ERROR whose message says why. " +
+                    "with an ERROR whose message says why. backgroundImageFit and backgroundImageFocalX/Y left out " +
+                    "keep the stored ones, except that a replace without a focal point centres it. " +
                     "locationServicesAction is keep (the default), on, off, or notManaged; " +
                     "ordinary saves preserve the stored Location-services policy."
     )
@@ -231,6 +255,11 @@ public class ConfigurationResource {
             throw new BadRequestException("connectivityMode must be adaptive, alwaysOn or null");
         }
         normalizeManagedAppPermissions(configuration);
+        validateBackgroundImageFit(configuration);
+        // A cleaned copy of the background image this save hosted: taken back if the save then fails.
+        KioskBackgroundImageAssets.Applied imageApplied = null;
+        // The file the save chose, held from the image check until the save is written or fails.
+        KioskBackgroundImageAssets.Applied imageHeld = null;
         try {
             Configuration dbConfiguration = this.configurationDAO.getConfigurationByName(configuration.getName());
             final Integer id = configuration.getId();
@@ -243,12 +272,18 @@ public class ConfigurationResource {
                                 "by user " + SecurityContext.get().getCurrentUserName());
                         return Response.PERMISSION_DENIED();
                     }
-                    canonicalizeBackgroundImage(configuration, null);
+                    imageApplied = canonicalizeBackgroundImage(configuration, null);
+                    imageHeld = imageApplied;
                     applyLocationServicesUpdate(configuration, null);
                     Response refused = refuseExtensions(configuration, null);
-                    if (refused != null) return refused;
+                    if (refused != null) {
+                        undo(imageApplied);
+                        return refused;
+                    }
                     configuration.setDisableLocation(false);        // Not used but shouldn't be NULL
                     this.configurationDAO.insertConfiguration(configuration);
+                    // Saved: the copy is the configuration's now, whatever fails after this.
+                    imageApplied = null;
                     User user = SecurityContext.get().getCurrentUser().get();
                     if (!user.isAllConfigAvailable()) {
                         // User should get permissions to edit a configuration he created
@@ -262,12 +297,18 @@ public class ConfigurationResource {
                         return Response.PERMISSION_DENIED();
                     }
                     Configuration stored = configurationDAO.getConfigurationById(id);
-                    canonicalizeBackgroundImage(configuration, stored);
+                    imageApplied = canonicalizeBackgroundImage(configuration, stored);
+                    imageHeld = imageApplied;
                     applyLocationServicesUpdate(configuration, stored);
+                    keepBackgroundImageFit(configuration, stored);
                     Response refused = refuseExtensions(configuration, storedExtensions(id, configuration));
-                    if (refused != null) return refused;
+                    if (refused != null) {
+                        undo(imageApplied);
+                        return refused;
+                    }
                     log.info("Configuration " + configuration.getName() + " updated by user "  + SecurityContext.get().getCurrentUserName());
                     this.configurationDAO.updateConfiguration(configuration);
+                    imageApplied = null;
                     this.pushService.notifyDevicesOnUpdate(configuration.getId());
                 }
                 configuration = getConfiguration(configuration.getId());
@@ -275,11 +316,16 @@ public class ConfigurationResource {
                 return Response.OK(configuration);
             }
         } catch (BadRequestException e) {
+            undo(imageApplied);
             throw e;
         } catch (Exception e) {
+            undo(imageApplied);
             log.error("Unexpected error when saving the configuration", e);
             e.printStackTrace();
             return Response.INTERNAL_ERROR();
+        } finally {
+            // Written (the configuration references the file) or failed: the save no longer holds it.
+            if (imageHeld != null) imageHeld.release();
         }
     }
 
@@ -324,10 +370,19 @@ public class ConfigurationResource {
         configuration.setManagedAppPermissions(kept);
     }
 
-    private void canonicalizeBackgroundImage(Configuration configuration, Configuration stored) {
-        if (backgroundImages == null) return;
+    private void undo(KioskBackgroundImageAssets.Applied applied) {
+        if (applied == null) return;
         try {
-            backgroundImages.apply(configuration, stored);
+            applied.undo(fileId -> configurationDAO.isBackgroundImageFileUsed(fileId));
+        } catch (RuntimeException e) {
+            log.warn("Could not remove the background image copy of a failed save", e);
+        }
+    }
+
+    private KioskBackgroundImageAssets.Applied canonicalizeBackgroundImage(Configuration configuration, Configuration stored) {
+        if (backgroundImages == null) return null;
+        try {
+            return backgroundImages.apply(configuration, stored);
         } catch (IllegalArgumentException e) {
             // The usual ERROR envelope, so the console can show the message.
             throw new BadRequestException(javax.ws.rs.core.Response.status(javax.ws.rs.core.Response.Status.BAD_REQUEST)
@@ -335,6 +390,39 @@ public class ConfigurationResource {
                     .entity(Response.ERROR(e.getMessage()))
                     .build());
         }
+    }
+
+    /** fit is fill, fit or null; a focal coordinate is null or a number from 0 to 1 (NaN and infinities refused). */
+    private static void validateBackgroundImageFit(Configuration c) {
+        String fit = c.getBackgroundImageFit();
+        if (fit != null && !"fill".equals(fit) && !"fit".equals(fit)) {
+            throw badRequest("backgroundImageFit must be fill, fit or null");
+        }
+        for (Double v : new Double[]{c.getBackgroundImageFocalX(), c.getBackgroundImageFocalY()}) {
+            if (v != null && !(v >= 0 && v <= 1)) {
+                throw badRequest("backgroundImageFocalX and backgroundImageFocalY must be from 0 to 1");
+            }
+        }
+    }
+
+    /**
+     * What a client doesn't send of fit and the focal point (an older console or API client) keeps its stored value,
+     * except the focal point on a {@code replace}: it belongs to the old image, so another image starts at the centre
+     * unless the client sends one (as the console does). Fill or Fit stays as chosen.
+     */
+    private static void keepBackgroundImageFit(Configuration c, Configuration stored) {
+        if (stored == null) return;
+        if (c.getBackgroundImageFit() == null) c.setBackgroundImageFit(stored.getBackgroundImageFit());
+        if ("replace".equals(c.getBackgroundImageAction())) return;
+        if (c.getBackgroundImageFocalX() == null) c.setBackgroundImageFocalX(stored.getBackgroundImageFocalX());
+        if (c.getBackgroundImageFocalY() == null) c.setBackgroundImageFocalY(stored.getBackgroundImageFocalY());
+    }
+
+    private static BadRequestException badRequest(String message) {
+        return new BadRequestException(javax.ws.rs.core.Response.status(javax.ws.rs.core.Response.Status.BAD_REQUEST)
+                .type(MediaType.APPLICATION_JSON)
+                .entity(Response.ERROR(message))
+                .build());
     }
 
     private static void applyLocationServicesUpdate(Configuration configuration, Configuration stored) {
@@ -439,7 +527,21 @@ public class ConfigurationResource {
             copy.setDescription(configuration.getDescription());
             copy.setApplications(configurationApplications);
             copy.setBaseUrl(this.configurationDAO.getBaseUrl());
-            this.configurationDAO.insertConfiguration(copy);
+            // The source's background image is held until the copy is written: a delete meanwhile can't leave the copy
+            // pointing at nothing (refused when it is already gone).
+            KioskBackgroundImageAssets.Applied held = null;
+            if (backgroundImages != null && copy.getBackgroundImageFileId() != null) {
+                try {
+                    held = backgroundImages.holdExisting(copy.getBackgroundImageFileId(), true);
+                } catch (IllegalArgumentException e) {
+                    return Response.ERROR(KioskBackgroundImageAssets.COPY_SOURCE_DELETED);
+                }
+            }
+            try {
+                this.configurationDAO.insertConfiguration(copy);
+            } finally {
+                if (held != null) held.release();
+            }
             User user = SecurityContext.get().getCurrentUser().get();
             if (!user.isAllConfigAvailable()) {
                 // User should get permissions to edit a configuration he created
@@ -501,6 +603,95 @@ public class ConfigurationResource {
             return Response.PERMISSION_DENIED();
         }
         return Response.OK(this.applicationDAO.populateRequestedPermissions(this.configurationDAO.getConfigurationApplications(id)));
+    }
+
+    /** What else may use an uploaded file (configuration files, icons), checked before a gallery delete. */
+    private com.hmdm.persistence.ConfigurationFileDAO configurationFileDAO;
+    private com.hmdm.persistence.IconDAO iconDAO;
+
+    // =================================================================================================================
+    @ApiOperation(
+            value = "Kiosk background images",
+            notes = "The customer's kiosk background images, once per content (SHA-256), newest first, with the "
+                    + "configurations using each (the ones the user may see by name, all of them counted). Paged. "
+                    + "Needs the configurations permission (as editing a background does), not Files access: a user "
+                    + "who edits configurations sees every kiosk image of the customer.",
+            response = KioskBackgroundImageAssets.GalleryPage.class
+    )
+    @GET
+    @Path("/backgroundImages")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getBackgroundImages(@QueryParam("page") @DefaultValue("0") int page,
+                                        @QueryParam("size") @DefaultValue("20") int size) {
+        if (!SecurityContext.get().hasPermission("configurations") || backgroundImages == null) {
+            return Response.PERMISSION_DENIED();
+        }
+        Map<Integer, List<KioskBackgroundImageAssets.Use>> uses = new HashMap<>();
+        Set<Integer> hidden = new HashSet<>();
+        // Which of them the user may open: one query, not an access check per configuration.
+        Set<Integer> accessible = new HashSet<>();
+        for (Configuration c : configurationDAO.getAccessibleBackgroundImageUses()) accessible.add(c.getId());
+        for (Configuration c : configurationDAO.getBackgroundImageUses()) {
+            KioskBackgroundImageAssets.Use u = new KioskBackgroundImageAssets.Use();
+            u.setId(c.getId());
+            u.setName(c.getName());
+            uses.computeIfAbsent(c.getBackgroundImageFileId(), k -> new ArrayList<>()).add(u);
+            if (!accessible.contains(c.getId())) hidden.add(c.getId());
+        }
+        return Response.OK(backgroundImages.gallery(uses, hidden, Math.max(0, page), Math.max(1, Math.min(100, size))));
+    }
+
+    // =================================================================================================================
+    @ApiOperation(
+            value = "Delete a kiosk background image",
+            notes = "Deletes an uploaded kiosk background image of the customer that no configuration (or configuration "
+                    + "file or icon) uses. Refused (ERROR with a message) while anything uses it."
+    )
+    @POST
+    @Path("/backgroundImages/{fileId}/delete")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response deleteBackgroundImage(@PathParam("fileId") Integer fileId) {
+        if (!SecurityContext.get().hasPermission("configurations") || !SecurityContext.get().hasPermission("edit_files")
+                || backgroundImages == null || fileId == null) {
+            return Response.PERMISSION_DENIED();
+        }
+        try {
+            backgroundImages.deleteUnused(fileId, id -> configurationDAO.isBackgroundImageFileUsed(id)
+                    || (configurationFileDAO != null && configurationFileDAO.isFileUsed(id))
+                    || (iconDAO != null && iconDAO.isFileUsed(id)));
+            return Response.OK();
+        } catch (IllegalArgumentException e) {
+            return Response.ERROR(e.getMessage());
+        }
+    }
+
+    // =================================================================================================================
+    @ApiOperation(
+            value = "Describe a kiosk background image",
+            notes = "An uploaded image as devices get it once a configuration is saved with it: name, format, displayed "
+                    + "width and height, size and SHA-256 of the file without metadata, upload time, current URL. "
+                    + "Refuses (ERROR with a message) a file a save would refuse. Another account's file is described "
+                    + "only when a configuration of this account that the user may open uses it (one copied from the "
+                    + "main account's template); it comes back with fromAnotherAccount true, and a save can't choose it. "
+                    + "Any other account's file gets the same ERROR as a file that doesn't exist.",
+            response = KioskBackgroundImageInfo.class
+    )
+    @GET
+    @Path("/backgroundImage/{fileId}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getBackgroundImage(@PathParam("fileId") Integer fileId) {
+        if (!SecurityContext.get().hasPermission("configurations") || backgroundImages == null || fileId == null) {
+            log.error("Unauthorized attempt to describe the background image file " + fileId);
+            return Response.PERMISSION_DENIED();
+        }
+        try {
+            // Another account's file only when a configuration of this account the user may open uses it (one copied
+            // from the main account's template): its editor then shows the image's facts, not an alert.
+            return Response.OK(backgroundImages.describe(fileId, id -> configurationDAO.getAccessibleBackgroundImageUses()
+                    .stream().anyMatch(c -> Integer.valueOf(id).equals(c.getBackgroundImageFileId()))));
+        } catch (IllegalArgumentException e) {
+            return Response.ERROR(e.getMessage());
+        }
     }
 
     // =================================================================================================================

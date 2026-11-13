@@ -12,11 +12,11 @@ import { ApiError } from '../api/client';
 import { commitUpload, listApplications, uploadRawFile, type Application } from '../api/applications';
 import {
   KIOSK_IMAGE_AGENT,
-  KIOSK_IMAGE_TYPES,
   kioskImageContentId,
   kioskImageErrorText,
   kioskImageProblem,
   kioskImageUploadName,
+  normalizeKioskImage,
 } from '../data/kioskBackground';
 import { getSyncSummary, type ConfigSyncSummary } from '../api/configSync';
 import {
@@ -35,6 +35,7 @@ import {
   isLocked,
   locationServicesAction,
 } from '../data/configurationRules';
+import { configuredKiosk } from '../data/kiosk';
 import { kioskAffectingChanges } from '../data/kioskChanges';
 import { manageableAppPermissions, managedAppPermissionLabel } from '../data/managedAppPermissions';
 import {
@@ -75,6 +76,11 @@ import { NoAccess } from '../ext/hosts/RoutePage';
 import { usePermission } from '../ext/permissions';
 import { paths } from '../routes';
 import { AssignedApps } from './configurations/AssignedApps';
+import { KioskBackgroundField, hostedPath, useKioskBackgroundInfo } from './configurations/KioskBackground';
+import { KioskBackgroundPreview } from './configurations/KioskPreview';
+import { kioskColours, type FitMode } from '../data/kioskScrim';
+import { KioskPlacement } from './configurations/KioskPlacement';
+import { KioskGallery } from './configurations/KioskGallery';
 import { AppSelect, FieldControl, LongHelp } from './configurations/controls';
 import { AppPickerModal, CopyConfigModal, DeleteConfigModal, KioskConfirmModal } from './configurations/modals';
 import { devicesBlockingDelete, plural, usedByLine, wipedOnly, wipedOnlyLine } from './configurations/sync';
@@ -327,7 +333,10 @@ function changedKeys(before: Configuration, after: Configuration): Set<string> {
   // The background image picker is a managed asset control rather than a generic CONFIG_FIELDS control.
   // Its identity must still participate in the editor's dirty state and save/apply flow.
   if (norm(before.backgroundImageFileId) !== norm(after.backgroundImageFileId)
-    || norm(after.backgroundImageAction) !== null) out.add('backgroundImageFileId');
+    || norm(after.backgroundImageAction) !== null
+    || norm(before.backgroundImageFit) !== norm(after.backgroundImageFit)
+    || norm(before.backgroundImageFocalX) !== norm(after.backgroundImageFocalX)
+    || norm(before.backgroundImageFocalY) !== norm(after.backgroundImageFocalY)) out.add('backgroundImageFileId');
   if (appsSignature(before) !== appsSignature(after)) out.add('applications');
   if (appPermissionsSignature(before) !== appPermissionsSignature(after)) out.add('managedAppPermissions');
   return out;
@@ -399,8 +408,9 @@ function Editor({
   // Discards so far: the apps table files its rows again by their restored state.
   const [discards, setDiscards] = useState(0);
   const nameRef = useRef<HTMLInputElement>(null);
-  const backgroundImageRef = useRef<HTMLInputElement>(null);
   const [backgroundUploading, setBackgroundUploading] = useState(false);
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const mayDeleteFiles = usePermission(CORE_ACTION_ACCESS.uploadFile);
   const ids = useId();
 
   // The assigned apps: the configuration's own, or the template's for a copy. Until they arrive, saving is blocked
@@ -651,28 +661,44 @@ function Editor({
     );
   };
 
-  async function uploadBackgroundImage(file: File) {
-    const problem = kioskImageProblem(file);
-    if (problem) {
-      toast.push('err', 'Image not used', problem);
+  async function uploadBackgroundImage(picked: File) {
+    const typeProblem = kioskImageProblem({ type: picked.type, size: 0 });
+    if (typeProblem) {
+      toast.push('err', 'Image not used', typeProblem);
       return;
     }
     setBackgroundUploading(true);
     try {
+      // At most 3840 px along its long edge (drawn upright when scaled); the server removes the metadata.
+      let file: File;
+      try {
+        file = (await normalizeKioskImage(picked)).file;
+      } catch (e) {
+        toast.push('err', 'Image not used', e instanceof Error ? e.message : 'The image could not be read.');
+        return;
+      }
+      const problem = kioskImageProblem(file);
+      if (problem) {
+        toast.push('err', 'Image not used', problem);
+        return;
+      }
       // Hosted under a name from its content: an edited image with the same file name doesn't clash with the old one.
       const name = kioskImageUploadName(file.name, await kioskImageContentId(file));
       const temporary = await uploadRawFile(new File([file], name, { type: file.type }));
       const saved = await commitUpload(temporary.serverPath);
       if (saved.id == null) throw new Error('The server did not return the uploaded image identity.');
       // URL and checksum are server-canonicalized on save. Clearing the old values avoids a stale preview payload.
+      // Another image: its own focal point starts at the centre (Fill or Fit stays as chosen).
       setDraft((d) => ({
         ...d,
         backgroundImageAction: 'replace',
         backgroundImageFileId: saved.id,
         backgroundImageUrl: undefined,
         backgroundImageSha256: undefined,
+        backgroundImageFocalX: 0.5,
+        backgroundImageFocalY: 0.5,
       }));
-      toast.push('ok', 'Background image uploaded', 'Save and apply the configuration to use it in kiosk.');
+      toast.push('ok', 'Background image uploaded', 'Check the preview, then save and apply the configuration to use it in kiosk.');
     } catch (e) {
       toast.push('err', 'Image upload failed', kioskImageErrorText(e));
     } finally {
@@ -680,44 +706,95 @@ function Editor({
     }
   }
 
+  const backgroundFileId = draft.backgroundImageFileId as number | null | undefined;
+  const backgroundInfo = useKioskBackgroundInfo(kioskOn ? backgroundFileId : null);
+  // The preview's apps are the device's: the kiosk this draft sends (configuredKiosk, as config.apply builds it), so the
+  // main app first, then by package, each package once, all of them; a single-app kiosk pins its app instead of a grid.
+  const draftKiosk = useMemo(() => (kioskOn ? configuredKiosk(draft as Configuration, allowed) : null), [kioskOn, draft, allowed]);
+  const kioskAppNames = useMemo(() => draftKiosk?.apps.map((a) => a.name) ?? [], [draftKiosk]);
+  const pinnedApp = draftKiosk?.payload.mode === 'single' ? (draftKiosk.apps[0]?.name ?? draftKiosk.payload.pinPackage) : undefined;
+
+  const imageFitMode: FitMode = draft.backgroundImageFit === 'fit' ? 'fit' : 'fill';
+  const focalX = typeof draft.backgroundImageFocalX === 'number' ? draft.backgroundImageFocalX : 0.5;
+  const focalY = typeof draft.backgroundImageFocalY === 'number' ? draft.backgroundImageFocalY : 0.5;
+  const imageFocal = useMemo(() => ({ x: focalX, y: focalY }), [focalX, focalY]);
+
   const backgroundImageRow = kioskOn ? (
     <FieldRow
       id={`${ids}-backgroundImage`}
       label="Background image"
-      help={`Needs agent ${KIOSK_IMAGE_AGENT}. A PNG, JPEG or WebP image, at most 10 MB and 16 megapixels, shown behind the kiosk launcher; the background color stays the fallback. Devices download it only when the server address is HTTPS, and check it by its SHA-256. It is hosted in Files, where anyone with its link can open it, so don't use a confidential image. Remove also clears the legacy Background image URL.`}
+      help={`Needs agent ${KIOSK_IMAGE_AGENT}. A PNG, JPEG or WebP photo behind the kiosk launcher; the background color stays the fallback.`}
       adornment={changed.has('backgroundImageFileId') && !readOnly ? <ChangedChip /> : undefined}
       disabled={readOnly}
-    >
-      {() => (
-        <div className="v2-cfged-calloutline">
-          <input
-            ref={backgroundImageRef}
-            type="file"
-            accept={KIOSK_IMAGE_TYPES.join(',')}
-            hidden
-            onChange={(e) => {
-              const file = e.currentTarget.files?.[0];
-              e.currentTarget.value = '';
-              if (file) void uploadBackgroundImage(file);
-            }}
+      below={backgroundInfo.info ? (
+        <div className="v2-cfged-kbg">
+          <KioskPlacement
+            src={hostedPath(backgroundInfo.info.url)}
+            width={backgroundInfo.info.width}
+            height={backgroundInfo.info.height}
+            fit={imageFitMode}
+            focal={imageFocal}
+            disabled={readOnly}
+            onFit={(v) => setDraft((d) => ({ ...d, backgroundImageFit: v }))}
+            onFocal={(f) => setDraft((d) => ({ ...d, backgroundImageFocalX: f.x, backgroundImageFocalY: f.y }))}
           />
-          <Button size="sm" onClick={() => backgroundImageRef.current?.click()} disabled={readOnly || backgroundUploading}>
-            {backgroundUploading ? 'Uploading…' : draft.backgroundImageFileId != null || draft.backgroundImageUrl ? 'Replace image' : 'Choose image'}
-          </Button>
-          {draft.backgroundImageFileId != null || draft.backgroundImageUrl ? (
-            <Button size="sm" onClick={() => setDraft((d) => ({
-              ...d,
-              backgroundImageAction: 'remove',
-              backgroundImageFileId: null,
-              backgroundImageUrl: undefined,
-              backgroundImageSha256: undefined,
-            }))} disabled={readOnly || backgroundUploading}>
-              Remove
-            </Button>
-          ) : null}
+          <KioskBackgroundPreview
+            src={hostedPath(backgroundInfo.info.url)}
+            width={backgroundInfo.info.width}
+            height={backgroundInfo.info.height}
+            colours={kioskColours(draft.backgroundColor as string | undefined, draft.textColor as string | undefined)}
+            appNames={kioskAppNames}
+            pinned={pinnedApp}
+            exitVisible={draft.kioskExit === true}
+            iconSize={draft.iconSize as string | undefined}
+            fit={imageFitMode}
+            focal={imageFocal}
+          />
         </div>
+      ) : undefined}
+    >
+      {({ labelId }) => (
+        <KioskBackgroundField
+          fileId={backgroundFileId}
+          info={backgroundInfo.info}
+          error={backgroundInfo.error}
+          legacyUrl={draft.backgroundImageUrl as string | undefined}
+          readOnly={readOnly}
+          uploading={backgroundUploading}
+          onFile={(file) => void uploadBackgroundImage(file)}
+          onRemove={() => setDraft((d) => ({
+            ...d,
+            backgroundImageAction: 'remove',
+            backgroundImageFileId: null,
+            backgroundImageUrl: undefined,
+            backgroundImageSha256: undefined,
+          }))}
+          onBrowse={() => setGalleryOpen(true)}
+          labelId={labelId}
+        />
       )}
     </FieldRow>
+  ) : null;
+  const gallery = kioskOn ? (
+    <KioskGallery
+      open={galleryOpen}
+      onClose={() => setGalleryOpen(false)}
+      currentFileId={backgroundFileId}
+      canDelete={mayDeleteFiles}
+      onChoose={(item) => {
+        setDraft((d) => ({
+          ...d,
+          backgroundImageAction: 'replace',
+          backgroundImageFileId: item.fileId,
+          backgroundImageUrl: undefined,
+          backgroundImageSha256: undefined,
+          backgroundImageFocalX: item.fileId === backgroundFileId ? d.backgroundImageFocalX : 0.5,
+          backgroundImageFocalY: item.fileId === backgroundFileId ? d.backgroundImageFocalY : 0.5,
+        }));
+        setGalleryOpen(false);
+        toast.push('ok', 'Background image chosen', `${item.name}. Save and apply the configuration to use it in kiosk.`);
+      }}
+    />
   ) : null;
 
   const renderItems = (items: Item[]) =>
@@ -738,6 +815,7 @@ function Editor({
       <CardHeader titleId={`${ids}-${id}-h`} title={title} subtitle={SECTION_SUB[id]} spacing={12} />
       {renderItems(LAYOUT[id])}
       {id === 'kiosk' ? backgroundImageRow : null}
+      {id === 'kiosk' ? gallery : null}
     </Card>
   );
 

@@ -1,0 +1,125 @@
+/* Kiosk background image: viewer, previewer, device page line. Colours of the console come from tokens.css; the
+   mock screens use the kiosk's own colours (custom properties set per screen), as the launcher does in both themes. */
+
+.v2 .v2-kbg {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.v2 .v2-kbg__state {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+  overflow-wrap: anywhere;
+}
+
+.v2 .v2-kbg__url {
+  color: var(--text);
+}
+
+.v2 .v2-kbg__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.v2 .v2-kbg__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.v2 .v2-kbg__thumb {
+  width: 160px;
+  height: 100px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-sunken);
+  flex: none;
+}
+
+.v2 .v2-kbg__thumb--missing {
+  display: grid;
+  place-items: center;
+  font-size: var(--fs-small);
+  color: var(--secondary);
+}
+
+.v2 .v2-kbg__facts {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.v2 .v2-kbg__name {
+  overflow-wrap: anywhere;
+}
+
+.v2 .v2-kbg__note {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin: 8px 0 0;
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+
+.v2 .v2-card.v2-kbg-device {
+  flex-direction: row;
+  gap: 14px;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.v2 .v2-kbg-device__thumb {
+  width: 72px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: var(--radius-seg);
+  border: 1px solid var(--border);
+  flex: none;
+}
+
+.v2 .v2-kbg-device__body {
+  min-width: 0;
+}
+
+.v2 .v2-kbg-device__title {
+  margin: 0 0 2px;
+  font-size: var(--fs-lead);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.v2 .v2-kbg-device__text {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+}
+
+.v2 .v2-kbg__how > summary {
+  cursor: pointer;
+  width: fit-content;
+  padding: 4px 0;
+  line-height: 24px;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  border-radius: var(--radius-xs);
+}
+
+.v2 .v2-kbg__how > summary:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.v2 .v2-kbg__how ul {
+  margin: 8px 0 0;
+  padding-left: 16px;
+  display: grid;
+  gap: 4px;
+  font-size: var(--fs-sm);
+  color: var(--secondary);
+  max-width: 64ch;
+}

@@ -8,6 +8,8 @@ line under Unreleased.
 
 ## Unreleased
 
+## v0.5.0 — 2026-11-13
+
 Upgrading
 - The database adds columns on start: `devices.wipedAt`; `configurations.camera`, `configurations.locationServices`,
   `configurations.backgroundImageFileId`, `configurations.backgroundImageSha256`, `configurations.backgroundImageFit`,
@@ -28,6 +30,8 @@ Upgrading
   `git fetch --tags && git checkout v0.5.0 && ./setup.sh --update` (native:
   `git fetch --tags && git checkout v0.5.0 && sudo ./setup.sh --update --native`). From then on, update with `./setup.sh --update`
   (native: `sudo ./setup.sh --update --native`).
+- There is a new agent, 0.5.0: roll it out from Settings → Agent rollout. Much of this release needs it, and devices
+  on older agents keep working ([UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050)).
 - Native: the installer now stops on an option it doesn't take, instead of ignoring it.
 - Answers files (`MDMESH_ANSWERS`) must belong to you and be private (mode 600), or they are refused.
 
@@ -230,6 +234,8 @@ Under the hood
   640 and 320px, and CI runs its quick pass.
 - Agent: the APK carries English resources only (about 90 KB smaller), and its screen text lives in string
   resources.
+- Agent protocol 1.6 and 1.7 (additive): config.apply `policies.locationServices`, and the `appPermissions` section
+  with the `app.runtimePermissions` capability.
 - Agent protocol 1.9 (additive): the enroll request's optional `enrollAttempt` and `resumeOnly`, the enroll response's
   `resumeSupported`, `error.agent.enrollment.notResumable`, and the retryable enroll errors
   `error.agent.enrollment.failed`, `error.agent.enrollment.inProgress` and `error.agent.enrollment.deviceLimit`. New
@@ -237,6 +243,9 @@ Under the hood
 - Protocol 1.10: `theme.backgroundImage` may carry `fit` and `focalX`/`focalY`, sent only when not the default
   (additive). `GET /private/configurations/backgroundImages` lists a customer's kiosk images and
   `POST /private/configurations/backgroundImages/{fileId}/delete` deletes an unused one.
+- Dependencies: Room 2.8.5, WorkManager 2.12.0, Retrofit 3.0.0, AppCompat 1.8.0 (agent); Jackson 2.22.4, Guava 33.8.0,
+  commons-codec 1.23.0, ActiveMQ 5.19.12 (server); vite 8.3.6, vitest 5.1.0, jsdom 31.0.0 (console); Caddy 2.11.9;
+  docker/login-action 4.8.0, setup-java 6.2.0.
 
 ## v0.4.0 — 2026-11-03
 

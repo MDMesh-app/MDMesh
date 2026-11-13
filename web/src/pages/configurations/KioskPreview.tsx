@@ -1,7 +1,7 @@
-// The kiosk background image's preview: the launcher over the image as the agent draws it (centre crop, a light dim
-// for the Exit button, a plate behind each text that needs one), in one large view at device scale with Phone/Tablet
-// and Rotate, and four thumbnails that select it. Same rules and functions as the agent: data/kioskScrim.ts,
-// data/kioskLauncherLayout.ts, data/kioskLabelLines.ts, docs/kiosk-background-scrim.md (version 3.4).
+// The kiosk background image's preview: the launcher over the image as the agent draws it (fill around the focal
+// point or fit, a light dim for the Exit button, a plate behind each text that needs one), in one large view at device
+// scale with Phone/Tablet and Rotate, and four thumbnails that select it. Same rules and functions as the agent:
+// data/kioskScrim.ts, data/kioskLauncherLayout.ts, data/kioskLabelLines.ts, docs/kiosk-background-scrim.md (version 3.6).
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { browserMeasure, FALLBACK_FONT, KIOSK_FONT, launcherLayout, PLATE_RADIUS, type LauncherLayout, type Measure } from '../../data/kioskLauncherLayout';
 import {

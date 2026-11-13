@@ -13,8 +13,11 @@
 // The build must exist (`npm run build` in web/; VITE_GALLERY=1 adds the component gallery to the sweep).
 import { chromium } from 'playwright';
 import { AxeBuilder } from '@axe-core/playwright';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import zlib from 'node:zlib';
+import { configurationsFixtures } from './fixtures.mjs';
 import { DIST, fx, newContext, startServer } from './harness.mjs';
 
 const arg = (k) => {
@@ -43,6 +46,73 @@ const USERS = {
   '**/rest/private/roles/all': () => env([ROLE]),
   '**/rest/private/roles/permissions': () => env([]),
 };
+
+/** A test PNG (8-bit RGB): a gradient with a bright band and a busy patch, so the preview draws plates and a dim. */
+function kioskPng(w, h) {
+  const raw = Buffer.alloc((w * 3 + 1) * h);
+  for (let y = 0; y < h; y++) {
+    const row = y * (w * 3 + 1);
+    for (let x = 0; x < w; x++) {
+      const busy = x > w * 0.55 && y < h * 0.45 && ((x >> 3) + (y >> 3)) % 2 === 0;
+      const bright = y > h * 0.6 && y < h * 0.75;
+      const v = busy ? 235 : bright ? 245 : Math.round(40 + (180 * x) / w);
+      raw.set([v, busy ? 40 : Math.round(60 + (120 * y) / h), bright ? 230 : 120], row + 1 + x * 3);
+    }
+  }
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(zlib.crc32(Buffer.concat([Buffer.from(type), data])));
+    return Buffer.concat([len, Buffer.from(type), data, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr.set([8, 2, 0, 0, 0], 8);
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', zlib.deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+/**
+ * The kiosk background image editor (#193) on configuration 2 (Retail Kiosk as a launcher kiosk, Exit shown): its
+ * image, the image's facts, two gallery entries (one in use, one unused) and the image file itself. Used by the kiosk
+ * states, the keyboard walk and the gallery's Escape check.
+ */
+const KIOSK_IMAGE = (() => {
+  const png = kioskPng(640, 400);
+  const url = 'https://mdm.acme.example/files/acme/kiosk-0123456789ab-lobby.png';
+  const info = {
+    fileId: 77, url, name: 'lobby.png', format: 'PNG', width: 640, height: 400, orientation: 1, size: png.length,
+    sha256: createHash('sha256').update(png).digest('hex'), uploadTime: Date.now() - 2 * 86_400_000,
+  };
+  const spare = { ...info, fileId: 78, url: url.replace('0123456789ab-lobby', 'fedcba987654-cafe-menu'), name: 'cafe-menu.png', sha256: 'b'.repeat(64) };
+  const cfx = configurationsFixtures(fx);
+  const config = {
+    // A launcher kiosk (no main app), so the preview draws the app grid, its plates and the Exit button.
+    ...cfx.configs.find((c) => c.id === 2), ...cfx.fullExtras(2), mainAppId: null, kioskExit: true,
+    backgroundImageFileId: info.fileId, backgroundImageUrl: url, backgroundImageSha256: info.sha256,
+  };
+  return {
+    rest: {
+      '**/rest/private/configurations/2': () => env(config),
+      '**/rest/private/configurations/backgroundImage/77': () => env(info),
+      '**/rest/private/configurations/backgroundImages?*': () => env({
+        items: [
+          { ...info, fileIds: [77], usedBy: [{ id: 2, name: 'Retail Kiosk' }], usedByCount: 1 },
+          { ...spare, fileIds: [78], usedBy: [], usedByCount: 0 },
+        ],
+        total: 2, page: 0, size: 20,
+      }),
+    },
+    files: { '**/files/acme/kiosk-*': { contentType: 'image/png', body: png } },
+  };
+})();
+
 const click = async (page, role, name, opts = {}) => {
   await page.getByRole(role, { name, ...opts }).first().click();
   await page.waitForTimeout(350);
@@ -170,6 +240,43 @@ const STATES = [
     },
   },
   { name: 'config-editor', route: '/configurations/1' },
+  // The kiosk background image (#193): the image's facts, the focal point picker (focused) and the preview (open by
+  // default) as a phone; the preview as a landscape tablet; and the uploaded-images dialog.
+  {
+    name: 'config-editor-kiosk-image',
+    route: '/configurations/2',
+    ...KIOSK_IMAGE,
+    setup: async (p) => {
+      await p.getByRole('img', { name: /^Current kiosk background: lobby\.png/ }).waitFor({ timeout: 8000 });
+      await p.getByRole('slider').first().focus();
+      await p.waitForTimeout(300);
+    },
+  },
+  {
+    name: 'config-editor-kiosk-preview',
+    route: '/configurations/2',
+    ...KIOSK_IMAGE,
+    setup: async (p) => {
+      // The preview is open by default: show it as a tablet, turned to landscape, measured (the readout says the
+      // contrast, not "Measuring…").
+      const preview = p.locator('details.v2-kbg__preview[open]');
+      await preview.scrollIntoViewIfNeeded();
+      await preview.getByRole('radiogroup', { name: 'Device' }).getByRole('radio', { name: 'Tablet' }).click();
+      await preview.getByRole('button', { name: 'Rotate to landscape' }).click();
+      await p.waitForTimeout(800);
+      await preview.locator('.v2-kbg__large-readout').filter({ hasText: /Tablet.*landscape/i }).filter({ hasNotText: 'Measuring' })
+        .waitFor({ timeout: 8000 });
+    },
+  },
+  {
+    name: 'config-editor-kiosk-gallery',
+    route: '/configurations/2',
+    ...KIOSK_IMAGE,
+    setup: async (p) => {
+      await click(p, 'button', 'Choose from uploaded');
+      await dialog(p).getByRole('button', { name: 'Use cafe-menu.png' }).waitFor({ timeout: 8000 });
+    },
+  },
   {
     name: 'config-editor-dirty',
     route: '/configurations/1',
@@ -320,6 +427,9 @@ async function openState(browser, base, state, theme, vp) {
   });
   for (const [pattern, body] of Object.entries(state.rest ?? {})) {
     await context.route(pattern, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: body(route) }));
+  }
+  for (const [pattern, file] of Object.entries(state.files ?? {})) {
+    await context.route(pattern, (route) => route.fulfill({ status: 200, ...file }));
   }
   const page = await context.newPage();
   const errors = [];
@@ -472,6 +582,7 @@ async function keyboardWalk(browser, base) {
     ['device', '/devices/WH-SCAN-07', fx.user],
     ['configurations', '/configurations', fx.user],
     ['config-editor', '/configurations/1', fx.user],
+    ['config-editor-kiosk', '/configurations/2', fx.user, KIOSK_IMAGE],
     ['apps', '/apps', fx.user],
     ['enroll', '/enroll', fx.user],
     ['settings', '/settings', fx.user],
@@ -480,9 +591,9 @@ async function keyboardWalk(browser, base) {
   fs.mkdirSync(path.join(out, 'focus'), { recursive: true });
   for (const theme of THEMES) for (const vp of VIEWPORTS) {
     if (vp.lightOnly && theme !== 'light') continue;
-    for (const [name, route, user] of routes) {
+    for (const [name, route, user, extra] of routes) {
       if (only && !name.includes(only)) continue;
-      const { context, page } = await openState(browser, base, { route, user }, theme, vp);
+      const { context, page } = await openState(browser, base, { route, user, ...extra }, theme, vp);
       if (vp.name === '1280' && theme === 'light') fs.writeFileSync(path.join(out, 'aria', `${name}.yml`), await page.locator('body').ariaSnapshot());
       await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur());
       const steps = [];
@@ -552,10 +663,11 @@ async function keyboardWalk(browser, base) {
     ['/apps', 'button', 'Deploy Chrome'],
     ['/enroll', 'button', 'Full screen'],
     ['/settings', 'button', /Change password/],
+    ['/configurations/2', 'button', 'Choose from uploaded', POPUP, KIOSK_IMAGE],
   ];
   const escapes = [];
-  for (const [route, role, label, open = POPUP] of dialogs) {
-    const { context, page } = await openState(browser, base, { route }, 'light', VIEWPORTS[0]);
+  for (const [route, role, label, open = POPUP, extra] of dialogs) {
+    const { context, page } = await openState(browser, base, { route, ...extra }, 'light', VIEWPORTS[0]);
     const trigger = page.getByRole(role, { name: label }).first();
     let result;
     try {

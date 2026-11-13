@@ -2,6 +2,7 @@
 
 .v2 .v2-kbp {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 
@@ -32,15 +33,21 @@
 
 .v2 .v2-kbp__focal {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   justify-items: start;
+  /* Wraps under its label when the row is narrow, and may shrink below the picker's 280 px there, so the picker's
+     max-width: 100% can narrow it. */
+  flex: 1 1 200px;
+  min-width: 0;
 }
 
 .v2 .v2-kbp__area {
   position: relative;
   overflow: hidden;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--border-strong);
+  /* The focal point picker is a control (drag, click, arrow keys): its edge is 3:1 (1.4.11). */
+  border: 1px solid var(--control-border);
   cursor: crosshair;
   touch-action: none;
   max-width: 100%;

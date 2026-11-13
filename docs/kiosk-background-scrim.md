@@ -10,7 +10,8 @@ controls (the Exit button). A photo can be any brightness, so the launcher does 
    that text reaches **4.5:1** (WCAG AA; the launcher has no large text) against **every** pixel under it, and solid
    over texture. Text over a calm part of the image gets no plate. Plates carry the text, so the image stays visible.
 
-The console's preview computes the same, so what it shows is what the device draws.
+The console's preview computes the same, so what it shows is what a device that reads the image at full size draws
+(see the reference note below).
 
 - Console: `web/src/data/kioskScrim.ts` (`parseColor`, `kioskColours`, `imageCells`, `kioskLegibility`),
   `web/src/data/kioskLauncherLayout.ts` (the plate geometry) and the preview, `web/src/pages/configurations/
@@ -39,9 +40,10 @@ exactly, and then its ranges can differ a little from the preview's, either way:
 
 - It samples a large image (for memory) and sizes its cells in sampled pixels, so a cell covers a slightly different
   part of the image: a 6000 x 4000 photo sampled by 4 has 13 px cells, 52 full-size pixels, where the console's are
-  50, so the device reads x in [936, 1456) where the console reads [950, 1450).
-- A low-RAM device draws a picture without transparency at 2 bytes a pixel (RGB_565) and works its cells out from
-  those drawn pixels.
+  50. For the cells under a text box at x 950 to 1450 of the image, the device reads x in [936, 1456) where the
+  console reads [950, 1450).
+- A low-memory device (low-RAM, or an app heap class of 128 MB or less) draws a picture without transparency at 2
+  bytes a pixel (RGB_565) and works its cells out from those drawn pixels.
 
 Each side keeps its own text at 4.5:1, and the Exit button's border at 3:1, against the pixels it draws itself. So a
 device can draw a plate or a stronger dim that the preview doesn't show, or the other way round, but never less than
@@ -87,9 +89,9 @@ Once per image, in image pixels:
 - **Decode**: the image as 8-bit sRGB, ARGB_8888, after its EXIF orientation. Orientation is **JPEG-only** (the server
   removes it from PNG and WebP, so those are shown as stored). An embedded colour profile is converted to sRGB (Display
   P3 included): on Android 8+ decode with `inPreferredColorSpace = SRGB`; older Android ignores profiles, the same as
-  treating the pixels as sRGB. The cells come from the pixels that are drawn: the ARGB_8888 bitmap, or, on a low-RAM
-  device that draws an opaque image as RGB_565, that bitmap read back (each channel widened to 8 bits as Android
-  draws it).
+  treating the pixels as sRGB. The cells come from the pixels that are drawn: the ARGB_8888 bitmap, or, on a
+  low-memory device (low-RAM, or an app heap class of 128 MB or less) that draws an opaque image as RGB_565, that
+  bitmap read back (each channel widened to 8 bits as Android draws it).
 - **Size**: full size (the console), or the device's power-of-two sample (`inSampleSize`), with `iw`, `ih` and the
   cells taken from the sampled bitmap. Sampling can change the ranges a little (see the reference note above).
 - **Cells**: square, `cellSize = max(1, ceil(max(iw, ih) / 120))` px; `cols = ceil(iw / cellSize)`,

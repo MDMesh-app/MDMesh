@@ -60,7 +60,8 @@ export function KioskPlacement({
   };
 
   const valueText = `${pct(focal.x)} across, ${pct(focal.y)} down`;
-  // The picker is at most 280 px wide and 200 px tall, in the image's proportions.
+  // The picker is at most 280 px wide and 200 px tall, in the image's proportions, and narrower when its column is
+  // (a 320 px window): the CSS caps it at the column's width and the aspect ratio keeps the proportions.
   const scale = Math.min(280 / width, 200 / height);
 
   return (
@@ -92,7 +93,7 @@ export function KioskPlacement({
           <div
             ref={area}
             className={`v2-kbp__area${focalOff ? ' is-off' : ''}`}
-            style={{ width: Math.round(width * scale), height: Math.round(height * scale) }}
+            style={{ width: Math.round(width * scale), aspectRatio: `${width} / ${height}` }}
             role="slider"
             tabIndex={focalOff ? -1 : 0}
             aria-labelledby={`${ids}-focal`}

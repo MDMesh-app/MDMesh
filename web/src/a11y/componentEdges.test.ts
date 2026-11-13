@@ -29,6 +29,8 @@ const STRONG_EDGES: Array<[what: string, file: string, selector: string, token: 
   ['selected tab', 'ui/Tabs.css', '.v2 .v2-tabs__tab.is-selected {', 'control-border'],
   ['current sidebar item', 'ui/Sidebar.css', '.v2 .v2-navitem.is-active {', 'control-border'],
   ['current section-nav item', 'ui/SectionNav.css', '.v2 .v2-secnav__item.is-current {', 'control-border'],
+  ['kiosk background focal point picker', 'pages/configurations/KioskPlacement.css', '.v2 .v2-kbp__area {', 'control-border'],
+  ['selected kiosk preview thumbnail (ring around the device)', 'pages/configurations/KioskPreview.css', ".v2 .v2-kbg__thumb-button[aria-pressed='true'] .v2-kbg__device {", 'ink'],
   ['toggle (off) track', 'ui/Toggle.css', '.v2 .v2-toggle__track {', 'switch-off-ring'],
   ['focus ring', 'tokens.css', '.v2 :focus-visible {', 'ink'],
   ['not-reported bar segment', 'ui/Bars.css', '.v2 .v2-bar--pending {', 'muted'],

@@ -7,9 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -26,10 +24,11 @@ import static org.junit.Assert.assertTrue;
 public class AgentProtocolVersionTest {
 
     /**
-     * Rows documented on this branch whose constant bump waits for the merge order to settle (#188 sets 1.9 first,
-     * then this branch sets 1.10). Empty this, and set AgentProtocol.VERSION to the highest row, when they merge.
+     * Documented rows whose constant bump waits for another branch's merge (say two open PRs that each add a row): the
+     * test then skips them when finding the highest row. Empty unless such a wait is in progress; empty it, and set
+     * AgentProtocol.VERSION to the highest row, when they merge.
      */
-    private static final Set<String> AWAITING_BUMP = new HashSet<>(Arrays.asList("1.10"));
+    private static final Set<String> AWAITING_BUMP = Collections.emptySet();
 
     /**
      * Versions in AWAITING_BUMP whose bump is due (the row below them is documented) but deliberately held, each with
@@ -37,9 +36,7 @@ public class AgentProtocolVersionTest {
      * version that is already the protocol version fails (empty both sets then). A release clears every hold first
      * (RELEASING.md, step 2).
      */
-    private static final Map<String, String> BUMP_HELD = Collections.singletonMap("1.10",
-            "1.9 is on main (#188); the merge order of feat/kiosk-background-console and feat/agent-ui-p4-p5 decides "
-                    + "which of them sets AgentProtocol.VERSION to 1.10");
+    private static final Map<String, String> BUMP_HELD = Collections.emptyMap();
 
     @Test
     public void theConstantIsTheHighestDocumentedVersion() throws Exception {
@@ -59,8 +56,8 @@ public class AgentProtocolVersionTest {
                 highest = r;
             }
         }
-        // An exception may only wait for the row just below it: once that row is documented (#188's 1.9 merged before
-        // this branch's 1.10), the bump is due, and so is emptying AWAITING_BUMP.
+        // An exception may only wait for the row just below it: once that row is documented (a 1.9 merged before
+        // a branch's 1.10), the bump is due, and so is emptying AWAITING_BUMP.
         assertTrue("every held bump awaits one", AWAITING_BUMP.containsAll(BUMP_HELD.keySet()));
         for (String pending : AWAITING_BUMP) {
             assertFalse(pending + " is the protocol version already: empty AWAITING_BUMP and BUMP_HELD",

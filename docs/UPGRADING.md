@@ -163,12 +163,12 @@ available).
 Agent 0.4.0 speaks protocol 1.5: it applies a configuration's connectivity mode, which older agents ignore. It also
 works with a 0.3.9 server.
 
-Agent 0.5.0 speaks protocol 1.9: it applies a configuration's Location services setting (1.6) and app permissions
-(1.7), and resumes an enrollment whose answer was lost (1.9: it sends an enroll attempt id, and gets back the device
-it already created instead of a used-up code). Older agents report Location services unsupported, and can't apply
-app permissions (their devices show as out of sync while a configuration has a rule). It also works with a 0.4.0
-server, which sends neither and ignores the attempt id: an enrollment there works as before, it just can't be
-resumed.
+Agent 0.5.0 speaks protocol 1.10: it applies a configuration's Location services setting (1.6) and app permissions
+(1.7), resumes an enrollment whose answer was lost (1.9: it sends an enroll attempt id, and gets back the device
+it already created instead of a used-up code), and draws a kiosk background image with its fit and focal point (1.10).
+Older agents report Location services unsupported, can't apply app permissions (their devices show as out of sync
+while a configuration has a rule), and ignore the background image. It also works with a 0.4.0 server, which sends
+none of these and ignores the attempt id: an enrollment there works as before, it just can't be resumed.
 
 ## Version notes
 

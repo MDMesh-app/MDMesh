@@ -34,6 +34,15 @@ Heads-up
 - Native installs: `REPLACE_DATA` must be `yes` or `no`, and `ASSUME_YES` `1` or `0`. Any other value now stops the
   installer before it changes anything, where it used to mean Keep or ask.
 
+Heads-up
+- The agent is now called **MDMesh** on the device (was MDM Agent): in the app drawer, Settings → Apps, the
+  device admin list and the device's Apps tab in the console. Its icon is new too: a white square on dark (was a white
+  shield on blue). It's the same app, so it updates in place. Needs agent 0.5.0.
+- Kiosk: the launcher keeps its text readable. If a configuration's kiosk text color has less than 4.5:1 contrast
+  with its background (the minimum for readable text), the device uses a readable color instead, so some brand
+  pairs show dark text (white on a bright red, for example). The background is always drawn solid (transparency is
+  ignored). Needs agent 0.5.0.
+
 New
 - From source and native: `./setup.sh --update` moves the clone to the newest release, checked against its signed
   manifest like the quick start, then runs it. A manifest that doesn't verify, or names no commit, and local changes
@@ -51,7 +60,7 @@ New
   this server.
 - Configurations can allow or block the camera. Block covers every app, kiosk apps too. Not managed after Block
   gives the camera back on agent 0.5.0; on older agents, choose Allow to lift a block (thanks @letternumber).
-- Kiosk: staff can tap Return to kiosk in the MDMesh Agent after leaving with the exit PIN, even offline. It shows
+- Kiosk: staff can tap Return to kiosk in the MDMesh app after leaving with the exit PIN, even offline. It shows
   only when the device's configuration enables kiosk, asks first (and warns when that kiosk has no exit on the
   device), and tells the server at once when online. Needs agent 0.5.0; no server update needed (thanks @tisign).
 - Enroll: one code can set up a batch. Choose Devices (one, or up to 10, 25 or 100) and Valid for (24 hours to 30
@@ -66,7 +75,11 @@ New
 - Kiosk: a configuration can show a background image behind the kiosk launcher. Choose it in the Kiosk section: a
   PNG, JPEG or WebP image, at most 10 MB and 16 megapixels. Devices download it only over HTTPS (with an `http://`
   server address they keep the background color), check it by its SHA-256, and keep the color if it can't be shown.
-  Needs agent 0.5.0 (thanks @letternumber).
+  The download starts as soon as the kiosk is applied, so the image is usually ready when the launcher shows.
+  The launcher dims the image only lightly (at most 30 %, as much as the Exit button needs to stand out at 3:1) and
+  puts a plate of the background color behind each text that needs one to read at 4.5:1, solid over busy texture;
+  the console's preview shows the same. The image fills the screen around a chosen focal point, or fits whole with
+  the background color around it (agent reads both from protocol 1.10). Needs agent 0.5.0 (thanks @letternumber).
 - Configurations can Grant or Deny an app's runtime permissions (camera, location, microphone, contacts, SMS and
   more), under each installed app in the editor; Default removes MDMesh's override. The choices come from the APK
   uploaded to the server. Needs agent 0.5.0 on a Device Owner device: a device on an older agent applies the rest of
@@ -76,6 +89,25 @@ New
 - A wiped device shows as **Wiped** instead of Online and then Offline, and is left out of the counts, Needs attention
   and rollouts; the Devices list's Wiped filter shows it (thanks @Przemek-Magic).
 - Sync now and console commands say when the device isn't connected and will get it at its next check-in.
+- Agent: its dialogs (Return to kiosk, Exit kiosk, Exit locked) follow the device's light or dark setting and use
+  the console's look, the same on every phone. An open dialog comes back after the device is rotated, unless
+  kiosk was turned off meanwhile. Needs agent 0.5.0.
+- Agent: Exit kiosk is easier to use. A wrong PIN shows in the dialog, which stays open and says how many tries are
+  left before the exit locks; the PIN can be shown while typing, but not copied or shared. The prompt closes, and
+  what was typed with it, when the screen goes off or another app opens, or after a minute without typing. After too
+  many wrong PINs, Exit locked counts down to when the exit can be tried again, and closes then (or after a minute).
+  Needs agent 0.5.0.
+- Agent: its notifications have sharp MDMesh status bar icons, and its app icon follows themed icons on Android 13
+  and later. Needs agent 0.5.0.
+- Agent: the MDMesh status screen follows the device's light or dark setting and uses the console's look: a device
+  card, a Kiosk card with Return to kiosk, and a callout that stays on screen when a return fails (it was a
+  short-lived message). Needs agent 0.5.0.
+- Kiosk: the launcher grid has pressed highlights, two-line app names (three with a larger font) and as many
+  columns as fit, also after rotating; its empty, loading, "App closed" and idle screens and the Exit kiosk button
+  use the kiosk's own colours and stay readable on any background. Needs agent 0.5.0.
+- Agent: the status screen, dialogs and kiosk launcher are easier to read and use: darker secondary and status text,
+  no text under 13sp, a visible focus ring for keyboards and D-pads, full-size copy buttons, and TalkBack reads
+  headings, each fact with its label, and a failed return or stuck enrolment as it appears. Needs agent 0.5.0.
 - Updates and the quick start run exactly the images the signed release names, pinned by digest; the quick start
   also checks each file it downloads, stops instead of falling back to `main`, and needs OpenSSL 3.0+, or an older
   OpenSSL and `minisign`.
@@ -126,11 +158,15 @@ Fixes
   reached its device limit; it enrolls by itself once there is room (agent 0.5.0; older agents just keep trying).
 - Audit log: on Docker installs, entries show the client's address instead of the edge container's (thanks
   @Przemek-Magic).
+- Agent: on Android 15 the status screen and the kiosk no longer draw under the status and navigation bars, where
+  the kiosk's Exit kiosk button could be hard to reach. Needs agent 0.5.0.
 - Kiosk: after someone leaves kiosk on the device with the exit PIN, the agent checks in right away, so the console
   shows kiosk off without waiting for the next heartbeat. Needs agent 0.5.0 (thanks @letternumber).
 - Agent rollout: when every device is in the canary, the rollout finishes once they've updated instead of staying
   open, and Settings stops offering the same agent again. If one can't update, it offers Finish instead of Promote
   (thanks @letternumber).
+- Kiosk: a single-app kiosk reopens its app once when it is closed, instead of starting it twice, and rotating the
+  device or changing the font or display size no longer restarts the kiosk screen. Needs agent 0.5.0.
 
 Under the hood
 - The release manifest records the tagged commit, which `setup.sh --update` checks the tag against. CI tests
@@ -138,6 +174,8 @@ Under the hood
 - `install/options.json` lists the installers' questions and answers, for the website's install guide. CI checks it
   against the scripts with dry runs.
 - NOTICE now says which parts of the agent are ported from Headwind MDM, and those files carry its license header.
+- Agent: the APK carries English resources only (about 90 KB smaller), and its screen text lives in string
+  resources.
 - Agent protocol 1.9 (additive): the enroll request's optional `enrollAttempt` and `resumeOnly`, the enroll response's
   `resumeSupported`, `error.agent.enrollment.notResumable`, and the retryable enroll errors
   `error.agent.enrollment.failed`, `error.agent.enrollment.inProgress` and `error.agent.enrollment.deviceLimit`. New

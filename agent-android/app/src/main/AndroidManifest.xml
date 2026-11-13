@@ -73,9 +73,18 @@
 
         <!-- Custom kiosk launcher. NOT a permanent HOME — the HOME claim lives on the alias below,
              which is toggled on only while in kiosk, so the device uses its normal OEM launcher the
-             rest of the time. -->
+             rest of the time.
+             configChanges: dark mode, rotation, window size (split screen, foldables), font size, display size and a
+             keyboard coming or going must not recreate the kiosk HOME. A recreate draws the idle screen first (a visible
+             flash) and replays the saved kiosk, which in single-app mode reopens the pinned app. Lock task survives
+             either way (it belongs to the task). The activity redraws its current screen itself
+             (onConfigurationChanged), in the kiosk's own colours, which don't follow the theme. An open exit dialog
+             is rebuilt when its look changes (DialogSlot.onConfigurationChanged, typed PIN kept in memory).
+             keyboard|keyboardHidden|navigation: a Bluetooth or USB keyboard or barcode scanner connecting (they
+             come and go as they sleep) changes nothing on screen, and must not wipe a PIN being typed. -->
         <activity
             android:name=".KioskLauncherActivity"
+            android:configChanges="uiMode|orientation|screenSize|smallestScreenSize|screenLayout|fontScale|density|keyboard|keyboardHidden|navigation"
             android:exported="true"
             android:launchMode="singleInstance"
             android:excludeFromRecents="true"

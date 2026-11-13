@@ -22,6 +22,10 @@ android {
         versionName = (project.findProperty("versionName") as String?) ?: "0.1.15"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // The agent is English-only (app/src/main/res/values). Drop the libraries' translations (AppCompat's
+        // action-bar and search strings, which no agent screen shows): about -105 KB in the release APK.
+        resourceConfigurations += "en"
     }
 
     signingConfigs {
@@ -85,6 +89,16 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    testOptions {
+        // Robolectric dialog tests inflate the app's real layouts, styles and drawables.
+        unitTests.isIncludeAndroidResources = true
+        // Robolectric keeps a sandbox per SDK and graphics mode for the whole run; with the accessibility tests'
+        // (API 26 and 35, native graphics) that outgrows Gradle's 512 MB default.
+        unitTests.all { it.maxHeapSize = "2g" }
+        // The shared legibility vectors live outside the module: a change to them must rerun the tests.
+        unitTests.all { it.inputs.file(rootProject.file("../proto/vectors/kiosk-scrim.json")) }
+    }
 }
 
 dependencies {
@@ -114,6 +128,12 @@ dependencies {
     ksp(libs.hilt.work.compiler)
 
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
+    // ATF's view builder loads MaterialButton, so Material comes along (test classpath only); Espresso isn't used.
+    testImplementation(libs.accessibility.test.framework) {
+        exclude(group = "androidx.test.espresso")
+    }
     testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.test.runner)

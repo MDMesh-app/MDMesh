@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Text field with an error: as mdm_field_bg, outlined in alert ink (2dp when focused). -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <corners android:radius="@dimen/mdm_radius_sm" />
+            <solid android:color="@color/mdm_surface" />
+            <stroke android:width="2dp" android:color="@color/mdm_alert_ink" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="@dimen/mdm_radius_sm" />
+            <solid android:color="@color/mdm_surface" />
+            <stroke android:width="1dp" android:color="@color/mdm_alert_ink" />
+        </shape>
+    </item>
+</selector>

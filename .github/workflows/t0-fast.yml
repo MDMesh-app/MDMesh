@@ -144,6 +144,17 @@ jobs:
         with:
           java-version: "17"
       - if: matrix.name == 'agent' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).agent)
+        name: Cache Robolectric SDK jars
+        # The Robolectric unit tests run on several API levels; Robolectric downloads one android-all jar per level
+        # (85-190 MB each) into ~/.m2, which the Gradle cache doesn't cover. Keyed on the version catalog (the pinned
+        # Robolectric version) and app/src/test/robolectric-sdks.txt (the API levels; RobolectricSdksTest keeps it
+        # in step with the tests' @Config), so a new version or level saves a new cache, and test edits don't.
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ runner.os }}-${{ hashFiles('agent-android/gradle/libs.versions.toml', 'agent-android/app/src/test/robolectric-sdks.txt') }}
+          restore-keys: robolectric-${{ runner.os }}-
+      - if: matrix.name == 'agent' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).agent)
         name: Detekt + assemble + lint + unit tests
         # The repo now carries a committed Gradle wrapper, and the kit's setup-gradle action is
         # built around wrapper caches rather than installing a standalone `gradle` on PATH (the

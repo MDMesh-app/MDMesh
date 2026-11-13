@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- v2 Callout: 16dp icon beside a title and an optional body line. Tone (colours, icon) is set by Callout.kt;
+     the icon is centred on the title's first line there too. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:paddingStart="@dimen/mdm_space_12"
+    android:paddingEnd="@dimen/mdm_space_12"
+    android:paddingTop="10dp"
+    android:paddingBottom="10dp">
+
+    <ImageView
+        android:id="@+id/callout_icon"
+        android:layout_width="@dimen/mdm_callout_icon"
+        android:layout_height="@dimen/mdm_callout_icon"
+        android:layout_marginEnd="10dp"
+        android:importantForAccessibility="no"
+        android:scaleType="fitCenter" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/callout_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="@style/TextAppearance.MdmAgent.CalloutTitle" />
+
+        <TextView
+            android:id="@+id/callout_body"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textAppearance="@style/TextAppearance.MdmAgent.CalloutBody"
+            android:visibility="gone" />
+    </LinearLayout>
+</LinearLayout>

@@ -17,6 +17,26 @@ class ExitPinGateTest {
 
     private fun wrong() = gate.attempt("00000000", pin)
 
+    @Test fun `attemptsLeft is what the last wrong PIN said, read back from the store`() {
+        assertEquals(null, gate.attemptsLeft())
+        wrong()
+        assertEquals(2, gate.attemptsLeft())
+        // A new gate on the same store (process death, rotation) reads the same.
+        assertEquals(2, ExitPinGate(store) { uptimeMs }.attemptsLeft())
+        wrong()
+        assertEquals(1, gate.attemptsLeft())
+        wrong() // locks
+        assertEquals("locked: Exit locked says it, not a tries-left line", null, gate.attemptsLeft())
+        uptimeMs += ExitPinGate.LOCKOUTS_MS.first()
+        assertEquals("after a lockout the next wrong PIN locks again; no count to show", null, gate.attemptsLeft())
+    }
+
+    @Test fun `a right PIN clears it`() {
+        wrong()
+        gate.attempt(pin, pin)
+        assertEquals(null, gate.attemptsLeft())
+    }
+
     /** Wrong PINs until the exit locks; returns that lockout. */
     private fun lockOut(): Outcome.Locked {
         repeat(ExitPinGate.FREE_ATTEMPTS - 1) { wrong() }

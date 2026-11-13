@@ -6,6 +6,7 @@ import com.mdmesh.core.transport.WakeSignal
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
@@ -52,8 +53,10 @@ class CredentialsFollower(
     }
 
     /** Holds the socket when [hot], drops it otherwise. Without credentials, re-reads them once (enrollment may have
-     *  finished elsewhere, in the worker or the heartbeat) and tries again if they appeared. */
+     *  finished elsewhere, in the worker or the heartbeat) and tries again if they appeared. Does nothing once [scope]
+     *  is gone: a wake check-in runs outside it and can end after the host stopped the transport. */
     fun reevaluate() {
+        if (!scope.isActive) return
         val saved = current
         if (saved == null) {
             scope.launch {

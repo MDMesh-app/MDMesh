@@ -2,7 +2,10 @@ package com.mdmesh.core.sync
 
 import com.mdmesh.core.store.DeviceIdentity
 import com.mdmesh.core.transport.TransportManager
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
@@ -150,5 +153,26 @@ class CredentialsFollowerTest {
         follower.reevaluate()
         scope.runCurrent()
         assertEquals(listOf("sek"), sockets.live)
+    }
+
+    @Test
+    fun `a wake check-in that finishes after the service is gone leaves the socket closed`() {
+        // The follower lives in the service's scope; the wake's check-in runs on the agent's scope and calls
+        // reevaluate() when it ends, which can be after onDestroy stopped the transport.
+        saved.id = "dev-1"; saved.secret = "sek"
+        val service = CoroutineScope(scope.coroutineContext + Job(scope.coroutineContext[Job]))
+        val follower = CredentialsFollower(service, successes, saved, transport, hot = { hot }, onWake = {})
+        service.launch { follower.load(); follower.reevaluate() }
+        scope.runCurrent()
+        assertEquals(listOf("sek"), sockets.live)
+
+        service.cancel() // the service is destroyed
+        transport.stop()
+        scope.runCurrent()
+
+        follower.reevaluate() // the wake's check-in finishes
+        scope.runCurrent()
+        assertEquals(emptyList<String?>(), sockets.live)
+        assertEquals(1, sockets.opened.size)
     }
 }

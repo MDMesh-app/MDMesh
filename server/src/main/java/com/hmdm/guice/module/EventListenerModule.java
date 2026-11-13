@@ -31,6 +31,7 @@ import com.hmdm.persistence.ConfigurationUpdatedEventListener;
 import com.hmdm.persistence.DeviceInfoUpdatedEventListener;
 import com.hmdm.persistence.mapper.DeviceMapper;
 import com.hmdm.service.DeviceStatusService;
+import com.hmdm.service.RemoteViewSessionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,6 +49,7 @@ public class EventListenerModule {
     private final DeviceStatusService deviceStatusService;
     private final AgentCommandDAO agentCommandDAO;
     private final AgentWakeHub wakeHub;
+    private final RemoteViewSessionService remoteViewSessions;
 
     private final ExecutorService executorService = ExecutorRegistry.register(Executors.newFixedThreadPool(1));
 
@@ -58,18 +60,21 @@ public class EventListenerModule {
      * <p>Constructs new <code>EventListenerModule</code> instance. This implementation does nothing.</p>
      */
     @Inject
-    public EventListenerModule(EventService eventService, DeviceMapper deviceMapper, DeviceStatusService deviceStatusService, AgentCommandDAO agentCommandDAO, AgentWakeHub wakeHub) {
+    public EventListenerModule(EventService eventService, DeviceMapper deviceMapper, DeviceStatusService deviceStatusService,
+                               AgentCommandDAO agentCommandDAO, AgentWakeHub wakeHub,
+                               RemoteViewSessionService remoteViewSessions) {
         this.eventService = eventService;
         this.deviceMapper = deviceMapper;
         this.deviceStatusService = deviceStatusService;
         this.agentCommandDAO = agentCommandDAO;
         this.wakeHub = wakeHub;
+        this.remoteViewSessions = remoteViewSessions;
     }
 
     public void init() {
         this.eventService.addEventListener(new DeviceInfoUpdatedEventListener(deviceStatusService));
         this.eventService.addEventListener(new ConfigurationUpdatedEventListener(deviceMapper, deviceStatusService));
-        this.eventService.addEventListener(new com.hmdm.rest.resource.support.AgentConfigUpdatedListener(agentCommandDAO, wakeHub));
+        this.eventService.addEventListener(new com.hmdm.rest.resource.support.AgentConfigUpdatedListener(agentCommandDAO, wakeHub, remoteViewSessions));
 
         executorService.submit(() -> {
             List<Integer> deviceIds = this.deviceMapper.getAllDeviceIds();

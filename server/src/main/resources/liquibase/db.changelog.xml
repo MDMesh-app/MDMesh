@@ -3196,4 +3196,48 @@
         <rollback>DROP TABLE agentEnrollmentKey;</rollback>
     </changeSet>
 
+    <changeSet id="26.11.12-remoteViewSession" author="letter-number" context="common">
+        <comment>Tables,new: durable remote view session lifecycle and append-only audit. Signaling, SDP, ICE,
+            screen frames and raw join credentials are deliberately never stored.</comment>
+        <sql>
+            CREATE TABLE remoteViewSession (
+                id UUID PRIMARY KEY,
+                deviceNumber VARCHAR(64) NOT NULL REFERENCES devices(number) ON DELETE CASCADE,
+                requesterUserId INT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+                mode VARCHAR(16) NOT NULL CHECK (mode = 'view'),
+                state VARCHAR(32) NOT NULL,
+                agentJoinSecretHash VARCHAR(64) NOT NULL,
+                createdAt BIGINT NOT NULL,
+                consentExpiresAt BIGINT NOT NULL,
+                expiresAt BIGINT NOT NULL,
+                endedAt BIGINT,
+                endReason VARCHAR(128),
+                CHECK ((endedAt IS NULL) = (endReason IS NULL))
+            );
+            CREATE UNIQUE INDEX remoteViewSession_one_active_device ON remoteViewSession(deviceNumber)
+                WHERE state NOT IN ('denied','expired','stopped','disconnected','failed');
+            CREATE INDEX remoteViewSession_expiry ON remoteViewSession(expiresAt)
+                WHERE state NOT IN ('denied','expired','stopped','disconnected','failed');
+            CREATE TABLE remoteViewSessionAudit (
+                id BIGSERIAL PRIMARY KEY,
+                sessionId UUID NOT NULL REFERENCES remoteViewSession(id) ON DELETE CASCADE,
+                state VARCHAR(32) NOT NULL,
+                at BIGINT NOT NULL,
+                actorUserId INT REFERENCES users(id) ON DELETE SET NULL,
+                detail VARCHAR(256)
+            );
+        </sql>
+        <rollback>DROP TABLE remoteViewSessionAudit; DROP TABLE remoteViewSession;</rollback>
+    </changeSet>
+
+    <changeSet id="26.11.12-remoteViewPermission" author="letter-number" context="common">
+        <comment>Permission,new: remote_view, initially granted only to the super-admin role.</comment>
+        <sql>
+            INSERT INTO permissions (name, description) VALUES ('remote_view', 'Request and view a device screen-share session');
+            INSERT INTO userRolePermissions (roleId, permissionId)
+                SELECT 1, id FROM permissions WHERE name = 'remote_view';
+        </sql>
+        <rollback>DELETE FROM permissions WHERE name = 'remote_view';</rollback>
+    </changeSet>
+
 </databaseChangeLog>

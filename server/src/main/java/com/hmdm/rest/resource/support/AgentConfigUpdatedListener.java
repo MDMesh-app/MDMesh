@@ -5,6 +5,7 @@ import com.hmdm.event.EventListener;
 import com.hmdm.event.EventType;
 import com.hmdm.notification.AgentWakeHub;
 import com.hmdm.persistence.AgentCommandDAO;
+import com.hmdm.service.RemoteViewSessionService;
 import com.hmdm.util.ExecutorRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,6 +23,7 @@ public class AgentConfigUpdatedListener implements EventListener<ConfigurationUp
     private static final Logger logger = LoggerFactory.getLogger(AgentConfigUpdatedListener.class);
     private final AgentCommandDAO commandDAO;
     private final AgentWakeHub wakeHub;
+    private final RemoteViewSessionService remoteViewSessions;
 
     /**
      * {@code ConfigurationDAO.updateConfiguration} fires the event INSIDE its {@code @Transactional} method and
@@ -38,9 +40,11 @@ public class AgentConfigUpdatedListener implements EventListener<ConfigurationUp
                 return t;
             }));
 
-    public AgentConfigUpdatedListener(AgentCommandDAO commandDAO, AgentWakeHub wakeHub) {
+    public AgentConfigUpdatedListener(AgentCommandDAO commandDAO, AgentWakeHub wakeHub,
+                                      RemoteViewSessionService remoteViewSessions) {
         this.commandDAO = commandDAO;
         this.wakeHub = wakeHub;
+        this.remoteViewSessions = remoteViewSessions;
     }
 
     @Override
@@ -56,6 +60,8 @@ public class AgentConfigUpdatedListener implements EventListener<ConfigurationUp
     private void wakeDevices(ConfigurationUpdatedEvent event) {
         try {
             for (String number : commandDAO.listDeviceNumbersByConfigurationId(event.getConfigurationId())) {
+                // A changed configuration invalidates a consent that was granted against the prior device state.
+                remoteViewSessions.stopForDevice(number, System.currentTimeMillis(), "configuration updated");
                 wakeHub.wake(number, "commands");
             }
         } catch (Exception e) {

@@ -263,7 +263,7 @@ mdm_check_port() {
 # between the markers, for the same reason as url.sh's above. CI (t0-fast, edge entry) fails if the copies differ.
 # >>> answers.sh functions (quickstart.sh keeps a verbatim copy) >>>
 # The keys an answers file may set: every answer and setting in install/options.json (CI checks the two match).
-_MDM_ANSWER_KEYS=" MDMESH_MODE MDMESH_REPO MDMESH_IMAGE_OWNER MDMESH_HOST MDMESH_TUNNEL_TOKEN MDMESH_ACME_EMAIL MDMESH_BASE_URL MDMESH_HTTP_PORT MDMESH_REPLACE_DATA MDMESH_ASSUME_YES MDMESH_DIR MDMESH_VERSION MDMESH_RELEASE_PUBKEY MDMESH_NONINTERACTIVE MDMESH_DRY_RUN "
+_MDM_ANSWER_KEYS=" MDMESH_MODE MDMESH_REPO MDMESH_IMAGE_OWNER MDMESH_HOST MDMESH_SERVER_PORT MDMESH_SUPERVISOR_PORT MDMESH_TUNNEL_TOKEN MDMESH_ACME_EMAIL MDMESH_BASE_URL MDMESH_HTTP_PORT MDMESH_REPLACE_DATA MDMESH_ASSUME_YES MDMESH_DIR MDMESH_VERSION MDMESH_RELEASE_PUBKEY MDMESH_NONINTERACTIVE MDMESH_DRY_RUN "
 _MDM_SECRET_KEYS=" MDMESH_TUNNEL_TOKEN "
 _MDM_ANS_GIVEN=" "       # ids of the questions answered in advance
 _MDM_ANS_FROM_FILE=" "   # keys set from the answers file
@@ -516,12 +516,16 @@ mdm_answer mode MODE mode MDMESH_MODE
 mdm_answer repo GH_REPO github-repo MDMESH_REPO
 mdm_answer image-owner IMAGE_OWNER image-owner MDMESH_IMAGE_OWNER
 mdm_answer host HOST hostname MDMESH_HOST
+mdm_answer server-port SERVER_PORT port MDMESH_SERVER_PORT
+mdm_answer supervisor-port SUPERVISOR_PORT port MDMESH_SUPERVISOR_PORT
 mdm_answer tunnel-token TUNNEL_TOKEN tunnel-token MDMESH_TUNNEL_TOKEN
 mdm_answer acme-email ACME_EMAIL email MDMESH_ACME_EMAIL
 if mdm_given mode; then
   case "$MODE" in
-    1) mdm_unused acme-email "in tunnel mode" ;;
-    2) mdm_unused tunnel-token "in domain mode" ;;
+    1) mdm_unused acme-email "in tunnel mode"
+       mdm_unused server-port "in tunnel mode"; mdm_unused supervisor-port "in tunnel mode" ;;
+    2) mdm_unused tunnel-token "in domain mode"
+       mdm_unused server-port "in domain mode"; mdm_unused supervisor-port "in domain mode" ;;
     3) mdm_unused acme-email "in host-Nginx mode"; mdm_unused tunnel-token "in host-Nginx mode" ;;
   esac
 fi
@@ -534,10 +538,19 @@ if [ "${MDMESH_DRY_RUN:-0}" = 1 ]; then
   mdm_plan_line repo "$REPO"
   mdm_plan_line image-owner "$IMAGE_OWNER_DEFAULT"
   mdm_plan_line host ''
-  if ! mdm_given mode; then mdm_plan_line tunnel-token ''; mdm_plan_line acme-email ''
-  elif [ "$MODE" = 1 ]; then mdm_plan_line tunnel-token ''; mdm_plan_row acme-email - unused
-  elif [ "$MODE" = 2 ]; then mdm_plan_row tunnel-token - unused; mdm_plan_line acme-email ''
-  else mdm_plan_row tunnel-token - unused; mdm_plan_row acme-email - unused; fi
+  if ! mdm_given mode; then
+    mdm_plan_line server-port 8080; mdm_plan_line supervisor-port 9000
+    mdm_plan_line tunnel-token ''; mdm_plan_line acme-email ''
+  elif [ "$MODE" = 1 ]; then
+    mdm_plan_row server-port - unused; mdm_plan_row supervisor-port - unused
+    mdm_plan_line tunnel-token ''; mdm_plan_row acme-email - unused
+  elif [ "$MODE" = 2 ]; then
+    mdm_plan_row server-port - unused; mdm_plan_row supervisor-port - unused
+    mdm_plan_row tunnel-token - unused; mdm_plan_line acme-email ''
+  else
+    mdm_plan_line server-port 8080; mdm_plan_line supervisor-port 9000
+    mdm_plan_row tunnel-token - unused; mdm_plan_row acme-email - unused
+  fi
   [ -z "${MDMESH_RELEASE_PUBKEY:-}" ] || mdm_plan_row release-pubkey '(custom)' MDMESH_RELEASE_PUBKEY
   _dir=${MDMESH_DIR:-mdmesh}; case "$_dir" in /*) ;; *) _dir="$PWD/$_dir" ;; esac
   _repo=$REPO; if mdm_given repo && [ -n "$GH_REPO" ]; then _repo=$GH_REPO; fi
@@ -678,8 +691,8 @@ say "Installing release v${RELEASE} of ${GH_REPO}."
 
 DB_PASSWORD=$(rand); HASH_SECRET=$(rand); ADMIN_PASSWORD=$(rand); RESET_TOKEN=$(openssl rand -hex 16)
 
-SERVER_PORT="8080"
-SUPERVISOR_PORT="9000"
+SERVER_PORT="${SERVER_PORT:-8080}"
+SUPERVISOR_PORT="${SUPERVISOR_PORT:-9000}"
 HOST_NGINX=0
 
 if [ "$MODE" = "1" ]; then
@@ -705,10 +718,10 @@ elif [ "$MODE" = "2" ]; then
 else
   mdm_answered host || read -rp "Your domain (DNS already pointing here, e.g. mdm.example.com): " HOST   # answer: host
   mdm_check_host HOST || { err "Enter the hostname only, e.g. mdm.example.com, then re-run."; exit 1; }
-  read -rp "Backend Server port [8080]: " INP_SERVER_PORT
-  read -rp "Backend Supervisor port [9000]: " INP_SUPERVISOR_PORT
-  SERVER_PORT="${INP_SERVER_PORT:-8080}"
-  SUPERVISOR_PORT="${INP_SUPERVISOR_PORT:-9000}"
+  mdm_answered server-port || read -rp "Backend Server port [8080]: " INP_SERVER_PORT   # answer: server-port
+  mdm_answered supervisor-port || read -rp "Backend Supervisor port [9000]: " INP_SUPERVISOR_PORT   # answer: supervisor-port
+  SERVER_PORT="${INP_SERVER_PORT:-${SERVER_PORT:-8080}}"
+  SUPERVISOR_PORT="${INP_SUPERVISOR_PORT:-${SUPERVISOR_PORT:-9000}}"
   mdm_check_port SERVER_PORT || { err "The backend server port must be a number from 1 to 65535."; exit 1; }
   mdm_check_port SUPERVISOR_PORT || { err "The backend supervisor port must be a number from 1 to 65535."; exit 1; }
   [ "$SERVER_PORT" != "$SUPERVISOR_PORT" ] || { err "The backend server and supervisor ports must differ."; exit 1; }

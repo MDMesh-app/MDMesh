@@ -26,7 +26,7 @@ import org.slf4j.LoggerFactory;
  * surface than a role path parameter, this avoids an ambiguous template mapping in the Tomcat
  * deployment used by the native installer.</p>
  */
-@ServerEndpoint(value = "/remote/ws/agent/{sessionId}", configurator = RemoteViewSignalingEndpoint.Auth.class)
+@ServerEndpoint(value = "/agent/remote/{sessionId}", configurator = RemoteViewSignalingEndpoint.Auth.class)
 public class RemoteViewSignalingEndpoint {
     private static final Logger logger = LoggerFactory.getLogger(RemoteViewSignalingEndpoint.class);
     private static final String HTTP_SESSION = "remote.httpSession";

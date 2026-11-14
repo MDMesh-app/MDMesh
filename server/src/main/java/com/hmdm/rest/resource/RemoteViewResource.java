@@ -78,7 +78,7 @@ public class RemoteViewResource {
         String origin = baseUrl == null ? "" : baseUrl.replaceAll("/+$", "");
         if (origin.startsWith("https://")) origin = "wss://" + origin.substring("https://".length());
         else if (origin.startsWith("http://")) origin = "ws://" + origin.substring("http://".length());
-        return origin + "/remote/ws/agent/" + id;
+        return origin + "/agent/remote/" + id;
     }
 
     static String agentPayload(UUID id, long expiresAt, String endpoint, String credential) {

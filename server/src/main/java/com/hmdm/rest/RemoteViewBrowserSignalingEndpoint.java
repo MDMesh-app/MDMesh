@@ -11,7 +11,7 @@ import javax.websocket.server.PathParam;
 import javax.websocket.server.ServerEndpoint;
 
 /** Browser-side peer of {@link RemoteViewSignalingEndpoint}. */
-@ServerEndpoint(value = "/remote/ws/browser/{sessionId}", configurator = RemoteViewSignalingEndpoint.Auth.class)
+@ServerEndpoint(value = "/agent/viewer/{sessionId}", configurator = RemoteViewSignalingEndpoint.Auth.class)
 public class RemoteViewBrowserSignalingEndpoint {
     private static final String HTTP_SESSION = "remote.httpSession";
 

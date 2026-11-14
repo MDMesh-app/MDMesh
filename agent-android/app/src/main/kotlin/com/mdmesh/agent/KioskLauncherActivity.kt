@@ -90,6 +90,7 @@ class KioskLauncherActivity : ComponentActivity() {
 
     /** The hold screen is showing (so its event is recorded once per hold). */
     private var holding = false
+    private var remoteViewStatus: TextView? = null
     private var remoteViewProbeStatus: TextView? = null
 
     private val remoteViewConsent = registerForActivityResult(
@@ -126,6 +127,11 @@ class KioskLauncherActivity : ComponentActivity() {
                         remoteSessionConsent.launch(remoteViewConsentController.captureConsentIntent())
                     }
                 }
+            }
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                remoteViewConsentController.status.collect(::showRemoteViewStatus)
             }
         }
         lifecycleScope.launch {
@@ -256,6 +262,17 @@ class KioskLauncherActivity : ComponentActivity() {
         status.setTextColor(if (state.active) SIGNAL else MUTED)
     }
 
+    private fun showRemoteViewStatus(state: com.mdmesh.remote.RemoteViewStatus) {
+        val status = remoteViewStatus ?: return
+        if (state.message.isBlank()) {
+            status.visibility = View.GONE
+            return
+        }
+        status.visibility = View.VISIBLE
+        status.text = "Remote view · ${state.message}"
+        status.setTextColor(if (state.active) SIGNAL else MUTED)
+    }
+
     private fun startLockTaskSafely() {
         runCatching {
             val am = getSystemService(ActivityManager::class.java)
@@ -349,7 +366,7 @@ class KioskLauncherActivity : ComponentActivity() {
         }
     }
 
-    @Suppress("LongMethod", "MagicNumber")
+    @Suppress("LongMethod", "MagicNumber", "CyclomaticComplexMethod")
     private fun launcherGrid(p: KioskApplyPayload): View {
         val bg = parseColor(p.theme.backgroundColor, INK)
         val fg = parseColor(p.theme.textColor, TEXT)
@@ -388,6 +405,11 @@ class KioskLauncherActivity : ComponentActivity() {
             )
         }
         column.addView(grid)
+        remoteViewStatus = text("", 13f, MUTED).apply {
+            visibility = View.GONE
+            setPadding(0, dp(10), 0, 0)
+        }
+        column.addView(remoteViewStatus)
         if (RemoteViewFeasibilityProbe.isAvailable()) {
             column.addView(
                 Button(this).apply {

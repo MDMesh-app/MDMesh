@@ -45,27 +45,42 @@ internal class RemoteViewCapture(
     private var source: VideoSource? = null
     private var helper: SurfaceTextureHelper? = null
     @Volatile private var stopped = false
+    @Volatile private var startupStage = "creating capture"
 
     fun start(resultData: Intent) {
+        startupStage = "initializing WebRTC"
         PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions.builder(appContext).createInitializationOptions())
+        startupStage = "creating WebRTC factory"
         factory = PeerConnectionFactory.builder().createPeerConnectionFactory()
+        startupStage = "creating peer connection"
         val createdPeer = factory!!.createPeerConnection(PeerConnection.RTCConfiguration(emptyList()), observer)
             ?: error("WebRTC peer connection could not be created")
         peer = createdPeer
+        startupStage = "creating video source"
         val videoSource = factory!!.createVideoSource(true)
         source = videoSource
+        startupStage = "creating screen capturer"
         val screen = ScreenCapturerAndroid(resultData, object : android.media.projection.MediaProjection.Callback() {
             override fun onStop() = stop("projection stopped")
         })
         capturer = screen
+        startupStage = "creating capture helper"
         helper = SurfaceTextureHelper.create("mdmesh-remote-capture", egl.eglBaseContext)
+        startupStage = "initializing screen capturer"
         screen.initialize(helper, appContext, videoSource.capturerObserver)
         val metrics: DisplayMetrics = appContext.resources.displayMetrics
+        startupStage = "starting screen capture"
         screen.startCapture(metrics.widthPixels.coerceAtLeast(1), metrics.heightPixels.coerceAtLeast(1), 15)
+        startupStage = "creating video track"
         val track = factory!!.createVideoTrack("mdmesh-screen", videoSource)
+        startupStage = "adding video track"
         createdPeer.addTrack(track)
+        startupStage = "opening signaling"
         connectSignaling()
     }
+
+    /** Safe operational context for server-side diagnostics; never contains SDP, credentials, or URLs. */
+    fun currentStartupStage(): String = startupStage
 
     private fun connectSignaling() {
         val parsed = request.signaling.endpoint.toHttpUrl()

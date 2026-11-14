@@ -29,6 +29,8 @@ class AndroidRemoteViewSession(
     private val main = Handler(Looper.getMainLooper())
     private val mutablePending = MutableStateFlow<RemoteViewConsentRequest?>(null)
     override val pendingConsent: StateFlow<RemoteViewConsentRequest?> = mutablePending
+    private val mutableStatus = MutableStateFlow(RemoteViewStatus("", active = false))
+    override val status: StateFlow<RemoteViewStatus> = mutableStatus
 
     @Volatile private var request: RemoteStartSessionPayload? = null
     @Volatile private var capture: RemoteViewCapture? = null
@@ -38,6 +40,7 @@ class AndroidRemoteViewSession(
         require(Instant.parse(request.expiresAt).isAfter(Instant.now())) { "remote-view session expired" }
         this.request = request
         mutablePending.value = RemoteViewConsentRequest(request.sessionId)
+        mutableStatus.value = RemoteViewStatus("Waiting for administrator screen-share approval…", active = false)
         reportEvent("remoteViewConsentRequested", "session=${request.sessionId}")
     }
 
@@ -55,6 +58,7 @@ class AndroidRemoteViewSession(
             consentDenied(sessionId)
             return
         }
+        mutableStatus.value = RemoteViewStatus("Starting remote screen share…", active = false)
         ContextCompat.startForegroundService(
             context,
             Intent(context, RemoteViewCaptureService::class.java)
@@ -66,12 +70,14 @@ class AndroidRemoteViewSession(
 
     override fun consentDenied(sessionId: String) {
         if (request?.sessionId != sessionId) return
+        mutableStatus.value = RemoteViewStatus("Remote screen-share request was not approved.", active = false)
         reportEvent("remoteViewDenied", "session=$sessionId")
         clear("denied")
     }
 
     /** Called by the foreground service after it has entered foreground state. */
     suspend fun startCapture(sessionId: String, resultData: Intent): Result<Unit> {
+        var startupStage = "creating capture"
         val result = runCatching {
             val active = requireNotNull(request) { "remote-view session is not active" }
             require(active.sessionId == sessionId) { "remote-view session mismatch" }
@@ -79,18 +85,23 @@ class AndroidRemoteViewSession(
             check(capture == null) { "remote-view capture is already active" }
             val device = requireNotNull(credentials()) { "device credentials are unavailable" }
             val newCapture = RemoteViewCapture(context, active, device, ::ended) {
+                mutableStatus.value = RemoteViewStatus("Remote screen share is active.", active = true)
                 reportEvent("remoteViewSignaling", "session=$sessionId; signaling socket opened")
             }
             capture = newCapture
+            startupStage = newCapture.currentStartupStage()
             newCapture.start(resultData)
+            mutableStatus.value = RemoteViewStatus("Screen capture started; connecting to viewer…", active = true)
             Unit
         }
         result.exceptionOrNull()?.let { failure ->
             val current = capture
+            val detail = "capture startup failed at ${current?.currentStartupStage() ?: startupStage}: ${failure.javaClass.simpleName}"
+            mutableStatus.value = RemoteViewStatus("Remote view failed: $detail", active = false)
             if (current != null) {
-                current.stop("capture startup failed: ${failure.javaClass.simpleName}")
+                current.stop(detail)
             } else {
-                reportEvent("remoteViewEnded", "session=$sessionId; reason=capture startup failed: ${failure.javaClass.simpleName}")
+                reportEvent("remoteViewEnded", "session=$sessionId; reason=$detail")
                 clear("capture startup failed")
             }
         }
@@ -105,6 +116,7 @@ class AndroidRemoteViewSession(
     override fun isActive(): Boolean = request != null
 
     private fun ended(reason: String) {
+        mutableStatus.value = RemoteViewStatus("Remote view ended: $reason", active = false)
         reportEvent("remoteViewEnded", "session=${request?.sessionId ?: "unknown"}; reason=$reason")
         clear(reason)
     }

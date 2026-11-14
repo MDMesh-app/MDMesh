@@ -13,7 +13,8 @@
 #           configurations) and must change nothing; then the supervisor is updated as UPGRADING says and the rollback
 #           finishes: the 0.4.0 console, sign-in, the devices and an enrollment code made before the update all work,
 #           what was written after the update is gone. Then the same database is updated again (no leftovers), and the
-#           docs' Docker restores (OPERATIONS "Backups and restore", UPGRADING "Restoring by hand") are run as written.
+#           docs' Docker restores (OPERATIONS "Backups and restore", UPGRADING "Restoring by hand") are run as written;
+#           UPGRADING's first with the backup cut short, which must leave the database exactly as it was.
 #   main    origin/main (0.5.0) updated to this branch (0.5.1); the new supervisor rolls back. A restore that fails at its
 #           very end, and a backup cut short, must leave the database exactly as it was; then the real rollback works.
 #   native  the native restore command from docs/OPERATIONS.md, as the mdmesh role (not a superuser) on PostgreSQL 16,
@@ -400,11 +401,21 @@ phase_040() {
   awk '/^### Restoring by hand/{f=1} f && /^```bash$/{b=1; next} f && b && /^```$/{exit} f && b' "$ROOT/docs/UPGRADING.md" > "$WORK/by-hand.sh"
   sed 's/^/      | /' "$WORK/by-hand.sh"
   docker cp "$WORK/by-hand.sh" "$DIND:$d/by-hand.sh" >>"$LOG"
+  echo "-- first with that backup cut short: nothing may change"
+  stamp="$(dc "$d" exec -T supervisor cat /backups/latest | tr -d '\r')"
+  dc "$d" stop server >>"$LOG" 2>&1; f1="$(fingerprint "$d")"
+  dc "$d" exec -T supervisor sh -c "cp /backups/$stamp.sql /backups/$stamp.sql.orig && head -n 300 /backups/$stamp.sql.orig > /backups/$stamp.sql"
+  in_dir "$d" sh by-hand.sh > "$WORK/by-hand-short.out" 2>&1
+  sed 's/^/      short: /' "$WORK/by-hand-short.out" | grep -v 'drop cascades to' | head -4
+  check "Restoring by hand a backup cut short: refused (the backup is incomplete)" grep -q 'the backup is incomplete' "$WORK/by-hand-short.out"
+  check "Restoring by hand a backup cut short: no Restored." bash -c "! grep -qx 'Restored.' '$WORK/by-hand-short.out'"
+  f2="$(fingerprint "$d")"
+  check "Restoring by hand a backup cut short left the database exactly as it was ($f1 = $f2)" test "$f1" = "$f2"
+  dc "$d" exec -T supervisor mv "/backups/$stamp.sql.orig" "/backups/$stamp.sql"
   in_dir "$d" sh by-hand.sh > "$WORK/by-hand.out" 2>&1
   sed 's/^/      out: /' "$WORK/by-hand.out" | grep -v 'drop cascades to' | head -8
   check "Restoring by hand prints Restored." grep -qx 'Restored.' "$WORK/by-hand.out"
   # "Then": the versions from the snapshot into .env, and start the old server.
-  stamp="$(dc "$d" exec -T supervisor cat /backups/latest | tr -d '\r')"
   dc "$d" exec -T supervisor cat "/backups/$stamp.env" | tr -d '\r' > "$WORK/snap.env"
   local k v
   for k in SERVER_VERSION WEB_VERSION CURRENT_VERSION; do

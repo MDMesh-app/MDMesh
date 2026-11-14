@@ -137,8 +137,12 @@ From the install directory:
 STAMP=$(docker compose exec -T supervisor cat /backups/latest)
 docker compose exec -T supervisor cat "/backups/$STAMP.env"   # the pre-update versions
 docker compose stop server
-{ docker compose exec -T supervisor cat "/backups/$STAMP.sql" && printf 'COMMIT;\n\\echo Restored.\n'; } \
-  | sed "1,/^SET lock_timeout = 0;\$/s/^SET lock_timeout = 0;\$/SET lock_timeout = '60s';/" \
+docker compose exec -T supervisor cat "/backups/$STAMP.sql" \
+  | awk -v q="'" '!set && $0 == "SET lock_timeout = 0;" { $0 = "SET lock_timeout = " q "60s" q ";"; set = 1 }
+      $0 == "-- PostgreSQL database dump complete" { complete = 1 }
+      { print }
+      END { if (complete) print "COMMIT;\n\\echo Restored."
+            else print "DO $$ BEGIN RAISE EXCEPTION " q "the backup is incomplete" q "; END $$;" }' \
   | docker compose exec -T postgres psql -X -q -v ON_ERROR_STOP=1 -o /dev/null -U mdmesh -d mdmesh \
       -c BEGIN -c "SET lock_timeout = '60s'" \
       -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()" \
@@ -155,9 +159,10 @@ docker compose up -d --no-deps server caddy
 
 The restore ends other sessions, empties the database and loads the dump, all in one transaction, and prints
 `Restored.` when it committed. Anything else (an error, or no `Restored.`) means nothing changed: the database is as it
-was. It gives up after 60 seconds without a lock. Keep the `sed`: without it, the dump's own `SET lock_timeout = 0;`
-removes that limit. Keep the `DROP SCHEMA` line too: the dump's own DROPs only know the tables from before the update,
-and one the update added that refers to them makes the restore fail.
+was. It gives up after 60 seconds without a lock. Keep the `awk`: it sends the `COMMIT` only after a backup that ends
+like a complete `pg_dump` (one cut short fails with "the backup is incomplete"), and it rewrites the dump's own
+`SET lock_timeout = 0;`, which would remove that limit. Keep the `DROP SCHEMA` line too: the dump's own DROPs only know
+the tables from before the update, and one the update added that refers to them makes the restore fail.
 
 ## Agent compatibility
 

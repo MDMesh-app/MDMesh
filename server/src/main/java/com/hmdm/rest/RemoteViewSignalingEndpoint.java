@@ -35,10 +35,16 @@ public class RemoteViewSignalingEndpoint {
     private static final String DEVICE = "remote.device";
     public static final class Auth extends ServerEndpointConfig.Configurator {
         @Override public void modifyHandshake(ServerEndpointConfig config, HandshakeRequest request, HandshakeResponse response) {
+            String authorization = header(request.getHeaders(), "Authorization");
+            String join = header(request.getHeaders(), "X-MDMesh-Remote-Session");
+            String device = header(request.getHeaders(), "X-MDMesh-Device");
             config.getUserProperties().put(HTTP_SESSION, request.getHttpSession());
-            put(config, AUTH, header(request.getHeaders(), "Authorization"));
-            put(config, JOIN, header(request.getHeaders(), "X-MDMesh-Remote-Session"));
-            put(config, DEVICE, header(request.getHeaders(), "X-MDMesh-Device"));
+            put(config, AUTH, authorization);
+            put(config, JOIN, join);
+            put(config, DEVICE, device);
+            // Handshake diagnostics are intentionally presence-only: bearer and join secrets never reach logs.
+            logger.info("Remote-view handshake: path={}, authorization={}, device={}, joinSecret={}",
+                    request.getRequestURI().getPath(), authorization != null, device != null, join != null);
         }
         private static void put(ServerEndpointConfig c, String key, String value) { if (value != null) c.getUserProperties().put(key, value); }
     }
@@ -58,6 +64,10 @@ public class RemoteViewSignalingEndpoint {
         RemoteViewSignalingHub.INSTANCE.relay(id, false, text);
     }
     @OnClose public void closed(Session socket, @PathParam("sessionId") String raw) { UUID id = id(raw); if (id != null && RemoteViewSignalingHub.INSTANCE != null) RemoteViewSignalingHub.INSTANCE.disconnect(id, socket); }
+    @javax.websocket.OnError public void error(Session socket, @PathParam("sessionId") String raw, Throwable failure) {
+        logger.warn("Remote-view signaling error: session={}, type={}", raw,
+                failure == null ? "unknown" : failure.getClass().getSimpleName());
+    }
     static UUID id(String raw) { try { return UUID.fromString(raw); } catch (Exception ignored) { return null; } }
     static String string(Session s, String key) { Object v=s.getUserProperties().get(key); return v instanceof String ? (String)v : null; }
     private static String header(Map<String,List<String>> headers, String wanted) { if(headers!=null) for(Map.Entry<String,List<String>> e:headers.entrySet()) if(wanted.equalsIgnoreCase(e.getKey()) && e.getValue()!=null && !e.getValue().isEmpty()) return e.getValue().get(0); return null; }

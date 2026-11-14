@@ -33,7 +33,9 @@ OLD_TAG=${E2E_OLD_TAG:-rr-main}
 P=${E2E_PREFIX:-rr-e2e}
 NET=$P-net REG=$P-registry DIND=$P-dind PG16=$P-pg16
 OWNER=rr-e2e
-DATA="${E2E_DATA_DIR:-$HERE/.e2e-data}"
+# dind + registry storage: a new directory of this run's own under E2E_DATA_DIR. Cleanup deletes only that one.
+DATA_BASE="${E2E_DATA_DIR:-$HERE/.e2e-data}"
+mkdir -p "$DATA_BASE" && DATA="$(mktemp -d "$DATA_BASE/run.XXXXXX")" || exit 1
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/rr-e2e.XXXXXX")"
 chmod 755 "$WORK"
 LOG="$WORK/docker.log"
@@ -53,7 +55,7 @@ cleanup() {
   echo; echo "== cleanup"
   docker rm -f -v "$DIND" "$REG" "$PG16" >>"$LOG" 2>&1
   docker network rm "$NET" >>"$LOG" 2>&1
-  if [ -d "$DATA" ]; then find "$DATA" -mindepth 1 -delete >>"$LOG" 2>&1; rmdir "$DATA" >>"$LOG" 2>&1; fi
+  find "$DATA" -mindepth 1 -delete >>"$LOG" 2>&1; rmdir "$DATA" >>"$LOG" 2>&1
   local left
   left="$(docker ps -a --format '{{.Names}}' | grep "^$P-" | tr '\n' ' ')"
   [ -z "$left" ] && echo "  no $P containers left" || echo "  LEFT: containers $left"

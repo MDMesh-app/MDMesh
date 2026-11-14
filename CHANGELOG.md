@@ -23,9 +23,14 @@ Upgrading
   instead, so make a new code on the Enroll page. A 0.4.0 server on the upgraded database accepts no code made
   before the downgrade; a rollback that restores the pre-update backup is fine
   ([UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050)).
-- Quick start: run `docker compose pull && docker compose up -d` once after this update. Updates never touch the
-  supervisor, and one from before 0.5.0 keeps applying updates by tag. From source, or with `SUPERVISOR_VERSION` set by
-  hand: [UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050).
+- Quick start: before you press Update, run `docker compose pull supervisor && docker compose up -d supervisor`. The
+  0.5.0 supervisor then applies this update, pinned, and can roll it back. One from before 0.5.0 can't restore over
+  0.5.0's new tables: its rollback, automatic or by hand, stops with the database unchanged and the server stopped.
+  Already updated by the old one? The same command, then Roll back
+  ([UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050)).
+- Quick start, if the old supervisor already applied this update: run `docker compose pull && docker compose up -d`
+  once. Updates never touch the supervisor, and one from before 0.5.0 keeps applying updates by tag. From source, or
+  with `SUPERVISOR_VERSION` set by hand: [UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050).
 - From source and native: 0.4.x has no `--update`, so move the clone to 0.5.0 once with
   `git fetch --tags && git checkout v0.5.0 && ./setup.sh --update` (native:
   `git fetch --tags && git checkout v0.5.0 && sudo ./setup.sh --update --native`). From then on, update with `./setup.sh --update`
@@ -133,6 +138,10 @@ New
   ([DEPLOY.md](https://github.com/MDMesh-app/MDMesh/blob/main/DEPLOY.md#option-a--quick-start-no-clone-published-images)).
 
 Fixes
+- Rollback and restore: the database is emptied before the backup is loaded, in the same transaction. The dump's own
+  DROPs failed when the update had added a table that refers to an older one, so the rollback stopped (nothing
+  changed). The by-hand restores in the docs, and the command the native installer prints next to each dump, do the
+  same.
 - The installers create .env and other files holding secrets readable only by their owner from the start, and a
   setup.sh re-run makes an existing .env owner-only again.
 - setup.sh re-runs read `.env` without running it as a script, so `bash -x ./setup.sh` no longer prints its

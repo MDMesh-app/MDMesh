@@ -759,8 +759,9 @@ t.test('an unverifiable release logs why (HTTP status / minisign), without secre
 // --- Stub docker + curl for driving apply.sh / rollback.sh without a daemon. The stub docker logs every call (one line
 // per call: its args) to $STUB_LOG and, for `compose exec -T postgres psql|pg_dump`, reads/writes stdio like the real
 // thing. Failure knobs (env): STUB_FAIL_RE (egrep on the args → exit 1), STUB_PSQL_FAIL=1 (the restore psql, the one
-// run with --single-transaction, prints an ERROR and exits 3, as psql -v ON_ERROR_STOP=1 does). curl succeeds unless
-// STUB_CURL_FAIL=1. ---
+// run with -c BEGIN, prints an ERROR and exits 3, as psql -v ON_ERROR_STOP=1 does). Like the real restore, the stub
+// psql fails when its input does not end with the COMMIT apply.sh/rollback.sh add after a complete dump (they send a
+// RAISE instead). curl succeeds unless STUB_CURL_FAIL=1. ---
 function makeStubs(dir) {
   const fs = require('fs'), path = require('path');
   const bin = path.join(dir, 'bin');
@@ -779,10 +780,11 @@ case "$*" in
   "image inspect "*)
     # RepoDigests of the image named by the last argument: that very ref, unless STUB_REPO_DIGESTS says otherwise.
     printf '%s\n' "\${STUB_REPO_DIGESTS:-\${@: -1}}";;
-  *" pg_dump "*) echo "-- stub dump"; echo "SELECT 1;";;
-  *" psql "*"--single-transaction"*)
+  *" pg_dump "*) echo "-- stub dump"; echo "SELECT 1;"; echo "-- PostgreSQL database dump complete";;
+  *" psql "*"-c BEGIN "*)
     cat > "$STUB_LOG.stdin"
-    if [ "\${STUB_PSQL_FAIL:-0}" = 1 ]; then echo 'psql:<stdin>:12: ERROR:  relation "x" does not exist' >&2; exit 3; fi;;
+    if [ "\${STUB_PSQL_FAIL:-0}" = 1 ]; then echo 'psql:<stdin>:12: ERROR:  relation "x" does not exist' >&2; exit 3; fi
+    if [ "$(tail -n1 "$STUB_LOG.stdin")" != "COMMIT;" ]; then echo 'psql:<stdin>:3: ERROR:  the backup is incomplete' >&2; exit 3; fi;;
 esac
 exit 0
 `, { mode: 0o755 });
@@ -843,7 +845,7 @@ t.test('rollback resets /update/status current to the version it restored', { ti
   const d = makeDeploy('SERVER_VERSION=0.0.2\nWEB_VERSION=0.0.2\nCURRENT_VERSION=0.0.2\n');
   fs.writeFileSync(path.join(d.backups, 'latest'), '20260927-120000\n');
   fs.writeFileSync(path.join(d.backups, '20260927-120000.env'), 'SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
-  fs.writeFileSync(path.join(d.backups, '20260927-120000.sql'), 'SELECT 1;\n');
+  fs.writeFileSync(path.join(d.backups, '20260927-120000.sql'), 'SELECT 1;\n-- PostgreSQL database dump complete\n');
   fs.writeFileSync(path.join(d.dir, 'recovery.token'), 'tok123');
   let sup = null;
   tt.after(async () => { await stopChild(sup && sup.child); fs.rmSync(d.dir, { recursive: true, force: true }); });
@@ -890,7 +892,7 @@ t.test('with AUTO_UPDATE on, a rollback is not undone by auto-applying the relea
     const d = makeDeploy('SERVER_VERSION=0.0.2\nWEB_VERSION=0.0.2\nCURRENT_VERSION=0.0.2\n');
     fs.writeFileSync(path.join(d.backups, 'latest'), '20260927-120000\n');
     fs.writeFileSync(path.join(d.backups, '20260927-120000.env'), 'SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
-    fs.writeFileSync(path.join(d.backups, '20260927-120000.sql'), 'SELECT 1;\n');
+    fs.writeFileSync(path.join(d.backups, '20260927-120000.sql'), 'SELECT 1;\n-- PostgreSQL database dump complete\n');
     fs.writeFileSync(path.join(d.dir, 'recovery.token'), 'tok123');
     let gh = null, sup = null;
     tt.after(async () => { await stopChild(sup && sup.child); if (gh) await gh.close(); fs.rmSync(d.dir, { recursive: true, force: true }); });
@@ -923,7 +925,7 @@ t.test('with AUTO_UPDATE on, a rollback is not undone by auto-applying the relea
 // to exit 0), and a failed restore must fail the script loudly, leaving the server stopped rather than running the
 // old version on the un-restored database. ---
 const idx = (calls, re) => calls.findIndex((c) => re.test(c));
-const PSQL_RE = /compose exec -T postgres psql .*--single-transaction/; // the restore itself
+const PSQL_RE = /compose exec -T postgres psql .*-c BEGIN /; // the restore itself
 
 function rollbackDeploy() {
   const fs = require('fs'), path = require('path');
@@ -931,7 +933,7 @@ function rollbackDeploy() {
   fs.writeFileSync(path.join(d.backups, 'latest'), '20260927-120000\n');
   fs.writeFileSync(path.join(d.backups, '20260927-120000.env'), 'SERVER_VERSION=0.0.1\nWEB_VERSION=0.0.1\nCURRENT_VERSION=0.0.1\n');
   // Like a real pg_dump: its preamble resets lock_timeout to 0 (which would undo a bound set before it).
-  fs.writeFileSync(path.join(d.backups, '20260927-120000.sql'), '-- dump\nSET lock_timeout = 0;\nSELECT 1;\n');
+  fs.writeFileSync(path.join(d.backups, '20260927-120000.sql'), '-- dump\nSET lock_timeout = 0;\nSELECT 1;\n-- PostgreSQL database dump complete\n');
   return d;
 }
 
@@ -940,14 +942,17 @@ function assertSafeRestoreOrder(calls, all) {
   a.ok(stop >= 0, 'the server is stopped before the restore:\n' + calls.join('\n') + '\n' + all);
   a.ok(psql > stop, 'psql runs after the server stopped:\n' + calls.join('\n'));
   // Ending the other sessions and the restore are ONE psql session and ONE transaction (no gap for a new lock to slip
-  // in), with a bounded lock_timeout set first: -c SET, -c terminate, then -f - (the dump), in that order.
+  // in), with a bounded lock_timeout set first: -c BEGIN, -c SET, -c terminate, -c the schema reset, then -f - (the
+  // dump, then the COMMIT), in that order. The reset drops public with everything in it (an object the update added can't block the restore) and
+  // makes it again with the owner and grants it had; in the same transaction, so a failed restore undoes it too.
   a.equal(calls.filter((c) => /compose exec -T postgres psql /.test(c)).length, 1, 'a single psql call:\n' + calls.join('\n'));
-  a.match(calls[psql], /-c SET lock_timeout = '60s' -c DO \$restore\$.*count\(pg_terminate_backend\(pid\)\).*datname = current_database\(\) AND pid <> pg_backend_pid\(\).*RAISE NOTICE 'ended % other session\(s\)'.*\$restore\$ -f -$/);
+  a.match(calls[psql], /-c BEGIN -c SET lock_timeout = '60s' -c DO \$restore\$.*count\(pg_terminate_backend\(pid\)\).*datname = current_database\(\) AND pid <> pg_backend_pid\(\).*RAISE NOTICE 'ended % other session\(s\)'.*\$restore\$ -c DO \$reset\$ .*SELECT nspowner::regrole, nspacl INTO o, a FROM pg_namespace WHERE nspname = 'public'; DROP SCHEMA public CASCADE; EXECUTE format\('CREATE SCHEMA public AUTHORIZATION %s', o\); .*aclexplode\(a\).*GRANT %s ON SCHEMA public TO %s.*\$reset\$ -f -$/);
   // Result rows (the dump's ~50 setval()s) go nowhere; errors and notices (stderr) still reach restore.log.
   a.match(calls[psql], / -o \/dev\/null /);
   a.ok(up > psql, 'the old server starts only after the restore:\n' + calls.join('\n'));
   a.match(calls[psql], /-v ON_ERROR_STOP=1/);
-  a.match(calls[psql], /--single-transaction/);
+  // Not --single-transaction: it commits whatever input arrived, and after the reset a cut-off stream is an empty database.
+  a.doesNotMatch(calls[psql], /--single-transaction/);
 }
 
 t.test('rollback.sh: stop server → restore (ON_ERROR_STOP, one transaction) → start → health', () => {
@@ -957,8 +962,8 @@ t.test('rollback.sh: stop server → restore (ON_ERROR_STOP, one transaction) �
     const r = runScript('rollback.sh', [], d.env);
     a.equal(r.code, 0, r.all);
     assertSafeRestoreOrder(d.calls(), r.all);
-    a.equal(fs.readFileSync(d.log + '.stdin', 'utf8'), "-- dump\nSET lock_timeout = '60s';\nSELECT 1;\n",
-      "the dump is fed to psql, with its own SET lock_timeout = 0 rewritten to the bound");
+    a.equal(fs.readFileSync(d.log + '.stdin', 'utf8'), "-- dump\nSET lock_timeout = '60s';\nSELECT 1;\n-- PostgreSQL database dump complete\nCOMMIT;\n",
+      "the dump is fed to psql, with its own SET lock_timeout = 0 rewritten to the bound, then the COMMIT");
     a.match(r.out, /PHASE rolled_back/);
   } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
 });
@@ -984,6 +989,26 @@ t.test('rollback.sh: a failed restore exits non-zero, says what state the stack 
       'the old server is not started on the un-restored database:\n' + calls.join('\n'));
     a.ok(fs.existsSync(path.join(d.backups, '20260927-120000.restore.log')), 'the full psql output is kept');
   } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+});
+
+t.test('rollback.sh: a backup cut short is never committed: the stream ends with a RAISE instead of COMMIT, the restore '
+  + 'fails and the server stays stopped', () => {
+  const fs = require('fs'), path = require('path');
+  for (const dump of ['-- dump\nSET lock_timeout = 0;\nSELECT 1;\n', '']) {
+    const d = rollbackDeploy();
+    try {
+      fs.writeFileSync(path.join(d.backups, '20260927-120000.sql'), dump || '-- dump\n');
+      const r = runScript('rollback.sh', [], d.env);
+      a.notEqual(r.code, 0, r.all);
+      a.match(r.out, /PHASE failed/);
+      const stdin = fs.readFileSync(d.log + '.stdin', 'utf8').trimEnd().split('\n');
+      a.match(stdin[stdin.length - 1], /^DO \$x\$ BEGIN RAISE EXCEPTION 'the backup is incomplete \(it does not end like a pg_dump\)'; END \$x\$;$/);
+      a.ok(!stdin.includes('COMMIT;'), stdin.join('\n'));
+      const calls = d.calls();
+      a.equal(calls.slice(idx(calls, PSQL_RE) + 1).filter((c) => /^compose up /.test(c)).length, 0, calls.join('\n'));
+      a.match(d.envFile(), /^CURRENT_VERSION=0\.0\.2$/m, '.env still names the running version');
+    } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
+  }
 });
 
 t.test('rollback.sh: if the server cannot be stopped, nothing is restored and the script fails loudly', () => {
@@ -1445,8 +1470,8 @@ t.test('restore_db: the lock bound is a fixed 60s; no environment value reaches 
     try {
       const r = runScript('rollback.sh', [], { ...d.env, RESTORE_LOCK_TIMEOUT: val });
       a.equal(r.code, 0, r.all);
-      const call = d.calls().find((c) => /psql .*--single-transaction/.test(c));
-      a.ok(call.includes("-c SET lock_timeout = '60s' -c"), JSON.stringify(val) + ': ' + call);
+      const call = d.calls().find((c) => PSQL_RE.test(c));
+      a.ok(call.includes("-c BEGIN -c SET lock_timeout = '60s' -c"), JSON.stringify(val) + ': ' + call);
       a.ok(fs.readFileSync(d.log + '.stdin', 'utf8').includes("SET lock_timeout = '60s';"));
       a.ok(!call.includes('DROP TABLE'));
     } finally { fs.rmSync(d.dir, { recursive: true, force: true }); }
@@ -1481,12 +1506,13 @@ t.test('restore_db rewrites only the preamble SET lock_timeout = 0; data rows an
   const body = "SET idle_in_transaction_session_timeout = 0;\nSELECT pg_catalog.set_config('search_path', '', false);\n"
     + 'SET client_min_messages = warning;\n\nCREATE TABLE public.t (x text);\n'
     + 'CREATE FUNCTION public.f() RETURNS integer LANGUAGE plpgsql AS $$\nBEGIN\nSET lock_timeout = 0;\nRETURN 1;\nEND $$;\n'
-    + 'COPY public.t (x) FROM stdin;\nSET lock_timeout = 0;\nkeep me\n\\.\n\nSET lock_timeout = 0;\n';
+    + 'COPY public.t (x) FROM stdin;\nSET lock_timeout = 0;\nkeep me\n\\.\n\nSET lock_timeout = 0;\n'
+    + '\n--\n-- PostgreSQL database dump complete\n--\n\n\\unrestrict abc123\n\n';
   const cases = [
-    // [dump, expected psql stdin]
-    [pre + 'SET lock_timeout = 0;\n' + body, pre + "SET lock_timeout = '60s';\n" + body],
+    // [dump, expected psql stdin: the dump, then the COMMIT]
+    [pre + 'SET lock_timeout = 0;\n' + body, pre + "SET lock_timeout = '60s';\n" + body + 'COMMIT;\n'],
     // No preamble line at all: nothing may be rewritten (the first whole-line match is then a data row).
-    [pre + body, pre + body],
+    [pre + body, pre + body + 'COMMIT;\n'],
   ];
   for (const [dump, want] of cases) {
     const d = rollbackDeploy();

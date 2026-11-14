@@ -42,9 +42,10 @@ When `SUPERVISOR_VERSION` is `latest` (quick starts before 0.5.0) this brings th
 newer supervisor applies an update, it pins `SUPERVISOR_VERSION` to that release's supervisor by digest, and
 `docker compose up -d` starts exactly that one. A plain version you set by hand is left alone: bump it yourself.
 
-The supervisor you run decides whether updates are pinned: one from before 0.5.0 still applies the 0.5.0 update by
-tag, as before. Run the command above once after that update to get the 0.5.0 supervisor, and every later update is
-pinned. If you set `SUPERVISOR_VERSION` yourself, see [v0.5.0](#v050).
+The supervisor you run decides whether updates are pinned, and how a rollback restores the database: one from before
+0.5.0 applies the 0.5.0 update by tag and can't roll it back. So on 0.4.x, get the 0.5.0 supervisor *before* you
+update ([v0.5.0](#v050)); every update from then on is pinned. If you set `SUPERVISOR_VERSION` yourself, see
+[v0.5.0](#v050).
 
 ## From-source Docker installs
 
@@ -137,22 +138,31 @@ STAMP=$(docker compose exec -T supervisor cat /backups/latest)
 docker compose exec -T supervisor cat "/backups/$STAMP.env"   # the pre-update versions
 docker compose stop server
 docker compose exec -T supervisor cat "/backups/$STAMP.sql" \
-  | sed "1,/^SET lock_timeout = 0;\$/s/^SET lock_timeout = 0;\$/SET lock_timeout = '60s';/" \
-  | docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 --single-transaction -U mdmesh -d mdmesh \
-      -c "SET lock_timeout = '60s'" \
+  | awk -v q="'" '!set && $0 == "SET lock_timeout = 0;" { $0 = "SET lock_timeout = " q "60s" q ";"; set = 1 }
+      $0 == "-- PostgreSQL database dump complete" { complete = 1 }
+      { print }
+      END { if (complete) print "COMMIT;\n\\echo Restored."
+            else print "DO $$ BEGIN RAISE EXCEPTION " q "the backup is incomplete" q "; END $$;" }' \
+  | docker compose exec -T postgres psql -X -q -v ON_ERROR_STOP=1 -o /dev/null -U mdmesh -d mdmesh \
+      -c BEGIN -c "SET lock_timeout = '60s'" \
       -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()" \
+      -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO PUBLIC" \
       -f -
 ```
 
 Then:
 
 ```bash
-# only if that succeeded: copy SERVER_VERSION, WEB_VERSION and CURRENT_VERSION from the .env snapshot above into .env
+# only if it printed Restored.: copy SERVER_VERSION, WEB_VERSION and CURRENT_VERSION from the .env snapshot above into .env
 docker compose up -d --no-deps server caddy
 ```
 
-The restore ends other sessions and gives up after 60 seconds without a lock. Keep the `sed`: without it, the dump's
-own `SET lock_timeout = 0;` removes that limit.
+The restore ends other sessions, empties the database and loads the dump, all in one transaction, and prints
+`Restored.` when it committed. Anything else (an error, or no `Restored.`) means nothing changed: the database is as it
+was. It gives up after 60 seconds without a lock. Keep the `awk`: it sends the `COMMIT` only after a backup that ends
+like a complete `pg_dump` (one cut short fails with "the backup is incomplete"), and it rewrites the dump's own
+`SET lock_timeout = 0;`, which would remove that limit. Keep the `DROP SCHEMA` line too: the dump's own DROPs only know
+the tables from before the update, and one the update added that refers to them makes the restore fail.
 
 ## Agent compatibility
 
@@ -174,6 +184,18 @@ none of these and ignores the attempt id: an enrollment there works as before, i
 
 ### v0.5.0
 
+- **Quick start: update the supervisor before you press Update.** In the install directory, run
+
+  ```bash
+  docker compose pull supervisor && docker compose up -d supervisor
+  ```
+
+  then apply 0.5.0 from **Settings → Updates**. The quick start set `SUPERVISOR_VERSION=latest`, so this starts the
+  0.5.0 supervisor (if you set a version in `.env` yourself, change it to `0.5.0` first). It works with your 0.4.x
+  server and console as before, and it is the one that then applies 0.5.0, pinned by digest, and rolls it back if
+  needed: by itself if 0.5.0 fails its health check, or from **Roll back**. A supervisor from before 0.5.0 can't roll
+  0.5.0 back (see *Going back to 0.4.0* below). With automatic updates on, run the command as soon as you can:
+  until then the old supervisor may apply 0.5.0 itself.
 - **The database update is automatic.** On start, the server adds `devices.wipedAt` and
   `devices.agentEnrollAttemptHash`; `configurations.camera`, `configurations.locationServices` and the kiosk background
   image columns (`backgroundImageFileId`, `backgroundImageSha256`, `backgroundImageFit`, `backgroundImageFocalX`,
@@ -195,9 +217,8 @@ none of these and ignores the attempt id: an enrollment there works as before, i
 - **Update the supervisor once, or updates stay unpinned.** Updates now run the images the signed release names, by
   digest ([how](#quick-start-installs)). The supervisor you run does that, and updates never touch it, so one from
   before 0.5.0 applies 0.5.0 by tag and goes on doing so for every later release, without a message.
-  - **Quick start:** apply 0.5.0 (**Settings → Updates**, or automatic updates), then run
-    `docker compose pull && docker compose up -d` in the install directory. The quick start set
-    `SUPERVISOR_VERSION=latest`; if you set a version in `.env` yourself, change it to `0.5.0` first.
+  - **Quick start:** the command in the first point, before the update. If 0.5.0 is already applied, run
+    `docker compose pull && docker compose up -d` in the install directory instead.
   - **From source with a registry `IMAGE_OWNER`:** the move to 0.5.0 above, also after applying 0.5.0 from the
     console. setup.sh builds the supervisor and ties `SUPERVISOR_VERSION` to the checkout's release, so
     `docker compose pull` alone keeps the old one.
@@ -221,6 +242,13 @@ none of these and ignores the attempt id: an enrollment there works as before, i
   must use the current release workflow ([RELEASING.md](../RELEASING.md)). An install that follows upstream releases
   with its own `IMAGE_OWNER` sets `GITHUB_REPO` to the repository that publishes its images, or `IMAGE_OWNER` to
   `mdmesh-app`.
+- **Going back to 0.4.0, if an old supervisor applied 0.5.0.** A supervisor from before 0.5.0 can't roll 0.5.0
+  back: its restore stops at `cannot drop constraint configurations_pr_key ... because other objects depend on it` (0.5.0 adds a
+  table that refers to configurations). Nothing changes: the database stays as it was, and `server` is left stopped.
+  The 0.5.0 supervisor restores into an emptied schema instead. So, on a quick start, run
+  `docker compose pull supervisor && docker compose up -d supervisor`, then **Roll back** from `/recovery`. If a rollback, or a failed update's automatic one, already stopped there, the same
+  command and **Roll back** again finish it; it uses the same backup. To stay on 0.5.0 instead, run
+  `docker compose up -d server`. By hand: [Restoring by hand](#restoring-by-hand).
 - **Going back to 0.4.0: enrollment codes.** The update stores enrollment codes hashed, the existing ones included
   (on PostgreSQL older than 11 it marks them used instead, see above). A one-click rollback, and the restores in
   [Backups and restore](OPERATIONS.md#backups-and-restore), bring back the database from before the update, with its

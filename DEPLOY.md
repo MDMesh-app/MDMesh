@@ -40,7 +40,8 @@ only then runs the script with `MDMESH_VERSION` set to that release, so it insta
 ```
 
 If a download or check fails, it says so and nothing runs. It runs in a subshell and removes its temporary
-directory afterwards. This needs releases from 0.5.0 on (earlier ones don't publish `quickstart.sh`).
+directory afterwards. This needs releases from 0.5.0 on (earlier ones don't publish `quickstart.sh`). The README's
+one-line command runs the same release asset without these checks.
 
 **Unchecked shortcut.** Without `minisign`, this looks up the latest release's tag and runs `quickstart.sh` from
 `refs/tags/<tag>` in the repository, **without checking it** (the script still verifies everything it downloads, but
@@ -76,8 +77,8 @@ Before using anything from the release, the quick start checks its `manifest.jso
 (minisign format, checked with `openssl` 3.0+, or with `minisign` when that is installed). The signed manifest holds
 the image digests and the SHA-256 of the compose files, the seed and `install/lib/db.sh`, which come from the
 release's tag; a file that doesn't match stops the install. The trust root is `quickstart.sh` itself, which carries
-a copy of `release/minisign.pub`: checked against the signed manifest by the block above, or taken on trust from the
-release's tag by the shortcut. A fork with its own signing key sets
+a copy of `release/minisign.pub`: checked against the signed manifest by the block above, or taken on trust (from the
+release's tag by the shortcut, or as the release asset by the README's command). A fork with its own signing key sets
 `MDMESH_RELEASE_PUBKEY` to the key line of its `release/minisign.pub`.
 
 If the latest release can't be looked up (GitHub API unreachable or rate-limited), the quick start stops and says so;

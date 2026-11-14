@@ -196,6 +196,16 @@ none of these and ignores the attempt id: an enrollment there works as before, i
   needed: by itself if 0.5.0 fails its health check, or from **Roll back**. A supervisor from before 0.5.0 can't roll
   0.5.0 back (see *Going back to 0.4.0* below). With automatic updates on, run the command as soon as you can:
   until then the old supervisor may apply 0.5.0 itself.
+- **The database update is automatic.** On start, the server adds `devices.wipedAt` and
+  `devices.agentEnrollAttemptHash`; `configurations.camera`, `configurations.locationServices` and the kiosk background
+  image columns (`backgroundImageFileId`, `backgroundImageSha256`, `backgroundImageFit`, `backgroundImageFocalX`,
+  `backgroundImageFocalY`); `device_state.kioskGeneration` and `device_state.kioskReturnGeneration`;
+  `applicationVersions.requestedPermissions`; `maxUses`, `useCount` and `revokedAt` on enrollment tokens; the
+  `configurationAppPermissions` and `agentEnrollmentKey` tables; and three indexes. Every new column is empty for
+  existing configurations, so no device re-applies its configuration until its agent is updated. Devices wiped before
+  the update aren't marked Wiped.
+- **PostgreSQL older than 11: existing enrollment codes stop working.** The update hashes existing codes with a
+  function PostgreSQL 11 added; on an older server it marks them used instead. Make a new code on the Enroll page.
 - **From source and native: move the clone to 0.5.0 once.** 0.4.x has no `./setup.sh --update`. Run
   `git fetch --tags && git checkout v0.5.0 && ./setup.sh --update` (native:
   `git fetch --tags && git checkout v0.5.0 && sudo ./setup.sh --update --native`). It works on a clone of `main` and on one checked
@@ -214,6 +224,19 @@ none of these and ignores the attempt id: an enrollment there works as before, i
     `docker compose pull` alone keeps the old one.
   - **Nothing to do:** a new 0.5.0 quick start is pinned from the start, and from-source installs with
     `IMAGE_OWNER=local` and native installs don't update from release images.
+- **New agent: 0.5.0.** Once the updater has downloaded it, **Settings → Agent rollout** offers it: pick a few canary
+  devices, then promote it to everyone else. Most of this release's device features need it (see
+  [Agent compatibility](#agent-compatibility)); devices on older agents keep working. A device that takes it applies
+  its configuration once more, as after every agent update.
+- **Live connection can take up to 5 minutes to come back after an outage (agent 0.5.0).** When the server has been
+  unreachable for a while, a device's live connection can take up to 5 minutes to come back (it was up to 1 minute), so
+  Sync now may say the device isn't connected a little longer. It comes back at once when the device's network returns
+  or its next check-in gets through. Check-ins are not affected.
+- **Native installer and answers.** The installer stops on an option it doesn't take, instead of ignoring it.
+  `REPLACE_DATA` must be `yes` or `no`, and `ASSUME_YES` `1` or `0`; empty means not set (the default). Any other value
+  stops it before it changes anything, where it used to mean Keep or ask. An answers file (`MDMESH_ANSWERS`, new in
+  0.5.0) must be owned by you or root and give no access to group or others (for example `chmod 600`). Check scripts
+  that run the installer unattended.
 - **Forks.** Once a 0.5.0 supervisor runs, it refuses a release whose manifest has no digests, and one that pins them
   under another owner than `IMAGE_OWNER`, with that reason, and nothing changes. A fork that publishes its own releases
   must use the current release workflow ([RELEASING.md](../RELEASING.md)). An install that follows upstream releases
@@ -227,7 +250,7 @@ none of these and ignores the attempt id: an enrollment there works as before, i
   command and **Roll back** again finish it; it uses the same backup. To stay on 0.5.0 instead, run
   `docker compose up -d server`. By hand: [Restoring by hand](#restoring-by-hand).
 - **Going back to 0.4.0: enrollment codes.** The update stores enrollment codes hashed, the existing ones included
-  (on PostgreSQL older than 11 it marks those used instead). A one-click rollback, and the restores in
+  (on PostgreSQL older than 11 it marks them used instead, see above). A one-click rollback, and the restores in
   [Backups and restore](OPERATIONS.md#backups-and-restore), bring back the database from before the update, with its
   codes as they were. A 0.4.0 server started on the 0.5.0 database instead (`--allow-downgrade`, say) finds none of
   them: every code made before the downgrade is refused as unknown, including one already printed or in a QR. Make a
@@ -236,14 +259,14 @@ none of these and ignores the attempt id: an enrollment there works as before, i
 - **App permissions (agent 0.5.0):** a configuration can Grant or Deny an installed app's runtime permissions. Devices
   on an older agent, or not Device Owner, can't apply them: they get the rest of the configuration and show as out of
   sync while it has a rule, until their agent is updated. Configurations without rules stay in sync on every agent.
-  API clients: `PUT /private/configurations` takes `managedAppPermissions` (`[{applicationId, permission, state}]`,
+  API clients: `PUT /rest/private/configurations` takes `managedAppPermissions` (`[{applicationId, permission, state}]`,
   state `grant` or `deny`); leaving it out keeps the stored rules, and rules for apps the save doesn't install are
   dropped.
-- **One config.apply after the upgrade, for some kiosk configurations.** A configuration's kiosk background image
-  address is now built from the current `BASE_URL` whenever it is sent. Where the stored address differs (the image
-  was picked before `BASE_URL` moved to HTTPS or another domain; a trailing slash alone doesn't count), the
-  configuration gets a new revision on upgrade, and its devices get one config.apply with the new address. Nothing to
-  do; the devices show the image again if the old address was one they refused.
+- **API changes.** `POST /rest/private/agent/v1/token` takes `maxUses` and `validHours` (left out: one device, 24 hours,
+  as before); `POST /rest/private/agent/v1/token/revoke-all` stops every code;
+  `GET /rest/private/agent/v1/devices/enrolled?since=<ms>` lists the devices enrolled since then. Enrollment codes are
+  stored hashed, so the database no longer holds them in clear. `PUT /rest/private/roles` and
+  `DELETE /rest/private/roles/{id}` now refuse the super-admin and org-admin roles (`error.role.protected`).
 - **Return to kiosk on the device (agent 0.5.0):** after someone leaves a kiosk with the exit PIN, the MDMesh app
   offers **Return to kiosk**, offline too, while the device's configuration enables kiosk. A console **Exit kiosk**
   (`kiosk.exit`) leaves that option on the device; to remove it, turn kiosk off in the configuration. Older agents

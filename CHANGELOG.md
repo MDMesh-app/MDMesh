@@ -21,16 +21,18 @@ Upgrading
   instead, so make a new code on the Enroll page. A 0.4.0 server on the upgraded database accepts no code made
   before the downgrade; a rollback that restores the pre-update backup is fine
   ([UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050)).
-- Quick start: run `docker compose pull && docker compose up -d` once after this update. Updates never touch the
-  supervisor, and one from before 0.5.0 keeps applying updates by tag. From source, or with `SUPERVISOR_VERSION` set by
-  hand: [UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050).
+- Quick start: before you press Update, run `docker compose pull supervisor && docker compose up -d supervisor`. The
+  0.5.0 supervisor then applies this update, pinned, and can roll it back. One from before 0.5.0 can't restore over
+  0.5.0's new tables: its rollback, automatic or by hand, stops with the database unchanged and the server stopped.
+  Already updated by the old one? The same command, then Roll back
+  ([UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050)).
+- Quick start, if the old supervisor already applied this update: run `docker compose pull && docker compose up -d`
+  once. Updates never touch the supervisor, and one from before 0.5.0 keeps applying updates by tag. From source, or
+  with `SUPERVISOR_VERSION` set by hand: [UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050).
 - From source and native: 0.4.x has no `--update`, so move the clone to 0.5.0 once with
   `git fetch --tags && git checkout v0.5.0 && ./setup.sh --update` (native:
   `git fetch --tags && git checkout v0.5.0 && sudo ./setup.sh --update --native`). From then on, update with `./setup.sh --update`
   (native: `sudo ./setup.sh --update --native`).
-- Quick start, rolling back to 0.4.0: update the supervisor first (`docker compose pull supervisor && docker compose up
-  -d supervisor`). One from before 0.5.0 can't restore over 0.5.0's new tables: its rollback stops with the database
-  unchanged and the server stopped ([UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050)).
 - Native: the installer now stops on an option it doesn't take, instead of ignoring it.
 - Answers files (`MDMESH_ANSWERS`) must belong to you and be private (mode 600), or they are refused.
 

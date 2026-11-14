@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 # End-to-end test of the one-click rollback and the by-hand restores across a schema change, in throwaway containers.
 #
-# Usage: tests/rollback-e2e/run.sh [040] [main] [native]      (default: all three)
+# Usage: tests/rollback-e2e/run.sh [first] [040] [main] [native]      (default: all four)
+#   first   what UPGRADING asks of a 0.4.x quick start: update the supervisor first (pull + up -d supervisor, :latest
+#           = this branch's), then update. The new supervisor on the 0.4.0 stack: /update/status, /recovery, an update
+#           check signed in as the admin. Then (a) an update to a release whose server never gets healthy (0.5.2, its
+#           Tomcat on another port: it migrates the database, then fails the health check) rolls back by itself to a
+#           working 0.4.0, and (b) the update to 0.5.1, then Roll back (POST /update/rollback with the recovery token,
+#           as /recovery sends it) is back on a working 0.4.0.
 #   040     v0.4.0 quick start (its published images, its supervisor) updated to this branch (0.5.1) by v0.4.0's own
 #           apply.sh. v0.4.0's rollback.sh fails over the new schema (configurations_pr_key: a 0.5.0 table refers to
 #           configurations) and must change nothing; then the supervisor is updated as UPGRADING says and the rollback
@@ -34,7 +40,7 @@ LOG="$WORK/docker.log"
 PASSED=0 FAILED=0
 FAILURES=()
 PHASES=("$@")
-[ "${#PHASES[@]}" -gt 0 ] || PHASES=(040 main native)
+[ "${#PHASES[@]}" -gt 0 ] || PHASES=(first 040 main native)
 
 pass() { echo "  ok   $*"; PASSED=$((PASSED + 1)); }
 fail() { echo "  FAIL $*"; FAILED=$((FAILED + 1)); FAILURES+=("$*"); }
@@ -75,16 +81,16 @@ server_image() { in_dind docker inspect -f '{{.Config.Image}}' "$(dc "$1" ps -aq
 # HTTP from inside the supervisor container (it has curl), through caddy as a browser or an agent would come. The
 # session id is kept by hand: the curl in the current supervisor image does not send a cookie jar's session back to
 # http://caddy (the 0.4.0 image's curl did).
-# http DIR METHOD PATH [JSON]: prints "<status> <body>".
+# http DIR METHOD PATH [JSON [HEADER]]: prints "<status> <body>".
 http() {
-  local d=$1 m=$2 p=$3 body=${4:-}
+  local d=$1 m=$2 p=$3 body=${4:-} hdr=${5:-}
   # shellcheck disable=SC2016  # expanded by the container's shell
   dc "$d" exec -T supervisor sh -c 'touch /tmp/rr-sid
-    b=$(curl -sS -m 30 -X "$1" -H "Content-Type: application/json" -H "Cookie: JSESSIONID=$(cat /tmp/rr-sid)" ${3:+--data "$3"} \
+    b=$(curl -sS -m 30 -X "$1" -H "Content-Type: application/json" -H "Cookie: JSESSIONID=$(cat /tmp/rr-sid)" ${3:+--data "$3"} ${4:+-H "$4"} \
       -D /tmp/rr-hdr -o /tmp/rr-body -w "%{http_code}" "http://caddy:80$2" 2>&1)
     s=$(sed -n "s/^[Ss]et-[Cc]ookie: JSESSIONID=\([^;]*\).*/\1/p" /tmp/rr-hdr | tr -d "\r")
     [ -z "$s" ] || echo "$s" > /tmp/rr-sid
-    echo "$b $(head -c 600 /tmp/rr-body)"' sh "$m" "$p" "$body" 2>>"$LOG" | tr -d '\r'
+    echo "$b $(head -c 600 /tmp/rr-body)"' sh "$m" "$p" "$body" "$hdr" 2>>"$LOG" | tr -d '\r'
 }
 ADMIN_PW="rr-e2e-$(openssl rand -hex 6)"
 ADMIN_MD5="$(printf '%s' "$ADMIN_PW" | md5sum | awk '{ print toupper($1) }')"
@@ -118,7 +124,11 @@ push() {
   for n in server web supervisor; do
     img="ghcr.io/$OWNER/mdmesh-$n:$v"
     if [ -n "$relabel" ]; then
-      printf 'FROM %s-%s:%s\nLABEL org.opencontainers.image.version=%s\n' "$src" "$n" "$tag" "$v" \
+      # broken: the server listens on 8081, so it migrates the database and starts, but never answers the health check.
+      { printf 'FROM %s-%s:%s\nLABEL org.opencontainers.image.version=%s\n' "$src" "$n" "$tag" "$v"
+        if [ "$relabel" = broken ] && [ "$n" = server ]; then
+          printf '%s\n' "RUN sed -i 's/port=\"8080\"/port=\"8081\"/' /usr/local/tomcat/conf/server.xml"
+        fi; } \
         | docker exec -i -e DOCKER_BUILDKIT=0 "$DIND" docker build -q -t "$img" - >>"$LOG" 2>&1 || return 1
     else
       in_dind docker tag "$src-$n:$tag" "$img" >>"$LOG" 2>&1 || return 1
@@ -236,8 +246,75 @@ setup_dind() {
   push 0.4.0 ghcr.io/mdmesh-app/mdmesh 0.4.0 || return 1
   push 0.5.0 ghcr.io/local/mdmesh "$OLD_TAG" || return 1
   push 0.5.1 ghcr.io/local/mdmesh "$NEW_TAG" relabel || return 1
+  push 0.5.2 ghcr.io/local/mdmesh "$NEW_TAG" broken || return 1
   mkdir -p "$WORK/v040"
   git -C "$ROOT" archive v0.4.0 docker-compose.release.yml install/lib/db.sh install/sql | tar -x -C "$WORK/v040"
+}
+
+# ---------------------------------------------------------------------------------------------------------------------
+phase_first() {
+  local d=/root/rr-first r t1 t2 t3 d1 d2 n0 stamp tok st _
+  say "first: v0.4.0 quick start, supervisor updated first (UPGRADING v0.5.0), then updates and rollbacks"
+  push_latest_supervisor ghcr.io/mdmesh-app/mdmesh-supervisor:0.4.0
+  install "$d" 0.4.0 "$WORK/v040" 0.4.0 0.4.0 latest || { teardown "$d"; return; }
+  login "$d" >>"$LOG"; t1="$(mint "$d")"; t2="$(mint "$d")"
+  r="$(enroll "$d" "$t1")"; d1="$(device_of "$r")"
+  check "0.4.0: a device enrolls (${d1:-$r})" test -n "$d1"
+  n0="$(q "$d" "SELECT count(*) FROM devices")"
+
+  echo "-- UPGRADING v0.5.0: docker compose pull supervisor && docker compose up -d supervisor (:latest is this branch's)"
+  push_latest_supervisor "$(ref_of 0.5.1 supervisor)"
+  in_dir "$d" sh -c 'docker compose pull supervisor && docker compose up -d supervisor' >>"$LOG" 2>&1
+  check "the running supervisor is this branch's" dc "$d" exec -T supervisor grep -q 'DROP SCHEMA public CASCADE' /app/rollback.sh
+  sleep 5
+  r="$(http "$d" GET /update/status)"
+  check "new supervisor on 0.4.0: /update/status 200, current 0.4.0 (${r:0:120})" grep -q '^200 .*"current":"0.4.0"' <<< "$r"
+  check "new supervisor on 0.4.0: /recovery 200" grep -q '^200 ' <<< "$(http "$d" GET /recovery)"
+  check "new supervisor on 0.4.0: console / 200" grep -q '^200 ' <<< "$(http "$d" GET /)"
+  login "$d" >>"$LOG"
+  r="$(http "$d" POST /update/check '{}' 'X-MDMesh-Console: 1')"
+  check "new supervisor on 0.4.0: an update check signed in as the admin is authorized by the 0.4.0 server (${r:0:120})" \
+    grep -q '^200 .*"current":"0.4.0"' <<< "$r"
+
+  echo "-- (a) update to 0.5.2, whose server never answers the health check: automatic rollback"
+  dc "$d" exec -T -e HEALTH_TIMEOUT=150 supervisor /app/apply.sh 0.5.2 "$(ref_of 0.5.2 server)" "$(ref_of 0.5.2 web)" \
+    "$(ref_of 0.5.2 supervisor)" > "$WORK/first-apply-broken.out" 2>&1
+  sed 's/^/      apply: /' "$WORK/first-apply-broken.out" | cut -c1-220
+  check "the failed update rolled back by itself (PHASE rolled_back)" grep -qx 'PHASE rolled_back' "$WORK/first-apply-broken.out"
+  stamp="$(dc "$d" exec -T supervisor cat /backups/latest | tr -d '\r')"
+  dc "$d" exec -T supervisor cat "/backups/$stamp.restore.log" > "$WORK/first-broken-restore.log" 2>>"$LOG"
+  check "0.5.2 had migrated the database before the rollback (the restore dropped configurationAppPermissions)" \
+    grep -qi 'drop cascades to table configurationapppermissions' "$WORK/first-broken-restore.log"
+  check "after the automatic rollback: the server image is 0.4.0 ($(server_image "$d"))" \
+    test "$(server_image "$d")" = "ghcr.io/$OWNER/mdmesh-server:0.4.0"
+  check ".env names 0.4.0 again" in_dind grep -qx CURRENT_VERSION=0.4.0 "$d/.env"
+  assert_old_works "$d" "after the automatic rollback:" "$d1" none "$n0"
+  check "after the automatic rollback: no 0.5.0 tables left" \
+    test "$(q "$d" "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND tablename IN ('configurationapppermissions', 'agentenrollmentkey')")" = 0
+
+  echo "-- (b) update to 0.5.1, then Roll back as /recovery does it"
+  dc "$d" exec -T supervisor /app/apply.sh 0.5.1 "$(ref_of 0.5.1 server)" "$(ref_of 0.5.1 web)" "$(ref_of 0.5.1 supervisor)" \
+    > "$WORK/first-apply.out" 2>&1
+  check "0.4.0 -> 0.5.1: OK" grep -qx 'OK 0.5.1' "$WORK/first-apply.out"
+  login "$d" >>"$LOG"; t3="$(mint "$d")"; r="$(enroll "$d" "$t3")"; d2="$(device_of "$r")"
+  check "0.5.1: a device enrolls after the update (${d2:-$r})" test -n "$d2"
+  tok="$(dc "$d" exec -T supervisor cat /backups/recovery.token | tr -d '\r\n')"
+  # shellcheck disable=SC2016  # expanded by the container's shell
+  dc "$d" exec -T supervisor sh -c 'curl -sS -X POST -H "X-MDMesh-Console: 1" -H "X-Recovery-Token: $1" -o /tmp/rr-rb -w "%{http_code}" http://caddy:80/update/rollback' \
+    sh "$tok" > "$WORK/first-rb.code" 2>>"$LOG"
+  check "Roll back accepted (HTTP $(cat "$WORK/first-rb.code"))" grep -qx 202 "$WORK/first-rb.code"
+  st=""
+  for _ in $(seq 1 60); do
+    sleep 5
+    st="$(http "$d" GET /update/status | grep -o '"phase":"[a-z_]*"' | head -1)"
+    case "$st" in *rolled_back*|*failed*) break ;; esac
+  done
+  check "Roll back finished: $st" test "$st" = '"phase":"rolled_back"'
+  check "after Roll back: the server image is 0.4.0 ($(server_image "$d"))" test "$(server_image "$d")" = "ghcr.io/$OWNER/mdmesh-server:0.4.0"
+  assert_old_works "$d" "after Roll back:" "$d1" "$d2" "$n0"
+  r="$(enroll "$d" "$t2")"
+  check "after Roll back: a code made before the updates enrolls a device ($(device_of "$r"))" test -n "$(device_of "$r")"
+  teardown "$d"
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -441,6 +518,7 @@ echo "rollback-e2e: work directory $WORK; phases: ${PHASES[*]}"
 setup_dind || { fail "setup"; exit 1; }
 for p in "${PHASES[@]}"; do
   case "$p" in
+    first) phase_first ;;
     040) phase_040 ;;
     main) phase_main ;;
     native) phase_native ;;

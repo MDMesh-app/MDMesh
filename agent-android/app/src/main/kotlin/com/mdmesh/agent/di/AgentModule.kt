@@ -87,6 +87,7 @@ import com.mdmesh.remote.RemoteViewConsentController
 import com.mdmesh.remote.RemoteViewRuntime
 import com.mdmesh.core.store.DeviceIdStore
 import com.mdmesh.core.config.ServerConfigStore
+import com.mdmesh.core.sync.CheckInWorker
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -144,6 +145,7 @@ object AgentModule {
     ): AndroidRemoteViewSession = AndroidRemoteViewSession(
         context = context,
         report = events::record,
+        scheduleCheckIn = { CheckInWorker.scheduleAfterCurrent(context) },
         credentials = {
             val id = identities.current(); val secret = identities.secret()
             if (id.isNullOrBlank() || secret.isNullOrBlank()) null else RemoteViewAgentCredentials(id, secret)

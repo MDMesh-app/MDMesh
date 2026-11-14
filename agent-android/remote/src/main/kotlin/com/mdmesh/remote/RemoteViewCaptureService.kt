@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -25,7 +26,10 @@ class RemoteViewCaptureService : Service() {
         val session = RemoteViewRuntime.session
         if (id == null || data == null || code != Activity.RESULT_OK || session == null) { stopSelf(startId); return START_NOT_STICKY }
         CoroutineScope(Dispatchers.IO).launch {
-            session.startCapture(id, data).onFailure { stopSelf(startId) }
+            session.startCapture(id, data).onFailure {
+                Log.w(TAG, "Remote-view capture startup failed", it)
+                stopSelf(startId)
+            }
         }
         return START_NOT_STICKY
     }
@@ -48,7 +52,7 @@ class RemoteViewCaptureService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
     @Suppress("DEPRECATION") private fun Intent.intentExtra(key: String): Intent? =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) getParcelableExtra(key, Intent::class.java) else getParcelableExtra(key)
-    companion object { const val EXTRA_SESSION_ID="com.mdmesh.remote.SESSION"; const val EXTRA_RESULT_CODE="com.mdmesh.remote.RESULT_CODE"; const val EXTRA_RESULT_DATA="com.mdmesh.remote.RESULT_DATA"; private const val CHANNEL="mdmesh_remote_view"; private const val ID=7302 }
+    companion object { const val EXTRA_SESSION_ID="com.mdmesh.remote.SESSION"; const val EXTRA_RESULT_CODE="com.mdmesh.remote.RESULT_CODE"; const val EXTRA_RESULT_DATA="com.mdmesh.remote.RESULT_DATA"; private const val CHANNEL="mdmesh_remote_view"; private const val ID=7302; private const val TAG="RemoteViewCapture" }
 }
 
 /** Process-local service bridge. A remote view is explicitly non-restorable after process death. */

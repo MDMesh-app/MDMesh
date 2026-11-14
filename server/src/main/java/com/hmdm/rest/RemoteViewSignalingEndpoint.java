@@ -16,10 +16,19 @@ import javax.websocket.server.HandshakeRequest;
 import javax.websocket.server.PathParam;
 import javax.websocket.server.ServerEndpoint;
 import javax.websocket.server.ServerEndpointConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-/** Separate browser/agent WebSocket signaling endpoints. No media, commands, or credentials are relayed. */
-@ServerEndpoint(value = "/remote/ws/{role}/{sessionId}", configurator = RemoteViewSignalingEndpoint.Auth.class)
+/**
+ * Agent-side remote-view signaling endpoint. No media, commands, or credentials are relayed.
+ *
+ * <p>The peer role is deliberately fixed in the endpoint path. Besides being a smaller authority
+ * surface than a role path parameter, this avoids an ambiguous template mapping in the Tomcat
+ * deployment used by the native installer.</p>
+ */
+@ServerEndpoint(value = "/remote/ws/agent/{sessionId}", configurator = RemoteViewSignalingEndpoint.Auth.class)
 public class RemoteViewSignalingEndpoint {
+    private static final Logger logger = LoggerFactory.getLogger(RemoteViewSignalingEndpoint.class);
     private static final String HTTP_SESSION = "remote.httpSession";
     private static final String AUTH = "remote.authorization";
     private static final String JOIN = "remote.joinSecret";
@@ -33,21 +42,25 @@ public class RemoteViewSignalingEndpoint {
         }
         private static void put(ServerEndpointConfig c, String key, String value) { if (value != null) c.getUserProperties().put(key, value); }
     }
-    @OnOpen public void open(Session socket, @PathParam("role") String role, @PathParam("sessionId") String raw) {
+    @OnOpen public void open(Session socket, @PathParam("sessionId") String raw) {
         UUID id = id(raw); RemoteViewSignalingHub hub = RemoteViewSignalingHub.INSTANCE;
-        boolean allowed = false;
-        if (id != null && hub != null && "browser".equals(role)) allowed = hub.joinBrowser(id, (HttpSession) socket.getUserProperties().get(HTTP_SESSION), socket);
-        if (id != null && hub != null && "agent".equals(role)) allowed = hub.joinAgent(id, string(socket, DEVICE), bearer(string(socket, AUTH)), string(socket, JOIN), socket);
-        if (!allowed) close(socket, "unauthorized");
+        boolean allowed = id != null && hub != null
+                && hub.joinAgent(id, string(socket, DEVICE), bearer(string(socket, AUTH)), string(socket, JOIN), socket);
+        if (!allowed) {
+            logger.warn("Remote-view agent signaling rejected: session={}", raw);
+            close(socket, "unauthorized");
+        } else {
+            logger.info("Remote-view agent signaling joined: session={}", raw);
+        }
     }
-    @OnMessage public void message(Session socket, String text, @PathParam("role") String role, @PathParam("sessionId") String raw) {
-        UUID id = id(raw); if (id == null || !("browser".equals(role) || "agent".equals(role)) || RemoteViewSignalingHub.INSTANCE == null) { close(socket, "invalid session"); return; }
-        RemoteViewSignalingHub.INSTANCE.relay(id, "browser".equals(role), text);
+    @OnMessage public void message(Session socket, String text, @PathParam("sessionId") String raw) {
+        UUID id = id(raw); if (id == null || RemoteViewSignalingHub.INSTANCE == null) { close(socket, "invalid session"); return; }
+        RemoteViewSignalingHub.INSTANCE.relay(id, false, text);
     }
     @OnClose public void closed(Session socket, @PathParam("sessionId") String raw) { UUID id = id(raw); if (id != null && RemoteViewSignalingHub.INSTANCE != null) RemoteViewSignalingHub.INSTANCE.disconnect(id, socket); }
-    private static UUID id(String raw) { try { return UUID.fromString(raw); } catch (Exception ignored) { return null; } }
-    private static String string(Session s, String key) { Object v=s.getUserProperties().get(key); return v instanceof String ? (String)v : null; }
+    static UUID id(String raw) { try { return UUID.fromString(raw); } catch (Exception ignored) { return null; } }
+    static String string(Session s, String key) { Object v=s.getUserProperties().get(key); return v instanceof String ? (String)v : null; }
     private static String header(Map<String,List<String>> headers, String wanted) { if(headers!=null) for(Map.Entry<String,List<String>> e:headers.entrySet()) if(wanted.equalsIgnoreCase(e.getKey()) && e.getValue()!=null && !e.getValue().isEmpty()) return e.getValue().get(0); return null; }
     private static String bearer(String value) { if(value == null || !value.regionMatches(true,0,"Bearer ",0,7)) return null; String token=value.substring(7).trim(); return token.isEmpty()?null:token; }
-    private static void close(Session socket, String message) { try { socket.close(new CloseReason(CloseReason.CloseCodes.VIOLATED_POLICY, message)); } catch (IOException ignored) {} }
+    static void close(Session socket, String message) { try { socket.close(new CloseReason(CloseReason.CloseCodes.VIOLATED_POLICY, message)); } catch (IOException ignored) {} }
 }

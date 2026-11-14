@@ -33,6 +33,7 @@ internal class RemoteViewCapture(
     private val request: com.mdmesh.proto.RemoteStartSessionPayload,
     private val credentials: RemoteViewAgentCredentials,
     private val ended: (String) -> Unit,
+    private val signalingOpened: () -> Unit,
 ) {
     private val appContext = context.applicationContext
     private val egl = EglBase.create()
@@ -78,10 +79,12 @@ internal class RemoteViewCapture(
                 .addHeader("X-MDMesh-Remote-Session", request.signaling.credential)
                 .build(),
             object : WebSocketListener() {
-                override fun onOpen(webSocket: WebSocket, response: Response) = Unit
+                override fun onOpen(webSocket: WebSocket, response: Response) = signalingOpened()
                 override fun onMessage(webSocket: WebSocket, text: String) { handleSignal(text) }
                 override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { stop("signaling closed: $reason") }
-                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { stop("signaling failed") }
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                    stop("signaling failed: ${t.javaClass.simpleName}")
+                }
             },
         )
     }

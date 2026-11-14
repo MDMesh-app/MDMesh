@@ -23,6 +23,7 @@ import java.time.Instant
 class AndroidRemoteViewSession(
     private val context: Context,
     private val report: (String, String) -> Unit,
+    private val scheduleCheckIn: () -> Unit,
     private val credentials: suspend () -> RemoteViewAgentCredentials?,
 ) : RemoteControlSession, RemoteViewConsentController {
     private val main = Handler(Looper.getMainLooper())
@@ -37,7 +38,7 @@ class AndroidRemoteViewSession(
         require(Instant.parse(request.expiresAt).isAfter(Instant.now())) { "remote-view session expired" }
         this.request = request
         mutablePending.value = RemoteViewConsentRequest(request.sessionId)
-        report("remoteViewConsentRequested", "session=${request.sessionId}")
+        reportEvent("remoteViewConsentRequested", "session=${request.sessionId}")
     }
 
     override fun claimConsentRequest(): RemoteViewConsentRequest? {
@@ -65,22 +66,35 @@ class AndroidRemoteViewSession(
 
     override fun consentDenied(sessionId: String) {
         if (request?.sessionId != sessionId) return
-        report("remoteViewDenied", "session=$sessionId")
+        reportEvent("remoteViewDenied", "session=$sessionId")
         clear("denied")
     }
 
     /** Called by the foreground service after it has entered foreground state. */
-    suspend fun startCapture(sessionId: String, resultData: Intent): Result<Unit> = runCatching {
-        val active = requireNotNull(request) { "remote-view session is not active" }
-        require(active.sessionId == sessionId) { "remote-view session mismatch" }
-        require(Instant.parse(active.expiresAt).isAfter(Instant.now())) { "remote-view session expired" }
-        check(capture == null) { "remote-view capture is already active" }
-        val device = requireNotNull(credentials()) { "device credentials are unavailable" }
-        RemoteViewCapture(context, active, device, ::ended).also {
-            capture = it
-            it.start(resultData)
+    suspend fun startCapture(sessionId: String, resultData: Intent): Result<Unit> {
+        val result = runCatching {
+            val active = requireNotNull(request) { "remote-view session is not active" }
+            require(active.sessionId == sessionId) { "remote-view session mismatch" }
+            require(Instant.parse(active.expiresAt).isAfter(Instant.now())) { "remote-view session expired" }
+            check(capture == null) { "remote-view capture is already active" }
+            val device = requireNotNull(credentials()) { "device credentials are unavailable" }
+            val newCapture = RemoteViewCapture(context, active, device, ::ended) {
+                reportEvent("remoteViewSignaling", "session=$sessionId; signaling socket opened")
+            }
+            capture = newCapture
+            newCapture.start(resultData)
+            Unit
         }
-        report("remoteViewSignaling", "session=$sessionId")
+        result.exceptionOrNull()?.let { failure ->
+            val current = capture
+            if (current != null) {
+                current.stop("capture startup failed: ${failure.javaClass.simpleName}")
+            } else {
+                reportEvent("remoteViewEnded", "session=$sessionId; reason=capture startup failed: ${failure.javaClass.simpleName}")
+                clear("capture startup failed")
+            }
+        }
+        return result
     }
 
     override suspend fun stop(sessionId: String, reason: String): Result<Unit> = runCatching {
@@ -91,8 +105,14 @@ class AndroidRemoteViewSession(
     override fun isActive(): Boolean = request != null
 
     private fun ended(reason: String) {
-        report("remoteViewEnded", "session=${request?.sessionId ?: "unknown"}; reason=$reason")
+        reportEvent("remoteViewEnded", "session=${request?.sessionId ?: "unknown"}; reason=$reason")
         clear(reason)
+    }
+
+    /** Persist a short lifecycle fact, then ask the normal authenticated check-in path to flush it promptly. */
+    private fun reportEvent(type: String, detail: String) {
+        report(type, detail)
+        scheduleCheckIn()
     }
 
     private fun clear(reason: String) {

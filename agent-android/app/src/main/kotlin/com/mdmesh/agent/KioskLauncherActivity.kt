@@ -270,7 +270,7 @@ class KioskLauncherActivity : ComponentActivity() {
         }
         status.visibility = View.VISIBLE
         status.text = "Remote view · ${state.message}"
-        status.setTextColor(if (state.active) SIGNAL else MUTED)
+        status.setTextColor(Color.WHITE)
     }
 
     private fun startLockTaskSafely() {
@@ -405,9 +405,10 @@ class KioskLauncherActivity : ComponentActivity() {
             )
         }
         column.addView(grid)
-        remoteViewStatus = text("", 13f, MUTED).apply {
+        remoteViewStatus = text("", 13f, Color.WHITE).apply {
             visibility = View.GONE
-            setPadding(0, dp(10), 0, 0)
+            setBackgroundColor(Color.BLACK)
+            setPadding(dp(8), dp(8), dp(8), dp(8))
         }
         column.addView(remoteViewStatus)
         if (RemoteViewFeasibilityProbe.isAvailable()) {

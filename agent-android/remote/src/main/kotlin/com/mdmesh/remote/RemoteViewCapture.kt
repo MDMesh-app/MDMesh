@@ -11,7 +11,6 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.json.JSONObject
 import org.webrtc.EglBase
 import org.webrtc.IceCandidate
@@ -83,12 +82,12 @@ internal class RemoteViewCapture(
     fun currentStartupStage(): String = startupStage
 
     private fun connectSignaling() {
-        val parsed = request.signaling.endpoint.toHttpUrl()
-        val wsUrl = parsed.newBuilder().scheme(if (parsed.isHttps) "wss" else "ws").build()
-        // The device id / bearer secret are appended by the session endpoint's auth layer through
-        // request headers. The temporary join credential never enters signaling messages.
+        // OkHttp performs the HTTP(S) → WebSocket upgrade itself. Its Request API deliberately
+        // accepts only HTTP(S), so changing the scheme to ws(s) throws before the handshake.
+        // The device id / bearer secret are sent as request headers; the temporary join credential
+        // never enters signaling messages.
         socket = client.newWebSocket(
-            Request.Builder().url(wsUrl)
+            Request.Builder().url(request.signaling.endpoint)
                 .addHeader("Authorization", "Bearer ${credentials.secret}")
                 .addHeader("X-MDMesh-Device", credentials.deviceId)
                 .addHeader("X-MDMesh-Remote-Session", request.signaling.credential)

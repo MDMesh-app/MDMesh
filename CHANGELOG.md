@@ -132,9 +132,9 @@ New
 - Updates and the quick start run exactly the images the signed release names, pinned by digest; the quick start
   also checks each file it downloads, stops instead of falling back to `main`, and needs OpenSSL 3.0+, or an older
   OpenSSL and `minisign`.
-- The README's install command checks `quickstart.sh` against the signed release before running it, and installs
-  exactly the release it checked; each release now publishes `quickstart.sh`, with its SHA-256 in the signed manifest.
-  Without `minisign`, a shortcut runs the latest release tag's `quickstart.sh` unchecked
+- Each release now publishes `quickstart.sh`, with its SHA-256 in the signed manifest. The README's install command
+  runs the latest release's copy instead of `main`'s; DEPLOY.md has one that checks it against the signed release
+  first and installs exactly the release it checked
   ([DEPLOY.md](https://github.com/MDMesh-app/MDMesh/blob/main/DEPLOY.md#option-a--quick-start-no-clone-published-images)).
 
 Fixes

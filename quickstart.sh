@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # MDMesh quick start — deploy from PUBLISHED images, no clone and no build. Needs only Docker.
-# Run from anywhere (the `bash <(...)` form keeps the prompts interactive). The README's install block downloads the
-# latest release's copy (a release asset) and checks it against the signed manifest before running it; its unchecked
-# shortcut runs the copy at the latest release's tag (DEPLOY.md, Option A):
+# Run from anywhere (the `bash <(...)` form keeps the prompts interactive). The README runs the latest release's copy
+# (a release asset); DEPLOY.md, Option A, checks that copy against the signed manifest before running it, and its
+# unchecked shortcut runs the copy at the latest release's tag:
 #
-#   bash <(curl -fsSL https://raw.githubusercontent.com/MDMesh-app/MDMesh/refs/tags/vX.Y.Z/quickstart.sh)
+#   bash <(curl -fsSL https://github.com/MDMesh-app/MDMesh/releases/latest/download/quickstart.sh)
 #
 # Each question can be answered in advance with an environment variable (MDMESH_MODE, MDMESH_HOST, …) or an answers
 # file (MDMESH_ANSWERS); MDMESH_NONINTERACTIVE=1 never asks, MDMESH_DRY_RUN=1 only checks the answers and prints the

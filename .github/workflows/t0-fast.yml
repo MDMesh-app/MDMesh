@@ -53,8 +53,9 @@ jobs:
             # web-entrypoint.sh, edge-peers.sh, CHANGELOG.md and .dockerignore are the web image build's inputs.
             edge: docker/Caddyfile, docker/web.Dockerfile, docker/web-entrypoint.sh, docker/edge-peers.sh, web/**, CHANGELOG.md, .dockerignore, docker-compose*.yml, docker/dev.env, scripts/edge-check.sh, supervisor/apply.sh
             # The installer scripts, and the signed manifest they and the supervisor read. Only the edge entry's cheap
-            # quickstart.sh checks run on these, not its image work.
-            installers: quickstart.sh, setup.sh, install/**, release/**, supervisor/lib.js, scripts/release-manifest-check.sh, tests/installer-answers/**, tests/setup-update/**, tests/apt-lock/**
+            # quickstart.sh checks run on these, not its image work. README.md and DEPLOY.md carry the install commands
+            # release-manifest-check.sh checks.
+            installers: README.md, DEPLOY.md, quickstart.sh, setup.sh, install/**, release/**, supervisor/lib.js, scripts/release-manifest-check.sh, tests/installer-answers/**, tests/setup-update/**, tests/apt-lock/**
 
   build:
     name: ${{ matrix.name }}

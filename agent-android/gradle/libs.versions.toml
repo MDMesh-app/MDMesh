@@ -24,6 +24,7 @@ hiltWork = "1.2.0"
 retrofit = "3.0.0"
 retrofitSerialization = "1.0.0"
 okhttp = "4.12.0"
+webrtc = "150.7871.04"
 kotlinxSerialization = "1.7.1"
 kotlinxCoroutines = "1.8.1"
 
@@ -65,6 +66,7 @@ retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = 
 retrofit-serialization = { group = "com.jakewharton.retrofit", name = "retrofit2-kotlinx-serialization-converter", version.ref = "retrofitSerialization" }
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
+webrtc-android = { group = "io.github.webrtc-sdk", name = "android", version.ref = "webrtc" }
 
 # Serialization + coroutines
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }

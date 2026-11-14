@@ -81,7 +81,12 @@ import com.mdmesh.policy.wifi.DpmHandle
 import com.mdmesh.policy.wifi.SharedPrefsWifiRadioOffState
 import com.mdmesh.remote.RemoteControlTierDetector
 import com.mdmesh.remote.RemoteControlSession
-import com.mdmesh.remote.StubRemoteControlSession
+import com.mdmesh.remote.AndroidRemoteViewSession
+import com.mdmesh.remote.RemoteViewAgentCredentials
+import com.mdmesh.remote.RemoteViewConsentController
+import com.mdmesh.remote.RemoteViewRuntime
+import com.mdmesh.core.store.DeviceIdStore
+import com.mdmesh.core.config.ServerConfigStore
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -125,16 +130,31 @@ object AgentModule {
     @Provides
     @Singleton
     fun provideRemoteTierDetector(): RemoteControlTierDetector =
-        // MediaProjection + accessibility probes land with :remote's real impl;
-        // until then advertise tier=none honestly.
         RemoteControlTierDetector(
-            screenCaptureAvailable = false,
+            screenCaptureAvailable = true,
             inputInjectionAvailable = false,
         )
 
     @Provides
     @Singleton
-    fun provideRemoteControlSession(): RemoteControlSession = StubRemoteControlSession()
+    fun provideAndroidRemoteViewSession(
+        @ApplicationContext context: Context,
+        identities: DeviceIdStore,
+        events: EventLog,
+    ): AndroidRemoteViewSession = AndroidRemoteViewSession(
+        context = context,
+        report = events::record,
+        credentials = {
+            val id = identities.current(); val secret = identities.secret()
+            if (id.isNullOrBlank() || secret.isNullOrBlank()) null else RemoteViewAgentCredentials(id, secret)
+        },
+    ).also { RemoteViewRuntime.session = it }
+
+    @Provides @Singleton
+    fun provideRemoteControlSession(session: AndroidRemoteViewSession): RemoteControlSession = session
+
+    @Provides @Singleton
+    fun provideRemoteViewConsentController(session: AndroidRemoteViewSession): RemoteViewConsentController = session
 
     @Provides
     @Singleton
@@ -384,9 +404,11 @@ object AgentModule {
 
     @Provides
     @IntoSet
-    fun provideRemoteStartSessionHandler(session: RemoteControlSession): CommandHandler = RemoteStartSessionHandler(session)
+    fun provideRemoteStartSessionHandler(session: RemoteControlSession): CommandHandler =
+        RemoteStartSessionHandler(session)
 
     @Provides
     @IntoSet
-    fun provideRemoteStopSessionHandler(session: RemoteControlSession): CommandHandler = RemoteStopSessionHandler(session)
+    fun provideRemoteStopSessionHandler(session: RemoteControlSession): CommandHandler =
+        RemoteStopSessionHandler(session)
 }

@@ -31,6 +31,29 @@ public class RemoteViewSessionServiceTest {
         assertTrue(service.isSignalingLive(created.session.getId(), 1002L));
     }
 
+    @Test public void authenticatedAgentEventsAdvanceAndEndOnlyTheirOwnSession() {
+        FakeDao dao = new FakeDao(); RemoteViewSessionService service = new RemoteViewSessionService(dao);
+        RemoteViewSessionService.Created created = service.create("device-1", 7, 1000L);
+        String detail = "session=" + created.session.getId();
+        service.recordAgentEvent("other-device", "remoteViewConsentRequested", detail, 1001L);
+        assertEquals("requested", dao.sessions.get(created.session.getId()).getState());
+        service.recordAgentEvent("device-1", "remoteViewConsentRequested", detail, 1002L);
+        assertEquals("awaiting_consent", dao.sessions.get(created.session.getId()).getState());
+        assertNotNull(service.claimAgentJoin(created.session.getId(), "device-1", created.agentJoinSecret, 1003L));
+        service.recordAgentEvent("device-1", "remoteViewEnded", detail + "; reason=projection stopped", 1004L);
+        assertEquals("stopped", dao.sessions.get(created.session.getId()).getState());
+        assertEquals(Long.valueOf(1004L), dao.sessions.get(created.session.getId()).getEndedAt());
+    }
+
+    @Test public void deniedEventEndsSessionAndMalformedDetailIsIgnored() {
+        FakeDao dao = new FakeDao(); RemoteViewSessionService service = new RemoteViewSessionService(dao);
+        RemoteViewSessionService.Created created = service.create("device-1", 7, 1000L);
+        service.recordAgentEvent("device-1", "remoteViewDenied", "not-a-session", 1001L);
+        assertEquals("requested", dao.sessions.get(created.session.getId()).getState());
+        service.recordAgentEvent("device-1", "remoteViewDenied", "session=" + created.session.getId(), 1002L);
+        assertEquals("denied", dao.sessions.get(created.session.getId()).getState());
+    }
+
     private static final class FakeDao extends RemoteViewSessionDAO {
         final Map<UUID, RemoteViewSession> sessions = new HashMap<>();
         FakeDao() { super(null); }

@@ -29,6 +29,7 @@ object RemoteViewFeasibilityProbe {
     private val mutableState = MutableStateFlow(RemoteViewFeasibilityState("", active = false))
     val state: StateFlow<RemoteViewFeasibilityState> = mutableState.asStateFlow()
 
+    @Suppress("FunctionOnlyReturningConstant")
     fun isAvailable(): Boolean = true
 
     fun requestConsent(

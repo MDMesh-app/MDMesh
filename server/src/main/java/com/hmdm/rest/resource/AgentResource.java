@@ -46,6 +46,7 @@ import com.hmdm.util.CryptoUtil;
 import com.hmdm.util.DesiredConfigBuilder;
 import com.hmdm.util.InstallIntegrity;
 import com.hmdm.util.RolloutProgress;
+import com.hmdm.service.RemoteViewSessionService;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import org.slf4j.Logger;
@@ -469,6 +470,11 @@ public class AgentResource {
                     commandDAO.recordKioskReturn(deviceNumber, ts, detail);
                 } else {
                     commandDAO.insertEvent(deviceNumber, e.getType(), ts, detail);
+                }
+                // Remote-view state changes use the same authenticated, durable event buffer as
+                // the timeline. The service rechecks both session id and device binding.
+                if (e.getType().startsWith("remoteView") && RemoteViewSessionService.INSTANCE != null) {
+                    RemoteViewSessionService.INSTANCE.recordAgentEvent(deviceNumber, e.getType(), detail, System.currentTimeMillis());
                 }
                 kioskLockoutAlert.onEvent(device, e.getType(), detail);
             }

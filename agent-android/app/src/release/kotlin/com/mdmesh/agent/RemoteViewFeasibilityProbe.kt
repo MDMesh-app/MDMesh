@@ -17,6 +17,7 @@ object RemoteViewFeasibilityProbe {
     val state: StateFlow<RemoteViewFeasibilityState> =
         MutableStateFlow(RemoteViewFeasibilityState("", active = false))
 
+    @Suppress("FunctionOnlyReturningConstant")
     fun isAvailable(): Boolean = false
 
     @Suppress("UNUSED_PARAMETER")

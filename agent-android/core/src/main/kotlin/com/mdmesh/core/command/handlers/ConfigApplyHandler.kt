@@ -16,6 +16,7 @@ import com.mdmesh.proto.ProtocolJson
  * applied now on purpose, with the reason; revision now persisted and reported in check-ins); `failed` = at least
  * one key failed (server retries after a backoff).
  */
+@Suppress("MaxLineLength")
 class ConfigApplyHandler(
     private val applier: ConfigApplier,
     private val beforeApply: suspend () -> Result<Unit> = { Result.success(Unit) },

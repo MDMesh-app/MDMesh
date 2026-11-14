@@ -14,6 +14,7 @@ import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import javax.inject.Inject;
 import javax.inject.Singleton;
+import javax.inject.Named;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
@@ -23,6 +24,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.Instant;
 
 /** POC-only console API. It authorizes and persists a consent-pending view request; it never returns its join secret. */
 @Singleton
@@ -34,12 +36,13 @@ public class RemoteViewResource {
     private final DeviceDAO devices;
     private final UnsecureDAO unsecure;
     private final AgentWakeHub wakeHub;
+    private final String baseUrl;
 
     @Inject
     public RemoteViewResource(RemoteViewSessionService sessions, AgentCommandDAO commands, DeviceDAO devices,
-                              UnsecureDAO unsecure, AgentWakeHub wakeHub) {
+                              UnsecureDAO unsecure, AgentWakeHub wakeHub, @Named("base.url") String baseUrl) {
         this.sessions = sessions; this.commands = commands; this.devices = devices;
-        this.unsecure = unsecure; this.wakeHub = wakeHub;
+        this.unsecure = unsecure; this.wakeHub = wakeHub; this.baseUrl = baseUrl;
     }
 
     @POST @Path("/devices/{deviceId}/sessions") @Produces(MediaType.APPLICATION_JSON)
@@ -57,8 +60,8 @@ public class RemoteViewResource {
             RemoteViewSessionService.Created created = sessions.create(deviceId, user.get().getId(), now);
             AgentCommand command = new AgentCommand();
             command.setDeviceNumber(deviceId); command.setType("remote.startSession");
-            command.setPayload("{\"sessionId\":\"" + created.session.getId() + "\",\"mode\":\"view\",\"expiresAt\":"
-                    + created.session.getExpiresAt() + ",\"joinSecret\":\"" + created.agentJoinSecret + "\"}");
+            command.setPayload(agentPayload(created.session.getId(), created.session.getExpiresAt(),
+                    signalingEndpoint(created.session.getId()), created.agentJoinSecret));
             command.setRequiresCapability("remote.view"); command.setStatus("pending"); command.setCreatedAt(now);
             commands.insert(command); wakeHub.wake(deviceId, "interactive");
             Map<String, Object> result = new LinkedHashMap<>();
@@ -69,6 +72,21 @@ public class RemoteViewResource {
             // The partial unique index is the authoritative concurrency guard.
             return Response.ERROR("A remote-view session is already active for this device");
         }
+    }
+
+    private String signalingEndpoint(UUID id) {
+        String origin = baseUrl == null ? "" : baseUrl.replaceAll("/+$", "");
+        if (origin.startsWith("https://")) origin = "wss://" + origin.substring("https://".length());
+        else if (origin.startsWith("http://")) origin = "ws://" + origin.substring("http://".length());
+        return origin + "/remote/ws/agent/" + id;
+    }
+
+    static String agentPayload(UUID id, long expiresAt, String endpoint, String credential) {
+        // Values are server-minted UUID/hex credentials or the configured origin; quote the only
+        // origin-derived field so a valid JSON command is still generated for a nonstandard URL.
+        return "{\"sessionId\":\"" + id + "\",\"mode\":\"view\",\"expiresAt\":\""
+                + Instant.ofEpochMilli(expiresAt) + "\",\"signaling\":{\"endpoint\":\""
+                + endpoint.replace("\\", "\\\\").replace("\"", "\\\"") + "\",\"credential\":\"" + credential + "\"}}";
     }
 
     @POST @Path("/sessions/{id}/stop") @Produces(MediaType.APPLICATION_JSON)

@@ -33,8 +33,7 @@ class RemoteControlTierDetector(
             tier = tier,
             screenCapture = screenCaptureAvailable,
             inputInjection = inputInjectionAvailable && screenCaptureAvailable,
-            // Transport is empty until WebRTC/websocket signaling is implemented.
-            transport = emptyList(),
+            transport = if (screenCaptureAvailable) listOf("websocket-signaling", "webrtc") else emptyList(),
         )
     }
 }

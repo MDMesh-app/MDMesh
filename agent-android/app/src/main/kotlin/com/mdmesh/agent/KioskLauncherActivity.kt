@@ -38,6 +38,7 @@ import com.mdmesh.kiosk.KioskController
 import com.mdmesh.kiosk.KioskReturnPolicy
 import com.mdmesh.proto.KioskApplyPayload
 import com.mdmesh.proto.KioskBackgroundImageDto
+import com.mdmesh.remote.RemoteViewConsentController
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -74,6 +75,7 @@ class KioskLauncherActivity : ComponentActivity() {
     @Inject lateinit var crashGuard: CrashLoopGuard
     @Inject lateinit var pinGate: ExitPinGate
     @Inject lateinit var backgroundImages: KioskBackgroundImageStore
+    @Inject lateinit var remoteViewConsentController: RemoteViewConsentController
 
     /** Last applied non-null kiosk state, so [onResume] can recover a bounced single-app pin. */
     private var active: KioskApplyPayload? = null
@@ -93,6 +95,13 @@ class KioskLauncherActivity : ComponentActivity() {
     private val remoteViewConsent = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result -> RemoteViewFeasibilityProbe.onConsentResult(this, result.resultCode, result.data) }
+    private val remoteSessionConsent = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        pendingRemoteSessionId?.let { remoteViewConsentController.consentResult(it, result.resultCode, result.data) }
+        pendingRemoteSessionId = null
+    }
+    private var pendingRemoteSessionId: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -106,6 +115,17 @@ class KioskLauncherActivity : ComponentActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 store.flow().distinctUntilChanged().collect(::applyState)
+            }
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                remoteViewConsentController.pendingConsent.collect { pending ->
+                    if (pending != null && pendingRemoteSessionId == null) {
+                        val claimed = remoteViewConsentController.claimConsentRequest() ?: return@collect
+                        pendingRemoteSessionId = claimed.sessionId
+                        remoteSessionConsent.launch(remoteViewConsentController.captureConsentIntent())
+                    }
+                }
             }
         }
         lifecycleScope.launch {
@@ -329,6 +349,7 @@ class KioskLauncherActivity : ComponentActivity() {
         }
     }
 
+    @Suppress("LongMethod", "MagicNumber")
     private fun launcherGrid(p: KioskApplyPayload): View {
         val bg = parseColor(p.theme.backgroundColor, INK)
         val fg = parseColor(p.theme.textColor, TEXT)

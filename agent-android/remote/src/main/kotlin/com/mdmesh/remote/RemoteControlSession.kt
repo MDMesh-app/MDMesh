@@ -9,9 +9,8 @@ import com.mdmesh.proto.RemoteStartSessionPayload
  *  - [Mode.VIEW]    — MediaProjection screen capture only (Tier 0, universal).
  *  - [Mode.CONTROL] — capture + AccessibilityService input injection (Tier 1).
  *
- * Capture (MediaProjection) and signaling/transport (WebRTC) are deferred — see
- * this module's README. The contract is defined now so `:core` can dispatch
- * `remote.startSession` / `remote.stopSession` commands against a stable surface.
+ * The implementation is deliberately view-only. It never exposes an input data
+ * channel or enables the accessibility service.
  */
 interface RemoteControlSession {
 
@@ -26,4 +25,17 @@ interface RemoteControlSession {
 
     /** True while a session is active. */
     fun isActive(): Boolean
+}
+
+/** A foreground activity consumes this request to present Android's capture-consent UI. */
+data class RemoteViewConsentRequest(val sessionId: String)
+data class RemoteViewAgentCredentials(val deviceId: String, val secret: String)
+
+/** UI-facing part of a view session; separated so command handling never needs an Activity. */
+interface RemoteViewConsentController {
+    val pendingConsent: kotlinx.coroutines.flow.StateFlow<RemoteViewConsentRequest?>
+    fun claimConsentRequest(): RemoteViewConsentRequest?
+    fun captureConsentIntent(): android.content.Intent
+    fun consentResult(sessionId: String, resultCode: Int, data: android.content.Intent?)
+    fun consentDenied(sessionId: String)
 }

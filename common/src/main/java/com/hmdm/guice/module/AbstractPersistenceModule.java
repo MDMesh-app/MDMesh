@@ -24,12 +24,14 @@ package com.hmdm.guice.module;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.inject.name.Names;
 import com.hmdm.persistence.JsonObjectTypeHandler;
+import com.hmdm.persistence.PostgresUuidTypeHandler;
 import org.apache.ibatis.transaction.jdbc.JdbcTransactionFactory;
 import org.mybatis.guice.MyBatisModule;
 import org.mybatis.guice.datasource.builtin.PooledDataSourceProvider;
 
 import javax.servlet.ServletContext;
 import java.util.Enumeration;
+import java.util.UUID;
 
 /**
  * <p>A base for module used for configuring the {@link org.apache.ibatis.session.SqlSessionFactory} to be used by the
@@ -87,6 +89,7 @@ public abstract class AbstractPersistenceModule extends MyBatisModule {
         this.addMapperClasses(getMapperPackageName());
         this.addSimpleAliases(getDomainObjectsPackageName());
         this.handleType(ObjectNode.class).with(JsonObjectTypeHandler.class);
+        this.handleType(UUID.class).with(PostgresUuidTypeHandler.class);
     }
 
     /**

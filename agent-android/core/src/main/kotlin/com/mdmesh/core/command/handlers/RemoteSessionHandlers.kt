@@ -1,3 +1,5 @@
+@file:Suppress("MaxLineLength", "ReturnCount")
+
 package com.mdmesh.core.command.handlers
 
 import com.mdmesh.core.command.CommandHandler

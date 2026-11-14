@@ -36,6 +36,7 @@ import com.mdmesh.core.telemetry.EventLog
 import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.proto.KioskApplyPayload
 import com.mdmesh.policy.wifi.DpmHandle
+import com.mdmesh.remote.RemoteViewConsentController
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
@@ -67,6 +68,7 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var kioskStore: KioskStateStore
     @Inject lateinit var events: EventLog
     @Inject lateinit var enrollTokens: EnrollTokenStore
+    @Inject lateinit var remoteViewConsentController: RemoteViewConsentController
 
     private lateinit var deviceIdValue: TextView
     private lateinit var credentialsLostValue: TextView
@@ -80,6 +82,13 @@ class MainActivity : ComponentActivity() {
     private val remoteViewConsent = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result -> RemoteViewFeasibilityProbe.onConsentResult(this, result.resultCode, result.data) }
+    private val remoteSessionConsent = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        pendingRemoteSessionId?.let { remoteViewConsentController.consentResult(it, result.resultCode, result.data) }
+        pendingRemoteSessionId = null
+    }
+    private var pendingRemoteSessionId: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -105,6 +114,17 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 RemoteViewFeasibilityProbe.state.collect(::showRemoteViewProbeState)
+            }
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                remoteViewConsentController.pendingConsent.collect { pending ->
+                    if (pending != null && pendingRemoteSessionId == null) {
+                        val claimed = remoteViewConsentController.claimConsentRequest() ?: return@collect
+                        pendingRemoteSessionId = claimed.sessionId
+                        remoteSessionConsent.launch(remoteViewConsentController.captureConsentIntent())
+                    }
+                }
             }
         }
         // Grant our own POST_NOTIFICATIONS as Device Owner BEFORE starting the foreground
@@ -229,6 +249,7 @@ class MainActivity : ComponentActivity() {
     private fun isDeviceOwner(): Boolean =
         dpmHandle.dpm.isDeviceOwnerApp(packageName)
 
+    @Suppress("LongMethod", "MagicNumber")
     private fun buildUi(): ScrollView {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL

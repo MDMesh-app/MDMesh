@@ -66,6 +66,12 @@ internal class RemoteViewCapture(
         val createdPeer = factory!!.createPeerConnection(PeerConnection.RTCConfiguration(emptyList()), observer)
             ?: error("WebRTC peer connection could not be created")
         peer = createdPeer
+        if (DIAGNOSTIC_NO_LOCAL_VIDEO) {
+            startupStage = "opening signaling without local video"
+            Log.i(TAG, "remote SDP diagnostic: local video sender intentionally omitted")
+            connectSignaling()
+            return
+        }
         startupStage = "creating video source"
         val videoSource = factory!!.createVideoSource(true)
         source = videoSource
@@ -138,6 +144,7 @@ internal class RemoteViewCapture(
                 }
                 startupStage = "setting remote description"
                 Log.i(TAG, "remote offer accepted")
+                logOfferForDiagnostic(description)
                 peer?.setRemoteDescription(object : Sdp() {
                     override fun onSetSuccess() {
                         startupStage = "creating answer"
@@ -147,7 +154,12 @@ internal class RemoteViewCapture(
                             override fun onCreateSuccess(sdp: SessionDescription) {
                                 peer?.setLocalDescription(object : Sdp() {
                                     override fun onSetSuccess() {
-                                        startScreenCapture()
+                                        if (DIAGNOSTIC_NO_LOCAL_VIDEO) {
+                                            startupStage = "local answer installed without local video"
+                                            Log.i(TAG, "remote SDP diagnostic: local answer installed")
+                                        } else {
+                                            startScreenCapture()
+                                        }
                                         startupStage = "sending answer"
                                         Log.i(TAG, "local description accepted")
                                         send("answer", JSONObject().put("sdp", sdp.description))
@@ -180,6 +192,17 @@ internal class RemoteViewCapture(
         capturer?.startCapture(captureWidth, captureHeight, 15)
         captureStarted = true
         Log.i(TAG, "negotiated screen capture started")
+    }
+
+    /**
+     * Temporary LAN-POC evidence. The user explicitly authorized diagnostic
+     * payload logging on this test server/device. Android truncates long log
+     * lines, so retain SDP line boundaries and write bounded chunks.
+     */
+    private fun logOfferForDiagnostic(sdp: String) {
+        sdp.chunked(DIAGNOSTIC_LOG_CHUNK_CHARS).forEachIndexed { index, chunk ->
+            Log.i(TAG, "remote offer SDP part ${index + 1}: $chunk")
+        }
     }
 
     private val observer = object : PeerConnection.Observer {
@@ -229,6 +252,10 @@ internal class RemoteViewCapture(
     private companion object {
         const val TAG = "MDMeshRemoteView"
         const val SCREEN_STREAM_ID = "mdmesh-screen-stream"
+        const val DIAGNOSTIC_LOG_CHUNK_CHARS = 1_800
+        // One-build-only isolation probe: tests native remote-SDP handling with
+        // no VideoSource, ScreenCapturer, VideoTrack, or local sender graph.
+        const val DIAGNOSTIC_NO_LOCAL_VIDEO = true
     }
 }
 

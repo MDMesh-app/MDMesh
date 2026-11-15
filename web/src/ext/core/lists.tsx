@@ -53,7 +53,7 @@ export function withCoreAppsParts(helpers: RowActionHelpers, parts: CoreAppsPart
 const editDevices = CORE_ACTION_ACCESS.editDevices;
 
 /**
- * A command sent straight from the menu, as before: no confirmation. Its toasts say "Lock device queued". Greyed out
+ * A command sent straight from the menu, as before: no confirmation. Its toasts say "Lock queued". Greyed out
  * for a wiped device: it erased itself, so nothing would run it.
  */
 function command(id: 'lock' | 'ring', label: string): ListRowActionContribution {
@@ -117,13 +117,13 @@ function bulk(id: 'run' | 'move' | 'delete', label: string, icon: ListBulkAction
  * their endpoint checks (core/access.ts), and the page decides per app, as before.
  */
 export const CORE_LIST_ACTIONS: readonly (ListRowActionContribution | ListBulkActionContribution)[] = [
-  command('lock', 'Lock device'),
-  command('ring', 'Ring device'),
+  command('lock', 'Lock'),
+  command('ring', 'Ring'),
   deviceRow('move'),
   deviceRow('delete'),
   appRow('checksum'),
   appRow('remove'),
-  bulk('run', 'Run action', <IconPlay />),
-  bulk('move', 'Change configuration', <IconSliders />),
-  bulk('delete', 'Delete', <IconTrash />, true),
+  bulk('run', 'Run action…', <IconPlay />),
+  bulk('move', 'Change configuration…', <IconSliders />),
+  bulk('delete', 'Delete…', <IconTrash />, true),
 ];

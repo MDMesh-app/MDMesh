@@ -152,7 +152,7 @@ describe('the device page without extensions', () => {
     expect(Array.from(rail().querySelectorAll('.v2-kvgroup.is-last')).map((g) => g.textContent)).toEqual([
       expect.stringContaining('Management'),
     ]);
-    expect(await within(panel()).findByText('Recent commands')).toBeTruthy();
+    expect(await within(panel()).findByRole('button', { name: 'View all activity' })).toBeTruthy();
     expect(here).toBe('/devices/WH-1');
   });
 
@@ -178,8 +178,8 @@ describe('the device page without extensions', () => {
 
     await waitFor(() => expect(within(panel()).getByRole('button', { name: /Reboot/ }).hasAttribute('disabled')).toBe(false));
     fireEvent.click(within(panel()).getByRole('button', { name: /Reboot/ }));
-    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Confirm' }));
-    expect(await screen.findByText('Reboot device queued')).toBeTruthy();
+    fireEvent.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Reboot' }));
+    expect(await screen.findByText('Reboot queued')).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     expect(nudges).toHaveLength(2);
     await act(async () => nudges[1]());
@@ -421,11 +421,11 @@ describe('the open tab lives in the URL', () => {
     expect(await within(panel()).findByText('TC52')).toBeTruthy();
   });
 
-  it('opens Activity from the Control tab’s "All activity" link, as a history entry', async () => {
+  it('opens Activity from the Control tab’s "View all activity" link, as a history entry', async () => {
     openDevice();
-    // "All activity" shows before the events answer; the Activity tab's count comes with them.
+    // "View all activity" shows before the events answer; the Activity tab's count comes with them.
     await waitFor(() => expect(tabNames()).toContain('Activity1'));
-    fireEvent.click(screen.getByRole('button', { name: 'All activity' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View all activity' }));
     expect(here).toBe('/devices/WH-1?tab=activity');
     expect(selectedTab()).toBe('Activity1');
   });
@@ -488,7 +488,7 @@ describe('the open tab lives in the URL', () => {
     renderInConsole(<AppRoutes />, { registry: registryOf(plugExtension(ORDER.deviceTab.control - 50)), path: '/devices/WH-1' });
     await screen.findByRole('tab', { name: 'Control' });
     await answer([]);
-    expect(await within(await screen.findByRole('tabpanel')).findByText('Recent commands')).toBeTruthy();
+    expect(await within(await screen.findByRole('tabpanel')).findByRole('button', { name: 'View all activity' })).toBeTruthy();
     expect(selectedTab()).toBe('Control');
   });
 });
@@ -586,7 +586,7 @@ describe('useDevice()', () => {
     fireEvent.click(await within(await screen.findByRole('tabpanel')).findByRole('button', { name: 'Send' }));
     expect(await screen.findByText('Sent 2')).toBeTruthy();
     fireEvent.click(screen.getByRole('tab', { name: 'Control' }));
-    await within(panel()).findByText('Recent commands');
+    await within(panel()).findByRole('button', { name: 'View all activity' });
     expect(within(panel()).queryByText('Waiting for the device')).toBeNull();
     expect(within(panel()).queryByText('Sent')).toBeNull();
     // The page's own location command does mark it, on the same configuration.
@@ -623,7 +623,7 @@ describe('useDevice()', () => {
     renderInConsole(<AppRoutes />, { registry: registryOf(commandsExtension([ring])), path: '/devices/WH-1?tab=commands' });
     fireEvent.click(await within(await screen.findByRole('tabpanel')).findByRole('button', { name: 'Send' }));
     fireEvent.click(screen.getByRole('tab', { name: 'Control' }));
-    expect((await within(panel()).findByRole('button', { name: /Lock now/ })).hasAttribute('disabled')).toBe(false);
+    expect((await within(panel()).findByRole('button', { name: 'Lock' })).hasAttribute('disabled')).toBe(false);
     expect(screen.getByRole('button', { name: 'Sync now' }).hasAttribute('disabled')).toBe(false);
     await act(async () => queue());
     expect(await screen.findByText('Ring queued')).toBeTruthy();

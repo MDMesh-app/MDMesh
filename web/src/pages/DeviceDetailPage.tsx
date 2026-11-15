@@ -53,10 +53,11 @@ import {
   StatusText,
   deriveDeviceKind,
   kindInputFromTelemetry,
+  useStickyValue,
   useToast,
   type KeyValueItem,
 } from '../ui';
-import { ActionDialog, CommandsCard, ConfigPanel, RemoteActions, TEMPLATE, type KioskReturnOffer } from './DeviceDetailControl';
+import { ActionDialog, ConfigPanel, RemoteActions, TEMPLATE, type KioskReturnOffer } from './DeviceDetailControl';
 import { DeviceKioskBackground } from './configurations/KioskBackground';
 import { ActivityTab, LocationTab, TelemetryTab } from './DeviceDetailTabs';
 import { AppsTab, useAppScan } from './DeviceDetailApps';
@@ -281,6 +282,12 @@ export function DeviceDetailPage() {
   const [dialog, setDialog] = useState<CommandTemplateExt | null>(null);
   const [kioskOpen, setKioskOpen] = useState(false);
   const [returnOpen, setReturnOpen] = useState(false);
+  // Each opening of a dialog gets a fresh one (its own inputs); a closed one stays mounted until the next, so it can
+  // animate out. The sticky values keep its content while it does.
+  const [dialogSeq, setDialogSeq] = useState(0);
+  // The custom kiosk dialog loads the library and the theme when it mounts: it mounts on its own openings only.
+  const [kioskSeq, setKioskSeq] = useState(0);
+  const shownDialog = useStickyValue(dialog);
   const [powerRequested, setPowerRequested] = useState<string | null>(null);
   const [locationRequested, setLocationRequested] = useState<string | null>(null);
 
@@ -606,10 +613,10 @@ export function DeviceDetailPage() {
     setBusy(true);
     try {
       const res = await syncConfigApps(number);
-      toast.push('ok', 'Config apps queued', `${res.queued} install command${res.queued === 1 ? '' : 's'} queued.`);
+      toast.push('ok', 'Install configuration apps queued', `${res.queued} install command${res.queued === 1 ? '' : 's'} queued.`);
       refresh();
     } catch (e) {
-      toast.push('err', 'Sync apps failed', e instanceof Error ? e.message : '');
+      toast.push('err', 'Install configuration apps failed', e instanceof Error ? e.message : '');
     } finally {
       setBusy(false);
     }
@@ -677,12 +684,18 @@ export function DeviceDetailPage() {
 
   const appScan = useAppScan(number, history, queue);
 
+  function openKiosk() {
+    setKioskSeq((n) => n + 1);
+    setKioskOpen(true);
+  }
+
   function runAction(t: CommandTemplateExt) {
     if (t.key === 'kiosk-enter') {
-      setKioskOpen(true);
+      openKiosk();
       return;
     }
     if ((t.params && t.params.length > 0) || t.confirm) {
+      setDialogSeq((n) => n + 1);
       setDialog(t);
       return;
     }
@@ -747,7 +760,11 @@ export function DeviceDetailPage() {
   });
   const cfgStart = configName ?? 'Its configuration';
   const cfgMid = configName ?? 'its configuration';
-  const openReturn = () => setReturnOpen(true);
+  const openReturn = () => {
+    setDialogSeq((n) => n + 1);
+    setReturnOpen(true);
+  };
+  const shownKiosk = useStickyValue(returnOpen ? kiosk : null);
   let kioskReturn: KioskReturnOffer;
   if (configurationId == null) {
     kioskReturn = { offered: false, onReturn: openReturn, hint: 'This device has no configuration, so there is no configured kiosk to return to.' };
@@ -769,7 +786,7 @@ export function DeviceDetailPage() {
       hint: (
         <>
           Couldn’t load the apps of {cfgMid}, so its kiosk can’t be built: {cfgAppsError}.{' '}
-          <LinkButton onClick={() => setCfgAppsAttempt((n) => n + 1)}>Try again</LinkButton>
+          <LinkButton onClick={() => setCfgAppsAttempt((n) => n + 1)}>Retry</LinkButton>
         </>
       ),
     };
@@ -970,7 +987,7 @@ export function DeviceDetailPage() {
               <RemoteActions
                 busy={busy || wiped}
                 onAction={runAction}
-                onEnterKiosk={() => setKioskOpen(true)}
+                onEnterKiosk={openKiosk}
                 kioskReturn={kioskReturn}
                 onInstallConfigApps={() => void installConfigApps()}
                 powerMode={powerShown}
@@ -982,14 +999,12 @@ export function DeviceDetailPage() {
                 doNotTrack={doNotTrack}
               />
             ) : null}
-            <CommandsCard
-              title="Recent commands"
-              items={history}
-              limit={5}
-              now={now}
-              loaded={historyLoaded}
-              onAll={() => deviceTabs.select('activity')}
-            />
+            {/* Activity owns the command history (I12); a quiet way there. */}
+            <div className="v2-device-allact">
+              <LinkButton tone="quiet" onClick={() => deviceTabs.select('activity')}>
+                View all activity
+              </LinkButton>
+            </div>
           </>
         ),
         telemetry: <TelemetryTab telemetry={tele} loaded={teleLoaded} reportedAt={ds?.updatedAt} />,
@@ -1135,24 +1150,36 @@ export function DeviceDetailPage() {
         </aside>
       </div>
 
-      {dialog ? (
+      {shownDialog ? (
         <ActionDialog
-          key={dialog.key}
-          template={dialog}
+          key={`${shownDialog.key}-${dialogSeq}`}
+          open={dialog != null}
+          template={shownDialog}
           device={device}
           busy={busy}
           onCancel={() => setDialog(null)}
-          onSend={(values) => void send(dialog, values)}
+          onSend={(values) => {
+            if (dialog) void send(dialog, values);
+          }}
         />
       ) : null}
-      {kioskOpen ? (
-        <DeviceKioskDialog device={device} configName={configName} onClose={() => setKioskOpen(false)} onQueued={refresh} />
+      {kioskSeq > 0 ? (
+        <DeviceKioskDialog
+          key={kioskSeq}
+          open={kioskOpen}
+          device={device}
+          configName={configName}
+          onClose={() => setKioskOpen(false)}
+          onQueued={refresh}
+        />
       ) : null}
-      {returnOpen && kiosk ? (
+      {shownKiosk ? (
         <ConfiguredKioskDialog
+          key={`return-${dialogSeq}`}
+          open={returnOpen && kiosk != null}
           device={device}
           configName={cfgMid}
-          kiosk={kiosk}
+          kiosk={shownKiosk}
           history={history}
           agentVersion={ds?.agentVersion}
           agentReported={!dsLoaded || ds != null}

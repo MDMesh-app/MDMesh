@@ -26,7 +26,6 @@ import {
   Callout,
   Checkbox,
   Field,
-  IconCheck,
   IconWarning,
   Input,
   KeyValueList,
@@ -34,6 +33,8 @@ import {
   SearchInput,
   Segmented,
   Select,
+  SkeletonRows,
+  Tooltip,
   useToast,
 } from '../ui';
 import { DialogTarget } from './DeviceDetailControl';
@@ -59,11 +60,14 @@ const CATEGORY_LABEL: Record<string, string> = { uploaded: 'Uploaded', system: '
  * optional exit PIN, then queue `kiosk.enter` with the configuration's launcher theme.
  */
 export function DeviceKioskDialog({
+  open = true,
   device,
   configName,
   onClose,
   onQueued,
 }: {
+  /** Kept mounted while closed (with a fresh `key` per opening) so it animates out. */
+  open?: boolean;
   device: { number: string; configurationId?: number; description?: string };
   /** The device's configuration, named in the description; undefined when it has none (or it isn't loaded). */
   configName?: string;
@@ -95,13 +99,16 @@ export function DeviceKioskDialog({
   const [deviceIcons, setDeviceIcons] = useState<Record<string, string>>({});
   const [loadingIcons, setLoadingIcons] = useState(false);
 
-  // Cancels in-flight scan / icon polls when the dialog closes (it unmounts on close).
+  // Cancels in-flight scan / icon polls when the dialog closes or unmounts.
   const abortRef = useRef<AbortController | null>(null);
   useEffect(() => {
     const ac = new AbortController();
     abortRef.current = ac;
     return () => ac.abort();
   }, []);
+  useEffect(() => {
+    if (!open) abortRef.current?.abort();
+  }, [open]);
 
   // A manual kiosk action must carry the assigned configuration's theme, or the launcher falls back to black.
   useEffect(() => {
@@ -261,7 +268,7 @@ export function DeviceKioskDialog({
 
   return (
     <Modal
-      open
+      open={open}
       onClose={onClose}
       size="lg"
       dismissOnBackdrop={false}
@@ -277,7 +284,7 @@ export function DeviceKioskDialog({
             Cancel
           </Button>
           <Button size="lg" variant="primary" disabled={busy || !canApply} onClick={() => void apply()}>
-            {busy ? 'Sending…' : `Enter custom kiosk (${selected.size})`}
+            {busy ? 'Sending…' : selected.size ? `Enter kiosk with ${selected.size} app${selected.size === 1 ? '' : 's'}` : 'Enter kiosk'}
           </Button>
         </>
       }
@@ -285,9 +292,9 @@ export function DeviceKioskDialog({
       <div className="v2-device-kiosk__body">
         <DialogTarget device={device} />
         {themeLoading ? (
-          <p className="v2-device-kiosk__note" role="status">
-            Loading configured launcher appearance…
-          </p>
+          <span className="v2-visually-hidden" role="status">
+            Loading the configuration’s launcher look
+          </span>
         ) : null}
         {themeError ? (
           <Callout tone="warn" icon={<IconWarning size={16} />}>
@@ -333,7 +340,7 @@ export function DeviceKioskDialog({
             onChange={setQuery}
           />
           {source === 'device' ? (
-            <Checkbox label="Show all (incl. system)" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />
+            <Checkbox label="Show system apps" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />
           ) : null}
           {source === 'device' && apps ? (
             <>
@@ -384,22 +391,13 @@ export function DeviceKioskDialog({
                 {libErr}
               </Callout>
             ) : null}
-            {source === 'library' && !lib && !libErr ? (
-              <p className="v2-device-kiosk__note" role="status">
-                Loading library…
-              </p>
-            ) : null}
+            {source === 'library' && !lib && !libErr ? <SkeletonRows compact count={4} label="Loading the library" /> : null}
             {items.map((i) => {
               const on = selected.has(i.pkg);
+              // I8: the checkbox leads the row; the whole row is its label.
               return (
-                <button
-                  key={i.pkg}
-                  type="button"
-                  aria-pressed={on}
-                  className={`v2-device-kiosk__app${on ? ' is-on' : ''}`}
-                  onClick={() => toggle(i.pkg)}
-                  title={i.pkg}
-                >
+                <label key={i.pkg} className={`v2-device-kiosk__app${on ? ' is-on' : ''}`}>
+                  <Checkbox checked={on} onChange={() => toggle(i.pkg)} />
                   {i.iconUrl ? (
                     <img
                       className="v2-device-kiosk__ico"
@@ -423,10 +421,7 @@ export function DeviceKioskDialog({
                       {CATEGORY_LABEL[i.badge] ?? i.badge}
                     </Badge>
                   ) : null}
-                  <span className="v2-device-kiosk__tick" aria-hidden="true">
-                    {on ? <IconCheck size={13} /> : null}
-                  </span>
-                </button>
+                </label>
               );
             })}
             {!items.length && (source === 'library' ? lib : apps) ? (
@@ -444,14 +439,15 @@ export function DeviceKioskDialog({
             </Select>
           </Field>
           <Field label="Kiosk exit PIN">
-            <Input
-              type="password"
-              autoComplete="new-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={EXIT_PIN_PLACEHOLDER}
-              title={EXIT_PIN_HELP}
-            />
+            <Tooltip content={EXIT_PIN_HELP}>
+              <Input
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={EXIT_PIN_PLACEHOLDER}
+              />
+            </Tooltip>
           </Field>
         </div>
       </div>
@@ -485,6 +481,7 @@ function lastScan(history: CommandHistoryItem[]): { id: number; pkgs: Set<string
  * differ on this device, then queues `kiosk.enter` with the configuration's own kiosk document.
  */
 export function ConfiguredKioskDialog({
+  open = true,
   device,
   configName,
   kiosk,
@@ -494,6 +491,8 @@ export function ConfiguredKioskDialog({
   onClose,
   onQueued,
 }: {
+  /** Kept mounted while closed (with a fresh `key` per opening) so it animates out. */
+  open?: boolean;
   device: { number: string; description?: string };
   configName: string;
   kiosk: ConfiguredKiosk;
@@ -546,10 +545,10 @@ export function ConfiguredKioskDialog({
   const appNames = kiosk.apps.map((a) => a.name).join(', ');
   return (
     <Modal
-      open
+      open={open}
       size="sm"
       onClose={busy ? () => undefined : onClose}
-      title="Return to configured kiosk"
+      title="Return to configured kiosk?"
       description={`Puts the device back into the kiosk that ${configName} defines: its main app, allowed apps, kiosk options, exit PIN and launcher look.`}
       className="v2-device-kreturn"
       footer={
@@ -558,7 +557,7 @@ export function ConfiguredKioskDialog({
             Cancel
           </Button>
           <Button size="lg" variant="primary" disabled={busy} onClick={() => void send()}>
-            {busy ? 'Sending…' : 'Return to configured kiosk'}
+            {busy ? 'Sending…' : 'Return to kiosk'}
           </Button>
         </>
       }
@@ -588,7 +587,7 @@ export function ConfiguredKioskDialog({
           {pinnedMissing
             ? `${missing.list.find((a) => a.pkg === p.pinPackage)?.name} wasn’t on the device at its last app scan${scanWhen}. Until it is installed, the kiosk shows a launcher grid instead of pinning it.`
             : `Not on the device at its last app scan${scanWhen}: ${missing.list.map((a) => a.name).join(', ')}. The kiosk can’t open an app that isn’t installed.`}{' '}
-          Use Install config apps first.
+          Use Install configuration apps first.
         </Callout>
       ) : null}
       {oldAgentForVolume ? (

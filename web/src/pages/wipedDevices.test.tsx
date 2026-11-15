@@ -105,7 +105,7 @@ describe('wiped devices on Devices', () => {
     fireEvent.click(table().getByRole('button', { name: 'More actions for WH-9' }));
     const menu = within(await screen.findByRole('menu'));
     const disabled = Object.fromEntries(menu.getAllByRole('menuitem').map((m) => [m.textContent, m.getAttribute('aria-disabled') === 'true']));
-    expect(disabled).toEqual({ 'Lock device': true, 'Ring device': true, 'Change configuration…': false, 'Delete…': false });
+    expect(disabled).toEqual({ Lock: true, Ring: true, 'Change configuration…': false, 'Delete…': false });
   }, SLOW);
 
   it('does not count a wiped device as a duplicate of its re-enrolled twin', async () => {
@@ -143,8 +143,8 @@ describe('what a sync says', () => {
   it('after a command from the row menu, says when the device will get it', async () => {
     open('/devices', { connected: false });
     fireEvent.click(await main().findByRole('button', { name: 'More actions for WH-3' }, LOAD));
-    fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Lock device' }));
-    expect(await screen.findByText('Lock device queued', undefined, LOAD)).toBeTruthy();
+    fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Lock' }));
+    expect(await screen.findByText('Lock queued', undefined, LOAD)).toBeTruthy();
     expect(await screen.findByText('WH-3 isn’t connected right now', undefined, LOAD)).toBeTruthy();
     expect(screen.getByText('It gets the command at its next check-in.')).toBeTruthy();
   }, SLOW);

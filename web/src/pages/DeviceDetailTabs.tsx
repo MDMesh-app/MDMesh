@@ -13,6 +13,7 @@ import {
   Card,
   CardHeader,
   EmptyState,
+  ErrorState,
   IconAlert,
   IconBattery,
   IconControl,
@@ -27,11 +28,12 @@ import {
   IconPulse,
   IconSync,
   IconTrash,
-  IconWarning,
   Grid,
   GridCell,
   KeyValueList,
+  Skeleton,
   SkeletonFacts,
+  SkeletonRows,
   RelativeTime,
   Segmented,
   Table,
@@ -380,12 +382,13 @@ export function ActivityTab({
       <Card padding="list" clip aria-labelledby={titleId}>
         <CardHeader
           inset
-          spacing={8}
           title="Events"
           titleId={titleId}
           actions={events.length ? <span className="v2-device-meta">{events.length} event{events.length === 1 ? '' : 's'}</span> : null}
         />
-        {events.length ? (
+        {!eventsLoaded && !events.length ? (
+          <SkeletonRows compact count={4} label="Loading events" />
+        ) : events.length ? (
           <ActivityList aria-label="Device events">
             {events.map((e) => (
               <ActivityRow
@@ -400,8 +403,8 @@ export function ActivityTab({
           </ActivityList>
         ) : (
           <div className="v2-device-cmds__empty">
-            <EmptyState bare icon={<IconHistory />} title={eventsLoaded ? 'No events yet' : 'Loading events…'}>
-              {eventsLoaded ? 'Boots, app installs, network changes and low battery show up here.' : null}
+            <EmptyState bare icon={<IconHistory />} title="No events yet">
+              Boots, app installs, network changes and low battery show up here.
             </EmptyState>
           </div>
         )}
@@ -438,7 +441,7 @@ export function LocationTab({
   // The list mounts only while it is open (up to 500 fixes).
   const [listOpen, setListOpen] = useState(false);
   return (
-    <Card aria-labelledby={titleId} gap={14} className="v2-device-loc">
+    <Card aria-labelledby={titleId} gap={16} className="v2-device-loc">
       <CardHeader
         title="Location history"
         titleId={titleId}
@@ -456,17 +459,13 @@ export function LocationTab({
                 ) : null}
               </span>
             ) : null}
-            <Button size="md" icon={<IconSync />} disabled={refreshing} onClick={onRefresh}>
+            <Button size="sm" icon={<IconSync />} disabled={refreshing} onClick={onRefresh}>
               Refresh
             </Button>
           </>
         }
       />
-      {error ? (
-        <Callout tone="alert" role="alert" icon={<IconWarning size={16} />}>
-          {error}
-        </Callout>
-      ) : null}
+      {error ? <ErrorState thing="the location history" detail={error} onRetry={onRefresh} retrying={refreshing} /> : null}
       {doNotTrack ? (
         <Callout tone="info" icon={<IconInfo />}>
           {DO_NOT_TRACK_HINT}
@@ -474,9 +473,10 @@ export function LocationTab({
         </Callout>
       ) : null}
       {!fixes && !error ? (
-        <p className="v2-device-meta" role="status">
-          Loading location…
-        </p>
+        <div role="status">
+          <span className="v2-visually-hidden">Loading the location history</span>
+          <Skeleton className="v2-device-loc__skel" />
+        </div>
       ) : null}
       {fixes && fixes.length === 0 && inRange ? (
         <EmptyState bare icon={<IconPin />} title={`No location in ${inRange}`}>

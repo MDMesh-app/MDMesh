@@ -81,7 +81,7 @@ describe.each([
   it('the device page: quick actions, remote actions and the rename pencil, its reads kept', async () => {
     open('/devices/WH-1', user);
     const panel = within(await screen.findByRole('tabpanel'));
-    await panel.findByText('Recent commands');
+    await panel.findByRole('button', { name: 'View all activity' });
     expectShown(screen.queryAllByRole('toolbar', { name: 'Quick actions' }));
     expectShown(panel.queryAllByText('Remote actions'));
     expectShown(screen.queryAllByRole('button', { name: /Rename device/ }));
@@ -110,8 +110,8 @@ describe.each([
   it('Settings: the rollout’s buttons and the Enroll link, the rollout itself kept', async () => {
     open('/settings', user);
     await main().findByText(/Updating the agent to/);
-    expectShown(main().queryAllByRole('button', { name: 'Cancel rollout' }));
-    expectShown(main().queryAllByRole('button', { name: 'Promote to everyone else' }));
+    expectShown(main().queryAllByRole('button', { name: 'Cancel rollout…' }));
+    expectShown(main().queryAllByRole('button', { name: 'Promote to everyone else…' }));
     expectShown(main().queryAllByRole('link', { name: 'Enroll a device' }));
   });
 
@@ -155,8 +155,10 @@ describe.each([
     expect(card.getByText(/Checked/)).toBeTruthy();
     expect(card.queryAllByRole('button', { name: 'Check now' }).length > 0).toBe(shown);
     expect(card.queryAllByRole('button', { name: /Update server and console/ }).length > 0).toBe(shown);
-    expect(card.queryAllByRole('switch').length > 0).toBe(shown);
-    expect(card.getByText('Install updates automatically')).toBeTruthy();
+    // Everyone sees the switch; only the deployment admin can turn it (aria-disabled, with the reason, for the rest).
+    expect(card.getByRole('switch', { name: 'Install updates automatically' }).getAttribute('aria-disabled')).toBe(
+      shown ? null : 'true',
+    );
   });
 
   it('keeps the help that speaks of the update to the roles it offers the update to', async () => {
@@ -202,7 +204,7 @@ describe('Settings → Updates follows a deploymentAdmin refresh', () => {
     act(() => void document.dispatchEvent(new Event('visibilitychange')));
     await waitFor(() => expect(card.queryByRole('button', { name: /Update server and console/ })).toBeNull());
     expect(card.queryByRole('button', { name: 'Check now' })).toBeNull();
-    expect(card.queryByRole('switch')).toBeNull();
+    expect(card.getByRole('switch').getAttribute('aria-disabled')).toBe('true');
   });
 });
 
@@ -279,11 +281,11 @@ describe.each([
 ])('Configurations as $role (add_config: $add, copy_config: $copy)', ({ user, add, copy }) => {
   const has = (found: unknown[], expected: boolean) => expect(found.length > 0).toBe(expected);
 
-  it('the list: New configuration, and each card’s Duplicate and Delete', async () => {
+  it('the list: New configuration, and each row’s Duplicate and Delete', async () => {
     open('/configurations', user);
     await main().findByRole('link', { name: 'Warehouse' });
-    has(main().queryAllByRole('button', { name: 'New configuration' }), add);
-    has(main().queryAllByRole('button', { name: 'Duplicate' }), copy);
+    // "New configuration…" when there are templates to choose from (its chooser), else it creates directly.
+    has(main().queryAllByRole('button', { name: /^New configuration(…)?$/ }), add);
     fireEvent.click(main().getByRole('button', { name: 'More for Warehouse' }));
     const items = within(await screen.findByRole('menu')).getAllByRole('menuitem').map((m) => m.textContent);
     expect(items).toEqual(copy ? ['Edit', 'Duplicate…', 'Delete…'] : ['Edit']);
@@ -292,7 +294,7 @@ describe.each([
   it('the editor: Duplicate and Delete', async () => {
     open('/configurations/3', user);
     await main().findByRole('heading', { name: 'Warehouse' });
-    has(main().queryAllByRole('button', { name: 'Duplicate' }), copy);
+    has(main().queryAllByRole('button', { name: 'Duplicate…' }), copy);
     has(main().queryAllByRole('button', { name: 'Delete…' }), copy);
   });
 
@@ -372,8 +374,8 @@ describe.each([
 it('Settings: a user limited to some device groups gets the rollout without its buttons', async () => {
   open('/settings', { ...ROLES.admin, allDevicesAvailable: false });
   await main().findByText(/Updating the agent to/);
-  expect(main().queryByRole('button', { name: 'Cancel rollout' })).toBeNull();
-  expect(main().queryByRole('button', { name: 'Promote to everyone else' })).toBeNull();
+  expect(main().queryByRole('button', { name: 'Cancel rollout…' })).toBeNull();
+  expect(main().queryByRole('button', { name: 'Promote to everyone else…' })).toBeNull();
   expect(main().getByRole('link', { name: 'Enroll a device' })).toBeTruthy();
 });
 
@@ -383,7 +385,7 @@ describe('renaming follows edit_device_desc alone', () => {
     ['edit_devices without edit_device_desc', ['edit_devices'], false, true],
   ])('%s', async (_, permissions, rename, actions) => {
     open('/devices/WH-1', custom(permissions));
-    await within(await screen.findByRole('tabpanel')).findByText('Recent commands');
+    await within(await screen.findByRole('tabpanel')).findByRole('button', { name: 'View all activity' });
     expect(screen.queryAllByRole('button', { name: /Rename device/ }).length > 0).toBe(rename);
     expect(screen.queryAllByRole('toolbar', { name: 'Quick actions' }).length > 0).toBe(actions);
   });

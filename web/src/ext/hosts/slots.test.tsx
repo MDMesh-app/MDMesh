@@ -243,12 +243,12 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
     await main().findByRole('link', { name: /Front desk/ });
     expect(headers()).toEqual(['', 'Device', 'Status', 'Configuration', 'Android', 'Last seen ↓', 'Actions']);
     const menu = await openMenu('WH-1');
-    expect(menu.getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Lock device', 'Ring device', 'Change configuration…', 'Delete…']);
+    expect(menu.getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Lock', 'Ring', 'Change configuration…', 'Delete…']);
     expect(menu.getAllByRole('separator')).toHaveLength(1);
     fireEvent.keyDown(menu.getAllByRole('menuitem')[0], { key: 'Escape' });
     fireEvent.click(main().getByRole('checkbox', { name: 'Select WH-1' }));
     await screen.findByRole('region', { name: 'Selection' });
-    expect(bulkButtons()).toEqual(['Run action', 'Change configuration', 'Delete']);
+    expect(bulkButtons()).toEqual(['Run action…', 'Change configuration…', 'Delete…']);
   });
 
   it('places an extension column among core’s, and sorts by its value', async () => {
@@ -312,7 +312,7 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
     expect(headers()).toContain('Error');
     expect(firstColumn('Error')).toEqual(['ok', 'ok']);
     const menu = await openMenu('WH-1');
-    expect(menu.getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Lock device', 'Ring device', 'Change configuration…', 'Delete…']);
+    expect(menu.getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Lock', 'Ring', 'Change configuration…', 'Delete…']);
   });
 
   it('hands actions helpers they cannot change, so core’s Lock still sends its own command', async () => {
@@ -332,8 +332,8 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
     ]);
     const fetch = open('/devices', { registry: registryOf(meddling) });
     await main().findByRole('link', { name: /Front desk/ });
-    fireEvent.click((await openMenu('WH-1')).getByRole('menuitem', { name: 'Lock device' }));
-    expect(await screen.findByText('Lock device queued')).toBeTruthy();
+    fireEvent.click((await openMenu('WH-1')).getByRole('menuitem', { name: 'Lock' }));
+    expect(await screen.findByText('Lock queued')).toBeTruthy();
     expect(hijack).not.toHaveBeenCalled();
     expect(fetch.mock.calls.some(([url]) => String(url).includes('/devices/WH-1/commands'))).toBe(true);
   });
@@ -350,7 +350,7 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
     open('/devices', { registry: registryOf(broken) });
     await main().findByRole('link', { name: /Front desk/ });
     const menu = await openMenu('WH-1');
-    expect(menu.getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Lock device', 'Ring device', 'Error', 'Change configuration…', 'Delete…']);
+    expect(menu.getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Lock', 'Ring', 'Error', 'Change configuration…', 'Delete…']);
     fireEvent.click(menu.getByRole('menuitem', { name: 'Error' }));
     expect(onSelect).toHaveBeenCalledTimes(1);
   });
@@ -369,12 +369,12 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
     await main().findByRole('link', { name: /Front desk/ });
     fireEvent.click(main().getByRole('checkbox', { name: 'Select WH-1' }));
     await screen.findByRole('region', { name: 'Selection' });
-    expect(bulkButtons()).toEqual(['Run action', 'Change configuration', 'Delete', 'Throws', 'Rejects', 'Bad icon']);
+    expect(bulkButtons()).toEqual(['Run action…', 'Change configuration…', 'Delete…', 'Throws', 'Rejects', 'Bad icon']);
     fireEvent.click(main().getByRole('button', { name: 'Throws' }));
     const rejects = main().getByRole('button', { name: 'Rejects' });
     fireEvent.click(rejects);
     await waitFor(() => expect((rejects as HTMLButtonElement).disabled).toBe(false)); // settled, not stuck busy
-    fireEvent.click(main().getByRole('button', { name: 'Run action' }));
+    fireEvent.click(main().getByRole('button', { name: 'Run action…' }));
     expect(await screen.findByRole('dialog')).toBeTruthy();
   });
 
@@ -383,7 +383,7 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
     await main().findByRole('link', { name: /Back office/ });
     const menu = await openMenu('WH-2');
     expect(menu.getAllByRole('menuitem').map((m) => m.textContent)).toEqual([
-      'Lock device', 'Ring device', 'Demo ping', 'Change configuration…', 'Delete…', 'Demo note',
+      'Lock', 'Ring', 'Demo ping', 'Change configuration…', 'Delete…', 'Demo note',
     ]);
     fireEvent.click(menu.getByRole('menuitem', { name: 'Demo ping' }));
     expect(await screen.findByText('Demo ping queued')).toBeTruthy();
@@ -397,7 +397,7 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
     await main().findByRole('link', { name: /Front desk/ });
     fireEvent.click(main().getByRole('checkbox', { name: 'Select all on this page' }));
     await screen.findByRole('region', { name: 'Selection' });
-    expect(bulkButtons()).toEqual(['Run action', 'Change configuration', 'Demo export', 'Delete']);
+    expect(bulkButtons()).toEqual(['Run action…', 'Change configuration…', 'Demo export', 'Delete…']);
     fireEvent.click(main().getByRole('button', { name: 'Demo export' }));
     expect(await screen.findByText('WH-1, WH-2')).toBeTruthy();
   });
@@ -462,7 +462,7 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
     await main().findByRole('link', { name: /Front desk/ });
     fireEvent.click(main().getByRole('checkbox', { name: 'Select WH-1' }));
     await screen.findByRole('region', { name: 'Selection' });
-    expect(bulkButtons()).toEqual(['Run action', 'Change configuration', 'Delete']); // Demo export needs settings
+    expect(bulkButtons()).toEqual(['Run action…', 'Change configuration…', 'Delete…']); // Demo export needs settings
   });
 
   it('drops the selection when a role refresh leaves no bulk action, and a row click opens the device again', async () => {

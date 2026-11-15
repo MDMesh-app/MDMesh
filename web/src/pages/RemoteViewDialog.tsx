@@ -19,6 +19,7 @@ function stateText(session: RemoteViewSession | null, stage: Stage): string {
 export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: string; onClose: () => void }) {
   const [session, setSession] = useState<RemoteViewSession | null>(null);
   const [stage, setStage] = useState<Stage>('waiting');
+  const [transportStatus, setTransportStatus] = useState('Waiting for device signaling…');
   const video = useRef<HTMLVideoElement>(null);
   const socket = useRef<WebSocket | null>(null);
   const peer = useRef<RTCPeerConnection | null>(null);
@@ -50,6 +51,8 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
       // the viewer and device; this POC deliberately does not configure TURN.
       const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
       peer.current = pc;
+      let localCandidateCount = 0;
+      let agentCandidateCount = 0;
       // A receive-only transceiver makes the browser offer a video media section.
       // offerToReceiveVideo alone can produce an empty offer in modern browsers;
       // Android WebRTC cannot negotiate the screen sender against that offer.
@@ -62,12 +65,23 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
           video.current.srcObject = stream;
           void video.current.play().catch(() => undefined);
           setStage('viewing');
+          setTransportStatus('Media is flowing.');
         }
       };
       pc.onicecandidate = (event) => {
         if (event.candidate && socket.current?.readyState === WebSocket.OPEN) {
+          localCandidateCount += 1;
+          setTransportStatus(`ICE candidates: viewer ${localCandidateCount}, device ${agentCandidateCount}`);
           socket.current.send(JSON.stringify({ type: 'candidate', payload: event.candidate.toJSON() }));
         }
+      };
+      pc.onicegatheringstatechange = () => {
+        if (pc.iceGatheringState === 'complete') {
+          setTransportStatus(`ICE gathering complete: viewer ${localCandidateCount}, device ${agentCandidateCount}`);
+        }
+      };
+      pc.oniceconnectionstatechange = () => {
+        setTransportStatus(`ICE ${pc.iceConnectionState}: viewer ${localCandidateCount}, device ${agentCandidateCount}`);
       };
       pc.onconnectionstatechange = () => {
         if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected' || pc.connectionState === 'closed') finish('ended');
@@ -75,6 +89,7 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
       const ws = new WebSocket(remoteViewSocketUrl(current.id));
       socket.current = ws;
       ws.onopen = () => {
+        setTransportStatus('Viewer signaling connected; waiting for device offer…');
         // The Android agent owns the screen sender and initiates negotiation.
         // Waiting for its offer avoids an Android-9 native crash while it
         // applies a browser-originated offer.
@@ -83,6 +98,7 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
         try {
           const message = JSON.parse(String(event.data)) as { type?: string; payload?: RTCSessionDescriptionInit & RTCIceCandidateInit };
           if (message.type === 'offer' && message.payload?.sdp) {
+            setTransportStatus('Device offer received; creating viewer answer…');
             await pc.setRemoteDescription({ type: 'offer', sdp: message.payload.sdp });
             remoteDescriptionInstalled = true;
             while (pendingCandidates.length > 0) {
@@ -92,8 +108,11 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
             ws.send(JSON.stringify({ type: 'answer', payload: { sdp: answer.sdp } }));
+            setTransportStatus('Viewer answer sent; gathering ICE candidates…');
           }
           if (message.type === 'candidate' && message.payload?.candidate) {
+            agentCandidateCount += 1;
+            setTransportStatus(`ICE candidates: viewer ${localCandidateCount}, device ${agentCandidateCount}`);
             if (remoteDescriptionInstalled) await pc.addIceCandidate(message.payload);
             else pendingCandidates.push(message.payload);
           }
@@ -128,6 +147,7 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
     footer={<Button variant="subtle" size="lg" onClick={close}>End view</Button>}>
     <div className="v2-remote-view">
       <p className="v2-remote-view__state" role="status">{stateText(session, stage)}</p>
+      <p className="v2-remote-view__transport" role="status">{transportStatus}</p>
       {stage === 'error' ? <Callout tone="alert">The viewer could not connect. No screen content was stored.</Callout> : null}
       <video ref={video} className="v2-remote-view__video" autoPlay playsInline aria-label="Live device screen" />
     </div>

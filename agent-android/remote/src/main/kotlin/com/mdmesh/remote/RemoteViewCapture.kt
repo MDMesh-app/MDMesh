@@ -35,6 +35,7 @@ internal class RemoteViewCapture(
     private val credentials: RemoteViewAgentCredentials,
     private val ended: (String) -> Unit,
     private val signalingOpened: () -> Unit,
+    private val diagnostic: (String) -> Unit,
 ) {
     private val appContext = context.applicationContext
     private val client = OkHttpClient.Builder().pingInterval(20, TimeUnit.SECONDS).build()
@@ -56,6 +57,8 @@ internal class RemoteViewCapture(
     private var captureWidth = 1
     private var captureHeight = 1
     private var captureStarted = false
+    private var localCandidateCount = 0
+    private var remoteCandidateCount = 0
     private val remoteCandidates = RemoteCandidateQueue<IceCandidate>()
     @Volatile private var stopped = false
     @Volatile private var startupStage = "creating capture"
@@ -127,6 +130,7 @@ internal class RemoteViewCapture(
             object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {
                     Log.i(TAG, "remote signaling opened")
+                    diagnostic("Signaling connected; creating screen-share offer…")
                     signalingOpened()
                     runOnPeerThread(::createAndSendOffer)
                 }
@@ -154,6 +158,7 @@ internal class RemoteViewCapture(
                 }
                 startupStage = "setting remote description"
                 Log.i(TAG, "remote answer accepted")
+                diagnostic("Viewer answer received; negotiating connection…")
                 peer?.setRemoteDescription(object : Sdp() {
                     override fun onSetSuccess() {
                         runOnPeerThread {
@@ -174,6 +179,7 @@ internal class RemoteViewCapture(
 
     /** Native WebRTC must not receive ICE until the asynchronous remote SDP operation finishes. */
     private fun addRemoteCandidate(candidate: IceCandidate) {
+        remoteCandidateCount++
         remoteCandidates.offer(candidate)?.let { peer?.addIceCandidate(it) }
     }
 
@@ -209,11 +215,14 @@ internal class RemoteViewCapture(
         capturer?.startCapture(captureWidth, captureHeight, 15)
         captureStarted = true
         Log.i(TAG, "negotiated screen capture started")
+        diagnostic("Screen capture active; establishing direct connection…")
     }
 
     private val observer = object : PeerConnection.Observer {
         override fun onIceCandidate(candidate: IceCandidate) {
+            localCandidateCount++
             Log.i(TAG, "remote local ICE candidate generated: mid=${candidate.sdpMid}, index=${candidate.sdpMLineIndex}")
+            diagnostic("ICE candidates: device $localCandidateCount, viewer $remoteCandidateCount")
             send("candidate", JSONObject().put("candidate", candidate.sdp).put("sdpMid", candidate.sdpMid).put("sdpMLineIndex", candidate.sdpMLineIndex))
         }
         override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>) = Unit
@@ -232,10 +241,14 @@ internal class RemoteViewCapture(
         override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
             startupStage = "ICE $state"
             Log.i(TAG, "remote ICE state=$state")
+            diagnostic("ICE $state (device $localCandidateCount, viewer $remoteCandidateCount)")
         }
         override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
         override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {
             Log.i(TAG, "remote ICE gathering=$state")
+            if (state == PeerConnection.IceGatheringState.COMPLETE) {
+                diagnostic("ICE gathering complete: device $localCandidateCount, viewer $remoteCandidateCount")
+            }
         }
         override fun onAddStream(stream: org.webrtc.MediaStream) = Unit
         override fun onRemoveStream(stream: org.webrtc.MediaStream) = Unit

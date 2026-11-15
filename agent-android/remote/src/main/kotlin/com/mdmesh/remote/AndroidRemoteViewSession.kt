@@ -84,10 +84,21 @@ class AndroidRemoteViewSession(
             require(Instant.parse(active.expiresAt).isAfter(Instant.now())) { "remote-view session expired" }
             check(capture == null) { "remote-view capture is already active" }
             val device = requireNotNull(credentials()) { "device credentials are unavailable" }
-            val newCapture = RemoteViewCapture(context, active, device, ::ended) {
-                mutableStatus.value = RemoteViewStatus("Remote screen share is active.", active = true)
-                reportEvent("remoteViewSignaling", "session=$sessionId; signaling socket opened")
-            }
+            val newCapture = RemoteViewCapture(
+                context,
+                active,
+                device,
+                ::ended,
+                {
+                    mutableStatus.value = RemoteViewStatus("Remote screen share is active.", active = true)
+                    reportEvent("remoteViewSignaling", "session=$sessionId; signaling socket opened")
+                },
+                { detail ->
+                    // Visible only during an active POC session; do not persist
+                    // signaling metadata or add normal device event traffic.
+                    mutableStatus.value = RemoteViewStatus(detail, active = true)
+                },
+            )
             capture = newCapture
             startupStage = newCapture.currentStartupStage()
             newCapture.start(resultData)

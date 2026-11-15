@@ -85,6 +85,7 @@ export const PAIRS: ContrastPair[] = [
   // is text, 1.4.1: never colour alone); their fills are recorded, not held to 3:1.
   { element: 'Selected segment fill on its track', fg: 'seg-selected', bg: 'surface-2', kind: 'exempt' },
   { element: 'Current nav item fill on the sidebar', fg: 'surface-2', bg: 'surface', kind: 'exempt' },
+  { element: 'Current section-nav item fill on the page', fg: 'surface-2', bg: 'app', kind: 'exempt' },
   { element: 'Card and panel border (decorative)', fg: 'border', bg: 'app', kind: 'exempt' },
   // ---- disabled: exempt, recorded ----
   { element: 'Disabled text (faint)', fg: 'faint', bg: 'surface', kind: 'exempt' },

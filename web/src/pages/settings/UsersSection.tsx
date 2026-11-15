@@ -13,7 +13,25 @@ import {
   type UserRole,
   type ManagementCapabilities,
 } from '../../api/users';
-import { Button, Callout, Card, EmptyState, Modal, CardHeader, SearchInput, Segmented, Table, useToast } from '../../ui';
+import {
+  Badge,
+  Button,
+  Callout,
+  Card,
+  CardHeader,
+  EmptyState,
+  ErrorState,
+  Menu,
+  Modal,
+  SearchInput,
+  SkeletonRows,
+  Table,
+  TabPanel,
+  Tabs,
+  useStickyValue,
+  useToast,
+  type MenuItem,
+} from '../../ui';
 import { UserEditor } from '../users/UserEditor';
 import { RoleEditor } from '../users/RoleEditor';
 import './UsersSection.css';
@@ -25,6 +43,37 @@ type Snapshot = {
   roles: UserRole[];
   permissions: Permission[];
 };
+type Deleting = { kind: 'user' | 'role'; id: number; name: string };
+type View = 'users' | 'roles';
+
+const TABS_ID = 'v2-users-tabs';
+
+/** Text kept to one line, ending in "…" when its column is narrow (the full text on hover). */
+function Clip({ text, sub }: { text: string; sub?: boolean }) {
+  return (
+    <span className={sub ? 'v2-users-clip v2-users-clip--sub' : 'v2-users-clip'} title={text}>
+      {text}
+    </span>
+  );
+}
+
+/** Row actions, shown on row hover or focus: a "…" menu, or its one action as a visible button. */
+function RowActions({ name, items }: { name: string; items: MenuItem[] }) {
+  if (items.length === 0) return null;
+  const [only] = items;
+  return (
+    <div className="v2-rowactions">
+      {items.length === 1 ? (
+        <Button size="sm" variant="ghost" aria-label={`${only.textValue} ${name}`} onClick={only.onSelect}>
+          {only.label}
+        </Button>
+      ) : (
+        <Menu label={`More actions for ${name}`} iconSize="xs" items={items} />
+      )}
+    </div>
+  );
+}
+
 export function UsersSection({
   capabilities,
   anchorId,
@@ -40,11 +89,16 @@ export function UsersSection({
   const [revision, setRevision] = useState(0);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'users' | 'roles'>('users');
+  const [tab, setTab] = useState<View>('users');
   const [q, setQ] = useState('');
   const [editingUser, setEditingUser] = useState<ManagedUser | 'new' | null>(null);
   const [editingRole, setEditingRole] = useState<UserRole | 'new' | null>(null);
-  const [deleting, setDeleting] = useState<{ kind: 'user' | 'role'; id: number; name: string } | null>(null);
+  // Each opening is a fresh form (a new key); a closed dialog stays mounted with what it showed, so it animates out.
+  const [session, setSession] = useState(0);
+  const shownUser = useStickyValue(editingUser);
+  const shownRole = useStickyValue(editingRole);
+  const [deleting, setDeleting] = useState<Deleting | null>(null);
+  const shownDelete = useStickyValue(deleting);
   const [deleteError, setDeleteError] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -85,6 +139,14 @@ export function UsersSection({
     setEditingRole(null);
     setDeleting(null);
   }, [user]);
+  const editUser = (target: ManagedUser | 'new') => {
+    setSession((n) => n + 1);
+    setEditingUser(target);
+  };
+  const editRole = (target: UserRole | 'new') => {
+    setSession((n) => n + 1);
+    setEditingRole(target);
+  };
   const saved = (title: string, body: string) => {
     setEditingUser(null);
     setEditingRole(null);
@@ -113,206 +175,235 @@ export function UsersSection({
   };
   if (!capabilities.users) return null;
   const needle = q.trim().toLowerCase();
-  const rolesTab = tab === 'roles' && data?.capabilities.roles;
+  const rolesTab = tab === 'roles' && !!data?.capabilities.roles;
+  const iAmSuper = !!(user?.superAdmin || user?.userRole?.superAdmin);
+
+  /** What this account may do to another one (the server enforces the same). */
+  const userActions = (u: ManagedUser): MenuItem[] => {
+    if (u.id === user?.id || u.editable === false || (u.userRole?.superAdmin && !iAmSuper)) return [];
+    const items: MenuItem[] = [{ key: 'edit', label: 'Edit…', textValue: 'Edit', onSelect: () => editUser(u) }];
+    if (!u.userRole?.superAdmin) {
+      items.push({
+        key: 'delete',
+        label: 'Delete…',
+        textValue: 'Delete',
+        danger: true,
+        onSelect: () => askDelete('user', u.id!, u.login),
+      });
+    }
+    return items;
+  };
+  const roleActions = (r: UserRole): MenuItem[] => [
+    { key: 'edit', label: 'Edit…', textValue: 'Edit', onSelect: () => editRole(r) },
+    { key: 'delete', label: 'Delete…', textValue: 'Delete', danger: true, onSelect: () => askDelete('role', r.id!, r.name) },
+  ];
+
+  const usersTable = data ? (
+    <Table
+      minWidth={600}
+      aria-label="Users"
+      className="v2-users-table"
+      empty={<EmptyState bare title={needle ? 'No matching users' : 'No users yet'} />}
+      rowKey={(u) => u.id!}
+      rows={data.users.filter((u) => `${u.login} ${u.name ?? ''} ${u.email ?? ''}`.toLowerCase().includes(needle))}
+      onRowClick={(u) => {
+        if (userActions(u).length) editUser(u);
+      }}
+      columns={[
+        {
+          key: 'user',
+          header: 'User',
+          className: 'v2-users-col v2-users-col--wide',
+          cell: (u) => (
+            <span className="v2-users-who">
+              <span className="v2-users-who__line">
+                <Clip text={u.name || u.login} />
+                {u.id === user?.id ? <Badge tone="neutral">You</Badge> : null}
+              </span>
+              {u.name ? <Clip text={u.login} sub /> : null}
+            </span>
+          ),
+        },
+        { key: 'email', header: 'Email', className: 'v2-users-col', cell: (u) => (u.email ? <Clip text={u.email} /> : '—') },
+        { key: 'role', header: 'Role', className: 'v2-users-col', cell: (u) => <Clip text={u.userRole?.name || '—'} /> },
+        {
+          key: 'access',
+          header: 'Access',
+          className: 'v2-users-col v2-users-col--wide',
+          cell: (u) => (
+            <Clip
+              text={`${u.allDevicesAvailable ? 'All devices' : 'Selected device groups'} · ${
+                u.allConfigAvailable ? 'All configurations' : 'Selected configurations'
+              }`}
+            />
+          ),
+        },
+        {
+          key: 'actions',
+          header: 'Actions',
+          headerHidden: true,
+          shrink: true,
+          align: 'right',
+          cell: (u) => <RowActions name={u.login} items={userActions(u)} />,
+        },
+      ]}
+    />
+  ) : null;
+
+  const rolesTable = data ? (
+    <Table
+      minWidth={480}
+      aria-label="Roles"
+      className="v2-users-table"
+      empty={<EmptyState bare title={needle ? 'No matching roles' : 'No editable roles yet'} />}
+      rowKey={(r) => r.id!}
+      rows={data.roles.filter((r) => `${r.name} ${r.description ?? ''}`.toLowerCase().includes(needle))}
+      onRowClick={(r) => editRole(r)}
+      columns={[
+        { key: 'name', header: 'Role', className: 'v2-users-col', cell: (r) => <Clip text={r.name} /> },
+        {
+          key: 'description',
+          header: 'Description',
+          className: 'v2-users-col v2-users-col--wide',
+          cell: (r) => (r.description ? <Clip text={r.description} /> : '—'),
+        },
+        {
+          key: 'permissions',
+          header: 'Permissions',
+          align: 'right',
+          shrink: true,
+          cell: (r) => <span className="v2-num">{(r.permissions ?? []).length}</span>,
+        },
+        {
+          key: 'actions',
+          header: 'Actions',
+          headerHidden: true,
+          shrink: true,
+          align: 'right',
+          cell: (r) => <RowActions name={r.name} items={roleActions(r)} />,
+        },
+      ]}
+    />
+  ) : null;
+
   return (
-    <Card id={anchorId} aria-labelledby={headingId} gap={20} className="v2-settings-card users-section">
+    <Card id={anchorId} aria-labelledby={headingId} padding="list" className="v2-settings-card v2-users">
       <CardHeader
+        inset
         titleId={headingId}
         title="Users & roles"
-        subtitle="Manage console accounts, permissions and access to your fleet."
+        subtitle="Console accounts, what they may do, and which devices they reach."
         actions={
           data && !loading ? (
-            <Button variant="primary" onClick={() => (rolesTab ? setEditingRole('new') : setEditingUser('new'))}>
-              {rolesTab ? 'New role' : 'New user'}
+            <Button variant="primary" size="sm" onClick={() => (rolesTab ? editRole('new') : editUser('new'))}>
+              {rolesTab ? 'New role…' : 'New user…'}
             </Button>
           ) : undefined
         }
       />
-      {error && (
-        <Callout tone="alert" role="alert">
-          {error} <Button onClick={() => setRevision((r) => r + 1)}>Retry</Button>
-        </Callout>
-      )}
+      {error ? (
+        <div className="v2-users-pad">
+          <ErrorState thing="users and roles" detail={error} onRetry={() => setRevision((r) => r + 1)} />
+        </div>
+      ) : null}
       {loading ? (
-        <p role="status">Loading users and roles…</p>
-      ) : (
-        data && (
-          <>
-            <div className="users-toolbar">
-              {data.capabilities.roles && (
-                <Segmented<'users' | 'roles'>
-                  aria-label="Manage"
-                  value={tab}
-                  onChange={(next) => {
-                    if (next === tab) return;
-                    setTab(next);
-                    setQ('');
-                  }}
-                  options={[
-                    { value: 'users', label: 'Users' },
-                    { value: 'roles', label: 'Roles' },
-                  ]}
-                />
-              )}
-              <SearchInput
-                value={q}
-                onChange={setQ}
-                placeholder={rolesTab ? 'Search roles' : 'Search users'}
-                aria-label={rolesTab ? 'Search roles' : 'Search users'}
+        <SkeletonRows count={3} label="Loading users and roles" />
+      ) : data ? (
+        <>
+          <div className="v2-users-toolbar">
+            {data.capabilities.roles ? (
+              <Tabs<View>
+                aria-label="Manage"
+                size="md"
+                idBase={TABS_ID}
+                value={tab}
+                onChange={(next) => {
+                  if (next === tab) return;
+                  setTab(next);
+                  setQ('');
+                }}
+                items={[
+                  { key: 'users', label: 'Users' },
+                  { key: 'roles', label: 'Roles' },
+                ]}
               />
-            </div>
-            {rolesTab ? (
-              <>
-                <Callout>Administrator roles are protected. Only roles available for editing appear here.</Callout>
-                <div className="users-table">
-                  <Table
-                    minWidth={500}
-                    aria-label="Roles"
-                    empty={<EmptyState title={needle ? 'No matching roles' : 'No editable roles'} />}
-                    rowKey={(r) => r.id!}
-                    rows={data.roles.filter((r) => `${r.name} ${r.description ?? ''}`.toLowerCase().includes(needle))}
-                    columns={[
-                      { key: 'name', header: 'Role', cell: (r) => r.name },
-                      { key: 'description', header: 'Description', cell: (r) => r.description || '—' },
-                      { key: 'permissions', header: 'Permissions', cell: (r) => (r.permissions ?? []).length },
-                      {
-                        key: 'actions',
-                        header: 'Actions',
-                        shrink: true,
-                        cell: (r) => (
-                          <div className="users-actions">
-                            <Button size="sm" aria-label={`Edit ${r.name}`} onClick={() => setEditingRole(r)}>
-                              Edit<span className="v2-visually-hidden"> {r.name}</span>
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="danger"
-                              aria-label={`Delete ${r.name}`}
-                              onClick={() => askDelete('role', r.id!, r.name)}
-                            >
-                              Delete<span className="v2-visually-hidden"> {r.name}</span>
-                            </Button>
-                          </div>
-                        ),
-                      },
-                    ]}
-                  />
-                </div>
-              </>
-            ) : (
-              <div className="users-table">
-                <Table
-                  minWidth={680}
-                  aria-label="Users"
-                  empty={<EmptyState title="No users found" />}
-                  rowKey={(u) => u.id!}
-                  rows={data.users.filter((u) =>
-                    `${u.login} ${u.name ?? ''} ${u.email ?? ''}`.toLowerCase().includes(needle),
-                  )}
-                  columns={[
-                    {
-                      key: 'login',
-                      header: 'Login',
-                      cell: (u) => (
-                        <>
-                          {u.login}
-                          {u.id === user?.id ? ' (you)' : ''}
-                        </>
-                      ),
-                    },
-                    { key: 'name', header: 'Name', cell: (u) => u.name || '—' },
-                    { key: 'email', header: 'Email', cell: (u) => u.email || '—' },
-                    { key: 'role', header: 'Role', cell: (u) => u.userRole?.name || '—' },
-                    {
-                      key: 'access',
-                      header: 'Access',
-                      cell: (u) => (
-                        <>
-                          {u.allDevicesAvailable ? 'All devices' : 'Selected device groups'} ·{' '}
-                          {u.allConfigAvailable ? 'All configurations' : 'Selected configurations'}
-                        </>
-                      ),
-                    },
-                    {
-                      key: 'actions',
-                      header: 'Actions',
-                      shrink: true,
-                      cell: (u) =>
-                        u.id !== user?.id &&
-                        u.editable !== false &&
-                        (!u.userRole?.superAdmin || user?.superAdmin || user?.userRole?.superAdmin) ? (
-                          <div className="users-actions">
-                            <Button size="sm" aria-label={`Edit ${u.login}`} onClick={() => setEditingUser(u)}>
-                              Edit<span className="v2-visually-hidden"> {u.login}</span>
-                            </Button>
-                            {!u.userRole?.superAdmin && (
-                              <Button
-                                size="sm"
-                                variant="danger"
-                                aria-label={`Delete ${u.login}`}
-                                onClick={() => askDelete('user', u.id!, u.login)}
-                              >
-                                Delete<span className="v2-visually-hidden"> {u.login}</span>
-                              </Button>
-                            )}
-                          </div>
-                        ) : (
-                          '—'
-                        ),
-                    },
-                  ]}
-                />
-              </div>
-            )}
-          </>
-        )
-      )}
-      {editingUser && data && (
+            ) : null}
+            <SearchInput
+              className="v2-users-search"
+              value={q}
+              onChange={setQ}
+              placeholder={rolesTab ? 'Search roles' : 'Search users'}
+              aria-label={rolesTab ? 'Search roles' : 'Search users'}
+            />
+          </div>
+          {data.capabilities.roles ? (
+            <TabPanel idBase={TABS_ID} tabKey={tab} className="v2-users-panel">
+              {rolesTab ? (
+                <>
+                  <div className="v2-users-pad">
+                    <Callout>Administrator roles are protected, so only roles you can edit are listed.</Callout>
+                  </div>
+                  {rolesTable}
+                </>
+              ) : (
+                usersTable
+              )}
+            </TabPanel>
+          ) : (
+            usersTable
+          )}
+        </>
+      ) : null}
+      {shownUser ? (
         <UserEditor
-          target={editingUser}
-          roles={data.assignable}
+          key={`user-${session}`}
+          open={editingUser !== null}
+          target={shownUser}
+          roles={data?.assignable ?? []}
           onClose={() => setEditingUser(null)}
           onSaved={() => saved('User saved', 'The account list is up to date.')}
         />
-      )}
-      {editingRole && data && (
+      ) : null}
+      {shownRole ? (
         <RoleEditor
-          target={editingRole}
-          permissions={data.permissions}
+          key={`role-${session}`}
+          open={editingRole !== null}
+          target={shownRole}
+          permissions={data?.permissions ?? []}
           onClose={() => setEditingRole(null)}
           onSaved={() => saved('Role saved', 'The role list is up to date.')}
         />
-      )}
+      ) : null}
       <Modal
-        open={!!deleting}
+        open={deleting !== null}
         role="alertdialog"
-        title={`Delete ${deleting?.kind ?? 'account'}?`}
+        size="sm"
+        title={`Delete ${shownDelete?.name ?? ''}?`}
         dismissOnBackdrop={false}
         onClose={() => {
           if (!busy) setDeleting(null);
         }}
         footer={
           <>
-            <Button disabled={busy} onClick={() => setDeleting(null)}>
+            <Button size="lg" disabled={busy} onClick={() => setDeleting(null)}>
               Cancel
             </Button>
-            <Button variant="danger" disabled={busy} onClick={() => void confirmDelete()}>
-              {busy ? 'Deleting…' : 'Delete'}
+            <Button variant="danger-primary" size="lg" disabled={busy} onClick={() => void confirmDelete()}>
+              {busy ? 'Deleting…' : shownDelete?.kind === 'role' ? 'Delete role' : 'Delete user'}
             </Button>
           </>
         }
       >
-        <p>
-          Delete “{deleting?.name}”?{' '}
-          {deleting?.kind === 'user'
-            ? 'This account will lose access to the console.'
-            : 'A role can be deleted only when no users are assigned to it.'}
+        <p className="v2-users-text">
+          {shownDelete?.kind === 'role'
+            ? 'Only a role no one is assigned to can be deleted.'
+            : 'This account can no longer sign in to the console.'}
         </p>
-        {deleteError && (
+        {deleteError ? (
           <Callout tone="alert" role="alert">
             {deleteError}
           </Callout>
-        )}
+        ) : null}
       </Modal>
     </Card>
   );

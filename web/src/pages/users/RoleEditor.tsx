@@ -3,11 +3,14 @@ import { managementError, saveRole, type Permission, type UserRole } from '../..
 import { Button, Callout, Checkbox, Field, Input, Modal, SearchInput, Textarea } from '../../ui';
 
 export function RoleEditor({
+  open = true,
   target,
   permissions,
   onClose,
   onSaved,
 }: {
+  /** False while it animates closed (the caller keeps it mounted). */
+  open?: boolean;
   target: UserRole | 'new';
   permissions: Permission[];
   onClose: () => void;
@@ -36,7 +39,7 @@ export function RoleEditor({
   };
   return (
     <Modal
-      open
+      open={open}
       title={target === 'new' ? 'New role' : `Edit ${target.name}`}
       dismissOnBackdrop={false}
       description="Permission changes apply to every user with this role on their next server request."
@@ -45,10 +48,10 @@ export function RoleEditor({
       }}
       footer={
         <>
-          <Button disabled={busy} onClick={onClose}>
+          <Button size="lg" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" type="submit" form="role-form" disabled={busy}>
+          <Button size="lg" variant="primary" type="submit" form="role-form" disabled={busy}>
             {busy ? 'Saving…' : 'Save role'}
           </Button>
         </>
@@ -61,13 +64,13 @@ export function RoleEditor({
       )}
       <form
         id="role-form"
-        className="users-form"
+        className="v2-users-form"
         onSubmit={(e) => {
           e.preventDefault();
           void submit();
         }}
       >
-        <fieldset disabled={busy} className="users-fields">
+        <fieldset disabled={busy} className="v2-users-fields">
           <Field label="Role name">
             <Input
               value={draft.name}
@@ -83,29 +86,31 @@ export function RoleEditor({
               onChange={(e) => setDraft({ ...draft, description: e.target.value })}
             />
           </Field>
-          <fieldset className="users-scope">
+          <fieldset className="v2-users-scope">
             <legend>Permissions ({draft.permissions.length} selected)</legend>
             <SearchInput value={q} onChange={setQ} placeholder="Filter permissions" aria-label="Filter permissions" />
-            <div className="users-choices">
+            <div className="v2-users-choices">
               {permissions
                 .filter((p) => p.name.toLowerCase().includes(q.toLowerCase()))
                 .map((p) => (
-                  <label key={p.id}>
-                    <Checkbox
-                      checked={draft.permissions.some((v) => v.id === p.id)}
-                      onChange={(e) =>
-                        setDraft({
-                          ...draft,
-                          permissions: e.target.checked
-                            ? [...draft.permissions, p]
-                            : draft.permissions.filter((v) => v.id !== p.id),
-                        })
-                      }
-                    />
-                    <span>
-                      {p.name.replace(/_/g, ' ')} <small>({p.name})</small>
-                    </span>
-                  </label>
+                  <Checkbox
+                    key={p.id}
+                    className="v2-users-choice"
+                    checked={draft.permissions.some((v) => v.id === p.id)}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        permissions: e.target.checked
+                          ? [...draft.permissions, p]
+                          : draft.permissions.filter((v) => v.id !== p.id),
+                      })
+                    }
+                    label={
+                      <span>
+                        {p.name.replace(/_/g, ' ')} <span className="v2-users-choice__code">({p.name})</span>
+                      </span>
+                    }
+                  />
                 ))}
             </div>
           </fieldset>

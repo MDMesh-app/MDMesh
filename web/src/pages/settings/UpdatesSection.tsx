@@ -14,8 +14,10 @@ import {
   IconInfo,
   Modal,
   RelativeTime,
+  Skeleton,
   Stepper,
   Toggle,
+  Tooltip,
   cx,
   formatRelative,
   LinkButton,
@@ -33,6 +35,8 @@ const PHASE_STEP: Record<(typeof PHASES)[number], string> = {
   recreate: 'Restart',
   healthcheck: 'Health check',
 };
+/** Why the automatic-updates switch is read-only for everyone but the admin who runs the install. */
+const AUTO_LOCKED_REASON = 'Only a super-admin, or the admin of a single-customer install, can change this.';
 /** Source installs (APPLY_SUPPORTED=0) update from the shell: the documented commands (README, classic Settings). */
 const MANUAL_STEPS = [
   { label: 'Docker, installed from source', cmd: './setup.sh --update' },
@@ -129,7 +133,7 @@ export function UpdatesSection({
     const x = await checkForUpdates();
     setChecking(false);
     if (x) sup.setStatus(x);
-    else setCheckMsg('Could not check for updates. Try again in a minute.');
+    else setCheckMsg('Couldn’t check for updates. Try again in a minute.');
   };
 
   const applyNow = async () => {
@@ -174,23 +178,31 @@ export function UpdatesSection({
               {s.checkedAt ? <RelativeTime value={s.checkedAt} style="long" prefix="Checked " /> : 'Not checked yet'}
             </span>
             {canManage ? (
-              <Button onClick={() => void checkNow()} disabled={checking || running}>
+              <Button size="sm" onClick={() => void checkNow()} disabled={checking || running}>
                 {checking ? 'Checking…' : 'Check now'}
               </Button>
             ) : null}
           </>
         ) : (
-          <Button onClick={() => void sup.refresh()}>Try again</Button>
+          <Button size="sm" onClick={() => void sup.refresh()}>
+            Retry
+          </Button>
         )
       }
     />
   );
 
   return (
-    <Card id={id} aria-labelledby={`${id}-title`} gap={14} className="v2-settings-card">
+    <Card id={id} aria-labelledby={`${id}-title`} gap={12} className="v2-settings-card">
       {header}
 
-      {!loaded ? <p className="v2-settings-muted">Asking the updater…</p> : null}
+      {!loaded ? (
+        <div className="v2-settings-skel" role="status">
+          <span className="v2-visually-hidden">Checking for updates</span>
+          <Skeleton height="title" width="45%" />
+          <Skeleton width="80%" />
+        </div>
+      ) : null}
 
       {loaded && !s ? (
         <Callout tone="info" icon={<IconInfo />}>
@@ -227,7 +239,7 @@ export function UpdatesSection({
         <div className="v2-settings-upd v2-settings-upd--busy">
           <div className="v2-settings-upd__titleline">
             <span className="v2-settings-upd__title">
-              Updating to MDMesh <span className="v2-mono">{apply.toVersion}</span>
+              Updating to MDMesh <span className="v2-num">{apply.toVersion}</span>
             </span>
             {apply.trigger === 'auto' ? <Badge tone="neutral" size="md">Started automatically</Badge> : null}
           </div>
@@ -254,14 +266,14 @@ export function UpdatesSection({
       {s && failed && apply ? (
         <div className="v2-settings-upd v2-settings-upd--alert" role="alert">
           <span className="v2-settings-upd__title">
-            The update to <span className="v2-mono">{apply.toVersion}</span>
+            The update to <span className="v2-num">{apply.toVersion}</span>
             {apply.phase === 'rolled_back' ? ' was rolled back' : ' failed'}
           </span>
           <p className="v2-settings-upd__help">
             {apply.phase === 'rolled_back' ? (
               <>
                 It didn&rsquo;t pass its checks, so the server went back to{' '}
-                <span className="v2-mono">{apply.fromVersion}</span> and its database backup.
+                <span className="v2-num">{apply.fromVersion}</span> and its database backup.
               </>
             ) : (
               <>It stopped and could not roll back on its own. Recovery can roll back to the backup or retry.</>
@@ -270,7 +282,7 @@ export function UpdatesSection({
           </p>
           {apply.error ? <p className="v2-settings-upd__error v2-mono">{apply.error}</p> : null}
           <div className="v2-settings-upd__actions">
-            <ButtonAnchor href="/recovery" size="lg" strong>
+            <ButtonAnchor href="/recovery" size="lg">
               Open recovery
             </ButtonAnchor>
           </div>
@@ -281,7 +293,7 @@ export function UpdatesSection({
         <Callout tone="ok" role="status" icon={<IconCheck />}>
           <span className="v2-settings-callout-row">
             <span>
-              Updated to MDMesh <span className="v2-mono">{apply.toVersion}</span>{' '}
+              Updated to MDMesh <span className="v2-num">{apply.toVersion}</span>{' '}
               {ago(apply.finishedAt as number)}. Reload to use the new console.
             </span>
             <Button size="sm" onClick={() => window.location.reload()}>
@@ -296,7 +308,7 @@ export function UpdatesSection({
         <div className="v2-settings-upd v2-settings-upd--ready">
           <div className="v2-settings-upd__titleline">
             <span className="v2-settings-upd__title">
-              MDMesh <span className="v2-mono">{s.latest}</span> is ready
+              MDMesh <span className="v2-num">{s.latest}</span> is ready
             </span>
             {s.verified ? (
               <Badge tone="ok" size="md" icon={<IconCheck size={12} />}>
@@ -325,7 +337,7 @@ export function UpdatesSection({
               {canManage ? (
                 <Button
                   variant="primary"
-                  size="xl"
+                  size="lg"
                   disabled={!s.verified || starting}
                   onClick={() => setConfirming(true)}
                 >
@@ -333,7 +345,7 @@ export function UpdatesSection({
                 </Button>
               ) : null}
               {releaseUrl ? (
-                <a className="v2-settings-strong-link" href={releaseUrl} target="_blank" rel="noreferrer">
+                <a className="v2-settings-link" href={releaseUrl} target="_blank" rel="noreferrer">
                   Full release notes ↗
                 </a>
               ) : null}
@@ -363,7 +375,7 @@ export function UpdatesSection({
                 </div>
               ))}
               {releaseUrl ? (
-                <a className="v2-settings-strong-link" href={releaseUrl} target="_blank" rel="noreferrer">
+                <a className="v2-settings-link" href={releaseUrl} target="_blank" rel="noreferrer">
                   Full release notes ↗
                 </a>
               ) : null}
@@ -371,7 +383,7 @@ export function UpdatesSection({
           )}
           {s.apk?.available ? (
             <p className="v2-settings-upd__help">
-              The release carries agent <span className="v2-mono">{s.apk.version}</span>.{' '}
+              The release carries agent <span className="v2-num">{s.apk.version}</span>.{' '}
               <a href={rolloutHref}>Roll it out to devices</a> after the server update.
             </p>
           ) : null}
@@ -382,17 +394,17 @@ export function UpdatesSection({
       {s && !s.updateAvailable && !running ? (
         <div className="v2-settings-uptodate">
           <span className="v2-settings-uptodate__icon" aria-hidden="true">
-            <IconCheck size={13} />
+            <IconCheck size={12} />
           </span>
           <span>
-            MDMesh <span className="v2-mono">{s.current}</span> is the latest release
+            MDMesh <span className="v2-num">{s.current}</span> is the latest release
             {channelLabel(s.channel) ? ` on the ${channelLabel(s.channel)?.toLowerCase()}` : ''}.
           </span>
         </div>
       ) : null}
       {s && !s.updateAvailable && s.latest && !s.verified && s.latest !== s.current ? (
         <Callout tone="warn" icon={<IconAlert />}>
-          MDMesh <span className="v2-mono">{s.latest}</span> was found, but its signature couldn&rsquo;t be verified, so it
+          MDMesh <span className="v2-num">{s.latest}</span> was found, but its signature couldn&rsquo;t be verified, so it
           won&rsquo;t be offered or installed.
         </Callout>
       ) : null}
@@ -408,6 +420,11 @@ export function UpdatesSection({
               Verified releases install within a few hours of release. Unverified releases never install on their
               own.
             </span>
+            {canManage ? null : (
+              <span id={`${id}-auto-locked`} className="v2-visually-hidden">
+                {AUTO_LOCKED_REASON}
+              </span>
+            )}
           </div>
           {canManage ? (
             <Toggle
@@ -418,11 +435,22 @@ export function UpdatesSection({
               onChange={(v) => void toggleAuto(v)}
             />
           ) : (
-            <span className="v2-settings-meta">{s.auto ? 'On' : 'Off'}</span>
+            // Read-only, not `disabled`: it stays focusable so keyboard users get the reason too (aria-disabled).
+            <Tooltip content={AUTO_LOCKED_REASON}>
+              <Toggle
+                className="is-locked"
+                aria-labelledby={`${id}-auto`}
+                aria-describedby={`${id}-auto-help ${id}-auto-locked`}
+                aria-disabled="true"
+                checked={!!s.auto}
+                onClick={(e) => e.preventDefault()}
+                onChange={() => {}}
+              />
+            </Tooltip>
           )}
           {s.auto && s.autoSkipped && s.autoSkipped === s.latest ? (
             <p className="v2-settings-auto__note">
-              Automatic updates won&rsquo;t install <span className="v2-mono">{s.autoSkipped}</span> again, because its
+              Automatic updates won&rsquo;t install <span className="v2-num">{s.autoSkipped}</span> again, because its
               last update failed or was rolled back.{' '}
               {canManage ? 'Update installs it by hand; a newer release installs on its own.' : 'A newer release installs on its own.'}
             </p>

@@ -98,8 +98,8 @@ function usePinnedSection(ids: ReadonlyArray<string>): [string | null, (id: stri
 }
 
 /**
- * Section side-nav (configuration editor, Settings): 8×12 items, r10; the current one raised on the page with
- * 600 ink and `aria-current="location"`. Real `href="#id"` anchors. Narrow screens: a scrollable chip row.
+ * Section side-nav (configuration editor, Settings): nav-item-height rows; the current one a fill with the 500 ink
+ * label and `aria-current="location"`. Real `href="#id"` anchors. Narrow screens: a scrollable row.
  * The current item follows the scroll position, except that a section jumped to stays current until the user
  * scrolls by hand.
  */
@@ -148,8 +148,8 @@ export function SectionNav({ items, activeId, spyOffset, className, ...aria }: S
 }
 
 /**
- * Two-column layout for SectionNav pages: nav (180-240px) beside the content, 20/24px gaps; stacks under 900px.
- * `contentMax` caps the content column (Settings: 880).
+ * Two-column layout for SectionNav pages: nav (180-240px) beside the content; stacks under 900px.
+ * `contentMax` caps the content column (px); a page may instead cap it from its CSS (Settings: --prose-max).
  */
 export function SectionLayout({
   nav,

@@ -1,6 +1,6 @@
 // Which component edges must reach 3:1 (WCAG 1.4.11), and that each really paints with a token whose pairs
 // tokenContrast.test.ts checks. Owner's rule, "inputs strong, buttons soft": inputs, selects, the search box, toggles,
-// the password toggle, the colour picker, the selected tab's indicator, the current section-nav item,
+// the password toggle, the colour picker, the selected tab's indicator,
 // the focus ring and the not-reported bar segment are 3:1. Text buttons, chips and cards keep the soft v2
 // edges: their visible label identifies them (rows of kind 'exempt' in contrastPairs.ts).
 import { readdirSync, readFileSync } from 'node:fs';
@@ -20,10 +20,10 @@ const STRONG_EDGES: Array<[what: string, file: string, selector: string, token: 
   ['text input / select / textarea (also the toolbar and rows-per-page selects)', 'ui/Input.css', '.v2 .v2-input {', 'input-border'],
   ['search box', 'ui/Input.css', '.v2 .v2-search {', 'input-border'],
   ['checkbox', 'ui/Input.css', '.v2 .v2-check {', 'input-border'],
-  ['password show/hide toggle', 'ui/Password.css', '.v2 .v2-password__toggle {', 'control-border'],
+  // The password toggle sits inside the field (whose edge is the input's, above): a ghost icon button, its icon 3:1.
+  ['password show/hide toggle (inside the field; its icon)', 'ui/Password.css', '.v2 .v2-password__toggle {', 'secondary'],
   ['colour picker button', 'ui/ColourInput.css', '.v2 .v2-colour__btn {', 'control-border'],
   ['selected tab indicator', 'ui/Tabs.css', '.v2 .v2-tabs::after {', 'ink'],
-  ['current section-nav item', 'ui/SectionNav.css', '.v2 .v2-secnav__item.is-current {', 'control-border'],
   ['kiosk background focal point picker', 'pages/configurations/KioskPlacement.css', '.v2 .v2-kbp__area {', 'control-border'],
   ['selected kiosk preview thumbnail (ring around the device)', 'pages/configurations/KioskPreview.css', ".v2 .v2-kbg__thumb-button[aria-pressed='true'] .v2-kbg__device {", 'ink'],
   ['toggle (off) track', 'ui/Toggle.css', '.v2 .v2-toggle__track {', 'switch-off-ring'],
@@ -57,6 +57,7 @@ const SOFT_BY_DESIGN: Array<[what: string, file: string, selector: string, token
   // Selected segment and current nav item: a fill plus the label's 500 weight and ink, never colour alone.
   ['selected segment (raised fill, 500 ink label)', 'ui/Segmented.css', '.v2 .v2-seg__opt.is-selected {', 'weight-medium'],
   ['current sidebar item (fill, 500 ink label)', 'ui/Sidebar.css', '.v2 .v2-navitem.is-active {', 'weight-medium'],
+  ['current section-nav item (fill, 500 ink label)', 'ui/SectionNav.css', '.v2 .v2-secnav__item.is-current {', 'weight-medium'],
   ['toast Dismiss (icon only, no edge)', 'ui/Toast.css', '.v2 .toast .t-close {', 'text-2'],
 ];
 

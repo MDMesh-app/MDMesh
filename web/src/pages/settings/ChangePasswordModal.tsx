@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type FormEvent } from 'react';
+import { useId, useState, type FormEvent } from 'react';
 import { changeOwnPassword, isTooManyAttempts, TOO_MANY_MESSAGE, type AuthUser } from '../../api/auth';
 import { Button, Callout, Field, IconAlert, Modal, PasswordInput, RuleList, useToast, type Rule } from '../../ui';
 
@@ -8,7 +8,8 @@ export const MIN_LENGTH = 8;
 /**
  * Change your own password (new with the redesign: the v0.3 console had no such form). `PUT /private/users/current` checks
  * the current password server-side; the rules below are the ones the client can check (same minimum as the
- * set-password page).
+ * set-password page). The caller keeps it mounted while it animates closed and gives each opening a new `key`, so
+ * every opening starts blank.
  */
 export function ChangePasswordModal({ open, user, onClose }: { open: boolean; user: AuthUser | null; onClose: () => void }) {
   const toast = useToast();
@@ -20,15 +21,6 @@ export function ChangePasswordModal({ open, user, onClose }: { open: boolean; us
   const [err, setErr] = useState<string | null>(null);
   const rulesId = useId();
   const formId = useId();
-
-  useEffect(() => {
-    if (open) return;
-    setCurrent('');
-    setNext('');
-    setAgain('');
-    setWrongCurrent(false);
-    setErr(null);
-  }, [open]);
 
   const typed = next.length > 0;
   const rules: Rule[] = [
@@ -72,7 +64,7 @@ export function ChangePasswordModal({ open, user, onClose }: { open: boolean; us
       dismissOnBackdrop={false}
       size="sm"
       title="Change password"
-      description={user?.login ? <>For <span className="v2-mono">{user.login}</span>.</> : undefined}
+      description={user?.login ? `For ${user.login}.` : undefined}
       footer={
         <>
           <Button size="lg" onClick={onClose} disabled={busy}>

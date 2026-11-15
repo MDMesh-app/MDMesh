@@ -55,11 +55,13 @@
   background: var(--switch-on-knob);
   transform: translateX(var(--space-3));
 }
-.v2 .v2-toggle:disabled {
+.v2 .v2-toggle:disabled,
+.v2 .v2-toggle[aria-disabled='true'] {
   cursor: default;
   color: var(--faint);
 }
-.v2 .v2-toggle:disabled .v2-toggle__track {
+.v2 .v2-toggle:disabled .v2-toggle__track,
+.v2 .v2-toggle[aria-disabled='true'] .v2-toggle__track {
   opacity: var(--disabled-opacity);
 }
 

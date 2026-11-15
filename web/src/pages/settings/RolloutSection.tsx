@@ -16,12 +16,16 @@ import {
   Card,
   CardHeader,
   Checkbox,
+  ErrorState,
   IconAlert,
   Modal,
   RelativeTime,
   RolloutSteps,
   SearchInput,
+  Skeleton,
+  SkeletonRows,
   formatRelative,
+  useStickyValue,
   type RolloutStep,
 } from '../../ui';
 import { CORE_ACTION_ACCESS } from '../../ext/core/access';
@@ -157,15 +161,8 @@ function CanaryPicker({
   const [loading, setLoading] = useState(false);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<Map<string, DeviceView>>(new Map());
+  const [retry, setRetry] = useState(0);
   const seq = useRef(0);
-
-  useEffect(() => {
-    if (!open) {
-      setQuery('');
-      setSelected(new Map());
-      return;
-    }
-  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -181,7 +178,7 @@ function CanaryPicker({
             setTotal(r.devices?.totalItemsCount ?? 0);
           })
           .catch((e) => {
-            if (id === seq.current) setLoadErr((e as Error).message || 'Could not load devices.');
+            if (id === seq.current) setLoadErr((e as Error).message || '');
           })
           .finally(() => {
             if (id === seq.current) setLoading(false);
@@ -190,7 +187,7 @@ function CanaryPicker({
       query ? 250 : 0,
     );
     return () => clearTimeout(t);
-  }, [open, query]);
+  }, [open, query, retry]);
 
   const toggle = (d: DeviceView) =>
     setSelected((s) => {
@@ -210,7 +207,7 @@ function CanaryPicker({
       title="Choose canary devices"
       description={
         <>
-          They get agent <span className="v2-mono">{version}</span> first. Once they&rsquo;ve updated, you promote it
+          They get agent <span className="v2-num">{version}</span> first. Once they&rsquo;ve updated, you promote it
           to everyone else.
         </>
       }
@@ -240,10 +237,8 @@ function CanaryPicker({
             {error}
           </Callout>
         ) : null}
-        {loadErr ? (
-          <Callout tone="alert" role="alert" icon={<IconAlert />}>
-            Could not load devices: {loadErr}
-          </Callout>
+        {loadErr !== null ? (
+          <ErrorState thing="devices" detail={loadErr || undefined} onRetry={() => setRetry((r) => r + 1)} retrying={loading} />
         ) : null}
         <ul className="v2-settings-picker__list" aria-label="Devices" aria-busy={loading || undefined}>
           {devices.map((d) => (
@@ -264,10 +259,10 @@ function CanaryPicker({
             </li>
           ))}
         </ul>
-        {!loading && !loadErr && devices.length === 0 ? (
-          <p className="v2-settings-muted">{query ? 'No devices match.' : 'No devices are enrolled yet.'}</p>
+        {!loading && loadErr === null && devices.length === 0 ? (
+          <p className="v2-settings-muted">{query ? 'No devices match.' : 'No devices enrolled yet.'}</p>
         ) : null}
-        {loading && devices.length === 0 ? <p className="v2-settings-muted">Loading devices…</p> : null}
+        {loading && devices.length === 0 ? <SkeletonRows count={4} compact label="Loading devices" /> : null}
         {total > devices.length ? (
           <p className="v2-settings-muted">
             Showing {devices.length} of {total} devices. Search to find others.
@@ -301,6 +296,8 @@ export function RolloutSection({
   const [err, setErr] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [picking, setPicking] = useState(false);
+  // Each opening of the picker starts blank (a new key); closed, it stays mounted to animate out.
+  const [pickSession, setPickSession] = useState(0);
   const [pickErr, setPickErr] = useState<string | null>(null);
   const [summary, setSummary] = useState<RolloutTargetSummary | null>(null);
   const summaryRequest = useRef(0);
@@ -406,16 +403,20 @@ export function RolloutSection({
         return c ? c.pending + c.outstanding : 0;
       })()
     : 0;
+  // What the promote and stop dialogs say, kept while they animate closed (the rollout may be gone by then).
+  const shownConfirm = useStickyValue(
+    confirm && active ? { kind: confirm, finishing, remaining, version: active.targetVersion } : null,
+  );
 
   return (
-    <Card id={id} aria-labelledby={titleId} gap={14} className="v2-settings-card">
+    <Card id={id} aria-labelledby={titleId} gap={12} className="v2-settings-card">
       {active ? (
         <CardHeader
           title="Agent rollout"
           titleId={titleId}
           subtitle={
             <>
-              Updating the agent to <span className="v2-mono">{active.targetVersion}</span>
+              Updating the agent to <span className="v2-num">{active.targetVersion}</span>
               {fleet
                 ? ' on every device.'
                 : ` on ${plural(eligibleOf(active.progress.canary), 'canary device', 'canary devices')} first, then the rest of the fleet.`}{' '}
@@ -424,12 +425,12 @@ export function RolloutSection({
           }
           actions={
             !canEdit ? undefined : finishing ? (
-              <Button onClick={() => setConfirm('cancel')} disabled={busy}>
-                Finish rollout
+              <Button size="sm" onClick={() => setConfirm('cancel')} disabled={busy}>
+                Finish rollout…
               </Button>
             ) : (
-              <Button variant="danger" onClick={() => setConfirm('cancel')} disabled={busy}>
-                Cancel rollout
+              <Button size="sm" variant="danger" onClick={() => setConfirm('cancel')} disabled={busy}>
+                Cancel rollout…
               </Button>
             )
           }
@@ -440,7 +441,7 @@ export function RolloutSection({
 
       {loadError ? (
         <Callout tone="warn" icon={<IconAlert />}>
-          Could not refresh the rollout: {rolloutError({ message: loadError })}
+          Couldn’t refresh the rollout: {rolloutError({ message: loadError })}
         </Callout>
       ) : null}
       {err ? (
@@ -463,11 +464,10 @@ export function RolloutSection({
               {canEdit ? (
                 <Button
                   variant="primary"
-                  size="xl"
                   disabled={busy || !cohortDone(active.progress.canary)}
                   onClick={() => setConfirm('promote')}
                 >
-                  Promote to everyone else
+                  Promote to everyone else…
                 </Button>
               ) : null}
               <span className="v2-settings-promote__hint">{promoteHint(active.progress.canary)}</span>
@@ -481,16 +481,19 @@ export function RolloutSection({
           )}
         </>
       ) : !loaded || (!statusLoaded && !loadError) ? (
-        <p className="v2-settings-muted">Checking for a rollout…</p>
+        <div className="v2-settings-skel" role="status">
+          <span className="v2-visually-hidden">Checking for a rollout</span>
+          <Skeleton width="60%" />
+        </div>
       ) : apk?.available && summary?.complete ? (
         <p className="v2-settings-muted">
-          Agent <span className="v2-mono">{apk.version}</span> is current on every device that can update itself.
+          Agent <span className="v2-num">{apk.version}</span> is current on every device that can update itself.
         </p>
       ) : apk?.available ? (
         <div className="v2-settings-start">
           <div className="v2-settings-start__text">
             <span className="v2-settings-start__label">
-              Agent <span className="v2-mono">{apk.version}</span> is ready to roll out
+              Agent <span className="v2-num">{apk.version}</span> is ready to roll out
             </span>
             <span className="v2-settings-start__help">
               Pick a few canary devices to update first. Once they&rsquo;ve updated, promote it to everyone else.
@@ -498,10 +501,10 @@ export function RolloutSection({
           </div>
           {canEdit ? (
             <Button
-              size="lg"
-              strong
+              variant="primary"
               onClick={() => {
                 setPickErr(null);
+                setPickSession((n) => n + 1);
                 setPicking(true);
               }}
             >
@@ -518,6 +521,7 @@ export function RolloutSection({
 
       {apk ? (
         <CanaryPicker
+          key={pickSession}
           open={picking}
           version={apk.version}
           busy={busy}
@@ -528,7 +532,7 @@ export function RolloutSection({
       ) : null}
 
       <Modal
-        open={confirm === 'promote'}
+        open={confirm === 'promote' && !!active}
         onClose={() => !busy && setConfirm(null)}
         size="sm"
         title="Promote to everyone else?"
@@ -544,31 +548,37 @@ export function RolloutSection({
         }
       >
         <p className="v2-settings-modal-text">
-          Agent <span className="v2-mono">{active?.targetVersion}</span> is sent to every other device that can install
+          Agent <span className="v2-num">{shownConfirm?.version}</span> is sent to every other device that can install
           it. Devices that are offline get it when they next check in.
         </p>
       </Modal>
 
       <Modal
-        open={confirm === 'cancel'}
+        open={confirm === 'cancel' && !!active}
         onClose={() => !busy && setConfirm(null)}
         role="alertdialog"
         size="sm"
-        title={finishing ? 'Finish this rollout?' : 'Cancel this rollout?'}
+        title={shownConfirm?.finishing ? 'Finish this rollout?' : 'Cancel this rollout?'}
         footer={
           <>
             <Button size="lg" onClick={() => setConfirm(null)} disabled={busy}>
               Keep it running
             </Button>
-            <Button variant={finishing ? 'primary' : 'danger'} size="lg" onClick={() => void stop()} disabled={busy}>
-              {busy ? 'Stopping…' : finishing ? 'Finish rollout' : 'Cancel rollout'}
+            {/* Stopping is not undone, but nothing is lost: devices keep what they installed (danger, not solid). */}
+            <Button
+              variant={shownConfirm?.finishing ? 'primary' : 'danger'}
+              size="lg"
+              onClick={() => void stop()}
+              disabled={busy}
+            >
+              {busy ? 'Stopping…' : shownConfirm?.finishing ? 'Finish rollout' : 'Cancel rollout'}
             </Button>
           </>
         }
       >
         <p className="v2-settings-modal-text">
-          {remaining > 0
-            ? `${plural(remaining, 'device hasn’t', 'devices haven’t')} updated yet and stop being offered agent ${active?.targetVersion ?? ''}. `
+          {shownConfirm && shownConfirm.remaining > 0
+            ? `${plural(shownConfirm.remaining, 'device hasn’t', 'devices haven’t')} updated yet and stop being offered agent ${shownConfirm.version}. `
             : ''}
           Installs already under way finish on their own, and devices that updated keep the new agent.
         </p>

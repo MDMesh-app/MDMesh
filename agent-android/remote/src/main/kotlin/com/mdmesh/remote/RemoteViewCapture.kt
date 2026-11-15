@@ -198,6 +198,7 @@ internal class RemoteViewCapture(
                         override fun onSetSuccess() {
                             startupStage = "sending local offer"
                             Log.i(TAG, "local offer accepted")
+                            diagnostic("Device offer sent with ${iceCandidateCount(sdp.description)} embedded ICE candidate(s); waiting for viewer…")
                             send("offer", JSONObject().put("sdp", sdp.description))
                         }
                         override fun onSetFailure(error: String) = stop("local offer rejected: $error")
@@ -294,3 +295,7 @@ internal class RemoteViewCapture(
 /** Rejects incomplete browser offers before Android's native WebRTC code sees them. */
 internal fun hasVideoMediaSection(sdp: String): Boolean = sdp.lineSequence()
     .any { line -> line.trimStart().startsWith("m=video ") }
+
+/** Counts candidate lines already embedded in SDP; excludes sensitive candidate contents. */
+internal fun iceCandidateCount(sdp: String): Int = sdp.lineSequence()
+    .count { line -> line.trimStart().startsWith("a=candidate:") }

@@ -22,4 +22,12 @@ class RemoteViewCaptureTest {
         assertTrue(queue.open() == listOf("first", "second"))
         assertTrue(queue.offer("later") == "later")
     }
+
+    @Test
+    fun `counts embedded ICE candidate lines without exposing their values`() {
+        val sdp = "v=0\r\na=candidate:1 1 udp 1 192.168.10.117 5000 typ host\r\n" +
+            "a=candidate:2 1 udp 1 10.0.0.1 5001 typ host\r\n"
+        assertTrue(iceCandidateCount(sdp) == 2)
+        assertTrue(iceCandidateCount("v=0\r\na=end-of-candidates\r\n") == 0)
+    }
 }

@@ -6,6 +6,10 @@ import './RemoteViewDialog.css';
 
 type Stage = 'waiting' | 'connecting' | 'viewing' | 'ended' | 'error';
 
+function embeddedIceCandidateCount(sdp: string | null | undefined): number {
+  return (sdp?.match(/^a=candidate:/gm) ?? []).length;
+}
+
 function stateText(session: RemoteViewSession | null, stage: Stage): string {
   if (stage === 'connecting') return 'Connecting the secure viewer…';
   if (stage === 'viewing') return 'Viewing the device screen. This view has no input control.';
@@ -80,6 +84,9 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
           setTransportStatus(`ICE gathering complete: viewer ${localCandidateCount}, device ${agentCandidateCount}`);
         }
       };
+      pc.onicecandidateerror = (event) => {
+        setTransportStatus(`ICE gathering error ${event.errorCode}: ${event.errorText || 'unknown error'}`);
+      };
       pc.oniceconnectionstatechange = () => {
         setTransportStatus(`ICE ${pc.iceConnectionState}: viewer ${localCandidateCount}, device ${agentCandidateCount}`);
       };
@@ -108,7 +115,7 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
             ws.send(JSON.stringify({ type: 'answer', payload: { sdp: answer.sdp } }));
-            setTransportStatus('Viewer answer sent; gathering ICE candidates…');
+            setTransportStatus(`Viewer answer sent with ${embeddedIceCandidateCount(pc.localDescription?.sdp)} embedded ICE candidate(s); gathering…`);
           }
           if (message.type === 'candidate' && message.payload?.candidate) {
             agentCandidateCount += 1;

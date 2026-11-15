@@ -61,6 +61,13 @@
   border-bottom-left-radius: var(--radius-control);
   border-bottom-right-radius: var(--radius-control);
 }
+@media (max-width: 860px) {
+  .v2 .v2-locmap .leaflet-bar a {
+    width: var(--touch);
+    height: var(--touch);
+    line-height: var(--touch);
+  }
+}
 .v2 .v2-locmap .leaflet-bar a:hover {
   background: var(--hover);
   color: var(--ink);

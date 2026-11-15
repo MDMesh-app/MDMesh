@@ -275,10 +275,30 @@
   .v2 .v2-search {
     min-height: var(--touch);
   }
-  /* A bigger box on phones (2.5.8's 24px; a labelled one is the whole label's height). */
-  .v2 .v2-check {
-    width: var(--control-xs);
-    height: var(--control-xs);
+  /* Phones: a 44px target around a 24px box (the box drawn in ::before, the mark in ::after). */
+  .v2 .v2-check,
+  .v2 .v2-check:checked,
+  .v2 .v2-check:indeterminate {
+    width: var(--touch);
+    height: var(--touch);
+    border: 0;
+    background: transparent;
+  }
+  .v2 .v2-check::before,
+  .v2 .v2-check::after {
+    inset: calc((var(--touch) - var(--control-xs)) / 2);
+  }
+  .v2 .v2-check::before {
+    content: '';
+    position: absolute;
+    border: var(--hairline) solid var(--input-border);
+    border-radius: var(--radius-check);
+    background: var(--surface);
+  }
+  .v2 .v2-check:checked::before,
+  .v2 .v2-check:indeterminate::before {
+    border-color: var(--ink);
+    background: var(--ink);
   }
   .v2 .v2-checklabel {
     min-height: var(--touch);

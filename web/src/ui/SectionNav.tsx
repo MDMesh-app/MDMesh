@@ -1,6 +1,7 @@
-import { useEffect, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import { useLocation } from 'react-router';
 import { cx } from './cx';
+import { useOverflowFade } from './useOverflowFade';
 import './SectionNav.css';
 
 export interface SectionNavItem {
@@ -122,8 +123,21 @@ export function SectionNav({ items, activeId, spyOffset, className, ...aria }: S
     el.focus({ preventScroll: true });
   };
 
+  // Phones (a row that scrolls sideways): keep the current section's item in view as the page scrolls.
+  const navRef = useRef<HTMLElement>(null);
+  useOverflowFade(navRef);
+  useEffect(() => {
+    const nav = navRef.current;
+    const item = nav?.querySelector<HTMLElement>('.is-current');
+    if (!nav || !item || nav.scrollWidth <= nav.clientWidth) return;
+    const left = item.offsetLeft - nav.offsetLeft;
+    if (left < nav.scrollLeft || left + item.offsetWidth > nav.scrollLeft + nav.clientWidth) {
+      nav.scrollTo({ left: Math.max(0, left - nav.clientWidth / 3) });
+    }
+  }, [active]);
+
   return (
-    <nav className={cx('v2-secnav', className)} {...aria}>
+    <nav ref={navRef} className={cx('v2-secnav', className)} {...aria}>
       {items.map((it) => {
         const on = it.id === active;
         return (

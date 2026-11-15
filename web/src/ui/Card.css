@@ -101,6 +101,13 @@
   color: var(--ink);
   text-decoration: underline;
 }
+@media (max-width: 860px) {
+  .v2 .v2-cardhead__actions > a {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--touch);
+  }
+}
 
 /* ---- notice strip (attention / missing checksum) ---- */
 .v2 .v2-notice {

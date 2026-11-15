@@ -1,3 +1,4 @@
+import { useOverflowFade } from './useOverflowFade';
 import { useId, useLayoutEffect, useRef, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { Link, NavLink } from 'react-router';
 import { Badge } from './Badge';
@@ -83,6 +84,7 @@ export function Tabs<K extends string>({ items, value, onChange, idBase, size = 
   const refs = useRef<Array<HTMLButtonElement | null>>([]);
   const list = useRef<HTMLDivElement>(null);
   useIndicator(list);
+  useOverflowFade(list);
   const current = items.findIndex((t) => t.key === value);
   // With none selected (the device page while a tab waits), the first enabled tab keeps the strip in the Tab order.
   const focusable = current >= 0 ? current : items.findIndex((t) => !t.disabled);
@@ -189,6 +191,7 @@ export function LinkTabs({
 }) {
   const list = useRef<HTMLElement>(null);
   useIndicator(list);
+  useOverflowFade(list);
   const inner = (t: LinkTabItem) => (
     <>
       {t.icon ? <span className="v2-tabs__icon">{t.icon}</span> : null}

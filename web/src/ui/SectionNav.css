@@ -105,6 +105,15 @@
     flex: 0 0 auto;
     white-space: nowrap;
   }
+  .v2 .v2-secnav[data-overflow='end'] {
+    mask-image: var(--fade-end);
+  }
+  .v2 .v2-secnav[data-overflow='start'] {
+    mask-image: var(--fade-start);
+  }
+  .v2 .v2-secnav[data-overflow='both'] {
+    mask-image: var(--fade-both);
+  }
   .v2 .v2-seclayout__content > [id] {
     scroll-margin-top: calc(var(--topbar-h) + var(--space-12) + var(--space-4));
   }

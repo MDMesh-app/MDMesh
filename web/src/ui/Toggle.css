@@ -68,6 +68,7 @@
 /* Phones: the switch's row is a 44px target. */
 @media (max-width: 860px) {
   .v2 .v2-toggle {
+    min-width: var(--touch);
     min-height: var(--touch);
   }
 }

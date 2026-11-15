@@ -101,8 +101,8 @@
   border-color: var(--border-strong);
 }
 .v2 .v2-devices-card.is-selected {
-  border-color: var(--ink);
-  outline: var(--hairline) solid var(--ink);
+  border-color: var(--border-strong);
+  background: var(--row-selected);
 }
 .v2 .v2-devices-card__top {
   display: grid;

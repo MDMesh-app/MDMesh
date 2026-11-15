@@ -289,6 +289,7 @@ export function ConfigurationsPage() {
       <Card as="section" padding="none" clip aria-label="Configuration list">
         <Table<Configuration>
           aria-label="Configurations"
+          className="v2-configs-table"
           columns={columns}
           rows={shown}
           rowKey={(c) => c.id ?? c.name}

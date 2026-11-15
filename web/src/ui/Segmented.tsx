@@ -1,5 +1,6 @@
 import { useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { cx } from './cx';
+import { useOverflowFade } from './useOverflowFade';
 import './Segmented.css';
 
 export type SegmentValue = string | number | boolean | null;
@@ -57,6 +58,8 @@ export function Segmented<V extends SegmentValue>({
   ...aria
 }: SegmentedProps<V>) {
   const refs = useRef<Array<HTMLButtonElement | null>>([]);
+  const track = useRef<HTMLDivElement>(null);
+  useOverflowFade(track);
   const selectedIndex = options.findIndex((o) => Object.is(o.value, value));
   const enabled = (i: number) => !disabled && !options[i]?.disabled;
   const firstEnabled = options.findIndex((_, i) => enabled(i));
@@ -87,6 +90,7 @@ export function Segmented<V extends SegmentValue>({
 
   return (
     <div
+      ref={track}
       role="radiogroup"
       id={id}
       aria-disabled={disabled || undefined}

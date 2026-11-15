@@ -232,6 +232,9 @@ token --ease
 token --elev-1
 token --elev-2
 token --elev-3
+token --fade-both
+token --fade-end
+token --fade-start
 token --faint
 token --focus
 token --font-mono

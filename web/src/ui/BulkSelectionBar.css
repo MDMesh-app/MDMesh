@@ -46,10 +46,35 @@
   font-weight: var(--weight-medium);
   font-variant-numeric: tabular-nums;
 }
+/* Phones: one row across the bottom, inside the page gutters; the actions scroll sideways if they don't fit. */
 @media (max-width: 860px) {
   .v2 .v2-bulkbar {
-    left: 50%;
+    left: var(--page-gutter);
+    right: var(--page-gutter);
     bottom: var(--space-4);
-    max-width: calc(100vw - var(--space-8));
+    width: auto;
+    max-width: none;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-left: var(--space-3);
+    transform: none;
+  }
+  .v2 .v2-bulkbar[data-state='closed'] {
+    transform: translateY(var(--space-4));
+  }
+  .v2 .v2-bulkbar > * {
+    flex: 0 0 auto;
+  }
+  .v2 .v2-bulkbar__count {
+    flex-wrap: nowrap;
+    white-space: nowrap;
+  }
+}
+@media (max-width: 860px) {
+  @starting-style {
+    .v2 .v2-bulkbar[data-state='open'] {
+      transform: translateY(var(--space-4));
+    }
   }
 }

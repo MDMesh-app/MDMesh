@@ -104,11 +104,15 @@
     min-height: var(--touch);
   }
 }
-/* Phones: tabs past the edge scroll sideways; the edge fades so the next tab shows there is more. */
-@media (max-width: 600px) {
-  .v2 .v2-tabs {
-    mask-image: linear-gradient(to right, currentColor calc(100% - var(--space-8)), transparent);
-  }
+/* Tabs past an edge scroll sideways; only an edge with more beyond it fades (useOverflowFade). */
+.v2 .v2-tabs[data-overflow='end'] {
+  mask-image: var(--fade-end);
+}
+.v2 .v2-tabs[data-overflow='start'] {
+  mask-image: var(--fade-start);
+}
+.v2 .v2-tabs[data-overflow='both'] {
+  mask-image: var(--fade-both);
 }
 @media (forced-colors: active) {
   .v2 .v2-tabs::after {

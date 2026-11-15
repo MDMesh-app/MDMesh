@@ -182,6 +182,17 @@
   --skeleton-delay: 150ms; /* most loads finish sooner: no flash of placeholders */
   --skeleton-sweep: 1600ms;
 
+  /* ---- edge fades for strips that scroll sideways (masks: only alpha matters) ---- */
+  --fade-end: linear-gradient(to right, #000 calc(100% - var(--space-8)), transparent);
+  --fade-start: linear-gradient(to left, #000 calc(100% - var(--space-8)), transparent);
+  --fade-both: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--space-8),
+    #000 calc(100% - var(--space-8)),
+    transparent
+  );
+
   /* ---- Deprecated aliases (sdk/surface.txt). They follow the scale above; removed after one release. ---- */
   --fs-display: var(--text-display);
   --fs-h1: var(--text-page);
@@ -418,6 +429,11 @@ body,
 }
 .v2 details[open] > summary:not([class])::before {
   transform: rotate(90deg);
+}
+@media (max-width: 860px) {
+  .v2 summary:not([class]) {
+    min-height: var(--touch);
+  }
 }
 
 /* Utility classes page code may use alongside the components. */

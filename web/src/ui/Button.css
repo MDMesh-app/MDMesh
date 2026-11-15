@@ -190,6 +190,12 @@
   .v2 .v2-btn {
     min-height: var(--touch);
   }
+  .v2 .v2-linkbtn--strong,
+  .v2 .v2-linkbtn--quiet {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--touch);
+  }
   .v2 .v2-iconbtn {
     min-width: var(--touch);
   }

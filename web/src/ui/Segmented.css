@@ -85,8 +85,20 @@
   }
   .v2 .v2-seg__opt,
   .v2 .v2-seg--sm .v2-seg__opt {
+    min-width: var(--touch);
     min-height: var(--touch);
   }
+}
+
+/* A track past the edge (phones) fades only where there is more (useOverflowFade). */
+.v2 .v2-seg[data-overflow='end'] {
+  mask-image: var(--fade-end);
+}
+.v2 .v2-seg[data-overflow='start'] {
+  mask-image: var(--fade-start);
+}
+.v2 .v2-seg[data-overflow='both'] {
+  mask-image: var(--fade-both);
 }
 
 @media (forced-colors: active) {

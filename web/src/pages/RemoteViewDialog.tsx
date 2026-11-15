@@ -53,7 +53,12 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
       setStage('connecting');
       // STUN discovers candidate addresses only. Media remains direct between
       // the viewer and device; this POC deliberately does not configure TURN.
-      const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+      const pc = new RTCPeerConnection({
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+        bundlePolicy: 'max-bundle',
+        rtcpMuxPolicy: 'require',
+        iceTransportPolicy: 'all',
+      });
       peer.current = pc;
       let localCandidateCount = 0;
       let agentCandidateCount = 0;

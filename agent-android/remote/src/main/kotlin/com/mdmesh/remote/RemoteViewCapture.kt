@@ -28,7 +28,13 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-/** One short-lived, video-only WebRTC sender. No audio track, data channel, or ICE server exists here. */
+/**
+ * One short-lived, video-only WebRTC sender.
+ *
+ * Its peer construction deliberately follows the maintained Android AppRTC
+ * reference: a serial executor, explicit Unified Plan/BUNDLE/RTCP settings,
+ * and a named media stream. The POC has no audio or data channel.
+ */
 internal class RemoteViewCapture(
     context: Context,
     private val request: com.mdmesh.proto.RemoteStartSessionPayload,
@@ -78,9 +84,7 @@ internal class RemoteViewCapture(
         // STUN discovers the agent's reachable candidate address. It does not
         // relay video or control traffic; TURN remains explicitly out of scope
         // for this LAN-first POC.
-        val createdPeer = factory!!.createPeerConnection(
-            PeerConnection.RTCConfiguration(listOf(PeerConnection.IceServer.builder(STUN_SERVER).createIceServer())), observer,
-        )
+        val createdPeer = factory!!.createPeerConnection(createRtcConfiguration(), observer)
             ?: error("WebRTC peer connection could not be created")
         peer = createdPeer
         startupStage = "creating video source"
@@ -206,7 +210,7 @@ internal class RemoteViewCapture(
                 }
             }
             override fun onCreateFailure(error: String) = stop("local offer creation failed: $error")
-        }, MediaConstraints())
+        }, sendOnlyVideoConstraints())
     }
 
     /** Starts frames only after the local answer has installed a usable video sender. */
@@ -259,6 +263,22 @@ internal class RemoteViewCapture(
     }
 
     private fun send(type: String, payload: JSONObject) { if (!stopped) socket?.send(JSONObject().put("type", type).put("payload", payload).toString()) }
+
+    /** Android AppRTC-compatible transport settings; do not depend on native defaults. */
+    private fun createRtcConfiguration(): PeerConnection.RTCConfiguration =
+        PeerConnection.RTCConfiguration(listOf(PeerConnection.IceServer.builder(STUN_SERVER).createIceServer())).apply {
+            tcpCandidatePolicy = PeerConnection.TcpCandidatePolicy.DISABLED
+            bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE
+            rtcpMuxPolicy = PeerConnection.RtcpMuxPolicy.REQUIRE
+            continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
+            keyType = PeerConnection.KeyType.ECDSA
+            sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
+        }
+
+    private fun sendOnlyVideoConstraints(): MediaConstraints = MediaConstraints().apply {
+        mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "false"))
+        mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo", "false"))
+    }
     @Synchronized
     fun stop(reason: String) {
         if (stopped) return

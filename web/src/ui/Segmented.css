@@ -6,7 +6,7 @@
   max-width: 100%;
   padding: calc(var(--space-1) - var(--hairline));
   border: var(--hairline) solid var(--border);
-  border-radius: var(--radius-6);
+  border-radius: var(--radius-control);
   background: var(--surface-2);
 }
 .v2 .v2-seg--sm {
@@ -29,7 +29,7 @@
   min-height: calc(var(--control-md) - var(--space-2));
   padding: 0 var(--space-3);
   border: 0;
-  border-radius: var(--radius-4);
+  border-radius: var(--radius-chip);
   background: transparent;
   color: var(--text-2);
   font-size: var(--text-13);

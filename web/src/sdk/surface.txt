@@ -287,13 +287,12 @@ token --page-gutter
 token --page-pad
 token --pressed
 token --prose-max
-token --radius-12
-token --radius-4
-token --radius-6
-token --radius-8
 token --radius-auth
+token --radius-card
 token --radius-card-sm
+token --radius-check
 token --radius-chip
+token --radius-control
 token --radius-full
 token --radius-lg
 token --radius-md

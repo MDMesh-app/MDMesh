@@ -37,7 +37,7 @@
   height: var(--control-lg);
   padding: 0;
   border: 0;
-  border-radius: var(--radius-4);
+  border-radius: var(--radius-chip);
   background: transparent;
   color: var(--secondary);
   font-size: var(--text-13);

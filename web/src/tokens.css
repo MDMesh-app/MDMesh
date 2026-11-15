@@ -151,11 +151,11 @@
   --hairline: 1px;
   --indicator: 2px; /* tab underline, focus ring */
 
-  /* ---- radii (4) ---- */
-  --radius-4: 4px; /* chips, tags, checkboxes, segments inside a track */
-  --radius-6: 6px; /* controls */
-  --radius-8: 8px; /* cards, menus, popovers, callouts */
-  --radius-12: 12px; /* dialogs, the sign-in card */
+  /* ---- radii: the website's family (6 / 10 / 16 / pill), by role. Nested: outer − inset (a 10 track, 4 in → 6). ---- */
+  --radius-chip: 6px; /* chips, tags, segments in a track, items in a menu or list, tooltips, small tiles */
+  --radius-control: 10px; /* buttons, inputs, selects, nav items; menus, popovers, callouts, toasts, notices */
+  --radius-card: 16px; /* cards, dialogs, the sign-in card */
+  --radius-check: 4px; /* checkbox: a 16px box (6 would read as a circle) */
   --radius-full: 999px; /* dots, pills, switches */
 
   /* ---- layout ---- */
@@ -204,16 +204,15 @@
   --ls-h1: var(--track-tight);
   --ls-display: var(--track-tight);
   --ls-eyebrow: var(--track-caps);
-  --radius-xs: var(--radius-4);
-  --radius-swatch: var(--radius-4);
-  --radius-chip: var(--radius-4);
-  --radius-seg: var(--radius-4);
-  --radius-tile: var(--radius-6);
-  --radius-sm: var(--radius-6);
-  --radius-md: var(--radius-8);
-  --radius-card-sm: var(--radius-8);
-  --radius-lg: var(--radius-8);
-  --radius-auth: var(--radius-12);
+  --radius-xs: var(--radius-chip);
+  --radius-swatch: var(--radius-chip);
+  --radius-seg: var(--radius-chip);
+  --radius-tile: var(--radius-control);
+  --radius-sm: var(--radius-control);
+  --radius-md: var(--radius-control);
+  --radius-card-sm: var(--radius-control);
+  --radius-lg: var(--radius-card);
+  --radius-auth: var(--radius-card);
   --radius-pill: var(--radius-full);
   --space-0: var(--space-1);
   --space-1h: var(--space-1);

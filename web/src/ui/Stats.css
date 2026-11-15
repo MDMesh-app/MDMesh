@@ -67,7 +67,7 @@
   padding: var(--card-pad);
   background: var(--surface);
   border: var(--hairline) solid var(--border);
-  border-radius: var(--radius-8);
+  border-radius: var(--radius-card);
 }
 .v2 .v2-fleet__title {
   font-size: var(--text-16);
@@ -107,7 +107,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  border-radius: var(--radius-4);
+  border-radius: var(--radius-chip);
   text-decoration: none;
   color: var(--text);
 }

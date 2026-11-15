@@ -810,19 +810,18 @@ export function DeviceDetailPage() {
       <>
         <Breadcrumb items={[{ label: 'Devices', to: paths.devices }, { label: id, mono: true }]} />
         {/* The page's own shape at its own size, so nothing moves when the device arrives. */}
-        <div className="v2-device-header" role="status" aria-busy="true">
+        <div className="v2-device-cols" role="status" aria-busy="true">
           <span className="v2-visually-hidden">Loading device…</span>
-          <Skeleton width="var(--control-lg)" height="var(--control-lg)" />
-          <div className="v2-device-header__text">
-            <Skeleton width="240px" height="var(--lh-22)" />
-            <Skeleton width="320px" />
-          </div>
-        </div>
-        <div className="v2-device-cols">
-          <Card>
+          <Card className="v2-device-id">
+            <Skeleton width="60%" />
+            <Skeleton width="80%" height="var(--lh-22)" />
+            <Skeleton width="50%" />
+            <Skeleton height="control" />
+          </Card>
+          <Card className="v2-device-main">
             <SkeletonFacts count={8} />
           </Card>
-          <Card>
+          <Card className="v2-device-rail">
             <SkeletonFacts count={6} />
           </Card>
         </div>
@@ -1033,15 +1032,11 @@ export function DeviceDetailPage() {
         </Callout>
       ) : null}
 
-      <header className="v2-device-header">
-        <DeviceTile kind={kind} tile={40} title={DEVICE_KIND_LABEL[kind]} className="v2-device-header__tile" />
-        <div className="v2-device-header__text">
-          <DeviceName
-            device={device}
-            canRename={canRename}
-            onSaved={(desc) => setDevice((d) => (d ? { ...d, description: desc } : d))}
-          />
-          <p className="v2-device-header__meta">
+      {/* Left: the identity card (status, name, quick actions) over the facts rail; right: the tabs. In the document
+          (and on phones) the order is identity, tabs, facts. */}
+      <div className="v2-device-cols">
+        <div className="v2-card v2-card--pad-default v2-device-id">
+          <div className="v2-device-id__top">
             <span className="v2-device-presence">
               <Tooltip content={reasonText}>
                 <span>
@@ -1061,58 +1056,67 @@ export function DeviceDetailPage() {
                 )}
               </span>
             </span>
-            <span aria-hidden="true" className="v2-device-header__sep">
-              ·
-            </span>
-            {/* The number is always in the header: the name above replaces it once the device has one. */}
-            {device.description ? (
-              <>
-                <span className="v2-device-header__num">{device.number}</span>
-                {subline ? <span aria-hidden="true"> · </span> : null}
-              </>
-            ) : null}
-            <span>{subline}</span>
-          </p>
-        </div>
-        {canEdit ? (
-          <div role="toolbar" aria-label="Quick actions" className="v2-device-header__actions">
-            <Button variant="primary" icon={<IconSync />} disabled={busy || wiped} onClick={() => void syncNow()}>
-              Sync now
-            </Button>
-            <Tooltip content={TEMPLATE.lock.description}>
-              <Button icon={<IconLock />} disabled={busy || wiped} onClick={() => runAction(TEMPLATE.lock)}>
-                Lock
-              </Button>
-            </Tooltip>
-            <Menu
-              label="More actions"
-              iconSize="md"
-              disabled={busy || wiped}
-              items={[
-                { key: 'ring', label: 'Ring', icon: <IconRing />, onSelect: () => runAction(TEMPLATE.ring) },
-                { key: 'alert', label: 'Send alert…', icon: <IconAlert />, onSelect: () => runAction(TEMPLATE.alert) },
-                {
-                  key: 'lsm',
-                  label: 'Lock-screen message…',
-                  icon: <IconScreenMessage />,
-                  onSelect: () => runAction(TEMPLATE['lockscreen-message']),
-                },
-                'separator',
-                {
-                  key: 'apps',
-                  label: 'Install configuration apps',
-                  icon: <IconDownload size={16} />,
-                  onSelect: () => void installConfigApps(),
-                },
-                { key: 'reboot', label: 'Reboot…', icon: <IconPower />, onSelect: () => runAction(TEMPLATE.reboot) },
-              ]}
-            />
+            <DeviceTile kind={kind} tile={40} title={DEVICE_KIND_LABEL[kind]} className="v2-device-id__tile" />
           </div>
-        ) : null}
-      </header>
-
-      {/* The tabs come first in the document (and on phones); the facts rail sits beside them on wide screens. */}
-      <div className="v2-device-cols">
+          <div className="v2-device-id__name">
+            <DeviceName
+              device={device}
+              canRename={canRename}
+              onSaved={(desc) => setDevice((d) => (d ? { ...d, description: desc } : d))}
+            />
+            <span className="v2-device-id__sub">
+              {/* The number is always here: the name above replaces it once the device has one. */}
+              {device.description ? (
+                <>
+                  <span className="v2-device-id__num">{device.number}</span>
+                  {subline ? <span aria-hidden="true"> · </span> : null}
+                </>
+              ) : null}
+              {subline}
+            </span>
+          </div>
+          {canEdit ? (
+            <div role="toolbar" aria-label="Quick actions" className="v2-device-id__actions">
+              <Button
+                variant="primary"
+                icon={<IconSync />}
+                className="v2-device-id__sync"
+                disabled={busy || wiped}
+                onClick={() => void syncNow()}
+              >
+                Sync now
+              </Button>
+              <Tooltip content={TEMPLATE.lock.description}>
+                <Button icon={<IconLock />} disabled={busy || wiped} onClick={() => runAction(TEMPLATE.lock)}>
+                  Lock
+                </Button>
+              </Tooltip>
+              <Menu
+                label="More actions"
+                iconSize="md"
+                disabled={busy || wiped}
+                items={[
+                  { key: 'ring', label: 'Ring', icon: <IconRing />, onSelect: () => runAction(TEMPLATE.ring) },
+                  { key: 'alert', label: 'Send alert…', icon: <IconAlert />, onSelect: () => runAction(TEMPLATE.alert) },
+                  {
+                    key: 'lsm',
+                    label: 'Lock-screen message…',
+                    icon: <IconScreenMessage />,
+                    onSelect: () => runAction(TEMPLATE['lockscreen-message']),
+                  },
+                  'separator',
+                  {
+                    key: 'apps',
+                    label: 'Install configuration apps',
+                    icon: <IconDownload size={16} />,
+                    onSelect: () => void installConfigApps(),
+                  },
+                  { key: 'reboot', label: 'Reboot…', icon: <IconPower />, onSelect: () => runAction(TEMPLATE.reboot) },
+                ]}
+              />
+            </div>
+          ) : null}
+        </div>
         <div className="v2-device-main">
           <DeviceTabs {...deviceTabs} idBase={tabsId} />
         </div>

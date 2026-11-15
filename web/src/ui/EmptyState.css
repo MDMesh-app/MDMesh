@@ -15,7 +15,7 @@
   height: var(--control-md);
   margin-bottom: var(--space-2);
   box-sizing: border-box;
-  border-radius: var(--radius-6);
+  border-radius: var(--radius-control);
   background: var(--surface-2);
   color: var(--secondary);
   display: inline-flex;

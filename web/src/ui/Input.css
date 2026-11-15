@@ -6,7 +6,7 @@
   height: var(--control-md);
   padding: 0 var(--space-3);
   border: var(--hairline) solid var(--input-border);
-  border-radius: var(--radius-6);
+  border-radius: var(--radius-control);
   background: var(--surface);
   color: var(--text);
   font-size: var(--text-14);
@@ -117,7 +117,7 @@
   max-height: min(360px, var(--radix-select-content-available-height));
   overflow: hidden;
   border: var(--hairline) solid var(--border);
-  border-radius: var(--radius-8);
+  border-radius: var(--radius-control);
   background: var(--surface);
   box-shadow: var(--elev-2);
   transform-origin: var(--radix-select-content-transform-origin);
@@ -150,7 +150,7 @@
   gap: var(--space-2);
   min-height: var(--control-md);
   padding: 0 var(--space-8) 0 var(--space-2);
-  border-radius: var(--radius-4);
+  border-radius: var(--radius-chip);
   color: var(--text);
   font-size: var(--text-13);
   line-height: var(--lh-13);
@@ -184,7 +184,7 @@
   min-width: 0;
   padding: 0 var(--space-3);
   border: var(--hairline) solid var(--input-border);
-  border-radius: var(--radius-6);
+  border-radius: var(--radius-control);
   background: var(--surface);
   color: var(--secondary);
   transition: border-color var(--dur-micro) var(--ease);
@@ -221,7 +221,7 @@
   height: var(--check);
   margin: 0;
   border: var(--hairline) solid var(--input-border);
-  border-radius: var(--radius-4);
+  border-radius: var(--radius-check);
   background: var(--surface);
   appearance: none;
   vertical-align: middle;

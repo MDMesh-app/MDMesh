@@ -65,7 +65,7 @@
   padding: var(--space-3);
   background: var(--surface-sunken);
   border: var(--hairline) solid var(--border);
-  border-radius: var(--radius-8);
+  border-radius: var(--radius-control);
 }
 .v2 .v2-kv--facts .v2-kv__pair {
   display: contents;
@@ -137,7 +137,7 @@
 /* boxed (configuration card) */
 .v2 .v2-metagrid--boxed {
   border: var(--hairline) solid var(--line-soft);
-  border-radius: var(--radius-6);
+  border-radius: var(--radius-control);
 }
 .v2 .v2-metagrid--boxed .v2-metagrid__cell {
   padding: var(--space-2) var(--space-3);

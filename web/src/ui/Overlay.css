@@ -3,7 +3,7 @@
   z-index: var(--z-toast);
   max-width: 280px;
   padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-4);
+  border-radius: var(--radius-chip);
   background: var(--ink);
   color: var(--on-ink);
   font-size: var(--text-12);
@@ -24,7 +24,7 @@
   max-width: min(360px, calc(100vw - 16px));
   padding: var(--space-3);
   border: var(--hairline) solid var(--border);
-  border-radius: var(--radius-8);
+  border-radius: var(--radius-control);
   background: var(--surface);
   box-shadow: var(--elev-2);
   outline: none;

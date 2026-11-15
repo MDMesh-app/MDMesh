@@ -16,7 +16,7 @@
   align-items: center;
   height: var(--control-md);
   padding: 0 var(--space-2);
-  border-radius: var(--radius-6);
+  border-radius: var(--radius-control);
   text-decoration: none;
   color: var(--ink);
 }
@@ -57,7 +57,7 @@
   gap: var(--space-2);
   height: var(--nav-item);
   padding: 0 var(--space-2);
-  border-radius: var(--radius-6);
+  border-radius: var(--radius-control);
   text-decoration: none;
   background: transparent;
   color: var(--text-2);
@@ -115,7 +115,7 @@
   gap: var(--space-2);
   height: var(--nav-item);
   padding: 0 var(--space-2);
-  border-radius: var(--radius-6);
+  border-radius: var(--radius-control);
   color: var(--text-2);
   text-decoration: none;
   font-size: var(--text-12);
@@ -162,7 +162,7 @@
   height: var(--control-md);
   padding: 0 var(--space-2) 0 var(--space-1);
   border: 0;
-  border-radius: var(--radius-6);
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--text-2);
   text-align: left;

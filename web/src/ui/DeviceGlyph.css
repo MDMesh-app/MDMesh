@@ -18,12 +18,12 @@
   justify-content: center;
   width: var(--control-lg);
   height: var(--control-lg);
-  border-radius: var(--radius-6);
+  border-radius: var(--radius-control);
   background: var(--surface-2);
   color: var(--text-2);
 }
 .v2 .v2-devtile--60 {
   width: var(--space-12);
   height: var(--space-12);
-  border-radius: var(--radius-8);
+  border-radius: var(--radius-card);
 }

@@ -77,7 +77,7 @@
 .v2 .v2-table__sort {
   padding: 0;
   border: 0;
-  border-radius: var(--radius-4);
+  border-radius: var(--radius-chip);
   background: none;
   color: inherit;
   font: inherit;

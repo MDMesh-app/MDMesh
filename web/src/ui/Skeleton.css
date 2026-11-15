@@ -5,7 +5,7 @@
   width: 100%;
   height: var(--lh-13);
   overflow: hidden;
-  border-radius: var(--radius-4);
+  border-radius: var(--radius-chip);
   background: var(--skeleton);
   animation: v2-fade-in var(--dur-enter) var(--ease) var(--skeleton-delay) backwards;
 }

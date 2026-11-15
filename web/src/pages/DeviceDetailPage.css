@@ -1,43 +1,42 @@
 /* Device detail: a page header (identity, status, quick actions), then the tabs beside a facts rail. Page-local:
    every selector is .v2 .v2-device-… */
 
-/* ---- header ---- */
-.v2 .v2-device-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-3) var(--space-4);
-  margin-bottom: var(--space-2);
+/* ---- identity card: status line and glyph, name, number and model, quick actions ---- */
+.v2 .v2-device-id {
+  gap: var(--space-3);
 }
-.v2 .v2-device-header__text {
-  flex: 1 1 320px;
-  min-width: 0;
+.v2 .v2-device-id__top {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-.v2 .v2-device-header__meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0 var(--space-2);
-  color: var(--secondary);
-}
-.v2 .v2-device-header__num {
-  font-family: var(--font-mono);
-  font-size: var(--text-12);
-}
-.v2 .v2-device-header__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2);
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
 }
 .v2 .v2-device-presence {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0 var(--space-2);
+  color: var(--secondary);
+}
+.v2 .v2-device-id__name {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.v2 .v2-device-id__sub {
+  color: var(--secondary);
+}
+.v2 .v2-device-id__num {
+  font-family: var(--font-mono);
+  font-size: var(--text-12);
+}
+.v2 .v2-device-id__actions {
+  display: flex;
+  gap: var(--space-2);
+  padding-top: var(--space-1);
+}
+.v2 .v2-device-id__sync {
+  flex: 1 1 auto;
 }
 .v2 .v2-device-name {
   display: flex;
@@ -69,22 +68,30 @@
   gap: var(--space-2);
 }
 
-/* ---- columns: the tabs, and the facts rail at the right (under the tabs on narrow screens) ---- */
+/* ---- columns: identity over the facts rail at the left, the tabs at the right. One column (identity, tabs,
+   facts: the document's order) below 960px. ---- */
 .v2 .v2-device-cols {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    'id main'
+    'facts main';
   align-items: start;
   gap: var(--grid-gap);
 }
+.v2 .v2-device-id {
+  grid-area: id;
+}
+.v2 .v2-device-rail {
+  grid-area: facts;
+}
 .v2 .v2-device-main {
+  grid-area: main;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: var(--grid-gap);
-}
-.v2 .v2-device-rail {
-  position: sticky;
-  top: var(--page-gutter);
 }
 .v2 .v2-device-panel {
   display: flex;
@@ -94,24 +101,21 @@
 }
 .v2 .v2-device-panel:focus-visible {
   outline-offset: var(--space-1);
-  border-radius: var(--radius-8);
+  border-radius: var(--radius-card);
 }
 .v2 .v2-device-maps {
   align-self: flex-start;
   margin-top: var(--space-3);
   font-weight: var(--weight-medium);
 }
-@media (max-width: 600px) {
-  .v2 .v2-device-header__tile {
-    display: none;
-  }
-}
-@media (max-width: 1100px) {
+@media (max-width: 960px) {
   .v2 .v2-device-cols {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .v2 .v2-device-rail {
-    position: static;
+    grid-template-rows: none;
+    grid-template-areas:
+      'id'
+      'main'
+      'facts';
   }
 }
 
@@ -582,4 +586,13 @@
 }
 .v2 .v2-device-loclist[open] > summary {
   margin-bottom: 8px;
+}
+
+/* The identity card's status: the presence over "checked in …" (no separator in a narrow column). */
+.v2 .v2-device-id .v2-device-presence {
+  flex-direction: column;
+  align-items: flex-start;
+}
+.v2 .v2-device-id .v2-device-presence > [aria-hidden='true'] {
+  display: none;
 }

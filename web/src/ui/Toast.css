@@ -69,7 +69,7 @@
   padding: var(--space-3) var(--space-4);
   background: var(--surface);
   border: var(--hairline) solid var(--border);
-  border-radius: var(--radius-8);
+  border-radius: var(--radius-control);
   box-shadow: var(--elev-2);
   color: var(--text);
   animation: v2-pop-in var(--dur-enter) var(--ease) both;
@@ -81,7 +81,7 @@
   flex: none;
   width: var(--lh-13);
   height: var(--lh-13);
-  border-radius: var(--radius-4);
+  border-radius: var(--radius-chip);
 }
 .v2 .toast.ok .t-ic {
   background: var(--ok-soft);
@@ -120,7 +120,7 @@
   margin: calc(var(--space-1) * -1) calc(var(--space-2) * -1) calc(var(--space-1) * -1) auto;
   padding: 0;
   border: 0;
-  border-radius: var(--radius-6);
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--text-2);
   cursor: pointer;

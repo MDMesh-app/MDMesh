@@ -22,7 +22,7 @@
   width: calc(100% - var(--space-8));
   max-height: calc(100dvh - var(--space-12));
   border: var(--hairline) solid var(--border);
-  border-radius: var(--radius-12);
+  border-radius: var(--radius-card);
   background: var(--surface);
   color: var(--text);
   box-shadow: var(--elev-3);

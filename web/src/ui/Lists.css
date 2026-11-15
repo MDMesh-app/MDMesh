@@ -58,7 +58,7 @@
   justify-content: center;
   width: var(--control-xs);
   height: var(--control-xs);
-  border-radius: var(--radius-6);
+  border-radius: var(--radius-chip);
 }
 .v2 .v2-activity__icon > svg {
   width: var(--icon-sm);

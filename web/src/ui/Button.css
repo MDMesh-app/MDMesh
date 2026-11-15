@@ -8,7 +8,7 @@
   height: var(--control-md);
   padding: 0 var(--space-3);
   border: var(--hairline) solid transparent;
-  border-radius: var(--radius-6);
+  border-radius: var(--radius-control);
   font-size: var(--text-13);
   line-height: var(--lh-13);
   font-weight: var(--weight-medium);
@@ -150,7 +150,7 @@
   height: var(--control-md);
   padding: 0;
   border: var(--hairline) solid transparent;
-  border-radius: var(--radius-6);
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--text-2);
   cursor: pointer;
@@ -161,7 +161,7 @@
 .v2 .v2-iconbtn--xs {
   width: var(--control-xs);
   height: var(--control-xs);
-  border-radius: var(--radius-4);
+  border-radius: var(--radius-chip);
 }
 .v2 .v2-iconbtn--sm {
   width: var(--control-sm);
@@ -210,7 +210,7 @@
   background: none;
   font: inherit;
   cursor: pointer;
-  border-radius: var(--radius-4);
+  border-radius: var(--radius-chip);
 }
 .v2 .v2-linkbtn--strong,
 .v2 .v2-linkbtn--quiet {

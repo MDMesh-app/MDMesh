@@ -9,7 +9,7 @@
   color: var(--text);
 }
 .v2 a.v2-devid {
-  border-radius: var(--radius-4);
+  border-radius: var(--radius-chip);
 }
 .v2 a.v2-devid:hover .v2-devid__name {
   text-decoration: underline;

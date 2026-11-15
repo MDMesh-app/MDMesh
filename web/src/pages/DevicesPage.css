@@ -92,7 +92,7 @@
   flex-direction: column;
   background: var(--surface);
   border: var(--hairline) solid var(--border);
-  border-radius: var(--radius-8);
+  border-radius: var(--radius-card);
   overflow: hidden;
   cursor: pointer;
   transition: border-color var(--dur-micro) var(--ease);

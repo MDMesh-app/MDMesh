@@ -77,6 +77,16 @@ public final class RemoteViewSignalingHub {
         synchronized (pair) { if (pair.browser == socket) pair.browser = null; if (pair.agent == socket) pair.agent = null;
             if (pair.browser == null && pair.agent == null) peers.remove(id, pair); }
     }
+
+    /** Ends the durable session when the only capture peer disconnects unexpectedly. */
+    public void agentDisconnected(UUID id, Session socket, String reason) {
+        Peers pair = peers.get(id);
+        if (pair == null) return;
+        synchronized (pair) {
+            if (pair.agent != socket) return;
+        }
+        sessions.stop(id, System.currentTimeMillis(), reason);
+    }
     public void close(UUID id, String reason) {
         Peers pair = peers.remove(id); if (pair == null) return;
         closeQuietly(pair.browser, reason); closeQuietly(pair.agent, reason);

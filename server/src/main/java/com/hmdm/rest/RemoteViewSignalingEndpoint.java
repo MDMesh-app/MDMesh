@@ -69,10 +69,20 @@ public class RemoteViewSignalingEndpoint {
         UUID id = id(raw); if (id == null || RemoteViewSignalingHub.INSTANCE == null) { close(socket, "invalid session"); return; }
         RemoteViewSignalingHub.INSTANCE.relay(id, false, text);
     }
-    @OnClose public void closed(Session socket, @PathParam("sessionId") String raw) { UUID id = id(raw); if (id != null && RemoteViewSignalingHub.INSTANCE != null) RemoteViewSignalingHub.INSTANCE.disconnect(id, socket); }
+    @OnClose public void closed(Session socket, @PathParam("sessionId") String raw) {
+        UUID id = id(raw);
+        if (id != null && RemoteViewSignalingHub.INSTANCE != null) {
+            RemoteViewSignalingHub.INSTANCE.agentDisconnected(id, socket, "agent signaling closed");
+            RemoteViewSignalingHub.INSTANCE.disconnect(id, socket);
+        }
+    }
     @javax.websocket.OnError public void error(Session socket, @PathParam("sessionId") String raw, Throwable failure) {
         logger.warn("Remote-view signaling error: session={}, type={}", raw,
                 failure == null ? "unknown" : failure.getClass().getSimpleName());
+        UUID id = id(raw);
+        if (id != null && RemoteViewSignalingHub.INSTANCE != null) {
+            RemoteViewSignalingHub.INSTANCE.agentDisconnected(id, socket, "agent signaling error");
+        }
     }
     static UUID id(String raw) { try { return UUID.fromString(raw); } catch (Exception ignored) { return null; } }
     static String string(Session s, String key) { Object v=s.getUserProperties().get(key); return v instanceof String ? (String)v : null; }

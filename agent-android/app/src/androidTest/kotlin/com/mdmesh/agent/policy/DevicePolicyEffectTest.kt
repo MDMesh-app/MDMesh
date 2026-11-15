@@ -1,6 +1,7 @@
 package com.mdmesh.agent.policy
 
 import android.app.admin.DevicePolicyManager
+import android.app.admin.SystemUpdatePolicy
 import android.content.Context
 import android.location.LocationManager
 import android.os.Build
@@ -19,10 +20,13 @@ import com.mdmesh.policy.location.LocationServicesPolicy
 import com.mdmesh.policy.safeboot.SafeBootPolicy
 import com.mdmesh.policy.safeboot.SafeBootPolicyFactory
 import com.mdmesh.policy.screenshots.ScreenshotsPolicy
+import com.mdmesh.policy.systemupdate.SystemUpdateControl
 import com.mdmesh.policy.wifi.DpmHandle
+import com.mdmesh.proto.ConfigSystemUpdate
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
@@ -63,6 +67,9 @@ class DevicePolicyEffectTest {
     /** Pre-test device state, restored unconditionally so a failure cannot brick the device's UX. */
     private lateinit var original: Map<String, Boolean>
 
+    /** The system update policy before the test; null when none was set. */
+    private var originalUpdatePolicy: SystemUpdatePolicy? = null
+
     private val doProvisioningHint: String
         get() = "This device is not Device Owner, so no DPM policy can be enforced and nothing can be " +
             "verified. Provision it first: adb shell dpm set-device-owner " +
@@ -78,11 +85,15 @@ class DevicePolicyEffectTest {
         assumeTrue(doProvisioningHint, dpm.isDeviceOwnerApp(context.packageName))
 
         original = captureDeviceState()
+        originalUpdatePolicy = dpm.systemUpdatePolicy
     }
 
     @After
     fun tearDown() {
-        if (::original.isInitialized) restoreDeviceState(original)
+        if (::original.isInitialized) {
+            restoreDeviceState(original)
+            runCatching { dpm.setSystemUpdatePolicy(handle.admin, originalUpdatePolicy) }
+        }
     }
 
     /**
@@ -112,6 +123,33 @@ class DevicePolicyEffectTest {
                 LocationServicesPolicy.CAPABILITY_KEY in toggles,
             )
         }
+    }
+
+    @Test
+    fun deviceOwnerAdvertisesTheSystemUpdatePolicy() {
+        assertTrue(
+            "a Device Owner must advertise systemUpdatePolicy; the capability matrix carries it to the server",
+            SystemUpdateControl.CAPABILITY_KEY in CapabilityRegistry(handle).supportedPolicyKeys(),
+        )
+    }
+
+    /**
+     * Reads the window back from the OS: swapped arguments would turn a night window into a working-day one and still
+     * report applied. Only the windowed policy is used: automatic would install an update waiting on the test phone.
+     */
+    @Test
+    fun aDailyWindowReachesTheOsAsSentAndReleaseClearsIt() {
+        val control = CapabilityRegistry(handle).systemUpdate
+        val window = ConfigSystemUpdate(ConfigSystemUpdate.WINDOWED, windowStart = 1320, windowEnd = 240)
+
+        assertEquals(PolicyOutcome.Applied, control.apply(window))
+        val policy = requireNotNull(dpm.systemUpdatePolicy) { "the window left no policy on the device" }
+        assertEquals(SystemUpdatePolicy.TYPE_INSTALL_WINDOWED, policy.policyType)
+        assertEquals(1320, policy.installWindowStart)
+        assertEquals(240, policy.installWindowEnd)
+
+        assertEquals(PolicyOutcome.Applied, control.release())
+        assertNull("release must clear the policy", dpm.systemUpdatePolicy)
     }
 
     @Test

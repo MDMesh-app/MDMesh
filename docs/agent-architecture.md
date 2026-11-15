@@ -62,7 +62,7 @@ it. It asks first, says so when that kiosk has no exit on the device, enters onl
 finishes the entry even if the screen goes away (a rotation); once in kiosk it queues a check-in. A newer delivered kiosk-off configuration removes the option even if another policy failed; a remote
 `kiosk.exit` leaves it available while the configuration still enables kiosk.
 
-**The 26 enforced fields**
+**The 29 enforced fields**
 
 | Area | Fields |
 |------|--------|
@@ -72,6 +72,7 @@ finishes the entry even if the screen goes away (a rotation); once in kiosk it q
 | Location | `requestUpdates` (location capture mode) |
 | Connectivity | `connectivityMode` (live-connection mode, 1.5) |
 | App permissions | `managedAppPermissions` (per installed app: Grant or Deny a runtime permission, 1.7) |
+| System updates | `systemUpdateType`, `systemUpdateFrom`, `systemUpdateTo` (OS update policy, 1.11) |
 
 **Kiosk colours on the device** (agent 0.5.0+, `KioskPalette`). A colour is `#RRGGBB`, `#AARRGGBB` or one of
 Android's colour names (any case, nothing around it), read the same way in the console's preview and on the device
@@ -118,6 +119,14 @@ agents use both colours as sent.
   agent applies its rules as soon as its `app.install` succeeds, also after an update. Only agents that advertise
   `app.runtimePermissions` get the section; the others get the document without it, under that document's revision,
   and show as out of sync while the configuration has a rule.
+- **1.11:** the `systemUpdate` section, from the Headwind-era System updates columns, applied with
+  `setSystemUpdatePolicy`: Immediately (1) = `automatic`, Scheduled (2) = `windowed` between `systemUpdateFrom` and
+  `systemUpdateTo` (HH:MM, device local time, may cross midnight; sent as minutes), Postponed (3) = `postpone` (up to
+  30 days; device makers or carriers might exempt important security updates). Default (0) is not managed: the
+  section is omitted, so revisions of Default configurations don't move, and an agent that set a policy for an
+  earlier document clears it. A save that changes these fields to a Scheduled type without two different valid times
+  is refused; a row saved earlier without them can still be edited, and is sent as Default. The agent also reports a
+  waiting OS update (`getPendingSystemUpdate`) in telemetry. Older agents ignore the section.
 
 **Kiosk background image.** A configuration's managed image is an uploaded file (`backgroundImageFileId`). On
 save the server refuses anything but a PNG, JPEG or WebP of at most 10 MB and 16 megapixels (read from the header),

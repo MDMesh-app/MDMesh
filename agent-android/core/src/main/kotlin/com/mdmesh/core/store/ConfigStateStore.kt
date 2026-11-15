@@ -40,7 +40,10 @@ interface ConfigStateStore {
      */
     var delivered: ConfigApplyPayload?
 
-    /** Result keys (`policies.<key>`, `kiosk`) whose release or kiosk exit failed: the next document retries them. */
+    /**
+     * Result keys (`policies.<key>`, `kiosk`, `systemUpdate`) whose release, kiosk exit or system update policy clear
+     * failed: the next document retries them.
+     */
     var unreleased: Set<String>
     /** Active app-permission rules survive documents from an older server that omit the optional section. */
     var activeAppPermissions: List<ConfigAppPermissions>

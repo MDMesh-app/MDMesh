@@ -7,6 +7,7 @@ describe('outcomeKeyLabel', () => {
     expect(outcomeKeyLabel('kiosk')).toBe('Kiosk mode');
     expect(outcomeKeyLabel('location')).toBe('Location reporting');
     expect(outcomeKeyLabel('connectivity')).toBe('Connectivity');
+    expect(outcomeKeyLabel('systemUpdate')).toBe('System updates');
   });
 
   it('names a server plugin’s key (policies.x.<plugin>.<key>) by its plugin and its key in words', () => {

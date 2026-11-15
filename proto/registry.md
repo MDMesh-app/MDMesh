@@ -28,7 +28,7 @@ Advertised only when the device has a working strategy for it (`CapabilityRegist
 | `mobileData` | mobile data toggle | 24 | Planned: not advertised yet. |
 | `kioskLockTask` | COSU lock-task kiosk | 24 | Planned: not advertised; kiosk commands are ungated (see below). |
 | `passwordComplexity` | password policy | 31 | Planned: not advertised yet. setRequiredPasswordComplexity (setPasswordQuality deprecated @26) |
-| `systemUpdatePolicy` | OS update windows | 24 | Planned: not advertised yet. |
+| `systemUpdatePolicy` | OS update policy | 24 | 1.11. Advertised to a Device Owner. config.apply `systemUpdate`: `setSystemUpdatePolicy` automatic / windowed / postpone; a document without the section clears a policy the agent set. |
 | `factoryResetProtection` | FRP policy | 30 | setFactoryResetProtectionPolicy; does not *prevent* a wipe, it decides whether a wiped device demands a Google account. Not implemented. |
 
 A config.apply document can also carry a server plugin's keys, `x.<pluginId>.<key>` (`policies.x.netaccess.vpn`,

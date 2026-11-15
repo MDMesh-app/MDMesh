@@ -1,6 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import { LOCATION_HISTORY_LIMIT } from '../api/deviceLocations';
-import { LOCATION_RANGES, fixesCount, locationSince, rangePhrase } from './deviceDetailFormat';
+import { fmtDateTime } from '../ui/format';
+import { LOCATION_RANGES, fixesCount, locationSince, pendingUpdateLabel, rangePhrase } from './deviceDetailFormat';
+
+describe('a waiting OS update (telemetry security)', () => {
+  const at = Date.UTC(2026, 10, 3, 9, 30);
+
+  it('says since when it waits, and whether it is a security patch when the device knows', () => {
+    const since = `Waiting since ${fmtDateTime(at)}`;
+    expect(pendingUpdateLabel({ pendingSystemUpdateAt: at, pendingSystemUpdateSecurityPatch: true })).toBe(`${since} (security patch)`);
+    expect(pendingUpdateLabel({ pendingSystemUpdateAt: at, pendingSystemUpdateSecurityPatch: false })).toBe(
+      `${since} (not a security patch)`,
+    );
+    expect(pendingUpdateLabel({ pendingSystemUpdateAt: at, pendingSystemUpdateSecurityPatch: null })).toBe(since);
+    expect(pendingUpdateLabel({ pendingSystemUpdateAt: at })).toBe(since);
+  });
+
+  it('says none was reported without a time, and leaves a time that is not a date to a dash', () => {
+    expect(pendingUpdateLabel({})).toBe('None reported');
+    expect(pendingUpdateLabel({ pendingSystemUpdateAt: null, pendingSystemUpdateSecurityPatch: true })).toBe('None reported');
+    expect(pendingUpdateLabel({ pendingSystemUpdateAt: 'yesterday' })).toBeUndefined();
+    expect(pendingUpdateLabel({ pendingSystemUpdateAt: -5 })).toBeUndefined();
+  });
+});
 
 describe('the location history range', () => {
   const now = Date.UTC(2026, 10, 4, 12);

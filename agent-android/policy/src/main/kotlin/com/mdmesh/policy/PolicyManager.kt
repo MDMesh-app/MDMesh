@@ -2,7 +2,7 @@
  * Headwind MDM: Open Source Android MDM Software
  * https://h-mdm.com
  *
- * Based on the system-update and user-restriction calls in hmdm-android Utils.java and
+ * Based on the user-restriction calls in hmdm-android Utils.java and
  * changed for MDMesh: rewritten in Kotlin around DpmHandle and PolicyOutcome; permission
  * policy, status bar and keyguard calls added.
  *
@@ -25,14 +25,13 @@
 package com.mdmesh.policy
 
 import android.app.admin.DevicePolicyManager
-import android.app.admin.SystemUpdatePolicy
 import android.os.Build
 import com.mdmesh.policy.wifi.DpmHandle
 
 /**
  * The Device-Owner-only policy helpers that don't fit the simple on/off
- * [TogglePolicy] shape — permission auto-grant, automatic system updates, status
- * bar / keyguard lockdown, and arbitrary `DISALLOW_*` restrictions.
+ * [TogglePolicy] shape — permission auto-grant, status bar / keyguard lockdown,
+ * and arbitrary `DISALLOW_*` restrictions.
  *
  * These are the levers the enroll baseline and `:core` command handlers reach for
  * directly (a [TogglePolicy] is routed generically by key; these are called by
@@ -69,22 +68,6 @@ class PolicyManager(
             )
             PolicyOutcome.Applied
         }.getOrElse { PolicyOutcome.Failed(it.message ?: "setPermissionAutoGrant failed") }
-    }
-
-    /**
-     * Install system updates automatically as soon as they are available
-     * ([SystemUpdatePolicy.createAutomaticInstallPolicy]). API 23+.
-     */
-    fun setSystemUpdateAutomatic(): PolicyOutcome {
-        if (!isDeviceOwner()) return PolicyOutcome.Unsupported
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return PolicyOutcome.Unsupported
-        return runCatching {
-            dpm.setSystemUpdatePolicy(
-                handle.admin,
-                SystemUpdatePolicy.createAutomaticInstallPolicy(),
-            )
-            PolicyOutcome.Applied
-        }.getOrElse { PolicyOutcome.Failed(it.message ?: "setSystemUpdateAutomatic failed") }
     }
 
     /**

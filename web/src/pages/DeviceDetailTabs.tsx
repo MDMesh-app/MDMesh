@@ -37,6 +37,7 @@ import {
 import { CommandsCard } from './DeviceDetailControl';
 import { LocationMap } from '../ui/LocationMap';
 import { EVENT_LABELS } from '../data/deviceActivity';
+import { versionAtLeast } from '../data/kiosk';
 import {
   DASH,
   capitalise,
@@ -47,6 +48,7 @@ import {
   LOCATION_RANGES,
   networkLabel,
   cleanLocation,
+  pendingUpdateLabel,
   rangePhrase,
   providerLabel,
   teleNum,
@@ -67,7 +69,15 @@ interface RowSpec {
   keys: Array<[Section, string]>;
   render: (s: Snap) => ReactNode | undefined;
   mono?: boolean;
+  /**
+   * The agent release that reports this row's keys. The agent sends no nulls, so from that release a key left out
+   * means none and the row shows whenever its section came; for an older or unknown agent it stays out, as others do.
+   */
+  since?: string;
 }
+
+/** Agent 0.5.0 (protocol 1.11) reports a waiting OS update. */
+const PENDING_UPDATE_AGENT = '0.5.0';
 
 const yesNo = (v: unknown, yes = 'Yes', no = 'No') => (v === true ? yes : v === false ? no : undefined);
 const list = (v: unknown) =>
@@ -200,6 +210,12 @@ const GROUPS: Array<{ title: string; rows: RowSpec[] }> = [
         keys: [['security', 'patchAgeDays']],
         render: (s) => (teleNum(s.security.patchAgeDays) != null ? `${s.security.patchAgeDays} day${s.security.patchAgeDays === 1 ? '' : 's'}` : undefined),
       },
+      {
+        label: 'System update',
+        keys: [['security', 'pendingSystemUpdateAt'], ['security', 'pendingSystemUpdateSecurityPatch']],
+        since: PENDING_UPDATE_AGENT,
+        render: (s) => pendingUpdateLabel(s.security),
+      },
     ],
   },
   {
@@ -222,7 +238,7 @@ function raw(v: unknown): string {
   return String(v);
 }
 
-function telemetryGroups(t: TelemetrySnapshot): Array<{ title: string; items: KeyValueItem[] }> {
+function telemetryGroups(t: TelemetrySnapshot, agentVersion?: string | null): Array<{ title: string; items: KeyValueItem[] }> {
   const top = teleObj(t);
   const s: Snap = {
     hardware: teleObj(top.hardware),
@@ -236,7 +252,9 @@ function telemetryGroups(t: TelemetrySnapshot): Array<{ title: string; items: Ke
   for (const g of GROUPS) {
     const items: KeyValueItem[] = [];
     for (const r of g.rows) {
-      const present = r.keys.some(([sec, k]) => k in s[sec]);
+      const present =
+        r.keys.some(([sec, k]) => k in s[sec]) ||
+        (r.since != null && r.keys.some(([sec]) => sec in top) && versionAtLeast(agentVersion, r.since) === true);
       r.keys.forEach(([sec, k]) => used.add(`${sec}.${k}`));
       if (!present) continue;
       const v = r.render(s);
@@ -259,7 +277,18 @@ function telemetryGroups(t: TelemetrySnapshot): Array<{ title: string; items: Ke
   return out;
 }
 
-export function TelemetryTab({ telemetry, loaded, reportedAt }: { telemetry: TelemetrySnapshot | null; loaded: boolean; reportedAt?: number }) {
+export function TelemetryTab({
+  telemetry,
+  loaded,
+  reportedAt,
+  agentVersion,
+}: {
+  telemetry: TelemetrySnapshot | null;
+  loaded: boolean;
+  reportedAt?: number;
+  /** The agent's reported version: it says whether a key left out means none or an agent too old to send it. */
+  agentVersion?: string | null;
+}) {
   if (!telemetry) {
     return (
       <Card>
@@ -269,7 +298,7 @@ export function TelemetryTab({ telemetry, loaded, reportedAt }: { telemetry: Tel
       </Card>
     );
   }
-  const groups = telemetryGroups(telemetry);
+  const groups = telemetryGroups(telemetry, agentVersion);
   return (
     <div className="v2-device-tele">
       {reportedAt ? (

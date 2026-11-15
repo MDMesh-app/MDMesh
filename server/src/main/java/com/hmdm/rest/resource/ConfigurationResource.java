@@ -222,8 +222,10 @@ public class ConfigurationResource {
                     "the plugins' validators on the namespaces the save changes: " +
                     "a refusal is an ERROR whose message is the first problem's key and whose data lists them all. " +
                     "applicationUsageParameters are upserted and never removed. " +
-                    "An explicit \"applications\": null, and a connectivityMode other than adaptive, alwaysOn or null, " +
-                    "are refused with HTTP 400. " +
+                    "An explicit \"applications\": null and a connectivityMode other than adaptive, alwaysOn or " +
+                    "null are refused with HTTP 400. So, on a save that changes systemUpdateType, systemUpdateFrom " +
+                    "or systemUpdateTo (or creates the configuration), are a systemUpdateType other than 0 to 3 and " +
+                    "a Scheduled (2) one without systemUpdateFrom and systemUpdateTo as two different HH:MM times. " +
                     "Kiosk background image: backgroundImageAction is keep (the default), replace or remove. replace " +
                     "takes backgroundImageFileId, an uploaded file (PNG, JPEG or WebP, at most 10 MB and 16 megapixels), " +
                     "and the server sets backgroundImageUrl and backgroundImageSha256 from it; remove clears all three. " +
@@ -255,6 +257,8 @@ public class ConfigurationResource {
             throw new BadRequestException("connectivityMode must be adaptive, alwaysOn or null");
         }
         normalizeManagedAppPermissions(configuration);
+        // Devices apply it now (config.apply systemUpdate, 1.11): a window they can't use would be sent as Default.
+        String systemUpdateError = systemUpdateError(configuration);
         validateBackgroundImageFit(configuration);
         // A cleaned copy of the background image this save hosted: taken back if the save then fails.
         KioskBackgroundImageAssets.Applied imageApplied = null;
@@ -272,6 +276,7 @@ public class ConfigurationResource {
                                 "by user " + SecurityContext.get().getCurrentUserName());
                         return Response.PERMISSION_DENIED();
                     }
+                    if (systemUpdateError != null) throw new BadRequestException(systemUpdateError);
                     imageApplied = canonicalizeBackgroundImage(configuration, null);
                     imageHeld = imageApplied;
                     applyLocationServicesUpdate(configuration, null);
@@ -297,6 +302,11 @@ public class ConfigurationResource {
                         return Response.PERMISSION_DENIED();
                     }
                     Configuration stored = configurationDAO.getConfigurationById(id);
+                    // Like the plugins' validators, only what the save changes: a row saved before this check
+                    // can still get an unrelated edit.
+                    if (systemUpdateError != null && systemUpdateChanges(configuration, stored)) {
+                        throw new BadRequestException(systemUpdateError);
+                    }
                     imageApplied = canonicalizeBackgroundImage(configuration, stored);
                     imageHeld = imageApplied;
                     applyLocationServicesUpdate(configuration, stored);
@@ -743,5 +753,30 @@ public class ConfigurationResource {
 
         }
         return configuration;
+    }
+
+    /** Why the configuration's system update setting can't be saved, or null when it can. */
+    static String systemUpdateError(Configuration configuration) {
+        int type = configuration.getSystemUpdateType();
+        if (type < DesiredConfigBuilder.SYSTEM_UPDATE_DEFAULT || type > DesiredConfigBuilder.SYSTEM_UPDATE_POSTPONED) {
+            return "systemUpdateType must be 0 (Default), 1 (Immediately), 2 (Scheduled) or 3 (Postponed)";
+        }
+        if (type == DesiredConfigBuilder.SYSTEM_UPDATE_SCHEDULED && DesiredConfigBuilder.systemUpdate(type,
+                configuration.getSystemUpdateFrom(), configuration.getSystemUpdateTo()) == null) {
+            return "a Scheduled systemUpdateType needs systemUpdateFrom and systemUpdateTo as two different HH:MM times";
+        }
+        return null;
+    }
+
+    /** Whether the save changes the stored system update setting. A blank time and null are the same. */
+    static boolean systemUpdateChanges(Configuration configuration, Configuration stored) {
+        return stored == null
+                || configuration.getSystemUpdateType() != stored.getSystemUpdateType()
+                || !timeOf(configuration.getSystemUpdateFrom()).equals(timeOf(stored.getSystemUpdateFrom()))
+                || !timeOf(configuration.getSystemUpdateTo()).equals(timeOf(stored.getSystemUpdateTo()));
+    }
+
+    private static String timeOf(String time) {
+        return time == null ? "" : time.trim();
     }
 }

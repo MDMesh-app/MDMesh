@@ -13,6 +13,8 @@ import kotlinx.serialization.Serializable
  * @property location capture cadence (`passive`, `active`, or `off` since 1.4), see [DeviceAction.LOCATION_MODE].
  * @property connectivity (1.5) present = set the live-connection mode (`adaptive` or `alwaysOn`), the same modes as
  *   [DeviceAction.POWER_MODE]; absent = not managed, the device keeps its mode.
+ * @property systemUpdate (1.11) present = set the OS update policy; absent = not managed, and a policy the agent set
+ *   for an earlier document is cleared (see ConfigApplier).
  */
 @Serializable
 data class ConfigApplyPayload(
@@ -24,6 +26,7 @@ data class ConfigApplyPayload(
     val connectivity: ConfigConnectivity? = null,
     /** Null = server does not manage app permissions; empty = deliberately release all earlier overrides. */
     val appPermissions: List<ConfigAppPermissions>? = null,
+    val systemUpdate: ConfigSystemUpdate? = null,
 )
 
 @Serializable
@@ -39,11 +42,31 @@ data class ConfigAppPermissions(
     val permissions: Map<String, String> = emptyMap(),
 )
 
+/**
+ * The `systemUpdate` section (1.11): how the device installs OS updates.
+ *
+ * @property policy [AUTOMATIC], [WINDOWED] or [POSTPONE]; another value is reported unsupported.
+ * @property windowStart [WINDOWED] only: minutes after local midnight (0..1439).
+ * @property windowEnd [WINDOWED] only: as [windowStart], and different from it; the window may cross midnight.
+ */
+@Serializable
+data class ConfigSystemUpdate(
+    val policy: String = "",
+    val windowStart: Int? = null,
+    val windowEnd: Int? = null,
+) {
+    companion object {
+        const val AUTOMATIC = "automatic"
+        const val WINDOWED = "windowed"
+        const val POSTPONE = "postpone"
+    }
+}
+
 /** JSON-encoded into `CommandResult.detail` (proto/payloads/config-apply-result.schema.json). */
 @Serializable
 data class ConfigApplyResult(
     val revision: String,
-    /** keys: `policies.<key>`, `kiosk`, `location`, `connectivity` → [ConfigOutcome] strings. */
+    /** keys: `policies.<key>`, `kiosk`, `location`, `connectivity`, `systemUpdate` → [ConfigOutcome] strings. */
     val outcomes: Map<String, String>,
 )
 

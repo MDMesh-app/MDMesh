@@ -109,19 +109,29 @@ internal class RemoteViewCapture(
     private fun handleSignal(text: String) = runCatching {
         val root = JSONObject(text); val payload = root.getJSONObject("payload")
         when (root.getString("type")) {
-            "offer" -> peer?.setRemoteDescription(object : Sdp() {
-                override fun onSetSuccess() {
-                    peer?.createAnswer(object : Sdp() {
-                        override fun onCreateSuccess(sdp: SessionDescription) {
-                            peer?.setLocalDescription(object : Sdp() {
-                                override fun onSetSuccess() {
-                                    send("answer", JSONObject().put("sdp", sdp.description))
-                                }
-                            }, sdp)
-                        }
-                    }, MediaConstraints())
+            "offer" -> {
+                val description = payload.getString("sdp")
+                // Do not pass a browser offer without a video media section into
+                // native WebRTC. Older Android WebRTC builds can abort the entire
+                // process instead of returning a normal negotiation error.
+                if (!hasVideoMediaSection(description)) {
+                    stop("invalid video offer")
+                    return@runCatching
                 }
-            }, SessionDescription(SessionDescription.Type.OFFER, payload.getString("sdp")))
+                peer?.setRemoteDescription(object : Sdp() {
+                    override fun onSetSuccess() {
+                        peer?.createAnswer(object : Sdp() {
+                            override fun onCreateSuccess(sdp: SessionDescription) {
+                                peer?.setLocalDescription(object : Sdp() {
+                                    override fun onSetSuccess() {
+                                        send("answer", JSONObject().put("sdp", sdp.description))
+                                    }
+                                }, sdp)
+                            }
+                        }, MediaConstraints())
+                    }
+                }, SessionDescription(SessionDescription.Type.OFFER, description))
+            }
             "candidate" -> peer?.addIceCandidate(IceCandidate(payload.getString("sdpMid"), payload.getInt("sdpMLineIndex"), payload.getString("candidate")))
         }
     }.onFailure { stop("invalid signaling") }
@@ -157,3 +167,7 @@ internal class RemoteViewCapture(
         const val SCREEN_STREAM_ID = "mdmesh-screen-stream"
     }
 }
+
+/** Rejects incomplete browser offers before Android's native WebRTC code sees them. */
+internal fun hasVideoMediaSection(sdp: String): Boolean = sdp.lineSequence()
+    .any { line -> line.trimStart().startsWith("m=video ") }

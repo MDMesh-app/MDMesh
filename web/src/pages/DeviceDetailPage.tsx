@@ -45,7 +45,9 @@ import {
   IconRing,
   IconScreenMessage,
   IconSync,
-  IconWarning,
+  ButtonLink,
+  EmptyState,
+  ErrorState,
   IconButton,
   Input,
   LinkButton,
@@ -851,16 +853,22 @@ export function DeviceDetailPage() {
       <>
         <Breadcrumb items={[{ label: 'Devices', to: paths.devices }, { label: id, mono: true }]} />
         <h1 className="v2-visually-hidden">Device {id}</h1>
-        <Callout tone="alert" role="alert" icon={<IconWarning size={16} />}>
-          {error ?? 'Device not found.'}
-        </Callout>
-        {error !== 'Device not found.' ? (
-          <div>
-            <Button size="lg" icon={<IconSync />} onClick={() => void load()}>
-              Try again
-            </Button>
-          </div>
-        ) : null}
+        {error && error !== 'Device not found.' ? (
+          <ErrorState thing="this device" onRetry={() => void load()} />
+        ) : (
+          <Card role="alert">
+            <EmptyState
+              title="Device not found"
+              action={
+                <ButtonLink to={paths.devices} variant="primary">
+                  Go to Devices
+                </ButtonLink>
+              }
+            >
+              No device has the number or id <span className="v2-mono">{id}</span>. It may have been deleted.
+            </EmptyState>
+          </Card>
+        )}
       </>
     );
   }

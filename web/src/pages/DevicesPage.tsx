@@ -56,6 +56,7 @@ import {
   cx,
   deriveDeviceKind,
   useMediaQuery,
+  useStickyValue,
   useToast,
   type DeviceKind,
   type SortDir,
@@ -860,7 +861,12 @@ export function DevicesPage() {
   }
 
   const issueEntries = ISSUE_ORDER.filter((k) => (issues[k] ?? 0) > 0);
-  const edit = dialog && dialog.kind !== 'run' ? dialog : null;
+  const shown = useStickyValue(dialog);
+  // Counts openings (a dialog after none): each opening's dialog is a fresh one.
+  const openings = useRef({ n: 0, open: false });
+  if (dialog && !openings.current.open) openings.current.n++;
+  openings.current.open = !!dialog;
+  const opening = openings.current.n;
 
   return (
     <>
@@ -1033,32 +1039,45 @@ export function DevicesPage() {
 
       {body}
 
-      {dialog?.kind === 'run' ? (
-        <RunActionModal deviceIds={dialog.ids} devices={dialog.devices} onClose={() => setDialog(null)} onDone={clearSel} />
+      {/* The dialogs stay mounted while they close (their exit motion), showing the last subject; a new opening is a
+          fresh dialog (its key), so nothing typed in an earlier one carries over. */}
+      {shown?.kind === 'run' ? (
+        <RunActionModal
+          key={opening}
+          open={dialog?.kind === 'run'}
+          deviceIds={shown.ids}
+          devices={shown.devices}
+          onClose={() => setDialog(null)}
+          onDone={clearSel}
+        />
       ) : null}
-      {edit?.kind === 'move' ? (
+      {shown?.kind === 'move' ? (
         <ChangeConfigurationModal
-          ids={edit.ids}
-          label={edit.label}
+          key={opening}
+          open={dialog?.kind === 'move'}
+          ids={shown.ids}
+          label={shown.label}
           configurations={allConfigs ?? []}
           configurationsError={allConfigsError}
           onClose={() => setDialog(null)}
           onDone={async () => {
-            if (edit.fromSelection) clearSel();
+            if (shown.fromSelection) clearSel();
             await refreshList();
           }}
         />
       ) : null}
-      {edit?.kind === 'delete' ? (
+      {shown?.kind === 'delete' ? (
         <DeleteDevicesModal
-          ids={edit.ids}
-          label={edit.label}
+          key={opening}
+          open={dialog?.kind === 'delete'}
+          ids={shown.ids}
+          label={shown.label}
           onClose={() => setDialog(null)}
           onDone={async () => {
             setSelected((prev) => {
-              if (edit.fromSelection) return new Set();
+              if (shown.fromSelection) return new Set();
               const next = new Set(prev);
-              for (const id of edit.ids) next.delete(id);
+              for (const id of shown.ids) next.delete(id);
               return next;
             });
             await refreshList();

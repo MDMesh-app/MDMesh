@@ -76,8 +76,8 @@ public class RemoteViewResource {
 
     private String signalingEndpoint(UUID id) {
         String origin = baseUrl == null ? "" : baseUrl.replaceAll("/+$", "");
-        if (origin.startsWith("https://")) origin = "wss://" + origin.substring("https://".length());
-        else if (origin.startsWith("http://")) origin = "ws://" + origin.substring("http://".length());
+        // OkHttp's WebSocket Request API takes an HTTP(S) URL and performs the Upgrade itself.
+        // Supplying ws(s) here causes a protocol failure before the endpoint sees the handshake.
         return origin + "/agent/remote/" + id;
     }
 

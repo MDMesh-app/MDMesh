@@ -1,19 +1,20 @@
 .v2 .v2-qr {
-  /* Wide enough to scan from a phone held at arm's length; the SVG code stays sharp at any size. */
-  flex: 1 1 320px;
-  max-width: 360px;
+  /* Large enough to scan from a phone held at arm's length; the SVG code stays sharp at any size. */
+  flex: 1 1 240px;
+  max-width: 320px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-2);
 }
+/* The code draws its own white ground and quiet zone (scanners need dark modules on a light ground, in both themes):
+   the frame only clips it to the radius. */
 .v2 .v2-qr__frame {
   width: 100%;
   aspect-ratio: 1;
   box-sizing: border-box;
-  padding: 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card-sm);
-  background: #ffffff; /* always light: scanners need dark modules on a light ground */
+  overflow: hidden;
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-control);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -23,9 +24,15 @@
   width: 100%;
   height: auto;
 }
+.v2 .v2-qr__error {
+  margin: 0;
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--text);
+}
 .v2 .v2-qr__actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .v2 .v2-qr__actions > * {
   flex: 1 1 0;

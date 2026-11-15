@@ -5,8 +5,11 @@ type Encoder = Pick<typeof import('qrcode'), 'create'>;
 /** The encoder once its chunk has loaded: later codes (New code, Full screen) are drawn in the same render. */
 let loadedEncoder: Encoder | null = null;
 
-/** Light modules around the code, in modules (the qrcode library's default `margin`). */
-const QUIET = 2;
+/**
+ * Light modules around the code (the standard's 4-module quiet zone). The SVG draws its own white ground, so the code
+ * reads the same on a dark theme and its frame needs no fill of its own.
+ */
+const QUIET = 4;
 
 /** The code's side in modules (quiet zone included) and one SVG path for its dark modules (a rect per run in a row). */
 function encode(encoder: Encoder, text: string): { box: number; path: string } {
@@ -63,7 +66,7 @@ export function QrCode({ text }: { text: string }) {
 
   if (loadFailed || code === 'failed') {
     return (
-      <p role="alert" style={{ margin: 0, padding: 16, textAlign: 'center', color: '#1f2328' }}>
+      <p role="alert" className="v2-qr__error">
         Couldn&rsquo;t draw the QR code. Reload the page and try again.
       </p>
     );

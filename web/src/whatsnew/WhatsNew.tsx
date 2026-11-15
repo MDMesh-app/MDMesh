@@ -5,6 +5,7 @@ import { useAuth } from '../auth/AuthContext';
 import { applyRunning, useSupervisor } from '../data/useSupervisor';
 import { Button, ButtonAnchor } from '../ui/Button';
 import { Modal } from '../ui/Modal';
+import { useStickyValue } from '../ui/useStickyValue';
 import { BUILD_VERSION, loadSection, releaseNotesUrl, whatsNewTarget, type WhatsNewTarget } from './bundle';
 import { parseNotes, type ChangelogSection } from './changelog';
 import { NotesView } from './NotesView';
@@ -96,7 +97,9 @@ export function WhatsNewProvider({ children }: { children: ReactNode }) {
   );
 }
 
-function WhatsNewDialog({ shown, onClose }: { shown: Shown | null; onClose: () => void }) {
+function WhatsNewDialog({ shown: current, onClose }: { shown: Shown | null; onClose: () => void }) {
+  // The last notes shown stay rendered while the dialog animates closed.
+  const shown = useStickyValue(current);
   // Focus starts at the top of the notes, so a long release opens at its title, not scrolled down to the buttons.
   const startRef = useRef<HTMLDivElement>(null);
   const notes = useMemo(() => (shown?.section ? parseNotes(shown.section.body) : null), [shown]);
@@ -111,7 +114,7 @@ function WhatsNewDialog({ shown, onClose }: { shown: Shown | null; onClose: () =
         : undefined;
   return (
     <Modal
-      open={!!shown}
+      open={current !== null}
       onClose={onClose}
       size="md"
       title={title}
@@ -135,7 +138,7 @@ function WhatsNewDialog({ shown, onClose }: { shown: Shown | null; onClose: () =
         {notes ? (
           <NotesView notes={notes} onNavigate={onClose} />
         ) : (
-          <p className="v2-whatsnew__p">The notes could not be loaded. Read them on GitHub.</p>
+          <p className="v2-whatsnew__p">Couldn’t load the release notes. Read them on GitHub.</p>
         )}
       </div>
     </Modal>

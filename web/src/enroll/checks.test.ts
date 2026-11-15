@@ -11,33 +11,33 @@ describe('addressProblem', () => {
 
   it('stops a code made on localhost, and points at the server address', () => {
     const p = addressProblem('http://localhost:8080', 'https://mdm.acme.test');
-    expect(p?.tone).toBe('alert');
+    expect(p?.severity).toBe('blocks');
     expect(p?.text).toContain('only this computer can reach');
     expect(p?.text).toContain('Open the console at https://mdm.acme.test');
-    expect(addressProblem('https://127.0.0.1:8443', null)?.tone).toBe('alert');
-    expect(addressProblem('http://[::1]:8080', null)?.tone).toBe('alert');
+    expect(addressProblem('https://127.0.0.1:8443', null)?.severity).toBe('blocks');
+    expect(addressProblem('http://[::1]:8080', null)?.severity).toBe('blocks');
   });
 
   it('stops a code made over http', () => {
     const p = addressProblem('http://mdm.acme.test', null);
-    expect(p?.tone).toBe('alert');
+    expect(p?.severity).toBe('blocks');
     expect(p?.text).toContain('Android 9 and later enroll only over https://');
   });
 
   it('warns when the console is open at another address than the server setting', () => {
     const p = addressProblem('https://mdm-old.acme.test', 'https://mdm.acme.test');
-    expect(p?.tone).toBe('warn');
+    expect(p?.severity).toBe('caution');
     expect(p?.text).toContain('keep it until a factory reset');
   });
 
   it('warns about a local address', () => {
-    expect(addressProblem('https://192.168.1.20', null)?.tone).toBe('warn');
-    expect(addressProblem('https://10.0.0.5:8443', 'https://10.0.0.5:8443')?.tone).toBe('warn');
-    expect(addressProblem('https://172.20.0.2', null)?.tone).toBe('warn');
-    expect(addressProblem('https://mdm.local', null)?.tone).toBe('warn');
-    expect(addressProblem('https://mdmesh', null)?.tone).toBe('warn');
+    expect(addressProblem('https://192.168.1.20', null)?.severity).toBe('caution');
+    expect(addressProblem('https://10.0.0.5:8443', 'https://10.0.0.5:8443')?.severity).toBe('caution');
+    expect(addressProblem('https://172.20.0.2', null)?.severity).toBe('caution');
+    expect(addressProblem('https://mdm.local', null)?.severity).toBe('caution');
+    expect(addressProblem('https://mdmesh', null)?.severity).toBe('caution');
     expect(addressProblem('https://172.40.0.2', null)).toBeNull();
-    expect(addressProblem('https://100.101.5.6', null)?.tone).toBe('warn');
+    expect(addressProblem('https://100.101.5.6', null)?.severity).toBe('caution');
     expect(addressProblem('https://100.20.5.6', null)).toBeNull();
   });
 

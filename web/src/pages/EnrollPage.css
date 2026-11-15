@@ -1,42 +1,23 @@
-/* Enroll. Two numbered cards side by side, wrapping under each other when narrow. */
-.v2 .v2-enroll {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 20px;
-}
-/* Board bases are content-box (360 / 520 + 24px side padding + 1px borders); cards here are border-box. */
-.v2 .v2-enroll__choose {
-  flex: 1 1 410px;
-}
-.v2 .v2-enroll__device {
-  flex: 2 1 570px;
-}
+/* Enroll: the two numbered steps side by side on the page grid (rows end level), then what enrolled and the codes. */
 
-/* ---- card 1: Wi-Fi ---- */
+/* ---- step 1: limits and Wi-Fi ---- */
 .v2 .v2-enroll__limits {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: var(--space-3);
   align-items: start;
 }
-@media (max-width: 520px) {
-  .v2 .v2-enroll__limits {
-    grid-template-columns: 1fr;
-  }
-}
-
 .v2 .v2-enroll__wifi {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line-soft);
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: var(--hairline) solid var(--line-soft);
 }
 .v2 .v2-enroll__wifirow {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
 }
 .v2 .v2-enroll__wifitext {
   flex: 1 1 auto;
@@ -45,67 +26,107 @@
   flex-direction: column;
 }
 .v2 .v2-enroll__wifilabel {
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 .v2 .v2-enroll__help {
-  font-size: var(--fs-sm);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
 }
 .v2 .v2-enroll__wifigrid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
-  gap: 12px;
+  gap: var(--space-3);
 }
 .v2 .v2-enroll__wide {
   grid-column: 1 / -1;
 }
-/* ---- card 2 ---- */
+/* Empty, the Wi-Fi note's live region leaves the layout (no box, no flex gap) but stays in the accessibility tree:
+   with display: none, its first text (Open → WPA) would be a region added with its content, which is often not read. */
+.v2 .v2-enroll__wifinote:empty {
+  position: absolute;
+}
+
+/* ---- step 2: QR / token ---- */
 .v2 .v2-enroll__panel {
   min-width: 0;
 }
-.v2 .v2-enroll__panel:focus-visible {
-  outline-offset: 4px;
+.v2 .v2-enroll__qrtab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
 }
 .v2 .v2-enroll__cols {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
-  gap: 24px;
+  gap: var(--space-4);
 }
-.v2 .v2-enroll__info {
-  flex: 2 1 260px;
+.v2 .v2-enroll__facts {
+  flex: 1 1 200px;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.v2 .v2-enroll__gives {
-  font-weight: 500;
 }
 .v2 .v2-enroll__expired {
   color: var(--alert-ink);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 /* Waiting / expired: no code to scan, so the frame takes the page fill (and the theme's text colours). */
 .v2 .v2-qr__frame.v2-enroll__qrwait {
   background: var(--app);
   color: var(--secondary);
-  font-size: var(--fs-sm);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   text-align: center;
+}
+.v2 .v2-enroll__qrskel {
+  flex: 1 1 auto;
+  align-self: stretch;
+  border-radius: 0;
+}
+
+/* "How to scan the code": the steps behind a disclosure, so the card stays the height of the code. */
+.v2 .v2-enroll__how > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-xs);
+  width: fit-content;
+  cursor: pointer;
+  list-style: none;
+  font-weight: var(--weight-medium);
+  color: var(--text);
+  border-radius: var(--radius-chip);
+}
+.v2 .v2-enroll__how > summary::-webkit-details-marker {
+  display: none;
+}
+.v2 .v2-enroll__how > summary:hover {
+  color: var(--ink);
+}
+.v2 .v2-enroll__howicon {
+  color: var(--secondary);
+  transform: rotate(-90deg);
+  transition: transform var(--dur-micro) var(--ease);
+}
+.v2 .v2-enroll__how[open] .v2-enroll__howicon {
+  transform: none;
+}
+.v2 .v2-enroll__how > .v2-numsteps {
+  margin-top: var(--space-3);
 }
 
 .v2 .v2-enroll__token {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--space-3);
 }
 .v2 .v2-enroll__tokenwait {
-  margin: 0;
   color: var(--secondary);
 }
 .v2 .v2-enroll__note {
   margin: 0;
-  font-size: var(--fs-sm);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
 }
 .v2 .v2-enroll__note .v2-mono {
@@ -113,53 +134,13 @@
   overflow-wrap: anywhere;
 }
 
-/* Server / Agent line under a rule */
-.v2 .v2-enroll__foot {
-  margin: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 24px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line-soft);
-  font-size: var(--fs-sm);
-}
-.v2 .v2-enroll__foot > div {
-  display: flex;
-  gap: 8px;
-  min-width: 0;
-}
-.v2 .v2-enroll__foot dt {
-  color: var(--secondary);
-}
-.v2 .v2-enroll__foot dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-/* Stop all codes: a quiet row at the end of card 2. */
 /* ---- devices enrolled while the page is open ---- */
-.v2 .v2-enroll__arrivals {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line-soft);
-}
-.v2 .v2-enroll__arrivalshead {
-  margin: 0;
-  font-size: inherit;
-  font-weight: 500;
-  line-height: inherit;
-}
-/* Empty, the Wi-Fi note's live region leaves the layout (no box, no flex gap) but stays in the accessibility tree:
-   with display: none, its first text (Open → WPA) would be a region added with its content, which is often not read. */
-.v2 .v2-enroll__wifinote:empty {
-  position: absolute;
+.v2 .v2-enroll__arrivalshead:focus-visible {
+  border-radius: var(--radius-chip);
 }
 .v2 .v2-enroll__arrivallist {
   display: flex;
   flex-direction: column;
-  gap: 6px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -169,26 +150,40 @@
   flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
-  gap: 4px 12px;
+  gap: var(--space-1) var(--space-3);
   min-width: 0;
+  padding: var(--space-2) 0;
+  border-top: var(--hairline) solid var(--line-soft);
 }
 .v2 .v2-enroll__arrivallist a {
   overflow-wrap: anywhere;
 }
 .v2 .v2-enroll__arrival {
-  font-size: var(--fs-sm);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
 }
 .v2 .v2-enroll__arrival--online {
   color: var(--ok-ink);
 }
 
-.v2 .v2-enroll__stop {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 12px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line-soft);
+/* ---- codes: Server / Agent addresses ---- */
+.v2 .v2-enroll__foot {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2) var(--space-4);
+  padding-top: var(--space-3);
+  border-top: var(--hairline) solid var(--line-soft);
+}
+.v2 .v2-enroll__foot > div {
+  display: contents;
+}
+.v2 .v2-enroll__foot dt {
+  color: var(--secondary);
+}
+.v2 .v2-enroll__foot dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }

@@ -1,6 +1,6 @@
 # Configurations
 
-<sub>[← README](../README.md) · [Deploy](../DEPLOY.md) · **Configurations** · [Kiosk mode](KIOSK.md) · [Upgrading](UPGRADING.md) · [Operations](OPERATIONS.md) · [Structure](../STRUCTURE.md)</sub>
+<sub>[← README](../README.md) · [Deploy](../DEPLOY.md) · [Upgrading](UPGRADING.md) · [Operations](OPERATIONS.md) · [Users and roles](USER_MANAGEMENT.md) · **Configurations** · [Kiosk mode](KIOSK.md)</sub>
 
 A configuration is the set of apps, kiosk rules and restrictions a group of devices follows. Each device uses one
 configuration. When you change a configuration, every device that uses it applies the change and reports the result
@@ -33,10 +33,10 @@ devices** says what happens:
 - **Remove**: the app is taken out of this configuration. It is **not** uninstalled from devices.
 
 Under an app set to Install, **Permissions** lets you **Grant** or **Deny** each runtime permission the app asks for,
-or leave it at **Default** (agent 0.5.0 or later). Each device applies what its Android version and the installed app
-support.
+or leave it at **Default** (agent 0.5.0 or later, Device Owner). Each device applies what its Android version and the
+installed app support. Until the app is installed, the device reports the configuration as **Apply failed**.
 
-The **Main app** and the **Show in kiosk** column are kiosk settings: see [Kiosk mode](KIOSK.md).
+The **Main app** and the **Show in kiosk** column (shown once Kiosk mode is on) are kiosk settings: see [Kiosk mode](KIOSK.md).
 
 ### Kiosk
 
@@ -62,7 +62,8 @@ blocked included. To lift a block, set the setting to **Allow**. The exceptions:
 
 - **Wi-Fi radio** and **Location services**: Not managed lifts their lock.
 - **Camera** (agent 0.5.0 or later): Not managed restores the camera after an MDMesh camera block.
-- **Safe Mode**: Not managed still blocks Safe Mode on a configuration with kiosk on, and on any device in kiosk.
+- **Safe Mode** (agent 0.3.7 or later): Not managed blocks Safe Mode on a configuration with kiosk on and on any
+  device in kiosk, and otherwise allows it, lifting an earlier block.
 
 **Location reporting** (Do not track, Last known (passive), GPS (fresh fix)) sets what location MDMesh collects;
 **Connectivity** (Battery-saver, Always-on, or **—** for not managed) sets how the device keeps its live connection
@@ -76,8 +77,8 @@ password is in the QR code in plain text.
 
 ### Headwind only
 
-Older settings that only the Headwind launcher read. The MDMesh agent doesn't apply them; they stay stored with the
-configuration.
+Older settings that only the Headwind launcher read (collapsed: select **Show settings**). The MDMesh agent doesn't
+apply them; they stay stored with the configuration.
 
 ## Put devices on a configuration
 
@@ -104,8 +105,10 @@ There is no separate Save: **Save and apply** saves the configuration and sends 
 The device keeps the last configuration it applied and applies it again after a restart or an agent update, even
 without a network. Apps are installed separately from the settings, at check-in.
 
-A configuration needs agent 0.3.0 or later. Some settings need a newer agent, as noted next to them; an older agent
-reports them as not supported ([agent compatibility](UPGRADING.md#agent-compatibility)).
+A configuration needs agent 0.3.0 or later. Some settings need a newer agent, as noted next to them. An older agent
+reports most of them as not supported; it ignores **Connectivity** and the kiosk background image, and a
+configuration with app permission rules shows as **Out of sync** on it
+([agent compatibility](UPGRADING.md#agent-compatibility)).
 
 ### Sync status
 
@@ -134,10 +137,11 @@ Where to look:
 
 ## When a configuration doesn't apply
 
-- **Apply failed:** open the device's **Control** tab to see which setting failed and why. If a setting fails, the
-  device doesn't record the configuration as applied. The server sends the same configuration again after an hour, or
-  right away when you change the configuration or the device updates its agent. **Retry apply** (or **Sync now**)
-  makes the device check in now.
+- **Apply failed:** open the device's **Control** tab to see which setting failed and why, and fix the cause. If a
+  setting fails, the device doesn't record the configuration as applied. The server sends the same configuration
+  again after an hour, or right away when you save a change to the configuration.
+- **Retry apply** (or **Sync now**) makes the device check in now. That sends the configuration to a device that is
+  out of sync; within the hour after a failure, it doesn't send it again.
 - **Not supported:** the device's agent or Android version can't apply that setting. Update the agent, or leave the
   setting Not managed for those devices.
 - **Applying… for a long time:** the device is probably offline. It gets the configuration when it checks in.

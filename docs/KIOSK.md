@@ -1,6 +1,6 @@
 # Kiosk mode
 
-<sub>[← README](../README.md) · [Deploy](../DEPLOY.md) · [Configurations](CONFIGURATIONS.md) · **Kiosk mode** · [Upgrading](UPGRADING.md) · [Operations](OPERATIONS.md) · [Structure](../STRUCTURE.md)</sub>
+<sub>[← README](../README.md) · [Deploy](../DEPLOY.md) · [Upgrading](UPGRADING.md) · [Operations](OPERATIONS.md) · [Users and roles](USER_MANAGEMENT.md) · [Configurations](CONFIGURATIONS.md) · **Kiosk mode**</sub>
 
 Kiosk mode locks a device to the apps you choose. People on the device can't open other apps, and the device comes
 back to the kiosk after a restart. You turn it on in a [configuration](CONFIGURATIONS.md), so every device that uses
@@ -12,7 +12,7 @@ the configuration gets the same kiosk.
   [enrolling devices](../DEPLOY.md#first-login-and-enrolling-devices)). Without Device Owner the device reports kiosk
   as not supported.
 - Any Android version MDMesh supports (7.0 or later) can run a kiosk. The **Buttons and system screens** settings
-  below are applied on Android 9 and later only.
+  below are applied on Android 9 and later only, except **Lock volume buttons (kiosk)**, which works on every version.
 - Some settings need a newer agent. The console names the version next to each one. Roll out a new agent from
   **Settings → Agent rollout** ([Upgrading](UPGRADING.md#agent-compatibility)).
 
@@ -23,10 +23,11 @@ the configuration gets the same kiosk.
 2. In **Kiosk**, turn on **Kiosk mode**.
 3. In **Apps**, set each app the kiosk should show to **Install**, and tick **Show in kiosk**. Only apps set to
    Install can be shown.
-4. Optionally pick a **Main app**: the app the kiosk opens.
+4. Optionally pick a **Main app**. It is pinned full screen when it is the only app shown in kiosk, and comes first in
+   a grid.
 5. Set **Kiosk exit PIN** and **Kiosk exit** (see [Leaving kiosk mode](#leaving-kiosk-mode)).
-6. Select **Save and apply**. The console asks you to confirm a kiosk change on devices that use the configuration;
-   select **Save and apply** again.
+6. Select **Save and apply** (**Create configuration** for a new one). If devices already use the configuration,
+   the console asks you to confirm the kiosk change: select **Save and apply** again.
 
 Devices apply the change at their next check-in, usually within seconds
 ([how configurations are applied](CONFIGURATIONS.md#how-a-configuration-reaches-devices)).
@@ -62,10 +63,10 @@ is **Allow** (agent 0.3.7 or later).
 ### Launcher look
 
 **Background color**, **Text color** and **Icon size** (Small, Medium, Large) style the launcher grid. The background
-is always solid. If the text color has less than 4.5:1 contrast with the background, devices on agent 0.5.0 use a
+is always solid. If the text color has less than 4.5:1 contrast with the background, devices on agent 0.5.0 or later use a
 readable color instead.
 
-**Background image** (agent 0.5.0) puts a PNG, JPEG or WebP photo behind the launcher, with **Fill** or **Fit**
+**Background image** (agent 0.5.0 or later) puts a PNG, JPEG or WebP photo behind the launcher, with **Fill** or **Fit**
 placement. It can be up to 10 MB and 16 megapixels. Devices download it over HTTPS only and keep the background color
 if anything goes wrong.
 
@@ -86,7 +87,9 @@ if anything goes wrong.
 - **Visible button:** an **Exit kiosk** button on the launcher.
 - **Hidden gesture:** 7 quick taps (within 3 seconds) in the top-right corner of the launcher.
 
-Both are on the MDMesh kiosk screen, not inside the kiosk's apps. The prompt asks for the **Exit PIN**. The right PIN ends kiosk on that device.
+Both are on the MDMesh kiosk screen, not inside the kiosk's apps. In a one-app kiosk the pinned app covers that
+screen, so the exit shows only when the screen does, for example on the **App closed** screen. Plan to end a one-app
+kiosk from the console. The prompt asks for the **Exit PIN**. The right PIN ends kiosk on that device.
 
 Choose a PIN only your staff know. The console marks a configuration whose PIN is still the old well-known default
 with **Default PIN**, and one without a PIN with **No PIN**. There is no length rule: a longer PIN is harder to guess.
@@ -98,7 +101,7 @@ can end it. Older agents let anyone leave a kiosk that has no PIN.
 
 With agent 0.3.6 or later, 3 wrong PINs lock the exit for 30 seconds. While it is locked, no PIN is checked, not even
 the right one. Each further wrong PIN locks it again for longer: 1 minute, 5 minutes, 15 minutes, then 1 hour. Only
-the right PIN resets the count; restarting the device doesn't end a lockout. The device stays in kiosk throughout.
+the right PIN resets the count; restarting the device starts the current lockout over. The device stays in kiosk throughout.
 
 Each lockout shows as **Exit PIN locked** in the device's **Activity**. If the server can send email, administrators
 who can edit the device also get an email, at most one per device per hour
@@ -110,7 +113,8 @@ sooner, end kiosk from the console.
 On a device page, open **Control → Remote actions → Kiosk & apps**:
 
 - **Exit kiosk** ends kiosk on the device and restores its normal home screen. The device must be online to receive
-  it.
+  it. Staff can still go back in with **Return to kiosk** on the device (below); to prevent that, turn kiosk off in
+  the configuration.
 - **Return to configured kiosk…** puts the device back into the kiosk its configuration defines.
 - **Custom kiosk…** locks the device to apps you pick now, as a one-time kiosk the configuration doesn't define. Its
   **Exit mode** can also be **Remote only**: no exit on the device. A custom kiosk always allows the home button and
@@ -124,8 +128,8 @@ kiosk that the configuration started, not a custom kiosk: end that one with Exit
 
 ### Going back into kiosk on the device
 
-With agent 0.5.0, after someone leaves the kiosk with the exit PIN, the **MDMesh** app on the device offers **Return
-to kiosk** while the device's configuration has kiosk on. It works offline. A kiosk with no exit on the device asks
+With agent 0.5.0 or later, after the kiosk ends (with the exit PIN or from the console), the **MDMesh** app on the
+device offers **Return to kiosk** while the device's configuration has kiosk on. It works offline. A kiosk with no exit on the device asks
 once more before it locks, because only the console can unlock it.
 
 ## Offline devices
@@ -139,9 +143,9 @@ admin ends it from the console.
 | What you see | What to check |
 |---|---|
 | Kiosk doesn't start | The device page's configuration panel: the device must be in sync and Device Owner. The device's agent must support configuration sync (**Agent too old** means it doesn't). |
-| **Return to configured kiosk…** is unavailable | The hint under it says why: no configuration, kiosk off in the configuration, or no app set to Install and shown in kiosk. |
+| **Return to configured kiosk…** is missing or unavailable | The hint under the **Kiosk & apps** buttons says why: for example no configuration, kiosk off in the configuration, no app set to Install and shown in kiosk, or the device is already in that kiosk. |
 | Grid instead of the main app | The main app isn't installed yet, or more than one app is shown in kiosk. Use **Install config apps** on the device page. |
-| Home or notifications still available | Check **Home button** and **Notifications**. On Android 7 and 8 these settings aren't applied. A custom kiosk always allows them. |
+| Home or notifications still available | Check **Home button** and **Notifications**. A custom kiosk always allows them. |
 | **App closed** on the device | The app closed more than 3 times in a minute. Fix the app, then tap **Open again**. |
 | Staff locked out by wrong PINs | Wait for the lockout to end, or select **Exit kiosk** on the device page. |
-| No lockout email | The server needs `SMTP_HOST` ([configuration reference](OPERATIONS.md#server)); the recipient needs an email address and access to the device. |
+| No lockout email | The server needs `SMTP_HOST` ([configuration reference](OPERATIONS.md#server)); the recipient needs an email address, permission to edit devices, and access to the device. |

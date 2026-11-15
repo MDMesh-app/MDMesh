@@ -26,9 +26,9 @@ export interface FileDropZoneProps {
 }
 
 /**
- * Drop zone for the Custom APK flow. The board (09) draws only the "file read" result, so this is the same panel in
- * its empty state: 1.5px dashed control border on the page fill, r14, the 44px tile, and a real button (the zone is
- * not a keyboard trap: the button opens the file picker; dropping is a pointer shortcut).
+ * Drop zone for the Custom APK flow: the "file read" panel in its empty state (hairline dashed border on the sunken
+ * fill, control radius, the 40px tile) with a real button (the zone is not a keyboard trap: the button opens the
+ * file picker; dropping is a pointer shortcut).
  */
 export function FileDropZone({
   onFile,
@@ -152,7 +152,7 @@ export function FileDropZone({
 export interface FileReadPanelProps {
   /** File name (mono 500). */
   name: ReactNode;
-  /** "Read successfully · split bundle with 3 parts · 41.0 MB" (13px ink of the tone). */
+  /** "Read successfully · split bundle with 3 parts · 41.0 MB" (meta size, ink of the tone). */
   detail: ReactNode;
   /** `ok` or `alert` (the file could not be read). */
   tone?: 'ok' | 'alert';
@@ -161,7 +161,7 @@ export interface FileReadPanelProps {
   className?: string;
 }
 
-/** Custom APK "file read" panel: 1.5px dashed ok-line, ok-wash, 16×18, r14, 44px r12 file tile. */
+/** Custom APK "file read" panel: hairline dashed ok-line on ok-wash, control radius, a 40px file tile. */
 export function FileReadPanel({ name, detail, tone = 'ok', action, className }: FileReadPanelProps) {
   return (
     <div className={cx('v2-filepanel', `is-${tone}`, className)} role={tone === 'alert' ? 'alert' : 'status'}>

@@ -4,16 +4,16 @@ import { searchFdroid, type FDroidApp } from '../api/fdroid';
 import {
   AppTile,
   Button,
-  Callout,
   Card,
   EmptyState,
-  IconAlert,
+  ErrorState,
   IconCheck,
   IconInfo,
   IconSearch,
   IconWarning,
   SearchInput,
   ShowMore,
+  Skeleton,
   useToast,
 } from '../ui';
 import { canDeploy, type DeployModes, type DeploySubject } from '../data/apps';
@@ -47,7 +47,7 @@ export function AppsFdroid({
   const toast = useToast();
   const [q, setQ] = useState('');
   const [apps, setApps] = useState<FDroidApp[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState(false);
   const [searching, setSearching] = useState(false);
   const [shown, setShown] = useState(PAGE);
   const [tick, setTick] = useState(0);
@@ -59,7 +59,7 @@ export function AppsFdroid({
 
   useEffect(() => {
     let cancelled = false;
-    setError(null);
+    setError(false);
     const t = setTimeout(
       () => {
         setSearching(true);
@@ -72,7 +72,7 @@ export function AppsFdroid({
           .catch(() => {
             if (cancelled) return;
             setApps([]);
-            setError('Could not reach the F-Droid catalogue.');
+            setError(true);
           })
           .finally(() => !cancelled && setSearching(false));
       },
@@ -165,34 +165,42 @@ export function AppsFdroid({
       </div>
 
       <p className="v2-apps-fd__info">
-        <IconInfo size={15} />
+        <IconInfo size={16} />
         <span>
           {q.trim() ? 'Matches from the f-droid.org catalogue.' : 'The f-droid.org catalogue, A to Z.'} Devices download the app
           straight from f-droid.org, and MDMesh checks it against the catalogue’s checksum.
         </span>
       </p>
 
-      {error ? (
-        <Callout tone="alert" role="alert" icon={<IconAlert size={16} />}>
-          <span className="v2-apps-calloutline">
-            {error}
-            <Button size="sm" onClick={() => setTick((t) => t + 1)}>
-              Retry
-            </Button>
-          </span>
-        </Callout>
-      ) : null}
+      {error ? <ErrorState thing="the F-Droid catalogue" onRetry={() => setTick((t) => t + 1)} /> : null}
 
       {apps === null ? (
-        <Card aria-busy="true">
-          <p className="v2-apps-loading">Searching F-Droid…</p>
-        </Card>
+        <ul className="v2-apps-fd__grid" aria-busy="true" aria-label="F-Droid apps">
+          <li className="v2-visually-hidden" role="status">
+            Searching F-Droid…
+          </li>
+          {Array.from({ length: 6 }, (_, i) => (
+            <li key={i} className="v2-apps-fd__card" aria-hidden="true">
+              <div className="v2-apps-fd__body">
+                <Skeleton width="44px" height="44px" />
+                <div className="v2-apps-fd__text">
+                  <Skeleton width="50%" height="title" />
+                  <Skeleton width="70%" />
+                  <Skeleton width="90%" />
+                </div>
+              </div>
+              <div className="v2-apps-fd__foot">
+                <Skeleton width="25%" />
+              </div>
+            </li>
+          ))}
+        </ul>
       ) : apps.length === 0 ? (
-        <Card>
-          <EmptyState icon={<IconSearch />} title="No results">
-            {error ? 'The server could not load the catalogue.' : 'No apps match your search.'}
-          </EmptyState>
-        </Card>
+        error ? null : (
+          <Card>
+            <EmptyState icon={<IconSearch />} title="No apps match your search" />
+          </Card>
+        )
       ) : (
         <>
           <ul className="v2-apps-fd__grid" aria-label="F-Droid apps" aria-busy={searching || undefined}>
@@ -217,7 +225,7 @@ export function AppsFdroid({
                       <>
                         {inLib ? (
                           <span className="v2-apps-fd__inlib">
-                            <IconCheck size={13} />
+                            <IconCheck size={14} />
                             In library
                           </span>
                         ) : null}
@@ -229,27 +237,27 @@ export function AppsFdroid({
                     ) : inLib ? (
                       <>
                         <span className="v2-apps-fd__inlib">
-                          <IconCheck size={13} />
+                          <IconCheck size={14} />
                           In library
                         </span>
                         {deployable(a) ? (
-                          <Button size="xs" onClick={() => deploy(a)} aria-label={`Deploy ${a.name}`}>
-                            Deploy
+                          <Button size="sm" onClick={() => deploy(a)} aria-label={`Deploy ${a.name}`}>
+                            Deploy…
                           </Button>
                         ) : null}
                       </>
                     ) : (
                       <>
                         {canAdd ? (
-                          <Button size="xs" disabled={busy} onClick={() => void addToLibrary(a)}>
+                          <Button size="sm" disabled={busy} onClick={() => void addToLibrary(a)}>
                             {/* The name starts with the visible words (2.5.3, label in name); the app's name follows. */}
                             {busy ? 'Adding…' : 'Add to library'}
                             <span className="v2-visually-hidden">{busy ? ` ${a.name}` : `: ${a.name}`}</span>
                           </Button>
                         ) : null}
                         {deployable(a) ? (
-                          <Button size="xs" variant="primary" onClick={() => deploy(a)} aria-label={`Deploy ${a.name}`}>
-                            Deploy
+                          <Button size="sm" variant="primary" onClick={() => deploy(a)} aria-label={`Deploy ${a.name}`}>
+                            Deploy…
                           </Button>
                         ) : null}
                       </>

@@ -48,6 +48,12 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
       setStage('connecting');
       const pc = new RTCPeerConnection({ iceServers: [] });
       peer.current = pc;
+      // A receive-only transceiver makes the browser offer a video media section.
+      // offerToReceiveVideo alone can produce an empty offer in modern browsers;
+      // Android WebRTC cannot negotiate the screen sender against that offer.
+      pc.addTransceiver('video', { direction: 'recvonly' });
+      const pendingCandidates: RTCIceCandidateInit[] = [];
+      let remoteDescriptionInstalled = false;
       pc.ontrack = (event) => {
         const stream = event.streams[0];
         if (stream && video.current) {
@@ -68,7 +74,7 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
       socket.current = ws;
       ws.onopen = async () => {
         try {
-          const offer = await pc.createOffer({ offerToReceiveVideo: true });
+          const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
           ws.send(JSON.stringify({ type: 'offer', payload: { sdp: offer.sdp } }));
         } catch {
@@ -79,8 +85,18 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
       ws.onmessage = async (event) => {
         try {
           const message = JSON.parse(String(event.data)) as { type?: string; payload?: RTCSessionDescriptionInit & RTCIceCandidateInit };
-          if (message.type === 'answer' && message.payload?.sdp) await pc.setRemoteDescription({ type: 'answer', sdp: message.payload.sdp });
-          if (message.type === 'candidate' && message.payload?.candidate) await pc.addIceCandidate(message.payload);
+          if (message.type === 'answer' && message.payload?.sdp) {
+            await pc.setRemoteDescription({ type: 'answer', sdp: message.payload.sdp });
+            remoteDescriptionInstalled = true;
+            while (pendingCandidates.length > 0) {
+              const candidate = pendingCandidates.shift();
+              if (candidate) await pc.addIceCandidate(candidate);
+            }
+          }
+          if (message.type === 'candidate' && message.payload?.candidate) {
+            if (remoteDescriptionInstalled) await pc.addIceCandidate(message.payload);
+            else pendingCandidates.push(message.payload);
+          }
         } catch { finish('error'); stop(); }
       };
       ws.onerror = () => finish('error');

@@ -74,7 +74,7 @@ const ROUTES: Array<[path: string, heading: RegExp, loaded: RegExp]> = [
   ['/configurations', /Configurations/, /Scanners/],
   ['/configurations/3', /Warehouse/, /Scanners/],
   ['/apps', /Apps/, /^Chrome$/],
-  ['/enroll', /Enroll/, /Warehouse/],
+  ['/enroll', /Enroll/, /Use the server default/],
   ['/settings', /Settings/, /Appearance/],
 ];
 

@@ -67,3 +67,9 @@ export { CopyField } from './CopyField';
 export { useLeaveGuard } from './useLeaveGuard';
 // Not exported here, import them by path: QrPanel (pulls in `qrcode`), LocationMap (Leaflet), and the dialogs with
 // their own API calls and CSS: DeployModal, BulkModals.
+export { Grid, GridCell } from './Grid';
+export type { GridProps, GridCellProps, GridSpan } from './Grid';
+export { Skeleton, SkeletonRows, SkeletonFacts } from './Skeleton';
+export { ErrorState } from './ErrorState';
+export { Tooltip, TooltipProvider } from './Tooltip';
+export { Popover } from './Popover';

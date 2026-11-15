@@ -1,45 +1,50 @@
-/* ---- stacked field ---- */
+/* ---- stacked field: 13px/500 label, the control, 12px help or error ---- */
 .v2 .v2-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-2);
   min-width: 0;
 }
 .v2 .v2-field__label {
-  font-weight: 500;
+  font-size: var(--text-13);
+  line-height: var(--lh-13);
+  font-weight: var(--weight-medium);
 }
 .v2 .v2-field--sm .v2-field__label {
-  font-size: var(--fs-sm);
+  font-size: var(--text-13);
 }
 .v2 .v2-field__help {
-  font-size: var(--fs-sm);
+  max-width: 80ch;
+  font-size: var(--text-12);
+  line-height: var(--lh-12);
   color: var(--secondary);
 }
 .v2 .v2-field__help.is-ok {
   color: var(--ok-ink);
 }
 .v2 .v2-field__error {
-  font-size: var(--fs-sm);
+  font-size: var(--text-12);
+  line-height: var(--lh-12);
   color: var(--alert-ink);
 }
 
-/* ---- setting row ---- */
+/* ---- setting row: label and help on the left, the control on the right ---- */
 .v2 .v2-fieldrow {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 24px;
-  padding: 13px 0;
+  gap: var(--space-2) var(--space-6);
+  padding: var(--space-3) 0;
 }
 .v2 .v2-fieldrow--divider {
-  border-top: 1px solid var(--line-soft);
+  border-top: var(--hairline) solid var(--line-soft);
 }
 .v2 .v2-fieldrow__text {
   flex: 1 1 260px;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-1);
 }
 .v2 .v2-fieldrow__text--lg {
   flex-basis: 300px;
@@ -49,13 +54,17 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 8px;
+  gap: var(--space-1) var(--space-2);
 }
 .v2 .v2-fieldrow__label {
-  font-weight: 500;
+  font-size: var(--text-13);
+  line-height: var(--lh-13);
+  font-weight: var(--weight-medium);
 }
 .v2 .v2-fieldrow__help {
-  font-size: var(--fs-sm);
+  max-width: 80ch;
+  font-size: var(--text-12);
+  line-height: var(--lh-12);
   color: var(--secondary);
 }
 .v2 .v2-fieldrow__control {
@@ -75,42 +84,46 @@
   color: var(--secondary);
 }
 .v2 .v2-fieldrow.is-disabled .v2-fieldrow__control {
-  opacity: 0.55;
+  opacity: var(--disabled-opacity);
 }
 
-/* ---- chips and eyebrows ---- */
+/* ---- "Changed" chip and eyebrows ---- */
 .v2 .v2-changed {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 0 7px;
-  border-radius: var(--radius-pill);
+  gap: var(--space-1);
+  height: 20px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
   background: var(--surface-2);
-  font-size: var(--fs-tiny);
-  font-weight: 500;
+  font-size: var(--text-11);
+  line-height: var(--lh-11);
+  font-weight: var(--weight-medium);
   color: var(--ink);
 }
 .v2 .v2-changed__dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
+  width: var(--dot-sm);
+  height: var(--dot-sm);
+  border-radius: var(--radius-full);
   background: var(--ink);
 }
 .v2 .v2-eyebrow {
   margin: 0;
-  font-size: var(--fs-small);
-  font-weight: 600;
+  font-size: var(--text-11);
+  line-height: var(--lh-11);
+  font-weight: var(--weight-medium);
   text-transform: uppercase;
-  letter-spacing: var(--ls-eyebrow);
+  letter-spacing: var(--track-caps);
   color: var(--secondary);
 }
 .v2 .v2-eyebrowline {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 4px 8px;
+  gap: var(--space-1) var(--space-2);
 }
 .v2 .v2-eyebrowline__help {
-  font-size: var(--fs-meta);
+  font-size: var(--text-12);
+  line-height: var(--lh-12);
   color: var(--secondary);
 }

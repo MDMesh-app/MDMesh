@@ -4,6 +4,7 @@ import { AuthProvider } from './auth/AuthContext';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { ThemeProvider } from './ui/theme';
 import { ToastProvider } from './ui/toast';
+import { TooltipProvider } from './ui/Tooltip';
 import { AppErrorBoundary } from './ui/AppErrorBoundary';
 import { legacyRedirect, paths } from './routes';
 import { AppShell } from './ui/AppShell';
@@ -79,9 +80,11 @@ export default function App() {
     <AuthProvider>
       <ThemeProvider>
         <ToastProvider>
-          <RegistryProvider registry={registry}>
-            <RouterProvider router={router} />
-          </RegistryProvider>
+          <TooltipProvider>
+            <RegistryProvider registry={registry}>
+              <RouterProvider router={router} />
+            </RegistryProvider>
+          </TooltipProvider>
         </ToastProvider>
       </ThemeProvider>
     </AuthProvider>

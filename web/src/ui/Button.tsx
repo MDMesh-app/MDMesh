@@ -3,19 +3,26 @@ import { Link, type LinkProps } from 'react-router';
 import { cx } from './cx';
 import './Button.css';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'subtle' | 'ghost';
+/**
+ * - `primary`: the one main action of a page, card or dialog (ink fill)
+ * - `secondary`: every other action (bordered). `subtle` is the same on the lighter card border.
+ * - `ghost`: quiet text action (toolbars, card headers)
+ * - `danger`: a destructive action that opens a confirmation ("Delete…"): red text, bordered
+ * - `danger-primary`: the confirmation of an irreversible action ("Factory reset", "Delete configuration"): red fill
+ */
+export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'danger-primary' | 'subtle' | 'ghost';
 
 /**
- * Sizes are the board button heights (14px text at line-height 1.5 unless noted). Pick by where the button sits:
- * - `xs`  6×12, 13px: in-row actions in dense tables (Library "Deploy", F-Droid card footer)
- * - `sm`  7×12, 13px: row actions in lists (Needs attention "Retry apply"), card footers, "Review update"
- * - `md`  7×12: toolbars and card headers (bulk bar, pagination, Settings "Check now", attention-strip action). Default.
- * - `lg`  8×14: section actions (editor Duplicate / Delete…, "Add apps", "Retry apply", remote-action tiles)
- * - `xl`  9×16: sticky-bar and settings primaries ("Save and apply", "Update server…", "Promote…"), device quick actions
- * - `hero` 10×16: page-header calls to action ("Enroll device", "New configuration", "Add to library")
- * - `auth` 11×16, 15px, full width: the submit button on the sign-in and set-password cards
+ * Three heights, 13px text: `sm` 28 (row actions, card footers, chips), `md` 32 (default: toolbars, card headers,
+ * forms), `lg` 36 (the page's primary action, dialog footers, sign-in). In the phone layout `md` and `lg` grow to the
+ * 44px touch target.
+ *
+ * Deprecated (the v0.4 board sizes, kept for extensions): `xs` = `sm`; `xl`, `hero` = `lg`; `auth` = `lg` stretched
+ * to the container's width.
  */
-export type ButtonSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'hero' | 'auth';
+export type ButtonSize = 'sm' | 'md' | 'lg' | 'xs' | 'xl' | 'hero' | 'auth';
+
+const SIZE: Record<ButtonSize, 'sm' | 'md' | 'lg'> = { xs: 'sm', sm: 'sm', md: 'md', lg: 'md', xl: 'lg', hero: 'lg', auth: 'lg' };
 
 interface CommonProps {
   variant?: ButtonVariant;
@@ -24,24 +31,17 @@ interface CommonProps {
   icon?: ReactNode;
   /** Trailing icon, e.g. a chevron. */
   iconEnd?: ReactNode;
-  /** 500 weight on a secondary button (boards: "Roll out agent…", "Review update", card "Edit"). */
+  /** @deprecated Every button label is 500 now; kept so existing callers compile. */
   strong?: boolean;
   /** Stretch to the container width. */
   block?: boolean;
 }
 
 function classes(
-  { variant = 'secondary', size = 'md', strong, block }: CommonProps,
+  { variant = 'secondary', size = 'md', block }: CommonProps,
   className?: string,
 ) {
-  return cx(
-    'v2-btn',
-    `v2-btn--${variant}`,
-    `v2-btn--${size}`,
-    strong && 'v2-btn--strong',
-    block && 'v2-btn--block',
-    className,
-  );
+  return cx('v2-btn', `v2-btn--${variant}`, `v2-btn--${SIZE[size]}`, (block || size === 'auth') && 'v2-btn--block', className);
 }
 
 function Inner({ icon, iconEnd, children }: { icon?: ReactNode; iconEnd?: ReactNode; children?: ReactNode }) {
@@ -90,17 +90,14 @@ export function ButtonAnchor({ variant, size, icon, iconEnd, strong, block, clas
   );
 }
 
-export type IconButtonSize = 'sm' | 'md' | 'lg';
+/** Square, ghost (no border, a hover fill): `xs` 24 (inside table rows), `sm` 28, `md` 32 (default), `lg` 36. */
+export type IconButtonSize = 'xs' | 'sm' | 'md' | 'lg';
 
 export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label'> {
   /** Accessible name; required because the button has no visible text. */
   label: string;
-  /** `sm` 30×30 r8 (cards, remove, rename) · `md` 32×32 r9 (table rows) · `lg` 34×34 r9 (sidebar). */
   size?: IconButtonSize;
-  /**
-   * @deprecated Every icon button now has the 3:1 control border (`--control-border`), so `strong` changes nothing.
-   * Kept so existing callers still compile.
-   */
+  /** @deprecated Icon buttons are ghost buttons now; `tone` changes nothing. Kept so existing callers compile. */
   tone?: 'default' | 'strong';
   children: ReactNode;
 }
@@ -127,8 +124,9 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
 
 export interface LinkButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /**
-   * `strong` 13px 600 ink (Settings "Retry", device page "View all"); `quiet` inherited size, 500, secondary ink
-   * (device page "Show details"); `inline` takes the surrounding text's font and colour (a sentence's "try again").
+   * `strong` and `quiet`: a quiet text action in a card header or under a list (secondary ink, 500, underlined on
+   * hover: "See all", "View all", "Show details"); `inline` takes the surrounding text's font and colour and stays
+   * underlined (a sentence's "try again").
    */
   tone?: 'strong' | 'quiet' | 'inline';
 }

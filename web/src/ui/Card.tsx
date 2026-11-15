@@ -4,15 +4,9 @@ import { StepNumber } from './Steps';
 import './Card.css';
 
 /**
- * Board paddings (top / sides / bottom):
- * - `default` 20 24 (most cards, 05 panels)
- * - `rows` 20 24 8: cards whose body is a list of ruled rows, the last rule-less row ending 8px above the edge
- *   (all six Settings sections, 07 Apps and the generated editor sections)
- * - `roomy` 20 24 24 (Enroll steps, Custom APK form)
- * - `compact` 18 24 (Overview Server and Agent versions)
- * - `snug` 16 24 18 (Overview By configuration)
- * - `rail` 20 20 16 (05 device rail) · `facts` 4 20 16 (04 rail under a header card) · `side` 18 20 (09 side cards)
- * - `list` / `none` 0: header and rows bring their own (Needs attention, Library table)
+ * Two paddings: `default` 16 on every side, and `list` / `none` 0 for cards whose header and rows bring their own
+ * (tables, lists). `rows` is 16 with 4 at the bottom, for a body of ruled rows that pad themselves.
+ * Deprecated (kept for extensions): `roomy`, `compact`, `snug`, `rail`, `facts`, `side` render as `default`.
  */
 export type CardPadding = 'default' | 'rows' | 'roomy' | 'compact' | 'snug' | 'list' | 'rail' | 'facts' | 'side' | 'none';
 /** Border tone: `alert` (config didn't apply), `warn` (attention strip), `dashed` (Headwind-only), `selected` (ink). */
@@ -22,24 +16,42 @@ export interface CardProps extends HTMLAttributes<HTMLElement> {
   as?: 'section' | 'div' | 'article' | 'aside' | 'li' | 'form';
   padding?: CardPadding;
   tone?: CardTone;
-  /** r14 instead of r16 (attention strip, bulk bar style notices). */
+  /** @deprecated One card radius (8) now; kept so existing callers compile. */
   radius?: 'lg' | 'md';
   /** Clip children to the radius (tables). Keep off where focus rings sit at the edge. */
   clip?: boolean;
-  /** Stack children with this gap (px). */
+  /** Stack children with a gap from the spacing scale (px, rounded to 8, 12, 16 or 24). */
   gap?: number;
 }
 
-/** White card: 1px #E7E9EE, r16, flat (no shadow). */
+const PAD: Record<CardPadding, 'default' | 'rows' | 'none'> = {
+  default: 'default',
+  rows: 'rows',
+  roomy: 'default',
+  compact: 'default',
+  snug: 'default',
+  rail: 'default',
+  facts: 'default',
+  side: 'default',
+  list: 'none',
+  none: 'none',
+};
+
+/** The spacing step a `gap` in px stands for. */
+function gapClass(gap: number) {
+  const step = gap <= 8 ? 2 : gap <= 12 ? 3 : gap <= 16 ? 4 : 6;
+  return `v2-card--gap-${step}`;
+}
+
+/** White card: 1px border, r8, flat (no shadow). */
 export function Card({
   as: As = 'section',
   padding = 'default',
   tone = 'default',
-  radius = 'lg',
+  radius: _radius,
   clip,
   gap,
   className,
-  style,
   children,
   ...rest
 }: CardProps) {
@@ -47,13 +59,12 @@ export function Card({
     <As
       className={cx(
         'v2-card',
-        `v2-card--pad-${padding}`,
+        `v2-card--pad-${PAD[padding]}`,
         tone !== 'default' && `v2-card--${tone}`,
-        radius === 'md' && 'v2-card--r14',
         clip && 'v2-card--clip',
+        gap !== undefined && gapClass(gap),
         className,
       )}
-      style={gap !== undefined ? { gap, ...style } : style}
       {...rest}
     >
       {children}
@@ -65,24 +76,24 @@ export interface CardHeaderProps {
   title: ReactNode;
   /** Id for the heading, so the card can use aria-labelledby. */
   titleId?: string;
-  /** 13px secondary line under the title ("What gets installed, and which apps the kiosk shows."). */
+  /** Secondary line under the title ("What gets installed, and which apps the kiosk shows."). */
   subtitle?: ReactNode;
   /** Right side: links ("See all"), counts, buttons, a segmented filter. */
   actions?: ReactNode;
   /** Heading level (default h2). */
   level?: 2 | 3;
-  /** `list` header padding 16 24 10 for cards whose body is a list or table. */
+  /** Header padding (16, 8 below) for cards whose body is a list or table (`padding="list"`). */
   inset?: boolean;
-  /** Title size: 16 (default), 17 (numbered steps), 18 ("Add your own app"). */
+  /** @deprecated One card-title size (16) now; kept so existing callers compile. */
   size?: 16 | 17 | 18;
-  /** Step number in a 26px ink square before the title (numbered cards; pair with size 17). */
+  /** Step number before the title (numbered cards). */
   number?: number;
-  /** Space under the header (px): 12 (07 editor sections), 10 (12 Settings), 6 (01 By configuration), 0. */
+  /** Space under the header: 0, or 8 (6, 8) or 12 (10, 12). */
   spacing?: 0 | 6 | 8 | 10 | 12;
   className?: string;
 }
 
-/** Card heading row: 16/600 title, optional subtitle, actions on the right. */
+/** Card heading row: 16/600 title, optional subtitle, actions on the right (quiet links, small buttons). */
 export function CardHeader({
   title,
   titleId,
@@ -90,7 +101,7 @@ export function CardHeader({
   actions,
   level = 2,
   inset,
-  size = 16,
+  size: _size,
   spacing = 0,
   number,
   className,
@@ -101,14 +112,14 @@ export function CardHeader({
       className={cx(
         'v2-cardhead',
         inset && 'v2-cardhead--inset',
-        spacing > 0 && `v2-cardhead--sp${spacing}`,
+        spacing > 0 && (spacing <= 8 ? 'v2-cardhead--sp8' : 'v2-cardhead--sp12'),
         number !== undefined && 'v2-cardhead--numbered',
         className,
       )}
     >
       {number !== undefined ? <StepNumber n={number} /> : null}
       <div className="v2-cardhead__text">
-        <H id={titleId} className={cx('v2-cardhead__title', size !== 16 && `v2-cardhead__title--${size}`)}>
+        <H id={titleId} className="v2-cardhead__title">
           {title}
         </H>
         {subtitle ? <span className="v2-cardhead__sub">{subtitle}</span> : null}
@@ -145,7 +156,7 @@ export function Notice({
   );
 }
 
-/** Inline callout (warn / info / alert / ok): r10, 10×12, 13px, leading icon. */
+/** Inline callout (warn / info / alert / ok): r8, 13px, leading icon. Red (`alert`) only for failures. */
 export function Callout({
   tone = 'info',
   icon,

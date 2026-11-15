@@ -23,6 +23,14 @@ Object.defineProperty(window, 'matchMedia', {
   }),
 });
 
+// Radix (Select, menus, popovers) uses pointer capture and scrollIntoView, which jsdom lacks.
+if (!Element.prototype.hasPointerCapture) {
+  Element.prototype.hasPointerCapture = () => false;
+  Element.prototype.setPointerCapture = () => {};
+  Element.prototype.releasePointerCapture = () => {};
+}
+if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
+
 // jsdom's <dialog> has no showModal() or close(); ui/Modal calls both. Opening sets `open`; closing clears it and
 // fires `close`, as a browser does (without making the page behind inert).
 if (!HTMLDialogElement.prototype.showModal) {

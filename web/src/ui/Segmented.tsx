@@ -9,7 +9,7 @@ export interface SegmentOption<V extends SegmentValue> {
   label: ReactNode;
   /** Leading icon (lg size: the Devices Table/Cards switch). */
   icon?: ReactNode;
-  /** Trailing mono count, e.g. "All 248". */
+  /** Trailing count, e.g. "All 248" (tabular, secondary). */
   count?: ReactNode;
   disabled?: boolean;
   /** Accessible name when the label is not plain text. */
@@ -17,9 +17,8 @@ export interface SegmentOption<V extends SegmentValue> {
 }
 
 /**
- * - `sm`: 4×10 options, r7, 12.5px, r10 track (Overview "Recent activity" filter)
- * - `md`: 5×12 options, r8, 13px, r10 track (tri-states, Settings Theme, QR/Token, Upload/Link). Default.
- * - `lg`: 6×12 options, r9, 13.5px, r12 track, mono counts (Devices status filter and view switch, Configurations "Show")
+ * Track height: `sm` 28 (inside card headers and rows), `md` 32 (default: toolbars, forms). `lg` is deprecated and
+ * renders as `md`.
  */
 export type SegmentedSize = 'sm' | 'md' | 'lg';
 
@@ -42,8 +41,9 @@ export interface SegmentedProps<V extends SegmentValue> {
 
 /**
  * Single-choice segmented control: `role="radiogroup"` with roving tabindex. Arrow keys move and select (radio
- * behaviour); Home/End jump to the ends. Selected = raised white segment + 600 ink, shape and weight only, so a
- * forced-colors rule adds an outline (colour alone never marks the choice).
+ * behaviour); Home/End jump to the ends. Selected = a raised segment (lighter fill and a shadow) with 500 ink text
+ * (unselected: 400, text-2); a forced-colors rule adds an outline (colour alone never marks the choice). For filters
+ * and view modes; navigation between views uses Tabs.
  */
 export function Segmented<V extends SegmentValue>({
   options,
@@ -90,7 +90,7 @@ export function Segmented<V extends SegmentValue>({
       role="radiogroup"
       id={id}
       aria-disabled={disabled || undefined}
-      className={cx('v2-seg', `v2-seg--${size}`, wrap && 'v2-seg--wrap', className)}
+      className={cx('v2-seg', `v2-seg--${size === 'lg' ? 'md' : size}`, wrap && 'v2-seg--wrap', className)}
       {...aria}
     >
       {options.map((o, i) => {

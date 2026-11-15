@@ -378,18 +378,40 @@ export function lazyComponent<P, K extends string>(
   load: () => Promise<Record<K, ComponentType<P>>>,
   name: K,
 ): LazyComponent<P> {
-  return lazy(async () => {
+  // One download, shared by a prefetch (preloadComponent) and the first render. A failed one is forgotten, so the
+  // render after it (the error boundary's "Try again") downloads again.
+  let pending: Promise<Record<K, ComponentType<P>>> | null = null;
+  const once = () => {
+    pending ??= load().catch((error: unknown) => {
+      pending = null;
+      throw error;
+    });
+    return pending;
+  };
+  const component = lazy(async () => {
     let module: Record<K, ComponentType<P>>;
     try {
-      module = await load();
+      module = await once();
     } catch (error) {
       throw lazyLoadError(error instanceof Error ? error.message : String(error), error);
     }
-    const component = module[name];
+    const exported = module[name];
     // A renamed export would otherwise surface as React's "element type is invalid", far from the cause.
-    if (!component) throw lazyLoadError(`lazyComponent: the module has no export named "${name}"`);
-    return { default: component };
+    if (!exported) throw lazyLoadError(`lazyComponent: the module has no export named "${name}"`);
+    return { default: exported };
   });
+  preloaders.set(component, () => void once().catch(() => {}));
+  return component;
+}
+
+const preloaders = new WeakMap<object, () => void>();
+
+/**
+ * Start downloading a lazyComponent's chunk without rendering it (a link is hovered or focused), so the page is
+ * ready by the time it is clicked. Anything else is ignored. Internal: not part of `@mdmesh/console`.
+ */
+export function preloadComponent(component: unknown) {
+  if (component && typeof component === 'object') preloaders.get(component)?.();
 }
 
 /**

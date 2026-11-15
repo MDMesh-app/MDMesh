@@ -511,8 +511,8 @@ export interface ProgressBarProps {
 export declare function ProgressBar({ value, tone, label, size, className, style }: ProgressBarProps): import("react").JSX.Element;
 
 // ---- ui/Button ----
-export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'subtle' | 'ghost';
-export type ButtonSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'hero' | 'auth';
+export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'danger-primary' | 'subtle' | 'ghost';
+export type ButtonSize = 'sm' | 'md' | 'lg' | 'xs' | 'xl' | 'hero' | 'auth';
 interface CommonProps {
     variant?: ButtonVariant;
     size?: ButtonSize;
@@ -527,7 +527,7 @@ export type ButtonLinkProps = CommonProps & LinkProps;
 export declare function ButtonLink({ variant, size, icon, iconEnd, strong, block, className, children, ...rest }: ButtonLinkProps): import("react").JSX.Element;
 export type ButtonAnchorProps = CommonProps & AnchorHTMLAttributes<HTMLAnchorElement>;
 export declare function ButtonAnchor({ variant, size, icon, iconEnd, strong, block, className, children, ...rest }: ButtonAnchorProps): import("react").JSX.Element;
-export type IconButtonSize = 'sm' | 'md' | 'lg';
+export type IconButtonSize = 'xs' | 'sm' | 'md' | 'lg';
 export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label'> {
     label: string;
     size?: IconButtonSize;
@@ -551,7 +551,7 @@ export interface CardProps extends HTMLAttributes<HTMLElement> {
     clip?: boolean;
     gap?: number;
 }
-export declare function Card({ as: As, padding, tone, radius, clip, gap, className, style, children, ...rest }: CardProps): import("react").JSX.Element;
+export declare function Card({ as: As, padding, tone, radius: _radius, clip, gap, className, children, ...rest }: CardProps): import("react").JSX.Element;
 export interface CardHeaderProps {
     title: ReactNode;
     titleId?: string;
@@ -564,7 +564,7 @@ export interface CardHeaderProps {
     spacing?: 0 | 6 | 8 | 10 | 12;
     className?: string;
 }
-export declare function CardHeader({ title, titleId, subtitle, actions, level, inset, size, spacing, number, className, }: CardHeaderProps): import("react").JSX.Element;
+export declare function CardHeader({ title, titleId, subtitle, actions, level, inset, size: _size, spacing, number, className, }: CardHeaderProps): import("react").JSX.Element;
 export declare function Notice({ tone, icon, children, action, className, 'aria-label': ariaLabel, }: {
     tone?: 'warn' | 'alert' | 'ok' | 'idle';
     icon: ReactNode;
@@ -655,11 +655,15 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
 }
 export declare const Textarea: import("react").ForwardRefExoticComponent<TextareaProps & import("react").RefAttributes<HTMLTextAreaElement>>;
 export type SelectSize = 'xs' | 'sm' | 'md' | 'lg';
-export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'size'> {
+export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'size' | 'value' | 'defaultValue' | 'onChange'> {
     size?: SelectSize;
     tone?: InputTone;
+    value?: string | number;
+    defaultValue?: string | number;
+    onChange?: (e: ChangeEvent<HTMLSelectElement>) => void;
+    inlineLabel?: string;
 }
-export declare const Select: import("react").ForwardRefExoticComponent<SelectProps & import("react").RefAttributes<HTMLSelectElement>>;
+export declare const Select: import("react").ForwardRefExoticComponent<SelectProps & import("react").RefAttributes<HTMLButtonElement>>;
 export interface SearchInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'onChange' | 'size'> {
     value: string;
     onChange: (value: string) => void;
@@ -682,9 +686,10 @@ export interface KeyValueItem {
     mono?: boolean;
 }
 export type KeyValueVariant = 'rail' | 'rows' | 'facts';
-export declare function KeyValueList({ items, variant, className, }: {
+export declare function KeyValueList({ items, variant, columns, className, }: {
     items: ReadonlyArray<KeyValueItem>;
     variant?: KeyValueVariant;
+    columns?: 1 | 2;
     className?: string;
 }): import("react").JSX.Element;
 export declare function KeyValueGroup({ title, items, last, children, }: {
@@ -747,7 +752,7 @@ export interface PageHeaderProps {
     actionsGap?: 8 | 12;
     className?: string;
 }
-export declare function PageHeader({ title, subtitle, actions, titleAdornment, breadcrumb, docTitle, subtitleMaxCh, actionsGap, className, }: PageHeaderProps): import("react").JSX.Element;
+export declare function PageHeader({ title, subtitle, actions, titleAdornment, breadcrumb, docTitle, subtitleMaxCh: _subtitleMaxCh, actionsGap: _actionsGap, className, }: PageHeaderProps): import("react").JSX.Element;
 export interface Crumb {
     label: ReactNode;
     to?: string;

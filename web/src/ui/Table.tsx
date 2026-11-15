@@ -12,7 +12,7 @@ export interface Column<Row> {
   /** Shrink to content (`width: 1%`) — action and checkbox columns. */
   shrink?: boolean;
   align?: 'left' | 'right';
-  /** Mono 13px text-2 cell (Android version, app version). */
+  /** Numeric/technical cell: tabular figures in text-2 (Android version, app version). */
   mono?: boolean;
   /** Sortable: the header becomes a button and gets aria-sort. */
   sortable?: boolean;
@@ -27,13 +27,13 @@ export interface TableProps<Row> {
   rowKey: (row: Row) => Key;
   /** Accessible table name. */
   'aria-label'?: string;
-  /** Outer cell padding: 16 (Devices), 20 (Library), 24 (lists inside cards), 0 (editor apps table). */
+  /** Outer cell padding: the card padding (16; 20 and 24 are deprecated and render as 16), or 0. */
   edge?: 0 | 16 | 20 | 24;
   /** Below this width the table scrolls sideways inside its wrapper. */
   minWidth?: number;
   /** Hide the header row (Needs attention, Recent commands). */
   headless?: boolean;
-  /** Row vertical padding: 12 (default) or 10 (compact lists: recent commands, editor apps). */
+  /** Row height: 12 = 44px (default), 10 = the 40px compact row (recent commands, editor apps). */
   rowPad?: 10 | 12;
   /** Selection: a checkbox column first. */
   selection?: {
@@ -91,8 +91,9 @@ export function scrollStopProps(stop: boolean, name?: string, labelledBy?: strin
 const ROW_CONTROLS = 'a, button, input, select, textarea, label, [role="menu"], [role="menuitem"]';
 
 /**
- * Data table from the boards: head 12/500 secondary, 12/8 cell padding, 1px #EEF0F3 row rules, selected rows on
- * #F4F6F9, 16px ink checkboxes. Wrap it in <Card padding="list" clip> for the bordered look.
+ * The console's one data table: a 36px head (12/500 secondary), 44px rows (40 compact) on hairline rules, a hover
+ * fill, selected rows tinted, drawn checkboxes. Put row actions in a `v2-rowactions` element: they show on row hover
+ * or focus (always on touch). Wrap it in <Card padding="list" clip> for the bordered look.
  */
 export function Table<Row>({
   columns,
@@ -125,7 +126,7 @@ export function Table<Row>({
       {...scrollStopProps(scrollStop, name, labelledBy)}
     >
       <table
-        className={cx('v2-table', `v2-table--edge${edge}`, rowPad === 10 && 'v2-table--pad10', onRowClick && 'v2-table--rowclick')}
+        className={cx('v2-table', edge === 0 && 'v2-table--edge0', rowPad === 10 && 'v2-table--compact', onRowClick && 'v2-table--rowclick')}
         style={minWidth ? { minWidth } : undefined}
         {...aria}
       >

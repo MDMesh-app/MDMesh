@@ -1,3 +1,4 @@
+/* Bars: stacked status bars and single progress bars, 4 / 6 / 8px tall, fully rounded, on a --line-soft track. */
 .v2 .v2-bar--ok {
   background: var(--online);
 }
@@ -10,10 +11,11 @@
 .v2 .v2-bar--idle {
   background: var(--offline);
 }
-/* "Not reported": a light fill with a 1px --muted edge, so the segment reaches 3:1 and reads apart from offline. */
+/* "Not reported": a light fill with an inset 1px --muted outline, so it reaches 3:1 and reads apart from offline. */
 .v2 .v2-bar--pending {
   background: var(--bar-idle);
-  box-shadow: inset 0 0 0 1px var(--muted);
+  outline: var(--hairline) solid var(--muted);
+  outline-offset: calc(var(--hairline) * -1);
 }
 .v2 .v2-bar--neutral {
   background: var(--secondary);
@@ -30,28 +32,16 @@
   display: flex;
 }
 .v2 .v2-stack--fleet {
-  gap: 3px;
-  height: 12px;
-}
-.v2 .v2-stack--fleet .v2-stack__seg {
-  border-radius: 2px;
-}
-.v2 .v2-stack--fleet .v2-stack__seg:first-child {
-  border-radius: 6px 2px 2px 6px;
-}
-.v2 .v2-stack--fleet .v2-stack__seg:last-child {
-  border-radius: 2px 6px 6px 2px;
-}
-.v2 .v2-stack--fleet .v2-stack__seg:only-child {
-  border-radius: 6px;
+  gap: var(--indicator);
+  height: var(--space-2);
 }
 .v2 .v2-stack--config {
-  gap: 2px;
+  gap: var(--indicator);
   height: 6px;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-full);
 }
-.v2 .v2-stack--config .v2-stack__seg {
-  border-radius: var(--radius-xs);
+.v2 .v2-stack__seg {
+  border-radius: var(--radius-full);
 }
 .v2 .v2-stack--track {
   background: var(--line-soft);
@@ -61,31 +51,27 @@
 .v2 .v2-progress {
   display: flex;
   overflow: hidden;
+  border-radius: var(--radius-full);
   background: var(--line-soft);
 }
 .v2 .v2-progress--md {
   height: 6px;
-  border-radius: var(--radius-xs);
 }
 .v2 .v2-progress--mini {
   flex: 0 0 40px;
   width: 40px;
   height: 6px;
-  border-radius: var(--radius-xs);
-}
-.v2 .v2-progress--mini .v2-progress__fill {
-  border-radius: var(--radius-xs);
 }
 .v2 .v2-progress--micro {
   flex: 0 1 48px;
   width: 48px;
-  min-width: 16px;
-  height: 4px;
-  border-radius: 2px;
+  min-width: var(--icon-md);
+  height: var(--space-1);
 }
 .v2 .v2-progress__fill {
   display: block;
   height: 100%;
+  border-radius: var(--radius-full);
 }
 
 @media (forced-colors: active) {

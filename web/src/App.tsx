@@ -22,13 +22,11 @@ const LoginPage = lazyComponent(() => import('./pages/LoginPage'), 'LoginPage');
 const SetPasswordPage = lazyComponent(() => import('./pages/SetPasswordPage'), 'SetPasswordPage');
 
 /**
- * Unknown paths: an old bookmark (`/v2/...`, `/dashboard`, `/configs`) goes to its page now; anything else says the
- * page doesn't exist (a mistyped device link no longer lands on the Overview without a word).
+ * Unknown paths (old bookmarks were moved on in AppRoutes): the page doesn't exist, said inside the shell (a mistyped
+ * device link no longer lands on the Overview without a word).
  */
 function Fallback() {
-  const { pathname, search, hash } = useLocation();
-  const to = legacyRedirect(pathname);
-  if (to) return <Navigate to={to + search + hash} replace />;
+  const { pathname } = useLocation();
   return (
     <>
       <PageHeader title="Page not found" subtitle="There is nothing at this address. Check the link, or start from the Overview." />
@@ -56,6 +54,10 @@ function Fallback() {
  */
 export function AppRoutes() {
   const pages = useRegistry().entries('route.page');
+  const { pathname, search, hash } = useLocation();
+  // Old bookmarks move to their page before anything else, signed in or not (so sign-in returns to the new path).
+  const legacy = legacyRedirect(pathname);
+  if (legacy) return <Navigate to={legacy + search + hash} replace />;
   return (
     <Routes>
       <Route

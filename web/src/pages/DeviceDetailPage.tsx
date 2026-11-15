@@ -854,7 +854,11 @@ export function DeviceDetailPage() {
         <Breadcrumb items={[{ label: 'Devices', to: paths.devices }, { label: id, mono: true }]} />
         <h1 className="v2-visually-hidden">Device {id}</h1>
         {error && error !== 'Device not found.' ? (
-          <ErrorState thing="this device" onRetry={() => void load()} />
+          <ErrorState
+            thing="this device"
+            detail={error === 'Failed to load device.' ? undefined : error}
+            onRetry={() => void load()}
+          />
         ) : (
           <Card role="alert">
             <EmptyState

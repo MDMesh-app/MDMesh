@@ -1,50 +1,60 @@
 /* ============================================================================
    MDMesh design tokens and base styles. Every token is scoped under `.v2`.
-   Light values are taken from the design boards. The boards have no dark mode, so the dark values extend the
-   v0.3 console's dark palette. Where a board value failed contrast (body text needs 4.5:1, borders and icons 3:1),
-   the value here is the nearest one that passes.
+
+   This file is the only place a raw value may appear: stylelint (stylelint.config.mjs) rejects colours, sizes,
+   spacing, radii, shadows and motion values anywhere else. When a value is missing, add a token here.
+
+   The system: 13px UI text, controls 28 / 32 / 36, 44px table rows, 16px card padding, a 4px spacing grid,
+   four radii, three elevations and one easing. Colours are named by job, not hue. Every text colour reaches
+   4.5:1 on the surfaces it sits on, every control edge and icon 3:1, in light and dark.
 
    The `.v2` class sits on <body> (index.html): it is the console's namespace, and every component class is
-   prefixed `v2-`.
+   prefixed `v2-`. Extensions use these tokens as `var(--name)`; the names under "Deprecated aliases" still work
+   and follow the new scale (they are snapshotted in sdk/surface.txt and go after one release's notice).
    ========================================================================= */
 
 .v2 {
   /* ---- surfaces ---- */
   --app: #f6f7f9; /* page background */
-  --surface: #ffffff; /* cards, sidebar, inputs, buttons */
-  --surface-2: #f1f2f5; /* segmented track, active nav, letter tiles, "Changed" chip, bulk bar */
-  --surface-sunken: #fafbfc; /* card footer dl, waiting rollout step */
+  --surface: #ffffff; /* cards, sidebar, inputs, menus, dialogs */
+  --surface-2: #f1f2f5; /* segmented track, current nav item, letter tiles */
+  --surface-sunken: #fafbfc; /* recessed panels inside a card */
   --row-selected: #f4f6f9; /* selected table row */
-  --hover: #f6f7f9; /* hover fill for quiet controls (boards draw no hover; = --app) */
-  --seg-selected: #ffffff; /* raised segment / tab / active section-nav item */
+  --hover: #f3f4f7; /* hover fill for rows and quiet controls */
+  --pressed: #eceef2; /* pressed fill for quiet controls */
+  --seg-selected: #ffffff; /* raised segment */
 
   /* ---- lines ---- */
-  --border: #e7e9ee; /* card and panel border, subtle buttons, sidebar rule (decorative) */
-  --border-strong: #d6dae1; /* buttons, outline tags, select chrome in toolbars */
+  --border: #e7e9ee; /* card and panel border, table rules (decorative) */
+  --border-strong: #d6dae1; /* text buttons, outline tags */
   --line-soft: #eef0f3; /* row dividers inside cards, bar tracks */
-  --input-border: #838b99; /* text inputs, selects, textareas: 3:1 on white, --app and --surface-2 (#d6dae1 was under) */
-  --control-border: var(--input-border); /* 3:1 edges (1.4.11): icon-only buttons, password toggle, colour picker,
-                                           the ring on a selected segment, tab, nav item or section */
+  --input-border: #838b99; /* text inputs, selects, checkboxes: 3:1 on white, --app and --surface-2 (1.4.11) */
+  --control-border: var(--input-border);
 
   /* ---- ink + text ---- */
-  --ink: #15181d; /* primary button, active text, focus ring, toggle on */
+  --ink: #15181d; /* primary button, current-state indicators, switch on */
   --on-ink: #ffffff;
-  --ink-hover: #23272f;
+  --ink-hover: #2a2f38;
+  --ink-pressed: #000000;
   --text: #1b2230;
   --text-2: #384152; /* labels in rows, subtitles, inactive nav */
-  --secondary: #4a5163; /* help, meta, table head: 7:1 on every neutral ground (matches the Android agent) */
+  --secondary: #4a5163; /* help, meta, table head: 7:1 on every neutral ground */
   --muted: #6b7686; /* offline ring only: 4.30:1 on --app, never text off white */
-  --faint: #9aa3b0; /* disabled text only (2.55:1) */
+  --faint: #9aa3b0; /* disabled text only */
+
+  /* ---- accent: Console blue. Two jobs only: the focus ring and the favicon. ---- */
+  --accent: #2f5597; /* 7.3:1 on white, 6.5:1 on --surface-2 */
+  --focus: var(--accent);
 
   /* ---- status: dot / ink / soft / line ---- */
-  --online: #189c5f; /* dots and bar fills: 3:1 on every neutral ground and the bar track (board #1aa766 was 2.7) */
-  --ok-ink: #096139; /* status text: 7:1 on white (matches the Android agent) */
+  --online: #189c5f;
+  --ok-ink: #096139;
   --ok-soft: #e6f6ee;
   --ok-line: #bfe8d2;
-  --ok-wash: #f7fcf9; /* success panel fill */
-  --ok-mark: #8fd8b1; /* file glyph bars on the success panel */
+  --ok-wash: #f7fcf9;
+  --ok-mark: #8fd8b1;
 
-  --warn: #c07922; /* 3:1 on every neutral ground and the bar track (board #d98a2b was 2.4) */
+  --warn: #c07922;
   --warn-ink: #77450c;
   --warn-soft: #fcf1e3;
   --warn-line: #f1d3ad;
@@ -53,102 +63,178 @@
   --alert-ink: #902626;
   --alert-soft: #fbe9e9;
   --alert-line: #f0d4d4;
+  --danger: #c43838; /* solid destructive button: white text 5.2:1 */
+  --danger-hover: #a92e2e;
+  --on-danger: #ffffff;
 
-  --offline: #7e8a9c; /* offline dot and bar fill: 3:1 on white, --app and the bar track (board #b6bdc7 was 1.7) */
+  --offline: #7e8a9c;
   --idle-ink: #4a5163;
   --idle-soft: #f1f2f5;
   --idle-line: #e7e9ee;
-  --bar-idle: #d6dae1; /* "not reported" segment fill; the segment's 3:1 edge is a --muted ring (Bars.css) */
+  --bar-idle: #d6dae1;
 
-  /* ---- disabled ---- */
+  /* ---- disabled: the same variant, faded (one visual language) ---- */
+  --disabled-opacity: 0.45;
   --disabled-bg: #e7e9ee;
-  --disabled-ink: #4a5163; /* disabled primary (Promote, Set password) */
+  --disabled-ink: #4a5163;
 
   /* ---- controls ---- */
   --switch-on: var(--ink);
   --switch-on-knob: #ffffff;
   --switch-off: #d6dae1;
   --switch-off-knob: #ffffff;
-  --switch-off-ring: var(--muted); /* 1px ring on the off track: the board's #d6dae1 alone is 1.40:1 */
+  --switch-off-ring: var(--muted);
   --swatch-line: rgba(21, 24, 29, 0.15);
-  --glyph-body: var(--surface); /* DeviceGlyph body (board hard-codes #fff) */
-  --glyph-screen: #d6dae1; /* DeviceGlyph screen */
-  --backdrop: rgba(20, 30, 55, 0.35);
+  --glyph-body: var(--surface);
+  --glyph-screen: #d6dae1;
+  --backdrop: rgba(20, 30, 55, 0.32);
+  --skeleton: #eceef2;
+  --skeleton-shine: rgba(255, 255, 255, 0.6);
 
-  /* ---- shadows (cards are flat: 1px border, no shadow) ---- */
-  --shadow-seg: 0 1px 2px rgba(20, 30, 55, 0.08); /* selected segment / tab */
-  --shadow-knob: 0 1px 2px rgba(20, 30, 55, 0.3); /* toggle knob */
-  --shadow-float: 0 8px 24px rgba(20, 30, 55, 0.12); /* sticky unsaved bar, toast */
-  --shadow-auth: 0 12px 32px rgba(20, 30, 55, 0.06); /* sign-in card */
-  --shadow-modal: 0 24px 48px rgba(20, 30, 55, 0.18);
+  /* ---- elevation (3 levels; cards are flat: 1px border, no shadow) ---- */
+  --elev-1: 0 1px 2px rgba(20, 30, 55, 0.1); /* raised segment, switch knob */
+  --elev-2: 0 1px 2px rgba(20, 30, 55, 0.06), 0 8px 24px rgba(20, 30, 55, 0.12); /* menus, popovers, toasts, bars */
+  --elev-3: 0 2px 4px rgba(20, 30, 55, 0.06), 0 24px 48px rgba(20, 30, 55, 0.18); /* dialogs */
 
-  /* ---- type ---- */
+  /* ---- type: Plex Sans for everything, Plex Mono only for copyable machine identifiers ---- */
   --font-sans: 'IBM Plex Sans', 'Helvetica Neue', Arial, system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-  --fs-display: 40px; /* Mono 500, -0.02em, lh 1: fleet total */
-  --fs-h1: 28px; /* 600, -0.025em, lh 1.15: page titles */
-  --fs-h1-sm: 24px; /* 600: device name (rail), auth card titles */
-  --fs-stat: 24px; /* Mono 500, lh 1.1: stat cells */
-  --fs-stat-sm: 22px; /* Mono 500: rollout cohort count */
-  --fs-title-lg: 18px; /* 600: "Add your own app", auth wordmark */
-  --fs-title: 17px; /* 600: numbered step cards, "0.3.4 is ready", sidebar wordmark */
-  --fs-h2: 16px; /* 600: card titles */
-  --fs-lead: 15px; /* page subtitle (text-2), card names, auth submit */
-  --fs-body: 14px; /* lh 1.5 */
-  --fs-control: 13.5px; /* lg segmented, sticky-bar sentence, card descriptions */
-  --fs-sm: 13px; /* md segmented, help text, links, small buttons */
-  --fs-meta: 12.5px; /* pills, stat footnotes, sub-lines */
-  --fs-small: 12px; /* table head, eyebrow, nav meta, mono package */
-  --fs-tiny: 11.5px; /* "Changed" chip, count badge, card dt */
-  --fs-micro: 11px; /* "Later" chip, duplicate chip, device-card dt, glyph caption */
+  --text-11: 11px; /* caps meta, count badges */
+  --text-12: 12px; /* meta, help, table head, pills */
+  --text-13: 13px; /* UI and body */
+  --text-14: 14px; /* input text, emphasised values */
+  --text-16: 16px; /* card titles */
+  --text-22: 22px; /* page titles, stat values */
+  --text-display: 28px; /* display numerals (fleet total) */
 
-  --lh-body: 1.5;
-  --lh-h1: 1.15;
-  --ls-h1: -0.025em;
-  --ls-display: -0.02em;
-  --ls-eyebrow: 0.06em;
+  --lh-11: 16px;
+  --lh-12: 16px;
+  --lh-13: 20px;
+  --lh-14: 20px;
+  --lh-16: 24px;
+  --lh-22: 28px;
+  --lh-display: 32px;
 
-  /* ---- radii ---- */
-  --radius-xs: 3px; /* bar segments */
-  --radius-swatch: 6px; /* colour swatch, outcome icon tile */
-  --radius-chip: 7px; /* file-extension chip, small segmented option */
-  --radius-seg: 8px; /* md segmented option, 30px icon button */
-  --radius-tile: 9px; /* 32-34px icon buttons, letter tiles, lg segmented option, tabs */
-  --radius-sm: 10px; /* buttons, inputs, selects, nav items, callouts */
-  --radius-md: 12px; /* lg segmented track, update card, 44px tiles */
-  --radius-card-sm: 14px; /* attention strip, bulk bar, sticky bar, success panel, 60px tile */
-  --radius-lg: 16px; /* cards */
-  --radius-auth: 20px; /* sign-in card */
-  --radius-pill: 999px;
+  --weight-regular: 400;
+  --weight-medium: 500; /* emphasis, labels, selected states, buttons */
+  --weight-semibold: 600; /* page and card titles only */
 
-  /* ---- spacing: 4-step scale plus the boards' off-grid 2/6/10/14 ---- */
-  --space-0: 2px;
+  --track-tight: -0.015em; /* page titles, display numerals */
+  --track-caps: 0.04em; /* 11px caps meta */
+
+  /* ---- spacing: a 4px grid ---- */
   --space-1: 4px;
-  --space-1h: 6px;
   --space-2: 8px;
-  --space-2h: 10px;
   --space-3: 12px;
-  --space-3h: 14px;
   --space-4: 16px;
-  --space-5: 20px;
   --space-6: 24px;
   --space-8: 32px;
+  --space-12: 48px;
+
+  /* ---- sizes ---- */
+  --control-xs: 24px; /* ghost icon buttons inside table rows */
+  --control-sm: 28px; /* row actions, chips, compact toolbars */
+  --control-md: 32px; /* default: buttons, inputs, selects, search, segmented tracks */
+  --control-lg: 36px; /* page primary, dialog footers, sign-in */
+  --row: 44px; /* table rows */
+  --row-compact: 40px; /* compact tables, list rows inside cards */
+  --nav-item: 30px; /* sidebar items */
+  --touch: 44px; /* minimum target in the phone layout */
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --check: 16px; /* checkbox and radio */
+  --dot-sm: 6px; /* sync marks */
+  --dot: 7px; /* status marks */
+  --dot-lg: 8px; /* legends */
+  --dot-ring: 1.5px; /* the outline of a hollow (offline) mark */
+  --hairline: 1px;
+  --indicator: 2px; /* tab underline, focus ring */
+
+  /* ---- radii (4) ---- */
+  --radius-4: 4px; /* chips, tags, checkboxes, segments inside a track */
+  --radius-6: 6px; /* controls */
+  --radius-8: 8px; /* cards, menus, popovers, callouts */
+  --radius-12: 12px; /* dialogs, the sign-in card */
+  --radius-full: 999px; /* dots, pills, switches */
 
   /* ---- layout ---- */
-  --sidebar-w: 232px;
-  --main-max: 1280px;
-  --page-pad: clamp(20px, 3vw, 32px);
-  --page-gap: 20px;
-  --card-pad: 20px 24px;
-  --mobilebar-h: 52px;
+  --sidebar-w: 220px;
+  --content-max: 1440px; /* left-anchored page column */
+  --prose-max: 760px; /* forms and settings prose */
+  --page-gutter: var(--space-6);
+  --grid-gap: var(--space-4); /* between cards, both axes */
+  --section-gap: var(--space-6); /* page header to content */
+  --card-pad: var(--space-4);
+  --topbar-h: 44px;
+  --z-sticky: 10;
+  --z-drawer: 40;
+  --z-overlay: 50;
+  --z-toast: 60;
+
+  /* ---- motion: one easing, transform and opacity only ---- */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --dur-micro: 150ms; /* hover fills, tab indicator, switch */
+  --dur-enter: 180ms; /* dialogs, menus, popovers, toasts opening; route and tab content */
+  --dur-exit: 120ms; /* the same closing */
+  --lift: 4px; /* how far a popover travels in */
+  --scale-in: 0.97; /* a dialog's starting scale */
+  --skeleton-delay: 150ms; /* most loads finish sooner: no flash of placeholders */
+  --skeleton-sweep: 1600ms;
+
+  /* ---- Deprecated aliases (sdk/surface.txt). They follow the scale above; removed after one release. ---- */
+  --fs-display: var(--text-display);
+  --fs-h1: var(--text-22);
+  --fs-h1-sm: var(--text-22);
+  --fs-stat: var(--text-22);
+  --fs-stat-sm: var(--text-22);
+  --fs-title-lg: var(--text-16);
+  --fs-title: var(--text-16);
+  --fs-h2: var(--text-16);
+  --fs-lead: var(--text-14);
+  --fs-body: var(--text-13);
+  --fs-control: var(--text-13);
+  --fs-sm: var(--text-13);
+  --fs-meta: var(--text-12);
+  --fs-small: var(--text-12);
+  --fs-tiny: var(--text-11);
+  --fs-micro: var(--text-11);
+  --lh-body: 1.54; /* 20px at 13px */
+  --lh-h1: 1.28; /* 28px at 22px */
+  --ls-h1: var(--track-tight);
+  --ls-display: var(--track-tight);
+  --ls-eyebrow: var(--track-caps);
+  --radius-xs: var(--radius-4);
+  --radius-swatch: var(--radius-4);
+  --radius-chip: var(--radius-4);
+  --radius-seg: var(--radius-4);
+  --radius-tile: var(--radius-6);
+  --radius-sm: var(--radius-6);
+  --radius-md: var(--radius-8);
+  --radius-card-sm: var(--radius-8);
+  --radius-lg: var(--radius-8);
+  --radius-auth: var(--radius-12);
+  --radius-pill: var(--radius-full);
+  --space-0: var(--space-1);
+  --space-1h: var(--space-1);
+  --space-2h: var(--space-2);
+  --space-3h: var(--space-3);
+  --space-5: var(--space-4);
+  --shadow-seg: var(--elev-1);
+  --shadow-knob: var(--elev-1);
+  --shadow-float: var(--elev-2);
+  --shadow-auth: var(--elev-2);
+  --shadow-modal: var(--elev-3);
+  --main-max: var(--content-max);
+  --page-pad: var(--page-gutter);
+  --page-gap: var(--grid-gap);
+  --mobilebar-h: var(--topbar-h);
 
   color-scheme: light;
 }
 
 /* ----------------------------------------------------------------------------
-   Dark. The boards define none: extends the v0.3 console's dark theme with the new tokens.
-   Every text colour reaches 4.5:1 or more on --surface (#161922).
+   Dark: designed, not inverted. Raised surfaces get lighter; every text colour reaches 4.5:1 on --surface.
    ------------------------------------------------------------------------- */
 [data-theme='dark'] .v2,
 .v2[data-theme='dark'] {
@@ -157,22 +243,26 @@
   --surface-2: #1e222c;
   --surface-sunken: #13161d;
   --row-selected: #1b2030;
-  --hover: #1b1f28;
-  --seg-selected: #2b313d; /* lighter than the track, so the selected segment still reads as raised */
+  --hover: #1c2029;
+  --pressed: #232834;
+  --seg-selected: #2b313d;
 
   --border: #272c37;
   --border-strong: #39404e;
   --line-soft: #21262f;
-  --input-border: #727b8b; /* 3:1 on --surface, --app, --surface-2 and a raised segment */
+  --input-border: #727b8b;
 
-  --ink: #f2f4f8;
+  --ink: #e7ebf1; /* primary fill: off-white, not the brightest thing on screen */
   --on-ink: #15181d;
-  --ink-hover: #dfe3ea;
+  --ink-hover: #d3d9e2;
+  --ink-pressed: #c4ccd7;
   --text: #e7ebf1;
   --text-2: #c4ccd7;
   --secondary: #aeb6c1;
   --muted: #8b95a3;
   --faint: #6c7480;
+
+  --accent: #7fa2ea; /* 6.9:1 on --surface */
 
   --online: #2bb979;
   --ok-ink: #4fd194;
@@ -190,8 +280,11 @@
   --alert-ink: #f4a0a0;
   --alert-soft: #2a1b1e;
   --alert-line: #45292d;
+  --danger: #c43838;
+  --danger-hover: #b83232;
+  --on-danger: #ffffff;
 
-  --offline: #667184; /* 3:1 on --surface, --app and the bar track */
+  --offline: #667184;
   --idle-ink: #aeb6c1;
   --idle-soft: #1e222c;
   --idle-line: #272c37;
@@ -206,21 +299,20 @@
   --switch-off-ring: var(--muted);
   --swatch-line: rgba(242, 244, 248, 0.2);
   --glyph-screen: #39404e;
-  --backdrop: rgba(0, 0, 0, 0.6);
+  --backdrop: rgba(0, 0, 0, 0.55);
+  --skeleton: #1e222c;
+  --skeleton-shine: rgba(255, 255, 255, 0.04);
 
-  --shadow-seg: 0 1px 2px rgba(0, 0, 0, 0.45);
-  --shadow-knob: 0 1px 2px rgba(0, 0, 0, 0.5);
-  --shadow-float: 0 8px 24px rgba(0, 0, 0, 0.5);
-  --shadow-auth: 0 12px 32px rgba(0, 0, 0, 0.4);
-  --shadow-modal: 0 24px 48px rgba(0, 0, 0, 0.6);
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --elev-2: 0 0 0 1px rgba(255, 255, 255, 0.04), 0 8px 24px rgba(0, 0, 0, 0.5);
+  --elev-3: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 24px 48px rgba(0, 0, 0, 0.6);
 
   color-scheme: dark;
 }
 
 /* ----------------------------------------------------------------------------
-   Reset. Border-box sizing everywhere, no default body margin, and a full-height root (the shell and the auth pages
-   size themselves from it). The theme switch crossfades the page (View Transitions where supported, else the body
-   transition), and scrollbars are thin and quiet.
+   Reset. Border-box sizing, no default body margin, a full-height root. The theme switch crossfades through a
+   View Transition only (ui/theme.tsx); nothing else animates colour on the page.
    ------------------------------------------------------------------------- */
 *,
 *::before,
@@ -233,33 +325,30 @@ body,
   height: 100%;
   margin: 0;
 }
-body {
-  transition: background-color 0.25s ease, color 0.25s ease;
-}
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: 0.3s;
+  animation-duration: 200ms;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
-::-webkit-scrollbar {
+.v2 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
-::-webkit-scrollbar-thumb {
+.v2 ::-webkit-scrollbar-thumb {
   background: var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius-full);
 }
-::-webkit-scrollbar-track {
+.v2 ::-webkit-scrollbar-track {
   background: transparent;
 }
 
 /* ----------------------------------------------------------------------------
-   Base. Mirrors the boards' page-level CSS: body 14/1.5 Plex Sans on --app, links ink, inherited fonts in
-   controls, and the 2px ink focus ring.
+   Base: 13/20 Plex Sans on --app, inherited fonts in controls, one focus ring (keyboard only).
    ------------------------------------------------------------------------- */
 .v2 {
   font-family: var(--font-sans);
-  font-size: var(--fs-body);
-  line-height: var(--lh-body);
+  font-size: var(--text-13);
+  line-height: var(--lh-13);
   color: var(--text);
   background: var(--app);
   font-synthesis: none;
@@ -269,6 +358,8 @@ body {
 .v2 a {
   color: var(--ink);
   text-decoration: underline;
+  text-underline-offset: 0.2em;
+  text-decoration-thickness: var(--hairline);
 }
 .v2 a:hover {
   color: var(--text-2);
@@ -280,11 +371,14 @@ body {
   font: inherit;
 }
 .v2 :focus-visible {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
+  outline: var(--indicator) solid var(--focus);
+  outline-offset: var(--indicator);
 }
 .v2 :where(h1, h2, h3, h4, p, dl, dd, figure) {
   margin: 0;
+}
+.v2 :where(h1, h2, h3) {
+  text-wrap: balance;
 }
 .v2 ::placeholder {
   color: var(--secondary);
@@ -296,17 +390,17 @@ body {
   font-family: var(--font-mono);
 }
 .v2 .v2-num {
-  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 .v2 .v2-secondary {
   color: var(--secondary);
 }
 .v2 .v2-eyebrow {
-  font-size: var(--fs-small);
-  font-weight: 600;
+  font-size: var(--text-11);
+  line-height: var(--lh-11);
+  font-weight: var(--weight-medium);
   text-transform: uppercase;
-  letter-spacing: var(--ls-eyebrow);
+  letter-spacing: var(--track-caps);
   color: var(--secondary);
 }
 .v2 .v2-visually-hidden {
@@ -321,10 +415,57 @@ body {
   border: 0;
 }
 
+/* Shared enter/exit keyframes: every overlay (dialog, menu, popover, tooltip, toast) and route/tab content. */
+@keyframes v2-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes v2-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes v2-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--pop-from, calc(var(--lift) * -1))) scale(var(--scale-in));
+  }
+}
+@keyframes v2-pop-out {
+  to {
+    opacity: 0;
+    transform: translateY(var(--pop-from, calc(var(--lift) * -1))) scale(var(--scale-in));
+  }
+}
+@keyframes v2-dialog-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(var(--scale-in));
+  }
+}
+@keyframes v2-dialog-out {
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(var(--scale-in));
+  }
+}
+@keyframes v2-shimmer {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .v2 *,
   .v2 *::before,
-  .v2 *::after {
+  .v2 *::after,
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;

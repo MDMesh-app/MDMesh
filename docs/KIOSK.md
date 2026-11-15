@@ -124,8 +124,9 @@ On a device page, open **Control → Remote actions → Kiosk & apps**:
 To act on many devices, select them on **Devices** and choose **Run action**: the **Kiosk** group has Return to
 configured kiosk and Custom kiosk, and **Exit kiosk** is under **Disruptive**.
 
-To take devices out of kiosk for good, turn **Kiosk mode** off in their configuration and save. This lifts only a
-kiosk that the configuration started, not a custom kiosk: end that one with Exit kiosk.
+To take devices out of kiosk for good, turn **Kiosk mode** off in their configuration and save. Turning it off ends
+whatever kiosk is running on devices whose configuration had kiosk on, a custom kiosk included. On devices whose
+configuration never had kiosk on, it changes nothing: end a custom kiosk there with Exit kiosk.
 
 ### Going back into kiosk on the device
 

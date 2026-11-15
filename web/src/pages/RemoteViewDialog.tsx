@@ -46,7 +46,9 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
     const connect = (current: RemoteViewSession) => {
       if (!live || stopped.current) return;
       setStage('connecting');
-      const pc = new RTCPeerConnection({ iceServers: [] });
+      // STUN discovers candidate addresses only. Media remains direct between
+      // the viewer and device; this POC deliberately does not configure TURN.
+      const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
       peer.current = pc;
       // A receive-only transceiver makes the browser offer a video media section.
       // offerToReceiveVideo alone can produce an empty offer in modern browsers;

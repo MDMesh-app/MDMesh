@@ -72,7 +72,12 @@ internal class RemoteViewCapture(
         startupStage = "creating WebRTC factory"
         factory = PeerConnectionFactory.builder().createPeerConnectionFactory()
         startupStage = "creating peer connection"
-        val createdPeer = factory!!.createPeerConnection(PeerConnection.RTCConfiguration(emptyList()), observer)
+        // STUN discovers the agent's reachable candidate address. It does not
+        // relay video or control traffic; TURN remains explicitly out of scope
+        // for this LAN-first POC.
+        val createdPeer = factory!!.createPeerConnection(
+            PeerConnection.RTCConfiguration(listOf(PeerConnection.IceServer.builder(STUN_SERVER).createIceServer())), observer,
+        )
             ?: error("WebRTC peer connection could not be created")
         peer = createdPeer
         startupStage = "creating video source"
@@ -269,6 +274,7 @@ internal class RemoteViewCapture(
     private companion object {
         const val TAG = "MDMeshRemoteView"
         const val SCREEN_STREAM_ID = "mdmesh-screen-stream"
+        const val STUN_SERVER = "stun:stun.l.google.com:19302"
     }
 }
 

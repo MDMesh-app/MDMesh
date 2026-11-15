@@ -9,7 +9,9 @@ import { CONFIG_FIELDS } from './configFields';
  * The configuration's own help for the exit PIN, so every kiosk dialog says the same: with agent 0.3.6+, an empty PIN
  * means no exit on the device.
  */
-export const EXIT_PIN_HELP = CONFIG_FIELDS.find((f) => f.key === 'password')?.help;
+const PIN_FIELD = CONFIG_FIELDS.find((f) => f.key === 'password');
+/** The exit PIN's help, its one line and its longer explanation, for tooltips beside a PIN field. */
+export const EXIT_PIN_HELP = [PIN_FIELD?.help, PIN_FIELD?.more].filter(Boolean).join(' ') || undefined;
 /** Placeholder of an exit-PIN input that may stay empty. */
 export const EXIT_PIN_PLACEHOLDER = 'Empty: no exit on the device (agent 0.3.6+)';
 /** What a kiosk without an exit PIN means on the device, by agent version. */

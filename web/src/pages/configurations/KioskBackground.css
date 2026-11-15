@@ -3,13 +3,13 @@
 
 .v2 .v2-kbg {
   display: grid;
-  gap: 16px;
+  gap: var(--space-4);
   min-width: 0;
 }
 
 .v2 .v2-kbg__state {
   margin: 0;
-  font-size: var(--fs-sm);
+  font-size: var(--text-ui);
   color: var(--secondary);
   overflow-wrap: anywhere;
 }
@@ -21,13 +21,13 @@
 .v2 .v2-kbg__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .v2 .v2-kbg__summary {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: var(--space-4);
   align-items: flex-start;
 }
 
@@ -35,7 +35,7 @@
   width: 160px;
   height: 100px;
   object-fit: cover;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
   border: 1px solid var(--border);
   background: var(--surface-sunken);
   flex: none;
@@ -44,7 +44,7 @@
 .v2 .v2-kbg__thumb--missing {
   display: grid;
   place-items: center;
-  font-size: var(--fs-small);
+  font-size: var(--text-meta);
   color: var(--secondary);
 }
 
@@ -59,16 +59,16 @@
 
 .v2 .v2-kbg__note {
   display: flex;
-  gap: 6px;
+  gap: var(--space-2);
   align-items: center;
-  margin: 8px 0 0;
-  font-size: var(--fs-sm);
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-ui);
   color: var(--secondary);
 }
 
 .v2 .v2-card.v2-kbg-device {
   flex-direction: row;
-  gap: 14px;
+  gap: var(--space-4);
   align-items: flex-start;
   text-align: left;
 }
@@ -77,7 +77,7 @@
   width: 72px;
   height: 48px;
   object-fit: cover;
-  border-radius: var(--radius-seg);
+  border-radius: var(--radius-chip);
   border: 1px solid var(--border);
   flex: none;
 }
@@ -87,39 +87,35 @@
 }
 
 .v2 .v2-kbg-device__title {
-  margin: 0 0 2px;
-  font-size: var(--fs-lead);
-  font-weight: 600;
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-input);
+  font-weight: var(--weight-medium);
   color: var(--text);
 }
 
 .v2 .v2-kbg-device__text {
   margin: 0;
-  font-size: var(--fs-sm);
+  font-size: var(--text-ui);
   color: var(--secondary);
 }
 
 .v2 .v2-kbg__how > summary {
   cursor: pointer;
   width: fit-content;
-  padding: 4px 0;
-  line-height: 24px;
-  font-size: var(--fs-sm);
+  padding: var(--space-1) 0;
+  line-height: var(--lh-title);
+  font-size: var(--text-ui);
   color: var(--text);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-chip);
 }
 
-.v2 .v2-kbg__how > summary:focus-visible {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
-}
 
 .v2 .v2-kbg__how ul {
-  margin: 8px 0 0;
-  padding-left: 16px;
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-4);
   display: grid;
-  gap: 4px;
-  font-size: var(--fs-sm);
+  gap: var(--space-1);
+  font-size: var(--text-ui);
   color: var(--secondary);
   max-width: 64ch;
 }

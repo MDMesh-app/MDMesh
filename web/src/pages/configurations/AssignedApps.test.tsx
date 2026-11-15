@@ -61,7 +61,7 @@ function open(apps = assigned(), configuration: Record<string, unknown> = {}) {
   return { puts };
 }
 
-const table = () => document.querySelector<HTMLTableElement>('.v2-cfged-apps__table')!;
+const table = () => document.querySelector<HTMLTableElement>('.v2-cfged-apps table')!;
 /** The app names in the table, in order. */
 const names = () => [...table().querySelectorAll('.v2-cfged-app__name')].map((n) => n.firstChild?.textContent);
 const search = () => screen.getByRole<HTMLInputElement>('searchbox', { name: 'Search assigned apps' });
@@ -234,7 +234,7 @@ describe('assigned apps: search, filter and sort', () => {
     open();
     await loaded();
     pick(/^Remove/);
-    fireEvent.click(screen.getByRole('button', { name: 'Add apps' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add apps…' }));
     const dialog = await screen.findByRole('dialog', { name: 'Add apps' });
     fireEvent.click(await within(dialog).findByRole('checkbox', { name: /Agenda/ }));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Add 1' }));
@@ -286,7 +286,7 @@ describe('assigned apps: search, filter and sort', () => {
     expect(names()).toHaveLength(APP_CONTROLS_THRESHOLD);
     chooseOption(actionOf('Microsoft Teams'), { value: '2' });
     // Past it again: no search or filter left from before, and the filter sees the state changed meanwhile.
-    fireEvent.click(screen.getByRole('button', { name: 'Add apps' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add apps…' }));
     const dialog = await screen.findByRole('dialog', { name: 'Add apps' });
     fireEvent.click(await within(dialog).findByRole('checkbox', { name: /Agenda/ }));
     fireEvent.click(within(dialog).getByRole('button', { name: 'Add 1' }));

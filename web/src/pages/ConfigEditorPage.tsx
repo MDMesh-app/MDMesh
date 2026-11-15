@@ -48,6 +48,7 @@ import {
   CardHeader,
   ChangedChip,
   EmptyState,
+  ErrorState,
   Eyebrow,
   Field,
   FieldRow,
@@ -64,6 +65,7 @@ import {
   SectionLayout,
   SectionNav,
   Select,
+  SkeletonFacts,
   StickySaveBar,
   Textarea,
   useLeaveGuard,
@@ -81,7 +83,7 @@ import { KioskBackgroundPreview } from './configurations/KioskPreview';
 import { kioskColours, type FitMode } from '../data/kioskScrim';
 import { KioskPlacement } from './configurations/KioskPlacement';
 import { KioskGallery } from './configurations/KioskGallery';
-import { AppSelect, FieldControl, LongHelp } from './configurations/controls';
+import { AgentTag, AppSelect, FieldControl, FieldHelp } from './configurations/controls';
 import { AppPickerModal, CopyConfigModal, DeleteConfigModal, KioskConfirmModal } from './configurations/modals';
 import { devicesBlockingDelete, plural, usedByLine, wipedOnly, wipedOnlyLine } from './configurations/sync';
 import { WATCH_MS, type ConfigWatch } from './configurations/watch';
@@ -180,32 +182,25 @@ function EditorLoader({ id, from }: { id: string; from: string | null }) {
       <>
         <PageHeader title={title} breadcrumb={crumbs(title)} />
         {state.kind === 'loading' ? (
-          <Card>
-            <EmptyState icon={<IconConfigurations />} title="Loading configuration…" />
+          <Card aria-busy="true">
+            <SkeletonFacts count={6} label="Loading configuration…" />
           </Card>
         ) : state.kind === 'error' ? (
-          <Callout tone="alert" role="alert" icon={<IconWarning size={16} />}>
-            <span className="v2-cfged-calloutline">
-              Could not load this configuration.
-              <Button size="sm" onClick={() => setAttempt((n) => n + 1)}>
-                Retry
-              </Button>
-            </span>
-          </Callout>
+          <ErrorState thing="this configuration" onRetry={() => setAttempt((n) => n + 1)} />
         ) : (
           <Card>
             <EmptyState
               icon={<IconConfigurations />}
               title={state.template ? 'Template not found' : 'Configuration not found'}
               action={
-                <ButtonLink size="lg" to={paths.configurations}>
+                <ButtonLink to={paths.configurations}>
                   All configurations
                 </ButtonLink>
               }
             >
               {state.template
-                ? 'The configuration to copy no longer exists, or you do not have access to it.'
-                : 'It may have been deleted, or you do not have access to it.'}
+                ? 'The configuration to copy no longer exists, or you don’t have access to it.'
+                : 'It may have been deleted, or you don’t have access to it.'}
             </EmptyState>
           </Card>
         )}
@@ -291,21 +286,20 @@ for (const [sec, items] of Object.entries(LAYOUT) as Array<[keyof typeof LAYOUT,
 
 /** Board help where it is clearer and still accurate; otherwise configFields help is used. */
 const HELP: Record<string, string> = {
-  kioskMode: 'When off, the kiosk settings below are ignored and the device uses its normal launcher.',
+  kioskMode: 'When off, the settings below are ignored and the device uses its own launcher.',
   kioskHome: 'The Android home button or gesture.',
   kioskRecents: 'The app switcher. Needs Home button on (Android requires it).',
-  kioskNotifications: 'Pulling down the notification shade. Needs Home button on (Android requires it).',
+  kioskNotifications: 'The notification shade. Needs Home button on (Android requires it).',
 };
 
 const SECTION_SUB = {
   kiosk: 'Lock the screen to the apps marked “Show in kiosk”.',
-  network: `Radios, location reporting and connectivity. ${GROUP_NOTES.Network ?? ''}`.trim(),
+  network: `Radios, location and connectivity. ${GROUP_NOTES.Network ?? ''}`.trim(),
   security: `What people on the device can change. ${GROUP_NOTES.Restrictions ?? ''}`.trim(),
   enrollment: GROUP_NOTES.Enrollment ?? '',
 };
 
-const LEGACY_NOTE =
-  'Only the Headwind launcher read these settings; the MDMesh agent does not apply them. They stay stored with the configuration, and saving keeps their values.';
+const LEGACY_NOTE = 'The MDMesh agent ignores these. They stay stored, and saving keeps their values.';
 
 // ---- change detection ----------------------------------------------------------------------------------------------
 
@@ -610,12 +604,12 @@ function Editor({
   // ---- rows ----
   const pinWarn = defaultPin
     ? readOnly
-      ? 'Devices on this template use a well-known default PIN, so anyone who knows it can leave kiosk mode. Duplicate it, set your own PIN, and move the devices to the copy.'
-      : 'This is still a well-known default PIN. Anyone who knows it can leave kiosk mode. Choose a PIN only your staff know.'
+      ? 'This template uses a well-known default PIN. Duplicate it, set your own PIN, and move its devices to the copy.'
+      : 'This is a well-known default PIN: anyone who knows it can leave kiosk. Choose one only your staff know.'
     : noPin
       ? readOnly
-        ? 'This template has no exit PIN: agents before 0.3.6 let anyone leave kiosk mode, 0.3.6 and later have no exit on the device. Duplicate it, set a PIN, and move the devices to the copy.'
-        : 'There is no exit PIN: agents before 0.3.6 let anyone leave kiosk mode without a prompt, 0.3.6 and later have no exit on the device (end kiosk from the console). Set a PIN only your staff know.'
+        ? 'This template has no exit PIN. Duplicate it, set a PIN, and move its devices to the copy.'
+        : 'No exit PIN: agents before 0.3.6 let anyone leave kiosk; later ones have no exit on the device. Set one.'
       : null;
 
   const row = (key: string, opts: { divider?: boolean } = {}) => {
@@ -630,8 +624,15 @@ function Editor({
         key={key}
         id={`${ids}-${key}`}
         label={def.label}
-        help={<LongHelp text={help} />}
-        adornment={changed.has(key) && !readOnly ? <ChangedChip /> : undefined}
+        help={<FieldHelp text={help} more={def.more} />}
+        adornment={
+          def.agent || (changed.has(key) && !readOnly) ? (
+            <>
+              {def.agent ? <AgentTag version={def.agent} /> : null}
+              {changed.has(key) && !readOnly ? <ChangedChip /> : null}
+            </>
+          ) : undefined
+        }
         disabled={off}
         divider={opts.divider}
         className={def.type === 'textarea' ? 'v2-cfged-row--wide' : undefined}
@@ -723,8 +724,13 @@ function Editor({
     <FieldRow
       id={`${ids}-backgroundImage`}
       label="Background image"
-      help={`Needs agent ${KIOSK_IMAGE_AGENT}. A PNG, JPEG or WebP photo behind the kiosk launcher; the background color stays the fallback.`}
-      adornment={changed.has('backgroundImageFileId') && !readOnly ? <ChangedChip /> : undefined}
+      help={<FieldHelp text="A PNG, JPEG or WebP photo behind the kiosk launcher." more="Where the image can’t be shown, the background color is used." />}
+      adornment={
+        <>
+          <AgentTag version={KIOSK_IMAGE_AGENT} />
+          {changed.has('backgroundImageFileId') && !readOnly ? <ChangedChip /> : null}
+        </>
+      }
       disabled={readOnly}
       below={backgroundInfo.info ? (
         <div className="v2-cfged-kbg">
@@ -858,14 +864,14 @@ function Editor({
     </Button>
   ) : !canCopy ? null : readOnly ? (
     <Button size="lg" variant="primary" icon={<IconCopy />} onClick={() => setCopying(true)}>
-      Duplicate to edit
+      Duplicate to edit…
     </Button>
   ) : (
     <>
-      <Button size="lg" icon={<IconCopy />} onClick={() => setCopying(true)}>
-        Duplicate
+      <Button icon={<IconCopy />} onClick={() => setCopying(true)}>
+        Duplicate…
       </Button>
-      <Button size="lg" variant="danger" icon={<IconTrash />} onClick={() => setDeleting(true)}>
+      <Button variant="danger" icon={<IconTrash />} onClick={() => setDeleting(true)}>
         Delete…
       </Button>
     </>
@@ -922,7 +928,7 @@ function Editor({
             }
           >
             <Textarea
-              rows={2}
+              rows={3}
               value={draft.description == null ? '' : String(draft.description)}
               disabled={readOnly}
               onChange={(e) =>
@@ -942,31 +948,25 @@ function Editor({
           spacing={12}
           actions={
             readOnly ? undefined : (
-              <Button size="lg" icon={<IconPlus />} onClick={() => setPickerOpen(true)} disabled={!appsReady || !libraryReady}>
-                Add apps
+              <Button size="sm" icon={<IconPlus />} onClick={() => setPickerOpen(true)} disabled={!appsReady || !libraryReady}>
+                Add apps…
               </Button>
             )
           }
         />
         {library === 'error' ? (
           <div className="v2-cfged-libnote">
-            <Callout tone="alert" role="alert" icon={<IconWarning size={16} />}>
-              <span className="v2-cfged-calloutline">
-                Could not load the app library, so apps cannot be added and the main-app choices are missing.
-                <Button size="sm" onClick={onRetryLibrary}>
-                  Retry
-                </Button>
-              </span>
-            </Callout>
+            <ErrorState thing="the app library" detail="Apps can’t be added until it loads." onRetry={onRetryLibrary} />
           </div>
         ) : null}
         <FieldRow
           id={`${ids}-mainAppId`}
           label={FIELD.mainAppId.label}
           help={
-            kioskOn
-              ? `${FIELD.mainAppId.help} Only apps set to Install and shown in kiosk can be chosen.`
-              : `${FIELD.mainAppId.help} Applies in kiosk mode only: turn kiosk mode on to choose one.`
+            <FieldHelp
+              text={kioskOn ? FIELD.mainAppId.help : 'The app the kiosk opens. Turn kiosk mode on to choose one.'}
+              more={kioskOn ? 'Only apps set to Install and shown in kiosk can be chosen.' : undefined}
+            />
           }
           adornment={changed.has('mainAppId') && !readOnly ? <ChangedChip /> : undefined}
           disabled={!kioskOn}
@@ -1005,12 +1005,12 @@ function Editor({
             return (
               <details className="v2-cfged-permission-app">
                 <summary>Permissions · {permissions.length} available</summary>
-                <p>APK candidates only. Each device applies what its Android version and installed app support. Default removes MDMesh’s explicit override.</p>
+                <p>Each device applies what its Android and the app support. Default lifts the override.</p>
                 {permissions.map((permission) => (
                   <label className="v2-cfged-permission-app__row" key={permission}>
                     <span>{managedAppPermissionLabel(permission)}</span>
                     {/* The shared Select: the 3:1 input border every select has (componentEdges.test.ts). */}
-                    <Select size="xs" aria-label={managedAppPermissionLabel(permission)} value={appPermissionState(app.id, permission)} disabled={readOnly} onChange={(e) => setAppPermission(app.id, permission, e.target.value)}>
+                    <Select size="sm" aria-label={managedAppPermissionLabel(permission)} value={appPermissionState(app.id, permission)} disabled={readOnly} onChange={(e) => setAppPermission(app.id, permission, e.target.value)}>
                       <option value="default">Default</option><option value="grant">Grant</option><option value="deny">Deny</option>
                     </Select>
                   </label>
@@ -1019,11 +1019,14 @@ function Editor({
             );
           }}
         />
-        <p className="v2-cfged-apps__note">
-          “Do not install” keeps an app listed without installing it. “Remove” takes the app out of this configuration;
-          it is not uninstalled from devices yet.
-          {kioskOn ? ' “Show in kiosk” controls whether an installed app appears in the kiosk launcher.' : ''}
-        </p>
+        <details className="v2-cfged-apps__note">
+          <summary>What On devices does</summary>
+          <p>
+            “Do not install” keeps an app listed without installing it. “Remove” takes the app out of this
+            configuration; it is not uninstalled from devices yet.
+            {kioskOn ? ' “Show in kiosk” sets whether an installed app appears in the kiosk launcher.' : ''}
+          </p>
+        </details>
       </Card>
     ),
     kiosk: section('kiosk', 'Kiosk'),
@@ -1035,12 +1038,12 @@ function Editor({
         <div className="v2-cfged-hw__head">
           <div className="v2-cfged-hw__text">
             <h2 id={`${ids}-hw-h`} className="v2-cfged-h2">
-              Headwind launcher only <span className="v2-cfged-hw__count">{LEGACY_FIELDS.length}</span>
+              Legacy launcher settings <span className="v2-cfged-hw__count v2-num">{LEGACY_FIELDS.length}</span>
             </h2>
-            <span className="v2-cfged-hw__sub">Older settings the MDMesh agent does not apply. {hwChanged ? `${hwChanged} changed.` : ''}</span>
+            <span className="v2-cfged-hw__sub">Only the Headwind launcher read these. {hwChanged ? `${hwChanged} changed.` : ''}</span>
           </div>
           <Button
-            size="lg"
+            size="sm"
             aria-expanded={advanced}
             aria-controls={`${ids}-hw-body`}
             iconEnd={<IconChevronDown className={advanced ? 'v2-cfged-chev is-open' : 'v2-cfged-chev'} />}
@@ -1091,20 +1094,16 @@ function Editor({
 
       {readOnly ? (
         <Callout tone="info" icon={<IconInfo size={16} />}>
-          This is a built-in template, so it is view only. Use <b>Duplicate to edit</b> to make your own editable copy.
+          A built-in template is view only. Duplicate it to make your own editable copy.
         </Callout>
       ) : null}
 
       {appsError && !appsReady ? (
-        <Callout tone="alert" role="alert" icon={<IconWarning size={16} />}>
-          <span className="v2-cfged-calloutline">
-            Could not load this configuration’s assigned apps. Saving is disabled so the app list (and kiosk
-            allowlist) is not wiped.
-            <Button size="sm" onClick={() => setAppsAttempt((n) => n + 1)}>
-              Retry
-            </Button>
-          </span>
-        </Callout>
+        <ErrorState
+          thing="this configuration’s assigned apps"
+          detail="Saving is off until they load, so the app list isn’t wiped."
+          onRetry={() => setAppsAttempt((n) => n + 1)}
+        />
       ) : null}
 
       <SectionLayout nav={<SectionNav aria-label="Sections" items={host.nav} />}>

@@ -54,5 +54,5 @@ export const CORE_CONFIG_SECTIONS: readonly ConfigSectionContribution<null>[] = 
   coreSection('network', 'Network'),
   coreSection('security', 'Security'),
   coreSection('enrollment', 'Enrollment'),
-  coreSection('headwind', 'Headwind only'),
+  coreSection('headwind', 'Legacy launcher settings'),
 ];

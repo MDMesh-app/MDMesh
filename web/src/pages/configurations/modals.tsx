@@ -7,7 +7,20 @@ import {
 } from '../../api/configurations';
 import { appCategory, type AppCategory, type Application } from '../../api/applications';
 import { CONFIG_FIELDS } from '../../data/configFields';
-import { AppTile, Button, Checkbox, EmptyState, Field, Input, Modal, SearchInput, Segmented, useToast } from '../../ui';
+import {
+  AppTile,
+  Button,
+  Checkbox,
+  EmptyState,
+  Field,
+  IconCheckSmall,
+  Input,
+  Modal,
+  SearchInput,
+  Segmented,
+  useStickyValue,
+  useToast,
+} from '../../ui';
 import { plural } from './sync';
 import './modals.css';
 
@@ -32,14 +45,16 @@ export function CopyConfigModal({
   onDone: (name: string, id: number | null) => void;
 }) {
   const [busy, setBusy] = useState(false);
+  // Kept mounted with what it last showed, so it plays its exit (useStickyValue).
+  const shown = useStickyValue(source);
   // Escape and the close button wait for a running copy (closing would hide its outcome).
   const close = () => {
     if (!busy) onClose();
   };
   return (
     <Modal open={source != null} onClose={close} title="Duplicate configuration" size="sm" dismissOnBackdrop={false}>
-      {source ? (
-        <CopyForm key={source.id} source={source} note={note} busy={busy} setBusy={setBusy} onClose={close} onDone={onDone} />
+      {shown ? (
+        <CopyForm key={shown.id} source={shown} note={note} busy={busy} setBusy={setBusy} onClose={close} onDone={onDone} />
       ) : null}
     </Modal>
   );
@@ -76,11 +91,11 @@ function CopyForm({
       const msg = errMessage(err);
       const dup = /duplicate/i.test(msg);
       if (dup) setError('A configuration with that name exists.');
-      toast.push('err', 'Copy failed', dup ? 'A configuration with that name exists.' : msg);
+      toast.push('err', 'Duplicate failed', dup ? 'A configuration with that name exists.' : msg);
       setBusy(false);
       return;
     }
-    toast.push('ok', 'Configuration copied', n);
+    toast.push('ok', 'Configuration duplicated', n);
     const id = await getConfigurations().then(
       (list) => list.find((x) => x.name === n)?.id ?? null,
       () => null,
@@ -92,7 +107,7 @@ function CopyForm({
   return (
     <form className="v2-configs-modalform" onSubmit={(e) => void go(e)}>
       <p className="v2-configs-modalform__lead">
-        Makes an editable copy of “{source.name}” with the same settings and apps. Devices stay on their current
+        An editable copy of “{source.name}” with the same settings and apps. Devices stay on their current
         configuration.
       </p>
       {note ? <p className="v2-configs-modalform__lead">{note}</p> : null}
@@ -104,7 +119,7 @@ function CopyForm({
           Cancel
         </Button>
         <Button size="lg" variant="primary" type="submit" disabled={busy || !name.trim()}>
-          {busy ? 'Copying…' : 'Duplicate'}
+          {busy ? 'Duplicating…' : 'Duplicate'}
         </Button>
       </div>
     </form>
@@ -129,6 +144,8 @@ export function DeleteConfigModal({
 }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
+  // Kept mounted with what it last showed, so it plays its exit (useStickyValue).
+  const shown = useStickyValue(target);
 
   async function go() {
     if (!target || target.id == null) return;
@@ -153,14 +170,14 @@ export function DeleteConfigModal({
       role="alertdialog"
       size="sm"
       title="Delete configuration?"
-      description={target ? `Delete “${target.name}”? This cannot be undone.` : undefined}
+      description={shown ? `“${shown.name}” and its settings are deleted for good.` : undefined}
       footer={
         <>
           <Button size="lg" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button size="lg" variant="danger" onClick={() => void go()} disabled={busy}>
-            {busy ? 'Deleting…' : 'Delete'}
+          <Button size="lg" variant="danger-primary" onClick={() => void go()} disabled={busy}>
+            {busy ? 'Deleting…' : 'Delete configuration'}
           </Button>
         </>
       }
@@ -176,7 +193,10 @@ export function DeleteConfigModal({
   );
 }
 
-/** "New configuration": blank, or based on one of the built-in templates (classic NewChooser). */
+/**
+ * "New configuration…": blank, or based on one of the built-in templates (classic NewChooser). The page opens it only
+ * when there is a template to offer; with none, New configuration creates a blank one directly.
+ */
 export function NewConfigChooser({
   open,
   templates,
@@ -188,34 +208,66 @@ export function NewConfigChooser({
   onClose: () => void;
   onPick: (base: Configuration | null) => void;
 }) {
+  // The choice: "blank" or a template id. Starts on Blank each time it opens.
+  const [choice, setChoice] = useState('blank');
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) {
+    setWasOpen(open);
+    if (open) setChoice('blank');
+  }
+  const options = [
+    { value: 'blank', name: 'Blank configuration', sub: 'Set everything yourself.' },
+    ...templates.map((t) => ({
+      value: String(t.id),
+      name: `Based on “${t.name}”`,
+      sub: 'Its settings and apps, ready to change.',
+    })),
+  ];
+  const create = (e: FormEvent) => {
+    e.preventDefault();
+    onPick(choice === 'blank' ? null : (templates.find((t) => String(t.id) === choice) ?? null));
+  };
   return (
     <Modal
       open={open}
       onClose={onClose}
       title="New configuration"
-      description="Start from scratch, or base it on a built-in template."
+      size="sm"
       footer={
-        <Button size="lg" onClick={onClose}>
-          Cancel
-        </Button>
+        <>
+          <Button size="lg" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button size="lg" variant="primary" type="submit" form="v2-configs-chooser">
+            Create
+          </Button>
+        </>
       }
     >
-      <ul className="v2-configs-chooser">
-        <li>
-          <button type="button" className="v2-configs-chooser__opt" onClick={() => onPick(null)}>
-            <span className="v2-configs-chooser__name">Blank configuration</span>
-            <span className="v2-configs-chooser__sub">Empty template: set everything yourself.</span>
-          </button>
-        </li>
-        {templates.map((t) => (
-          <li key={t.id}>
-            <button type="button" className="v2-configs-chooser__opt" onClick={() => onPick(t)}>
-              <span className="v2-configs-chooser__name">Based on “{t.name}”</span>
-              <span className="v2-configs-chooser__sub">Copy this template’s settings and apps, then customise.</span>
-            </button>
-          </li>
-        ))}
-      </ul>
+      <form id="v2-configs-chooser" onSubmit={create}>
+        <fieldset className="v2-configs-chooser">
+          <legend className="v2-visually-hidden">Start from</legend>
+          {options.map((o) => (
+            <label key={o.value} className={choice === o.value ? 'v2-configs-chooser__opt is-on' : 'v2-configs-chooser__opt'}>
+              <input
+                type="radio"
+                name="v2-configs-chooser"
+                className="v2-visually-hidden"
+                value={o.value}
+                checked={choice === o.value}
+                onChange={() => setChoice(o.value)}
+              />
+              <span className="v2-configs-chooser__text">
+                <span className="v2-configs-chooser__name">{o.name}</span>
+                <span className="v2-configs-chooser__sub">{o.sub}</span>
+              </span>
+              <span className="v2-configs-chooser__mark" aria-hidden="true">
+                {choice === o.value ? <IconCheckSmall /> : null}
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      </form>
     </Modal>
   );
 }
@@ -238,6 +290,7 @@ export function KioskConfirmModal({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const shown = useStickyValue(keys);
   return (
     <Modal
       open={keys != null}
@@ -255,7 +308,7 @@ export function KioskConfirmModal({
       }
     >
       <p className="v2-configs-modalnote">
-        This edit changes kiosk settings ({(keys ?? []).map((k) => FIELD_LABEL[k] ?? k).join(', ')}). Every device
+        This edit changes kiosk settings ({(shown ?? []).map((k) => FIELD_LABEL[k] ?? k).join(', ')}). Every device
         assigned to this configuration will re-apply kiosk at its next check-in, usually within seconds. Turning kiosk
         off lifts it only on devices that entered kiosk through this configuration.
       </p>
@@ -281,9 +334,16 @@ export function AppPickerModal({
   onAdd: (apps: Application[]) => void;
   onClose: () => void;
 }) {
+  // A fresh picker (no search, nothing ticked) each time it opens; kept mounted while it closes, for its exit.
+  const [session, setSession] = useState(0);
+  const [wasOpen, setWasOpen] = useState(open);
+  if (wasOpen !== open) {
+    setWasOpen(open);
+    if (open) setSession((n) => n + 1);
+  }
   return (
     <Modal open={open} onClose={onClose} title="Add apps" size="lg">
-      {open ? <PickerBody apps={apps} excludeIds={excludeIds} onAdd={onAdd} onClose={onClose} /> : null}
+      <PickerBody key={session} apps={apps} excludeIds={excludeIds} onAdd={onAdd} onClose={onClose} />
     </Modal>
   );
 }

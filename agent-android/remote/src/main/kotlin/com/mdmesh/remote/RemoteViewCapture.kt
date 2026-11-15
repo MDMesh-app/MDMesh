@@ -43,6 +43,7 @@ internal class RemoteViewCapture(
     private var capturer: VideoCapturer? = null
     private var source: VideoSource? = null
     private var helper: SurfaceTextureHelper? = null
+    private val remoteCandidates = RemoteCandidateQueue<IceCandidate>()
     @Volatile private var stopped = false
     @Volatile private var startupStage = "creating capture"
 
@@ -120,6 +121,7 @@ internal class RemoteViewCapture(
                 }
                 peer?.setRemoteDescription(object : Sdp() {
                     override fun onSetSuccess() {
+                        applyPendingRemoteCandidates()
                         peer?.createAnswer(object : Sdp() {
                             override fun onCreateSuccess(sdp: SessionDescription) {
                                 peer?.setLocalDescription(object : Sdp() {
@@ -132,9 +134,20 @@ internal class RemoteViewCapture(
                     }
                 }, SessionDescription(SessionDescription.Type.OFFER, description))
             }
-            "candidate" -> peer?.addIceCandidate(IceCandidate(payload.getString("sdpMid"), payload.getInt("sdpMLineIndex"), payload.getString("candidate")))
+            "candidate" -> addRemoteCandidate(
+                IceCandidate(payload.getString("sdpMid"), payload.getInt("sdpMLineIndex"), payload.getString("candidate")),
+            )
         }
     }.onFailure { stop("invalid signaling") }
+
+    /** Native WebRTC must not receive ICE until the asynchronous remote SDP operation finishes. */
+    private fun addRemoteCandidate(candidate: IceCandidate) {
+        remoteCandidates.offer(candidate)?.let { peer?.addIceCandidate(it) }
+    }
+
+    private fun applyPendingRemoteCandidates() {
+        remoteCandidates.open().forEach { candidate -> peer?.addIceCandidate(candidate) }
+    }
 
     private val observer = object : PeerConnection.Observer {
         override fun onIceCandidate(candidate: IceCandidate) = send("candidate", JSONObject().put("candidate", candidate.sdp).put("sdpMid", candidate.sdpMid).put("sdpMLineIndex", candidate.sdpMLineIndex))
@@ -156,6 +169,7 @@ internal class RemoteViewCapture(
         if (stopped) return
         stopped = true
         runCatching { socket?.close(1000, reason.take(80)) }; socket = null
+        remoteCandidates.clear()
         runCatching { capturer?.stopCapture() }; capturer?.dispose(); capturer = null
         source?.dispose(); source = null; helper?.dispose(); helper = null
         peer?.close(); peer = null; factory?.dispose(); factory = null; egl.release()

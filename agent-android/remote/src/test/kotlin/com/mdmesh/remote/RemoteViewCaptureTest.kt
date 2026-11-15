@@ -13,4 +13,13 @@ class RemoteViewCaptureTest {
         assertFalse(hasVideoMediaSection("v=0\r\nm=application 9 UDP/DTLS/SCTP webrtc-datachannel\r\n"))
         assertFalse(hasVideoMediaSection("v=0\r\n"))
     }
+
+    @Test
+    fun `remote candidates wait until remote description is installed`() {
+        val queue = RemoteCandidateQueue<String>()
+        assertFalse(queue.offer("first") != null)
+        assertFalse(queue.offer("second") != null)
+        assertTrue(queue.open() == listOf("first", "second"))
+        assertTrue(queue.offer("later") == "later")
+    }
 }

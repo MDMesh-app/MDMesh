@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react';
 import * as D from '@radix-ui/react-dialog';
 import { IconButton } from './Button';
 import { IconClose } from './icons';
@@ -94,6 +94,11 @@ export function Modal({
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const scrollStop = useScrollStop(body, open && !!children);
+  // A stable ref callback (an inline one runs again on every render, with null and then the element).
+  const bodyCallback = useCallback((el: HTMLDivElement | null) => {
+    bodyRef.current = el;
+    setBody(el);
+  }, []);
   const alert = role === 'alertdialog';
   const titleId = useId();
 
@@ -146,10 +151,7 @@ export function Modal({
             </div>
             {children ? (
               <div
-                ref={(el) => {
-                  bodyRef.current = el;
-                  setBody(el);
-                }}
+                ref={bodyCallback}
                 className="v2-modal__body"
                 {...(scrollStop ? { tabIndex: 0, role: 'group', 'aria-labelledby': titleId } : {})}
               >

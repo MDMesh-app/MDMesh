@@ -124,7 +124,8 @@ export function AppShell() {
     if (!open) return;
     drawerRef.current?.querySelector<HTMLElement>('a[href], button')?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+      // An Escape a menu or dialog inside the drawer already used (it prevents the default) closes only that.
+      if (e.key === 'Escape' && !e.defaultPrevented) setOpen(false);
     };
     document.addEventListener('keydown', onKey);
     const menu = menuRef.current;

@@ -10,7 +10,7 @@ import { isOnline, notConnected } from '../data/presence';
 import { CORE_ACTION_ACCESS } from '../ext/core/access';
 import { CoreOverviewProvider } from '../ext/core/overview';
 import { OverviewRows, OverviewStats } from '../ext/hosts/OverviewCards';
-import { usePermission } from '../ext/permissions';
+import { useCurrentUser, usePermission } from '../ext/permissions';
 import { paths, UPDATES_HREF } from '../routes';
 import {
   ActivityList,
@@ -122,7 +122,10 @@ export function OverviewPage() {
   const unknown = data.loadedAt === null && !!data.error;
   const firstLoad = data.loading && data.loadedAt === null;
   // Nothing enrolled yet: the first-run steps instead of a fleet of zeros.
-  const firstRun = !firstLoad && !unknown && data.total === 0;
+  // Only for someone who sees the whole fleet (a scoped user's empty view says nothing about the fleet) and may enroll;
+  // anyone else gets the cards' own "No devices yet".
+  const user = useCurrentUser();
+  const firstRun = !firstLoad && !unknown && data.total === 0 && canEnroll && !!user?.allDevices;
 
   // Core's cards, which the contributions in ext/core/overview.tsx pick out; extensions' cards are placed among them.
   const core = {
@@ -173,7 +176,9 @@ export function OverviewPage() {
       {data.error ? (
         <ErrorState
           thing="the fleet"
-          detail={data.loadedAt !== null ? 'Showing the last data loaded.' : undefined}
+          detail={[data.error === 'Failed to load devices.' ? null : data.error, data.loadedAt !== null ? 'Showing the last data loaded.' : null]
+            .filter(Boolean)
+            .join(' ') || undefined}
           onRetry={data.refresh}
         />
       ) : null}

@@ -46,6 +46,9 @@ export function Tooltip({
 }) {
   const provided = useContext(Provided);
   if (content === null || content === undefined || content === '') return children;
+  // A disabled control gets no pointer events: the tooltip goes on a wrapper the pointer reaches instead.
+  const disabled = !!(children.props as { disabled?: boolean }).disabled;
+  const target = disabled ? <span className="v2-tooltip-wrap">{children}</span> : children;
   const tip = (
     <T.Root>
       <T.Trigger
@@ -54,7 +57,7 @@ export function Tooltip({
           if (performance.now() - keyboardMoveAt > KEYBOARD_FOCUS_MS) e.preventDefault();
         }}
       >
-        {children}
+        {target}
       </T.Trigger>
       <T.Portal>
         <T.Content side={side} sideOffset={6} collisionPadding={8} className="v2-tooltip">

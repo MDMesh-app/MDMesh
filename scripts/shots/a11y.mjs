@@ -673,9 +673,12 @@ async function keyboardWalk(browser, base) {
     ['/enroll', 'button', 'Full screen'],
     ['/settings', 'button', /Change password/],
     ['/configurations/2', 'button', 'Choose from uploaded', POPUP, KIOSK_IMAGE],
+    // A menu item that opens a dialog: closing the dialog (Escape, or its Cancel) returns focus to the menu's trigger.
+    ['/devices', 'button', 'More actions for KIOSK-FRONT', DIALOG, {}, { item: 'Change configuration…' }],
+    ['/configurations', 'button', 'More for Default', DIALOG, {}, { item: 'Delete…', close: 'Cancel' }],
   ];
   const escapes = [];
-  for (const [route, role, label, open = POPUP, extra] of dialogs) {
+  for (const [route, role, label, open = POPUP, extra, via] of dialogs) {
     const { context, page } = await openState(browser, base, { route, ...extra }, 'light', VIEWPORTS[0]);
     const trigger = page.getByRole(role, { name: label }).first();
     let result;
@@ -683,13 +686,23 @@ async function keyboardWalk(browser, base) {
       await trigger.focus();
       await page.keyboard.press('Enter');
       await page.waitForTimeout(400);
+      if (via?.item) {
+        await page.getByRole('menuitem', { name: via.item }).focus();
+        await page.keyboard.press('Enter');
+        await page.waitForTimeout(400);
+      }
       const opened = await page.evaluate((sel) => !!document.querySelector(sel), open);
       const focusInside = await page.evaluate((sel) => !!document.activeElement?.closest(sel), open);
-      await page.keyboard.press('Escape');
+      if (via?.close) {
+        await page.locator(open).getByRole('button', { name: via.close }).focus();
+        await page.keyboard.press('Enter');
+      } else {
+        await page.keyboard.press('Escape');
+      }
       await page.waitForTimeout(400);
       const closed = await page.evaluate((sel) => !document.querySelector(sel), open);
       const returned = await trigger.evaluate((el) => el === document.activeElement);
-      result = { route, label: String(label), opened, focusInside, closed, returned };
+      result = { route, label: via?.item ? `${label} → ${via.item}` : String(label), opened, focusInside, closed, returned };
     } catch (e) {
       result = { route, label: String(label), error: String(e.message).split('\n')[0] };
     }

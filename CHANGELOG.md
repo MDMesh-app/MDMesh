@@ -42,10 +42,18 @@ Upgrading
   `chmod 600`), or they are refused.
 
 Heads-up
-- Console extensions: `Select` is now a listbox button (no longer a native `<select>`): it takes the same props and
-  `onChange(e)` still reads `e.target.value`, but its ref is the trigger button. The size and padding names a new
-  scale replaced (`Button` `xs`/`xl`/`hero`/`auth`, `Card` paddings, the `--fs-*`, `--radius-sm/md/lg` and other
-  board tokens) still work and follow the new scale; they go in 0.6.0.
+- Console extensions: `Select` is now a listbox button, not a native `<select>`. It takes a single select's props
+  (`<option>`/`<optgroup>` children, `value` or `defaultValue`, `name`, `required`, `form`, `autoComplete`, `disabled`;
+  handlers, `style`, `tabIndex`, `autoFocus`, `data-*` and `aria-*` go to the button); `multiple` is no longer
+  accepted. `onChange(e)` gets an object with `target.value`, `target.name`, `preventDefault()` and
+  `stopPropagation()`, not a native event. Its `ref` keeps the old element type until 0.6.0 but holds only `value`,
+  `name`, `disabled`, `required`, `focus()` and `blur()`; in 0.6.0 it becomes the button, which the new `triggerRef`
+  gives now. Deprecated until they go in 0.6.0: `Button` sizes `xs`/`xl`/`hero`/`auth` (drawn as `sm`/`lg`), `Card`
+  paddings other than `default`/`rows`/`list`/`none` (drawn as `default`), and the board tokens (`--fs-*`,
+  `--radius-sm`/`md`/`lg`, `--space-0`/`1h`/`2h`/`3h`/`5`, `--shadow-*`, `--page-pad`, `--main-max`), which follow
+  the new scale; and, now ignored, `Button` `strong`, `IconButton` `tone`, `Card` `radius`, `CardHeader` `size`,
+  `PageHeader` `subtitleMaxCh` and `actionsGap`, and `Checkbox` `size`. `Card` `gap` now rounds to 8, 12, 16 or 24
+  and no longer reaches `style`.
 - Native installs: `REPLACE_DATA` must be `yes` or `no`, and `ASSUME_YES` `1` or `0`; empty means not set (the
   default). Any other value now stops the installer before it changes anything, where it used to mean Keep or ask.
 - The agent is now called **MDMesh** on the device (was MDM Agent): in the app drawer, Settings → Apps, the
@@ -240,8 +248,8 @@ Fixes
 
 Under the hood
 - Console: menus, dialogs, selects, popovers and tooltips are built on Radix Primitives. Every colour, size, space,
-  radius, shadow and timing comes from `web/src/tokens.css`, and `npm run lint:css` (stylelint) rejects any other
-  value. New for extensions: `Grid`/`GridCell`, `Skeleton`, `ErrorState`, `Tooltip`, `Popover` and `useStickyValue`,
+  radius, shadow and timing comes from `web/src/tokens.css`, and `npm run lint:css` (stylelint, in CI) rejects any
+  other value. New for extensions: `Grid`/`GridCell`, `Skeleton`, `ErrorState`, `Tooltip`, `Popover` and `useStickyValue`,
   and the role tokens (`--text-ui`, `--control-md`, `--radius-control`, `--space-*` and the rest).
 - The release manifest records the tagged commit, which `setup.sh --update` checks the tag against. CI tests
   `--update` against signed fixture releases.

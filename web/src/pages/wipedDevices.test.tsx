@@ -264,7 +264,7 @@ describe('a wiped device’s page', () => {
     async () => {
       const fetch = open('/devices/WH-9');
       const actions = within(await screen.findByRole('toolbar', { name: 'Quick actions' }, LOAD));
-      expect(main().getAllByText('Wiped').length).toBeGreaterThan(0);
+      expect(within(document.querySelector('.v2-device-id') as HTMLElement).getByText('Wiped')).toBeTruthy();
       const notice = main().getByText(/The device erased itself/).closest('.v2-callout');
       expect(notice?.textContent).toMatch(
         /^Wiped .+\. The device erased itself, so it no longer reports\. Delete it from Devices, or keep it for its history\.$/,

@@ -1,8 +1,8 @@
-import { useOverflowFade } from './useOverflowFade';
 import { useId, useLayoutEffect, useRef, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { Link, NavLink } from 'react-router';
 import { Badge } from './Badge';
 import { cx } from './cx';
+import { useOverflowFade } from './useOverflowFade';
 import './Tabs.css';
 
 export interface TabItem<K extends string> {
@@ -46,10 +46,13 @@ export function tabIds(idBase: string, key: string) {
  * follows resizes; it hides while nothing is selected.
  */
 function useIndicator(list: RefObject<HTMLElement | null>) {
+  // The placement, kept for the observer and run again after every render (the selected tab may have changed).
+  const place = useRef<() => void>(() => {});
   useLayoutEffect(() => {
     const el = list.current;
     if (!el) return;
-    const place = () => {
+    let frame = 0;
+    place.current = () => {
       const on = el.querySelector<HTMLElement>('.v2-tabs__tab.is-selected');
       if (!on) {
         el.removeAttribute('data-indicator');
@@ -60,15 +63,17 @@ function useIndicator(list: RefObject<HTMLElement | null>) {
       // The first placement doesn't animate; later ones slide.
       if (!el.hasAttribute('data-indicator')) {
         el.setAttribute('data-indicator', 'placed');
-        requestAnimationFrame(() => el.setAttribute('data-indicator', 'ready'));
+        frame = requestAnimationFrame(() => el.setAttribute('data-indicator', 'ready'));
       }
     };
-    place();
-    if (typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(place);
-    ro.observe(el);
-    return () => ro.disconnect();
-  });
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => place.current());
+    ro?.observe(el);
+    return () => {
+      ro?.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, [list]);
+  useLayoutEffect(() => place.current());
 }
 
 const sizeClass = (size: TabsSize) => `v2-tabs--${size === 'lg' ? 'tab' : size}`;

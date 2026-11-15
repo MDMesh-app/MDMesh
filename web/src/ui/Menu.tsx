@@ -1,4 +1,4 @@
-import { useState, type MouseEvent, type ReactNode } from 'react';
+import { useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import * as DM from '@radix-ui/react-dropdown-menu';
 import { Button, IconButton, type ButtonSize, type ButtonVariant, type IconButtonSize } from './Button';
 import { IconChevronDown, IconMore } from './icons';
@@ -59,6 +59,7 @@ export function Menu({
 }: MenuProps) {
   const withIcons = items.some((it) => it !== 'separator' && !!it.icon);
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   // Radix opens on pointerdown and on Enter, Space or ArrowDown. A click with no pointer behind it (detail 0: a
   // screen reader's activation, or a script) opens it too; a mouse click's own pointerdown already did.
   const onClick = (e: MouseEvent) => {
@@ -67,7 +68,7 @@ export function Menu({
   return (
     <span className={cx('v2-menu', className)}>
       <DM.Root modal={false} open={open} onOpenChange={setOpen}>
-        <DM.Trigger asChild disabled={disabled} onClick={onClick}>
+        <DM.Trigger ref={triggerRef} asChild disabled={disabled} onClick={onClick}>
           {trigger === 'icon' ? (
             <IconButton label={label} size={iconSize}>
               <IconMore size={iconSize === 'xs' || iconSize === 'sm' ? 14 : 16} />
@@ -100,7 +101,12 @@ export function Menu({
                   disabled={it.disabled}
                   textValue={it.textValue ?? (typeof it.label === 'string' ? it.label : undefined)}
                   className={cx('v2-menu__item', it.danger && 'is-danger')}
-                  onSelect={() => it.onSelect()}
+                  onSelect={() => {
+                    // Focus goes back to the trigger first: a dialog the item opens then returns focus there when it
+                    // closes (the item itself is gone by then).
+                    triggerRef.current?.focus();
+                    it.onSelect();
+                  }}
                 >
                   {withIcons ? (
                     <span className="v2-menu__icon" aria-hidden="true">

@@ -39,3 +39,11 @@
 .v2 .v2-popover[data-side='top'] {
   --pop-from: var(--lift);
 }
+
+/* A Tooltip around a disabled control hangs on this wrapper (the control itself takes no pointer events). */
+.v2 .v2-tooltip-wrap {
+  display: inline-flex;
+}
+.v2 .v2-tooltip-wrap > :disabled {
+  pointer-events: none;
+}

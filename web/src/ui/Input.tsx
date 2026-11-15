@@ -3,9 +3,16 @@ import {
   Fragment,
   forwardRef,
   isValidElement,
+  useCallback,
   useEffect,
+  useImperativeHandle,
   useRef,
+  useState,
   type ChangeEvent,
+  type FocusEventHandler,
+  type KeyboardEventHandler,
+  type MouseEventHandler,
+  type Ref,
   type InputHTMLAttributes,
   type ReactElement,
   type ReactNode,
@@ -18,7 +25,7 @@ import { useFieldControl } from './Field';
 import { IconCheck, IconChevronDown, IconSearch } from './icons';
 import './Input.css';
 
-/** Height: `sm` 28 (PIN, compact rows) · `md` 32 (default) · `lg` 36 (sign-in, prominent forms). */
+/** Height (the control scale): `sm` (PIN, compact rows) · `md` (default) · `lg` (sign-in, prominent forms). */
 export type InputSize = 'sm' | 'md' | 'lg';
 export type InputTone = 'default' | 'invalid' | 'warn';
 
@@ -26,7 +33,8 @@ function useFieldProps(props: { id?: string; 'aria-describedby'?: string; 'aria-
   const f = useFieldControl();
   return {
     id: props.id ?? f?.id,
-    'aria-describedby': props['aria-describedby'] ?? f?.describedBy,
+    // Both: a caller's (or a Tooltip's, while it shows) and the field's help and error.
+    'aria-describedby': [props['aria-describedby'], f?.describedBy].filter(Boolean).join(' ') || undefined,
     invalid: f?.invalid ?? false,
   };
 }
@@ -137,20 +145,76 @@ function parseOptions(children: ReactNode): ParsedEntry[] {
   return out;
 }
 
-/** The change event a native select's `onChange` hands its caller: `e.target.value` is all callers read. */
+/**
+ * The change event a native select's `onChange` hands its caller: `target` and `currentTarget` carry `value` and
+ * `name`; `preventDefault` and `stopPropagation` exist (and do nothing: there is no native event behind it).
+ */
 function changeEvent(value: string, name?: string): ChangeEvent<HTMLSelectElement> {
   const target = { value, name: name ?? '' } as HTMLSelectElement;
-  return { target, currentTarget: target } as ChangeEvent<HTMLSelectElement>;
+  let prevented = false;
+  let stopped = false;
+  return {
+    type: 'change',
+    target,
+    currentTarget: target,
+    preventDefault: () => {
+      prevented = true;
+    },
+    isDefaultPrevented: () => prevented,
+    stopPropagation: () => {
+      stopped = true;
+    },
+    isPropagationStopped: () => stopped,
+    persist: () => {},
+  } as unknown as ChangeEvent<HTMLSelectElement>;
+}
+
+/**
+ * What the Select's `ref` points at until 0.6.0 (the native select element before 0.5.0): a stand-in with the members extensions
+ * used — `value`, `name`, `disabled`, `required`, `focus()`, `blur()` — typed as the old element so code compiles.
+ * The rest of the element's API is gone. From 0.6.0 the ref is the trigger button; use `triggerRef` for it now.
+ */
+function selectHandle(
+  trigger: () => HTMLButtonElement | null,
+  state: () => { value: string; name?: string; disabled?: boolean; required?: boolean },
+): HTMLSelectElement {
+  return {
+    get value() {
+      return state().value;
+    },
+    get name() {
+      return state().name ?? '';
+    },
+    get disabled() {
+      return !!state().disabled;
+    },
+    get required() {
+      return !!state().required;
+    },
+    type: 'select-one',
+    focus: (options?: FocusOptions) => trigger()?.focus(options),
+    blur: () => trigger()?.blur(),
+  } as unknown as HTMLSelectElement;
 }
 
 export interface SelectProps
-  extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'size' | 'value' | 'defaultValue' | 'onChange'> {
+  extends Omit<
+    SelectHTMLAttributes<HTMLSelectElement>,
+    'size' | 'value' | 'defaultValue' | 'onChange' | 'multiple' | 'onFocus' | 'onBlur' | 'onKeyDown' | 'onClick'
+  > {
   size?: SelectSize;
   tone?: InputTone;
   value?: string | number;
   defaultValue?: string | number;
   /** Called with a change-shaped event: read `e.target.value`, as with a native select. */
   onChange?: (e: ChangeEvent<HTMLSelectElement>) => void;
+  /** Focus, blur, key and click handlers run on the trigger button. */
+  onFocus?: FocusEventHandler<HTMLElement>;
+  onBlur?: FocusEventHandler<HTMLElement>;
+  onKeyDown?: KeyboardEventHandler<HTMLElement>;
+  onClick?: MouseEventHandler<HTMLElement>;
+  /** The trigger button (the `ref` is a select-like stand-in until 0.6.0, then the button). */
+  triggerRef?: Ref<HTMLButtonElement>;
   /** Text before the value inside the box ("Type  All"); the toolbar filters use it. */
   inlineLabel?: string;
 }
@@ -192,10 +256,13 @@ function Item({ option }: { option: ParsedOption }) {
 
 /**
  * Select on Radix: a button-like trigger at the input heights and a listbox popover (typeahead, arrow keys, the
- * selected item checked). Takes the props of a native select: `<option>` / `<optgroup>` children, `value`,
- * `onChange(e)` with `e.target.value`. The ref is the trigger button.
+ * selected item checked). Takes the props of a single native select: `<option>` / `<optgroup>` children, `value` or
+ * `defaultValue`, `onChange(e)` with `e.target.value`, `name`, `required`, `form`, `autoComplete`. Inside a form Radix
+ * keeps a hidden native select in step, so the form submits the value and `required` with nothing chosen blocks
+ * submission. Other props (handlers, `style`, `tabIndex`, `autoFocus`, `data-*`, `aria-*`) go to the trigger.
+ * `multiple` is not supported.
  */
-export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select(
+export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(
   {
     size = 'md',
     tone = 'default',
@@ -207,36 +274,70 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
     disabled,
     required,
     name,
+    form,
+    autoComplete,
     inlineLabel,
     id,
-    title,
+    triggerRef,
     'aria-label': ariaLabel,
-    'aria-labelledby': ariaLabelledBy,
+    'aria-describedby': describedBy,
+    'aria-invalid': ariaInvalid,
     ...rest
   },
   ref,
 ) {
-  const f = useFieldProps({ id, ...rest });
+  const f = useFieldProps({ id, 'aria-describedby': describedBy });
   const invalid = tone === 'invalid' || f.invalid;
   const entries = parseOptions(children);
+  const flat = entries.flatMap((e) => ('group' in e ? e.options : [e]));
+  if (import.meta.env.DEV && (rest as { multiple?: unknown }).multiple) {
+    console.warn('Select: `multiple` is not supported (one value only).');
+  }
+  const { multiple: _multiple, ...triggerProps } = rest as typeof rest & { multiple?: unknown };
+
+  // Uncontrolled: our own state, as a native select starts on its first option.
+  const [own, setOwn] = useState(() => String(defaultValue ?? flat[0]?.value ?? ''));
+  const current = value === undefined ? own : String(value);
+  // '' (or a value no option has) is Radix's "nothing chosen": the trigger shows the placeholder, which reads as the
+  // empty option ("All", "None") if there is one, else as the first option, like a native select would.
+  const known = current !== '' && flat.some((o) => o.value === current);
+  const placeholder = (flat.find((o) => o.value === '') ?? flat[0])?.label;
+
+  const trigger = useRef<HTMLButtonElement | null>(null);
+  const latest = useRef({ value: current, name, disabled, required });
+  latest.current = { value: current, name, disabled, required };
+  useImperativeHandle(ref, () => selectHandle(() => trigger.current, () => latest.current), []);
+  const setTrigger = useCallback(
+    (el: HTMLButtonElement | null) => {
+      trigger.current = el;
+      if (typeof triggerRef === 'function') triggerRef(el);
+      else if (triggerRef) (triggerRef as { current: HTMLButtonElement | null }).current = el;
+    },
+    [triggerRef],
+  );
+
   return (
     <RSelect.Root
-      value={value === undefined ? undefined : toItem(String(value))}
-      defaultValue={defaultValue === undefined ? undefined : toItem(String(defaultValue))}
-      onValueChange={(v) => onChange?.(changeEvent(fromItem(v), name))}
+      value={known ? toItem(current) : ''}
+      onValueChange={(v) => {
+        const next = fromItem(v);
+        if (value === undefined) setOwn(next);
+        onChange?.(changeEvent(next, name));
+      }}
       disabled={disabled}
       required={required}
       name={name}
+      form={form}
+      autoComplete={autoComplete}
     >
       <RSelect.Trigger
-        ref={ref}
+        {...(triggerProps as Record<string, unknown>)}
+        ref={setTrigger}
         id={f.id}
-        data-value={value === undefined ? undefined : String(value)}
-        title={title}
+        data-value={current}
         aria-label={ariaLabel ?? inlineLabel}
-        aria-labelledby={ariaLabelledBy}
         aria-describedby={f['aria-describedby']}
-        aria-invalid={invalid || rest['aria-invalid'] || undefined}
+        aria-invalid={invalid || ariaInvalid || undefined}
         className={cx(
           'v2-input',
           'v2-select',
@@ -252,7 +353,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
           </span>
         ) : null}
         <span className="v2-select__value">
-          <RSelect.Value />
+          <RSelect.Value placeholder={placeholder} />
         </span>
         <RSelect.Icon className="v2-select__chevron">
           <IconChevronDown />
@@ -277,7 +378,7 @@ export interface LabelledSelectProps extends Omit<SelectProps, 'inlineLabel' | '
 }
 
 /** Toolbar filter with its label inside the box: a `Select` at the 32px height. */
-export const LabelledSelect = forwardRef<HTMLButtonElement, LabelledSelectProps>(function LabelledSelect(
+export const LabelledSelect = forwardRef<HTMLSelectElement, LabelledSelectProps>(function LabelledSelect(
   { label, className, children, ...rest },
   ref,
 ) {

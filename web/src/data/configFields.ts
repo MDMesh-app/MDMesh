@@ -88,8 +88,9 @@ export const GROUP_ORDER: FieldGroup[] = [
 export const GROUP_NOTES: Partial<Record<FieldGroup, string>> = {
   Kiosk: 'Everything below kiosk mode applies only while kiosk mode is on.',
   'Kiosk appearance': 'The look of the MDMesh kiosk launcher, while kiosk mode is on.',
-  Network: 'Not managed leaves a setting as it is.',
-  Restrictions: 'Not managed leaves a setting as it is.',
+  Network: 'Not managed leaves a setting as it is, except Wi-Fi radio and Location services: Not managed lifts their lock.',
+  Restrictions:
+    'Not managed leaves a setting as it is, except Camera (agent 0.5.0+: it restores access after an MDMesh block) and Safe Mode (see its setting).',
   Enrollment: 'Not sent to devices: the Enroll page can put this Wi-Fi in the enrollment QR.',
 };
 

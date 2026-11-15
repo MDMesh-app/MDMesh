@@ -370,6 +370,9 @@ export function configSection<T>(section: Omit<ConfigSectionContribution<T>, 'sl
   return { ...section, slot: 'config.section' };
 }
 
+/** Each lazyComponent's chunk download, for preloadComponent. */
+const preloaders = new WeakMap<object, () => void>();
+
 /**
  * A component from a named export, loaded on first render: `lazyComponent(() => import('./NetworkTab'), 'NetworkTab')`.
  * Each extension's UI is then its own chunk, so extensions do not grow the console's first load.
@@ -403,8 +406,6 @@ export function lazyComponent<P, K extends string>(
   preloaders.set(component, () => void once().catch(() => {}));
   return component;
 }
-
-const preloaders = new WeakMap<object, () => void>();
 
 /**
  * Start downloading a lazyComponent's chunk without rendering it (a link is hovered or focused), so the page is

@@ -687,15 +687,20 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
 }
 export declare const Textarea: import("react").ForwardRefExoticComponent<TextareaProps & import("react").RefAttributes<HTMLTextAreaElement>>;
 export type SelectSize = 'xs' | 'sm' | 'md' | 'lg';
-export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'size' | 'value' | 'defaultValue' | 'onChange'> {
+export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'size' | 'value' | 'defaultValue' | 'onChange' | 'multiple' | 'onFocus' | 'onBlur' | 'onKeyDown' | 'onClick'> {
     size?: SelectSize;
     tone?: InputTone;
     value?: string | number;
     defaultValue?: string | number;
     onChange?: (e: ChangeEvent<HTMLSelectElement>) => void;
+    onFocus?: FocusEventHandler<HTMLElement>;
+    onBlur?: FocusEventHandler<HTMLElement>;
+    onKeyDown?: KeyboardEventHandler<HTMLElement>;
+    onClick?: MouseEventHandler<HTMLElement>;
+    triggerRef?: Ref<HTMLButtonElement>;
     inlineLabel?: string;
 }
-export declare const Select: import("react").ForwardRefExoticComponent<SelectProps & import("react").RefAttributes<HTMLButtonElement>>;
+export declare const Select: import("react").ForwardRefExoticComponent<SelectProps & import("react").RefAttributes<HTMLSelectElement>>;
 export interface SearchInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'onChange' | 'size'> {
     value: string;
     onChange: (value: string) => void;

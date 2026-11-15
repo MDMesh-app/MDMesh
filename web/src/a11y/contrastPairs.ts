@@ -54,9 +54,10 @@ export const PAIRS: ContrastPair[] = [
   { element: 'Destructive confirm button hover', fg: 'on-danger', bg: 'danger-hover', kind: 'text' },
   // ---- non-text: control boundaries ----
   ...grid('Text input / select border', ['input-border'], ['surface', 'app', 'surface-2'], 'ui'),
-  // Owner's rule, "inputs strong, buttons soft": icon-only buttons (no label to identify them), the password toggle
-  // and the colour picker take --control-border; text buttons keep the soft v2 edge (exempt rows below).
-  ...grid('Icon-only button / password toggle / colour picker edge', ['control-border'], ['surface', 'app', 'surface-2'], 'ui'),
+  // Owner's rule, "inputs strong, buttons soft": the colour picker takes --control-border; icon-only buttons and the
+  // password toggle are ghost buttons whose icon carries the 3:1 ("Icon in a button" below); text buttons keep the
+  // soft v2 edge (exempt rows below).
+  ...grid('Colour picker edge', ['control-border'], ['surface', 'app', 'surface-2'], 'ui'),
   { element: 'Invalid input border', fg: 'alert', bg: 'surface', kind: 'ui' },
   { element: 'Warning input border', fg: 'warn', bg: 'surface', kind: 'ui' },
   // The selected tab's 2px indicator sits on the page or a card.

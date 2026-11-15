@@ -101,8 +101,10 @@ describe.each([
     open('/', user);
     // The row's action once the probe has found the device out of sync; the device's name is the row's link.
     const sync = () => main().queryAllByRole('button', { name: 'Sync now: Front desk' });
-    if (shown) await waitFor(() => expect(sync().length).toBe(1));
-    expect((await main().findAllByRole('link', { name: /Front desk/ })).length > 0).toBe(true);
+    // Every role waits for the probe's answer (the row's reason), so a missing Sync now is the role's, not the probe's.
+    const attention = within(await main().findByRole('table', { name: 'Devices that need attention' }));
+    await attention.findByText(/Configuration out of sync|Configuration failed to apply/);
+    expect(attention.getAllByRole('link', { name: /Front desk/ }).length > 0).toBe(true);
     expectShown(sync());
     expectShown(main().queryAllByRole('link', { name: 'Enroll device' }));
   });
@@ -388,5 +390,23 @@ describe('renaming follows edit_device_desc alone', () => {
     await within(await screen.findByRole('tabpanel')).findByRole('button', { name: 'View all activity' });
     expect(screen.queryAllByRole('button', { name: /Rename device/ }).length > 0).toBe(rename);
     expect(screen.queryAllByRole('toolbar', { name: 'Quick actions' }).length > 0).toBe(actions);
+  });
+});
+
+describe('the Overview with no device enrolled', () => {
+  const empty = (path: string, init?: RequestInit): unknown =>
+    new URL(path, 'http://console').pathname.endsWith('/devices/search')
+      ? { devices: { items: [], totalItemsCount: 0 }, configurations: {} }
+      : api(path, init);
+
+  it.each([
+    { role: 'Admin', user: ROLES.admin, firstRun: true },
+    { role: 'User', user: ROLES.user, firstRun: true },
+    { role: 'Observer', user: ROLES.observer, firstRun: false },
+    { role: 'User scoped to some devices', user: { ...ROLES.user, allDevicesAvailable: false }, firstRun: false },
+  ])('$role: the first-run steps only for a role that may enroll and sees the whole fleet', async ({ user, firstRun }) => {
+    open('/', user, empty);
+    await main().findAllByText('No devices yet');
+    expect(main().queryAllByRole('heading', { name: 'Enroll your first device' }).length > 0).toBe(firstRun);
   });
 });

@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent } from 'react';
+import { useEffect, useId, useState, type FormEvent } from 'react';
 import { changeOwnPassword, isTooManyAttempts, TOO_MANY_MESSAGE, type AuthUser } from '../../api/auth';
 import { Button, Callout, Field, IconAlert, Modal, PasswordInput, RuleList, useToast, type Rule } from '../../ui';
 
@@ -19,6 +19,16 @@ export function ChangePasswordModal({ open, user, onClose }: { open: boolean; us
   const [busy, setBusy] = useState(false);
   const [wrongCurrent, setWrongCurrent] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Typed passwords don't outlive the dialog: cleared once it has finished closing (not during its exit motion).
+  useEffect(() => {
+    if (open) return;
+    const t = window.setTimeout(() => {
+      setCurrent('');
+      setNext('');
+      setAgain('');
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [open]);
   const rulesId = useId();
   const formId = useId();
 

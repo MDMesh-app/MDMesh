@@ -17,7 +17,7 @@ export const dist = arg('--dist') ?? process.env.V2_PARITY_DIST ?? (fs.existsSyn
 export const outDir = arg('--out') ?? process.env.V2_PARITY_OUT ?? fs.mkdtempSync(path.join(process.env.TMPDIR || os.tmpdir(), 'v2-parity-'));
 fs.mkdirSync(outDir, { recursive: true });
 
-// ---- Radix widgets (devices, device-detail, apps, enroll, settings) ----
+// ---- Radix widgets: the console's selects and dialogs ----
 /** Any open dialog: Radix Dialog / AlertDialog render divs with role dialog / alertdialog (no native <dialog>). */
 export const DIALOG = '[role="dialog"], [role="alertdialog"]';
 
@@ -42,7 +42,6 @@ export async function pickOption(scope, select, option) {
 /** The value a Select (Radix) holds: its trigger's data-value. */
 export const pickedValue = (trigger) => trigger.getAttribute('data-value');
 
-// ---- Radix widgets (configurations, overview, auth) ----
 /**
  * The option names a Select (Radix) offers: opens its listbox, reads them, closes it with Escape (the value is
  * unchanged). `select` is the trigger Locator, or its accessible name looked up (exactly) in `scope`.

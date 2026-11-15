@@ -355,7 +355,7 @@ export function RunActionModal({
                 const asks = (t.params?.length ?? 0) > 0 || !!t.confirm;
                 return (
                   <Tooltip key={t.key} content={t.description}>
-                    <Button variant={asks && t.danger ? 'danger' : 'secondary'} disabled={busy} onClick={() => pick(t)}>
+                    <Button variant={t.danger ? 'danger' : 'secondary'} disabled={busy} onClick={() => pick(t)}>
                       {asks ? `${t.label}…` : t.label}
                     </Button>
                   </Tooltip>

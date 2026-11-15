@@ -295,6 +295,11 @@ export function RolloutSection({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
+  // A rollout that ends (here or elsewhere) takes its open confirmation with it, so it can't reopen on the next one.
+  const hasActive = !!active;
+  useEffect(() => {
+    if (!hasActive) setConfirm(null);
+  }, [hasActive]);
   const [picking, setPicking] = useState(false);
   // Each opening of the picker starts blank (a new key); closed, it stays mounted to animate out.
   const [pickSession, setPickSession] = useState(0);

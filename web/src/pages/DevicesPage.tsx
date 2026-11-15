@@ -569,8 +569,8 @@ export function DevicesPage() {
         <span className="v2-cfgsync__name">{name}</span>
       </div>
     ) : (
-      <span className="v2-cfgsync v2-cfgsync--stack">
-        <span>{name}</span>
+      <span className="v2-cfgsync v2-cfgsync--line">
+        <span className="v2-cfgsync__name">{name}</span>
       </span>
     );
   };
@@ -862,11 +862,14 @@ export function DevicesPage() {
 
   const issueEntries = ISSUE_ORDER.filter((k) => (issues[k] ?? 0) > 0);
   const shown = useStickyValue(dialog);
-  // Counts openings (a dialog after none): each opening's dialog is a fresh one.
-  const openings = useRef({ n: 0, open: false });
-  if (dialog && !openings.current.open) openings.current.n++;
-  openings.current.open = !!dialog;
-  const opening = openings.current.n;
+  // Counts openings (a dialog after none): each opening's dialog is a fresh one. State updated while rendering, from
+  // `dialog`: React renders again at once.
+  const [opening, setOpening] = useState(0);
+  const [wasOpen, setWasOpen] = useState(false);
+  if (!!dialog !== wasOpen) {
+    setWasOpen(!!dialog);
+    if (dialog) setOpening((n) => n + 1);
+  }
 
   return (
     <>
@@ -882,7 +885,7 @@ export function DevicesPage() {
         }
       />
 
-      {error ? <ErrorState thing="devices" onRetry={() => void refreshList()} /> : null}
+      {error ? <ErrorState thing="devices" detail={error === 'Failed to load devices.' ? undefined : error} onRetry={() => void refreshList()} /> : null}
 
       {total > devices.length && !loading ? (
         <Callout tone="info">

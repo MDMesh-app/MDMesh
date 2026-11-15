@@ -102,8 +102,7 @@
   gap: var(--space-1);
 }
 @media (hover: hover) and (pointer: fine) {
-  .v2 tr:not(:hover, :focus-within, .is-selected) .v2-rowactions:not(:has([aria-expanded='true'])),
-  .v2 .v2-rowhover:not(:hover, :focus-within) .v2-rowactions:not(:has([aria-expanded='true'])) {
+  .v2 tr:not(:hover, :focus-within, .is-selected) .v2-rowactions:not(:has([aria-expanded='true'])) {
     opacity: 0;
   }
 }

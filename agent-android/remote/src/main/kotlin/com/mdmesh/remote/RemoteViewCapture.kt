@@ -268,7 +268,9 @@ internal class RemoteViewCapture(
     private fun createRtcConfiguration(): PeerConnection.RTCConfiguration =
         PeerConnection.RTCConfiguration(listOf(PeerConnection.IceServer.builder(STUN_SERVER).createIceServer())).apply {
             tcpCandidatePolicy = PeerConnection.TcpCandidatePolicy.DISABLED
-            bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE
+            // This Android WebRTC binding produces no BUNDLE group on the S8.
+            // Forcing MAXBUNDLE then rejects its own local offer; retain the
+            // runtime's compatible default rather than copying AppRTC blindly.
             rtcpMuxPolicy = PeerConnection.RtcpMuxPolicy.REQUIRE
             continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
             keyType = PeerConnection.KeyType.ECDSA

@@ -55,7 +55,6 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
       // the viewer and device; this POC deliberately does not configure TURN.
       const pc = new RTCPeerConnection({
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-        bundlePolicy: 'max-bundle',
         rtcpMuxPolicy: 'require',
         iceTransportPolicy: 'all',
       });

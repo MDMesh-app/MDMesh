@@ -22,10 +22,13 @@ import javax.servlet.http.HttpSession;
 import javax.websocket.CloseReason;
 import javax.websocket.Session;
 import com.hmdm.util.ExecutorRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** In-memory SDP/ICE relay only. It never stores or logs signaling payloads or media. */
 @Singleton
 public final class RemoteViewSignalingHub {
+    private static final Logger logger = LoggerFactory.getLogger(RemoteViewSignalingHub.class);
     public static volatile RemoteViewSignalingHub INSTANCE;
     static final int MAX_MESSAGE_CHARS = 16 * 1024;
     private static final int MAX_MESSAGES_PER_MINUTE = 60;
@@ -90,9 +93,13 @@ public final class RemoteViewSignalingHub {
             target = fromBrowser ? pair.agent : pair.browser;
             if (target == null || !target.isOpen()) {
                 pair.queueForTarget(fromBrowser, text);
+                logger.info("Remote-view signaling queued: session={}, from={}, type={}", id,
+                        fromBrowser ? "browser" : "agent", signalType(text));
                 return;
             }
         }
+        logger.info("Remote-view signaling relayed: session={}, from={}, type={}", id,
+                fromBrowser ? "browser" : "agent", signalType(text));
         if (target != null && target.isOpen()) target.getAsyncRemote().sendText(text);
     }
 
@@ -128,6 +135,10 @@ public final class RemoteViewSignalingHub {
     private static void sendAll(Session socket, List<String> messages) {
         if (socket == null || !socket.isOpen()) return;
         for (String message : messages) socket.getAsyncRemote().sendText(message);
+    }
+    private static String signalType(String text) {
+        try { return JSON.readTree(text).path("type").asText("unknown"); }
+        catch (IOException ignored) { return "invalid"; }
     }
     static boolean validEnvelope(String text, boolean fromBrowser) {
         try {

@@ -207,7 +207,10 @@ internal class RemoteViewCapture(
     }
 
     private val observer = object : PeerConnection.Observer {
-        override fun onIceCandidate(candidate: IceCandidate) = send("candidate", JSONObject().put("candidate", candidate.sdp).put("sdpMid", candidate.sdpMid).put("sdpMLineIndex", candidate.sdpMLineIndex))
+        override fun onIceCandidate(candidate: IceCandidate) {
+            Log.i(TAG, "remote local ICE candidate generated: mid=${candidate.sdpMid}, index=${candidate.sdpMLineIndex}")
+            send("candidate", JSONObject().put("candidate", candidate.sdp).put("sdpMid", candidate.sdpMid).put("sdpMLineIndex", candidate.sdpMLineIndex))
+        }
         override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>) = Unit
         override fun onConnectionChange(state: PeerConnection.PeerConnectionState) {
             startupStage = "peer $state"
@@ -221,9 +224,14 @@ internal class RemoteViewCapture(
             }
         }
         override fun onSignalingChange(state: PeerConnection.SignalingState) = Unit
-        override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) = Unit
+        override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) {
+            startupStage = "ICE $state"
+            Log.i(TAG, "remote ICE state=$state")
+        }
         override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
-        override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) = Unit
+        override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {
+            Log.i(TAG, "remote ICE gathering=$state")
+        }
         override fun onAddStream(stream: org.webrtc.MediaStream) = Unit
         override fun onRemoveStream(stream: org.webrtc.MediaStream) = Unit
         override fun onDataChannel(channel: org.webrtc.DataChannel) { runOnPeerThread { channel.close() } }

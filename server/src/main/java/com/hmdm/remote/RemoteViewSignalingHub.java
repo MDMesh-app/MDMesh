@@ -105,7 +105,11 @@ public final class RemoteViewSignalingHub {
         try {
             JsonNode root = JSON.readTree(text); if (!root.isObject() || root.size() != 2) return false;
             JsonNode type = root.get("type"), payload = root.get("payload"); if (type == null || !type.isTextual() || payload == null) return false;
-            String value = type.asText(); return fromBrowser ? ("offer".equals(value) || "candidate".equals(value)) : ("answer".equals(value) || "candidate".equals(value));
+            // The agent owns the screen sender and therefore creates the offer.
+            // This avoids asking older Android WebRTC runtimes to consume a
+            // browser-generated offer before they have established their local
+            // media graph.
+            String value = type.asText(); return fromBrowser ? ("answer".equals(value) || "candidate".equals(value)) : ("offer".equals(value) || "candidate".equals(value));
         } catch (IOException bad) { return false; }
     }
     private static void closeQuietly(Session socket, String reason) { if (socket != null && socket.isOpen()) try { socket.close(new CloseReason(CloseReason.CloseCodes.VIOLATED_POLICY, reason)); } catch (IOException ignored) {} }

@@ -4,8 +4,6 @@ package com.mdmesh.remote
 
 import android.content.Context
 import android.content.Intent
-import android.os.Handler
-import android.os.Looper
 import android.util.DisplayMetrics
 import android.util.Log
 import okhttp3.OkHttpClient
@@ -26,6 +24,8 @@ import org.webrtc.VideoCapturer
 import org.webrtc.VideoSource
 import org.webrtc.VideoTrack
 import org.webrtc.ScreenCapturerAndroid
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /** One short-lived, video-only WebRTC sender. No audio track, data channel, or ICE server exists here. */
@@ -37,9 +37,17 @@ internal class RemoteViewCapture(
     private val signalingOpened: () -> Unit,
 ) {
     private val appContext = context.applicationContext
-    private val egl = EglBase.create()
     private val client = OkHttpClient.Builder().pingInterval(20, TimeUnit.SECONDS).build()
-    private var socket: WebSocket? = null
+    /**
+     * AppRTC serializes every PeerConnection operation on one executor. Native
+     * WebRTC objects are not safe to mutate from the OkHttp, callback, capture,
+     * and Android-main threads that all participate in this feature.
+     */
+    private val peerExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "mdmesh-remote-webrtc")
+    }
+    @Volatile private var socket: WebSocket? = null
+    private var egl: EglBase? = null
     private var factory: PeerConnectionFactory? = null
     private var peer: PeerConnection? = null
     private var capturer: VideoCapturer? = null
@@ -48,30 +56,25 @@ internal class RemoteViewCapture(
     private var captureWidth = 1
     private var captureHeight = 1
     private var captureStarted = false
-    // WebRTC invokes observers on its own worker threads. Releasing the peer or
-    // factory re-entrantly from one of those callbacks can make native WebRTC
-    // tear down a collection while it is still iterating it. Keep lifecycle
-    // cleanup on the app main thread instead.
-    private val cleanupHandler = Handler(Looper.getMainLooper())
     private val remoteCandidates = RemoteCandidateQueue<IceCandidate>()
     @Volatile private var stopped = false
     @Volatile private var startupStage = "creating capture"
 
-    fun start(resultData: Intent) {
+    fun start(resultData: Intent) = runOnPeerThread {
+        runCatching { startOnPeerThread(resultData) }
+            .onFailure { failure -> stop("capture startup failed: ${failure.javaClass.simpleName}") }
+    }
+
+    private fun startOnPeerThread(resultData: Intent) {
         startupStage = "initializing WebRTC"
         PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions.builder(appContext).createInitializationOptions())
+        egl = EglBase.create()
         startupStage = "creating WebRTC factory"
         factory = PeerConnectionFactory.builder().createPeerConnectionFactory()
         startupStage = "creating peer connection"
         val createdPeer = factory!!.createPeerConnection(PeerConnection.RTCConfiguration(emptyList()), observer)
             ?: error("WebRTC peer connection could not be created")
         peer = createdPeer
-        if (DIAGNOSTIC_NO_LOCAL_VIDEO) {
-            startupStage = "opening signaling without local video"
-            Log.i(TAG, "remote SDP diagnostic: local video sender intentionally omitted")
-            connectSignaling()
-            return
-        }
         startupStage = "creating video source"
         val videoSource = factory!!.createVideoSource(true)
         source = videoSource
@@ -81,7 +84,7 @@ internal class RemoteViewCapture(
         })
         capturer = screen
         startupStage = "creating capture helper"
-        helper = SurfaceTextureHelper.create("mdmesh-remote-capture", egl.eglBaseContext)
+        helper = SurfaceTextureHelper.create("mdmesh-remote-capture", requireNotNull(egl).eglBaseContext)
         startupStage = "initializing screen capturer"
         screen.initialize(helper, appContext, videoSource.capturerObserver)
         val metrics: DisplayMetrics = appContext.resources.displayMetrics
@@ -120,8 +123,9 @@ internal class RemoteViewCapture(
                 override fun onOpen(webSocket: WebSocket, response: Response) {
                     Log.i(TAG, "remote signaling opened")
                     signalingOpened()
+                    runOnPeerThread(::createAndSendOffer)
                 }
-                override fun onMessage(webSocket: WebSocket, text: String) { handleSignal(text) }
+                override fun onMessage(webSocket: WebSocket, text: String) { runOnPeerThread { handleSignal(text) } }
                 override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { stop("signaling closed: $reason") }
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                     stop("signaling failed: ${t.javaClass.simpleName}")
@@ -130,45 +134,32 @@ internal class RemoteViewCapture(
         )
     }
 
+    /** Runs only on [peerExecutor], including JSON-to-native candidate handoff. */
     private fun handleSignal(text: String) = runCatching {
         val root = JSONObject(text); val payload = root.getJSONObject("payload")
         when (root.getString("type")) {
-            "offer" -> {
+            "answer" -> {
                 val description = payload.getString("sdp")
-                // Do not pass a browser offer without a video media section into
+                // Do not pass a browser answer without a video media section into
                 // native WebRTC. Older Android WebRTC builds can abort the entire
                 // process instead of returning a normal negotiation error.
                 if (!hasVideoMediaSection(description)) {
-                    stop("invalid video offer")
+                    stop("invalid video answer")
                     return@runCatching
                 }
                 startupStage = "setting remote description"
-                Log.i(TAG, "remote offer accepted")
-                logOfferForDiagnostic(description)
+                Log.i(TAG, "remote answer accepted")
                 peer?.setRemoteDescription(object : Sdp() {
                     override fun onSetSuccess() {
-                        startupStage = "creating answer"
-                        Log.i(TAG, "remote description accepted")
-                        applyPendingRemoteCandidates()
-                        peer?.createAnswer(object : Sdp() {
-                            override fun onCreateSuccess(sdp: SessionDescription) {
-                                peer?.setLocalDescription(object : Sdp() {
-                                    override fun onSetSuccess() {
-                                        if (DIAGNOSTIC_NO_LOCAL_VIDEO) {
-                                            startupStage = "local answer installed without local video"
-                                            Log.i(TAG, "remote SDP diagnostic: local answer installed")
-                                        } else {
-                                            startScreenCapture()
-                                        }
-                                        startupStage = "sending answer"
-                                        Log.i(TAG, "local description accepted")
-                                        send("answer", JSONObject().put("sdp", sdp.description))
-                                    }
-                                }, sdp)
-                            }
-                        }, MediaConstraints())
+                        runOnPeerThread {
+                            startupStage = "remote answer installed"
+                            Log.i(TAG, "remote description accepted")
+                            applyPendingRemoteCandidates()
+                            startScreenCapture()
+                        }
                     }
-                }, SessionDescription(SessionDescription.Type.OFFER, description))
+                    override fun onSetFailure(error: String) = stop("remote answer rejected: $error")
+                }, SessionDescription(SessionDescription.Type.ANSWER, description))
             }
             "candidate" -> addRemoteCandidate(
                 IceCandidate(payload.getString("sdpMid"), payload.getInt("sdpMLineIndex"), payload.getString("candidate")),
@@ -185,6 +176,27 @@ internal class RemoteViewCapture(
         remoteCandidates.open().forEach { candidate -> peer?.addIceCandidate(candidate) }
     }
 
+    /** The screen-sharing agent is the offerer; Firefox receives a constrained local offer. */
+    private fun createAndSendOffer() {
+        startupStage = "creating local offer"
+        peer?.createOffer(object : Sdp() {
+            override fun onCreateSuccess(sdp: SessionDescription) {
+                runOnPeerThread {
+                    startupStage = "setting local offer"
+                    peer?.setLocalDescription(object : Sdp() {
+                        override fun onSetSuccess() {
+                            startupStage = "sending local offer"
+                            Log.i(TAG, "local offer accepted")
+                            send("offer", JSONObject().put("sdp", sdp.description))
+                        }
+                        override fun onSetFailure(error: String) = stop("local offer rejected: $error")
+                    }, sdp)
+                }
+            }
+            override fun onCreateFailure(error: String) = stop("local offer creation failed: $error")
+        }, MediaConstraints())
+    }
+
     /** Starts frames only after the local answer has installed a usable video sender. */
     private fun startScreenCapture() {
         if (captureStarted || stopped) return
@@ -192,17 +204,6 @@ internal class RemoteViewCapture(
         capturer?.startCapture(captureWidth, captureHeight, 15)
         captureStarted = true
         Log.i(TAG, "negotiated screen capture started")
-    }
-
-    /**
-     * Temporary LAN-POC evidence. The user explicitly authorized diagnostic
-     * payload logging on this test server/device. Android truncates long log
-     * lines, so retain SDP line boundaries and write bounded chunks.
-     */
-    private fun logOfferForDiagnostic(sdp: String) {
-        sdp.chunked(DIAGNOSTIC_LOG_CHUNK_CHARS).forEachIndexed { index, chunk ->
-            Log.i(TAG, "remote offer SDP part ${index + 1}: $chunk")
-        }
     }
 
     private val observer = object : PeerConnection.Observer {
@@ -225,7 +226,7 @@ internal class RemoteViewCapture(
         override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) = Unit
         override fun onAddStream(stream: org.webrtc.MediaStream) = Unit
         override fun onRemoveStream(stream: org.webrtc.MediaStream) = Unit
-        override fun onDataChannel(channel: org.webrtc.DataChannel) { channel.close() }
+        override fun onDataChannel(channel: org.webrtc.DataChannel) { runOnPeerThread { channel.close() } }
         override fun onRenegotiationNeeded() = Unit
         override fun onAddTrack(receiver: org.webrtc.RtpReceiver, mediaStreams: Array<out org.webrtc.MediaStream>) = Unit
     }
@@ -236,26 +237,30 @@ internal class RemoteViewCapture(
         if (stopped) return
         stopped = true
         Log.i(TAG, "stopping remote capture: $reason")
-        cleanupHandler.post {
+        peerExecutor.execute {
             runCatching { socket?.close(1000, reason.take(80)) }; socket = null
             remoteCandidates.clear()
             if (captureStarted) runCatching { capturer?.stopCapture() }
             captureStarted = false
             capturer?.dispose(); capturer = null
             source?.dispose(); source = null; helper?.dispose(); helper = null
-            peer?.close(); peer = null; factory?.dispose(); factory = null; egl.release()
+            peer?.close(); peer = null; factory?.dispose(); factory = null; egl?.release(); egl = null
             ended(reason)
+            peerExecutor.shutdown()
         }
+    }
+
+    private fun runOnPeerThread(action: () -> Unit) {
+        if (stopped) return
+        runCatching {
+            peerExecutor.execute { if (!stopped) action() }
+        }.onFailure { failure -> stop("WebRTC executor failed: ${failure.javaClass.simpleName}") }
     }
     private open class Sdp : SdpObserver { override fun onCreateSuccess(sdp: SessionDescription) = Unit; override fun onSetSuccess() = Unit; override fun onCreateFailure(error: String) = Unit; override fun onSetFailure(error: String) = Unit }
 
     private companion object {
         const val TAG = "MDMeshRemoteView"
         const val SCREEN_STREAM_ID = "mdmesh-screen-stream"
-        const val DIAGNOSTIC_LOG_CHUNK_CHARS = 1_800
-        // One-build-only isolation probe: tests native remote-SDP handling with
-        // no VideoSource, ScreenCapturer, VideoTrack, or local sender graph.
-        const val DIAGNOSTIC_NO_LOCAL_VIDEO = true
     }
 }
 

@@ -72,26 +72,24 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
       };
       const ws = new WebSocket(remoteViewSocketUrl(current.id));
       socket.current = ws;
-      ws.onopen = async () => {
-        try {
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          ws.send(JSON.stringify({ type: 'offer', payload: { sdp: offer.sdp } }));
-        } catch {
-          finish('error');
-          stop();
-        }
+      ws.onopen = () => {
+        // The Android agent owns the screen sender and initiates negotiation.
+        // Waiting for its offer avoids an Android-9 native crash while it
+        // applies a browser-originated offer.
       };
       ws.onmessage = async (event) => {
         try {
           const message = JSON.parse(String(event.data)) as { type?: string; payload?: RTCSessionDescriptionInit & RTCIceCandidateInit };
-          if (message.type === 'answer' && message.payload?.sdp) {
-            await pc.setRemoteDescription({ type: 'answer', sdp: message.payload.sdp });
+          if (message.type === 'offer' && message.payload?.sdp) {
+            await pc.setRemoteDescription({ type: 'offer', sdp: message.payload.sdp });
             remoteDescriptionInstalled = true;
             while (pendingCandidates.length > 0) {
               const candidate = pendingCandidates.shift();
               if (candidate) await pc.addIceCandidate(candidate);
             }
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            ws.send(JSON.stringify({ type: 'answer', payload: { sdp: answer.sdp } }));
           }
           if (message.type === 'candidate' && message.payload?.candidate) {
             if (remoteDescriptionInstalled) await pc.addIceCandidate(message.payload);

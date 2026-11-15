@@ -45,6 +45,9 @@ internal class RemoteViewCapture(
     private var capturer: VideoCapturer? = null
     private var source: VideoSource? = null
     private var helper: SurfaceTextureHelper? = null
+    private var captureWidth = 1
+    private var captureHeight = 1
+    private var captureStarted = false
     // WebRTC invokes observers on its own worker threads. Releasing the peer or
     // factory re-entrantly from one of those callbacks can make native WebRTC
     // tear down a collection while it is still iterating it. Keep lifecycle
@@ -76,8 +79,12 @@ internal class RemoteViewCapture(
         startupStage = "initializing screen capturer"
         screen.initialize(helper, appContext, videoSource.capturerObserver)
         val metrics: DisplayMetrics = appContext.resources.displayMetrics
-        startupStage = "starting screen capture"
-        screen.startCapture(metrics.widthPixels.coerceAtLeast(1), metrics.heightPixels.coerceAtLeast(1), 15)
+        // Do not start producing frames before WebRTC has a negotiated sender.
+        // An Android 9 native WebRTC runtime can be reached with a track whose
+        // sender graph is not negotiated yet, so defer frame production until
+        // the answer has installed it.
+        captureWidth = metrics.widthPixels.coerceAtLeast(1)
+        captureHeight = metrics.heightPixels.coerceAtLeast(1)
         startupStage = "creating video track"
         val track = factory!!.createVideoTrack("mdmesh-screen", videoSource)
         startupStage = "adding video track"
@@ -140,6 +147,7 @@ internal class RemoteViewCapture(
                             override fun onCreateSuccess(sdp: SessionDescription) {
                                 peer?.setLocalDescription(object : Sdp() {
                                     override fun onSetSuccess() {
+                                        startScreenCapture()
                                         startupStage = "sending answer"
                                         Log.i(TAG, "local description accepted")
                                         send("answer", JSONObject().put("sdp", sdp.description))
@@ -163,6 +171,15 @@ internal class RemoteViewCapture(
 
     private fun applyPendingRemoteCandidates() {
         remoteCandidates.open().forEach { candidate -> peer?.addIceCandidate(candidate) }
+    }
+
+    /** Starts frames only after the local answer has installed a usable video sender. */
+    private fun startScreenCapture() {
+        if (captureStarted || stopped) return
+        startupStage = "starting negotiated screen capture"
+        capturer?.startCapture(captureWidth, captureHeight, 15)
+        captureStarted = true
+        Log.i(TAG, "negotiated screen capture started")
     }
 
     private val observer = object : PeerConnection.Observer {
@@ -199,7 +216,9 @@ internal class RemoteViewCapture(
         cleanupHandler.post {
             runCatching { socket?.close(1000, reason.take(80)) }; socket = null
             remoteCandidates.clear()
-            runCatching { capturer?.stopCapture() }; capturer?.dispose(); capturer = null
+            if (captureStarted) runCatching { capturer?.stopCapture() }
+            captureStarted = false
+            capturer?.dispose(); capturer = null
             source?.dispose(); source = null; helper?.dispose(); helper = null
             peer?.close(); peer = null; factory?.dispose(); factory = null; egl.release()
             ended(reason)

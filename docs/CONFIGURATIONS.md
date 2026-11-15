@@ -34,9 +34,11 @@ devices** says what happens:
 
 Under an app set to Install, **Permissions** lets you **Grant** or **Deny** each runtime permission the app asks for,
 or leave it at **Default** (agent 0.5.0 or later, Device Owner). Each device applies what its Android version and the
-installed app support. Until the app is installed, the device reports the configuration as **Apply failed**.
+installed app support. While an app with permission rules isn't installed yet, the device reports the
+configuration as **Apply failed**.
 
-The **Main app** and the **Show in kiosk** column (shown once Kiosk mode is on) are kiosk settings: see [Kiosk mode](KIOSK.md).
+The **Main app** and the **Show in kiosk** column (shown once Kiosk mode is on) are kiosk settings: see
+[Kiosk mode](KIOSK.md).
 
 ### Kiosk
 

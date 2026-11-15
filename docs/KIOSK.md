@@ -63,8 +63,8 @@ is **Allow** (agent 0.3.7 or later).
 ### Launcher look
 
 **Background color**, **Text color** and **Icon size** (Small, Medium, Large) style the launcher grid. The background
-is always solid. If the text color has less than 4.5:1 contrast with the background, devices on agent 0.5.0 or later use a
-readable color instead.
+is always solid. If the text color has less than 4.5:1 contrast with the background, devices on agent 0.5.0 or later
+use a readable color instead.
 
 **Background image** (agent 0.5.0 or later) puts a PNG, JPEG or WebP photo behind the launcher, with **Fill** or **Fit**
 placement. It can be up to 10 MB and 16 megapixels. Devices download it over HTTPS only and keep the background color
@@ -101,7 +101,8 @@ can end it. Older agents let anyone leave a kiosk that has no PIN.
 
 With agent 0.3.6 or later, 3 wrong PINs lock the exit for 30 seconds. While it is locked, no PIN is checked, not even
 the right one. Each further wrong PIN locks it again for longer: 1 minute, 5 minutes, 15 minutes, then 1 hour. Only
-the right PIN resets the count; restarting the device starts the current lockout over. The device stays in kiosk throughout.
+the right PIN resets the count; restarting the device starts the current lockout over. The device stays in kiosk
+throughout.
 
 Each lockout shows as **Exit PIN locked** in the device's **Activity**. If the server can send email, administrators
 who can edit the device also get an email, at most one per device per hour
@@ -113,8 +114,8 @@ sooner, end kiosk from the console.
 On a device page, open **Control → Remote actions → Kiosk & apps**:
 
 - **Exit kiosk** ends kiosk on the device and restores its normal home screen. The device must be online to receive
-  it. Staff can still go back in with **Return to kiosk** on the device (below); to prevent that, turn kiosk off in
-  the configuration.
+  it. Staff can still go back in with **Return to kiosk** on the device (agent 0.5.0 or later); to prevent that,
+  turn kiosk off in the configuration.
 - **Return to configured kiosk…** puts the device back into the kiosk its configuration defines.
 - **Custom kiosk…** locks the device to apps you pick now, as a one-time kiosk the configuration doesn't define. Its
   **Exit mode** can also be **Remote only**: no exit on the device. A custom kiosk always allows the home button and
@@ -129,8 +130,8 @@ kiosk that the configuration started, not a custom kiosk: end that one with Exit
 ### Going back into kiosk on the device
 
 With agent 0.5.0 or later, after the kiosk ends (with the exit PIN or from the console), the **MDMesh** app on the
-device offers **Return to kiosk** while the device's configuration has kiosk on. It works offline. A kiosk with no exit on the device asks
-once more before it locks, because only the console can unlock it.
+device offers **Return to kiosk** while the device's configuration has kiosk on. It works offline. A kiosk with no
+exit on the device asks once more before it locks, because only the console can unlock it.
 
 ## Offline devices
 

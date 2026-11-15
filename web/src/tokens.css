@@ -309,6 +309,13 @@
   color-scheme: dark;
 }
 
+/* Phones: a 16px page gutter (every layout that bleeds to the page edge reads it). */
+@media (max-width: 860px) {
+  .v2 {
+    --page-gutter: var(--space-4);
+  }
+}
+
 /* ----------------------------------------------------------------------------
    Reset. Border-box sizing, no default body margin, a full-height root. The theme switch crossfades through a
    View Transition only (ui/theme.tsx); nothing else animates colour on the page.
@@ -382,6 +389,35 @@ body,
 .v2 ::placeholder {
   color: var(--secondary);
   opacity: 1;
+}
+
+/* Disclosures (<details>): one look everywhere, a drawn chevron that turns as it opens (summaries with their own class
+   draw their own). */
+.v2 summary:not([class]) {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-xs);
+  border-radius: var(--radius-chip);
+  list-style: none;
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+.v2 summary:not([class])::-webkit-details-marker {
+  display: none;
+}
+.v2 summary:not([class])::before {
+  content: '';
+  flex: 0 0 auto;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  background: var(--secondary);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M4.5 3l3 3-3 3' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  transition: transform var(--dur-micro) var(--ease);
+}
+.v2 details[open] > summary:not([class])::before {
+  transform: rotate(90deg);
 }
 
 /* Utility classes page code may use alongside the components. */

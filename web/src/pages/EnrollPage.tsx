@@ -17,7 +17,6 @@ import {
   Grid,
   GridCell,
   IconAlert,
-  IconChevronDown,
   IconSync,
   IconWarning,
   Input,
@@ -704,10 +703,7 @@ export function EnrollPage() {
               <KeyValueList variant="facts" items={facts(true)} className="v2-enroll__facts" />
             </div>
             <details className="v2-enroll__how">
-              <summary>
-                <IconChevronDown className="v2-enroll__howicon" />
-                How to scan the code
-              </summary>
+              <summary>How to scan the code</summary>
               <NumberedSteps steps={qrSteps(wifiInCode)} />
             </details>
           </div>

@@ -607,6 +607,8 @@ async function keyboardWalk(browser, base) {
       let wrapped = false;
       for (let i = 0; i < TAB_CAP; i++) {
         await page.keyboard.press('Tab');
+        // A tooltip opens on focus and is placed a frame later (Floating UI): measure once it has its place.
+        await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
         const info = await page.evaluate(() => {
           const el = document.activeElement;
           if (!el || el === document.body) return null;
@@ -666,7 +668,7 @@ async function keyboardWalk(browser, base) {
     ['/devices/WH-SCAN-07', 'button', 'Rename device', 'form.v2-device-rename'],
     ['/devices/WH-SCAN-07', 'button', 'Send alert…'],
     ['/devices', 'button', 'More actions for KIOSK-FRONT'],
-    ['/configurations', 'button', 'New configuration'],
+    ['/configurations', 'button', 'More for Default'],
     ['/apps', 'button', 'Deploy Chrome'],
     ['/enroll', 'button', 'Full screen'],
     ['/settings', 'button', /Change password/],

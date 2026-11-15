@@ -73,13 +73,19 @@
   color: var(--secondary);
 }
 
+/* Phones: every option is a 44px target, and a long filter scrolls sideways in its track instead of wrapping. */
 @media (max-width: 860px) {
-  .v2 .v2-seg {
+  .v2 .v2-seg,
+  .v2 .v2-seg--wrap {
+    flex-wrap: nowrap;
     height: auto;
-    min-height: var(--touch);
+    min-height: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
   }
-  .v2 .v2-seg__opt {
-    min-height: calc(var(--touch) - var(--space-2));
+  .v2 .v2-seg__opt,
+  .v2 .v2-seg--sm .v2-seg__opt {
+    min-height: var(--touch);
   }
 }
 

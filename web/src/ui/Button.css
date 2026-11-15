@@ -187,8 +187,7 @@
 /* Phone layout: every control reaches the 44px touch target (2.5.8 asks 24; 44 is the console's aim on touch). */
 @media (max-width: 860px) {
   .v2 .v2-iconbtn,
-  .v2 .v2-btn--md,
-  .v2 .v2-btn--lg {
+  .v2 .v2-btn {
     min-height: var(--touch);
   }
   .v2 .v2-iconbtn {

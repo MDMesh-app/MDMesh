@@ -117,3 +117,11 @@
 .v2 .v2-configs-sync__text.is-idle {
   color: var(--secondary);
 }
+
+/* Phones: the table keeps the name and sync columns (and the row menu); the rest is on the configuration's page. */
+@media (max-width: 600px) {
+  .v2 .v2-configs-col--main,
+  .v2 .v2-configs-col--count {
+    display: none;
+  }
+}

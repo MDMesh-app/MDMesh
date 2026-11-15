@@ -88,11 +88,14 @@
   white-space: nowrap;
 }
 .v2 .v2-activity__who {
-  font-family: var(--font-mono);
-  font-size: var(--text-meta);
   font-weight: var(--weight-medium);
   color: var(--text);
   text-decoration: none;
+}
+/* A device link names it by its number (mono: an identifier people copy); an event's name stays in the UI face. */
+.v2 a.v2-activity__who {
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
 }
 .v2 a.v2-activity__who:hover {
   text-decoration: underline;

@@ -85,32 +85,6 @@
 }
 
 /* "How to scan the code": the steps behind a disclosure, so the card stays the height of the code. */
-.v2 .v2-enroll__how > summary {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: var(--control-xs);
-  width: fit-content;
-  cursor: pointer;
-  list-style: none;
-  font-weight: var(--weight-medium);
-  color: var(--text);
-  border-radius: var(--radius-chip);
-}
-.v2 .v2-enroll__how > summary::-webkit-details-marker {
-  display: none;
-}
-.v2 .v2-enroll__how > summary:hover {
-  color: var(--ink);
-}
-.v2 .v2-enroll__howicon {
-  color: var(--secondary);
-  transform: rotate(-90deg);
-  transition: transform var(--dur-micro) var(--ease);
-}
-.v2 .v2-enroll__how[open] .v2-enroll__howicon {
-  transform: none;
-}
 .v2 .v2-enroll__how > .v2-numsteps {
   margin-top: var(--space-3);
 }

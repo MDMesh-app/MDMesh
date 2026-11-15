@@ -29,6 +29,7 @@ import {
   Tooltip,
   type Column,
   type MenuEntry,
+  useMediaQuery,
 } from '../ui';
 import { CORE_ACTION_ACCESS } from '../ext/core/access';
 import { usePermission } from '../ext/permissions';
@@ -195,6 +196,8 @@ export function ConfigurationsPage() {
   const newConfig = () => (chooses ? setChooserOpen(true) : navigate(paths.configuration('new')));
   const newLabel = chooses ? 'New configuration…' : 'New configuration';
 
+  // Phones: name and sync only (main app and counts are on the configuration's page), no sideways scroll.
+  const phone = useMediaQuery('(max-width: 600px)');
   const columns: Column<Configuration>[] = [
     {
       key: 'name',
@@ -213,6 +216,7 @@ export function ConfigurationsPage() {
       header: 'Apps',
       align: 'right',
       mono: true,
+      className: 'v2-configs-col--count',
       cell: (c) => {
         const a = c.id != null ? assigned[c.id] : undefined;
         return a === undefined ? <Skeleton width="2ch" /> : a === null ? '—' : a.length;
@@ -223,6 +227,7 @@ export function ConfigurationsPage() {
       header: 'Devices',
       align: 'right',
       mono: true,
+      className: 'v2-configs-col--count',
       cell: (c) => {
         const row = c.id != null ? sync[c.id] : undefined;
         if (row) return row.total;
@@ -287,7 +292,7 @@ export function ConfigurationsPage() {
           columns={columns}
           rows={shown}
           rowKey={(c) => c.id ?? c.name}
-          minWidth={760}
+          minWidth={phone ? undefined : 760}
           onRowClick={(c) => navigate(paths.configuration(c.id ?? ''))}
           empty={
             <EmptyState

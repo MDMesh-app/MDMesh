@@ -65,6 +65,13 @@
   opacity: var(--disabled-opacity);
 }
 
+/* Phones: the switch's row is a 44px target. */
+@media (max-width: 860px) {
+  .v2 .v2-toggle {
+    min-height: var(--touch);
+  }
+}
+
 /* Forced colours: a ButtonText outline in both states (not a border, so the knob's travel stays the same). */
 @media (forced-colors: active) {
   .v2 .v2-toggle__track {

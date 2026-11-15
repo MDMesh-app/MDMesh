@@ -115,9 +115,6 @@
   .v2 .v2-shell {
     display: block;
   }
-  .v2 .v2-shell__main {
-    padding: var(--space-4);
-  }
   .v2 .v2-shell__side {
     position: fixed;
     left: 0;

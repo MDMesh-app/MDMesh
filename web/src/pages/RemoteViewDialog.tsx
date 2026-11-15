@@ -61,6 +61,7 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
       peer.current = pc;
       let localCandidateCount = 0;
       let agentCandidateCount = 0;
+      let answerSent = false;
       // A receive-only transceiver makes the browser offer a video media section.
       // offerToReceiveVideo alone can produce an empty offer in modern browsers;
       // Android WebRTC cannot negotiate the screen sender against that offer.
@@ -77,15 +78,14 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
         }
       };
       pc.onicecandidate = (event) => {
-        if (event.candidate && socket.current?.readyState === WebSocket.OPEN) {
+        if (event.candidate) {
           localCandidateCount += 1;
           setTransportStatus(`ICE candidates: viewer ${localCandidateCount}, device ${agentCandidateCount}`);
-          socket.current.send(JSON.stringify({ type: 'candidate', payload: event.candidate.toJSON() }));
         }
       };
       pc.onicegatheringstatechange = () => {
         if (pc.iceGatheringState === 'complete') {
-          setTransportStatus(`ICE gathering complete: viewer ${localCandidateCount}, device ${agentCandidateCount}`);
+          sendCompleteAnswer();
         }
       };
       pc.onicecandidateerror = (event) => {
@@ -96,6 +96,19 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
       };
       pc.onconnectionstatechange = () => {
         if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected' || pc.connectionState === 'closed') finish('ended');
+      };
+      const sendCompleteAnswer = () => {
+        if (answerSent || !pc.localDescription?.sdp) return;
+        const embeddedCandidates = embeddedIceCandidateCount(pc.localDescription.sdp);
+        if (embeddedCandidates === 0) {
+          setTransportStatus('Viewer produced no local ICE candidates.');
+          finish('error');
+          stop();
+          return;
+        }
+        answerSent = true;
+        ws.send(JSON.stringify({ type: 'answer', payload: { sdp: pc.localDescription.sdp } }));
+        setTransportStatus(`Viewer answer sent with ${embeddedCandidates} ICE candidate(s).`);
       };
       const ws = new WebSocket(remoteViewSocketUrl(current.id));
       socket.current = ws;
@@ -118,8 +131,8 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
             }
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
-            ws.send(JSON.stringify({ type: 'answer', payload: { sdp: answer.sdp } }));
-            setTransportStatus(`Viewer answer sent with ${embeddedIceCandidateCount(pc.localDescription?.sdp)} embedded ICE candidate(s); gathering…`);
+            setTransportStatus('Viewer answer set; gathering local ICE candidates…');
+            window.setTimeout(sendCompleteAnswer, 5000);
           }
           if (message.type === 'candidate' && message.payload?.candidate) {
             agentCandidateCount += 1;

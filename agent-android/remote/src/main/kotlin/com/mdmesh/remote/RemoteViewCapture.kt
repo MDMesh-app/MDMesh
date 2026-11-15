@@ -14,6 +14,7 @@ import okhttp3.WebSocketListener
 import org.json.JSONObject
 import org.webrtc.EglBase
 import org.webrtc.IceCandidate
+import org.webrtc.Logging
 import org.webrtc.MediaConstraints
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
@@ -26,6 +27,7 @@ import org.webrtc.VideoTrack
 import org.webrtc.ScreenCapturerAndroid
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 
 /**
@@ -53,6 +55,9 @@ internal class RemoteViewCapture(
     private val peerExecutor: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "mdmesh-remote-webrtc")
     }
+    private val iceTimer: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor { runnable ->
+        Thread(runnable, "mdmesh-remote-ice-grace")
+    }
     @Volatile private var socket: WebSocket? = null
     private var egl: EglBase? = null
     private var factory: PeerConnectionFactory? = null
@@ -65,6 +70,7 @@ internal class RemoteViewCapture(
     private var captureStarted = false
     private var localCandidateCount = 0
     private var remoteCandidateCount = 0
+    private var localOfferSent = false
     private val remoteCandidates = RemoteCandidateQueue<IceCandidate>()
     @Volatile private var stopped = false
     @Volatile private var startupStage = "creating capture"
@@ -77,6 +83,10 @@ internal class RemoteViewCapture(
     private fun startOnPeerThread(resultData: Intent) {
         startupStage = "initializing WebRTC"
         PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions.builder(appContext).createInitializationOptions())
+        // Mirrors AppRTC's native diagnostic setup for this LAN POC. It is
+        // intentionally temporary: native WebRTC logs can include network
+        // candidate details and must not remain enabled for a production path.
+        Logging.enableLogToDebugOutput(Logging.Severity.LS_INFO)
         egl = EglBase.create()
         startupStage = "creating WebRTC factory"
         factory = PeerConnectionFactory.builder().createPeerConnectionFactory()
@@ -200,10 +210,14 @@ internal class RemoteViewCapture(
                     startupStage = "setting local offer"
                     peer?.setLocalDescription(object : Sdp() {
                         override fun onSetSuccess() {
-                            startupStage = "sending local offer"
                             Log.i(TAG, "local offer accepted")
-                            diagnostic("Device offer sent with ${iceCandidateCount(sdp.description)} embedded ICE candidate(s); waiting for viewer…")
-                            send("offer", JSONObject().put("sdp", sdp.description))
+                            startupStage = "gathering local ICE candidates"
+                            diagnostic("Local offer set; gathering device ICE candidates…")
+                            // Some Android 9 bindings do not surface Java
+                            // onIceCandidate callbacks reliably. Read the
+                            // finalized local SDP after a short gathering
+                            // window instead of sending a candidate-free offer.
+                            scheduleLocalOffer()
                         }
                         override fun onSetFailure(error: String) = stop("local offer rejected: $error")
                     }, sdp)
@@ -228,7 +242,6 @@ internal class RemoteViewCapture(
             localCandidateCount++
             Log.i(TAG, "remote local ICE candidate generated: mid=${candidate.sdpMid}, index=${candidate.sdpMLineIndex}")
             diagnostic("ICE candidates: device $localCandidateCount, viewer $remoteCandidateCount")
-            send("candidate", JSONObject().put("candidate", candidate.sdp).put("sdpMid", candidate.sdpMid).put("sdpMLineIndex", candidate.sdpMLineIndex))
         }
         override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>) = Unit
         override fun onConnectionChange(state: PeerConnection.PeerConnectionState) {
@@ -252,7 +265,7 @@ internal class RemoteViewCapture(
         override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {
             Log.i(TAG, "remote ICE gathering=$state")
             if (state == PeerConnection.IceGatheringState.COMPLETE) {
-                diagnostic("ICE gathering complete: device $localCandidateCount, viewer $remoteCandidateCount")
+                runOnPeerThread(::sendLocalOffer)
             }
         }
         override fun onAddStream(stream: org.webrtc.MediaStream) = Unit
@@ -263,6 +276,27 @@ internal class RemoteViewCapture(
     }
 
     private fun send(type: String, payload: JSONObject) { if (!stopped) socket?.send(JSONObject().put("type", type).put("payload", payload).toString()) }
+
+    private fun scheduleLocalOffer() {
+        iceTimer.schedule({ runOnPeerThread(::sendLocalOffer) }, ICE_GATHERING_GRACE_MS, TimeUnit.MILLISECONDS)
+    }
+
+    /** Sends one complete, non-trickle offer after native gathering has had a chance to finish. */
+    private fun sendLocalOffer() {
+        if (localOfferSent || stopped) return
+        val description = peer?.localDescription?.description
+        when {
+            description == null -> stop("local offer disappeared")
+            iceCandidateCount(description) == 0 -> stop("no device ICE candidates gathered")
+            else -> {
+                localOfferSent = true
+                startupStage = "sending local offer"
+                val embeddedCandidates = iceCandidateCount(description)
+                diagnostic("Device offer sent with $embeddedCandidates ICE candidate(s); waiting for viewer…")
+                send("offer", JSONObject().put("sdp", description))
+            }
+        }
+    }
 
     /** Android AppRTC-compatible transport settings; do not depend on native defaults. */
     private fun createRtcConfiguration(): PeerConnection.RTCConfiguration =
@@ -295,6 +329,7 @@ internal class RemoteViewCapture(
             source?.dispose(); source = null; helper?.dispose(); helper = null
             peer?.close(); peer = null; factory?.dispose(); factory = null; egl?.release(); egl = null
             ended(reason)
+            iceTimer.shutdownNow()
             peerExecutor.shutdown()
         }
     }
@@ -311,6 +346,7 @@ internal class RemoteViewCapture(
         const val TAG = "MDMeshRemoteView"
         const val SCREEN_STREAM_ID = "mdmesh-screen-stream"
         const val STUN_SERVER = "stun:stun.l.google.com:19302"
+        const val ICE_GATHERING_GRACE_MS = 5_000L
     }
 }
 

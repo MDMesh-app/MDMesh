@@ -35,6 +35,18 @@ public class RemoteViewSignalingHubTest {
         assertEquals("agent signaling closed", sessions.reason);
     }
 
+    @Test public void queuesEarlyMessagesUntilTheTargetPeerJoins() {
+        RemoteViewSignalingHub.Peers peers = new RemoteViewSignalingHub.Peers();
+
+        peers.queueForTarget(false, "agent offer");
+        peers.queueForTarget(true, "browser answer");
+
+        assertEquals(java.util.Collections.singletonList("agent offer"), peers.drainForBrowser());
+        assertEquals(java.util.Collections.singletonList("browser answer"), peers.drainForAgent());
+        assertTrue(peers.drainForBrowser().isEmpty());
+        assertTrue(peers.drainForAgent().isEmpty());
+    }
+
     private static Session socket() {
         return (Session) Proxy.newProxyInstance(RemoteViewSignalingHubTest.class.getClassLoader(),
                 new Class<?>[]{Session.class}, (proxy, method, args) -> null);

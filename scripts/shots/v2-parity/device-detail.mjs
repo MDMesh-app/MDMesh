@@ -28,8 +28,12 @@ const p = await page();
 await p.goto(`${base}/devices/WH-SCAN-07`);
 await p.getByRole('heading', { level: 1 }).waitFor();
 ok((await p.getByRole('heading', { level: 1 }).textContent()) === 'Warehouse scanner', 'name heading');
-ok(await p.getByText('18.2 / 32 GB').isVisible(), 'storage from real telemetry keys');
-ok(await p.getByText('10.20.4.51').first().isVisible(), 'local IP from dynamic.ipAddress');
+// With telemetry, Storage and Network live in the Telemetry tab (the rail shows them only without telemetry).
+ok((await p.locator('.v2-device-rail').getByText('Local IP').count()) === 0 && (await p.locator('.v2-device-rail').getByText('Storage', { exact: true }).count()) === 0, 'rail: no Network/Storage while there is telemetry');
+await p.getByRole('tab', { name: 'Telemetry' }).click();
+ok(await p.getByRole('tabpanel').getByText('18.2 / 32 GB').isVisible(), 'storage from real telemetry keys');
+ok(await p.getByRole('tabpanel').getByText('10.20.4.51').first().isVisible(), 'local IP from dynamic.ipAddress');
+await p.getByRole('tab', { name: 'Control' }).click();
 ok(await p.getByText('Configuration didn’t fully apply').waitFor({ timeout: 6000 }).then(() => true, () => false), 'config panel');
 ok(await p.locator('.v2-device-cfg__oval', { hasText: 'Permission denied' }).isVisible(), 'failure reason');
 // rename
@@ -48,7 +52,7 @@ ok(p.posts.some((x) => x.url.endsWith('/description') && x.body === 'Scanner 7')
 await p.getByRole('button', { name: 'Sync now' }).click();
 ok(await toast(p, 'Sync requested'), 'sync toast');
 await p.getByRole('toolbar', { name: 'Quick actions' }).getByRole('button', { name: 'Lock' }).click();
-ok(await toast(p, 'Lock device queued'), 'lock toast');
+ok(await toast(p, 'Lock queued'), 'lock toast');
 ok(await toast(p, 'Command 413'), 'command id in toast');
 ok(p.posts.some((x) => x.url.includes('/commands') && JSON.parse(x.body || '{}').type === 'device.lock'), 'lock POST');
 // alert dialog
@@ -63,9 +67,9 @@ const alertPost = p.posts.find((x) => x.body && x.body.includes('device.alert'))
 ok(alertPost && JSON.parse(JSON.parse(alertPost.body).payload).body === 'Please return to desk', 'alert payload');
 // factory reset
 await p.getByRole('button', { name: 'Factory reset…' }).click();
-const wipe = p.getByRole('alertdialog', { name: 'Factory reset (wipe)' });
+const wipe = p.getByRole('alertdialog', { name: 'Factory reset?' });
 await wipe.waitFor();
-const confirm = wipe.getByRole('button', { name: 'Confirm' });
+const confirm = wipe.getByRole('button', { name: 'Factory reset', exact: true });
 ok(await confirm.isDisabled(), 'wipe confirm disabled');
 await wipe.getByLabel('Type WIPE to confirm').fill('wipe');
 ok(await confirm.isDisabled(), 'wipe needs exact WIPE');
@@ -77,15 +81,15 @@ ok(!(await wipe.isVisible()), 'wipe dialog closes on Escape');
 ok(!p.posts.some((x) => x.body && x.body.includes('device.wipe')), 'no wipe sent');
 // passcode
 await p.getByRole('button', { name: 'Reset passcode…' }).click();
-const pc = p.getByRole('alertdialog', { name: 'Reset passcode' });
+const pc = p.getByRole('alertdialog', { name: 'Reset passcode?' });
 await pc.waitFor();
 ok((await pc.getByLabel('New passcode (blank to clear)').getAttribute('type')) === 'password', 'passcode field is password');
 await pc.getByRole('button', { name: 'Cancel' }).click();
 // reboot
 await p.getByRole('button', { name: 'Reboot…' }).click();
-const rb = p.getByRole('alertdialog', { name: 'Reboot device' });
-await rb.getByRole('button', { name: 'Confirm' }).click();
-ok(await toast(p, 'Reboot device queued'), 'reboot toast');
+const rb = p.getByRole('alertdialog', { name: 'Reboot device?' });
+await rb.getByRole('button', { name: 'Reboot', exact: true }).click();
+ok(await toast(p, 'Reboot queued'), 'reboot toast');
 // power
 await p.getByRole('radio', { name: 'Always-on' }).click();
 ok(await toast(p, 'Connectivity: Always-on queued'), 'power toast');
@@ -95,12 +99,12 @@ ok((await p.getByRole('radiogroup', { name: 'Location' }).getByRole('radio', { n
 await p.getByRole('radio', { name: 'Accurate' }).click();
 ok(await toast(p, 'Location: Accurate queued'), 'location toast');
 // install config apps
-await p.getByRole('button', { name: 'Install config apps' }).click();
+await p.getByRole('button', { name: 'Install configuration apps' }).click();
 ok(await toast(p, '2 install commands queued.'), 'config apps toast');
 // menu
 await p.getByRole('button', { name: 'More actions' }).click();
 await p.getByRole('menuitem', { name: 'Ring' }).click();
-ok(await toast(p, 'Ring device queued'), 'menu ring');
+ok(await toast(p, 'Ring queued'), 'menu ring');
 // kiosk: the configuration (Default) has kiosk mode off, so only the custom kiosk is offered, with a hint
 ok(await p.getByText('Default doesn’t use kiosk mode, so there is no configured kiosk to return to.').isVisible(), 'kiosk off: hint says there is no configured kiosk');
 ok((await p.getByRole('button', { name: 'Return to configured kiosk…' }).count()) === 0, 'kiosk off: no Return to configured kiosk');
@@ -112,27 +116,30 @@ await kd.waitFor();
 ok((await kd.textContent()).includes('Device WH-SCAN-07 · Scanner 7'), 'custom kiosk names the device (as renamed)');
 ok(await kd.getByPlaceholder('Empty: no exit on the device (agent 0.3.6+)').isVisible(), 'custom kiosk: empty exit PIN means no exit (0.3.6+)');
 ok((await kd.textContent()).includes('A one-time kiosk with apps you pick now') && (await kd.textContent()).includes('Default doesn’t define it.'), 'custom kiosk says it is one-time and not the configuration’s');
-await kd.getByRole('button', { name: /Field Ops/ }).click();
+await kd.getByRole('checkbox', { name: /Field Ops/ }).check();
 await kd.getByRole('radio', { name: 'Pin a single app' }).click();
-ok((await kd.getByRole('button', { name: /^Enter custom kiosk \(\d\)$/ }).textContent()) === 'Enter custom kiosk (1)', 'kiosk count');
+ok((await kd.getByRole('button', { name: /^Enter kiosk/ }).textContent()) === 'Enter kiosk with 1 app', 'kiosk count');
 await kd.getByRole('searchbox', { name: 'Search apps' }).fill('zzz');
 ok(await kd.getByText('No apps match.').isVisible(), 'kiosk no match');
 await kd.getByRole('searchbox', { name: 'Search apps' }).fill('');
 await kd.getByRole('radio', { name: 'Device apps' }).click();
 ok(await kd.getByRole('button', { name: 'Scan device apps' }).isVisible(), 'device scan button');
 await kd.getByRole('radio', { name: 'Library' }).click();
-await kd.getByRole('button', { name: 'Enter custom kiosk (1)' }).click();
+await kd.getByRole('button', { name: 'Enter kiosk with 1 app' }).click();
 ok(await toast(p, 'Custom kiosk queued'), 'kiosk toast');
 const kp = p.posts.find((x) => x.body && x.body.includes('kiosk.enter'));
 ok(kp && JSON.parse(JSON.parse(kp.body).payload).pinPackage === 'com.acme.fieldops', 'kiosk payload single pin');
 // tabs
-await p.getByRole('button', { name: 'All activity' }).click();
-ok((await p.getByRole('tab', { name: /Activity/ }).getAttribute('aria-selected')) === 'true', 'All activity opens Activity tab');
+await p.getByRole('button', { name: 'View all activity' }).click();
+ok((await p.getByRole('tab', { name: /Activity/ }).getAttribute('aria-selected')) === 'true', 'View all activity opens Activity tab');
 ok(await p.getByText('Low battery').isVisible(), 'events listed');
 ok(await p.getByRole('heading', { name: 'Commands' }).isVisible(), 'full command history');
+// Tabs: Control, Telemetry, Apps, Activity, Location.
 await p.getByRole('tab', { name: /Activity/ }).focus();
 await p.keyboard.press('ArrowLeft');
-ok((await p.getByRole('tab', { name: 'Telemetry' }).getAttribute('aria-selected')) === 'true', 'arrow keys move tabs');
+ok((await p.getByRole('tab', { name: 'Apps' }).getAttribute('aria-selected')) === 'true', 'arrow keys move tabs');
+await p.keyboard.press('ArrowLeft');
+ok((await p.getByRole('tab', { name: 'Telemetry' }).getAttribute('aria-selected')) === 'true', 'arrow keys move tabs (twice)');
 ok(await p.getByText('Storage used').isVisible() && await p.getByText('Build').isVisible(), 'telemetry formatted');
 ok(await p.getByText('Other').isVisible(), 'unknown keys listed');
 await p.getByRole('tab', { name: 'Location' }).click();
@@ -153,7 +160,7 @@ await p.keyboard.press('Escape');
 // not found
 const q = await page();
 await q.goto(`${base}/devices/NOPE`);
-ok(await q.getByText('Device not found.').isVisible({ timeout: 4000 }).catch(() => false) || await toast(q, 'Device not found.'), 'not found');
+ok(await q.getByText('Device not found', { exact: true }).waitFor({ timeout: 4000 }).then(() => true, () => false), 'not found');
 
 // mobile overflow
 const m = await page({ viewport: { width: 390, height: 844 } });
@@ -185,7 +192,7 @@ async function fleet(p, list, { lookup = true } = {}) {
   });
 }
 const heading = async (p) => { await p.getByRole('heading', { level: 1 }).waitFor({ timeout: 12000 }); return p.getByRole('heading', { level: 1 }).textContent(); };
-const sub = (p) => p.locator('.v2-device-head__sub').textContent();
+const sub = (p) => p.locator('.v2-device-id__sub').textContent();
 
 // Number / id collision: "12" is a device number, 12 is another device's database id, and "120" / "WH-12"
 // contain "12". Rows that only contain it come first, as a substring search could return them.
@@ -201,17 +208,17 @@ const sub = (p) => p.locator('.v2-device-head__sub').textContent();
   ok((await sub(c)).startsWith('12'), 'collision: header shows the device number under the name');
   ok((await c.locator('.v2-breadcrumb, nav[aria-label="Breadcrumb"]').first().textContent()).includes('12'), 'collision: breadcrumb shows the number');
   await c.getByRole('button', { name: 'Factory reset…' }).click();
-  const wipe = c.getByRole('alertdialog', { name: 'Factory reset (wipe)' });
+  const wipe = c.getByRole('alertdialog', { name: 'Factory reset?' });
   await wipe.waitFor();
   ok((await wipe.textContent()).includes('Device 12 · Numbered twelve'), 'wipe dialog names the device');
   await c.keyboard.press('Escape');
   await c.getByRole('button', { name: 'Reset passcode…' }).click();
-  const pc = c.getByRole('alertdialog', { name: 'Reset passcode' });
+  const pc = c.getByRole('alertdialog', { name: 'Reset passcode?' });
   await pc.waitFor();
   ok((await pc.textContent()).includes('Device 12 · Numbered twelve'), 'reset passcode dialog names the device');
   await pc.getByRole('button', { name: 'Cancel' }).click();
   await c.getByRole('button', { name: 'Reboot…' }).click();
-  const rb = c.getByRole('alertdialog', { name: 'Reboot device' });
+  const rb = c.getByRole('alertdialog', { name: 'Reboot device?' });
   await rb.waitFor();
   ok((await rb.textContent()).includes('Device 12'), 'reboot dialog names the device');
   await rb.getByRole('button', { name: 'Cancel' }).click();
@@ -223,7 +230,7 @@ const sub = (p) => p.locator('.v2-device-head__sub').textContent();
   ok((await sub(c)).startsWith('120'), 'id fallback: header shows the number, not the id');
   ok(new URL(c.url()).pathname === '/devices/120', 'id fallback: the URL moves to the device number');
   await c.goto(`${base}/devices/1`);
-  ok(await c.getByText('Device not found.').waitFor({ timeout: 6000 }).then(() => true, () => false), 'a substring of numbers (and no id 1) is not found, not a guess');
+  ok(await c.getByText('Device not found', { exact: true }).waitFor({ timeout: 6000 }).then(() => true, () => false), 'a substring of numbers (and no id 1) is not found, not a guess');
   await c.context().close();
 
   // The exact lookup failing (older server, "/" in the number) still finds the exact row in the search answer.
@@ -243,7 +250,7 @@ const sub = (p) => p.locator('.v2-device-head__sub').textContent();
   });
   await e.context().route('**/rest/private/devices/number/**', (r) => r.fulfill({ status: 500, body: 'boom' }));
   await e.goto(`${base}/devices/12`);
-  const failed = await e.getByText('Failed to load device.').waitFor({ timeout: 6000 }).then(() => true, () => false);
+  const failed = await e.getByText('Couldn’t load this device.').waitFor({ timeout: 6000 }).then(() => true, () => false);
   ok(failed && (await e.getByRole('heading', { name: 'Id twelve' }).count()) === 0, 'lookup error + no exact row: an error, never the device whose id is 12');
   await e.context().close();
   allowNetErrors = false;
@@ -365,13 +372,13 @@ for (const slowLookup of [true, false]) {
     return route.fallback();
   });
   await e.goto(`${base}/devices/WH-SCAN-07`);
-  ok(await e.getByText('Failed to load device.').waitFor({ timeout: 6000 }).then(() => true, () => false), 'server error: message shown');
+  ok(await e.getByText('Couldn’t load this device.').waitFor({ timeout: 6000 }).then(() => true, () => false), 'server error: message shown');
   mode = 'offline';
-  await e.getByRole('button', { name: 'Try again' }).click();
+  await e.getByRole('button', { name: 'Retry' }).click();
   ok(await e.getByText('Cannot reach the server.').waitFor({ timeout: 6000 }).then(() => true, () => false), 'offline: "Cannot reach the server."');
   mode = 'ok';
-  await e.getByRole('button', { name: 'Try again' }).click();
-  ok((await heading(e)) === 'Warehouse scanner', 'Try again loads the device');
+  await e.getByRole('button', { name: 'Retry' }).click();
+  ok((await heading(e)) === 'Warehouse scanner', 'Retry loads the device');
   await e.context().close();
   allowNetErrors = false;
 }
@@ -500,15 +507,15 @@ const kioskHint = (p) => p.locator('.v2-device-actions__row', { hasText: 'Kiosk 
   ok(/v2-btn--primary/.test((await returnBtn(k).getAttribute('class')) ?? ''), 'Return to configured kiosk is the primary button');
   ok(!/v2-btn--(danger|primary)/.test((await k.getByRole('button', { name: 'Custom kiosk…' }).getAttribute('class')) ?? ''), 'kiosk on: Custom kiosk stays a quiet secondary button');
   await returnBtn(k).click();
-  const rd = k.getByRole('dialog', { name: 'Return to configured kiosk' });
+  const rd = k.getByRole('dialog', { name: 'Return to configured kiosk?' });
   await rd.waitFor();
   const rtext = await rd.textContent();
   ok(rtext.includes('Puts the device back into the kiosk that Default defines'), 'return dialog says what it does');
   ok(rtext.includes('Pinned to POS') && rtext.includes('Visible exit button') && rtext.includes('The configuration’s PIN'), `return dialog summary (${rtext.slice(0, 260)})`);
   ok(rtext.includes('Device WH-SCAN-07'), 'return dialog names the device');
-  ok(rtext.includes('POS wasn’t on the device at its last app scan') && rtext.includes('Install config apps'), 'main app missing from the last scan: warned');
+  ok(rtext.includes('POS wasn’t on the device at its last app scan') && rtext.includes('Install configuration apps'), 'main app missing from the last scan: warned');
   ok(!rtext.includes('Lock volume'), 'no volume warning when the kiosk does not lock the volume');
-  await rd.getByRole('button', { name: 'Return to configured kiosk' }).click();
+  await rd.getByRole('button', { name: 'Return to kiosk' }).click();
   ok(await toast(k, 'Return to configured kiosk queued'), 'return toast');
   const sent = lastKioskPayload(k);
   ok(sent && canon(sent) === canon(golden), `payload equals the configuration’s config.apply kiosk block (${sent && canon(sent)})`);
@@ -517,7 +524,10 @@ const kioskHint = (p) => p.locator('.v2-device-actions__row', { hasText: 'Kiosk 
   hist = [{ id: 413, type: 'kiosk.enter', status: 'pending', createdAt: Date.now() }, ...hist];
   await kioskHint(k).getByText('Waiting for the device to enter the kiosk that Default defines.').waitFor({ timeout: 8000 }).catch(() => {});
   ok(await returnBtn(k).isDisabled() && (await kioskHint(k).textContent()).includes('Waiting for the device'), 'while it waits: disabled with the reason');
-  ok((await returnBtn(k).getAttribute('aria-describedby')) === (await kioskHint(k).getAttribute('id')), 'disabled button points at its reason');
+  const describedBy = await returnBtn(k).getAttribute('aria-describedby');
+  const hintIdAttr = await kioskHint(k).getAttribute('id');
+  // Its tooltip, while open (focus came back to it), adds its own id to the list.
+  ok(!!hintIdAttr && (describedBy ?? '').split(/\s+/).includes(hintIdAttr), `disabled button points at its reason (aria-describedby ${describedBy}, hint id ${hintIdAttr})`);
   // Done, and the device reports kiosk on: already in the configured kiosk (also after a reload).
   hist = [{ ...hist[0], status: 'done', completedAt: Date.now() }, ...hist.slice(1)];
   kioskActive = true;
@@ -561,19 +571,19 @@ const kioskHint = (p) => p.locator('.v2-device-actions__row', { hasText: 'Kiosk 
   await heading(k);
   await returnEnabled(k);
   await returnBtn(k).click();
-  const rd = k.getByRole('dialog', { name: 'Return to configured kiosk' });
+  const rd = k.getByRole('dialog', { name: 'Return to configured kiosk?' });
   await rd.waitFor();
   const rtext = await rd.textContent();
   ok(rtext.includes('Launcher grid with 3 apps') && rtext.includes('A, B, Decoy'), `launcher summary (${rtext.slice(0, 200)})`);
   ok(rtext.includes('Hidden gesture') && rtext.includes('None: agents before 0.3.6 let anyone leave the kiosk; 0.3.6 and later have no exit on the device'), 'gesture exit, no PIN');
   ok(rtext.includes('The main app set in Default isn’t set to Install and shown in kiosk, so this kiosk leaves it out'), 'main app left out: warned');
   ok(rtext.includes('This device runs agent 0.3.2. Agents before 0.3.4 ignore Lock volume buttons'), 'old agent + volume lock: warned');
-  await rd.getByRole('button', { name: 'Return to configured kiosk' }).click();
+  await rd.getByRole('button', { name: 'Return to kiosk' }).click();
   const alert = rd.getByRole('alert');
   await alert.waitFor({ timeout: 4000 }).catch(() => {});
   ok((await alert.textContent().catch(() => '')).startsWith('Couldn’t queue the command:'), `queue error shown in the dialog (${await alert.textContent().catch(() => '')})`);
   ok(await rd.isVisible(), 'dialog stays open after an error');
-  await rd.getByRole('button', { name: 'Return to configured kiosk' }).click();
+  await rd.getByRole('button', { name: 'Return to kiosk' }).click();
   ok(await toast(k, 'Return to configured kiosk queued'), 'second try queued');
   const sent = lastKioskPayload(k);
   const want = { mode: 'launcher', allowedPackages: ['com.a', 'com.b', 'com.decoy'], features: { notifications: true, lockVolume: true }, exitMode: 'gesture', theme: {} };
@@ -594,9 +604,9 @@ const kioskHint = (p) => p.locator('.v2-device-actions__row', { hasText: 'Kiosk 
   await kioskHint(k).getByText('Couldn’t load the apps of Default', { exact: false }).waitFor({ timeout: 6000 }).catch(() => {});
   ok(await returnBtn(k).isDisabled().catch(() => false) && (await kioskHint(k).textContent().catch(() => '')).includes('Couldn’t load the apps of Default'), 'apps load error: disabled, error shown');
   fail = false;
-  await kioskHint(k).getByRole('button', { name: 'Try again' }).click();
+  await kioskHint(k).getByRole('button', { name: 'Retry' }).click();
   await returnEnabled(k);
-  ok(await returnBtn(k).isEnabled(), 'Try again loads the apps');
+  ok(await returnBtn(k).isEnabled(), 'Retry loads the apps');
   await k.context().close();
   allowNetErrors = false;
 

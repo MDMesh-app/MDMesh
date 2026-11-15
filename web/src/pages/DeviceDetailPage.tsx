@@ -53,10 +53,11 @@ import {
   useToast,
   type KeyValueItem,
 } from '../ui';
-import { ActionDialog, CommandsCard, ConfigPanel, RemoteActions, TEMPLATE, type KioskReturnOffer } from './DeviceDetailControl';
+import { ActionDialog, CommandsCard, ConfigPanel, RemoteActions, RemoteViewAction, TEMPLATE, type KioskReturnOffer } from './DeviceDetailControl';
 import { ActivityTab, LocationTab, TelemetryTab } from './DeviceDetailTabs';
 import { AppsTab, useAppScan } from './DeviceDetailApps';
 import { ConfiguredKioskDialog, DeviceKioskDialog } from './DeviceKioskDialog';
+import { RemoteViewDialog } from './RemoteViewDialog';
 import { CORE_ACTION_ACCESS } from '../ext/core/access';
 import { withCoreParts } from '../ext/core/device';
 import { usePermission } from '../ext/permissions';
@@ -239,6 +240,7 @@ export function DeviceDetailPage() {
   // What the role may change (ext/core/access.ts); the reads stay for everyone.
   const canEdit = usePermission(CORE_ACTION_ACCESS.editDevices);
   const canRename = usePermission(CORE_ACTION_ACCESS.renameDevice);
+  const canRemoteView = usePermission({ permission: 'remote_view' });
 
   const [device, setDevice] = useState<DeviceView | null>(null);
   const [configs, setConfigs] = useState<Record<string, ConfigurationLookup>>({});
@@ -279,6 +281,7 @@ export function DeviceDetailPage() {
   const [returnOpen, setReturnOpen] = useState(false);
   const [powerRequested, setPowerRequested] = useState<string | null>(null);
   const [locationRequested, setLocationRequested] = useState<string | null>(null);
+  const [remoteViewOpen, setRemoteViewOpen] = useState(false);
 
   /* ---- device lookup ---- */
   // The route param is the device number (every link in the console uses it) or, from old links, the database id.
@@ -378,6 +381,7 @@ export function DeviceDetailPage() {
     setDialog(null);
     setKioskOpen(false);
     setReturnOpen(false);
+    setRemoteViewOpen(false);
     setConfiguredIds(number ? configuredKioskIds(number) : new Set());
   }, [number]);
 
@@ -952,6 +956,7 @@ export function DeviceDetailPage() {
                 doNotTrack={doNotTrack}
               />
             ) : null}
+            {canRemoteView ? <RemoteViewAction busy={busy || wiped} disabled={wiped} onStart={() => setRemoteViewOpen(true)} /> : null}
             <CommandsCard
               title="Recent commands"
               items={history}
@@ -1134,6 +1139,7 @@ export function DeviceDetailPage() {
           onQueued={onReturnQueued}
         />
       ) : null}
+      {remoteViewOpen ? <RemoteViewDialog deviceNumber={device.number} onClose={() => setRemoteViewOpen(false)} /> : null}
     </DeviceProvider>
   );
 }

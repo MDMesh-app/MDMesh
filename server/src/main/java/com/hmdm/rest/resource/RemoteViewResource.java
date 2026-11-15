@@ -16,6 +16,7 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 import javax.inject.Named;
 import javax.ws.rs.POST;
+import javax.ws.rs.GET;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
@@ -100,6 +101,28 @@ public class RemoteViewResource {
             }
             return Response.OK();
         } catch (IllegalArgumentException badId) { return Response.ERROR("Invalid remote-view session id"); }
+    }
+
+    /** Non-secret state for the requester; SDP, ICE, and the agent join credential are never exposed. */
+    @GET @Path("/sessions/{id}") @Produces(MediaType.APPLICATION_JSON)
+    public Response status(@PathParam("id") String rawId) {
+        if (!SecurityContext.get().hasPermission("remote_view")) return Response.PERMISSION_DENIED();
+        try {
+            UUID id = UUID.fromString(rawId);
+            int userId = SecurityContext.get().getCurrentUser().map(u -> u.getId()).orElse(-1);
+            com.hmdm.persistence.domain.RemoteViewSession session = sessions.findOwned(id, userId);
+            if (session == null) return Response.PERMISSION_DENIED();
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("id", session.getId());
+            result.put("state", session.getState());
+            result.put("consentExpiresAt", session.getConsentExpiresAt());
+            result.put("expiresAt", session.getExpiresAt());
+            result.put("endedAt", session.getEndedAt());
+            result.put("endReason", session.getEndReason());
+            return Response.OK(result);
+        } catch (IllegalArgumentException badId) {
+            return Response.ERROR("Invalid remote-view session id");
+        }
     }
 
 }

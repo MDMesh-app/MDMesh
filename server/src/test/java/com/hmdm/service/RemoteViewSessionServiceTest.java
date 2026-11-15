@@ -54,6 +54,17 @@ public class RemoteViewSessionServiceTest {
         assertEquals("denied", dao.sessions.get(created.session.getId()).getState());
     }
 
+    @Test public void browserMayJoinOnlyItsOwnersLiveSignalingSession() {
+        FakeDao dao = new FakeDao(); RemoteViewSessionService service = new RemoteViewSessionService(dao);
+        RemoteViewSessionService.Created created = service.create("device-1", 7, 1000L);
+        assertFalse(service.browserMayJoin(created.session.getId(), 7, 1001L));
+        assertFalse(service.browserMayJoin(created.session.getId(), 8, 1001L));
+        assertNotNull(service.claimAgentJoin(created.session.getId(), "device-1", created.agentJoinSecret, 1002L));
+        assertTrue(service.browserMayJoin(created.session.getId(), 7, 1003L));
+        assertSame(created.session, service.findOwned(created.session.getId(), 7));
+        assertNull(service.findOwned(created.session.getId(), 8));
+    }
+
     private static final class FakeDao extends RemoteViewSessionDAO {
         final Map<UUID, RemoteViewSession> sessions = new HashMap<>();
         FakeDao() { super(null); }

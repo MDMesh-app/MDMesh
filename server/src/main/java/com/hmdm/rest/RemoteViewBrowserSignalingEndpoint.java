@@ -9,10 +9,13 @@ import javax.websocket.OnOpen;
 import javax.websocket.Session;
 import javax.websocket.server.PathParam;
 import javax.websocket.server.ServerEndpoint;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Browser-side peer of {@link RemoteViewSignalingEndpoint}. */
 @ServerEndpoint(value = "/agent/viewer/{sessionId}", configurator = RemoteViewSignalingEndpoint.Auth.class)
 public class RemoteViewBrowserSignalingEndpoint {
+    private static final Logger logger = LoggerFactory.getLogger(RemoteViewBrowserSignalingEndpoint.class);
     private static final String HTTP_SESSION = "remote.httpSession";
 
     @OnOpen public void open(Session socket, @PathParam("sessionId") String raw) {
@@ -21,7 +24,10 @@ public class RemoteViewBrowserSignalingEndpoint {
         boolean allowed = id != null && hub != null
                 && hub.joinBrowser(id, (HttpSession) socket.getUserProperties().get(HTTP_SESSION), socket);
         if (!allowed) {
+            logger.warn("Remote-view browser signaling rejected: session={}", raw);
             RemoteViewSignalingEndpoint.close(socket, "unauthorized");
+        } else {
+            logger.info("Remote-view browser signaling joined: session={}", raw);
         }
     }
 
@@ -39,5 +45,10 @@ public class RemoteViewBrowserSignalingEndpoint {
         if (id != null && RemoteViewSignalingHub.INSTANCE != null) {
             RemoteViewSignalingHub.INSTANCE.disconnect(id, socket);
         }
+    }
+
+    @javax.websocket.OnError public void error(Session socket, @PathParam("sessionId") String raw, Throwable failure) {
+        logger.warn("Remote-view browser signaling error: session={}, type={}", raw,
+                failure == null ? "unknown" : failure.getClass().getSimpleName());
     }
 }

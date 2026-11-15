@@ -67,7 +67,12 @@ public class RemoteViewSessionService {
     public boolean browserMayJoin(UUID id, int userId, long now) {
         RemoteViewSession session = dao.find(id);
         return session != null && session.getEndedAt() == null && session.getRequesterUserId() == userId
-                && now <= session.getExpiresAt();
+                && "signaling".equals(session.getState()) && now <= session.getExpiresAt();
+    }
+    /** The requester may poll the durable, non-secret session state while waiting for consent. */
+    public RemoteViewSession findOwned(UUID id, int userId) {
+        RemoteViewSession session = dao.find(id);
+        return session != null && session.getRequesterUserId() == userId ? session : null;
     }
     public boolean isSignalingLive(UUID id, long now) {
         RemoteViewSession session = dao.find(id);

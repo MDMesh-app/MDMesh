@@ -580,6 +580,22 @@ export function RemoteActions({
   );
 }
 
+/** Kept separate from edit-device controls: remote_view is a dedicated, narrower role permission. */
+export function RemoteViewAction({ busy, disabled, onStart }: { busy: boolean; disabled?: boolean; onStart: () => void }) {
+  return <Card className="v2-device-actions">
+    <ActionRow
+      title="Remote view"
+      sub="Screen only — no input"
+      busy={busy}
+      tiles={[{
+        key: 'remote-view', label: 'View screen…', icon: <IconScreenMessage />, variant: 'primary',
+        title: 'Ask the device user to approve a short, view-only screen-share session.', disabled, run: onStart,
+      }]}
+      hint="The device must approve each session. This POC does not provide remote input or store screen content."
+    />
+  </Card>;
+}
+
 /* ===============================================================================================================
    Action dialog (parameters and confirmations)
    =============================================================================================================== */

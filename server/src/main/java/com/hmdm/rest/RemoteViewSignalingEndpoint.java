@@ -38,7 +38,13 @@ public class RemoteViewSignalingEndpoint {
             String authorization = header(request.getHeaders(), "Authorization");
             String join = header(request.getHeaders(), "X-MDMesh-Remote-Session");
             String device = header(request.getHeaders(), "X-MDMesh-Device");
-            config.getUserProperties().put(HTTP_SESSION, request.getHttpSession());
+            // The agent authenticates with its device credential and does not have a servlet
+            // session. Tomcat exposes user properties as a ConcurrentHashMap, which rejects a
+            // null put and otherwise turns a valid WebSocket upgrade into HTTP 500.
+            Object httpSession = request.getHttpSession();
+            if (httpSession != null) {
+                config.getUserProperties().put(HTTP_SESSION, httpSession);
+            }
             put(config, AUTH, authorization);
             put(config, JOIN, join);
             put(config, DEVICE, device);

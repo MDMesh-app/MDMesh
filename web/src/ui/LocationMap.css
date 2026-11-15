@@ -84,6 +84,7 @@
 }
 .v2 .v2-locmap .leaflet-control-attribution a {
   color: var(--text-2);
+  text-decoration: underline; /* a link inside text: not by colour alone (1.4.1) */
 }
 
 /* A fix's popup: a small popover. */

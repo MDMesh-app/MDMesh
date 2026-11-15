@@ -97,7 +97,6 @@ function AccountMenu() {
     <DM.Root modal={false} open={open} onOpenChange={setOpen}>
       <DM.Trigger
         className="v2-account"
-        aria-label={`Account: ${name}`}
         onClick={(e) => {
           if (e.detail === 0) setOpen(true);
         }}
@@ -105,7 +104,10 @@ function AccountMenu() {
         <span className="v2-account__avatar" aria-hidden="true">
           {name.slice(0, 1).toUpperCase()}
         </span>
-        <span className="v2-account__name">{name}</span>
+        <span className="v2-account__name">
+          <span className="v2-visually-hidden">Account: </span>
+          {name}
+        </span>
         <IconChevronDown />
       </DM.Trigger>
       <DM.Portal>

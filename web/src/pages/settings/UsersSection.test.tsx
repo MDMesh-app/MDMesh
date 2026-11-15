@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { chooseOption } from '../../test/select';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../../App';
 import { ROLES, renderInConsole, stubApi } from '../../test/console';
@@ -126,7 +127,7 @@ describe('Users & roles administration', () => {
     const dialog = within(await screen.findByRole('dialog'));
     const login = await dialog.findByLabelText('Login');
     fireEvent.change(login, { target: { value: 'new-operator' } });
-    fireEvent.change(dialog.getByLabelText('Role'), { target: { value: '7' } });
+    chooseOption(dialog.getByLabelText('Role'), { value: '7' });
     fireEvent.change(dialog.getByLabelText('Password'), { target: { value: 'password' } });
     fireEvent.change(dialog.getByLabelText('Confirm password'), { target: { value: 'password' } });
     fireEvent.click(dialog.getByRole('checkbox', { name: 'All device groups' }));
@@ -193,7 +194,7 @@ describe('Users & roles administration', () => {
     const dialog = within(await screen.findByRole('dialog'));
     const login = await dialog.findByLabelText('Login');
     fireEvent.change(login, { target: { value: 'new' } });
-    fireEvent.change(dialog.getByLabelText('Role'), { target: { value: '7' } });
+    chooseOption(dialog.getByLabelText('Role'), { value: '7' });
     fireEvent.change(dialog.getByLabelText('Password'), { target: { value: 'short' } });
     fireEvent.change(dialog.getByLabelText('Confirm password'), { target: { value: 'short' } });
     expect(dialog.getByText('At least 8 characters')).toBeTruthy();
@@ -247,6 +248,7 @@ describe('Users & roles administration', () => {
       'textContent',
       'This role is assigned to users. Assign them another role before deleting it.',
     );
-    expect(screen.getByRole('table', { name: 'Roles' }).textContent).toContain('Operators');
+    // The page behind the open dialog is hidden from assistive tech (aria-hidden), so look past that.
+    expect(screen.getByRole('table', { name: 'Roles', hidden: true }).textContent).toContain('Operators');
   });
 });

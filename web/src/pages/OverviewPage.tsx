@@ -17,15 +17,16 @@ import {
   ActivityRow,
   AttentionList,
   Button,
-  ButtonAnchor,
   ButtonLink,
-  Callout,
   Card,
   CardHeader,
   CountMeta,
   DeviceIdentity,
   EmptyState,
+  ErrorState,
   FleetSummary,
+  Grid,
+  GridCell,
   IconAlert,
   IconBattery,
   IconCheck,
@@ -43,6 +44,8 @@ import {
   StatCell,
   StatGrid,
   StatusDot,
+  SkeletonFacts,
+  SkeletonRows,
   deriveDeviceKind,
   useToast,
   type AttentionItem,
@@ -114,6 +117,9 @@ export function OverviewPage() {
   );
 
   const showSubtitle = !data.loading && data.loadedAt !== null;
+  // The first load failed: nothing is known, so the cards say so instead of showing an empty fleet.
+  const unknown = data.loadedAt === null && !!data.error;
+  const firstLoad = data.loading && data.loadedAt === null;
 
   // Core's cards, which the contributions in ext/core/overview.tsx pick out; extensions' cards are placed among them.
   const core = {
@@ -121,7 +127,8 @@ export function OverviewPage() {
     rollout: data.rollout ? <RolloutStat rollout={data.rollout} /> : null,
     needsAttention: (
       <NeedsAttention
-        loading={data.loading}
+        loading={firstLoad}
+        unknown={unknown}
         rows={needsAttention}
         issues={issues}
         now={now}
@@ -131,9 +138,15 @@ export function OverviewPage() {
       />
     ),
     byConfiguration: (
-      <ByConfiguration devices={devices} configurations={data.configurations} summary={data.summary} loading={data.loading} />
+      <ByConfiguration
+        devices={devices}
+        configurations={data.configurations}
+        summary={data.summary}
+        loading={firstLoad}
+        unknown={unknown}
+      />
     ),
-    recentActivity: <RecentActivity activity={data.activity} appNames={data.appNames} />,
+    recentActivity: <RecentActivity activity={unknown ? null : data.activity} appNames={data.appNames} unknown={unknown} />,
     server: data.update ? <ServerCard status={data.update} /> : null,
   };
 
@@ -141,12 +154,12 @@ export function OverviewPage() {
     <CoreOverviewProvider parts={core}>
       <PageHeader
         title="Overview"
-        subtitle={showSubtitle ? <Subtitle data={data} counts={counts} now={now} /> : undefined}
+        subtitle={showSubtitle ? <Subtitle data={data} counts={counts} now={now} /> : null}
         actions={
           <>
-            <UpdatedAt loadedAt={data.loadedAt} failed={!!data.error} loading={data.loading} />
+            <UpdatedAt loadedAt={data.loadedAt} failed={!!data.error} />
             {canEnroll ? (
-              <ButtonLink to={paths.enroll} variant="primary" size="hero" icon={<IconPlus />}>
+              <ButtonLink to={paths.enroll} variant="primary" size="lg" icon={<IconPlus />}>
                 Enroll device
               </ButtonLink>
             ) : null}
@@ -155,59 +168,62 @@ export function OverviewPage() {
       />
 
       {data.error ? (
-        <Callout tone="alert" role="alert" icon={<IconAlert size={15} />} className="v2-ov-error">
-          <span>
-            {data.error}
-            {data.loadedAt !== null ? ' Showing the last data loaded.' : ''}
-          </span>
-          <Button size="sm" onClick={data.refresh}>
-            Retry
-          </Button>
-        </Callout>
+        <ErrorState
+          thing="the fleet"
+          detail={data.loadedAt !== null ? 'Showing the last data loaded.' : undefined}
+          onRetry={data.refresh}
+        />
       ) : null}
 
-      <FleetSummary
-        headingId="v2-ov-fleet"
-        total={data.total}
-        caption={
-          <>
-            {plural(data.total, 'device enrolled', 'devices enrolled')}
-            {data.total > devices.length && devices.length > 0 ? (
+      {/* One 12-column grid for every row, so card edges line up down the page (ext/hosts/OverviewCards). */}
+      <Grid>
+        <GridCell span={8}>
+          <FleetSummary
+            headingId="v2-ov-fleet"
+            loading={firstLoad}
+            total={unknown ? null : data.total}
+            caption={
               <>
-                {' '}
-                · status of the first <Num>{devices.length}</Num>
+                {plural(data.total, 'device enrolled', 'devices enrolled')}
+                {data.total > devices.length && devices.length > 0 ? (
+                  <>
+                    {' '}
+                    · status of the first <Num>{devices.length}</Num>
+                  </>
+                ) : null}
+                {/* Beside the total, not in the bar and legend: a wiped device is enrolled but no longer reports. */}
+                {counts.wiped > 0 ? (
+                  <>
+                    {' · '}
+                    <Link to={`${paths.devices}?status=wiped`}>
+                      <Num>{counts.wiped}</Num> wiped
+                    </Link>
+                  </>
+                ) : null}
               </>
-            ) : null}
-            {/* Beside the total, not in the bar and legend: a wiped device is enrolled but no longer reports. */}
-            {counts.wiped > 0 ? (
-              <>
-                {' · '}
-                <Link to={`${paths.devices}?status=wiped`}>
-                  <Num>{counts.wiped}</Num> wiped
-                </Link>
-              </>
-            ) : null}
-          </>
-        }
-        legend={[
-          { key: 'online', label: 'Online', count: counts.online, tone: 'ok', to: `${paths.devices}?status=online` },
-          {
-            key: 'attention',
-            label: 'Need attention',
-            count: counts.attention,
-            tone: 'warn',
-            to: `${paths.devices}?status=attention`,
-          },
-          { key: 'offline', label: 'Offline', count: counts.offline, tone: 'idle', to: `${paths.devices}?status=offline` },
-        ]}
-        stats={
-          <StatGrid>
-            <OverviewStats />
-          </StatGrid>
-        }
-      />
-
-      <OverviewRows />
+            }
+            legend={[
+              { key: 'online', label: 'Online', count: counts.online, tone: 'ok', to: `${paths.devices}?status=online` },
+              {
+                key: 'attention',
+                label: 'Needs attention',
+                count: counts.attention,
+                tone: 'warn',
+                to: `${paths.devices}?status=attention`,
+              },
+              { key: 'offline', label: 'Offline', count: counts.offline, tone: 'idle', to: `${paths.devices}?status=offline` },
+            ]}
+          />
+        </GridCell>
+        <GridCell span={4}>
+          <Card aria-label="Fleet status" className="v2-ov-stats">
+            <StatGrid>
+              <OverviewStats />
+            </StatGrid>
+          </Card>
+        </GridCell>
+        <OverviewRows />
+      </Grid>
     </CoreOverviewProvider>
   );
 }
@@ -257,8 +273,8 @@ function Subtitle({ data, counts, now }: { data: OverviewData; counts: Counts; n
 }
 
 /** "● Updated 20s ago": when the data last loaded (warn mark when the latest refresh failed). */
-function UpdatedAt({ loadedAt, failed, loading }: { loadedAt: number | null; failed: boolean; loading: boolean }) {
-  if (loadedAt === null) return loading ? <span className="v2-ov-updated">Loading…</span> : null;
+function UpdatedAt({ loadedAt, failed }: { loadedAt: number | null; failed: boolean }) {
+  if (loadedAt === null) return null;
   return (
     <span className="v2-ov-updated">
       <StatusDot tone={failed ? 'warn' : 'ok'} size={7} />
@@ -273,7 +289,7 @@ function SyncStat({ summary, failed }: { summary: ConfigSyncSummary[] | null; fa
   if (!summary) {
     return (
       <StatCell
-        label="Config in sync"
+        label="Configuration in sync"
         value="—"
         notes={[failed ? { text: 'Could not be checked', tone: 'alert' } : { text: 'Checking…' }]}
       />
@@ -295,7 +311,7 @@ function SyncStat({ summary, failed }: { summary: ConfigSyncSummary[] | null; fa
   if (t.neverSeen > 0) notes.push({ text: `${t.neverSeen} not reported` });
   if (t.total === 0) notes.push({ text: 'No device has a configuration' });
   else if (notes.length === 0) notes.push({ text: 'All in sync', tone: 'ok' });
-  return <StatCell label="Config in sync" value={t.inSync} of={`/${t.total}`} notes={notes.slice(0, 2)} />;
+  return <StatCell label="Configuration in sync" value={t.inSync} of={`/${t.total}`} notes={notes.slice(0, 2)} />;
 }
 
 /** While an agent rollout runs: devices updated in its current stage (Settings → Agent rollout has the controls). */
@@ -310,7 +326,7 @@ function RolloutStat({ rollout }: { rollout: ActiveRollout }) {
     <StatCell
       label={
         <Link to={SETTINGS_ROLLOUT} className="v2-ov-statlink">
-          Agent <span className="v2-mono">{rollout.targetVersion}</span> rollout
+          Agent {rollout.targetVersion} rollout
         </Link>
       }
       value={c.updated}
@@ -324,6 +340,7 @@ function RolloutStat({ rollout }: { rollout: ActiveRollout }) {
 
 function NeedsAttention({
   loading,
+  unknown,
   rows,
   issues,
   now,
@@ -332,6 +349,7 @@ function NeedsAttention({
   allWiped,
 }: {
   loading: boolean;
+  unknown?: boolean;
   rows: DeviceView[];
   issues: Record<number, ConfigIssue>;
   now: number;
@@ -377,12 +395,6 @@ function NeedsAttention({
           Update agent
         </ButtonLink>
       );
-    } else {
-      action = (
-        <ButtonLink size="sm" to={to} aria-label={`Open device: ${name}`}>
-          Open device
-        </ButtonLink>
-      );
     }
     return {
       key: d.id,
@@ -403,7 +415,13 @@ function NeedsAttention({
   });
 
   let body: ReactNode;
-  if (loading) body = <p className="v2-ov-loading">Loading…</p>;
+  if (loading) body = <SkeletonRows count={5} label="Loading devices that need attention…" />;
+  else if (unknown)
+    body = (
+      <EmptyState bare title="Not known">
+        The devices couldn’t be loaded, so it isn’t known which need attention.
+      </EmptyState>
+    );
   else if (!hasDevices)
     body = (
       <EmptyState bare title="No devices yet">
@@ -437,7 +455,9 @@ function NeedsAttention({
         title="Needs attention"
         titleId="v2-ov-att"
         actions={
-          !loading && rows.length > 0 ? <CountMeta shown={shown.length} total={rows.length} to={paths.devices} /> : null
+          !loading && rows.length > 0 ? (
+            <CountMeta shown={shown.length} total={rows.length} to={`${paths.devices}?status=attention`} />
+          ) : null
         }
       />
       {body}
@@ -462,11 +482,13 @@ function ByConfiguration({
   configurations,
   summary,
   loading,
+  unknown,
 }: {
   devices: DeviceView[];
   configurations: Record<string, ConfigurationLookup>;
   summary: ConfigSyncSummary[] | null;
   loading: boolean;
+  unknown?: boolean;
 }) {
   const rows = useMemo<ConfigRow[]>(() => {
     // Devices per configuration from the device list (the classic card); sync detail from the summary when loaded.
@@ -528,15 +550,19 @@ function ByConfiguration({
   }, [devices, configurations, summary]);
 
   return (
-    <Card padding="snug" aria-labelledby="v2-ov-cfg">
+    <Card aria-labelledby="v2-ov-cfg">
       <CardHeader
-        spacing={6}
+        spacing={8}
         title="By configuration"
         titleId="v2-ov-cfg"
         actions={<Link to={paths.configurations}>Manage</Link>}
       />
       {loading ? (
-        <p className="v2-ov-loading v2-ov-loading--flush">Loading…</p>
+        <SkeletonFacts count={3} label="Loading configurations…" />
+      ) : unknown ? (
+        <EmptyState bare title="Not known">
+          The devices couldn’t be loaded.
+        </EmptyState>
       ) : rows.length === 0 ? (
         <EmptyState bare title="No devices yet">
           Devices are counted here by the configuration they use.
@@ -625,7 +651,15 @@ const FILTERS: ReadonlyArray<{ value: ActivityFilter; label: string }> = [
   { value: 'events', label: 'Device events' },
 ];
 
-function RecentActivity({ activity, appNames }: { activity: ActivityItem[] | null; appNames: Record<string, string> }) {
+function RecentActivity({
+  activity,
+  appNames,
+  unknown,
+}: {
+  activity: ActivityItem[] | null;
+  appNames: Record<string, string>;
+  unknown?: boolean;
+}) {
   const [filter, setFilter] = useState<ActivityFilter>('all');
   const rows = (activity ?? [])
     .filter((a) =>
@@ -634,7 +668,13 @@ function RecentActivity({ activity, appNames }: { activity: ActivityItem[] | nul
     .slice(0, ACTIVITY_ROWS);
 
   let body: ReactNode;
-  if (activity === null) body = <p className="v2-ov-loading">Loading activity…</p>;
+  if (unknown)
+    body = (
+      <EmptyState bare title="Not known">
+        The devices couldn’t be loaded, so their recent activity isn’t known.
+      </EmptyState>
+    );
+  else if (activity === null) body = <SkeletonRows count={6} compact label="Loading activity…" />;
   else if (rows.length === 0)
     body = (
       <EmptyState bare title={filter === 'commands' ? 'No command results' : 'No recent events'}>
@@ -679,86 +719,70 @@ function RecentActivity({ activity, appNames }: { activity: ActivityItem[] | nul
 
 /* ---- Server ------------------------------------------------------------------------------------------------------- */
 
+/**
+ * The server's version and update state as facts. The sidebar's update item is the one call to action for a new
+ * release, so this card states it without a second button; a running or failed update links to its progress.
+ */
 function ServerCard({ status }: { status: UpdateStatus }) {
   const apply = status.apply;
   const active = !!apply && !isApplyTerminal(apply.phase);
   const failed = !!apply && (apply.phase === 'failed' || apply.phase === 'rolled_back');
-  const channel = status.channel ? ` · ${status.channel} channel` : '';
 
-  let panel: ReactNode = null;
+  let line: ReactNode;
   if (active && apply) {
-    panel = (
-      <div className="v2-ov-srv__panel">
-        <span className="v2-ov-srv__title">
-          Updating to <span className="v2-mono">{apply.toVersion}</span>
-        </span>
-        <span className="v2-ov-srv__line is-warn">
-          <StatusDot tone="warn" />
-          {applyPhaseLabel(apply.phase)}
-        </span>
-        <ButtonLink size="sm" strong to={SETTINGS_UPDATES}>
+    line = (
+      <span className="v2-ov-srv__line is-warn">
+        <StatusDot tone="warn" />
+        Updating to {apply.toVersion}: {applyPhaseLabel(apply.phase)}
+        <Link to={SETTINGS_UPDATES} className="v2-ov-srv__link">
           View progress
-        </ButtonLink>
-      </div>
+        </Link>
+      </span>
     );
   } else if (failed && apply) {
-    panel = (
-      <div className="v2-ov-srv__panel">
-        <span className="v2-ov-srv__title">{apply.phase === 'rolled_back' ? 'Update rolled back' : 'Update failed'}</span>
-        {apply.error ? <span className="v2-ov-srv__line is-alert">{apply.error}</span> : null}
+    line = (
+      <span className="v2-ov-srv__line is-alert">
+        <StatusDot tone="alert" />
+        {apply.phase === 'rolled_back' ? 'Update rolled back' : 'Update failed'}
         {/* /recovery is served outside the SPA. */}
-        <ButtonAnchor size="sm" strong href="/recovery">
+        <a href="/recovery" className="v2-ov-srv__link">
           Open recovery
-        </ButtonAnchor>
-      </div>
+        </a>
+      </span>
     );
   } else if (status.updateAvailable && status.latest) {
-    panel = (
-      <div className="v2-ov-srv__panel">
-        <span className="v2-ov-srv__title">
-          <span className="v2-mono">{status.latest}</span> is available
-        </span>
-        {status.verified ? (
-          <span className="v2-ov-srv__line is-ok">
-            <IconCheck />
-            Signature verified{channel}
-          </span>
-        ) : (
-          <span className="v2-ov-srv__line is-warn">
-            <StatusDot tone="warn" />
-            Signature not verified{channel}
-          </span>
-        )}
-        <ButtonLink size="sm" strong to={SETTINGS_UPDATES}>
-          Review update
-        </ButtonLink>
-      </div>
+    line = (
+      <span className="v2-ov-srv__line">
+        {status.latest} available{status.verified ? ', signature verified' : ', signature not verified'}
+      </span>
+    );
+  } else if (lastCheckError(status)) {
+    line = <span className="v2-ov-srv__line is-warn">The last update check failed.</span>;
+  } else {
+    line = (
+      <span className="v2-ov-srv__line">
+        Up to date
+        {status.checkedAt ? (
+          <>
+            {' · '}
+            <RelativeTime value={status.checkedAt} style="long" prefix="checked " />
+          </>
+        ) : null}
+      </span>
     );
   }
 
   return (
-    <Card padding="compact" gap={12} aria-labelledby="v2-ov-srv">
+    <Card gap={8} aria-labelledby="v2-ov-srv">
       <CardHeader title="Server" titleId="v2-ov-srv" />
       <div className="v2-ov-srv__run">
         <StatusDot tone="ok" size={8} />
         <span>
-          Running <span className="v2-mono">{status.current}</span>
+          Running <span className="v2-num">{status.current}</span>
+          {status.channel ? <span className="v2-secondary"> · {status.channel} channel</span> : null}
         </span>
       </div>
-      {panel ??
-        (lastCheckError(status) ? (
-          <span className="v2-ov-srv__meta">The last update check failed.</span>
-        ) : (
-          <span className="v2-ov-srv__meta">
-            Up to date
-            {status.checkedAt ? (
-              <>
-                {' · '}
-                <RelativeTime value={status.checkedAt} style="long" prefix="checked " />
-              </>
-            ) : null}
-          </span>
-        ))}
+      {line}
     </Card>
   );
 }

@@ -24,6 +24,13 @@ import {
   ButtonLink,
   Callout,
   Card,
+  ErrorState,
+  Field,
+  IconFilter,
+  Popover,
+  Select,
+  SkeletonRows,
+  Tooltip,
   Checkbox,
   Chip,
   ConfigSync,
@@ -37,7 +44,6 @@ import {
   IconSync,
   IconTable,
   IconWarning,
-  LabelledSelect,
   Menu,
   Notice,
   PageHeader,
@@ -307,6 +313,21 @@ export function DevicesPage() {
   const { syncOf, presenceOf, check, refresh } = useFleetSync(devices, loading, visible);
   const presence = useCallback((d: DeviceView) => presenceOf(d, now), [presenceOf, now]);
 
+  // The first load lands in one piece: the list, its counts, the attention strip and the subtitle appear together
+  // once the sync check has settled (or after 2s, whichever comes first), instead of the strip popping in above a
+  // table that is already showing. Later refreshes keep what is on screen.
+  const [settled, setSettled] = useState(false);
+  const listReady = !loading || devices.length > 0;
+  useEffect(() => {
+    if (settled || !listReady) return;
+    if (check !== 'pending') {
+      setSettled(true);
+      return;
+    }
+    const t = window.setTimeout(() => setSettled(true), 2000);
+    return () => window.clearTimeout(t);
+  }, [settled, listReady, check]);
+
   const counts = useMemo(() => {
     const c = { online: 0, attention: 0, offline: 0, wiped: 0 };
     for (const d of devices) c[presence(d)]++;
@@ -507,13 +528,20 @@ export function DevicesPage() {
     // A wiped device erased itself: there is nothing to wake (core's Lock and Ring are greyed out too).
     const wiped = presence(d) === 'wiped';
     return (
-      <div className={cx('v2-devices-actions', size === 'sm' && 'v2-devices-actions--card')}>
+      <div className={cx('v2-rowactions', size === 'sm' && 'v2-devices-actions--card')}>
         {canEdit ? (
-          <IconButton label={`Sync ${d.number} now`} size={size} disabled={syncing.has(d.id) || wiped} onClick={() => void syncNow(d)}>
-            <IconSync size={size === 'sm' ? 14 : 15} />
-          </IconButton>
+          <Tooltip content="Sync now">
+            <IconButton
+              label={`Sync now: ${d.number}`}
+              size={size === 'sm' ? 'sm' : 'xs'}
+              disabled={syncing.has(d.id) || wiped}
+              onClick={() => void syncNow(d)}
+            >
+              <IconSync size={14} />
+            </IconButton>
+          </Tooltip>
         ) : null}
-        {items.length ? <Menu label={`More actions for ${d.number}`} iconSize={size} items={items} /> : null}
+        {items.length ? <Menu label={`More actions for ${d.number}`} iconSize={size === 'sm' ? 'sm' : 'xs'} items={items} /> : null}
       </div>
     );
   };
@@ -600,9 +628,11 @@ export function DevicesPage() {
   const partial = check === 'partial';
   const attentionKnown = check === 'partial' || check === 'complete';
   const attentionText = `${counts.attention}${partial ? '+' : ''}`;
-  const mono = (v: number | string) => <span className="v2-mono">{v}</span>;
-  let subtitle: ReactNode;
-  if (!(loading && devices.length === 0) && !error && active > 0) {
+  const mono = (v: number | string) => <span className="v2-num">{v}</span>;
+  // Written once every count is in (the sync check settled), so it never rewrites itself as data arrives; its line
+  // is reserved meanwhile.
+  let subtitle: ReactNode = null;
+  if (settled && !error && active > 0) {
     subtitle = (
       <>
         {/* A capped list (over 1000) counts only the loaded devices: say so next to the server total. */}
@@ -610,7 +640,7 @@ export function DevicesPage() {
         {mono(counts.online)} of {total > devices.length ? 'the first ' : ''}
         {mono(active)} online now
         {attentionKnown && counts.attention > 0 ? <>, {mono(attentionText)} need attention</> : null}
-        {counts.offline > 0 ? <>, {mono(counts.offline)} haven’t checked in</> : null}.
+        {counts.offline > 0 ? <>, {mono(counts.offline)} offline</> : null}.
       </>
     );
   }
@@ -641,6 +671,15 @@ export function DevicesPage() {
     setDupOnly(false);
   };
 
+  // The filters behind the Filter button: how many are on, and clearing just them.
+  const filterCount = [type !== 'all', configFilter !== 'all', android !== 'all', dupOnly].filter(Boolean).length;
+  const clearMenuFilters = () => {
+    setType('all');
+    setConfigFilter('all');
+    setAndroid('all');
+    setDupOnly(false);
+  };
+
   const pickIssue = (k: IssueKind) => {
     if (issue === k) {
       setIssue(null);
@@ -650,9 +689,9 @@ export function DevicesPage() {
     setIssue(k);
   };
 
-  const bulkBar = selectionActive ? (
+  const bulkBar = canSelect ? (
     <BulkSelectionBar
-      variant={view === 'table' ? 'attached' : 'standalone'}
+      open={selectionActive}
       count={selectedIds.length}
       total={filtered.length}
       onSelectAll={() => setSelected(new Set(filtered.map((d) => d.id)))}
@@ -693,7 +732,7 @@ export function DevicesPage() {
           serverQuery ? (
             <Button onClick={clearFilters}>Clear search</Button>
           ) : canEdit ? (
-            <ButtonLink to={paths.enroll} variant="primary" icon={<IconPlus />}>
+            <ButtonLink to={paths.enroll} variant="primary" size="lg" icon={<IconPlus />}>
               Enroll device
             </ButtonLink>
           ) : undefined
@@ -736,12 +775,10 @@ export function DevicesPage() {
     : undefined;
 
   let body: ReactNode;
-  if (loading && devices.length === 0) {
+  if (!settled && !(error && devices.length === 0)) {
     body = (
-      <Card aria-busy="true">
-        <p className="v2-devices-loading" role="status">
-          Loading devices…
-        </p>
+      <Card padding="none" clip aria-busy="true">
+        <SkeletonRows count={view === 'table' ? Math.min(pageSize, 10) : 6} label="Loading devices…" />
       </Card>
     );
   } else if (error && devices.length === 0) {
@@ -758,7 +795,6 @@ export function DevicesPage() {
             columns={columns}
             rows={pageRows}
             rowKey={(d) => d.id}
-            edge={16}
             minWidth={860}
             selection={selection}
             sort={{ key: sort.key, dir: sort.dir, onSort }}
@@ -805,7 +841,7 @@ export function DevicesPage() {
                   <dl className="v2-devices-card__facts">
                     <div>
                       <dt>Android</dt>
-                      <dd className="v2-mono">{orDash(d.androidVersion)}</dd>
+                      <dd className="v2-num">{orDash(d.androidVersion)}</dd>
                     </div>
                     <div>
                       <dt>Last seen</dt>
@@ -834,23 +870,14 @@ export function DevicesPage() {
         subtitle={subtitle}
         actions={
           canEdit ? (
-            <ButtonLink to={paths.enroll} variant="primary" size="hero" icon={<IconPlus />}>
+            <ButtonLink to={paths.enroll} variant="primary" size="lg" icon={<IconPlus />}>
               Enroll device
             </ButtonLink>
           ) : undefined
         }
       />
 
-      {error ? (
-        <Callout tone="alert" role="alert">
-          <span className="v2-devices-callout">
-            {error}
-            <Button size="sm" onClick={() => void refreshList()}>
-              Try again
-            </Button>
-          </span>
-        </Callout>
-      ) : null}
+      {error ? <ErrorState thing="devices" onRetry={() => void refreshList()} /> : null}
 
       {total > devices.length && !loading ? (
         <Callout tone="info">
@@ -858,13 +885,13 @@ export function DevicesPage() {
         </Callout>
       ) : null}
 
-      {attentionKnown && counts.attention > 0 ? (
+      {settled && attentionKnown && counts.attention > 0 ? (
         <Notice
           aria-label="Needs attention"
           icon={<IconWarning />}
           action={
             (issues.agentTooOld ?? 0) > 0 ? (
-              <ButtonLink to={`${paths.settings}#agent-rollout`} strong>
+              <ButtonLink to={`${paths.settings}#agent-rollout`} size="sm">
                 Roll out an agent update
               </ButtonLink>
             ) : undefined
@@ -892,7 +919,6 @@ export function DevicesPage() {
           onChange={setQ}
         />
         <Segmented<StatusFilter>
-          size="lg"
           aria-label="Status"
           value={status}
           onChange={(v) => {
@@ -902,7 +928,7 @@ export function DevicesPage() {
           options={[
             { value: 'all', label: 'All', count: active },
             { value: 'online', label: 'Online', count: counts.online },
-            { value: 'attention', label: 'Attention', count: attentionKnown ? attentionText : '–' },
+            { value: 'attention', label: 'Needs attention', count: attentionKnown ? attentionText : '–' },
             { value: 'offline', label: 'Offline', count: counts.offline },
             // Only once there is one (or a link asks for it), like Duplicates.
             ...(counts.wiped > 0 || status === 'wiped'
@@ -910,62 +936,91 @@ export function DevicesPage() {
               : []),
           ]}
         />
-        {view === 'cards' ? (
-          <LabelledSelect
-            label="Sort"
-            value={sort.key}
-            onChange={(e) => {
-              const k = e.target.value as SortKey;
-              setSortChoice({ key: k, dir: SORT_DEFAULT_DIR[k] });
-            }}
-          >
-            {(Object.keys(SORT_LABEL) as SortKey[]).map((k) => (
-              <option key={k} value={k}>
-                {SORT_LABEL[k]}
-              </option>
-            ))}
-          </LabelledSelect>
-        ) : null}
-        <LabelledSelect label="Type" value={type} onChange={(e) => setType(e.target.value as 'all' | DeviceKind)}>
-          <option value="all">All</option>
-          {typeOptions.map((k) => (
-            <option key={k} value={k}>
-              {DEVICE_KIND_LABEL[k]}
-            </option>
-          ))}
-        </LabelledSelect>
-        <LabelledSelect label="Configuration" value={configFilter} onChange={(e) => setConfigFilter(e.target.value)}>
-          <option value="all">All</option>
-          {configOptions.list.map(([id, name]) => (
-            <option key={id} value={id}>
-              {name}
-            </option>
-          ))}
-          {configOptions.unassigned ? <option value="none">Unassigned</option> : null}
-        </LabelledSelect>
-        <LabelledSelect label="Android" value={android} onChange={(e) => setAndroid(e.target.value)}>
-          <option value="all">All</option>
-          {androidOptions.map((a) => (
-            <option key={a} value={a}>
-              {a}
-            </option>
-          ))}
-        </LabelledSelect>
-        {dupTotal > 0 ? (
-          <button
-            type="button"
-            className={cx('v2-devices-dup', dupOnly && 'is-pressed')}
-            aria-pressed={dupOnly}
-            title="Devices that share a hardware ID with another row: likely the same physical device enrolled more than once"
-            onClick={() => setDupOnly((v) => !v)}
-          >
-            Duplicates <span className="v2-mono">{dupTotal}</span>
-          </button>
-        ) : null}
+        <Popover
+          label="Filters"
+          align="start"
+          trigger={
+            <Button icon={<IconFilter />} aria-label={filterCount ? `Filter, ${filterCount} on` : 'Filter'}>
+              Filter
+              {filterCount ? <span className="v2-devices-filtercount">{filterCount}</span> : null}
+            </Button>
+          }
+        >
+          <div className="v2-devices-filters">
+            <Field label="Type">
+              <Select value={type} onChange={(e) => setType(e.target.value as 'all' | DeviceKind)}>
+                <option value="all">All types</option>
+                {typeOptions.map((k) => (
+                  <option key={k} value={k}>
+                    {DEVICE_KIND_LABEL[k]}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Configuration">
+              <Select value={configFilter} onChange={(e) => setConfigFilter(e.target.value)}>
+                <option value="all">All configurations</option>
+                {configOptions.list.map(([id, name]) => (
+                  <option key={id} value={id}>
+                    {name}
+                  </option>
+                ))}
+                {configOptions.unassigned ? <option value="none">Unassigned</option> : null}
+              </Select>
+            </Field>
+            <Field label="Android">
+              <Select value={android} onChange={(e) => setAndroid(e.target.value)}>
+                <option value="all">All versions</option>
+                {androidOptions.map((a) => (
+                  <option key={a} value={a}>
+                    {a}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            {view === 'cards' ? (
+              <Field label="Sort">
+                <Select
+                  value={sort.key}
+                  onChange={(e) => {
+                    const k = e.target.value as SortKey;
+                    setSortChoice({ key: k, dir: SORT_DEFAULT_DIR[k] });
+                  }}
+                >
+                  {(Object.keys(SORT_LABEL) as SortKey[]).map((k) => (
+                    <option key={k} value={k}>
+                      {SORT_LABEL[k]}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            ) : null}
+            {dupTotal > 0 ? (
+              <Checkbox
+                label={
+                  <span className="v2-devices-filters__dup">
+                    <span>
+                      Only duplicates <span className="v2-num v2-secondary">{dupTotal}</span>
+                    </span>
+                    <span className="v2-devices-filters__help">
+                      Devices that share a hardware ID with another row: likely one device enrolled more than once.
+                    </span>
+                  </span>
+                }
+                checked={dupOnly}
+                onChange={() => setDupOnly((v) => !v)}
+              />
+            ) : null}
+            {filterCount ? (
+              <Button variant="ghost" size="sm" className="v2-devices-filters__clear" onClick={clearMenuFilters}>
+                Clear filters
+              </Button>
+            ) : null}
+          </div>
+        </Popover>
         <span className="v2-devices-toolbar__spacer" />
         {!narrow ? (
           <Segmented<View>
-            size="lg"
             aria-label="View"
             value={view}
             onChange={setView}

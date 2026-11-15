@@ -135,18 +135,25 @@ describe('settings.section', () => {
 
 describe('overview.card', () => {
   const statLabels = () => Array.from(document.querySelectorAll('.v2-statgrid .v2-stat__label')).map((d) => d.textContent);
-  const columns = () =>
-    Array.from(document.querySelectorAll('.v2-ov-row')).map((row) =>
-      Array.from(row.children).map((col) => [col.className, Array.from(col.children).map((c) => c.getAttribute('aria-labelledby') ?? c.getAttribute('aria-label'))]),
-    );
+  /** The card rows of the Overview grid: each main cell starts a row, the aside cell after it joins that row. */
+  const columns = () => {
+    const rows: Array<Array<[string, Array<string | null>]>> = [];
+    for (const cell of Array.from(document.querySelectorAll('.v2-ov-main, .v2-ov-aside'))) {
+      const kind = cell.classList.contains('v2-ov-main') ? 'v2-ov-main' : 'v2-ov-aside';
+      const cards = Array.from(cell.children).map((c) => c.getAttribute('aria-labelledby') ?? c.getAttribute('aria-label'));
+      if (kind === 'v2-ov-main' || rows.length === 0) rows.push([]);
+      rows[rows.length - 1].push([kind, cards]);
+    }
+    return rows;
+  };
 
   it('lays out core’s cards in their rows and columns as before without extensions', async () => {
     open('/', { registry: registryOf() });
-    await main().findByText('Config in sync');
-    expect(statLabels()).toEqual(['Config in sync']);
+    await main().findByText('Configuration in sync');
+    expect(statLabels()).toEqual(['Configuration in sync']);
     expect(columns()).toEqual([
       [['v2-ov-main', ['v2-ov-att']], ['v2-ov-aside', ['v2-ov-cfg']]],
-      [['v2-ov-main', ['v2-ov-act']], ['v2-ov-side', ['v2-ov-srv']]],
+      [['v2-ov-main', ['v2-ov-act']], ['v2-ov-aside', ['v2-ov-srv']]],
     ]);
   });
 
@@ -154,7 +161,7 @@ describe('overview.card', () => {
     open('/');
     await main().findByRole('heading', { name: 'Demo card' });
     await main().findByText('Demo stat');
-    expect(statLabels()).toEqual(['Config in sync', 'Demo stat']);
+    expect(statLabels()).toEqual(['Configuration in sync', 'Demo stat']);
     expect(columns()[0]).toEqual([['v2-ov-main', ['v2-ov-att']], ['v2-ov-aside', ['v2-ov-cfg', 'Demo card']]]);
   });
 
@@ -169,7 +176,7 @@ describe('overview.card', () => {
 
   it('drops a core card when it leaves the registry', async () => {
     open('/', { registry: coreWithout('overview.card:recent-activity') });
-    await main().findByText('Config in sync');
+    await main().findByText('Configuration in sync');
     expect(columns().flat().map(([, cards]) => cards).flat()).not.toContain('v2-ov-act');
   });
 
@@ -178,7 +185,7 @@ describe('overview.card', () => {
     const broken = ext('broken', [{ slot: 'overview.card', id: 'oops', order: 50, placement: 'main', component: throwing('boom') }]);
     open('/', { registry: registryOf(broken) });
     expect(await main().findByText(/The “Broken” extension ran into a problem/)).toBeTruthy();
-    expect(main().getByText('Config in sync')).toBeTruthy();
+    expect(main().getByText('Configuration in sync')).toBeTruthy();
     expect(main().getByRole('heading', { name: /Needs attention/ })).toBeTruthy();
   });
 
@@ -186,7 +193,7 @@ describe('overview.card', () => {
     quiet();
     const broken = ext('broken', [{ slot: 'overview.card', id: 'oops', order: 150, placement: 'stat', component: throwing('boom') }]);
     open('/', { registry: registryOf(broken) });
-    await main().findByText('Config in sync');
+    await main().findByText('Configuration in sync');
     const grid = document.querySelector('.v2-statgrid') as HTMLElement;
     const mark = await within(grid).findByText('Error');
     expect(within(grid).queryByRole('alert')).toBeNull();
@@ -200,8 +207,8 @@ describe('overview.card', () => {
       { slot: 'overview.card', id: 'audit', order: 50, placement: 'stat', requires: { permission: 'settings' }, component: demoStat() },
     ]);
     open('/', { registry: registryOf(gated), user: ROLES.user });
-    await main().findByText('Config in sync');
-    expect(statLabels()).toEqual(['Config in sync']);
+    await main().findByText('Configuration in sync');
+    expect(statLabels()).toEqual(['Configuration in sync']);
   });
 });
 
@@ -478,7 +485,7 @@ describe('list.column, list.rowAction, list.bulkAction on Devices', () => {
     open('/devices', { user: ROLES.observer });
     await main().findByRole('link', { name: /Front desk/ });
     expect(main().queryByRole('checkbox', { name: 'Select WH-1' })).toBeNull();
-    expect(main().queryByRole('button', { name: 'Sync WH-1 now' })).toBeNull();
+    expect(main().queryByRole('button', { name: 'Sync now: WH-1' })).toBeNull();
     const menu = await openMenu('WH-1');
     expect(menu.getAllByRole('menuitem').map((m) => m.textContent)).toEqual(['Demo note']);
     expect(menu.queryAllByRole('separator')).toHaveLength(0);

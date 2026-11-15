@@ -1,5 +1,5 @@
-import { createElement, type ReactNode } from 'react';
-import { CORE_OVERVIEW_COLUMN } from '../core/overview';
+import { createElement, Fragment, type ReactNode } from 'react';
+import { GridCell } from '../../ui/Grid';
 import { ExtensionBoundary } from '../ExtensionBoundary';
 import type { SlotEntry } from '../registry';
 import type { OverviewCardContribution } from '../types';
@@ -36,8 +36,10 @@ export function OverviewStats() {
 }
 
 /**
- * The card rows under the fleet summary. In order, a `main` card starts a row and the `aside` cards after it stack
- * in that row's aside column (an aside before any main gets a row of its own).
+ * The card rows under the fleet summary, as cells of the Overview's 12-column grid. In order, a `main` card starts a
+ * row (8 columns) and the `aside` cards after it stack in that row's 4-column aside, the last one stretched so both
+ * columns end on one line; an aside before any main starts a row of its own. A main card with no asides, or asides
+ * that render nothing, takes the full width.
  */
 export function OverviewRows() {
   const rows: { main?: Entry; asides: Entry[] }[] = [];
@@ -49,26 +51,20 @@ export function OverviewRows() {
       rows[rows.length - 1].asides.push(entry);
     }
   }
-  return rows.map(({ main, asides }) => {
-    const head = asides[0];
-    // By configuration keeps its column's width wherever it sits in the column.
-    const core = asides.find((e) => e.extension.core && CORE_OVERVIEW_COLUMN[e.contribution.id]);
-    const column = (core && CORE_OVERVIEW_COLUMN[core.contribution.id]) || 'v2-ov-side';
-    return (
-      <div key={(main ?? head).key} className="v2-ov-row">
-        {main ? (
-          <div className="v2-ov-main">
-            <OverviewCard entry={main} />
-          </div>
-        ) : null}
-        {asides.length ? (
-          <div className={column}>
-            {asides.map((entry) => (
-              <OverviewCard key={entry.key} entry={entry} />
-            ))}
-          </div>
-        ) : null}
-      </div>
-    );
-  });
+  return rows.map(({ main, asides }) => (
+    <Fragment key={(main ?? asides[0]).key}>
+      {main ? (
+        <GridCell span={asides.length ? 8 : 12} className="v2-ov-main">
+          <OverviewCard entry={main} />
+        </GridCell>
+      ) : null}
+      {asides.length ? (
+        <GridCell span={main ? 4 : 12} className="v2-ov-aside">
+          {asides.map((entry) => (
+            <OverviewCard key={entry.key} entry={entry} />
+          ))}
+        </GridCell>
+      ) : null}
+    </Fragment>
+  ));
 }

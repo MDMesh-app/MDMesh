@@ -28,7 +28,10 @@ import {
   IconSync,
   IconTrash,
   IconWarning,
-  KeyValueGroup,
+  Grid,
+  GridCell,
+  KeyValueList,
+  SkeletonFacts,
   RelativeTime,
   Segmented,
   Table,
@@ -259,17 +262,55 @@ function telemetryGroups(t: TelemetrySnapshot): Array<{ title: string; items: Ke
   return out;
 }
 
+type TeleGroup = { title: string; items: KeyValueItem[] };
+
+/**
+ * Where each telemetry group sits in the bento grid: the first (Hardware, the longest) is the tall cell, the next two
+ * stack beside it, the rest pair up in halves, and an odd last one takes the full width with its rows in two
+ * columns. Every row of the grid is filled edge to edge, so there are no holes at any width; below the grid's
+ * breakpoints every cell takes the full width (ui/Grid.css).
+ */
+function telemetryLayout(groups: TeleGroup[]): Array<{ group: TeleGroup; span: 6 | 12; rows: 1 | 2; wide: boolean }> {
+  if (groups.length === 1) return [{ group: groups[0], span: 12, rows: 1, wide: true }];
+  const out: Array<{ group: TeleGroup; span: 6 | 12; rows: 1 | 2; wide: boolean }> = [];
+  let rest = groups;
+  if (groups.length >= 3) {
+    out.push({ group: groups[0], span: 6, rows: 2, wide: false });
+    out.push({ group: groups[1], span: 6, rows: 1, wide: false });
+    out.push({ group: groups[2], span: 6, rows: 1, wide: false });
+    rest = groups.slice(3);
+  }
+  rest.forEach((group, i) => {
+    const alone = rest.length % 2 === 1 && i === rest.length - 1;
+    out.push({ group, span: alone ? 12 : 6, rows: 1, wide: alone });
+  });
+  return out;
+}
+
 export function TelemetryTab({ telemetry, loaded, reportedAt }: { telemetry: TelemetrySnapshot | null; loaded: boolean; reportedAt?: number }) {
   if (!telemetry) {
+    if (!loaded) {
+      return (
+        <Grid aria-busy="true">
+          {[6, 6, 6, 6].map((span, i) => (
+            <GridCell key={i} span={span as 6}>
+              <Card>
+                <SkeletonFacts count={i === 0 ? 8 : 4} label={i === 0 ? 'Loading telemetry…' : undefined} />
+              </Card>
+            </GridCell>
+          ))}
+        </Grid>
+      );
+    }
     return (
       <Card>
-        <EmptyState icon={<IconPulse />} title={loaded ? 'No telemetry yet' : 'Loading telemetry…'}>
-          {loaded ? 'The agent reports its hardware, network and battery details at check-in.' : null}
+        <EmptyState icon={<IconPulse />} title="No telemetry yet">
+          The agent reports its hardware, network and battery details at check-in.
         </EmptyState>
       </Card>
     );
   }
-  const groups = telemetryGroups(telemetry);
+  const layout = telemetryLayout(telemetryGroups(telemetry));
   return (
     <div className="v2-device-tele">
       {reportedAt ? (
@@ -277,13 +318,16 @@ export function TelemetryTab({ telemetry, loaded, reportedAt }: { telemetry: Tel
           Reported <RelativeTime value={reportedAt} style="long" seconds />
         </p>
       ) : null}
-      <div className="v2-device-tele__grid">
-        {groups.map((g) => (
-          <Card key={g.title} padding="facts" className="v2-device-tele__card">
-            <KeyValueGroup title={g.title} items={g.items} last />
-          </Card>
+      <Grid className="v2-device-tele__grid">
+        {layout.map(({ group, span, rows, wide }) => (
+          <GridCell key={group.title} span={span} rows={rows}>
+            <Card as="section" aria-label={group.title} className="v2-device-tele__card">
+              <CardHeader title={group.title} level={3} spacing={8} />
+              <KeyValueList items={group.items} columns={wide ? 2 : 1} />
+            </Card>
+          </GridCell>
         ))}
-      </div>
+      </Grid>
     </div>
   );
 }

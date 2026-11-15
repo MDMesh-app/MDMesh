@@ -1,102 +1,64 @@
-/* Device detail (left rail, tabbed panel). Page-local: every selector is .v2 .v2-device-… */
+/* Device detail: a page header (identity, status, quick actions), then the tabs beside a facts rail. Page-local:
+   every selector is .v2 .v2-device-… */
 
-/* ---- columns: rail 1 1 300px beside the work column 2.5 1 560px, wrapping under ~900px ---- */
-.v2 .v2-device-cols {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 20px;
-}
-.v2 .v2-device-rail {
-  flex: 1 1 300px;
-}
-.v2 .v2-device-main {
-  flex: 2.5 1 560px;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.v2 .v2-device-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-width: 0;
-}
-.v2 .v2-device-panel:focus-visible {
-  outline-offset: 4px;
-  border-radius: var(--radius-lg);
-}
-
-/* ---- rail header ---- */
-.v2 .v2-device-head {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding-bottom: 18px;
-  border-bottom: 1px solid var(--line-soft);
-}
-.v2 .v2-device-head__top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-.v2 .v2-device-presence {
+/* ---- header ---- */
+.v2 .v2-device-header {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 8px;
-  font-size: var(--fs-sm);
+  gap: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-2);
+}
+.v2 .v2-device-header__text {
+  flex: 1 1 320px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.v2 .v2-device-header__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-2);
   color: var(--secondary);
 }
-.v2 .v2-device-head__glyph {
-  flex: 0 0 auto;
+.v2 .v2-device-header__num {
+  font-family: var(--font-mono);
+  font-size: var(--text-12);
+}
+.v2 .v2-device-header__actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
-  line-height: 0;
+  gap: var(--space-2);
 }
-.v2 .v2-device-head__glyph .v2-glyph {
-  color: var(--text-2);
-}
-.v2 .v2-device-head__name {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.v2 .v2-device-presence {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-2);
 }
 .v2 .v2-device-name {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 10px;
+  gap: var(--space-1) var(--space-2);
 }
 .v2 .v2-device-name__h {
   flex: 0 1 auto;
   min-width: 0;
-  margin: 0;
-  font-size: var(--fs-h1-sm);
-  font-weight: 600;
-  letter-spacing: var(--ls-h1);
-  line-height: 1.2;
+  font-size: var(--text-22);
+  line-height: var(--lh-22);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--track-tight);
   overflow-wrap: anywhere;
-}
-.v2 .v2-device-name__edit.v2-iconbtn--md {
-  width: 33px;
-  height: 33px;
-}
-.v2 .v2-device-head__sub {
-  font-size: var(--fs-control);
-  color: var(--secondary);
-}
-.v2 .v2-device-head__num {
-  font-family: var(--font-mono);
 }
 .v2 .v2-device-rename {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .v2 .v2-device-rename__input {
   flex: 1 1 200px;
@@ -104,29 +66,53 @@
 }
 .v2 .v2-device-rename__actions {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
 }
-.v2 .v2-device-head__actions {
+
+/* ---- columns: the tabs, and the facts rail at the right (under the tabs on narrow screens) ---- */
+.v2 .v2-device-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  align-items: start;
+  gap: var(--grid-gap);
+}
+.v2 .v2-device-main {
+  min-width: 0;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-direction: column;
+  gap: var(--grid-gap);
 }
-.v2 .v2-device-head__actions > .v2-btn,
-.v2 .v2-device-head__actions > .v2-menu {
-  flex: 0 0 auto;
+.v2 .v2-device-rail {
+  position: sticky;
+  top: var(--page-gutter);
 }
-.v2 .v2-device-head__actions > .v2-device-head__sync {
-  flex: 1 1 140px;
-  padding-inline: 15px;
+.v2 .v2-device-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--grid-gap);
+  min-width: 0;
 }
-.v2 .v2-device-head__actions > .v2-btn:not(.v2-device-head__sync) {
-  padding-inline: 14px;
+.v2 .v2-device-panel:focus-visible {
+  outline-offset: var(--space-1);
+  border-radius: var(--radius-8);
 }
 .v2 .v2-device-maps {
   align-self: flex-start;
-  padding-top: 12px;
-  font-size: var(--fs-sm);
-  font-weight: 600;
+  margin-top: var(--space-3);
+  font-weight: var(--weight-medium);
+}
+@media (max-width: 600px) {
+  .v2 .v2-device-header__tile {
+    display: none;
+  }
+}
+@media (max-width: 1100px) {
+  .v2 .v2-device-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .v2 .v2-device-rail {
+    position: static;
+  }
 }
 
 /* ---- configuration status panel ---- */
@@ -384,7 +370,6 @@
 
 /* ---- commands / events ---- */
 .v2 .v2-device-meta {
-  font-size: var(--fs-sm);
   color: var(--secondary);
 }
 .v2 .v2-device-cmds__empty {
@@ -419,47 +404,11 @@
   flex: 1 1 220px;
 }
 
-/* ---- telemetry tab ---- */
+/* ---- telemetry tab: a bento of fact cards on the page grid (DeviceDetailTabs telemetryLayout) ---- */
 .v2 .v2-device-tele {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-}
-.v2 .v2-device-tele__when {
-  margin: 0;
-}
-.v2 .v2-device-tele__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
-  gap: 16px;
-  align-items: start;
-}
-
-/* ---- loading ---- */
-.v2 .v2-device-loading {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0;
-  color: var(--secondary);
-}
-.v2 .v2-device-spin {
-  width: 14px;
-  height: 14px;
-  border: 2px solid var(--border-strong);
-  border-top-color: var(--ink);
-  border-radius: 50%;
-  animation: v2-device-spin 0.8s linear infinite;
-}
-@keyframes v2-device-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .v2 .v2-device-spin {
-    animation-duration: 2.4s;
-  }
+  gap: var(--space-3);
 }
 
 /* ---- enter kiosk dialog ---- */

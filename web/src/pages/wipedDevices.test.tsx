@@ -82,7 +82,7 @@ describe('wiped devices on Devices', () => {
     await waitFor(
       () =>
         expect(statusFilter().getAllByRole('radio').map((r) => r.textContent)).toEqual([
-          'All 3', 'Online 1', 'Attention 1', 'Offline 1', 'Wiped 1',
+          'All 3', 'Online 1', 'Needs attention 1', 'Offline 1', 'Wiped 1',
         ]),
       LOAD,
     );
@@ -101,10 +101,10 @@ describe('wiped devices on Devices', () => {
     expect(main().queryByRole('checkbox')).toBeNull();
     expect(screen.queryByRole('region', { name: 'Selection' })).toBeNull();
     // Commands are greyed out; Delete stays.
-    expect(table().getByRole('button', { name: 'Sync WH-9 now' }).hasAttribute('disabled')).toBe(true);
+    expect(table().getByRole('button', { name: 'Sync now: WH-9' }).hasAttribute('disabled')).toBe(true);
     fireEvent.click(table().getByRole('button', { name: 'More actions for WH-9' }));
     const menu = within(await screen.findByRole('menu'));
-    const disabled = Object.fromEntries(menu.getAllByRole('menuitem').map((m) => [m.textContent, m.hasAttribute('disabled')]));
+    const disabled = Object.fromEntries(menu.getAllByRole('menuitem').map((m) => [m.textContent, m.getAttribute('aria-disabled') === 'true']));
     expect(disabled).toEqual({ 'Lock device': true, 'Ring device': true, 'Change configuration…': false, 'Delete…': false });
   }, SLOW);
 
@@ -134,7 +134,7 @@ describe('what a sync says', () => {
     ['an older server, which does not say', null, 'Sync requested', 'ok'],
   ])('on the Devices list, for %s', async (_, answer, title, kind) => {
     open('/devices', answer);
-    fireEvent.click(await main().findByRole('button', { name: 'Sync WH-3 now' }, LOAD));
+    fireEvent.click(await main().findByRole('button', { name: 'Sync now: WH-3' }, LOAD));
     expect(await screen.findByText(title, undefined, LOAD)).toBeTruthy();
     expect(toastOf(title)?.classList.contains(kind)).toBe(true);
     if (kind === 'warn') expect(screen.getByText('It syncs at its next check-in.')).toBeTruthy();
@@ -264,7 +264,7 @@ describe('a wiped device’s page', () => {
     async () => {
       const fetch = open('/devices/WH-9');
       const actions = within(await screen.findByRole('toolbar', { name: 'Quick actions' }, LOAD));
-      expect(within(screen.getByRole('complementary', { name: 'Device' })).getByText('Wiped')).toBeTruthy();
+      expect(main().getAllByText('Wiped').length).toBeGreaterThan(0);
       const notice = main().getByText(/The device erased itself/).closest('.v2-callout');
       expect(notice?.textContent).toMatch(
         /^Wiped .+\. The device erased itself, so it no longer reports\. Delete it from Devices, or keep it for its history\.$/,

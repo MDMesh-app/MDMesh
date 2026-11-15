@@ -44,7 +44,7 @@ const SECURITY_VALUES: WifiSecurity[] = ['WPA', 'WEP', 'NONE', 'EAP'];
  * falls back to the debug agent's package and checksum (we only read the flag here; the payload is built there).
  */
 const RELEASE_BUILD = !!(import.meta.env as Record<string, string | undefined>).VITE_AGENT_CHECKSUM;
-const SERVER_SETTING = 'Server setting for new devices';
+const SERVER_SETTING = 'Use the server default';
 const METHOD_TABS = 'v2-enroll-method';
 
 type Method = 'qr' | 'token';
@@ -419,7 +419,7 @@ export function EnrollPage() {
     setStopOpen(true);
   };
 
-  const givesName = selected?.name ?? (cfgId ? `Configuration #${cfgId}` : SERVER_SETTING);
+  const givesName = selected?.name ?? (cfgId ? `Configuration #${cfgId}` : 'The server default');
   // What the code does, not what was asked: an older server ignores both choices and makes a single-use 24 h code.
   const limitsIgnored = !!token && !token.limitsApplied && (uses !== 1 || validHours !== 24);
   let devicesHelp: string;

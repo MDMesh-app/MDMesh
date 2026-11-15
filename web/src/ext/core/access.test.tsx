@@ -91,20 +91,19 @@ describe.each([
   it('the Devices list: Sync, the row menu, selection and Enroll, the list kept', async () => {
     open('/devices', user);
     await main().findByRole('link', { name: /Front desk/ });
-    expectShown(main().queryAllByRole('button', { name: 'Sync WH-1 now' }));
+    expectShown(main().queryAllByRole('button', { name: 'Sync now: WH-1' }));
     expectShown(main().queryAllByRole('button', { name: 'More actions for WH-1' }));
     expectShown(main().queryAllByRole('checkbox', { name: 'Select WH-1' }));
     expectShown(main().queryAllByRole('link', { name: 'Enroll device' }));
   });
 
-  it('the Overview: Enroll, and Sync now on a device out of sync (Open device instead)', async () => {
+  it('the Overview: Enroll, and Sync now on a device out of sync (its name links to it either way)', async () => {
     open('/', user);
-    // The row's action once the probe has found the device out of sync.
+    // The row's action once the probe has found the device out of sync; the device's name is the row's link.
     const sync = () => main().queryAllByRole('button', { name: 'Sync now: Front desk' });
-    const openIt = () => main().queryAllByRole('link', { name: 'Open device: Front desk' });
-    await waitFor(() => expect(sync().length + openIt().length).toBe(1));
+    if (shown) await waitFor(() => expect(sync().length).toBe(1));
+    expect((await main().findAllByRole('link', { name: /Front desk/ })).length > 0).toBe(true);
     expectShown(sync());
-    expect(openIt().length > 0).toBe(!shown);
     expectShown(main().queryAllByRole('link', { name: 'Enroll device' }));
   });
 
@@ -178,11 +177,11 @@ describe.each([
       .toBe(!shown);
   });
 
-  it('the sidebar’s update card says how long it takes only to those who may update', async () => {
+  it('the sidebar’s update item names the release for every role (Settings says who may apply it)', async () => {
     open('/settings', user);
     const nav = within(screen.getByRole('navigation', { name: 'Main' }));
-    const card = await nav.findByRole('link', { name: /Server update 0\.3\.8/ });
-    expect(card.textContent).toMatch(shown ? /About 2 minutes\./ : /An admin who runs this install can apply it\./);
+    const item = await nav.findByRole('link', { name: /Server 0\.3\.8 available/ });
+    expect(item.getAttribute('href')).toBe('/settings#updates');
   });
 });
 
@@ -264,7 +263,9 @@ describe('Deploy offers only the modes the role may use', () => {
     );
     fireEvent.click(await main().findByRole('button', { name: 'Deploy Scanner' }));
     const dialog = within(await screen.findByRole('dialog', { name: 'Deploy Scanner' }));
-    expect(await dialog.findByRole('option', { name: 'Warehouse' })).toBeTruthy();
+    // The picker's options show once it opens (ui/Input Select).
+    fireEvent.click(await dialog.findByRole('combobox'));
+    expect(await screen.findByRole('option', { name: 'Warehouse' })).toBeTruthy();
   });
 });
 

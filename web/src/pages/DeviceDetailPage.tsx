@@ -33,7 +33,10 @@ import {
   Callout,
   Card,
   DEVICE_KIND_LABEL,
-  DeviceGlyph,
+  DeviceTile,
+  Skeleton,
+  SkeletonFacts,
+  Tooltip,
   IconAlert,
   IconDownload,
   IconLock,
@@ -806,11 +809,23 @@ export function DeviceDetailPage() {
     return (
       <>
         <Breadcrumb items={[{ label: 'Devices', to: paths.devices }, { label: id, mono: true }]} />
-        <Card>
-          <p className="v2-device-loading" role="status">
-            <span className="v2-device-spin" aria-hidden="true" /> Loading device…
-          </p>
-        </Card>
+        {/* The page's own shape at its own size, so nothing moves when the device arrives. */}
+        <div className="v2-device-header" role="status" aria-busy="true">
+          <span className="v2-visually-hidden">Loading device…</span>
+          <Skeleton width="var(--control-lg)" height="var(--control-lg)" />
+          <div className="v2-device-header__text">
+            <Skeleton width="240px" height="var(--lh-22)" />
+            <Skeleton width="320px" />
+          </div>
+        </div>
+        <div className="v2-device-cols">
+          <Card>
+            <SkeletonFacts count={8} />
+          </Card>
+          <Card>
+            <SkeletonFacts count={6} />
+          </Card>
+        </div>
       </>
     );
   }
@@ -888,14 +903,20 @@ export function DeviceDetailPage() {
       label: 'Android',
       value: teleStr(hw.osRelease) ?? (ds?.androidRelease || undefined) ?? device.androidVersion ?? DASH,
     },
-    { key: 'storage', label: 'Storage', value: fmtStorage(teleNum(hw.totalStorageBytes), teleNum(dyn.freeStorageBytes)) },
+    // The Telemetry tab owns the full hardware and network facts; the rail keeps the identity ones, and the rest
+    // only while there is no telemetry to show them.
+    ...(tele
+      ? []
+      : [{ key: 'storage', label: 'Storage', value: fmtStorage(teleNum(hw.totalStorageBytes), teleNum(dyn.freeStorageBytes)) }]),
     { key: 'serial', label: 'Serial', value: teleStr(idn.serial) ?? device.serial ?? DASH, mono: true },
     { key: 'imei', label: 'IMEI', value: teleStr(idn.imei) ?? device.imei ?? DASH, mono: true },
   ];
-  const networkItems: KeyValueItem[] = [
-    { key: 'local', label: 'Local IP', value: teleStr(dyn.ipAddress) ?? DASH, mono: true },
-    { key: 'public', label: 'Public IP', value: teleStr(topTele.publicIp) ?? device.publicIp ?? DASH, mono: true },
-  ];
+  const networkItems: KeyValueItem[] = tele
+    ? []
+    : [
+        { key: 'local', label: 'Local IP', value: teleStr(dyn.ipAddress) ?? DASH, mono: true },
+        { key: 'public', label: 'Public IP', value: teleStr(topTele.publicIp) ?? device.publicIp ?? DASH, mono: true },
+      ];
   const deviceOwner = typeof sec.isDeviceOwner === 'boolean' ? sec.isDeviceOwner : undefined;
   const ownerSource = deviceOwner ?? device.mdmMode;
   const managementItems: KeyValueItem[] = [
@@ -1012,95 +1033,90 @@ export function DeviceDetailPage() {
         </Callout>
       ) : null}
 
-      <div className="v2-device-cols">
-        <aside aria-label="Device" className="v2-card v2-card--pad-rail v2-device-rail">
-          <div className="v2-device-head">
-            <div className="v2-device-head__top">
-              <span className="v2-device-presence" title={reasonText}>
-                <StatusText variant="meta" status={presence} />
-                {reasonText ? <span className="v2-visually-hidden">: {reasonText}</span> : null}
-                <span aria-hidden="true">·</span>
+      <header className="v2-device-header">
+        <DeviceTile kind={kind} tile={40} title={DEVICE_KIND_LABEL[kind]} className="v2-device-header__tile" />
+        <div className="v2-device-header__text">
+          <DeviceName
+            device={device}
+            canRename={canRename}
+            onSaved={(desc) => setDevice((d) => (d ? { ...d, description: desc } : d))}
+          />
+          <p className="v2-device-header__meta">
+            <span className="v2-device-presence">
+              <Tooltip content={reasonText}>
                 <span>
-                  checked in{' '}
-                  {lastSeen && lastAge && lastIso ? (
-                    <time dateTime={lastIso} title={fmtDateTime(lastSeen)}>
-                      {lastAge === 'just now' ? lastAge : `${lastAge} ago`}
-                    </time>
-                  ) : (
-                    'never'
-                  )}
+                  <StatusText variant="meta" status={presence} />
                 </span>
+              </Tooltip>
+              {reasonText ? <span className="v2-visually-hidden">: {reasonText}</span> : null}
+              <span aria-hidden="true">·</span>
+              <span>
+                checked in{' '}
+                {lastSeen && lastAge && lastIso ? (
+                  <time dateTime={lastIso} title={fmtDateTime(lastSeen)}>
+                    {lastAge === 'just now' ? lastAge : `${lastAge} ago`}
+                  </time>
+                ) : (
+                  'never'
+                )}
               </span>
-              <span className="v2-device-head__glyph">
-                <DeviceGlyph kind={kind} size={22} title={DEVICE_KIND_LABEL[kind]} />
-              </span>
-            </div>
-            <div className="v2-device-head__name">
-              <DeviceName
-                device={device}
-                canRename={canRename}
-                onSaved={(desc) => setDevice((d) => (d ? { ...d, description: desc } : d))}
-              />
-              <span className="v2-device-head__sub">
-                {/* The number is always in the header: the name above replaces it once the device has one. */}
-                {device.description ? (
-                  <>
-                    <span className="v2-device-head__num">{device.number}</span>
-                    {subline ? ' · ' : null}
-                  </>
-                ) : null}
-                {subline}
-              </span>
-            </div>
-            {canEdit ? (
-              <div role="toolbar" aria-label="Quick actions" className="v2-device-head__actions">
-                <Button
-                  variant="primary"
-                  size="xl"
-                  icon={<IconSync />}
-                  disabled={busy || wiped}
-                  className="v2-device-head__sync"
-                  onClick={() => void syncNow()}
-                >
-                  Sync now
-                </Button>
-                <Button
-                  size="xl"
-                  icon={<IconLock />}
-                  disabled={busy || wiped}
-                  title={TEMPLATE.lock.description}
-                  onClick={() => runAction(TEMPLATE.lock)}
-                >
-                  Lock
-                </Button>
-                <Menu
-                  trigger="button"
-                  buttonSize="xl"
-                  label="More actions"
-                  disabled={busy || wiped}
-                  items={[
-                    { key: 'ring', label: 'Ring', icon: <IconRing />, onSelect: () => runAction(TEMPLATE.ring) },
-                    { key: 'alert', label: 'Send alert…', icon: <IconAlert />, onSelect: () => runAction(TEMPLATE.alert) },
-                    {
-                      key: 'lsm',
-                      label: 'Lock-screen message…',
-                      icon: <IconScreenMessage />,
-                      onSelect: () => runAction(TEMPLATE['lockscreen-message']),
-                    },
-                    'separator',
-                    {
-                      key: 'apps',
-                      label: 'Install config apps',
-                      icon: <IconDownload size={16} />,
-                      onSelect: () => void installConfigApps(),
-                    },
-                    { key: 'reboot', label: 'Reboot…', icon: <IconPower />, onSelect: () => runAction(TEMPLATE.reboot) },
-                  ]}
-                />
-              </div>
+            </span>
+            <span aria-hidden="true" className="v2-device-header__sep">
+              ·
+            </span>
+            {/* The number is always in the header: the name above replaces it once the device has one. */}
+            {device.description ? (
+              <>
+                <span className="v2-device-header__num">{device.number}</span>
+                {subline ? <span aria-hidden="true"> · </span> : null}
+              </>
             ) : null}
+            <span>{subline}</span>
+          </p>
+        </div>
+        {canEdit ? (
+          <div role="toolbar" aria-label="Quick actions" className="v2-device-header__actions">
+            <Button variant="primary" icon={<IconSync />} disabled={busy || wiped} onClick={() => void syncNow()}>
+              Sync now
+            </Button>
+            <Tooltip content={TEMPLATE.lock.description}>
+              <Button icon={<IconLock />} disabled={busy || wiped} onClick={() => runAction(TEMPLATE.lock)}>
+                Lock
+              </Button>
+            </Tooltip>
+            <Menu
+              label="More actions"
+              iconSize="md"
+              disabled={busy || wiped}
+              items={[
+                { key: 'ring', label: 'Ring', icon: <IconRing />, onSelect: () => runAction(TEMPLATE.ring) },
+                { key: 'alert', label: 'Send alert…', icon: <IconAlert />, onSelect: () => runAction(TEMPLATE.alert) },
+                {
+                  key: 'lsm',
+                  label: 'Lock-screen message…',
+                  icon: <IconScreenMessage />,
+                  onSelect: () => runAction(TEMPLATE['lockscreen-message']),
+                },
+                'separator',
+                {
+                  key: 'apps',
+                  label: 'Install configuration apps',
+                  icon: <IconDownload size={16} />,
+                  onSelect: () => void installConfigApps(),
+                },
+                { key: 'reboot', label: 'Reboot…', icon: <IconPower />, onSelect: () => runAction(TEMPLATE.reboot) },
+              ]}
+            />
           </div>
+        ) : null}
+      </header>
 
+      {/* The tabs come first in the document (and on phones); the facts rail sits beside them on wide screens. */}
+      <div className="v2-device-cols">
+        <div className="v2-device-main">
+          <DeviceTabs {...deviceTabs} idBase={tabsId} />
+        </div>
+        <aside aria-label="Device" className="v2-card v2-card--pad-default v2-device-rail">
           <DeviceRailGroups />
           {loc ? (
             <a
@@ -1113,10 +1129,6 @@ export function DeviceDetailPage() {
             </a>
           ) : null}
         </aside>
-
-        <div className="v2-device-main">
-          <DeviceTabs {...deviceTabs} idBase={tabsId} />
-        </div>
       </div>
 
       {dialog ? (

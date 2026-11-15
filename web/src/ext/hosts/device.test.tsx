@@ -147,7 +147,7 @@ describe('the device page without extensions', () => {
     await screen.findByRole('tab', { name: 'Control' });
     await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Apps', 'Activity1', 'Location']));
     expect(selectedTab()).toBe('Control');
-    expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Network', 'Management']);
+    expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Management']);
     // Only the last group is marked last.
     expect(Array.from(rail().querySelectorAll('.v2-kvgroup.is-last')).map((g) => g.textContent)).toEqual([
       expect.stringContaining('Management'),
@@ -278,7 +278,7 @@ describe('core fills the slots like any extension', () => {
     const { registry } = createRegistry({ ...CORE_EXTENSION, contributions: CORE_EXTENSION.contributions.filter((c) => !dropped(c)) }, []);
     openDevice({ registry });
     await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Apps', 'Activity1']));
-    expect(railTitles()).toEqual(['Status', 'Hardware', 'Network', 'Management']);
+    expect(railTitles()).toEqual(['Status', 'Hardware', 'Management']);
   });
 });
 
@@ -287,7 +287,7 @@ describe('extension tabs and rail groups', () => {
     openDevice({ registry: registryOf(demo) });
     await screen.findByRole('tab', { name: 'Demo' });
     await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Demo', 'Apps', 'Activity1', 'Location', 'Demo admin']));
-    expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Network', 'Demo', 'Management']);
+    expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Demo', 'Management']);
     expect(within(rail()).getByText('Demo agent').closest('div, li, dl')?.textContent).toContain('0.3.7');
   });
 
@@ -313,7 +313,7 @@ describe('extension tabs and rail groups', () => {
     };
     openDevice({ registry: registryOf(ext('boom', [tab('boom', Boom, { label: 'Boom' })])), path: '/devices/WH-1?tab=boom' });
     expect(await within(await screen.findByRole('tabpanel')).findByText(/The “Boom” extension ran into a problem/)).toBeTruthy();
-    expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Network', 'Management']);
+    expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Management']);
     fireEvent.click(screen.getByRole('tab', { name: 'Telemetry' }));
     expect(await within(panel()).findByText('TC52')).toBeTruthy();
     expect(screen.queryByText(/ran into a problem/)).toBeNull();
@@ -327,7 +327,7 @@ describe('extension tabs and rail groups', () => {
     openDevice({ registry: registryOf(ext('iconic', [tab('iconic', () => 'Iconic body', { label: 'Iconic', icon: BadIcon } as Partial<Contribution>)])) });
     await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Apps', 'Activity1', 'Location', 'Iconic']));
     expect(screen.getByRole('tab', { name: 'Iconic' }).querySelector('svg')).toBeNull();
-    expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Network', 'Management']);
+    expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Management']);
   });
 
   it('leaves out a count or a rail group whose function throws, and shows a bad rail value as a callout there', async () => {
@@ -354,7 +354,7 @@ describe('extension tabs and rail groups', () => {
     openDevice({ registry: registryOf(broken) });
     await screen.findByRole('tab', { name: 'Counted' });
     await waitFor(() => expect(tabNames()).toEqual(['Control', 'Telemetry', 'Apps', 'Activity1', 'Location', 'Counted', 'Odd']));
-    expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Network', 'Management']);
+    expect(railTitles()).toEqual(['Status', 'Location', 'Hardware', 'Management']);
     expect(within(rail()).getByRole('alert').textContent).toMatch(/The “Broken” extension ran into a problem/);
   });
 });

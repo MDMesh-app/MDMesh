@@ -1010,7 +1010,7 @@ function Editor({
                   <label className="v2-cfged-permission-app__row" key={permission}>
                     <span>{managedAppPermissionLabel(permission)}</span>
                     {/* The shared Select: the 3:1 input border every select has (componentEdges.test.ts). */}
-                    <Select size="xs" value={appPermissionState(app.id, permission)} disabled={readOnly} onChange={(e) => setAppPermission(app.id, permission, e.target.value)}>
+                    <Select size="xs" aria-label={managedAppPermissionLabel(permission)} value={appPermissionState(app.id, permission)} disabled={readOnly} onChange={(e) => setAppPermission(app.id, permission, e.target.value)}>
                       <option value="default">Default</option><option value="grant">Grant</option><option value="deny">Deny</option>
                     </Select>
                   </label>

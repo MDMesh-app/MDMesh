@@ -1,69 +1,29 @@
-/* Overview. Shared parts (fleet card, stat cells, attention rows, activity feed, cards) come from ui/;
-   this file holds the page layout and the By configuration / Server card bodies. */
+/* Overview. Shared parts (fleet card, stat cells, attention rows, activity feed, cards) come from ui/; the layout is
+   the page Grid. This file holds the aside column and the By configuration / Server card bodies. */
 
-/* "● Updated 20s ago" beside Enroll device: 7px dot, 7px gap, 13px secondary. */
+/* "● Updated 20s ago" beside Enroll device. */
 .v2 .v2-ov-updated {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  font-size: var(--fs-sm);
+  gap: var(--space-2);
   color: var(--secondary);
 }
 
-.v2 .v2-ov-error {
-  align-items: center;
+/* The aside column: its cards stacked on the grid gutter, the last one stretched to the row's height. */
+.v2 .v2-ov-aside {
+  gap: var(--grid-gap);
 }
-.v2 .v2-ov-error .v2-callout__body {
+.v2 .v2-ov-aside > * {
+  flex: 0 0 auto;
+}
+.v2 .v2-ov-aside > :last-child {
   flex: 1 1 auto;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
 }
-
-/* Two-column rows that wrap, 20px gap: a main column (one card) and an aside column (its cards stacked). The board's
-   sections are content-box, so their flex bases grow by border and padding: Needs attention / Recent activity
-   560 + 2 = 562, By configuration 320 + 48 + 2 = 370, the Server column (an unpadded div) 320. These border-box bases
-   give the board's 688 / 432 and 722 / 400 splits at 1440. The main column may shrink below its card's content, as
-   the clipped card itself could; By configuration's column keeps its card's minimum. A column whose cards render
-   nothing takes no room. */
-.v2 .v2-ov-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 20px;
-}
-.v2 .v2-ov-row > :empty {
+.v2 .v2-grid__cell:empty {
   display: none;
 }
-.v2 .v2-ov-main {
-  flex: 2 1 562px;
-  min-width: 0;
-}
-.v2 .v2-ov-aside,
-.v2 .v2-ov-side {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-.v2 .v2-ov-aside {
-  flex: 1 1 370px;
-}
-.v2 .v2-ov-side {
-  flex: 1 1 320px;
-  min-width: 0;
-}
-
-.v2 .v2-ov-loading {
-  margin: 0;
-  padding: 12px 24px 20px;
-  border-top: 1px solid var(--line-soft);
-  font-size: var(--fs-sm);
-  color: var(--secondary);
-}
-.v2 .v2-ov-loading--flush {
-  padding: 10px 0 0;
+.v2 .v2-ov-stats {
+  justify-content: center;
 }
 
 .v2 .v2-ov-statlink {
@@ -74,7 +34,7 @@
   text-decoration: underline;
 }
 
-/* ---- By configuration: rows 10px 0, top rule, name/count line, 6px bar, 12.5 note ---- */
+/* ---- By configuration: one rule-separated row per configuration: name and count, a bar, a note ---- */
 .v2 .v2-ov-cfgs {
   list-style: none;
   margin: 0;
@@ -83,19 +43,22 @@
 .v2 .v2-ov-cfg {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 0;
-  border-top: 1px solid var(--line-soft);
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  border-top: var(--hairline) solid var(--line-soft);
+}
+.v2 .v2-ov-cfg:last-child {
+  padding-bottom: 0;
 }
 .v2 .v2-ov-cfg__head {
   display: flex;
   align-items: baseline;
-  gap: 12px;
+  gap: var(--space-3);
 }
 .v2 .v2-ov-cfg__name {
   flex: 1 1 auto;
   min-width: 0;
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   color: var(--text);
   text-decoration: none;
   overflow: hidden;
@@ -106,11 +69,12 @@
   text-decoration: underline;
 }
 .v2 .v2-ov-cfg__count {
-  font-family: var(--font-mono);
-  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
 }
 .v2 .v2-ov-cfg__note {
-  font-size: var(--fs-meta);
+  font-size: var(--text-12);
+  line-height: var(--lh-12);
 }
 .v2 .v2-ov-cfg__note.is-ok {
   color: var(--ok-ink);
@@ -127,29 +91,14 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 10px;
-}
-.v2 .v2-ov-srv__panel {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 12px 14px;
-  background: var(--app);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-}
-.v2 .v2-ov-srv__title {
-  font-weight: 600;
+  gap: var(--space-2);
 }
 .v2 .v2-ov-srv__line {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  font-size: var(--fs-sm);
-}
-.v2 .v2-ov-srv__line.is-ok {
-  color: var(--ok-ink);
+  gap: var(--space-1) var(--space-2);
+  color: var(--secondary);
 }
 .v2 .v2-ov-srv__line.is-warn {
   color: var(--warn-ink);
@@ -157,13 +106,12 @@
 .v2 .v2-ov-srv__line.is-alert {
   color: var(--alert-ink);
 }
-.v2 .v2-ov-srv__meta {
-  font-size: var(--fs-sm);
-  color: var(--secondary);
+.v2 .v2-ov-srv__link {
+  font-weight: var(--weight-medium);
+  color: inherit;
 }
 
-/* Phones: the attention table would scroll sideways (min-width 600); stack each row instead —
-   device on top, reason under it, last seen and the action on one line. */
+/* Phones: the attention table would scroll sideways; stack each row instead: device, reason, then time and action. */
 @media (max-width: 600px) {
   .v2 .v2-ov-att .v2-attn {
     display: block;
@@ -180,12 +128,14 @@
       'reason reason'
       'when action';
     align-items: center;
-    gap: 8px 12px;
-    padding: 12px 24px;
+    gap: var(--space-2) var(--space-3);
+    height: auto;
+    padding: var(--space-3) var(--card-pad);
   }
   .v2 .v2-ov-att .v2-attn td {
     display: block;
     width: auto;
+    max-width: none;
     padding: 0;
   }
   .v2 .v2-ov-att .v2-attn .v2-attn__device {

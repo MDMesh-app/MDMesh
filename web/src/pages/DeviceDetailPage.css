@@ -28,7 +28,7 @@
 }
 .v2 .v2-device-id__num {
   font-family: var(--font-mono);
-  font-size: var(--text-12);
+  font-size: var(--text-meta);
 }
 .v2 .v2-device-id__actions {
   display: flex;
@@ -47,8 +47,8 @@
 .v2 .v2-device-name__h {
   flex: 0 1 auto;
   min-width: 0;
-  font-size: var(--text-22);
-  line-height: var(--lh-22);
+  font-size: var(--text-page);
+  line-height: var(--lh-page);
   font-weight: var(--weight-semibold);
   letter-spacing: var(--track-tight);
   overflow-wrap: anywhere;

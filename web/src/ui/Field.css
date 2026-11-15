@@ -6,25 +6,25 @@
   min-width: 0;
 }
 .v2 .v2-field__label {
-  font-size: var(--text-13);
-  line-height: var(--lh-13);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
   font-weight: var(--weight-medium);
 }
 .v2 .v2-field--sm .v2-field__label {
-  font-size: var(--text-13);
+  font-size: var(--text-ui);
 }
 .v2 .v2-field__help {
   max-width: 80ch;
-  font-size: var(--text-12);
-  line-height: var(--lh-12);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
 }
 .v2 .v2-field__help.is-ok {
   color: var(--ok-ink);
 }
 .v2 .v2-field__error {
-  font-size: var(--text-12);
-  line-height: var(--lh-12);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--alert-ink);
 }
 
@@ -57,14 +57,14 @@
   gap: var(--space-1) var(--space-2);
 }
 .v2 .v2-fieldrow__label {
-  font-size: var(--text-13);
-  line-height: var(--lh-13);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
   font-weight: var(--weight-medium);
 }
 .v2 .v2-fieldrow__help {
   max-width: 80ch;
-  font-size: var(--text-12);
-  line-height: var(--lh-12);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
 }
 .v2 .v2-fieldrow__control {
@@ -96,8 +96,8 @@
   padding: 0 var(--space-2);
   border-radius: var(--radius-full);
   background: var(--surface-2);
-  font-size: var(--text-11);
-  line-height: var(--lh-11);
+  font-size: var(--text-caps);
+  line-height: var(--lh-caps);
   font-weight: var(--weight-medium);
   color: var(--ink);
 }
@@ -109,8 +109,8 @@
 }
 .v2 .v2-eyebrow {
   margin: 0;
-  font-size: var(--text-11);
-  line-height: var(--lh-11);
+  font-size: var(--text-caps);
+  line-height: var(--lh-caps);
   font-weight: var(--weight-medium);
   text-transform: uppercase;
   letter-spacing: var(--track-caps);
@@ -123,7 +123,7 @@
   gap: var(--space-1) var(--space-2);
 }
 .v2 .v2-eyebrowline__help {
-  font-size: var(--text-12);
-  line-height: var(--lh-12);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
 }

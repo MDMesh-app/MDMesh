@@ -9,8 +9,8 @@
   padding: 0 var(--space-3);
   border: var(--hairline) solid transparent;
   border-radius: var(--radius-control);
-  font-size: var(--text-13);
-  line-height: var(--lh-13);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
   font-weight: var(--weight-medium);
   white-space: nowrap;
   text-decoration: none;
@@ -214,7 +214,7 @@
 }
 .v2 .v2-linkbtn--strong,
 .v2 .v2-linkbtn--quiet {
-  font-size: var(--text-13);
+  font-size: var(--text-ui);
   font-weight: var(--weight-medium);
   color: var(--secondary);
   text-decoration: none;

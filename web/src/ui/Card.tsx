@@ -156,7 +156,7 @@ export function Notice({
   );
 }
 
-/** Inline callout (warn / info / alert / ok): r8, 13px, leading icon. Red (`alert`) only for failures. */
+/** Inline callout (warn / info / alert / ok): control radius, UI text, leading icon. Red (`alert`) only for failures. */
 export function Callout({
   tone = 'info',
   icon,

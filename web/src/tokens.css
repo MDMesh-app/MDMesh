@@ -4,8 +4,8 @@
    This file is the only place a raw value may appear: stylelint (stylelint.config.mjs) rejects colours, sizes,
    spacing, radii, shadows and motion values anywhere else. When a value is missing, add a token here.
 
-   The system: 13px UI text, controls 28 / 32 / 36, 44px table rows, 16px card padding, a 4px spacing grid,
-   four radii, three elevations and one easing. Colours are named by job, not hue. Every text colour reaches
+   The system (the owner's comfortable density): 14px UI text, controls 32 / 36 / 40, 48px table rows, 16px card
+   padding, a 4px spacing grid, the website's radius family, three elevations and one easing. Colours are named by job, not hue. Every text colour reaches
    4.5:1 on the surfaces it sits on, every control edge and icon 3:1, in light and dark.
 
    The `.v2` class sits on <body> (index.html): it is the console's namespace, and every component class is
@@ -100,20 +100,20 @@
   --font-sans: 'IBM Plex Sans', 'Helvetica Neue', Arial, system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-  --text-11: 11px; /* caps meta, count badges */
-  --text-12: 12px; /* meta, help, table head, pills */
-  --text-13: 13px; /* UI and body */
-  --text-14: 14px; /* input text, emphasised values */
-  --text-16: 16px; /* card titles */
-  --text-22: 22px; /* page titles, stat values */
+  --text-caps: 11px; /* caps meta, count badges */
+  --text-meta: 13px; /* meta, help, table head, pills */
+  --text-ui: 14px; /* UI and body */
+  --text-input: 15px; /* input text, emphasised values */
+  --text-title: 16px; /* card titles */
+  --text-page: 22px; /* page titles, stat values */
   --text-display: 28px; /* display numerals (fleet total) */
 
-  --lh-11: 16px;
-  --lh-12: 16px;
-  --lh-13: 20px;
-  --lh-14: 20px;
-  --lh-16: 24px;
-  --lh-22: 28px;
+  --lh-caps: 16px;
+  --lh-meta: 18px;
+  --lh-ui: 20px;
+  --lh-input: 22px;
+  --lh-title: 24px;
+  --lh-page: 28px;
   --lh-display: 32px;
 
   --weight-regular: 400;
@@ -133,13 +133,13 @@
   --space-12: 48px;
 
   /* ---- sizes ---- */
-  --control-xs: 24px; /* ghost icon buttons inside table rows */
-  --control-sm: 28px; /* row actions, chips, compact toolbars */
-  --control-md: 32px; /* default: buttons, inputs, selects, search, segmented tracks */
-  --control-lg: 36px; /* page primary, dialog footers, sign-in */
-  --row: 44px; /* table rows */
-  --row-compact: 40px; /* compact tables, list rows inside cards */
-  --nav-item: 30px; /* sidebar items */
+  --control-xs: 28px; /* ghost icon buttons inside table rows */
+  --control-sm: 32px; /* row actions, chips, compact toolbars */
+  --control-md: 36px; /* default: buttons, inputs, selects, search, segmented tracks */
+  --control-lg: 40px; /* page primary, dialog footers, sign-in */
+  --row: 48px; /* table rows */
+  --row-compact: 44px; /* compact tables, list rows inside cards */
+  --nav-item: 34px; /* sidebar items */
   --touch: 44px; /* minimum target in the phone layout */
   --icon-sm: 14px;
   --icon-md: 16px;
@@ -184,22 +184,22 @@
 
   /* ---- Deprecated aliases (sdk/surface.txt). They follow the scale above; removed after one release. ---- */
   --fs-display: var(--text-display);
-  --fs-h1: var(--text-22);
-  --fs-h1-sm: var(--text-22);
-  --fs-stat: var(--text-22);
-  --fs-stat-sm: var(--text-22);
-  --fs-title-lg: var(--text-16);
-  --fs-title: var(--text-16);
-  --fs-h2: var(--text-16);
-  --fs-lead: var(--text-14);
-  --fs-body: var(--text-13);
-  --fs-control: var(--text-13);
-  --fs-sm: var(--text-13);
-  --fs-meta: var(--text-12);
-  --fs-small: var(--text-12);
-  --fs-tiny: var(--text-11);
-  --fs-micro: var(--text-11);
-  --lh-body: 1.54; /* 20px at 13px */
+  --fs-h1: var(--text-page);
+  --fs-h1-sm: var(--text-page);
+  --fs-stat: var(--text-page);
+  --fs-stat-sm: var(--text-page);
+  --fs-title-lg: var(--text-title);
+  --fs-title: var(--text-title);
+  --fs-h2: var(--text-title);
+  --fs-lead: var(--text-input);
+  --fs-body: var(--text-ui);
+  --fs-control: var(--text-ui);
+  --fs-sm: var(--text-ui);
+  --fs-meta: var(--text-meta);
+  --fs-small: var(--text-meta);
+  --fs-tiny: var(--text-caps);
+  --fs-micro: var(--text-caps);
+  --lh-body: 1.43; /* 20px at 14px */
   --lh-h1: 1.28; /* 28px at 22px */
   --ls-h1: var(--track-tight);
   --ls-display: var(--track-tight);
@@ -346,8 +346,8 @@ body,
    ------------------------------------------------------------------------- */
 .v2 {
   font-family: var(--font-sans);
-  font-size: var(--text-13);
-  line-height: var(--lh-13);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
   color: var(--text);
   background: var(--app);
   font-synthesis: none;
@@ -395,8 +395,8 @@ body,
   color: var(--secondary);
 }
 .v2 .v2-eyebrow {
-  font-size: var(--text-11);
-  line-height: var(--lh-11);
+  font-size: var(--text-caps);
+  line-height: var(--lh-caps);
   font-weight: var(--weight-medium);
   text-transform: uppercase;
   letter-spacing: var(--track-caps);

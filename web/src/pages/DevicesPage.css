@@ -35,8 +35,8 @@
   border-radius: var(--radius-full);
   background: var(--ink);
   color: var(--on-ink);
-  font-size: var(--text-11);
-  line-height: var(--lh-11);
+  font-size: var(--text-caps);
+  line-height: var(--lh-caps);
   font-variant-numeric: tabular-nums;
 }
 .v2 .v2-devices-filters {
@@ -59,8 +59,8 @@
   flex-direction: column;
 }
 .v2 .v2-devices-filters__help {
-  font-size: var(--text-12);
-  line-height: var(--lh-12);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
 }
 .v2 .v2-devices-filters__clear {
@@ -141,8 +141,8 @@
   border-left: var(--hairline) solid var(--line-soft);
 }
 .v2 .v2-devices-card__facts dt {
-  font-size: var(--text-11);
-  line-height: var(--lh-11);
+  font-size: var(--text-caps);
+  line-height: var(--lh-caps);
   color: var(--secondary);
 }
 .v2 .v2-devices-card__facts dd {

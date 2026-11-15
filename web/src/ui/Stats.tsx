@@ -21,7 +21,7 @@ export interface StatCellProps {
   notes?: ReadonlyArray<StatNote>;
 }
 
-/** Overview stat cell: 12px label, 22px tabular value, toned 12px footnotes. Use inside <StatGrid>. */
+/** Overview stat cell: meta-size label, page-title-size tabular value, toned meta footnotes. Use inside <StatGrid>. */
 export function StatCell({ label, value, of, notes = [] }: StatCellProps) {
   return (
     <div className="v2-stat">

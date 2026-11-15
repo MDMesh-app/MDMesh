@@ -8,8 +8,8 @@
   border: 0;
   background: none;
   color: var(--text-2);
-  font-size: var(--text-13);
-  line-height: var(--lh-13);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
   cursor: pointer;
 }
 /* Bare (no label): the 24px row stays the target (2.5.8). */

@@ -40,8 +40,8 @@
   border-radius: var(--radius-chip);
   background: transparent;
   color: var(--secondary);
-  font-size: var(--text-13);
-  line-height: var(--lh-13);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
   font-weight: var(--weight-medium);
   white-space: nowrap;
   cursor: pointer;
@@ -85,7 +85,7 @@
   height: var(--icon-md);
 }
 .v2 .v2-tabs__count {
-  font-size: var(--text-12);
+  font-size: var(--text-meta);
   font-variant-numeric: tabular-nums;
   font-weight: var(--weight-regular);
   color: var(--secondary);

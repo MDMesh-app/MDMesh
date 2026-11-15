@@ -73,3 +73,4 @@ export { Skeleton, SkeletonRows, SkeletonFacts } from './Skeleton';
 export { ErrorState } from './ErrorState';
 export { Tooltip, TooltipProvider } from './Tooltip';
 export { Popover } from './Popover';
+export { useStickyValue } from './useStickyValue';

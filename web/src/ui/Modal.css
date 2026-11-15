@@ -94,8 +94,8 @@
   gap: var(--space-1);
 }
 .v2 .v2-modal__title {
-  font-size: var(--text-16);
-  line-height: var(--lh-16);
+  font-size: var(--text-title);
+  line-height: var(--lh-title);
   font-weight: var(--weight-semibold);
 }
 .v2 .v2-modal__desc {

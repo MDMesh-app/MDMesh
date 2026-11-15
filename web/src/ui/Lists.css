@@ -89,7 +89,7 @@
 }
 .v2 .v2-activity__who {
   font-family: var(--font-mono);
-  font-size: var(--text-12);
+  font-size: var(--text-meta);
   font-weight: var(--weight-medium);
   color: var(--text);
   text-decoration: none;

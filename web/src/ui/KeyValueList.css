@@ -11,7 +11,7 @@
 }
 .v2 .v2-kv .is-mono {
   font-family: var(--font-mono);
-  font-size: var(--text-12);
+  font-size: var(--text-meta);
 }
 
 /* rail: device facts and telemetry, 28px rows */
@@ -101,7 +101,7 @@
 }
 .v2 .v2-metagrid .is-mono {
   font-family: var(--font-mono);
-  font-size: var(--text-12);
+  font-size: var(--text-meta);
 }
 .v2 .v2-metagrid__cell {
   display: flex;
@@ -118,8 +118,8 @@
   white-space: nowrap;
 }
 .v2 .v2-metagrid dt {
-  font-size: var(--text-11);
-  line-height: var(--lh-11);
+  font-size: var(--text-caps);
+  line-height: var(--lh-caps);
 }
 /* strip (device card footer) */
 .v2 .v2-metagrid--strip {

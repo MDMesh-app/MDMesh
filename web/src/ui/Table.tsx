@@ -91,7 +91,7 @@ export function scrollStopProps(stop: boolean, name?: string, labelledBy?: strin
 const ROW_CONTROLS = 'a, button, input, select, textarea, label, [role="menu"], [role="menuitem"]';
 
 /**
- * The console's one data table: a 36px head (12/500 secondary), 44px rows (40 compact) on hairline rules, a hover
+ * The console's one data table: a control-height head (meta/500 secondary), --row rows (--row-compact when compact) on hairline rules, a hover
  * fill, selected rows tinted, drawn checkboxes. Put row actions in a `v2-rowactions` element: they show on row hover
  * or focus (always on touch). Wrap it in <Card padding="list" clip> for the bordered look.
  */

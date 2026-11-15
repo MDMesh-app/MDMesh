@@ -6,13 +6,13 @@ export interface KeyValueItem {
   key?: Key;
   label: ReactNode;
   value: ReactNode;
-  /** A value people copy (IPs, serials, hashes): IBM Plex Mono at 12px. */
+  /** A value people copy (IPs, serials, hashes): IBM Plex Mono at the meta size. */
   mono?: boolean;
 }
 
 /**
- * - `rail`: dense 28px rows, value right-aligned (device facts, telemetry)
- * - `rows`: 40px rows with a top rule, value at the right (Settings Account / Server)
+ * - `rail`: dense rows, value right-aligned (device facts, telemetry)
+ * - `rows`: --row-compact rows with a top rule, value at the right (Settings Account / Server)
  * - `facts`: label/value grid in a sunken box (Enroll summary)
  */
 export type KeyValueVariant = 'rail' | 'rows' | 'facts';

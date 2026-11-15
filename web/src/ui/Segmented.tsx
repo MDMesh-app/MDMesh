@@ -17,7 +17,7 @@ export interface SegmentOption<V extends SegmentValue> {
 }
 
 /**
- * Track height: `sm` 28 (inside card headers and rows), `md` 32 (default: toolbars, forms). `lg` is deprecated and
+ * Track height: `sm` (--control-sm: inside card headers and rows), `md` (--control-md, default: toolbars, forms). `lg` is deprecated and
  * renders as `md`.
  */
 export type SegmentedSize = 'sm' | 'md' | 'lg';

@@ -94,8 +94,8 @@
   border-bottom: var(--hairline) solid var(--border);
 }
 .v2 .v2-mobilebar__brand {
-  font-size: var(--text-14);
-  line-height: var(--lh-14);
+  font-size: var(--text-input);
+  line-height: var(--lh-input);
 }
 .v2 .v2-scrim {
   position: fixed;

@@ -32,8 +32,8 @@
   border-radius: var(--radius-chip);
   background: transparent;
   color: var(--text-2);
-  font-size: var(--text-13);
-  line-height: var(--lh-13);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
   font-weight: var(--weight-regular);
   white-space: nowrap;
   cursor: pointer;
@@ -44,8 +44,8 @@
 .v2 .v2-seg--sm .v2-seg__opt {
   min-height: calc(var(--control-sm) - var(--space-2));
   padding-inline: var(--space-2);
-  font-size: var(--text-12);
-  line-height: var(--lh-12);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
 }
 .v2 .v2-seg__opt:not(.is-selected, :disabled):hover {
   color: var(--ink);

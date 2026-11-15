@@ -814,7 +814,7 @@ export function DeviceDetailPage() {
           <span className="v2-visually-hidden">Loading device…</span>
           <Card className="v2-device-id">
             <Skeleton width="60%" />
-            <Skeleton width="80%" height="var(--lh-22)" />
+            <Skeleton width="80%" height="var(--lh-page)" />
             <Skeleton width="50%" />
             <Skeleton height="control" />
           </Card>

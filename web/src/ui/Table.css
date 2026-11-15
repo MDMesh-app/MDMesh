@@ -1,4 +1,5 @@
-/* The one data table: 36px head, 44px rows (40 compact), hairline rules, hover fill, hover-revealed row actions. */
+/* The one data table: a control-height head, --row rows (--row-compact compact), hairline rules, hover fill, hover-revealed
+   row actions. */
 .v2 .v2-tablewrap {
   position: relative; /* contain visually-hidden header text, which is absolutely positioned */
   overflow-x: auto;
@@ -7,15 +8,15 @@
 .v2 .v2-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--text-13);
-  line-height: var(--lh-13);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
 }
 .v2 .v2-table thead tr {
   height: var(--control-lg);
   text-align: left;
   color: var(--secondary);
-  font-size: var(--text-12);
-  line-height: var(--lh-12);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
 }
 .v2 .v2-table th {
   padding: 0 var(--space-2);

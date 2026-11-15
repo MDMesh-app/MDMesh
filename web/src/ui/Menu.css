@@ -34,8 +34,8 @@
   padding: 0 var(--space-2);
   border-radius: var(--radius-chip);
   color: var(--text);
-  font-size: var(--text-13);
-  line-height: var(--lh-13);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
   white-space: nowrap;
   cursor: pointer;
   outline: none;

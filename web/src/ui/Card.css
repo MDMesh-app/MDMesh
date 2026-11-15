@@ -72,13 +72,13 @@
   flex-direction: column;
 }
 .v2 .v2-cardhead__title {
-  font-size: var(--text-16);
-  line-height: var(--lh-16);
+  font-size: var(--text-title);
+  line-height: var(--lh-title);
   font-weight: var(--weight-semibold);
 }
 .v2 .v2-cardhead__sub {
-  font-size: var(--text-12);
-  line-height: var(--lh-12);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
 }
 .v2 .v2-cardhead__actions {
@@ -86,7 +86,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2) var(--space-3);
-  font-size: var(--text-13);
+  font-size: var(--text-ui);
   color: var(--secondary);
 }
 
@@ -165,14 +165,14 @@
   padding: var(--space-2) var(--space-3);
   border: var(--hairline) solid;
   border-radius: var(--radius-control);
-  font-size: var(--text-13);
-  line-height: var(--lh-13);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
 }
 .v2 .v2-callout__icon {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  height: var(--lh-13);
+  height: var(--lh-ui);
 }
 .v2 .v2-callout__icon > svg {
   width: var(--icon-sm);

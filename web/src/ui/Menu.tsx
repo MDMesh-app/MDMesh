@@ -24,7 +24,7 @@ export interface MenuProps {
   /** Accessible name of the trigger ("More actions for KSK-0151"). */
   label: string;
   /**
-   * - `icon` (default): the "…" ghost IconButton (`iconSize`, default `sm` 28)
+   * - `icon` (default): the "…" ghost IconButton (`iconSize`, default `sm`)
    * - `button`: a text Button (`buttonText` with a chevron, or "…" alone), sizes as Button
    */
   trigger?: 'icon' | 'button';

@@ -137,7 +137,7 @@ export interface SidebarProps {
 }
 
 /**
- * The left column: wordmark, main nav (30px items; hovering or focusing one starts loading its page), the
+ * The left column: wordmark, main nav (--nav-item rows; hovering or focusing one starts loading its page), the
  * server-update card when there is one, and the account row (theme and sign out in its menu).
  * The nav is the registry's `nav.item` slot (core's items are ext/core/nav.ts), filtered by the user's role.
  */

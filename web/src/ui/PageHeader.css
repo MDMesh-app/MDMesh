@@ -20,14 +20,14 @@
   gap: var(--space-2);
 }
 .v2 .v2-pagehead__title {
-  font-size: var(--text-22);
-  line-height: var(--lh-22);
+  font-size: var(--text-page);
+  line-height: var(--lh-page);
   font-weight: var(--weight-semibold);
   letter-spacing: var(--track-tight);
   color: var(--text);
 }
 .v2 .v2-pagehead__sub {
-  min-height: var(--lh-13);
+  min-height: var(--lh-ui);
   max-width: 80ch;
   color: var(--secondary);
 }

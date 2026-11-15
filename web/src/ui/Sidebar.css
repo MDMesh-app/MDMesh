@@ -27,8 +27,8 @@
   gap: var(--space-2);
   color: var(--ink);
   font-weight: var(--weight-semibold);
-  font-size: var(--text-16);
-  line-height: var(--lh-16);
+  font-size: var(--text-title);
+  line-height: var(--lh-title);
   letter-spacing: var(--track-tight);
 }
 .v2 .v2-wordmark__mark {
@@ -146,8 +146,8 @@
   background: var(--alert);
 }
 .v2 .v2-updcard__text {
-  font-size: var(--text-12);
-  line-height: var(--lh-12);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
 }
 /* The card is the link; its action is drawn as a small secondary button. */
@@ -200,8 +200,8 @@
   background: var(--surface-2);
   border: var(--hairline) solid var(--border);
   color: var(--text-2);
-  font-size: var(--text-11);
-  line-height: var(--lh-11);
+  font-size: var(--text-caps);
+  line-height: var(--lh-caps);
   font-weight: var(--weight-medium);
 }
 .v2 .v2-account__name {

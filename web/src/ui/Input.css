@@ -9,8 +9,8 @@
   border-radius: var(--radius-control);
   background: var(--surface);
   color: var(--text);
-  font-size: var(--text-14);
-  line-height: var(--lh-14);
+  font-size: var(--text-input);
+  line-height: var(--lh-input);
   font-weight: var(--weight-regular);
   transition-property: border-color, box-shadow;
   transition-duration: var(--dur-micro);
@@ -19,14 +19,14 @@
 .v2 .v2-input--sm {
   height: var(--control-sm);
   padding-inline: var(--space-2);
-  font-size: var(--text-13);
+  font-size: var(--text-ui);
 }
 .v2 .v2-input--lg {
   height: var(--control-lg);
 }
 .v2 .v2-input--mono {
   font-family: var(--font-mono);
-  font-size: var(--text-13);
+  font-size: var(--text-ui);
 }
 .v2 .v2-input:hover:not(:disabled, [readonly]) {
   border-color: var(--secondary);
@@ -58,7 +58,7 @@
 /* Textarea: grows with its content from three lines (field-sizing where supported; else rows + resize). */
 .v2 .v2-textarea {
   height: auto;
-  min-height: calc(var(--lh-14) * 3 + var(--space-2) * 2);
+  min-height: calc(var(--lh-input) * 3 + var(--space-2) * 2);
   padding-block: var(--space-2);
   resize: vertical;
   field-sizing: content;
@@ -72,7 +72,7 @@
   padding-inline: var(--space-3) var(--space-2);
   text-align: left;
   cursor: pointer;
-  font-size: var(--text-13);
+  font-size: var(--text-ui);
 }
 .v2 .v2-select--sm {
   height: var(--control-sm);
@@ -80,7 +80,7 @@
 }
 .v2 .v2-select--lg {
   height: var(--control-lg);
-  font-size: var(--text-14);
+  font-size: var(--text-input);
 }
 .v2 .v2-select__label {
   flex: 0 0 auto;
@@ -136,8 +136,8 @@
 }
 .v2 .v2-listbox__group {
   padding: var(--space-2) var(--space-2) var(--space-1);
-  font-size: var(--text-11);
-  line-height: var(--lh-11);
+  font-size: var(--text-caps);
+  line-height: var(--lh-caps);
   font-weight: var(--weight-medium);
   letter-spacing: var(--track-caps);
   text-transform: uppercase;
@@ -152,8 +152,8 @@
   padding: 0 var(--space-8) 0 var(--space-2);
   border-radius: var(--radius-chip);
   color: var(--text);
-  font-size: var(--text-13);
-  line-height: var(--lh-13);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
   cursor: pointer;
   outline: none;
   user-select: none;
@@ -205,8 +205,8 @@
   border: 0;
   background: transparent;
   color: var(--text);
-  font-size: var(--text-13);
-  line-height: var(--lh-13);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
   outline: none;
 }
 .v2 .v2-search__input::-webkit-search-cancel-button {

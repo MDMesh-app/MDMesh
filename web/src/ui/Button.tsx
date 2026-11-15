@@ -13,9 +13,9 @@ import './Button.css';
 export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'danger-primary' | 'subtle' | 'ghost';
 
 /**
- * Three heights, 13px text: `sm` 28 (row actions, card footers, chips), `md` 32 (default: toolbars, card headers,
- * forms), `lg` 36 (the page's primary action, dialog footers, sign-in). In the phone layout `md` and `lg` grow to the
- * 44px touch target.
+ * Three heights (--control-sm / -md / -lg, 32 / 36 / 40), UI-size text: `sm` row actions, card footers, chips; `md`
+ * the default (toolbars, card headers, forms); `lg` the page's primary action, dialog footers, sign-in. In the phone
+ * layout every control reaches the 44px touch target.
  *
  * Deprecated (the v0.4 board sizes, kept for extensions): `xs` = `sm`; `xl`, `hero` = `lg`; `auth` = `lg` stretched
  * to the container's width.
@@ -90,7 +90,7 @@ export function ButtonAnchor({ variant, size, icon, iconEnd, strong, block, clas
   );
 }
 
-/** Square, ghost (no border, a hover fill): `xs` 24 (inside table rows), `sm` 28, `md` 32 (default), `lg` 36. */
+/** Square, ghost (no border, a hover fill), at the control heights: `xs` (inside table rows), `sm`, `md` (default), `lg`. */
 export type IconButtonSize = 'xs' | 'sm' | 'md' | 'lg';
 
 export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label'> {

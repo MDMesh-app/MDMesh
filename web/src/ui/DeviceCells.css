@@ -33,8 +33,8 @@
 .v2 .v2-devid__num {
   flex: 0 0 auto;
   font-family: var(--font-mono);
-  font-size: var(--text-12);
-  line-height: var(--lh-12);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
   white-space: nowrap;
 }
@@ -51,8 +51,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--text-12);
-  line-height: var(--lh-12);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
 }
 
@@ -65,8 +65,8 @@
 }
 .v2 .v2-presence__reason {
   min-width: 0;
-  font-size: var(--text-12);
-  line-height: var(--lh-12);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
 }
 .v2 .v2-presence--line .v2-presence__reason {
@@ -104,7 +104,7 @@
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
-  height: var(--lh-13);
+  height: var(--lh-ui);
 }
 .v2 .v2-cfgsync--row {
   display: flex;
@@ -114,8 +114,8 @@
 }
 .v2 .v2-cfgsync__key {
   flex: 0 0 auto;
-  font-size: var(--text-12);
-  line-height: var(--lh-12);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
 }
 .v2 .v2-cfgsync--row .v2-cfgsync__name {
@@ -145,7 +145,7 @@
   white-space: nowrap;
 }
 .v2 .v2-battery--table .v2-battery__pct {
-  font-size: var(--text-12);
+  font-size: var(--text-meta);
   color: var(--text-2);
 }
 .v2 .v2-battery__pct.is-low {

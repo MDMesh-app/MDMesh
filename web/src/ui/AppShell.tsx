@@ -88,7 +88,7 @@ function useHashTarget(main: RefObject<HTMLElement | null>) {
  * Desktop: a 220px sticky sidebar beside a left-anchored main column (up to 1440, 24px gutters, 16px between
  * sections). Each page fades in (opacity only) as it arrives; while a page's chunk downloads for the first time a
  * skeleton holds its place, and moving between pages keeps the previous one on screen until the next is ready.
- * ≤ 860px: a 44px sticky top bar with the menu button and the wordmark (the page's own heading names it), the
+ * ≤ 860px: a sticky top bar (--topbar-h) with the menu button and the wordmark (the page's own heading names it), the
  * sidebar as an off-canvas drawer over a scrim (Escape, scrim click and navigation close it; focus moves in and back).
  */
 export function AppShell() {

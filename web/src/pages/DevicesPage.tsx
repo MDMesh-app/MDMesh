@@ -738,7 +738,7 @@ export function DevicesPage() {
           ) : undefined
         }
       >
-        {serverQuery ? undefined : 'No devices are enrolled yet.'}
+        {serverQuery ? undefined : 'Enroll one to see it, and manage it, here.'}
       </EmptyState>
     ) : (
       <EmptyState
@@ -827,7 +827,6 @@ export function DevicesPage() {
                     {identity(d, 'card')}
                     {canSelect ? (
                       <Checkbox
-                        size={17}
                         className="v2-devices-card__check"
                         aria-label={`Select ${d.number}`}
                         checked={on}

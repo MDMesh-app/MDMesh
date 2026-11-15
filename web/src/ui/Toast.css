@@ -59,7 +59,7 @@
   font-variant-numeric: tabular-nums;
   color: var(--text-2);
 }
-/* Rises in from below (--pop-from); a dismissed toast leaves at once (toast.tsx unmounts it). */
+/* Rises in from below (--pop-from) and drops out the same way (toast.tsx keeps a leaving one for its exit). */
 .v2 .toast {
   --pop-from: var(--lift);
 
@@ -73,6 +73,10 @@
   box-shadow: var(--elev-2);
   color: var(--text);
   animation: v2-pop-in var(--dur-enter) var(--ease) both;
+}
+.v2 .toast[data-state='closed'] {
+  pointer-events: none;
+  animation: v2-pop-out var(--dur-exit) var(--ease) both;
 }
 /* The tile is one text line tall, so it centres on the title's first line. */
 .v2 .toast .t-ic {

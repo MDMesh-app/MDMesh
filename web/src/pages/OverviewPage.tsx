@@ -26,6 +26,7 @@ import {
   EmptyState,
   ErrorState,
   FleetSummary,
+  NumberedSteps,
   Grid,
   GridCell,
   IconAlert,
@@ -120,6 +121,8 @@ export function OverviewPage() {
   // The first load failed: nothing is known, so the cards say so instead of showing an empty fleet.
   const unknown = data.loadedAt === null && !!data.error;
   const firstLoad = data.loading && data.loadedAt === null;
+  // Nothing enrolled yet: the first-run steps instead of a fleet of zeros.
+  const firstRun = !firstLoad && !unknown && data.total === 0;
 
   // Core's cards, which the contributions in ext/core/overview.tsx pick out; extensions' cards are placed among them.
   const core = {
@@ -175,53 +178,83 @@ export function OverviewPage() {
         />
       ) : null}
 
-      {/* One 12-column grid for every row, so card edges line up down the page (ext/hosts/OverviewCards). */}
-      <Grid>
-        <GridCell span={8}>
-          <FleetSummary
-            headingId="v2-ov-fleet"
-            loading={firstLoad}
-            total={unknown ? null : data.total}
-            caption={
+      {/* First run: no device yet, so no dashboard of zeros, the three steps to the first one instead. */}
+      {firstRun ? (
+        <Card aria-labelledby="v2-ov-first" className="v2-ov-first">
+          <CardHeader
+            title="Enroll your first device"
+            titleId="v2-ov-first"
+            subtitle="The fleet, its health and its activity show here once a device reports in."
+          />
+          <NumberedSteps
+            steps={[
               <>
-                {plural(data.total, 'device enrolled', 'devices enrolled')}
-                {data.total > devices.length && devices.length > 0 ? (
-                  <>
-                    {' '}
-                    · status of the first <Num>{devices.length}</Num>
-                  </>
-                ) : null}
-                {/* Beside the total, not in the bar and legend: a wiped device is enrolled but no longer reports. */}
-                {counts.wiped > 0 ? (
-                  <>
-                    {' · '}
-                    <Link to={`${paths.devices}?status=wiped`}>
-                      <Num>{counts.wiped}</Num> wiped
-                    </Link>
-                  </>
-                ) : null}
-              </>
-            }
-            legend={[
-              { key: 'online', label: 'Online', count: counts.online, tone: 'ok', to: `${paths.devices}?status=online` },
-              {
-                key: 'attention',
-                label: 'Needs attention',
-                count: counts.attention,
-                tone: 'warn',
-                to: `${paths.devices}?status=attention`,
-              },
-              { key: 'offline', label: 'Offline', count: counts.offline, tone: 'idle', to: `${paths.devices}?status=offline` },
+                Pick what new devices get in <Link to={paths.configurations}>Configurations</Link> (the default one works to
+                start).
+              </>,
+              <>Make an enrollment code on the Enroll page.</>,
+              <>Factory-reset the device and scan the code at its welcome screen, or type the token on a device that's set up.</>,
             ]}
           />
-        </GridCell>
-        <GridCell span={4}>
-          <Card aria-label="Fleet status" className="v2-ov-stats">
-            <StatGrid>
-              <OverviewStats />
-            </StatGrid>
-          </Card>
-        </GridCell>
+          <div>
+            <ButtonLink to={paths.enroll} variant="primary" icon={<IconPlus />}>
+              Enroll device
+            </ButtonLink>
+          </div>
+        </Card>
+      ) : null}
+
+      {/* One 12-column grid for every row, so card edges line up down the page (ext/hosts/OverviewCards). */}
+      <Grid>
+        {firstRun ? null : (
+          <>
+            <GridCell span={8}>
+              <FleetSummary
+                headingId="v2-ov-fleet"
+                loading={firstLoad}
+                total={unknown ? null : data.total}
+                caption={
+                  <>
+                    {plural(data.total, 'device enrolled', 'devices enrolled')}
+                    {data.total > devices.length && devices.length > 0 ? (
+                      <>
+                        {' '}
+                        · status of the first <Num>{devices.length}</Num>
+                      </>
+                    ) : null}
+                    {/* Beside the total, not in the bar and legend: a wiped device is enrolled but no longer reports. */}
+                    {counts.wiped > 0 ? (
+                      <>
+                        {' · '}
+                        <Link to={`${paths.devices}?status=wiped`}>
+                          <Num>{counts.wiped}</Num> wiped
+                        </Link>
+                      </>
+                    ) : null}
+                  </>
+                }
+                legend={[
+                  { key: 'online', label: 'Online', count: counts.online, tone: 'ok', to: `${paths.devices}?status=online` },
+                  {
+                    key: 'attention',
+                    label: 'Needs attention',
+                    count: counts.attention,
+                    tone: 'warn',
+                    to: `${paths.devices}?status=attention`,
+                  },
+                  { key: 'offline', label: 'Offline', count: counts.offline, tone: 'idle', to: `${paths.devices}?status=offline` },
+                ]}
+              />
+            </GridCell>
+            <GridCell span={4}>
+              <Card aria-label="Fleet status" className="v2-ov-stats">
+                <StatGrid>
+                  <OverviewStats />
+                </StatGrid>
+              </Card>
+            </GridCell>
+          </>
+        )}
         <OverviewRows />
       </Grid>
     </CoreOverviewProvider>

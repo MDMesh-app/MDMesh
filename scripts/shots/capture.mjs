@@ -8,8 +8,9 @@
 // --check visits, against the same fixtures:
 //   * signed in: / /devices /devices/WH-SCAN-07 /configurations /configurations/1 /apps /enroll /settings — each
 //     must render the app shell (.v2-shell .v2-sidebar .v2-wordmark) and end on the requested path; /devices/101
-//     (an old id link) must move to the device's number, /devices/WH-SCAN-07; /no-such-page (catch-all) and the old
-//     bookmarks /dashboard, /configs and /v2/devices must land on /, /configurations and /devices;
+//     (an old id link) must move to the device's number, /devices/WH-SCAN-07; /no-such-page (catch-all) must stay put
+//     inside the shell ("Page not found"); the old bookmarks /dashboard, /configs and /v2/devices must land on /,
+//     /configurations and /devices;
 //   * signed out: /login — the sign-in form must render and the page must stay on /login;
 //   * flagged first-login session (passwordReset + token in storage, as an older console stored it; the console
 //     itself keeps the token in memory, which v2-parity/auth.mjs covers): /set-password — the set-password form
@@ -49,7 +50,8 @@ const CHECK_GROUPS = [
       // An old link by database id (no device has the number 101): the device page finds it by id and moves to
       // the device's number.
       { route: '/devices/101', expect: '/devices/WH-SCAN-07', selector: SHELL },
-      { route: '/no-such-page', expect: '/', selector: SHELL },
+      // An unknown path stays where it is and says so, inside the shell.
+      { route: '/no-such-page', expect: '/no-such-page', selector: SHELL },
       // Old bookmarks: the v0.3 console's paths and the redesign preview's /v2/*.
       { route: '/dashboard', expect: '/', selector: SHELL },
       { route: '/configs', expect: '/configurations', selector: SHELL },

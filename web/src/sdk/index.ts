@@ -99,6 +99,13 @@ export { PageHeader, Breadcrumb } from '../ui/PageHeader';
 export type { Crumb } from '../ui/PageHeader';
 export { Pagination } from '../ui/Pagination';
 export { RelativeTime } from '../ui/RelativeTime';
+export { Grid, GridCell } from '../ui/Grid';
+export type { GridProps, GridCellProps, GridSpan } from '../ui/Grid';
+export { Skeleton, SkeletonRows, SkeletonFacts } from '../ui/Skeleton';
+export { ErrorState } from '../ui/ErrorState';
+export { Tooltip } from '../ui/Tooltip';
+export { Popover } from '../ui/Popover';
+export { useStickyValue } from '../ui/useStickyValue';
 export { CopyField } from '../ui/CopyField';
 // An Overview `stat` tile renders one.
 export { StatCell } from '../ui/Stats';

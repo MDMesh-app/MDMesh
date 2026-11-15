@@ -42,9 +42,14 @@ const VISIBLE_NARROW = 2;
 const HOVER_QUERY = '(hover: hover)';
 /** How long an announcement stays in its live region (it has been read by then; the toast stays on screen). */
 const ANNOUNCE_MS = 7000;
+/** Motion is welcome (not reduced): only then does a dismissed toast linger to animate out. */
+const MOTION_QUERY = '(prefers-reduced-motion: no-preference)';
+/** A leaving toast is gone after this even if its animation never ends (a background tab). */
+const LEAVE_MS = 400;
 
 /**
- * Toasts, bottom right, above the configuration editor's save bar. Success and warning go after 5 s, a failure after
+ * Toasts, bottom right, above the configuration editor's save bar. They rise in and, where motion is welcome, fade
+ * out when they go. Success and warning go after 5 s, a failure after
  * 30 s; the pointer over the stack or focus in it holds them (2.2.1), and each has a Dismiss button (Escape too).
  * Each message is announced once as it arrives, failures from one assertive live region and the rest from one polite
  * region (4.1.3; plain aria-live, so the empty regions add no alert/status roles to every page); the stack itself is
@@ -190,6 +195,54 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timedIds, expire]);
   const more = toasts.length - shown.length;
+
+  // Toasts that just left the view play their exit (fade and drop) where they were, then go. They are hidden from
+  // assistive tech and take no input meanwhile; the list, its focus handling and the live regions never see them.
+  // Only where motion is welcome: with reduced motion (or no motion at all) a toast goes at once.
+  const motion = useMediaQuery(MOTION_QUERY);
+  const [leaving, setLeaving] = useState<Array<{ toast: Toast; at: number }>>([]);
+  const lastShown = useRef<Toast[]>([]);
+  const shownIds = shown.map((t) => t.id).join(',');
+  useEffect(() => {
+    const before = lastShown.current;
+    lastShown.current = shown;
+    if (!motion) return;
+    const gone = before
+      .map((toast, at) => ({ toast, at }))
+      .filter(({ toast }) => !toasts.some((t) => t.id === toast.id));
+    if (gone.length === 0) return;
+    setLeaving((l) => [...l, ...gone]);
+    const ids = gone.map((g) => g.toast.id);
+    window.setTimeout(() => {
+      if (mounted.current) setLeaving((l) => l.filter((x) => !ids.includes(x.toast.id)));
+    }, LEAVE_MS);
+    // shownIds stands for `shown`, a new array every render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shownIds, motion]);
+  const dropLeaving = (id: number) => setLeaving((l) => l.filter((x) => x.toast.id !== id));
+  const renderLeaving = (t: Toast) => (
+    <div
+      key={`leaving-${t.id}`}
+      className={`toast ${t.kind}`}
+      data-state="closed"
+      aria-hidden="true"
+      inert
+      onAnimationEnd={() => dropLeaving(t.id)}
+    >
+      <span className="t-ic">{t.kind === 'ok' ? <CheckMark /> : t.kind === 'warn' ? <BangMark /> : <CrossMark />}</span>
+      <div className="t-main">
+        <div className="t-title">{t.title}</div>
+        {t.body && <div className="t-body">{t.body}</div>}
+      </div>
+      <span className="t-close">
+        <CrossMark />
+      </span>
+    </div>
+  );
+  // Shown toasts, with any leaving ones back at the place they left.
+  const stack: Array<{ toast: Toast; gone: boolean }> = shown.map((toast) => ({ toast, gone: false }));
+  for (const { toast, at } of leaving) stack.splice(Math.min(at, stack.length), 0, { toast, gone: true });
+
   const render = (t: Toast) => (
     <div key={t.id} data-toast={t.id} className={`toast ${t.kind}`}>
       <span className="t-ic" aria-hidden="true">
@@ -251,7 +304,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             </button>
           </div>
         ) : null}
-        <div className="toast-region">{shown.map(render)}</div>
+        <div className="toast-region">{stack.map(({ toast, gone }) => (gone ? renderLeaving(toast) : render(toast)))}</div>
         {/* Two live regions that are always there (a region added with its content is often not read). */}
         <div aria-live="assertive" className="v2-visually-hidden">
           {said.filter((a) => a.kind === 'err').map((a) => (

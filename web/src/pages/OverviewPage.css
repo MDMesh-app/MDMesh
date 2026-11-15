@@ -169,3 +169,8 @@
     padding: 0;
   }
 }
+
+/* First run (no device yet): the steps to the first one, above the empty grid. */
+.v2 .v2-ov-first {
+  gap: var(--space-4);
+}

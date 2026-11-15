@@ -8,6 +8,10 @@ import { TooltipProvider } from './ui/Tooltip';
 import { AppErrorBoundary } from './ui/AppErrorBoundary';
 import { legacyRedirect, paths } from './routes';
 import { AppShell } from './ui/AppShell';
+import { ButtonLink } from './ui/Button';
+import { Card } from './ui/Card';
+import { EmptyState } from './ui/EmptyState';
+import { PageHeader } from './ui/PageHeader';
 import { RoutePage } from './ext/hosts/RoutePage';
 import { registry } from './ext/load';
 import { RegistryProvider, useRegistry } from './ext/RegistryContext';
@@ -17,11 +21,31 @@ import { lazyComponent } from './ext/types';
 const LoginPage = lazyComponent(() => import('./pages/LoginPage'), 'LoginPage');
 const SetPasswordPage = lazyComponent(() => import('./pages/SetPasswordPage'), 'SetPasswordPage');
 
-/** Unknown paths: an old bookmark (`/v2/...`, `/dashboard`, `/configs`) goes to its page now, anything else home. */
+/**
+ * Unknown paths: an old bookmark (`/v2/...`, `/dashboard`, `/configs`) goes to its page now; anything else says the
+ * page doesn't exist (a mistyped device link no longer lands on the Overview without a word).
+ */
 function Fallback() {
   const { pathname, search, hash } = useLocation();
   const to = legacyRedirect(pathname);
-  return <Navigate to={to ? to + search + hash : paths.overview} replace />;
+  if (to) return <Navigate to={to + search + hash} replace />;
+  return (
+    <>
+      <PageHeader title="Page not found" subtitle="There is nothing at this address. Check the link, or start from the Overview." />
+      <Card>
+        <EmptyState
+          title="No page here"
+          action={
+            <ButtonLink to={paths.overview} variant="primary">
+              Go to the Overview
+            </ButtonLink>
+          }
+        >
+          <span className="v2-mono">{pathname}</span>
+        </EmptyState>
+      </Card>
+    </>
+  );
 }
 
 /**
@@ -55,9 +79,9 @@ export function AppRoutes() {
           {pages.map((entry) => (
             <Route key={entry.key} path={entry.contribution.path} element={<RoutePage entry={entry} />} />
           ))}
+          <Route path="*" element={<Fallback />} />
         </Route>
       </Route>
-      <Route path="*" element={<Fallback />} />
     </Routes>
   );
 }

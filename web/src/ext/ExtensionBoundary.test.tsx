@@ -70,7 +70,7 @@ describe('ExtensionBoundary', () => {
     renderCards(['flaky']);
     await screen.findByRole('alert');
     crash = false;
-    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText('Flaky works')).toBeTruthy();
   });
 

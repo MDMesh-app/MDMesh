@@ -42,6 +42,10 @@ Upgrading
   `chmod 600`), or they are refused.
 
 Heads-up
+- Console extensions: `Select` is now a listbox button (no longer a native `<select>`): it takes the same props and
+  `onChange(e)` still reads `e.target.value`, but its ref is the trigger button. The size and padding names a new
+  scale replaced (`Button` `xs`/`xl`/`hero`/`auth`, `Card` paddings, the `--fs-*`, `--radius-sm/md/lg` and other
+  board tokens) still work and follow the new scale; they go in 0.6.0.
 - Native installs: `REPLACE_DATA` must be `yes` or `no`, and `ASSUME_YES` `1` or `0`; empty means not set (the
   default). Any other value now stops the installer before it changes anything, where it used to mean Keep or ask.
 - The agent is now called **MDMesh** on the device (was MDM Agent): in the app drawer, Settings → Apps, the
@@ -57,6 +61,13 @@ Heads-up
   random times so they don't all reconnect at once after a server restart. Check-ins are not affected.
 
 New
+- The console has a new look: denser and calmer, with one type and spacing scale, one table, one set of controls, and
+  menus, dialogs, tabs and pages that move instead of snapping. Lists show 48px rows with their actions on hover;
+  Devices has one toolbar with a Filter menu; the Overview and the device's Telemetry tab are laid out on one grid;
+  pages load with placeholders at their real size instead of "Loading…" and never show a 0 they don't know. An
+  unknown address says "Page not found" instead of opening the Overview. The browser tab has an MDMesh icon.
+- Destructive confirmations name what they do ("Factory reset", "Delete configuration"), and one action has one
+  name everywhere ("Lock", "Ring", "Sync now", "Needs attention").
 - From source and native: `./setup.sh --update` moves the clone to the newest release, checked against its signed
   manifest like the quick start, then runs it. A manifest that doesn't verify, or names no commit, and local changes
   stop it; a release that isn't published yet is skipped. Fresh installs clone and run `./setup.sh --update` too. It
@@ -228,6 +239,10 @@ Fixes
   storage is full), the launcher says so instead of doing nothing. Needs agent 0.5.0.
 
 Under the hood
+- Console: menus, dialogs, selects, popovers and tooltips are built on Radix Primitives. Every colour, size, space,
+  radius, shadow and timing comes from `web/src/tokens.css`, and `npm run lint:css` (stylelint) rejects any other
+  value. New for extensions: `Grid`/`GridCell`, `Skeleton`, `ErrorState`, `Tooltip`, `Popover` and `useStickyValue`,
+  and the role tokens (`--text-ui`, `--control-md`, `--radius-control`, `--space-*` and the rest).
 - The release manifest records the tagged commit, which `setup.sh --update` checks the tag against. CI tests
   `--update` against signed fixture releases.
 - `install/options.json` lists the installers' questions and answers, for the website's install guide. CI checks it

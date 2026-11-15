@@ -4,6 +4,8 @@ package com.mdmesh.remote
 
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import android.util.DisplayMetrics
 import android.util.Log
 import okhttp3.OkHttpClient
@@ -43,6 +45,11 @@ internal class RemoteViewCapture(
     private var capturer: VideoCapturer? = null
     private var source: VideoSource? = null
     private var helper: SurfaceTextureHelper? = null
+    // WebRTC invokes observers on its own worker threads. Releasing the peer or
+    // factory re-entrantly from one of those callbacks can make native WebRTC
+    // tear down a collection while it is still iterating it. Keep lifecycle
+    // cleanup on the app main thread instead.
+    private val cleanupHandler = Handler(Looper.getMainLooper())
     private val remoteCandidates = RemoteCandidateQueue<IceCandidate>()
     @Volatile private var stopped = false
     @Volatile private var startupStage = "creating capture"
@@ -97,7 +104,10 @@ internal class RemoteViewCapture(
                 .addHeader("X-MDMesh-Remote-Session", request.signaling.credential)
                 .build(),
             object : WebSocketListener() {
-                override fun onOpen(webSocket: WebSocket, response: Response) = signalingOpened()
+                override fun onOpen(webSocket: WebSocket, response: Response) {
+                    Log.i(TAG, "remote signaling opened")
+                    signalingOpened()
+                }
                 override fun onMessage(webSocket: WebSocket, text: String) { handleSignal(text) }
                 override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { stop("signaling closed: $reason") }
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
@@ -119,13 +129,19 @@ internal class RemoteViewCapture(
                     stop("invalid video offer")
                     return@runCatching
                 }
+                startupStage = "setting remote description"
+                Log.i(TAG, "remote offer accepted")
                 peer?.setRemoteDescription(object : Sdp() {
                     override fun onSetSuccess() {
+                        startupStage = "creating answer"
+                        Log.i(TAG, "remote description accepted")
                         applyPendingRemoteCandidates()
                         peer?.createAnswer(object : Sdp() {
                             override fun onCreateSuccess(sdp: SessionDescription) {
                                 peer?.setLocalDescription(object : Sdp() {
                                     override fun onSetSuccess() {
+                                        startupStage = "sending answer"
+                                        Log.i(TAG, "local description accepted")
                                         send("answer", JSONObject().put("sdp", sdp.description))
                                     }
                                 }, sdp)
@@ -152,7 +168,17 @@ internal class RemoteViewCapture(
     private val observer = object : PeerConnection.Observer {
         override fun onIceCandidate(candidate: IceCandidate) = send("candidate", JSONObject().put("candidate", candidate.sdp).put("sdpMid", candidate.sdpMid).put("sdpMLineIndex", candidate.sdpMLineIndex))
         override fun onIceCandidatesRemoved(candidates: Array<out IceCandidate>) = Unit
-        override fun onConnectionChange(state: PeerConnection.PeerConnectionState) { if (state == PeerConnection.PeerConnectionState.FAILED || state == PeerConnection.PeerConnectionState.CLOSED || state == PeerConnection.PeerConnectionState.DISCONNECTED) stop("peer $state") }
+        override fun onConnectionChange(state: PeerConnection.PeerConnectionState) {
+            startupStage = "peer $state"
+            Log.i(TAG, "remote peer state=$state")
+            // DISCONNECTED is explicitly a transient ICE state. Ending the
+            // capture and disposing native objects from this callback caused a
+            // re-entrant native teardown on the S8. FAILED and CLOSED are the
+            // only terminal states for this short-lived POC session.
+            if (state == PeerConnection.PeerConnectionState.FAILED || state == PeerConnection.PeerConnectionState.CLOSED) {
+                stop("peer $state")
+            }
+        }
         override fun onSignalingChange(state: PeerConnection.SignalingState) = Unit
         override fun onIceConnectionChange(state: PeerConnection.IceConnectionState) = Unit
         override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
@@ -165,19 +191,24 @@ internal class RemoteViewCapture(
     }
 
     private fun send(type: String, payload: JSONObject) { if (!stopped) socket?.send(JSONObject().put("type", type).put("payload", payload).toString()) }
+    @Synchronized
     fun stop(reason: String) {
         if (stopped) return
         stopped = true
-        runCatching { socket?.close(1000, reason.take(80)) }; socket = null
-        remoteCandidates.clear()
-        runCatching { capturer?.stopCapture() }; capturer?.dispose(); capturer = null
-        source?.dispose(); source = null; helper?.dispose(); helper = null
-        peer?.close(); peer = null; factory?.dispose(); factory = null; egl.release()
-        ended(reason)
+        Log.i(TAG, "stopping remote capture: $reason")
+        cleanupHandler.post {
+            runCatching { socket?.close(1000, reason.take(80)) }; socket = null
+            remoteCandidates.clear()
+            runCatching { capturer?.stopCapture() }; capturer?.dispose(); capturer = null
+            source?.dispose(); source = null; helper?.dispose(); helper = null
+            peer?.close(); peer = null; factory?.dispose(); factory = null; egl.release()
+            ended(reason)
+        }
     }
     private open class Sdp : SdpObserver { override fun onCreateSuccess(sdp: SessionDescription) = Unit; override fun onSetSuccess() = Unit; override fun onCreateFailure(error: String) = Unit; override fun onSetFailure(error: String) = Unit }
 
     private companion object {
+        const val TAG = "MDMeshRemoteView"
         const val SCREEN_STREAM_ID = "mdmesh-screen-stream"
     }
 }

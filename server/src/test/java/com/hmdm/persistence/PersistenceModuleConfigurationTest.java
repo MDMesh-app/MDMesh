@@ -51,6 +51,13 @@ public class PersistenceModuleConfigurationTest {
         assertTrue(configuration.hasStatement(RemoteViewSessionMapper.class.getName() + ".find"));
         assertTrue(configuration.hasStatement(RemoteViewSessionMapper.class.getName() + ".insertAudit"));
 
+        String expirySql = configuration
+                .getMappedStatement(RemoteViewSessionMapper.class.getName() + ".findExpired")
+                .getBoundSql(Collections.singletonMap("now", 1L))
+                .getSql();
+        assertTrue(expirySql.contains("state IN ('requested','awaiting_consent')"));
+        assertTrue(expirySql.contains("expiresAt < ?"));
+
         List<ParameterMapping> findParameters = configuration
                 .getMappedStatement(RemoteViewSessionMapper.class.getName() + ".find")
                 .getBoundSql(Collections.singletonMap("id", UUID.randomUUID()))

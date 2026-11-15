@@ -2,7 +2,6 @@ package com.hmdm.remote;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.hmdm.persistence.UserDAO;
 import com.hmdm.persistence.domain.User;
 import com.hmdm.rest.filter.AuthFilter;
 import com.hmdm.service.RemoteViewSessionService;
@@ -28,14 +27,13 @@ public final class RemoteViewSignalingHub {
     private static final int MAX_MESSAGES_PER_MINUTE = 60;
     private static final ObjectMapper JSON = new ObjectMapper();
     private final RemoteViewSessionService sessions;
-    private final UserDAO users;
     private final Map<UUID, Peers> peers = new ConcurrentHashMap<>();
     private final ScheduledExecutorService expiry = ExecutorRegistry.register(Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "remote-view-signal-expiry"); t.setDaemon(true); return t;
     }));
 
-    @Inject public RemoteViewSignalingHub(RemoteViewSessionService sessions, UserDAO users) {
-        this.sessions = sessions; this.users = users; INSTANCE = this;
+    @Inject public RemoteViewSignalingHub(RemoteViewSessionService sessions) {
+        this.sessions = sessions; INSTANCE = this;
         expiry.scheduleAtFixedRate(this::closeExpired, 5, 5, TimeUnit.SECONDS);
     }
 
@@ -43,10 +41,12 @@ public final class RemoteViewSignalingHub {
         if (http == null) return false;
         Object stored = http.getAttribute(AuthFilter.sessionCredentials);
         if (!(stored instanceof User)) return false;
-        User cookieUser = (User) stored;
-        User current = users.getUserDetails(cookieUser.getId());
-        if (current == null || current.isPasswordReset() || current.getAuthToken() == null
-                || !current.getAuthToken().equals(cookieUser.getAuthToken()) || !hasRemoteView(current)
+        // WebSocket callbacks run outside the HTTP request thread, so they do not
+        // have SecurityContext. The authenticated HTTP session is the authority
+        // for this same-origin browser connection; do not call a context-bound DAO
+        // from here.
+        User current = (User) stored;
+        if (current.isPasswordReset() || current.getAuthToken() == null || !hasRemoteView(current)
                 || !sessions.browserMayJoin(id, current.getId(), System.currentTimeMillis())) return false;
         Peers pair = peers.computeIfAbsent(id, ignored -> new Peers());
         synchronized (pair) { if (pair.browser != null && pair.browser.isOpen()) return false; pair.browser = socket; pair.browserUser = current.getId(); }

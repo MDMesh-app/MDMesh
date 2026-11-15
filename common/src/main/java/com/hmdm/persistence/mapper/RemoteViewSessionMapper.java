@@ -15,7 +15,7 @@ public interface RemoteViewSessionMapper {
     void insertAudit(@Param("sessionId") UUID sessionId, @Param("state") String state, @Param("at") long at,
                      @Param("actorUserId") Integer actorUserId, @Param("detail") String detail);
     @Select("SELECT * FROM remoteViewSession WHERE id=#{id}") RemoteViewSession find(@Param("id") UUID id);
-    @Select("SELECT * FROM remoteViewSession WHERE endedAt IS NULL AND (consentExpiresAt < #{now} OR expiresAt < #{now})")
+    @Select("SELECT * FROM remoteViewSession WHERE endedAt IS NULL AND (expiresAt < #{now} OR (state IN ('requested','awaiting_consent') AND consentExpiresAt < #{now}))")
     List<RemoteViewSession> findExpired(@Param("now") long now);
     @Select("SELECT * FROM remoteViewSession WHERE deviceNumber=#{deviceNumber} AND endedAt IS NULL")
     List<RemoteViewSession> findActiveByDevice(@Param("deviceNumber") String deviceNumber);

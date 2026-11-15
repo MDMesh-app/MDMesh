@@ -15,7 +15,7 @@ export function Skeleton({
 }: {
   /** CSS width (default 100%). */
   width?: string;
-  /** `line` one 13/20 text line, `title` a 16/24 line, `control` 32px, `row` the 44px table row, or a CSS length. */
+  /** `line` one UI text line, `title` a card-title line, `control` the control height, `row` the table row, or a CSS length. */
   height?: 'line' | 'title' | 'control' | 'row' | string;
   radius?: 'sm' | 'full';
   className?: string;
@@ -31,7 +31,7 @@ export function Skeleton({
   );
 }
 
-/** `count` table-row placeholders (44px, or 40 compact) with a name-like and a meta-like bar, inside a list card. */
+/** `count` table-row placeholders (--row, or --row-compact) with a name-like and a meta-like bar, inside a list card. */
 export function SkeletonRows({ count = 5, compact, label }: { count?: number; compact?: boolean; label?: string }) {
   return (
     <div className={cx('v2-skelrows', compact && 'v2-skelrows--compact')} role={label ? 'status' : undefined}>

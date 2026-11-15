@@ -36,7 +36,14 @@ const env = (data, status = 'OK', message = null) => JSON.stringify({ status, me
 const SIGNED_OUT = null;
 const RESET = { ...fx.user, passwordReset: true, passwordResetToken: 'a11y-token' };
 
-const dialog = (page) => page.locator('dialog[open]').last();
+/** An open dialog (Radix renders role="dialog" / "alertdialog", portalled to the end of <body>). */
+const DIALOG = '[role="dialog"], [role="alertdialog"]';
+const dialog = (page) => page.locator(DIALOG).last();
+/** Pick an option in a console Select (a listbox button, not a native <select>). */
+async function choose(page, label, option) {
+  await page.getByLabel(label).click();
+  await page.getByRole('option', { name: option }).click();
+}
 /** Users & roles answers: the section shows only when the server says it manages users. */
 const ROLE = { id: 2, name: 'Admin', superAdmin: false, permissions: [] };
 const USERS = {
@@ -298,7 +305,7 @@ const STATES = [
       await p.getByRole('radiogroup', { name: 'Bluetooth' }).getByRole('radio', { name: 'Block' }).click();
       await p.getByRole('region', { name: 'Unsaved changes' }).waitFor({ timeout: 5000 });
       await p.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /Devices/ }).click();
-      await p.locator('dialog[open]').waitFor({ timeout: 5000 });
+      await p.locator(DIALOG).first().waitFor({ timeout: 5000 });
     },
   },
   // ---- apps ----
@@ -351,7 +358,7 @@ const STATES = [
       const sw = p.getByRole('switch', { name: 'Join Wi-Fi during setup' });
       if ((await sw.getAttribute('aria-checked')) !== 'true') await sw.click();
       await p.getByLabel('Network name').fill('Office');
-      await p.getByLabel('Security').selectOption('WPA');
+      await choose(p, 'Security', /WPA/);
       await p.getByLabel('Wi-Fi password').fill('short');
       await p.locator('#v2-enroll-wifi-issue').waitFor({ timeout: 5000 });
     },
@@ -654,7 +661,7 @@ async function keyboardWalk(browser, base) {
 
   // Dialogs, menus and the inline rename: the trigger opens it with focus inside, Escape closes it and focus returns
   // to the trigger. `open` is what the trigger opens (a dialog or menu unless said).
-  const POPUP = 'dialog[open], [role=menu]';
+  const POPUP = `${DIALOG}, [role=menu]`;
   const dialogs = [
     ['/devices/WH-SCAN-07', 'button', 'Rename device', 'form.v2-device-rename'],
     ['/devices/WH-SCAN-07', 'button', 'Send alert…'],

@@ -22,7 +22,7 @@ export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'danger-primary
  */
 export type ButtonSize = 'sm' | 'md' | 'lg' | 'xs' | 'xl' | 'hero' | 'auth';
 
-const SIZE: Record<ButtonSize, 'sm' | 'md' | 'lg'> = { xs: 'sm', sm: 'sm', md: 'md', lg: 'md', xl: 'lg', hero: 'lg', auth: 'lg' };
+const SIZE: Record<ButtonSize, 'sm' | 'md' | 'lg'> = { xs: 'sm', sm: 'sm', md: 'md', lg: 'lg', xl: 'lg', hero: 'lg', auth: 'lg' };
 
 interface CommonProps {
   variant?: ButtonVariant;

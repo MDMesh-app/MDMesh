@@ -33,7 +33,7 @@ export interface TableProps<Row> {
   minWidth?: number;
   /** Hide the header row (Needs attention, Recent commands). */
   headless?: boolean;
-  /** Row height: 12 = 44px (default), 10 = the 40px compact row (recent commands, editor apps). */
+  /** Row height: 12 = --row (default), 10 = --row-compact (recent commands, editor apps). */
   rowPad?: 10 | 12;
   /** Selection: a checkbox column first. */
   selection?: {

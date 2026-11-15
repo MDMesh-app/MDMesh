@@ -91,11 +91,11 @@ for (const theme of ['light', 'dark']) {
   await page.press('input[autocomplete="current-password"]', 'Enter');
   await page.waitForSelector('[role=alert]');
   check(posts.length === 1 && posts[0].login === 'admin' && posts[0].password === md5u('S3cret pass') && Object.keys(posts[0]).length === 2, 'POST body {login, MD5 upper} like classic');
-  check((await page.textContent('[role=alert]')).includes('Wrong login or password.'), 'wrong password → generic message');
+  check((await page.textContent('[role=alert]')).includes('Wrong username or password.'), 'wrong password → generic message');
   await page.screenshot({ path: `${out}/login-error.png` });
   mode = 'http500';
   await page.click('button[type=submit]'); await settle(page);
-  check((await page.textContent('[role=alert]')).includes('Wrong login or password.'), 'HTTP 500 → same generic message (classic)');
+  check((await page.textContent('[role=alert]')).includes('Wrong username or password.'), 'HTTP 500 → same generic message (classic)');
   mode = 'down';
   await page.click('button[type=submit]'); await settle(page);
   check((await page.textContent('[role=alert]')).includes('Cannot reach the server'), 'network failure → cannot reach');

@@ -50,6 +50,13 @@ export { PageHeader, Breadcrumb } from '../ui/PageHeader';
 export type { Crumb } from '../ui/PageHeader';
 export { Pagination } from '../ui/Pagination';
 export { RelativeTime } from '../ui/RelativeTime';
+export { Grid, GridCell } from '../ui/Grid';
+export type { GridProps, GridCellProps, GridSpan } from '../ui/Grid';
+export { Skeleton, SkeletonRows, SkeletonFacts } from '../ui/Skeleton';
+export { ErrorState } from '../ui/ErrorState';
+export { Tooltip } from '../ui/Tooltip';
+export { Popover } from '../ui/Popover';
+export { useStickyValue } from '../ui/useStickyValue';
 export { CopyField } from '../ui/CopyField';
 export { StatCell } from '../ui/Stats';
 export type { StatCellProps, StatNote } from '../ui/Stats';
@@ -601,6 +608,15 @@ export declare function EmptyState({ icon, title, children, action, bare, classN
     className?: string;
 }): import("react").JSX.Element;
 
+// ---- ui/ErrorState ----
+export declare function ErrorState({ thing, detail, onRetry, retrying, className, }: {
+    thing: ReactNode;
+    detail?: ReactNode;
+    onRetry?: () => void;
+    retrying?: boolean;
+    className?: string;
+}): import("react").JSX.Element;
+
 // ---- ui/Field ----
 export interface FieldProps {
     label: ReactNode;
@@ -639,6 +655,22 @@ export declare function Eyebrow({ children, help, as: As, id, className, }: {
     id?: string;
     className?: string;
 }): import("react").JSX.Element;
+
+// ---- ui/Grid ----
+export type GridSpan = 3 | 4 | 6 | 8 | 9 | 12;
+export interface GridProps extends HTMLAttributes<HTMLElement> {
+    dense?: boolean;
+    as?: 'div' | 'section' | 'ul';
+    children: ReactNode;
+}
+export declare function Grid({ dense, as: As, className, children, ...rest }: GridProps): import("react").JSX.Element;
+export interface GridCellProps extends HTMLAttributes<HTMLElement> {
+    span?: GridSpan;
+    rows?: 1 | 2 | 3;
+    as?: 'div' | 'section' | 'li';
+    children: ReactNode;
+}
+export declare function GridCell({ span, rows, as: As, className, children, ...rest }: GridCellProps): import("react").JSX.Element;
 
 // ---- ui/Input ----
 export type InputSize = 'sm' | 'md' | 'lg';
@@ -778,6 +810,17 @@ export interface PaginationProps {
 }
 export declare function Pagination({ page, pageSize, total, onPageChange, pageSizeOptions, onPageSizeChange, suffix, variant, noun, className, }: PaginationProps): import("react").JSX.Element;
 
+// ---- ui/Popover ----
+export declare function Popover({ trigger, children, label, align, open, onOpenChange, className, }: {
+    trigger: ReactElement;
+    children: ReactNode;
+    label: string;
+    align?: 'start' | 'center' | 'end';
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
+    className?: string;
+}): import("react").JSX.Element;
+
 // ---- ui/RelativeTime ----
 export type RelativeStyle = 'short' | 'long';
 export interface RelativeTimeProps {
@@ -853,6 +896,23 @@ export interface TriStateProps {
     className?: string;
 }
 export declare function TriState({ segments, ...rest }: TriStateProps): import("react").JSX.Element;
+
+// ---- ui/Skeleton ----
+export declare function Skeleton({ width, height, radius, className, }: {
+    width?: string;
+    height?: 'line' | 'title' | 'control' | 'row' | string;
+    radius?: 'sm' | 'full';
+    className?: string;
+}): import("react").JSX.Element;
+export declare function SkeletonRows({ count, compact, label }: {
+    count?: number;
+    compact?: boolean;
+    label?: string;
+}): import("react").JSX.Element;
+export declare function SkeletonFacts({ count, label }: {
+    count?: number;
+    label?: string;
+}): import("react").JSX.Element;
 
 // ---- ui/Stats ----
 export interface StatNote {
@@ -988,6 +1048,13 @@ export interface ToggleProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
 }
 export declare const Toggle: import("react").ForwardRefExoticComponent<ToggleProps & import("react").RefAttributes<HTMLButtonElement>>;
 
+// ---- ui/Tooltip ----
+export declare function Tooltip({ content, side, children, }: {
+    content: ReactNode;
+    side?: 'top' | 'bottom' | 'left' | 'right';
+    children: ReactElement;
+}): import("react").JSX.Element;
+
 // ---- ui/icons ----
 export interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'children'> {
     size?: number;
@@ -1052,3 +1119,6 @@ export interface ToastApi {
     push: (kind: ToastKind, title: string, body: string) => void;
 }
 export declare function useToast(): ToastApi;
+
+// ---- ui/useStickyValue ----
+export declare function useStickyValue<T>(value: T | null | undefined): T | null;

@@ -73,7 +73,10 @@ internal class RemoteViewCapture(
         startupStage = "creating video track"
         val track = factory!!.createVideoTrack("mdmesh-screen", videoSource)
         startupStage = "adding video track"
-        createdPeer.addTrack(track)
+        // The one-argument overload supplies no stream IDs. On the S8's WebRTC
+        // native runtime that reaches front() on an empty vector and aborts the
+        // entire agent process. A video sender must belong to a named stream.
+        createdPeer.addTrack(track, listOf(SCREEN_STREAM_ID))
         startupStage = "opening signaling"
         connectSignaling()
     }
@@ -149,4 +152,8 @@ internal class RemoteViewCapture(
         ended(reason)
     }
     private open class Sdp : SdpObserver { override fun onCreateSuccess(sdp: SessionDescription) = Unit; override fun onSetSuccess() = Unit; override fun onCreateFailure(error: String) = Unit; override fun onSetFailure(error: String) = Unit }
+
+    private companion object {
+        const val SCREEN_STREAM_ID = "mdmesh-screen-stream"
+    }
 }

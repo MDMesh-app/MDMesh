@@ -1,13 +1,14 @@
 import { createElement, useState } from 'react';
 import { Link, NavLink } from 'react-router';
 import { useAuth } from '../auth/AuthContext';
+import { useMayManageDeployment } from '../auth/useMayManageDeployment';
 import { useTheme } from './theme';
 import { isApplyTerminal, type UpdateStatus } from '../api/updates';
 import { useSupervisor } from '../data/useSupervisor';
 import { applyPhaseLabel } from '../data/updateStatus';
 import { ExtensionBoundary } from '../ext/ExtensionBoundary';
 import { useContributions } from '../ext/useContributions';
-import { paths } from '../routes';
+import { paths, UPDATES_HREF } from '../routes';
 import * as DM from '@radix-ui/react-dropdown-menu';
 import { usePrefetchRoute } from '../ext/usePrefetchRoute';
 import { IconChevronDown, IconMoon, IconSignOut, IconSun } from './icons';
@@ -28,46 +29,59 @@ export function Wordmark({ size = 17, className }: { size?: 17 | 18; className?:
 }
 
 /**
- * The sidebar's one-line server-update item, the console's single announcement of a server update (Settings →
- * Updates has the details). Hidden when there is nothing to say.
+ * The sidebar's server-update card, above the account row: a status dot and "Server update 0.1.15", one short line,
+ * and the action. The Overview's Server card says the same in the same words; both lead to Settings → Updates.
+ * Hidden when there is nothing to say.
  */
-function UpdateItem({ status, onNavigate }: { status: UpdateStatus | null; onNavigate?: () => void }) {
+function UpdateCard({ status, onNavigate }: { status: UpdateStatus | null; onNavigate?: () => void }) {
+  // Only the admin who runs the install may update; anyone else is told so instead of how long it takes.
+  const canUpdate = useMayManageDeployment();
   if (!status) return null;
   const apply = status.apply;
   const active = !!apply && !isApplyTerminal(apply.phase);
   const failed = !!apply && (apply.phase === 'failed' || apply.phase === 'rolled_back');
-  const updatesHref = `${paths.settings}#updates`;
 
   if (active && apply) {
     return (
-      <Link to={updatesHref} className="v2-upditem" onClick={onNavigate}>
-        <span className="v2-upditem__dot is-warn" aria-hidden="true" />
-        <span className="v2-upditem__text">
+      <Link to={UPDATES_HREF} className="v2-updcard" onClick={onNavigate}>
+        <span className="v2-updcard__title">
+          <span className="v2-updcard__dot is-warn" aria-hidden="true" />
           Updating to {apply.toVersion}
-          <span className="v2-visually-hidden">: {applyPhaseLabel(apply.phase)}</span>
         </span>
-        <span className="v2-upditem__go">View</span>
+        <span className="v2-updcard__text">{applyPhaseLabel(apply.phase)}</span>
+        <span className="v2-updcard__action">View progress</span>
       </Link>
     );
   }
   if (failed && apply) {
     return (
-      <a href="/recovery" className="v2-upditem">
-        <span className="v2-upditem__dot is-alert" aria-hidden="true" />
-        <span className="v2-upditem__text">{apply.phase === 'rolled_back' ? 'Update rolled back' : 'Update failed'}</span>
-        <span className="v2-upditem__go">Recover</span>
+      <a href="/recovery" className="v2-updcard">
+        <span className="v2-updcard__title">
+          <span className="v2-updcard__dot is-alert" aria-hidden="true" />
+          {apply.phase === 'rolled_back' ? 'Update rolled back' : 'Update failed'}
+        </span>
+        {apply.error ? <span className="v2-updcard__text">{apply.error}</span> : null}
+        <span className="v2-updcard__action">Open recovery</span>
       </a>
     );
   }
   if (!status.updateAvailable || !status.latest) return null;
+  const how =
+    status.applySupported === false
+      ? 'Update from the server shell.'
+      : canUpdate
+        ? 'About 2 minutes to apply.'
+        : 'An admin can apply it.';
   return (
-    <Link to={updatesHref} className="v2-upditem" onClick={onNavigate}>
-      <span className={cx('v2-upditem__dot', status.verified ? 'is-ok' : 'is-warn')} aria-hidden="true" />
-      <span className="v2-upditem__text">
-        <span className="v2-visually-hidden">Server</span> {status.latest} available
-        {status.verified ? null : <span className="v2-visually-hidden"> (signature not verified)</span>}
+    <Link to={UPDATES_HREF} className="v2-updcard" onClick={onNavigate}>
+      <span className="v2-updcard__title">
+        <span className={cx('v2-updcard__dot', status.verified ? 'is-ok' : 'is-warn')} aria-hidden="true" />
+        Server update {status.latest}
       </span>
-      <span className="v2-upditem__go">Review</span>
+      <span className="v2-updcard__text">
+        {status.verified ? 'Verified release.' : 'Signature not verified.'} {how}
+      </span>
+      <span className="v2-updcard__action">Review update</span>
     </Link>
   );
 }
@@ -123,8 +137,8 @@ export interface SidebarProps {
 }
 
 /**
- * The left column: wordmark, main nav (30px items; hovering or focusing one starts loading its page), the one-line
- * server-update item, and the account row (theme and sign out in its menu).
+ * The left column: wordmark, main nav (30px items; hovering or focusing one starts loading its page), the
+ * server-update card when there is one, and the account row (theme and sign out in its menu).
  * The nav is the registry's `nav.item` slot (core's items are ext/core/nav.ts), filtered by the user's role.
  */
 export function Sidebar({ onNavigate, id, className }: SidebarProps) {
@@ -172,7 +186,7 @@ export function Sidebar({ onNavigate, id, className }: SidebarProps) {
         })}
       </div>
       <div className="v2-sidebar__foot">
-        <UpdateItem status={update} onNavigate={onNavigate} />
+        <UpdateCard status={update} onNavigate={onNavigate} />
         <AccountMenu />
       </div>
     </nav>

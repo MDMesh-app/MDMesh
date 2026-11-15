@@ -177,11 +177,12 @@ describe.each([
       .toBe(!shown);
   });
 
-  it('the sidebar’s update item names the release for every role (Settings says who may apply it)', async () => {
+  it('the sidebar’s update card says how long it takes only to those who may update', async () => {
     open('/settings', user);
     const nav = within(screen.getByRole('navigation', { name: 'Main' }));
-    const item = await nav.findByRole('link', { name: /Server 0\.3\.8 available/ });
-    expect(item.getAttribute('href')).toBe('/settings#updates');
+    const card = await nav.findByRole('link', { name: /Server update 0\.3\.8/ });
+    expect(card.getAttribute('href')).toBe('/settings#updates');
+    expect(card.textContent).toMatch(shown ? /About 2 minutes to apply\./ : /An admin can apply it\./);
   });
 });
 

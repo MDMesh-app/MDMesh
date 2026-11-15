@@ -107,50 +107,65 @@
   gap: var(--space-1);
 }
 
-/* One-line server update item */
-.v2 .v2-upditem,
-.v2 .v2-upditem:hover {
+/* Server-update card: a compact inset card above the account row. */
+.v2 .v2-updcard,
+.v2 .v2-updcard:hover {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  margin: 0 var(--space-1) var(--space-2);
+  padding: var(--space-3);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-sunken);
+  color: var(--text);
+  text-decoration: none;
+  transition: border-color var(--dur-micro) var(--ease);
+}
+.v2 .v2-updcard:hover {
+  border-color: var(--border-strong);
+}
+.v2 .v2-updcard__title {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  height: var(--nav-item);
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-control);
-  color: var(--text-2);
-  text-decoration: none;
-  font-size: var(--text-12);
-  line-height: var(--lh-12);
-  transition: background-color var(--dur-micro) var(--ease);
+  font-weight: var(--weight-medium);
 }
-.v2 .v2-upditem:hover {
-  background: var(--hover);
-  color: var(--ink);
-}
-.v2 .v2-upditem__dot {
+.v2 .v2-updcard__dot {
   flex: 0 0 auto;
-  width: var(--space-2);
-  height: var(--space-2);
-  margin-inline: var(--space-1);
+  width: var(--dot);
+  height: var(--dot);
   border-radius: var(--radius-full);
   background: var(--online);
 }
-.v2 .v2-upditem__dot.is-warn {
+.v2 .v2-updcard__dot.is-warn {
   background: var(--warn);
 }
-.v2 .v2-upditem__dot.is-alert {
+.v2 .v2-updcard__dot.is-alert {
   background: var(--alert);
 }
-.v2 .v2-upditem__text {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.v2 .v2-updcard__text {
+  font-size: var(--text-12);
+  line-height: var(--lh-12);
+  color: var(--secondary);
 }
-.v2 .v2-upditem__go {
-  flex: 0 0 auto;
-  font-weight: var(--weight-medium);
+/* The card is the link; its action is drawn as a small secondary button. */
+.v2 .v2-updcard__action {
+  display: inline-flex;
+  align-items: center;
+  height: var(--control-sm);
+  margin-top: var(--space-1);
+  padding: 0 var(--space-3);
+  border: var(--hairline) solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface);
   color: var(--ink);
+  font-weight: var(--weight-medium);
+  transition: background-color var(--dur-micro) var(--ease);
+}
+.v2 .v2-updcard:hover .v2-updcard__action {
+  background: var(--hover);
 }
 
 /* Account row: avatar initial, login, chevron; its menu holds the theme switch and Sign out. */
@@ -201,8 +216,7 @@
   color: var(--secondary);
 }
 @media (max-width: 860px) {
-  .v2 .v2-account,
-  .v2 .v2-upditem {
+  .v2 .v2-account {
     min-height: var(--touch);
   }
 }

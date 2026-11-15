@@ -86,19 +86,35 @@
   color: var(--secondary);
 }
 
-/* ---- Server card ---- */
+/* ---- Server card: the running version, then an update as an inset callout with its action ---- */
 .v2 .v2-ov-srv__run {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
+}
+.v2 .v2-ov-srv__panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-sunken);
+}
+.v2 .v2-ov-srv__title {
+  font-weight: var(--weight-medium);
 }
 .v2 .v2-ov-srv__line {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-1) var(--space-2);
-  color: var(--secondary);
+  gap: var(--space-2);
+  font-size: var(--text-12);
+  line-height: var(--lh-12);
+}
+.v2 .v2-ov-srv__line.is-ok {
+  color: var(--ok-ink);
 }
 .v2 .v2-ov-srv__line.is-warn {
   color: var(--warn-ink);
@@ -106,9 +122,8 @@
 .v2 .v2-ov-srv__line.is-alert {
   color: var(--alert-ink);
 }
-.v2 .v2-ov-srv__link {
-  font-weight: var(--weight-medium);
-  color: inherit;
+.v2 .v2-ov-srv__meta {
+  color: var(--secondary);
 }
 
 /* Phones: the attention table would scroll sideways; stack each row instead: device, reason, then time and action. */

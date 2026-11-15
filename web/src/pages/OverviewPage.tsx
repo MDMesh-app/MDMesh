@@ -11,12 +11,13 @@ import { CORE_ACTION_ACCESS } from '../ext/core/access';
 import { CoreOverviewProvider } from '../ext/core/overview';
 import { OverviewRows, OverviewStats } from '../ext/hosts/OverviewCards';
 import { usePermission } from '../ext/permissions';
-import { paths } from '../routes';
+import { paths, UPDATES_HREF } from '../routes';
 import {
   ActivityList,
   ActivityRow,
   AttentionList,
   Button,
+  ButtonAnchor,
   ButtonLink,
   Card,
   CardHeader,
@@ -65,7 +66,6 @@ import './OverviewPage.css';
 const ATTENTION_ROWS = 6;
 const ACTIVITY_ROWS = 8;
 /** Settings sections the Overview links to (Settings side-nav anchors). */
-const SETTINGS_UPDATES = `${paths.settings}#updates`;
 const SETTINGS_ROLLOUT = `${paths.settings}#agent-rollout`;
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
@@ -720,69 +720,84 @@ function RecentActivity({
 /* ---- Server ------------------------------------------------------------------------------------------------------- */
 
 /**
- * The server's version and update state as facts. The sidebar's update item is the one call to action for a new
- * release, so this card states it without a second button; a running or failed update links to its progress.
+ * The server's version, and an update as an inset callout with its action: "0.1.15 is available", its signature and
+ * channel, "Review update" (the sidebar's card says the same and links to the same place). A running or failed
+ * update shows its progress or the way to recovery instead.
  */
 function ServerCard({ status }: { status: UpdateStatus }) {
   const apply = status.apply;
   const active = !!apply && !isApplyTerminal(apply.phase);
   const failed = !!apply && (apply.phase === 'failed' || apply.phase === 'rolled_back');
+  const channel = status.channel ? ` · ${status.channel} channel` : '';
 
-  let line: ReactNode;
+  let panel: ReactNode = null;
   if (active && apply) {
-    line = (
-      <span className="v2-ov-srv__line is-warn">
-        <StatusDot tone="warn" />
-        Updating to {apply.toVersion}: {applyPhaseLabel(apply.phase)}
-        <Link to={SETTINGS_UPDATES} className="v2-ov-srv__link">
+    panel = (
+      <div className="v2-ov-srv__panel">
+        <span className="v2-ov-srv__title">Updating to {apply.toVersion}</span>
+        <span className="v2-ov-srv__line is-warn">
+          <StatusDot tone="warn" />
+          {applyPhaseLabel(apply.phase)}
+        </span>
+        <ButtonLink size="sm" to={UPDATES_HREF}>
           View progress
-        </Link>
-      </span>
+        </ButtonLink>
+      </div>
     );
   } else if (failed && apply) {
-    line = (
-      <span className="v2-ov-srv__line is-alert">
-        <StatusDot tone="alert" />
-        {apply.phase === 'rolled_back' ? 'Update rolled back' : 'Update failed'}
+    panel = (
+      <div className="v2-ov-srv__panel">
+        <span className="v2-ov-srv__title">{apply.phase === 'rolled_back' ? 'Update rolled back' : 'Update failed'}</span>
+        {apply.error ? <span className="v2-ov-srv__line is-alert">{apply.error}</span> : null}
         {/* /recovery is served outside the SPA. */}
-        <a href="/recovery" className="v2-ov-srv__link">
+        <ButtonAnchor size="sm" href="/recovery">
           Open recovery
-        </a>
-      </span>
+        </ButtonAnchor>
+      </div>
     );
   } else if (status.updateAvailable && status.latest) {
-    line = (
-      <span className="v2-ov-srv__line">
-        {status.latest} available{status.verified ? ', signature verified' : ', signature not verified'}
-      </span>
-    );
-  } else if (lastCheckError(status)) {
-    line = <span className="v2-ov-srv__line is-warn">The last update check failed.</span>;
-  } else {
-    line = (
-      <span className="v2-ov-srv__line">
-        Up to date
-        {status.checkedAt ? (
-          <>
-            {' · '}
-            <RelativeTime value={status.checkedAt} style="long" prefix="checked " />
-          </>
-        ) : null}
-      </span>
+    panel = (
+      <div className="v2-ov-srv__panel">
+        <span className="v2-ov-srv__title">{status.latest} is available</span>
+        {status.verified ? (
+          <span className="v2-ov-srv__line is-ok">
+            <IconCheck size={14} />
+            Signature verified{channel}
+          </span>
+        ) : (
+          <span className="v2-ov-srv__line is-warn">
+            <StatusDot tone="warn" />
+            Signature not verified{channel}
+          </span>
+        )}
+        <ButtonLink size="sm" to={UPDATES_HREF}>
+          Review update
+        </ButtonLink>
+      </div>
     );
   }
 
   return (
-    <Card gap={8} aria-labelledby="v2-ov-srv">
+    <Card gap={12} aria-labelledby="v2-ov-srv">
       <CardHeader title="Server" titleId="v2-ov-srv" />
       <div className="v2-ov-srv__run">
         <StatusDot tone="ok" size={8} />
-        <span>
-          Running <span className="v2-num">{status.current}</span>
-          {status.channel ? <span className="v2-secondary"> · {status.channel} channel</span> : null}
-        </span>
+        <span>Running {status.current}</span>
       </div>
-      {line}
+      {panel ??
+        (lastCheckError(status) ? (
+          <span className="v2-ov-srv__meta">The last update check failed.</span>
+        ) : (
+          <span className="v2-ov-srv__meta">
+            Up to date{channel}
+            {status.checkedAt ? (
+              <>
+                {' · '}
+                <RelativeTime value={status.checkedAt} style="long" prefix="checked " />
+              </>
+            ) : null}
+          </span>
+        ))}
     </Card>
   );
 }

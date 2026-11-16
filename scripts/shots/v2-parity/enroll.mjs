@@ -72,15 +72,15 @@ const tokenRoute = (body) => async (ctx) =>
 try {
   // 1. Stored default with saved Wi-Fi (the board's state).
   {
-    const { ctx, page, mints } = await open({ defaultCfg: '3' });
+    const { ctx, page, mints } = await open({ defaultCfg: '6' });
     if (SHOTS) {
       fs.mkdirSync(SHOTS, { recursive: true });
       await page.screenshot({ path: path.join(SHOTS, 'enroll-default-1440-light.png') });
     }
     const select = cfgSelect(page);
-    check('default configuration selected and marked', (await pickedValue(select)) === '3' && (await select.innerText()).includes('Field Ops (default)'), await select.innerText());
+    check('default configuration selected and marked', (await pickedValue(select)) === '6' && (await select.innerText()).includes('Field Ops (default)'), await select.innerText());
     check('server-setting option present', (await optionText(select, '')) === 'Use the server default');
-    check('first mint bound to the default configuration', mints[0]?.configurationId === 3, JSON.stringify(mints));
+    check('first mint bound to the default configuration', mints[0]?.configurationId === 6, JSON.stringify(mints));
     const sw = page.getByRole('switch', { name: 'Join Wi-Fi during setup' });
     check('Wi-Fi switch on from the configuration', (await sw.getAttribute('aria-checked')) === 'true');
     check('SSID filled from the configuration', (await page.getByLabel('Network name').inputValue()) === 'Field-Setup');
@@ -99,7 +99,7 @@ try {
     const before = mints.length;
     await page.getByRole('button', { name: 'New code' }).click();
     await page.waitForTimeout(300);
-    check('New code mints for the selected configuration', mints.length === before + 1 && mints.at(-1).configurationId === 3, JSON.stringify(mints.at(-1)));
+    check('New code mints for the selected configuration', mints.length === before + 1 && mints.at(-1).configurationId === 6, JSON.stringify(mints.at(-1)));
     check('New code keeps focus on the button', await page.evaluate(() => document.activeElement?.textContent?.includes('New code')));
 
     // Full screen.
@@ -172,10 +172,10 @@ try {
     check('summary names the server default', /Configuration\s*Server default/.test(await facts.innerText()), (await facts.innerText()).replace(/\s+/g, ' '));
 
     // A configuration without saved Wi-Fi clears the fields (as in the v0.3 console). Default has none (Retail Kiosk has one).
-    await pickOption(select, select, { value: '1' });
+    await pickOption(select, select, { value: '4' });
     await page.waitForTimeout(700);
     check('configuration without Wi-Fi turns the switch off', (await sw.getAttribute('aria-checked')) === 'false');
-    check('…and mints for it', mints.at(-1).configurationId === 1);
+    check('…and mints for it', mints.at(-1).configurationId === 4);
 
     // Token tab with arrow keys.
     await page.getByRole('tab', { name: 'QR code' }).focus();
@@ -194,7 +194,7 @@ try {
     const n1 = mints.length;
     await page.getByRole('button', { name: 'New token' }).click();
     await page.waitForTimeout(300);
-    check('New token mints for the selected configuration', mints.length === n1 + 1 && mints.at(-1).configurationId === 1);
+    check('New token mints for the selected configuration', mints.length === n1 + 1 && mints.at(-1).configurationId === 4);
     check('new token value differs', (await page.getByLabel('Enrollment token').inputValue()) !== tokenValue);
     await ctx.close();
   }
@@ -249,12 +249,12 @@ try {
   // 5. Configurations fail to load.
   {
     const { ctx, page } = await open({
-      defaultCfg: '3',
+      defaultCfg: '6',
       quietNet: true,
       setup: async (c) => c.route('**/rest/private/configurations/search', (r) => r.fulfill({ status: 500, body: '' })),
     });
     check('configurations load failure explained', await page.getByText('Couldn’t load configurations, so the code uses the server default.', { exact: false }).isVisible());
-    check('stored default kept by id when the list failed', (await pickedValue(cfgSelect(page))) === '3');
+    check('stored default kept by id when the list failed', (await pickedValue(cfgSelect(page))) === '6');
     await ctx.unroute('**/rest/private/configurations/search');
     await page.getByRole('button', { name: 'Retry' }).click();
     await page.waitForTimeout(400);
@@ -266,7 +266,7 @@ try {
   {
     let calls = 0;
     const { ctx, page, mints } = await open({
-      defaultCfg: '3',
+      defaultCfg: '6',
       setup: async (c) =>
         c.route('**/rest/private/agent/v1/token', async (route) => {
           const n = ++calls;
@@ -282,14 +282,14 @@ try {
     calls = 0;
     await page.getByRole('button', { name: 'New code' }).click(); // call 1: slow, for Field Ops
     await page.waitForTimeout(100);
-    await pickOption(page, 'Configuration', { value: '1' });
+    await pickOption(page, 'Configuration', { value: '4' });
     await page.waitForTimeout(800); // call 2 (Default) settles and lands first
     await page.getByRole('tab', { name: 'Token' }).click();
     const later = await page.getByLabel('Enrollment token').inputValue().catch(() => '');
     await page.waitForTimeout(1500); // the slow answer for Field Ops lands now
     const after = await page.getByLabel('Enrollment token').inputValue().catch(() => '');
     check('a late answer for the previous configuration is dropped', later === 'later-token-2' && after === 'later-token-2', `${later} → ${after}`);
-    check('…and the code is for the chosen configuration', mints.at(-1)?.configurationId === 1, JSON.stringify(mints));
+    check('…and the code is for the chosen configuration', mints.at(-1)?.configurationId === 4, JSON.stringify(mints));
     await ctx.close();
   }
 
@@ -297,7 +297,7 @@ try {
   // listbox changes the value per choice, not per arrow key: three choices in a row, as fast as the pointer goes; the
   // page times each change so the check knows they came closer together than the 300 ms the choice settles in.)
   {
-    const { ctx, page, mints } = await open({ defaultCfg: '3' });
+    const { ctx, page, mints } = await open({ defaultCfg: '6' });
     const select = cfgSelect(page);
     await select.evaluate((el) => {
       window.__changes = [];
@@ -322,9 +322,9 @@ try {
 
   // 9. EAP Wi-Fi saved on a configuration shows as EAP, not WPA.
   {
-    const rows = restData('GET', '/private/configurations/search').map((c) => (c.id === 3 ? { ...c, wifiSecurityType: 'EAP' } : c));
+    const rows = restData('GET', '/private/configurations/search').map((c) => (c.id === 6 ? { ...c, wifiSecurityType: 'EAP' } : c));
     const { ctx, page } = await open({
-      defaultCfg: '3',
+      defaultCfg: '6',
       setup: async (c) =>
         c.route('**/rest/private/configurations/search', (r) =>
           r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'OK', message: null, data: rows }) }),
@@ -343,7 +343,7 @@ try {
 
   // 6. Phone width: Enroll card first, no sideways scroll; dark keeps a white QR frame.
   {
-    const { ctx, page } = await open({ defaultCfg: '3', viewport: { width: 390, height: 844 }, theme: 'dark' });
+    const { ctx, page } = await open({ defaultCfg: '6', viewport: { width: 390, height: 844 }, theme: 'dark' });
     const order = await page.locator('.v2-enroll h2').allTextContents();
     check('phone: Enroll the device comes first', order[0] === 'Enroll the device', order.join(' | '));
     const sw = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

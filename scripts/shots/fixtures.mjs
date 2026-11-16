@@ -10,24 +10,30 @@ export function buildFixtures(now = Date.now()) {
     superAdmin: true, userRole: { superAdmin: true, permissions: [] },
   };
 
+  // As on a real server: the seed's three built-in templates at ids 1-3 (install/sql/hmdm_init.en.sql), then the
+  // configurations the admins made.
   const configurations = {
-    1: { id: 1, name: 'Default', qrCodeKey: 'def' },
-    2: { id: 2, name: 'Retail Kiosk', qrCodeKey: 'kio' },
-    3: { id: 3, name: 'Field Ops', qrCodeKey: 'fld' },
+    1: { id: 1, name: 'Managed Launcher', qrCodeKey: 'mgl' },
+    2: { id: 2, name: 'MIUI (Xiaomi Redmi)', qrCodeKey: 'miu' },
+    3: { id: 3, name: 'Background (Agent) Mode', qrCodeKey: 'bgm' },
+    4: { id: 4, name: 'Default', qrCodeKey: 'def' },
+    5: { id: 5, name: 'Retail Kiosk', qrCodeKey: 'kio' },
+    6: { id: 6, name: 'Field Ops', qrCodeKey: 'fld' },
   };
   const configList = [
-    { id: 1, name: 'Default' }, { id: 2, name: 'Retail Kiosk' }, { id: 3, name: 'Field Ops' },
+    { id: 1, name: 'Managed Launcher' }, { id: 2, name: 'MIUI (Xiaomi Redmi)' }, { id: 3, name: 'Background (Agent) Mode' },
+    { id: 4, name: 'Default' }, { id: 5, name: 'Retail Kiosk' }, { id: 6, name: 'Field Ops' },
   ];
 
   const devices = [
-    d(101, 'WH-SCAN-07', 1, 'Warehouse scanner', 'green', now - 2 * min, '13', false, ['Warehouse']),
-    d(102, 'KIOSK-FRONT', 2, 'Front-desk kiosk', 'green', now - 40 * 1000, '14', true, ['Retail']),
-    d(103, 'FIELD-1242', 3, 'Field tablet — North', 'yellow', now - 22 * min, '12', false, ['Field']),
-    d(104, 'KIOSK-CAFE', 2, 'Café menu board', 'green', now - 5 * min, '13', true, ['Retail']),
-    d(105, 'WH-SCAN-09', 1, 'Warehouse scanner', 'green', now - 3 * min, '13', false, ['Warehouse']),
-    d(106, 'FIELD-1247', 3, 'Field tablet — South', 'red', now - 3 * hour, '11', false, ['Field']),
-    d(107, 'LOBBY-PAD', 2, 'Lobby check-in', 'green', now - 90 * 1000, '14', true, ['Retail']),
-    d(108, 'WH-SCAN-11', 1, 'Warehouse scanner', 'grey', now - 6 * day, '12', false, ['Warehouse']),
+    d(101, 'WH-SCAN-07', 4, 'Warehouse scanner', 'green', now - 2 * min, '13', false, ['Warehouse']),
+    d(102, 'KIOSK-FRONT', 5, 'Front-desk kiosk', 'green', now - 40 * 1000, '14', true, ['Retail']),
+    d(103, 'FIELD-1242', 6, 'Field tablet — North', 'yellow', now - 22 * min, '12', false, ['Field']),
+    d(104, 'KIOSK-CAFE', 5, 'Café menu board', 'green', now - 5 * min, '13', true, ['Retail']),
+    d(105, 'WH-SCAN-09', 4, 'Warehouse scanner', 'green', now - 3 * min, '13', false, ['Warehouse']),
+    d(106, 'FIELD-1247', 6, 'Field tablet — South', 'red', now - 3 * hour, '11', false, ['Field']),
+    d(107, 'LOBBY-PAD', 5, 'Lobby check-in', 'green', now - 90 * 1000, '14', true, ['Retail']),
+    d(108, 'WH-SCAN-11', 4, 'Warehouse scanner', 'grey', now - 6 * day, '12', false, ['Warehouse']),
   ];
 
   function d(id, number, configurationId, description, statusCode, lastUpdate, androidVersion, kioskMode, groupNames) {
@@ -149,22 +155,22 @@ export function buildOverviewFixtures() {
     inSync: true, supported: true, lastCommand: { id: 30 + configurationId, status: 'done', detail: null },
   });
   const syncSummary = [
-    { configurationId: 1, total: 3, inSync: 2, outOfSync: 0, unsupported: 0, neverSeen: 1, deferred: 0 },
-    { configurationId: 2, total: 3, inSync: 1, outOfSync: 1, unsupported: 1, neverSeen: 0, deferred: 0 },
-    { configurationId: 3, total: 2, inSync: 1, outOfSync: 1, unsupported: 0, neverSeen: 0, deferred: 0 },
+    { configurationId: 4, total: 3, inSync: 2, outOfSync: 0, unsupported: 0, neverSeen: 1, deferred: 0 },
+    { configurationId: 5, total: 3, inSync: 1, outOfSync: 1, unsupported: 1, neverSeen: 0, deferred: 0 },
+    { configurationId: 6, total: 2, inSync: 1, outOfSync: 1, unsupported: 0, neverSeen: 0, deferred: 0 },
   ];
   const configStatus = {
-    'WH-SCAN-07': ok(1),
-    'WH-SCAN-09': ok(1),
-    'KIOSK-FRONT': ok(2),
+    'WH-SCAN-07': ok(4),
+    'WH-SCAN-09': ok(4),
+    'KIOSK-FRONT': ok(5),
     // Last config.apply failed (USB storage needs device owner).
     'KIOSK-CAFE': {
-      configurationId: 2, currentRevision: rev('b'), appliedRevision: rev('a'), appliedAt: Date.now() - 86_400_000,
+      configurationId: 5, currentRevision: rev('b'), appliedRevision: rev('a'), appliedAt: Date.now() - 86_400_000,
       inSync: false, supported: true,
       lastCommand: { id: 41, status: 'failed', detail: JSON.stringify({ revision: rev('b'), outcomes: { usbStorage: 'failed: needs device owner' } }) },
     },
     // Agent without config.apply.
-    'LOBBY-PAD': { configurationId: 2, currentRevision: rev('b'), appliedRevision: null, inSync: false, supported: false, lastCommand: null },
+    'LOBBY-PAD': { configurationId: 5, currentRevision: rev('b'), appliedRevision: null, inSync: false, supported: false, lastCommand: null },
   };
   return { syncSummary, configStatus };
 }
@@ -201,7 +207,7 @@ export function buildDeviceDetailFixtures(base, now = Date.now()) {
     identity: { ...base.telemetry.identity, imei: ['359021084472016'], imsi: [], iccid: [], phoneNumber: [] },
   };
   const configStatus = {
-    configurationId: 1, currentRevision: '8b04d7aa5c1e9f3b2d7a6c4e1f0b9a8d7c6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a',
+    configurationId: 4, currentRevision: '8b04d7aa5c1e9f3b2d7a6c4e1f0b9a8d7c6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a',
     appliedRevision: '3f9a2c1e7b6d5a4c3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d',
     appliedAt: now - 2 * hour, inSync: false, supported: true,
     lastCommand: {
@@ -224,7 +230,7 @@ export function buildDeviceDetailFixtures(base, now = Date.now()) {
     { id: 390, type: 'device.reboot', status: 'done', createdAt: now - 3 * day - 10 * min, completedAt: now - 3 * day },
     { id: 381, type: 'device.lockscreenMessage', status: 'done', createdAt: now - 4 * day, completedAt: now - 4 * day },
   ];
-  const configuration = { id: 1, name: 'Default', requestUpdates: 'WIFI', kioskMode: false, applications: [] };
+  const configuration = { id: 4, name: 'Default', requestUpdates: 'WIFI', kioskMode: false, applications: [] };
   return { telemetry, configStatus, commands, configuration };
 }
 
@@ -233,7 +239,7 @@ export function deviceDetailRest(method, p, dd) {
   if (method === 'GET' && /\/devices\/[^/]+\/telemetry$/.test(p)) return dd.telemetry;
   if (method === 'GET' && /\/devices\/[^/]+\/configStatus$/.test(p)) return dd.configStatus;
   if (method === 'GET' && /\/agent\/v1\/devices\/[^/]+\/commands/.test(p)) return dd.commands;
-  if (method === 'GET' && /\/private\/configurations\/1$/.test(p)) return dd.configuration; // device 101's configuration
+  if (method === 'GET' && /\/private\/configurations\/4$/.test(p)) return dd.configuration; // device 101's configuration
   if (method === 'POST' && /\/devices\/[^/]+\/syncApps$/.test(p)) return { queued: 2 };
   if (method === 'POST' && /\/agent\/v1\/devices\/[^/]+\/commands$/.test(p)) return { id: 413, status: 'pending' };
   return undefined;
@@ -251,9 +257,13 @@ export function configurationsFixtures(fx) {
     wifi: null, wifiRadio: null, bluetooth: null, camera: null, usbStorage: null, disableScreenshots: null,
     disableFactoryReset: null, disableSafeBoot: null, mainAppId: null, baseUrl: 'https://mdm.acme.example',
   };
+  const seed = (description) => ({ description, mainAppId: null, eventReceivingComponent: 'com.hmdm.launcher.AdminReceiver' });
   const full = {
-    1: { description: 'Warehouse scanners and shared handhelds. USB storage blocked, no location tracking.', usbStorage: false },
-    2: {
+    1: seed('Displays a set of application icons predefined by the administrator. To show or hide applications, use the Applications tab.'),
+    2: seed('Optimized for MIUI-running devices'),
+    3: { ...seed('Headwind MDM is running in the background, it is used to install apps and track the device status. User can do everything (permissive mode).') },
+    4: { description: 'Warehouse scanners and shared handhelds. USB storage blocked, no location tracking.', usbStorage: false },
+    5: {
       description: 'Front-desk and café screens pinned to Signage Player. Status bar shown, power menu locked.',
       kioskMode: true, password: '12345678', defaultKioskPin: true, mainAppId: 2710,
       kioskExit: null, kioskHome: null, kioskRecents: false, kioskNotifications: null, kioskSystemInfo: true,
@@ -263,14 +273,16 @@ export function configurationsFixtures(fx) {
       disableFactoryReset: true, disableSafeBoot: true,
       wifiSSID: 'acme-setup', wifiPassword: 'setup-2026', wifiSecurityType: 'WPA',
     },
-    3: { description: 'Field tablets on the road. GPS location reporting, screenshots blocked.', requestUpdates: 'GPS', disableScreenshots: true },
+    6: { description: 'Field tablets on the road. GPS location reporting, screenshots blocked.', requestUpdates: 'GPS', disableScreenshots: true },
   };
   const configs = fx.configList.map((c) => ({ ...base, ...c, qrCodeKey: fx.configurations[c.id]?.qrCodeKey, ...full[c.id] }));
   // configId → { appId: [action, showIcon, usedVersionId] }
   const picks = {
+    // Managed Launcher, as seeded: the agent and a scanner app on its home screen.
     1: { 1: [1, true, 16], 5: [1, true, 1130] },
-    2: { 6: [1, true, 2710], 3: [1, false, 6000], 4: [0, true, 100] },
-    3: { 2: [1, true, 420], 3: [1, true, 6000], 4: [1, true, 100] },
+    4: { 1: [1, true, 16], 5: [1, true, 1130] },
+    5: { 6: [1, true, 2710], 3: [1, false, 6000], 4: [0, true, 100] },
+    6: { 2: [1, true, 420], 3: [1, true, 6000], 4: [1, true, 100] },
   };
   const appsFor = (id) => fx.applications.map((a) => {
     const p = picks[id]?.[a.id];
@@ -279,9 +291,9 @@ export function configurationsFixtures(fx) {
     return { ...a, selected: !!p, action: p ? p[0] : 1, showIcon: p ? p[1] : true, usedVersionId: p ? p[2] : undefined, remove: false, ...layout };
   });
   const syncSummary = [
-    { configurationId: 1, total: 3, inSync: 2, outOfSync: 0, unsupported: 1, neverSeen: 0, deferred: 0 },
-    { configurationId: 2, total: 3, inSync: 3, outOfSync: 0, unsupported: 0, neverSeen: 0, deferred: 0 },
-    { configurationId: 3, total: 2, inSync: 1, outOfSync: 0, unsupported: 0, neverSeen: 1, deferred: 0 },
+    { configurationId: 4, total: 3, inSync: 2, outOfSync: 0, unsupported: 1, neverSeen: 0, deferred: 0 },
+    { configurationId: 5, total: 3, inSync: 3, outOfSync: 0, unsupported: 0, neverSeen: 0, deferred: 0 },
+    { configurationId: 6, total: 2, inSync: 1, outOfSync: 0, unsupported: 0, neverSeen: 1, deferred: 0 },
   ];
   // GET /configurations/{id} (getConfigurationByIdFull) adds what the /search rows lack: configuration files, app
   // settings and app usage parameters, with `applications` empty (the editor reads them from
@@ -304,9 +316,9 @@ export function configurationsFixtures(fx) {
   return { configs, appsFor, syncSummary, fullExtras };
 }
 // A configuration with a long app list (14), for the editor's search, On devices filter and sort. Only the parity
-// test that asks for it serves it (as configuration 4), so no other page or screenshot sees it.
+// test that asks for it serves it (as configuration 9), so no other page or screenshot sees it.
 export function manyAppsFixture(cfx) {
-  const id = 4;
+  const id = 9;
   // [id, name, pkg, version, action]: 8 Install, 3 Do not install, 3 Remove, not in name order.
   const rows = [
     [1, 'MDMesh Agent', 'com.lunacy.mdm.agent', '0.1.15', 1],
@@ -328,7 +340,7 @@ export function manyAppsFixture(cfx) {
     id: appId, name, pkg, version, type: 'app', selected: true, action, showIcon: true, usedVersionId: 1000 + appId,
     remove: false, screenOrder: appId, keyCode: null, bottom: false, longTap: false,
   }));
-  const [base] = cfx.configs;
+  const base = cfx.configs.find((c) => c.id === 4);
   const config = { ...base, ...cfx.fullExtras(id), id, name: 'Shared tablets', description: 'Tablets shared across shifts.', kioskMode: false };
   return { id, config, apps };
 }
@@ -343,13 +355,13 @@ export function buildAppsFixtures(base) {
   const fdroid = (pkg, vc) => `https://f-droid.org/repo/${pkg}_${vc}.apk`;
   // id, name, pkg, version, versionCode, url, hasApkHash, parts, used-in configuration ids
   const rows = [
-    [1, 'MDMesh Agent', 'com.lunacy.mdm.agent', '0.1.15', 16, `${host}/files/com.lunacy.mdm.agent.apk`, true, null, [1, 2, 3]],
-    [2, 'Field Ops', 'com.acme.fieldops', '4.2.0', 420, `${host}/files/com.acme.fieldops.apk`, false, null, [3]],
-    [3, 'Chrome', 'com.android.chrome', '120.0', 6000, 'https://dl.acme-cdn.example/chrome-120.apk', true, null, [2, 3]],
+    [1, 'MDMesh Agent', 'com.lunacy.mdm.agent', '0.1.15', 16, `${host}/files/com.lunacy.mdm.agent.apk`, true, null, [4, 5, 6]],
+    [2, 'Field Ops', 'com.acme.fieldops', '4.2.0', 420, `${host}/files/com.acme.fieldops.apk`, false, null, [6]],
+    [3, 'Chrome', 'com.android.chrome', '120.0', 6000, 'https://dl.acme-cdn.example/chrome-120.apk', true, null, [5, 6]],
     [4, 'Microsoft Teams', 'com.microsoft.teams', '1.0.0', 100, 'https://downloads.acme-cdn.example/teams-1.0.0.apk', false, null, []],
-    [5, 'Zebra DataWedge', 'com.symbol.datawedge', '11.3', 1130, undefined, false, 3, [1]],
-    [6, 'Signage Player', 'com.acme.signage', '2.7.1', 271, `${host}/files/com.acme.signage.apk`, false, null, [2]],
-    [7, 'Organic Maps', 'app.organicmaps', '2025.03.02', 25030200, fdroid('app.organicmaps', 25030200), true, null, [3]],
+    [5, 'Zebra DataWedge', 'com.symbol.datawedge', '11.3', 1130, undefined, false, 3, [4]],
+    [6, 'Signage Player', 'com.acme.signage', '2.7.1', 271, `${host}/files/com.acme.signage.apk`, false, null, [5]],
+    [7, 'Organic Maps', 'app.organicmaps', '2025.03.02', 25030200, fdroid('app.organicmaps', 25030200), true, null, [6]],
     [8, 'Binary Eye', 'de.markusfisch.android.binaryeye', '1.63.6', 135, fdroid('de.markusfisch.android.binaryeye', 135), true, null, []],
   ];
   const parts = (pkg, n) =>
@@ -408,7 +420,7 @@ export function appsRest(method, p, ax) {
 // (POST /private/agent/v1/token, 24 h TTL like the server).
 export function buildEnrollFixtures(fx, now = Date.now()) {
   const wifi = {
-    3: { wifiSSID: 'Field-Setup', wifiPassword: 'field-setup-2026', wifiSecurityType: 'WPA' },
+    6: { wifiSSID: 'Field-Setup', wifiPassword: 'field-setup-2026', wifiSecurityType: 'WPA' },
   };
   const configs = fx.configList.map((c) => ({ ...c, qrCodeKey: fx.configurations[c.id]?.qrCodeKey, ...(wifi[c.id] ?? {}) }));
   let n = 0;

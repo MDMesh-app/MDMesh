@@ -137,7 +137,7 @@ clearReqs();
 await dep2.getByRole('button', { name: 'Add to configuration' }).click();
 check('assign toast', await waitToast('Assigned to Default'));
 const link = reqs.find((r) => r.u.endsWith('/applications/configurations'));
-check('assign link body', !!link && /"configurationId":1,[^}]*"action":1/.test(link.b), link?.b?.slice(0, 300));
+check('assign link body', !!link && /"configurationId":4,[^}]*"action":1/.test(link.b), link?.b?.slice(0, 300));
 
 // Deploy error when nothing to install
 await page.route('**/rest/private/applications/2/versions', (r) => r.fulfill(ok([])));

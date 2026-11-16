@@ -44,6 +44,20 @@ describe('configurations list', () => {
     expect(card.getByRole('button', { name: 'More for Warehouse' })).toBeTruthy();
   });
 
+  it('has no kind filter with one kind only', async () => {
+    open([WAREHOUSE]);
+    await screen.findByRole('link', { name: 'Warehouse' });
+    expect(screen.queryByRole('radiogroup', { name: 'Show' })).toBeNull();
+  });
+
+  it('shows All, Custom and Built-in with both kinds, and tags a template Built-in', async () => {
+    open([WAREHOUSE, TEMPLATE]);
+    await screen.findByRole('link', { name: 'Warehouse' });
+    const show = screen.getByRole('radiogroup', { name: 'Show' });
+    expect(within(show).getAllByRole('radio').map((r) => r.textContent)).toEqual(['All 2', 'Custom 1', 'Built-in 1']);
+    expect(within(screen.getByRole('article', { name: 'MIUI (Xiaomi Redmi)' })).getByText('Built-in')).toBeTruthy();
+  });
+
   it('with no template, New configuration opens a blank one directly', async () => {
     open([WAREHOUSE]);
     await screen.findByRole('link', { name: 'Warehouse' });

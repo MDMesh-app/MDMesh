@@ -140,9 +140,9 @@ try {
     const opts = await p.getByRole('listbox').getByRole('option').allTextContents();
     await p.keyboard.press('Escape');
     await p.getByRole('listbox').waitFor({ state: 'detached', timeout: 2000 }).catch(() => {});
-    check('default configuration lists No default + sorted configurations', opts.join('|') === 'No default|Default|Field Ops|Retail Kiosk', opts.join('|'));
+    check('default configuration lists No default + sorted configurations', opts.join('|') === 'No default|Background (Agent) Mode|Default|Field Ops|Managed Launcher|MIUI (Xiaomi Redmi)|Retail Kiosk', opts.join('|'));
     await pickOption(p, defSel, 'Retail Kiosk');
-    check('choosing a default stores it per browser', (await p.evaluate(() => localStorage.getItem('mdmesh-default-config'))) === '2');
+    check('choosing a default stores it per browser', (await p.evaluate(() => localStorage.getItem('mdmesh-default-config'))) === '5');
     await pickOption(p, defSel, 'No default');
     check('No default clears it', (await p.evaluate(() => localStorage.getItem('mdmesh-default-config'))) === null);
     await p.click('#enrollment a:has-text("Enroll a device")');

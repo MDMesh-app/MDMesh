@@ -97,8 +97,8 @@ async function filterBy(page, label, value) {
   await page.getByRole('radio', { name: /^All/ }).click(); await page.waitForTimeout(150);
 
   // selects (in the Filter popover)
-  await filterBy(page, 'Configuration', '2');
-  ok('config filter by id + URL', (await rows()) === 3 && page.url().includes('config=2'), `${await rows()} ${page.url()}`);
+  await filterBy(page, 'Configuration', '5');
+  ok('config filter by id + URL', (await rows()) === 3 && page.url().includes('config=5'), `${await rows()} ${page.url()}`);
   await filterBy(page, 'Configuration', 'all');
   ok('config filter cleared from URL', !page.url().includes('config='));
   await filterBy(page, 'Android', '14');
@@ -282,11 +282,11 @@ async function filterBy(page, label, value) {
   await page.getByRole('button', { name: 'Change configuration' }).click();
   const move = page.getByRole('button', { name: 'Move' });
   ok('Move disabled until chosen', await move.isDisabled());
-  await pickOption(page.getByRole('dialog', { name: 'Change configuration' }), 'Configuration', { value: '3' });
+  await pickOption(page.getByRole('dialog', { name: 'Change configuration' }), 'Configuration', { value: '6' });
   await move.click();
   await page.waitForTimeout(400);
   const put = last(calls, /^\/private\/devices$/);
-  ok('PUT devices {ids, configurationId}', put && put.m === 'PUT' && JSON.parse(put.body).configurationId === 3 && JSON.parse(put.body).ids.length === 8);
+  ok('PUT devices {ids, configurationId}', put && put.m === 'PUT' && JSON.parse(put.body).configurationId === 6 && JSON.parse(put.body).ids.length === 8);
   ok('selection cleared after move', (await page.locator(BAR).count()) === 0);
 
   // bulk delete
@@ -297,13 +297,13 @@ async function filterBy(page, label, value) {
   ok('bulk delete', JSON.parse(last(calls, /deleteBulk$/).body).ids.join() === '108');
 
   // deep links: ?status=…&config=…, then Clear filters
-  await page.goto(`${base}/devices?status=offline&config=1`);
+  await page.goto(`${base}/devices?status=offline&config=4`);
   await page.waitForSelector('table[aria-label="Devices"] tbody tr');
   await page.waitForTimeout(600);
-  ok('?status=offline&config=1 → 1', (await rows()) === 1 && (await page.getByRole('radio', { name: /Offline/ }).getAttribute('aria-checked')) === 'true');
-  await page.goto(`${base}/devices?status=attention&config=1`);
+  ok('?status=offline&config=4 → 1', (await rows()) === 1 && (await page.getByRole('radio', { name: /Offline/ }).getAttribute('aria-checked')) === 'true');
+  await page.goto(`${base}/devices?status=attention&config=4`);
   await page.waitForTimeout(900);
-  ok('?status=attention&config=1 → empty', (await page.getByText('No devices match these filters').count()) === 1);
+  ok('?status=attention&config=4 → empty', (await page.getByText('No devices match these filters').count()) === 1);
   await page.getByRole('button', { name: 'Clear filters' }).click();
   await page.waitForTimeout(200);
   ok('Clear filters resets URL', (await rows()) === 8 && !page.url().includes('?'), page.url());

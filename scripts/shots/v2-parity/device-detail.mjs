@@ -178,7 +178,7 @@ const json = (route, data) => route.fulfill({ status: 200, contentType: 'applica
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const now = Date.now();
 const dev = (id, number, description, extra = {}) => ({
-  id, number, description, configurationId: 1, statusCode: 'green', lastUpdate: now - 60_000, androidVersion: '13',
+  id, number, description, configurationId: 4, statusCode: 'green', lastUpdate: now - 60_000, androidVersion: '13',
   kioskMode: false, enrollTime: now - 10 * 86_400_000, mdmMode: true, groups: [], ...extra,
 });
 /** Devices search + exact lookup answered from `list` (the search returns every row, as a substring search could). */
@@ -386,8 +386,8 @@ for (const slowLookup of [true, false]) {
 // Do-not-track lock (the configuration's requestUpdates unset or DONOTTRACK).
 {
   const t = await page();
-  await t.context().route('**/rest/private/configurations/1', (route) =>
-    json(route, { id: 1, name: 'Default', requestUpdates: 'DONOTTRACK', kioskMode: false, applications: [] }));
+  await t.context().route('**/rest/private/configurations/4', (route) =>
+    json(route, { id: 4, name: 'Default', requestUpdates: 'DONOTTRACK', kioskMode: false, applications: [] }));
   await t.context().route('**/rest/private/agent/v1/devices/*/locations*', (route) => json(route, []));
   await t.context().route('**/rest/private/agent/v1/devices/*/telemetry', (route) =>
     json(route, { hardware: { model: 'TC52' }, dynamic: {}, security: {}, identity: {} }));
@@ -427,7 +427,7 @@ for (const slowLookup of [true, false]) {
     ]));
   await ctx.route('**/rest/private/agent/v1/devices/*/state', (route) => json(route, { ...fx.state, updatedAt: 'soon' }));
   await ctx.route('**/rest/private/agent/v1/devices/*/configStatus', (route) =>
-    json(route, { configurationId: 1, currentRevision: 'aaaaaaaa1', appliedRevision: 'bbbbbbbb2', appliedAt: 1e20, inSync: false, supported: true }));
+    json(route, { configurationId: 4, currentRevision: 'aaaaaaaa1', appliedRevision: 'bbbbbbbb2', appliedAt: 1e20, inSync: false, supported: true }));
   await ctx.route('**/rest/private/agent/v1/devices/*/commands*', (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
     return json(route, [
@@ -467,8 +467,8 @@ const kioskPosts = (p) => p.posts.filter((x) => x.url.includes('/commands') && x
 const lastKioskPayload = (p) => { const l = kioskPosts(p).at(-1); return l ? JSON.parse(JSON.parse(l.body).payload) : null; };
 /** Configuration 1 and its app matrix (rows with `selected`, as /configurations/applications/{id} answers). */
 async function kioskConfig(p, cfg, apps) {
-  await p.context().route('**/rest/private/configurations/1', (r) => json(r, { id: 1, name: 'Default', applications: [], ...cfg }));
-  await p.context().route('**/rest/private/configurations/applications/1', (r) => json(r, apps.map((a) => ({ selected: true, action: 1, showIcon: true, ...a }))));
+  await p.context().route('**/rest/private/configurations/4', (r) => json(r, { id: 4, name: 'Default', applications: [], ...cfg }));
+  await p.context().route('**/rest/private/configurations/applications/4', (r) => json(r, apps.map((a) => ({ selected: true, action: 1, showIcon: true, ...a }))));
 }
 const returnBtn = (p) => p.getByRole('button', { name: 'Return to configured kiosk' });
 /** Waits (up to 8 s) for Return to configured kiosk to be offered and enabled (the configuration's apps load first). */
@@ -499,7 +499,7 @@ const kioskHint = (p) => p.locator('.v2-device-actions__row', { hasText: 'Kiosk 
   let kioskActive = false;
   await ctx.route('**/rest/private/agent/v1/devices/*/commands*', (r) => (r.request().method() === 'GET' ? json(r, hist) : r.fallback()));
   await ctx.route('**/rest/private/agent/v1/devices/*/state', (r) => json(r, { ...fx.state, agentVersion: '0.3.4', kioskActive, updatedAt: Date.now() }));
-  await ctx.route('**/rest/private/agent/v1/devices/*/configStatus', (r) => json(r, { configurationId: 1, currentRevision: 'a1', appliedRevision: 'a1', inSync: true, supported: true }));
+  await ctx.route('**/rest/private/agent/v1/devices/*/configStatus', (r) => json(r, { configurationId: 4, currentRevision: 'a1', appliedRevision: 'a1', inSync: true, supported: true }));
   await k.goto(`${base}/devices/WH-SCAN-07`);
   await heading(k);
   await returnEnabled(k);
@@ -596,8 +596,8 @@ const kioskHint = (p) => p.locator('.v2-device-actions__row', { hasText: 'Kiosk 
   allowNetErrors = true; // the apps 500 below logs "Failed to load resource"
   const k = await page();
   let fail = true;
-  await k.context().route('**/rest/private/configurations/1', (r) => json(r, { id: 1, name: 'Default', kioskMode: true, mainAppId: 505, applications: [] }));
-  await k.context().route('**/rest/private/configurations/applications/1', (r) =>
+  await k.context().route('**/rest/private/configurations/4', (r) => json(r, { id: 4, name: 'Default', kioskMode: true, mainAppId: 505, applications: [] }));
+  await k.context().route('**/rest/private/configurations/applications/4', (r) =>
     fail ? r.fulfill({ status: 500, body: 'boom' }) : json(r, [{ id: 5, usedVersionId: 505, pkg: 'com.acme.pos', name: 'POS', selected: true, action: 1, showIcon: true }]));
   await k.goto(`${base}/devices/WH-SCAN-07`);
   await heading(k);
@@ -622,7 +622,7 @@ const kioskHint = (p) => p.locator('.v2-device-actions__row', { hasText: 'Kiosk 
   const a = await page();
   await kioskConfig(a, { kioskMode: true, mainAppId: 505 }, [{ id: 5, usedVersionId: 505, pkg: 'com.acme.pos', name: 'POS' }]);
   await a.context().route('**/rest/private/agent/v1/devices/*/state', (r) => json(r, { ...fx.state, kioskActive: true, updatedAt: Date.now() }));
-  await a.context().route('**/rest/private/agent/v1/devices/*/configStatus', (r) => json(r, { configurationId: 1, currentRevision: 'a1', appliedRevision: 'a1', inSync: true, supported: true }));
+  await a.context().route('**/rest/private/agent/v1/devices/*/configStatus', (r) => json(r, { configurationId: 4, currentRevision: 'a1', appliedRevision: 'a1', inSync: true, supported: true }));
   await a.context().route('**/rest/private/agent/v1/devices/*/commands*', (r) => (r.request().method() === 'GET'
     ? json(r, [
         { id: 420, type: 'config.apply', status: 'done', completedAt: now - 60_000, detail: JSON.stringify({ revision: 'a1', outcomes: { kiosk: 'applied', location: 'applied' } }) },

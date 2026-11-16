@@ -6,7 +6,7 @@
 //   node capture.mjs --check    # runtime smoke for dependency bumps instead; writes nothing
 //
 // --check visits, against the same fixtures:
-//   * signed in: / /devices /devices/WH-SCAN-07 /configurations /configurations/1 /apps /enroll /settings — each
+//   * signed in: / /devices /devices/WH-SCAN-07 /configurations /configurations/4 /apps /enroll /settings — each
 //     must render the app shell (.v2-shell .v2-sidebar .v2-wordmark) and end on the requested path; /devices/101
 //     (an old id link) must move to the device's number, /devices/WH-SCAN-07; /no-such-page (catch-all) must stay put
 //     inside the shell ("Page not found"); the old bookmarks /dashboard, /configs and /v2/devices must land on /,
@@ -41,7 +41,7 @@ if (THEME !== 'light' && THEME !== 'dark') {
 
 // ---- --check: runtime smoke over every route (see header) ----
 const SHELL = '.v2-shell .v2-sidebar .v2-wordmark';
-const SIGNED_IN = ['/', '/devices', '/devices/WH-SCAN-07', '/configurations', '/configurations/1', '/apps', '/enroll', '/settings'];
+const SIGNED_IN = ['/', '/devices', '/devices/WH-SCAN-07', '/configurations', '/configurations/4', '/apps', '/enroll', '/settings'];
 const CHECK_GROUPS = [
   {
     user: fx.user,

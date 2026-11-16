@@ -14,17 +14,20 @@ const results = [];
 let failed = 0;
 
 const envelope = (data) => JSON.stringify({ status: 'OK', message: null, data });
+/** The seed's built-in templates (ids 1-3), alone: a fresh install with nothing made yet. */
 const seedConfigs = () =>
-  fx.configList.map((c) => ({
-    id: c.id,
-    name: ['Managed Launcher', 'Background (Agent) Mode', 'MIUI (Xiaomi Redmi)'][c.id - 1],
-    description: 'Built-in template',
-    kioskMode: c.id === 1,
-    password: c.id === 1 ? '12345678' : '',
-    defaultKioskPin: c.id === 1,
-    mainAppId: null,
-    requestUpdates: 'DONOTTRACK',
-  }));
+  fx.configList
+    .filter((c) => c.id <= 3)
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      description: 'Built-in template',
+      kioskMode: c.id === 1,
+      password: c.id === 1 ? '12345678' : '',
+      defaultKioskPin: c.id === 1,
+      mainAppId: null,
+      requestUpdates: 'DONOTTRACK',
+    }));
 
 const denied = JSON.stringify({ status: 'ERROR', message: 'error.permission.denied', data: null });
 const idOf = (r) => Number(new URL(r.request().url()).pathname.split('/').pop());
@@ -37,6 +40,12 @@ async function seedRoutes(context) {
     const row = rows.find((c) => c.id === idOf(r));
     return r.fulfill({ contentType: 'application/json', body: row ? envelope({ ...row, applications: [], files: [] }) : denied });
   });
+}
+
+/** The configurations the admins made, without the built-in templates (a server whose templates were deleted). */
+async function customRoutes(context) {
+  const rows = configurationsFixtures(fx).configs.filter((c) => c.id > 3);
+  await context.route('**/rest/private/configurations/search', (r) => r.fulfill({ contentType: 'application/json', body: envelope(rows) }));
 }
 
 /**
@@ -98,7 +107,7 @@ const appTableRows = (page) => page.locator('.v2-cfged-apps tbody tr');
 await test('list: cards, counts, sync line, badges', async (page) => {
   await go(page, '/configurations');
   const cards = cfgRows(page);
-  await assert.equal(await cards.count(), 3);
+  await assert.equal(await cards.count(), 6);
   const kiosk = cards.filter({ hasText: 'Retail Kiosk' });
   assert.match(await kiosk.innerText(), /Kiosk/);
   assert.match(await kiosk.innerText(), /Default PIN/);
@@ -116,11 +125,26 @@ await test('list: search, show filter, empty match', async (page) => {
   await page.getByRole('searchbox', { name: 'Search configurations' }).fill('café');
   assert.equal(await cfgRows(page).count(), 1);
   await page.getByRole('searchbox', { name: 'Search configurations' }).fill('');
-  await page.getByRole('radio', { name: /Built-in/ }).click();
+  // Built-in templates and the admins' own: the filter splits them.
+  const show = page.getByRole('radiogroup', { name: 'Show' });
+  assert.deepEqual(await show.getByRole('radio').allInnerTexts(), ['All 6', 'Custom 3', 'Built-in 3']);
+  await show.getByRole('radio', { name: /Built-in/ }).click();
+  assert.equal(await cfgRows(page).filter({ hasText: 'Built-in' }).count(), 3);
+  await show.getByRole('radio', { name: /Custom/ }).click();
+  assert.equal(await cfgRows(page).filter({ hasText: 'Built-in' }).count(), 0);
+  assert.equal(await cfgRows(page).count(), 3);
+  await page.getByRole('searchbox', { name: 'Search configurations' }).fill('zzz');
   await page.getByText('No configurations match').waitFor();
   await page.getByRole('button', { name: 'Show all configurations' }).click();
-  assert.equal(await cfgRows(page).count(), 3);
+  assert.equal(await cfgRows(page).count(), 6);
 });
+
+await test('list: with one kind only, no filter', async (page) => {
+  await go(page, '/configurations');
+  await cfgRows(page).first().waitFor();
+  assert.equal(await cfgRows(page).count(), 3);
+  assert.equal(await page.getByRole('radiogroup', { name: 'Show' }).count(), 0);
+}, customRoutes);
 
 await test('list: built-in rows (seed id + name) are view-only', async (page) => {
   await go(page, '/configurations');
@@ -155,9 +179,9 @@ await test('list: duplicate → copy → opens the copy', async (page, log) => {
   assert.equal(await dlg.getByRole('textbox', { name: 'New name' }).inputValue(), 'Field Ops copy');
   await dlg.getByRole('textbox', { name: 'New name' }).fill('Field Ops');
   await dlg.getByRole('button', { name: 'Duplicate' }).click();
-  await page.waitForURL('**/configurations/3');
+  await page.waitForURL('**/configurations/6');
   const body = JSON.parse(puts(log, '/configurations/copy')[0].body);
-  assert.equal(body.id, 3);
+  assert.equal(body.id, 6);
   assert.equal(body.name, 'Field Ops');
 });
 
@@ -169,10 +193,10 @@ await test('list: delete confirmation, refusal message', async (page, log) => {
   await dlg.getByRole('button', { name: 'Delete configuration' }).click();
   // The toast (its live-region copy reads "Delete failed. Devices still use…").
   await page.getByText('Devices still use this configuration.', { exact: true }).waitFor();
-  assert.ok(log.some((l) => l.method === 'DELETE' && l.path.endsWith('/configurations/3')));
+  assert.ok(log.some((l) => l.method === 'DELETE' && l.path.endsWith('/configurations/6')));
 }, async (context, log) => {
-  await context.route('**/rest/private/configurations/3', (r) =>
-    r.request().method() === 'DELETE' && log.push({ method: 'DELETE', path: '/private/configurations/3' })
+  await context.route('**/rest/private/configurations/6', (r) =>
+    r.request().method() === 'DELETE' && log.push({ method: 'DELETE', path: '/private/configurations/6' })
       ? r.fulfill({ contentType: 'application/json', body: JSON.stringify({ status: 'ERROR', message: 'error.configuration.device.reference.exists', data: null }) })
       : r.fallback());
 });
@@ -197,12 +221,12 @@ await test('list: no templates → New configuration opens a blank one directly'
   await page.getByRole('button', { name: 'New configuration', exact: true }).first().click();
   await page.waitForURL(/\/configurations\/new$/);
   assert.equal(await page.locator(DIALOG).count(), 0);
-});
+}, customRoutes);
 
 // ---------------------------------------------------------------- editor
 
 await test('editor: flag Allow/Block, null restored, Changed chip, nav count, discard', async (page) => {
-  await go(page, '/configurations/2');
+  await go(page, '/configurations/5');
   await appTableRows(page).nth(2).waitFor();
   assert.equal(await bar(page).count(), 0);
   const nav = page.getByRole('navigation', { name: 'Sections' });
@@ -224,7 +248,7 @@ await test('editor: flag Allow/Block, null restored, Changed chip, nav count, di
 });
 
 await test('editor: kiosk change asks, then saves the whole config and the list polls', async (page, log) => {
-  await go(page, '/configurations/2');
+  await go(page, '/configurations/5');
   await appTableRows(page).nth(2).waitFor();
   await group(page, 'Recents button').getByRole('radio', { name: 'Allow' }).click();
   await group(page, 'Location reporting').getByRole('radio', { name: 'GPS (fresh fix)' }).click();
@@ -236,7 +260,7 @@ await test('editor: kiosk change asks, then saves the whole config and the list 
   await dlg.getByRole('button', { name: 'Save and apply' }).click();
   await page.waitForURL(/\/configurations$/);
   const body = JSON.parse(puts(log, '/private/configurations').at(-1).body);
-  assert.equal(body.id, 2);
+  assert.equal(body.id, 5);
   assert.equal(body.kioskRecents, true);
   assert.equal(body.kioskHome, null);
   assert.equal(body.requestUpdates, 'GPS');
@@ -249,7 +273,7 @@ await test('editor: kiosk change asks, then saves the whole config and the list 
 });
 
 await test('editor: name required and duplicate name', async (page) => {
-  await go(page, '/configurations/3');
+  await go(page, '/configurations/6');
   await appTableRows(page).nth(2).waitFor();
   await page.getByRole('textbox', { name: /^Name/ }).fill('');
   await bar(page).getByRole('button', { name: 'Save and apply' }).click();
@@ -265,7 +289,7 @@ await test('editor: name required and duplicate name', async (page) => {
 });
 
 await test('editor: default PIN warning from the server flag, PIN show/hide', async (page) => {
-  await go(page, '/configurations/2');
+  await go(page, '/configurations/5');
   await page.getByText('This is a well-known default PIN: anyone who knows it can leave kiosk.').waitFor();
   const pin = page.getByRole('textbox', { name: 'Kiosk exit PIN' }).or(page.locator('input[aria-labelledby$="-password"]'));
   assert.equal(await pin.first().getAttribute('type'), 'password');
@@ -278,7 +302,7 @@ await test('editor: default PIN warning from the server flag, PIN show/hide', as
 });
 
 await test('editor: apps — add, action, show in kiosk clears main app, kiosk off hides column', async (page) => {
-  await go(page, '/configurations/2');
+  await go(page, '/configurations/5');
   const rows = appTableRows(page);
   await rows.nth(2).waitFor();
   const main = page.getByRole('combobox', { name: 'Main app' });
@@ -309,7 +333,7 @@ await test('editor: apps — add, action, show in kiosk clears main app, kiosk o
 });
 
 await test('editor: Legacy launcher settings section (was Headwind only)', async (page) => {
-  await go(page, '/configurations/1');
+  await go(page, '/configurations/4');
   const btn = page.getByRole('button', { name: 'Show settings' });
   assert.equal(await btn.getAttribute('aria-expanded'), 'false');
   await btn.click();
@@ -321,17 +345,17 @@ await test('editor: Legacy launcher settings section (was Headwind only)', async
 await test('editor: leave guard on links and Back', async (page) => {
   await go(page, '/configurations');
   await cfgRow(page, 'Field Ops').getByRole('link', { name: 'Field Ops', exact: true }).click();
-  await page.waitForURL('**/configurations/3');
+  await page.waitForURL('**/configurations/6');
   await appTableRows(page).nth(2).waitFor();
   await group(page, 'Bluetooth').getByRole('radio', { name: 'Block' }).click();
   await page.getByRole('link', { name: 'Devices', exact: false }).first().click();
   const dlg = page.getByRole('alertdialog', { name: 'Leave without saving?' });
   await dlg.getByRole('button', { name: 'Keep editing' }).click();
-  assert.match(page.url(), /\/configurations\/3$/);
+  assert.match(page.url(), /\/configurations\/6$/);
   await page.goBack();
   await dlg.waitFor();
   await dlg.getByRole('button', { name: 'Keep editing' }).click();
-  assert.match(page.url(), /\/configurations\/3$/);
+  assert.match(page.url(), /\/configurations\/6$/);
   assert.match(await bar(page).innerText(), /1 unsaved change/);
   await page.goBack();
   await dlg.getByRole('button', { name: 'Leave without saving' }).click();
@@ -371,7 +395,7 @@ await test('editor: guard — undo by hand, skip link, first entry, save then Ba
 
 await test('editor: guard — Back on the tab\'s first entry gets the browser\'s leave prompt', async (page) => {
   // Back from the tab's first entry leaves the console, which only the browser can hold (beforeunload).
-  await go(page, '/configurations/3');
+  await go(page, '/configurations/6');
   await appTableRows(page).nth(2).waitFor();
   await group(page, 'Bluetooth').getByRole('radio', { name: 'Block' }).click();
   await page.waitForTimeout(200);
@@ -383,7 +407,7 @@ await test('editor: guard — Back on the tab\'s first entry gets the browser\'s
   });
   await page.goBack({ timeout: 3000 }).catch(() => undefined);
   assert.equal(asked, 'beforeunload');
-  assert.match(page.url(), /\/configurations\/3$/);
+  assert.match(page.url(), /\/configurations\/6$/);
   assert.match(await bar(page).innerText(), /1 unsaved change/);
 });
 
@@ -431,13 +455,13 @@ await test('editor: blank new configuration', async (page, log) => {
 });
 
 await test('editor: assigned apps fail to load → save blocked, Retry', async (page) => {
-  await go(page, '/configurations/2');
+  await go(page, '/configurations/5');
   await page.getByText('Couldn’t load this configuration’s assigned apps.').waitFor();
   await group(page, 'Bluetooth').getByRole('radio', { name: 'Allow' }).click();
   assert.ok(await bar(page).getByRole('button', { name: 'Save and apply' }).isDisabled());
   assert.match(await bar(page).innerText(), /Saving is off until the assigned apps load/);
 }, async (context) => {
-  await context.route('**/rest/private/configurations/applications/2', (r) => r.fulfill({ status: 500, body: '' }));
+  await context.route('**/rest/private/configurations/applications/5', (r) => r.fulfill({ status: 500, body: '' }));
 });
 
 await test('editor: unknown id', async (page) => {
@@ -447,7 +471,7 @@ await test('editor: unknown id', async (page) => {
 
 await test('editor: 390px has no horizontal page scroll', async (page) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await go(page, '/configurations/2');
+  await go(page, '/configurations/5');
   await appTableRows(page).nth(2).waitFor();
   const w = await page.evaluate(() => document.documentElement.scrollWidth);
   assert.ok(w <= 390, `scrollWidth ${w}`);
@@ -464,9 +488,9 @@ const assignedFrom = (rows) =>
   rows.filter((a) => a.selected).map(({ selected, ...rest }) => JSON.parse(JSON.stringify(rest)));
 
 await test('editor: save sends back the full configuration plus the edits (files, app settings, unknown key)', async (page, log) => {
-  const full = page.waitForResponse((r) => /\/rest\/private\/configurations\/3$/.test(r.url()) && r.request().method() === 'GET');
-  const appRows = page.waitForResponse((r) => /\/rest\/private\/configurations\/applications\/3$/.test(r.url()));
-  await go(page, '/configurations/3');
+  const full = page.waitForResponse((r) => /\/rest\/private\/configurations\/6$/.test(r.url()) && r.request().method() === 'GET');
+  const appRows = page.waitForResponse((r) => /\/rest\/private\/configurations\/applications\/6$/.test(r.url()));
+  await go(page, '/configurations/6');
   const loaded = (await (await full).json()).data;
   const assigned = assignedFrom((await (await appRows).json()).data);
   // the fixture really carries what /search lacks
@@ -497,7 +521,7 @@ await test('editor: save sends back the full configuration plus the edits (files
 });
 
 await test('editor: Duplicate is the server copy and opens it (unsaved edits not copied, guard asks)', async (page, log) => {
-  await go(page, '/configurations/3');
+  await go(page, '/configurations/6');
   await appTableRows(page).nth(2).waitFor();
   await group(page, 'Bluetooth').getByRole('radio', { name: 'Block' }).click();
   await page.getByRole('button', { name: 'Duplicate', exact: true }).click();
@@ -514,7 +538,7 @@ await test('editor: Duplicate is the server copy and opens it (unsaved edits not
   await page.waitForURL('**/configurations/8');
   const copies = log.filter((l) => l.path === '/private/configurations/copy');
   assert.equal(copies.length, 1);
-  assert.deepEqual(JSON.parse(copies[0].body), { id: 3, name: 'Field Ops South', description: 'Field tablets on the road. GPS location reporting, screenshots blocked.' });
+  assert.deepEqual(JSON.parse(copies[0].body), { id: 6, name: 'Field Ops South', description: 'Field tablets on the road. GPS location reporting, screenshots blocked.' });
   assert.equal(puts(log, '/private/configurations').length, 0);
 }, async (context, log) => {
   let copied = false;
@@ -530,7 +554,7 @@ await test('editor: Duplicate is the server copy and opens it (unsaved edits not
 });
 
 await test('editor: a removed or uninstalled main app is cleared', async (page) => {
-  await go(page, '/configurations/2');
+  await go(page, '/configurations/5');
   await appTableRows(page).nth(2).waitFor();
   const main = page.getByRole('combobox', { name: 'Main app' });
   assert.equal(await pickedValue(main), '2710');
@@ -543,7 +567,7 @@ await test('editor: a removed or uninstalled main app is cleared', async (page) 
 });
 
 await test('editor: app library fails → error with Retry, Add apps off; Retry recovers', async (page) => {
-  await go(page, '/configurations/3');
+  await go(page, '/configurations/6');
   await appTableRows(page).nth(2).waitFor();
   const callout = page.getByText('Couldn’t load the app library');
   await callout.waitFor();
@@ -598,15 +622,15 @@ await test('list: per-configuration app requests are capped at 4 in flight; dele
 });
 
 await test('editor: save bar when agents are too old for configuration sync', async (page) => {
-  // configuration 1: 1 of 3 devices has an agent too old
-  await go(page, '/configurations/1');
+  // configuration 4 (Default): 1 of 3 devices has an agent too old
+  await go(page, '/configurations/4');
   await appTableRows(page).nth(1).waitFor();
   await group(page, 'Bluetooth').getByRole('radio', { name: 'Block' }).click();
   assert.match(await bar(page).innerText(), /pick up the changes on their next sync, except 1 device that has an agent too old/);
   await bar(page).getByRole('button', { name: 'Discard' }).click();
   await bar(page).waitFor({ state: 'detached' });
-  // configuration 3: every device too old (overridden)
-  await go(page, '/configurations/3');
+  // configuration 6 (Field Ops): every device too old (overridden)
+  await go(page, '/configurations/6');
   await appTableRows(page).nth(2).waitFor();
   await group(page, 'Bluetooth').getByRole('radio', { name: 'Block' }).click();
   assert.match(await bar(page).innerText(), /All 2 devices using this configuration have agents too old for configuration sync, so they do not pick up changes/);
@@ -614,8 +638,8 @@ await test('editor: save bar when agents are too old for configuration sync', as
   await context.route('**/rest/private/agent/v1/configurations/syncSummary', (r) => r.fulfill({
     contentType: 'application/json',
     body: envelope([
-      { configurationId: 1, total: 3, inSync: 2, outOfSync: 0, unsupported: 1, neverSeen: 0, deferred: 0 },
-      { configurationId: 3, total: 2, inSync: 0, outOfSync: 0, unsupported: 2, neverSeen: 0, deferred: 0 },
+      { configurationId: 4, total: 3, inSync: 2, outOfSync: 0, unsupported: 1, neverSeen: 0, deferred: 0 },
+      { configurationId: 6, total: 2, inSync: 0, outOfSync: 0, unsupported: 2, neverSeen: 0, deferred: 0 },
     ]),
   }));
 });
@@ -630,7 +654,7 @@ await test('editor: ids like 1e1 or 0x2 are not found', async (page, log) => {
 
 await test('editor: 390px stacks the app rows (select and Remove on screen)', async (page) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await go(page, '/configurations/2');
+  await go(page, '/configurations/5');
   await appTableRows(page).nth(2).waitFor();
   const box = page.locator('.v2-cfged-apps');
   const [sw, cw] = await box.evaluate((el) => [el.scrollWidth, el.clientWidth]);
@@ -649,9 +673,9 @@ await test('editor: 390px stacks the app rows (select and Remove on screen)', as
 const many = manyAppsFixture(configurationsFixtures(fx));
 /** Configuration 4, with 14 assigned apps. */
 async function manyRoutes(context) {
-  await context.route(/\/rest\/private\/configurations\/4$/, (r) =>
+  await context.route(/\/rest\/private\/configurations\/9$/, (r) =>
     r.request().method() === 'GET' ? r.fulfill({ contentType: 'application/json', body: envelope(many.config) }) : r.fallback());
-  await context.route(/\/rest\/private\/configurations\/applications\/4$/, (r) =>
+  await context.route(/\/rest\/private\/configurations\/applications\/9$/, (r) =>
     r.fulfill({ contentType: 'application/json', body: envelope(many.apps) }));
 }
 const appNames = (page) => page.locator('.v2-cfged-apps .v2-cfged-app__name').evaluateAll((els) => els.map((e) => e.firstChild.textContent));
@@ -659,7 +683,7 @@ const appSearch = (page) => page.getByRole('searchbox', { name: 'Search assigned
 const onDevices = (page) => page.getByRole('radiogroup', { name: 'On devices', exact: true });
 
 await test('editor: a short app list has no search, filter or sort', async (page) => {
-  await go(page, '/configurations/2');
+  await go(page, '/configurations/5');
   await appTableRows(page).nth(2).waitFor();
   assert.equal(await appSearch(page).count(), 0);
   assert.equal(await onDevices(page).count(), 0);
@@ -667,7 +691,7 @@ await test('editor: a short app list has no search, filter or sort', async (page
 });
 
 await test('editor: a long app list — search, On devices filter with counts, sort, no match', async (page) => {
-  await go(page, '/configurations/4');
+  await go(page, '/configurations/9');
   await appSearch(page).waitFor();
   assert.deepEqual(await onDevices(page).getByRole('radio').allInnerTexts(), ['All 14', 'Install 8', 'Do not install 3', 'Remove 3']);
   const names = await appNames(page);
@@ -689,7 +713,7 @@ await test('editor: a long app list — search, On devices filter with counts, s
 }, manyRoutes);
 
 await test('editor: a long app list — an edit under a filter stays visible and saves every app', async (page, log) => {
-  await go(page, '/configurations/4');
+  await go(page, '/configurations/9');
   await appSearch(page).waitFor();
   await onDevices(page).getByRole('radio', { name: /^Install/ }).click();
   await pickOption(page, 'What happens to Chrome', { value: '2' });
@@ -706,7 +730,7 @@ await test('editor: a long app list — an edit under a filter stays visible and
 
 await test('editor: a long app list at 390px — controls on screen, no horizontal page scroll', async (page) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await go(page, '/configurations/4');
+  await go(page, '/configurations/9');
   await appSearch(page).waitFor();
   for (const el of [appSearch(page), onDevices(page), page.getByRole('combobox', { name: 'Sort' })]) {
     const b = await el.boundingBox();

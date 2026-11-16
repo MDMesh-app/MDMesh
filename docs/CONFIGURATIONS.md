@@ -15,7 +15,8 @@ for each setting.
 4. Set the apps and settings (below), then select **Create configuration**.
 
 The built-in templates (marked **Built-in**) are view only. Use **Duplicate to edit** to make an editable copy. Any
-configuration can be copied with **Duplicate**; devices stay on the configuration they had.
+configuration can be copied with **Duplicate**; devices stay on the configuration they had. When the list has both
+kinds, **All**, **Custom** (made on this server) and **Built-in** filter it.
 
 **Delete** is refused while devices still use the configuration: move them to another one first.
 

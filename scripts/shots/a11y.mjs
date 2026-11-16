@@ -101,12 +101,12 @@ const KIOSK_IMAGE = (() => {
   const cfx = configurationsFixtures(fx);
   const config = {
     // A launcher kiosk (no main app), so the preview draws the app grid, its plates and the Exit button.
-    ...cfx.configs.find((c) => c.id === 2), ...cfx.fullExtras(2), mainAppId: null, kioskExit: true,
+    ...cfx.configs.find((c) => c.id === 5), ...cfx.fullExtras(5), mainAppId: null, kioskExit: true,
     backgroundImageFileId: info.fileId, backgroundImageUrl: url, backgroundImageSha256: info.sha256,
   };
   return {
     rest: {
-      '**/rest/private/configurations/2': () => env(config),
+      '**/rest/private/configurations/5': () => env(config),
       '**/rest/private/configurations/backgroundImage/77': () => env(info),
       '**/rest/private/configurations/backgroundImages?*': () => env({
         items: [
@@ -246,12 +246,12 @@ const STATES = [
       await click(p, 'menuitem', /Delete/);
     },
   },
-  { name: 'config-editor', route: '/configurations/1' },
+  { name: 'config-editor', route: '/configurations/4' },
   // The kiosk background image (#193): the image's facts, the focal point picker (focused) and the preview (open by
   // default) as a phone; the preview as a landscape tablet; and the uploaded-images dialog.
   {
     name: 'config-editor-kiosk-image',
-    route: '/configurations/2',
+    route: '/configurations/5',
     ...KIOSK_IMAGE,
     setup: async (p) => {
       await p.getByRole('img', { name: /^Current kiosk background: lobby\.png/ }).waitFor({ timeout: 8000 });
@@ -261,7 +261,7 @@ const STATES = [
   },
   {
     name: 'config-editor-kiosk-preview',
-    route: '/configurations/2',
+    route: '/configurations/5',
     ...KIOSK_IMAGE,
     setup: async (p) => {
       // The preview is open by default: show it as a tablet, turned to landscape, measured (the readout says the
@@ -277,7 +277,7 @@ const STATES = [
   },
   {
     name: 'config-editor-kiosk-gallery',
-    route: '/configurations/2',
+    route: '/configurations/5',
     ...KIOSK_IMAGE,
     setup: async (p) => {
       await click(p, 'button', 'Choose from uploaded');
@@ -286,7 +286,7 @@ const STATES = [
   },
   {
     name: 'config-editor-dirty',
-    route: '/configurations/1',
+    route: '/configurations/4',
     setup: async (p) => {
       await p.getByRole('radiogroup', { name: 'Bluetooth' }).getByRole('radio', { name: 'Block' }).click();
       await p.getByRole('region', { name: 'Unsaved changes' }).waitFor({ timeout: 5000 });
@@ -294,12 +294,12 @@ const STATES = [
   },
   {
     name: 'config-editor-add-apps',
-    route: '/configurations/1',
+    route: '/configurations/4',
     setup: (p) => click(p, 'button', 'Add apps'),
   },
   {
     name: 'config-editor-leave-guard',
-    route: '/configurations/1',
+    route: '/configurations/4',
     mobile: false,
     setup: async (p) => {
       await p.getByRole('radiogroup', { name: 'Bluetooth' }).getByRole('radio', { name: 'Block' }).click();
@@ -600,8 +600,8 @@ async function keyboardWalk(browser, base) {
     ['devices', '/devices', fx.user],
     ['device', '/devices/WH-SCAN-07', fx.user],
     ['configurations', '/configurations', fx.user],
-    ['config-editor', '/configurations/1', fx.user],
-    ['config-editor-kiosk', '/configurations/2', fx.user, KIOSK_IMAGE],
+    ['config-editor', '/configurations/4', fx.user],
+    ['config-editor-kiosk', '/configurations/5', fx.user, KIOSK_IMAGE],
     ['apps', '/apps', fx.user],
     ['enroll', '/enroll', fx.user],
     ['settings', '/settings', fx.user],
@@ -684,7 +684,7 @@ async function keyboardWalk(browser, base) {
     ['/apps', 'button', 'Deploy Chrome'],
     ['/enroll', 'button', 'Full screen'],
     ['/settings', 'button', /Change password/],
-    ['/configurations/2', 'button', 'Choose from uploaded', POPUP, KIOSK_IMAGE],
+    ['/configurations/5', 'button', 'Choose from uploaded', POPUP, KIOSK_IMAGE],
     // A menu item that opens a dialog: closing the dialog (Escape, or its Cancel) returns focus to the menu's trigger.
     ['/devices', 'button', 'More actions for KIOSK-FRONT', DIALOG, {}, { item: 'Change configuration' }],
     ['/configurations', 'button', 'More for Default', DIALOG, {}, { item: 'Delete', close: 'Cancel' }],

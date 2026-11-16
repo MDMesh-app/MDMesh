@@ -26,7 +26,7 @@ async function page(opts = {}, setup) {
 {
   const { ctx, p, errors } = await page({}, async (ctx) => {
     // Make KIOSK-FRONT out of sync so a "Sync now" row exists; record sync posts.
-    await ctx.route('**/rest/private/agent/v1/devices/KIOSK-FRONT/configStatus', (r) => r.fulfill({ contentType: 'application/json', body: ok({ configurationId: 2, currentRevision: 'b', appliedRevision: 'a', inSync: false, supported: true, lastCommand: { id: 5, status: 'done' } }) }));
+    await ctx.route('**/rest/private/agent/v1/devices/KIOSK-FRONT/configStatus', (r) => r.fulfill({ contentType: 'application/json', body: ok({ configurationId: 5, currentRevision: 'b', appliedRevision: 'a', inSync: false, supported: true, lastCommand: { id: 5, status: 'done' } }) }));
   });
   const text = await p.locator('#v2-main').innerText();
   check('title', (await p.title()).startsWith('Overview'));
@@ -46,7 +46,7 @@ async function page(opts = {}, setup) {
   check('offline rows', (await p.locator('td.v2-attn__reason', { hasText: 'Offline' }).count()) === 3);
   check('device link', (await p.getByRole('link', { name: /Café menu board/ }).first().getAttribute('href')) === '/devices/KIOSK-CAFE');
   check('by config', /Retail Kiosk\s*3\s*1 in sync · 1 out of sync · 1 agent too old/.test(text) && /Default\s*3\s*2 in sync · 1 not reported/.test(text));
-  check('config link', (await p.getByRole('link', { name: 'Retail Kiosk' }).getAttribute('href')) === '/configurations/2');
+  check('config link', (await p.getByRole('link', { name: 'Retail Kiosk' }).getAttribute('href')) === '/configurations/5');
   check('manage', (await p.getByRole('link', { name: 'Manage' }).getAttribute('href')) === '/configurations');
   check('server', /Running 0\.1\.14/.test(text) && /0\.1\.15 is available/.test(text) && /Signature verified · stable channel/.test(text));
   check('review update', (await p.locator('#v2-main').getByRole('link', { name: 'Review update' }).getAttribute('href')) === '/settings#updates');
@@ -129,7 +129,7 @@ async function page(opts = {}, setup) {
   const devs = fx.devices.map((d) => ({ ...d, lastUpdate: now - 60_000 }));
   const { ctx, p } = await page({}, async (ctx) => {
     await ctx.route('**/rest/private/devices/search', (r) => r.fulfill({ contentType: 'application/json', body: ok({ configurations: fx.configurations, devices: { items: devs, totalItemsCount: devs.length } }) }));
-    await ctx.route('**/configurations/syncSummary', (r) => r.fulfill({ contentType: 'application/json', body: ok([{ configurationId: 1, total: 3, inSync: 3, outOfSync: 0, unsupported: 0, neverSeen: 0 }, { configurationId: 2, total: 3, inSync: 3, outOfSync: 0, unsupported: 0, neverSeen: 0 }, { configurationId: 3, total: 2, inSync: 2, outOfSync: 0, unsupported: 0, neverSeen: 0 }]) }));
+    await ctx.route('**/configurations/syncSummary', (r) => r.fulfill({ contentType: 'application/json', body: ok([{ configurationId: 4, total: 3, inSync: 3, outOfSync: 0, unsupported: 0, neverSeen: 0 }, { configurationId: 5, total: 3, inSync: 3, outOfSync: 0, unsupported: 0, neverSeen: 0 }, { configurationId: 6, total: 2, inSync: 2, outOfSync: 0, unsupported: 0, neverSeen: 0 }]) }));
   });
   const t = await p.locator('#v2-main').innerText();
   check('healthy subtitle', /Every device is online and in sync\./.test(t));

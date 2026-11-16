@@ -4,12 +4,27 @@ import { LinkButton } from '../ui/Button';
 import { IconChevronDown } from '../ui/icons';
 import { parseInline, type Block, type Inline, type ListItem, type Notes, type NotesSection } from './changelog';
 
+/**
+ * Which links render as links. `bundled`: the CHANGELOG built into this console (trusted): http(s) and paths in the
+ * console. `feed`: text from the release feed at runtime (Settings' notes): https only, as updateStatus.ts's
+ * safeReleaseUrl; any other link shows as its label.
+ */
+export type LinkPolicy = 'bundled' | 'feed';
+
 /** Inline marks as React elements (text is always text: nothing here is HTML). */
-export function InlineText({ text, onNavigate }: { text: string; onNavigate: () => void }) {
-  return <>{renderInline(parseInline(text), onNavigate)}</>;
+export function InlineText({
+  text,
+  onNavigate,
+  links = 'bundled',
+}: {
+  text: string;
+  onNavigate: () => void;
+  links?: LinkPolicy;
+}) {
+  return <>{renderInline(parseInline(text), onNavigate, links)}</>;
 }
 
-function renderInline(nodes: Inline[], onNavigate: () => void): ReactNode[] {
+function renderInline(nodes: Inline[], onNavigate: () => void, links: LinkPolicy = 'bundled'): ReactNode[] {
   return nodes.map((n, i) => {
     switch (n.kind) {
       case 'text':
@@ -21,8 +36,11 @@ function renderInline(nodes: Inline[], onNavigate: () => void): ReactNode[] {
           </code>
         );
       case 'strong':
-        return <strong key={i}>{renderInline(n.children, onNavigate)}</strong>;
+        return <strong key={i}>{renderInline(n.children, onNavigate, links)}</strong>;
       case 'link':
+        if (links === 'feed' && (n.internal || !/^https:/i.test(n.href))) {
+          return <span key={i}>{renderInline(n.children, onNavigate, links)}</span>;
+        }
         return n.internal ? (
           <Link
             key={i}
@@ -32,11 +50,11 @@ function renderInline(nodes: Inline[], onNavigate: () => void): ReactNode[] {
               if (e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) onNavigate();
             }}
           >
-            {renderInline(n.children, onNavigate)}
+            {renderInline(n.children, onNavigate, links)}
           </Link>
         ) : (
           <a key={i} href={n.href} target="_blank" rel="noopener noreferrer">
-            {renderInline(n.children, onNavigate)}
+            {renderInline(n.children, onNavigate, links)}
           </a>
         );
     }
@@ -49,11 +67,13 @@ export function NotesList({
   onNavigate,
   className = 'v2-whatsnew__list',
   mark,
+  links = 'bundled',
 }: {
   items: ListItem[];
   onNavigate: () => void;
   className?: string;
   mark?: (item: ListItem) => ReactNode;
+  links?: LinkPolicy;
 }) {
   return (
     <ul className={className}>
@@ -62,12 +82,12 @@ export function NotesList({
           {mark?.(item)}
           {item.parts.map((p, j) =>
             p.kind === 'list' ? (
-              <NotesList key={j} items={p.items} onNavigate={onNavigate} className={className} />
+              <NotesList key={j} items={p.items} onNavigate={onNavigate} className={className} links={links} />
             ) : j === 0 ? (
-              <InlineText key={j} text={p.text} onNavigate={onNavigate} />
+              <InlineText key={j} text={p.text} onNavigate={onNavigate} links={links} />
             ) : (
               <p key={j} className="v2-whatsnew__more">
-                <InlineText text={p.text} onNavigate={onNavigate} />
+                <InlineText text={p.text} onNavigate={onNavigate} links={links} />
               </p>
             ),
           )}

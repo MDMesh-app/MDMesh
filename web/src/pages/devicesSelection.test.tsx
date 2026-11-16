@@ -92,6 +92,36 @@ describe.each([
     expect(checked()).toEqual([2, 3, 4, 5]);
   });
 
+  it('Shift+Space on a checkbox selects the range, without toggling the box on its own', async () => {
+    open(path);
+    await main().findByText('Charlie', {}, LOAD);
+    fireEvent.click(box(1));
+    fireEvent.keyDown(box(3), { key: ' ', shiftKey: true });
+    // Shift let go before Space: the keyup is still the range's, not a toggle of its own.
+    expect(fireEvent.keyUp(box(3), { key: ' ' })).toBe(false);
+    expect(checked()).toEqual([1, 2, 3]);
+  });
+
+  it('after Clear, Shift+click on a checkbox starts afresh and ticks just that one', async () => {
+    open(path);
+    await main().findByText('Charlie', {}, LOAD);
+    fireEvent.click(box(2));
+    fireEvent.click(await screen.findByRole('button', { name: 'Clear' }));
+    await waitFor(() => expect(checked()).toEqual([]));
+    fireEvent.click(box(4), { shiftKey: true });
+    expect(checked()).toEqual([4]);
+  });
+
+  it('a click on a disabled control in its tooltip wrapper is not a click on the device', async () => {
+    open(path);
+    await main().findByText('Charlie', {}, LOAD);
+    fireEvent.click(box(1));
+    const wrap = main().getByText('Charlie').closest('tr, li')!.querySelector('.v2-tooltip-wrap');
+    expect(wrap).not.toBeNull();
+    fireEvent.click(wrap!);
+    expect(checked()).toEqual([1]);
+  });
+
   it('Shift+click clears the range when the last device toggled was cleared', async () => {
     open(path);
     await main().findByText('Charlie', {}, LOAD);

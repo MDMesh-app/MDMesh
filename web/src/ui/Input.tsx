@@ -193,18 +193,35 @@ function selectHandle(
   trigger: () => HTMLButtonElement | null,
   state: () => { value: string; name?: string; disabled?: boolean; required?: boolean },
 ): SelectHandle {
+  // Assigning does nothing (props drive the Select), with a warning, as before 0.5.0's handle: a ref still typed
+  // HTMLSelectElement that sets `value` gets the warning, not a TypeError.
+  const ignored = (what: string) => {
+    if (import.meta.env.DEV) console.warn(`Select: setting the ref's ${what} does nothing; pass the \`${what}\` prop instead.`);
+  };
   return {
     get value() {
       return state().value;
     },
+    set value(_v: string) {
+      ignored('value');
+    },
     get name() {
       return state().name ?? '';
+    },
+    set name(_v: string) {
+      ignored('name');
     },
     get disabled() {
       return !!state().disabled;
     },
+    set disabled(_v: boolean) {
+      ignored('disabled');
+    },
     get required() {
       return !!state().required;
+    },
+    set required(_v: boolean) {
+      ignored('required');
     },
     type: 'select-one',
     focus: (options?: FocusOptions) => trigger()?.focus(options),
@@ -354,6 +371,9 @@ const ListboxSelect = forwardRef<SelectHandle, SelectProps>(function ListboxSele
   const entries = parseOptions(children);
   const flat = entries.flatMap((e) => ('group' in e ? e.options : [e]));
   const { multiple: _multiple, native: _native, ...triggerProps } = rest;
+  if (import.meta.env.DEV && (Array.isArray(value) || Array.isArray(defaultValue))) {
+    console.warn('Select: an array value needs `multiple` (a native select until 0.6.0); the listbox takes one value.');
+  }
 
   // Uncontrolled: our own state; until something is picked it follows the first option (options may arrive late).
   const [own, setOwn] = useState<string | null>(defaultValue === undefined ? null : String(defaultValue));

@@ -61,6 +61,7 @@ import {
   type DeviceKind,
   type SortDir,
   type TableProps,
+  isRowClick,
   noShiftSelect,
   shiftOf,
   shiftSpace,
@@ -130,7 +131,6 @@ const compareText = (a: string, b: string) => a.localeCompare(b, undefined, { nu
 const errText = (e: unknown) => (e instanceof Error ? e.message : '');
 
 /** Interactive descendants handle their own clicks; a click elsewhere on a row or card opens (or selects) it. */
-const INTERACTIVE = 'a, button, input, select, textarea, label, [role="menu"], [role="menuitem"]';
 
 /** Devices, table and cards. Classic: pages/DevicesPage.tsx. */
 export function DevicesPage() {
@@ -478,6 +478,11 @@ export function DevicesPage() {
   // The device last toggled: Shift with the next one selects, or clears, every device between them on this page, in
   // the list's order, to match it.
   const anchor = useRef<number | null>(null);
+  // An emptied selection (Clear, a bulk action done, the last box unticked) leaves no range to extend: the next
+  // Shift+click starts afresh.
+  useEffect(() => {
+    if (selected.size === 0) anchor.current = null;
+  }, [selected]);
   const pick = (d: DeviceView, shiftKey = false) => {
     const from = anchor.current;
     anchor.current = d.id;
@@ -852,7 +857,7 @@ export function DevicesPage() {
                   className={cx('v2-devices-card', on && 'is-selected')}
                   onMouseDown={canSelect ? noShiftSelect : undefined}
                   onClick={(e) => {
-                    if (!(e.target as HTMLElement).closest(INTERACTIVE)) activate(d, e);
+                    if (isRowClick(e)) activate(d, e);
                   }}
                 >
                   <div className="v2-devices-card__top">

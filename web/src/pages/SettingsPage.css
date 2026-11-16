@@ -140,7 +140,7 @@
 }
 
 /* Release notes as a short changelog: an entry per release (version, date, a one-line summary), its items grouped
-   under small labelled lists with one bullet style and one rhythm. Security is marked in alert tone. */
+   under small labelled lists with one bullet style and one rhythm. */
 .v2 .v2-relnotes-wrap {
   display: flex;
   flex-direction: column;
@@ -195,9 +195,6 @@
   gap: var(--space-2);
   margin: 0;
 }
-.v2 .v2-relnotes__label.is-security {
-  color: var(--alert-ink);
-}
 .v2 .v2-relnotes__count {
   font-weight: var(--weight-regular);
   letter-spacing: 0;
@@ -212,10 +209,6 @@
 }
 .v2 .v2-relnotes__list > li::marker {
   color: var(--secondary);
-}
-.v2 .v2-relnotes__mark {
-  margin-right: var(--space-2);
-  vertical-align: 1px;
 }
 .v2 .v2-relnotes__p {
   margin: 0;

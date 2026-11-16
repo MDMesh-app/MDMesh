@@ -121,7 +121,7 @@ export function buildFixtures(now = Date.now()) {
       'Fixes',
       '- Agent updates that got stuck are sent again, and the agent no longer freezes waiting on an',
       '  install.',
-      '- A security fix: enrollment codes are compared in constant time.',
+      '- Saving a configuration no longer resets its kiosk background.',
       '',
       'Security',
       '- Signing out ends the session on the server too.',

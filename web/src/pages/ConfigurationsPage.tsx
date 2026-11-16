@@ -40,7 +40,8 @@ import { devicesBlockingDelete, syncLine } from './configurations/sync';
 import type { ConfigWatch } from './configurations/watch';
 import './ConfigurationsPage.css';
 
-type Show = 'all' | 'yours' | 'builtin';
+/** Custom: made on this server (by any admin), as opposed to the built-in templates the server seeds. */
+type Show = 'all' | 'custom' | 'builtin';
 
 const POLL_MS = 10_000;
 /** Concurrent /configurations/applications/{id} requests: each answer carries the whole app library. */
@@ -181,15 +182,18 @@ export function ConfigurationsPage() {
   const counts = useMemo(() => {
     const all = configs ?? [];
     const builtin = all.filter(isLocked).length;
-    return { all: all.length, builtin, yours: all.length - builtin };
+    return { all: all.length, builtin, custom: all.length - builtin };
   }, [configs]);
+  // Filtering by kind only helps when there are both: with one kind empty the filter is hidden, and shows everything.
+  const bothKinds = counts.builtin > 0 && counts.custom > 0;
+  const kind: Show = bothKinds ? show : 'all';
 
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return (configs ?? [])
-      .filter((c) => (show === 'all' ? true : show === 'builtin' ? isLocked(c) : !isLocked(c)))
+      .filter((c) => (kind === 'all' ? true : kind === 'builtin' ? isLocked(c) : !isLocked(c)))
       .filter((c) => !needle || `${c.name} ${c.description ?? ''}`.toLowerCase().includes(needle));
-  }, [configs, q, show]);
+  }, [configs, q, kind]);
 
   const templates = useMemo(() => (configs ?? []).filter(isLocked), [configs]);
   // With no template the chooser would offer one option (Blank): create directly instead (K7).
@@ -293,16 +297,18 @@ export function ConfigurationsPage() {
           placeholder="Search configurations"
           aria-label="Search configurations"
         />
-        <Segmented<Show>
-          aria-label="Show"
-          value={show}
-          onChange={setShow}
-          options={[
-            { value: 'all', label: 'All', count: counts.all },
-            { value: 'yours', label: 'Yours', count: counts.yours },
-            { value: 'builtin', label: 'Built-in', count: counts.builtin },
-          ]}
-        />
+        {bothKinds ? (
+          <Segmented<Show>
+            aria-label="Show"
+            value={show}
+            onChange={setShow}
+            options={[
+              { value: 'all', label: 'All', count: counts.all },
+              { value: 'custom', label: 'Custom', count: counts.custom },
+              { value: 'builtin', label: 'Built-in', count: counts.builtin },
+            ]}
+          />
+        ) : null}
         <span className="v2-configs-toolbar__spacer" />
         {unassigned ? (
           <Link className="v2-configs-toolbar__unassigned" to={`${paths.devices}?config=none`}>

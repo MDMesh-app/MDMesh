@@ -101,13 +101,38 @@ export const shiftOf = (e: Event): boolean => !!(e as Partial<globalThis.MouseEv
  * box doesn't toggle itself as well; `run` on the keydown.
  */
 export function shiftSpace(e: KeyboardEvent, run?: () => void) {
-  if (e.key !== ' ' || !e.shiftKey) return;
-  e.preventDefault();
-  if (e.type === 'keydown' && !e.repeat) run?.();
+  if (e.key !== ' ') return;
+  const el = e.currentTarget;
+  if (e.type === 'keydown') {
+    if (!e.shiftKey) return;
+    e.preventDefault();
+    rangeKeys.add(el);
+    if (!e.repeat) run?.();
+  } else if (rangeKeys.delete(el)) {
+    // Its keyup too, even with Shift let go first: a browser that clicks on keyup would toggle the box as well.
+    e.preventDefault();
+  }
 }
+/** Checkboxes whose Space went down with Shift, until it comes up. */
+const rangeKeys = new WeakSet<EventTarget>();
 
-/** Clicks on these inside a row are theirs, not the row's. */
-const ROW_CONTROLS = 'a, button, input, select, textarea, label, [role="menu"], [role="menuitem"]';
+/**
+ * Clicks on these inside a row or card are theirs, not the row's. A tooltip's wrapper counts: a disabled control in
+ * it takes no pointer events, so a click on it lands on the wrapper (a double-click on Sync now must not open the
+ * device).
+ */
+export const ROW_CONTROLS =
+  'a, button, input, select, textarea, label, [role="menu"], [role="menuitem"], .v2-tooltip-wrap';
+
+/**
+ * Whether a click on a row or card is the row's own: not on a control in it, and not the end of a drag that selected
+ * text (copying a serial number must not open or toggle the device).
+ */
+export function isRowClick(e: MouseEvent): boolean {
+  if ((e.target as Element).closest(ROW_CONTROLS)) return false;
+  const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+  return !sel || sel.isCollapsed || !(e.currentTarget as Node).contains(sel.anchorNode);
+}
 
 /**
  * The console's one data table: a control-height head (meta/500 secondary), --row rows (--row-compact when compact) on hairline rules, a hover
@@ -207,7 +232,7 @@ export function Table<Row>({
                 onClick={
                   onRowClick
                     ? (e: MouseEvent<HTMLTableRowElement>) => {
-                        if (!(e.target as Element).closest(ROW_CONTROLS)) onRowClick(r, e);
+                        if (isRowClick(e)) onRowClick(r, e);
                       }
                     : undefined
                 }

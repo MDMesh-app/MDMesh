@@ -23,14 +23,8 @@ import {
   LinkButton,
 } from '../../ui';
 import { applyRunning, type SupervisorState } from '../../data/useSupervisor';
-import {
-  entrySize,
-  isSecurityGroup,
-  isSecurityItem,
-  parseReleaseEntries,
-  type ReleaseEntry,
-} from '../../data/releaseNotes';
-import type { Block, ListItem, NotesSection } from '../../whatsnew/changelog';
+import { entrySize, parseReleaseEntries, type ReleaseEntry } from '../../data/releaseNotes';
+import type { Block, NotesSection } from '../../whatsnew/changelog';
 import { InlineText, NotesList } from '../../whatsnew/NotesView';
 import { applyPhaseLabel, lastCheckError, safeReleaseUrl } from '../../data/updateStatus';
 
@@ -84,13 +78,6 @@ function noteDate(d: string | null): string | null {
 }
 
 const noNavigation = () => {};
-const securityMark = (item: ListItem) =>
-  isSecurityItem(item) ? (
-    <Badge tone="alert" size="sm" className="v2-relnotes__mark">
-      Security
-    </Badge>
-  ) : null;
-
 function NotesBlocks({ blocks, folded }: { blocks: Block[]; folded: boolean }) {
   return (
     <>
@@ -101,11 +88,11 @@ function NotesBlocks({ blocks, folded }: { blocks: Block[]; folded: boolean }) {
             items={folded ? b.items.slice(0, FOLDED_ITEMS) : b.items}
             onNavigate={noNavigation}
             className="v2-relnotes__list"
-            mark={securityMark}
+            links="feed"
           />
         ) : (
           <p key={i} className="v2-relnotes__p">
-            <InlineText text={b.text} onNavigate={noNavigation} />
+            <InlineText text={b.text} onNavigate={noNavigation} links="feed" />
           </p>
         ),
       )}
@@ -124,7 +111,13 @@ function ReleaseNotesEntry({ entry, folded }: { entry: ReleaseEntry; folded: boo
     <article className="v2-relnotes__entry" aria-labelledby={headId}>
       <header className="v2-relnotes__head">
         <h3 id={headId} className="v2-relnotes__version">
-          Version <span className="v2-num">{entry.version}</span>
+          {entry.version ? (
+            <>
+              Version <span className="v2-num">{entry.version}</span>
+            </>
+          ) : (
+            'Release notes'
+          )}
         </h3>
         {date ? <span className="v2-relnotes__date">{date}</span> : null}
         {entry.security ? (
@@ -135,13 +128,13 @@ function ReleaseNotesEntry({ entry, folded }: { entry: ReleaseEntry; folded: boo
       </header>
       {entry.headline ? (
         <p className="v2-relnotes__headline">
-          <InlineText text={entry.headline} onNavigate={noNavigation} />
+          <InlineText text={entry.headline} onNavigate={noNavigation} links="feed" />
         </p>
       ) : null}
       {!folded && entry.intro.length ? <NotesBlocks blocks={entry.intro} folded={false} /> : null}
       {groups.map((g, i) => (
         <div key={i} className="v2-relnotes__group">
-          <h4 className={cx('v2-eyebrow', 'v2-relnotes__label', isSecurityGroup(g) && 'is-security')}>
+          <h4 className="v2-eyebrow v2-relnotes__label">
             {g.title}
             <span className="v2-relnotes__count v2-num">{groupSize(g)}</span>
           </h4>
@@ -170,8 +163,8 @@ function ReleaseNotes({ status }: { status: UpdateStatus }) {
   return (
     <div className="v2-relnotes-wrap">
       <div id={id} className="v2-relnotes">
-        {(folded ? entries.slice(0, 1) : entries).map((e) => (
-          <ReleaseNotesEntry key={e.version} entry={e} folded={folded} />
+        {(folded ? entries.slice(0, 1) : entries).map((e, i) => (
+          <ReleaseNotesEntry key={i} entry={e} folded={folded} />
         ))}
       </div>
       {long ? (

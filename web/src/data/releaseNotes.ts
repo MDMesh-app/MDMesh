@@ -4,51 +4,45 @@
 // reads each with the What's new parser (whatsnew/changelog.ts): plain data the page renders as React text, never as
 // HTML, so nothing in the notes can inject markup.
 
-import { parseNotes, type Block, type ListItem, type NotesSection } from '../whatsnew/changelog';
+import { parseNotes, type Block, type NotesSection } from '../whatsnew/changelog';
 
 /** A release's notes, grouped for the Updates card. */
 export interface ReleaseEntry {
-  version: string;
+  /** null: notes that name no version, with no version offered either. */
+  version: string | null;
   /** "2026-10-22" from the heading, or the release's `publishedAt` for the one the supervisor offers. */
   date: string | null;
   /** The release's opening paragraph, its one-line summary; null when it opens straight into a section. */
   headline: string | null;
-  /** Further opening and closing paragraphs. */
+  /** Further opening paragraphs, then the closing ones ("Thanks @… for the reports"). */
   intro: Block[];
-  /** The sections, in reading order: Security first, then New, Heads-up, Upgrading, Fixes, others, Under the hood. */
+  /** The sections in the What's new order: New, Heads-up, Upgrading, Fixes, others (Security), Under the hood. */
   groups: NotesSection[];
-  /** Any line of it is about security (a Security section, or an item that says "security" or names a CVE). */
+  /**
+   * It has security fixes: its notes have a Security section ("Security", "### Security", "Security (agent 0.5.0)"),
+   * which every release with a security fix carries. Nothing else counts: the word alone appears in feature notes
+   * ("Wi-Fi security").
+   */
   security: boolean;
 }
 
-const RELEASE_HEADING = /^\s{0,3}#{1,6}\s*(?:MDMesh\s+)?v?(\d+\.\d+\.\d+)\b(?:\s*[—–-]\s*(\d{4}-\d{2}-\d{2}))?.*$/i;
+/** A release's own heading, as CHANGELOG.md writes it: the version, then a date or nothing ("### 0.5.0 changes" isn't). */
+const RELEASE_HEADING = /^\s{0,3}#{1,6}\s*(?:MDMesh\s+)?v?(\d+\.\d+\.\d+)(?:\s*[—–-]\s*(\d{4}-\d{2}-\d{2}))?\s*$/i;
 const TITLE_LINE = /^\s*(?:#{1,6}\s*)?(?:MDMesh\s+)?v?(\d+\.\d+\.\d+)\s*$/i;
-const SECURITY_TEXT = /\bsecurity\b|\bCVE-\d{4}-\d+/i;
-
-const itemText = (item: ListItem): string =>
-  item.parts.map((p) => (p.kind === 'text' ? p.text : p.items.map(itemText).join(' '))).join(' ');
-
-/** Whether a list item is about security (its text says so, or names a CVE). */
-export const isSecurityItem = (item: ListItem): boolean => SECURITY_TEXT.test(itemText(item));
+/** A section heading written as a markdown heading ("### Fixes"): the What's new parser takes the bare label. */
+const MD_SECTION = /^\s{0,3}#{1,6}\s+(?=(?:Upgrading|Heads-up|New|Fixes|Security|Under the hood)\b)/;
 
 /** A Security section's title ("Security", "Security (agent 0.5.0)"). */
 export const isSecurityGroup = (g: NotesSection): boolean => /^Security\b/.test(g.title);
 
-function entry(version: string, date: string | null, body: string): ReleaseEntry {
-  const notes = parseNotes(body);
-  const intro = [...notes.intro, ...notes.outro];
-  const first = intro[0];
+function entry(version: string | null, date: string | null, body: string): ReleaseEntry {
+  const notes = parseNotes(body.split('\n').map((l) => l.replace(MD_SECTION, '')).join('\n'));
+  // The summary is the opening line only, never a closing one (a release may open straight into a section).
+  const first = notes.intro[0];
   const headline = first && first.kind === 'para' ? first.text : null;
-  const groups = notes.sections
-    .map((s, i) => ({ s, i }))
-    .sort((a, b) => Number(isSecurityGroup(b.s)) - Number(isSecurityGroup(a.s)) || a.i - b.i)
-    .map(({ s }) => s);
-  const security = groups.some(
-    (g) =>
-      isSecurityGroup(g) ||
-      g.blocks.some((b) => (b.kind === 'list' ? b.items.some(isSecurityItem) : SECURITY_TEXT.test(b.text))),
-  );
-  return { version, date, headline, intro: headline ? intro.slice(1) : intro, groups, security };
+  const intro = [...(headline ? notes.intro.slice(1) : notes.intro), ...notes.outro];
+  const groups = notes.sections;
+  return { version, date, headline, intro, groups, security: groups.some(isSecurityGroup) };
 }
 
 interface Part {
@@ -82,7 +76,8 @@ export function parseReleaseEntries(
 
   const offered = version ? version.replace(/^v/i, '') : null;
   const published = publishedAt && Number.isFinite(Date.parse(publishedAt)) ? publishedAt : null;
-  const out: ReleaseEntry[] = [];
+  // Each release's text, in order; the same release twice (an unheaded preamble, then its heading) is one entry.
+  const bodies: Array<{ version: string | null; date: string | null; lines: string[] }> = [];
   for (const p of parts) {
     let body = p.lines;
     let v = p.version;
@@ -94,10 +89,18 @@ export function parseReleaseEntries(
       body = body.slice(firstLine + 1);
     }
     v = v ?? offered;
-    if (!v || !body.some((l) => l.trim())) continue;
-    out.push(entry(v, p.date ?? (v === offered ? published : null), body.join('\n')));
+    if (!body.some((l) => l.trim())) continue;
+    const same = bodies.find((b) => b.version === v);
+    if (same) {
+      same.lines.push('', ...body);
+      same.date = same.date ?? p.date;
+    } else {
+      bodies.push({ version: v, date: p.date, lines: body });
+    }
   }
-  return out.sort((a, b) => compareVersions(b.version, a.version));
+  return bodies
+    .map((b) => entry(b.version, b.date ?? (b.version === offered ? published : null), b.lines.join('\n')))
+    .sort((a, b) => (a.version && b.version ? compareVersions(b.version, a.version) : 0));
 }
 
 function compareVersions(a: string, b: string): number {

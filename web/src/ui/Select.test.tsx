@@ -179,6 +179,14 @@ describe('Select: the deprecated native path (until 0.6.0)', () => {
       </Select>,
     );
     expect(old.current?.value).toBe('a');
+    // As on 0.4's element, assigning compiles; it warns and does nothing rather than throwing.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(() => {
+      old.current!.value = 'b';
+    }).not.toThrow();
+    expect(old.current?.value).toBe('a');
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 });
 

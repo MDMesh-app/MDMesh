@@ -25,6 +25,14 @@ BEGIN
     END IF;
 END $$;
 
+-- Older seeds described the Background (Agent) Mode configuration as Headwind MDM's; give the row still holding that
+-- exact text the current wording (Liquibase changeset 26.11.16-configurations-backgroundMode-description does the same
+-- at server start). A description an admin wrote is kept, and once updated the row no longer matches.
+UPDATE configurations
+SET description = 'The MDMesh agent runs in the background to install apps and report device status. The user can use the device freely (permissive mode).'
+WHERE id = 3 AND name = 'Background (Agent) Mode'
+  AND description = 'Headwind MDM is running in the background, it is used to install apps and track the device status. User can do everything (permissive mode).';
+
 -- Remove the Headwind agent/launcher seed records. MDMesh's agent is com.mdmesh.agent and is
 -- supplied through the signed release/update path, not this legacy application library. The old
 -- launcher row pointed at a non-existent h-mdm.com artifact and must not be offered for install

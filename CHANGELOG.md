@@ -82,10 +82,15 @@ Heads-up
 
 Security
 - Updates applied by a 0.5.0 supervisor, and the quick start, run the server, web and supervisor images by the digest
-  the signed release names, so an image replaced in the registry is refused.
+  the signed release names, so an image replaced in the registry is never run.
 - The quick start checks every file it downloads from the release against the signed manifest, and stops instead of
   falling back to `main` or `:latest` when the release can't be found or doesn't verify. It needs OpenSSL 3.0+, or an
   older OpenSSL and `minisign`.
+- The installers create .env and the other files that hold secrets as readable only by their owner from the start,
+  and a setup.sh re-run makes an existing .env owner-only again.
+- setup.sh re-runs read `.env` without running it as a script, so `bash -x ./setup.sh` no longer prints its
+  passwords and secrets. Values are read as before, quotes and escapes included; a line whose value the shell would
+  compute (a `$` or backquote) stops setup.sh, naming the line.
 
 New
 - The console has a new look: calmer, with comfortable spacing, one type and spacing scale, one table, one set of
@@ -189,11 +194,6 @@ Fixes
   DROPs failed when the update had added a table that refers to an older one, so the rollback stopped (nothing
   changed). The by-hand restores in the docs, and the command the native installer prints next to each dump, do the
   same.
-- The installers create .env and the other files that hold secrets as readable only by their owner from the start,
-  and a setup.sh re-run makes an existing .env owner-only again.
-- setup.sh re-runs read `.env` without running it as a script, so `bash -x ./setup.sh` no longer prints its
-  passwords and secrets. Values are read as before, quotes and escapes included; a line whose value the shell would
-  compute (a `$` or backquote) stops setup.sh, naming the line.
 - Once staff tap Return to kiosk on the device, the console stops offering its own Return to kiosk for that device;
   a later kiosk exit, custom kiosk, or configuration apply offers it again.
 - Files: uploading a file again with the same name and the same content returns the file already there instead of an
@@ -564,13 +564,15 @@ Heads-up
 - "Do not track" now really collects no location. It is the default for the configurations the installer
   creates and for new ones, so those devices stop reporting location. To keep it, set Location reporting to
   "Last known (passive)" (was "Network") or "GPS". Location already stored is kept.
+- SECURE_ENROLLMENT=1 also blocks the agent's APK downloads; the server now warns about it at startup.
+  Leave it at 0 for MDMesh agents.
+
+Security
 - Kiosk exit PIN: new installs get a random PIN, shown (and editable) in the configuration editor. A
   configuration still on the old default 12345678 gets a warning in the console. Set your own PIN there.
 - The Headwind launcher's QR routes now answer 404 unless LEGACY_DEVICE_API=1 (the console draws the
   agent's QR itself). The installer-created configurations get new QR keys.
 - The read-only Observer role can no longer send push messages or edit device descriptions.
-- SECURE_ENROLLMENT=1 also blocks the agent's APK downloads; the server now warns about it at startup.
-  Leave it at 0 for MDMesh agents.
 
 New (agent 0.3.4)
 - Wi-Fi radio on/off per configuration.
@@ -606,7 +608,7 @@ Upgrading
   installs. Then roll out the new agent from Rollouts, to one device first. Older agents keep working
   until they update.
 
-Heads-up
+Security
 - App installs are now always checked against a SHA-256. Uploaded APKs and F-Droid apps are covered
   automatically. For an app added by an external link, add its SHA-256 in the Library (new "SHA-256…"
   button) or upload the APK; until then its installs stop with a message saying so.

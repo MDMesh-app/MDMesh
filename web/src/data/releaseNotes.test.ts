@@ -44,13 +44,11 @@ describe('parseReleaseEntries', () => {
     expect(parseReleaseEntries('  ', '1.0.0')).toEqual([]);
   });
 
-  it('does not mark v0.3.5 or v0.3.4, whose notes have no Security section', () => {
-    for (const v of ['0.3.5', '0.3.4']) {
-      const entries = parseReleaseEntries(releaseBody(v), v);
-      expect(entries.map((e) => e.version)).toEqual([v]);
-      expect(entries[0].security).toBe(false);
-      expect(entries[0].groups.length).toBeGreaterThan(2);
-    }
+  it('does not mark v0.3.2, whose notes have no Security section (and which fixed no security issue)', () => {
+    const entries = parseReleaseEntries(releaseBody('0.3.2'), '0.3.2');
+    expect(entries.map((e) => e.version)).toEqual(['0.3.2']);
+    expect(entries[0].security).toBe(false);
+    expect(entries[0].groups.length).toBeGreaterThan(2);
   });
 
   it('takes the summary from the opening line only, never a closing thank-you', () => {
@@ -84,6 +82,12 @@ describe('Security releases (the signed manifest’s securityReleases)', () => {
     const derived = JSON.parse(execFileSync('python3', [script, resolve(import.meta.dirname, '../../../CHANGELOG.md')], { encoding: 'utf8' }));
     expect(labelled.length).toBeGreaterThan(0);
     expect(derived).toEqual(labelled);
+  });
+  it('are exactly these: a release that gains or loses its Security section changes the signed record on purpose', () => {
+    const script = resolve(import.meta.dirname, '../../../release/security-releases.py');
+    const derived = JSON.parse(execFileSync('python3', [script, resolve(import.meta.dirname, '../../../CHANGELOG.md')], { encoding: 'utf8' }));
+    // Update this list together with CHANGELOG.md.
+    expect(derived).toEqual(['0.3.1', '0.3.3', '0.3.4', '0.3.7', '0.3.8', '0.3.9', '0.4.0', '0.5.0']);
   });
   it('can’t diverge over fenced code: the script skips it, the console’s parser doesn’t read it, CHANGELOG.md has none', () => {
     expect(CHANGELOG).not.toMatch(/^\s{0,3}(```|~~~)/m);

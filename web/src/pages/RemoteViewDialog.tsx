@@ -11,11 +11,12 @@ function embeddedIceCandidateCount(sdp: string | null | undefined): number {
   return (sdp?.match(/^a=candidate:/gm) ?? []).length;
 }
 
-function stateText(session: RemoteViewSession | null, stage: Stage): string {
+export function remoteViewStateText(session: RemoteViewSession | null, stage: Stage): string {
   if (stage === 'connecting') return 'Connecting the secure viewer…';
   if (stage === 'viewing') return 'Viewing the device screen. This view has no input control.';
   if (stage === 'ended') return session?.endReason || 'The screen-share session ended.';
   if (stage === 'error') return session?.endReason || 'Could not start the screen-share viewer.';
+  if (session?.state === 'denied') return 'The person holding the device did not approve screen sharing.';
   if (session?.state === 'requested') return 'Request sent; waiting for the device to check in.';
   if (session?.state === 'awaiting_consent') return 'Waiting for the person holding the device to approve screen sharing.';
   return 'Requesting screen-share consent on the device…';
@@ -229,7 +230,7 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
   return <Modal open onClose={close} title="View device screen" description="The device must approve this short, view-only session." size="full" dismissOnBackdrop={false}
     footer={<Button variant="subtle" size="lg" onClick={close}>End view</Button>}>
     <div className="v2-remote-view">
-      <p className="v2-remote-view__state" role="status">{stateText(session, stage)}</p>
+      <p className="v2-remote-view__state" role="status">{remoteViewStateText(session, stage)}</p>
       <p className="v2-remote-view__transport" role="status">{transportStatus}</p>
       {stage === 'error' ? <Callout tone="alert">The viewer could not connect. No screen content was stored.</Callout> : null}
       <video ref={video} className="v2-remote-view__video" autoPlay playsInline aria-label="Live device screen" />

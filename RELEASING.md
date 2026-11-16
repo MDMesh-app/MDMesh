@@ -66,14 +66,8 @@ Patches are tagged from `main` for now, like every release (the `gate` job accep
 ### Security fixes
 
 A fix for a vulnerability that isn't public yet is developed in a GitHub private security advisory (Security →
-Advisories → New draft advisory → Start a temporary private fork), not in a public PR. Its changelog line says what
-operators see, without the details.
-
-**A release with a security fix must have a Security section** in its CHANGELOG.md section (a `Security` line of its
-own, as v0.3.8's), and a release without one must not have it. That heading is the one record of which releases fixed
-security issues: the release notes in Settings label the release "Security fixes", and the signed manifest's
-`securityReleases` lists every such version, which the console uses to warn an admin whose update skips one
-(`release/security-releases.py` derives it; the release workflow fails if the manifest's list and CHANGELOG.md differ).
+Advisories → New draft advisory → Start a temporary private fork), not in a public PR. Its changelog line goes under
+the release's **Security** heading, never under Fixes, and says what operators see, without the details.
 
 The fix is public from the moment it merges, so keep that window short:
 
@@ -82,6 +76,13 @@ The fix is public from the moment it merges, so keep that window short:
 - An advisory merge may skip `main`'s required checks, and whether CI runs in the temporary private fork depends on
   GitHub (check GitHub's docs). Treat CI on the release PR as the only CI the fix gets.
 - Publish the advisory once the release is out. See [SECURITY.md](SECURITY.md) for reporting.
+
+**A release with a security fix must have a Security section** in its CHANGELOG.md section (a `Security` line of its
+own, as v0.3.8's), whether the fix came through an advisory or not, and a release without a security fix must not have
+one. That heading is the one record of which releases fixed security issues: the release notes in Settings label the
+release "Security fixes", and the signed manifest's `securityReleases` lists every such version, which the console
+uses to warn an admin whose update skips one (`release/security-releases.py` derives it; the release workflow fails if
+the manifest's list and CHANGELOG.md differ).
 
 ## What the release workflow does
 

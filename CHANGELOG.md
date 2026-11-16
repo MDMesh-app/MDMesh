@@ -2,9 +2,10 @@
 
 What changed in each MDMesh release, for the people running it, newest first. A version's section is its tag
 annotation and GitHub release notes, word for word ([RELEASING.md](RELEASING.md)). From v0.3.2 on, its sections come
-in this order, empty ones left out: Upgrading, Heads-up, New, Fixes, Under the hood. Feature releases (0.x.0) ship
-every three weeks; patch releases (0.x.y) only for a security fix or something broken in the field. Each PR adds its
-line under Unreleased.
+in this order, empty ones left out: Upgrading, Heads-up, Security, New, Fixes, Under the hood. A release that fixes a
+security issue has a Security section, and only such a release has one. Feature releases (0.x.0) ship every three
+weeks; patch releases (0.x.y) only for a security fix or something broken in the field. Each PR adds its line under
+Unreleased.
 
 ## Unreleased
 
@@ -338,6 +339,11 @@ Heads-up
   v0.3 file left in the tree. Each file's new place, its slot and what to check after the merge:
   [UPGRADING, v0.4.0 for forks](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v040-for-forks).
 
+Security
+- Sign-in starts a fresh session, and so does changing your own password.
+- Audit log: requests from API clients are recorded with their user, and a request is recorded however its path is
+  spelled.
+
 New
 - Connectivity per configuration (Configuration → Network): Always-on keeps the agent's live connection up, so
   commands reach a locked phone without waiting for its next check-in. "—" leaves each device's own mode. Needs agent
@@ -369,9 +375,6 @@ Fixes
 - Storage and Local IP show on the device page. The old console read keys the agent never sends, so both were "—".
 - Saving a configuration keeps its apps' Headwind launcher layout (screen order, key code, bottom row, long tap).
 - Enroll shows a configuration's EAP Wi-Fi security as EAP, not as WPA / WPA2.
-- Sign-in starts a fresh session, and so does changing your own password.
-- Audit log: requests from API clients are recorded with their user, and a request is recorded however its path is
-  spelled.
 
 Under the hood
 - The console has unit tests (vitest), and CI runs them on every console change.
@@ -467,10 +470,12 @@ Upgrading
 - Until devices have agent 0.3.7, set Safe Mode to Block on configurations whose devices you put into kiosk with Enter
   kiosk.
 
-Fixes
+Security
 - Kiosk: Safe Mode is blocked whenever a device is in kiosk, including kiosks started with Enter kiosk on the device
   page, unless the configuration's Safe Mode setting is Allow. The block is lifted once nothing asks for it: when such
   a kiosk ends, or when kiosk is turned off on the configuration, unless the setting is Block. Needs agent 0.3.7.
+
+Fixes
 - Kiosk: an exit PIN that can't be checked right now says so ("Exit unavailable right now") instead of closing.
 - The console's kiosk help says which behaviour needs agent 0.3.6 or later.
 

@@ -24,7 +24,7 @@ function RowWithDialog() {
         items={[
           {
             key: 'rename',
-            label: 'Rename…',
+            label: 'Rename',
             onSelect: () => {
               setOpening((n) => n + 1);
               setSubject('Default');
@@ -47,7 +47,7 @@ describe('dialogs opened from a menu, kept mounted for their exit', () => {
   it('Escape returns focus to the menu’s trigger (the menu item is gone by then)', async () => {
     render(<RowWithDialog />);
     const trigger = screen.getByRole('button', { name: 'More for Default' });
-    pick(trigger, 'Rename…');
+    pick(trigger, 'Rename');
     expect(await screen.findByRole('dialog', { name: 'Rename Default' })).toBeTruthy();
     fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
@@ -57,11 +57,11 @@ describe('dialogs opened from a menu, kept mounted for their exit', () => {
   it('starts blank on each opening (nothing typed in an earlier one carries over)', async () => {
     render(<RowWithDialog />);
     const trigger = screen.getByRole('button', { name: 'More for Default' });
-    pick(trigger, 'Rename…');
+    pick(trigger, 'Rename');
     fireEvent.change(await screen.findByRole('textbox', { name: 'New name' }), { target: { value: 'Lobby' } });
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    pick(trigger, 'Rename…');
+    pick(trigger, 'Rename');
     expect(((await screen.findByRole('textbox', { name: 'New name' })) as HTMLInputElement).value).toBe('');
   });
 });
@@ -72,7 +72,7 @@ describe('Modal: focus return', () => {
     return (
       <>
         <button type="button" onClick={() => setOpen(true)}>
-          Duplicate…
+          Duplicate
         </button>
         <Modal open={open} onClose={() => setOpen(false)} title="Duplicate configuration">
           {/* A field that focuses itself as it mounts, before the dialog's own focus handling runs. */}
@@ -84,7 +84,7 @@ describe('Modal: focus return', () => {
 
   it('goes back to the opener even when a field in the dialog has autoFocus', async () => {
     render(<Opener />);
-    const opener = screen.getByRole('button', { name: 'Duplicate…' });
+    const opener = screen.getByRole('button', { name: 'Duplicate' });
     opener.focus();
     fireEvent.click(opener);
     await screen.findByRole('dialog', { name: 'Duplicate configuration' });

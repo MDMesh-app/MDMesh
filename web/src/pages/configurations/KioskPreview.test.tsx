@@ -588,7 +588,7 @@ describe('the configuration editor', () => {
     open({ backgroundImageFileId: 42, backgroundImageUrl: INFO.url, backgroundImageSha256: INFO.sha256, backgroundImageFit: 'fill', backgroundImageFocalX: 0.2, backgroundImageFocalY: 0.8 });
     const slider = await screen.findByRole('slider', { name: 'Focal point' });
     expect(slider.getAttribute('aria-valuetext')).toBe('20% across, 80% down');
-    fireEvent.click(screen.getByRole('button', { name: 'Choose from uploaded…' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Choose from uploaded' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Use night.jpg' }));
     await waitFor(() => expect(screen.getByRole('slider', { name: 'Focal point' }).getAttribute('aria-valuetext')).toBe('50% across, 50% down'));
     expect(screen.getByRole('radio', { name: 'Fill' }).getAttribute('aria-checked')).toBe('true');

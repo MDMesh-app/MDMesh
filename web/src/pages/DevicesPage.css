@@ -5,7 +5,7 @@
   font-weight: var(--weight-medium);
 }
 .v2 .v2-devices-attn__chips {
-  flex: 1 1 280px;
+  flex: 0 1 auto;
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);

@@ -423,7 +423,7 @@ function ActionRow({
 
 /** The configured-kiosk action in Remote actions: absent (the hint says why), or offered, possibly unavailable. */
 export interface KioskReturnOffer {
-  /** Show "Return to configured kiosk…". */
+  /** Show "Return to configured kiosk". */
   offered: boolean;
   /** Offered but unavailable: the hint says why. */
   disabled?: boolean;
@@ -482,8 +482,8 @@ export function RemoteActions({
         sub="Get someone’s attention"
         busy={busy}
         tiles={[
-          tile('alert', 'Send alert…', <IconAlert />),
-          tile('lockscreen-message', 'Lock-screen message…', <IconScreenMessage />),
+          tile('alert', 'Send alert', <IconAlert />),
+          tile('lockscreen-message', 'Lock-screen message', <IconScreenMessage />),
           tile('ring', 'Ring', <IconRing />),
           tile('ring-stop', 'Stop ringing', <IconStopRing />),
         ]}
@@ -498,7 +498,7 @@ export function RemoteActions({
             ? [
                 {
                   key: 'kiosk-return',
-                  label: 'Return to configured kiosk…',
+                  label: 'Return to configured kiosk',
                   icon: <IconEnterKiosk />,
                   tip: 'Puts the device back into the kiosk its configuration defines.',
                   variant: 'primary' as const,
@@ -507,7 +507,7 @@ export function RemoteActions({
                 },
               ]
             : []),
-          { key: 'kiosk-enter', label: 'Custom kiosk…', icon: <IconEnterKiosk />, tip: TEMPLATE['kiosk-enter'].description, run: onEnterKiosk },
+          { key: 'kiosk-enter', label: 'Custom kiosk', icon: <IconEnterKiosk />, tip: TEMPLATE['kiosk-enter'].description, run: onEnterKiosk },
           tile('kiosk-exit', 'Exit kiosk', <IconExitKiosk />),
           {
             key: 'config-apps',
@@ -522,7 +522,7 @@ export function RemoteActions({
         title="Device"
         sub="Interrupts the user"
         busy={busy}
-        tiles={[tile('lock', 'Lock', <IconLock size={16} />), tile('reboot', 'Reboot…', <IconPower />)]}
+        tiles={[tile('lock', 'Lock', <IconLock size={16} />), tile('reboot', 'Reboot', <IconPower />)]}
       />
       <div className="v2-device-actions__row" role="group" aria-labelledby={`${titleId}-pw`}>
         <ActionHead id={`${titleId}-pw`} title="Power use" sub="How often it reports" />
@@ -586,12 +586,12 @@ export function RemoteActions({
         <div className="v2-device-actions__tiles">
           <Tooltip content={TEMPLATE['passcode-reset'].description}>
             <Button variant="danger" icon={<IconKey />} disabled={busy} onClick={() => send('passcode-reset')}>
-              Reset passcode…
+              Reset passcode
             </Button>
           </Tooltip>
           <Tooltip content={TEMPLATE.wipe.description}>
             <Button variant="danger" icon={<IconFactoryReset />} disabled={busy} onClick={() => send('wipe')}>
-              Factory reset…
+              Factory reset
             </Button>
           </Tooltip>
         </div>

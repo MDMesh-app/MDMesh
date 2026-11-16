@@ -36,10 +36,11 @@
 }
 .v2 .v2-countmeta__link {
   font-weight: var(--weight-medium);
-  color: var(--secondary);
-  text-decoration: none;
-}
-.v2 .v2-countmeta__link:hover {
   color: var(--ink);
   text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 0.2em;
+}
+.v2 .v2-countmeta__link:hover {
+  text-decoration-color: currentColor;
 }

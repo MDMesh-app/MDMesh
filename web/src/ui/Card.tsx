@@ -147,11 +147,13 @@ export function Notice({
 }) {
   return (
     <section aria-label={ariaLabel} className={cx('v2-notice', `v2-notice--${tone}`, className)}>
-      <span className="v2-notice__icon" aria-hidden="true">
-        {icon}
-      </span>
-      <div className="v2-notice__body">{children}</div>
-      {action ? <div className="v2-notice__action">{action}</div> : null}
+      <div className="v2-notice__grid">
+        <span className="v2-notice__icon" aria-hidden="true">
+          {icon}
+        </span>
+        <div className="v2-notice__body">{children}</div>
+        {action ? <div className="v2-notice__action">{action}</div> : null}
+      </div>
     </section>
   );
 }

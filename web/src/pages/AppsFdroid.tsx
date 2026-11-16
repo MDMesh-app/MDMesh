@@ -242,7 +242,7 @@ export function AppsFdroid({
                         </span>
                         {deployable(a) ? (
                           <Button size="sm" onClick={() => deploy(a)} aria-label={`Deploy ${a.name}`}>
-                            Deploy…
+                            Deploy
                           </Button>
                         ) : null}
                       </>
@@ -257,7 +257,7 @@ export function AppsFdroid({
                         ) : null}
                         {deployable(a) ? (
                           <Button size="sm" variant="primary" onClick={() => deploy(a)} aria-label={`Deploy ${a.name}`}>
-                            Deploy…
+                            Deploy
                           </Button>
                         ) : null}
                       </>

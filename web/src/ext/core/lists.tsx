@@ -18,7 +18,7 @@ import { ORDER } from './order';
 
 /** What the Devices page builds for core's actions. Page-private: not part of the helpers' public shape. */
 export interface CoreDevicesParts {
-  /** "Change configuration…" and "Delete…" for one row. */
+  /** "Change configuration" and "Delete" for one row. */
   row: Record<'move' | 'delete', (device: DeviceView) => MenuItem>;
   /** The bulk bar's own buttons, on the page's selection. */
   bulk: Record<'run' | 'move' | 'delete', () => void>;
@@ -123,7 +123,7 @@ export const CORE_LIST_ACTIONS: readonly (ListRowActionContribution | ListBulkAc
   deviceRow('delete'),
   appRow('checksum'),
   appRow('remove'),
-  bulk('run', 'Run action…', <IconPlay />),
-  bulk('move', 'Change configuration…', <IconSliders />),
-  bulk('delete', 'Delete…', <IconTrash />, true),
+  bulk('run', 'Run action', <IconPlay />),
+  bulk('move', 'Change configuration', <IconSliders />),
+  bulk('delete', 'Delete', <IconTrash />, true),
 ];

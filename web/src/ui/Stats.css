@@ -111,8 +111,13 @@
   text-decoration: none;
   color: var(--text);
 }
-.v2 a.v2-fleet__item:hover .v2-fleet__label {
+.v2 a.v2-fleet__item .v2-fleet__label {
   text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 0.2em;
+}
+.v2 a.v2-fleet__item:hover .v2-fleet__label {
+  text-decoration-color: currentColor;
 }
 .v2 .v2-fleet__label {
   color: var(--text-2);

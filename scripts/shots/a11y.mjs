@@ -201,7 +201,7 @@ const STATES = [
     route: '/devices',
     setup: async (p) => {
       await click(p, 'button', 'More actions for KIOSK-FRONT');
-      await click(p, 'menuitem', 'Delete…');
+      await click(p, 'menuitem', 'Delete');
     },
   },
   {
@@ -221,10 +221,10 @@ const STATES = [
   { name: 'device-tab-telemetry', route: '/devices/WH-SCAN-07', setup: (p) => click(p, 'tab', 'Telemetry') },
   { name: 'device-tab-activity', route: '/devices/WH-SCAN-07', setup: (p) => click(p, 'tab', /Activity/) },
   { name: 'device-rename', route: '/devices/WH-SCAN-07', setup: (p) => click(p, 'button', 'Rename device') },
-  { name: 'device-alert-dialog', route: '/devices/WH-SCAN-07', setup: (p) => click(p, 'button', 'Send alert…') },
-  { name: 'device-factory-reset', route: '/devices/WH-SCAN-07', setup: (p) => click(p, 'button', 'Factory reset…') },
+  { name: 'device-alert-dialog', route: '/devices/WH-SCAN-07', setup: (p) => click(p, 'button', 'Send alert') },
+  { name: 'device-factory-reset', route: '/devices/WH-SCAN-07', setup: (p) => click(p, 'button', 'Factory reset') },
   { name: 'device-more-menu', route: '/devices/WH-SCAN-07', setup: (p) => click(p, 'button', 'More actions') },
-  { name: 'device-kiosk-dialog', route: '/devices/WH-SCAN-07', setup: (p) => click(p, 'button', 'Custom kiosk…') },
+  { name: 'device-kiosk-dialog', route: '/devices/WH-SCAN-07', setup: (p) => click(p, 'button', 'Custom kiosk') },
   { name: 'device-not-found', route: '/devices/NOPE' },
   // ---- configurations ----
   { name: 'configurations', route: '/configurations' },
@@ -666,7 +666,7 @@ async function keyboardWalk(browser, base) {
   const POPUP = `${DIALOG}, [role=menu]`;
   const dialogs = [
     ['/devices/WH-SCAN-07', 'button', 'Rename device', 'form.v2-device-rename'],
-    ['/devices/WH-SCAN-07', 'button', 'Send alert…'],
+    ['/devices/WH-SCAN-07', 'button', 'Send alert'],
     ['/devices', 'button', 'More actions for KIOSK-FRONT'],
     ['/configurations', 'button', 'More for Default'],
     ['/apps', 'button', 'Deploy Chrome'],
@@ -674,10 +674,10 @@ async function keyboardWalk(browser, base) {
     ['/settings', 'button', /Change password/],
     ['/configurations/2', 'button', 'Choose from uploaded', POPUP, KIOSK_IMAGE],
     // A menu item that opens a dialog: closing the dialog (Escape, or its Cancel) returns focus to the menu's trigger.
-    ['/devices', 'button', 'More actions for KIOSK-FRONT', DIALOG, {}, { item: 'Change configuration…' }],
-    ['/configurations', 'button', 'More for Default', DIALOG, {}, { item: 'Delete…', close: 'Cancel' }],
+    ['/devices', 'button', 'More actions for KIOSK-FRONT', DIALOG, {}, { item: 'Change configuration' }],
+    ['/configurations', 'button', 'More for Default', DIALOG, {}, { item: 'Delete', close: 'Cancel' }],
     // A dialog whose field takes focus as it mounts (autoFocus): focus still goes back to the menu's trigger.
-    ['/configurations', 'button', 'More for Default', DIALOG, {}, { item: 'Duplicate…' }],
+    ['/configurations', 'button', 'More for Default', DIALOG, {}, { item: 'Duplicate' }],
   ];
   const escapes = [];
   for (const [route, role, label, open = POPUP, extra, via] of dialogs) {

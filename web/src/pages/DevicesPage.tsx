@@ -505,12 +505,12 @@ export function DevicesPage() {
     row: {
       move: (d) => ({
         key: 'move',
-        label: 'Change configuration…',
+        label: 'Change configuration',
         onSelect: () => setDialog({ kind: 'move', ids: [d.id], label: d.number, fromSelection: false }),
       }),
       delete: (d) => ({
         key: 'delete',
-        label: 'Delete…',
+        label: 'Delete',
         danger: true,
         onSelect: () => setDialog({ kind: 'delete', ids: [d.id], label: d.number, fromSelection: false }),
       }),

@@ -234,7 +234,7 @@ export function SettingsPage() {
                 }}
                 disabled={!user}
               >
-                Change password…
+                Change password
               </Button>
               <Button size="sm" onClick={() => void signOut()}>
                 Sign out

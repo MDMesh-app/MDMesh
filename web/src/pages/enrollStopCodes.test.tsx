@@ -53,7 +53,7 @@ describe('Enroll: codes for a batch', () => {
     await waitFor(() => expect(posts(fetch, '/agent/v1/token')).toHaveLength(3), LOAD);
     const notice = await main().findByText(/The code for a batch you replaced still works until/, undefined, LOAD);
 
-    fireEvent.click(within(notice.closest('.v2-callout') ?? notice).getByRole('button', { name: 'Stop all codes…' }));
+    fireEvent.click(within(notice.closest('.v2-callout') ?? notice).getByRole('button', { name: 'Stop all codes' }));
     const dialog = within(await screen.findByRole('alertdialog', { name: 'Stop all enrollment codes?' }));
     expect(posts(fetch, '/agent/v1/token/revoke-all')).toHaveLength(0);
     fireEvent.click(dialog.getByRole('button', { name: 'Stop all codes' }));
@@ -93,7 +93,7 @@ describe('Enroll: codes for a batch', () => {
       String(input).endsWith('/token/revoke-all') ? new Response('Not Found', { status: 404 }) : answer(input, init),
     );
     await openEnroll(fetch);
-    fireEvent.click(main().getByRole('button', { name: 'Stop all codes…' }));
+    fireEvent.click(main().getByRole('button', { name: 'Stop all codes' }));
     const dialog = within(await screen.findByRole('alertdialog', { name: 'Stop all enrollment codes?' }));
     fireEvent.click(dialog.getByRole('button', { name: 'Stop all codes' }));
     expect(await dialog.findByText(/This server can.t stop codes/, undefined, LOAD)).toBeTruthy();

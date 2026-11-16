@@ -46,10 +46,10 @@ describe('configurations list', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('with templates, New configuration… asks where to start, then Create opens it', async () => {
+  it('with templates, New configuration asks where to start, then Create opens it', async () => {
     open([WAREHOUSE, TEMPLATE]);
     await screen.findByRole('link', { name: 'Warehouse' });
-    fireEvent.click(screen.getByRole('button', { name: 'New configuration…' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New configuration' }));
     const dialog = await screen.findByRole('dialog', { name: 'New configuration' });
     expect(within(dialog).getByRole('radio', { name: /Blank configuration/ })).toHaveProperty('checked', true);
     fireEvent.click(within(dialog).getByRole('radio', { name: /Based on “MIUI/ }));
@@ -57,11 +57,11 @@ describe('configurations list', () => {
     expect(await screen.findByText('Based on “MIUI (Xiaomi Redmi)”. Not saved yet.')).toBeTruthy();
   });
 
-  it('Delete… confirms with “Delete configuration”', async () => {
+  it('Delete confirms with “Delete configuration”', async () => {
     open([WAREHOUSE]);
     await screen.findByRole('link', { name: 'Warehouse' });
     fireEvent.click(screen.getByRole('button', { name: 'More for Warehouse' }));
-    fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Delete…' }));
+    fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Delete' }));
     const dialog = await screen.findByRole('alertdialog', { name: 'Delete configuration?' });
     expect(within(dialog).getByRole('button', { name: 'Delete configuration' })).toBeTruthy();
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));

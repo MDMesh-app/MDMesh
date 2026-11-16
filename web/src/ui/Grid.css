@@ -1,8 +1,10 @@
-/* The page grid: 12 columns, equal gutters, stretched cells, spans that answer to the grid's own width. */
+/* The page grid: 12 columns, equal gutters, spans that answer to the grid's own width. Cards are as tall as their
+   content; `--stretch` stretches them to their row (comparable content only, or a short card is dead space). */
 .v2 .v2-grid {
   container: v2-grid / inline-size;
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
+  align-items: start;
   gap: var(--grid-gap);
   margin: 0;
   padding: 0;
@@ -17,8 +19,11 @@
   min-width: 0;
   grid-column: span 12;
 }
-/* The card (or any single child) fills its cell, so cells in a row end on one line. */
-.v2 .v2-grid__cell > * {
+.v2 .v2-grid--stretch {
+  align-items: stretch;
+}
+/* Stretched: the card (or any single child) fills its cell, so cells in a row end on one line. */
+.v2 .v2-grid--stretch > .v2-grid__cell > * {
   flex: 1 1 auto;
 }
 .v2 .v2-grid__cell[data-span='3'] {

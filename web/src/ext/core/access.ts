@@ -70,7 +70,7 @@ export const CORE_ACTION_ACCESS = {
    * 26.10.13).
    */
   renameDevice: { permission: 'edit_device_desc' },
-  /** The library's "Remove from library…": ApplicationResource DELETE /{id} checks edit_applications. */
+  /** The library's "Remove from library": ApplicationResource DELETE /{id} checks edit_applications. */
   removeApp: { permission: 'edit_applications' },
   /**
    * Deploy's "Add to a configuration": ApplicationResource POST /configurations checks edit_applications. Its picker
@@ -79,7 +79,7 @@ export const CORE_ACTION_ACCESS = {
    */
   addToConfiguration: { permission: 'edit_applications' },
   /**
-   * "SHA-256 checksum…" and the missing-checksum notice's "Add checksum": ApplicationResource
+   * "SHA-256 checksum" and the missing-checksum notice's "Add checksum": ApplicationResource
    * PUT /versions/{id}/sha256 checks edit_application_versions.
    */
   setAppChecksum: { permission: 'edit_application_versions' },

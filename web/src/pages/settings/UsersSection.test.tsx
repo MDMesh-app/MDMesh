@@ -58,7 +58,7 @@ function open(
   renderInConsole(<AppRoutes />, { user, path });
   return fetch;
 }
-/** Opens a row's "…" menu and picks an item ("Edit…", "Delete…"). */
+/** Opens a row's "…" menu and picks an item ("Edit", "Delete"). */
 async function rowAction(name: string, item: string) {
   fireEvent.click(await screen.findByRole('button', { name: `More actions for ${name}` }));
   fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: item }));
@@ -127,12 +127,12 @@ describe('Users & roles administration', () => {
     expect(screen.queryByRole('button', { name: 'More actions for root' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'More actions for operator' }));
     const items = within(await screen.findByRole('menu')).getAllByRole('menuitem').map((m) => m.textContent);
-    expect(items).toEqual(['Edit…', 'Delete…']);
+    expect(items).toEqual(['Edit', 'Delete']);
   });
 
   it('creates an account with a wire-compatible hashed password and the selected access scopes', async () => {
     const fetch = open();
-    fireEvent.click(await screen.findByRole('button', { name: 'New user…' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'New user' }));
     const dialog = within(await screen.findByRole('dialog'));
     const login = await dialog.findByLabelText('Login');
     fireEvent.change(login, { target: { value: 'new-operator' } });
@@ -162,7 +162,7 @@ describe('Users & roles administration', () => {
 
   it('preserves restricted access on an edit and never forwards account secrets or a reset flag', async () => {
     const fetch = open();
-    await rowAction('operator', 'Edit…');
+    await rowAction('operator', 'Edit');
     const dialog = within(await screen.findByRole('dialog'));
     const name = await dialog.findByLabelText('Name');
     fireEvent.change(name, { target: { value: 'Updated operator' } });
@@ -185,7 +185,7 @@ describe('Users & roles administration', () => {
 
   it('refuses mismatching passwords without sending a write', async () => {
     const fetch = open();
-    fireEvent.click(await screen.findByRole('button', { name: 'New user…' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'New user' }));
     const dialog = within(await screen.findByRole('dialog'));
     const login = await dialog.findByLabelText('Login');
     fireEvent.change(login, { target: { value: 'new' } });
@@ -199,7 +199,7 @@ describe('Users & roles administration', () => {
 
   it('applies Change password’s minimum length to a new account’s password', async () => {
     const fetch = open();
-    fireEvent.click(await screen.findByRole('button', { name: 'New user…' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'New user' }));
     const dialog = within(await screen.findByRole('dialog'));
     const login = await dialog.findByLabelText('Login');
     fireEvent.change(login, { target: { value: 'new' } });
@@ -219,7 +219,7 @@ describe('Users & roles administration', () => {
   it('saves role permissions by ID and preserves the description', async () => {
     const fetch = open();
     fireEvent.click(await screen.findByRole('tab', { name: 'Roles' }));
-    await rowAction('Operators', 'Edit…');
+    await rowAction('Operators', 'Edit');
     const dialog = within(await screen.findByRole('dialog'));
     fireEvent.click(dialog.getByRole('checkbox', { name: 'edit devices (edit_devices)' }));
     fireEvent.submit(dialog.getByLabelText('Role name').closest('form')!);
@@ -250,7 +250,7 @@ describe('Users & roles administration', () => {
           )
         : original(input, init),
     );
-    await rowAction('Operators', 'Delete…');
+    await rowAction('Operators', 'Delete');
     const dialog = within(await screen.findByRole('alertdialog'));
     fireEvent.click(dialog.getByRole('button', { name: 'Delete role' }));
     expect(await dialog.findByRole('alert')).toHaveProperty(

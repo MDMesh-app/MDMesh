@@ -9,15 +9,10 @@
   color: var(--secondary);
 }
 
-/* The aside column: its cards stacked on the grid gutter, the last one stretched to the row's height. */
+/* The two card columns: each stacks its cards on the grid gutter, each card as tall as its content. */
+.v2 .v2-ov-main,
 .v2 .v2-ov-aside {
   gap: var(--grid-gap);
-}
-.v2 .v2-ov-aside > * {
-  flex: 0 0 auto;
-}
-.v2 .v2-ov-aside > :last-child {
-  flex: 1 1 auto;
 }
 .v2 .v2-grid__cell:empty {
   display: none;
@@ -28,10 +23,12 @@
 
 .v2 .v2-ov-statlink {
   color: inherit;
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 0.2em;
 }
 .v2 .v2-ov-statlink:hover {
-  text-decoration: underline;
+  text-decoration-color: currentColor;
 }
 
 /* ---- By configuration: one rule-separated row per configuration: name and count, a bar, a note ---- */

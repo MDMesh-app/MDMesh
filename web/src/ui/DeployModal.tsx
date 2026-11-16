@@ -283,7 +283,7 @@ export function DeployModal({
           <TabPanel idBase={idBase} tabKey="config" className="v2-deploy__panel">
             <Field label="Configuration" help="Every device on this configuration installs the app on its next sync.">
               <Select value={config} onChange={(e) => setConfig(e.target.value)}>
-                <option value="">Select a configuration…</option>
+                <option value="">Select a configuration</option>
                 {configs.map((c) => (
                   <option key={c.id} value={String(c.id)}>
                     {c.name}

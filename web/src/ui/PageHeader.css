@@ -57,11 +57,13 @@
 .v2 .v2-crumbs a {
   border-radius: var(--radius-chip);
   color: var(--secondary);
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 0.2em;
 }
 .v2 .v2-crumbs a:hover {
   color: var(--ink);
-  text-decoration: underline;
+  text-decoration-color: currentColor;
 }
 .v2 .v2-crumbs__current {
   color: var(--text);

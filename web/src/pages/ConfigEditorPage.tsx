@@ -864,15 +864,15 @@ function Editor({
     </Button>
   ) : !canCopy ? null : readOnly ? (
     <Button size="lg" variant="primary" icon={<IconCopy />} onClick={() => setCopying(true)}>
-      Duplicate to edit…
+      Duplicate to edit
     </Button>
   ) : (
     <>
       <Button icon={<IconCopy />} onClick={() => setCopying(true)}>
-        Duplicate…
+        Duplicate
       </Button>
       <Button variant="danger" icon={<IconTrash />} onClick={() => setDeleting(true)}>
-        Delete…
+        Delete
       </Button>
     </>
   );
@@ -949,7 +949,7 @@ function Editor({
           actions={
             readOnly ? undefined : (
               <Button size="sm" icon={<IconPlus />} onClick={() => setPickerOpen(true)} disabled={!appsReady || !libraryReady}>
-                Add apps…
+                Add apps
               </Button>
             )
           }

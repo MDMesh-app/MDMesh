@@ -85,7 +85,7 @@ const puts = (log, suffix) => log.filter((l) => l.method === 'PUT' && l.path.end
 /** The list's rows (one Table, a row per configuration; the "no match" row is not one). */
 const cfgRows = (page) => page.locator('.v2-configs-table tbody tr:not(:has(.v2-table__empty))');
 const cfgRow = (page, text) => cfgRows(page).filter({ hasText: text });
-/** A row's "…" menu (Radix DropdownMenu): Edit / View, Duplicate…, Delete…. */
+/** A row's "…" menu (Radix DropdownMenu): Edit / View, Duplicate, Delete. */
 async function rowMenu(page, name, item) {
   await page.getByRole('button', { name: `More for ${name}` }).click();
   await page.getByRole('menuitem', { name: item }).click();
@@ -126,7 +126,7 @@ await test('list: built-in rows (seed id + name) are view-only', async (page) =>
   await go(page, '/configurations');
   const card = cfgRows(page).first();
   assert.match(await card.innerText(), /Built-in/);
-  // View / Duplicate to edit… / no Delete now live in the row's "…" menu (one table, K8).
+  // View / Duplicate to edit / no Delete now live in the row's "…" menu (one table, K8).
   await card.getByRole('button', { name: /More for/ }).click();
   await page.getByRole('menuitem', { name: 'View' }).waitFor();
   assert.equal(await page.getByRole('menuitem', { name: 'Edit', exact: true }).count(), 0);
@@ -176,7 +176,7 @@ await test('list: delete confirmation, refusal message', async (page, log) => {
 await test('list: new configuration chooser', async (page) => {
   await go(page, '/configurations');
   // With templates the button opens the chooser (hence the ellipsis): pick a radio, then Create.
-  await page.getByRole('button', { name: 'New configuration…' }).first().click();
+  await page.getByRole('button', { name: 'New configuration' }).first().click();
   const dlg = page.getByRole('dialog', { name: 'New configuration' });
   await dlg.locator('label', { hasText: 'Based on “Managed Launcher”' }).click();
   assert.ok(await dlg.getByRole('radio', { name: /Based on “Managed Launcher”/ }).isChecked());
@@ -289,7 +289,7 @@ await test('editor: apps — add, action, show in kiosk clears main app, kiosk o
   await pickOption(page, 'What happens to Chrome', { value: '2' });
   assert.ok(await page.getByRole('checkbox', { name: /in kiosk: Chrome/ }).isDisabled());
   // add an app
-  await page.getByRole('button', { name: 'Add apps…' }).click();
+  await page.getByRole('button', { name: 'Add apps' }).click();
   const dlg = page.getByRole('dialog', { name: 'Add apps' });
   await dlg.getByRole('checkbox', { name: /Field Ops/ }).check();
   await dlg.getByRole('button', { name: 'Add 1' }).click();
@@ -391,7 +391,7 @@ await test('editor: built-in template is read-only, Duplicate to edit is the ser
   assert.equal(await page.getByRole('button', { name: /^Add apps/ }).count(), 0);
   assert.equal(await bar(page).count(), 0);
   await page.getByText('This template uses a well-known default PIN').waitFor();
-  await page.getByRole('button', { name: 'Duplicate to edit…' }).click();
+  await page.getByRole('button', { name: 'Duplicate to edit' }).click();
   const dlg = page.getByRole('dialog', { name: 'Duplicate configuration' });
   assert.equal(await dlg.getByRole('textbox', { name: 'New name' }).inputValue(), 'Managed Launcher copy');
   await dlg.getByRole('button', { name: 'Duplicate' }).click();
@@ -496,7 +496,7 @@ await test('editor: Duplicate is the server copy and opens it (unsaved edits not
   await go(page, '/configurations/3');
   await appTableRows(page).nth(2).waitFor();
   await group(page, 'Bluetooth').getByRole('radio', { name: 'Block' }).click();
-  await page.getByRole('button', { name: 'Duplicate…', exact: true }).click();
+  await page.getByRole('button', { name: 'Duplicate', exact: true }).click();
   const dlg = page.getByRole('dialog', { name: 'Duplicate configuration' });
   await dlg.getByText('Unsaved changes on this page are not copied.').waitFor();
   await dlg.getByRole('textbox', { name: 'New name' }).fill('Field Ops South');
@@ -543,11 +543,11 @@ await test('editor: app library fails → error with Retry, Add apps off; Retry 
   await appTableRows(page).nth(2).waitFor();
   const callout = page.getByText('Couldn’t load the app library');
   await callout.waitFor();
-  assert.ok(await page.getByRole('button', { name: 'Add apps…' }).isDisabled());
+  assert.ok(await page.getByRole('button', { name: 'Add apps' }).isDisabled());
   await page.unroute('**/rest/private/applications/search');
   await page.locator('.v2-cfged-libnote').getByRole('button', { name: 'Retry' }).click();
   await callout.waitFor({ state: 'detached' });
-  assert.equal(await page.getByRole('button', { name: 'Add apps…' }).isDisabled(), false);
+  assert.equal(await page.getByRole('button', { name: 'Add apps' }).isDisabled(), false);
 }, async (context) => {
   // page-level route so the test can lift it (context routes stay)
   context.on('page', (p) => void p.route('**/rest/private/applications/search', (r) => r.fulfill({ status: 500, body: '' })));

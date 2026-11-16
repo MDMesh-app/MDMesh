@@ -38,11 +38,12 @@ export function AuthLayout({
 
   const body = (
     <>
-      <Wordmark size={18} />
-      <div className="v2-auth__titles">
+      {/* One header group: the wordmark, the title right under it, then the subtitle. */}
+      <header className="v2-auth__head">
+        <Wordmark size={18} />
         <h1 className="v2-auth__title">{title}</h1>
         {subtitle ? <p className="v2-auth__sub">{subtitle}</p> : null}
-      </div>
+      </header>
       {children}
     </>
   );

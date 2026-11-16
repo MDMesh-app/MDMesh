@@ -341,7 +341,7 @@ export function UpdatesSection({
                   disabled={!s.verified || starting}
                   onClick={() => setConfirming(true)}
                 >
-                  Update server and console…
+                  Update server and console
                 </Button>
               ) : null}
               {releaseUrl ? (

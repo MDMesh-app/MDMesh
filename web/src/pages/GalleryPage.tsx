@@ -244,7 +244,7 @@ export default function GalleryPage() {
               { key: 'lock', label: 'Lock', onSelect: () => {} },
               { key: 'ring', label: 'Ring', onSelect: () => {} },
               'separator',
-              { key: 'del', label: 'Delete…', danger: true, onSelect: () => {} },
+              { key: 'del', label: 'Delete', danger: true, onSelect: () => {} },
             ]}
           />
         </span>
@@ -314,7 +314,7 @@ export default function GalleryPage() {
             Roll out agent 0.3.3 to 9
           </Button>
           <Button variant="danger" size="lg" icon={<Icons.IconTrash size={14} />}>
-            Delete…
+            Delete
           </Button>
           <Button variant="subtle" size="lg" icon={<Icons.IconRing />}>
             Ring

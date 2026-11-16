@@ -139,10 +139,11 @@
   --control-lg: 40px; /* page primary, dialog footers, sign-in */
   --row: 48px; /* table rows */
   --row-compact: 44px; /* compact tables, list rows inside cards */
-  --nav-item: 34px; /* sidebar items */
+  --nav-item: 36px; /* sidebar items */
   --touch: 44px; /* minimum target in the phone layout */
   --icon-sm: 14px;
   --icon-md: 16px;
+  --icon-nav: 18px; /* sidebar nav icons */
   --check: 16px; /* checkbox and radio */
   --dot-sm: 6px; /* sync marks */
   --dot: 7px; /* status marks */
@@ -159,7 +160,7 @@
   --radius-full: 999px; /* dots, pills, switches */
 
   /* ---- layout ---- */
-  --sidebar-w: 220px;
+  --sidebar-w: 240px;
   --content-max: 1440px; /* left-anchored page column */
   --prose-max: 760px; /* forms and settings prose */
   --page-gutter: var(--space-6);

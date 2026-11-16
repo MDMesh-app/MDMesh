@@ -1,6 +1,6 @@
 /* Location breadcrumb map (LocationMap.tsx). z-index 0 keeps Leaflet's panes under the sticky page chrome. Leaflet's
-   own chrome (zoom buttons, attribution, popups) is redrawn on the console's tokens, and the OpenStreetMap tiles are
-   muted to greys so the trail and the latest fix are the only colour on the map (C7). The element is Leaflet's
+   own chrome (zoom buttons, attribution, popups) is redrawn on the console's tokens. The OpenStreetMap tiles keep their
+   colours (the owner's call): only the dark theme dims them a little so the map doesn't glare. The element is Leaflet's
    container itself (.leaflet-container). */
 .v2 .v2-locmap {
   height: clamp(280px, 50vh, 460px);
@@ -14,13 +14,10 @@
   line-height: var(--lh-meta);
 }
 
-/* Muted tiles: greys in light; inverted greys in dark, so the map sits in the dark page instead of glaring. */
-.v2 .v2-locmap .leaflet-tile-pane {
-  filter: grayscale(1) contrast(0.9) brightness(1.04);
-}
+/* Dark theme: the coloured tiles, gently dimmed. */
 [data-theme='dark'] .v2 .v2-locmap .leaflet-tile-pane,
 .v2[data-theme='dark'] .v2-locmap .leaflet-tile-pane {
-  filter: grayscale(1) invert(1) brightness(0.85) contrast(0.85);
+  filter: brightness(0.82);
 }
 
 /* Zoom: two stacked icon buttons on a raised surface (the console's icon-button size and hover). */

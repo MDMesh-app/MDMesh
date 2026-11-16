@@ -74,7 +74,7 @@ function singleItem(items: ReadonlyArray<MenuEntry>) {
 
 /**
  * Library: every deployable app in the library as a table (cards ≤ 900px), with the missing-checksum
- * notice, and per row Deploy plus the "…" menu (SHA-256 checksum…, Remove from library…), revealed on hover or focus.
+ * notice, and per row Deploy plus the "…" menu (SHA-256 checksum, Remove from library), revealed on hover or focus.
  */
 export function AppsLibrary({
   tabs,
@@ -184,12 +184,12 @@ export function AppsLibrary({
   // The "…" menu comes from the registry: core's entries (ext/core/lists.tsx) pick these out of the helpers.
   const helpers = withCoreAppsParts(listHelpers, {
     row: {
-      checksum: (a) => (canEditSha(a) ? { key: 'sha', label: 'SHA-256 checksum…', onSelect: () => void editSha256(a) } : null),
+      checksum: (a) => (canEditSha(a) ? { key: 'sha', label: 'SHA-256 checksum', onSelect: () => void editSha256(a) } : null),
       remove: (a) =>
         canRemove(a)
           ? {
               key: 'remove',
-              label: removing === a.id ? 'Removing…' : 'Remove from library…',
+              label: removing === a.id ? 'Removing…' : 'Remove from library',
               textValue: 'Remove from library',
               danger: true,
               disabled: removing != null,
@@ -209,7 +209,7 @@ export function AppsLibrary({
     return (
       <div className="v2-rowactions">
         {onDeploy ? (
-          <Tooltip content={busy ? 'Opening…' : 'Deploy…'}>
+          <Tooltip content={busy ? 'Opening…' : 'Deploy'}>
             <IconButton
               label={`Deploy ${a.name}`}
               size={size}

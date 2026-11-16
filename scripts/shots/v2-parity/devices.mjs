@@ -151,7 +151,7 @@ async function filterBy(page, label, value) {
   await page.waitForTimeout(300);
   ok('menu Ring → device.ring', last(calls, /\/devices\/KIOSK-FRONT\/commands$/)?.body.includes('device.ring'));
   await page.getByRole('button', { name: 'More actions for KIOSK-FRONT' }).click();
-  await page.getByRole('menuitem', { name: 'Delete…' }).click();
+  await page.getByRole('menuitem', { name: 'Delete' }).click();
   ok('menu Delete opens confirm', (await page.getByRole('alertdialog').count()) === 1);
   await page.getByRole('button', { name: 'Delete KIOSK-FRONT' }).click();
   await page.waitForTimeout(300);
@@ -172,10 +172,10 @@ async function filterBy(page, label, value) {
   ok('header checkbox selects page', await selectedIs(page, 8));
 
   // Run action: immediate (Ring), confirm (Reboot), params (Send alert)
-  await page.getByRole('button', { name: 'Run action…' }).click();
+  await page.getByRole('button', { name: 'Run action' }).click();
   ok('run modal title', (await page.getByRole('dialog', { name: 'Run action on 8 devices' }).count()) === 1);
   ok('destructive actions excluded', (await page.getByRole('button', { name: /^Factory reset/ }).count()) === 0 && (await page.getByRole('button', { name: /^Reset passcode/ }).count()) === 0);
-  await page.getByRole('button', { name: 'Reboot…' }).click();
+  await page.getByRole('button', { name: 'Reboot' }).click();
   ok('Reboot asks to confirm', (await page.getByRole('dialog', { name: 'Reboot device?' }).count()) === 1 && (await page.getByRole('button', { name: 'Reboot 8 devices' }).count()) === 1);
   await page.getByRole('button', { name: 'Reboot 8 devices' }).click();
   await page.waitForTimeout(300);
@@ -184,8 +184,8 @@ async function filterBy(page, label, value) {
   ok('selection cleared after run', (await page.locator(BAR).count()) === 0);
 
   await page.getByLabel('Select all on this page').check();
-  await page.getByRole('button', { name: 'Run action…' }).click();
-  await page.getByRole('button', { name: 'Send alert…' }).click();
+  await page.getByRole('button', { name: 'Run action' }).click();
+  await page.getByRole('button', { name: 'Send alert' }).click();
   const run = page.getByRole('button', { name: 'Send to 8 devices' });
   ok('alert: Run disabled until Message', await run.isDisabled());
   await page.getByLabel('Message', { exact: true }).fill('Hello');
@@ -195,17 +195,17 @@ async function filterBy(page, label, value) {
   ok('alert queued with body', bulk && JSON.parse(JSON.parse(bulk.body).command.payload).body === 'Hello');
 
   await page.getByLabel('Select all on this page').check();
-  await page.getByRole('button', { name: 'Run action…' }).click();
-  await page.getByRole('button', { name: 'Install app…' }).click();
+  await page.getByRole('button', { name: 'Run action' }).click();
+  await page.getByRole('button', { name: 'Install app' }).click();
   await page.getByRole('button', { name: /^Chrome/ }).click();
   await page.waitForTimeout(300);
   bulk = last(calls, /\/bulk\/commands$/);
   ok('install queued', bulk && JSON.parse(bulk.body).command.type === 'app.install');
 
   await page.getByLabel('Select all on this page').check();
-  await page.getByRole('button', { name: 'Run action…' }).click();
-  const customBtn = page.getByRole('button', { name: 'Custom kiosk…' });
-  const returnBtn = page.getByRole('button', { name: 'Return to configured kiosk…' });
+  await page.getByRole('button', { name: 'Run action' }).click();
+  const customBtn = page.getByRole('button', { name: 'Custom kiosk' });
+  const returnBtn = page.getByRole('button', { name: 'Return to configured kiosk' });
   // One primary per dialog now: the catalogue's buttons are all secondary (the footer has none either).
   ok('kiosk group: Return to configured kiosk is secondary, not red', /v2-btn--secondary/.test((await returnBtn.getAttribute('class')) ?? ''), await returnBtn.getAttribute('class'));
   ok('kiosk group: Custom kiosk is secondary, not red', /v2-btn--secondary/.test((await customBtn.getAttribute('class')) ?? ''), await customBtn.getAttribute('class'));
@@ -229,8 +229,8 @@ async function filterBy(page, label, value) {
   // Return to configured kiosk: only Retail Kiosk (devices 102, 104, 107) has kiosk mode on; it pins Signage Player
   // (mainAppId 2710 is its usedVersionId), Chrome is hidden from kiosk and Teams isn't set to Install.
   await page.getByLabel('Select all on this page').check();
-  await page.getByRole('button', { name: 'Run action…' }).click();
-  await page.getByRole('button', { name: 'Return to configured kiosk…' }).click();
+  await page.getByRole('button', { name: 'Run action' }).click();
+  await page.getByRole('button', { name: 'Return to configured kiosk' }).click();
   const rd = page.getByRole('dialog', { name: 'Return to configured kiosk?' });
   await rd.getByRole('list', { name: 'By configuration' }).waitFor({ timeout: 5000 }).catch(() => {});
   const rtext = (await rd.textContent()).replace(/\s+/g, ' ');
@@ -255,19 +255,19 @@ async function filterBy(page, label, value) {
 
   // A selection with no kiosk configuration: nothing to return, the button stays disabled.
   await page.getByLabel('Select WH-SCAN-07').check();
-  await page.getByRole('button', { name: 'Run action…' }).click();
-  await page.getByRole('button', { name: 'Return to configured kiosk…' }).click();
+  await page.getByRole('button', { name: 'Run action' }).click();
+  await page.getByRole('button', { name: 'Return to configured kiosk' }).click();
   const rd2 = page.getByRole('dialog', { name: 'Return to configured kiosk?' });
   await rd2.getByRole('list', { name: 'By configuration' }).waitFor({ timeout: 5000 }).catch(() => {});
   ok('return: nothing to return → disabled', await rd2.getByRole('button', { name: 'Return 0 devices to configured kiosk' }).isDisabled());
   await rd2.getByRole('button', { name: 'Back' }).click();
-  ok('return: Back to the catalogue', (await page.getByRole('button', { name: 'Custom kiosk…' }).count()) === 1);
+  ok('return: Back to the catalogue', (await page.getByRole('button', { name: 'Custom kiosk' }).count()) === 1);
   await escapeDialog(page);
   await page.getByRole('button', { name: 'Clear', exact: true }).click().catch(() => {});
 
   // Escape closes the run modal
   await page.getByLabel('Select all on this page').check();
-  await page.getByRole('button', { name: 'Run action…' }).click();
+  await page.getByRole('button', { name: 'Run action' }).click();
   await page.getByRole('dialog', { name: 'Run action on 8 devices' }).waitFor();
   await page.keyboard.press('Escape');
   await page.locator(DIALOG).first().waitFor({ state: 'detached', timeout: 2000 }).catch(() => {});
@@ -279,7 +279,7 @@ async function filterBy(page, label, value) {
   }
 
   // change configuration
-  await page.getByRole('button', { name: 'Change configuration…' }).click();
+  await page.getByRole('button', { name: 'Change configuration' }).click();
   const move = page.getByRole('button', { name: 'Move' });
   ok('Move disabled until chosen', await move.isDisabled());
   await pickOption(page.getByRole('dialog', { name: 'Change configuration' }), 'Configuration', { value: '3' });
@@ -291,7 +291,7 @@ async function filterBy(page, label, value) {
 
   // bulk delete
   await page.getByLabel('Select WH-SCAN-11').check();
-  await page.getByRole('button', { name: 'Delete…', exact: true }).click();
+  await page.getByRole('button', { name: 'Delete', exact: true }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: 'Delete 1' }).click();
   await page.waitForTimeout(300);
   ok('bulk delete', JSON.parse(last(calls, /deleteBulk$/).body).ids.join() === '108');
@@ -354,7 +354,7 @@ async function filterBy(page, label, value) {
   await page.getByRole('radio', { name: /Offline/ }).click();
   await page.waitForTimeout(200);
   ok('Offline filter: 1 selected, "Select all 3" offered', (await selectedIs(page, 1)) && (await page.getByRole('button', { name: 'Select all 3' }).count()) === 1);
-  await page.getByRole('button', { name: 'Run action…' }).click();
+  await page.getByRole('button', { name: 'Run action' }).click();
   ok('bulk dialog acts on the visible selection only', (await page.getByRole('dialog', { name: 'Run action on 1 device' }).count()) === 1);
   await escapeDialog(page);
   await page.getByRole('button', { name: 'Select all 3' }).click();

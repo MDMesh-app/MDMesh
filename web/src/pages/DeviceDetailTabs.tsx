@@ -293,7 +293,7 @@ export function TelemetryTab({ telemetry, loaded, reportedAt }: { telemetry: Tel
   if (!telemetry) {
     if (!loaded) {
       return (
-        <Grid aria-busy="true">
+        <Grid stretch aria-busy="true">
           {[6, 6, 6, 6].map((span, i) => (
             <GridCell key={i} span={span as 6}>
               <Card>
@@ -320,7 +320,7 @@ export function TelemetryTab({ telemetry, loaded, reportedAt }: { telemetry: Tel
           Reported <RelativeTime value={reportedAt} style="long" seconds />
         </p>
       ) : null}
-      <Grid className="v2-device-tele__grid">
+      <Grid stretch className="v2-device-tele__grid">
         {layout.map(({ group, span, rows, wide }) => (
           <GridCell key={group.title} span={span} rows={rows}>
             <Card as="section" aria-label={group.title} className="v2-device-tele__card">

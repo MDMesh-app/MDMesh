@@ -23,12 +23,13 @@
 .v2 .v2-settings-link {
   border-radius: var(--radius-chip);
   font-weight: var(--weight-medium);
-  color: var(--secondary);
-  text-decoration: none;
-}
-.v2 .v2-settings-link:hover {
   color: var(--ink);
   text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 0.2em;
+}
+.v2 .v2-settings-link:hover {
+  text-decoration-color: currentColor;
 }
 /* Loading placeholders at the size of the line or panel they stand for. */
 .v2 .v2-settings-skel {

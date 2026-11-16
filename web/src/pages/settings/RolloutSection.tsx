@@ -431,11 +431,11 @@ export function RolloutSection({
           actions={
             !canEdit ? undefined : finishing ? (
               <Button size="sm" onClick={() => setConfirm('cancel')} disabled={busy}>
-                Finish rollout…
+                Finish rollout
               </Button>
             ) : (
               <Button size="sm" variant="danger" onClick={() => setConfirm('cancel')} disabled={busy}>
-                Cancel rollout…
+                Cancel rollout
               </Button>
             )
           }
@@ -472,7 +472,7 @@ export function RolloutSection({
                   disabled={busy || !cohortDone(active.progress.canary)}
                   onClick={() => setConfirm('promote')}
                 >
-                  Promote to everyone else…
+                  Promote to everyone else
                 </Button>
               ) : null}
               <span className="v2-settings-promote__hint">{promoteHint(active.progress.canary)}</span>
@@ -513,7 +513,7 @@ export function RolloutSection({
                 setPicking(true);
               }}
             >
-              Roll out agent…
+              Roll out agent
             </Button>
           ) : null}
         </div>

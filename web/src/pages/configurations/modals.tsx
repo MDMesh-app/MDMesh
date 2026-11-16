@@ -194,7 +194,7 @@ export function DeleteConfigModal({
 }
 
 /**
- * "New configuration…": blank, or based on one of the built-in templates (classic NewChooser). The page opens it only
+ * "New configuration": blank, or based on one of the built-in templates (classic NewChooser). The page opens it only
  * when there is a template to offer; with none, New configuration creates a blank one directly.
  */
 export function NewConfigChooser({

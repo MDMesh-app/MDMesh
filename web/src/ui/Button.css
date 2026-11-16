@@ -111,16 +111,20 @@
 
 .v2 .v2-btn--ghost,
 .v2 .v2-btn--ghost:hover {
-  background: transparent;
+  /* Quiet, but still a button at rest: a soft fill, no edge. */
+  background: var(--surface-2);
   border-color: transparent;
-  color: var(--text-2);
-  padding-inline: var(--space-2);
+  color: var(--text);
+  padding-inline: var(--space-3);
 }
 
 .v2 .v2-btn--secondary:not(:disabled, [aria-disabled='true']):hover,
-.v2 .v2-btn--subtle:not(:disabled, [aria-disabled='true']):hover,
-.v2 .v2-btn--ghost:not(:disabled, [aria-disabled='true']):hover {
+.v2 .v2-btn--subtle:not(:disabled, [aria-disabled='true']):hover {
   background: var(--hover);
+  color: var(--ink);
+}
+.v2 .v2-btn--ghost:not(:disabled, [aria-disabled='true']):hover {
+  background: var(--pressed);
   color: var(--ink);
 }
 .v2 .v2-btn--danger:not(:disabled, [aria-disabled='true']):hover {
@@ -131,6 +135,7 @@
 .v2 .v2-btn--subtle:not(:disabled, [aria-disabled='true']):active,
 .v2 .v2-btn--ghost:not(:disabled, [aria-disabled='true']):active {
   background: var(--pressed);
+  border-color: var(--border-strong);
 }
 
 /* ---- disabled: the same variant, faded ---- */
@@ -140,7 +145,8 @@
   opacity: var(--disabled-opacity);
 }
 
-/* ---- icon buttons: ghost squares 24 / 28 / 32 / 36 ---- */
+/* ---- icon buttons: squares at the control heights. At rest a hairline edge on the surface (it reads as a button,
+   not a bare icon); hovered, a fill and a stronger edge. ---- */
 .v2 .v2-iconbtn {
   display: inline-flex;
   flex: 0 0 auto;
@@ -149,12 +155,12 @@
   width: var(--control-md);
   height: var(--control-md);
   padding: 0;
-  border: var(--hairline) solid transparent;
+  border: var(--hairline) solid var(--border);
   border-radius: var(--radius-control);
-  background: transparent;
+  background: var(--surface);
   color: var(--text-2);
   cursor: pointer;
-  transition-property: background-color, color, opacity;
+  transition-property: background-color, border-color, color, opacity;
   transition-duration: var(--dur-micro);
   transition-timing-function: var(--ease);
 }
@@ -173,6 +179,7 @@
 }
 .v2 .v2-iconbtn:not(:disabled):hover,
 .v2 .v2-iconbtn[aria-expanded='true'] {
+  border-color: var(--border-strong);
   background: var(--hover);
   color: var(--ink);
 }
@@ -219,16 +226,17 @@
 }
 .v2 .v2-linkbtn--strong,
 .v2 .v2-linkbtn--quiet {
+  /* A link at rest: ink, medium, a soft underline that firms up on hover. */
   font-size: var(--text-ui);
   font-weight: var(--weight-medium);
-  color: var(--secondary);
-  text-decoration: none;
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 0.2em;
 }
 .v2 .v2-linkbtn--strong:hover,
 .v2 .v2-linkbtn--quiet:hover {
-  color: var(--ink);
-  text-decoration: underline;
-  text-underline-offset: 0.2em;
+  text-decoration-color: currentColor;
 }
 .v2 .v2-linkbtn--inline {
   color: inherit;

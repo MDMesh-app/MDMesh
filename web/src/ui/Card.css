@@ -90,16 +90,17 @@
   color: var(--secondary);
 }
 
-/* Links in a card header are quiet text actions: secondary ink, no underline until hovered. */
+/* Links in a card header ("See all", "Manage"): ink, medium, a soft underline that firms up on hover. */
 .v2 .v2-cardhead__actions > a {
   border-radius: var(--radius-chip);
   font-weight: var(--weight-medium);
-  color: var(--secondary);
-  text-decoration: none;
-}
-.v2 .v2-cardhead__actions > a:hover {
   color: var(--ink);
   text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 0.2em;
+}
+.v2 .v2-cardhead__actions > a:hover {
+  text-decoration-color: currentColor;
 }
 @media (max-width: 860px) {
   .v2 .v2-cardhead__actions > a {
@@ -109,23 +110,28 @@
   }
 }
 
-/* ---- notice strip (attention / missing checksum) ---- */
+/* ---- notice strip (attention / missing checksum) ----
+   A grid: the icon beside the body (title and chips in one wrapping row), the action at the right; where the strip
+   is narrow the action drops under the body, still aligned with it (a container query, so it follows the strip). */
 .v2 .v2-notice {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2) var(--space-3);
-  min-height: var(--row);
-  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
+  container: v2-notice / inline-size;
   background: var(--surface);
   border: var(--hairline) solid var(--warn-line);
   border-radius: var(--radius-control);
 }
-.v2 .v2-notice__icon {
-  flex: 0 0 auto;
-  display: inline-flex;
+.v2 .v2-notice__grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: center;
+  gap: var(--space-2) var(--space-3);
+  min-height: var(--row);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+}
+.v2 .v2-notice__icon {
+  display: inline-flex;
+  align-self: start;
+  align-items: center;
+  height: var(--control-sm);
   color: var(--warn-ink);
 }
 .v2 .v2-notice__icon > svg {
@@ -133,17 +139,22 @@
   height: var(--icon-md);
 }
 .v2 .v2-notice__body {
-  flex: 1 1 320px;
   min-width: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2) var(--space-3);
+  min-height: var(--control-sm);
 }
 .v2 .v2-notice__action {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+@container v2-notice (max-width: 560px) {
+  .v2 .v2-notice__action {
+    grid-column: 2 / -1;
+  }
 }
 .v2 .v2-notice--alert {
   border-color: var(--alert-line);

@@ -1,4 +1,4 @@
-/* Sidebar: 220px, 12px padding, 30px nav items at 13px; footer = one-line update item + account row. */
+/* Sidebar: --sidebar-w wide, --nav-item rows at the UI size with --icon-nav icons; footer = update card + account row. */
 .v2 .v2-sidebar {
   height: 100%;
   min-height: 100%;
@@ -54,10 +54,12 @@
 .v2 .v2-navitem:hover {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-3);
   height: var(--nav-item);
-  padding: 0 var(--space-2);
+  padding: 0 var(--space-3);
   border-radius: var(--radius-control);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
   text-decoration: none;
   background: transparent;
   color: var(--text-2);
@@ -68,8 +70,8 @@
 }
 .v2 .v2-navitem > svg {
   flex: 0 0 auto;
-  width: var(--icon-md);
-  height: var(--icon-md);
+  width: var(--icon-nav);
+  height: var(--icon-nav);
   color: var(--secondary);
 }
 .v2 .v2-navitem:not(.is-active):hover {

@@ -41,11 +41,11 @@ describe('Agent rollout', () => {
   it('offers Finish, not Promote, when every device is in the canary', async () => {
     const fetch = open((p) => (p === '/agent/v1/rollout/active' ? canary(0) : null));
     await main().findByText(/Updating the agent to/);
-    expect(main().queryByRole('button', { name: 'Promote to everyone else…' })).toBeNull();
-    expect(main().queryByRole('button', { name: 'Cancel rollout…' })).toBeNull();
+    expect(main().queryByRole('button', { name: 'Promote to everyone else' })).toBeNull();
+    expect(main().queryByRole('button', { name: 'Cancel rollout' })).toBeNull();
     expect(main().getByText(/Every device is in the canary\. The rollout closes once/)).toBeTruthy();
 
-    fireEvent.click(main().getByRole('button', { name: 'Finish rollout…' }));
+    fireEvent.click(main().getByRole('button', { name: 'Finish rollout' }));
     const dialog = within(await screen.findByRole('alertdialog'));
     fireEvent.click(dialog.getByRole('button', { name: 'Finish rollout' }));
     await waitFor(() =>
@@ -56,8 +56,8 @@ describe('Agent rollout', () => {
   it.each([3, undefined])('keeps Promote and Cancel when others is %s', async (others) => {
     open((p) => (p === '/agent/v1/rollout/active' ? canary(others) : null));
     await main().findByText(/Updating the agent to/);
-    expect(main().getByRole('button', { name: 'Promote to everyone else…' })).toBeTruthy();
-    expect(main().getByRole('button', { name: 'Cancel rollout…' })).toBeTruthy();
+    expect(main().getByRole('button', { name: 'Promote to everyone else' })).toBeTruthy();
+    expect(main().getByRole('button', { name: 'Cancel rollout' })).toBeTruthy();
   });
 
   it('brings the start offer back when a device on an older agent enrolls while Settings is open', async () => {
@@ -75,6 +75,6 @@ describe('Agent rollout', () => {
       await vi.advanceTimersByTimeAsync(SUMMARY_POLL_MS);
     });
     await main().findByText(/is ready to roll out/);
-    expect(main().getByRole('button', { name: 'Roll out agent…' })).toBeTruthy();
+    expect(main().getByRole('button', { name: 'Roll out agent' })).toBeTruthy();
   });
 });

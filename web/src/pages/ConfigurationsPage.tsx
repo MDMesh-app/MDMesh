@@ -25,11 +25,12 @@ import {
   Skeleton,
   SkeletonRows,
   StackedBar,
-  Table,
+  Grid,
+  GridCell,
+  MetaGrid,
+  ButtonLink,
   Tooltip,
-  type Column,
   type MenuEntry,
-  useMediaQuery,
 } from '../ui';
 import { CORE_ACTION_ACCESS } from '../ext/core/access';
 import { usePermission } from '../ext/permissions';
@@ -194,70 +195,7 @@ export function ConfigurationsPage() {
   // With no template the chooser would offer one option (Blank): create directly instead (K7).
   const chooses = templates.length > 0;
   const newConfig = () => (chooses ? setChooserOpen(true) : navigate(paths.configuration('new')));
-  const newLabel = chooses ? 'New configuration…' : 'New configuration';
-
-  // Phones: name and sync only (main app and counts are on the configuration's page), no sideways scroll.
-  const phone = useMediaQuery('(max-width: 600px)');
-  const columns: Column<Configuration>[] = [
-    {
-      key: 'name',
-      header: 'Configuration',
-      className: 'v2-configs-col--name',
-      cell: (c) => <ConfigIdentity c={c} />,
-    },
-    {
-      key: 'main',
-      header: 'Main app',
-      className: 'v2-configs-col--main',
-      cell: (c) => <MainApp c={c} apps={apps} assigned={c.id != null ? assigned[c.id] : undefined} />,
-    },
-    {
-      key: 'apps',
-      header: 'Apps',
-      align: 'right',
-      mono: true,
-      className: 'v2-configs-col--count',
-      cell: (c) => {
-        const a = c.id != null ? assigned[c.id] : undefined;
-        return a === undefined ? <Skeleton width="2ch" /> : a === null ? '—' : a.length;
-      },
-    },
-    {
-      key: 'devices',
-      header: 'Devices',
-      align: 'right',
-      mono: true,
-      className: 'v2-configs-col--count',
-      cell: (c) => {
-        const row = c.id != null ? sync[c.id] : undefined;
-        if (row) return row.total;
-        if (!syncLoaded) return <Skeleton width="2ch" />;
-        return syncFailed ? '—' : 0;
-      },
-    },
-    {
-      key: 'sync',
-      header: 'Sync',
-      className: 'v2-configs-col--sync',
-      cell: (c) => <SyncCell row={c.id != null ? sync[c.id] : undefined} failed={syncFailed} loaded={syncLoaded} />,
-    },
-    {
-      key: 'actions',
-      header: 'Actions',
-      headerHidden: true,
-      shrink: true,
-      cell: (c) => (
-        <div className="v2-rowactions">
-          <RowMenu
-            c={c}
-            onOpen={() => navigate(paths.configuration(c.id ?? ''))}
-            onCopy={canCopy ? () => setCopyOf(c) : undefined}
-            onDelete={canCopy ? () => setDeleting(c) : undefined}
-          />
-        </div>
-      ),
-    },
-  ];
+  const newLabel = chooses ? 'New configuration' : 'New configuration';
 
   let body: ReactNode = null;
   if (configs === null) {
@@ -285,39 +223,48 @@ export function ConfigurationsPage() {
       </Card>
     );
   } else {
-    body = (
-      <Card as="section" padding="none" clip aria-label="Configuration list">
-        <Table<Configuration>
-          aria-label="Configurations"
-          className="v2-configs-table"
-          columns={columns}
-          rows={shown}
-          rowKey={(c) => c.id ?? c.name}
-          minWidth={phone ? undefined : 760}
-          onRowClick={(c) => navigate(paths.configuration(c.id ?? ''))}
-          empty={
-            <EmptyState
-              bare
-              icon={<IconSearch />}
-              title="No configurations match"
-              action={
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setQ('');
-                    setShow('all');
-                  }}
-                >
-                  Show all configurations
-                </Button>
-              }
-            >
-              Try another name or description.
-            </EmptyState>
-          }
-        />
-      </Card>
-    );
+    body =
+      shown.length === 0 ? (
+        <Card>
+          <EmptyState
+            bare
+            icon={<IconSearch />}
+            title="No configurations match"
+            action={
+              <Button
+                size="sm"
+                onClick={() => {
+                  setQ('');
+                  setShow('all');
+                }}
+              >
+                Show all configurations
+              </Button>
+            }
+          >
+            Try another name or description.
+          </EmptyState>
+        </Card>
+      ) : (
+        // Cards on the page grid, three to a row on wide screens; each row's cards end level (comparable content).
+        <Grid as="ul" stretch aria-label="Configurations" className="v2-configs__grid">
+          {shown.map((c) => (
+            <GridCell as="li" span={4} key={c.id ?? c.name}>
+              <ConfigCard
+                c={c}
+                apps={apps}
+                assigned={c.id != null ? assigned[c.id] : undefined}
+                sync={c.id != null ? sync[c.id] : undefined}
+                syncFailed={syncFailed}
+                syncLoaded={syncLoaded}
+                onOpen={() => navigate(paths.configuration(c.id ?? ''))}
+                onCopy={canCopy ? () => setCopyOf(c) : undefined}
+                onDelete={canCopy ? () => setDeleting(c) : undefined}
+              />
+            </GridCell>
+          ))}
+        </Grid>
+      );
   }
 
   return (
@@ -475,7 +422,7 @@ function SyncCell({ row, failed, loaded }: { row?: ConfigSyncSummary; failed: bo
   );
 }
 
-/** The row's "…" menu: Edit (View for a built-in), Duplicate…, Delete…. */
+/** The row's "…" menu: Edit (View for a built-in), Duplicate, Delete. */
 function RowMenu({
   c,
   onOpen,
@@ -493,7 +440,7 @@ function RowMenu({
   if (onCopy) {
     menu.push({
       key: 'copy',
-      label: locked ? 'Duplicate to edit…' : 'Duplicate…',
+      label: locked ? 'Duplicate to edit' : 'Duplicate',
       textValue: 'Duplicate',
       icon: <IconCopy />,
       onSelect: onCopy,
@@ -502,7 +449,7 @@ function RowMenu({
   if (!locked && onDelete) {
     menu.push('separator', {
       key: 'delete',
-      label: 'Delete…',
+      label: 'Delete',
       textValue: 'Delete',
       icon: <IconTrash />,
       danger: true,
@@ -510,4 +457,69 @@ function RowMenu({
     });
   }
   return <Menu items={menu} label={`More for ${c.name}`} iconSize="xs" align="end" />;
+}
+
+/**
+ * One configuration as a card: name, tags and description with its "…" menu; main app, apps and devices; the sync
+ * bar; and its actions (Edit or View, Duplicate).
+ */
+function ConfigCard({
+  c,
+  apps,
+  assigned,
+  sync,
+  syncFailed,
+  syncLoaded,
+  onOpen,
+  onCopy,
+  onDelete,
+}: {
+  c: Configuration;
+  apps: Application[];
+  /** undefined = loading, null = failed. */
+  assigned: ConfigApp[] | null | undefined;
+  sync?: ConfigSyncSummary;
+  syncFailed: boolean;
+  syncLoaded: boolean;
+  onOpen: () => void;
+  /** Duplicate and Delete, left out for a role without copy_config. */
+  onCopy?: () => void;
+  onDelete?: () => void;
+}) {
+  const locked = isLocked(c);
+  const to = paths.configuration(c.id ?? '');
+  const devices = sync?.total ?? (syncFailed ? '—' : syncLoaded ? 0 : undefined);
+  return (
+    <Card as="article" aria-label={c.name} className="v2-configs-card">
+      <div className="v2-configs-card__top">
+        <ConfigIdentity c={c} />
+        <RowMenu c={c} onOpen={onOpen} onCopy={onCopy} onDelete={onDelete} />
+      </div>
+      <MetaGrid
+        boxed
+        className="v2-configs-card__meta"
+        columns="minmax(0, 1.6fr) repeat(2, minmax(0, 1fr))"
+        cells={[
+          { key: 'main', label: 'Main app', value: <MainApp c={c} apps={apps} assigned={assigned} /> },
+          {
+            key: 'apps',
+            label: 'Apps',
+            value: assigned === undefined ? <Skeleton width="2ch" /> : assigned === null ? '—' : assigned.length,
+          },
+          { key: 'devices', label: 'Devices', value: devices === undefined ? <Skeleton width="2ch" /> : devices },
+        ]}
+      />
+      <SyncCell row={sync} failed={syncFailed} loaded={syncLoaded} />
+      <div className="v2-configs-card__foot">
+        <ButtonLink to={to} size="sm" icon={locked ? undefined : <IconPencil />}>
+          {locked ? 'View' : 'Edit'}
+        </ButtonLink>
+        {onCopy ? (
+          <Button size="sm" icon={<IconCopy />} onClick={onCopy}>
+            {locked ? 'Duplicate to edit' : 'Duplicate'}
+          </Button>
+        ) : null}
+      </div>
+    </Card>
+  );
 }

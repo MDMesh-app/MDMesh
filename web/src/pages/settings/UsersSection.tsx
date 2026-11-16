@@ -181,11 +181,11 @@ export function UsersSection({
   /** What this account may do to another one (the server enforces the same). */
   const userActions = (u: ManagedUser): MenuItem[] => {
     if (u.id === user?.id || u.editable === false || (u.userRole?.superAdmin && !iAmSuper)) return [];
-    const items: MenuItem[] = [{ key: 'edit', label: 'Edit…', textValue: 'Edit', onSelect: () => editUser(u) }];
+    const items: MenuItem[] = [{ key: 'edit', label: 'Edit', textValue: 'Edit', onSelect: () => editUser(u) }];
     if (!u.userRole?.superAdmin) {
       items.push({
         key: 'delete',
-        label: 'Delete…',
+        label: 'Delete',
         textValue: 'Delete',
         danger: true,
         onSelect: () => askDelete('user', u.id!, u.login),
@@ -194,8 +194,8 @@ export function UsersSection({
     return items;
   };
   const roleActions = (r: UserRole): MenuItem[] => [
-    { key: 'edit', label: 'Edit…', textValue: 'Edit', onSelect: () => editRole(r) },
-    { key: 'delete', label: 'Delete…', textValue: 'Delete', danger: true, onSelect: () => askDelete('role', r.id!, r.name) },
+    { key: 'edit', label: 'Edit', textValue: 'Edit', onSelect: () => editRole(r) },
+    { key: 'delete', label: 'Delete', textValue: 'Delete', danger: true, onSelect: () => askDelete('role', r.id!, r.name) },
   ];
 
   const usersTable = data ? (
@@ -296,7 +296,7 @@ export function UsersSection({
         actions={
           data && !loading ? (
             <Button variant="primary" size="sm" onClick={() => (rolesTab ? editRole('new') : editUser('new'))}>
-              {rolesTab ? 'New role…' : 'New user…'}
+              {rolesTab ? 'New role' : 'New user'}
             </Button>
           ) : undefined
         }

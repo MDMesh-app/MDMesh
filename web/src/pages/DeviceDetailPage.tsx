@@ -1124,10 +1124,10 @@ export function DeviceDetailPage() {
                 disabled={busy || wiped}
                 items={[
                   { key: 'ring', label: 'Ring', icon: <IconRing />, onSelect: () => runAction(TEMPLATE.ring) },
-                  { key: 'alert', label: 'Send alert…', icon: <IconAlert />, onSelect: () => runAction(TEMPLATE.alert) },
+                  { key: 'alert', label: 'Send alert', icon: <IconAlert />, onSelect: () => runAction(TEMPLATE.alert) },
                   {
                     key: 'lsm',
-                    label: 'Lock-screen message…',
+                    label: 'Lock-screen message',
                     icon: <IconScreenMessage />,
                     onSelect: () => runAction(TEMPLATE['lockscreen-message']),
                   },
@@ -1138,7 +1138,7 @@ export function DeviceDetailPage() {
                     icon: <IconDownload size={16} />,
                     onSelect: () => void installConfigApps(),
                   },
-                  { key: 'reboot', label: 'Reboot…', icon: <IconPower />, onSelect: () => runAction(TEMPLATE.reboot) },
+                  { key: 'reboot', label: 'Reboot', icon: <IconPower />, onSelect: () => runAction(TEMPLATE.reboot) },
                 ]}
               />
             </div>

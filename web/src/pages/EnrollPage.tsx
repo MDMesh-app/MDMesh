@@ -691,7 +691,7 @@ export function EnrollPage() {
         <Callout tone="warn" icon={<IconWarning size={16} />} role="status">
           {replacedText(replaced)}{' '}
           <LinkButton tone="inline" onClick={openStop}>
-            Stop all codes…
+            Stop all codes
           </LinkButton>
         </Callout>
       ) : null}
@@ -791,7 +791,7 @@ export function EnrollPage() {
         titleId="v2-enroll-codes"
         actions={
           <Button size="sm" variant="danger" onClick={openStop}>
-            Stop all codes…
+            Stop all codes
           </Button>
         }
       />

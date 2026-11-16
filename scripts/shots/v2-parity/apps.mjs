@@ -162,7 +162,7 @@ check('version field', (await page.getByLabel('Version', { exact: true }).inputV
 check('pkg read-only', await page.getByLabel('Package name').evaluate((e) => e.readOnly));
 check('in library disabled', await page.getByRole('button', { name: 'In library' }).isDisabled());
 check('stepper all done', (await page.locator('.v2-stepper [aria-current="step"]').count()) === 0);
-await page.getByRole('button', { name: 'Deploy…' }).click();
+await page.getByRole('button', { name: 'Deploy' }).click();
 const dep3 = page.getByRole('dialog');
 await dep3.waitFor();
 check('custom deploy can assign', !(await dep3.getByRole('tab', { name: 'Add to a configuration' }).isDisabled()));
@@ -211,7 +211,7 @@ await page.getByLabel('Link to the APK').fill('https://cdn.example.com/chrome.ap
 await page.getByLabel('Package name').fill('com.android.chrome');
 await page.route('**/rest/private/applications/android', (r) => r.fulfill(err('error.duplicate.application')));
 clearReqs();
-await page.getByRole('button', { name: 'Add and deploy…' }).click();
+await page.getByRole('button', { name: 'Add and deploy' }).click();
 check('duplicate reuses existing', await waitToast('Already in Library'));
 const dep4 = page.getByRole('dialog');
 await dep4.waitFor();

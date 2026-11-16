@@ -551,7 +551,7 @@ export function AppsCustom({
               ) : null}
               {onDeploy ? (
                 <Button size="lg" icon={<IconDownload size={16} />} disabled={deployDisabled} onClick={() => void addAndDeploy()}>
-                  {saved || !canAdd ? 'Deploy…' : 'Add and deploy…'}
+                  {saved || !canAdd ? 'Deploy' : 'Add and deploy'}
                 </Button>
               ) : null}
               <span className="v2-apps-custom__hint">

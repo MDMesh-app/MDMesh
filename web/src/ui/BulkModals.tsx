@@ -352,11 +352,10 @@ export function RunActionModal({
             {ACTION_TEMPLATES.filter(bulkable)
               .filter((t) => (t.group ?? 'safe') === g.id)
               .map((t) => {
-                const asks = (t.params?.length ?? 0) > 0 || !!t.confirm;
                 return (
                   <Tooltip key={t.key} content={t.description}>
                     <Button variant={t.danger ? 'danger' : 'secondary'} disabled={busy} onClick={() => pick(t)}>
-                      {asks ? `${t.label}…` : t.label}
+                      {t.label}
                     </Button>
                   </Tooltip>
                 );
@@ -365,7 +364,7 @@ export function RunActionModal({
         ))}
         <ActionGroup title="Apps">
           <Button disabled={busy} onClick={() => setStep({ kind: 'apps' })}>
-            Install app…
+            Install app
           </Button>
         </ActionGroup>
         <ActionGroup title="Kiosk">
@@ -377,12 +376,12 @@ export function RunActionModal({
                 setStep({ kind: 'configured' });
               }}
             >
-              Return to configured kiosk…
+              Return to configured kiosk
             </Button>
           </Tooltip>
           <Tooltip content="Locks the devices to apps you pick now, as a one-time kiosk their configurations don’t define.">
             <Button disabled={busy} onClick={() => setStep({ kind: 'kiosk' })}>
-              Custom kiosk…
+              Custom kiosk
             </Button>
           </Tooltip>
         </ActionGroup>
@@ -699,7 +698,7 @@ export function ChangeConfigurationModal({
       ) : null}
       <Field label="Configuration">
         <Select value={target} disabled={!!configurationsError} onChange={(e) => setTarget(e.target.value)}>
-          <option value="">Select a configuration…</option>
+          <option value="">Select a configuration</option>
           {configurations.map((c) => (
             <option key={c.id} value={String(c.id)}>
               {c.name}

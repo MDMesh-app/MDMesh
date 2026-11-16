@@ -72,10 +72,10 @@ function Boom(): ReactNode {
 const MENU: MenuEntry[] = [
   { key: 'lock', label: 'Lock', icon: <Icons.IconLock size={15} />, onSelect: () => {} },
   { key: 'ring', label: 'Ring', icon: <Icons.IconRing size={15} />, onSelect: () => {} },
-  { key: 'cfg', label: 'Change configuration…', icon: <Icons.IconSliders />, onSelect: () => {} },
+  { key: 'cfg', label: 'Change configuration', icon: <Icons.IconSliders />, onSelect: () => {} },
   { key: 'off', label: 'Exit kiosk', icon: <Icons.IconExitKiosk size={15} />, onSelect: () => {}, disabled: true },
   'separator',
-  { key: 'del', label: 'Delete…', icon: <Icons.IconTrash />, onSelect: () => {}, danger: true },
+  { key: 'del', label: 'Delete', icon: <Icons.IconTrash />, onSelect: () => {}, danger: true },
 ];
 
 export function GalleryMore() {

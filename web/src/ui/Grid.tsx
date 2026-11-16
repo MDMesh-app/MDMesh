@@ -8,19 +8,25 @@ export type GridSpan = 3 | 4 | 6 | 8 | 9 | 12;
 export interface GridProps extends HTMLAttributes<HTMLElement> {
   /** Fill holes with later, smaller cells (bento layouts whose order may move). Off: cells keep their order. */
   dense?: boolean;
+  /**
+   * Stretch each cell's card to its row's height, so a row ends on one line. Only where the cells hold comparable
+   * content (a bento of facts, a row of stat cards): a short card stretched beside a tall one is dead space. Off
+   * (the default), each card is as tall as its content.
+   */
+  stretch?: boolean;
   as?: 'div' | 'section' | 'ul';
   children: ReactNode;
 }
 
 /**
- * The page grid: 12 columns, one gutter (--grid-gap) on both axes, cells stretched to their row's height so a row
- * never ends ragged. It answers to its own width (a container query), not the window's: below 960px a 3/4/8/9-span
+ * The page grid: 12 columns, one gutter (--grid-gap) on both axes; cards as tall as their content, or stretched to
+ * their row (`stretch`) where the row's cards hold comparable content. It answers to its own width (a container query), not the window's: below 960px a 3/4/8/9-span
  * cell takes half or all of the row, below 640px every cell takes the whole row. Pages use it for every card layout,
  * so card edges line up from page to page.
  */
-export function Grid({ dense, as: As = 'div', className, children, ...rest }: GridProps) {
+export function Grid({ dense, stretch, as: As = 'div', className, children, ...rest }: GridProps) {
   return (
-    <As className={cx('v2-grid', dense && 'v2-grid--dense', className)} {...rest}>
+    <As className={cx('v2-grid', dense && 'v2-grid--dense', stretch && 'v2-grid--stretch', className)} {...rest}>
       {children}
     </As>
   );

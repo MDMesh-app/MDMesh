@@ -1,4 +1,4 @@
-/* Configurations list: toolbar, then one table (48px rows: name + description, main app, apps, devices, sync). */
+/* Configurations: toolbar, then cards on the page grid (name, tags, description, main app / apps / devices, sync, actions). */
 .v2 .v2-configs-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -39,19 +39,37 @@
   border: var(--dot-ring) solid var(--muted);
 }
 
-/* ---- rows ---- */
-/* max-width 0 lets a cell's text ellipsize inside its column's share instead of widening the table */
-.v2 .v2-configs-col--name {
-  width: 36%;
-  max-width: 0;
+/* ---- cards ---- */
+.v2 .v2-configs__grid {
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
-.v2 .v2-configs-col--main {
-  width: 18%;
-  max-width: 0;
+.v2 .v2-configs-card {
+  gap: var(--space-3);
 }
-.v2 .v2-configs-col--sync {
-  width: 24%;
-  max-width: 0;
+.v2 .v2-configs-card__top {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.v2 .v2-configs-card__top > .v2-configs-id {
+  flex: 1 1 auto;
+}
+.v2 .v2-configs-card__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding-top: var(--space-1);
+}
+.v2 .v2-configs-card .v2-configs-id__desc {
+  /* Two lines on a card (the full text is on the configuration's page). */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  white-space: normal;
 }
 .v2 .v2-configs-id {
   display: flex;
@@ -118,48 +136,3 @@
   color: var(--secondary);
 }
 
-/* Phones: each configuration is a stacked row (name and description, then its sync line), its menu at the right; the
-   main app and the counts are on the configuration's page. No header, no sideways scroll. */
-@media (max-width: 600px) {
-  .v2 .v2-configs-table thead,
-  .v2 .v2-configs-col--main,
-  .v2 .v2-configs-col--count {
-    display: none;
-  }
-  .v2 .v2-configs-table table,
-  .v2 .v2-configs-table tbody {
-    display: block;
-  }
-  .v2 .v2-configs-table tbody tr {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: var(--space-2) var(--space-3);
-    height: auto;
-    padding: var(--space-3) var(--card-pad);
-  }
-  .v2 .v2-configs-table tbody td {
-    display: block;
-    padding: 0;
-  }
-  .v2 .v2-configs-table tbody td:first-child,
-  .v2 .v2-configs-table tbody td:last-child {
-    padding: 0;
-  }
-  .v2 .v2-configs-table .v2-configs-col--name {
-    grid-column: 1;
-    grid-row: 1;
-    width: auto;
-    max-width: none;
-  }
-  .v2 .v2-configs-table .v2-configs-col--sync {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    width: auto;
-    max-width: none;
-  }
-  .v2 .v2-configs-table tbody td:last-child {
-    grid-column: 2;
-    grid-row: 1;
-  }
-}

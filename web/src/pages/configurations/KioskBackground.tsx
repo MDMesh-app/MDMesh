@@ -117,7 +117,7 @@ export function KioskBackgroundField({
         </Button>
         {onBrowse ? (
           <Button size="sm" onClick={onBrowse} disabled={readOnly || uploading}>
-            Choose from uploaded…
+            Choose from uploaded
           </Button>
         ) : null}
         {has ? (

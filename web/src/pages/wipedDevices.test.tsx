@@ -105,7 +105,7 @@ describe('wiped devices on Devices', () => {
     fireEvent.click(table().getByRole('button', { name: 'More actions for WH-9' }));
     const menu = within(await screen.findByRole('menu'));
     const disabled = Object.fromEntries(menu.getAllByRole('menuitem').map((m) => [m.textContent, m.getAttribute('aria-disabled') === 'true']));
-    expect(disabled).toEqual({ Lock: true, Ring: true, 'Change configuration…': false, 'Delete…': false });
+    expect(disabled).toEqual({ Lock: true, Ring: true, 'Change configuration': false, 'Delete': false });
   }, SLOW);
 
   it('does not count a wiped device as a duplicate of its re-enrolled twin', async () => {
@@ -211,7 +211,7 @@ describe('a configuration with only wiped devices', () => {
     await main().findByText('Used only by 1 wiped device', undefined, LOAD);
     expect(main().queryByText('Not used by any device yet')).toBeNull();
     fireEvent.click(main().getByRole('button', { name: 'More for Warehouse' }));
-    fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Delete…' }));
+    fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Delete' }));
     const dialog = await screen.findByRole('alertdialog');
     expect(dialog.textContent).toMatch(WHOLE);
     expect(dialog.textContent).toMatch(FILTER);
@@ -226,7 +226,7 @@ describe('a configuration with only wiped devices', () => {
     fireEvent.change(main().getByRole('textbox', { name: /Description/ }), { target: { value: 'Old scanners' } });
     await waitFor(() => expect(screen.getByRole('region', { name: 'Unsaved changes' }).textContent).toMatch(/Used only by 1 wiped device\./), LOAD);
     expect(screen.queryByText(/No device uses this configuration yet/)).toBeNull();
-    fireEvent.click(await main().findByRole('button', { name: 'Delete…' }, LOAD));
+    fireEvent.click(await main().findByRole('button', { name: 'Delete' }, LOAD));
     const dialog = await screen.findByRole('alertdialog');
     expect(dialog.textContent).toMatch(WHOLE);
     expect(dialog.textContent).toMatch(FILTER);
@@ -236,7 +236,7 @@ describe('a configuration with only wiped devices', () => {
     openWith('/configurations', [{ ...WIPED_ONLY[0], total: 2, inSync: 2 }]);
     await main().findByText('All 2 in sync', undefined, LOAD);
     fireEvent.click(main().getByRole('button', { name: 'More for Warehouse' }));
-    fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Delete…' }));
+    fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Delete' }));
     const dialog = await screen.findByRole('alertdialog');
     expect(dialog.textContent).toMatch(/3 devices still use this configuration/);
     expect(dialog.textContent).toMatch(FILTER);
@@ -246,7 +246,7 @@ describe('a configuration with only wiped devices', () => {
     openWith('/configurations', []);
     await main().findByText('Not used by any device yet', undefined, LOAD);
     fireEvent.click(main().getByRole('button', { name: 'More for Warehouse' }));
-    fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Delete…' }));
+    fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Delete' }));
     const dialog = await screen.findByRole('alertdialog');
     expect(dialog.textContent).not.toMatch(/refuse/);
   }, SLOW);

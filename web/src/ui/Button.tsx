@@ -7,7 +7,7 @@ import './Button.css';
  * - `primary`: the one main action of a page, card or dialog (ink fill)
  * - `secondary`: every other action (bordered). `subtle` is the same on the lighter card border.
  * - `ghost`: quiet text action (toolbars, card headers)
- * - `danger`: a destructive action that opens a confirmation ("Delete…"): red text, bordered
+ * - `danger`: a destructive action that opens a confirmation ("Delete"): red text, bordered
  * - `danger-primary`: the confirmation of an irreversible action ("Factory reset", "Delete configuration"): red fill
  */
 export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'danger-primary' | 'subtle' | 'ghost';

@@ -210,59 +210,58 @@ export function OverviewPage() {
         </Card>
       ) : null}
 
-      {/* One 12-column grid for every row, so card edges line up down the page (ext/hosts/OverviewCards). */}
-      <Grid>
-        {firstRun ? null : (
-          <>
-            <GridCell span={8}>
-              <FleetSummary
-                headingId="v2-ov-fleet"
-                loading={firstLoad}
-                total={unknown ? null : data.total}
-                caption={
-                  <>
-                    {plural(data.total, 'device enrolled', 'devices enrolled')}
-                    {data.total > devices.length && devices.length > 0 ? (
-                      <>
-                        {' '}
-                        · status of the first <Num>{devices.length}</Num>
-                      </>
-                    ) : null}
-                    {/* Beside the total, not in the bar and legend: a wiped device is enrolled but no longer reports. */}
-                    {counts.wiped > 0 ? (
-                      <>
-                        {' · '}
-                        <Link to={`${paths.devices}?status=wiped`}>
-                          <Num>{counts.wiped}</Num> wiped
-                        </Link>
-                      </>
-                    ) : null}
-                  </>
-                }
-                legend={[
-                  { key: 'online', label: 'Online', count: counts.online, tone: 'ok', to: `${paths.devices}?status=online` },
-                  {
-                    key: 'attention',
-                    label: 'Needs attention',
-                    count: counts.attention,
-                    tone: 'warn',
-                    to: `${paths.devices}?status=attention`,
-                  },
-                  { key: 'offline', label: 'Offline', count: counts.offline, tone: 'idle', to: `${paths.devices}?status=offline` },
-                ]}
-              />
-            </GridCell>
-            <GridCell span={4}>
-              <Card aria-label="Fleet status" className="v2-ov-stats">
-                <StatGrid>
-                  <OverviewStats />
-                </StatGrid>
-              </Card>
-            </GridCell>
-          </>
-        )}
-        <OverviewRows />
-      </Grid>
+      {/* The 12-column page grid: the fleet and its stats as one even row, then the cards in two columns (8 and 4,
+          ext/hosts/OverviewCards), so card edges line up down the page. */}
+      {firstRun ? null : (
+        <Grid stretch>
+          <GridCell span={8}>
+            <FleetSummary
+              headingId="v2-ov-fleet"
+              loading={firstLoad}
+              total={unknown ? null : data.total}
+              caption={
+                <>
+                  {plural(data.total, 'device enrolled', 'devices enrolled')}
+                  {data.total > devices.length && devices.length > 0 ? (
+                    <>
+                      {' '}
+                      · status of the first <Num>{devices.length}</Num>
+                    </>
+                  ) : null}
+                  {/* Beside the total, not in the bar and legend: a wiped device is enrolled but no longer reports. */}
+                  {counts.wiped > 0 ? (
+                    <>
+                      {' · '}
+                      <Link to={`${paths.devices}?status=wiped`}>
+                        <Num>{counts.wiped}</Num> wiped
+                      </Link>
+                    </>
+                  ) : null}
+                </>
+              }
+              legend={[
+                { key: 'online', label: 'Online', count: counts.online, tone: 'ok', to: `${paths.devices}?status=online` },
+                {
+                  key: 'attention',
+                  label: 'Needs attention',
+                  count: counts.attention,
+                  tone: 'warn',
+                  to: `${paths.devices}?status=attention`,
+                },
+                { key: 'offline', label: 'Offline', count: counts.offline, tone: 'idle', to: `${paths.devices}?status=offline` },
+              ]}
+            />
+          </GridCell>
+          <GridCell span={4}>
+            <Card aria-label="Fleet status" className="v2-ov-stats">
+              <StatGrid>
+                <OverviewStats />
+              </StatGrid>
+            </Card>
+          </GridCell>
+        </Grid>
+      )}
+      <OverviewRows />
     </CoreOverviewProvider>
   );
 }

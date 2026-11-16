@@ -112,8 +112,8 @@ describe.each([
   it('Settings: the rollout’s buttons and the Enroll link, the rollout itself kept', async () => {
     open('/settings', user);
     await main().findByText(/Updating the agent to/);
-    expectShown(main().queryAllByRole('button', { name: 'Cancel rollout…' }));
-    expectShown(main().queryAllByRole('button', { name: 'Promote to everyone else…' }));
+    expectShown(main().queryAllByRole('button', { name: 'Cancel rollout' }));
+    expectShown(main().queryAllByRole('button', { name: 'Promote to everyone else' }));
     expectShown(main().queryAllByRole('link', { name: 'Enroll a device' }));
   });
 
@@ -132,7 +132,7 @@ describe.each([
     if (more.length) {
       fireEvent.click(more[0]);
       const items = within(await screen.findByRole('menu')).getAllByRole('menuitem').map((m) => m.textContent);
-      expect(items).toEqual(['SHA-256 checksum…', 'Remove from library…']);
+      expect(items).toEqual(['SHA-256 checksum', 'Remove from library']);
     }
   });
 });
@@ -286,18 +286,18 @@ describe.each([
   it('the list: New configuration, and each row’s Duplicate and Delete', async () => {
     open('/configurations', user);
     await main().findByRole('link', { name: 'Warehouse' });
-    // "New configuration…" when there are templates to choose from (its chooser), else it creates directly.
+    // "New configuration" when there are templates to choose from (its chooser), else it creates directly.
     has(main().queryAllByRole('button', { name: /^New configuration(…)?$/ }), add);
     fireEvent.click(main().getByRole('button', { name: 'More for Warehouse' }));
     const items = within(await screen.findByRole('menu')).getAllByRole('menuitem').map((m) => m.textContent);
-    expect(items).toEqual(copy ? ['Edit', 'Duplicate…', 'Delete…'] : ['Edit']);
+    expect(items).toEqual(copy ? ['Edit', 'Duplicate', 'Delete'] : ['Edit']);
   });
 
   it('the editor: Duplicate and Delete', async () => {
     open('/configurations/3', user);
     await main().findByRole('heading', { name: 'Warehouse' });
-    has(main().queryAllByRole('button', { name: 'Duplicate…' }), copy);
-    has(main().queryAllByRole('button', { name: 'Delete…' }), copy);
+    has(main().queryAllByRole('button', { name: 'Duplicate' }), copy);
+    has(main().queryAllByRole('button', { name: 'Delete' }), copy);
   });
 
   // A new configuration, blank or from a template (?from=), saves with PUT and no id, which needs add_config.
@@ -376,8 +376,8 @@ describe.each([
 it('Settings: a user limited to some device groups gets the rollout without its buttons', async () => {
   open('/settings', { ...ROLES.admin, allDevicesAvailable: false });
   await main().findByText(/Updating the agent to/);
-  expect(main().queryByRole('button', { name: 'Cancel rollout…' })).toBeNull();
-  expect(main().queryByRole('button', { name: 'Promote to everyone else…' })).toBeNull();
+  expect(main().queryByRole('button', { name: 'Cancel rollout' })).toBeNull();
+  expect(main().queryByRole('button', { name: 'Promote to everyone else' })).toBeNull();
   expect(main().getByRole('link', { name: 'Enroll a device' })).toBeTruthy();
 });
 

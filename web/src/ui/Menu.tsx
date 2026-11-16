@@ -12,7 +12,7 @@ export interface MenuItem {
   textValue?: string;
   icon?: ReactNode;
   onSelect: () => void;
-  /** Destructive action (Delete…, Factory reset…): alert ink. */
+  /** Destructive action (Delete, Factory reset): alert ink. */
   danger?: boolean;
   disabled?: boolean;
 }

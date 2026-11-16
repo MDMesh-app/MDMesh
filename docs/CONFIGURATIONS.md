@@ -9,7 +9,8 @@ for each setting.
 ## Create a configuration
 
 1. Open **Configurations** and select **New configuration**.
-2. Choose **Blank configuration**, or **Based on** a built-in template to copy its settings and apps.
+2. If there are built-in templates, choose **Blank configuration**, or **Based on** a template to copy its settings
+   and apps, then select **Create**. With no templates, a blank configuration opens directly.
 3. Give it a **Name** (it must be unique) and optionally a **Description**.
 4. Set the apps and settings (below), then select **Create configuration**.
 

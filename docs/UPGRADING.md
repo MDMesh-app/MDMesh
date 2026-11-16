@@ -19,8 +19,8 @@ applies them: it backs up the database, then rolls back if the new version fails
 
 ## Quick-start installs
 
-The install's admin (a super-admin, or the org admin of a single-customer install) clicks **Update** on the console's
-banner. A failed update rolls back by itself.
+The install's admin (a super-admin, or the org admin of a single-customer install) selects **Review update** on the
+console's server-update card, then **Update server and console**. A failed update rolls back by itself.
 
 **Automatic updates** (Settings, or `AUTO_UPDATE=1`) apply each release without a prompt. Once `/backups/auto.json`
 exists (the Settings switch, or any failed or rolled-back update, creates it), it wins over `AUTO_UPDATE`; change it
@@ -598,8 +598,8 @@ kiosk PINs.
 - The Headwind launcher's device routes (`/rest/public/sync/*`, notifications, plugin device uploads, usage stats)
   return 404 unless `LEGACY_DEVICE_API=1`.
 - App installs now carry the APK's SHA-256, and current agents refuse an install without one. Hosted APKs are hashed
-  automatically. For a Library app with an external URL, add the hash with **SHA-256 checksum** in the app's **…**
-  menu, or upload the APK instead.
+  automatically. For a Library app with an external URL, add the hash with **Add checksum**, or **SHA-256 checksum**
+  in the app's row, or upload the APK instead.
 
 ### v0.3.1
 

@@ -44,16 +44,20 @@ Upgrading
 Heads-up
 - Console extensions: `Select` is now a listbox button, not a native `<select>`. It takes a single select's props
   (`<option>`/`<optgroup>` children, `value` or `defaultValue`, `name`, `required`, `form`, `autoComplete`, `disabled`;
-  handlers, `style`, `tabIndex`, `autoFocus`, `data-*` and `aria-*` go to the button); `multiple` is no longer
-  accepted. `onChange(e)` gets an object with `target.value`, `target.name`, `preventDefault()` and
-  `stopPropagation()`, not a native event. Its `ref` keeps the old element type until 0.6.0 but holds only `value`,
-  `name`, `disabled`, `required`, `focus()` and `blur()`; in 0.6.0 it becomes the button, which the new `triggerRef`
-  gives now. Deprecated until they go in 0.6.0: `Button` sizes `xs`/`xl`/`hero`/`auth` (drawn as `sm`/`lg`), `Card`
-  paddings other than `default`/`rows`/`list`/`none` (drawn as `default`), and the board tokens (`--fs-*`,
-  `--radius-sm`/`md`/`lg`, `--space-0`/`1h`/`2h`/`3h`/`5`, `--shadow-*`, `--page-pad`, `--main-max`), which follow
-  the new scale; and, now ignored, `Button` `strong`, `IconButton` `tone`, `Card` `radius`, `CardHeader` `size`,
-  `PageHeader` `subtitleMaxCh` and `actionsGap`, and `Checkbox` `size`. `Card` `gap` now rounds to 8, 12, 16 or 24
-  and no longer reaches `style`.
+  handlers, `style`, `tabIndex`, `autoFocus`, `data-*` and `aria-*` go to the button). `onChange(e)` gets an object
+  with `target.value`, `target.name`, `preventDefault()` and `stopPropagation()`, not a native event. Its `ref` is a
+  `SelectHandle` (`value`, `name`, `disabled`, `required`, `focus()`, `blur()`); in 0.6.0 it becomes the button, which
+  the new `triggerRef` gives now. Until 0.6.0, `native` (or `multiple`, which implies it) draws the old native select,
+  with a native change event and the element as `ref` ([EXTENDING](web/EXTENDING.md)).
+- Console extensions: the Overview's `main` and `aside` cards now stack in two independent columns (all `main` cards
+  in the wide one, all `aside` cards in the narrow one), so an `aside` no longer joins the row of the `main` card
+  before it. On the first-run Overview, extensions' `stat` tiles still show.
+- Console extensions: deprecated until they go in 0.6.0: `Select` `native` and `multiple`, `Button` sizes
+  `xs`/`xl`/`hero`/`auth` (drawn as `sm`/`lg`), `Card` paddings other than `default`/`rows`/`list`/`none` (drawn as
+  `default`), and the board tokens (`--fs-*`, `--radius-sm`/`md`/`lg`, `--space-0`/`1h`/`2h`/`3h`/`5`, `--shadow-*`,
+  `--page-pad`, `--main-max`), which follow the new scale; and, now ignored, `Button` `strong`, `IconButton` `tone`,
+  `Card` `radius`, `CardHeader` `size`, `PageHeader` `subtitleMaxCh` and `actionsGap`, and `Checkbox` `size`. `Card`
+  `gap` now rounds to 8, 12, 16 or 24 and no longer reaches `style`.
 - Native installs: `REPLACE_DATA` must be `yes` or `no`, and `ASSUME_YES` `1` or `0`; empty means not set (the
   default). Any other value now stops the installer before it changes anything, where it used to mean Keep or ask.
 - The agent is now called **MDMesh** on the device (was MDM Agent): in the app drawer, Settings → Apps, the

@@ -111,6 +111,98 @@ public class FilesResourceTest {
         }
     }
 
+    @Test
+    public void testFailedExtractionLeavesNoTempFiles() throws IOException {
+        File zipFile = temporaryFolder.newFile("bad_second_entry.xapk");
+        writeGoodSplitThenBadStoredApk(zipFile);
+
+        Customer customer = customer(920001);
+        int before = bundlePartCount(customer);
+        try {
+            new FilesResource().extractApkParts(zipFile, customer);
+            Assert.fail("Expected an IOException for an APK with an invalid CRC");
+        } catch (IOException expected) {
+            // The split extracted before the bad entry must be removed too.
+        }
+        Assert.assertEquals(before, bundlePartCount(customer));
+    }
+
+    @Test
+    public void testLaterUniversalApkReplacesEarlierOneWithoutLeaking() throws IOException {
+        File zipFile = temporaryFolder.newFile("two_universal.apks");
+        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(zipFile))) {
+            zos.putNextEntry(new ZipEntry("a/universal.apk"));
+            zos.write("first universal".getBytes("UTF-8"));
+            zos.closeEntry();
+            zos.putNextEntry(new ZipEntry("b/universal.apk"));
+            zos.write("second universal".getBytes("UTF-8"));
+            zos.closeEntry();
+        }
+
+        Customer customer = customer(920002);
+        int before = bundlePartCount(customer);
+        List<File> parts = new FilesResource().extractApkParts(zipFile, customer);
+        try {
+            Assert.assertEquals(1, parts.size());
+            Assert.assertEquals("second universal", new String(readBytes(parts.get(0)), "UTF-8"));
+            Assert.assertEquals(before + 1, bundlePartCount(customer));
+        } finally {
+            for (File part : parts) part.delete();
+        }
+    }
+
+    private Customer customer(int id) {
+        Customer customer = new Customer();
+        customer.setId(id);
+        return customer;
+    }
+
+    /** The extracted parts currently left in [customer]'s upload directory. */
+    private int bundlePartCount(Customer customer) throws IOException {
+        File probe = com.hmdm.util.FileUtil.createUploadFile(customer, "probe");
+        try {
+            File[] left = probe.getParentFile().listFiles((dir, name) -> name.startsWith("bundlepart"));
+            return left == null ? 0 : left.length;
+        } finally {
+            probe.delete();
+        }
+    }
+
+    /** A DEFLATED good split, then a STORED base.apk whose data no longer matches its CRC. */
+    private void writeGoodSplitThenBadStoredApk(File zipFile) throws IOException {
+        byte[] badBytes = "stored apk with bad crc".getBytes("UTF-8");
+        CRC32 crc = new CRC32();
+        crc.update(badBytes);
+        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(zipFile))) {
+            zos.putNextEntry(new ZipEntry("config.apk"));
+            zos.write("good split".getBytes("UTF-8"));
+            zos.closeEntry();
+            ZipEntry stored = new ZipEntry("base.apk");
+            stored.setMethod(ZipEntry.STORED);
+            stored.setSize(badBytes.length);
+            stored.setCompressedSize(badBytes.length);
+            stored.setCrc(crc.getValue());
+            zos.putNextEntry(stored);
+            zos.write(badBytes);
+            zos.closeEntry();
+        }
+        byte[] zipBytes = readBytes(zipFile);
+        int localOffset = findLastSignature(zipBytes, 0x04034b50);
+        int dataOffset = localOffset + 30 + littleEndianShort(zipBytes, localOffset + 26)
+                + littleEndianShort(zipBytes, localOffset + 28);
+        zipBytes[dataOffset] ^= 1;
+        try (FileOutputStream out = new FileOutputStream(zipFile)) {
+            out.write(zipBytes);
+        }
+    }
+
+    private int findLastSignature(byte[] bytes, int signature) throws IOException {
+        for (int i = bytes.length - 4; i >= 0; i--) {
+            if (littleEndianInt(bytes, i) == signature) return i;
+        }
+        throw new IOException("ZIP signature not found");
+    }
+
     private void writeStoredApk(File zipFile, byte[] apkBytes) throws IOException {
         try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(zipFile))) {
             ZipEntry entry = new ZipEntry("base.apk");

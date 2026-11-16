@@ -867,6 +867,7 @@ public class FilesResource {
     List<File> extractApkParts(File zip, Customer customer) throws IOException {
         List<File> parts = new LinkedList<>();
         File universal = null;
+        boolean extracted = false;
         try (java.util.zip.ZipFile zipFile = new java.util.zip.ZipFile(zip)) {
             java.util.Enumeration<? extends java.util.zip.ZipEntry> entries = zipFile.entries();
             while (entries.hasMoreElements()) {
@@ -876,32 +877,20 @@ public class FilesResource {
                 if (!base.endsWith(".apk")) continue;
                 // Output name is generated (not the entry name), so a malicious entry path can't escape.
                 File out = FileUtil.createUploadFile(customer, "bundlepart");
-                try {
-                    java.util.zip.CRC32 crc = new java.util.zip.CRC32();
-                    long size = 0;
-                    try (InputStream is = zipFile.getInputStream(entry);
-                         java.io.OutputStream os = new java.io.BufferedOutputStream(new java.io.FileOutputStream(out))) {
-                        byte[] buf = new byte[64 * 1024];
-                        int n;
-                        while ((n = is.read(buf)) >= 0) {
-                            os.write(buf, 0, n);
-                            crc.update(buf, 0, n);
-                            size += n;
-                        }
-                    }
-                    if (size != entry.getSize() || crc.getValue() != entry.getCrc()) {
-                        throw new IOException("Invalid size or CRC for zip entry " + entry.getName());
-                    }
-                } catch (IOException e) {
-                    out.delete();
-                    throw e;
+                if (base.equals("universal.apk")) {
+                    if (universal != null) universal.delete(); // a later universal.apk replaces an earlier one
+                    universal = out;
+                } else {
+                    parts.add(out);
                 }
-                if (base.equals("universal.apk")) universal = out; else parts.add(out);
+                copyEntry(zipFile, entry, out);
             }
-        } catch (IOException e) {
-            if (universal != null) universal.delete();
-            for (File part : parts) part.delete();
-            throw e;
+            extracted = true;
+        } finally {
+            if (!extracted) { // any failure, checked or not: leave no temp file behind
+                if (universal != null) universal.delete();
+                for (File part : parts) part.delete();
+            }
         }
         if (universal != null) {
             for (File f : parts) f.delete(); // discard splits; the universal APK stands alone
@@ -910,6 +899,26 @@ public class FilesResource {
             return only;
         }
         return parts;
+    }
+
+    /** Copy one zip entry to [out], checking its size and CRC: ZipFile, unlike ZipInputStream, checks neither. */
+    private static void copyEntry(java.util.zip.ZipFile zipFile, java.util.zip.ZipEntry entry, File out)
+            throws IOException {
+        java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+        long size = 0;
+        try (InputStream is = zipFile.getInputStream(entry);
+             java.io.OutputStream os = new java.io.BufferedOutputStream(new java.io.FileOutputStream(out))) {
+            byte[] buf = new byte[64 * 1024];
+            int n;
+            while ((n = is.read(buf)) >= 0) {
+                os.write(buf, 0, n);
+                crc.update(buf, 0, n);
+                size += n;
+            }
+        }
+        if (size != entry.getSize() || crc.getValue() != entry.getCrc()) {
+            throw new IOException("Invalid size or CRC for zip entry " + entry.getName());
+        }
     }
 
     /**

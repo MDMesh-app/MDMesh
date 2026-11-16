@@ -50,6 +50,13 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
       closeTransport();
       if (sessionId.current) void stopRemoteViewSession(sessionId.current).catch(() => undefined);
     };
+    /** The agent/server ended the session: release browser media without re-stopping it remotely. */
+    const endFromRemote = () => {
+      if (stopped.current) return;
+      stopped.current = true;
+      closeTransport();
+      finish('ended');
+    };
     const connect = (current: RemoteViewSession) => {
       if (!live || stopped.current) return;
       setStage('connecting');
@@ -132,7 +139,7 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
         setTransportStatus(`ICE ${pc.iceConnectionState}: viewer ${localCandidateCount}, device ${agentCandidateCount}`);
       };
       pc.onconnectionstatechange = () => {
-        if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected' || pc.connectionState === 'closed') finish('ended');
+        if (pc.connectionState === 'failed') stop();
       };
       const sendCompleteAnswer = () => {
         if (answerSent || !pc.localDescription?.sdp) return;
@@ -179,8 +186,11 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
           }
         } catch { finish('error'); stop(); }
       };
-      ws.onerror = () => finish('error');
-      ws.onclose = () => { if (!stopped.current) finish('ended'); };
+      ws.onerror = () => {
+        setTransportStatus('Viewer signaling connection failed.');
+        endFromRemote();
+      };
+      ws.onclose = () => endFromRemote();
     };
     const check = async (id: string) => {
       try {

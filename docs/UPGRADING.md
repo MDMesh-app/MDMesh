@@ -18,10 +18,12 @@ applies them: it backs up the database, then rolls back if the new version fails
 `docker compose logs supervisor` (native: `journalctl -u mdmesh-supervisor`).
 
 If the update on offer skips over a release that fixed security issues (say this server runs 0.5.0, 0.5.1 fixed one,
-and 0.5.2 is on offer), the console says so in amber: the sidebar card reads **Security update**, and Settings →
-Updates names the releases it is missing and links their notes. The list is the signed manifest's `securityReleases`
-(every release whose changelog has a Security section), read only from a manifest that verified; the supervisor
-reports the skipped ones as `missedSecurity` in `/update/status`. Installing the offered release brings those fixes.
+and 0.5.2 is on offer), the console says so in amber: the sidebar and Overview cards say the update "includes security
+fixes from 0.5.1 that this server is missing", the Settings list marks Updates "Security fixes", and Settings →
+Updates names the releases and links their notes. The list is the signed manifest's `securityReleases` (every release
+whose changelog has a Security section), read only from a manifest that verified; the supervisor reports the skipped
+ones as `missedSecurity` in `/update/status`. Installing the offered release brings those fixes. It needs a 0.5.0 or
+later supervisor and releases from 0.5.0 on, so a 0.4.x server sees no warning on its way to 0.5.0.
 
 ## Quick-start installs
 

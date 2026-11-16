@@ -178,6 +178,7 @@ class RemoteViewFeasibilityService : Service() {
         else getParcelableExtra(key)
 
     companion object {
+        private const val TAG = "MDMeshRemoteViewProbe"
         const val EXTRA_RESULT_CODE = "com.mdmesh.remote.probe.RESULT_CODE"
         const val EXTRA_RESULT_DATA = "com.mdmesh.remote.probe.RESULT_DATA"
         private const val CHANNEL_ID = "mdmesh_remote_view_probe"

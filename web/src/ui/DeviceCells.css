@@ -1,6 +1,7 @@
 /* ---- identity ---- */
-.v2 .v2-devid,
-.v2 a.v2-devid:hover {
+/* Hover changes only the name's underline, never layout: a rule that re-set display or gap on :hover outranked the
+   card variant's gap at rest, so the name shifted left under the pointer. */
+.v2 .v2-devid {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -10,6 +11,9 @@
 }
 .v2 a.v2-devid {
   border-radius: var(--radius-chip);
+}
+.v2 a.v2-devid:hover {
+  color: var(--text);
 }
 .v2 a.v2-devid:hover .v2-devid__name {
   text-decoration: underline;

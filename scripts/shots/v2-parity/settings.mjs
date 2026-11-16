@@ -173,8 +173,14 @@ try {
     await p.goto(`${base}/settings`);
     await p.waitForSelector('text=is ready');
     check('ready card shows version, verified, channel, date', (await p.locator('#updates >> text=Signature verified').count()) === 1 && (await p.locator('#updates >> text=/Stable channel · released/').count()) === 1);
-    check('release notes render as headings and bullets', (await p.locator('#updates li').count()) === 3 && (await p.locator('#updates .v2-settings-notes__h').count()) === 2);
-    check('notes drop the repeated version title', (await p.locator('#updates .v2-settings-notes >> text=v0.1.15').count()) === 0);
+    // Folded: the release's header and summary, Security first, up to three items a group, no Under the hood.
+    const notes = p.locator('#updates .v2-relnotes');
+    check('release notes: one entry with version, date and summary', (await notes.locator('.v2-relnotes__entry').count()) === 1 && (await notes.locator('h3:has-text("Version 0.1.15")').count()) === 1 && (await notes.locator('.v2-relnotes__date').count()) === 1 && (await notes.locator('.v2-relnotes__headline').count()) === 1);
+    check('release notes: groups in order, Security first, folded to three items', JSON.stringify(await notes.locator('h4').evaluateAll((hs) => hs.map((h) => h.firstChild.textContent))) === JSON.stringify(['Security', 'New', 'Fixes']) && (await notes.locator('li').count()) === 6);
+    check('release notes: security items and the release are marked', (await notes.locator('.v2-relnotes__mark').count()) === 1 && (await notes.locator('.v2-relnotes__head >> text=Security fixes').count()) === 1);
+    check('notes drop the repeated version title', (await notes.locator('text=v0.1.15').count()) === 0);
+    await p.click('#updates button:has-text("Show all notes")');
+    check('Show all notes opens every item and Under the hood', (await notes.locator('li').count()) === 8 && (await notes.locator('h4:has-text("Under the hood")').count()) === 1 && (await p.getAttribute('#updates button:has-text("Show less")', 'aria-expanded')) === 'true');
     check('Full release notes link opens the release URL', (await p.getAttribute('#updates a:has-text("Full release notes")', 'href')) === fx.updateStatus.release.url);
     await p.click('#updates button:has-text("Check now")');
     await p.waitForTimeout(400);

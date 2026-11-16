@@ -10,13 +10,17 @@
   color: var(--text);
 }
 
-.v2 .v2-sidebar__brand,
-.v2 .v2-sidebar__brand:hover {
+.v2 .v2-sidebar__brand {
   display: flex;
   align-items: center;
   height: var(--control-md);
   padding: 0 var(--space-2);
   border-radius: var(--radius-control);
+  text-decoration: none;
+  color: var(--ink);
+}
+/* Hover changes colour only, never layout (it outranks the global link hover). */
+.v2 .v2-sidebar__brand:hover {
   text-decoration: none;
   color: var(--ink);
 }
@@ -50,8 +54,7 @@
   flex-direction: column;
   gap: var(--hairline);
 }
-.v2 .v2-navitem,
-.v2 .v2-navitem:hover {
+.v2 .v2-navitem {
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -67,6 +70,12 @@
   transition-property: background-color, color;
   transition-duration: var(--dur-micro);
   transition-timing-function: var(--ease);
+}
+/* Hover changes colour only, never layout (it outranks the global link hover). */
+.v2 .v2-navitem:hover {
+  text-decoration: none;
+  background: transparent;
+  color: var(--text-2);
 }
 .v2 .v2-navitem > svg {
   flex: 0 0 auto;
@@ -110,8 +119,7 @@
 }
 
 /* Server-update card: a compact inset card above the account row. */
-.v2 .v2-updcard,
-.v2 .v2-updcard:hover {
+.v2 .v2-updcard {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -124,6 +132,12 @@
   color: var(--text);
   text-decoration: none;
   transition: border-color var(--dur-micro) var(--ease);
+}
+/* Hover changes colour only, never layout (it outranks the global link hover). */
+.v2 .v2-updcard:hover {
+  background: var(--surface-sunken);
+  color: var(--text);
+  text-decoration: none;
 }
 .v2 .v2-updcard:hover {
   border-color: var(--border-strong);

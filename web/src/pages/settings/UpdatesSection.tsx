@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { applyUpdate, checkForUpdates, setAutoUpdate, type UpdateStatus } from '../../api/updates';
 import { useMayManageDeployment } from '../../auth/useMayManageDeployment';
 import {
@@ -23,7 +23,15 @@ import {
   LinkButton,
 } from '../../ui';
 import { applyRunning, type SupervisorState } from '../../data/useSupervisor';
-import { notesWeight, parseReleaseNotes } from '../../data/releaseNotes';
+import {
+  entrySize,
+  isSecurityGroup,
+  isSecurityItem,
+  parseReleaseEntries,
+  type ReleaseEntry,
+} from '../../data/releaseNotes';
+import type { Block, ListItem, NotesSection } from '../../whatsnew/changelog';
+import { InlineText, NotesList } from '../../whatsnew/NotesView';
 import { applyPhaseLabel, lastCheckError, safeReleaseUrl } from '../../data/updateStatus';
 
 /** Apply phases in order (supervisor APPLY_PHASES before `done`). */
@@ -63,40 +71,112 @@ function channelLabel(ch: string | null | undefined): string | null {
   return `${ch.charAt(0).toUpperCase()}${ch.slice(1)} channel`;
 }
 
-function ReleaseNotes({ status }: { status: UpdateStatus }) {
-  const blocks = useMemo(() => parseReleaseNotes(status.release?.notes, status.latest), [status.release?.notes, status.latest]);
-  const long = notesWeight(blocks) > 6;
-  const [open, setOpen] = useState(false);
-  if (blocks.length === 0) return null;
-  const id = 'v2-settings-notes';
+/** Up to this many items per group, and no Under the hood, while the notes are folded. */
+const FOLDED_ITEMS = 3;
+/** Notes longer than this (items and paragraphs, all entries) start folded. */
+const FOLD_OVER = 6;
+
+/** "22 Oct 2026" from a heading's date or an ISO time. */
+function noteDate(d: string | null): string | null {
+  if (!d) return null;
+  const t = Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d}T12:00:00` : d);
+  return Number.isFinite(t) ? new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : null;
+}
+
+const noNavigation = () => {};
+const securityMark = (item: ListItem) =>
+  isSecurityItem(item) ? (
+    <Badge tone="alert" size="sm" className="v2-relnotes__mark">
+      Security
+    </Badge>
+  ) : null;
+
+function NotesBlocks({ blocks, folded }: { blocks: Block[]; folded: boolean }) {
   return (
-    <div className="v2-settings-notes-wrap">
-      <div id={id} className={cx('v2-settings-notes', long && !open && 'is-clamped')}>
-        {blocks.map((b, i) =>
-          b.kind === 'list' ? (
-            <ul key={i} className="v2-settings-notes__list">
-              {b.items.map((it, j) => (
-                <li key={j}>{it}</li>
-              ))}
-            </ul>
-          ) : b.kind === 'heading' ? (
-            <p key={i} className="v2-settings-notes__h">
-              {b.text}
-            </p>
-          ) : (
-            <p key={i} className="v2-settings-notes__p">
-              {b.text}
-            </p>
-          ),
-        )}
+    <>
+      {blocks.map((b, i) =>
+        b.kind === 'list' ? (
+          <NotesList
+            key={i}
+            items={folded ? b.items.slice(0, FOLDED_ITEMS) : b.items}
+            onNavigate={noNavigation}
+            className="v2-relnotes__list"
+            mark={securityMark}
+          />
+        ) : (
+          <p key={i} className="v2-relnotes__p">
+            <InlineText text={b.text} onNavigate={noNavigation} />
+          </p>
+        ),
+      )}
+    </>
+  );
+}
+
+const groupSize = (g: NotesSection) => g.blocks.reduce((n, b) => n + (b.kind === 'list' ? b.items.length : 1), 0);
+
+/** One release: version and date, its one-line summary, then its items grouped under New, Fixes, Security and so on. */
+function ReleaseNotesEntry({ entry, folded }: { entry: ReleaseEntry; folded: boolean }) {
+  const headId = useId();
+  const date = noteDate(entry.date);
+  const groups = folded ? entry.groups.filter((g) => g.kind !== 'underTheHood') : entry.groups;
+  return (
+    <article className="v2-relnotes__entry" aria-labelledby={headId}>
+      <header className="v2-relnotes__head">
+        <h3 id={headId} className="v2-relnotes__version">
+          Version <span className="v2-num">{entry.version}</span>
+        </h3>
+        {date ? <span className="v2-relnotes__date">{date}</span> : null}
+        {entry.security ? (
+          <Badge tone="alert" size="sm">
+            Security fixes
+          </Badge>
+        ) : null}
+      </header>
+      {entry.headline ? (
+        <p className="v2-relnotes__headline">
+          <InlineText text={entry.headline} onNavigate={noNavigation} />
+        </p>
+      ) : null}
+      {!folded && entry.intro.length ? <NotesBlocks blocks={entry.intro} folded={false} /> : null}
+      {groups.map((g, i) => (
+        <div key={i} className="v2-relnotes__group">
+          <h4 className={cx('v2-eyebrow', 'v2-relnotes__label', isSecurityGroup(g) && 'is-security')}>
+            {g.title}
+            <span className="v2-relnotes__count v2-num">{groupSize(g)}</span>
+          </h4>
+          <NotesBlocks blocks={g.blocks} folded={folded} />
+        </div>
+      ))}
+    </article>
+  );
+}
+
+/**
+ * The ready release's notes as a short changelog: an entry per release, newest first. Long notes start folded (the
+ * newest entry, a few items per group, no Under the hood) behind "Show all notes".
+ */
+function ReleaseNotes({ status }: { status: UpdateStatus }) {
+  const entries = useMemo(
+    () => parseReleaseEntries(status.release?.notes, status.latest, status.release?.publishedAt),
+    [status.release?.notes, status.latest, status.release?.publishedAt],
+  );
+  const total = entries.reduce((n, e) => n + entrySize(e), 0);
+  const long = total > FOLD_OVER || entries.length > 1;
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  if (entries.length === 0) return null;
+  const folded = long && !open;
+  return (
+    <div className="v2-relnotes-wrap">
+      <div id={id} className="v2-relnotes">
+        {(folded ? entries.slice(0, 1) : entries).map((e) => (
+          <ReleaseNotesEntry key={e.version} entry={e} folded={folded} />
+        ))}
       </div>
       {long ? (
-        <LinkButton
-          aria-expanded={open}
-          aria-controls={id}
-          onClick={() => setOpen((v) => !v)}
-        >
-          {open ? 'Show less' : 'Show all notes'}
+        <LinkButton aria-expanded={open} aria-controls={id} onClick={() => setOpen((v) => !v)}>
+          {open ? 'Show less' : `Show all notes (${total})`}
         </LinkButton>
       ) : null}
     </div>

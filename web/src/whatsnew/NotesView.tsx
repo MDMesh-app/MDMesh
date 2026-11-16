@@ -5,7 +5,7 @@ import { IconChevronDown } from '../ui/icons';
 import { parseInline, type Block, type Inline, type ListItem, type Notes, type NotesSection } from './changelog';
 
 /** Inline marks as React elements (text is always text: nothing here is HTML). */
-function InlineText({ text, onNavigate }: { text: string; onNavigate: () => void }) {
+export function InlineText({ text, onNavigate }: { text: string; onNavigate: () => void }) {
   return <>{renderInline(parseInline(text), onNavigate)}</>;
 }
 
@@ -43,14 +43,26 @@ function renderInline(nodes: Inline[], onNavigate: () => void): ReactNode[] {
   });
 }
 
-function List({ items, onNavigate }: { items: ListItem[]; onNavigate: () => void }) {
+/** A notes list, nested lists included. `mark` puts something before an item's text (Settings' Security badge). */
+export function NotesList({
+  items,
+  onNavigate,
+  className = 'v2-whatsnew__list',
+  mark,
+}: {
+  items: ListItem[];
+  onNavigate: () => void;
+  className?: string;
+  mark?: (item: ListItem) => ReactNode;
+}) {
   return (
-    <ul className="v2-whatsnew__list">
+    <ul className={className}>
       {items.map((item, i) => (
         <li key={i}>
+          {mark?.(item)}
           {item.parts.map((p, j) =>
             p.kind === 'list' ? (
-              <List key={j} items={p.items} onNavigate={onNavigate} />
+              <NotesList key={j} items={p.items} onNavigate={onNavigate} className={className} />
             ) : j === 0 ? (
               <InlineText key={j} text={p.text} onNavigate={onNavigate} />
             ) : (
@@ -70,7 +82,7 @@ function Blocks({ blocks, onNavigate }: { blocks: Block[]; onNavigate: () => voi
     <>
       {blocks.map((b, i) =>
         b.kind === 'list' ? (
-          <List key={i} items={b.items} onNavigate={onNavigate} />
+          <NotesList key={i} items={b.items} onNavigate={onNavigate} />
         ) : (
           <p key={i} className="v2-whatsnew__p">
             <InlineText text={b.text} onNavigate={onNavigate} />

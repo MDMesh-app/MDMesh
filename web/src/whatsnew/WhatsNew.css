@@ -1,5 +1,5 @@
 /* What's new: a release's notes in the modal (md: about 75 characters a line). The notes' type follows Settings'
-   release notes (pages/SettingsPage.css, .v2-settings-notes): text-2 body, medium headings in text, indented bullets. */
+   release notes (pages/SettingsPage.css, .v2-relnotes): text-2 body, indented bullets. */
 .v2 .v2-whatsnew {
   display: flex;
   flex-direction: column;

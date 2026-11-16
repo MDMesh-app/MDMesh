@@ -12,8 +12,7 @@
 .v2 .v2-configs-toolbar__spacer {
   flex: 1 1 0;
 }
-.v2 .v2-configs-toolbar__unassigned,
-.v2 .v2-configs-toolbar__unassigned:hover {
+.v2 .v2-configs-toolbar__unassigned {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
@@ -23,6 +22,11 @@
   border-radius: var(--radius-control);
   font-size: var(--text-ui);
   line-height: var(--lh-ui);
+  color: var(--text-2);
+  text-decoration: none;
+}
+/* Hover changes colour only, never layout (it outranks the global link hover). */
+.v2 .v2-configs-toolbar__unassigned:hover {
   color: var(--text-2);
   text-decoration: none;
 }
@@ -82,13 +86,17 @@
   gap: var(--space-2);
   min-width: 0;
 }
-.v2 .v2-configs-id__name,
-.v2 .v2-configs-id__name:hover {
+.v2 .v2-configs-id__name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: var(--weight-medium);
+  color: var(--text);
+  text-decoration: none;
+}
+/* Hover changes colour only, never layout (it outranks the global link hover). */
+.v2 .v2-configs-id__name:hover {
   color: var(--text);
   text-decoration: none;
 }

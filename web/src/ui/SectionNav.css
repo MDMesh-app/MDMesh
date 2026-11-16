@@ -35,8 +35,7 @@
   flex-direction: column;
   gap: var(--hairline);
 }
-.v2 .v2-secnav__item,
-.v2 .v2-secnav__item:hover {
+.v2 .v2-secnav__item {
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -50,6 +49,12 @@
   transition-property: background-color, color;
   transition-duration: var(--dur-micro);
   transition-timing-function: var(--ease);
+}
+/* Hover changes colour only, never layout (it outranks the global link hover). */
+.v2 .v2-secnav__item:hover {
+  background: transparent;
+  color: var(--text-2);
+  text-decoration: none;
 }
 .v2 .v2-secnav__item:not(.is-current):hover {
   background: var(--hover);

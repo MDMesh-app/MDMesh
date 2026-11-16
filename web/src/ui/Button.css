@@ -109,13 +109,17 @@
   color: var(--alert-ink);
 }
 
-.v2 .v2-btn--ghost,
-.v2 .v2-btn--ghost:hover {
+.v2 .v2-btn--ghost {
   /* Quiet, but still a button at rest: a soft fill, no edge. */
   background: var(--surface-2);
   border-color: transparent;
   color: var(--text);
   padding-inline: var(--space-3);
+}
+/* Hover changes colour only, never layout (it outranks the global link hover). */
+.v2 .v2-btn--ghost:hover {
+  background: var(--surface-2);
+  color: var(--text);
 }
 
 .v2 .v2-btn--secondary:not(:disabled, [aria-disabled='true']):hover,

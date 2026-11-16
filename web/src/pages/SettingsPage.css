@@ -139,38 +139,87 @@
   flex: 1 1 260px;
 }
 
-/* Release notes: bullets indented one step, text-2; long notes start clamped behind a fade. */
-.v2 .v2-settings-notes-wrap {
+/* Release notes as a short changelog: an entry per release (version, date, a one-line summary), its items grouped
+   under small labelled lists with one bullet style and one rhythm. Security is marked in alert tone. */
+.v2 .v2-relnotes-wrap {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
-.v2 .v2-settings-notes {
+.v2 .v2-relnotes {
   display: flex;
   flex-direction: column;
+  gap: var(--space-4);
+  align-self: stretch;
+}
+.v2 .v2-relnotes__entry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+}
+.v2 .v2-relnotes__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}
+.v2 .v2-relnotes__version {
+  margin: 0;
+  font-size: var(--text-title);
+  line-height: var(--lh-title);
+  font-weight: var(--weight-medium);
+  color: var(--text);
+}
+.v2 .v2-relnotes__date {
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+  color: var(--secondary);
+}
+.v2 .v2-relnotes__headline {
+  margin: 0;
+  color: var(--text);
+}
+.v2 .v2-relnotes__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.v2 .v2-relnotes__label {
+  display: flex;
+  align-items: center;
   gap: var(--space-2);
-  color: var(--text-2);
+  margin: 0;
 }
-.v2 .v2-settings-notes.is-clamped {
-  max-height: 168px;
-  overflow: hidden;
-  mask-image: linear-gradient(to bottom, currentColor 70%, transparent);
+.v2 .v2-relnotes__label.is-security {
+  color: var(--alert-ink);
 }
-.v2 .v2-settings-notes__list {
+.v2 .v2-relnotes__count {
+  font-weight: var(--weight-regular);
+  letter-spacing: 0;
+}
+.v2 .v2-relnotes__list {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
   margin: 0;
   padding-left: var(--space-6);
+  color: var(--text-2);
 }
-.v2 .v2-settings-notes__h {
-  margin: 0;
-  font-weight: var(--weight-medium);
-  color: var(--text);
+.v2 .v2-relnotes__list > li::marker {
+  color: var(--secondary);
 }
-.v2 .v2-settings-notes__p {
+.v2 .v2-relnotes__mark {
+  margin-right: var(--space-2);
+  vertical-align: 1px;
+}
+.v2 .v2-relnotes__p {
   margin: 0;
+  color: var(--text-2);
 }
 
 /* Source installs: the update commands. */

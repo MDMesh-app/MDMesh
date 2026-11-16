@@ -182,6 +182,10 @@ function selectHandle(
     get value() {
       return state().value;
     },
+    set value(_v: string) {
+      // The value follows `value` / `onChange`; the stand-in can't set it (a native select's ref could).
+      if (import.meta.env.DEV) console.warn('Select: setting the ref’s value does nothing; pass `value` instead.');
+    },
     get name() {
       return state().name ?? '';
     },
@@ -296,12 +300,18 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
   const { multiple: _multiple, ...triggerProps } = rest as typeof rest & { multiple?: unknown };
 
   // Uncontrolled: our own state, as a native select starts on its first option.
-  const [own, setOwn] = useState(() => String(defaultValue ?? flat[0]?.value ?? ''));
-  const current = value === undefined ? own : String(value);
-  // '' (or a value no option has) is Radix's "nothing chosen": the trigger shows the placeholder, which reads as the
-  // empty option ("All", "None") if there is one, else as the first option, like a native select would.
-  const known = current !== '' && flat.some((o) => o.value === current);
-  const placeholder = (flat.find((o) => o.value === '') ?? flat[0])?.label;
+  // Uncontrolled: our own state; until something is picked it follows the first option (options may arrive late).
+  const [own, setOwn] = useState<string | null>(defaultValue === undefined ? null : String(defaultValue));
+  const current = value === undefined ? (own ?? flat[0]?.value ?? '') : String(value);
+  // An empty option ("All", "None", "Use the server default") is a real choice, shown and checked like any other —
+  // except where '' must read as nothing chosen: a required select, one that submits with a form (`name`: the form
+  // must not carry a stand-in value), or one whose '' option is missing or disabled. Then '' (or a value no option
+  // has) is Radix's placeholder, read as the empty option if there is one, else as the first option, as a native
+  // select shows it.
+  const emptyOption = flat.find((o) => o.value === '');
+  const emptyIsChoice = !!emptyOption && !emptyOption.disabled && !required && !name;
+  const known = (current !== '' || emptyIsChoice) && flat.some((o) => o.value === current);
+  const placeholder = (emptyOption ?? flat[0])?.label;
 
   const trigger = useRef<HTMLButtonElement | null>(null);
   const latest = useRef({ value: current, name, disabled, required });

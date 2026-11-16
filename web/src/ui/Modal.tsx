@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useCallback, useEffect, useId, useInsertionEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import * as D from '@radix-ui/react-dialog';
 import { IconButton } from './Button';
 import { IconClose } from './icons';
@@ -91,6 +91,15 @@ export function Modal({
   const [body, setBody] = useState<HTMLDivElement | null>(null);
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const returnTo = useRef<HTMLElement | null>(null);
+  // The opener, taken as `open` turns true, before the content mounts: a field in the body with `autoFocus` takes
+  // focus before Radix's onOpenAutoFocus runs, so focus then is already inside the dialog.
+  const wasOpen = useRef(false);
+  useInsertionEffect(() => {
+    if (open && !wasOpen.current) {
+      returnTo.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    }
+    wasOpen.current = open;
+  }, [open]);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const scrollStop = useScrollStop(body, open && !!children);
@@ -119,7 +128,11 @@ export function Modal({
             // The caller's target, else the first control in the body, else the close button: never the close button
             // ahead of the content (Radix's default is the first focusable in the dialog, which is the close button).
             e.preventDefault();
-            returnTo.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+            // Fallback for an opener not seen as `open` turned true; never an element inside this dialog.
+            const active = document.activeElement;
+            if (!returnTo.current && active instanceof HTMLElement && !(e.currentTarget as Node).contains(active)) {
+              returnTo.current = active;
+            }
             const target =
               initialFocus?.current ?? bodyRef.current?.querySelector<HTMLElement>(FOCUSABLE) ?? closeRef.current;
             target?.focus();

@@ -17,6 +17,7 @@ import type { UpdateStatus } from '../../api/updates';
 import { ATTENTION_PROBE_CAP, isConfigIssue, suspectDevices, type SyncCheck } from '../../data/fleetHealth';
 import { rolloutActive } from '../../data/rollout';
 import { useSupervisor } from '../../data/useSupervisor';
+import { LOAD_DEVICES_FAILED } from '../../data/useDevices';
 import type { ConfigIssue } from './attention';
 
 export const REFRESH_MS = 60_000;
@@ -63,7 +64,7 @@ function messageFor(err: unknown): string {
     if (err.httpStatus === 401 || err.httpStatus === 403) return 'Your session has expired. Sign in again.';
     if (err.httpStatus === 0) return 'Cannot reach the server.';
   }
-  return 'Failed to load devices.';
+  return LOAD_DEVICES_FAILED;
 }
 
 export function useOverviewData(): OverviewData {

@@ -43,6 +43,19 @@ describe('Select (Radix) with a native select’s props', () => {
     expect(select.textContent).toContain('All');
   });
 
+  it('treats an empty option as a real choice: shown, and checked in the list', () => {
+    render(
+      <Select aria-label="Default configuration" value="" onChange={() => {}}>
+        <option value="">No default</option>
+        <option value="3">Warehouse</option>
+      </Select>,
+    );
+    const select = screen.getByRole('combobox', { name: 'Default configuration' });
+    expect(select.hasAttribute('data-placeholder')).toBe(false);
+    fireEvent.click(select);
+    expect(screen.getByRole('option', { name: 'No default' }).getAttribute('data-state')).toBe('checked');
+  });
+
   it('shows the first option for a value no option has, as a native select does', () => {
     render(
       <Select aria-label="Rows" value="7" onChange={() => {}}>

@@ -676,6 +676,8 @@ async function keyboardWalk(browser, base) {
     // A menu item that opens a dialog: closing the dialog (Escape, or its Cancel) returns focus to the menu's trigger.
     ['/devices', 'button', 'More actions for KIOSK-FRONT', DIALOG, {}, { item: 'Change configuration…' }],
     ['/configurations', 'button', 'More for Default', DIALOG, {}, { item: 'Delete…', close: 'Cancel' }],
+    // A dialog whose field takes focus as it mounts (autoFocus): focus still goes back to the menu's trigger.
+    ['/configurations', 'button', 'More for Default', DIALOG, {}, { item: 'Duplicate…' }],
   ];
   const escapes = [];
   for (const [route, role, label, open = POPUP, extra, via] of dialogs) {

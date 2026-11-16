@@ -66,6 +66,34 @@ describe('dialogs opened from a menu, kept mounted for their exit', () => {
   });
 });
 
+describe('Modal: focus return', () => {
+  function Opener() {
+    const [open, setOpen] = useState(false);
+    return (
+      <>
+        <button type="button" onClick={() => setOpen(true)}>
+          Duplicate…
+        </button>
+        <Modal open={open} onClose={() => setOpen(false)} title="Duplicate configuration">
+          {/* A field that focuses itself as it mounts, before the dialog's own focus handling runs. */}
+          <input aria-label="Name" autoFocus />
+        </Modal>
+      </>
+    );
+  }
+
+  it('goes back to the opener even when a field in the dialog has autoFocus', async () => {
+    render(<Opener />);
+    const opener = screen.getByRole('button', { name: 'Duplicate…' });
+    opener.focus();
+    fireEvent.click(opener);
+    await screen.findByRole('dialog', { name: 'Duplicate configuration' });
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+  });
+});
+
 describe('Modal: a press outside', () => {
   async function pressOutside() {
     await act(async () => {

@@ -180,7 +180,7 @@ export function AppsFdroid({
             Searching F-Droid…
           </li>
           {Array.from({ length: 6 }, (_, i) => (
-            <li key={i} className="v2-apps-fd__card" aria-hidden="true">
+            <li key={i} className="v2-apps-fd__card is-loading" aria-hidden="true">
               <div className="v2-apps-fd__body">
                 <Skeleton width="44px" height="44px" />
                 <div className="v2-apps-fd__text">

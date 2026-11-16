@@ -221,8 +221,8 @@ await dep4.getByRole('button', { name: 'Cancel' }).click();
 
 // ---------------- F-Droid ----------------
 await page.goto(`${base}/apps?source=fdroid`);
-await page.locator('.v2-apps-fd__card').first().waitFor();
-check('12 cards', (await page.locator('.v2-apps-fd__card').count()) === 12);
+await page.locator('.v2-apps-fd__card:not(.is-loading)').first().waitFor();
+check('12 cards', (await page.locator('.v2-apps-fd__card:not(.is-loading)').count()) === 12);
 await page.getByRole('button', { name: 'Show more' }).click();
 check('show more -> 14', (await page.locator('.v2-apps-fd__card').count()) === 14);
 check('no more button', (await page.getByRole('button', { name: 'Show more' }).count()) === 0);

@@ -7,6 +7,7 @@ import type { DeviceEvent } from '../api/events';
 import type { ActiveRollout } from '../api/rollout';
 import { isApplyTerminal, type UpdateStatus } from '../api/updates';
 import { isOnline, notConnected } from '../data/presence';
+import { LOAD_DEVICES_FAILED } from '../data/useDevices';
 import { CORE_ACTION_ACCESS } from '../ext/core/access';
 import { CoreOverviewProvider } from '../ext/core/overview';
 import { OverviewRows, OverviewStats } from '../ext/hosts/OverviewCards';
@@ -176,7 +177,7 @@ export function OverviewPage() {
       {data.error ? (
         <ErrorState
           thing="the fleet"
-          detail={[data.error === 'Failed to load devices.' ? null : data.error, data.loadedAt !== null ? 'Showing the last data loaded.' : null]
+          detail={[data.error === LOAD_DEVICES_FAILED ? null : data.error, data.loadedAt !== null ? 'Showing the last data loaded.' : null]
             .filter(Boolean)
             .join(' ') || undefined}
           onRetry={data.refresh}

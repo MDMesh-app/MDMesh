@@ -32,3 +32,45 @@ export function safeReleaseUrl(url: string | null | undefined): string | null {
     return null;
   }
 }
+
+const RELEASE_VERSION = /^\d+\.\d+\.\d+$/;
+
+/**
+ * The security releases the offered update skips over, oldest first: the supervisor's `missedSecurity` (from the
+ * verified manifest only; absent from a supervisor before 0.5.0). Empty unless an update is on offer.
+ */
+export function missedSecurity(s: UpdateStatus | null | undefined): string[] {
+  if (!s?.updateAvailable || !s.latest || !Array.isArray(s.missedSecurity)) return [];
+  return s.missedSecurity.filter((v): v is string => typeof v === 'string' && RELEASE_VERSION.test(v));
+}
+
+/** "0.1.13", "0.1.13 and 0.1.14", "0.1.12, 0.1.13 and 0.1.14". */
+export function joinVersions(vs: readonly string[]): string {
+  if (vs.length <= 1) return vs[0] ?? '';
+  return `${vs.slice(0, -1).join(', ')} and ${vs[vs.length - 1]}`;
+}
+
+/** The sidebar update card's line. */
+export const missedSecurityShort = (vs: readonly string[]): string =>
+  `You’re missing security fixes from ${joinVersions(vs)}.`;
+
+/** Settings → Updates: the notice's text. */
+export const missedSecurityText = (vs: readonly string[], current: string, latest: string): string =>
+  `${joinVersions(vs)} fixed security issues this server doesn’t have yet. It runs ${current}, and updating to ${latest} includes those fixes.`;
+
+/**
+ * The notice's link, built from the offered release's GitHub page (`…/releases/tag/vX.Y.Z`, https only): one missed
+ * release links to its own page ("What 0.1.13 fixed"); several link to the releases list ("Release notes"). Null when
+ * the release link isn't a GitHub-shaped https release page.
+ */
+export function missedSecurityLink(
+  vs: readonly string[],
+  releaseUrl: string | null | undefined,
+): { href: string; label: string } | null {
+  const safe = safeReleaseUrl(releaseUrl);
+  const m = safe ? /^(https:\/\/[^/?#]+\/[^/?#]+\/[^/?#]+\/releases)\/tag\/[^/?#]+$/.exec(safe) : null;
+  if (!m || vs.length === 0) return null;
+  return vs.length === 1
+    ? { href: `${m[1]}/tag/v${vs[0]}`, label: `What ${vs[0]} fixed` }
+    : { href: m[1], label: 'Release notes' };
+}

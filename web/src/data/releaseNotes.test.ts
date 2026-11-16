@@ -1,7 +1,8 @@
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { releaseSection } from '../whatsnew/changelog';
+import { releaseSection, releaseVersions } from '../whatsnew/changelog';
 import { entrySize, parseReleaseEntries } from './releaseNotes';
 
 const CHANGELOG = readFileSync(resolve(import.meta.dirname, '../../../CHANGELOG.md'), 'utf8');
@@ -71,5 +72,17 @@ describe('parseReleaseEntries', () => {
     // …and it reads as its text, without the marks.
     expect(JSON.stringify(entries[0])).toContain('0.5.0 database changes');
     expect(JSON.stringify(entries[0])).not.toContain('###');
+  });
+});
+
+describe('Security releases (the signed manifest’s securityReleases)', () => {
+  it('are the versions whose notes this console labels "Security fixes", as release/security-releases.py lists them', () => {
+    const labelled = releaseVersions(CHANGELOG)
+      .filter((v) => parseReleaseEntries(releaseBody(v), v)[0]?.security)
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    const script = resolve(import.meta.dirname, '../../../release/security-releases.py');
+    const derived = JSON.parse(execFileSync('python3', [script, resolve(import.meta.dirname, '../../../CHANGELOG.md')], { encoding: 'utf8' }));
+    expect(labelled.length).toBeGreaterThan(0);
+    expect(derived).toEqual(labelled);
   });
 });

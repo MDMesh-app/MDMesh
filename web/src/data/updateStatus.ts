@@ -50,27 +50,35 @@ export function joinVersions(vs: readonly string[]): string {
   return `${vs.slice(0, -1).join(', ')} and ${vs[vs.length - 1]}`;
 }
 
-/** The sidebar update card's line. */
+/** The line under an update that skips security releases (the sidebar card, the Overview's Server card). */
 export const missedSecurityShort = (vs: readonly string[]): string =>
-  `You’re missing security fixes from ${joinVersions(vs)}.`;
+  `Includes security fixes from ${joinVersions(vs)} that this server is missing.`;
 
 /** Settings → Updates: the notice's text. */
 export const missedSecurityText = (vs: readonly string[], current: string, latest: string): string =>
   `${joinVersions(vs)} fixed security issues this server doesn’t have yet. It runs ${current}, and updating to ${latest} includes those fixes.`;
 
+/** The GitHub repository page a release link belongs to (`https://github.com/<owner>/<repo>`), or null. */
+function releaseRepo(releaseUrl: string | null | undefined): string | null {
+  const safe = safeReleaseUrl(releaseUrl);
+  if (!safe) return null;
+  const u = new URL(safe);
+  if (u.hostname !== 'github.com' || u.port || u.username || u.password || u.search || u.hash) return null;
+  const m = /^\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/releases\/tag\/[^/]+$/.exec(u.pathname);
+  return m ? `https://github.com/${m[1]}/${m[2]}` : null;
+}
+
 /**
- * The notice's link, built from the offered release's GitHub page (`…/releases/tag/vX.Y.Z`, https only): one missed
- * release links to its own page ("What 0.1.13 fixed"); several link to the releases list ("Release notes"). Null when
- * the release link isn't a GitHub-shaped https release page.
+ * The notice's link, on the offered release's repository (its link must be an https github.com release page): one
+ * missed release links to its own page ("What 0.1.13 fixed"); several link to the releases list ("Release notes").
  */
 export function missedSecurityLink(
   vs: readonly string[],
   releaseUrl: string | null | undefined,
 ): { href: string; label: string } | null {
-  const safe = safeReleaseUrl(releaseUrl);
-  const m = safe ? /^(https:\/\/[^/?#]+\/[^/?#]+\/[^/?#]+\/releases)\/tag\/[^/?#]+$/.exec(safe) : null;
-  if (!m || vs.length === 0) return null;
+  const repo = releaseRepo(releaseUrl);
+  if (!repo || vs.length === 0) return null;
   return vs.length === 1
-    ? { href: `${m[1]}/tag/v${vs[0]}`, label: `What ${vs[0]} fixed` }
-    : { href: m[1], label: 'Release notes' };
+    ? { href: `${repo}/releases/tag/v${vs[0]}`, label: `What ${vs[0]} fixed` }
+    : { href: `${repo}/releases`, label: 'Release notes' };
 }

@@ -46,11 +46,13 @@ describe('copy', () => {
     expect(joinVersions(['0.1.13', '0.1.14'])).toBe('0.1.13 and 0.1.14');
     expect(joinVersions(['0.1.12', '0.1.13', '0.1.14'])).toBe('0.1.12, 0.1.13 and 0.1.14');
   });
-  it('words the sidebar line', () => {
-    expect(missedSecurityShort(['0.1.13'])).toBe('You’re missing security fixes from 0.1.13.');
-    expect(missedSecurityShort(['0.1.13', '0.1.14'])).toBe('You’re missing security fixes from 0.1.13 and 0.1.14.');
+  it('words the sidebar and Overview line', () => {
+    expect(missedSecurityShort(['0.1.13'])).toBe('Includes security fixes from 0.1.13 that this server is missing.');
+    expect(missedSecurityShort(['0.1.13', '0.1.14'])).toBe(
+      'Includes security fixes from 0.1.13 and 0.1.14 that this server is missing.',
+    );
     expect(missedSecurityShort(['0.1.12', '0.1.13', '0.1.14'])).toBe(
-      'You’re missing security fixes from 0.1.12, 0.1.13 and 0.1.14.',
+      'Includes security fixes from 0.1.12, 0.1.13 and 0.1.14 that this server is missing.',
     );
   });
   it('words the Updates notice', () => {
@@ -86,6 +88,11 @@ describe('missedSecurityLink', () => {
     expect(missedSecurityLink(['0.1.13'], 'http://github.com/MDMesh-app/MDMesh/releases/tag/v0.1.15')).toBeNull();
     expect(missedSecurityLink(['0.1.13'], 'javascript:alert(1)')).toBeNull();
     expect(missedSecurityLink(['0.1.13'], 'https://github.com/MDMesh-app/MDMesh/pull/1')).toBeNull();
+    // Only github.com, the host the supervisor's release feed (api.github.com) links to.
+    expect(missedSecurityLink(['0.1.13'], 'https://evil.example/MDMesh-app/MDMesh/releases/tag/v0.1.15')).toBeNull();
+    expect(missedSecurityLink(['0.1.13'], 'https://github.com.evil.example/a/b/releases/tag/v0.1.15')).toBeNull();
+    expect(missedSecurityLink(['0.1.13'], 'https://u:p@github.com/a/b/releases/tag/v0.1.15')).toBeNull();
+    expect(missedSecurityLink(['0.1.13'], 'https://github.com:8443/a/b/releases/tag/v0.1.15')).toBeNull();
     expect(missedSecurityLink(['0.1.13'], null)).toBeNull();
     expect(missedSecurityLink([], url)).toBeNull();
   });

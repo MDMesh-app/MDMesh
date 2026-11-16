@@ -6,6 +6,7 @@ import {
   missedSecurityLink,
   missedSecurityShort,
   missedSecurityText,
+  updatesNavMeta,
 } from './updateStatus';
 
 const status = (over: Partial<UpdateStatus> = {}): UpdateStatus => ({
@@ -95,5 +96,22 @@ describe('missedSecurityLink', () => {
     expect(missedSecurityLink(['0.1.13'], 'https://github.com:8443/a/b/releases/tag/v0.1.15')).toBeNull();
     expect(missedSecurityLink(['0.1.13'], null)).toBeNull();
     expect(missedSecurityLink([], url)).toBeNull();
+  });
+});
+
+describe('updatesNavMeta (Settings section list)', () => {
+  const apply = (phase: string) => ({ phase, fromVersion: '0.1.12', toVersion: '0.1.15', trigger: 'manual' as const, startedAt: 0, finishedAt: null, error: null });
+  it('says "Security fixes" in amber when the update skips security releases', () => {
+    expect(updatesNavMeta(status())).toEqual({ meta: 'Security fixes', metaTone: 'warn' });
+  });
+  it('says "1 ready" otherwise, and nothing with nothing on offer', () => {
+    expect(updatesNavMeta(status({ missedSecurity: [] }))).toEqual({ meta: '1 ready', metaTone: 'ok' });
+    expect(updatesNavMeta(status({ updateAvailable: false }))).toEqual({});
+    expect(updatesNavMeta(null)).toEqual({});
+  });
+  it('puts a running or failed update first', () => {
+    expect(updatesNavMeta(status({ apply: apply('pull') }))).toEqual({ meta: 'Updating', metaTone: 'warn' });
+    expect(updatesNavMeta(status({ apply: apply('rolled_back') }))).toEqual({ meta: 'Failed', metaTone: 'alert' });
+    expect(updatesNavMeta(status({ apply: apply('done') }))).toEqual({ meta: 'Security fixes', metaTone: 'warn' });
   });
 });

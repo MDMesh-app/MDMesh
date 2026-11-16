@@ -1,6 +1,6 @@
 // Wording and rules for the supervisor's update status, shared by the Overview server card, the sidebar's update
 // card and Settings → Updates.
-import type { UpdateStatus } from '../api/updates';
+import { isApplyTerminal, type UpdateStatus } from '../api/updates';
 
 /** The live line for each apply phase (the v0.3 console's UpdateBanner wording). */
 export const APPLY_PHASE_LABEL: Readonly<Record<string, string>> = {
@@ -81,4 +81,14 @@ export function missedSecurityLink(
   return vs.length === 1
     ? { href: `${repo}/releases/tag/v${vs[0]}`, label: `What ${vs[0]} fixed` }
     : { href: `${repo}/releases`, label: 'Release notes' };
+}
+
+/** Settings' section list: the Updates entry's meta. An apply running or failed comes first; then skipped security
+ *  fixes in amber ("Security fixes"), then a plain ready update. */
+export function updatesNavMeta(s: UpdateStatus | null | undefined): { meta?: string; metaTone?: 'ok' | 'warn' | 'alert' } {
+  const apply = s?.apply;
+  if (apply && !isApplyTerminal(apply.phase)) return { meta: 'Updating', metaTone: 'warn' };
+  if (apply && (apply.phase === 'failed' || apply.phase === 'rolled_back')) return { meta: 'Failed', metaTone: 'alert' };
+  if (missedSecurity(s).length > 0) return { meta: 'Security fixes', metaTone: 'warn' };
+  return s?.updateAvailable ? { meta: '1 ready', metaTone: 'ok' } : {};
 }

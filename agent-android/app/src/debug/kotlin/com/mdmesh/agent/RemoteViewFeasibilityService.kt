@@ -17,6 +17,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.mdmesh.remote.RemoteViewProbePlatform
 
@@ -34,6 +35,12 @@ class RemoteViewFeasibilityService : Service() {
     private var capturedFrameCount = 0
 
     private val stopRunnable = Runnable { stopProbe() }
+    private val noFramesRunnable = Runnable {
+        if (capturedFrameCount == 0) {
+            Log.w(TAG, "MediaProjection virtual display produced no frame after $NO_FRAME_TIMEOUT_MS ms")
+            RemoteViewFeasibilityProbe.markNoFramesReceived()
+        }
+    }
     private val projectionCallback = object : MediaProjection.Callback() {
         override fun onStop() = stopProbe()
     }
@@ -72,6 +79,7 @@ class RemoteViewFeasibilityService : Service() {
                 capturedFrameCount += 1
                 if (capturedFrameCount == 1 || capturedFrameCount % FRAME_DIAGNOSTIC_INTERVAL == 0) {
                     val brightness = sampledBrightness(image)
+                    Log.i(TAG, "MediaProjection frame=$capturedFrameCount brightness=$brightness")
                     RemoteViewFeasibilityProbe.markCapturedFrame(capturedFrameCount, brightness)
                 }
             } finally {
@@ -90,6 +98,7 @@ class RemoteViewFeasibilityService : Service() {
             mainHandler,
         )
         RemoteViewFeasibilityProbe.markActive()
+        mainHandler.postDelayed(noFramesRunnable, NO_FRAME_TIMEOUT_MS)
         mainHandler.postDelayed(stopRunnable, PROBE_DURATION_MS)
     }
 
@@ -118,6 +127,7 @@ class RemoteViewFeasibilityService : Service() {
 
     private fun stopProbe() {
         mainHandler.removeCallbacks(stopRunnable)
+        mainHandler.removeCallbacks(noFramesRunnable)
         display?.release()
         display = null
         imageReader?.close()
@@ -173,6 +183,7 @@ class RemoteViewFeasibilityService : Service() {
         private const val CHANNEL_ID = "mdmesh_remote_view_probe"
         private const val NOTIFICATION_ID = 7_301
         private const val PROBE_DURATION_MS = 30_000L
+        private const val NO_FRAME_TIMEOUT_MS = 5_000L
         private const val FRAME_DIAGNOSTIC_INTERVAL = 10
         private const val COLOR_COMPONENT_COUNT = 3
         private const val LAST_COLOR_COMPONENT_OFFSET = COLOR_COMPONENT_COUNT - 1

@@ -122,6 +122,13 @@ object RemoteViewFeasibilityProbe {
         )
     }
 
+    internal fun markNoFramesReceived() {
+        mutableState.value = RemoteViewFeasibilityState(
+            "Screen-share test is active but Android has delivered no capture frames after 5 seconds.",
+            active = true,
+        )
+    }
+
     internal fun markStopped() {
         mutableState.value = RemoteViewFeasibilityState("Screen-share test ended.", active = false)
     }

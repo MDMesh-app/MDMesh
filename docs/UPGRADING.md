@@ -17,6 +17,12 @@ applies them: it backs up the database, then rolls back if the new version fails
 ([settings](OPERATIONS.md#updater-supervisor)). If no update shows up, see the `[verify]` line in
 `docker compose logs supervisor` (native: `journalctl -u mdmesh-supervisor`).
 
+If the update on offer skips over a release that fixed security issues (say this server runs 0.5.0, 0.5.1 fixed one,
+and 0.5.2 is on offer), the console says so in amber: the sidebar card reads **Security update**, and Settings →
+Updates names the releases it is missing and links their notes. The list is the signed manifest's `securityReleases`
+(every release whose changelog has a Security section), read only from a manifest that verified; the supervisor
+reports the skipped ones as `missedSecurity` in `/update/status`. Installing the offered release brings those fixes.
+
 ## Quick-start installs
 
 The install's admin (a super-admin, or the org admin of a single-customer install) selects **Review update** on the

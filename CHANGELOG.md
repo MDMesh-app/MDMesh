@@ -91,6 +91,9 @@ New
   or clears them if that one is cleared.
 - Settings shows a ready update's release notes by version: a one-line summary, the items grouped, and a "Security
   fixes" label on a release that has a Security section.
+- When the update on offer skips a release that fixed security issues, the console says so in amber: the sidebar card
+  reads "Security update", and Settings → Updates names the releases this server is missing, with a link to their
+  notes. Each release's signed manifest lists the releases with a Security section (`securityReleases`).
 - Destructive confirmations name what they do ("Factory reset", "Delete configuration"), and one action has one
   name everywhere ("Lock", "Ring", "Sync now", "Needs attention").
 - From source and native: `./setup.sh --update` moves the clone to the newest release, checked against its signed

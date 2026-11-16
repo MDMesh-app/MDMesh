@@ -80,6 +80,13 @@ Heads-up
   comes back right away when the device's network returns or its next check-in gets through, and devices retry at
   random times so they don't all reconnect at once after a server restart. Check-ins are not affected.
 
+Security
+- Updates applied by a 0.5.0 supervisor, and the quick start, run the server, web and supervisor images by the digest
+  the signed release names, so an image replaced in the registry is refused.
+- The quick start checks every file it downloads from the release against the signed manifest, and stops instead of
+  falling back to `main` or `:latest` when the release can't be found or doesn't verify. It needs OpenSSL 3.0+, or an
+  older OpenSSL and `minisign`.
+
 New
 - The console has a new look: calmer, with comfortable spacing, one type and spacing scale, one table, one set of
   controls, and menus, dialogs, tabs and pages that move instead of snapping. Lists show 48px rows with their actions
@@ -172,9 +179,6 @@ New
 - Agent: the status screen, dialogs and kiosk launcher are easier to read and use: darker secondary and status text,
   no text under 13sp, a visible focus ring for keyboards and D-pads, full-size copy buttons, and TalkBack reads
   headings, each fact with its label, and a failed return or stuck enrolment as it appears. Needs agent 0.5.0.
-- Updates applied by a 0.5.0 supervisor, and the quick start, run exactly the images the signed release names, pinned
-  by digest; the quick start also checks each file it downloads, stops instead of falling back to `main`, and needs
-  OpenSSL 3.0+, or an older OpenSSL and `minisign`.
 - Each release now publishes `quickstart.sh`, with its SHA-256 in the signed manifest. The README's install command
   runs the latest release's copy instead of `main`'s; DEPLOY.md has one that checks it against the signed release
   first and installs exactly the release it checked

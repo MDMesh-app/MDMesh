@@ -44,8 +44,8 @@ describe('parseReleaseEntries', () => {
     expect(parseReleaseEntries('  ', '1.0.0')).toEqual([]);
   });
 
-  it('does not mark v0.5.0 or v0.3.5, whose notes have no Security section', () => {
-    for (const v of ['0.5.0', '0.3.5']) {
+  it('does not mark v0.3.5 or v0.3.4, whose notes have no Security section', () => {
+    for (const v of ['0.3.5', '0.3.4']) {
       const entries = parseReleaseEntries(releaseBody(v), v);
       expect(entries.map((e) => e.version)).toEqual([v]);
       expect(entries[0].security).toBe(false);

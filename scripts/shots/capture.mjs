@@ -11,6 +11,8 @@
 //     (an old id link) must move to the device's number, /devices/WH-SCAN-07; /no-such-page (catch-all) must stay put
 //     inside the shell ("Page not found"); the old bookmarks /dashboard, /configs and /v2/devices must land on /,
 //     /configurations and /devices;
+//   * signed in, the offered update skipping a security release (fixtures.mjs updateScenarios): /settings must show
+//     the missing-security-fixes notice;
 //   * signed out: /login — the sign-in form must render and the page must stay on /login;
 //   * flagged first-login session (passwordReset + token in storage, as an older console stored it; the console
 //     itself keeps the token in memory, which v2-parity/auth.mjs covers): /set-password — the set-password form
@@ -26,6 +28,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { roundCorners } from './round.mjs';
 import { DIST, fx, serve, newContext } from './harness.mjs';
+import { updateScenarios } from './fixtures.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(__dirname, '../../docs/screenshots');
@@ -58,6 +61,12 @@ const CHECK_GROUPS = [
       { route: '/v2/devices', expect: '/devices', selector: SHELL },
     ],
   },
+  // The offered update skips a security release (fixtures.mjs updateScenarios): Settings shows the notice.
+  {
+    user: fx.user,
+    updateStatus: updateScenarios(fx).missedSecurity,
+    routes: [{ route: '/settings', expect: '/settings', selector: '.v2-settings-secnotice .v2-notice__title' }],
+  },
   {
     user: null,
     routes: [{ route: '/login', expect: '/login', selector: '.v2-auth__card input[autocomplete="username"]' }],
@@ -71,7 +80,7 @@ const CHECK_GROUPS = [
 async function runCheck(browser, base) {
   const problems = [];
   for (const group of CHECK_GROUPS) {
-    const context = await newContext(browser, group.user, { theme: THEME });
+    const context = await newContext(browser, group.user, { theme: THEME, ...(group.updateStatus ? { updateStatus: group.updateStatus } : {}) });
     const page = await context.newPage();
     page.on('pageerror', (e) => problems.push(`pageerror on ${page.url()}: ${e.message}`));
     page.on('console', (m) => { if (m.type() === 'error') problems.push(`console.error on ${page.url()}: ${m.text()}`); });

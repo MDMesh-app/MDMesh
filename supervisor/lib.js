@@ -24,6 +24,24 @@ function pickRelease(releases, channel) {
     || null;
 }
 
+const RELEASE_VERSION = /^\d+\.\d+\.\d+$/;
+
+/** The security releases an update from `current` to the manifest's version skips over: the versions in the manifest's
+ *  securityReleases (every release whose CHANGELOG.md section has a Security heading, release/build-manifest.sh) newer
+ *  than `current` and older than the offered release, oldest first. The offered release itself is left out (its own
+ *  notes already say "Security fixes"). Trusted only from a VERIFIED manifest; an unverified one, or one from release
+ *  tooling before the field (0.4.x and older), gives []. */
+function missedSecurity(manifest, verified, current) {
+  const latest = manifest && manifest.version;
+  const list = manifest && manifest.securityReleases;
+  if (!verified || !latest || !Array.isArray(list)) return [];
+  const seen = new Set();
+  return list
+    .filter((v) => typeof v === 'string' && RELEASE_VERSION.test(v) && semverGt(v, current) && semverGt(latest, v)
+      && !seen.has(v) && seen.add(v))
+    .sort((a, b) => (semverGt(a, b) ? 1 : semverGt(b, a) ? -1 : 0));
+}
+
 /** Build the status object the console + recovery page read. Update only offered if VERIFIED. */
 function shapeStatus({ current, manifest, verified, checkedAt, error }) {
   const latest = manifest && manifest.version;
@@ -35,6 +53,7 @@ function shapeStatus({ current, manifest, verified, checkedAt, error }) {
     channel: (manifest && manifest.channel) || null,
     checkedAt: checkedAt || null,
     error: error || null,
+    missedSecurity: missedSecurity(manifest, verified, current),
   };
 }
 
@@ -264,7 +283,7 @@ function legacyDeploymentAdmin(body) {
 }
 
 module.exports = {
-  parseSemver, semverGt, pickRelease, shapeStatus,
+  parseSemver, semverGt, pickRelease, shapeStatus, missedSecurity,
   imageTags, imagePins, nextPhase, isTerminal, APPLY_PHASES, APPLY_TERMINAL,
   apkAsset, sha256Matches, recoveryPage, isPublishTemp, assetRequest, fetchAsset, envValue, applyLine, applyRefusal,
   deploymentAdminVerdict, legacyDeploymentAdmin,

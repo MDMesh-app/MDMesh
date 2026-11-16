@@ -189,6 +189,8 @@ Fixes
   a later kiosk exit, custom kiosk, or configuration apply offers it again.
 - Files: uploading a file again with the same name and the same content returns the file already there instead of an
   error.
+- Apps: an .xapk or other split-APK bundle whose APKs are stored uncompressed now uploads instead of failing to
+  unpack, and a damaged APK inside a bundle is refused (thanks @detobel36).
 - Enroll: the page warns before you hand out a QR code devices can't use: the console is open at localhost, over
   `http://`, at a local address, or at another address than the server's `BASE_URL` (devices keep the address in the
   code until a factory reset). Wi-Fi a device can't join from a QR code (a secured network entered without its

@@ -11,14 +11,17 @@ line under Unreleased.
 ## v0.5.0 — 2026-11-13
 
 Upgrading
-- On its first start, 0.5.0's server adds to the database: the columns `devices.wipedAt`; `configurations.camera`,
-  `configurations.locationServices`, `configurations.backgroundImageFileId`, `configurations.backgroundImageSha256`,
-  `configurations.backgroundImageFit`, `configurations.backgroundImageFocalX` and
-  `configurations.backgroundImageFocalY`; `device_state.kioskGeneration` and `device_state.kioskReturnGeneration`;
-  `applicationVersions.requestedPermissions`; and `devices.agentEnrollAttemptHash`; indexes on
-  `devices.agentEnrollAttemptHash`, on each customer's devices by enrollment time, and on
-  `configurations.backgroundImageFileId`; and the tables `configurationAppPermissions` and `agentEnrollmentKey`, whose
-  one row the server fills with a random key on first use. Devices wiped before the update aren't marked Wiped.
+- On its first start, 0.5.0's server adds to the database:
+  - columns: `devices.wipedAt` and `devices.agentEnrollAttemptHash`; `configurations.camera`,
+    `configurations.locationServices`, `configurations.backgroundImageFileId`, `configurations.backgroundImageSha256`,
+    `configurations.backgroundImageFit`, `configurations.backgroundImageFocalX` and
+    `configurations.backgroundImageFocalY`; `device_state.kioskGeneration` and `device_state.kioskReturnGeneration`;
+    `applicationVersions.requestedPermissions`;
+  - indexes: on `devices.agentEnrollAttemptHash`, on each customer's devices by enrollment time, and on
+    `configurations.backgroundImageFileId`;
+  - tables: `configurationAppPermissions`, and `agentEnrollmentKey`, whose one row the server fills with a random key
+    on first use.
+  - Devices wiped before the update aren't marked Wiped.
 - On the same start, the server adds three columns to enrollment tokens (`maxUses`, `useCount`, `revokedAt`) and
   stores the tokens hashed. Existing codes stay single-use and keep working, except on PostgreSQL older than 11, where
   they stop: make a new code on the Enroll page. A 0.4.0 server started on the upgraded database, without restoring

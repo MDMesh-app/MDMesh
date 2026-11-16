@@ -162,6 +162,33 @@
     grid-column: 2 / -1;
   }
 }
+/* With a title: the title and its text are one block, a within-component gap apart, and the icon sits on the
+   title's line (its box is one title line tall). Even padding; the action stays centred on the block beside it, or
+   under the text, on its left edge, where the notice is narrow (above). */
+.v2 .v2-notice--titled .v2-notice__grid {
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+.v2 .v2-notice--titled .v2-notice__icon {
+  height: var(--lh-ui);
+}
+.v2 .v2-notice--titled .v2-notice__body {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  gap: var(--space-1);
+  min-height: 0;
+}
+.v2 .v2-notice--titled .v2-notice__body > :first-child {
+  display: block;
+  min-height: 0;
+}
+.v2 .v2-notice__title {
+  font-weight: var(--weight-semibold);
+}
+.v2 .v2-notice__text > * {
+  margin: 0;
+}
 .v2 .v2-notice--alert {
   border-color: var(--alert-line);
 }

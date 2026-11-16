@@ -1,4 +1,4 @@
-import type { HTMLAttributes, ReactNode } from 'react';
+import { useId, type HTMLAttributes, type ReactNode } from 'react';
 import { cx } from './cx';
 import { StepNumber } from './Steps';
 import './Card.css';
@@ -129,10 +129,15 @@ export function CardHeader({
   );
 }
 
-/** Attention / notice strip: tinted icon tile, text, action ("14 need attention", missing checksum). */
+/**
+ * Attention / notice strip: tinted icon, text, action ("14 need attention", missing checksum). With a `title`, a
+ * notice block instead: the title and its text as one block (the icon on the title's line), and the notice is
+ * labelled by its title.
+ */
 export function Notice({
   tone = 'warn',
   icon,
+  title,
   children,
   action,
   className,
@@ -140,18 +145,34 @@ export function Notice({
 }: {
   tone?: 'warn' | 'alert' | 'ok' | 'idle';
   icon: ReactNode;
+  /** A short title over the text ("Missing security fixes"). */
+  title?: ReactNode;
   children: ReactNode;
   action?: ReactNode;
   className?: string;
   'aria-label'?: string;
 }) {
+  const titleId = useId();
   return (
-    <section aria-label={ariaLabel} className={cx('v2-notice', `v2-notice--${tone}`, className)}>
+    <section
+      aria-label={title ? undefined : ariaLabel}
+      aria-labelledby={title ? titleId : undefined}
+      className={cx('v2-notice', `v2-notice--${tone}`, title ? 'v2-notice--titled' : null, className)}
+    >
       <div className="v2-notice__grid">
         <span className="v2-notice__icon" aria-hidden="true">
           {icon}
         </span>
-        <div className="v2-notice__body">{children}</div>
+        {title ? (
+          <div className="v2-notice__body">
+            <span id={titleId} className="v2-notice__title">
+              {title}
+            </span>
+            <div className="v2-notice__text">{children}</div>
+          </div>
+        ) : (
+          <div className="v2-notice__body">{children}</div>
+        )}
         {action ? <div className="v2-notice__action">{action}</div> : null}
       </div>
     </section>

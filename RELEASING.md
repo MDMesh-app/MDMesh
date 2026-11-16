@@ -69,6 +69,12 @@ A fix for a vulnerability that isn't public yet is developed in a GitHub private
 Advisories → New draft advisory → Start a temporary private fork), not in a public PR. Its changelog line says what
 operators see, without the details.
 
+**A release with a security fix must have a Security section** in its CHANGELOG.md section (a `Security` line of its
+own, as v0.3.8's), and a release without one must not have it. That heading is the one record of which releases fixed
+security issues: the release notes in Settings label the release "Security fixes", and the signed manifest's
+`securityReleases` lists every such version, which the console uses to warn an admin whose update skips one
+(`release/security-releases.py` derives it; the release workflow fails if the manifest's list and CHANGELOG.md differ).
+
 The fix is public from the moment it merges, so keep that window short:
 
 - Merge it from the private fork only when the release is otherwise ready (reviewed, Unreleased final).
@@ -102,6 +108,9 @@ supervisors before 0.5.0 read) and `components.apk`, and from 0.5.0 adds:
 - `files`: the SHA-256 of each file the quick start downloads from the tag, and of `quickstart.sh` itself (the
   release asset);
 - `commit`: the tagged commit.
+- `securityReleases`: every version up to this one whose CHANGELOG.md section has a Security heading, oldest first
+  (`release/security-releases.py`; [Security fixes](#security-fixes)). A 0.5.0+ supervisor reports the ones an update
+  skips over as `missedSecurity` in `/update/status`, from a verified manifest only.
 
 Who reads what:
 

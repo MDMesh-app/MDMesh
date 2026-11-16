@@ -31,11 +31,14 @@ function open(configs: Array<Record<string, unknown>>) {
 }
 
 describe('configurations list', () => {
-  it('lists configurations as table rows, with their description', async () => {
+  it('lists configurations as cards, with their description and actions', async () => {
     open([WAREHOUSE]);
-    const table = await screen.findByRole('table', { name: 'Configurations' });
-    const row = within(table).getByRole('link', { name: 'Warehouse' }).closest('tr')!;
-    expect(within(row).getByText('Scanners and shared handhelds')).toBeTruthy();
+    const list = await screen.findByRole('list', { name: 'Configurations' });
+    const card = within(within(list).getByRole('article', { name: 'Warehouse' }));
+    expect(card.getByText('Scanners and shared handhelds')).toBeTruthy();
+    expect(card.getByRole('link', { name: /Edit/ }).getAttribute('href')).toBe('/configurations/7');
+    expect(card.getByRole('button', { name: /Duplicate/ })).toBeTruthy();
+    expect(card.getByRole('button', { name: 'More for Warehouse' })).toBeTruthy();
   });
 
   it('with no template, New configuration opens a blank one directly', async () => {

@@ -660,10 +660,11 @@ export declare function Eyebrow({ children, help, as: As, id, className, }: {
 export type GridSpan = 3 | 4 | 6 | 8 | 9 | 12;
 export interface GridProps extends HTMLAttributes<HTMLElement> {
     dense?: boolean;
+    stretch?: boolean;
     as?: 'div' | 'section' | 'ul';
     children: ReactNode;
 }
-export declare function Grid({ dense, as: As, className, children, ...rest }: GridProps): import("react").JSX.Element;
+export declare function Grid({ dense, stretch, as: As, className, children, ...rest }: GridProps): import("react").JSX.Element;
 export interface GridCellProps extends HTMLAttributes<HTMLElement> {
     span?: GridSpan;
     rows?: 1 | 2 | 3;

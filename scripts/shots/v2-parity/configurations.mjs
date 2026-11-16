@@ -82,8 +82,8 @@ const bar = (page) => page.getByRole('region', { name: 'Unsaved changes' });
 const group = (page, name) => page.getByRole('radiogroup', { name, exact: true });
 const stats = { now: 0, max: 0, done: 0 };
 const puts = (log, suffix) => log.filter((l) => l.method === 'PUT' && l.path.endsWith(suffix));
-/** The list's rows (one Table, a row per configuration; the "no match" row is not one). */
-const cfgRows = (page) => page.locator('.v2-configs-table tbody tr:not(:has(.v2-table__empty))');
+/** The list's cards (one per configuration, on the page grid). */
+const cfgRows = (page) => page.locator('.v2-configs-card');
 const cfgRow = (page, text) => cfgRows(page).filter({ hasText: text });
 /** A row's "…" menu (Radix DropdownMenu): Edit / View, Duplicate, Delete. */
 async function rowMenu(page, name, item) {
@@ -95,7 +95,7 @@ const appTableRows = (page) => page.locator('.v2-cfged-apps tbody tr');
 
 // ---------------------------------------------------------------- list
 
-await test('list: rows, counts, sync line, badges', async (page) => {
+await test('list: cards, counts, sync line, badges', async (page) => {
   await go(page, '/configurations');
   const cards = cfgRows(page);
   await assert.equal(await cards.count(), 3);
@@ -105,8 +105,8 @@ await test('list: rows, counts, sync line, badges', async (page) => {
   assert.match(await kiosk.innerText(), /Signage Player 2\.7\.1/);
   assert.match(await kiosk.innerText(), /All 3 in sync/);
   const def = cards.filter({ hasText: 'Warehouse scanners' });
-  // The Apps column (was "Apps 2" on the card).
-  assert.equal((await def.locator('td').nth(2).innerText()).trim(), '2');
+  // The Apps cell of the card's facts (Main app / Apps / Devices).
+  assert.equal((await def.locator('.v2-metagrid__cell').nth(1).locator('dd').innerText()).trim(), '2');
   assert.match(await def.innerText(), /2 of 3 in sync · 1 agent too old/);
   assert.match(await cards.filter({ hasText: 'Field Ops' }).innerText(), /1 of 2 in sync · 1 not reported yet/);
 });
@@ -126,7 +126,11 @@ await test('list: built-in rows (seed id + name) are view-only', async (page) =>
   await go(page, '/configurations');
   const card = cfgRows(page).first();
   assert.match(await card.innerText(), /Built-in/);
-  // View / Duplicate to edit / no Delete now live in the row's "…" menu (one table, K8).
+  // The card's own buttons: View and Duplicate to edit, no Edit.
+  await card.getByRole('link', { name: 'View' }).waitFor();
+  assert.equal(await card.getByRole('link', { name: 'Edit' }).count(), 0);
+  await card.getByRole('button', { name: 'Duplicate to edit' }).waitFor();
+  // The "…" menu: View, Duplicate to edit, no Delete.
   await card.getByRole('button', { name: /More for/ }).click();
   await page.getByRole('menuitem', { name: 'View' }).waitFor();
   assert.equal(await page.getByRole('menuitem', { name: 'Edit', exact: true }).count(), 0);

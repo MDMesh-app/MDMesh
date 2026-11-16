@@ -204,7 +204,7 @@ device shows isn't reported yet.
 - **Upgrade:** the update that added the column stored the current set of each device on a configuration, so it sends no installs to
   the fleet, and an app added after it installs at the next check-in, even on a device that was offline during the
   update. Apps a configuration already had are left as they are.
-- **Install config apps** on the device page sends every app again (`POST .../syncApps`), e.g. after one was removed on
+- **Install configuration apps** on the device page sends every app again (`POST .../syncApps`), e.g. after one was removed on
   the device. Removing an app from a configuration doesn't uninstall it.
 - A hosted APK is hashed once per file (kept until its size or modification time changes), not once per device.
 

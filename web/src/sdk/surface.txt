@@ -261,6 +261,7 @@ token --grid-gap
 token --hairline
 token --hover
 token --icon-md
+token --icon-nav
 token --icon-sm
 token --idle-ink
 token --idle-line

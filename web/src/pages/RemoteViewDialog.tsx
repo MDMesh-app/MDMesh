@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '../api/client';
 import { getRemoteViewSession, remoteViewSocketUrl, requestRemoteView, stopRemoteViewSession, type RemoteViewSession } from '../api/remoteView';
 import { Button, Callout, Modal } from '../ui';
+import { icePathLabel, isDirectLanPath, selectedIcePath } from './remoteViewTransport';
 import './RemoteViewDialog.css';
 
 type Stage = 'waiting' | 'connecting' | 'viewing' | 'ended' | 'error';
@@ -15,6 +16,7 @@ function stateText(session: RemoteViewSession | null, stage: Stage): string {
   if (stage === 'viewing') return 'Viewing the device screen. This view has no input control.';
   if (stage === 'ended') return session?.endReason || 'The screen-share session ended.';
   if (stage === 'error') return session?.endReason || 'Could not start the screen-share viewer.';
+  if (session?.state === 'requested') return 'Request sent; waiting for the device to check in.';
   if (session?.state === 'awaiting_consent') return 'Waiting for the person holding the device to approve screen sharing.';
   return 'Requesting screen-share consent on the device…';
 }
@@ -60,10 +62,9 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
     const connect = (current: RemoteViewSession) => {
       if (!live || stopped.current) return;
       setStage('connecting');
-      // STUN discovers candidate addresses only. Media remains direct between
-      // the viewer and device; this POC deliberately does not configure TURN.
+      // The LAN POC deliberately has neither STUN nor TURN. A selected pair
+      // must therefore be direct host ↔ host or the session is stopped.
       const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
         rtcpMuxPolicy: 'require',
         iceTransportPolicy: 'all',
       });
@@ -71,6 +72,7 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
       let localCandidateCount = 0;
       let agentCandidateCount = 0;
       let answerSent = false;
+      let icePath = 'ICE path: waiting for selected pair';
       // A receive-only transceiver makes the browser offer a video media section.
       // offerToReceiveVideo alone can produce an empty offer in modern browsers;
       // Android WebRTC cannot negotiate the screen sender against that offer.
@@ -95,6 +97,16 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
       const updateVideoStats = async () => {
         if (!live || pc.connectionState !== 'connected') return;
         const report = await pc.getStats();
+        const selectedPath = selectedIcePath(report);
+        if (selectedPath) {
+          icePath = `ICE path: ${icePathLabel(selectedPath)}`;
+          if (!isDirectLanPath(selectedPath)) {
+            setTransportStatus(`${icePath}; ending non-LAN session.`);
+            finish('error');
+            stop();
+            return;
+          }
+        }
         const inbound = [...report.values()].find((item) => {
           const video = item as RTCInboundRtpStreamStats;
           return item.type === 'inbound-rtp' && video.kind === 'video';
@@ -104,7 +116,7 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
           return;
         }
         setTransportStatus(
-          `Viewer video: bytes ${inbound.bytesReceived}, decoded ${inbound.framesDecoded ?? 0}, dropped ${inbound.framesDropped ?? 0}; ${videoRenderDiagnostic()}`,
+          `Viewer video: bytes ${inbound.bytesReceived}, decoded ${inbound.framesDecoded ?? 0}, dropped ${inbound.framesDropped ?? 0}; ${icePath}; ${videoRenderDiagnostic()}`,
         );
       };
       pc.ontrack = (event) => {

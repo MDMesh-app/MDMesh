@@ -36,8 +36,15 @@ function api(path: string, init?: RequestInit): unknown {
   return null;
 }
 
-function open(path: string, { registry = registryOf(demo), user = ROLES.superAdmin }: { registry?: Registry; user?: AuthUser } = {}) {
-  const fetch = stubApi(api);
+function open(
+  path: string,
+  {
+    registry = registryOf(demo),
+    user = ROLES.superAdmin,
+    server = api,
+  }: { registry?: Registry; user?: AuthUser; server?: typeof api } = {},
+) {
+  const fetch = stubApi(server);
   renderInConsole(<AppRoutes />, { path, registry, user });
   return fetch;
 }
@@ -197,6 +204,17 @@ describe('overview.card', () => {
     // Still what a <dl> may hold: each tile a div of a dt and its dd.
     expect(Array.from(grid.children).map((c) => [c.tagName, c.className])).toEqual([['DIV', 'v2-stat'], ['DIV', 'v2-stat']]);
     expect(mark.closest('dd')?.previousElementSibling?.tagName).toBe('DT');
+  });
+
+  it('keeps an extension’s stat tiles on the first-run Overview, without core’s', async () => {
+    const empty = (path: string, init?: RequestInit): unknown =>
+      new URL(path, 'http://console').pathname.endsWith('/devices/search')
+        ? { devices: { items: [], totalItemsCount: 0 }, configurations: {} }
+        : api(path, init);
+    open('/', { server: empty });
+    await main().findByRole('heading', { name: 'Enroll your first device' });
+    await main().findByText('Demo stat');
+    expect(statLabels()).toEqual(['Demo stat']);
   });
 
   it('hides a card the role may not use', async () => {

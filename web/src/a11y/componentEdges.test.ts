@@ -80,9 +80,10 @@ describe('edges that stay soft by design', () => {
       ['pages', 'ui'].flatMap((dir) => tsxFiles(resolve(SRC, dir))).map((f) => [f, readFileSync(f, 'utf8')]),
     );
     expect(Object.keys(files).length).toBeGreaterThan(20);
+    // ui/Input keeps the deprecated native path for extensions (`native` / `multiple`, until 0.6.0); core uses neither.
     const native = Object.entries(files)
-      .filter(([f]) => !f.includes('.test.'))
-      .flatMap(([f, src]) => [...src.matchAll(/<select\b[^>]*>/g)].map(() => f));
+      .filter(([f]) => !f.includes('.test.') && !f.endsWith('/ui/Input.tsx'))
+      .flatMap(([f, src]) => [...src.matchAll(/<select\b[^>]*>|<(?:Labelled)?Select\b[^>]*\b(?:native|multiple)\b/g)].map(() => f));
     expect(native).toEqual([]);
   });
 });

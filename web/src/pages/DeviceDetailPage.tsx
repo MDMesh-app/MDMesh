@@ -939,8 +939,11 @@ export function DeviceDetailPage() {
     { key: 'serial', label: 'Serial', value: teleStr(idn.serial) ?? device.serial ?? DASH, mono: true },
     { key: 'imei', label: 'IMEI', value: teleStr(idn.imei) ?? device.imei ?? DASH, mono: true },
   ];
+  // With telemetry, the Telemetry tab shows the IPs; a public IP only the server knows (none in the report) stays here.
   const networkItems: KeyValueItem[] = tele
-    ? []
+    ? !teleStr(topTele.publicIp) && device.publicIp
+      ? [{ key: 'public', label: 'Public IP', value: device.publicIp, mono: true }]
+      : []
     : [
         { key: 'local', label: 'Local IP', value: teleStr(dyn.ipAddress) ?? DASH, mono: true },
         { key: 'public', label: 'Public IP', value: teleStr(topTele.publicIp) ?? device.publicIp ?? DASH, mono: true },

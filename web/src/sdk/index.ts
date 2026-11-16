@@ -73,7 +73,7 @@ export { Card, CardHeader, Notice, Callout } from '../ui/Card';
 export type { CardPadding, CardTone } from '../ui/Card';
 export { Field, FieldRow, ChangedChip, Eyebrow } from '../ui/Field';
 export { Input, Textarea, Select, SearchInput, Checkbox } from '../ui/Input';
-export type { InputSize, InputTone, SelectSize } from '../ui/Input';
+export type { InputSize, InputTone, SelectHandle, SelectSize } from '../ui/Input';
 export { Segmented, TriState } from '../ui/Segmented';
 export type { SegmentOption, SegmentValue, SegmentedProps, SegmentedSize } from '../ui/Segmented';
 export { Toggle } from '../ui/Toggle';

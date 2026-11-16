@@ -11,6 +11,7 @@ import { paths } from '../routes';
 import {
   Button,
   ButtonLink,
+  Callout,
   Card,
   CardHeader,
   EmptyState,
@@ -710,6 +711,10 @@ export function ActionDialog({
             </Field>
           ) : null}
         </form>
+      ) : t.danger ? (
+        <Callout tone="warn" icon={<IconWarning size={16} />}>
+          This interrupts whoever is using the device.
+        </Callout>
       ) : null}
     </Modal>
   );

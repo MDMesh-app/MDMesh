@@ -98,7 +98,8 @@ function AccountMenu() {
       <DM.Trigger
         className="v2-account"
         onClick={(e) => {
-          if (e.detail === 0) setOpen(true);
+          // A click with no pointer behind it (a screen reader's activation) toggles, as on Menu.
+          if (e.detail === 0) setOpen((o) => !o);
         }}
       >
         <span className="v2-account__avatar" aria-hidden="true">

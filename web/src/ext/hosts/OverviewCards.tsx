@@ -28,11 +28,22 @@ function OverviewCard({ entry }: { entry: Entry }) {
   );
 }
 
-/** The fleet summary's stat tiles the role may see, core's and extensions' in order. */
-export function OverviewStats() {
-  return useContributions('overview.card')
-    .filter((e) => e.contribution.placement === 'stat')
-    .map((entry) => <OverviewCard key={entry.key} entry={entry} />);
+const statEntries = (entries: readonly Entry[], extensionsOnly: boolean) =>
+  entries.filter((e) => e.contribution.placement === 'stat' && !(extensionsOnly && e.extension.core));
+
+/**
+ * The fleet summary's stat tiles the role may see, core's and extensions' in order. `extensionsOnly`: just the
+ * extensions' (the first-run Overview has no fleet to sum up, but an extension's stat may be about something else).
+ */
+export function OverviewStats({ extensionsOnly = false }: { extensionsOnly?: boolean }) {
+  return statEntries(useContributions('overview.card'), extensionsOnly).map((entry) => (
+    <OverviewCard key={entry.key} entry={entry} />
+  ));
+}
+
+/** Whether any extension contributes a stat tile the role may see. */
+export function useHasExtensionStats(): boolean {
+  return statEntries(useContributions('overview.card'), true).length > 0;
 }
 
 /**

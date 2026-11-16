@@ -1,7 +1,7 @@
 import { createRef, useState } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { Select } from './Input';
+import { Select, type SelectHandle } from './Input';
 import { chooseOption, selectValue } from '../test/select';
 
 describe('Select (Radix) with a native select’s props', () => {
@@ -120,5 +120,80 @@ describe('Select (Radix) with a native select’s props', () => {
     );
     expect(form.checkValidity()).toBe(true);
     expect(new FormData(form).get('role')).toBe('7');
+  });
+});
+
+describe('Select: the deprecated native path (until 0.6.0)', () => {
+  it('`multiple` draws a native select with a real element ref and native change events', () => {
+    const ref = createRef<HTMLSelectElement>();
+    const seen: string[][] = [];
+    render(
+      <Select
+        ref={ref}
+        multiple
+        aria-label="Days"
+        defaultValue={['mon']}
+        onChange={(e) => seen.push(Array.from(e.target.selectedOptions, (o) => o.value))}
+      >
+        <option value="mon">Monday</option>
+        <option value="tue">Tuesday</option>
+      </Select>,
+    );
+    const el = screen.getByRole('listbox', { name: 'Days' });
+    expect(ref.current).toBe(el);
+    expect(ref.current?.options.length).toBe(2);
+    (el as HTMLSelectElement).options[1].selected = true;
+    fireEvent.change(el);
+    expect(seen).toEqual([['mon', 'tue']]);
+  });
+
+  it('`native` keeps a single native select', () => {
+    const ref = createRef<HTMLSelectElement>();
+    render(
+      <Select ref={ref} native aria-label="Fit" defaultValue="cover">
+        <option value="fill">Fill</option>
+        <option value="cover">Cover</option>
+      </Select>,
+    );
+    expect(ref.current?.tagName).toBe('SELECT');
+    expect(ref.current?.value).toBe('cover');
+  });
+
+  it('a listbox Select’s ref is a SelectHandle', () => {
+    const ref = createRef<SelectHandle>();
+    render(
+      <Select ref={ref} aria-label="Fit" defaultValue="cover">
+        <option value="fill">Fill</option>
+        <option value="cover">Cover</option>
+      </Select>,
+    );
+    expect(ref.current?.value).toBe('cover');
+    expect(ref.current?.type).toBe('select-one');
+  });
+
+  it('still compiles with a ref typed as the old element (until 0.6.0)', () => {
+    const old = createRef<HTMLSelectElement>();
+    render(
+      <Select ref={old} aria-label="Old" defaultValue="a">
+        <option value="a">A</option>
+      </Select>,
+    );
+    expect(old.current?.value).toBe('a');
+  });
+});
+
+describe('Select: groups', () => {
+  it('an <optgroup disabled> disables its options', () => {
+    render(
+      <Select aria-label="App" defaultValue="a">
+        <option value="a">Alpha</option>
+        <optgroup label="Retired" disabled>
+          <option value="b">Beta</option>
+        </optgroup>
+      </Select>,
+    );
+    fireEvent.click(screen.getByRole('combobox', { name: 'App' }));
+    expect(screen.getByRole('option', { name: 'Beta' }).getAttribute('aria-disabled')).toBe('true');
+    expect(screen.getByRole('option', { name: 'Alpha' }).getAttribute('aria-disabled')).toBeNull();
   });
 });

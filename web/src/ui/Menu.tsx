@@ -60,10 +60,11 @@ export function Menu({
   const withIcons = items.some((it) => it !== 'separator' && !!it.icon);
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  // Radix opens on pointerdown and on Enter, Space or ArrowDown. A click with no pointer behind it (detail 0: a
-  // screen reader's activation, or a script) opens it too; a mouse click's own pointerdown already did.
+  // Radix opens on pointerdown and on Enter, Space or ArrowDown (and prevents the click those keys would make). A
+  // click with no pointer behind it (detail 0: a screen reader's activation, or a script) toggles it, as a button
+  // would; a mouse click's own pointerdown already did.
   const onClick = (e: MouseEvent) => {
-    if (e.detail === 0 && !disabled) setOpen(true);
+    if (e.detail === 0 && !disabled) setOpen((o) => !o);
   };
   return (
     <span className={cx('v2-menu', className)}>

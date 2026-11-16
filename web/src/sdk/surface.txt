@@ -181,6 +181,7 @@ type SegmentOption
 type SegmentValue
 type SegmentedProps
 type SegmentedSize
+type SelectHandle
 type SelectSize
 type SettingsSectionContribution
 type SettingsSectionProps

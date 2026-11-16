@@ -133,10 +133,14 @@ function parseOptions(children: ReactNode): ParsedEntry[] {
     if (child.type === Fragment) {
       out.push(...parseOptions((child.props as { children?: ReactNode }).children));
     } else if (child.type === 'optgroup') {
-      const g = child as ReactElement<{ label?: ReactNode; children?: ReactNode }>;
+      const g = child as ReactElement<{ label?: ReactNode; children?: ReactNode; disabled?: boolean }>;
+      // A disabled group disables every option in it, as in a native select.
+      const off = !!g.props.disabled;
       out.push({
         group: g.props.label,
-        options: parseOptions(g.props.children).flatMap((e) => ('group' in e ? e.options : [e])),
+        options: parseOptions(g.props.children)
+          .flatMap((e) => ('group' in e ? e.options : [e]))
+          .map((o) => (off ? { ...o, disabled: true } : o)),
       });
     } else if (child.type === 'option') {
       out.push(option(child as ReactElement<{ value?: unknown; children?: ReactNode; disabled?: boolean }>));
@@ -170,21 +174,28 @@ function changeEvent(value: string, name?: string): ChangeEvent<HTMLSelectElemen
 }
 
 /**
- * What the Select's `ref` points at until 0.6.0 (the native select element before 0.5.0): a stand-in with the members extensions
- * used — `value`, `name`, `disabled`, `required`, `focus()`, `blur()` — typed as the old element so code compiles.
- * The rest of the element's API is gone. From 0.6.0 the ref is the trigger button; use `triggerRef` for it now.
+ * What a listbox Select's `ref` holds: the members of the native select element that extensions used before 0.5.0.
+ * A deprecated native Select (`native` or `multiple`) still hands its ref the `<select>` element itself. Type a ref
+ * as `SelectHandle` (it fits both); one typed as `HTMLSelectElement` still compiles until 0.6.0, but on a listbox
+ * Select only these members work. From 0.6.0 the ref is the trigger button; `triggerRef` gives it now.
  */
+export interface SelectHandle {
+  readonly value: string;
+  readonly name: string;
+  readonly disabled: boolean;
+  readonly required: boolean;
+  readonly type: string;
+  focus(options?: FocusOptions): void;
+  blur(): void;
+}
+
 function selectHandle(
   trigger: () => HTMLButtonElement | null,
   state: () => { value: string; name?: string; disabled?: boolean; required?: boolean },
-): HTMLSelectElement {
+): SelectHandle {
   return {
     get value() {
       return state().value;
-    },
-    set value(_v: string) {
-      // The value follows `value` / `onChange`; the stand-in can't set it (a native select's ref could).
-      if (import.meta.env.DEV) console.warn('Select: setting the ref’s value does nothing; pass `value` instead.');
     },
     get name() {
       return state().name ?? '';
@@ -198,7 +209,7 @@ function selectHandle(
     type: 'select-one',
     focus: (options?: FocusOptions) => trigger()?.focus(options),
     blur: () => trigger()?.blur(),
-  } as unknown as HTMLSelectElement;
+  };
 }
 
 export interface SelectProps
@@ -208,10 +219,21 @@ export interface SelectProps
   > {
   size?: SelectSize;
   tone?: InputTone;
-  value?: string | number;
-  defaultValue?: string | number;
-  /** Called with a change-shaped event: read `e.target.value`, as with a native select. */
+  /** An array only with `multiple`. */
+  value?: string | number | readonly string[];
+  defaultValue?: string | number | readonly string[];
+  /**
+   * Called with a change-shaped event: read `e.target.value`, as with a native select. A listbox Select has no
+   * native event behind it (`target` has `value` and `name`); a `native` one passes the browser's.
+   */
   onChange?: (e: ChangeEvent<HTMLSelectElement>) => void;
+  /**
+   * @deprecated Until 0.6.0: draws the native `<select>` of 0.4.x (a real change event, the element as `ref`, and
+   * `multiple`). Move to the listbox Select; for several values use checkboxes.
+   */
+  native?: boolean;
+  /** @deprecated Until 0.6.0, and only as a `native` select (it implies `native`). Use checkboxes instead. */
+  multiple?: boolean;
   /** Focus, blur, key and click handlers run on the trigger button. */
   onFocus?: FocusEventHandler<HTMLElement>;
   onBlur?: FocusEventHandler<HTMLElement>;
@@ -264,9 +286,46 @@ function Item({ option }: { option: ParsedOption }) {
  * `defaultValue`, `onChange(e)` with `e.target.value`, `name`, `required`, `form`, `autoComplete`. Inside a form Radix
  * keeps a hidden native select in step, so the form submits the value and `required` with nothing chosen blocks
  * submission. Other props (handlers, `style`, `tabIndex`, `autoFocus`, `data-*`, `aria-*`) go to the trigger.
- * `multiple` is not supported.
+ * `native` or `multiple` (both deprecated, until 0.6.0) draw the native select instead.
  */
-export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(
+export const Select = forwardRef<HTMLSelectElement | SelectHandle, SelectProps>(function Select(props, ref) {
+  return props.native || props.multiple ? (
+    <NativeSelect {...props} ref={ref as Ref<HTMLSelectElement>} />
+  ) : (
+    <ListboxSelect {...props} ref={ref as Ref<SelectHandle>} />
+  );
+});
+
+/** The 0.4.x native select, kept for `native` / `multiple` until 0.6.0. */
+const NativeSelect = forwardRef<HTMLSelectElement, SelectProps>(function NativeSelect(
+  { size = 'md', tone = 'default', className, children, native: _native, inlineLabel, triggerRef: _t, ...rest },
+  ref,
+) {
+  const f = useFieldProps(rest);
+  const invalid = tone === 'invalid' || f.invalid;
+  return (
+    <select
+      ref={ref}
+      {...(rest as SelectHTMLAttributes<HTMLSelectElement>)}
+      id={f.id}
+      aria-label={rest['aria-label'] ?? inlineLabel}
+      aria-describedby={f['aria-describedby']}
+      aria-invalid={invalid || rest['aria-invalid'] || undefined}
+      className={cx(
+        'v2-input',
+        'v2-select--native',
+        `v2-select--${size === 'xs' ? 'sm' : size}`,
+        invalid && 'is-invalid',
+        tone === 'warn' && 'is-warn',
+        className,
+      )}
+    >
+      {children}
+    </select>
+  );
+});
+
+const ListboxSelect = forwardRef<SelectHandle, SelectProps>(function ListboxSelect(
   {
     size = 'md',
     tone = 'default',
@@ -294,12 +353,8 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
   const invalid = tone === 'invalid' || f.invalid;
   const entries = parseOptions(children);
   const flat = entries.flatMap((e) => ('group' in e ? e.options : [e]));
-  if (import.meta.env.DEV && (rest as { multiple?: unknown }).multiple) {
-    console.warn('Select: `multiple` is not supported (one value only).');
-  }
-  const { multiple: _multiple, ...triggerProps } = rest as typeof rest & { multiple?: unknown };
+  const { multiple: _multiple, native: _native, ...triggerProps } = rest;
 
-  // Uncontrolled: our own state, as a native select starts on its first option.
   // Uncontrolled: our own state; until something is picked it follows the first option (options may arrive late).
   const [own, setOwn] = useState<string | null>(defaultValue === undefined ? null : String(defaultValue));
   const current = value === undefined ? (own ?? flat[0]?.value ?? '') : String(value);
@@ -388,7 +443,7 @@ export interface LabelledSelectProps extends Omit<SelectProps, 'inlineLabel' | '
 }
 
 /** Toolbar filter with its label inside the box: a `Select` at the 32px height. */
-export const LabelledSelect = forwardRef<HTMLSelectElement, LabelledSelectProps>(function LabelledSelect(
+export const LabelledSelect = forwardRef<HTMLSelectElement | SelectHandle, LabelledSelectProps>(function LabelledSelect(
   { label, className, children, ...rest },
   ref,
 ) {

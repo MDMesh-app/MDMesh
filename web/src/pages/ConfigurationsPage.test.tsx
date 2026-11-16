@@ -1,4 +1,4 @@
-// The Configurations list: one table, "New configuration" creating directly unless there are templates to choose
+// The Configurations list: cards, "New configuration" creating directly unless there are templates to choose
 // from (K7), and the Delete confirmation naming its verb. Rendered through the real routes against a stubbed API.
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
@@ -8,13 +8,16 @@ import { renderInConsole } from '../test/console';
 const WAREHOUSE = { id: 7, name: 'Warehouse', description: 'Scanners and shared handhelds', kioskMode: false };
 const TEMPLATE = { id: 2, name: 'MIUI (Xiaomi Redmi)', kioskMode: false };
 
-function open(configs: Array<Record<string, unknown>>) {
+function open(configs: Array<Record<string, unknown>>, listed: Promise<void> = Promise.resolve()) {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL) => {
       const p = new URL(String(input), 'http://console').pathname.replace('/rest', '');
       let data: unknown = null;
-      if (p === '/private/configurations/search') data = configs;
+      if (p === '/private/configurations/search') {
+        await listed;
+        data = configs;
+      }
       else if (p.startsWith('/private/configurations/applications/')) data = [];
       else if (p === '/private/configurations/7') data = { ...WAREHOUSE, extensions: {} };
       else if (p === '/private/configurations/2') data = { ...TEMPLATE, extensions: {} };
@@ -47,6 +50,19 @@ describe('configurations list', () => {
     fireEvent.click(screen.getByRole('button', { name: 'New configuration' }));
     expect(await screen.findByRole('button', { name: 'Create configuration' })).toBeTruthy();
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('New configuration waits for the list, so templates arriving late still get the chooser', async () => {
+    let arrive = () => {};
+    open([WAREHOUSE, TEMPLATE], new Promise<void>((r) => (arrive = r)));
+    const button = await screen.findByRole('button', { name: 'New configuration' });
+    expect(button).toHaveProperty('disabled', true);
+    fireEvent.click(button);
+    expect(screen.queryByRole('button', { name: 'Create configuration' })).toBeNull();
+    arrive();
+    await waitFor(() => expect(button).toHaveProperty('disabled', false));
+    fireEvent.click(button);
+    expect(await screen.findByRole('dialog', { name: 'New configuration' })).toBeTruthy();
   });
 
   it('with templates, New configuration asks where to start, then Create opens it', async () => {

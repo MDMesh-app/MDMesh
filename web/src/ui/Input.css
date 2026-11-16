@@ -105,6 +105,15 @@
 .v2 .v2-select[data-placeholder] .v2-select__value {
   color: var(--secondary);
 }
+/* The deprecated native select (`native` / `multiple`, until 0.6.0): the browser's own control at the input sizes. */
+.v2 .v2-select--native {
+  cursor: pointer;
+  font-size: var(--text-ui);
+}
+.v2 .v2-select--native[multiple] {
+  height: auto;
+  padding-block: var(--space-1);
+}
 /* Toolbar filters: the softer card edge; the label inside carries the identity. */
 .v2 .v2-lselect {
   font-weight: var(--weight-medium);

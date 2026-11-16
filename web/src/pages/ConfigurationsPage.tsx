@@ -196,6 +196,9 @@ export function ConfigurationsPage() {
   const chooses = templates.length > 0;
   const newConfig = () => (chooses ? setChooserOpen(true) : navigate(paths.configuration('new')));
   const newLabel = 'New configuration';
+  // Whether there are templates (and so the chooser) is known once the list is in: until then New configuration
+  // waits. After a failed load it opens a blank one, as nothing else can be offered.
+  const listing = configs === null && !error;
 
   let body: ReactNode = null;
   if (configs === null) {
@@ -275,7 +278,7 @@ export function ConfigurationsPage() {
         subtitleMaxCh={72}
         actions={
           canAdd ? (
-            <Button variant="primary" size="lg" icon={<IconPlus />} onClick={newConfig}>
+            <Button variant="primary" size="lg" icon={<IconPlus />} onClick={newConfig} disabled={listing}>
               {newLabel}
             </Button>
           ) : undefined

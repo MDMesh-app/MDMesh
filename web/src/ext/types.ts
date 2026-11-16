@@ -382,7 +382,7 @@ export function lazyComponent<P, K extends string>(
   name: K,
 ): LazyComponent<P> {
   // One download, shared by a prefetch (preloadComponent) and the first render. A failed one is forgotten, so the
-  // render after it (the error boundary's "Try again") downloads again.
+  // render after it (the error boundary's "Retry") downloads again.
   let pending: Promise<Record<K, ComponentType<P>>> | null = null;
   const once = () => {
     pending ??= load().catch((error: unknown) => {
@@ -442,7 +442,7 @@ export function coreComponent<P>(component: ComponentType<P>): LazyComponent<P> 
 export const CORE_STORAGE: { readonly defaults: null } = Object.freeze({ defaults: null });
 
 /**
- * React.lazy keeps a failed load and throws it again on every render, so "Try again" cannot help: error boundaries
+ * React.lazy keeps a failed load and throws it again on every render, so "Retry" cannot help: error boundaries
  * offer a reload for this name (ui/AppErrorBoundary isChunkLoadError).
  */
 function lazyLoadError(message: string, cause?: unknown): Error {

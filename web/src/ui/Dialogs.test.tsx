@@ -132,3 +132,14 @@ describe('Modal: a press outside', () => {
     expect(closed).toBe(0);
   });
 });
+
+describe('Menu: a click with no pointer behind it (a screen reader’s activation)', () => {
+  it('toggles the menu: opens it, then closes it', async () => {
+    render(<Menu label="More for Default" items={[{ key: 'rename', label: 'Rename', onSelect: () => {} }]} />);
+    const trigger = screen.getByRole('button', { name: 'More for Default' });
+    fireEvent.click(trigger, { detail: 0 });
+    expect(await screen.findByRole('menu')).toBeTruthy();
+    fireEvent.click(trigger, { detail: 0 });
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+  });
+});

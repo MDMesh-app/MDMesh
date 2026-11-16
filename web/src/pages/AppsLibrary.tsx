@@ -228,8 +228,8 @@ export function AppsLibrary({
             icon={single.icon}
             disabled={single.disabled}
             onClick={single.onSelect}
-            // The visible words first, then the app (one such button per row; 2.5.3).
-            aria-label={`${single.textValue ?? (typeof single.label === 'string' ? single.label : '')} ${a.name}`.trim()}
+            // The visible words first ("Removing…" while busy), then the app (one such button per row; 2.5.3).
+            aria-label={`${typeof single.label === 'string' ? single.label : (single.textValue ?? '')} ${a.name}`.trim()}
           >
             {single.label}
           </Button>

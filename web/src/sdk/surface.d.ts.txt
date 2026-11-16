@@ -24,7 +24,7 @@ export { Card, CardHeader, Notice, Callout } from '../ui/Card';
 export type { CardPadding, CardTone } from '../ui/Card';
 export { Field, FieldRow, ChangedChip, Eyebrow } from '../ui/Field';
 export { Input, Textarea, Select, SearchInput, Checkbox } from '../ui/Input';
-export type { InputSize, InputTone, SelectSize } from '../ui/Input';
+export type { InputSize, InputTone, SelectHandle, SelectSize } from '../ui/Input';
 export { Segmented, TriState } from '../ui/Segmented';
 export type { SegmentOption, SegmentValue, SegmentedProps, SegmentedSize } from '../ui/Segmented';
 export { Toggle } from '../ui/Toggle';
@@ -688,12 +688,23 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
 }
 export declare const Textarea: import("react").ForwardRefExoticComponent<TextareaProps & import("react").RefAttributes<HTMLTextAreaElement>>;
 export type SelectSize = 'xs' | 'sm' | 'md' | 'lg';
+export interface SelectHandle {
+    readonly value: string;
+    readonly name: string;
+    readonly disabled: boolean;
+    readonly required: boolean;
+    readonly type: string;
+    focus(options?: FocusOptions): void;
+    blur(): void;
+}
 export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'size' | 'value' | 'defaultValue' | 'onChange' | 'multiple' | 'onFocus' | 'onBlur' | 'onKeyDown' | 'onClick'> {
     size?: SelectSize;
     tone?: InputTone;
-    value?: string | number;
-    defaultValue?: string | number;
+    value?: string | number | readonly string[];
+    defaultValue?: string | number | readonly string[];
     onChange?: (e: ChangeEvent<HTMLSelectElement>) => void;
+    native?: boolean;
+    multiple?: boolean;
     onFocus?: FocusEventHandler<HTMLElement>;
     onBlur?: FocusEventHandler<HTMLElement>;
     onKeyDown?: KeyboardEventHandler<HTMLElement>;
@@ -701,7 +712,7 @@ export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement
     triggerRef?: Ref<HTMLButtonElement>;
     inlineLabel?: string;
 }
-export declare const Select: import("react").ForwardRefExoticComponent<SelectProps & import("react").RefAttributes<HTMLSelectElement>>;
+export declare const Select: import("react").ForwardRefExoticComponent<SelectProps & import("react").RefAttributes<HTMLSelectElement | SelectHandle>>;
 export interface SearchInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'onChange' | 'size'> {
     value: string;
     onChange: (value: string) => void;

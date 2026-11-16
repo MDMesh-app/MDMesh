@@ -133,8 +133,14 @@ export function Modal({
             if (!returnTo.current && active instanceof HTMLElement && !(e.currentTarget as Node).contains(active)) {
               returnTo.current = active;
             }
+            // The first control that is drawn (one in a collapsed or hidden part has no boxes), else the first not
+            // inside a `hidden` part (where nothing has boxes yet).
+            const controls = Array.from(bodyRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []);
             const target =
-              initialFocus?.current ?? bodyRef.current?.querySelector<HTMLElement>(FOCUSABLE) ?? closeRef.current;
+              initialFocus?.current ??
+              controls.find((x) => x.getClientRects().length > 0) ??
+              controls.find((x) => !x.closest('[hidden]')) ??
+              closeRef.current;
             target?.focus();
           }}
           onCloseAutoFocus={(e) => {

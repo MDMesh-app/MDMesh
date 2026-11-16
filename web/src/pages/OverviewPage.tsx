@@ -10,7 +10,7 @@ import { isOnline, notConnected } from '../data/presence';
 import { LOAD_DEVICES_FAILED } from '../data/useDevices';
 import { CORE_ACTION_ACCESS } from '../ext/core/access';
 import { CoreOverviewProvider } from '../ext/core/overview';
-import { OverviewRows, OverviewStats } from '../ext/hosts/OverviewCards';
+import { OverviewRows, OverviewStats, useHasExtensionStats } from '../ext/hosts/OverviewCards';
 import { useCurrentUser, usePermission } from '../ext/permissions';
 import { paths, UPDATES_HREF } from '../routes';
 import {
@@ -127,6 +127,7 @@ export function OverviewPage() {
   // anyone else gets the cards' own "No devices yet".
   const user = useCurrentUser();
   const firstRun = !firstLoad && !unknown && data.total === 0 && canEnroll && !!user?.allDevices;
+  const extensionStats = useHasExtensionStats();
 
   // Core's cards, which the contributions in ext/core/overview.tsx pick out; extensions' cards are placed among them.
   const core = {
@@ -207,6 +208,14 @@ export function OverviewPage() {
               Enroll device
             </ButtonLink>
           </div>
+        </Card>
+      ) : null}
+      {/* First run hides the fleet and core's stats (all zeros), not an extension's: those may be about anything. */}
+      {firstRun && extensionStats ? (
+        <Card aria-label="Fleet status" className="v2-ov-stats">
+          <StatGrid>
+            <OverviewStats extensionsOnly />
+          </StatGrid>
         </Card>
       ) : null}
 

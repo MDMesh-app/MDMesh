@@ -1,4 +1,4 @@
-import { createContext, useContext, type ReactElement, type ReactNode } from 'react';
+import { cloneElement, createContext, useContext, useId, type ReactElement, type ReactNode } from 'react';
 import * as T from '@radix-ui/react-tooltip';
 import './Overlay.css';
 
@@ -45,10 +45,26 @@ export function Tooltip({
   children: ReactElement;
 }) {
   const provided = useContext(Provided);
+  const descId = useId();
   if (content === null || content === undefined || content === '') return children;
-  // A disabled control gets no pointer events: the tooltip goes on a wrapper the pointer reaches instead.
-  const disabled = !!(children.props as { disabled?: boolean }).disabled;
-  const target = disabled ? <span className="v2-tooltip-wrap">{children}</span> : children;
+  // A disabled control gets no pointer events: the tooltip goes on a wrapper the pointer reaches instead. A child that
+  // takes `disabled` at all is always wrapped, enabled or not: switching the wrapper on and off would remount the
+  // control (it loses focus, and a dialog it opened has nothing to return focus to).
+  const props = children.props as { disabled?: boolean; 'aria-describedby'?: string };
+  const wrapped = 'disabled' in props;
+  // Wrapped, the trigger is the wrapper, so Radix describes it, not the control: the control names the text itself.
+  const target = wrapped ? (
+    <span className="v2-tooltip-wrap">
+      {cloneElement(children as ReactElement<Record<string, unknown>>, {
+        'aria-describedby': [props['aria-describedby'], descId].filter(Boolean).join(' '),
+      })}
+      <span id={descId} hidden>
+        {content}
+      </span>
+    </span>
+  ) : (
+    children
+  );
   const tip = (
     <T.Root>
       <T.Trigger

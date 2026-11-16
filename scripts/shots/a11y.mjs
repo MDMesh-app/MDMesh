@@ -452,6 +452,18 @@ async function openState(browser, base, state, theme, vp) {
       setupError = String(e.message).split('\n')[0];
     }
   }
+  // A step can start a page or dialog entrance (a short fade): measure the settled page, not a frame mid-fade, whose
+  // colours axe would read lighter. Endless animations (skeleton sheens) are not waited for.
+  await page
+    .evaluate(() =>
+      Promise.all(
+        document
+          .getAnimations()
+          .filter((a) => a.effect?.getTiming().iterations !== Infinity)
+          .map((a) => a.finished.catch(() => {})),
+      ),
+    )
+    .catch(() => {});
   return { context, page, errors, setupError };
 }
 

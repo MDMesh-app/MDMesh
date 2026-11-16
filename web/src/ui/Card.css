@@ -146,6 +146,12 @@
   gap: var(--space-2) var(--space-3);
   min-height: var(--control-sm);
 }
+/* The first line (the title) is as tall as the icon box, so the icon sits on its centre however the body wraps. */
+.v2 .v2-notice__body > :first-child {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-sm);
+}
 .v2 .v2-notice__action {
   display: flex;
   flex-wrap: wrap;

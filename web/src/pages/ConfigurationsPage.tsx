@@ -195,7 +195,7 @@ export function ConfigurationsPage() {
   // With no template the chooser would offer one option (Blank): create directly instead (K7).
   const chooses = templates.length > 0;
   const newConfig = () => (chooses ? setChooserOpen(true) : navigate(paths.configuration('new')));
-  const newLabel = chooses ? 'New configuration' : 'New configuration';
+  const newLabel = 'New configuration';
 
   let body: ReactNode = null;
   if (configs === null) {

@@ -303,10 +303,10 @@ or add server plugins also read [v0.4.0 for forks](#v040-for-forks) below.
   takes the new agent applies its configuration once more, as after every agent update; it changes nothing unless the
   configuration sets a connectivity mode.
 - **Configuration apps install at check-in.** An app added to a configuration, in the editor or with Deploy's "Add to
-  a configuration", now installs on its devices at their next check-in, without **Install config apps**, also on a
+  a configuration", now installs on its devices at their next check-in, without **Install configuration apps**, also on a
   device that was offline. A device moved to another configuration gets that configuration's apps it doesn't have. A
-  failed install is tried up to three times (after 15 minutes, then an hour), then left to Install config apps. Apps
-  a configuration had before the update are not sent again: use Install config apps for a device still missing one.
+  failed install is tried up to three times (after 15 minutes, then an hour), then left to Install configuration apps. Apps
+  a configuration had before the update are not sent again: use Install configuration apps for a device still missing one.
   It needs no new agent: every agent that can install silently (Device Owner) does it.
 - **Rolling back to 0.3.9 is safe.** A one-click rollback, and the restores in
   [Backups and restore](OPERATIONS.md#backups-and-restore), bring back the database from before the update,
@@ -580,7 +580,7 @@ kiosk PINs.
     short), or airplane mode. Wi-Fi then stays on, shown as deferred, until the configuration changes.
   - The old Wi-Fi setting, now named **Wi-Fi settings**, still only locks the Wi-Fi settings screen.
 - **Lock volume buttons (kiosk)** (new, off by default; needs agent 0.3.4, and older agents ignore it) blocks volume
-  changes in kiosk. Android mutes a locked device, so **Ring device** is silent on it.
+  changes in kiosk. Android mutes a locked device, so **Ring** is silent on it.
 - **Lock hardware buttons** blocks only the power menu.
 - **Headwind QR routes:** `/rest/public/qr/*` returns 404 unless `LEGACY_DEVICE_API=1`; the console doesn't use
   them. The three installer-created configurations get a new QR key on first start. With `LEGACY_DEVICE_API=1`, the
@@ -598,8 +598,8 @@ kiosk PINs.
 - The Headwind launcher's device routes (`/rest/public/sync/*`, notifications, plugin device uploads, usage stats)
   return 404 unless `LEGACY_DEVICE_API=1`.
 - App installs now carry the APK's SHA-256, and current agents refuse an install without one. Hosted APKs are hashed
-  automatically. For a Library app with an external URL, add the hash with the **SHA-256…** button, or upload the
-  APK instead.
+  automatically. For a Library app with an external URL, add the hash with **SHA-256 checksum** in the app's **…**
+  menu, or upload the APK instead.
 
 ### v0.3.1
 

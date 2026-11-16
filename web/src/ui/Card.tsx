@@ -145,7 +145,7 @@ export function Notice({
 }: {
   tone?: 'warn' | 'alert' | 'ok' | 'idle';
   icon: ReactNode;
-  /** A short title over the text ("Missing security fixes"). */
+  /** A short title over the text ("Missing security fixes"). It names the notice unless `aria-label` is given. */
   title?: ReactNode;
   children: ReactNode;
   action?: ReactNode;
@@ -155,8 +155,8 @@ export function Notice({
   const titleId = useId();
   return (
     <section
-      aria-label={title ? undefined : ariaLabel}
-      aria-labelledby={title ? titleId : undefined}
+      aria-label={ariaLabel}
+      aria-labelledby={title && !ariaLabel ? titleId : undefined}
       className={cx('v2-notice', `v2-notice--${tone}`, title ? 'v2-notice--titled' : null, className)}
     >
       <div className="v2-notice__grid">

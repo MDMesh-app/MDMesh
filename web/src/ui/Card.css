@@ -162,7 +162,7 @@
     grid-column: 2 / -1;
   }
 }
-/* With a title: the title and its text are one block, a within-component gap apart, and the icon sits on the
+/* With a title: the title and its text are one block, a within-component gap (8) apart, and the icon sits on the
    title's line (its box is one title line tall). Even padding; the action stays centred on the block beside it, or
    under the text, on its left edge, where the notice is narrow (above). */
 .v2 .v2-notice--titled .v2-notice__grid {
@@ -176,7 +176,7 @@
   flex-direction: column;
   flex-wrap: nowrap;
   align-items: stretch;
-  gap: var(--space-1);
+  gap: var(--space-2);
   min-height: 0;
 }
 .v2 .v2-notice--titled .v2-notice__body > :first-child {
@@ -185,6 +185,9 @@
 }
 .v2 .v2-notice__title {
   font-weight: var(--weight-semibold);
+}
+.v2 .v2-notice__text {
+  text-wrap: pretty;
 }
 .v2 .v2-notice__text > * {
   margin: 0;

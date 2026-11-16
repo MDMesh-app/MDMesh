@@ -51,8 +51,8 @@ def releases(text, upto=None):
         if line.startswith("## "):
             current = None  # Unreleased, Older releases: not a release section
             continue
-        text = HEADING_MARKS.sub("", line)
-        if current and not text[:1].isspace() and SECURITY.match(text):
+        heading = HEADING_MARKS.sub("", line)
+        if current and not heading[:1].isspace() and SECURITY.match(heading):
             found.add(current)
     out = sorted(found, key=key)
     if upto is not None:

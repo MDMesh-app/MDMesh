@@ -33,12 +33,14 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
   useEffect(() => {
     let live = true;
     let poll: ReturnType<typeof setTimeout> | undefined;
+    let videoStatsInterval: number | undefined;
     const finish = (next: Stage, value?: RemoteViewSession | null) => {
       if (!live) return;
       if (value) setSession(value);
       setStage(next);
     };
     const closeTransport = () => {
+      if (videoStatsInterval) window.clearInterval(videoStatsInterval);
       socket.current?.close(); socket.current = null;
       peer.current?.close(); peer.current = null;
     };
@@ -68,13 +70,31 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
       pc.addTransceiver('video', { direction: 'recvonly' });
       const pendingCandidates: RTCIceCandidateInit[] = [];
       let remoteDescriptionInstalled = false;
+      const updateVideoStats = async () => {
+        if (!live || pc.connectionState !== 'connected') return;
+        const report = await pc.getStats();
+        const inbound = [...report.values()].find((item) => {
+          const video = item as RTCInboundRtpStreamStats;
+          return item.type === 'inbound-rtp' && video.kind === 'video';
+        }) as RTCInboundRtpStreamStats | undefined;
+        if (!inbound) {
+          setTransportStatus('Viewer has no inbound video RTP statistics yet.');
+          return;
+        }
+        setTransportStatus(
+          `Viewer video: bytes ${inbound.bytesReceived}, decoded ${inbound.framesDecoded ?? 0}, dropped ${inbound.framesDropped ?? 0}`,
+        );
+      };
       pc.ontrack = (event) => {
         const stream = event.streams[0];
         if (stream && video.current) {
           video.current.srcObject = stream;
+          video.current.muted = true;
           void video.current.play().catch(() => undefined);
           setStage('viewing');
-          setTransportStatus('Media is flowing.');
+          setTransportStatus('Remote video track received; checking decoded frames…');
+          void updateVideoStats();
+          videoStatsInterval = window.setInterval(() => { void updateVideoStats(); }, 2000);
         }
       };
       pc.onicecandidate = (event) => {

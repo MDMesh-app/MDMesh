@@ -82,6 +82,11 @@ class MainActivity : ComponentActivity() {
     private val remoteViewConsent = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result -> RemoteViewFeasibilityProbe.onConsentResult(this, result.resultCode, result.data) }
+    private val remoteVideoCandidateConsent = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        RemoteViewFeasibilityProbe.onCapturedVideoCandidateConsentResult(this, result.resultCode, result.data)
+    }
     private val remoteSessionConsent = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
@@ -296,6 +301,34 @@ class MainActivity : ComponentActivity() {
             visibility = View.GONE
         }
         root.addView(remoteViewProbeButton)
+        if (RemoteViewFeasibilityProbe.isAvailable()) {
+            root.addView(
+                Button(this).apply {
+                    text = "Test WebRTC candidate gathering"
+                    isAllCaps = false
+                    setOnClickListener { RemoteViewFeasibilityProbe.testCandidateGathering(this@MainActivity) }
+                },
+            )
+            root.addView(
+                Button(this).apply {
+                    text = "Test WebRTC video candidates"
+                    isAllCaps = false
+                    setOnClickListener { RemoteViewFeasibilityProbe.testVideoCandidateGathering(this@MainActivity) }
+                },
+            )
+            root.addView(
+                Button(this).apply {
+                    text = "Test captured-video ICE candidates"
+                    isAllCaps = false
+                    setOnClickListener {
+                        RemoteViewFeasibilityProbe.requestCapturedVideoCandidateGathering(
+                            this@MainActivity,
+                            remoteVideoCandidateConsent,
+                        )
+                    }
+                },
+            )
+        }
         remoteViewProbeStatus = text("", 13f, MUTED).apply {
             visibility = View.GONE
             setPadding(0, dp(6), 0, 0)

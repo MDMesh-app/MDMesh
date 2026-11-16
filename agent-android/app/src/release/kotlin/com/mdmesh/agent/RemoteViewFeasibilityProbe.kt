@@ -25,4 +25,16 @@ object RemoteViewFeasibilityProbe {
 
     @Suppress("UNUSED_PARAMETER")
     fun onConsentResult(context: Context, resultCode: Int, resultData: Intent?) = Unit
+
+    @Suppress("UNUSED_PARAMETER")
+    fun testCandidateGathering(context: Context) = Unit
+
+    @Suppress("UNUSED_PARAMETER")
+    fun testVideoCandidateGathering(context: Context) = Unit
+
+    @Suppress("UNUSED_PARAMETER")
+    fun requestCapturedVideoCandidateGathering(activity: Activity, launcher: ActivityResultLauncher<Intent>) = Unit
+
+    @Suppress("UNUSED_PARAMETER")
+    fun onCapturedVideoCandidateConsentResult(context: Context, resultCode: Int, resultData: Intent?) = Unit
 }

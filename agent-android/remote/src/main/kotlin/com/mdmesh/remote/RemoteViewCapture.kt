@@ -13,11 +13,14 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONObject
 import org.webrtc.EglBase
+import org.webrtc.DefaultVideoDecoderFactory
+import org.webrtc.DefaultVideoEncoderFactory
 import org.webrtc.IceCandidate
 import org.webrtc.Logging
 import org.webrtc.MediaConstraints
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
+import org.webrtc.RtpTransceiver
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
 import org.webrtc.SurfaceTextureHelper
@@ -71,6 +74,7 @@ internal class RemoteViewCapture(
     private var localCandidateCount = 0
     private var remoteCandidateCount = 0
     private var localOfferSent = false
+    private var videoStatsScheduled = false
     private val remoteCandidates = RemoteCandidateQueue<IceCandidate>()
     @Volatile private var stopped = false
     @Volatile private var startupStage = "creating capture"
@@ -89,11 +93,19 @@ internal class RemoteViewCapture(
         Logging.enableLogToDebugOutput(Logging.Severity.LS_INFO)
         egl = EglBase.create()
         startupStage = "creating WebRTC factory"
-        factory = PeerConnectionFactory.builder().createPeerConnectionFactory()
+        // A generic factory can gather data-channel candidates but the S8 does
+        // not initialize ICE for a video sender without explicit codec
+        // factories. The isolated captured-video probe verified this setup.
+        factory = PeerConnectionFactory.builder()
+            .setVideoEncoderFactory(DefaultVideoEncoderFactory(requireNotNull(egl).eglBaseContext, true, true))
+            .setVideoDecoderFactory(DefaultVideoDecoderFactory(requireNotNull(egl).eglBaseContext))
+            .createPeerConnectionFactory()
         startupStage = "creating peer connection"
-        // STUN discovers the agent's reachable candidate address. It does not
-        // relay video or control traffic; TURN remains explicitly out of scope
-        // for this LAN-first POC.
+        // Keep the live screen-capture peer on the exact minimal transport
+        // baseline proven by the debug candidate probe. The S8 gathered four
+        // local candidates with this baseline, while the earlier AppRTC-style
+        // overrides gathered none. LAN host candidates are sufficient for this
+        // POC; STUN/TURN are deliberately deferred.
         val createdPeer = factory!!.createPeerConnection(createRtcConfiguration(), observer)
             ?: error("WebRTC peer connection could not be created")
         peer = createdPeer
@@ -119,10 +131,18 @@ internal class RemoteViewCapture(
         startupStage = "creating video track"
         val track = factory!!.createVideoTrack("mdmesh-screen", videoSource)
         startupStage = "adding video track"
-        // The one-argument overload supplies no stream IDs. On the S8's WebRTC
-        // native runtime that reaches front() on an empty vector and aborts the
-        // entire agent process. A video sender must belong to a named stream.
-        createdPeer.addTrack(track, listOf(SCREEN_STREAM_ID))
+        // Use the explicit Unified-Plan sender path. It avoids the legacy
+        // addTrack empty-vector abort seen on this Android 9 WebRTC runtime.
+        createdPeer.addTransceiver(
+            track,
+            RtpTransceiver.RtpTransceiverInit(
+                RtpTransceiver.RtpTransceiverDirection.SEND_ONLY,
+                listOf(SCREEN_STREAM_ID),
+            ),
+        )
+        // The S8 starts video ICE gathering only once its screen capturer is
+        // active. The isolated captured-video probe validates this ordering.
+        startScreenCapture()
         startupStage = "opening signaling"
         connectSignaling()
     }
@@ -179,7 +199,7 @@ internal class RemoteViewCapture(
                             startupStage = "remote answer installed"
                             Log.i(TAG, "remote description accepted")
                             applyPendingRemoteCandidates()
-                            startScreenCapture()
+                            refreshScreenCaptureAfterNegotiation()
                         }
                     }
                     override fun onSetFailure(error: String) = stop("remote answer rejected: $error")
@@ -227,7 +247,7 @@ internal class RemoteViewCapture(
         }, sendOnlyVideoConstraints())
     }
 
-    /** Starts frames only after the local answer has installed a usable video sender. */
+    /** Starts capture before the local offer so Android 9 initializes video ICE gathering. */
     private fun startScreenCapture() {
         if (captureStarted || stopped) return
         startupStage = "starting negotiated screen capture"
@@ -235,6 +255,23 @@ internal class RemoteViewCapture(
         captureStarted = true
         Log.i(TAG, "negotiated screen capture started")
         diagnostic("Screen capture active; establishing direct connection…")
+    }
+
+    /**
+     * Capture starts before the offer so the S8 initializes video ICE. Restart
+     * it once the browser answer is installed so a static screen still emits a
+     * fresh frame/keyframe after a receiver exists.
+     */
+    private fun refreshScreenCaptureAfterNegotiation() {
+        if (!captureStarted) {
+            startScreenCapture()
+            return
+        }
+        runCatching {
+            capturer?.stopCapture()
+            capturer?.startCapture(captureWidth, captureHeight, 15)
+        }.onFailure { failure -> stop("screen capture refresh failed: ${failure.javaClass.simpleName}") }
+        diagnostic("Screen capture refreshed for connected viewer…")
     }
 
     private val observer = object : PeerConnection.Observer {
@@ -260,13 +297,32 @@ internal class RemoteViewCapture(
             startupStage = "ICE $state"
             Log.i(TAG, "remote ICE state=$state")
             diagnostic("ICE $state (device $localCandidateCount, viewer $remoteCandidateCount)")
+            if (
+                !videoStatsScheduled &&
+                (state == PeerConnection.IceConnectionState.CONNECTED ||
+                    state == PeerConnection.IceConnectionState.COMPLETED)
+            ) {
+                videoStatsScheduled = true
+                iceTimer.schedule(
+                    { runOnPeerThread(::logOutboundVideoStats) },
+                    VIDEO_STATS_DELAY_MS,
+                    TimeUnit.MILLISECONDS,
+                )
+                iceTimer.schedule(
+                    { runOnPeerThread(::logOutboundVideoStats) },
+                    VIDEO_STATS_FOLLOW_UP_DELAY_MS,
+                    TimeUnit.MILLISECONDS,
+                )
+            }
         }
         override fun onIceConnectionReceivingChange(receiving: Boolean) = Unit
         override fun onIceGatheringChange(state: PeerConnection.IceGatheringState) {
             Log.i(TAG, "remote ICE gathering=$state")
-            if (state == PeerConnection.IceGatheringState.COMPLETE) {
-                runOnPeerThread(::sendLocalOffer)
-            }
+            // On the S8, COMPLETE is delivered before the queued
+            // onIceCandidate callbacks. Sending from here observes a
+            // candidate-free SDP and tears down a connection that would have
+            // produced candidates milliseconds later. createAndSendOffer()
+            // schedules one bounded grace-window send instead.
         }
         override fun onAddStream(stream: org.webrtc.MediaStream) = Unit
         override fun onRemoveStream(stream: org.webrtc.MediaStream) = Unit
@@ -298,18 +354,30 @@ internal class RemoteViewCapture(
         }
     }
 
-    /** Android AppRTC-compatible transport settings; do not depend on native defaults. */
-    private fun createRtcConfiguration(): PeerConnection.RTCConfiguration =
-        PeerConnection.RTCConfiguration(listOf(PeerConnection.IceServer.builder(STUN_SERVER).createIceServer())).apply {
-            tcpCandidatePolicy = PeerConnection.TcpCandidatePolicy.DISABLED
-            // This Android WebRTC binding produces no BUNDLE group on the S8.
-            // Forcing MAXBUNDLE then rejects its own local offer; retain the
-            // runtime's compatible default rather than copying AppRTC blindly.
-            rtcpMuxPolicy = PeerConnection.RtcpMuxPolicy.REQUIRE
-            continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
-            keyType = PeerConnection.KeyType.ECDSA
-            sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
+    /** One post-connect diagnostic distinguishes an empty sender from viewer decode/render failure. */
+    private fun logOutboundVideoStats() {
+        val stats = peer ?: return
+        stats.getStats { report ->
+            val video = report.statsMap.values.firstOrNull { item ->
+                item.type == "outbound-rtp" && item.members["kind"] == "video"
+            }
+            val members = video?.members
+            val frames = members?.get("framesSent") ?: members?.get("framesEncoded") ?: "n/a"
+            val bytes = members?.get("bytesSent") ?: "n/a"
+            Log.i(TAG, "remote outbound video stats: frames=$frames bytes=$bytes")
+            diagnostic("Video sender stats: frames $frames, bytes $bytes")
         }
+    }
+
+    /**
+     * Android 9-compatible LAN baseline.
+     *
+     * Do not add AppRTC transport overrides here until each one is proven on
+     * the S8: its bundled WebRTC accepts a data-only peer with the defaults but
+     * produced no candidates with the copied override set.
+     */
+    private fun createRtcConfiguration(): PeerConnection.RTCConfiguration =
+        PeerConnection.RTCConfiguration(emptyList())
 
     private fun sendOnlyVideoConstraints(): MediaConstraints = MediaConstraints().apply {
         mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveAudio", "false"))
@@ -345,8 +413,9 @@ internal class RemoteViewCapture(
     private companion object {
         const val TAG = "MDMeshRemoteView"
         const val SCREEN_STREAM_ID = "mdmesh-screen-stream"
-        const val STUN_SERVER = "stun:stun.l.google.com:19302"
         const val ICE_GATHERING_GRACE_MS = 5_000L
+        const val VIDEO_STATS_DELAY_MS = 2_000L
+        const val VIDEO_STATS_FOLLOW_UP_DELAY_MS = 7_000L
     }
 }
 

@@ -96,6 +96,11 @@ class KioskLauncherActivity : ComponentActivity() {
     private val remoteViewConsent = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result -> RemoteViewFeasibilityProbe.onConsentResult(this, result.resultCode, result.data) }
+    private val remoteVideoCandidateConsent = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        RemoteViewFeasibilityProbe.onCapturedVideoCandidateConsentResult(this, result.resultCode, result.data)
+    }
     private val remoteSessionConsent = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
@@ -418,6 +423,36 @@ class KioskLauncherActivity : ComponentActivity() {
                     isAllCaps = false
                     setOnClickListener {
                         RemoteViewFeasibilityProbe.requestConsent(this@KioskLauncherActivity, remoteViewConsent)
+                    }
+                },
+            )
+            column.addView(
+                Button(this).apply {
+                    text = "Test WebRTC candidate gathering"
+                    isAllCaps = false
+                    setOnClickListener {
+                        RemoteViewFeasibilityProbe.testCandidateGathering(this@KioskLauncherActivity)
+                    }
+                },
+            )
+            column.addView(
+                Button(this).apply {
+                    text = "Test WebRTC video candidates"
+                    isAllCaps = false
+                    setOnClickListener {
+                        RemoteViewFeasibilityProbe.testVideoCandidateGathering(this@KioskLauncherActivity)
+                    }
+                },
+            )
+            column.addView(
+                Button(this).apply {
+                    text = "Test captured-video ICE candidates"
+                    isAllCaps = false
+                    setOnClickListener {
+                        RemoteViewFeasibilityProbe.requestCapturedVideoCandidateGathering(
+                            this@KioskLauncherActivity,
+                            remoteVideoCandidateConsent,
+                        )
                     }
                 },
             )

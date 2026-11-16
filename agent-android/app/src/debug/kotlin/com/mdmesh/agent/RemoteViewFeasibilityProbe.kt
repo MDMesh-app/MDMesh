@@ -7,6 +7,7 @@ import android.media.projection.MediaProjectionManager
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.core.content.ContextCompat
+import com.mdmesh.remote.RemoteViewCandidateProbe
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -53,6 +54,56 @@ object RemoteViewFeasibilityProbe {
             .putExtra(RemoteViewFeasibilityService.EXTRA_RESULT_DATA, resultData)
         ContextCompat.startForegroundService(context, intent)
         Toast.makeText(context, "Screen-share probe active for 30 seconds.", Toast.LENGTH_LONG).show()
+    }
+
+    /**
+     * Debug-only WebRTC diagnostic. It creates a data-channel-only peer and
+     * counts local ICE candidates without screen capture or server signaling.
+     */
+    fun testCandidateGathering(context: Context) {
+        mutableState.value = RemoteViewFeasibilityState(
+            "Testing local WebRTC candidate gathering…",
+            active = false,
+        )
+        RemoteViewCandidateProbe.run(context) { message ->
+            mutableState.value = RemoteViewFeasibilityState(message, active = false)
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun testVideoCandidateGathering(context: Context) {
+        mutableState.value = RemoteViewFeasibilityState(
+            "Testing local WebRTC video candidate gathering…",
+            active = false,
+        )
+        RemoteViewCandidateProbe.runVideo(context) { message ->
+            mutableState.value = RemoteViewFeasibilityState(message, active = false)
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun requestCapturedVideoCandidateGathering(
+        activity: Activity,
+        launcher: ActivityResultLauncher<Intent>,
+    ) {
+        mutableState.value = RemoteViewFeasibilityState(
+            "Waiting for captured-video probe approval…",
+            active = false,
+        )
+        val manager = activity.getSystemService(MediaProjectionManager::class.java)
+        launcher.launch(manager.createScreenCaptureIntent())
+    }
+
+    fun onCapturedVideoCandidateConsentResult(context: Context, resultCode: Int, resultData: Intent?) {
+        if (resultCode != Activity.RESULT_OK || resultData == null) {
+            mutableState.value = RemoteViewFeasibilityState("Captured-video probe was not approved.", active = false)
+            return
+        }
+        mutableState.value = RemoteViewFeasibilityState("Gathering captured-video ICE candidates…", active = false)
+        RemoteViewCandidateProbe.runCapturedVideo(context, resultData) { message ->
+            mutableState.value = RemoteViewFeasibilityState(message, active = false)
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        }
     }
 
     internal fun markActive() {

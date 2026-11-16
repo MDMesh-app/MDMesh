@@ -226,6 +226,8 @@ Fixes
   device or changing the font or display size no longer restarts the kiosk screen. Needs agent 0.5.0.
 - Kiosk: when the exit PIN is right but the device can't leave kiosk just then (for example when its
   storage is full), the launcher says so instead of doing nothing. Needs agent 0.5.0.
+- Configurations: the built-in Background (Agent) Mode template no longer describes itself as Headwind MDM. On an
+  existing server the database updates its description on start, unless you have changed it.
 
 Under the hood
 - The release manifest records the tagged commit, which `setup.sh --update` checks the tag against. CI tests

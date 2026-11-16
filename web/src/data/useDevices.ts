@@ -18,13 +18,16 @@ export interface DevicesState {
   reload: (value?: string) => Promise<void>;
 }
 
+/** The generic load failure (no reason known): ErrorState says "Couldn't load …" without repeating it. */
+export const LOAD_DEVICES_FAILED = 'Failed to load devices.';
+
 function messageFor(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.httpStatus === 401 || err.httpStatus === 403)
       return 'Your session has expired. Sign in again.';
     if (err.httpStatus === 0) return 'Cannot reach the server.';
   }
-  return 'Failed to load devices.';
+  return LOAD_DEVICES_FAILED;
 }
 
 export function useDevices(

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type Key, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type Key, type MouseEvent, type ReactNode } from 'react';
 import { Checkbox } from './Input';
 import { cx } from './cx';
 import './Table.css';
@@ -12,7 +12,7 @@ export interface Column<Row> {
   /** Shrink to content (`width: 1%`) — action and checkbox columns. */
   shrink?: boolean;
   align?: 'left' | 'right';
-  /** Mono 13px text-2 cell (Android version, app version). */
+  /** Numeric/technical cell: tabular figures in text-2 (Android version, app version). */
   mono?: boolean;
   /** Sortable: the header becomes a button and gets aria-sort. */
   sortable?: boolean;
@@ -27,18 +27,19 @@ export interface TableProps<Row> {
   rowKey: (row: Row) => Key;
   /** Accessible table name. */
   'aria-label'?: string;
-  /** Outer cell padding: 16 (Devices), 20 (Library), 24 (lists inside cards), 0 (editor apps table). */
+  /** Outer cell padding: the card padding (16; 20 and 24 are deprecated and render as 16), or 0. */
   edge?: 0 | 16 | 20 | 24;
   /** Below this width the table scrolls sideways inside its wrapper. */
   minWidth?: number;
   /** Hide the header row (Needs attention, Recent commands). */
   headless?: boolean;
-  /** Row vertical padding: 12 (default) or 10 (compact lists: recent commands, editor apps). */
+  /** Row height: 12 = --row (default), 10 = --row-compact (recent commands, editor apps). */
   rowPad?: 10 | 12;
   /** Selection: a checkbox column first. */
   selection?: {
     selected: ReadonlySet<Key>;
-    onToggle: (key: Key, row: Row) => void;
+    /** `shiftKey`: the toggle came with Shift held (a click or Shift+Space), to select a range. */
+    onToggle: (key: Key, row: Row, how?: { shiftKey: boolean }) => void;
     onToggleAll: (select: boolean) => void;
     /** Accessible label for a row checkbox, e.g. (r) => `Select ${r.number}`. */
     rowLabel: (row: Row) => string;
@@ -51,7 +52,7 @@ export interface TableProps<Row> {
    * A click anywhere on a row that is not on a control in it (link, button, checkbox, menu…): open or select the
    * row. Pointer convenience only, so keep a link or button in the row for keyboard users.
    */
-  onRowClick?: (row: Row) => void;
+  onRowClick?: (row: Row, event: MouseEvent<HTMLTableRowElement>) => void;
   className?: string;
 }
 
@@ -87,12 +88,60 @@ export function scrollStopProps(stop: boolean, name?: string, labelledBy?: strin
   return { tabIndex: 0, role: 'region', 'aria-label': 'Scrollable table' };
 }
 
-/** Clicks on these inside a row are theirs, not the row's. */
-const ROW_CONTROLS = 'a, button, input, select, textarea, label, [role="menu"], [role="menuitem"]';
+/** Stops the text selection a Shift+press starts (Shift+click selects a range of rows instead). */
+export function noShiftSelect(e: MouseEvent) {
+  if (e.shiftKey && !(e.target as Element).closest('input:not([type="checkbox"]), textarea, select')) e.preventDefault();
+}
+
+/** Whether a checkbox's change came with Shift held (its change event is the click that made it). */
+export const shiftOf = (e: Event): boolean => !!(e as Partial<globalThis.MouseEvent>).shiftKey;
 
 /**
- * Data table from the boards: head 12/500 secondary, 12/8 cell padding, 1px #EEF0F3 row rules, selected rows on
- * #F4F6F9, 16px ink checkboxes. Wrap it in <Card padding="list" clip> for the bordered look.
+ * Shift+Space on a selection checkbox: a range, not the plain toggle Space makes. Both key events are stopped, so the
+ * box doesn't toggle itself as well; `run` on the keydown.
+ */
+export function shiftSpace(e: KeyboardEvent, run?: () => void) {
+  if (e.key !== ' ') return;
+  const el = e.currentTarget;
+  if (e.type === 'keydown') {
+    if (!e.shiftKey) {
+      // A plain Space: whatever an earlier Shift+Space left (its keyup lost to a focus change) no longer applies.
+      rangeKeys.delete(el);
+      return;
+    }
+    e.preventDefault();
+    rangeKeys.add(el);
+    if (!e.repeat) run?.();
+  } else if (rangeKeys.delete(el)) {
+    // Its keyup too, even with Shift let go first: a browser that clicks on keyup would toggle the box as well.
+    e.preventDefault();
+  }
+}
+/** Checkboxes whose Space went down with Shift, until it comes up. */
+const rangeKeys = new WeakSet<EventTarget>();
+
+/**
+ * Clicks on these inside a row or card are theirs, not the row's. A tooltip's wrapper counts: a disabled control in
+ * it takes no pointer events, so a click on it lands on the wrapper (a double-click on Sync now must not open the
+ * device).
+ */
+export const ROW_CONTROLS =
+  'a, button, input, select, textarea, label, [role="menu"], [role="menuitem"], .v2-tooltip-wrap';
+
+/**
+ * Whether a click on a row or card is the row's own: not on a control in it, and not the end of a drag that selected
+ * text (copying a serial number must not open or toggle the device).
+ */
+export function isRowClick(e: MouseEvent): boolean {
+  if ((e.target as Element).closest(ROW_CONTROLS)) return false;
+  const sel = typeof window !== 'undefined' ? window.getSelection() : null;
+  return !sel || sel.isCollapsed || !(e.currentTarget as Node).contains(sel.anchorNode);
+}
+
+/**
+ * The console's one data table: a control-height head (meta/500 secondary), --row rows (--row-compact when compact) on hairline rules, a hover
+ * fill, selected rows tinted, drawn checkboxes. Put row actions in a `v2-rowactions` element: they show on row hover
+ * or focus (always on touch). Wrap it in <Card padding="list" clip> for the bordered look.
  */
 export function Table<Row>({
   columns,
@@ -125,7 +174,7 @@ export function Table<Row>({
       {...scrollStopProps(scrollStop, name, labelledBy)}
     >
       <table
-        className={cx('v2-table', `v2-table--edge${edge}`, rowPad === 10 && 'v2-table--pad10', onRowClick && 'v2-table--rowclick')}
+        className={cx('v2-table', edge === 0 && 'v2-table--edge0', rowPad === 10 && 'v2-table--compact', onRowClick && 'v2-table--rowclick')}
         style={minWidth ? { minWidth } : undefined}
         {...aria}
       >
@@ -182,17 +231,25 @@ export function Table<Row>({
               <tr
                 key={k}
                 className={cx(on && 'is-selected')}
+                // Shift+click selects a range: the browser's text selection it would also start is not wanted.
+                onMouseDown={selection || onRowClick ? noShiftSelect : undefined}
                 onClick={
                   onRowClick
                     ? (e: MouseEvent<HTMLTableRowElement>) => {
-                        if (!(e.target as Element).closest(ROW_CONTROLS)) onRowClick(r);
+                        if (isRowClick(e)) onRowClick(r, e);
                       }
                     : undefined
                 }
               >
                 {selection ? (
                   <td className="v2-table__shrink">
-                    <Checkbox aria-label={selection.rowLabel(r)} checked={!!on} onChange={() => selection.onToggle(k, r)} />
+                    <Checkbox
+                      aria-label={selection.rowLabel(r)}
+                      checked={!!on}
+                      onChange={(e) => selection.onToggle(k, r, { shiftKey: shiftOf(e.nativeEvent) })}
+                      onKeyDown={(e) => shiftSpace(e, () => selection.onToggle(k, r, { shiftKey: true }))}
+                      onKeyUp={(e) => shiftSpace(e)}
+                    />
                   </td>
                 ) : null}
                 {columns.map((c) => (

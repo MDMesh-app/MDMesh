@@ -1,7 +1,7 @@
 // Which component edges must reach 3:1 (WCAG 1.4.11), and that each really paints with a token whose pairs
 // tokenContrast.test.ts checks. Owner's rule, "inputs strong, buttons soft": inputs, selects, the search box, toggles,
-// icon-only buttons, the password toggle, the colour picker, the ring on a selected segment / tab / nav item /
-// section, the focus ring and the not-reported bar segment are 3:1. Text buttons, chips and cards keep the soft v2
+// the password toggle, the colour picker, the selected tab's indicator,
+// the focus ring and the not-reported bar segment are 3:1. Text buttons, chips and cards keep the soft v2
 // edges: their visible label identifies them (rows of kind 'exempt' in contrastPairs.ts).
 import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -17,20 +17,17 @@ function tsxFiles(dir: string): string[] {
 }
 
 const STRONG_EDGES: Array<[what: string, file: string, selector: string, token: string]> = [
-  ['text input / select / textarea', 'ui/Input.css', '.v2 .v2-input {', 'input-border'],
-  ['labelled toolbar select', 'ui/Input.css', '.v2 .v2-lselect {', 'input-border'],
+  ['text input / select / textarea (also the toolbar and rows-per-page selects)', 'ui/Input.css', '.v2 .v2-input {', 'input-border'],
   ['search box', 'ui/Input.css', '.v2 .v2-search {', 'input-border'],
-  ['rows-per-page select', 'ui/Pagination.css', '.v2 .v2-pager__select {', 'input-border'],
-  ['icon-only button (IconButton: drawer toggle, dialog close, row and card "…" menus, rename)', 'ui/Button.css', '.v2 .v2-iconbtn {', 'control-border'],
-  ['"More actions" menu trigger (icon-only Button)', 'ui/Menu.css', '.v2 .v2-btn.v2-menu__iconbtn:not(:disabled) {', 'control-border'],
-  ['password show/hide toggle', 'ui/Password.css', '.v2 .v2-password__toggle {', 'control-border'],
+  ['checkbox', 'ui/Input.css', '.v2 .v2-check {', 'input-border'],
+  // The password toggle sits inside the field (whose edge is the input's, above): a ghost icon button, its icon 3:1.
+  ['password show/hide toggle (inside the field; its icon)', 'ui/Password.css', '.v2 .v2-password__toggle {', 'secondary'],
   ['colour picker button', 'ui/ColourInput.css', '.v2 .v2-colour__btn {', 'control-border'],
-  ['selected segment', 'ui/Segmented.css', '.v2 .v2-seg__opt.is-selected {', 'control-border'],
-  ['selected tab', 'ui/Tabs.css', '.v2 .v2-tabs__tab.is-selected {', 'control-border'],
-  ['current sidebar item', 'ui/Sidebar.css', '.v2 .v2-navitem.is-active {', 'control-border'],
-  ['current section-nav item', 'ui/SectionNav.css', '.v2 .v2-secnav__item.is-current {', 'control-border'],
+  ['selected tab indicator', 'ui/Tabs.css', '.v2 .v2-tabs::after {', 'ink'],
+  ['kiosk background focal point picker', 'pages/configurations/KioskPlacement.css', '.v2 .v2-kbp__area {', 'control-border'],
+  ['selected kiosk preview thumbnail (ring around the device)', 'pages/configurations/KioskPreview.css', ".v2 .v2-kbg__thumb-button[aria-pressed='true'] .v2-kbg__device {", 'ink'],
   ['toggle (off) track', 'ui/Toggle.css', '.v2 .v2-toggle__track {', 'switch-off-ring'],
-  ['focus ring', 'tokens.css', '.v2 :focus-visible {', 'ink'],
+  ['focus ring', 'tokens.css', '.v2 :focus-visible {', 'focus'],
   ['not-reported bar segment', 'ui/Bars.css', '.v2 .v2-bar--pending {', 'muted'],
 ];
 
@@ -52,9 +49,15 @@ function rule(file: string, selector: string): string {
  */
 const SOFT_BY_DESIGN: Array<[what: string, file: string, selector: string, token: string]> = [
   ['secondary text button', 'ui/Button.css', '.v2 .v2-btn--secondary:hover,', 'border-strong'],
-  ['danger text button', 'ui/Button.css', '.v2 .v2-btn--danger:hover {', 'alert-line'],
+  ['danger text button', 'ui/Button.css', '.v2 .v2-btn--danger:hover {', 'border-strong'],
   ['read-only input', 'ui/Input.css', ".v2 .v2-input[readonly] {", 'border'],
-  ['disabled input', 'ui/Input.css', '.v2 .v2-input:disabled {', 'border'],
+  ['disabled input', 'ui/Input.css', '.v2 .v2-input[data-disabled] {', 'border'],
+  // Icon-only buttons are ghost buttons: the icon itself (--text-2, ≥ 3:1, "Icon in a button" pairs) identifies them.
+  ['icon-only button (no edge; its icon is 3:1)', 'ui/Button.css', '.v2 .v2-iconbtn {', 'text-2'],
+  // Selected segment and current nav item: a fill plus the label's 500 weight and ink, never colour alone.
+  ['selected segment (raised fill, 500 ink label)', 'ui/Segmented.css', '.v2 .v2-seg__opt.is-selected {', 'weight-medium'],
+  ['current sidebar item (fill, 500 ink label)', 'ui/Sidebar.css', '.v2 .v2-navitem.is-active {', 'weight-medium'],
+  ['current section-nav item (fill, 500 ink label)', 'ui/SectionNav.css', '.v2 .v2-secnav__item.is-current {', 'weight-medium'],
   ['toast Dismiss (icon only, no edge)', 'ui/Toast.css', '.v2 .toast .t-close {', 'text-2'],
 ];
 
@@ -71,16 +74,16 @@ describe('edges that stay soft by design', () => {
     expect(rule(file, selector)).toContain(`var(--${token})`);
   });
 
-  it('a select is never a bare native one: every <select> in core uses a styled class', () => {
-    // #181 added a bare <select>; the shared Select (v2-input) or the pager/toolbar selects carry the 3:1 edge.
+  it('a select is never a native one: core uses the shared Select (ui/Input, Radix) with its 3:1 edge', () => {
+    // #181 added a bare <select>; since the polish there is none: every choice goes through ui/Input's Select.
     const files = Object.fromEntries(
       ['pages', 'ui'].flatMap((dir) => tsxFiles(resolve(SRC, dir))).map((f) => [f, readFileSync(f, 'utf8')]),
     );
     expect(Object.keys(files).length).toBeGreaterThan(20);
-    expect(Object.values(files).join('').match(/<select\b/g)?.length).toBeGreaterThan(2);
-    const bare = Object.entries(files)
-      .filter(([f]) => !f.includes('.test.'))
-      .flatMap(([f, src]) => [...src.matchAll(/<select\b[^>]*>/g)].filter((m) => !/className=/.test(m[0])).map(() => f));
-    expect(bare).toEqual([]);
+    // ui/Input keeps the deprecated native path for extensions (`native` / `multiple`, until 0.6.0); core uses neither.
+    const native = Object.entries(files)
+      .filter(([f]) => !f.includes('.test.') && !f.endsWith('/ui/Input.tsx'))
+      .flatMap(([f, src]) => [...src.matchAll(/<select\b[^>]*>|<(?:Labelled)?Select\b[^>]*\b(?:native|multiple)\b/g)].map(() => f));
+    expect(native).toEqual([]);
   });
 });

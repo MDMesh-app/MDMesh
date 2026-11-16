@@ -72,11 +72,12 @@ describe('the Apps tab', () => {
     expect(within(panel()).getByText('No apps match.')).toBeTruthy();
   });
 
-  it('says there is no recent scan rather than never scanned, and offers Scan now to a role with edit_devices', async () => {
+  it('says there is no recent scan rather than never scanned, offers Scan now to a role with edit_devices, and hides Export CSV', async () => {
     openApps({ history: [scan(5, 'pending'), scan(4, 'failed', undefined, 'Result too large')] });
     expect(await screen.findByText('No recent scan')).toBeTruthy();
     expect(within(panel()).getByRole('button', { name: 'Scan now' })).toBeTruthy();
-    expect((within(panel()).getByRole('button', { name: 'Export CSV' }) as HTMLButtonElement).disabled).toBe(true);
+    // Nothing to export yet: the button waits for a scan that lists apps.
+    expect(within(panel()).queryByRole('button', { name: 'Export CSV' })).toBeNull();
   });
 
   it('shows the list without Scan now to a role without edit_devices', async () => {

@@ -82,7 +82,7 @@ describe('wiped devices on Devices', () => {
     await waitFor(
       () =>
         expect(statusFilter().getAllByRole('radio').map((r) => r.textContent)).toEqual([
-          'All 3', 'Online 1', 'Attention 1', 'Offline 1', 'Wiped 1',
+          'All 3', 'Online 1', 'Needs attention 1', 'Offline 1', 'Wiped 1',
         ]),
       LOAD,
     );
@@ -101,11 +101,11 @@ describe('wiped devices on Devices', () => {
     expect(main().queryByRole('checkbox')).toBeNull();
     expect(screen.queryByRole('region', { name: 'Selection' })).toBeNull();
     // Commands are greyed out; Delete stays.
-    expect(table().getByRole('button', { name: 'Sync WH-9 now' }).hasAttribute('disabled')).toBe(true);
+    expect(table().getByRole('button', { name: 'Sync now: WH-9' }).hasAttribute('disabled')).toBe(true);
     fireEvent.click(table().getByRole('button', { name: 'More actions for WH-9' }));
     const menu = within(await screen.findByRole('menu'));
-    const disabled = Object.fromEntries(menu.getAllByRole('menuitem').map((m) => [m.textContent, m.hasAttribute('disabled')]));
-    expect(disabled).toEqual({ 'Lock device': true, 'Ring device': true, 'Change configuration…': false, 'Delete…': false });
+    const disabled = Object.fromEntries(menu.getAllByRole('menuitem').map((m) => [m.textContent, m.getAttribute('aria-disabled') === 'true']));
+    expect(disabled).toEqual({ Lock: true, Ring: true, 'Change configuration': false, 'Delete': false });
   }, SLOW);
 
   it('does not count a wiped device as a duplicate of its re-enrolled twin', async () => {
@@ -134,7 +134,7 @@ describe('what a sync says', () => {
     ['an older server, which does not say', null, 'Sync requested', 'ok'],
   ])('on the Devices list, for %s', async (_, answer, title, kind) => {
     open('/devices', answer);
-    fireEvent.click(await main().findByRole('button', { name: 'Sync WH-3 now' }, LOAD));
+    fireEvent.click(await main().findByRole('button', { name: 'Sync now: WH-3' }, LOAD));
     expect(await screen.findByText(title, undefined, LOAD)).toBeTruthy();
     expect(toastOf(title)?.classList.contains(kind)).toBe(true);
     if (kind === 'warn') expect(screen.getByText('It syncs at its next check-in.')).toBeTruthy();
@@ -143,8 +143,8 @@ describe('what a sync says', () => {
   it('after a command from the row menu, says when the device will get it', async () => {
     open('/devices', { connected: false });
     fireEvent.click(await main().findByRole('button', { name: 'More actions for WH-3' }, LOAD));
-    fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Lock device' }));
-    expect(await screen.findByText('Lock device queued', undefined, LOAD)).toBeTruthy();
+    fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Lock' }));
+    expect(await screen.findByText('Lock queued', undefined, LOAD)).toBeTruthy();
     expect(await screen.findByText('WH-3 isn’t connected right now', undefined, LOAD)).toBeTruthy();
     expect(screen.getByText('It gets the command at its next check-in.')).toBeTruthy();
   }, SLOW);
@@ -211,7 +211,7 @@ describe('a configuration with only wiped devices', () => {
     await main().findByText('Used only by 1 wiped device', undefined, LOAD);
     expect(main().queryByText('Not used by any device yet')).toBeNull();
     fireEvent.click(main().getByRole('button', { name: 'More for Warehouse' }));
-    fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Delete…' }));
+    fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Delete' }));
     const dialog = await screen.findByRole('alertdialog');
     expect(dialog.textContent).toMatch(WHOLE);
     expect(dialog.textContent).toMatch(FILTER);
@@ -226,7 +226,7 @@ describe('a configuration with only wiped devices', () => {
     fireEvent.change(main().getByRole('textbox', { name: /Description/ }), { target: { value: 'Old scanners' } });
     await waitFor(() => expect(screen.getByRole('region', { name: 'Unsaved changes' }).textContent).toMatch(/Used only by 1 wiped device\./), LOAD);
     expect(screen.queryByText(/No device uses this configuration yet/)).toBeNull();
-    fireEvent.click(await main().findByRole('button', { name: 'Delete…' }, LOAD));
+    fireEvent.click(await main().findByRole('button', { name: 'Delete' }, LOAD));
     const dialog = await screen.findByRole('alertdialog');
     expect(dialog.textContent).toMatch(WHOLE);
     expect(dialog.textContent).toMatch(FILTER);
@@ -236,7 +236,7 @@ describe('a configuration with only wiped devices', () => {
     openWith('/configurations', [{ ...WIPED_ONLY[0], total: 2, inSync: 2 }]);
     await main().findByText('All 2 in sync', undefined, LOAD);
     fireEvent.click(main().getByRole('button', { name: 'More for Warehouse' }));
-    fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Delete…' }));
+    fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Delete' }));
     const dialog = await screen.findByRole('alertdialog');
     expect(dialog.textContent).toMatch(/3 devices still use this configuration/);
     expect(dialog.textContent).toMatch(FILTER);
@@ -246,7 +246,7 @@ describe('a configuration with only wiped devices', () => {
     openWith('/configurations', []);
     await main().findByText('Not used by any device yet', undefined, LOAD);
     fireEvent.click(main().getByRole('button', { name: 'More for Warehouse' }));
-    fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Delete…' }));
+    fireEvent.click(within(await screen.findByRole('menu')).getByRole('menuitem', { name: 'Delete' }));
     const dialog = await screen.findByRole('alertdialog');
     expect(dialog.textContent).not.toMatch(/refuse/);
   }, SLOW);
@@ -264,7 +264,7 @@ describe('a wiped device’s page', () => {
     async () => {
       const fetch = open('/devices/WH-9');
       const actions = within(await screen.findByRole('toolbar', { name: 'Quick actions' }, LOAD));
-      expect(within(screen.getByRole('complementary', { name: 'Device' })).getByText('Wiped')).toBeTruthy();
+      expect(within(document.querySelector('.v2-device-id') as HTMLElement).getByText('Wiped')).toBeTruthy();
       const notice = main().getByText(/The device erased itself/).closest('.v2-callout');
       expect(notice?.textContent).toMatch(
         /^Wiped .+\. The device erased itself, so it no longer reports\. Delete it from Devices, or keep it for its history\.$/,

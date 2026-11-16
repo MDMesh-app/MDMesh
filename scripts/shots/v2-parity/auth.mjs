@@ -79,10 +79,10 @@ for (const theme of ['light', 'dark']) {
   await settle(page);
   check(posts.length === 0, 'empty form is not sent');
   await page.screenshot({ path: `${out}/login-empty.png` });
-  check(await page.getByText('Enter your login.').isVisible() && await page.getByText('Enter your password.').isVisible(), 'empty-field errors shown');
+  check(await page.getByText('Enter your username.').isVisible() && await page.getByText('Enter your password.').isVisible(), 'empty-field errors shown');
   check(await page.evaluate(() => document.activeElement?.getAttribute('autocomplete')) === 'username', 'focus moves to first empty field');
   await page.fill('input[autocomplete="username"]', 'admin');
-  check(!(await page.getByText('Enter your login.').isVisible()), 'field error clears on typing');
+  check(!(await page.getByText('Enter your username.').isVisible()), 'field error clears on typing');
   await page.fill('input[autocomplete="current-password"]', 'S3cret pass');
   await page.click('button[aria-label="Show password"]');
   check(await page.getAttribute('input[autocomplete="current-password"]', 'type') === 'text', 'show password reveals');
@@ -91,11 +91,11 @@ for (const theme of ['light', 'dark']) {
   await page.press('input[autocomplete="current-password"]', 'Enter');
   await page.waitForSelector('[role=alert]');
   check(posts.length === 1 && posts[0].login === 'admin' && posts[0].password === md5u('S3cret pass') && Object.keys(posts[0]).length === 2, 'POST body {login, MD5 upper} like classic');
-  check((await page.textContent('[role=alert]')).includes('Wrong login or password.'), 'wrong password → generic message');
+  check((await page.textContent('[role=alert]')).includes('Wrong username or password.'), 'wrong password → generic message');
   await page.screenshot({ path: `${out}/login-error.png` });
   mode = 'http500';
   await page.click('button[type=submit]'); await settle(page);
-  check((await page.textContent('[role=alert]')).includes('Wrong login or password.'), 'HTTP 500 → same generic message (classic)');
+  check((await page.textContent('[role=alert]')).includes('Wrong username or password.'), 'HTTP 500 → same generic message (classic)');
   mode = 'down';
   await page.click('button[type=submit]'); await settle(page);
   check((await page.textContent('[role=alert]')).includes('Cannot reach the server'), 'network failure → cannot reach');
@@ -152,9 +152,11 @@ for (const [from, want] of cases) {
   check(path(page) === '/login' && await page.locator('.v2-auth__card input[autocomplete="username"]').count() === 1, 'guard on / → /login without from');
   await page.goto(base + '/v2/devices/101?tab=x#y');
   await page.waitForURL('**/login**');
+  await settle(page);
   check(path(page) === '/login?from=%2Fdevices%2F101%3Ftab%3Dx%23y', `old /v2 bookmark signed out → ${path(page)}`);
   await page.goto(base + '/dashboard');
-  await page.waitForURL('**/login');
+  await page.waitForURL('**/login**');
+  await settle(page);
   check(path(page) === '/login', `old /dashboard signed out → ${path(page)}`);
   await c.close();
 }
@@ -174,14 +176,21 @@ for (const [from, want] of cases) {
     ['/dashboard', '/'],
     ['/configs', '/configurations'],
     ['/overview', '/'],
-    ['/no-such-page', '/'],
-    ['/v2//evil.example/x', '/'], // never a protocol-relative redirect
+    // Never a protocol-relative redirect: it lands on the same origin's /evil.example/x, which is no page (below).
+    ['/v2//evil.example/x', '/evil.example/x'],
   ];
   for (const [from, want] of legacy) {
     await page.goto(base + from);
     await page.waitForSelector(want === '/login' ? '.v2-auth__card' : '.v2-shell');
     await page.waitForFunction((w) => location.pathname + location.search + location.hash === w, want, { timeout: 5000 }).catch(() => {});
     check(new URL(page.url()).origin === base && path(page) === want, `${from} → ${page.url()} (want ${want})`);
+  }
+  // An unknown path is no old bookmark: it says so on the same origin (it used to redirect to the Overview).
+  for (const unknown of ['/no-such-page', '/v2//evil.example/x']) {
+    await page.goto(base + unknown);
+    await page.waitForSelector('.v2-shell');
+    const found = await page.getByRole('heading', { name: 'Page not found' }).waitFor({ timeout: 5000 }).then(() => true, () => false);
+    check(new URL(page.url()).origin === base && found, `${unknown} → Page not found at ${page.url()}`);
   }
   await c.close();
 }
@@ -211,7 +220,9 @@ for (const [from, want] of cases) {
   await c.route('**/rest/public/auth/logout', (r) => { loggedOut = true; return r.fulfill({ status: 200, body: '' }); });
   await page.goto(base + '/apps');
   await page.waitForSelector('.v2-shell');
-  await page.getByRole('button', { name: 'Sign out' }).first().click();
+  // Sign out sits in the account menu (Radix DropdownMenu) under the user's row.
+  await page.getByRole('button', { name: /^Account:/ }).click();
+  await page.getByRole('menuitem', { name: 'Sign out' }).click();
   await page.waitForURL('**/login**');
   check(loggedOut && path(page).startsWith('/login?from=%2Fapps'), `sign out → ${path(page)}`);
   check(await page.evaluate(() => localStorage.getItem('hmdm.admin.user')) === null, 'stored user cleared on sign out');
@@ -226,8 +237,9 @@ for (const [from, want] of cases) {
   await c.route('**/rest/public/auth/logout', (r) => { logouts++; return r.fulfill({ status: 200, body: '' }); });
   await c.route('**/rest/public/passwordReset/reset', (r) => {
     resets.push(JSON.parse(r.request().postData()));
+    // A plain server error. (error.user.not.found is the refused reset token since v0.3.8: its own check below.)
     return resetMode === 'fail'
-      ? r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'ERROR', message: 'error.user.not.found', data: null }) })
+      ? r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'ERROR', message: null, data: null }) })
       : r.fulfill({ status: 200, contentType: 'application/json', body: ok({}) });
   });
   await page.goto(`${base}/login?from=${encodeURIComponent('/settings')}`);
@@ -264,6 +276,26 @@ for (const [from, want] of cases) {
   check(path(page) === '/login?from=%2Fsettings', `after reset → ${path(page)}`);
   check(await page.getByText('Password updated. Sign in with your new password.').waitFor({ timeout: 5000 }).then(() => true, () => false), 'password-changed notice');
   check(errors.length === 0, `no console errors (first login) ${errors.join(' | ')}`);
+  await c.close();
+}
+// The server refuses the reset token (used, or older than 24 hours): signed out, back to sign in with a notice.
+{
+  const { c, page } = await ctx(resetUser);
+  const resets = []; let logouts = 0;
+  await c.route('**/rest/public/auth/logout', (r) => { logouts++; return r.fulfill({ status: 200, body: '' }); });
+  await c.route('**/rest/public/passwordReset/reset', (r) => {
+    resets.push(JSON.parse(r.request().postData()));
+    return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'ERROR', message: 'error.user.not.found', data: null }) });
+  });
+  await page.goto(`${base}/set-password?from=${encodeURIComponent('/settings')}`);
+  await page.waitForSelector('.v2-rules');
+  await page.fill('input[name="new-password"]', 'longenough1');
+  await page.fill('input[name="confirm-password"]', 'longenough1');
+  await page.locator('button[type=submit]').click();
+  await page.waitForURL('**/login**', { timeout: 5000 }).catch(() => {});
+  check(resets.length === 1 && resets[0].passwordResetToken === 'tok-123', 'expired token: reset was sent once');
+  check(logouts === 1 && path(page) === '/login?from=%2Fsettings', `expired token: signed out → ${path(page)}`);
+  check(await page.getByText('That password change expired. Sign in again to set your password.').waitFor({ timeout: 5000 }).then(() => true, () => false), 'expired token: notice shown');
   await c.close();
 }
 {

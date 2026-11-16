@@ -66,11 +66,11 @@ try {
 
   // config.section: its card and nav entry among core's, and its change in the save bar and the one PUT.
   {
-    const { context, page } = await open('/configurations/1', {
+    const { context, page } = await open('/configurations/4', {
       setup: async (c) => {
-        await c.route('**/rest/private/configurations/1', (route) =>
+        await c.route('**/rest/private/configurations/4', (route) =>
           route.request().method() === 'GET'
-            ? json(route, { ...restData('GET', '/private/configurations/1', '/configurations/1'), extensions: { demo: { label: 'Front', on: false }, other: { kept: true } } })
+            ? json(route, { ...restData('GET', '/private/configurations/4', '/configurations/4'), extensions: { demo: { label: 'Front', on: false }, other: { kept: true } } })
             : route.fallback());
         await c.route('**/rest/private/configurations', (route) => {
           if (route.request().method() !== 'PUT') return route.fallback();

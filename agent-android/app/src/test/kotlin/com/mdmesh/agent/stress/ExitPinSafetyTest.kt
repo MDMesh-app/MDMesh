@@ -228,6 +228,67 @@ class ExitPinSafetyTest : KioskHarness() {
         assertNotNull("'1 try left' warning gone after rotation", findText(pinDialog()!!.window!!.decorView, warn))
     }
 
+    /** N1'': "Exit isn't available" (right PIN, journal not writable) is rebuilt on rotation, like Exit locked. */
+    @Test fun exitUnavailableSurvivesRotationAndRecreation() {
+        launch(grid)
+        exitJournalFull()
+        tapExitKiosk()
+        submitPin(pin)
+        assertNotNull(unavailableDialog())
+        rotate()
+        assertNotNull("'Exit isn't available' gone after rotation", unavailableDialog())
+        recreate()
+        assertNotNull("'Exit isn't available' gone after a recreation", unavailableDialog())
+        assertEquals(1, ShadowDialog.getShownDialogs().count { it.isShowing })
+    }
+
+    /**
+     * PR #201 review: a restored "Exit isn't available" belongs to the kiosk its exit was refused for. Another kiosk
+     * entered before the launcher comes back (process death) must not get it; the same kiosk, in a new look, does.
+     */
+    @Test fun restoredExitUnavailableOnlyComesBackToItsOwnKiosk() {
+        launch(grid)
+        exitJournalFull()
+        tapExitKiosk()
+        submitPin(pin)
+        assertNotNull(unavailableDialog())
+        processDeathRestore(grid.copy(allowedPackages = listOf(other)))
+        assertNull("kiosk A's refusal shown over kiosk B", unavailableDialog())
+        ctl!!.pause().stop().destroy()
+        settle()
+
+        launch(grid)
+        exitJournalFull()
+        tapExitKiosk()
+        submitPin(pin)
+        processDeathRestore(grid.copy(theme = grid.theme.copy(backgroundColor = "#123456")))
+        assertNotNull("refusal lost on a restyle of its own kiosk", unavailableDialog())
+        processDeathRestore()
+        assertNotNull("refusal lost on a second restore of its own kiosk", unavailableDialog())
+    }
+
+    /** What ties the restored message to its kiosk is never the PIN. */
+    @Test fun savedExitUnavailableHoldsNoPin() {
+        launch(grid)
+        exitJournalFull()
+        tapExitKiosk()
+        submitPin(pin)
+        val out = android.os.Bundle()
+        ctl!!.saveInstanceState(out)
+        assertTrue("PIN written to saved state", !deepContains(out, pin))
+    }
+
+    /** Nobody acknowledged it: it doesn't stay over the kiosk for good, it closes as the PIN prompt does. */
+    @Test fun exitUnavailableClosesAfterTheIdleTime() {
+        launch(grid)
+        exitJournalFull()
+        tapExitKiosk()
+        submitPin(pin)
+        assertNotNull(unavailableDialog())
+        idle(IDLE_MS / 1000 + 1)
+        assertNull(unavailableDialog())
+    }
+
     @Test fun triesLeftWarningShownWhenThePromptIsOpenedAgain() {
         launch(grid)
         tapExitKiosk()

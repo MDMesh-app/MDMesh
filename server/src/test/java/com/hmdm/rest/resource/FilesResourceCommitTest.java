@@ -50,9 +50,14 @@ public class FilesResourceCommitTest {
     private static final class FakeUploadedFileDAO extends UploadedFileDAO {
         UploadedFile existing;
         UploadedFile byPath;
+        /** The row belongs to another customer: the real DAO refuses it with a SecurityException. */
+        boolean foreign;
         final List<UploadedFile> written = new ArrayList<>();
         FakeUploadedFileDAO() { super(null, null, null, "unused"); }
-        @Override public UploadedFile getById(Integer id) { return existing; }
+        @Override public UploadedFile getById(Integer id) {
+            if (foreign) throw com.hmdm.security.SecurityException.onAdminDataAccessViolation("not this customer's file");
+            return existing;
+        }
         @Override public UploadedFile insert(UploadedFile file) { written.add(file); return file; }
         @Override public void update(UploadedFile file) { written.add(file); }
         final List<Integer> removed = new ArrayList<>();
@@ -342,5 +347,98 @@ public class FilesResourceCommitTest {
         assertEquals(Response.ResponseStatus.OK, r.getStatus());
         assertTrue("a file of another record must survive", other.exists());
         assertFalse(mine.exists());
+    }
+
+    /** Files → edit of a file a configuration save holds is refused (the save hashed these bytes). */
+    @Test
+    public void editingAFileASaveHoldsIsRefused() throws IOException {
+        uploadedFileDAO.existing = hosted(5, "kiosk-aaaaaaaaaaaa-beach.jpg");
+        resource.setKioskImages(new com.hmdm.rest.resource.support.KioskBackgroundImageAssets(uploadedFileDAO,
+                new FakeCustomerDAO(customer), "https://mdm.example.com", filesDir.getAbsolutePath()) {
+            @Override public EditStart beginEdit(int fileId) {
+                return fileId == 5 ? EditStart.HELD : super.beginEdit(fileId);
+            }
+        });
+        UploadedFile edit = hosted(5, "kiosk-aaaaaaaaaaaa-beach.jpg");
+        edit.setDescription("renamed");
+        Response r = resource.updateFile(edit);
+        assertEquals("error.used.file", r.getMessage());
+        assertTrue(uploadedFileDAO.written.isEmpty());
+    }
+
+    /** Background images whose own rows (for holds) are always there, whatever the Files fake says. */
+    private com.hmdm.rest.resource.support.KioskBackgroundImageAssets realKioskImages() {
+        FakeUploadedFileDAO rows = new FakeUploadedFileDAO();
+        rows.existing = hosted(5, "kiosk-aaaaaaaaaaaa-beach.jpg");
+        com.hmdm.rest.resource.support.KioskBackgroundImageAssets assets = new com.hmdm.rest.resource.support.KioskBackgroundImageAssets(
+                rows, new FakeCustomerDAO(customer), "https://mdm.example.com", filesDir.getAbsolutePath());
+        resource.setKioskImages(assets);
+        return assets;
+    }
+
+    private static com.hmdm.rest.json.view.FileView removal(int id) {
+        com.hmdm.rest.json.view.FileView req = new com.hmdm.rest.json.view.FileView();
+        req.setId(id);
+        req.setFilePath("kiosk-aaaaaaaaaaaa-beach.jpg");
+        return req;
+    }
+
+    /**
+     * Edit and Remove of another customer's file id get the same refusal whether or not one of that customer's saves
+     * holds it or an edit of it runs, and never change that state.
+     */
+    @Test
+    public void anotherCustomersFileIsRefusedTheSameWayAndItsStateIsUntouched() {
+        com.hmdm.rest.resource.support.KioskBackgroundImageAssets assets = realKioskImages();
+        uploadedFileDAO.foreign = true;
+        UploadedFile edit = hosted(5, "kiosk-aaaaaaaaaaaa-beach.jpg");
+
+        // Idle.
+        assertDenied(resource.updateFile(edit));
+        assertDenied(resource.removeFile(removal(5)));
+        assertFalse("a refused edit leaves no mark", assets.isHeld(5));
+        assertEquals(com.hmdm.rest.resource.support.KioskBackgroundImageAssets.EditStart.STARTED, assets.beginEdit(5));
+
+        // Mid-edit by the owner.
+        assertDenied(resource.updateFile(edit));
+        assertDenied(resource.removeFile(removal(5)));
+        assertEquals("the owner's edit is still running",
+                com.hmdm.rest.resource.support.KioskBackgroundImageAssets.EditStart.EDITING, assets.beginEdit(5));
+        assets.endEdit(5);
+
+        // Held by the owner's save.
+        com.hmdm.rest.resource.support.KioskBackgroundImageAssets.Applied save = assets.holdExisting(5, true);
+        assertDenied(resource.updateFile(edit));
+        assertDenied(resource.removeFile(removal(5)));
+        assertTrue("the owner's save still holds it", assets.isHeld(5));
+        save.release();
+        assertFalse(assets.isHeld(5));
+        assertEquals("no edit mark was left behind",
+                com.hmdm.rest.resource.support.KioskBackgroundImageAssets.EditStart.STARTED, assets.beginEdit(5));
+        assets.endEdit(5);
+        assertTrue(uploadedFileDAO.written.isEmpty());
+        assertTrue(uploadedFileDAO.removed.isEmpty());
+    }
+
+    /** Remove and a second edit of a file being changed in Files say so. */
+    @Test
+    public void removeAndEditOfAFileBeingEditedAreRefusedAsBeingChanged() {
+        com.hmdm.rest.resource.support.KioskBackgroundImageAssets assets = realKioskImages();
+        uploadedFileDAO.existing = hosted(5, "kiosk-aaaaaaaaaaaa-beach.jpg");
+        assets.beginEdit(5);
+        try {
+            assertEquals(com.hmdm.rest.resource.support.KioskBackgroundImageAssets.BEING_EDITED,
+                    resource.removeFile(removal(5)).getMessage());
+            UploadedFile edit = hosted(5, "kiosk-aaaaaaaaaaaa-beach.jpg");
+            edit.setDescription("renamed");
+            assertEquals(com.hmdm.rest.resource.support.KioskBackgroundImageAssets.BEING_EDITED,
+                    resource.updateFile(edit).getMessage());
+            assertEquals("the second edit didn't end the first",
+                    com.hmdm.rest.resource.support.KioskBackgroundImageAssets.EditStart.EDITING, assets.beginEdit(5));
+        } finally {
+            assets.endEdit(5);
+        }
+        assertTrue(uploadedFileDAO.written.isEmpty());
+        assertTrue(uploadedFileDAO.removed.isEmpty());
     }
 }

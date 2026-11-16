@@ -1,99 +1,78 @@
+/* Dropdown menu (Radix): r8 popover on the --elev-2 shadow, 32px items (40 on touch), an optional 16px icon column,
+   the shared pop motion in and out. */
 .v2 .v2-menu {
   display: inline-flex;
 }
-/* The 05 rail "More actions" trigger: icon-only text button, 9×12. Icon-only, so the 3:1 --control-border edge of
-   every icon button (a text button's soft edge relies on its label). */
 .v2 .v2-menu__iconbtn {
-  padding-inline: 12px;
-}
-.v2 .v2-btn.v2-menu__iconbtn:not(:disabled) {
-  border-color: var(--control-border);
+  padding-inline: var(--space-2);
 }
 .v2 .v2-menu__popup {
-  position: fixed;
-  z-index: 70;
+  z-index: var(--z-overlay);
   min-width: 200px;
   max-width: min(320px, calc(100vw - 16px));
-  box-sizing: border-box;
-  padding: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
+  padding: var(--space-1);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-control);
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-float);
-  animation: v2-menu-in 0.12s ease both;
+  box-shadow: var(--elev-2);
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+}
+.v2 .v2-menu__popup[data-state='open'] {
+  animation: v2-pop-in var(--dur-enter) var(--ease);
+}
+.v2 .v2-menu__popup[data-state='closed'] {
+  animation: v2-pop-out var(--dur-exit) var(--ease);
+}
+.v2 .v2-menu__popup[data-side='top'] {
+  --pop-from: var(--lift);
 }
 .v2 .v2-menu__item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 8px 12px;
-  border: 0;
-  border-radius: var(--radius-seg);
-  background: transparent;
+  gap: var(--space-2);
+  min-height: var(--control-md);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-chip);
   color: var(--text);
-  font-size: var(--fs-body);
-  line-height: var(--lh-body);
-  text-align: left;
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
   white-space: nowrap;
   cursor: pointer;
+  outline: none;
+  user-select: none;
 }
-.v2 .v2-menu__item:focus-visible {
-  outline-offset: -2px;
-}
-.v2 .v2-menu__item:not(:disabled):hover,
-.v2 .v2-menu__item:not(:disabled):focus {
-  background: var(--surface-2);
+.v2 .v2-menu__item[data-highlighted] {
+  background: var(--hover);
 }
 .v2 .v2-menu__icon {
   display: inline-flex;
+  flex: 0 0 auto;
+  justify-content: center;
+  width: var(--icon-md);
   color: var(--text-2);
+}
+.v2 .v2-menu__icon > svg {
+  width: var(--icon-md);
+  height: var(--icon-md);
 }
 .v2 .v2-menu__item.is-danger,
 .v2 .v2-menu__item.is-danger .v2-menu__icon {
   color: var(--alert-ink);
 }
-.v2 .v2-menu__item.is-danger:not(:disabled):hover,
-.v2 .v2-menu__item.is-danger:not(:disabled):focus {
+.v2 .v2-menu__item.is-danger[data-highlighted] {
   background: var(--alert-soft);
 }
-.v2 .v2-menu__item:disabled {
+.v2 .v2-menu__item[data-disabled] {
   color: var(--faint);
   cursor: default;
 }
 .v2 .v2-menu__sep {
-  height: 1px;
-  margin: 4px 8px;
+  height: var(--hairline);
+  margin: var(--space-1) calc(var(--space-1) * -1);
   background: var(--line-soft);
-}
-@keyframes v2-menu-in {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-.v2 .v2-menu__popup.is-up {
-  animation-name: v2-menu-in-up;
-}
-@keyframes v2-menu-in-up {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
 }
 @media (max-width: 860px) {
   .v2 .v2-menu__item {
-    min-height: 40px;
+    min-height: var(--row-compact);
   }
 }

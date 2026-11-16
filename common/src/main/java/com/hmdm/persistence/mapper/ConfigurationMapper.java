@@ -148,6 +148,9 @@ public interface ConfigurationMapper {
             "connectivityMode=#{connectivityMode}, " +
             "backgroundImageFileId=#{backgroundImageFileId}, " +
             "backgroundImageSha256=#{backgroundImageSha256}, " +
+            "backgroundImageFit=#{backgroundImageFit}, " +
+            "backgroundImageFocalX=#{backgroundImageFocalX}, " +
+            "backgroundImageFocalY=#{backgroundImageFocalY}, " +
             // Left out (null), the stored extensions stay: a client that doesn't know them can't wipe them.
             "extensions=COALESCE(CAST(#{extensions} AS jsonb), extensions) " +
             "WHERE id=#{id}"})
@@ -156,8 +159,27 @@ public interface ConfigurationMapper {
     @Delete({"DELETE FROM configurations WHERE id=#{id}"})
     void removeConfigurationById(@Param("id") Integer id);
 
+    @Select("SELECT id, name, backgroundImageFileId FROM configurations " +
+            "WHERE customerId = #{customerId} AND backgroundImageFileId IS NOT NULL ORDER BY name")
+    List<Configuration> getBackgroundImageUses(@Param("customerId") int customerId);
+
+    /** Of getBackgroundImageUses, the configurations the user may open (the access rule of checkConfigurationAccess). */
+    @Select("SELECT configurations.id, configurations.name, configurations.backgroundImageFileId FROM configurations " +
+            "INNER JOIN users ON users.id = #{userId} " +
+            "LEFT JOIN userConfigurationAccess access ON configurations.id = access.configurationId AND access.userId = users.id " +
+            "WHERE configurations.customerId = #{customerId} AND configurations.backgroundImageFileId IS NOT NULL " +
+            "AND (users.allConfigAvailable = TRUE OR NOT access.id IS NULL) ORDER BY configurations.name")
+    List<Configuration> getAccessibleBackgroundImageUses(@Param("customerId") int customerId, @Param("userId") int userId);
+
     @Select("SELECT COUNT(*) FROM configurations WHERE backgroundImageFileId = #{fileId}")
     long countBackgroundImageFileReferences(@Param("fileId") int fileId);
+
+    /** The customer's configurations whose managed kiosk background image has these bytes (lowercase hex SHA-256). */
+    @Select("SELECT id, customerId, backgroundImageFileId, backgroundImageUrl, backgroundImageSha256 FROM configurations " +
+            "WHERE customerId = #{customerId} AND backgroundImageSha256 = #{sha256} " +
+            "AND backgroundImageFileId IS NOT NULL ORDER BY id")
+    List<Configuration> getManagedBackgroundImageConfigurations(@Param("customerId") int customerId,
+                                                                @Param("sha256") String sha256);
 
     @Select({"SELECT * " +
             "FROM configurations " +

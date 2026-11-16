@@ -45,16 +45,26 @@ public class ConfigReconciler {
     private final UnsecureDAO unsecureDAO;
     private final AgentCommandDAO commandDAO;
     private final ExtensionPoints extensionPoints;
+    private final KioskBackgroundImageUrls backgroundImageUrls;
 
     /**
-     * @param extensionPoints the server plugins' policy keys, from the plugins on for each configuration's customer
-     *                        (none without plugins)
+     * @param extensionPoints     the server plugins' policy keys, from the plugins on for each configuration's
+     *                            customer (none without plugins)
+     * @param backgroundImageUrls builds the kiosk background image URL from the current base URL as the document is
+     *                            built; null sends the URL stored with the configuration
      */
     @Inject
-    public ConfigReconciler(UnsecureDAO unsecureDAO, AgentCommandDAO commandDAO, ExtensionPoints extensionPoints) {
+    public ConfigReconciler(UnsecureDAO unsecureDAO, AgentCommandDAO commandDAO, ExtensionPoints extensionPoints,
+                            KioskBackgroundImageUrls backgroundImageUrls) {
         this.unsecureDAO = unsecureDAO;
         this.commandDAO = commandDAO;
         this.extensionPoints = extensionPoints;
+        this.backgroundImageUrls = backgroundImageUrls;
+    }
+
+    /** Sends the stored kiosk background image URL as is (tests that don't involve the image). */
+    public ConfigReconciler(UnsecureDAO unsecureDAO, AgentCommandDAO commandDAO, ExtensionPoints extensionPoints) {
+        this(unsecureDAO, commandDAO, extensionPoints, null);
     }
 
     /** The desired-state document for the device's configuration, or null when it has none. */
@@ -65,6 +75,9 @@ public class ConfigReconciler {
         // Null means a legacy server did not understand the section; an empty list deliberately means release every
         // explicit app-permission override the agent applied previously.
         cfg.setManagedAppPermissions(unsecureDAO.getManagedAppPermissions(cfg.getId()));
+        // Built now, not when the image was picked: a later base.url change (HTTP -> HTTPS, a new domain) reaches the
+        // devices as a new revision instead of a URL the agent refuses.
+        if (backgroundImageUrls != null) cfg.setBackgroundImageUrl(backgroundImageUrls.current(cfg));
         List<Application> apps = unsecureDAO.getPlainConfigurationAppsOptimized(cfg.getId());
         return DesiredConfigBuilder.build(cfg, apps, extensionPoints.contributors(cfg.getCustomerId()));
     }

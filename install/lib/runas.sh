@@ -49,10 +49,18 @@ as_mdmesh_role() {
 # compromised mdmesh role could escalate through its own dump; as the owning role it cannot. The command reads the role
 # password from ROOT.xml as the service user (setpriv, run as root), so the password is never on a command line. It
 # needs the install still present (its ROOT.xml and mdmesh role); restore a final uninstall dump into a fresh install.
+# The restore empties the schema and loads the dump in ONE transaction (not `pg_restore -c`, whose DROPs fail when a
+# later upgrade added a table that refers to the dump's, and which has no transaction). The COMMIT follows only a
+# pg_restore that succeeded, so a damaged dump changes nothing; it prints Restored. once committed. The schema is
+# made again as PostgreSQL 15+ makes it (owner pg_database_owner, USAGE for PUBLIC); every supported distro ships 15+.
 mdm_restore_hint() {
   local root="$CATALINA/conf/Catalina/localhost/ROOT.xml"
-  printf 'restore AS the mdmesh role (never as postgres), with the install present:\n'
+  printf 'restore AS the mdmesh role (never as postgres), with the install present (docs/OPERATIONS.md):\n'
+  printf '      systemctl stop %s\n' "${SVC_UNIT:-mdmesh-server}"
+  printf '      { pg_restore -f - %s && printf '\''COMMIT;\\n\\\\echo Restored.\\n'\''; } \\\n' "$1"
   # shellcheck disable=SC2016  # the $(...) is literal text of the command being printed, not an expansion
-  printf '      PGPASSWORD="$(setpriv --reuid=%s --regid=%s --init-groups sed -n '\''s/.*name=\"JDBC.password\" value=\"\\([^\"]*\\)\".*/\\1/p'\'' %s | head -n1)" \\\n' "$SVC_USER" "$SVC_USER" "$root"
-  printf '        pg_restore -h 127.0.0.1 -p 5432 -U mdmesh -d mdmesh -c --if-exists %s\n' "$1"
+  printf '        | PGPASSWORD="$(setpriv --reuid=%s --regid=%s --init-groups sed -n '\''s/.*name=\"JDBC.password\" value=\"\\([^\"]*\\)\".*/\\1/p'\'' %s | head -n1)" \\\n' "$SVC_USER" "$SVC_USER" "$root"
+  printf '        psql -h 127.0.0.1 -p 5432 -U mdmesh -d mdmesh -X -q -v ON_ERROR_STOP=1 -o /dev/null -c BEGIN \\\n'
+  printf '        -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public AUTHORIZATION pg_database_owner; GRANT USAGE ON SCHEMA public TO PUBLIC" -f -\n'
+  printf '      systemctl start %s\n' "${SVC_UNIT:-mdmesh-server}"
 }

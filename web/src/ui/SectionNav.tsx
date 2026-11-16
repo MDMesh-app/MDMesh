@@ -1,6 +1,7 @@
-import { useEffect, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import { useLocation } from 'react-router';
 import { cx } from './cx';
+import { useOverflowFade } from './useOverflowFade';
 import './SectionNav.css';
 
 export interface SectionNavItem {
@@ -98,8 +99,8 @@ function usePinnedSection(ids: ReadonlyArray<string>): [string | null, (id: stri
 }
 
 /**
- * Section side-nav (configuration editor, Settings): 8×12 items, r10; the current one raised on the page with
- * 600 ink and `aria-current="location"`. Real `href="#id"` anchors. Narrow screens: a scrollable chip row.
+ * Section side-nav (configuration editor, Settings): nav-item-height rows; the current one a fill with the 500 ink
+ * label and `aria-current="location"`. Real `href="#id"` anchors. Narrow screens: a scrollable row.
  * The current item follows the scroll position, except that a section jumped to stays current until the user
  * scrolls by hand.
  */
@@ -122,8 +123,21 @@ export function SectionNav({ items, activeId, spyOffset, className, ...aria }: S
     el.focus({ preventScroll: true });
   };
 
+  // Phones (a row that scrolls sideways): keep the current section's item in view as the page scrolls.
+  const navRef = useRef<HTMLElement>(null);
+  useOverflowFade(navRef);
+  useEffect(() => {
+    const nav = navRef.current;
+    const item = nav?.querySelector<HTMLElement>('.is-current');
+    if (!nav || !item || nav.scrollWidth <= nav.clientWidth) return;
+    const left = item.offsetLeft - nav.offsetLeft;
+    if (left < nav.scrollLeft || left + item.offsetWidth > nav.scrollLeft + nav.clientWidth) {
+      nav.scrollTo({ left: Math.max(0, left - nav.clientWidth / 3) });
+    }
+  }, [active]);
+
   return (
-    <nav className={cx('v2-secnav', className)} {...aria}>
+    <nav ref={navRef} className={cx('v2-secnav', className)} {...aria}>
       {items.map((it) => {
         const on = it.id === active;
         return (
@@ -148,8 +162,8 @@ export function SectionNav({ items, activeId, spyOffset, className, ...aria }: S
 }
 
 /**
- * Two-column layout for SectionNav pages: nav (180-240px) beside the content, 20/24px gaps; stacks under 900px.
- * `contentMax` caps the content column (Settings: 880).
+ * Two-column layout for SectionNav pages: nav (180-240px) beside the content; stacks under 900px.
+ * `contentMax` caps the content column (px); a page may instead cap it from its CSS (Settings: --prose-max).
  */
 export function SectionLayout({
   nav,

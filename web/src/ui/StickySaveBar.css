@@ -1,63 +1,53 @@
+/* Unsaved-changes bar: a floating bar (--elev-2) stuck to the bottom of the content column. Sticky, so it keeps its
+   own place at the end of the flow and never covers the last content; scroll-padding (StickySaveBar.tsx) keeps a
+   focused field clear of it while it floats. */
 .v2 .v2-savebar {
+  --pop-from: var(--lift); /* rises in from below */
   position: sticky;
-  bottom: 16px;
-  z-index: 6;
+  bottom: var(--space-4);
+  z-index: var(--z-sticky);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 16px;
-  padding: 14px 20px;
+  gap: var(--space-3) var(--space-4);
+  padding: var(--space-3) var(--space-4);
   background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-card-sm);
-  box-shadow: var(--shadow-float);
-  animation: v2-savebar-in 0.18s ease both;
+  border: var(--hairline) solid var(--border-strong);
+  border-radius: var(--radius-control);
+  box-shadow: var(--elev-2);
+  animation: v2-pop-in var(--dur-enter) var(--ease) both;
 }
 .v2 .v2-savebar__count {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-weight: 600;
+  gap: var(--space-2);
+  font-weight: var(--weight-medium);
 }
 .v2 .v2-savebar__dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
+  width: var(--dot);
+  height: var(--dot);
+  border-radius: var(--radius-full);
   background: var(--ink);
 }
 .v2 .v2-savebar__msg {
   flex: 1 1 280px;
   color: var(--text-2);
-  font-size: var(--fs-control);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
 }
 .v2 .v2-savebar__actions {
   display: flex;
-  gap: 8px;
-}
-/* board: Save and apply is 9×18, Discard 9×16 */
-.v2 .v2-savebar .v2-savebar__save {
-  padding-inline: 18px;
-}
-
-@keyframes v2-savebar-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
+  gap: var(--space-2);
 }
 
 /* Phones: full-width bar on the bottom edge, sentence hidden, buttons stretch. */
 @media (max-width: 640px) {
   .v2 .v2-savebar {
     bottom: 0;
-    margin: 0 calc(-1 * var(--page-pad));
-    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    margin: 0 calc(-1 * var(--page-gutter));
+    padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom));
     border-radius: 0;
-    border-width: 1px 0 0;
+    border-width: var(--hairline) 0 0;
   }
   .v2 .v2-savebar__msg {
     display: none;

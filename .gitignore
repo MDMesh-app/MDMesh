@@ -74,3 +74,6 @@ Thumbs.db
 
 # Maintainer-local Claude Code notes
 /CLAUDE.md
+
+# tests/rollback-e2e: dind + registry storage of a run
+tests/rollback-e2e/.e2e-data/

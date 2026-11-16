@@ -8,8 +8,8 @@
 #   - the fields older supervisors and the installers read (components.serverImage/webImage/apk) are unchanged;
 #   - quickstart.sh's copy of the release key and its file list match release/minisign.pub and build-manifest.sh;
 #   - the manifest records quickstart.sh's own SHA-256, and release.yml publishes quickstart.sh as a release asset;
-#   - README.md and DEPLOY.md carry the same install block and shortcut, with release/minisign.pub's key, and the
-#     manifest's version line is what that block checks.
+#   - DEPLOY.md carries the one install block and shortcut, with release/minisign.pub's key, and the manifest's
+#     version line is what that block checks; README.md runs the latest release's quickstart.sh asset, never main's.
 # Needs bash, python3, node, openssl and minisign. Run from anywhere: scripts/release-manifest-check.sh
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -78,29 +78,31 @@ grep -q '^  "files": {$' "$T/manifest.json" || fail "quickstart.sh would not fin
 for f in $MDM_QUICKSTART_FILES quickstart.sh; do
   [ "$(mdm_manifest_field "$T/manifest.json" "$f" "$MDM_SHA256_ERE")" = "$(mdm_sha256 "$ROOT/$f")" ] || fail "sha256 of $f not read or wrong"
 done
-# The release asset quickstart.sh, which the README's checked install block downloads, is in the files: list of
+# The release asset quickstart.sh, which README.md and DEPLOY.md's install block download, is in the files: list of
 # release.yml's GitHub Release step.
 awk '/^ +files: \|$/ { on = 1; next } on && /^ +[a-z0-9._-]+$/ { print $1; next } { on = 0 }' \
     "$ROOT/.github/workflows/release.yml" | grep -qx 'quickstart\.sh' \
   || fail "release.yml no longer uploads quickstart.sh as a release asset"
-# The install block in README.md and DEPLOY.md greps this exact version line (grep -qxF '  "version": "X.Y.Z",').
+# DEPLOY.md's install block greps this exact version line (grep -qxF '  "version": "X.Y.Z",').
 grep -qxF '  "version": "9.8.7",' "$T/manifest.json" || fail "the manifest's version line is not what the install block greps for"
-# The install block and the unchecked shortcut are the same in README.md and DEPLOY.md, and the block's key is the
-# release key.
-python3 - "$ROOT" "$(sed -n 2p "$ROOT/release/minisign.pub")" <<'PY' || fail "README.md / DEPLOY.md install blocks (details above)"
+# DEPLOY.md has the install block and the unchecked shortcut once each, and the block's key is the release key.
+# README.md's quick start is the one-line command that runs the latest release's quickstart.sh asset (never main's).
+python3 - "$ROOT" "$(sed -n 2p "$ROOT/release/minisign.pub")" <<'PY' || fail "README.md / DEPLOY.md install commands (details above)"
 import re, sys
 root, key = sys.argv[1], sys.argv[2]
-def blocks(name):
-    found = re.findall(r"```bash\n(.*?)```", open(f"{root}/{name}").read(), re.S)
-    checked = [b for b in found if "minisign -V -m" in b]
-    shortcut = [b for b in found if "/refs/tags/$t/quickstart.sh" in b]
-    if len(checked) != 1 or len(shortcut) != 1:
-        sys.exit(f"{name}: expected one install block and one shortcut, found {len(checked)} and {len(shortcut)}")
-    return checked[0], shortcut[0]
-r, d = blocks("README.md"), blocks("DEPLOY.md")
-if r != d: sys.exit("README.md and DEPLOY.md install blocks differ")
-keys = re.findall(r"-P (\S+)", r[0])
+def bash_blocks(name):
+    return re.findall(r"```bash\n(.*?)```", open(f"{root}/{name}").read(), re.S)
+found = bash_blocks("DEPLOY.md")
+checked = [b for b in found if "minisign -V -m" in b]
+shortcut = [b for b in found if "/refs/tags/$t/quickstart.sh" in b]
+if len(checked) != 1 or len(shortcut) != 1:
+    sys.exit(f"DEPLOY.md: expected one install block and one shortcut, found {len(checked)} and {len(shortcut)}")
+keys = re.findall(r"-P (\S+)", checked[0])
 if keys != [key]: sys.exit(f"install block key {keys} is not release/minisign.pub's {key}")
+one_liner = "bash <(curl -fsSL https://github.com/MDMesh-app/MDMesh/releases/latest/download/quickstart.sh)\n"
+readme = [b for b in bash_blocks("README.md") if "quickstart.sh" in b]
+if readme != [one_liner]:
+    sys.exit(f"README.md: expected one quick-start block, exactly {one_liner.strip()!r}; found {readme}")
 PY
 
 # shellcheck disable=SC2016  # the JavaScript is single-quoted on purpose

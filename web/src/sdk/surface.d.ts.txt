@@ -24,7 +24,7 @@ export { Card, CardHeader, Notice, Callout } from '../ui/Card';
 export type { CardPadding, CardTone } from '../ui/Card';
 export { Field, FieldRow, ChangedChip, Eyebrow } from '../ui/Field';
 export { Input, Textarea, Select, SearchInput, Checkbox } from '../ui/Input';
-export type { InputSize, InputTone, SelectSize } from '../ui/Input';
+export type { InputSize, InputTone, SelectHandle, SelectSize } from '../ui/Input';
 export { Segmented, TriState } from '../ui/Segmented';
 export type { SegmentOption, SegmentValue, SegmentedProps, SegmentedSize } from '../ui/Segmented';
 export { Toggle } from '../ui/Toggle';
@@ -50,6 +50,13 @@ export { PageHeader, Breadcrumb } from '../ui/PageHeader';
 export type { Crumb } from '../ui/PageHeader';
 export { Pagination } from '../ui/Pagination';
 export { RelativeTime } from '../ui/RelativeTime';
+export { Grid, GridCell } from '../ui/Grid';
+export type { GridProps, GridCellProps, GridSpan } from '../ui/Grid';
+export { Skeleton, SkeletonRows, SkeletonFacts } from '../ui/Skeleton';
+export { ErrorState } from '../ui/ErrorState';
+export { Tooltip } from '../ui/Tooltip';
+export { Popover } from '../ui/Popover';
+export { useStickyValue } from '../ui/useStickyValue';
 export { CopyField } from '../ui/CopyField';
 export { StatCell } from '../ui/Stats';
 export type { StatCellProps, StatNote } from '../ui/Stats';
@@ -136,6 +143,13 @@ export interface ConfigStatus {
         detail?: string | null;
         createdAt?: number;
         completedAt?: number;
+    } | null;
+    kioskBackgroundImage?: {
+        url: string;
+        sha256: string;
+        fit?: 'fit';
+        focalX?: number;
+        focalY?: number;
     } | null;
 }
 
@@ -504,8 +518,8 @@ export interface ProgressBarProps {
 export declare function ProgressBar({ value, tone, label, size, className, style }: ProgressBarProps): import("react").JSX.Element;
 
 // ---- ui/Button ----
-export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'subtle' | 'ghost';
-export type ButtonSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl' | 'hero' | 'auth';
+export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'danger-primary' | 'subtle' | 'ghost';
+export type ButtonSize = 'sm' | 'md' | 'lg' | 'xs' | 'xl' | 'hero' | 'auth';
 interface CommonProps {
     variant?: ButtonVariant;
     size?: ButtonSize;
@@ -520,7 +534,7 @@ export type ButtonLinkProps = CommonProps & LinkProps;
 export declare function ButtonLink({ variant, size, icon, iconEnd, strong, block, className, children, ...rest }: ButtonLinkProps): import("react").JSX.Element;
 export type ButtonAnchorProps = CommonProps & AnchorHTMLAttributes<HTMLAnchorElement>;
 export declare function ButtonAnchor({ variant, size, icon, iconEnd, strong, block, className, children, ...rest }: ButtonAnchorProps): import("react").JSX.Element;
-export type IconButtonSize = 'sm' | 'md' | 'lg';
+export type IconButtonSize = 'xs' | 'sm' | 'md' | 'lg';
 export interface IconButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label'> {
     label: string;
     size?: IconButtonSize;
@@ -544,7 +558,7 @@ export interface CardProps extends HTMLAttributes<HTMLElement> {
     clip?: boolean;
     gap?: number;
 }
-export declare function Card({ as: As, padding, tone, radius, clip, gap, className, style, children, ...rest }: CardProps): import("react").JSX.Element;
+export declare function Card({ as: As, padding, tone, radius: _radius, clip, gap, className, children, ...rest }: CardProps): import("react").JSX.Element;
 export interface CardHeaderProps {
     title: ReactNode;
     titleId?: string;
@@ -557,7 +571,7 @@ export interface CardHeaderProps {
     spacing?: 0 | 6 | 8 | 10 | 12;
     className?: string;
 }
-export declare function CardHeader({ title, titleId, subtitle, actions, level, inset, size, spacing, number, className, }: CardHeaderProps): import("react").JSX.Element;
+export declare function CardHeader({ title, titleId, subtitle, actions, level, inset, size: _size, spacing, number, className, }: CardHeaderProps): import("react").JSX.Element;
 export declare function Notice({ tone, icon, children, action, className, 'aria-label': ariaLabel, }: {
     tone?: 'warn' | 'alert' | 'ok' | 'idle';
     icon: ReactNode;
@@ -591,6 +605,15 @@ export declare function EmptyState({ icon, title, children, action, bare, classN
     children?: ReactNode;
     action?: ReactNode;
     bare?: boolean;
+    className?: string;
+}): import("react").JSX.Element;
+
+// ---- ui/ErrorState ----
+export declare function ErrorState({ thing, detail, onRetry, retrying, className, }: {
+    thing: ReactNode;
+    detail?: ReactNode;
+    onRetry?: () => void;
+    retrying?: boolean;
     className?: string;
 }): import("react").JSX.Element;
 
@@ -633,6 +656,23 @@ export declare function Eyebrow({ children, help, as: As, id, className, }: {
     className?: string;
 }): import("react").JSX.Element;
 
+// ---- ui/Grid ----
+export type GridSpan = 3 | 4 | 6 | 8 | 9 | 12;
+export interface GridProps extends HTMLAttributes<HTMLElement> {
+    dense?: boolean;
+    stretch?: boolean;
+    as?: 'div' | 'section' | 'ul';
+    children: ReactNode;
+}
+export declare function Grid({ dense, stretch, as: As, className, children, ...rest }: GridProps): import("react").JSX.Element;
+export interface GridCellProps extends HTMLAttributes<HTMLElement> {
+    span?: GridSpan;
+    rows?: 1 | 2 | 3;
+    as?: 'div' | 'section' | 'li';
+    children: ReactNode;
+}
+export declare function GridCell({ span, rows, as: As, className, children, ...rest }: GridCellProps): import("react").JSX.Element;
+
 // ---- ui/Input ----
 export type InputSize = 'sm' | 'md' | 'lg';
 export type InputTone = 'default' | 'invalid' | 'warn';
@@ -648,11 +688,31 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
 }
 export declare const Textarea: import("react").ForwardRefExoticComponent<TextareaProps & import("react").RefAttributes<HTMLTextAreaElement>>;
 export type SelectSize = 'xs' | 'sm' | 'md' | 'lg';
-export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'size'> {
+export interface SelectHandle {
+    readonly value: string;
+    readonly name: string;
+    readonly disabled: boolean;
+    readonly required: boolean;
+    readonly type: string;
+    focus(options?: FocusOptions): void;
+    blur(): void;
+}
+export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, 'size' | 'value' | 'defaultValue' | 'onChange' | 'multiple' | 'onFocus' | 'onBlur' | 'onKeyDown' | 'onClick'> {
     size?: SelectSize;
     tone?: InputTone;
+    value?: string | number | readonly string[];
+    defaultValue?: string | number | readonly string[];
+    onChange?: (e: ChangeEvent<HTMLSelectElement>) => void;
+    native?: boolean;
+    multiple?: boolean;
+    onFocus?: FocusEventHandler<HTMLElement>;
+    onBlur?: FocusEventHandler<HTMLElement>;
+    onKeyDown?: KeyboardEventHandler<HTMLElement>;
+    onClick?: MouseEventHandler<HTMLElement>;
+    triggerRef?: Ref<HTMLButtonElement>;
+    inlineLabel?: string;
 }
-export declare const Select: import("react").ForwardRefExoticComponent<SelectProps & import("react").RefAttributes<HTMLSelectElement>>;
+export declare const Select: import("react").ForwardRefExoticComponent<SelectProps & import("react").RefAttributes<HTMLSelectElement | SelectHandle>>;
 export interface SearchInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'onChange' | 'size'> {
     value: string;
     onChange: (value: string) => void;
@@ -675,9 +735,10 @@ export interface KeyValueItem {
     mono?: boolean;
 }
 export type KeyValueVariant = 'rail' | 'rows' | 'facts';
-export declare function KeyValueList({ items, variant, className, }: {
+export declare function KeyValueList({ items, variant, columns, className, }: {
     items: ReadonlyArray<KeyValueItem>;
     variant?: KeyValueVariant;
+    columns?: 1 | 2;
     className?: string;
 }): import("react").JSX.Element;
 export declare function KeyValueGroup({ title, items, last, children, }: {
@@ -740,7 +801,7 @@ export interface PageHeaderProps {
     actionsGap?: 8 | 12;
     className?: string;
 }
-export declare function PageHeader({ title, subtitle, actions, titleAdornment, breadcrumb, docTitle, subtitleMaxCh, actionsGap, className, }: PageHeaderProps): import("react").JSX.Element;
+export declare function PageHeader({ title, subtitle, actions, titleAdornment, breadcrumb, docTitle, subtitleMaxCh: _subtitleMaxCh, actionsGap: _actionsGap, className, }: PageHeaderProps): import("react").JSX.Element;
 export interface Crumb {
     label: ReactNode;
     to?: string;
@@ -765,6 +826,17 @@ export interface PaginationProps {
     className?: string;
 }
 export declare function Pagination({ page, pageSize, total, onPageChange, pageSizeOptions, onPageSizeChange, suffix, variant, noun, className, }: PaginationProps): import("react").JSX.Element;
+
+// ---- ui/Popover ----
+export declare function Popover({ trigger, children, label, align, open, onOpenChange, className, }: {
+    trigger: ReactElement;
+    children: ReactNode;
+    label: string;
+    align?: 'start' | 'center' | 'end';
+    open?: boolean;
+    onOpenChange?: (open: boolean) => void;
+    className?: string;
+}): import("react").JSX.Element;
 
 // ---- ui/RelativeTime ----
 export type RelativeStyle = 'short' | 'long';
@@ -842,6 +914,23 @@ export interface TriStateProps {
 }
 export declare function TriState({ segments, ...rest }: TriStateProps): import("react").JSX.Element;
 
+// ---- ui/Skeleton ----
+export declare function Skeleton({ width, height, radius, className, }: {
+    width?: string;
+    height?: 'line' | 'title' | 'control' | 'row' | string;
+    radius?: 'sm' | 'full';
+    className?: string;
+}): import("react").JSX.Element;
+export declare function SkeletonRows({ count, compact, label }: {
+    count?: number;
+    compact?: boolean;
+    label?: string;
+}): import("react").JSX.Element;
+export declare function SkeletonFacts({ count, label }: {
+    count?: number;
+    label?: string;
+}): import("react").JSX.Element;
+
 // ---- ui/Stats ----
 export interface StatNote {
     text: ReactNode;
@@ -907,7 +996,9 @@ export interface TableProps<Row> {
     rowPad?: 10 | 12;
     selection?: {
         selected: ReadonlySet<Key>;
-        onToggle: (key: Key, row: Row) => void;
+        onToggle: (key: Key, row: Row, how?: {
+            shiftKey: boolean;
+        }) => void;
         onToggleAll: (select: boolean) => void;
         rowLabel: (row: Row) => string;
         allLabel?: string;
@@ -918,7 +1009,7 @@ export interface TableProps<Row> {
         onSort: (key: string) => void;
     };
     empty?: ReactNode;
-    onRowClick?: (row: Row) => void;
+    onRowClick?: (row: Row, event: MouseEvent<HTMLTableRowElement>) => void;
     className?: string;
 }
 export declare function Table<Row>({ columns, rows, rowKey, edge, minWidth, headless, rowPad, selection, sort, empty, onRowClick, className, ...aria }: TableProps<Row>): import("react").JSX.Element;
@@ -975,6 +1066,13 @@ export interface ToggleProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement
     stateLabels?: [on: string, off: string];
 }
 export declare const Toggle: import("react").ForwardRefExoticComponent<ToggleProps & import("react").RefAttributes<HTMLButtonElement>>;
+
+// ---- ui/Tooltip ----
+export declare function Tooltip({ content, side, children, }: {
+    content: ReactNode;
+    side?: 'top' | 'bottom' | 'left' | 'right';
+    children: ReactElement;
+}): import("react").JSX.Element;
 
 // ---- ui/icons ----
 export interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'children'> {
@@ -1040,3 +1138,6 @@ export interface ToastApi {
     push: (kind: ToastKind, title: string, body: string) => void;
 }
 export declare function useToast(): ToastApi;
+
+// ---- ui/useStickyValue ----
+export declare function useStickyValue<T>(value: T | null | undefined): T | null;

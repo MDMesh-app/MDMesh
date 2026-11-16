@@ -1,15 +1,17 @@
+/* Section side-nav pages (Settings, the configuration editor): the nav beside a column of cards; on narrow screens a
+   scrollable row under the top bar. The current item is a fill and the label's 500 ink (no outline), like the sidebar. */
 .v2 .v2-seclayout {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
-  gap: 20px 24px;
+  gap: var(--space-4) var(--space-6);
 }
 .v2 .v2-seclayout__nav {
   flex: 1 1 180px;
   min-width: 0;
   max-width: 240px;
   position: sticky;
-  top: 24px;
+  top: var(--space-6);
   align-self: flex-start;
 }
 .v2 .v2-seclayout__content {
@@ -18,10 +20,10 @@
   max-width: var(--v2-sec-max, none);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--grid-gap);
 }
 .v2 .v2-seclayout__content > [id] {
-  scroll-margin-top: 24px;
+  scroll-margin-top: var(--space-6);
 }
 /* SectionNav moves focus to the section it scrolls to; the section itself is not a control. */
 .v2 .v2-seclayout__content > [id][tabindex='-1']:focus {
@@ -31,37 +33,47 @@
 .v2 .v2-secnav {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--hairline);
 }
-.v2 .v2-secnav__item,
-.v2 .v2-secnav__item:hover {
+.v2 .v2-secnav__item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
+  gap: var(--space-2);
+  min-height: var(--nav-item);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--text-2);
-  font-weight: 400;
+  font-weight: var(--weight-regular);
+  text-decoration: none;
+  transition-property: background-color, color;
+  transition-duration: var(--dur-micro);
+  transition-timing-function: var(--ease);
+}
+/* Hover changes colour only, never layout (it outranks the global link hover). */
+.v2 .v2-secnav__item:hover {
+  background: transparent;
+  color: var(--text-2);
   text-decoration: none;
 }
-.v2 .v2-secnav__item:hover {
+.v2 .v2-secnav__item:not(.is-current):hover {
+  background: var(--hover);
   color: var(--ink);
 }
-/* The current section: white on the page is 1.1:1, so a 1px control-border ring marks it at 3:1 (1.4.11). */
+/* The current section: a fill, ink, and the medium weight (never colour alone; no outline, review C1). */
 .v2 .v2-secnav__item.is-current {
-  background: var(--surface);
-  box-shadow: inset 0 0 0 1px var(--control-border);
+  background: var(--surface-2);
   color: var(--ink);
-  font-weight: 600;
+  font-weight: var(--weight-medium);
 }
 .v2 .v2-secnav__label {
   flex: 1 1 auto;
   min-width: 0;
 }
 .v2 .v2-secnav__meta {
-  font-size: var(--fs-small);
-  font-weight: 400;
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+  font-weight: var(--weight-regular);
   color: var(--secondary);
   white-space: nowrap;
 }
@@ -81,9 +93,9 @@
     flex: 1 1 100%;
     max-width: none;
     top: 0;
-    z-index: 4;
-    margin: 0 calc(-1 * var(--page-pad));
-    padding: 8px var(--page-pad);
+    z-index: var(--z-sticky);
+    margin: 0 calc(-1 * var(--page-gutter));
+    padding: var(--space-2) var(--page-gutter);
     background: var(--app);
   }
   .v2 .v2-secnav {
@@ -91,25 +103,37 @@
     overflow-x: auto;
     scrollbar-width: none;
     /* room for the 2px + 2px focus ring inside the scroller, which would otherwise clip it */
-    padding: 4px;
-    margin: -4px;
+    padding: var(--space-1);
+    margin: calc(-1 * var(--space-1));
   }
   .v2 .v2-secnav__item {
     flex: 0 0 auto;
     white-space: nowrap;
   }
+  .v2 .v2-secnav[data-overflow='end'] {
+    mask-image: var(--fade-end);
+  }
+  .v2 .v2-secnav[data-overflow='start'] {
+    mask-image: var(--fade-start);
+  }
+  .v2 .v2-secnav[data-overflow='both'] {
+    mask-image: var(--fade-both);
+  }
   .v2 .v2-seclayout__content > [id] {
-    scroll-margin-top: calc(var(--mobilebar-h) + 64px);
+    scroll-margin-top: calc(var(--topbar-h) + var(--space-12) + var(--space-4));
   }
 }
 @media (max-width: 860px) {
   .v2 .v2-seclayout__nav {
-    top: var(--mobilebar-h);
+    top: var(--topbar-h);
+  }
+  .v2 .v2-secnav__item {
+    min-height: var(--touch);
   }
 }
 @media (forced-colors: active) {
   .v2 .v2-secnav__item.is-current {
-    outline: 2px solid Highlight;
-    outline-offset: -2px;
+    outline: var(--indicator) solid Highlight;
+    outline-offset: calc(var(--indicator) * -1);
   }
 }

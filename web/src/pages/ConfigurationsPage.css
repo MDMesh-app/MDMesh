@@ -1,27 +1,32 @@
-/* Configurations list. */
+/* Configurations: toolbar, then cards on the page grid (name, tags, description, main app / apps / devices, sync, actions). */
 .v2 .v2-configs-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
+  gap: var(--space-2);
 }
 .v2 .v2-configs-toolbar__search {
-  flex: 1 1 240px;
-  /* board: max-width 360px on a content-box label (12px padding, 1px border each side) */
-  max-width: 386px;
+  flex: 1 1 200px;
+  max-width: 320px;
 }
 .v2 .v2-configs-toolbar__spacer {
   flex: 1 1 0;
 }
-.v2 .v2-configs-toolbar__unassigned,
-.v2 .v2-configs-toolbar__unassigned:hover {
+.v2 .v2-configs-toolbar__unassigned {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 12px;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-sm);
-  font-size: var(--fs-sm);
+  gap: var(--space-2);
+  height: var(--control-md);
+  padding: 0 var(--space-3);
+  border: var(--hairline) dashed var(--border-strong);
+  border-radius: var(--radius-control);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
+  color: var(--text-2);
+  text-decoration: none;
+}
+/* Hover changes colour only, never layout (it outranks the global link hover). */
+.v2 .v2-configs-toolbar__unassigned:hover {
   color: var(--text-2);
   text-decoration: none;
 }
@@ -31,114 +36,111 @@
 }
 .v2 .v2-configs-toolbar__ring {
   flex: 0 0 auto;
-  width: 7px;
-  height: 7px;
+  width: var(--dot);
+  height: var(--dot);
   box-sizing: border-box;
-  border-radius: 50%;
-  border: 1.5px solid var(--muted);
+  border-radius: var(--radius-full);
+  border: var(--dot-ring) solid var(--muted);
 }
 
-.v2 .v2-configs-callout {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-}
-
+/* ---- cards ---- */
 .v2 .v2-configs__grid {
-  list-style: none;
   margin: 0;
   padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
-  gap: 16px;
+  list-style: none;
 }
-
 .v2 .v2-configs-card {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-}
-.v2 .v2-configs-card__body {
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 18px 18px 14px;
+  gap: var(--space-3);
 }
 .v2 .v2-configs-card__top {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: var(--space-2);
 }
-.v2 .v2-configs-card__titles {
+.v2 .v2-configs-card__top > .v2-configs-id {
   flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.v2 .v2-configs-card__nameline {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 8px;
-}
-.v2 .v2-configs-card__name,
-.v2 .v2-configs-card__name:hover {
-  font-size: var(--fs-h2);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  color: var(--text);
-  text-decoration: none;
-  overflow-wrap: anywhere;
-}
-.v2 .v2-configs-card__name:hover {
-  text-decoration: underline;
-}
-.v2 .v2-configs-card__desc {
-  font-size: var(--fs-control);
-  color: var(--text-2);
-  overflow-wrap: anywhere;
-}
-.v2 .v2-configs-card__meta {
-  margin-top: auto;
-}
-.v2 .v2-configs-card__sync {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.v2 .v2-configs-card__synctext {
-  font-size: var(--fs-meta);
-}
-.v2 .v2-configs-card__synctext.is-ok {
-  color: var(--ok-ink);
-}
-.v2 .v2-configs-card__synctext.is-warn {
-  color: var(--warn-ink);
-}
-.v2 .v2-configs-card__synctext.is-idle {
-  color: var(--secondary);
 }
 .v2 .v2-configs-card__foot {
   display: flex;
   flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding-top: var(--space-1);
+}
+.v2 .v2-configs-card .v2-configs-id__desc {
+  /* Two lines on a card (the full text is on the configuration's page). */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  white-space: normal;
+}
+.v2 .v2-configs-id {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.v2 .v2-configs-id__line {
+  display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 18px;
-  border-top: 1px solid var(--line-soft);
+  gap: var(--space-2);
+  min-width: 0;
 }
-/* board: Edit / View are 7×13, 13/500 */
-.v2 .v2-configs-card__open {
-  padding-inline: 13px;
+.v2 .v2-configs-id__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--weight-medium);
+  color: var(--text);
+  text-decoration: none;
 }
-.v2 .v2-configs-card__footnote {
-  flex: 1 1 auto;
-  text-align: right;
-  font-size: var(--fs-meta);
+/* Hover changes colour only, never layout (it outranks the global link hover). */
+.v2 .v2-configs-id__name:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+.v2 .v2-configs-id__name:hover {
+  text-decoration: underline;
+}
+.v2 .v2-configs-id__line .v2-badge {
+  flex: none;
+}
+.v2 .v2-configs-id__desc,
+.v2 .v2-configs-main {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v2 .v2-configs-id__desc {
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
 }
+.v2 .v2-configs-main {
+  color: var(--text-2);
+}
+.v2 .v2-configs-sync {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.v2 .v2-configs-sync__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+}
+.v2 .v2-configs-sync__text.is-ok {
+  color: var(--ok-ink);
+}
+.v2 .v2-configs-sync__text.is-warn {
+  color: var(--warn-ink);
+}
+.v2 .v2-configs-sync__text.is-idle {
+  color: var(--secondary);
+}
+

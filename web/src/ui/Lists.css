@@ -1,53 +1,68 @@
+/* Lists inside cards: attention rows (44px), the activity feed and recent commands (40px). Hairline rules, card
+   padding at the edges, one line per row. */
+
 /* ---- attention rows ---- */
 .v2 .v2-attn {
   width: 100%;
-  min-width: 600px;
+  min-width: 560px;
   border-collapse: collapse;
 }
 .v2 .v2-attn tr {
-  border-top: 1px solid var(--line-soft);
+  height: var(--row);
+  border-top: var(--hairline) solid var(--line-soft);
 }
 .v2 .v2-attn td {
-  padding: 12px 8px;
+  padding: var(--space-1) var(--space-2);
   vertical-align: middle;
 }
 .v2 .v2-attn .v2-attn__device {
-  padding-left: 24px;
+  max-width: 0;
+  width: 40%;
+  padding-left: var(--card-pad);
+}
+.v2 .v2-attn__reason .v2-stext {
+  max-width: 100%;
 }
 .v2 .v2-attn__when {
   width: 1%;
-  font-size: var(--fs-sm);
   color: var(--secondary);
   text-align: right;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .v2 .v2-attn .v2-attn__action {
   width: 1%;
-  padding-right: 24px;
+  padding-right: var(--card-pad);
   text-align: right;
+  white-space: nowrap;
 }
 
 /* ---- activity feed ---- */
 .v2 .v2-activity {
   list-style: none;
   margin: 0;
-  padding: 0 0 6px;
+  padding: 0;
 }
 .v2 .v2-activity__row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 24px;
-  border-top: 1px solid var(--line-soft);
+  gap: var(--space-3);
+  min-height: var(--row-compact);
+  padding: var(--space-2) var(--card-pad);
+  border-top: var(--hairline) solid var(--line-soft);
 }
 .v2 .v2-activity__icon {
   flex: 0 0 auto;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-tile);
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: var(--control-xs);
+  height: var(--control-xs);
+  border-radius: var(--radius-chip);
+}
+.v2 .v2-activity__icon > svg {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 .v2 .v2-activity__icon.is-ok {
   background: var(--ok-soft);
@@ -68,10 +83,19 @@
 .v2 .v2-activity__text {
   flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .v2 .v2-activity__who {
-  font-weight: 600;
+  font-weight: var(--weight-medium);
+  color: var(--text);
   text-decoration: none;
+}
+/* A device link names it by its number (mono: an identifier people copy); an event's name stays in the UI face. */
+.v2 a.v2-activity__who {
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
 }
 .v2 a.v2-activity__who:hover {
   text-decoration: underline;
@@ -80,37 +104,36 @@
   color: var(--text-2);
 }
 .v2 .v2-activity__detail {
-  font-size: var(--fs-sm);
   color: var(--secondary);
 }
 .v2 .v2-activity__when {
   flex: 0 0 auto;
-  font-size: var(--fs-sm);
   color: var(--secondary);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---- recent commands ---- */
 .v2 .v2-cmds {
   width: 100%;
-  min-width: 560px;
+  min-width: 520px;
   border-collapse: collapse;
 }
 .v2 .v2-cmds tr {
-  border-top: 1px solid var(--line-soft);
+  height: var(--row-compact);
+  border-top: var(--hairline) solid var(--line-soft);
 }
 .v2 .v2-cmds td {
-  padding: 10px 8px;
+  padding: var(--space-1) var(--space-2);
   vertical-align: middle;
 }
 .v2 .v2-cmds .v2-cmds__label {
-  padding-left: 24px;
+  padding-left: var(--card-pad);
 }
 .v2 .v2-cmds__name {
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 .v2 .v2-cmds__detail {
-  font-size: var(--fs-sm);
   color: var(--secondary);
 }
 .v2 .v2-cmds__status {
@@ -118,9 +141,9 @@
 }
 .v2 .v2-cmds .v2-cmds__when {
   width: 1%;
-  padding-right: 24px;
-  font-size: var(--fs-sm);
+  padding-right: var(--card-pad);
   color: var(--secondary);
   text-align: right;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }

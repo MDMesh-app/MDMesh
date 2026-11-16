@@ -90,6 +90,63 @@ export async function getServerBaseUrl(): Promise<string | null> {
   return u ?? null;
 }
 
+/** A kiosk background image as devices get it once a configuration is saved with it (KioskBackgroundImageInfo). */
+export interface KioskBackgroundImageInfo {
+  fileId: number;
+  /** Where devices download it (from the server's current base URL). */
+  url: string;
+  /** The file name, without the `kiosk-<hex>-` prefix it is hosted under. */
+  name: string;
+  format: 'PNG' | 'JPEG' | 'WebP';
+  /** As displayed (after the EXIF orientation). */
+  width: number;
+  height: number;
+  orientation: number;
+  /** Bytes, without metadata. */
+  size: number;
+  sha256: string;
+  uploadTime?: number | null;
+  /** The uploaded file still carries metadata (location, camera), which saving removes. */
+  hasMetadata?: boolean;
+  /**
+   * Another account's file that this configuration uses (one copied from the main account's template): devices get it
+   * as it is hosted there. Absent for the account's own files.
+   */
+  fromAnotherAccount?: boolean;
+}
+
+/** Describes an uploaded background image file; refused (ApiError with a readable message) as a save would. */
+export async function getKioskBackgroundImage(fileId: number): Promise<KioskBackgroundImageInfo> {
+  return apiClient.get<KioskBackgroundImageInfo>(`/private/configurations/backgroundImage/${fileId}`);
+}
+
+/** A gallery entry: one per image content, the file to use, and the configurations using it. */
+export interface KioskGalleryItem extends KioskBackgroundImageInfo {
+  /** Every uploaded file with these bytes. */
+  fileIds: number[];
+  /** The configurations using it that this user may see. */
+  usedBy: { id: number; name: string }[];
+  /** All configurations using it. */
+  usedByCount: number;
+}
+
+export interface KioskGalleryPage {
+  items: KioskGalleryItem[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+/** The customer's kiosk background images, newest first. */
+export async function listKioskBackgroundImages(page = 0, size = 20): Promise<KioskGalleryPage> {
+  return apiClient.get<KioskGalleryPage>(`/private/configurations/backgroundImages?page=${page}&size=${size}`);
+}
+
+/** Deletes an uploaded kiosk image nothing uses; refused (ApiError with a readable message) otherwise. */
+export async function deleteKioskBackgroundImage(fileId: number): Promise<void> {
+  await apiClient.post<void>(`/private/configurations/backgroundImages/${fileId}/delete`);
+}
+
 /** One full configuration: every column plus its files, app settings and usage parameters (not its apps). */
 export async function getConfiguration(id: number): Promise<Configuration> {
   return apiClient.get<Configuration>(`/private/configurations/${id}`);

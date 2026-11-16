@@ -29,8 +29,11 @@ import { useContributions } from '../useContributions';
 
 type Entry = SlotEntry<ConfigSectionContribution<unknown>>;
 
-/** A core section's nav meta ("2 changed", "Default PIN"), which the editor works out from its own data. */
-export type ConfigSectionMeta = Pick<SectionNavItem, 'meta' | 'metaTone'>;
+/**
+ * A core section's nav meta ("2 changed", "Default PIN"), which the editor works out from its own data, and the nav
+ * label when it differs from the contribution's title.
+ */
+export type ConfigSectionMeta = Pick<SectionNavItem, 'meta' | 'metaTone'> & { label?: string };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
@@ -239,7 +242,10 @@ export function useConfigSections({
   const nav = entries.map((entry): SectionNavItem => {
     const anchor = sectionAnchor(entry.extension, entry.contribution.id);
     const state = stateOf(entry);
-    if (!state) return { id: anchor, label: entry.contribution.title, ...coreMeta[entry.contribution.id] };
+    if (!state) {
+      const { label, ...meta } = coreMeta[entry.contribution.id] ?? {};
+      return { id: anchor, label: label ?? entry.contribution.title, ...meta };
+    }
     const shown = errors[state.namespace]?.length ?? 0;
     const count = readOnly ? 0 : state.count;
     return {

@@ -8,6 +8,18 @@ export interface ConfigStatus {
   inSync: boolean;
   supported: boolean;
   lastCommand?: { id: number; status: string; detail?: string | null; createdAt?: number; completedAt?: number } | null;
+  /**
+   * The kiosk background image the device's configuration specifies (absent without one, and on older servers). Not
+   * what the device shows: agents don't report that yet.
+   */
+  kioskBackgroundImage?: {
+    url: string;
+    sha256: string;
+    /** As config.apply 1.10 sends them: only when not the default (fill, centre). */
+    fit?: 'fit';
+    focalX?: number;
+    focalY?: number;
+  } | null;
 }
 
 export interface ConfigSyncSummary {

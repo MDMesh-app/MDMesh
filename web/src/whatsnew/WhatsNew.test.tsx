@@ -137,7 +137,7 @@ describe('What’s new: when it opens by itself', () => {
     });
     expect(await screen.findByRole('button', { name: 'Sign in' })).toBeTruthy();
     expect(localStorage.getItem(seenKey('0.4.0'))).toBeNull();
-    fireEvent.change(screen.getByLabelText('Login'), { target: { value: 'admin' } });
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'admin' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'pw' } });
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     expect(await screen.findByRole('dialog', { name: 'What’s new in 0.4.0' })).toBeTruthy();
@@ -174,7 +174,7 @@ describe('What’s new: when it opens by itself', () => {
     expect(localStorage.getItem(seenKey('0.4.0'))).toBeNull();
 
     expired = false;
-    fireEvent.change(screen.getByLabelText('Login'), { target: { value: 'admin' } });
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'admin' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'pw' } });
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     expect(await screen.findByRole('dialog', { name: 'What’s new in 0.4.0' })).toBeTruthy();

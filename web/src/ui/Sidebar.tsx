@@ -1,4 +1,4 @@
-import { createElement } from 'react';
+import { createElement, useState } from 'react';
 import { Link, NavLink } from 'react-router';
 import { useAuth } from '../auth/AuthContext';
 import { useMayManageDeployment } from '../auth/useMayManageDeployment';
@@ -8,13 +8,15 @@ import { useSupervisor } from '../data/useSupervisor';
 import { applyPhaseLabel } from '../data/updateStatus';
 import { ExtensionBoundary } from '../ext/ExtensionBoundary';
 import { useContributions } from '../ext/useContributions';
-import { paths } from '../routes';
-import { IconButton } from './Button';
-import { IconMoon, IconSignOut, IconSun } from './icons';
+import { paths, UPDATES_HREF } from '../routes';
+import * as DM from '@radix-ui/react-dropdown-menu';
+import { usePrefetchRoute } from '../ext/usePrefetchRoute';
+import { IconChevronDown, IconMoon, IconSignOut, IconSun } from './icons';
 import { cx } from './cx';
+import './Menu.css';
 import './Sidebar.css';
 
-/** MDMesh wordmark: ink square + "MDM" 700 + "esh" 500 secondary (at 17px, auth cards at 18px). */
+/** MDMesh wordmark: ink square + "MDM" 600 + "esh" 400 secondary, at the card-title size. */
 export function Wordmark({ size = 17, className }: { size?: 17 | 18; className?: string }) {
   return (
     <span className={cx('v2-wordmark', size === 18 && 'v2-wordmark--18', className)} role="img" aria-label="MDMesh">
@@ -26,25 +28,28 @@ export function Wordmark({ size = 17, className }: { size?: 17 | 18; className?:
   );
 }
 
-/** The sidebar's server-update card. Hidden when there is nothing to say. */
+/**
+ * The sidebar's server-update card, above the account row: a status dot and "Server update 0.1.15", one short line,
+ * and the action. The Overview's Server card says the same in the same words; both lead to Settings → Updates.
+ * Hidden when there is nothing to say.
+ */
 function UpdateCard({ status, onNavigate }: { status: UpdateStatus | null; onNavigate?: () => void }) {
-  // v0.3.8: only the admin who runs the install may update; anyone else is told so instead of how long it takes.
+  // Only the admin who runs the install may update; anyone else is told so instead of how long it takes.
   const canUpdate = useMayManageDeployment();
   if (!status) return null;
   const apply = status.apply;
   const active = !!apply && !isApplyTerminal(apply.phase);
   const failed = !!apply && (apply.phase === 'failed' || apply.phase === 'rolled_back');
-  const updatesHref = `${paths.settings}#updates`;
 
   if (active && apply) {
     return (
-      <Link to={updatesHref} className="v2-updcard" onClick={onNavigate}>
+      <Link to={UPDATES_HREF} className="v2-updcard" onClick={onNavigate}>
         <span className="v2-updcard__title">
           <span className="v2-updcard__dot is-warn" aria-hidden="true" />
-          Updating to <span className="v2-mono">{apply.toVersion}</span>
+          Updating to {apply.toVersion}
         </span>
         <span className="v2-updcard__text">{applyPhaseLabel(apply.phase)}</span>
-        <span className="v2-updcard__link">View progress</span>
+        <span className="v2-updcard__action">View progress</span>
       </Link>
     );
   }
@@ -56,7 +61,7 @@ function UpdateCard({ status, onNavigate }: { status: UpdateStatus | null; onNav
           {apply.phase === 'rolled_back' ? 'Update rolled back' : 'Update failed'}
         </span>
         {apply.error ? <span className="v2-updcard__text">{apply.error}</span> : null}
-        <span className="v2-updcard__link">Open recovery</span>
+        <span className="v2-updcard__action">Open recovery</span>
       </a>
     );
   }
@@ -65,10 +70,10 @@ function UpdateCard({ status, onNavigate }: { status: UpdateStatus | null; onNav
     status.applySupported === false
       ? 'Update from the server shell.'
       : canUpdate
-        ? 'About 2 minutes.'
-        : 'An admin who runs this install can apply it.';
+        ? 'About 2 minutes to apply.'
+        : 'An admin can apply it.';
   return (
-    <Link to={updatesHref} className="v2-updcard" onClick={onNavigate}>
+    <Link to={UPDATES_HREF} className="v2-updcard" onClick={onNavigate}>
       <span className="v2-updcard__title">
         <span className={cx('v2-updcard__dot', status.verified ? 'is-ok' : 'is-warn')} aria-hidden="true" />
         Server update {status.latest}
@@ -76,8 +81,54 @@ function UpdateCard({ status, onNavigate }: { status: UpdateStatus | null; onNav
       <span className="v2-updcard__text">
         {status.verified ? 'Verified release.' : 'Signature not verified.'} {how}
       </span>
-      <span className="v2-updcard__link">Review update</span>
+      <span className="v2-updcard__action">Review update</span>
     </Link>
+  );
+}
+
+/** The signed-in user's row: their login, and a menu with the theme switch and Sign out. */
+function AccountMenu() {
+  const { user, signOut } = useAuth();
+  const { theme, toggleTheme } = useTheme();
+  const nextTheme = theme === 'dark' ? 'light' : 'dark';
+  const name = user?.login || user?.name || '—';
+  const [open, setOpen] = useState(false);
+  return (
+    <DM.Root modal={false} open={open} onOpenChange={setOpen}>
+      <DM.Trigger
+        className="v2-account"
+        onClick={(e) => {
+          // A click with no pointer behind it (a screen reader's activation) toggles, as on Menu.
+          if (e.detail === 0) setOpen((o) => !o);
+        }}
+      >
+        <span className="v2-account__avatar" aria-hidden="true">
+          {name.slice(0, 1).toUpperCase()}
+        </span>
+        <span className="v2-account__name">
+          <span className="v2-visually-hidden">Account: </span>
+          {name}
+        </span>
+        <IconChevronDown />
+      </DM.Trigger>
+      <DM.Portal>
+        <DM.Content className="v2-menu__popup" side="top" align="start" sideOffset={4} collisionPadding={8} loop>
+          <DM.Item className="v2-menu__item" onSelect={toggleTheme}>
+            <span className="v2-menu__icon" aria-hidden="true">
+              {theme === 'dark' ? <IconSun /> : <IconMoon />}
+            </span>
+            Switch to {nextTheme} mode
+          </DM.Item>
+          <DM.Separator className="v2-menu__sep" />
+          <DM.Item className="v2-menu__item" onSelect={() => void signOut()}>
+            <span className="v2-menu__icon" aria-hidden="true">
+              <IconSignOut />
+            </span>
+            Sign out
+          </DM.Item>
+        </DM.Content>
+      </DM.Portal>
+    </DM.Root>
   );
 }
 
@@ -89,19 +140,18 @@ export interface SidebarProps {
 }
 
 /**
- * Left column of every board: wordmark, main nav, update card, signed-in user with theme and sign-out.
+ * The left column: wordmark, main nav (--nav-item rows; hovering or focusing one starts loading its page), the
+ * server-update card when there is one, and the account row (theme and sign out in its menu).
  * The nav is the registry's `nav.item` slot (core's items are ext/core/nav.ts), filtered by the user's role.
  */
 export function Sidebar({ onNavigate, id, className }: SidebarProps) {
-  const { user, signOut } = useAuth();
-  const { theme, toggleTheme } = useTheme();
   const navItems = useContributions('nav.item');
+  const prefetch = usePrefetchRoute();
   // The shell's shared status (at the fastest cadence any mounted consumer asks for: 30 min for the sidebar alone,
   // every minute in a versioned build because of ReloadPrompt, fast while an apply runs); hidden while the
   // supervisor is unreachable.
   const supervisor = useSupervisor();
   const update = supervisor.reachable ? supervisor.status : null;
-  const nextTheme = theme === 'dark' ? 'light' : 'dark';
 
   return (
     <nav id={id} aria-label="Main" className={cx('v2-sidebar', className)}>
@@ -118,6 +168,8 @@ export function Sidebar({ onNavigate, id, className }: SidebarProps) {
               end={to === paths.overview}
               className={({ isActive }) => cx('v2-navitem', isActive && 'is-active')}
               onClick={onNavigate}
+              onPointerEnter={() => prefetch(to)}
+              onFocus={() => prefetch(to)}
             >
               <ExtensionBoundary entry={entry} fallback="none">
                 {createElement(icon)}
@@ -138,17 +190,7 @@ export function Sidebar({ onNavigate, id, className }: SidebarProps) {
       </div>
       <div className="v2-sidebar__foot">
         <UpdateCard status={update} onNavigate={onNavigate} />
-        <div className="v2-sidebar__user">
-          <span className="v2-sidebar__login" title={user?.login || user?.name || undefined}>
-            {user?.login || user?.name || '—'}
-          </span>
-          <IconButton size="lg" label={`Switch to ${nextTheme} mode`} onClick={toggleTheme}>
-            {theme === 'dark' ? <IconSun /> : <IconMoon />}
-          </IconButton>
-          <IconButton size="lg" label="Sign out" onClick={() => void signOut()}>
-            <IconSignOut />
-          </IconButton>
-        </div>
+        <AccountMenu />
       </div>
     </nav>
   );

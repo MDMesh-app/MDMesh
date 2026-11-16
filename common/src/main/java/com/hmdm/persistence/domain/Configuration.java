@@ -218,6 +218,12 @@ public class Configuration implements CustomerData, Serializable {
     private Integer backgroundImageFileId;
     @ApiModelProperty(hidden = true)
     private String backgroundImageSha256;
+    @ApiModelProperty("How the kiosk background image fills the screen: fill (cropped, the default; null) or fit (whole, letterboxed)")
+    private String backgroundImageFit;
+    @ApiModelProperty("Focal point of the kiosk background image, 0..1 across the image (null: the centre, 0.5); fill only")
+    private Double backgroundImageFocalX;
+    @ApiModelProperty("Focal point of the kiosk background image, 0..1 down the image (null: the centre, 0.5); fill only")
+    private Double backgroundImageFocalY;
     /**
      * Console-only instruction for saving a managed kiosk background image. This is deliberately not persisted:
      * omitted means keep the stored image, while replace and remove are explicit user actions.
@@ -361,6 +367,30 @@ public class Configuration implements CustomerData, Serializable {
 
     public void setBackgroundImageFileId(Integer backgroundImageFileId) {
         this.backgroundImageFileId = backgroundImageFileId;
+    }
+
+    public String getBackgroundImageFit() {
+        return backgroundImageFit;
+    }
+
+    public void setBackgroundImageFit(String backgroundImageFit) {
+        this.backgroundImageFit = backgroundImageFit;
+    }
+
+    public Double getBackgroundImageFocalX() {
+        return backgroundImageFocalX;
+    }
+
+    public void setBackgroundImageFocalX(Double backgroundImageFocalX) {
+        this.backgroundImageFocalX = backgroundImageFocalX;
+    }
+
+    public Double getBackgroundImageFocalY() {
+        return backgroundImageFocalY;
+    }
+
+    public void setBackgroundImageFocalY(Double backgroundImageFocalY) {
+        this.backgroundImageFocalY = backgroundImageFocalY;
     }
 
     public String getBackgroundImageSha256() {
@@ -1105,6 +1135,9 @@ public class Configuration implements CustomerData, Serializable {
         copy.setBackgroundImageUrl(getBackgroundImageUrl());
         copy.setBackgroundImageFileId(getBackgroundImageFileId());
         copy.setBackgroundImageSha256(getBackgroundImageSha256());
+        copy.setBackgroundImageFit(getBackgroundImageFit());
+        copy.setBackgroundImageFocalX(getBackgroundImageFocalX());
+        copy.setBackgroundImageFocalY(getBackgroundImageFocalY());
         copy.setIconSize(getIconSize());
         copy.setDesktopHeader(getDesktopHeader());
         copy.setDesktopHeaderTemplate(getDesktopHeaderTemplate());

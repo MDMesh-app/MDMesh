@@ -1,0 +1,66 @@
+/* The page grid: 12 columns, equal gutters, spans that answer to the grid's own width. Cards are as tall as their
+   content; `--stretch` stretches them to their row (comparable content only, or a short card is dead space). */
+.v2 .v2-grid {
+  container: v2-grid / inline-size;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--grid-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.v2 .v2-grid--dense {
+  grid-auto-flow: row dense;
+}
+.v2 .v2-grid__cell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  grid-column: span 12;
+}
+.v2 .v2-grid--stretch {
+  align-items: stretch;
+}
+/* Stretched: the card (or any single child) fills its cell, so cells in a row end on one line. */
+.v2 .v2-grid--stretch > .v2-grid__cell > * {
+  flex: 1 1 auto;
+}
+.v2 .v2-grid__cell[data-span='3'] {
+  grid-column: span 3;
+}
+.v2 .v2-grid__cell[data-span='4'] {
+  grid-column: span 4;
+}
+.v2 .v2-grid__cell[data-span='6'] {
+  grid-column: span 6;
+}
+.v2 .v2-grid__cell[data-span='8'] {
+  grid-column: span 8;
+}
+.v2 .v2-grid__cell[data-span='9'] {
+  grid-column: span 9;
+}
+.v2 .v2-grid__cell[data-rows='2'] {
+  grid-row: span 2;
+}
+.v2 .v2-grid__cell[data-rows='3'] {
+  grid-row: span 3;
+}
+
+@container v2-grid (max-width: 959px) {
+  .v2 .v2-grid__cell[data-span='3'] {
+    grid-column: span 6;
+  }
+  .v2 .v2-grid__cell:is([data-span='4'], [data-span='8'], [data-span='9']) {
+    grid-column: span 12;
+  }
+}
+@container v2-grid (max-width: 639px) {
+  .v2 .v2-grid__cell[data-span] {
+    grid-column: span 12;
+  }
+  .v2 .v2-grid__cell[data-rows] {
+    grid-row: auto;
+  }
+}

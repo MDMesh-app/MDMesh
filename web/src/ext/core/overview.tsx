@@ -49,9 +49,3 @@ export const CORE_OVERVIEW_CARDS: readonly OverviewCardContribution[] = [
   card('recent-activity', 'recentActivity', 'main'),
   card('server', 'server', 'aside'),
 ];
-
-/**
- * The aside column's class when it holds this core card, where it is not the default `v2-ov-side`: By
- * configuration's column is the padded card's width in the design, wider than the Server column (OverviewPage.css).
- */
-export const CORE_OVERVIEW_COLUMN: Readonly<Record<string, string>> = { 'by-configuration': 'v2-ov-aside' };

@@ -1,65 +1,88 @@
+/* Switch: a 28x16 track with a 12px knob that slides; off keeps a 3:1 ring (1.4.11). */
 .v2 .v2-toggle {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  gap: 10px;
-  padding: 4px 0;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
   border: 0;
   background: none;
   color: var(--text-2);
-  font-size: var(--fs-sm);
-  line-height: var(--lh-body);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
   cursor: pointer;
 }
+/* Bare (no label): the 24px row stays the target (2.5.8). */
 .v2 .v2-toggle--bare {
+  min-height: var(--control-xs);
   padding: 0;
-  border-radius: 11px;
+  border-radius: var(--radius-full);
 }
 .v2 .v2-toggle__track {
   display: flex;
+  flex: 0 0 auto;
   justify-content: flex-start;
-  width: 40px;
-  height: 22px;
+  align-items: center;
+  width: var(--control-sm);
+  height: var(--icon-md);
   box-sizing: border-box;
-  padding: 3px;
-  border-radius: 11px;
+  padding: var(--indicator);
+  border-radius: var(--radius-full);
   background: var(--switch-off);
-  box-shadow: inset 0 0 0 1px var(--switch-off-ring);
-  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+  outline: var(--hairline) solid var(--switch-off-ring);
+  outline-offset: calc(var(--hairline) * -1);
+  transition-property: background-color;
+  transition-duration: var(--dur-micro);
+  transition-timing-function: var(--ease);
 }
 .v2 .v2-toggle__knob {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
+  width: var(--space-3);
+  height: var(--space-3);
+  border-radius: var(--radius-full);
   background: var(--switch-off-knob);
-  box-shadow: var(--shadow-knob);
+  box-shadow: var(--elev-1);
   transform: translateX(0);
-  transition: transform 0.15s ease, background-color 0.15s ease;
+  transition-property: transform;
+  transition-duration: var(--dur-micro);
+  transition-timing-function: var(--ease);
 }
 .v2 .v2-toggle.is-on .v2-toggle__track {
   background: var(--switch-on);
-  box-shadow: none;
+  outline: none;
 }
+/* Travel: track width - 2 x padding - knob = 12px. */
 .v2 .v2-toggle.is-on .v2-toggle__knob {
   background: var(--switch-on-knob);
-  transform: translateX(18px);
+  transform: translateX(var(--space-3));
 }
-.v2 .v2-toggle:disabled {
+.v2 .v2-toggle:disabled,
+.v2 .v2-toggle[aria-disabled='true'] {
   cursor: default;
   color: var(--faint);
 }
-.v2 .v2-toggle:disabled .v2-toggle__track {
-  opacity: 0.5;
+.v2 .v2-toggle:disabled .v2-toggle__track,
+.v2 .v2-toggle[aria-disabled='true'] .v2-toggle__track {
+  opacity: var(--disabled-opacity);
 }
 
+/* Phones: the switch's row is a 44px target. */
+@media (max-width: 860px) {
+  .v2 .v2-toggle {
+    min-width: var(--touch);
+    min-height: var(--touch);
+  }
+}
+
+/* Forced colours: a ButtonText outline in both states (not a border, so the knob's travel stays the same). */
 @media (forced-colors: active) {
   .v2 .v2-toggle__track {
-    border: 1px solid ButtonText;
+    outline: var(--hairline) solid ButtonText;
   }
   .v2 .v2-toggle__knob {
     background: ButtonText;
   }
   .v2 .v2-toggle.is-on .v2-toggle__track {
+    outline: var(--hairline) solid ButtonText;
     background: Highlight;
   }
 }

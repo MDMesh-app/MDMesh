@@ -369,9 +369,16 @@ To go back to it, stop the server, restore, then build the release the dump was 
 
 ```bash
 docker compose stop server
-docker compose exec -T postgres pg_restore -U mdmesh -d mdmesh -c --if-exists < mdmesh-pre-upgrade.dump
+{ docker compose exec -T postgres pg_restore -f - < mdmesh-pre-upgrade.dump && printf 'COMMIT;\n\\echo Restored.\n'; } \
+  | docker compose exec -T postgres psql -X -q -v ON_ERROR_STOP=1 -o /dev/null -U mdmesh -d mdmesh -c BEGIN \
+      -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO PUBLIC" -f -
 git checkout vX.Y.Z && ./setup.sh      # the release you upgraded from
 ```
+
+The restore empties the database and loads the dump in one transaction, and prints `Restored.` when it committed.
+Anything else (an error, or no `Restored.`) means nothing changed: the database is as it was. Don't use
+`pg_restore -c` instead: it drops only what the dump has, so a table the upgrade added that refers to one of those
+(0.5.0 adds one) makes it fail, and without a transaction it stops halfway.
 
 With a registry `IMAGE_OWNER`, add `--allow-downgrade` to that `./setup.sh`.
 
@@ -380,11 +387,17 @@ With a registry `IMAGE_OWNER`, add `--allow-downgrade` to that `./setup.sh`.
 dump, so a tampered database could gain superuser rights. With the install present, as root:
 
 ```bash
-PGPASSWORD="$(setpriv --reuid=mdmesh --regid=mdmesh --init-groups \
-  sed -n 's/.*name="JDBC.password" value="\([^"]*\)".*/\1/p' \
-  /opt/mdmesh-tc/conf/Catalina/localhost/ROOT.xml | head -n1)" \
-  pg_restore -h 127.0.0.1 -p 5432 -U mdmesh -d mdmesh -c --if-exists <dump-file>
+systemctl stop mdmesh-server
+{ pg_restore -f - <dump-file> && printf 'COMMIT;\n\\echo Restored.\n'; } \
+  | PGPASSWORD="$(setpriv --reuid=mdmesh --regid=mdmesh --init-groups \
+      sed -n 's/.*name="JDBC.password" value="\([^"]*\)".*/\1/p' \
+      /opt/mdmesh-tc/conf/Catalina/localhost/ROOT.xml | head -n1)" \
+    psql -h 127.0.0.1 -p 5432 -U mdmesh -d mdmesh -X -q -v ON_ERROR_STOP=1 -o /dev/null -c BEGIN \
+      -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public AUTHORIZATION pg_database_owner; GRANT USAGE ON SCHEMA public TO PUBLIC" -f -
+systemctl start mdmesh-server
 ```
+
+As on Docker, it prints `Restored.` when it committed; anything else means nothing changed.
 
 The installer and uninstaller print this command next to each dump they write. To restore an uninstall dump, install
 again first.

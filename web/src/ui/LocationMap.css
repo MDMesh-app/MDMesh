@@ -1,8 +1,112 @@
-/* Location breadcrumb map (LocationMap.tsx). z-index 0 keeps Leaflet's panes under the sticky page chrome. */
+/* Location breadcrumb map (LocationMap.tsx). z-index 0 keeps Leaflet's panes under the sticky page chrome. Leaflet's
+   own chrome (zoom buttons, attribution, popups) is redrawn on the console's tokens. The OpenStreetMap tiles keep their
+   colours (the owner's call): only the dark theme dims them a little so the map doesn't glare. The element is Leaflet's
+   container itself (.leaflet-container). */
 .v2 .v2-locmap {
   height: clamp(280px, 50vh, 460px);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-control);
   overflow: hidden;
   z-index: 0;
+  background: var(--surface-2);
+  font-family: var(--font-sans);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+}
+
+/* Dark theme: the coloured tiles, gently dimmed. */
+[data-theme='dark'] .v2 .v2-locmap .leaflet-tile-pane,
+.v2[data-theme='dark'] .v2-locmap .leaflet-tile-pane {
+  filter: brightness(0.82);
+}
+
+/* Zoom: two stacked icon buttons on a raised surface (the console's icon-button size and hover). */
+.v2 .v2-locmap .leaflet-top .leaflet-control,
+.v2 .v2-locmap .leaflet-left .leaflet-control {
+  margin-top: var(--space-3);
+  margin-left: var(--space-3);
+}
+.v2 .v2-locmap .leaflet-bar {
+  border: var(--hairline) solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  box-shadow: var(--elev-1);
+}
+.v2 .v2-locmap .leaflet-bar a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-sm);
+  height: var(--control-sm);
+  border-bottom: var(--hairline) solid var(--border);
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--text-2);
+  font-family: var(--font-sans);
+  font-size: var(--text-title);
+  line-height: var(--lh-title);
+  font-weight: var(--weight-regular);
+  text-indent: 0;
+  transition: background-color var(--dur-micro) var(--ease);
+}
+.v2 .v2-locmap .leaflet-bar a:first-child {
+  border-top-left-radius: var(--radius-control);
+  border-top-right-radius: var(--radius-control);
+}
+.v2 .v2-locmap .leaflet-bar a:last-child {
+  border-bottom: 0;
+  border-bottom-left-radius: var(--radius-control);
+  border-bottom-right-radius: var(--radius-control);
+}
+@media (max-width: 860px) {
+  .v2 .v2-locmap .leaflet-bar a {
+    width: var(--touch);
+    height: var(--touch);
+    line-height: var(--touch);
+  }
+}
+.v2 .v2-locmap .leaflet-bar a:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+.v2 .v2-locmap .leaflet-bar a:active {
+  background: var(--pressed);
+}
+.v2 .v2-locmap .leaflet-bar a.leaflet-disabled {
+  background: var(--surface);
+  color: var(--faint);
+}
+
+/* Attribution: kept (OpenStreetMap's licence asks for it), set quietly. */
+.v2 .v2-locmap .leaflet-control-attribution {
+  padding: 0 var(--space-1);
+  border-top-left-radius: var(--radius-chip);
+  background: var(--surface);
+  color: var(--secondary);
+  font-size: var(--text-caps);
+  line-height: var(--lh-caps);
+}
+.v2 .v2-locmap .leaflet-control-attribution a {
+  color: var(--text-2);
+  text-decoration: underline; /* a link inside text: not by colour alone (1.4.1) */
+}
+
+/* A fix's popup: a small popover. */
+.v2 .v2-locmap .leaflet-popup-content-wrapper {
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--elev-2);
+}
+.v2 .v2-locmap .leaflet-popup-content {
+  margin: var(--space-2) var(--space-6) var(--space-2) var(--space-3); /* room for the close button */
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+}
+.v2 .v2-locmap .leaflet-popup-tip {
+  background: var(--surface);
+  box-shadow: none;
+}
+.v2 .v2-locmap a.leaflet-popup-close-button {
+  color: var(--secondary);
 }

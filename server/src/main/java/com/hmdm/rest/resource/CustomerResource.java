@@ -77,13 +77,26 @@ public class CustomerResource {
     /**
      * <p>Constructs new <code>CustomerResource</code> instance. This implementation does nothing.</p>
      */
+    /**
+     * @param kioskImages the kiosk background images: held while configurations that use them are copied into a new
+     *                    account
+     */
     @Inject
-    public CustomerResource(CustomerDAO customerDAO, UnsecureDAO unsecureDAO, UserDAO userDAO, MailchimpService mailchimpService) {
+    public CustomerResource(CustomerDAO customerDAO, UnsecureDAO unsecureDAO, UserDAO userDAO, MailchimpService mailchimpService,
+                            com.hmdm.rest.resource.support.KioskBackgroundImageAssets kioskImages) {
         this.customerDAO = customerDAO;
         this.unsecureDAO = unsecureDAO;
         this.userDAO = userDAO;
         this.mailchimpService = mailchimpService;
+        this.kioskImages = kioskImages;
     }
+
+    /** Tests that don't involve kiosk background images. */
+    public CustomerResource(CustomerDAO customerDAO, UnsecureDAO unsecureDAO, UserDAO userDAO, MailchimpService mailchimpService) {
+        this(customerDAO, unsecureDAO, userDAO, mailchimpService, null);
+    }
+
+    private com.hmdm.rest.resource.support.KioskBackgroundImageAssets kioskImages;
 
     /**
      * Customer accounts are super-admin business. Every route starts here, before it reads or writes anything (the
@@ -188,7 +201,22 @@ public class CustomerResource {
                     log.warn("User with email {} already exists, customer {}", customer.getEmail(), dbUser.getCustomerId());
                     return Response.DUPLICATE_ENTITY("error.duplicate.email");
                 }
-                String adminCredentials = this.customerDAO.insertCustomer(customer);
+                // The kiosk background images of the configurations copied into the new account are held meanwhile.
+                List<com.hmdm.rest.resource.support.KioskBackgroundImageAssets.Applied> held = new java.util.ArrayList<>();
+                String adminCredentials;
+                try {
+                    if (kioskImages != null && customer.getConfigurationIds() != null) {
+                        for (Integer id : customer.getConfigurationIds()) {
+                            com.hmdm.persistence.domain.Configuration c = id == null ? null : unsecureDAO.getConfigurationById(id);
+                            if (c != null && c.getBackgroundImageFileId() != null) {
+                                held.add(kioskImages.holdExisting(c.getBackgroundImageFileId(), false));
+                            }
+                        }
+                    }
+                    adminCredentials = this.customerDAO.insertCustomer(customer);
+                } finally {
+                    for (com.hmdm.rest.resource.support.KioskBackgroundImageAssets.Applied h : held) h.release();
+                }
                 if (customer.getEmail() != null && !customer.getEmail().trim().equals("")) {
                     if (mailchimpService.initialize()) {
                         mailchimpService.subscribe(customer, "cloud_demo");

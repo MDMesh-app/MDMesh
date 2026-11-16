@@ -4,9 +4,9 @@
 import type { IssueKind, SyncVerdict } from '../data/fleetHealth';
 import type { StatusKind } from '../ui';
 
-/** Attention-strip filter chips: "1 config failed", "2 out of sync"… */
+/** Attention-strip filter chips: "1 configuration failed", "2 out of sync"… */
 export const ISSUE_CHIP: Record<IssueKind, { tone: 'alert' | 'warn'; text: (n: number) => string }> = {
-  failed: { tone: 'alert', text: (n) => `${n} config failed` },
+  failed: { tone: 'alert', text: (n) => `${n} configuration failed` },
   outOfSync: { tone: 'warn', text: (n) => `${n} out of sync` },
   agentTooOld: { tone: 'warn', text: (n) => `${n} agent too old` },
   deferred: { tone: 'warn', text: (n) => `${n} settings deferred` },

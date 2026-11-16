@@ -22,6 +22,11 @@
    Remove every `<!-- pending … -->` marker, and the whole line if its PR didn't merge; the script refuses a released
    section with any HTML comment left. Sum up the Dependabot bumps in Under the hood. Preview it with
    `release/changelog-section.sh X.Y.Z`.
+   Clear any agent protocol hold: in `server/src/test/java/com/hmdm/rest/json/agent/AgentProtocolVersionTest.java`
+   empty `AWAITING_BUMP` and `BUMP_HELD`, and set `AgentProtocol.VERSION` to the highest row of
+   `proto/VERSIONING.md`. A release never ships with a protocol bump held: once Unreleased is moved, the server test
+   `AgentProtocolVersionTest.aHeldBumpIsStillUnreleased` fails on the release PR until the hold is cleared (t0-fast's
+   server job runs on any change to CHANGELOG.md or proto/VERSIONING.md, so it runs on a changelog-only release PR).
 3. **Review and CI.** The PR's code review, green CI, and the native install matrix on the release branch, all nine
    matrix jobs, 3 distros × 3 scenarios (T2; see "T2 native rig" in [docs/DEV.md](docs/DEV.md)). Pull requests run
    T2 only when the installers change, so this is what catches a server change that breaks a native upgrade:
@@ -237,22 +242,22 @@ pulls the `:VERSION` tags). A release published without the private minisign key
 refused, so a hijacked repo/account or a moved image tag alone can't push code to the fleet.
 
 **What runs `quickstart.sh`, and what protects it.** Anyone with write access to the repository can replace a release
-asset, without a PR or review. So the README's install block checks the asset before running it: the manifest's
+asset, without a PR or review. The README's one-line command runs the latest release's asset as it is, so it trusts
+everyone with write access. DEPLOY.md's install block checks the asset before running it: the manifest's
 minisign signature against the release key, that the manifest is the latest release's, and the script's SHA-256 in
-its `files`; only the private minisign key can make a script pass that. The README's unchecked shortcut instead takes the
+its `files`; only the private minisign key can make a script pass that. DEPLOY.md's unchecked shortcut instead takes the
 latest release's tag from GitHub's `/releases/latest` redirect, accepts it only if it is `/releases/tag/vX.Y.Z` (and
 stops otherwise), and runs `quickstart.sh` from `refs/tags/vX.Y.Z` on raw.githubusercontent.com: the full ref, so a
 branch with the same name can't stand in for the tag. What it runs is therefore the commit that tag points at, and the
 `v*` tag ruleset ([setup step 4](#4-release-environment-and-tag-protection)) is what stops anyone outside its bypass
-list from creating, moving or deleting a `v*` tag. It does not protect against a bypass actor. Neither path stops a writer who
-marks an older release as latest: that release is genuine and signed, so both install it.
+list from creating, moving or deleting a `v*` tag. It does not protect against a bypass actor. No path stops a writer who
+marks an older release as latest: that release is genuine and signed, so each installs it.
 Without the ruleset, anyone with write access could repoint a tag.
 
 The quick start verifies the same signature with `openssl` against a copy of the key line in `quickstart.sh`, then
-the image digests and the downloaded files' SHA-256. README.md and DEPLOY.md carry the same key in their install
-block (`-P`). T0 (`scripts/release-manifest-check.sh`) fails if any of the three differs from `release/minisign.pub`.
-**If you ever rotate the minisign key, update all three copies (quickstart.sh, README.md, DEPLOY.md) in the same
-PR.**
+the image digests and the downloaded files' SHA-256. DEPLOY.md carries the same key in its install block (`-P`).
+T0 (`scripts/release-manifest-check.sh`) fails if either differs from `release/minisign.pub`.
+**If you ever rotate the minisign key, update both copies (quickstart.sh, DEPLOY.md) in the same PR.**
 
 ## Verifying a published release
 

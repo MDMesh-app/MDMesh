@@ -9,7 +9,9 @@ import { CONFIG_FIELDS } from './configFields';
  * The configuration's own help for the exit PIN, so every kiosk dialog says the same: with agent 0.3.6+, an empty PIN
  * means no exit on the device.
  */
-export const EXIT_PIN_HELP = CONFIG_FIELDS.find((f) => f.key === 'password')?.help;
+const PIN_FIELD = CONFIG_FIELDS.find((f) => f.key === 'password');
+/** The exit PIN's help, its one line and its longer explanation, for tooltips beside a PIN field. */
+export const EXIT_PIN_HELP = [PIN_FIELD?.help, PIN_FIELD?.more].filter(Boolean).join(' ') || undefined;
 /** Placeholder of an exit-PIN input that may stay empty. */
 export const EXIT_PIN_PLACEHOLDER = 'Empty: no exit on the device (agent 0.3.6+)';
 /** What a kiosk without an exit PIN means on the device, by agent version. */
@@ -28,7 +30,7 @@ export type KioskTheme = {
   textColor?: string;
   iconSize?: string;
   /** Optional server-managed launcher image; agent validates HTTPS and SHA-256 before using it. */
-  backgroundImage?: { url: string; sha256: string };
+  backgroundImage?: { url: string; sha256: string; fit?: 'fit'; focalX?: number; focalY?: number };
 };
 
 /** The `kiosk.enter` payload (KioskApplyPayload): also the `kiosk` block of a `config.apply` document. */
@@ -249,6 +251,14 @@ export function versionAtLeast(version: string | null | undefined, min: string):
 /** The agent release whose kiosk honours features.lockVolume (protocol 1.4); older agents ignore it. */
 export const LOCK_VOLUME_AGENT = '0.3.4';
 
+/** Fit and focal point as config.apply 1.10 sends them: only when not the default (fill, centre). */
+function imagePlacement(c: Configuration): { fit?: 'fit'; focalX?: number; focalY?: number } {
+  if (c.backgroundImageFit === 'fit') return { fit: 'fit' };
+  const x = typeof c.backgroundImageFocalX === 'number' ? c.backgroundImageFocalX : 0.5;
+  const y = typeof c.backgroundImageFocalY === 'number' ? c.backgroundImageFocalY : 0.5;
+  return x !== 0.5 || y !== 0.5 ? { focalX: x, focalY: y } : {};
+}
+
 /** The assigned configuration's launcher theme, including a complete managed-image descriptor when present. */
 export function kioskTheme(configuration: Configuration | undefined): KioskTheme | undefined {
   if (!configuration) return undefined;
@@ -258,10 +268,15 @@ export function kioskTheme(configuration: Configuration | undefined): KioskTheme
   const imageSha256 = typeof configuration.backgroundImageSha256 === 'string'
     ? configuration.backgroundImageSha256.trim().toLowerCase()
     : '';
-  // Never turn a legacy arbitrary backgroundImageUrl into an agent download. The descriptor is
-  // valid only when the server supplied both a HTTPS URL and the canonical digest it calculated.
-  const backgroundImage = imageUrl.startsWith('https://') && /^[0-9a-f]{64}$/.test(imageSha256)
-    ? { url: imageUrl, sha256: imageSha256 }
+  // Only a managed image, as config.apply sends it (DesiredConfigBuilder): an uploaded file with the digest the server
+  // computed; never a legacy backgroundImageUrl (the Headwind wallpaper, no file and no digest). The stored URL goes
+  // out whatever its scheme: it is the address of the day the image was picked, and the server replaces it with the
+  // one built from its current base URL as it queues kiosk.enter (KioskCommandImages), as config.apply does. Agents
+  // download over HTTPS only and keep the color otherwise.
+  const managed = typeof configuration.backgroundImageFileId === 'number' && imageUrl !== ''
+    && /^[0-9a-f]{64}$/.test(imageSha256);
+  const backgroundImage = managed
+    ? { url: imageUrl, sha256: imageSha256, ...imagePlacement(configuration) }
     : undefined;
   const theme = {
     backgroundColor: value('backgroundColor'),

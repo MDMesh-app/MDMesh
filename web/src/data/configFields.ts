@@ -38,7 +38,12 @@ export interface FieldDef {
   label: string;
   type: FieldType;
   group: FieldGroup;
+  /** One line, at most 80 characters. */
   help: string;
+  /** The longer explanation, behind "Learn more". */
+  more?: string;
+  /** The agent version a setting needs, shown as a tag ("Agent 0.3.4+"); older agents ignore it. */
+  agent?: string;
   /** Applied on devices by the MDMesh agent via config.apply. Unset = Headwind launcher field, not applied. */
   enforced?: boolean;
   /** Takes effect only while kiosk mode is on. */
@@ -68,14 +73,11 @@ export const DEFAULT_SEGMENTS: TriSegment[] = [
   { value: null, label: 'Not managed' }, { value: true, label: 'On' }, { value: false, label: 'Off' },
 ];
 
-// Behaviour that depends on the agent version (agent 0.3.4 / protocol 1.4).
-const WIFI_HELP = 'Block locks the Wi-Fi settings so users cannot change networks. It does not turn Wi-Fi off: that is Wi-Fi radio. Allow lifts the lock.';
-const WIFI_RADIO_HELP = 'Needs agent 0.3.4 or later. On turns Wi-Fi on. Off turns it off and, on Android 13 and later, stops users turning it back on. Off is skipped (shown as deferred) while Wi-Fi is the only network, so the device stays reachable, and is tried again at the next configuration change, reboot or agent update. Phones that switch mobile data off while on Wi-Fi cannot apply it. If the device cannot reach the server for about 30 minutes after Wi-Fi was turned off (SIM removed, server only reachable on the Wi-Fi network), the agent turns Wi-Fi back on and keeps it on until the configuration is changed; Off then shows as deferred. A longer server outage, or a user cutting the device off (airplane mode, pulling the SIM), does the same. Any change to the configuration applies Off again. Not managed lifts the lock and leaves the radio as it is.';
-const LOCK_BUTTONS_HELP = 'Block the power menu in kiosk. Volume buttons are a separate setting, Lock volume buttons (kiosk).';
-const LOCK_VOLUME_HELP = 'Applies in kiosk mode, with agent 0.3.4 or later: blocks volume changes. Android mutes the device while volume is locked, so Ring device is silent on it; the lock is lifted when kiosk ends.';
-const CONNECTIVITY_HELP = 'Needs agent 0.4.0 or later; older agents ignore it. Battery-saver holds the live connection only while the screen is on or the device is charging, so a command sent to a locked phone on battery waits for the next heartbeat (about 10 minutes, longer in deep Doze) or for the screen to come on. Always-on keeps the connection up 24/7, so commands such as Lock, Ring or Wipe reach a locked phone without waiting for the heartbeat, at a battery cost. The mode set here is applied again when the configuration changes, the device restarts or the agent updates, so a mode set on a device page lasts only until then. To keep a lost device on Always-on, set its configuration to Always-on (or move the device to one that is). To switch devices back, choose Battery-saver; — (not managed) leaves each device as it is.';
-const LOCATION_HELP = 'Do not track collects no location with agent 0.3.4 or later, and the server drops any location an older agent still reports. Last known (passive) reports the location the device already has at each check-in; GPS (fresh fix) asks for a new fix each time (more accurate, more battery).';
-const LOCATION_SERVICES_HELP = 'Needs agent 0.5.0 or later on an Android 11+ Device Owner device; older agents report it unsupported. On turns Android Location services on; Off turns them off. While managed, the user cannot change the setting. Not managed restores the user setting control but leaves Location services in their current state. This is separate from Location reporting, which controls what MDMesh collects.';
+// Behaviour that depends on the agent version (agent 0.3.4 / protocol 1.4): `help` is one line, `more` the detail.
+const WIFI_RADIO_MORE = 'Off is skipped (shown as deferred) while Wi-Fi is the only network, so the device stays reachable, and is tried again at the next configuration change, reboot or agent update. Phones that switch mobile data off while on Wi-Fi cannot apply it. If the device cannot reach the server for about 30 minutes after Wi-Fi was turned off (SIM removed, server only reachable on the Wi-Fi network), the agent turns Wi-Fi back on and keeps it on until the configuration is changed; Off then shows as deferred. A longer server outage, or a user cutting the device off (airplane mode, pulling the SIM), does the same. Any change to the configuration applies Off again. Not managed lifts the lock and leaves the radio as it is.';
+const CONNECTIVITY_MORE = 'Older agents ignore it. Battery-saver holds the live connection only while the screen is on or the device is charging, so a command sent to a locked phone on battery waits for the next heartbeat (about 10 minutes, longer in deep Doze) or for the screen to come on. Always-on keeps the connection up 24/7, so commands such as Lock, Ring or Wipe reach a locked phone without waiting for the heartbeat, at a battery cost. The mode set here is applied again when the configuration changes, the device restarts or the agent updates, so a mode set on a device page lasts only until then. To keep a lost device on Always-on, set its configuration to Always-on (or move the device to one that is). To switch devices back, choose Battery-saver; — (not managed) leaves each device as it is.';
+const LOCATION_MORE = 'Do not track collects no location with agent 0.3.4 or later, and the server drops any location an older agent still reports. Last known (passive) reports the location the device already has at each check-in; GPS (fresh fix) asks for a new fix each time (more accurate, more battery).';
+const LOCATION_SERVICES_MORE = 'Needs an Android 11+ Device Owner device; older agents report it unsupported. While managed, the user cannot change the setting. Not managed restores the user setting control but leaves Location services in their current state. This is separate from Location reporting, which controls what MDMesh collects.';
 
 export const GROUP_ORDER: FieldGroup[] = [
   'Identity', 'Apps', 'Kiosk', 'Kiosk appearance', 'Network', 'Restrictions', 'Enrollment',
@@ -85,10 +87,11 @@ export const GROUP_ORDER: FieldGroup[] = [
 /** One-line notes under a section heading of the main editor. */
 export const GROUP_NOTES: Partial<Record<FieldGroup, string>> = {
   Kiosk: 'Everything below kiosk mode applies only while kiosk mode is on.',
-  'Kiosk appearance': 'The look of the MDMesh kiosk launcher. Applies only while kiosk mode is on.',
-  Network: 'Not managed leaves the device as it is, including a block applied earlier. Wi-Fi radio and Location services are the exceptions: Not managed lifts their lock.',
-  Restrictions: 'Not managed normally leaves the device as it is, including a block applied earlier. Camera is an exception on agent 0.5.0 or later: it restores access after an MDMesh camera block. Safe Mode is another: see its setting.',
-  Enrollment: 'Not sent to devices. The Enroll page can load this Wi-Fi into the enrollment QR so a new device joins it during setup.',
+  'Kiosk appearance': 'The look of the MDMesh kiosk launcher, while kiosk mode is on.',
+  Network: 'Not managed leaves a setting as it is, except Wi-Fi radio and Location services: Not managed lifts their lock.',
+  Restrictions:
+    'Not managed leaves a setting as it is, except Camera (agent 0.5.0+: it restores access after an MDMesh block) and Safe Mode (see its setting).',
+  Enrollment: 'Not sent to devices: the Enroll page can put this Wi-Fi in the enrollment QR.',
 };
 
 export const CONFIG_FIELDS: FieldDef[] = [
@@ -97,41 +100,41 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'description', label: 'Description', type: 'textarea', group: 'Identity', metadata: true, help: 'Optional notes about what this template is for.' },
 
   // ── Apps ──────────────────────────────────────────────────────────────────
-  { key: 'mainAppId', label: 'Main app', type: 'app', group: 'Apps', enforced: true, kioskOnly: true, help: 'The app the kiosk opens. It is pinned full-screen when it is the only app shown in kiosk.' },
+  { key: 'mainAppId', label: 'Main app', type: 'app', group: 'Apps', enforced: true, kioskOnly: true, help: 'The app the kiosk opens, pinned full-screen when it is the only kiosk app.' },
   { key: 'contentAppId', label: 'Content app', type: 'app', group: 'Apps', help: 'App the Headwind launcher showed instead of its icon grid.' },
   { key: 'autostartForeground', label: 'Keep apps foreground', type: 'tri', group: 'Apps', help: 'Headwind launcher kept auto-started apps in the foreground.' },
 
   // ── Kiosk ─────────────────────────────────────────────────────────────────
   { key: 'kioskMode', label: 'Kiosk mode', type: 'switch', group: 'Kiosk', enforced: true, help: 'Lock the device to the main app, or to the apps shown in kiosk.' },
-  { key: 'kioskExit', label: 'Kiosk exit', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, flagLabels: ['Hidden gesture', 'Visible button'], help: 'How to reach the exit PIN prompt: 7 taps in the top-right corner, or a visible exit button.' },
-  { key: 'password', label: 'Kiosk exit PIN', type: 'password', group: 'Kiosk', enforced: true, kioskOnly: true, help: 'Asked for when someone leaves kiosk mode on the device. With agent 0.3.6 or later: leave it empty and the device has no exit (end kiosk from the console), and 3 wrong PINs lock the exit for 30 s, then for longer after each wrong PIN, and administrators get an email if the server can send email (SMTP). Older agents let anyone leave a kiosk that has no PIN. Stored as entered.' },
+  { key: 'kioskExit', label: 'Kiosk exit', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, flagLabels: ['Hidden gesture', 'Visible button'], help: 'How to reach the exit PIN prompt: a visible button, or 7 taps top-right.' },
+  { key: 'password', label: 'Kiosk exit PIN', type: 'password', group: 'Kiosk', enforced: true, kioskOnly: true, help: 'Asked for when someone leaves kiosk mode on the device.', more: 'With agent 0.3.6 or later: leave it empty and the device has no exit (end kiosk from the console), and 3 wrong PINs lock the exit for 30 s, then for longer after each wrong PIN, and administrators get an email if the server can send email (SMTP). Older agents let anyone leave a kiosk that has no PIN. Stored as entered.' },
   { key: 'kioskHome', label: 'Home button', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: 'Allow the Home button in kiosk.' },
-  { key: 'kioskRecents', label: 'Recents button', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: 'Allow the Recent-apps button in kiosk. Needs Home button on (Android requires it).' },
-  { key: 'kioskNotifications', label: 'Notifications', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: 'Allow the notification shade in kiosk. Needs Home button on (Android requires it).' },
+  { key: 'kioskRecents', label: 'Recents button', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: 'Allow the Recent-apps button in kiosk. Needs Home button on.' },
+  { key: 'kioskNotifications', label: 'Notifications', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: 'Allow the notification shade in kiosk. Needs Home button on.' },
   { key: 'kioskSystemInfo', label: 'System info', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: 'Show the status bar (time, battery, signal) in kiosk.' },
   { key: 'kioskKeyguard', label: 'Lock screen', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: 'Allow the lock screen in kiosk.' },
-  { key: 'kioskLockButtons', label: 'Lock hardware buttons', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: LOCK_BUTTONS_HELP },
-  { key: 'kioskLockVolume', label: 'Lock volume buttons (kiosk)', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: LOCK_VOLUME_HELP },
-  { key: 'runDefaultLauncher', label: 'Allow stock launcher', type: 'tri', group: 'Kiosk', help: 'Headwind launcher did not make itself the Home app. MDMesh only takes Home in kiosk.' },
+  { key: 'kioskLockButtons', label: 'Lock hardware buttons', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: 'Block the power menu in kiosk. Volume buttons have their own setting.' },
+  { key: 'kioskLockVolume', label: 'Lock volume buttons (kiosk)', type: 'flag', group: 'Kiosk', enforced: true, kioskOnly: true, help: 'Blocks volume changes in kiosk. Android mutes the device while locked.', more: 'Ring is silent while volume is locked; the lock is lifted when kiosk ends.', agent: '0.3.4' },
+  { key: 'runDefaultLauncher', label: 'Allow stock launcher', type: 'tri', group: 'Kiosk', help: 'Headwind launcher did not make itself Home. MDMesh takes Home in kiosk only.' },
   { key: 'kioskScreenOn', label: 'Keep screen on', type: 'tri', group: 'Kiosk', help: 'Headwind launcher kept the screen awake in kiosk.' },
   { key: 'showWifi', label: 'Show Wi-Fi on error', type: 'tri', group: 'Kiosk', help: 'Headwind launcher showed Wi-Fi settings when it could not reach the server.' },
 
   // ── Kiosk appearance ──────────────────────────────────────────────────────
   { key: 'backgroundColor', label: 'Background color', type: 'color', group: 'Kiosk appearance', enforced: true, kioskOnly: true, help: 'Kiosk launcher background. Always solid: transparency is ignored.' },
-  { key: 'textColor', label: 'Text color', type: 'color', group: 'Kiosk appearance', enforced: true, kioskOnly: true, help: 'Kiosk launcher text. It needs at least 4.5:1 contrast with the background color; with less, the device uses a readable color instead.' },
+  { key: 'textColor', label: 'Text color', type: 'color', group: 'Kiosk appearance', enforced: true, kioskOnly: true, help: 'Kiosk launcher text. Needs 4.5:1 contrast with the background color.', more: 'With less, the device uses a readable color instead.' },
   { key: 'iconSize', label: 'Icon size', type: 'enum', group: 'Kiosk appearance', enforced: true, kioskOnly: true, help: 'App icon size in the kiosk launcher.', options: [
     { value: 'SMALL', label: 'Small' }, { value: 'MEDIUM', label: 'Medium' }, { value: 'LARGE', label: 'Large' },
   ] },
 
   // ── Network ───────────────────────────────────────────────────────────────
-  { key: 'wifi', label: 'Wi-Fi settings', type: 'tri', group: 'Network', enforced: true, segments: ALLOW_BLOCK, help: WIFI_HELP },
-  { key: 'wifiRadio', label: 'Wi-Fi radio', type: 'tri', group: 'Network', enforced: true, segments: DEFAULT_SEGMENTS, help: WIFI_RADIO_HELP },
-  { key: 'locationServices', label: 'Location services', type: 'tri', group: 'Network', enforced: true, segments: DEFAULT_SEGMENTS, help: LOCATION_SERVICES_HELP },
-  { key: 'bluetooth', label: 'Bluetooth', type: 'tri', group: 'Network', enforced: true, segments: ALLOW_BLOCK, help: 'Block turns Bluetooth off and stops users turning it on. Allow lifts the block (it does not turn Bluetooth on).' },
-  { key: 'requestUpdates', label: 'Location reporting', type: 'enum', group: 'Network', enforced: true, help: LOCATION_HELP, options: [
+  { key: 'wifi', label: 'Wi-Fi settings', type: 'tri', group: 'Network', enforced: true, segments: ALLOW_BLOCK, help: 'Block locks the Wi-Fi settings so users can’t change networks.', more: 'It does not turn Wi-Fi off: that is Wi-Fi radio. Allow lifts the lock.' },
+  { key: 'wifiRadio', label: 'Wi-Fi radio', type: 'tri', group: 'Network', enforced: true, segments: DEFAULT_SEGMENTS, help: 'Turns Wi-Fi on or off. On Android 13+, Off also stops users turning it on.', more: WIFI_RADIO_MORE, agent: '0.3.4' },
+  { key: 'locationServices', label: 'Location services', type: 'tri', group: 'Network', enforced: true, segments: DEFAULT_SEGMENTS, help: 'Turns Android Location services on or off, and locks the setting.', more: LOCATION_SERVICES_MORE, agent: '0.5.0' },
+  { key: 'bluetooth', label: 'Bluetooth', type: 'tri', group: 'Network', enforced: true, segments: ALLOW_BLOCK, help: 'Block turns Bluetooth off and stops users turning it on.', more: 'Allow lifts the block (it does not turn Bluetooth on).' },
+  { key: 'requestUpdates', label: 'Location reporting', type: 'enum', group: 'Network', enforced: true, help: 'Which location the device reports at each check-in.', more: LOCATION_MORE, options: [
     { value: 'DONOTTRACK', label: 'Do not track' }, { value: 'WIFI', label: 'Last known (passive)' }, { value: 'GPS', label: 'GPS (fresh fix)' },
   ] },
-  { key: 'connectivityMode', label: 'Connectivity', type: 'enum', group: 'Network', enforced: true, help: CONNECTIVITY_HELP, options: [
+  { key: 'connectivityMode', label: 'Connectivity', type: 'enum', group: 'Network', enforced: true, help: 'How quickly commands reach a locked phone on battery.', more: CONNECTIVITY_MORE, agent: '0.4.0', options: [
     { value: 'adaptive', label: 'Battery-saver' }, { value: 'alwaysOn', label: 'Always-on' },
   ] },
   { key: 'mobileData', label: 'Mobile data', type: 'tri', group: 'Network', help: 'Headwind launcher switched mobile data (needed system-app rights).' },
@@ -139,11 +142,11 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'mobileEnrollment', label: 'Enroll over mobile data', type: 'switch', group: 'Network', help: "Read only by Headwind's server QR. The MDMesh enrollment QR ignores it." },
 
   // ── Restrictions ──────────────────────────────────────────────────────────
-  { key: 'disableSafeBoot', label: 'Safe Mode', type: 'tri', group: 'Restrictions', enforced: true, segments: ALLOW_BLOCK_INVERTED, help: 'Block prevents rebooting into Safe Mode, which would bypass the kiosk. Not managed blocks it on a configuration with kiosk on, and on any device in kiosk (agent 0.3.7 or later); otherwise it is allowed, and agent 0.3.7 lifts a block nothing asks for. Older agents keep a block until this is set to Allow. Allow permits it, even in kiosk.' },
+  { key: 'disableSafeBoot', label: 'Safe Mode', type: 'tri', group: 'Restrictions', enforced: true, segments: ALLOW_BLOCK_INVERTED, help: 'Block prevents rebooting into Safe Mode, which would bypass the kiosk.', more: 'Not managed blocks it on a configuration with kiosk on, and on any device in kiosk (agent 0.3.7 or later); otherwise it is allowed, and agent 0.3.7 lifts a block nothing asks for. Older agents keep a block until this is set to Allow. Allow permits it, even in kiosk.' },
   { key: 'disableFactoryReset', label: 'Factory reset', type: 'tri', group: 'Restrictions', enforced: true, segments: ALLOW_BLOCK_INVERTED, help: 'Block prevents a factory reset from Settings.' },
   { key: 'disableScreenshots', label: 'Screenshots', type: 'tri', group: 'Restrictions', enforced: true, segments: ALLOW_BLOCK_INVERTED, help: 'Block prevents screenshots and screen recording.' },
   { key: 'usbStorage', label: 'USB storage', type: 'tri', group: 'Restrictions', enforced: true, segments: ALLOW_BLOCK, help: 'Block stops USB file transfer and mounting external storage.' },
-  { key: 'camera', label: 'Camera', type: 'tri', group: 'Restrictions', enforced: true, segments: ALLOW_BLOCK, help: 'Block prevents every app from using camera hardware. It does not hide camera apps, install one, or remove photos. On agent 0.5.0 or later, Not managed restores access after MDMesh blocked it. On older agents, choose Allow to lift a block.' },
+  { key: 'camera', label: 'Camera', type: 'tri', group: 'Restrictions', enforced: true, segments: ALLOW_BLOCK, help: 'Block stops every app using the camera hardware.', more: 'It does not hide camera apps, install one, or remove photos. On agent 0.5.0 or later, Not managed restores access after MDMesh blocked it. On older agents, choose Allow to lift a block.' },
   { key: 'blockStatusBar', label: 'Lock status bar', type: 'switch', group: 'Restrictions', help: 'Headwind launcher covered the status bar.' },
   { key: 'lockVolume', label: 'Lock volume (legacy)', type: 'tri', group: 'Restrictions', help: 'Headwind launcher blocked volume changes.' },
   { key: 'allowedClasses', label: 'Allowed app classes', type: 'text', group: 'Restrictions', help: 'Headwind launcher allowlist of settings screens.' },
@@ -177,8 +180,8 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'orientation', label: 'Screen orientation', type: 'enum', group: 'Display', help: 'Headwind launcher locked its own screen orientation.', options: [
     { value: 0, label: 'No lock (auto)' }, { value: 1, label: 'Portrait' }, { value: 2, label: 'Landscape' },
   ] },
-  { key: 'useDefaultDesignSettings', label: 'Default launcher design', type: 'switch', group: 'Display', help: 'Headwind launcher ignored its custom colors. The MDMesh kiosk always uses Kiosk appearance.' },
-  { key: 'backgroundImageUrl', label: 'Background image URL', type: 'text', group: 'Display', help: 'Headwind launcher wallpaper. With a kiosk background image, this shows its address; another URL here replaces that image.' },
+  { key: 'useDefaultDesignSettings', label: 'Default launcher design', type: 'switch', group: 'Display', help: 'Headwind launcher ignored its custom colors. MDMesh uses Kiosk appearance.' },
+  { key: 'backgroundImageUrl', label: 'Background image URL', type: 'text', group: 'Display', help: 'Headwind launcher wallpaper. Another URL here replaces the kiosk image.', more: 'With a kiosk background image, this shows its address.' },
   { key: 'desktopHeader', label: 'Launcher header', type: 'enum', group: 'Display', help: 'Header line above the Headwind launcher.', options: [
     { value: 'NO_HEADER', label: 'None' }, { value: 'DEVICE_ID', label: 'Device ID' }, { value: 'DESCRIPTION', label: 'Description' },
     { value: 'CUSTOM1', label: 'Custom 1' }, { value: 'CUSTOM2', label: 'Custom 2' }, { value: 'CUSTOM3', label: 'Custom 3' }, { value: 'TEMPLATE', label: 'Template' },
@@ -204,7 +207,7 @@ export const CONFIG_FIELDS: FieldDef[] = [
   { key: 'newServerUrl', label: 'Migrate to server URL', type: 'text', group: 'Advanced', help: 'Headwind launcher moved itself to this server.' },
   { key: 'eventReceivingComponent', label: 'Event receiver', type: 'text', group: 'Advanced', help: 'package/class that received Headwind launcher broadcasts.' },
   { key: 'qrParameters', label: 'Extra QR parameters', type: 'textarea', group: 'Advanced', help: "Extra fields for Headwind's server QR. The MDMesh enrollment QR ignores them." },
-  { key: 'adminExtras', label: 'QR admin extras', type: 'textarea', group: 'Advanced', help: "Extra admin-extras entries for Headwind's server QR. The MDMesh enrollment QR ignores them." },
+  { key: 'adminExtras', label: 'QR admin extras', type: 'textarea', group: 'Advanced', help: 'Extra admin-extras entries for Headwind\'s server QR. MDMesh\'s QR ignores them.' },
 ];
 
 /** Always-visible editor fields: metadata, enforced, and the enrollment-QR Wi-Fi. */

@@ -15,6 +15,9 @@ import {
   SearchInput,
   Segmented,
   Select,
+  SkeletonRows,
+  Table,
+  type Column,
 } from '../../ui';
 
 /** Lists this long or shorter show no search, filter or sort, and keep their stored order. */
@@ -130,7 +133,29 @@ export function AssignedApps({
     searchRef.current?.focus();
   };
 
-  const cols = kioskColumn ? 4 : 3;
+  const edit = { readOnly, onAction, onKioskVisibility, onRemove };
+  const columns: Column<ConfigApp>[] = [
+    { key: 'app', header: 'App', className: 'v2-cfged-apps__app', cell: (a) => <AppCell app={a} details={renderAppDetails?.(a)} /> },
+    { key: 'action', header: 'On devices', shrink: true, className: 'v2-cfged-apps__action', cell: (a) => <ActionCell app={a} {...edit} /> },
+    ...(kioskColumn
+      ? [{ key: 'kiosk', header: 'Show in kiosk', shrink: true, className: 'v2-cfged-apps__kiosk', cell: (a: ConfigApp) => <KioskCell app={a} {...edit} /> }]
+      : []),
+    {
+      key: 'rm',
+      header: 'Remove',
+      headerHidden: true,
+      shrink: true,
+      className: 'v2-cfged-apps__rm',
+      cell: (a) =>
+        readOnly ? null : (
+          <div className="v2-rowactions">
+            <IconButton size="xs" label={`Remove ${nameOf(a)}`} onClick={() => onRemove(a.id)}>
+              <IconClose />
+            </IconButton>
+          </div>
+        ),
+    },
+  ];
   return (
     <>
       {controls ? (
@@ -144,7 +169,6 @@ export function AssignedApps({
             onChange={view(setQ, q)}
           />
           <Segmented<StateFilter>
-            size="lg"
             aria-label="On devices"
             value={filter}
             onChange={view(setFilter, filter)}
@@ -167,132 +191,96 @@ export function AssignedApps({
           </span>
         </div>
       ) : null}
-      <div className="v2-cfged-apps">
-        <table className="v2-cfged-apps__table">
-          <thead>
-            <tr>
-              <th scope="col">App</th>
-              <th scope="col">On devices</th>
-              {kioskColumn ? <th scope="col">Show in kiosk</th> : null}
-              <th scope="col" className="v2-cfged-apps__rm">
-                <span className="v2-visually-hidden">Remove</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {!ready && !error ? (
-              <tr>
-                <td colSpan={cols} className="v2-cfged-apps__empty">
-                  Loading the assigned apps…
-                </td>
-              </tr>
-            ) : apps.length === 0 ? (
-              <tr>
-                <td colSpan={cols} className="v2-cfged-apps__empty">
-                  No apps assigned.
-                </td>
-              </tr>
-            ) : rows.length === 0 ? (
-              <tr>
-                <td colSpan={cols} className="v2-cfged-apps__empty">
-                  <EmptyState
-                    bare
-                    icon={<IconSearch />}
-                    title="No apps match"
-                    action={
-                      <Button size="sm" onClick={clear}>
-                        Clear
-                      </Button>
-                    }
-                  />
-                </td>
-              </tr>
+      {!ready && !error ? (
+        <div className="v2-cfged-apps__loading">
+          <SkeletonRows count={3} compact label="Loading the assigned apps…" />
+        </div>
+      ) : (
+        <Table<ConfigApp>
+          aria-label="Assigned apps"
+          className="v2-cfged-apps"
+          columns={columns}
+          rows={rows}
+          rowKey={(a) => a.id}
+          edge={0}
+          rowPad={10}
+          empty={
+            apps.length === 0 ? (
+              <EmptyState bare title="No apps yet">
+                Added apps install on every device that uses this configuration.
+              </EmptyState>
             ) : (
-              rows.map((a) => (
-                <AppRow
-                  key={a.id}
-                  app={a}
-                  readOnly={readOnly}
-                  kioskColumn={kioskColumn}
-                  onAction={onAction}
-                  onKioskVisibility={onKioskVisibility}
-                  onRemove={onRemove}
-                  details={renderAppDetails?.(a)}
-                />
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              <EmptyState
+                bare
+                icon={<IconSearch />}
+                title="No apps match"
+                action={
+                  <Button size="sm" onClick={clear}>
+                    Clear
+                  </Button>
+                }
+              />
+            )
+          }
+        />
+      )}
     </>
   );
 }
 
-function AppRow({
-  app: a,
-  readOnly,
-  kioskColumn,
-  onAction,
-  onKioskVisibility,
-  onRemove,
-  details,
-}: { app: ConfigApp; details?: ReactNode } & Pick<AssignedAppsProps, 'readOnly' | 'kioskColumn' | 'onAction' | 'onKioskVisibility' | 'onRemove'>) {
+type EditProps = Pick<AssignedAppsProps, 'readOnly' | 'onAction' | 'onKioskVisibility' | 'onRemove'>;
+
+function AppCell({ app: a, details }: { app: ConfigApp; details?: ReactNode }) {
+  const name = nameOf(a);
+  return (
+    <div className="v2-cfged-app">
+      <AppTile name={name} size={32} />
+      <div className="v2-cfged-app__text">
+        <span className="v2-cfged-app__name">
+          {name}
+          {a.version ? <span className="v2-cfged-app__ver"> {a.version}</span> : null}
+        </span>
+        {a.pkg ? <span className="v2-cfged-app__pkg">{a.pkg}</span> : null}
+        {details ? <div className="v2-cfged-app__details">{details}</div> : null}
+      </div>
+    </div>
+  );
+}
+
+function ActionCell({ app: a, readOnly, onAction }: { app: ConfigApp } & EditProps) {
+  return (
+    <Select
+      size="sm"
+      aria-label={`What happens to ${nameOf(a)}`}
+      value={actionOf(a)}
+      disabled={readOnly}
+      onChange={(e) => onAction(a.id, Number(e.target.value))}
+    >
+      <option value={1}>Install</option>
+      <option value={2}>Remove</option>
+      <option value={0}>Do not install</option>
+    </Select>
+  );
+}
+
+/** Show in kiosk: whether this installed app appears and launches in kiosk mode. */
+function KioskCell({ app: a, readOnly, onKioskVisibility }: { app: ConfigApp } & EditProps) {
   const name = nameOf(a);
   const action = actionOf(a);
   const shown = a.showIcon !== false;
   const kioskText = action !== 1 ? (action === 2 ? 'Removed' : 'Not installed') : shown ? 'Shown' : 'Hidden';
   return (
-    <tr>
-      <td className="v2-cfged-apps__app">
-        <div className="v2-cfged-app">
-          <AppTile name={name} size={32} />
-          <div className="v2-cfged-app__text">
-            <span className="v2-cfged-app__name">
-              {name}
-              {a.version ? <span className="v2-cfged-app__ver"> {a.version}</span> : null}
-            </span>
-            {a.pkg ? <span className="v2-cfged-app__pkg">{a.pkg}</span> : null}
-            {details ? <div className="v2-cfged-app__details">{details}</div> : null}
-          </div>
-        </div>
-      </td>
-      <td className="v2-cfged-apps__action">
-        <Select
-          size="xs"
-          aria-label={`What happens to ${name}`}
-          value={action}
-          disabled={readOnly}
-          onChange={(e) => onAction(a.id, Number(e.target.value))}
-        >
-          <option value={1}>Install</option>
-          <option value={2}>Remove</option>
-          <option value={0}>Do not install</option>
-        </Select>
-      </td>
-      {kioskColumn ? (
-        <td className="v2-cfged-apps__kiosk">
-          <Checkbox
-            className={`v2-cfged-app__kiosk is-${action !== 1 ? 'off' : shown ? 'on' : 'hidden'}`}
-            label={
-              <>
-                {kioskText}
-                <span className="v2-visually-hidden"> in kiosk: {name}</span>
-              </>
-            }
-            title="Allow this installed app to appear and launch in kiosk mode"
-            checked={action === 1 && shown}
-            disabled={readOnly || action !== 1}
-            onChange={(e) => onKioskVisibility(a.id, e.target.checked)}
-          />
-        </td>
-      ) : null}
-      <td className="v2-cfged-apps__rm">
-        {readOnly ? null : (
-          <IconButton size="sm" label={`Remove ${name}`} onClick={() => onRemove(a.id)}>
-            <IconClose />
-          </IconButton>
-        )}
-      </td>
-    </tr>
+    <Checkbox
+      className={`v2-cfged-app__kiosk is-${action !== 1 ? 'off' : shown ? 'on' : 'hidden'}`}
+      label={
+        <>
+          {kioskText}
+          <span className="v2-visually-hidden"> in kiosk: {name}</span>
+        </>
+      }
+      checked={action === 1 && shown}
+      disabled={readOnly || action !== 1}
+      onChange={(e) => onKioskVisibility(a.id, e.target.checked)}
+    />
   );
 }

@@ -40,6 +40,18 @@ public class ConfigStatusView {
     private boolean inSync;
     private boolean supported;
     private LastCommand lastCommand;
+    /**
+     * The kiosk background image the device's configuration specifies ({@code kiosk.theme.backgroundImage} of the
+     * document it is sent); null without one. Not what the device shows: the agent doesn't report that yet.
+     */
+    private DesiredKioskBackgroundImage kioskBackgroundImage;
+
+    /** Sets {@link #kioskBackgroundImage} from the configuration's document (null: none). */
+    public void setKioskBackgroundImageFrom(DesiredConfig doc) {
+        DesiredKiosk kiosk = doc == null ? null : doc.getKiosk();
+        DesiredKioskTheme theme = kiosk == null ? null : kiosk.getTheme();
+        this.kioskBackgroundImage = theme == null ? null : theme.getBackgroundImage();
+    }
 
     /** Slim view of the latest config.apply — deliberately omits the payload (it embeds the kiosk password). */
     @Getter

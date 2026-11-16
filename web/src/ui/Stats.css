@@ -1,37 +1,50 @@
-/* ---- stat cells ---- */
+/* ---- stat cells (a two-column <dl>, a hairline between columns) ---- */
 .v2 .v2-statgrid {
-  flex: 2 1 340px;
   margin: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4) 0;
 }
 .v2 .v2-stat {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding-left: 16px;
-  border-left: 1px solid var(--line-soft);
+  gap: var(--space-1);
+  min-width: 0;
+  padding: 0 var(--space-4);
+}
+.v2 .v2-stat:nth-child(odd) {
+  padding-left: 0;
+}
+.v2 .v2-stat:nth-child(even) {
+  border-left: var(--hairline) solid var(--line-soft);
 }
 .v2 .v2-stat dd {
   margin: 0;
 }
 .v2 .v2-stat__label {
-  font-size: var(--fs-meta);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
 }
+.v2 .v2-stat__label a {
+  color: inherit;
+}
 .v2 .v2-stat__value {
-  font-family: var(--font-mono);
-  font-size: var(--fs-stat);
-  font-weight: 500;
-  line-height: 1.1;
+  font-size: var(--text-page);
+  line-height: var(--lh-page);
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--track-tight);
 }
 .v2 .v2-stat__of {
-  font-size: var(--fs-body);
+  font-size: var(--text-ui);
+  font-weight: var(--weight-regular);
+  letter-spacing: 0;
   color: var(--secondary);
 }
 .v2 .v2-stat__note {
-  font-size: var(--fs-meta);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
 }
 .v2 .v2-stat__note.is-alert {
   color: var(--alert-ink);
@@ -49,60 +62,76 @@
 /* ---- fleet card ---- */
 .v2 .v2-fleet {
   display: flex;
-  flex-wrap: wrap;
-  gap: 20px 24px;
-  padding: 20px 24px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-}
-.v2 .v2-fleet__main {
-  flex: 3 1 420px;
-  min-width: 0;
-  display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--space-3);
+  padding: var(--card-pad);
+  background: var(--surface);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-card);
+}
+.v2 .v2-fleet__title {
+  font-size: var(--text-title);
+  line-height: var(--lh-title);
+  font-weight: var(--weight-semibold);
 }
 .v2 .v2-fleet__head {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 4px 12px;
+  gap: var(--space-1) var(--space-2);
+  min-height: var(--lh-display);
 }
 .v2 .v2-fleet__total {
-  font-family: var(--font-mono);
-  font-size: var(--fs-display);
-  font-weight: 500;
-  letter-spacing: var(--ls-display);
-  line-height: 1;
+  font-size: var(--text-display);
+  line-height: var(--lh-display);
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--track-tight);
 }
 .v2 .v2-fleet__caption {
   color: var(--secondary);
 }
+.v2 .v2-fleet__track {
+  display: block;
+  height: var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--line-soft);
+}
 .v2 .v2-fleet__legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 28px;
+  gap: var(--space-2) var(--space-6);
 }
-.v2 .v2-fleet__item,
-.v2 a.v2-fleet__item:hover {
+.v2 .v2-fleet__item {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
+  border-radius: var(--radius-chip);
   text-decoration: none;
   color: var(--text);
 }
-.v2 a.v2-fleet__item:hover .v2-fleet__label {
+/* Hover changes colour only, never layout (it outranks the global link hover). */
+.v2 a.v2-fleet__item:hover {
+  text-decoration: none;
+  color: var(--text);
+}
+.v2 a.v2-fleet__item .v2-fleet__label {
   text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 0.2em;
+}
+.v2 a.v2-fleet__item:hover .v2-fleet__label {
+  text-decoration-color: currentColor;
 }
 .v2 .v2-fleet__label {
   color: var(--text-2);
 }
 .v2 .v2-fleet__count {
-  font-family: var(--font-mono);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
 }
 .v2 .v2-fleet__pct {
-  font-size: var(--fs-meta);
+  font-size: var(--text-meta);
   color: var(--secondary);
+  font-variant-numeric: tabular-nums;
 }

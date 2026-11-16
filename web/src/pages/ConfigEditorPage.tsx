@@ -12,11 +12,11 @@ import { ApiError } from '../api/client';
 import { commitUpload, listApplications, uploadRawFile, type Application } from '../api/applications';
 import {
   KIOSK_IMAGE_AGENT,
-  KIOSK_IMAGE_TYPES,
   kioskImageContentId,
   kioskImageErrorText,
   kioskImageProblem,
   kioskImageUploadName,
+  normalizeKioskImage,
 } from '../data/kioskBackground';
 import { getSyncSummary, type ConfigSyncSummary } from '../api/configSync';
 import {
@@ -35,6 +35,7 @@ import {
   isLocked,
   locationServicesAction,
 } from '../data/configurationRules';
+import { configuredKiosk } from '../data/kiosk';
 import { kioskAffectingChanges } from '../data/kioskChanges';
 import { manageableAppPermissions, managedAppPermissionLabel } from '../data/managedAppPermissions';
 import {
@@ -47,6 +48,7 @@ import {
   CardHeader,
   ChangedChip,
   EmptyState,
+  ErrorState,
   Eyebrow,
   Field,
   FieldRow,
@@ -63,6 +65,7 @@ import {
   SectionLayout,
   SectionNav,
   Select,
+  SkeletonFacts,
   StickySaveBar,
   Textarea,
   useLeaveGuard,
@@ -75,7 +78,12 @@ import { NoAccess } from '../ext/hosts/RoutePage';
 import { usePermission } from '../ext/permissions';
 import { paths } from '../routes';
 import { AssignedApps } from './configurations/AssignedApps';
-import { AppSelect, FieldControl, LongHelp } from './configurations/controls';
+import { KioskBackgroundField, hostedPath, useKioskBackgroundInfo } from './configurations/KioskBackground';
+import { KioskBackgroundPreview } from './configurations/KioskPreview';
+import { kioskColours, type FitMode } from '../data/kioskScrim';
+import { KioskPlacement } from './configurations/KioskPlacement';
+import { KioskGallery } from './configurations/KioskGallery';
+import { AgentTag, AppSelect, FieldControl, FieldHelp } from './configurations/controls';
 import { AppPickerModal, CopyConfigModal, DeleteConfigModal, KioskConfirmModal } from './configurations/modals';
 import { devicesBlockingDelete, plural, usedByLine, wipedOnly, wipedOnlyLine } from './configurations/sync';
 import { WATCH_MS, type ConfigWatch } from './configurations/watch';
@@ -174,32 +182,25 @@ function EditorLoader({ id, from }: { id: string; from: string | null }) {
       <>
         <PageHeader title={title} breadcrumb={crumbs(title)} />
         {state.kind === 'loading' ? (
-          <Card>
-            <EmptyState icon={<IconConfigurations />} title="Loading configuration…" />
+          <Card aria-busy="true">
+            <SkeletonFacts count={6} label="Loading configuration…" />
           </Card>
         ) : state.kind === 'error' ? (
-          <Callout tone="alert" role="alert" icon={<IconWarning size={16} />}>
-            <span className="v2-cfged-calloutline">
-              Could not load this configuration.
-              <Button size="sm" onClick={() => setAttempt((n) => n + 1)}>
-                Retry
-              </Button>
-            </span>
-          </Callout>
+          <ErrorState thing="this configuration" onRetry={() => setAttempt((n) => n + 1)} />
         ) : (
           <Card>
             <EmptyState
               icon={<IconConfigurations />}
               title={state.template ? 'Template not found' : 'Configuration not found'}
               action={
-                <ButtonLink size="lg" to={paths.configurations}>
+                <ButtonLink to={paths.configurations}>
                   All configurations
                 </ButtonLink>
               }
             >
               {state.template
-                ? 'The configuration to copy no longer exists, or you do not have access to it.'
-                : 'It may have been deleted, or you do not have access to it.'}
+                ? 'The configuration to copy no longer exists, or you don’t have access to it.'
+                : 'It may have been deleted, or you don’t have access to it.'}
             </EmptyState>
           </Card>
         )}
@@ -285,21 +286,20 @@ for (const [sec, items] of Object.entries(LAYOUT) as Array<[keyof typeof LAYOUT,
 
 /** Board help where it is clearer and still accurate; otherwise configFields help is used. */
 const HELP: Record<string, string> = {
-  kioskMode: 'When off, the kiosk settings below are ignored and the device uses its normal launcher.',
+  kioskMode: 'When off, the settings below are ignored and the device uses its own launcher.',
   kioskHome: 'The Android home button or gesture.',
   kioskRecents: 'The app switcher. Needs Home button on (Android requires it).',
-  kioskNotifications: 'Pulling down the notification shade. Needs Home button on (Android requires it).',
+  kioskNotifications: 'The notification shade. Needs Home button on (Android requires it).',
 };
 
 const SECTION_SUB = {
   kiosk: 'Lock the screen to the apps marked “Show in kiosk”.',
-  network: `Radios, location reporting and connectivity. ${GROUP_NOTES.Network ?? ''}`.trim(),
+  network: `Radios, location and connectivity. ${GROUP_NOTES.Network ?? ''}`.trim(),
   security: `What people on the device can change. ${GROUP_NOTES.Restrictions ?? ''}`.trim(),
   enrollment: GROUP_NOTES.Enrollment ?? '',
 };
 
-const LEGACY_NOTE =
-  'Only the Headwind launcher read these settings; the MDMesh agent does not apply them. They stay stored with the configuration, and saving keeps their values.';
+const LEGACY_NOTE = 'The MDMesh agent ignores these. They stay stored, and saving keeps their values.';
 
 // ---- change detection ----------------------------------------------------------------------------------------------
 
@@ -327,7 +327,10 @@ function changedKeys(before: Configuration, after: Configuration): Set<string> {
   // The background image picker is a managed asset control rather than a generic CONFIG_FIELDS control.
   // Its identity must still participate in the editor's dirty state and save/apply flow.
   if (norm(before.backgroundImageFileId) !== norm(after.backgroundImageFileId)
-    || norm(after.backgroundImageAction) !== null) out.add('backgroundImageFileId');
+    || norm(after.backgroundImageAction) !== null
+    || norm(before.backgroundImageFit) !== norm(after.backgroundImageFit)
+    || norm(before.backgroundImageFocalX) !== norm(after.backgroundImageFocalX)
+    || norm(before.backgroundImageFocalY) !== norm(after.backgroundImageFocalY)) out.add('backgroundImageFileId');
   if (appsSignature(before) !== appsSignature(after)) out.add('applications');
   if (appPermissionsSignature(before) !== appPermissionsSignature(after)) out.add('managedAppPermissions');
   return out;
@@ -399,8 +402,9 @@ function Editor({
   // Discards so far: the apps table files its rows again by their restored state.
   const [discards, setDiscards] = useState(0);
   const nameRef = useRef<HTMLInputElement>(null);
-  const backgroundImageRef = useRef<HTMLInputElement>(null);
   const [backgroundUploading, setBackgroundUploading] = useState(false);
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const mayDeleteFiles = usePermission(CORE_ACTION_ACCESS.uploadFile);
   const ids = useId();
 
   // The assigned apps: the configuration's own, or the template's for a copy. Until they arrive, saving is blocked
@@ -600,12 +604,12 @@ function Editor({
   // ---- rows ----
   const pinWarn = defaultPin
     ? readOnly
-      ? 'Devices on this template use a well-known default PIN, so anyone who knows it can leave kiosk mode. Duplicate it, set your own PIN, and move the devices to the copy.'
-      : 'This is still a well-known default PIN. Anyone who knows it can leave kiosk mode. Choose a PIN only your staff know.'
+      ? 'This template uses a well-known default PIN. Duplicate it, set your own PIN, and move its devices to the copy.'
+      : 'This is a well-known default PIN: anyone who knows it can leave kiosk. Choose one only your staff know.'
     : noPin
       ? readOnly
-        ? 'This template has no exit PIN: agents before 0.3.6 let anyone leave kiosk mode, 0.3.6 and later have no exit on the device. Duplicate it, set a PIN, and move the devices to the copy.'
-        : 'There is no exit PIN: agents before 0.3.6 let anyone leave kiosk mode without a prompt, 0.3.6 and later have no exit on the device (end kiosk from the console). Set a PIN only your staff know.'
+        ? 'This template has no exit PIN. Duplicate it, set a PIN, and move its devices to the copy.'
+        : 'No exit PIN: agents before 0.3.6 let anyone leave kiosk; later ones have no exit on the device. Set one.'
       : null;
 
   const row = (key: string, opts: { divider?: boolean } = {}) => {
@@ -620,8 +624,15 @@ function Editor({
         key={key}
         id={`${ids}-${key}`}
         label={def.label}
-        help={<LongHelp text={help} />}
-        adornment={changed.has(key) && !readOnly ? <ChangedChip /> : undefined}
+        help={<FieldHelp text={help} more={def.more} />}
+        adornment={
+          def.agent || (changed.has(key) && !readOnly) ? (
+            <>
+              {def.agent ? <AgentTag version={def.agent} /> : null}
+              {changed.has(key) && !readOnly ? <ChangedChip /> : null}
+            </>
+          ) : undefined
+        }
         disabled={off}
         divider={opts.divider}
         className={def.type === 'textarea' ? 'v2-cfged-row--wide' : undefined}
@@ -651,28 +662,44 @@ function Editor({
     );
   };
 
-  async function uploadBackgroundImage(file: File) {
-    const problem = kioskImageProblem(file);
-    if (problem) {
-      toast.push('err', 'Image not used', problem);
+  async function uploadBackgroundImage(picked: File) {
+    const typeProblem = kioskImageProblem({ type: picked.type, size: 0 });
+    if (typeProblem) {
+      toast.push('err', 'Image not used', typeProblem);
       return;
     }
     setBackgroundUploading(true);
     try {
+      // At most 3840 px along its long edge (drawn upright when scaled); the server removes the metadata.
+      let file: File;
+      try {
+        file = (await normalizeKioskImage(picked)).file;
+      } catch (e) {
+        toast.push('err', 'Image not used', e instanceof Error ? e.message : 'The image could not be read.');
+        return;
+      }
+      const problem = kioskImageProblem(file);
+      if (problem) {
+        toast.push('err', 'Image not used', problem);
+        return;
+      }
       // Hosted under a name from its content: an edited image with the same file name doesn't clash with the old one.
       const name = kioskImageUploadName(file.name, await kioskImageContentId(file));
       const temporary = await uploadRawFile(new File([file], name, { type: file.type }));
       const saved = await commitUpload(temporary.serverPath);
       if (saved.id == null) throw new Error('The server did not return the uploaded image identity.');
       // URL and checksum are server-canonicalized on save. Clearing the old values avoids a stale preview payload.
+      // Another image: its own focal point starts at the centre (Fill or Fit stays as chosen).
       setDraft((d) => ({
         ...d,
         backgroundImageAction: 'replace',
         backgroundImageFileId: saved.id,
         backgroundImageUrl: undefined,
         backgroundImageSha256: undefined,
+        backgroundImageFocalX: 0.5,
+        backgroundImageFocalY: 0.5,
       }));
-      toast.push('ok', 'Background image uploaded', 'Save and apply the configuration to use it in kiosk.');
+      toast.push('ok', 'Background image uploaded', 'Check the preview, then save and apply the configuration to use it in kiosk.');
     } catch (e) {
       toast.push('err', 'Image upload failed', kioskImageErrorText(e));
     } finally {
@@ -680,44 +707,100 @@ function Editor({
     }
   }
 
+  const backgroundFileId = draft.backgroundImageFileId as number | null | undefined;
+  const backgroundInfo = useKioskBackgroundInfo(kioskOn ? backgroundFileId : null);
+  // The preview's apps are the device's: the kiosk this draft sends (configuredKiosk, as config.apply builds it), so the
+  // main app first, then by package, each package once, all of them; a single-app kiosk pins its app instead of a grid.
+  const draftKiosk = useMemo(() => (kioskOn ? configuredKiosk(draft as Configuration, allowed) : null), [kioskOn, draft, allowed]);
+  const kioskAppNames = useMemo(() => draftKiosk?.apps.map((a) => a.name) ?? [], [draftKiosk]);
+  const pinnedApp = draftKiosk?.payload.mode === 'single' ? (draftKiosk.apps[0]?.name ?? draftKiosk.payload.pinPackage) : undefined;
+
+  const imageFitMode: FitMode = draft.backgroundImageFit === 'fit' ? 'fit' : 'fill';
+  const focalX = typeof draft.backgroundImageFocalX === 'number' ? draft.backgroundImageFocalX : 0.5;
+  const focalY = typeof draft.backgroundImageFocalY === 'number' ? draft.backgroundImageFocalY : 0.5;
+  const imageFocal = useMemo(() => ({ x: focalX, y: focalY }), [focalX, focalY]);
+
   const backgroundImageRow = kioskOn ? (
     <FieldRow
       id={`${ids}-backgroundImage`}
       label="Background image"
-      help={`Needs agent ${KIOSK_IMAGE_AGENT}. A PNG, JPEG or WebP image, at most 10 MB and 16 megapixels, shown behind the kiosk launcher; the background color stays the fallback. Devices download it only when the server address is HTTPS, and check it by its SHA-256. It is hosted in Files, where anyone with its link can open it, so don't use a confidential image. Remove also clears the legacy Background image URL.`}
-      adornment={changed.has('backgroundImageFileId') && !readOnly ? <ChangedChip /> : undefined}
+      help={<FieldHelp text="A PNG, JPEG or WebP photo behind the kiosk launcher." more="Where the image can’t be shown, the background color is used." />}
+      adornment={
+        <>
+          <AgentTag version={KIOSK_IMAGE_AGENT} />
+          {changed.has('backgroundImageFileId') && !readOnly ? <ChangedChip /> : null}
+        </>
+      }
       disabled={readOnly}
-    >
-      {() => (
-        <div className="v2-cfged-calloutline">
-          <input
-            ref={backgroundImageRef}
-            type="file"
-            accept={KIOSK_IMAGE_TYPES.join(',')}
-            hidden
-            onChange={(e) => {
-              const file = e.currentTarget.files?.[0];
-              e.currentTarget.value = '';
-              if (file) void uploadBackgroundImage(file);
-            }}
+      below={backgroundInfo.info ? (
+        <div className="v2-cfged-kbg">
+          <KioskPlacement
+            src={hostedPath(backgroundInfo.info.url)}
+            width={backgroundInfo.info.width}
+            height={backgroundInfo.info.height}
+            fit={imageFitMode}
+            focal={imageFocal}
+            disabled={readOnly}
+            onFit={(v) => setDraft((d) => ({ ...d, backgroundImageFit: v }))}
+            onFocal={(f) => setDraft((d) => ({ ...d, backgroundImageFocalX: f.x, backgroundImageFocalY: f.y }))}
           />
-          <Button size="sm" onClick={() => backgroundImageRef.current?.click()} disabled={readOnly || backgroundUploading}>
-            {backgroundUploading ? 'Uploading…' : draft.backgroundImageFileId != null || draft.backgroundImageUrl ? 'Replace image' : 'Choose image'}
-          </Button>
-          {draft.backgroundImageFileId != null || draft.backgroundImageUrl ? (
-            <Button size="sm" onClick={() => setDraft((d) => ({
-              ...d,
-              backgroundImageAction: 'remove',
-              backgroundImageFileId: null,
-              backgroundImageUrl: undefined,
-              backgroundImageSha256: undefined,
-            }))} disabled={readOnly || backgroundUploading}>
-              Remove
-            </Button>
-          ) : null}
+          <KioskBackgroundPreview
+            src={hostedPath(backgroundInfo.info.url)}
+            width={backgroundInfo.info.width}
+            height={backgroundInfo.info.height}
+            colours={kioskColours(draft.backgroundColor as string | undefined, draft.textColor as string | undefined)}
+            appNames={kioskAppNames}
+            pinned={pinnedApp}
+            exitVisible={draft.kioskExit === true}
+            iconSize={draft.iconSize as string | undefined}
+            fit={imageFitMode}
+            focal={imageFocal}
+          />
         </div>
+      ) : undefined}
+    >
+      {({ labelId }) => (
+        <KioskBackgroundField
+          fileId={backgroundFileId}
+          info={backgroundInfo.info}
+          error={backgroundInfo.error}
+          legacyUrl={draft.backgroundImageUrl as string | undefined}
+          readOnly={readOnly}
+          uploading={backgroundUploading}
+          onFile={(file) => void uploadBackgroundImage(file)}
+          onRemove={() => setDraft((d) => ({
+            ...d,
+            backgroundImageAction: 'remove',
+            backgroundImageFileId: null,
+            backgroundImageUrl: undefined,
+            backgroundImageSha256: undefined,
+          }))}
+          onBrowse={() => setGalleryOpen(true)}
+          labelId={labelId}
+        />
       )}
     </FieldRow>
+  ) : null;
+  const gallery = kioskOn ? (
+    <KioskGallery
+      open={galleryOpen}
+      onClose={() => setGalleryOpen(false)}
+      currentFileId={backgroundFileId}
+      canDelete={mayDeleteFiles}
+      onChoose={(item) => {
+        setDraft((d) => ({
+          ...d,
+          backgroundImageAction: 'replace',
+          backgroundImageFileId: item.fileId,
+          backgroundImageUrl: undefined,
+          backgroundImageSha256: undefined,
+          backgroundImageFocalX: item.fileId === backgroundFileId ? d.backgroundImageFocalX : 0.5,
+          backgroundImageFocalY: item.fileId === backgroundFileId ? d.backgroundImageFocalY : 0.5,
+        }));
+        setGalleryOpen(false);
+        toast.push('ok', 'Background image chosen', `${item.name}. Save and apply the configuration to use it in kiosk.`);
+      }}
+    />
   ) : null;
 
   const renderItems = (items: Item[]) =>
@@ -738,6 +821,7 @@ function Editor({
       <CardHeader titleId={`${ids}-${id}-h`} title={title} subtitle={SECTION_SUB[id]} spacing={12} />
       {renderItems(LAYOUT[id])}
       {id === 'kiosk' ? backgroundImageRow : null}
+      {id === 'kiosk' ? gallery : null}
     </Card>
   );
 
@@ -784,11 +868,11 @@ function Editor({
     </Button>
   ) : (
     <>
-      <Button size="lg" icon={<IconCopy />} onClick={() => setCopying(true)}>
+      <Button icon={<IconCopy />} onClick={() => setCopying(true)}>
         Duplicate
       </Button>
-      <Button size="lg" variant="danger" icon={<IconTrash />} onClick={() => setDeleting(true)}>
-        Delete…
+      <Button variant="danger" icon={<IconTrash />} onClick={() => setDeleting(true)}>
+        Delete
       </Button>
     </>
   );
@@ -844,7 +928,7 @@ function Editor({
             }
           >
             <Textarea
-              rows={2}
+              rows={3}
               value={draft.description == null ? '' : String(draft.description)}
               disabled={readOnly}
               onChange={(e) =>
@@ -864,7 +948,7 @@ function Editor({
           spacing={12}
           actions={
             readOnly ? undefined : (
-              <Button size="lg" icon={<IconPlus />} onClick={() => setPickerOpen(true)} disabled={!appsReady || !libraryReady}>
+              <Button size="sm" icon={<IconPlus />} onClick={() => setPickerOpen(true)} disabled={!appsReady || !libraryReady}>
                 Add apps
               </Button>
             )
@@ -872,23 +956,17 @@ function Editor({
         />
         {library === 'error' ? (
           <div className="v2-cfged-libnote">
-            <Callout tone="alert" role="alert" icon={<IconWarning size={16} />}>
-              <span className="v2-cfged-calloutline">
-                Could not load the app library, so apps cannot be added and the main-app choices are missing.
-                <Button size="sm" onClick={onRetryLibrary}>
-                  Retry
-                </Button>
-              </span>
-            </Callout>
+            <ErrorState thing="the app library" detail="Apps can’t be added until it loads." onRetry={onRetryLibrary} />
           </div>
         ) : null}
         <FieldRow
           id={`${ids}-mainAppId`}
           label={FIELD.mainAppId.label}
           help={
-            kioskOn
-              ? `${FIELD.mainAppId.help} Only apps set to Install and shown in kiosk can be chosen.`
-              : `${FIELD.mainAppId.help} Applies in kiosk mode only: turn kiosk mode on to choose one.`
+            <FieldHelp
+              text={kioskOn ? FIELD.mainAppId.help : 'The app the kiosk opens. Turn kiosk mode on to choose one.'}
+              more={kioskOn ? 'Only apps set to Install and shown in kiosk can be chosen.' : undefined}
+            />
           }
           adornment={changed.has('mainAppId') && !readOnly ? <ChangedChip /> : undefined}
           disabled={!kioskOn}
@@ -927,12 +1005,12 @@ function Editor({
             return (
               <details className="v2-cfged-permission-app">
                 <summary>Permissions · {permissions.length} available</summary>
-                <p>APK candidates only. Each device applies what its Android version and installed app support. Default removes MDMesh’s explicit override.</p>
+                <p>Each device applies what its Android and the app support. Default lifts the override.</p>
                 {permissions.map((permission) => (
                   <label className="v2-cfged-permission-app__row" key={permission}>
                     <span>{managedAppPermissionLabel(permission)}</span>
                     {/* The shared Select: the 3:1 input border every select has (componentEdges.test.ts). */}
-                    <Select size="xs" value={appPermissionState(app.id, permission)} disabled={readOnly} onChange={(e) => setAppPermission(app.id, permission, e.target.value)}>
+                    <Select size="sm" aria-label={managedAppPermissionLabel(permission)} value={appPermissionState(app.id, permission)} disabled={readOnly} onChange={(e) => setAppPermission(app.id, permission, e.target.value)}>
                       <option value="default">Default</option><option value="grant">Grant</option><option value="deny">Deny</option>
                     </Select>
                   </label>
@@ -941,11 +1019,14 @@ function Editor({
             );
           }}
         />
-        <p className="v2-cfged-apps__note">
-          “Do not install” keeps an app listed without installing it. “Remove” takes the app out of this configuration;
-          it is not uninstalled from devices yet.
-          {kioskOn ? ' “Show in kiosk” controls whether an installed app appears in the kiosk launcher.' : ''}
-        </p>
+        <details className="v2-cfged-apps__note">
+          <summary>What On devices does</summary>
+          <p>
+            “Do not install” keeps an app listed without installing it. “Remove” takes the app out of this
+            configuration; it is not uninstalled from devices yet.
+            {kioskOn ? ' “Show in kiosk” sets whether an installed app appears in the kiosk launcher.' : ''}
+          </p>
+        </details>
       </Card>
     ),
     kiosk: section('kiosk', 'Kiosk'),
@@ -957,12 +1038,12 @@ function Editor({
         <div className="v2-cfged-hw__head">
           <div className="v2-cfged-hw__text">
             <h2 id={`${ids}-hw-h`} className="v2-cfged-h2">
-              Headwind launcher only <span className="v2-cfged-hw__count">{LEGACY_FIELDS.length}</span>
+              Legacy launcher settings <span className="v2-cfged-hw__count v2-num">{LEGACY_FIELDS.length}</span>
             </h2>
-            <span className="v2-cfged-hw__sub">Older settings the MDMesh agent does not apply. {hwChanged ? `${hwChanged} changed.` : ''}</span>
+            <span className="v2-cfged-hw__sub">Only the Headwind launcher read these. {hwChanged ? `${hwChanged} changed.` : ''}</span>
           </div>
           <Button
-            size="lg"
+            size="sm"
             aria-expanded={advanced}
             aria-controls={`${ids}-hw-body`}
             iconEnd={<IconChevronDown className={advanced ? 'v2-cfged-chev is-open' : 'v2-cfged-chev'} />}
@@ -1013,20 +1094,16 @@ function Editor({
 
       {readOnly ? (
         <Callout tone="info" icon={<IconInfo size={16} />}>
-          This is a built-in template, so it is view only. Use <b>Duplicate to edit</b> to make your own editable copy.
+          A built-in template is view only. Duplicate it to make your own editable copy.
         </Callout>
       ) : null}
 
       {appsError && !appsReady ? (
-        <Callout tone="alert" role="alert" icon={<IconWarning size={16} />}>
-          <span className="v2-cfged-calloutline">
-            Could not load this configuration’s assigned apps. Saving is disabled so the app list (and kiosk
-            allowlist) is not wiped.
-            <Button size="sm" onClick={() => setAppsAttempt((n) => n + 1)}>
-              Retry
-            </Button>
-          </span>
-        </Callout>
+        <ErrorState
+          thing="this configuration’s assigned apps"
+          detail="Saving is off until they load, so the app list isn’t wiped."
+          onRetry={() => setAppsAttempt((n) => n + 1)}
+        />
       ) : null}
 
       <SectionLayout nav={<SectionNav aria-label="Sections" items={host.nav} />}>

@@ -65,7 +65,7 @@ const PAGES = {
   device: { route: '/devices/WH-SCAN-07', board: '05-device-detail-panel', w: 1440, h: 1280 },
   'device-header': { route: '/devices/WH-SCAN-07', board: '04-device-detail', w: 1440, h: 1400 },
   configurations: { route: '/configurations', board: '06-configurations', w: 1440, h: 1060 },
-  'config-editor': { route: '/configurations/2', board: '07-config-editor', w: 1440, h: 2400 },
+  'config-editor': { route: '/configurations/5', board: '07-config-editor', w: 1440, h: 2400 },
   apps: { route: '/apps', board: '08-apps-library', w: 1440, h: 1060 },
   'apps-custom': { route: '/apps?source=custom', board: '09-apps-custom', w: 1440, h: 1060 },
   'apps-fdroid': { route: '/apps?source=fdroid', board: '10-apps-fdroid', w: 1440, h: 1060 },

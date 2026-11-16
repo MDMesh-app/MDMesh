@@ -1,55 +1,71 @@
-/* Devices list (table, cards). Shared parts (table, pills, identity, bulk bar, pager) come from ui/. */
+/* Devices list (table, cards). Shared parts (table, status, identity, bulk bar, pager) come from ui/. */
 
-/* ---- attention strip (title 600, chips gap 6) ---- */
+/* ---- attention strip ---- */
 .v2 .v2-devices-attn__title {
-  font-weight: 600;
+  font-weight: var(--weight-medium);
 }
 .v2 .v2-devices-attn__chips {
-  flex: 1 1 280px;
+  flex: 0 1 auto;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
-/* ---- toolbar: search 1 1 240 (max 360), status, filters, spacer, view switch; wraps (gap 8 12) ---- */
+/* ---- toolbar: search (≤ 320), status, Filter, spacer, view switch. One row from 1024px up. ---- */
 .v2 .v2-devices-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
+  gap: var(--space-2);
 }
 .v2 .v2-devices-search {
-  flex: 1 0 280px;
-  max-width: 360px;
+  flex: 1 1 200px;
+  max-width: 320px;
 }
 .v2 .v2-devices-toolbar__spacer {
   flex: 1 1 0;
 }
-/* Duplicates toggle: a labelled-select-sized box (r10, 3:1 border) with the warn chip colours when on. */
-.v2 .v2-devices-dup {
+.v2 .v2-devices-filtercount {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 12px;
-  border: 1px solid var(--input-border);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--text-2);
-  font: inherit;
-  font-size: var(--fs-sm);
-  cursor: pointer;
+  justify-content: center;
+  min-width: var(--space-4);
+  height: var(--space-4);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-full);
+  background: var(--ink);
+  color: var(--on-ink);
+  font-size: var(--text-caps);
+  line-height: var(--lh-caps);
+  font-variant-numeric: tabular-nums;
 }
-.v2 .v2-devices-dup .v2-mono {
+.v2 .v2-devices-filters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 260px;
+}
+.v2 .v2-devices-filters .v2-select {
+  width: 100%;
+}
+.v2 .v2-devices-filters .v2-checklabel {
+  align-items: flex-start;
+}
+.v2 .v2-devices-filters .v2-check {
+  margin-top: var(--space-1);
+}
+.v2 .v2-devices-filters__dup {
+  display: flex;
+  flex-direction: column;
+}
+.v2 .v2-devices-filters__help {
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
 }
-.v2 .v2-devices-dup.is-pressed {
-  background: var(--warn-soft);
-  border-color: var(--warn);
-  color: var(--warn-ink);
-  font-weight: 600;
-}
-.v2 .v2-devices-dup.is-pressed .v2-mono {
-  color: inherit;
+.v2 .v2-devices-filters__clear {
+  align-self: flex-start;
+  margin-left: calc(var(--space-2) * -1);
 }
 
 /* ---- table ---- */
@@ -58,69 +74,55 @@
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
-.v2 .v2-devices-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
-}
-.v2 .v2-devices-actions--card {
-  gap: 4px;
-}
 .v2 .v2-devices-empty {
-  padding: 8px 24px 24px;
-}
-.v2 .v2-devices-loading {
-  margin: 0;
-  color: var(--secondary);
-}
-.v2 .v2-devices-callout {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
+  padding: var(--space-2) var(--space-6) var(--space-6);
 }
 
-/* ---- cards: grid minmax(min(100%, 340px), 1fr), gap 16 ---- */
+/* ---- cards: the page grid's gutter, 3 to 4 columns ---- */
 .v2 .v2-devices-cards {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
-  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  gap: var(--grid-gap);
 }
 .v2 .v2-devices-card {
   display: flex;
   flex-direction: column;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-card);
   overflow: hidden;
   cursor: pointer;
+  transition: border-color var(--dur-micro) var(--ease);
+}
+.v2 .v2-devices-card:hover {
+  border-color: var(--border-strong);
 }
 .v2 .v2-devices-card.is-selected {
-  border-color: var(--ink);
-  box-shadow: 0 0 0 1px var(--ink);
+  border-color: var(--border-strong);
+  background: var(--row-selected);
 }
 .v2 .v2-devices-card__top {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  column-gap: 12px;
-  row-gap: 14px;
-  padding: 16px;
+  gap: var(--space-3);
+  padding: var(--card-pad);
 }
 .v2 .v2-devices-card__check {
   justify-self: end;
   align-self: start;
-  margin-top: 2px;
+}
+.v2 .v2-devices-actions--card {
+  justify-self: end;
 }
 .v2 .v2-devices-card__config {
-  padding: 10px 16px;
-  border-top: 1px solid var(--line-soft);
+  padding: var(--space-2) var(--card-pad);
+  border-top: var(--hairline) solid var(--line-soft);
 }
 .v2 .v2-devices-card__config .v2-stext {
   flex: 0 0 auto;
-  white-space: nowrap;
 }
 .v2 .v2-devices-card__facts {
   margin: 0;
@@ -128,25 +130,25 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   background: var(--surface-sunken);
-  border-top: 1px solid var(--line-soft);
+  border-top: var(--hairline) solid var(--line-soft);
 }
 .v2 .v2-devices-card__facts > div {
   display: flex;
   flex-direction: column;
-  padding: 9px 16px 10px;
+  padding: var(--space-2) var(--card-pad);
 }
 .v2 .v2-devices-card__facts > div + div {
-  border-left: 1px solid var(--line-soft);
-  padding-left: 12px;
+  border-left: var(--hairline) solid var(--line-soft);
 }
 .v2 .v2-devices-card__facts dt {
-  font-size: var(--fs-micro);
+  font-size: var(--text-caps);
+  line-height: var(--lh-caps);
   color: var(--secondary);
 }
 .v2 .v2-devices-card__facts dd {
   margin: 0;
-  font-size: var(--fs-sm);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Narrow (≤ 860, drawer shell): the search box takes its own line. */

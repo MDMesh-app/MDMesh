@@ -3,14 +3,27 @@ import { Outlet, useLocation } from 'react-router';
 import { ReloadPrompt } from './ReloadPrompt';
 import { SupervisorProvider } from '../data/useSupervisor';
 import { WhatsNewProvider } from '../whatsnew/WhatsNew';
-import { useContributions } from '../ext/useContributions';
 import { IconButton } from './Button';
 import { IconMenu } from './icons';
 import { PageErrorBoundary } from './PageErrorBoundary';
-import { Sidebar } from './Sidebar';
+import { Sidebar, Wordmark } from './Sidebar';
+import { Skeleton, SkeletonRows } from './Skeleton';
 import { MOBILE_QUERY, useMediaQuery } from './useMediaQuery';
 import { cx } from './cx';
 import './AppShell.css';
+
+/** What a page shows while its chunk downloads the first time (later visits keep the previous page meanwhile). */
+function PageSkeleton() {
+  return (
+    <div className="v2-pageskel" role="status">
+      <span className="v2-visually-hidden">Loading page…</span>
+      <Skeleton width="180px" height="title" />
+      <div className="v2-pageskel__card">
+        <SkeletonRows count={6} />
+      </div>
+    </div>
+  );
+}
 
 /** How long a #hash target is kept in view while the page above it is still loading. */
 const HASH_SETTLE_MS = 4000;
@@ -72,10 +85,11 @@ function useHashTarget(main: RefObject<HTMLElement | null>) {
  * Signed-in layout for every page (a layout route: pages render into <Outlet/>). It owns the supervisor status
  * poll (SupervisorProvider), so the sidebar's update card, the Overview and Settings share one status, and the What's
  * new dialog (whatsnew/WhatsNew.tsx), which never shows over the signed-out pages.
- * Desktop: the board's flex row, sidebar `1 1 232px` beside a centred main column (max 1280, padding
- * clamp(20px, 3vw, 32px), 20px between sections), sidebar sticky at full height.
- * ≤ 860px: the v0.3 console's pattern, a 52px sticky top bar with a menu button and the page name, the sidebar
- * as an off-canvas drawer over a scrim (Escape, scrim click and navigation close it; focus moves in and back).
+ * Desktop: a 220px sticky sidebar beside a left-anchored main column (up to 1440, 24px gutters, 16px between
+ * sections). Each page fades in (opacity only) as it arrives; while a page's chunk downloads for the first time a
+ * skeleton holds its place, and moving between pages keeps the previous one on screen until the next is ready.
+ * ≤ 860px: a sticky top bar (--topbar-h) with the menu button and the wordmark (the page's own heading names it), the
+ * sidebar as an off-canvas drawer over a scrim (Escape, scrim click and navigation close it; focus moves in and back).
  */
 export function AppShell() {
   const location = useLocation();
@@ -95,12 +109,6 @@ export function AppShell() {
     main.focus({ preventScroll: true });
   };
 
-  // The mobile bar names the sidebar item the page belongs to.
-  const section = useContributions('nav.item').find(({ contribution: { to } }) =>
-    location.pathname === to || location.pathname.startsWith(`${to}/`),
-  );
-  const title = section?.contribution.label ?? 'MDMesh';
-
   // Navigation closes the drawer.
   useEffect(() => {
     setOpen(false);
@@ -116,7 +124,8 @@ export function AppShell() {
     if (!open) return;
     drawerRef.current?.querySelector<HTMLElement>('a[href], button')?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+      // An Escape a menu or dialog inside the drawer already used (it prevents the default) closes only that.
+      if (e.key === 'Escape' && !e.defaultPrevented) setOpen(false);
     };
     document.addEventListener('keydown', onKey);
     const menu = menuRef.current;
@@ -151,7 +160,7 @@ export function AppShell() {
               <div className="v2-mobilebar">
                 <IconButton
                   ref={menuRef}
-                  size="lg"
+                  size="md"
                   label={open ? 'Close navigation' : 'Open navigation'}
                   aria-expanded={open}
                   aria-controls="v2-sidebar"
@@ -159,17 +168,21 @@ export function AppShell() {
                 >
                   <IconMenu />
                 </IconButton>
-                <span className="v2-mobilebar__title">{title}</span>
+                <Wordmark className="v2-mobilebar__brand" />
               </div>
             ) : null}
             <main ref={mainRef} id="v2-main" tabIndex={-1} className="v2-shell__main">
               <ReloadPrompt />
-              {/* Pages are lazy chunks; a crash or a failed chunk replaces only the page, never the shell. */}
-              <PageErrorBoundary key={location.pathname}>
-                <Suspense fallback={null}>
-                  <Outlet />
-                </Suspense>
-              </PageErrorBoundary>
+              {/* Pages are lazy chunks; a crash or a failed chunk replaces only the page, never the shell. The Suspense
+                  boundary sits outside the per-page boundary so it survives navigation: a page still downloading
+                  keeps the previous page on screen (navigations are transitions) instead of an empty frame. */}
+              <Suspense fallback={<PageSkeleton />}>
+                <PageErrorBoundary key={location.pathname}>
+                  <div className="v2-route">
+                    <Outlet />
+                  </div>
+                </PageErrorBoundary>
+              </Suspense>
             </main>
           </div>
         </div>

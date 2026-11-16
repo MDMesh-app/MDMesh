@@ -130,7 +130,7 @@ describe('configuration sections: the host', () => {
     open();
     await demoLabel();
     expect(navLabels().map((l) => l?.replace(/\d.*$/, '').trim())).toEqual([
-      'Identity', 'Apps', 'Kiosk', 'Network', 'Demo', 'Security', 'Enrollment', 'Headwind only',
+      'Identity', 'Apps', 'Kiosk', 'Network', 'Demo', 'Security', 'Enrollment', 'Legacy launcher settings',
     ]);
     const card = document.getElementById('x-demo-demo');
     expect(card?.tagName).toBe('SECTION');
@@ -145,7 +145,7 @@ describe('configuration sections: the host', () => {
     open({}, { registry: registryOf() });
     await screen.findByText('Description');
     expect(navLabels().map((l) => l?.replace(/\d.*$/, '').trim())).toEqual([
-      'Identity', 'Apps', 'Kiosk', 'Network', 'Security', 'Enrollment', 'Headwind only',
+      'Identity', 'Apps', 'Kiosk', 'Network', 'Security', 'Enrollment', 'Legacy launcher settings',
     ]);
   });
 
@@ -550,7 +550,7 @@ describe('configuration sections: edge cases', () => {
     expect(saveBar()).toBeNull();
 
     explode = false;
-    fireEvent.click(within(card).getByRole('button', { name: 'Try again' }));
+    fireEvent.click(within(card).getByRole('button', { name: 'Retry' }));
     expect(await within(card).findByRole('button', { name: 'Boomed' })).toBeTruthy();
     expect(within(saveBar()!).getByText('1 unsaved change')).toBeTruthy();
     await save();

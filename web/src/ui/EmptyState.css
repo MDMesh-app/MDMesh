@@ -1,43 +1,45 @@
+/* Empty state: a 32px neutral icon tile, a 14px/500 title, one line or two of secondary body, then actions. */
 .v2 .v2-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 40px 24px;
+  gap: var(--space-1);
+  padding: var(--space-8) var(--space-6);
   text-align: center;
 }
 .v2 .v2-empty--bare {
-  padding: 24px 16px;
+  padding: var(--space-6) var(--space-4);
 }
 .v2 .v2-empty__icon {
-  width: 40px;
-  height: 40px;
-  margin-bottom: 6px;
+  width: var(--control-md);
+  height: var(--control-md);
+  margin-bottom: var(--space-2);
   box-sizing: border-box;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-control);
   background: var(--surface-2);
-  border: 1px solid var(--border);
-  color: var(--text-2);
+  color: var(--secondary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 .v2 .v2-empty__title {
   margin: 0;
-  font-size: var(--fs-lead);
-  font-weight: 600;
+  font-size: var(--text-input);
+  line-height: var(--lh-input);
+  font-weight: var(--weight-medium);
   color: var(--text);
 }
 .v2 .v2-empty__body {
   margin: 0;
   max-width: 52ch;
-  font-size: var(--fs-control);
-  color: var(--text-2);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
+  color: var(--secondary);
 }
 .v2 .v2-empty__action {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 8px;
-  margin-top: 10px;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
 }

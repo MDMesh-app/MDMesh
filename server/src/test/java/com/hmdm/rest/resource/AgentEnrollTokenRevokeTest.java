@@ -38,7 +38,7 @@ public class AgentEnrollTokenRevokeTest {
     }
 
     private static AgentAdminResource admin(AgentEnrollmentTokenDAO tokens) {
-        return new AgentAdminResource(tokens, null, null, null, null, null, null, null);
+        return new AgentAdminResource(tokens, null, null, null, null, null, null, null, null);
     }
 
     @After

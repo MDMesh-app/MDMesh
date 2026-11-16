@@ -443,5 +443,3 @@ SELECT pg_catalog.setval('public.configurationapplications_id_seq', 271, true);
 INSERT INTO devices (id, number, description, lastupdate, configurationid, oldconfigurationid, info, imei, phone, customerid) VALUES (1, 'h0001', 'My first Android device', 0, 1, NULL, NULL, NULL, NULL, 1);
 
 SELECT pg_catalog.setval('public.devices_id_seq', 1, true);
-
-

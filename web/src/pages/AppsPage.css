@@ -144,6 +144,11 @@
   margin: 0;
   min-width: 0;
 }
+/* A card's cell is narrow: its Used in list wraps between names instead of running past the card. */
+.v2 .v2-apps-libcard__facts .v2-apps-lib__used {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 
 /* ---- custom APK: the form card (8 of 12) and help cards (4 of 12) ---- */
 .v2 .v2-apps-custom__head {

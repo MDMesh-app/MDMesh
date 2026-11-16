@@ -68,5 +68,8 @@ describe('parseReleaseEntries', () => {
   it('starts a new entry only at a release heading, not a sub-heading that opens with a version', () => {
     const entries = parseReleaseEntries('New\n- A.\n\n### 0.5.0 database changes\n- B.', '0.5.0');
     expect(entries).toHaveLength(1);
+    // …and it reads as its text, without the marks.
+    expect(JSON.stringify(entries[0])).toContain('0.5.0 database changes');
+    expect(JSON.stringify(entries[0])).not.toContain('###');
   });
 });

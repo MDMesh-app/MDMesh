@@ -61,25 +61,22 @@ function renderInline(nodes: Inline[], onNavigate: () => void, links: LinkPolicy
   });
 }
 
-/** A notes list, nested lists included. `mark` puts something before an item's text (Settings' Security badge). */
+/** A notes list, nested lists included. */
 export function NotesList({
   items,
   onNavigate,
   className = 'v2-whatsnew__list',
-  mark,
   links = 'bundled',
 }: {
   items: ListItem[];
   onNavigate: () => void;
   className?: string;
-  mark?: (item: ListItem) => ReactNode;
   links?: LinkPolicy;
 }) {
   return (
     <ul className={className}>
       {items.map((item, i) => (
         <li key={i}>
-          {mark?.(item)}
           {item.parts.map((p, j) =>
             p.kind === 'list' ? (
               <NotesList key={j} items={p.items} onNavigate={onNavigate} className={className} links={links} />

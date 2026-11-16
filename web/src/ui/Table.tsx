@@ -104,7 +104,11 @@ export function shiftSpace(e: KeyboardEvent, run?: () => void) {
   if (e.key !== ' ') return;
   const el = e.currentTarget;
   if (e.type === 'keydown') {
-    if (!e.shiftKey) return;
+    if (!e.shiftKey) {
+      // A plain Space: whatever an earlier Shift+Space left (its keyup lost to a focus change) no longer applies.
+      rangeKeys.delete(el);
+      return;
+    }
     e.preventDefault();
     rangeKeys.add(el);
     if (!e.repeat) run?.();

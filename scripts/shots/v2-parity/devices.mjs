@@ -465,7 +465,7 @@ for (const width of [1440, 390]) {
 {
   const now = Date.now();
   const many = Array.from({ length: 25 }, (_, i) => ({
-    id: 500 + i, number: `TAB-${String(i).padStart(4, '0')}`, description: `Tablet ${i}`, configurationId: i % 5 === 0 ? undefined : 1,
+    id: 500 + i, number: `TAB-${String(i).padStart(4, '0')}`, description: `Tablet ${i}`, configurationId: i % 5 === 0 ? undefined : 4,
     lastUpdate: now - i * 60_000, androidVersion: '13', hardwareId: i < 2 ? 'same-hw' : `hw-${i}`,
   }));
   const { context, page, errors } = await ctx({ devices: many });

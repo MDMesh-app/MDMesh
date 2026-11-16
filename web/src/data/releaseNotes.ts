@@ -29,14 +29,17 @@ export interface ReleaseEntry {
 /** A release's own heading, as CHANGELOG.md writes it: the version, then a date or nothing ("### 0.5.0 changes" isn't). */
 const RELEASE_HEADING = /^\s{0,3}#{1,6}\s*(?:MDMesh\s+)?v?(\d+\.\d+\.\d+)(?:\s*[—–-]\s*(\d{4}-\d{2}-\d{2}))?\s*$/i;
 const TITLE_LINE = /^\s*(?:#{1,6}\s*)?(?:MDMesh\s+)?v?(\d+\.\d+\.\d+)\s*$/i;
-/** A section heading written as a markdown heading ("### Fixes"): the What's new parser takes the bare label. */
-const MD_SECTION = /^\s{0,3}#{1,6}\s+(?=(?:Upgrading|Heads-up|New|Fixes|Security|Under the hood)\b)/;
+/**
+ * A markdown heading's marks ("### Fixes", "### Notes"): the What's new parser takes a section's bare label, and any
+ * other heading reads as its text, not "### Notes". Release headings are split off before this.
+ */
+const MD_HEADING = /^\s{0,3}#{1,6}\s+/;
 
 /** A Security section's title ("Security", "Security (agent 0.5.0)"). */
 export const isSecurityGroup = (g: NotesSection): boolean => /^Security\b/.test(g.title);
 
 function entry(version: string | null, date: string | null, body: string): ReleaseEntry {
-  const notes = parseNotes(body.split('\n').map((l) => l.replace(MD_SECTION, '')).join('\n'));
+  const notes = parseNotes(body.split('\n').map((l) => l.replace(MD_HEADING, '')).join('\n'));
   // The summary is the opening line only, never a closing one (a release may open straight into a section).
   const first = notes.intro[0];
   const headline = first && first.kind === 'para' ? first.text : null;

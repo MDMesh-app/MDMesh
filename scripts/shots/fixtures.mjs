@@ -261,7 +261,7 @@ export function configurationsFixtures(fx) {
   const full = {
     1: seed('Displays a set of application icons predefined by the administrator. To show or hide applications, use the Applications tab.'),
     2: seed('Optimized for MIUI-running devices'),
-    3: { ...seed('Headwind MDM is running in the background, it is used to install apps and track the device status. User can do everything (permissive mode).') },
+    3: seed('The MDMesh agent runs in the background to install apps and report device status. The user can use the device freely (permissive mode).'),
     4: { description: 'Warehouse scanners and shared handhelds. USB storage blocked, no location tracking.', usbStorage: false },
     5: {
       description: 'Front-desk and café screens pinned to Signage Player. Status bar shown, power menu locked.',
@@ -355,11 +355,11 @@ export function buildAppsFixtures(base) {
   const fdroid = (pkg, vc) => `https://f-droid.org/repo/${pkg}_${vc}.apk`;
   // id, name, pkg, version, versionCode, url, hasApkHash, parts, used-in configuration ids
   const rows = [
-    [1, 'MDMesh Agent', 'com.lunacy.mdm.agent', '0.1.15', 16, `${host}/files/com.lunacy.mdm.agent.apk`, true, null, [4, 5, 6]],
+    [1, 'MDMesh Agent', 'com.lunacy.mdm.agent', '0.1.15', 16, `${host}/files/com.lunacy.mdm.agent.apk`, true, null, [1, 4, 5, 6]],
     [2, 'Field Ops', 'com.acme.fieldops', '4.2.0', 420, `${host}/files/com.acme.fieldops.apk`, false, null, [6]],
     [3, 'Chrome', 'com.android.chrome', '120.0', 6000, 'https://dl.acme-cdn.example/chrome-120.apk', true, null, [5, 6]],
     [4, 'Microsoft Teams', 'com.microsoft.teams', '1.0.0', 100, 'https://downloads.acme-cdn.example/teams-1.0.0.apk', false, null, []],
-    [5, 'Zebra DataWedge', 'com.symbol.datawedge', '11.3', 1130, undefined, false, 3, [4]],
+    [5, 'Zebra DataWedge', 'com.symbol.datawedge', '11.3', 1130, undefined, false, 3, [1, 4]],
     [6, 'Signage Player', 'com.acme.signage', '2.7.1', 271, `${host}/files/com.acme.signage.apk`, false, null, [5]],
     [7, 'Organic Maps', 'app.organicmaps', '2025.03.02', 25030200, fdroid('app.organicmaps', 25030200), true, null, [6]],
     [8, 'Binary Eye', 'de.markusfisch.android.binaryeye', '1.63.6', 135, fdroid('de.markusfisch.android.binaryeye', 135), true, null, []],

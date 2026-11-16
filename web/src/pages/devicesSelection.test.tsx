@@ -102,6 +102,16 @@ describe.each([
     expect(checked()).toEqual([1, 2, 3]);
   });
 
+  it('a Shift+Space whose keyup was lost does not swallow the next plain Space', async () => {
+    open(path);
+    await main().findByText('Charlie', {}, LOAD);
+    fireEvent.click(box(1));
+    fireEvent.keyDown(box(3), { key: ' ', shiftKey: true });
+    // Focus went elsewhere before the keyup; later, a plain Space on the same box.
+    fireEvent.keyDown(box(3), { key: ' ' });
+    expect(fireEvent.keyUp(box(3), { key: ' ' })).toBe(true);
+  });
+
   it('after Clear, Shift+click on a checkbox starts afresh and ticks just that one', async () => {
     open(path);
     await main().findByText('Charlie', {}, LOAD);

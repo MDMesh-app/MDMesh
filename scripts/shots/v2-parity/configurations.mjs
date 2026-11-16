@@ -671,7 +671,7 @@ await test('editor: 390px stacks the app rows (select and Remove on screen)', as
 // ---------------------------------------------------------------- a long app list: search, filter, sort
 
 const many = manyAppsFixture(configurationsFixtures(fx));
-/** Configuration 4, with 14 assigned apps. */
+/** Configuration 9, with 14 assigned apps. */
 async function manyRoutes(context) {
   await context.route(/\/rest\/private\/configurations\/9$/, (r) =>
     r.request().method() === 'GET' ? r.fulfill({ contentType: 'application/json', body: envelope(many.config) }) : r.fallback());

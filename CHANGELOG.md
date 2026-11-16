@@ -80,7 +80,7 @@ New
   unknown address says "Page not found" instead of opening the Overview. The browser tab has an MDMesh icon.
 - Devices: once a device is selected, a click on a row or card selects it too (its name still opens it), and
   Shift-click, or Shift+Space on a checkbox, selects or clears the whole range since the last one. Settings shows a
-  ready update's notes by version, with a one-line summary, grouped items and security fixes marked.
+  ready update's notes by version, with a one-line summary, grouped items, and a release with security fixes marked.
 - Destructive confirmations name what they do ("Factory reset", "Delete configuration"), and one action has one
   name everywhere ("Lock", "Ring", "Sync now", "Needs attention").
 - From source and native: `./setup.sh --update` moves the clone to the newest release, checked against its signed

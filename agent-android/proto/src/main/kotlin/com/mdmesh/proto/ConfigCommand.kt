@@ -21,6 +21,8 @@ data class ConfigApplyPayload(
     val policies: Map<String, Boolean> = emptyMap(),
     val kiosk: KioskApplyPayload? = null,
     val location: ConfigLocation? = null,
+    /** 1.6: global Private DNS host; empty clears it, absent = not managed. */
+    val dns: String? = null,
     val connectivity: ConfigConnectivity? = null,
     /** Null = server does not manage app permissions; empty = deliberately release all earlier overrides. */
     val appPermissions: List<ConfigAppPermissions>? = null,
@@ -43,7 +45,7 @@ data class ConfigAppPermissions(
 @Serializable
 data class ConfigApplyResult(
     val revision: String,
-    /** keys: `policies.<key>`, `kiosk`, `location`, `connectivity` → [ConfigOutcome] strings. */
+    /** keys: `policies.<key>`, `kiosk`, `location`, `dns`, `connectivity` → [ConfigOutcome] strings. */
     val outcomes: Map<String, String>,
 )
 

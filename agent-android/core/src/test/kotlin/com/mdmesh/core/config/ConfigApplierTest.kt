@@ -551,4 +551,77 @@ class ConfigApplierTest {
         assertTrue(modes.isEmpty())
         assertEquals("unsupported is final: the document is saved", "c5", store.revision())
     }
+
+    private class FakeDnsPolicy(
+        var outcome: PolicyOutcome = PolicyOutcome.Applied,
+    ) : com.mdmesh.policy.dns.DnsPolicy {
+        override val capabilityKey: String = "dns"
+        val hosts = mutableListOf<String?>()
+        override fun isSupported() = true
+        override fun setDnsHost(dnsHost: String?): PolicyOutcome {
+            hosts += dnsHost
+            return outcome
+        }
+    }
+
+    @Test fun `dns sets the configured host and an empty one clears it`() = runTest {
+        val dns = FakeDnsPolicy(); val store = InMemoryConfigStateStore()
+        val a = ConfigApplier(fixedToggles(), kiosk(FakeController()), {}, store, setPowerMode = {},
+            dnsPolicy = { dns })
+
+        val set = a.apply(ConfigApplyPayload(revision = "d1", dns = "dns.google"))
+        assertEquals(mapOf("dns" to ConfigOutcome.APPLIED), set.outcomes)
+        assertEquals(listOf("dns.google"), dns.hosts)
+
+        // The console stores "" when the admin empties a field that had a value: the agent returns to opportunistic.
+        val cleared = a.apply(ConfigApplyPayload(revision = "d2", dns = ""))
+        assertEquals(mapOf("dns" to ConfigOutcome.APPLIED), cleared.outcomes)
+        assertEquals(listOf("dns.google", ""), dns.hosts)
+        assertEquals("d2", store.revision())
+    }
+
+    @Test fun `a document without the dns section leaves an unmanaged device alone`() = runTest {
+        val dns = FakeDnsPolicy(); val store = InMemoryConfigStateStore()
+        ConfigApplier(fixedToggles(), kiosk(FakeController()), {}, store, setPowerMode = {}, dnsPolicy = { dns })
+            .apply(ConfigApplyPayload(revision = "n1"))
+        assertTrue("never managed -> no DNS call", dns.hosts.isEmpty())
+    }
+
+    @Test fun `removing the dns section releases the host a previous document set`() = runTest {
+        val dns = FakeDnsPolicy(); val store = InMemoryConfigStateStore()
+        val a = ConfigApplier(fixedToggles(), kiosk(FakeController()), {}, store, setPowerMode = {},
+            dnsPolicy = { dns })
+        a.apply(ConfigApplyPayload(revision = "r1", dns = "dns.google"))
+
+        val r = a.apply(ConfigApplyPayload(revision = "r2"))
+        assertEquals(listOf("dns.google", null), dns.hosts)
+        assertFalse("a successful release needs no outcome key", r.outcomes.containsKey("dns"))
+        assertEquals("r2", store.revision())
+    }
+
+    @Test fun `a failed dns release is reported and retried`() = runTest {
+        val dns = FakeDnsPolicy(); val store = InMemoryConfigStateStore()
+        val a = ConfigApplier(fixedToggles(), kiosk(FakeController()), {}, store, setPowerMode = {},
+            dnsPolicy = { dns })
+        a.apply(ConfigApplyPayload(revision = "f1", dns = "dns.google"))
+
+        dns.outcome = PolicyOutcome.Failed("dpm busy")
+        val failed = a.apply(ConfigApplyPayload(revision = "f2"))
+        assertEquals(ConfigOutcome.failed("dpm busy"), failed.outcomes["dns"])
+        assertEquals("not saved, so the release is retried", "f1", store.revision())
+
+        dns.outcome = PolicyOutcome.Applied
+        val retried = a.apply(ConfigApplyPayload(revision = "f2"))
+        assertFalse(retried.outcomes.containsKey("dns"))
+        assertEquals("f2", store.revision())
+        assertEquals(2, dns.hosts.count { it == null })
+    }
+
+    @Test fun `dns unsupported is final and the document is saved`() = runTest {
+        val store = InMemoryConfigStateStore()
+        val r = applier(fixedToggles(), kiosk(FakeController()), {}, store)
+            .apply(ConfigApplyPayload(revision = "u1", dns = "dns.google"))
+        assertEquals(ConfigOutcome.UNSUPPORTED, r.outcomes["dns"])
+        assertEquals("u1", store.revision())
+    }
 }

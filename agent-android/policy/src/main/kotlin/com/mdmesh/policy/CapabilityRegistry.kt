@@ -5,6 +5,8 @@ import com.mdmesh.policy.bluetooth.BluetoothPolicy
 import com.mdmesh.policy.bluetooth.BluetoothPolicyFactory
 import com.mdmesh.policy.camera.CameraPolicy
 import com.mdmesh.policy.camera.CameraPolicyFactory
+import com.mdmesh.policy.dns.DnsPolicy
+import com.mdmesh.policy.dns.DnsPolicyFactory
 import com.mdmesh.policy.factoryreset.FactoryResetPolicy
 import com.mdmesh.policy.factoryreset.FactoryResetPolicyFactory
 import com.mdmesh.policy.location.LocationServicesPolicy
@@ -93,12 +95,16 @@ class CapabilityRegistry(
      * server keeps sending it and the agent keeps retrying); see [ResolvedToggles.advertisedKeys].
      * Each entry corresponds to a row in `proto/registry.md` § policy.
      */
-    fun supportedPolicyKeys(): List<String> = togglePolicies().advertisedKeys
+    fun supportedPolicyKeys(): List<String> = buildList {
+        addAll(togglePolicies().advertisedKeys)
+        // DNS is string-valued rather than a toggle, so it has its own probe (fork feature).
+        DnsPolicyFactory.create(handle)?.let { add(DnsPolicy.CAPABILITY_KEY) }
+    }
 
     /** Convenience: resolve the live [DeviceControl] facade for this device. */
     fun deviceControl(): DeviceControl? {
         val wifi = WifiPolicyFactory.create(handle) ?: return null
-        return DefaultDeviceControl(wifi)
+        return DefaultDeviceControl(wifi, DnsPolicyFactory.create(handle))
     }
 
     private companion object {
@@ -109,4 +115,5 @@ class CapabilityRegistry(
 /** Default [DeviceControl] facade wiring the selected strategies together. */
 internal class DefaultDeviceControl(
     override val wifi: WifiPolicy,
+    override val dns: DnsPolicy? = null,
 ) : DeviceControl

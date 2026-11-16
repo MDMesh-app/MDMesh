@@ -47,6 +47,19 @@ class DeviceOwnerAfterStartTest {
         }
     }
 
+    /** Like PrivateDnsPolicy: supported only on a Device Owner (and API 29+, not modelled here). */
+    private class DeviceOwnerDns(private val dpm: FakeDpm) : com.mdmesh.policy.dns.DnsPolicy {
+        override val capabilityKey = "dns"
+        var lastHost: String? = "unset"
+        override fun isSupported() = dpm.deviceOwner
+        override fun setDnsHost(dnsHost: String?): PolicyOutcome {
+            if (!isSupported()) return PolicyOutcome.Unsupported
+            lastHost = dnsHost
+            dpm.calls += "dns=$dnsHost"
+            return PolicyOutcome.Applied
+        }
+    }
+
     /** Mirrors CapabilityRegistry: each probe builds a fresh candidate and keeps it only when supported. */
     private fun resolver(dpm: FakeDpm) = TogglePolicyResolver(
         linkedMapOf<String, () -> TogglePolicy?>(
@@ -136,6 +149,20 @@ class DeviceOwnerAfterStartTest {
         assertEquals(ConfigOutcome.APPLIED, after.outcomes["policies.screenshots"])
         assertEquals(ConfigOutcome.APPLIED, after.outcomes["policies.factoryReset"])
         assertEquals(listOf("screenshots=false", "factoryReset=false"), dpm.calls)
+    }
+
+    @Test
+    fun `config apply applies DNS when Device Owner arrives after the applier was built`() = runTest {
+        val dpm = FakeDpm()
+        val dns = DeviceOwnerDns(dpm)
+        val applier = ConfigApplier(resolver(dpm)::current, kiosk(), {}, InMemoryConfigStateStore(),
+            setPowerMode = {}, dnsPolicy = { dns.takeIf { it.isSupported() } })
+
+        dpm.deviceOwner = true // provisioning completes after the process built its singletons
+        val r = applier.apply(ConfigApplyPayload(revision = "dns1", dns = "dns.google"))
+
+        assertEquals(ConfigOutcome.APPLIED, r.outcomes["dns"])
+        assertEquals("dns.google", dns.lastHost)
     }
 
     @Test

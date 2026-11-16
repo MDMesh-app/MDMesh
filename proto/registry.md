@@ -24,6 +24,7 @@ Advertised only when the device has a working strategy for it (`CapabilityRegist
 | `screenshots` | disable screenshots | 24 | |
 | `factoryReset` | block/restore the user-initiated factory reset | 24 | `UserManager.DISALLOW_FACTORY_RESET`; Device Owner only; does **not** cover a wipe from recovery mode or fastboot. Not to be confused with `factoryResetProtection` below. |
 | `safeBoot` | block/restore rebooting into Safe Mode | 24 | `UserManager.DISALLOW_SAFE_BOOT` (API 23); Device Owner only. Closes the Safe-Mode escape from a kiosk. From agent 0.3.7 the kiosk also blocks Safe Mode itself while in kiosk unless the configuration sends `true`, and every `config.apply` re-checks it last, so a block nothing asks for is lifted (a `policy.apply` block lasts until the next `config.apply`, which includes the re-apply at boot). |
+| `dns` | global private DNS host | 29 | String-valued, not a boolean toggle: `DevicePolicyManager.setGlobalPrivateDnsModeSpecifiedHost`; an empty value clears it to opportunistic mode. Device Owner only. Advertised by the agent as `dns`; the server sends it as the `dns` section of `config.apply` (1.6, fork feature), and `policy.apply` accepts `{ "policy": "dns", "value": "<host>" }` too. |
 | `gps` | legacy location toggle | 24 | Planned: not advertised. Use `locationServices` for the modern Android Location-services policy. |
 | `mobileData` | mobile data toggle | 24 | Planned: not advertised yet. |
 | `kioskLockTask` | COSU lock-task kiosk | 24 | Planned: not advertised; kiosk commands are ungated (see below). |

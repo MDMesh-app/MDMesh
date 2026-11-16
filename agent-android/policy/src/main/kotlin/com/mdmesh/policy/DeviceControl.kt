@@ -1,5 +1,6 @@
 package com.mdmesh.policy
 
+import com.mdmesh.policy.dns.DnsPolicy
 import com.mdmesh.policy.wifi.WifiPolicy
 
 /**
@@ -25,6 +26,9 @@ interface DeviceControl {
 
     /** Wi-Fi enable/disable + admin lock. The one worked example in this scaffold. */
     val wifi: WifiPolicy
+
+    /** Global Private DNS configuration. */
+    val dns: DnsPolicy?
 
     // Future policy surfaces (bluetooth, camera, screenshots, kiosk, ...) are added
     // here as additional capability-abstracted interfaces, each with their own

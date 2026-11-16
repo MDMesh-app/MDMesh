@@ -80,6 +80,7 @@ import com.mdmesh.oem.OemAdapter
 import com.mdmesh.policy.CapabilityRegistry
 import com.mdmesh.policy.AppRuntimePermissions
 import com.mdmesh.policy.DeviceOwnerAppRuntimePermissions
+import com.mdmesh.policy.dns.DnsPolicyFactory
 import com.mdmesh.policy.wifi.AndroidWifiRadio
 import com.mdmesh.policy.wifi.DpmHandle
 import com.mdmesh.policy.wifi.SharedPrefsWifiRadioOffState
@@ -199,9 +200,9 @@ object AgentModule {
 
     @Provides
     @IntoSet
-    fun providePolicyApplyHandler(registry: CapabilityRegistry): CommandHandler =
-        // A function, not a map: the toggles are resolved per command (Device Owner arrives after process start, #76).
-        PolicyApplyHandler(registry::togglePolicies)
+    fun providePolicyApplyHandler(registry: CapabilityRegistry, handle: DpmHandle): CommandHandler =
+        // Functions, not maps: the policies are resolved per command (Device Owner arrives after process start, #76).
+        PolicyApplyHandler(registry::togglePolicies, dnsPolicy = { DnsPolicyFactory.create(handle) })
 
     @Provides
     @Singleton
@@ -375,13 +376,15 @@ object AgentModule {
     @Suppress("LongParameterList") // Hilt's explicit configuration-section bindings make this wiring auditable.
     fun provideConfigApplier(
         registry: CapabilityRegistry,
+        handle: DpmHandle,
         kiosk: KioskApplier,
         location: LocationModeStore,
         store: ConfigStateStore,
         power: PowerModeStore,
         appPermissions: AppRuntimePermissions,
     ): ConfigApplier = ConfigApplier(registry::togglePolicies, kiosk, location::set, store,
-        setPowerMode = power::set, appPermissions = appPermissions)
+        setPowerMode = power::set, appPermissions = appPermissions,
+        dnsPolicy = { DnsPolicyFactory.create(handle) })
 
     @Provides
     @Singleton

@@ -151,6 +151,17 @@ public class FilesResourceTest {
         }
     }
 
+    @Test
+    public void testExtractFromNonZipFindsNoApks() throws IOException {
+        File notAZip = temporaryFolder.newFile("encrypted.apkm");
+        try (FileOutputStream out = new FileOutputStream(notAZip)) {
+            out.write("not a zip archive at all".getBytes("UTF-8"));
+        }
+        Assert.assertTrue(new FilesResource().extractApkParts(notAZip, customer()).isEmpty());
+        Assert.assertTrue(new FilesResource().extractApkParts(temporaryFolder.newFile("empty.xapk"), customer())
+                .isEmpty());
+    }
+
     private Customer customer(int id) {
         Customer customer = new Customer();
         customer.setId(id);

@@ -865,10 +865,17 @@ public class FilesResource {
     /** Extract every {@code *.apk} entry of a zip container to temp files. If a {@code universal.apk}
      *  is present (bundletool .apks), return ONLY it — it's a self-contained single install. */
     List<File> extractApkParts(File zip, Customer customer) throws IOException {
+        java.util.zip.ZipFile opened;
+        try {
+            opened = new java.util.zip.ZipFile(zip);
+        } catch (java.util.zip.ZipException notAZip) {
+            // Not a zip at all (an encrypted .apkm, say): no APKs, the clearer error.bundle.noApks.
+            return new LinkedList<>();
+        }
         List<File> parts = new LinkedList<>();
         File universal = null;
         boolean extracted = false;
-        try (java.util.zip.ZipFile zipFile = new java.util.zip.ZipFile(zip)) {
+        try (java.util.zip.ZipFile zipFile = opened) {
             java.util.Enumeration<? extends java.util.zip.ZipEntry> entries = zipFile.entries();
             while (entries.hasMoreElements()) {
                 java.util.zip.ZipEntry entry = entries.nextElement();

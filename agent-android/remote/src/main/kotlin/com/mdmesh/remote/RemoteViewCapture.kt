@@ -16,7 +16,6 @@ import org.webrtc.EglBase
 import org.webrtc.DefaultVideoDecoderFactory
 import org.webrtc.DefaultVideoEncoderFactory
 import org.webrtc.IceCandidate
-import org.webrtc.Logging
 import org.webrtc.MediaConstraints
 import org.webrtc.PeerConnection
 import org.webrtc.PeerConnectionFactory
@@ -87,10 +86,6 @@ internal class RemoteViewCapture(
     private fun startOnPeerThread(resultData: Intent) {
         startupStage = "initializing WebRTC"
         PeerConnectionFactory.initialize(PeerConnectionFactory.InitializationOptions.builder(appContext).createInitializationOptions())
-        // Mirrors AppRTC's native diagnostic setup for this LAN POC. It is
-        // intentionally temporary: native WebRTC logs can include network
-        // candidate details and must not remain enabled for a production path.
-        Logging.enableLogToDebugOutput(Logging.Severity.LS_INFO)
         egl = EglBase.create()
         startupStage = "creating WebRTC factory"
         // A generic factory can gather data-channel candidates but the S8 does

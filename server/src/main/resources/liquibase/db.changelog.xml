@@ -3214,4 +3214,17 @@
             ALTER TABLE configurations DROP COLUMN IF EXISTS backgroundImageFit;</rollback>
     </changeSet>
 
+    <changeSet id="26.11.16-configurations-backgroundMode-description" author="lunacy" context="common">
+        <comment>Replace the Headwind wording in the description the old installer seed gave its Background (Agent) Mode
+            configuration, as install/sql/post_seed.sql does. Only the row still holding that exact seed text changes,
+            so a description an admin wrote is kept. The description is not part of the agent's desired-state
+            revision, so devices see no change. A no-op on a fresh database (the seed is loaded after the first start
+            and carries the new text) and on a second run.</comment>
+        <sql>UPDATE configurations
+            SET description = 'The MDMesh agent runs in the background to install apps and report device status. The user can use the device freely (permissive mode).'
+            WHERE id = 3 AND name = 'Background (Agent) Mode'
+              AND description = 'Headwind MDM is running in the background, it is used to install apps and track the device status. User can do everything (permissive mode).';</sql>
+        <rollback/>
+    </changeSet>
+
 </databaseChangeLog>

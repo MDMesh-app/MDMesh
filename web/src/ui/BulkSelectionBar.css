@@ -46,6 +46,18 @@
   font-weight: var(--weight-medium);
   font-variant-numeric: tabular-nums;
 }
+.v2 .v2-bulkbar__hint {
+  margin-right: var(--space-2);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+  color: var(--secondary);
+  white-space: nowrap;
+}
+@media (max-width: 1100px) {
+  .v2 .v2-bulkbar__hint {
+    display: none;
+  }
+}
 /* Phones: one row across the bottom, inside the page gutters; the actions scroll sideways if they don't fit. */
 @media (max-width: 860px) {
   .v2 .v2-bulkbar {

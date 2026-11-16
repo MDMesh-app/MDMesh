@@ -17,7 +17,7 @@ export { StatusPill, StatusText, StatusDot, STATUS_META, TONE_SHAPE } from './St
 export type { StatusKind, StatusTone, StatusShape } from './Status';
 export { Card, CardHeader, Notice, Callout } from './Card';
 export type { CardPadding, CardTone } from './Card';
-export { Table } from './Table';
+export { Table, noShiftSelect, shiftOf, shiftSpace } from './Table';
 export type { Column, SortDir, TableProps } from './Table';
 export { SectionNav, SectionLayout, useScrollSpy } from './SectionNav';
 export type { SectionNavItem } from './SectionNav';

@@ -996,7 +996,9 @@ export interface TableProps<Row> {
     rowPad?: 10 | 12;
     selection?: {
         selected: ReadonlySet<Key>;
-        onToggle: (key: Key, row: Row) => void;
+        onToggle: (key: Key, row: Row, how?: {
+            shiftKey: boolean;
+        }) => void;
         onToggleAll: (select: boolean) => void;
         rowLabel: (row: Row) => string;
         allLabel?: string;
@@ -1007,7 +1009,7 @@ export interface TableProps<Row> {
         onSort: (key: string) => void;
     };
     empty?: ReactNode;
-    onRowClick?: (row: Row) => void;
+    onRowClick?: (row: Row, event: MouseEvent<HTMLTableRowElement>) => void;
     className?: string;
 }
 export declare function Table<Row>({ columns, rows, rowKey, edge, minWidth, headless, rowPad, selection, sort, empty, onRowClick, className, ...aria }: TableProps<Row>): import("react").JSX.Element;

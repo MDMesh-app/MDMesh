@@ -61,6 +61,9 @@ import {
   type DeviceKind,
   type SortDir,
   type TableProps,
+  noShiftSelect,
+  shiftOf,
+  shiftSpace,
 } from '../ui';
 import { ChangeConfigurationModal, DeleteDevicesModal, RunActionModal } from '../ui/BulkModals';
 import { ISSUE_ORDER, ISSUE_REASON, issueKind, type IssueKind, type Presence } from '../data/fleetHealth';
@@ -472,9 +475,35 @@ export function DevicesPage() {
   }, [canSelect]);
   const selectionActive = canSelect && selectedIds.length > 0;
 
-  // Once a selection is in progress, a click on a row or card (outside its links and buttons) toggles it, as in the
-  // v0.3 console; otherwise it opens the device. The route takes the number, like the v0.3 links.
-  const activate = (d: DeviceView) => (selectionActive ? toggle(d.id) : navigate(paths.device(d.number)));
+  // The device last toggled: Shift with the next one selects, or clears, every device between them on this page, in
+  // the list's order, to match it.
+  const anchor = useRef<number | null>(null);
+  const pick = (d: DeviceView, shiftKey = false) => {
+    const from = anchor.current;
+    anchor.current = d.id;
+    const ids = pageRows.map((r) => r.id);
+    const a = from === null ? -1 : ids.indexOf(from);
+    const b = ids.indexOf(d.id);
+    if (!shiftKey || a < 0 || b < 0 || a === b) {
+      toggle(d.id);
+      return;
+    }
+    const on = selected.has(from as number);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of ids.slice(Math.min(a, b), Math.max(a, b) + 1)) {
+        if (on) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  };
+
+  // Once a selection is in progress, a click on a row or card (outside its links and buttons) toggles it, Shift+click
+  // a range, as in the v0.3 console; otherwise it opens the device (its name link opens it either way). The route
+  // takes the number, like the v0.3 links.
+  const activate = (d: DeviceView, e?: { shiftKey: boolean }) =>
+    selectionActive ? pick(d, !!e?.shiftKey) : navigate(paths.device(d.number));
 
   // The latest search asked for (its answer may still be on the way), so a refresh never brings back an older one.
   const refreshList = useCallback(() => reload(requested.current), [reload]);
@@ -697,6 +726,7 @@ export function DevicesPage() {
       total={filtered.length}
       onSelectAll={() => setSelected(new Set(filtered.map((d) => d.id)))}
       onClear={clearSel}
+      hint="Click devices to add them, Shift-click for a range"
     >
       <BulkActions actions={bulkActions} rows={selectedRows} helpers={helpers} />
     </BulkSelectionBar>
@@ -760,7 +790,7 @@ export function DevicesPage() {
   const selection: TableProps<DeviceView>['selection'] = canSelect
     ? {
         selected,
-        onToggle: (_k, d) => toggle(d.id),
+        onToggle: (_k, d, how) => pick(d, how?.shiftKey),
         onToggleAll: (select) =>
           setSelected((prev) => {
             const next = new Set(prev);
@@ -820,8 +850,9 @@ export function DevicesPage() {
                 <li
                   key={d.id}
                   className={cx('v2-devices-card', on && 'is-selected')}
+                  onMouseDown={canSelect ? noShiftSelect : undefined}
                   onClick={(e) => {
-                    if (!(e.target as HTMLElement).closest(INTERACTIVE)) activate(d);
+                    if (!(e.target as HTMLElement).closest(INTERACTIVE)) activate(d, e);
                   }}
                 >
                   <div className="v2-devices-card__top">
@@ -831,7 +862,9 @@ export function DevicesPage() {
                         className="v2-devices-card__check"
                         aria-label={`Select ${d.number}`}
                         checked={on}
-                        onChange={() => toggle(d.id)}
+                        onChange={(e) => pick(d, shiftOf(e.nativeEvent))}
+                        onKeyDown={(e) => shiftSpace(e, () => pick(d, true))}
+                        onKeyUp={(e) => shiftSpace(e)}
                       />
                     ) : null}
                     <PresenceStatus layout="inline" status={s.p} reason={s.reason} />

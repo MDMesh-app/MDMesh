@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type Key, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type Key, type MouseEvent, type ReactNode } from 'react';
 import { Checkbox } from './Input';
 import { cx } from './cx';
 import './Table.css';
@@ -38,7 +38,8 @@ export interface TableProps<Row> {
   /** Selection: a checkbox column first. */
   selection?: {
     selected: ReadonlySet<Key>;
-    onToggle: (key: Key, row: Row) => void;
+    /** `shiftKey`: the toggle came with Shift held (a click or Shift+Space), to select a range. */
+    onToggle: (key: Key, row: Row, how?: { shiftKey: boolean }) => void;
     onToggleAll: (select: boolean) => void;
     /** Accessible label for a row checkbox, e.g. (r) => `Select ${r.number}`. */
     rowLabel: (row: Row) => string;
@@ -51,7 +52,7 @@ export interface TableProps<Row> {
    * A click anywhere on a row that is not on a control in it (link, button, checkbox, menu…): open or select the
    * row. Pointer convenience only, so keep a link or button in the row for keyboard users.
    */
-  onRowClick?: (row: Row) => void;
+  onRowClick?: (row: Row, event: MouseEvent<HTMLTableRowElement>) => void;
   className?: string;
 }
 
@@ -85,6 +86,24 @@ export function scrollStopProps(stop: boolean, name?: string, labelledBy?: strin
   if (name) return { tabIndex: 0, role: 'region', 'aria-label': `Scrollable: ${name}` };
   if (labelledBy) return { tabIndex: 0, role: 'region', 'aria-labelledby': labelledBy };
   return { tabIndex: 0, role: 'region', 'aria-label': 'Scrollable table' };
+}
+
+/** Stops the text selection a Shift+press starts (Shift+click selects a range of rows instead). */
+export function noShiftSelect(e: MouseEvent) {
+  if (e.shiftKey && !(e.target as Element).closest('input:not([type="checkbox"]), textarea, select')) e.preventDefault();
+}
+
+/** Whether a checkbox's change came with Shift held (its change event is the click that made it). */
+export const shiftOf = (e: Event): boolean => !!(e as Partial<globalThis.MouseEvent>).shiftKey;
+
+/**
+ * Shift+Space on a selection checkbox: a range, not the plain toggle Space makes. Both key events are stopped, so the
+ * box doesn't toggle itself as well; `run` on the keydown.
+ */
+export function shiftSpace(e: KeyboardEvent, run?: () => void) {
+  if (e.key !== ' ' || !e.shiftKey) return;
+  e.preventDefault();
+  if (e.type === 'keydown' && !e.repeat) run?.();
 }
 
 /** Clicks on these inside a row are theirs, not the row's. */
@@ -183,17 +202,25 @@ export function Table<Row>({
               <tr
                 key={k}
                 className={cx(on && 'is-selected')}
+                // Shift+click selects a range: the browser's text selection it would also start is not wanted.
+                onMouseDown={selection || onRowClick ? noShiftSelect : undefined}
                 onClick={
                   onRowClick
                     ? (e: MouseEvent<HTMLTableRowElement>) => {
-                        if (!(e.target as Element).closest(ROW_CONTROLS)) onRowClick(r);
+                        if (!(e.target as Element).closest(ROW_CONTROLS)) onRowClick(r, e);
                       }
                     : undefined
                 }
               >
                 {selection ? (
                   <td className="v2-table__shrink">
-                    <Checkbox aria-label={selection.rowLabel(r)} checked={!!on} onChange={() => selection.onToggle(k, r)} />
+                    <Checkbox
+                      aria-label={selection.rowLabel(r)}
+                      checked={!!on}
+                      onChange={(e) => selection.onToggle(k, r, { shiftKey: shiftOf(e.nativeEvent) })}
+                      onKeyDown={(e) => shiftSpace(e, () => selection.onToggle(k, r, { shiftKey: true }))}
+                      onKeyUp={(e) => shiftSpace(e)}
+                    />
                   </td>
                 ) : null}
                 {columns.map((c) => (

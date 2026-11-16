@@ -191,7 +191,7 @@ export function SettingsPage() {
     : apply && (apply.phase === 'failed' || apply.phase === 'rolled_back')
       ? { meta: 'Failed', metaTone: 'alert' }
       : missedSecurity(s).length > 0
-        ? { meta: 'Security', metaTone: 'warn' }
+        ? { meta: 'Security fixes', metaTone: 'warn' }
         : s?.updateAvailable
           ? { meta: '1 ready', metaTone: 'ok' }
           : {};

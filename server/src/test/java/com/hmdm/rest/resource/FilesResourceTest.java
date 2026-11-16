@@ -162,6 +162,31 @@ public class FilesResourceTest {
                 .isEmpty());
     }
 
+    @Test
+    public void testExtractRejectsEntryLargerThanDeclared() throws IOException {
+        File zipFile = temporaryFolder.newFile("understated_size.xapk");
+        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(zipFile))) {
+            zos.putNextEntry(new ZipEntry("base.apk"));
+            zos.write(new byte[1024 * 1024]); // compresses to almost nothing
+            zos.closeEntry();
+        }
+        byte[] zipBytes = readBytes(zipFile);
+        putLittleEndianInt(zipBytes, findSignature(zipBytes, 0x02014b50) + 24, 16); // declare 16 bytes
+        try (FileOutputStream out = new FileOutputStream(zipFile)) {
+            out.write(zipBytes);
+        }
+
+        Customer customer = customer(920003);
+        int before = bundlePartCount(customer);
+        try {
+            new FilesResource().extractApkParts(zipFile, customer);
+            Assert.fail("Expected an IOException for an entry larger than its declared size");
+        } catch (IOException expected) {
+            Assert.assertTrue(expected.getMessage(), expected.getMessage().contains("declared size"));
+        }
+        Assert.assertEquals(before, bundlePartCount(customer));
+    }
+
     private Customer customer(int id) {
         Customer customer = new Customer();
         customer.setId(id);

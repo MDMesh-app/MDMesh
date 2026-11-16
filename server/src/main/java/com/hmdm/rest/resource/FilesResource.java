@@ -908,7 +908,8 @@ public class FilesResource {
         return parts;
     }
 
-    /** Copy one zip entry to [out], checking its size and CRC: ZipFile, unlike ZipInputStream, checks neither. */
+    /** Copy one zip entry to [out], checking its size and CRC: ZipFile, unlike ZipInputStream, checks neither.
+     *  Stops as soon as the entry inflates past the size the archive declares, so a lying entry can't fill the disk. */
     private static void copyEntry(java.util.zip.ZipFile zipFile, java.util.zip.ZipEntry entry, File out)
             throws IOException {
         java.util.zip.CRC32 crc = new java.util.zip.CRC32();
@@ -918,6 +919,9 @@ public class FilesResource {
             byte[] buf = new byte[64 * 1024];
             int n;
             while ((n = is.read(buf)) >= 0) {
+                if (size + n > entry.getSize()) {
+                    throw new IOException("Zip entry " + entry.getName() + " is larger than its declared size");
+                }
                 os.write(buf, 0, n);
                 crc.update(buf, 0, n);
                 size += n;

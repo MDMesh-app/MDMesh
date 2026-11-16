@@ -73,14 +73,16 @@ Heads-up
   random times so they don't all reconnect at once after a server restart. Check-ins are not affected.
 
 New
-- The console has a new look: denser and calmer, with one type and spacing scale, one table, one set of controls, and
-  menus, dialogs, tabs and pages that move instead of snapping. Lists show 48px rows with their actions on hover;
-  Devices has one toolbar with a Filter menu; the Overview and the device's Telemetry tab are laid out on one grid;
-  pages load with placeholders at their real size instead of "Loading…" and never show a 0 they don't know. An
-  unknown address says "Page not found" instead of opening the Overview. The browser tab has an MDMesh icon.
-- Devices: once a device is selected, a click on a row or card selects it too (its name still opens it), and
-  Shift-click, or Shift+Space on a checkbox, selects or clears the whole range since the last one. Settings shows a
-  ready update's notes by version, with a one-line summary, grouped items, and a release with security fixes marked.
+- The console has a new look: calmer, with comfortable spacing, one type and spacing scale, one table, one set of
+  controls, and menus, dialogs, tabs and pages that move instead of snapping. Lists show 48px rows with their actions
+  on hover; Devices has one toolbar with a Filter menu; configurations show as cards; the Overview is laid out in two
+  columns and the device's Telemetry tab on one grid; pages load with placeholders at their real size instead of
+  "Loading…" and never show a 0 they don't know. Button and menu labels no longer end in "…". An unknown address says
+  "Page not found" instead of opening the Overview. The browser tab has an MDMesh icon.
+- Devices: once a device is selected, a click on a row or card adds it to the selection (its name still opens the
+  device), and Shift-click, or Shift+Space on a checkbox, selects or clears the range since the last one.
+- Settings shows a ready update's release notes by version: a one-line summary, the items grouped, and a "Security
+  fixes" label on a release that has a Security section.
 - Destructive confirmations name what they do ("Factory reset", "Delete configuration"), and one action has one
   name everywhere ("Lock", "Ring", "Sync now", "Needs attention").
 - From source and native: `./setup.sh --update` moves the clone to the newest release, checked against its signed

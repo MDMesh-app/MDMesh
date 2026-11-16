@@ -152,11 +152,11 @@ class RemoteViewFeasibilityService : Service() {
             for (horizontal in SAMPLE_GRID.indices) {
                 val x = ((image.width - 1) * SAMPLE_GRID[horizontal]).toInt().coerceAtLeast(0)
                 val offset = y * plane.rowStride + x * plane.pixelStride
-                if (offset + 2 >= buffer.limit()) continue
-                total += (buffer.get(offset).toInt() and 0xff)
-                total += (buffer.get(offset + 1).toInt() and 0xff)
-                total += (buffer.get(offset + 2).toInt() and 0xff)
-                samples += 3
+                if (offset + LAST_COLOR_COMPONENT_OFFSET >= buffer.limit()) continue
+                for (component in 0 until COLOR_COMPONENT_COUNT) {
+                    total += (buffer.get(offset + component).toInt() and BYTE_MASK)
+                }
+                samples += COLOR_COMPONENT_COUNT
             }
         }
         return if (samples == 0) 0 else (total / samples).toInt()
@@ -174,6 +174,9 @@ class RemoteViewFeasibilityService : Service() {
         private const val NOTIFICATION_ID = 7_301
         private const val PROBE_DURATION_MS = 30_000L
         private const val FRAME_DIAGNOSTIC_INTERVAL = 10
+        private const val COLOR_COMPONENT_COUNT = 3
+        private const val LAST_COLOR_COMPONENT_OFFSET = COLOR_COMPONENT_COUNT - 1
+        private const val BYTE_MASK = 0xff
         private val SAMPLE_GRID = floatArrayOf(0.15f, 0.5f, 0.85f)
     }
 }

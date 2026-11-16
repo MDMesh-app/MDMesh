@@ -25,6 +25,7 @@ data class RemoteViewFeasibilityState(
  * whether the S8 can present and accept Android's capture consent while kiosk
  * is active and whether a foreground service can own a short projection.
  */
+@Suppress("TooManyFunctions")
 object RemoteViewFeasibilityProbe {
 
     private val mutableState = MutableStateFlow(RemoteViewFeasibilityState("", active = false))

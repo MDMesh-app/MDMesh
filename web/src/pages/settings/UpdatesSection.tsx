@@ -12,7 +12,9 @@ import {
   IconAlert,
   IconCheck,
   IconInfo,
+  IconShield,
   Modal,
+  Notice,
   RelativeTime,
   Skeleton,
   Stepper,
@@ -26,7 +28,14 @@ import { applyRunning, type SupervisorState } from '../../data/useSupervisor';
 import { entrySize, parseReleaseEntries, type ReleaseEntry } from '../../data/releaseNotes';
 import type { Block, NotesSection } from '../../whatsnew/changelog';
 import { InlineText, NotesList } from '../../whatsnew/NotesView';
-import { applyPhaseLabel, lastCheckError, safeReleaseUrl } from '../../data/updateStatus';
+import {
+  applyPhaseLabel,
+  lastCheckError,
+  missedSecurity,
+  missedSecurityLink,
+  missedSecurityText,
+  safeReleaseUrl,
+} from '../../data/updateStatus';
 
 /** Apply phases in order (supervisor APPLY_PHASES before `done`). */
 const PHASES = ['authorizing', 'backup', 'pull', 'recreate', 'healthcheck'] as const;
@@ -239,6 +248,8 @@ export function UpdatesSection({
   const canApply = s?.applySupported !== false;
   const lastError = lastCheckError(s);
   const releaseUrl = safeReleaseUrl(s?.release?.url);
+  const missed = missedSecurity(s);
+  const missedLink = missedSecurityLink(missed, s?.release?.url);
 
   const header = (
     <CardHeader
@@ -374,6 +385,26 @@ export function UpdatesSection({
             </Button>
           </span>
         </Callout>
+      ) : null}
+
+      {/* The offered release skips over security releases this server never got (the supervisor's missedSecurity, from
+          the verified manifest). Amber, not red: nothing failed, and the update below includes the fixes. */}
+      {s && s.latest && missed.length > 0 && !running ? (
+        <Notice
+          tone="warn"
+          icon={<IconShield size={16} />}
+          title="Missing security fixes"
+          className="v2-settings-secnotice"
+          action={
+            missedLink ? (
+              <a className="v2-settings-link" href={missedLink.href} target="_blank" rel="noreferrer">
+                {missedLink.label} ↗
+              </a>
+            ) : undefined
+          }
+        >
+          <p>{missedSecurityText(missed, s.current, s.latest)}</p>
+        </Notice>
       ) : null}
 
       {/* A release is ready. */}

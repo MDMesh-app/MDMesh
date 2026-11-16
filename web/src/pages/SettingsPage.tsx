@@ -24,6 +24,7 @@ import {
 import { ChangePasswordModal } from './settings/ChangePasswordModal';
 import { UsersSection } from './settings/UsersSection';
 import { applyRunning, useSupervisor } from '../data/useSupervisor';
+import { missedSecurity } from '../data/updateStatus';
 import { CORE_ACTION_ACCESS } from '../ext/core/access';
 import { CORE_SETTINGS, CoreSettingsProvider } from '../ext/core/settings';
 import { useSettingsSections, type SectionMeta } from '../ext/hosts/SettingsSections';
@@ -189,9 +190,11 @@ export function SettingsPage() {
     ? { meta: 'Updating', metaTone: 'warn' }
     : apply && (apply.phase === 'failed' || apply.phase === 'rolled_back')
       ? { meta: 'Failed', metaTone: 'alert' }
-      : s?.updateAvailable
-        ? { meta: '1 ready', metaTone: 'ok' }
-        : {};
+      : missedSecurity(s).length > 0
+        ? { meta: 'Security', metaTone: 'warn' }
+        : s?.updateAvailable
+          ? { meta: '1 ready', metaTone: 'ok' }
+          : {};
   // Core's sections and extensions' come from the registry (ext/core/settings.tsx); the page builds core's bodies.
   const { nav, sections } = useSettingsSections(
     {

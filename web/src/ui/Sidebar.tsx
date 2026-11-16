@@ -5,7 +5,7 @@ import { useMayManageDeployment } from '../auth/useMayManageDeployment';
 import { useTheme } from './theme';
 import { isApplyTerminal, type UpdateStatus } from '../api/updates';
 import { useSupervisor } from '../data/useSupervisor';
-import { applyPhaseLabel } from '../data/updateStatus';
+import { applyPhaseLabel, missedSecurity, missedSecurityShort } from '../data/updateStatus';
 import { ExtensionBoundary } from '../ext/ExtensionBoundary';
 import { useContributions } from '../ext/useContributions';
 import { paths, UPDATES_HREF } from '../routes';
@@ -29,8 +29,8 @@ export function Wordmark({ size = 17, className }: { size?: 17 | 18; className?:
 }
 
 /**
- * The sidebar's server-update card, above the account row: a status dot and "Server update 0.1.15", one short line,
- * and the action. The Overview's Server card says the same in the same words; both lead to Settings → Updates.
+ * The sidebar's server-update card, above the account row: a status dot and "Server update 0.1.15" (amber "Security
+ * update 0.1.15" when the update brings security fixes from releases this server skipped), one short line, and the action. The Overview's Server card says the same in the same words; both lead to Settings → Updates.
  * Hidden when there is nothing to say.
  */
 function UpdateCard({ status, onNavigate }: { status: UpdateStatus | null; onNavigate?: () => void }) {
@@ -66,6 +66,20 @@ function UpdateCard({ status, onNavigate }: { status: UpdateStatus | null; onNav
     );
   }
   if (!status.updateAvailable || !status.latest) return null;
+  // The update skips over security releases (verified manifest only): amber, and the card says so.
+  const missed = missedSecurity(status);
+  if (missed.length > 0) {
+    return (
+      <Link to={UPDATES_HREF} className="v2-updcard" onClick={onNavigate}>
+        <span className="v2-updcard__title">
+          <span className="v2-updcard__dot is-warn" aria-hidden="true" />
+          Security update {status.latest}
+        </span>
+        <span className="v2-updcard__text">{missedSecurityShort(missed)}</span>
+        <span className="v2-updcard__action">Review update</span>
+      </Link>
+    );
+  }
   const how =
     status.applySupported === false
       ? 'Update from the server shell.'

@@ -370,6 +370,9 @@ export function configSection<T>(section: Omit<ConfigSectionContribution<T>, 'sl
   return { ...section, slot: 'config.section' };
 }
 
+/** Each lazyComponent's chunk download, for preloadComponent. */
+const preloaders = new WeakMap<object, () => void>();
+
 /**
  * A component from a named export, loaded on first render: `lazyComponent(() => import('./NetworkTab'), 'NetworkTab')`.
  * Each extension's UI is then its own chunk, so extensions do not grow the console's first load.
@@ -378,18 +381,38 @@ export function lazyComponent<P, K extends string>(
   load: () => Promise<Record<K, ComponentType<P>>>,
   name: K,
 ): LazyComponent<P> {
-  return lazy(async () => {
+  // One download, shared by a prefetch (preloadComponent) and the first render. A failed one is forgotten, so the
+  // render after it (the error boundary's "Retry") downloads again.
+  let pending: Promise<Record<K, ComponentType<P>>> | null = null;
+  const once = () => {
+    pending ??= load().catch((error: unknown) => {
+      pending = null;
+      throw error;
+    });
+    return pending;
+  };
+  const component = lazy(async () => {
     let module: Record<K, ComponentType<P>>;
     try {
-      module = await load();
+      module = await once();
     } catch (error) {
       throw lazyLoadError(error instanceof Error ? error.message : String(error), error);
     }
-    const component = module[name];
+    const exported = module[name];
     // A renamed export would otherwise surface as React's "element type is invalid", far from the cause.
-    if (!component) throw lazyLoadError(`lazyComponent: the module has no export named "${name}"`);
-    return { default: component };
+    if (!exported) throw lazyLoadError(`lazyComponent: the module has no export named "${name}"`);
+    return { default: exported };
   });
+  preloaders.set(component, () => void once().catch(() => {}));
+  return component;
+}
+
+/**
+ * Start downloading a lazyComponent's chunk without rendering it (a link is hovered or focused), so the page is
+ * ready by the time it is clicked. Anything else is ignored. Internal: not part of `@mdmesh/console`.
+ */
+export function preloadComponent(component: unknown) {
+  if (component && typeof component === 'object') preloaders.get(component)?.();
 }
 
 /**
@@ -419,7 +442,7 @@ export function coreComponent<P>(component: ComponentType<P>): LazyComponent<P> 
 export const CORE_STORAGE: { readonly defaults: null } = Object.freeze({ defaults: null });
 
 /**
- * React.lazy keeps a failed load and throws it again on every render, so "Try again" cannot help: error boundaries
+ * React.lazy keeps a failed load and throws it again on every render, so "Retry" cannot help: error boundaries
  * offer a reload for this name (ui/AppErrorBoundary isChunkLoadError).
  */
 function lazyLoadError(message: string, cause?: unknown): Error {

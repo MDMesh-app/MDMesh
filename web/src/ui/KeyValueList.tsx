@@ -6,24 +6,27 @@ export interface KeyValueItem {
   key?: Key;
   label: ReactNode;
   value: ReactNode;
-  /** Technical value (IPs, serials, versions): IBM Plex Mono, 13px in the rail. */
+  /** A value people copy (IPs, serials, hashes): IBM Plex Mono at the meta size. */
   mono?: boolean;
 }
 
 /**
- * - `rail`: dense rows, 5px padding, value right-aligned (device detail rail)
- * - `rows`: 11px rows with a top rule, value at the right (Settings Account / Server)
- * - `facts`: two-column grid in a sunken box, 13.5px (Enroll summary)
+ * - `rail`: dense rows, value right-aligned (device facts, telemetry)
+ * - `rows`: --row-compact rows with a top rule, value at the right (Settings Account / Server)
+ * - `facts`: label/value grid in a sunken box (Enroll summary)
  */
 export type KeyValueVariant = 'rail' | 'rows' | 'facts';
 
 export function KeyValueList({
   items,
   variant = 'rail',
+  columns = 1,
   className,
 }: {
   items: ReadonlyArray<KeyValueItem>;
   variant?: KeyValueVariant;
+  /** `rail` and `rows`: flow the rows into two columns where the container is wide enough (≥ 560px). */
+  columns?: 1 | 2;
   className?: string;
 }) {
   if (variant === 'facts') {
@@ -39,7 +42,7 @@ export function KeyValueList({
     );
   }
   return (
-    <dl className={cx('v2-kv', `v2-kv--${variant}`, className)}>
+    <dl className={cx('v2-kv', `v2-kv--${variant}`, columns === 2 && 'v2-kv--2col', className)}>
       {items.map((it, i) => (
         <div key={it.key ?? i} className="v2-kv__row">
           <dt>{it.label}</dt>
@@ -50,7 +53,7 @@ export function KeyValueList({
   );
 }
 
-/** A titled group of rail rows: 12/600 uppercase eyebrow, then the list (Status / Location / Hardware…). */
+/** A titled group of rail rows: a quiet 11px caps label, then the list (Status / Location / Hardware…). */
 export function KeyValueGroup({
   title,
   items,

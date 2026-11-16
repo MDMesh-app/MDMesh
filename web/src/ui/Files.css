@@ -1,13 +1,15 @@
+/* Custom APK file panels: the drop zone (empty) and the "file read" result share one anatomy. */
+
 /* ---- file read panel ---- */
 .v2 .v2-filepanel,
 .v2 .v2-drop {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px 14px;
-  padding: 16px 18px;
-  border: 1.5px dashed var(--ok-line);
-  border-radius: var(--radius-card-sm);
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: var(--hairline) dashed var(--ok-line);
+  border-radius: var(--radius-control);
   background: var(--ok-wash);
 }
 .v2 .v2-filepanel.is-alert {
@@ -16,16 +18,16 @@
 }
 .v2 .v2-filepanel__tile {
   flex: 0 0 auto;
-  width: 44px;
-  height: 44px;
+  width: var(--control-lg);
+  height: var(--control-lg);
   box-sizing: border-box;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-chip);
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: var(--hairline) solid var(--border);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--ink);
+  color: var(--text-2);
 }
 .v2 .v2-filepanel__bar {
   fill: var(--ok-mark);
@@ -41,11 +43,12 @@
 }
 .v2 .v2-filepanel__name {
   font-family: var(--font-mono);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   overflow-wrap: anywhere;
 }
 .v2 .v2-filepanel__detail {
-  font-size: var(--fs-sm);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--ok-ink);
 }
 .v2 .v2-filepanel.is-alert .v2-filepanel__detail {
@@ -55,29 +58,32 @@
 /* ---- drop zone: the same panel, empty ---- */
 .v2 .v2-drop {
   border-color: var(--border-strong);
-  background: var(--app);
-  transition: border-color 0.12s ease, background-color 0.12s ease;
+  background: var(--surface-sunken);
+  transition:
+    border-color var(--dur-micro) var(--ease),
+    background-color var(--dur-micro) var(--ease);
 }
 .v2 .v2-drop.is-over {
   border-color: var(--ink);
   background: var(--surface-2);
 }
 .v2 .v2-drop.is-disabled {
-  opacity: 0.7;
+  opacity: var(--disabled-opacity);
 }
 .v2 .v2-drop__title {
-  font-weight: 600;
+  font-weight: var(--weight-medium);
 }
 .v2 .v2-drop__hint {
-  font-size: var(--fs-sm);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
 }
 
 /* The read result inside FileDropZone: still a drop target (outline while a file is over it). */
 .v2 .v2-dropresult {
-  border-radius: var(--radius-card-sm);
+  border-radius: var(--radius-control);
 }
 .v2 .v2-dropresult.is-over {
-  outline: 2px dashed var(--ink);
-  outline-offset: 2px;
+  outline: var(--indicator) dashed var(--ink);
+  outline-offset: var(--indicator);
 }

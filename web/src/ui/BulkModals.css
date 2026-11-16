@@ -1,24 +1,76 @@
-/* Bulk dialogs (BulkModals.tsx): action groups as wrapping rows of buttons under an eyebrow. */
+/* Bulk dialogs (BulkModals.tsx): action groups as wrapping rows of buttons under an eyebrow; app lists with a leading
+   checkbox per row. */
 .v2 .v2-bulkmodal__text {
   margin: 0;
 }
 .v2 .v2-bulkmodal__group {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .v2 .v2-bulkmodal__grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 .v2 .v2-bulkmodal__kiosks {
   margin: 0;
-  padding-left: 18px;
+  padding-left: var(--space-4);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-2);
 }
 .v2 .v2-bulkmodal__kiosks .is-skipped {
   color: var(--secondary);
+}
+
+/* Custom kiosk: the Library as a list, one row per app, its checkbox first (I8). */
+.v2 .v2-bulkmodal__apps {
+  display: flex;
+  flex-direction: column;
+  max-height: min(320px, 40vh);
+  overflow-y: auto;
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-control);
+}
+.v2 .v2-bulkmodal__app {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--row-compact);
+  padding: var(--space-1) var(--space-3);
+  border-top: var(--hairline) solid var(--line-soft);
+  background: var(--surface);
+  cursor: pointer;
+  transition: background-color var(--dur-micro) var(--ease);
+}
+.v2 .v2-bulkmodal__app:first-child {
+  border-top: 0;
+}
+.v2 .v2-bulkmodal__app:hover {
+  background: var(--hover);
+}
+.v2 .v2-bulkmodal__app.is-on {
+  background: var(--row-selected);
+}
+.v2 .v2-bulkmodal__appmeta {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.v2 .v2-bulkmodal__appname {
+  font-weight: var(--weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v2 .v2-bulkmodal__apppkg {
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+  color: var(--secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

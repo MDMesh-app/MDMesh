@@ -9,19 +9,21 @@ for each setting.
 ## Create a configuration
 
 1. Open **Configurations** and select **New configuration**.
-2. Choose **Blank configuration**, or **Based on** a built-in template to copy its settings and apps.
+2. If there are built-in templates, choose **Blank configuration**, or **Based on** a template to copy its settings
+   and apps, then select **Create**. With no templates, a blank configuration opens directly.
 3. Give it a **Name** (it must be unique) and optionally a **Description**.
 4. Set the apps and settings (below), then select **Create configuration**.
 
 The built-in templates (marked **Built-in**) are view only. Use **Duplicate to edit** to make an editable copy. Any
-configuration can be copied with **Duplicate**; devices stay on the configuration they had.
+configuration can be copied with **Duplicate**; devices stay on the configuration they had. When the list has both
+kinds, **All**, **Custom** (made on this server) and **Built-in** filter it.
 
-**Delete…** is refused while devices still use the configuration: move them to another one first.
+**Delete** is refused while devices still use the configuration: move them to another one first.
 
 ## What a configuration contains
 
 The editor has these sections: **Identity**, **Apps**, **Kiosk**, **Network**, **Security**, **Enrollment** and
-**Headwind only**. A setting you change is marked **Changed** until you save.
+**Legacy launcher settings**. A setting you change is marked **Changed** until you save.
 
 ### Apps
 
@@ -77,7 +79,7 @@ to the server. Each setting's help text in the console explains the details.
 **Enroll** page can put this Wi-Fi network in the enrollment QR code, so a new device joins it during setup. The
 password is in the QR code in plain text.
 
-### Headwind only
+### Legacy launcher settings
 
 Older settings that only the Headwind launcher read (collapsed: select **Show settings**). The MDMesh agent doesn't
 apply them; they stay stored with the configuration.
@@ -86,7 +88,7 @@ apply them; they stay stored with the configuration.
 
 - **New devices:** on the **Enroll** page, choose the **Configuration** before you share the QR code. The code is tied
   to that configuration ([enrolling devices](../DEPLOY.md#first-login-and-enrolling-devices)).
-- **Enrolled devices:** on **Devices**, use **Change configuration…** in a device's menu, or select several devices
+- **Enrolled devices:** on **Devices**, use **Change configuration** in a device's menu, or select several devices
   and choose **Change configuration**. Pick the configuration and select **Move**. The device gets the new
   configuration's settings and installs the apps it doesn't have yet.
 
@@ -130,7 +132,7 @@ Each device shows one of these:
 
 Where to look:
 
-- **Overview**: **Config in sync** across the fleet, **By configuration**, and **Needs attention** for the devices
+- **Overview**: **Configuration in sync** across the fleet, **By configuration**, and **Needs attention** for the devices
   that failed, are out of sync or have old agents.
 - **Configurations**: each card shows how many of its devices are in sync, applying, on too old an agent or not
   reported yet. After a save the cards update for about two minutes.
@@ -147,7 +149,7 @@ Where to look:
 - **Not supported:** the device's agent or Android version can't apply that setting. Update the agent, or leave the
   setting Not managed for those devices.
 - **Applying… for a long time:** the device is probably offline. It gets the configuration when it checks in.
-- **An app didn't install:** use **Install config apps** on the device page to send every Install app again.
+- **An app didn't install:** use **Install configuration apps** on the device page to send every Install app again.
 
 ## Who can edit configurations
 

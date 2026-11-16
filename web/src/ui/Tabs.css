@@ -1,46 +1,67 @@
-/* Tabs: the lg segmented track (r12) with 7×14 tabs at body size, icon gap 7, mono 12px counts. */
+/* Underline tabs: 13px/500 labels on a hairline, the selected one in ink with a 2px ink indicator that slides
+   (transform only). Labels keep one weight, so selecting never shifts the row. */
 .v2 .v2-tabs {
-  align-self: flex-start;
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 2px;
-  padding: 3px;
+  position: relative;
+  display: flex;
+  gap: var(--space-4);
   max-width: 100%;
-  box-sizing: border-box;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: var(--hairline) solid var(--border);
+}
+.v2 .v2-tabs::after {
+  content: '';
+  position: absolute;
+  bottom: calc(var(--hairline) * -1);
+  left: 0;
+  width: 1px;
+  height: var(--indicator);
+  background: var(--ink);
+  opacity: 0;
+  transform: translateX(var(--tab-x, 0)) scaleX(var(--tab-w, 0));
+  transform-origin: left;
+  pointer-events: none;
+}
+.v2 .v2-tabs[data-indicator]::after {
+  opacity: 1;
+}
+.v2 .v2-tabs[data-indicator='ready']::after {
+  transition: transform var(--dur-enter) var(--ease);
 }
 .v2 .v2-tabs__tab {
+  position: relative;
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 7px;
-  padding: 7px 14px;
+  gap: var(--space-2);
+  height: var(--control-lg);
+  padding: 0;
   border: 0;
-  border-radius: var(--radius-tile);
+  border-radius: var(--radius-chip);
   background: transparent;
-  box-shadow: none;
-  color: var(--text-2);
-  font-size: var(--fs-body);
-  font-weight: 400;
-  line-height: var(--lh-body);
+  color: var(--secondary);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
+  font-weight: var(--weight-medium);
   white-space: nowrap;
   cursor: pointer;
-  transition: background-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+  transition: color var(--dur-micro) var(--ease);
 }
-.v2 .v2-tabs__tab:not(.is-selected):not(:disabled):hover {
+.v2 .v2-tabs--md .v2-tabs__tab {
+  height: var(--control-md);
+}
+.v2 .v2-tabs__tab:not(.is-selected, :disabled, .is-disabled):hover {
   color: var(--ink);
 }
-/* As the segmented control: a 1px control-border ring marks the selected tab at 3:1 (1.4.11). */
 .v2 .v2-tabs__tab.is-selected {
-  background: var(--seg-selected);
-  box-shadow: var(--shadow-seg), inset 0 0 0 1px var(--control-border);
   color: var(--ink);
-  font-weight: 600;
+}
+.v2 .v2-tabs__tab:focus-visible {
+  outline-offset: calc(var(--indicator) * -1);
 }
 .v2 .v2-tabs__tab:disabled,
 .v2 .v2-tabs__tab.is-disabled {
-  color: var(--faint);
+  opacity: var(--disabled-opacity);
   cursor: default;
 }
 
@@ -48,7 +69,7 @@
 .v2 a.v2-tabs__tab,
 .v2 a.v2-tabs__tab:hover {
   text-decoration: none;
-  color: var(--text-2);
+  color: var(--secondary);
 }
 .v2 a.v2-tabs__tab:not(.is-selected):hover {
   color: var(--ink);
@@ -56,43 +77,45 @@
 .v2 a.v2-tabs__tab.is-selected {
   color: var(--ink);
 }
-
-/* sizes: lg = Segmented lg (Table / Cards), md = Segmented md (QR code / Token) */
-.v2 .v2-tabs--lg .v2-tabs__tab {
-  gap: 6px;
-  padding: 6px 12px;
-  font-size: var(--fs-control);
-}
-.v2 .v2-tabs--md {
-  border-radius: var(--radius-sm);
-}
-.v2 .v2-tabs--md .v2-tabs__tab {
-  gap: 6px;
-  padding: 5px 12px;
-  border-radius: var(--radius-seg);
-  font-size: var(--fs-sm);
-}
 .v2 .v2-tabs__icon {
   display: inline-flex;
 }
+.v2 .v2-tabs__icon > svg {
+  width: var(--icon-md);
+  height: var(--icon-md);
+}
 .v2 .v2-tabs__count {
-  font-family: var(--font-mono);
-  font-size: var(--fs-small);
-  font-weight: 400;
+  font-size: var(--text-meta);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-regular);
   color: var(--secondary);
 }
+
+/* The open tab's content arrives with a short fade (no movement, so nothing reflows). */
+.v2 .v2-tabpanel {
+  animation: v2-fade-in var(--dur-enter) var(--ease);
+}
 .v2 .v2-tabpanel:focus-visible {
-  outline-offset: 4px;
+  outline-offset: var(--space-1);
 }
 
 @media (max-width: 860px) {
   .v2 .v2-tabs__tab {
-    min-height: 40px;
+    min-height: var(--touch);
   }
 }
+/* Tabs past an edge scroll sideways; only an edge with more beyond it fades (useOverflowFade). */
+.v2 .v2-tabs[data-overflow='end'] {
+  mask-image: var(--fade-end);
+}
+.v2 .v2-tabs[data-overflow='start'] {
+  mask-image: var(--fade-start);
+}
+.v2 .v2-tabs[data-overflow='both'] {
+  mask-image: var(--fade-both);
+}
 @media (forced-colors: active) {
-  .v2 .v2-tabs__tab.is-selected {
-    outline: 2px solid Highlight;
-    outline-offset: -2px;
+  .v2 .v2-tabs::after {
+    background: Highlight;
   }
 }

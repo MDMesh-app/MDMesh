@@ -153,7 +153,7 @@ export function fmtAge(ms: number, now: number): string {
   return formatRelative(ms, now, 'short').replace(/ ago$/, '');
 }
 
-/** Recent-commands time: "3m ago", "2h ago" within a day, then "Yesterday", "3 days ago", the date. */
+/** A command's time: "3m ago", "2h ago" within a day, then "Yesterday", "3 days ago", the date. */
 export function fmtWhen(ms: number, now: number): string {
   return now - ms < 24 * 3600 * 1000 ? formatRelative(ms, now, 'short') : formatRelative(ms, now, 'long');
 }
@@ -174,10 +174,10 @@ export function makeModel(manufacturer?: string, model?: string): string | undef
    Configuration status
    --------------------------------------------------------------------------------------------------------------- */
 
-/** Short revision for display ("8b04d7aa"), "Reset by device" for the agent's self-heal marker. */
+/** Short revision for display, 7 characters as git shows them ("8b04d7a"); "Reset by device" for the agent's self-heal marker. */
 export function shortRevision(r?: string | null): string {
   if (r === DEVICE_RESET_REVISION) return 'Reset by device';
-  return r ? r.slice(0, 8) : DASH;
+  return r ? r.slice(0, 7) : DASH;
 }
 
 /** Whether the configuration panel shows in full (anything but a clean "In sync"). */

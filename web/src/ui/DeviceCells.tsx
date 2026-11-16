@@ -2,8 +2,9 @@ import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 import { Badge } from './Badge';
 import { ProgressBar, batteryTone } from './Bars';
-import { DEVICE_KIND_LABEL, DeviceTile, type DeviceKind } from './DeviceGlyph';
-import { StatusPill, StatusText, type StatusKind } from './Status';
+import { DEVICE_KIND_LABEL, DeviceGlyph, DeviceTile, type DeviceKind } from './DeviceGlyph';
+import { STATUS_META, StatusDot, StatusPill, StatusText, type StatusKind } from './Status';
+import { Tooltip } from './Tooltip';
 import { cx } from './cx';
 import './DeviceCells.css';
 
@@ -18,48 +19,55 @@ export interface DeviceIdentityProps {
   /** Link target (device detail). Without it the block is plain text. */
   to?: string;
   /**
-   * - `row` (table): 40px tile, 14/600 name, wrapping sub-line "number · Type · model"
-   * - `attention`: 38px tile, sub-line "number · Type"
-   * - `card`: 44px tile, 15/600 name, both lines truncated
+   * - `row` (tables) and `attention` (Overview list): one line, a 16px glyph, the name, the number after it
+   * - `card`: glyph, name over "number · Type · model", both truncated
    */
   variant?: 'row' | 'attention' | 'card';
   className?: string;
 }
 
-/** Glyph tile + name + "KSK-0151 · Kiosk · Galaxy Tab A8". */
+/** Device glyph + name + number (the type is the glyph's tooltip and accessible name in rows). */
 export function DeviceIdentity({ name, number, kind, model, dupCount, to, variant = 'row', className }: DeviceIdentityProps) {
-  const tile = variant === 'card' ? 44 : variant === 'attention' ? 38 : 40;
   const type = DEVICE_KIND_LABEL[kind];
-  // Table rows (02) space the parts 6px apart; the attention list (01) and cards (03) set them as text, " · ".
-  const inline = variant !== 'row';
-  const sep = <span aria-hidden="true">{inline ? ' · ' : '·'}</span>;
-  const body = (
-    <>
-      <DeviceTile kind={kind} tile={tile} />
-      <span className="v2-devid__text">
-        <span className="v2-devid__name">{name}</span>
-        <span className="v2-devid__sub">
-          <span className="v2-devid__num">{number}</span>
-          {sep}
-          <span className={cx(variant !== 'attention' && 'v2-devid__type')}>{type}</span>
-          {model && variant !== 'attention' ? (
-            <>
-              {sep}
-              <span>{model}</span>
-            </>
-          ) : null}
-          {dupCount && dupCount > 1 ? (
-            <>
-              {inline ? ' ' : null}
-              <Badge tone="warn" size="xs">
-                {dupCount}× hardware ID
-              </Badge>
-            </>
-          ) : null}
+  const dup =
+    dupCount && dupCount > 1 ? (
+      <Badge tone="warn" size="xs">
+        {dupCount}× hardware ID
+      </Badge>
+    ) : null;
+  const body =
+    variant === 'card' ? (
+      <>
+        <DeviceTile kind={kind} tile={40} />
+        <span className="v2-devid__text">
+          <span className="v2-devid__name">{name}</span>
+          <span className="v2-devid__sub">
+            <span className="v2-devid__num">{number}</span>
+            <span aria-hidden="true"> · </span>
+            {type}
+            {model ? (
+              <>
+                <span aria-hidden="true"> · </span>
+                {model}
+              </>
+            ) : null}
+            {dup ? <> {dup}</> : null}
+          </span>
         </span>
-      </span>
-    </>
-  );
+      </>
+    ) : (
+      <>
+        <Tooltip content={type}>
+          <span className="v2-devid__glyph">
+            <DeviceGlyph kind={kind} size={16} />
+            <span className="v2-visually-hidden">{type}: </span>
+          </span>
+        </Tooltip>
+        <span className="v2-devid__name">{name}</span>
+        <span className="v2-devid__num">{number}</span>
+        {dup}
+      </>
+    );
   const cls = cx('v2-devid', `v2-devid--${variant}`, className);
   return to ? (
     <Link to={to} className={cls}>
@@ -74,13 +82,21 @@ export interface PresenceStatusProps {
   status: 'online' | 'attention' | 'offline' | 'wiped';
   /** Why ("Kiosk running", "Battery low, not charging", "Last seen on Wi-Fi “WH-North”", "Wiped 2h ago"). */
   reason?: ReactNode;
-  /** `stack` (table: pill over a 12.5px reason) or `inline` (card: side by side, reason wraps to 2 lines). */
+  /** `stack` (tables: one line, mark + label, the reason after it in secondary) or `inline` (cards: pill + reason). */
   layout?: 'stack' | 'inline';
   className?: string;
 }
 
-/** Presence pill with its reason line. */
+/** Presence with its reason. */
 export function PresenceStatus({ status, reason, layout = 'stack', className }: PresenceStatusProps) {
+  if (layout === 'stack') {
+    return (
+      <span className={cx('v2-presence', 'v2-presence--line', className)}>
+        <StatusText variant="reason" status={status} />
+        {reason ? <span className="v2-presence__reason">{reason}</span> : null}
+      </span>
+    );
+  }
   return (
     <span className={cx('v2-presence', `v2-presence--${layout}`, className)}>
       <StatusPill status={status} />
@@ -97,12 +113,12 @@ export interface ConfigSyncProps {
   sync: StatusKind;
   /** Override the sync wording. */
   syncLabel?: ReactNode;
-  /** `stack` (name over the sync line) or `row` (card strip: "Configuration  name  ● In sync"). */
+  /** `stack` (tables: one line, the name then the sync state) or `row` (card strip: "Configuration  name  ● In sync"). */
   layout?: 'stack' | 'row';
   className?: string;
 }
 
-/** Configuration name with its sync line: 6px dot + 12.5px in the tone's ink. */
+/** Configuration name with its sync state: in tables a quiet mark when in sync, the words when it is not. */
 export function ConfigSync({ name, to, sync, syncLabel, layout = 'stack', className }: ConfigSyncProps) {
   const label = to ? <Link to={to}>{name}</Link> : name;
   if (layout === 'row') {
@@ -114,10 +130,21 @@ export function ConfigSync({ name, to, sync, syncLabel, layout = 'stack', classN
       </div>
     );
   }
+  const quiet = STATUS_META[sync].tone === 'ok' || sync === 'notReported';
+  const words = syncLabel ?? STATUS_META[sync].label;
   return (
-    <span className={cx('v2-cfgsync', 'v2-cfgsync--stack', className)}>
-      <span>{label}</span>
-      <StatusText status={sync}>{syncLabel}</StatusText>
+    <span className={cx('v2-cfgsync', 'v2-cfgsync--line', className)}>
+      <span className="v2-cfgsync__name">{label}</span>
+      {quiet ? (
+        <Tooltip content={words}>
+          <span className="v2-cfgsync__mark">
+            <StatusDot tone={STATUS_META[sync].tone} shape="circle" size={6} />
+            <span className="v2-visually-hidden">{words}</span>
+          </span>
+        </Tooltip>
+      ) : (
+        <StatusText status={sync}>{syncLabel}</StatusText>
+      )}
     </span>
   );
 }

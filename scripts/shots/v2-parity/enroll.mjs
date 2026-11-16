@@ -6,7 +6,7 @@ import { chromium } from 'playwright';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fx, newContext, restData, startServer } from '../harness.mjs';
-import { dist as DIST } from './lib.mjs';
+import { DIALOG, dist as DIST, pickOption, pickedValue } from './lib.mjs';
 
 const arg = (k, d) => {
   const i = process.argv.indexOf(k);
@@ -47,6 +47,23 @@ async function open({ defaultCfg = null, viewport = { width: 1440, height: 1120 
   await page.waitForTimeout(400);
   return { ctx, page, mints };
 }
+/** The Configuration select (Radix: a combobox button holding its value as data-value). */
+const cfgSelect = (page) => page.getByRole('combobox', { name: 'Configuration', exact: true });
+/** The visible name of a Select's option for `value` (opens the list, reads it, closes it with Escape). */
+async function optionText(trigger, value) {
+  await trigger.click();
+  const box = trigger.page().getByRole('listbox');
+  const text = await box.locator(`[role="option"][data-value="${value}"]`).textContent();
+  await trigger.page().keyboard.press('Escape');
+  await box.waitFor({ state: 'detached', timeout: 2000 }).catch(() => {});
+  return text;
+}
+/** The steps sit in the "How to scan the code" disclosure: open it first. */
+async function stepsText(page) {
+  const how = page.locator('details.v2-enroll__how');
+  if (!(await how.evaluate((d) => d.open))) await how.locator('summary').click();
+  return page.locator('.v2-numsteps').innerText();
+}
 const tokenRoute = (body) => async (ctx) =>
   ctx.route('**/rest/private/agent/v1/token', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) }),
@@ -55,26 +72,26 @@ const tokenRoute = (body) => async (ctx) =>
 try {
   // 1. Stored default with saved Wi-Fi (the board's state).
   {
-    const { ctx, page, mints } = await open({ defaultCfg: '3' });
+    const { ctx, page, mints } = await open({ defaultCfg: '6' });
     if (SHOTS) {
       fs.mkdirSync(SHOTS, { recursive: true });
       await page.screenshot({ path: path.join(SHOTS, 'enroll-default-1440-light.png') });
     }
-    const select = page.getByLabel('Configuration', { exact: true });
-    check('default configuration selected and marked', (await select.inputValue()) === '3' && (await select.locator('option:checked').textContent()).includes('Field Ops (default)'));
-    check('server-setting option present', (await select.locator('option[value=""]').textContent()) === 'Server setting for new devices');
-    check('first mint bound to the default configuration', mints[0]?.configurationId === 3, JSON.stringify(mints));
+    const select = cfgSelect(page);
+    check('default configuration selected and marked', (await pickedValue(select)) === '6' && (await select.innerText()).includes('Field Ops (default)'), await select.innerText());
+    check('server-setting option present', (await optionText(select, '')) === 'Use the server default');
+    check('first mint bound to the default configuration', mints[0]?.configurationId === 6, JSON.stringify(mints));
     const sw = page.getByRole('switch', { name: 'Join Wi-Fi during setup' });
     check('Wi-Fi switch on from the configuration', (await sw.getAttribute('aria-checked')) === 'true');
     check('SSID filled from the configuration', (await page.getByLabel('Network name').inputValue()) === 'Field-Setup');
     check('password filled', (await page.getByLabel('Wi-Fi password').inputValue()) === 'field-setup-2026');
-    check('security filled', (await page.getByLabel('Security').inputValue()) === 'WPA');
+    check('security filled', (await pickedValue(page.getByRole('combobox', { name: 'Security', exact: true }))) === 'WPA');
     check('"Filled in from" note', await page.getByText('Filled in from Field Ops. Changes here only affect this code.').isVisible());
     check('password-in-QR warning', await page.getByText('The Wi-Fi password is written into the QR code.', { exact: false }).isVisible());
     const facts = page.locator('.v2-kv--facts');
-    check('summary Gives / Joins Wi-Fi / Use / Expires', /Gives\s*Field Ops/.test(await facts.innerText()) && (await facts.innerText()).includes('Field-Setup') && (await facts.innerText()).includes('One device, then it stops working') && /in 24 hours/.test(await facts.innerText()));
+    check('summary Configuration / Joins Wi-Fi / Use / Expires', /Configuration\s*Field Ops/.test(await facts.innerText()) && (await facts.innerText()).includes('Field-Setup') && (await facts.innerText()).includes('One device, then it stops working') && /in 24 hours/.test(await facts.innerText()), (await facts.innerText()).replace(/\s+/g, ' '));
     check('QR rendered with an accessible name', await page.getByRole('img', { name: 'Enrollment QR code for Field Ops' }).locator('.v2-qr__code').count() === 1);
-    check('four steps, no "connect to Wi-Fi" while the code carries it', (await page.locator('.v2-numsteps li').count()) === 4 && !(await page.locator('.v2-numsteps').innerText()).includes('Connect to Wi-Fi'));
+    check('four steps, no "connect to Wi-Fi" while the code carries it', (await page.locator('.v2-numsteps li').count()) === 4 && !(await stepsText(page)).includes('Connect to Wi-Fi'));
     check('footer server + agent URLs', (await page.locator('.v2-enroll__foot').innerText()).includes(`${base}/files/agent.apk`) && (await page.locator('.v2-enroll__foot').innerText()).includes(base));
     check('debug-defaults warning (build has no release checksum)', await page.getByText('No verified agent release was found', { exact: false }).isVisible());
 
@@ -82,19 +99,19 @@ try {
     const before = mints.length;
     await page.getByRole('button', { name: 'New code' }).click();
     await page.waitForTimeout(300);
-    check('New code mints for the selected configuration', mints.length === before + 1 && mints.at(-1).configurationId === 3, JSON.stringify(mints.at(-1)));
+    check('New code mints for the selected configuration', mints.length === before + 1 && mints.at(-1).configurationId === 6, JSON.stringify(mints.at(-1)));
     check('New code keeps focus on the button', await page.evaluate(() => document.activeElement?.textContent?.includes('New code')));
 
     // Full screen.
     await page.getByRole('button', { name: 'Full screen' }).click();
-    const dlg = page.getByRole('dialog');
+    const dlg = page.locator(DIALOG);
     await dlg.waitFor();
     check('full screen shows the code', (await dlg.locator('.v2-qr__code').count()) === 1 && (await dlg.innerText()).includes('Scan to enroll: Field Ops'));
     // The code sits in the middle of the body; in a window too short for it (a landscape phone) the body scrolls from
     // the code's top edge, none of it out of reach above.
     const qrPlace = () =>
       page.evaluate(() => {
-        const body = document.querySelector('dialog[open] .v2-modal__body');
+        const body = document.querySelector('[role="dialog"] .v2-modal__body');
         const frame = body.querySelector('.v2-qr__frame');
         const last = body.lastElementChild;
         body.scrollTop = 0;
@@ -105,7 +122,8 @@ try {
         body.scrollTop = body.scrollHeight;
         const bottom = b.bottom - last.getBoundingClientRect().bottom;
         body.scrollTop = 0;
-        return { top: Math.round(top), bottom: Math.round(bottom), centred, scrolls: body.scrollHeight > body.clientHeight };
+        const fits = f.top >= b.top && f.bottom <= b.bottom && f.top >= 0 && f.bottom <= innerHeight;
+        return { top: Math.round(top), bottom: Math.round(bottom), centred, scrolls: body.scrollHeight > body.clientHeight, fits, frame: Math.round(f.height), body: Math.round(b.height), vh: innerHeight };
       });
     const roomy = await qrPlace();
     check('full screen centres the code', roomy.centred && !roomy.scrolls, JSON.stringify(roomy));
@@ -120,17 +138,18 @@ try {
     await dlg.waitFor();
     await page.waitForTimeout(200);
     const cramped = await qrPlace();
-    check('full screen in a short window scrolls from the code’s top edge', cramped.scrolls && cramped.top >= 0 && cramped.bottom >= 0, JSON.stringify(cramped));
+    // The code now sizes itself to the window (min(80vh, 88vw)): it fits whole, or the body scrolls from its top edge.
+    check('full screen in a short window: the whole code is in reach (fits, or scrolls from its top edge)', (cramped.scrolls || cramped.fits) && cramped.top >= 0 && cramped.bottom >= 0, JSON.stringify(cramped));
     await dlg.getByRole('button', { name: 'Close' }).click();
     await page.waitForTimeout(200);
     await page.setViewportSize(size);
     check('…and its close button closes it', !(await dlg.isVisible()));
 
     // Security Open hides the password and the warning.
-    await page.getByLabel('Security').selectOption('NONE');
+    await pickOption(page, 'Security', { value: 'NONE' });
     check('Open hides the password field', (await page.getByLabel('Wi-Fi password').count()) === 0);
     check('Open hides the password warning', (await page.getByText('The Wi-Fi password is written', { exact: false }).count()) === 0);
-    await page.getByLabel('Security').selectOption('WPA');
+    await pickOption(page, 'Security', { value: 'WPA' });
 
     // Editing the SSID updates the summary.
     await page.getByLabel('Network name').fill('Lobby-Staff');
@@ -140,23 +159,23 @@ try {
     await sw.click();
     check('switch off hides the Wi-Fi fields', (await page.getByLabel('Network name').count()) === 0);
     check('switch off drops "Joins Wi-Fi" from the summary', !(await facts.innerText()).includes('Joins Wi-Fi'));
-    check('step 3 asks to connect to Wi-Fi when the code carries none', (await page.locator('.v2-numsteps').innerText()).includes('Connect to Wi-Fi if the device asks'));
+    check('step 3 asks to connect to Wi-Fi when the code carries none', (await stepsText(page)).includes('Connect to Wi-Fi if the device asks'));
     await sw.click();
     check('switch on again restores the typed values', (await page.getByLabel('Network name').inputValue()) === 'Lobby-Staff');
 
     // Server setting: token without a configuration id, Wi-Fi left as typed.
     const n0 = mints.length;
-    await select.selectOption('');
+    await pickOption(select, select, { value: '' });
     await page.waitForTimeout(700); // the choice settles (300 ms) before a token is minted for it
     check('server setting mints with no configuration id', mints.length === n0 + 1 && mints.at(-1).configurationId === undefined, JSON.stringify(mints.at(-1)));
     check('server setting leaves the Wi-Fi fields', (await page.getByLabel('Network name').inputValue()) === 'Lobby-Staff');
-    check('Gives says the server setting', (await facts.innerText()).includes('Server setting for new devices'));
+    check('summary names the server default', /Configuration\s*Server default/.test(await facts.innerText()), (await facts.innerText()).replace(/\s+/g, ' '));
 
     // A configuration without saved Wi-Fi clears the fields (as in the v0.3 console). Default has none (Retail Kiosk has one).
-    await select.selectOption('1');
+    await pickOption(select, select, { value: '4' });
     await page.waitForTimeout(700);
     check('configuration without Wi-Fi turns the switch off', (await sw.getAttribute('aria-checked')) === 'false');
-    check('…and mints for it', mints.at(-1).configurationId === 1);
+    check('…and mints for it', mints.at(-1).configurationId === 4);
 
     // Token tab with arrow keys.
     await page.getByRole('tab', { name: 'QR code' }).focus();
@@ -175,7 +194,7 @@ try {
     const n1 = mints.length;
     await page.getByRole('button', { name: 'New token' }).click();
     await page.waitForTimeout(300);
-    check('New token mints for the selected configuration', mints.length === n1 + 1 && mints.at(-1).configurationId === 1);
+    check('New token mints for the selected configuration', mints.length === n1 + 1 && mints.at(-1).configurationId === 4);
     check('new token value differs', (await page.getByLabel('Enrollment token').inputValue()) !== tokenValue);
     await ctx.close();
   }
@@ -184,7 +203,7 @@ try {
   {
     const { ctx, page, mints } = await open({ defaultCfg: '99' });
     await page.waitForTimeout(700);
-    check('stale default falls back to the server setting', (await page.getByLabel('Configuration', { exact: true }).inputValue()) === '' && mints.at(-1)?.configurationId === undefined, JSON.stringify(mints));
+    check('stale default falls back to the server setting', (await pickedValue(cfgSelect(page))) === '' && mints.at(-1)?.configurationId === undefined, JSON.stringify(mints));
     check('stale default: never minted for, and forgotten', mints.length === 1 && mints.every((m) => m.configurationId === undefined) && (await page.evaluate(() => localStorage.getItem('mdmesh-default-config'))) === null, JSON.stringify(mints));
     await ctx.close();
   }
@@ -198,9 +217,9 @@ try {
     check('server error shown as a sentence', await alert.isVisible());
     check('no QR while there is no token', (await page.locator('.v2-enroll .v2-qr__code').count()) === 0 && (await page.getByText('No code yet.').isVisible()));
     await ctx.unroute('**/rest/private/agent/v1/token');
-    await alert.getByRole('button', { name: 'Try again' }).click();
+    await alert.getByRole('button', { name: 'Retry' }).click();
     await page.waitForTimeout(400);
-    check('Try again recovers', (await page.getByRole('alert').count()) === 0 && (await page.locator('.v2-enroll .v2-qr__code').count()) === 1);
+    check('Retry recovers', (await page.getByRole('alert').count()) === 0 && (await page.locator('.v2-enroll .v2-qr__code').count()) === 1);
     await ctx.close();
   }
   {
@@ -230,16 +249,16 @@ try {
   // 5. Configurations fail to load.
   {
     const { ctx, page } = await open({
-      defaultCfg: '3',
+      defaultCfg: '6',
       quietNet: true,
       setup: async (c) => c.route('**/rest/private/configurations/search', (r) => r.fulfill({ status: 500, body: '' })),
     });
-    check('configurations load failure explained', await page.getByText('Couldn’t load the configurations', { exact: false }).isVisible());
-    check('stored default kept by id when the list failed', (await page.getByLabel('Configuration', { exact: true }).inputValue()) === '3');
+    check('configurations load failure explained', await page.getByText('Couldn’t load configurations, so the code uses the server default.', { exact: false }).isVisible());
+    check('stored default kept by id when the list failed', (await pickedValue(cfgSelect(page))) === '6');
     await ctx.unroute('**/rest/private/configurations/search');
     await page.getByRole('button', { name: 'Retry' }).click();
     await page.waitForTimeout(400);
-    check('Retry loads them', (await page.getByLabel('Configuration', { exact: true }).locator('option:checked').textContent()).includes('Field Ops (default)'));
+    check('Retry loads them', (await cfgSelect(page).innerText()).includes('Field Ops (default)'));
     await ctx.close();
   }
 
@@ -247,7 +266,7 @@ try {
   {
     let calls = 0;
     const { ctx, page, mints } = await open({
-      defaultCfg: '3',
+      defaultCfg: '6',
       setup: async (c) =>
         c.route('**/rest/private/agent/v1/token', async (route) => {
           const n = ++calls;
@@ -263,35 +282,39 @@ try {
     calls = 0;
     await page.getByRole('button', { name: 'New code' }).click(); // call 1: slow, for Field Ops
     await page.waitForTimeout(100);
-    await page.getByLabel('Configuration', { exact: true }).selectOption('1');
+    await pickOption(page, 'Configuration', { value: '4' });
     await page.waitForTimeout(800); // call 2 (Default) settles and lands first
     await page.getByRole('tab', { name: 'Token' }).click();
     const later = await page.getByLabel('Enrollment token').inputValue().catch(() => '');
     await page.waitForTimeout(1500); // the slow answer for Field Ops lands now
     const after = await page.getByLabel('Enrollment token').inputValue().catch(() => '');
     check('a late answer for the previous configuration is dropped', later === 'later-token-2' && after === 'later-token-2', `${later} → ${after}`);
-    check('…and the code is for the chosen configuration', mints.at(-1)?.configurationId === 1, JSON.stringify(mints));
+    check('…and the code is for the chosen configuration', mints.at(-1)?.configurationId === 4, JSON.stringify(mints));
     await ctx.close();
   }
 
-  // 8. Arrowing through the configuration select mints one token, for the option it settles on.
+  // 8. Choosing quickly through the configuration select mints one token, for the option it settles on. (A Radix
+  // listbox changes the value per choice, not per arrow key: three choices in a row, as fast as the pointer goes; the
+  // page times each change so the check knows they came closer together than the 300 ms the choice settles in.)
   {
-    const { ctx, page, mints } = await open({ defaultCfg: '3' });
-    const select = page.getByLabel('Configuration', { exact: true });
-    const values = await select.locator('option').evaluateAll((os) => os.map((o) => o.value));
+    const { ctx, page, mints } = await open({ defaultCfg: '6' });
+    const select = cfgSelect(page);
+    await select.evaluate((el) => {
+      window.__changes = [];
+      new MutationObserver(() => window.__changes.push({ v: el.getAttribute('data-value'), t: performance.now() })).observe(el, { attributes: true, attributeFilter: ['data-value'] });
+    });
     const n0 = mints.length;
-    await select.focus();
-    for (let i = 0; i < 4; i++) {
-      await page.keyboard.press(i % 2 ? 'ArrowUp' : 'ArrowDown');
-      await page.waitForTimeout(60);
+    // A pointer user's quick clicks: no waiting for the list's opening motion to settle.
+    for (const v of ['1', '2', '']) {
+      await select.click({ force: true });
+      await page.locator(`[role="listbox"] [role="option"][data-value="${v}"]`).click({ force: true });
     }
-    for (const v of values.slice(0, 3)) {
-      await select.selectOption(v); // as fast as the user can arrow
-      await page.waitForTimeout(60);
-    }
-    const last = values[2];
+    const changes = await page.evaluate(() => window.__changes);
+    const gaps = changes.slice(1).map((c, i) => Math.round(c.t - changes[i].t));
+    const last = await pickedValue(select);
+    check('…the quick choices changed the value each time, under 300 ms apart', changes.map((c) => c.v).join() === '1,2,' && gaps.every((g) => g < 300), `${changes.map((c) => JSON.stringify(c.v)).join(' → ')}; gaps ${gaps.join(', ')} ms`);
     await page.waitForTimeout(900);
-    check('arrowing through the select mints once after it settles', mints.length === n0 + 1, `${mints.length - n0} mints`);
+    check('choosing quickly through the select mints once after it settles', mints.length === n0 + 1, `${mints.length - n0} mints`);
     check('…for the option it settled on', (mints.at(-1)?.configurationId ?? '') === (last === '' ? '' : Number(last)), `${JSON.stringify(mints.at(-1))} vs ${last}`);
     check('…and its QR is up', (await page.locator('.v2-enroll .v2-qr__code').count()) === 1);
     await ctx.close();
@@ -299,20 +322,20 @@ try {
 
   // 9. EAP Wi-Fi saved on a configuration shows as EAP, not WPA.
   {
-    const rows = restData('GET', '/private/configurations/search').map((c) => (c.id === 3 ? { ...c, wifiSecurityType: 'EAP' } : c));
+    const rows = restData('GET', '/private/configurations/search').map((c) => (c.id === 6 ? { ...c, wifiSecurityType: 'EAP' } : c));
     const { ctx, page } = await open({
-      defaultCfg: '3',
+      defaultCfg: '6',
       setup: async (c) =>
         c.route('**/rest/private/configurations/search', (r) =>
           r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'OK', message: null, data: rows }) }),
         ),
     });
-    const sec = page.getByLabel('Security');
-    check('EAP from the configuration selected', (await sec.inputValue()) === 'EAP' && (await sec.locator('option:checked').textContent()).includes('EAP (from the configuration)'));
+    const sec = page.getByRole('combobox', { name: 'Security', exact: true });
+    check('EAP from the configuration selected', (await pickedValue(sec)) === 'EAP' && (await sec.innerText()).includes('EAP (from the configuration)'));
     check('EAP keeps the password field', (await page.getByLabel('Wi-Fi password').count()) === 1);
     check('Wi-Fi password is not autofilled from saved logins', (await page.getByLabel('Wi-Fi password').getAttribute('autocomplete')) === 'new-password');
     // The server setting no longer claims the fields came from a configuration.
-    await page.getByLabel('Configuration', { exact: true }).selectOption('');
+    await pickOption(page, 'Configuration', { value: '' });
     await page.waitForTimeout(200);
     check('server setting drops "Filled in from"', (await page.getByText('Filled in from', { exact: false }).count()) === 0 && (await page.getByText('Changes here only affect this code.').isVisible()));
     await ctx.close();
@@ -320,13 +343,20 @@ try {
 
   // 6. Phone width: Enroll card first, no sideways scroll; dark keeps a white QR frame.
   {
-    const { ctx, page } = await open({ defaultCfg: '3', viewport: { width: 390, height: 844 }, theme: 'dark' });
-    const order = await page.locator('.v2-enroll > section h2').allTextContents();
+    const { ctx, page } = await open({ defaultCfg: '6', viewport: { width: 390, height: 844 }, theme: 'dark' });
+    const order = await page.locator('.v2-enroll h2').allTextContents();
     check('phone: Enroll the device comes first', order[0] === 'Enroll the device', order.join(' | '));
     const sw = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     check('phone: no horizontal scroll', sw <= 0, `overflow ${sw}px`);
-    const bg = await page.locator('.v2-qr__frame').first().evaluate((el) => getComputedStyle(el).backgroundColor);
-    check('dark: QR frame stays white', bg === 'rgb(255, 255, 255)', bg);
+    // The code draws its own white ground (a white rect under the modules, filling the frame) instead of the frame.
+    const ground = await page.locator('.v2-qr__frame').first().evaluate((frame) => {
+      const rect = frame.querySelector('.v2-qr__code rect');
+      if (!rect) return { fill: null };
+      const f = frame.getBoundingClientRect();
+      const r = rect.getBoundingClientRect();
+      return { fill: getComputedStyle(rect).fill, covers: r.width >= f.width - 3 && r.height >= f.height - 3 };
+    });
+    check('dark: QR ground stays white', ground.fill === 'rgb(255, 255, 255)' && ground.covers, JSON.stringify(ground));
     if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'enroll-default-390-dark.png'), fullPage: true });
     await ctx.close();
   }

@@ -58,6 +58,20 @@ export function viewWindow(v: View): { w: number; h: number } {
   return v.orientation === 'portrait' ? { w: d.short, h: d.long } : { w: d.long, h: d.short };
 }
 
+/**
+ * The simulated device's own look: its bezel, camera hole, an app window's shadow and the launcher's font. These are
+ * device pixels, the same in both themes as hardware is, not console UI, so they are not console tokens (tokens.css,
+ * where every console value lives): KioskPreview.css reads them as custom properties set here on the device.
+ */
+const HARDWARE = {
+  '--kbg-bezel-fill': '#16181d',
+  '--kbg-camera-fill': '#050506',
+  '--kbg-camera-edge': '0 0 0 1px rgba(255, 255, 255, 0.1)',
+  '--kbg-app-shadow': '0 2px 12px rgba(0, 0, 0, 0.35)',
+  '--kbg-font-browser': FALLBACK_FONT,
+  '--kbg-font-device': KIOSK_FONT,
+} as CSSProperties;
+
 /** An image with a shorter short edge may look soft on a large tablet. */
 const SOFT_EDGE = 1080;
 /** The turn's length; none when the viewer prefers reduced motion. */
@@ -644,7 +658,10 @@ function ScaledScreen({
   // (a device keeps its window out of the cutout).
   const hole = Math.max(2, Math.min(8 * s, bezel * 0.6));
   return (
-    <div className="v2-kbg__device" style={{ '--kbg-bezel': `${bezel}px`, '--kbg-corner': style['--kbg-corner' as keyof CSSProperties] } as CSSProperties}>
+    <div
+      className="v2-kbg__device"
+      style={{ ...HARDWARE, '--kbg-bezel': `${bezel}px`, '--kbg-corner': style['--kbg-corner' as keyof CSSProperties] } as CSSProperties}
+    >
       {camera ? (
         <span
           className="v2-kbg__camera"

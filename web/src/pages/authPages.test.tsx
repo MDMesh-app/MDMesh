@@ -1,5 +1,5 @@
 // The sign-in, set-password and change-password forms' answers to the server's v0.3.8 and v0.3.9 refusals: the sign-in
-// limit (LoginThrottle) says so instead of "Wrong login or password." (the current-password check of a password change
+// limit (LoginThrottle) says so instead of "Wrong username or password." (the current-password check of a password change
 // counts too), and a reset token the server no longer takes (it works once, for 24 hours) sends the flagged session
 // back to sign in, which issues a fresh one.
 import { fireEvent, screen, waitFor } from '@testing-library/react';
@@ -27,7 +27,7 @@ function stubServer(answer: (path: string) => { status?: string; message?: strin
 }
 
 function signInWith(login: string, password: string) {
-  fireEvent.change(screen.getByLabelText('Login'), { target: { value: login } });
+  fireEvent.change(screen.getByLabelText('Username'), { target: { value: login } });
   fireEvent.change(screen.getByLabelText('Password'), { target: { value: password } });
   fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
 }
@@ -57,13 +57,13 @@ describe('Sign in', () => {
     expect((await screen.findByRole('alert')).textContent).toMatch(/^Too many failed sign-ins\./);
   });
 
-  it('still says "Wrong login or password." for any other refusal', async () => {
+  it('still says "Wrong username or password." for any other refusal', async () => {
     stubServer((p) => (p.includes('/public/auth/login') ? { status: 'ERROR', message: null as unknown as string } : {}));
     renderInConsole(<LoginPage />, { user: null, path: '/login' });
 
     signInWith('admin', 'wrong');
 
-    expect((await screen.findByRole('alert')).textContent).toBe('Wrong login or password.');
+    expect((await screen.findByRole('alert')).textContent).toBe('Wrong username or password.');
   });
 });
 

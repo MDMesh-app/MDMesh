@@ -2,7 +2,7 @@
 //   node scripts/shots/v2-parity/apps.mjs [--dist <dir>]
 import { chromium } from 'playwright';
 import { fx, newContext, startServer } from '../harness.mjs';
-import { dist } from './lib.mjs';
+import { DIALOG, dist, pickOption } from './lib.mjs';
 
 const { server, base } = await startServer(dist);
 const browser = await chromium.launch();
@@ -35,6 +35,18 @@ const waitToast = async (text, timeout = 12000) => {
   }
 };
 const clearReqs = () => (reqs.length = 0);
+/** A library row's action: from its "More for {app}" menu, or the row's own button when the menu would hold only it. */
+async function rowAction(app, item) {
+  // A dialog that is still closing hides the page from the accessibility tree (Radix): wait for it to go.
+  await page.locator(DIALOG).first().waitFor({ state: 'detached', timeout: 3000 }).catch(() => {});
+  const menu = page.getByRole('button', { name: `More for ${app}` });
+  if (await menu.count()) {
+    await menu.click();
+    await page.getByRole('menuitem', { name: item }).click();
+  } else {
+    await page.locator('table[aria-label="Library"] tbody tr', { hasText: app }).getByRole('button', { name: item }).click();
+  }
+}
 
 // ---------------- Library ----------------
 await page.goto(`${base}/apps`);
@@ -51,9 +63,9 @@ check('source split bundle', (await page.getByText('3 parts').count()) === 1);
 await page.getByRole('searchbox', { name: 'Search the library' }).fill('chrome');
 check('search filters', (await page.locator('table[aria-label="Library"] tbody tr').count()) === 1);
 await page.getByRole('searchbox', { name: 'Search the library' }).fill('');
-await page.getByRole('combobox', { name: 'Source', exact: true }).selectOption('fdroid');
+await pickOption(page, 'Source', { value: 'fdroid' });
 check('source filter', (await page.locator('table[aria-label="Library"] tbody tr').count()) === 2);
-await page.getByRole('combobox', { name: 'Source', exact: true }).selectOption('all');
+await pickOption(page, 'Source', { value: 'all' });
 await page.getByRole('searchbox', { name: 'Search the library' }).fill('zzz');
 check('no matches', (await page.getByText('No apps match your search.').count()) === 1);
 await page.getByRole('searchbox', { name: 'Search the library' }).fill('');
@@ -76,15 +88,13 @@ check('sha PUT lower-cased', !!shaReq && shaReq.b.includes('ab'.repeat(32)), sha
 check('notice gone', (await page.locator('section[aria-label="Missing checksum"]').count()) === 0);
 
 // Remove blocked (used)
-await page.getByRole('button', { name: 'More for MDMesh Agent' }).click();
-await page.getByRole('menuitem', { name: /Remove from library/ }).click();
+await rowAction('MDMesh Agent', /Remove from library/);
 check('remove blocked toast', await waitToast('App is still in use'));
 // Remove allowed
-await page.getByRole('button', { name: 'More for Binary Eye' }).click();
-await page.getByRole('menuitem', { name: /Remove from library/ }).click();
+await rowAction('Binary Eye', /Remove from library/);
 const conf = page.getByRole('alertdialog');
 await conf.waitFor();
-check('confirm text', (await conf.innerText()).includes('does not uninstall the app'));
+check('confirm text', (await conf.innerText()).includes('Devices keep the installed app'));
 clearReqs();
 await conf.getByRole('button', { name: 'Remove from library' }).click();
 check('removed toast', await waitToast('Removed from Library'));
@@ -94,8 +104,7 @@ check('count updated', (await page.locator('nav[aria-label="App source"] .v2-tab
 // Remove error mapping
 await page.route('**/rest/private/applications/7', (r) => (r.request().method() === 'DELETE' ? r.fulfill(err('error.config.reference.exists')) : r.fallback()));
 await page.route('**/rest/private/applications/configurations/7', (r) => r.fulfill(ok([])));
-await page.getByRole('button', { name: 'More for Organic Maps' }).click();
-await page.getByRole('menuitem', { name: /Remove from library/ }).click();
+await rowAction('Organic Maps', /Remove from library/);
 await page.getByRole('alertdialog').getByRole('button', { name: 'Remove from library' }).click();
 check('reference.exists mapped', await waitToast('A configuration still uses this app'));
 
@@ -123,12 +132,12 @@ await page.getByRole('button', { name: 'Deploy Chrome' }).click();
 const dep2 = page.getByRole('dialog');
 await dep2.waitFor();
 await dep2.getByRole('tab', { name: 'Add to a configuration' }).click();
-await dep2.getByLabel('Configuration', { exact: true }).selectOption({ label: 'Default' });
+await pickOption(dep2, 'Configuration', 'Default');
 clearReqs();
 await dep2.getByRole('button', { name: 'Add to configuration' }).click();
 check('assign toast', await waitToast('Assigned to Default'));
 const link = reqs.find((r) => r.u.endsWith('/applications/configurations'));
-check('assign link body', !!link && /"configurationId":1,[^}]*"action":1/.test(link.b), link?.b?.slice(0, 300));
+check('assign link body', !!link && /"configurationId":4,[^}]*"action":1/.test(link.b), link?.b?.slice(0, 300));
 
 // Deploy error when nothing to install
 await page.route('**/rest/private/applications/2/versions', (r) => r.fulfill(ok([])));
@@ -153,7 +162,7 @@ check('version field', (await page.getByLabel('Version', { exact: true }).inputV
 check('pkg read-only', await page.getByLabel('Package name').evaluate((e) => e.readOnly));
 check('in library disabled', await page.getByRole('button', { name: 'In library' }).isDisabled());
 check('stepper all done', (await page.locator('.v2-stepper [aria-current="step"]').count()) === 0);
-await page.getByRole('button', { name: 'Deploy…' }).click();
+await page.getByRole('button', { name: 'Deploy' }).click();
 const dep3 = page.getByRole('dialog');
 await dep3.waitFor();
 check('custom deploy can assign', !(await dep3.getByRole('tab', { name: 'Add to a configuration' }).isDisabled()));
@@ -202,7 +211,7 @@ await page.getByLabel('Link to the APK').fill('https://cdn.example.com/chrome.ap
 await page.getByLabel('Package name').fill('com.android.chrome');
 await page.route('**/rest/private/applications/android', (r) => r.fulfill(err('error.duplicate.application')));
 clearReqs();
-await page.getByRole('button', { name: 'Add and deploy…' }).click();
+await page.getByRole('button', { name: 'Add and deploy' }).click();
 check('duplicate reuses existing', await waitToast('Already in Library'));
 const dep4 = page.getByRole('dialog');
 await dep4.waitFor();
@@ -212,8 +221,8 @@ await dep4.getByRole('button', { name: 'Cancel' }).click();
 
 // ---------------- F-Droid ----------------
 await page.goto(`${base}/apps?source=fdroid`);
-await page.locator('.v2-apps-fd__card').first().waitFor();
-check('12 cards', (await page.locator('.v2-apps-fd__card').count()) === 12);
+await page.locator('.v2-apps-fd__card:not(.is-loading)').first().waitFor();
+check('12 cards', (await page.locator('.v2-apps-fd__card:not(.is-loading)').count()) === 12);
 await page.getByRole('button', { name: 'Show more' }).click();
 check('show more -> 14', (await page.locator('.v2-apps-fd__card').count()) === 14);
 check('no more button', (await page.getByRole('button', { name: 'Show more' }).count()) === 0);
@@ -225,7 +234,8 @@ await page.route('**/rest/private/applications/android', (r) => {
   putBody = r.request().postData();
   return r.fulfill(ok({ id: 950, name: 'AntennaPod', pkg: 'de.danoeh.antennapod' }));
 });
-await page.getByRole('button', { name: 'Add to library: AntennaPod' }).click();
+// (Chromium joins the visually hidden ": AntennaPod" with a space: "Add to library : AntennaPod".)
+await page.getByRole('button', { name: /^Add to library ?: AntennaPod$/ }).click();
 check('fdroid add toast', await waitToast('Added to Library'));
 check('fdroid add body', !!putBody && putBody.includes('f-droid.org/repo/de.danoeh.antennapod') && putBody.includes('sha256'), putBody);
 check('now in library', (await page.locator('.v2-apps-fd__card', { hasText: 'AntennaPod' }).locator('.v2-apps-fd__inlib').count()) === 1);
@@ -251,7 +261,7 @@ check('search request', !!(await searchReq.catch(() => null)));
 // error + retry
 await page.route('**/rest/private/fdroid/search*', (r) => r.fulfill(err('error.fdroid.fetch')));
 await page.getByRole('searchbox', { name: 'Search F-Droid' }).fill('x');
-check('fdroid error', await page.getByText('Could not reach the F-Droid catalogue.').waitFor({ timeout: 3000 }).then(() => true, () => false));
+check('fdroid error', await page.getByText('Couldn’t load the F-Droid catalogue.').waitFor({ timeout: 3000 }).then(() => true, () => false));
 
 // Escape closes a dialog, focus returns
 await page.goto(`${base}/apps`);
@@ -260,7 +270,8 @@ await btn.click();
 await page.getByRole('dialog').waitFor();
 await page.keyboard.press('Escape');
 await page.waitForTimeout(200);
-check('escape closes', (await page.getByRole('dialog').count()) === 0);
+await page.locator(DIALOG).first().waitFor({ state: 'detached', timeout: 2000 }).catch(() => {});
+check('escape closes', (await page.locator(DIALOG).count()) === 0);
 check('focus returns', await btn.evaluate((e) => e === document.activeElement));
 
 // ---------------- Review follow-ups (fresh contexts) ----------------
@@ -309,7 +320,7 @@ const linkProbe = /\/rest\/private\/applications\/configurations\/(\d+)$/;
   const dd = p.getByRole('dialog');
   await dd.waitFor();
   await dd.getByRole('tab', { name: 'Add to a configuration' }).click();
-  await dd.getByLabel('Configuration', { exact: true }).selectOption({ label: 'Default' });
+  await pickOption(dd, 'Configuration', 'Default');
   const beforeAssign = probes.length;
   await dd.getByRole('button', { name: 'Add to configuration' }).click();
   await p.locator('.toast', { hasText: 'Assigned to Default' }).waitFor({ timeout: 8000 }).catch(() => {});
@@ -330,14 +341,16 @@ const linkProbe = /\/rest\/private\/applications\/configurations\/(\d+)$/;
   await p.goto(`${base}/apps`);
   await p.locator('table[aria-label="Library"] tbody tr').first().waitFor();
   await p.getByRole('button', { name: 'Deploy Chrome' }).click();
-  check('slow deploy: button says Opening…', (await p.getByRole('button', { name: 'Deploy Chrome' }).innerText()).includes('Opening'));
+  // An icon button now: "Opening…" is its tooltip and aria-busy (it stays enabled so focus can come back to it).
+  check('slow deploy: button says it is opening (aria-busy)', (await p.getByRole('button', { name: 'Deploy Chrome' }).getAttribute('aria-busy')) === 'true');
   await p.getByRole('link', { name: /Custom APK/ }).click();
   await p.waitForTimeout(2000);
   check('slow deploy: no dialog after switching tab', (await p.getByRole('dialog').count()) === 0);
   if (await p.getByRole('dialog').count()) await p.keyboard.press('Escape'); // (the failure above) carry on
   await p.getByRole('link', { name: /Library/ }).click();
   await p.locator('table[aria-label="Library"] tbody tr').first().waitFor();
-  check('slow deploy: Deploy is usable again', (await p.getByRole('button', { name: 'Deploy Chrome' }).innerText()).trim() === 'Deploy');
+  const again = p.getByRole('button', { name: 'Deploy Chrome' });
+  check('slow deploy: Deploy is usable again', (await again.getAttribute('aria-busy')) === null && (await again.isEnabled()));
   await c.close();
 }
 
@@ -346,12 +359,12 @@ const linkProbe = /\/rest\/private\/applications\/configurations\/(\d+)$/;
   const { c, p } = await freshPage({ quietNet: true });
   await c.route('**/rest/private/applications/search', (r) => r.fulfill({ status: 500, body: '' }));
   await p.goto(`${base}/apps`);
-  const alert = p.getByText('Could not load the app library.');
+  const alert = p.getByText('Couldn’t load the app library.');
   check('library error shown', await alert.waitFor({ timeout: 5000 }).then(() => true, () => false));
   check('library error: no rows, no empty-library message', (await p.locator('table[aria-label="Library"] tbody tr').count()) === 0 && (await p.getByText('No apps in the library yet').count()) === 0);
   await c.unroute('**/rest/private/applications/search');
   await p.getByRole('button', { name: 'Retry' }).click();
-  check('library Retry loads it', await p.locator('table[aria-label="Library"] tbody tr').first().waitFor({ timeout: 5000 }).then(() => true, () => false) && (await p.getByText('Could not load the app library.').count()) === 0);
+  check('library Retry loads it', await p.locator('table[aria-label="Library"] tbody tr').first().waitFor({ timeout: 5000 }).then(() => true, () => false) && (await p.getByText('Couldn’t load the app library.').count()) === 0);
   await c.close();
 }
 

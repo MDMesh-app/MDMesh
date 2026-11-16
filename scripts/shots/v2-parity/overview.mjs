@@ -26,27 +26,27 @@ async function page(opts = {}, setup) {
 {
   const { ctx, p, errors } = await page({}, async (ctx) => {
     // Make KIOSK-FRONT out of sync so a "Sync now" row exists; record sync posts.
-    await ctx.route('**/rest/private/agent/v1/devices/KIOSK-FRONT/configStatus', (r) => r.fulfill({ contentType: 'application/json', body: ok({ configurationId: 2, currentRevision: 'b', appliedRevision: 'a', inSync: false, supported: true, lastCommand: { id: 5, status: 'done' } }) }));
+    await ctx.route('**/rest/private/agent/v1/devices/KIOSK-FRONT/configStatus', (r) => r.fulfill({ contentType: 'application/json', body: ok({ configurationId: 5, currentRevision: 'b', appliedRevision: 'a', inSync: false, supported: true, lastCommand: { id: 5, status: 'done' } }) }));
   });
   const text = await p.locator('#v2-main').innerText();
   check('title', (await p.title()).startsWith('Overview'));
   check('subtitle', /3 devices need attention, and 3 are offline\./.test(text), text.split('\n')[1]);
   check('updated', /Updated \d+s ago|Updated just now/.test(text));
   check('fleet total', /FLEET\s*8\s*devices enrolled/i.test(text));
-  check('legend', /Online\s*2\s*25%/.test(text) && /Need attention\s*3\s*38%/.test(text) && /Offline\s*3\s*38%/.test(text));
+  check('legend', /Online\s*2\s*25%/.test(text) && /Needs attention\s*3\s*38%/.test(text) && /Offline\s*3\s*38%/.test(text));
   check('legend links', (await p.locator('a.v2-fleet__item').evaluateAll((as) => as.map((a) => a.getAttribute('href')))).join() === '/devices?status=online,/devices?status=attention,/devices?status=offline');
-  check('sync stat', /Config in sync\s*4\/8\s*2 out of sync\s*1 agent too old/.test(text));
+  check('sync stat', /Configuration in sync\s*4\/8\s*2 out of sync\s*1 agent too old/.test(text));
   check('rollout stat', /Agent 0\.1\.15 rollout\s*2\/4\s*Canary devices first\s*1 installing/.test(text));
   const rows = p.locator('table.v2-attn tr');
   check('attention rows', (await rows.count()) === 6, String(await rows.count()));
-  check('showing meta', /Showing 6 of 6/.test(text));
-  check('see all', (await p.getByRole('link', { name: 'See all' }).getAttribute('href')) === '/devices');
+  check('showing meta: none when every row is shown', !/Showing \d+ of \d+/.test(text));
+  check('see all', (await p.getByRole('link', { name: 'See all' }).getAttribute('href')) === '/devices?status=attention');
   check('failed reason first', (await rows.first().innerText()).includes('Configuration failed to apply'));
   check('update agent href', (await p.getByRole('link', { name: /Update agent: Lobby check-in/ }).getAttribute('href')) === '/settings#agent-rollout');
   check('offline rows', (await p.locator('td.v2-attn__reason', { hasText: 'Offline' }).count()) === 3);
   check('device link', (await p.getByRole('link', { name: /Café menu board/ }).first().getAttribute('href')) === '/devices/KIOSK-CAFE');
   check('by config', /Retail Kiosk\s*3\s*1 in sync · 1 out of sync · 1 agent too old/.test(text) && /Default\s*3\s*2 in sync · 1 not reported/.test(text));
-  check('config link', (await p.getByRole('link', { name: 'Retail Kiosk' }).getAttribute('href')) === '/configurations/2');
+  check('config link', (await p.getByRole('link', { name: 'Retail Kiosk' }).getAttribute('href')) === '/configurations/5');
   check('manage', (await p.getByRole('link', { name: 'Manage' }).getAttribute('href')) === '/configurations');
   check('server', /Running 0\.1\.14/.test(text) && /0\.1\.15 is available/.test(text) && /Signature verified · stable channel/.test(text));
   check('review update', (await p.locator('#v2-main').getByRole('link', { name: 'Review update' }).getAttribute('href')) === '/settings#updates');
@@ -79,7 +79,8 @@ async function page(opts = {}, setup) {
   check('sync fail toast', /Sync failed/.test(await p.locator('body').innerText()));
 
   // Open device navigates
-  await p.getByRole('link', { name: 'Open device: Café menu board' }).click();
+  // The row's device name is the link (K8: no separate "Open device" button).
+  await p.locator('table.v2-attn').getByRole('link', { name: /Café menu board/ }).click();
   await p.waitForTimeout(300);
   check('open device navigates', p.url().endsWith('/devices/KIOSK-CAFE'));
 
@@ -100,7 +101,7 @@ async function page(opts = {}, setup) {
       ? r.fulfill({ status: 500, contentType: 'application/json', body: '{}' })
       : r.fulfill({ contentType: 'application/json', body: ok({ configurations: fx.configurations, devices: { items: fx.devices, totalItemsCount: fx.devices.length } }) }));
   });
-  check('error banner', /Failed to load devices\./.test(await p.locator('[role=alert]').innerText()));
+  check('error banner', /Couldn[’']t load the fleet\./.test(await p.locator('[role=alert]').innerText()));
   fail = false;
   await p.getByRole('button', { name: 'Retry' }).click();
   await p.waitForTimeout(800);
@@ -128,7 +129,7 @@ async function page(opts = {}, setup) {
   const devs = fx.devices.map((d) => ({ ...d, lastUpdate: now - 60_000 }));
   const { ctx, p } = await page({}, async (ctx) => {
     await ctx.route('**/rest/private/devices/search', (r) => r.fulfill({ contentType: 'application/json', body: ok({ configurations: fx.configurations, devices: { items: devs, totalItemsCount: devs.length } }) }));
-    await ctx.route('**/configurations/syncSummary', (r) => r.fulfill({ contentType: 'application/json', body: ok([{ configurationId: 1, total: 3, inSync: 3, outOfSync: 0, unsupported: 0, neverSeen: 0 }, { configurationId: 2, total: 3, inSync: 3, outOfSync: 0, unsupported: 0, neverSeen: 0 }, { configurationId: 3, total: 2, inSync: 2, outOfSync: 0, unsupported: 0, neverSeen: 0 }]) }));
+    await ctx.route('**/configurations/syncSummary', (r) => r.fulfill({ contentType: 'application/json', body: ok([{ configurationId: 4, total: 3, inSync: 3, outOfSync: 0, unsupported: 0, neverSeen: 0 }, { configurationId: 5, total: 3, inSync: 3, outOfSync: 0, unsupported: 0, neverSeen: 0 }, { configurationId: 6, total: 2, inSync: 2, outOfSync: 0, unsupported: 0, neverSeen: 0 }]) }));
   });
   const t = await p.locator('#v2-main').innerText();
   check('healthy subtitle', /Every device is online and in sync\./.test(t));
@@ -150,7 +151,8 @@ for (const [name, error, failedShown] of [['not polled yet', 'not polled yet', f
   const { ctx, p } = await page({}, async (ctx) => {
     await ctx.route('**/update/**', (r) => r.fulfill({ contentType: 'application/json', body: JSON.stringify(status) }));
   });
-  const t = await p.locator('.v2-ov-side').innerText();
+  // The Server card (the old .v2-ov-side column is now part of the page grid).
+  const t = await p.locator('[aria-labelledby="v2-ov-srv"]').innerText();
   check(`server card, ${name}`, /The last update check failed\./.test(t) === failedShown && /Up to date/.test(t) === !failedShown, t.replace(/\n/g, ' | '));
   await ctx.close();
 }

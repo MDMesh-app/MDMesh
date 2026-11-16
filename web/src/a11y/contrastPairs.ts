@@ -50,16 +50,20 @@ export const PAIRS: ContrastPair[] = [
   // ---- inverted ----
   { element: 'Primary button / ink badge', fg: 'on-ink', bg: 'ink', kind: 'text' },
   { element: 'Primary button hover', fg: 'on-ink', bg: 'ink-hover', kind: 'text' },
+  { element: 'Destructive confirm button', fg: 'on-danger', bg: 'danger', kind: 'text' },
+  { element: 'Destructive confirm button hover', fg: 'on-danger', bg: 'danger-hover', kind: 'text' },
   // ---- non-text: control boundaries ----
   ...grid('Text input / select border', ['input-border'], ['surface', 'app', 'surface-2'], 'ui'),
-  // Owner's rule, "inputs strong, buttons soft": icon-only buttons (no label to identify them), the password toggle
-  // and the colour picker take --control-border; text buttons keep the soft v2 edge (exempt rows below).
-  ...grid('Icon-only button / password toggle / colour picker edge', ['control-border'], ['surface', 'app', 'surface-2'], 'ui'),
+  // Owner's rule, "inputs strong, buttons soft": the colour picker takes --control-border; icon-only buttons and the
+  // password toggle are ghost buttons whose icon carries the 3:1 ("Icon in a button" below); text buttons keep the
+  // soft v2 edge (exempt rows below).
+  ...grid('Colour picker edge', ['control-border'], ['surface', 'app', 'surface-2'], 'ui'),
   { element: 'Invalid input border', fg: 'alert', bg: 'surface', kind: 'ui' },
   { element: 'Warning input border', fg: 'warn', bg: 'surface', kind: 'ui' },
-  ...grid('Selected segment / tab outline', ['control-border'], ['seg-selected'], 'ui'),
-  // ---- non-text: focus ring (2px ink outline, offset onto the ground) ----
-  ...grid('Focus ring', ['ink'], [...NEUTRAL, 'ok-soft', 'warn-soft', 'alert-soft'], 'ui'),
+  // The selected tab's 2px indicator sits on the page or a card.
+  ...grid('Selected tab indicator', ['ink'], ['surface', 'app'], 'ui'),
+  // ---- non-text: focus ring (2px Console-blue outline, offset onto the ground) ----
+  ...grid('Focus ring', ['focus'], [...NEUTRAL, 'ok-soft', 'warn-soft', 'alert-soft'], 'ui'),
   // ---- non-text: toggle ----
   { element: 'Toggle off: track ring on its card', fg: 'switch-off-ring', bg: 'surface', kind: 'ui' },
   { element: 'Toggle on: track on its card', fg: 'switch-on', bg: 'surface', kind: 'ui' },
@@ -77,7 +81,12 @@ export const PAIRS: ContrastPair[] = [
   // ---- soft by design: exempt, recorded (1.4.11 asks no edge of a control its visible label identifies) ----
   { element: 'Secondary text button edge', fg: 'border-strong', bg: 'surface', kind: 'exempt' },
   { element: 'Subtle text button edge (remote-action tiles)', fg: 'border', bg: 'surface', kind: 'exempt' },
-  { element: 'Danger text button edge', fg: 'alert-line', bg: 'surface', kind: 'exempt' },
+  { element: 'Danger text button edge', fg: 'border-strong', bg: 'surface', kind: 'exempt' },
+  // Selected segment and current nav item: shown by a raised or tinted fill and the label's weight and ink (the label
+  // is text, 1.4.1: never colour alone); their fills are recorded, not held to 3:1.
+  { element: 'Selected segment fill on its track', fg: 'seg-selected', bg: 'surface-2', kind: 'exempt' },
+  { element: 'Current nav item fill on the sidebar', fg: 'surface-2', bg: 'surface', kind: 'exempt' },
+  { element: 'Current section-nav item fill on the page', fg: 'surface-2', bg: 'app', kind: 'exempt' },
   { element: 'Card and panel border (decorative)', fg: 'border', bg: 'app', kind: 'exempt' },
   // ---- disabled: exempt, recorded ----
   { element: 'Disabled text (faint)', fg: 'faint', bg: 'surface', kind: 'exempt' },

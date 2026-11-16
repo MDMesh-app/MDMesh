@@ -55,7 +55,7 @@ installed. Apps in the grid that aren't installed are left out.
 | **System info** | Show / Hide | The status bar (time, battery, signal). |
 | **Lock screen** | Allow / Block | Whether the lock screen can appear in kiosk. |
 | **Lock hardware buttons** | On / Off | Blocks the power menu. |
-| **Lock volume buttons (kiosk)** | On / Off | Blocks volume changes (agent 0.3.4 or later). Android mutes the device while volume is locked, so **Ring device** is silent on it. The lock is lifted when kiosk ends. |
+| **Lock volume buttons (kiosk)** | On / Off | Blocks volume changes (agent 0.3.4 or later). Android mutes the device while volume is locked, so **Ring** is silent on it. The lock is lifted when kiosk ends. |
 
 A kiosk also blocks Safe Mode, which could otherwise bypass it, unless the configuration's **Safe Mode** setting
 is **Allow** (agent 0.3.7 or later).
@@ -116,8 +116,8 @@ On a device page, open **Control → Remote actions → Kiosk & apps**:
 - **Exit kiosk** ends kiosk on the device and restores its normal home screen. The device must be online to receive
   it. Staff can still go back in with **Return to kiosk** on the device (agent 0.5.0 or later); to prevent that,
   turn kiosk off in the configuration.
-- **Return to configured kiosk…** puts the device back into the kiosk its configuration defines.
-- **Custom kiosk…** locks the device to apps you pick now, as a one-time kiosk the configuration doesn't define. Its
+- **Return to configured kiosk** puts the device back into the kiosk its configuration defines.
+- **Custom kiosk** locks the device to apps you pick now, as a one-time kiosk the configuration doesn't define. Its
   **Exit mode** can also be **Remote only**: no exit on the device. A custom kiosk always allows the home button and
   notifications.
 
@@ -145,8 +145,8 @@ admin ends it from the console.
 | What you see | What to check |
 |---|---|
 | Kiosk doesn't start | The device page's configuration panel: the device must be in sync and Device Owner. The device's agent must support configuration sync (**Agent too old** means it doesn't). |
-| **Return to configured kiosk…** is missing or unavailable | The hint under the **Kiosk & apps** buttons says why: for example no configuration, kiosk off in the configuration, no app set to Install and shown in kiosk, or the device is already in that kiosk. |
-| Grid instead of the main app | The main app isn't installed yet, or more than one app is shown in kiosk. Use **Install config apps** on the device page. |
+| **Return to configured kiosk** is missing or unavailable | The hint under the **Kiosk & apps** buttons says why: for example no configuration, kiosk off in the configuration, no app set to Install and shown in kiosk, or the device is already in that kiosk. |
+| Grid instead of the main app | The main app isn't installed yet, or more than one app is shown in kiosk. Use **Install configuration apps** on the device page. |
 | Home or notifications still available | Check **Home button** and **Notifications**. A custom kiosk always allows them. |
 | **App closed** on the device | The app closed more than 3 times in a minute. Fix the app, then tap **Open again**. |
 | Staff locked out by wrong PINs | Wait for the lockout to end, or select **Exit kiosk** on the device page. |

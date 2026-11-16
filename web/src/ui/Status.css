@@ -1,35 +1,33 @@
-/* ---- status mark: circle / diamond / square / hollow ring ---- */
+/* ---- status mark: circle / diamond / square / hollow ring (shape keeps status readable without colour) ---- */
 .v2 .v2-sdot {
   display: inline-block;
   flex: 0 0 auto;
-  box-sizing: border-box;
-  border: 1.5px solid currentColor;
+  border: var(--dot-ring) solid currentColor;
 }
 .v2 .v2-sdot--s6 {
-  width: 6px;
-  height: 6px;
+  width: var(--dot-sm);
+  height: var(--dot-sm);
   border-width: 0;
 }
 .v2 .v2-sdot--s7 {
-  width: 7px;
-  height: 7px;
+  width: var(--dot);
+  height: var(--dot);
 }
 .v2 .v2-sdot--s8 {
-  width: 8px;
-  height: 8px;
+  width: var(--dot-lg);
+  height: var(--dot-lg);
 }
 .v2 .v2-sdot--circle {
-  border-radius: 50%;
+  border-radius: var(--radius-full);
 }
 .v2 .v2-sdot--ring {
-  border-radius: 50%;
-  background: transparent !important;
+  border-radius: var(--radius-full);
 }
 .v2 .v2-sdot--square {
-  border-radius: 1px;
+  border-radius: var(--hairline);
 }
 .v2 .v2-sdot--diamond {
-  border-radius: 1px;
+  border-radius: var(--hairline);
   transform: rotate(45deg);
 }
 .v2 .v2-sdot--ok {
@@ -48,7 +46,10 @@
   color: var(--muted);
   background: var(--offline);
 }
-/* A 6px sync dot has no ring, so the idle fill must carry it alone (board: #B6BDC7). */
+.v2 .v2-sdot.v2-sdot--ring {
+  background: transparent;
+}
+/* A 6px sync dot has no ring, so the idle fill carries it alone. */
 .v2 .v2-sdot--idle.v2-sdot--s6 {
   background: var(--offline);
 }
@@ -57,18 +58,15 @@
 .v2 .v2-spill {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 2px 10px;
-  box-sizing: border-box;
-  border: 1px solid;
-  border-radius: var(--radius-pill);
-  font-size: var(--fs-meta);
-  font-weight: 500;
-  line-height: var(--lh-body);
+  gap: var(--space-2);
+  height: var(--control-xs);
+  padding: 0 var(--space-2);
+  border: var(--hairline) solid;
+  border-radius: var(--radius-full);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+  font-weight: var(--weight-medium);
   white-space: nowrap;
-}
-.v2 .v2-spill--nodot {
-  padding: 1px 10px;
 }
 .v2 .v2-spill--ok {
   background: var(--ok-soft);
@@ -95,21 +93,21 @@
 .v2 .v2-stext {
   display: inline-flex;
   align-items: center;
-  line-height: var(--lh-body);
-}
-.v2 .v2-stext--sync {
-  gap: 6px;
-  font-size: var(--fs-meta);
+  gap: var(--space-2);
   white-space: nowrap;
 }
+.v2 .v2-stext--sync {
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+}
 .v2 .v2-stext--reason {
-  gap: 8px;
-  font-size: var(--fs-control);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
 }
 .v2 .v2-stext--meta {
-  gap: 8px;
-  font-size: var(--fs-sm);
-  font-weight: 600;
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
+  font-weight: var(--weight-medium);
 }
 .v2 .v2-stext--ok {
   color: var(--ok-ink);
@@ -130,7 +128,7 @@
     color: CanvasText;
     background: CanvasText;
   }
-  .v2 .v2-sdot--ring {
+  .v2 .v2-sdot.v2-sdot--ring {
     background: transparent;
   }
 }

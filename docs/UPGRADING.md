@@ -19,8 +19,8 @@ applies them: it backs up the database, then rolls back if the new version fails
 
 ## Quick-start installs
 
-The install's admin (a super-admin, or the org admin of a single-customer install) clicks **Update** on the console's
-banner. A failed update rolls back by itself.
+The install's admin (a super-admin, or the org admin of a single-customer install) selects **Review update** on the
+console's server-update card, then **Update server and console**. A failed update rolls back by itself.
 
 **Automatic updates** (Settings, or `AUTO_UPDATE=1`) apply each release without a prompt. Once `/backups/auto.json`
 exists (the Settings switch, or any failed or rolled-back update, creates it), it wins over `AUTO_UPDATE`; change it
@@ -184,78 +184,82 @@ none of these and ignores the attempt id: an enrollment there works as before, i
 
 ### v0.5.0
 
-- **Quick start: update the supervisor before you press Update.** In the install directory, run
+- **Quick start: update the supervisor before you apply 0.5.0.** In the install directory, run
 
   ```bash
   docker compose pull supervisor && docker compose up -d supervisor
   ```
 
-  then apply 0.5.0 from **Settings → Updates**. The quick start set `SUPERVISOR_VERSION=latest`, so this starts the
-  0.5.0 supervisor (if you set a version in `.env` yourself, change it to `0.5.0` first). It works with your 0.4.x
-  server and console as before, and it is the one that then applies 0.5.0, pinned by digest, and rolls it back if
-  needed: by itself if 0.5.0 fails its health check, or from **Roll back**. A supervisor from before 0.5.0 can't roll
-  0.5.0 back (see *Going back to 0.4.0* below). With automatic updates on, run the command as soon as you can:
-  until then the old supervisor may apply 0.5.0 itself.
+  then apply 0.5.0 from **Settings → Updates** (**Update server and console**). The quick start set
+  `SUPERVISOR_VERSION=latest`, so this starts the 0.5.0 supervisor (if you set a version in `.env` yourself, change it
+  to `0.5.0` first). It works with your 0.4.x server and console as before, and it is the one that then applies 0.5.0,
+  pinned by digest, and rolls it back if needed: by itself if 0.5.0 fails its health check, or from **Roll back** on
+  `/recovery`. A supervisor from before 0.5.0 can't roll 0.5.0 back (see *Going back to 0.4.0, if an old supervisor
+  applied 0.5.0* below). With automatic updates on, run the command as soon as you can: until then the old supervisor
+  may apply 0.5.0 itself.
 - **The database update is automatic.** On start, the server adds `devices.wipedAt` and
   `devices.agentEnrollAttemptHash`; `configurations.camera`, `configurations.locationServices` and the kiosk background
   image columns (`backgroundImageFileId`, `backgroundImageSha256`, `backgroundImageFit`, `backgroundImageFocalX`,
   `backgroundImageFocalY`); `device_state.kioskGeneration` and `device_state.kioskReturnGeneration`;
   `applicationVersions.requestedPermissions`; `maxUses`, `useCount` and `revokedAt` on enrollment tokens; the
-  `configurationAppPermissions` and `agentEnrollmentKey` tables; and three indexes. Every new column is empty for
-  existing configurations, so no device re-applies its configuration until its agent is updated. Devices wiped before
-  the update aren't marked Wiped.
+  `configurationAppPermissions` and `agentEnrollmentKey` tables; and three indexes (on
+  `devices.agentEnrollAttemptHash`, on each customer's devices by enrollment time, and on
+  `configurations.backgroundImageFileId`). Every new column is empty for existing configurations, so no device
+  re-applies its configuration until its agent is updated. Devices wiped before the update aren't marked Wiped.
 - **PostgreSQL older than 11: existing enrollment codes stop working.** The update hashes existing codes with a
   function PostgreSQL 11 added; on an older server it marks them used instead. Make a new code on the Enroll page.
 - **From source and native: move the clone to 0.5.0 once.** 0.4.x has no `./setup.sh --update`. Run
   `git fetch --tags && git checkout v0.5.0 && ./setup.sh --update` (native:
   `git fetch --tags && git checkout v0.5.0 && sudo ./setup.sh --update --native`). It works on a clone of `main` and on one checked
-  out at a release tag (where `git pull` fails), and leaves the clone on the release tag `--update` works from; that
-  `--update` checks the release's signature and runs its setup.sh (or moves on to a newer release, if there is one).
-  Git refuses the checkout if it would overwrite local changes, and `--update` stops on any it would carry along. Then
-  use `./setup.sh --update` (native: `sudo ./setup.sh --update --native`) for every later release. On 0.4.x itself,
-  `./setup.sh --update` is refused as an unknown option, and with `--native` it would install 0.4.x again.
+  out at a release tag (where `git pull` fails). The checkout leaves the clone on the v0.5.0 tag, which is where
+  `--update` starts; `--update` then checks the release's signature and runs its setup.sh (or moves on to a newer
+  release, if there is one). Git refuses the checkout if it would overwrite local changes, and `--update` stops on any
+  it would carry along. Then use `./setup.sh --update` (native: `sudo ./setup.sh --update --native`) for every later
+  release. Don't run `--update` on a 0.4.x checkout: 0.4.x's setup.sh refuses it as an unknown option, and with
+  `--native` it ignores it and installs 0.4.x again.
 - **Update the supervisor once, or updates stay unpinned.** Updates now run the images the signed release names, by
-  digest ([how](#quick-start-installs)). The supervisor you run does that, and updates never touch it, so one from
-  before 0.5.0 applies 0.5.0 by tag and goes on doing so for every later release, without a message.
-  - **Quick start:** the command in the first point, before the update. If 0.5.0 is already applied, run
-    `docker compose pull && docker compose up -d` in the install directory instead.
-  - **From source with a registry `IMAGE_OWNER`:** the move to 0.5.0 above, also after applying 0.5.0 from the
-    console. setup.sh builds the supervisor and ties `SUPERVISOR_VERSION` to the checkout's release, so
+  digest ([how](#quick-start-installs)). The supervisor you run does that, and server updates never replace it, so one
+  from before 0.5.0 applies 0.5.0 by tag and goes on applying every later release by tag, without a message.
+  - **Quick start:** the command in the first point, before the update. If an old supervisor already applied 0.5.0
+    and you keep 0.5.0, run `docker compose pull && docker compose up -d` in the install directory instead.
+  - **From source with a registry `IMAGE_OWNER`:** the move to 0.5.0 above, even if you already applied 0.5.0 from
+    the console. setup.sh builds the supervisor and ties `SUPERVISOR_VERSION` to the checkout's release, so
     `docker compose pull` alone keeps the old one.
   - **Nothing to do:** a new 0.5.0 quick start is pinned from the start, and from-source installs with
     `IMAGE_OWNER=local` and native installs don't update from release images.
-- **New agent: 0.5.0.** Once the updater has downloaded it, **Settings → Agent rollout** offers it: pick a few canary
-  devices, then promote it to everyone else. Most of this release's device features need it (see
+- **New agent: 0.5.0.** Once the supervisor has downloaded it, **Settings → Agent rollout** offers it: pick a few
+  canary devices, then promote it to everyone else. Most of this release's device features need it (see
   [Agent compatibility](#agent-compatibility)); devices on older agents keep working. A device that takes it applies
   its configuration once more, as after every agent update.
 - **Live connection can take up to 5 minutes to come back after an outage (agent 0.5.0).** When the server has been
   unreachable for a while, a device's live connection can take up to 5 minutes to come back (it was up to 1 minute), so
-  Sync now may say the device isn't connected a little longer. It comes back at once when the device's network returns
-  or its next check-in gets through. Check-ins are not affected.
-- **Native installer and answers.** The installer stops on an option it doesn't take, instead of ignoring it.
-  `REPLACE_DATA` must be `yes` or `no`, and `ASSUME_YES` `1` or `0`; empty means not set (the default). Any other value
-  stops it before it changes anything, where it used to mean Keep or ask. An answers file (`MDMESH_ANSWERS`, new in
-  0.5.0) must be owned by you or root and give no access to group or others (for example `chmod 600`). Check scripts
-  that run the installer unattended.
+  Sync now may say the device isn't connected a little longer. The connection comes back at once when the device's
+  network returns or its next check-in gets through. Check-ins are not affected.
+- **Native installer and answers.** The installer stops on a command-line option it doesn't take, instead of
+  ignoring it. `REPLACE_DATA` must be `yes` or `no`, and `ASSUME_YES` `1` or `0`; empty means not set (the default).
+  Any other value stops it before it changes anything; before 0.5.0, another `REPLACE_DATA` meant Keep and another
+  `ASSUME_YES` meant ask. An answers file (`MDMESH_ANSWERS`, new in 0.5.0) must be owned by you or root and give no
+  access to group or others (for example `chmod 600`). Check scripts that run the installer unattended.
 - **Forks.** Once a 0.5.0 supervisor runs, it refuses a release whose manifest has no digests, and one that pins them
   under another owner than `IMAGE_OWNER`, with that reason, and nothing changes. A fork that publishes its own releases
   must use the current release workflow ([RELEASING.md](../RELEASING.md)). An install that follows upstream releases
-  with its own `IMAGE_OWNER` sets `GITHUB_REPO` to the repository that publishes its images, or `IMAGE_OWNER` to
+  with its own `IMAGE_OWNER` must set `GITHUB_REPO` to the repository that publishes its images, or `IMAGE_OWNER` to
   `mdmesh-app`.
 - **Going back to 0.4.0, if an old supervisor applied 0.5.0.** A supervisor from before 0.5.0 can't roll 0.5.0
   back: its restore stops at `cannot drop constraint configurations_pr_key ... because other objects depend on it` (0.5.0 adds a
   table that refers to configurations). Nothing changes: the database stays as it was, and `server` is left stopped.
   The 0.5.0 supervisor restores into an emptied schema instead. So, on a quick start, run
-  `docker compose pull supervisor && docker compose up -d supervisor`, then **Roll back** from `/recovery`. If a rollback, or a failed update's automatic one, already stopped there, the same
-  command and **Roll back** again finish it; it uses the same backup. To stay on 0.5.0 instead, run
-  `docker compose up -d server`. By hand: [Restoring by hand](#restoring-by-hand).
+  `docker compose pull supervisor && docker compose up -d supervisor`, then **Roll back** from `/recovery`. If a
+  rollback, from **Roll back** or after a failed update, already stopped there, the same command and **Roll back**
+  again finish it with the same backup. To stay on 0.5.0 instead, run `docker compose up -d server`. By hand:
+  [Restoring by hand](#restoring-by-hand).
 - **Going back to 0.4.0: enrollment codes.** The update stores enrollment codes hashed, the existing ones included
   (on PostgreSQL older than 11 it marks them used instead, see above). A one-click rollback, and the restores in
   [Backups and restore](OPERATIONS.md#backups-and-restore), bring back the database from before the update, with its
-  codes as they were. A 0.4.0 server started on the 0.5.0 database instead (`--allow-downgrade`, say) finds none of
-  them: every code made before the downgrade is refused as unknown, including one already printed or in a QR. Make a
-  new code on the Enroll page. If you then update that same database to 0.5.0 again, codes made while 0.4.0 ran don't
-  work either: make new ones.
+  codes as they were. A 0.4.0 server started on the 0.5.0 database instead, without a restore (`--allow-downgrade`,
+  say), finds none of them: every code made before the downgrade is refused as unknown, including one already printed
+  or in a QR. Make a new code on the Enroll page. If you then update that same database to 0.5.0 again, codes made
+  while 0.4.0 ran don't work either: make new ones.
 - **App permissions (agent 0.5.0):** a configuration can Grant or Deny an installed app's runtime permissions. Devices
   on an older agent, or not Device Owner, can't apply them: they get the rest of the configuration and show as out of
   sync while it has a rule, until their agent is updated. Configurations without rules stay in sync on every agent.
@@ -303,10 +307,10 @@ or add server plugins also read [v0.4.0 for forks](#v040-for-forks) below.
   takes the new agent applies its configuration once more, as after every agent update; it changes nothing unless the
   configuration sets a connectivity mode.
 - **Configuration apps install at check-in.** An app added to a configuration, in the editor or with Deploy's "Add to
-  a configuration", now installs on its devices at their next check-in, without **Install config apps**, also on a
+  a configuration", now installs on its devices at their next check-in, without **Install configuration apps**, also on a
   device that was offline. A device moved to another configuration gets that configuration's apps it doesn't have. A
-  failed install is tried up to three times (after 15 minutes, then an hour), then left to Install config apps. Apps
-  a configuration had before the update are not sent again: use Install config apps for a device still missing one.
+  failed install is tried up to three times (after 15 minutes, then an hour), then left to Install configuration apps. Apps
+  a configuration had before the update are not sent again: use Install configuration apps for a device still missing one.
   It needs no new agent: every agent that can install silently (Device Owner) does it.
 - **Rolling back to 0.3.9 is safe.** A one-click rollback, and the restores in
   [Backups and restore](OPERATIONS.md#backups-and-restore), bring back the database from before the update,
@@ -580,7 +584,7 @@ kiosk PINs.
     short), or airplane mode. Wi-Fi then stays on, shown as deferred, until the configuration changes.
   - The old Wi-Fi setting, now named **Wi-Fi settings**, still only locks the Wi-Fi settings screen.
 - **Lock volume buttons (kiosk)** (new, off by default; needs agent 0.3.4, and older agents ignore it) blocks volume
-  changes in kiosk. Android mutes a locked device, so **Ring device** is silent on it.
+  changes in kiosk. Android mutes a locked device, so **Ring** is silent on it.
 - **Lock hardware buttons** blocks only the power menu.
 - **Headwind QR routes:** `/rest/public/qr/*` returns 404 unless `LEGACY_DEVICE_API=1`; the console doesn't use
   them. The three installer-created configurations get a new QR key on first start. With `LEGACY_DEVICE_API=1`, the
@@ -598,8 +602,8 @@ kiosk PINs.
 - The Headwind launcher's device routes (`/rest/public/sync/*`, notifications, plugin device uploads, usage stats)
   return 404 unless `LEGACY_DEVICE_API=1`.
 - App installs now carry the APK's SHA-256, and current agents refuse an install without one. Hosted APKs are hashed
-  automatically. For a Library app with an external URL, add the hash with the **SHA-256…** button, or upload the
-  APK instead.
+  automatically. For a Library app with an external URL, add the hash with **Add checksum**, or **SHA-256 checksum**
+  in the app's row, or upload the APK instead.
 
 ### v0.3.1
 

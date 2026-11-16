@@ -24,7 +24,7 @@ export interface QrPanelProps {
 }
 
 /**
- * Enroll's QR column: a square r14 bordered frame (14px padding) holding the code, with "New code" and "Full screen"
+ * Enroll's QR column: a square bordered frame holding the code, with "New code" and "Full screen"
  * underneath. The frame stays white in dark mode: scanners need dark modules on a light ground. Full screen opens
  * a viewport-sized Modal with the code as large as fits.
  */
@@ -37,11 +37,11 @@ export function QrPanel({ value, label, onNewCode, newCodeBusy, fullScreenTitle 
       </div>
       <div className="v2-qr__actions">
         {onNewCode ? (
-          <Button size="lg" icon={<IconSync size={14} />} onClick={onNewCode} disabled={newCodeBusy}>
+          <Button icon={<IconSync size={14} />} onClick={onNewCode} disabled={newCodeBusy}>
             {newCodeBusy ? 'Making a code…' : 'New code'}
           </Button>
         ) : null}
-        <Button size="lg" onClick={() => setFull(true)}>
+        <Button onClick={() => setFull(true)}>
           Full screen
         </Button>
       </div>

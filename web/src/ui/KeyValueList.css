@@ -1,17 +1,20 @@
+/* Label / value lists. */
 .v2 .v2-kv {
   margin: 0;
 }
 .v2 .v2-kv dd {
   margin: 0;
+  font-variant-numeric: tabular-nums;
 }
 .v2 .v2-kv dt {
   color: var(--secondary);
 }
 .v2 .v2-kv .is-mono {
   font-family: var(--font-mono);
+  font-size: var(--text-meta);
 }
 
-/* rail: device detail */
+/* rail: device facts and telemetry, 28px rows */
 .v2 .v2-kv--rail {
   display: flex;
   flex-direction: column;
@@ -19,26 +22,36 @@
 .v2 .v2-kv--rail .v2-kv__row {
   display: flex;
   flex-wrap: wrap;
+  align-items: baseline;
   justify-content: space-between;
-  gap: 0 12px;
-  padding: 5px 0;
+  gap: 0 var(--space-3);
+  padding: var(--space-1) 0;
 }
 .v2 .v2-kv--rail dd {
   text-align: right;
   overflow-wrap: anywhere;
 }
-.v2 .v2-kv--rail dd.is-mono {
-  font-size: var(--fs-sm);
+
+/* two columns of rows, when there is room */
+.v2 .v2-kv--2col {
+  display: block;
+  columns: 2 280px;
+  column-gap: var(--space-8);
+}
+.v2 .v2-kv--2col .v2-kv__row {
+  break-inside: avoid;
 }
 
-/* rows: Settings */
+/* rows: Settings, 40px rows on a rule */
 .v2 .v2-kv--rows .v2-kv__row {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
-  gap: 4px 16px;
-  padding: 11px 0;
-  border-top: 1px solid var(--line-soft);
+  gap: var(--space-1) var(--space-4);
+  min-height: var(--row-compact);
+  padding: var(--space-2) 0;
+  border-top: var(--hairline) solid var(--line-soft);
 }
 .v2 .v2-kv--rows dd {
   overflow-wrap: anywhere;
@@ -48,12 +61,11 @@
 .v2 .v2-kv--facts {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 6px 16px;
-  padding: 12px 14px;
-  background: var(--app);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  font-size: var(--fs-control);
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3);
+  background: var(--surface-sunken);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-control);
 }
 .v2 .v2-kv--facts .v2-kv__pair {
   display: contents;
@@ -63,11 +75,15 @@
 .v2 .v2-kvgroup {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 14px 0 8px;
-  border-bottom: 1px solid var(--line-soft);
+  gap: var(--space-1);
+  padding: var(--space-3) 0;
+  border-bottom: var(--hairline) solid var(--line-soft);
+}
+.v2 .v2-kvgroup:first-child {
+  padding-top: 0;
 }
 .v2 .v2-kvgroup.is-last {
+  padding-bottom: 0;
   border-bottom: 0;
 }
 
@@ -85,12 +101,13 @@
 }
 .v2 .v2-metagrid .is-mono {
   font-family: var(--font-mono);
+  font-size: var(--text-meta);
 }
 .v2 .v2-metagrid__cell {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  border-right: 1px solid var(--line-soft);
+  border-right: var(--hairline) solid var(--line-soft);
 }
 .v2 .v2-metagrid__cell:last-child {
   border-right: 0;
@@ -100,36 +117,28 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.v2 .v2-metagrid dt {
+  font-size: var(--text-caps);
+  line-height: var(--lh-caps);
+}
 /* strip (device card footer) */
 .v2 .v2-metagrid--strip {
-  border-top: 1px solid var(--line-soft);
+  border-top: var(--hairline) solid var(--line-soft);
 }
 .v2 .v2-metagrid--strip .v2-metagrid__cell {
-  padding: 9px 12px 10px;
+  padding: var(--space-2) var(--space-3);
 }
 .v2 .v2-metagrid--strip .v2-metagrid__cell:first-child {
-  padding-left: 16px;
+  padding-left: var(--card-pad);
 }
 .v2 .v2-metagrid--strip .v2-metagrid__cell:last-child {
-  padding-right: 16px;
-}
-.v2 .v2-metagrid--strip dt {
-  font-size: var(--fs-micro);
-}
-.v2 .v2-metagrid--strip dd {
-  font-size: var(--fs-sm);
+  padding-right: var(--card-pad);
 }
 /* boxed (configuration card) */
 .v2 .v2-metagrid--boxed {
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-sm);
+  border: var(--hairline) solid var(--line-soft);
+  border-radius: var(--radius-control);
 }
 .v2 .v2-metagrid--boxed .v2-metagrid__cell {
-  padding: 8px 12px;
-}
-.v2 .v2-metagrid--boxed dt {
-  font-size: var(--fs-tiny);
-}
-.v2 .v2-metagrid--boxed dd {
-  font-size: var(--fs-control);
+  padding: var(--space-2) var(--space-3);
 }

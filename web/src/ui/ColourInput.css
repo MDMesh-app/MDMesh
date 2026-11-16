@@ -2,15 +2,16 @@
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
 }
 .v2 .v2-colour__btn {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 12px 5px 6px;
-  border: 1px solid var(--control-border);
-  border-radius: var(--radius-sm);
+  gap: var(--space-2);
+  height: var(--control-md);
+  padding: 0 var(--space-3) 0 var(--space-2);
+  border: var(--hairline) solid var(--control-border);
+  border-radius: var(--radius-control);
   background: var(--surface);
   color: var(--text);
   cursor: pointer;
@@ -22,7 +23,7 @@
   width: 24px;
   height: 24px;
   box-sizing: border-box;
-  border-radius: var(--radius-swatch);
+  border-radius: var(--radius-chip);
   border: 1px solid var(--swatch-line);
 }
 .v2 .v2-colour__swatch.is-default {
@@ -30,7 +31,7 @@
 }
 .v2 .v2-colour__hex {
   font-family: var(--font-mono);
-  font-size: var(--fs-sm);
+  font-size: var(--text-ui);
 }
 /* The native picker anchors under the button but stays invisible. */
 .v2 .v2-colour__native {

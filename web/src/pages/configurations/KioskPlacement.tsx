@@ -1,6 +1,6 @@
 // How the kiosk background image fills the screen: Fill (cropped around a focal point) or Fit (whole, letterboxed),
 // and the focal point itself, set by clicking or dragging on the image or with the arrow keys.
-import { useId, useRef, type KeyboardEvent, type PointerEvent } from 'react';
+import { useId, useRef, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
 import { DEFAULT_FOCAL, type FitMode, type FocalPoint } from '../../data/kioskScrim';
 import { Button, Segmented } from '../../ui';
 import './KioskPlacement.css';
@@ -9,6 +9,15 @@ const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 /** Two decimals: what the configuration stores and the agent gets. */
 const round2 = (v: number) => Math.round(v * 100) / 100;
 const pct = (v: number) => `${Math.round(v * 100)}%`;
+
+/**
+ * The focal point ring sits on the photo, not on a console surface, so it has its own fixed colours: light with a dark
+ * edge reads on any image, in either theme. Not console tokens.
+ */
+const ON_PHOTO = {
+  '--kbp-ring': '#ffffff',
+  '--kbp-ring-edge': '0 0 0 1px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(0, 0, 0, 0.6)',
+} as CSSProperties;
 
 export function KioskPlacement({
   src,
@@ -126,7 +135,7 @@ export function KioskPlacement({
             }}
           >
             <img src={src} alt="" draggable={false} />
-            <span className="v2-kbp__marker" style={{ left: `${focal.x * 100}%`, top: `${focal.y * 100}%` }} aria-hidden="true" />
+            <span className="v2-kbp__marker" style={{ ...ON_PHOTO, left: `${focal.x * 100}%`, top: `${focal.y * 100}%` }} aria-hidden="true" />
           </div>
           <p id={`${ids}-focal-help`} className="v2-kbp__hint">
             {fit === 'fit'

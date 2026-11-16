@@ -86,6 +86,7 @@ export const IconSignOut = make('0 0 16 16', 16, 1.5, <path d="M6 2.5H3.5v11H6M1
 /* ---- actions (16px grid) ---- */
 export const IconPlus = make('0 0 16 16', 15, 1.8, <path d="M8 2.5v11M2.5 8h11" />);
 export const IconCheck = make('0 0 16 16', 14, 1.8, <path d="M3 8.3l3 3 7-7" />);
+export const IconFilter = make('0 0 16 16', 16, 1.6, <path d="M2.5 4h11M4.5 8h7M6.5 12h3" />, hairline);
 export const IconSearch = make('0 0 16 16', 15, 1.6, <>
   <circle cx="7" cy="7" r="4.8" />
   <path d="M10.5 10.5L14 14" />

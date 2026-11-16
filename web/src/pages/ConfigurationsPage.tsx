@@ -8,10 +8,9 @@ import { appNameForVersionId, hasDefaultPin, hasNoPin, isLocked } from '../data/
 import {
   Badge,
   Button,
-  ButtonLink,
-  Callout,
   Card,
   EmptyState,
+  ErrorState,
   IconConfigurations,
   IconCopy,
   IconLockSmall,
@@ -19,13 +18,18 @@ import {
   IconPlus,
   IconSearch,
   IconTrash,
-  IconWarning,
   Menu,
-  MetaGrid,
   PageHeader,
   SearchInput,
   Segmented,
+  Skeleton,
+  SkeletonRows,
   StackedBar,
+  Grid,
+  GridCell,
+  MetaGrid,
+  ButtonLink,
+  Tooltip,
   type MenuEntry,
 } from '../ui';
 import { CORE_ACTION_ACCESS } from '../ext/core/access';
@@ -36,7 +40,8 @@ import { devicesBlockingDelete, syncLine } from './configurations/sync';
 import type { ConfigWatch } from './configurations/watch';
 import './ConfigurationsPage.css';
 
-type Show = 'all' | 'yours' | 'builtin';
+/** Custom: made on this server (by any admin), as opposed to the built-in templates the server seeds. */
+type Show = 'all' | 'custom' | 'builtin';
 
 const POLL_MS = 10_000;
 /** Concurrent /configurations/applications/{id} requests: each answer carries the whole app library. */
@@ -177,24 +182,33 @@ export function ConfigurationsPage() {
   const counts = useMemo(() => {
     const all = configs ?? [];
     const builtin = all.filter(isLocked).length;
-    return { all: all.length, builtin, yours: all.length - builtin };
+    return { all: all.length, builtin, custom: all.length - builtin };
   }, [configs]);
+  // Filtering by kind only helps when there are both: with one kind empty the filter is hidden, and shows everything.
+  const bothKinds = counts.builtin > 0 && counts.custom > 0;
+  const kind: Show = bothKinds ? show : 'all';
 
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return (configs ?? [])
-      .filter((c) => (show === 'all' ? true : show === 'builtin' ? isLocked(c) : !isLocked(c)))
+      .filter((c) => (kind === 'all' ? true : kind === 'builtin' ? isLocked(c) : !isLocked(c)))
       .filter((c) => !needle || `${c.name} ${c.description ?? ''}`.toLowerCase().includes(needle));
-  }, [configs, q, show]);
+  }, [configs, q, kind]);
 
   const templates = useMemo(() => (configs ?? []).filter(isLocked), [configs]);
-  const newConfig = () => setChooserOpen(true);
+  // With no template the chooser would offer one option (Blank): create directly instead (K7).
+  const chooses = templates.length > 0;
+  const newConfig = () => (chooses ? setChooserOpen(true) : navigate(paths.configuration('new')));
+  const newLabel = 'New configuration';
+  // Whether there are templates (and so the chooser) is known once the list is in: until then New configuration
+  // waits. After a failed load it opens a blank one, as nothing else can be offered.
+  const listing = configs === null && !error;
 
   let body: ReactNode = null;
   if (configs === null) {
     body = (
-      <Card>
-        <EmptyState icon={<IconConfigurations />} title="Loading configurations…" />
+      <Card padding="none" clip aria-busy="true">
+        <SkeletonRows count={4} label="Loading configurations…" />
       </Card>
     );
   } else if (configs.length === 0) {
@@ -202,72 +216,74 @@ export function ConfigurationsPage() {
       <Card>
         <EmptyState
           icon={<IconConfigurations />}
-          title="No configurations"
+          title="No configurations yet"
           action={
             canAdd ? (
-              <Button variant="primary" size="lg" icon={<IconPlus />} onClick={newConfig}>
-                New configuration
+              <Button variant="primary" icon={<IconPlus />} onClick={newConfig}>
+                {newLabel}
               </Button>
             ) : undefined
           }
         >
-          {canAdd ? 'Create one to use as a device template.' : undefined}
-        </EmptyState>
-      </Card>
-    );
-  } else if (shown.length === 0) {
-    body = (
-      <Card>
-        <EmptyState
-          icon={<IconSearch />}
-          title="No configurations match"
-          action={
-            <Button
-              size="lg"
-              onClick={() => {
-                setQ('');
-                setShow('all');
-              }}
-            >
-              Show all configurations
-            </Button>
-          }
-        >
-          Try another name or description.
+          {canAdd ? 'Create one to set the apps and rules your devices follow.' : undefined}
         </EmptyState>
       </Card>
     );
   } else {
-    body = (
-      <ul className="v2-configs__grid">
-        {shown.map((c) => (
-          <ConfigCard
-            key={c.id}
-            c={c}
-            apps={apps}
-            assigned={c.id != null ? assigned[c.id] : undefined}
-            sync={c.id != null ? sync[c.id] : undefined}
-            syncFailed={syncFailed}
-            syncLoaded={syncLoaded}
-            onOpen={() => navigate(paths.configuration(c.id ?? ''))}
-            onCopy={canCopy ? () => setCopyOf(c) : undefined}
-            onDelete={canCopy ? () => setDeleting(c) : undefined}
-          />
-        ))}
-      </ul>
-    );
+    body =
+      shown.length === 0 ? (
+        <Card>
+          <EmptyState
+            bare
+            icon={<IconSearch />}
+            title="No configurations match"
+            action={
+              <Button
+                size="sm"
+                onClick={() => {
+                  setQ('');
+                  setShow('all');
+                }}
+              >
+                Show all configurations
+              </Button>
+            }
+          >
+            Try another name or description.
+          </EmptyState>
+        </Card>
+      ) : (
+        // Cards on the page grid, three to a row on wide screens; each row's cards end level (comparable content).
+        <Grid as="ul" stretch aria-label="Configurations" className="v2-configs__grid">
+          {shown.map((c) => (
+            <GridCell as="li" span={4} key={c.id ?? c.name}>
+              <ConfigCard
+                c={c}
+                apps={apps}
+                assigned={c.id != null ? assigned[c.id] : undefined}
+                sync={c.id != null ? sync[c.id] : undefined}
+                syncFailed={syncFailed}
+                syncLoaded={syncLoaded}
+                onOpen={() => navigate(paths.configuration(c.id ?? ''))}
+                onCopy={canCopy ? () => setCopyOf(c) : undefined}
+                onDelete={canCopy ? () => setDeleting(c) : undefined}
+              />
+            </GridCell>
+          ))}
+        </Grid>
+      );
   }
 
   return (
     <>
       <PageHeader
         title="Configurations"
-        subtitle="A configuration is the set of apps, kiosk rules and restrictions a device follows. Devices pick up changes on their next sync."
+        subtitle="The apps, kiosk rules and restrictions a device follows. Devices pick up changes on their next sync."
         subtitleMaxCh={72}
         actions={
           canAdd ? (
-            <Button variant="primary" size="hero" icon={<IconPlus />} onClick={newConfig}>
-              New configuration
+            <Button variant="primary" size="lg" icon={<IconPlus />} onClick={newConfig} disabled={listing}>
+              {newLabel}
             </Button>
           ) : undefined
         }
@@ -281,17 +297,18 @@ export function ConfigurationsPage() {
           placeholder="Search configurations"
           aria-label="Search configurations"
         />
-        <Segmented<Show>
-          size="lg"
-          aria-label="Show"
-          value={show}
-          onChange={setShow}
-          options={[
-            { value: 'all', label: 'All', count: counts.all },
-            { value: 'yours', label: 'Yours', count: counts.yours },
-            { value: 'builtin', label: 'Built-in', count: counts.builtin },
-          ]}
-        />
+        {bothKinds ? (
+          <Segmented<Show>
+            aria-label="Show"
+            value={show}
+            onChange={setShow}
+            options={[
+              { value: 'all', label: 'All', count: counts.all },
+              { value: 'custom', label: 'Custom', count: counts.custom },
+              { value: 'builtin', label: 'Built-in', count: counts.builtin },
+            ]}
+          />
+        ) : null}
         <span className="v2-configs-toolbar__spacer" />
         {unassigned ? (
           <Link className="v2-configs-toolbar__unassigned" to={`${paths.devices}?config=none`}>
@@ -301,26 +318,9 @@ export function ConfigurationsPage() {
         ) : null}
       </div>
 
-      {error ? (
-        <Callout tone="alert" role="alert" icon={<IconWarning size={16} />}>
-          <span className="v2-configs-callout">
-            Could not load configurations.
-            <Button size="sm" onClick={() => void load()}>
-              Retry
-            </Button>
-          </span>
-        </Callout>
-      ) : null}
-
+      {error ? <ErrorState thing="configurations" onRetry={() => void load()} /> : null}
       {libraryFailed && !error ? (
-        <Callout tone="alert" role="alert" icon={<IconWarning size={16} />}>
-          <span className="v2-configs-callout">
-            Could not load the app library, so some main apps may show as “—”.
-            <Button size="sm" onClick={loadLibrary}>
-              Retry
-            </Button>
-          </span>
-        </Callout>
+        <ErrorState thing="the app library" detail="Some main apps show as “—”." onRetry={loadLibrary} />
       ) : null}
 
       {body}
@@ -358,6 +358,120 @@ export function ConfigurationsPage() {
   );
 }
 
+/** Name (the row's link), its tags, and the description on one line. */
+function ConfigIdentity({ c }: { c: Configuration }) {
+  const locked = isLocked(c);
+  const description = c.description ? String(c.description) : '';
+  return (
+    <div className="v2-configs-id">
+      <div className="v2-configs-id__line">
+        <Link to={paths.configuration(c.id ?? '')} className="v2-configs-id__name">
+          {c.name}
+        </Link>
+        {locked ? (
+          <Badge tone="neutral" icon={<IconLockSmall />}>
+            Built-in
+          </Badge>
+        ) : null}
+        {c.kioskMode ? <Badge>Kiosk</Badge> : null}
+        {hasDefaultPin(c) ? (
+          <Tooltip content="The kiosk exit PIN is a well-known default. Change it.">
+            <Badge tone="warn" tabIndex={0}>
+              Default PIN
+            </Badge>
+          </Tooltip>
+        ) : null}
+        {hasNoPin(c) ? (
+          <Tooltip content="Kiosk mode has no exit PIN. Set one.">
+            <Badge tone="warn" tabIndex={0}>
+              No PIN
+            </Badge>
+          </Tooltip>
+        ) : null}
+      </div>
+      {description ? (
+        <span className="v2-configs-id__desc" title={description}>
+          {description}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+/** The main app with its version; "—" when there is none (or the library failed). */
+function MainApp({
+  c,
+  apps,
+  assigned,
+}: {
+  c: Configuration;
+  apps: Application[];
+  /** undefined = loading, null = failed. */
+  assigned: ConfigApp[] | null | undefined;
+}) {
+  const mainId = (c.mainAppId as number | null | undefined) ?? undefined;
+  const main = mainId != null ? assigned?.find((a) => a.usedVersionId === mainId) : undefined;
+  const label = main ? `${main.name ?? main.pkg}${main.version ? ` ${main.version}` : ''}` : appNameForVersionId(apps, mainId, assigned ?? []);
+  return (
+    <span className="v2-configs-main" title={typeof label === 'string' ? label : undefined}>
+      {label}
+    </span>
+  );
+}
+
+/** The sync bar and its line: how many of the configuration's devices run it. */
+function SyncCell({ row, failed, loaded }: { row?: ConfigSyncSummary; failed: boolean; loaded: boolean }) {
+  if (!loaded) return <Skeleton width="60%" />;
+  const line = syncLine(row, failed);
+  return (
+    <div className="v2-configs-sync">
+      <StackedBar segments={line.segments} track />
+      <span className={`v2-configs-sync__text is-${line.tone}`}>{line.text}</span>
+    </div>
+  );
+}
+
+/** The row's "…" menu: Edit (View for a built-in), Duplicate, Delete. */
+function RowMenu({
+  c,
+  onOpen,
+  onCopy,
+  onDelete,
+}: {
+  c: Configuration;
+  onOpen: () => void;
+  /** Duplicate and Delete, left out for a role without copy_config. */
+  onCopy?: () => void;
+  onDelete?: () => void;
+}) {
+  const locked = isLocked(c);
+  const menu: MenuEntry[] = [{ key: 'open', label: locked ? 'View' : 'Edit', icon: <IconPencil />, onSelect: onOpen }];
+  if (onCopy) {
+    menu.push({
+      key: 'copy',
+      label: locked ? 'Duplicate to edit' : 'Duplicate',
+      textValue: 'Duplicate',
+      icon: <IconCopy />,
+      onSelect: onCopy,
+    });
+  }
+  if (!locked && onDelete) {
+    menu.push('separator', {
+      key: 'delete',
+      label: 'Delete',
+      textValue: 'Delete',
+      icon: <IconTrash />,
+      danger: true,
+      onSelect: onDelete,
+    });
+  }
+  return <Menu items={menu} label={`More for ${c.name}`} iconSize="xs" align="end" />;
+}
+
+/**
+ * One configuration as a card: name, tags and description with its "…" menu; main app, apps and devices; the sync
+ * bar; and its actions (Edit or View, Duplicate).
+ */
 function ConfigCard({
   c,
   apps,
@@ -383,92 +497,30 @@ function ConfigCard({
 }) {
   const locked = isLocked(c);
   const to = paths.configuration(c.id ?? '');
-  const mainId = (c.mainAppId as number | null | undefined) ?? undefined;
-  const main = mainId != null ? assigned?.find((a) => a.usedVersionId === mainId) : undefined;
-  const mainLabel = main ? (
-    <>
-      {main.name ?? main.pkg}
-      {main.version ? ` ${main.version}` : null}
-    </>
-  ) : (
-    appNameForVersionId(apps, mainId, assigned ?? [])
-  );
-  const line = syncLoaded ? syncLine(sync, syncFailed) : { segments: [], text: 'Checking sync…', tone: 'idle' as const };
-  const devices = sync?.total ?? (syncFailed ? '—' : syncLoaded ? 0 : '…');
-
-  const menu: MenuEntry[] = [{ key: 'open', label: locked ? 'View' : 'Edit', icon: <IconPencil />, onSelect: onOpen }];
-  if (onCopy) {
-    menu.push({
-      key: 'copy',
-      label: locked ? 'Duplicate to edit…' : 'Duplicate…',
-      textValue: 'Duplicate',
-      icon: <IconCopy />,
-      onSelect: onCopy,
-    });
-  }
-  if (!locked && onDelete) {
-    menu.push('separator', {
-      key: 'delete',
-      label: 'Delete…',
-      textValue: 'Delete',
-      icon: <IconTrash />,
-      danger: true,
-      onSelect: onDelete,
-    });
-  }
-
+  const devices = sync?.total ?? (syncFailed ? '—' : syncLoaded ? 0 : undefined);
   return (
-    <li className="v2-configs-card">
-      <div className="v2-configs-card__body">
-        <div className="v2-configs-card__top">
-          <div className="v2-configs-card__titles">
-            <div className="v2-configs-card__nameline">
-              <Link to={to} className="v2-configs-card__name">
-                {c.name}
-              </Link>
-              {locked ? (
-                <Badge tone="neutral" icon={<IconLockSmall />}>
-                  Built-in
-                </Badge>
-              ) : null}
-              {c.kioskMode ? <Badge>Kiosk</Badge> : null}
-              {hasDefaultPin(c) ? (
-                <Badge tone="warn" title="The kiosk exit PIN is a well-known default. Change it.">
-                  Default PIN
-                </Badge>
-              ) : null}
-              {hasNoPin(c) ? (
-                <Badge tone="warn" title="Kiosk mode has no exit PIN. Agents before 0.3.6 let anyone leave it; 0.3.6 and later have no exit on the device. Set one.">
-                  No PIN
-                </Badge>
-              ) : null}
-            </div>
-            {c.description ? <p className="v2-configs-card__desc">{String(c.description)}</p> : null}
-          </div>
-          <Menu items={menu} label={`More for ${c.name}`} iconSize="sm" />
-        </div>
-        <MetaGrid
-          boxed
-          className="v2-configs-card__meta"
-          columns="minmax(0, 1.6fr) repeat(2, minmax(0, 1fr))"
-          cells={[
-            { key: 'main', label: 'Main app', value: mainLabel },
-            {
-              key: 'apps',
-              label: 'Apps',
-              value: assigned === undefined ? '…' : assigned === null ? '—' : assigned.length,
-              mono: true,
-            },
-            { key: 'devices', label: 'Devices', value: devices, mono: true },
-          ]}
-        />
-        <div className="v2-configs-card__sync">
-          <StackedBar segments={line.segments} track />
-          <span className={`v2-configs-card__synctext is-${line.tone}`}>{line.text}</span>
-        </div>
+    <Card as="article" aria-label={c.name} className="v2-configs-card">
+      <div className="v2-configs-card__top">
+        <ConfigIdentity c={c} />
+        <RowMenu c={c} onOpen={onOpen} onCopy={onCopy} onDelete={onDelete} />
       </div>
+      <MetaGrid
+        boxed
+        className="v2-configs-card__meta"
+        columns="minmax(0, 1.6fr) repeat(2, minmax(0, 1fr))"
+        cells={[
+          { key: 'main', label: 'Main app', value: <MainApp c={c} apps={apps} assigned={assigned} /> },
+          {
+            key: 'apps',
+            label: 'Apps',
+            value: assigned === undefined ? <Skeleton width="2ch" /> : assigned === null ? '—' : assigned.length,
+          },
+          { key: 'devices', label: 'Devices', value: devices === undefined ? <Skeleton width="2ch" /> : devices },
+        ]}
+      />
+      <SyncCell row={sync} failed={syncFailed} loaded={syncLoaded} />
       <div className="v2-configs-card__foot">
-        <ButtonLink to={to} size="sm" variant={locked ? 'secondary' : 'primary'} strong className="v2-configs-card__open">
+        <ButtonLink to={to} size="sm" icon={locked ? undefined : <IconPencil />}>
           {locked ? 'View' : 'Edit'}
         </ButtonLink>
         {onCopy ? (
@@ -476,8 +528,7 @@ function ConfigCard({
             {locked ? 'Duplicate to edit' : 'Duplicate'}
           </Button>
         ) : null}
-        {locked ? <span className="v2-configs-card__footnote">Ships with MDMesh</span> : null}
       </div>
-    </li>
+    </Card>
   );
 }

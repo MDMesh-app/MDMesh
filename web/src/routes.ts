@@ -14,6 +14,9 @@ export const paths = {
   gallery: '/_gallery',
 } as const;
 
+/** Settings → Updates: where every server-update link goes (the sidebar's card, the Overview's Server card). */
+export const UPDATES_HREF = `${paths.settings}#updates`;
+
 /**
  * The current path for an old bookmark, or null when `pathname` is not an old path. The redesign's preview lived
  * under `/v2/...` (`/v2/overview` is now `/`), and the v0.3 console's `/dashboard` and `/configs` are now `/` and

@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import { useCallback, useEffect, useId, useInsertionEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import * as D from '@radix-ui/react-dialog';
 import { IconButton } from './Button';
 import { IconClose } from './icons';
 import { cx } from './cx';
@@ -14,13 +15,13 @@ export interface ModalProps {
   children?: ReactNode;
   /** Buttons row, right-aligned (put the primary action last). */
   footer?: ReactNode;
-  /** Width: `sm` 420 · `md` 540 (default) · `lg` 720 · `full` the whole viewport (full-screen QR code). */
+  /** Width: `sm` 400 · `md` 520 (default) · `lg` 720 · `full` the whole viewport (full-screen QR code). */
   size?: 'sm' | 'md' | 'lg' | 'full';
   /** Element to focus on open (default: first focusable in the body, else the close button). */
   initialFocus?: RefObject<HTMLElement | null>;
   /** Keep the dialog open on backdrop clicks (forms with unsaved input). */
   dismissOnBackdrop?: boolean;
-  /** `alertdialog` for destructive confirmations. */
+  /** `alertdialog` for destructive confirmations: a click outside never dismisses it. */
   role?: 'dialog' | 'alertdialog';
   className?: string;
 }
@@ -33,10 +34,9 @@ const FOCUSABLE =
  * so a keyboard can reach it and scroll it. Chromium does this for any such scroller; Safari doesn't. Kept up to date
  * as the body or its content resizes and as its content changes.
  */
-function useScrollStop(body: RefObject<HTMLDivElement | null>, open: boolean): boolean {
+function useScrollStop(el: HTMLDivElement | null, open: boolean): boolean {
   const [stop, setStop] = useState(false);
   useEffect(() => {
-    const el = body.current;
     if (!open || !el) return;
     const update = () => {
       const scrolls = el.scrollHeight > el.clientHeight + 1;
@@ -63,14 +63,15 @@ function useScrollStop(body: RefObject<HTMLDivElement | null>, open: boolean): b
       el.removeEventListener('focusout', update);
       setStop(false);
     };
-  }, [body, open]);
+  }, [el, open]);
   return stop;
 }
 
 /**
- * Modal dialog on the native <dialog> + showModal(): the page behind is inert, Escape closes, Tab is kept inside,
- * and focus returns to the element that opened it. The boards draw no modal; it takes the card language
- * (white, 1px border, r16, 20×24 padding) with the float shadow over a navy scrim.
+ * Modal dialog on Radix Dialog: the page behind is inert and doesn't scroll, Escape closes, Tab stays inside, and
+ * focus returns to the element that opened it. Opens with a short scale-and-fade (180ms) and closes with the same
+ * reversed (120ms) while `open` goes false; reduced motion makes both instant. r12 panel on the --elev-3 shadow over a
+ * navy scrim; a header (title, description, close) and footer that stay put while a tall body scrolls.
  */
 export function Modal({
   open,
@@ -85,119 +86,101 @@ export function Modal({
   role = 'dialog',
   className,
 }: ModalProps) {
-  const ref = useRef<HTMLDialogElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
-  const bodyRef = useRef<HTMLDivElement>(null);
+  // The body as state, not only a ref: the portal mounts it after this component, and the scroll stop watches it.
+  const [body, setBody] = useState<HTMLDivElement | null>(null);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
   const returnTo = useRef<HTMLElement | null>(null);
-  const downOnBackdrop = useRef(false);
+  // The opener, taken as `open` turns true, before the content mounts: a field in the body with `autoFocus` takes
+  // focus before Radix's onOpenAutoFocus runs, so focus then is already inside the dialog.
+  const wasOpen = useRef(false);
+  useInsertionEffect(() => {
+    if (open && !wasOpen.current) {
+      returnTo.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    }
+    wasOpen.current = open;
+  }, [open]);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
-  const openRef = useRef(open);
-  openRef.current = open;
+  const scrollStop = useScrollStop(body, open && !!children);
+  // A stable ref callback (an inline one runs again on every render, with null and then the element).
+  const bodyCallback = useCallback((el: HTMLDivElement | null) => {
+    bodyRef.current = el;
+    setBody(el);
+  }, []);
+  const alert = role === 'alertdialog';
   const titleId = useId();
-  const descId = useId();
-  const scrollStop = useScrollStop(bodyRef, open && !!children);
-
-  useEffect(() => {
-    const dlg = ref.current;
-    if (!dlg) return;
-    if (open && !dlg.open) {
-      returnTo.current = document.activeElement as HTMLElement | null;
-      dlg.showModal();
-      const target =
-        initialFocus?.current ?? bodyRef.current?.querySelector<HTMLElement>(FOCUSABLE) ?? closeRef.current;
-      target?.focus();
-      const root = document.documentElement;
-      const prev = root.style.overflow;
-      root.style.overflow = 'hidden';
-      return () => {
-        root.style.overflow = prev;
-        if (dlg.open) dlg.close();
-        const back = returnTo.current;
-        if (back && document.contains(back)) back.focus();
-      };
-    }
-    if (!open && dlg.open) dlg.close();
-    // initialFocus is read once on open
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-
-  // Tab stays inside the dialog (native modal dialogs also let focus reach the browser chrome).
-  const onKeyDown = (e: KeyboardEvent<HTMLDialogElement>) => {
-    if (e.key !== 'Tab' || !ref.current) return;
-    const items = Array.from(ref.current.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-      (el) => el.offsetParent !== null || el === document.activeElement,
-    );
-    if (items.length === 0) return;
-    const first = items[0];
-    const last = items[items.length - 1];
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first.focus();
-    }
-  };
 
   return (
-    <dialog
-      ref={ref}
-      role={role === 'alertdialog' ? 'alertdialog' : undefined}
-      aria-modal="true"
-      aria-labelledby={titleId}
-      aria-describedby={description ? descId : undefined}
-      className={cx('v2-modal', `v2-modal--${size}`, className)}
-      onCancel={(e) => {
-        e.preventDefault();
-        onCloseRef.current();
-      }}
-      onClose={() => {
-        // The browser can close the dialog itself (a second Escape while onClose declined): keep `open` in step.
-        // Ignore the close our own effect cleanup queued (StrictMode re-shows the dialog before it fires).
-        if (openRef.current && !ref.current?.open) onCloseRef.current();
-      }}
-      onKeyDown={onKeyDown}
-      onPointerDown={(e) => {
-        downOnBackdrop.current = e.target === ref.current;
-      }}
-      onClick={(e) => {
-        // Dismiss only when the press started and ended on the backdrop, not when a drag from the panel (selecting
-        // text in an input) ends outside it.
-        const fromBackdrop = downOnBackdrop.current;
-        downOnBackdrop.current = false;
-        if (dismissOnBackdrop && fromBackdrop && e.target === ref.current) onCloseRef.current();
+    <D.Root
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onCloseRef.current();
       }}
     >
-      {open ? (
-        <div className="v2-modal__panel">
-          <div className="v2-modal__head">
-            <div className="v2-modal__titles">
-              <h2 id={titleId} className="v2-modal__title">
-                {title}
-              </h2>
-              {description ? (
-                <p id={descId} className="v2-modal__desc">
-                  {description}
-                </p>
-              ) : null}
+      <D.Portal>
+        <D.Overlay className="v2-modal__scrim" />
+        <D.Content
+          role={alert ? 'alertdialog' : 'dialog'}
+          {...(description ? {} : { 'aria-describedby': undefined })}
+          className={cx('v2-modal', `v2-modal--${size}`, className)}
+          onOpenAutoFocus={(e) => {
+            // The caller's target, else the first control in the body, else the close button: never the close button
+            // ahead of the content (Radix's default is the first focusable in the dialog, which is the close button).
+            e.preventDefault();
+            // Fallback for an opener not seen as `open` turned true; never an element inside this dialog.
+            const active = document.activeElement;
+            if (!returnTo.current && active instanceof HTMLElement && !(e.currentTarget as Node).contains(active)) {
+              returnTo.current = active;
+            }
+            // The first control that is drawn (one in a collapsed or hidden part has no boxes), else the first not
+            // inside a `hidden` part (where nothing has boxes yet).
+            const controls = Array.from(bodyRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []);
+            const target =
+              initialFocus?.current ??
+              controls.find((x) => x.getClientRects().length > 0) ??
+              controls.find((x) => !x.closest('[hidden]')) ??
+              closeRef.current;
+            target?.focus();
+          }}
+          onCloseAutoFocus={(e) => {
+            // Back to the element that opened the dialog (there is no Radix trigger to return to).
+            e.preventDefault();
+            const back = returnTo.current;
+            if (back && document.contains(back)) back.focus();
+          }}
+          onPointerDownOutside={(e) => {
+            if (alert || !dismissOnBackdrop) e.preventDefault();
+          }}
+          onInteractOutside={(e) => {
+            if (alert || !dismissOnBackdrop) e.preventDefault();
+          }}
+        >
+          <div className="v2-modal__panel">
+            <div className="v2-modal__head">
+              <div className="v2-modal__titles">
+                <D.Title className="v2-modal__title">
+                  <span id={titleId}>{title}</span>
+                </D.Title>
+                {description ? <D.Description className="v2-modal__desc">{description}</D.Description> : null}
+              </div>
+              <IconButton ref={closeRef} label="Close" size="sm" onClick={() => onCloseRef.current()}>
+                <IconClose />
+              </IconButton>
             </div>
-            <IconButton ref={closeRef} label="Close" size="sm" onClick={() => onCloseRef.current()}>
-              <IconClose />
-            </IconButton>
+            {children ? (
+              <div
+                ref={bodyCallback}
+                className="v2-modal__body"
+                {...(scrollStop ? { tabIndex: 0, role: 'group', 'aria-labelledby': titleId } : {})}
+              >
+                {children}
+              </div>
+            ) : null}
+            {footer ? <div className="v2-modal__foot">{footer}</div> : null}
           </div>
-          {children ? (
-            <div
-              ref={bodyRef}
-              className="v2-modal__body"
-              {...(scrollStop ? { tabIndex: 0, role: 'group', 'aria-labelledby': titleId } : {})}
-            >
-              {children}
-            </div>
-          ) : null}
-          {footer ? <div className="v2-modal__foot">{footer}</div> : null}
-        </div>
-      ) : null}
-    </dialog>
+        </D.Content>
+      </D.Portal>
+    </D.Root>
   );
 }

@@ -1,3 +1,5 @@
+/* The one data table: a control-height head, --row rows (--row-compact compact), hairline rules, hover fill, hover-revealed
+   row actions. */
 .v2 .v2-tablewrap {
   position: relative; /* contain visually-hidden header text, which is absolutely positioned */
   overflow-x: auto;
@@ -6,33 +8,40 @@
 .v2 .v2-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--fs-body);
+  font-size: var(--text-ui);
+  line-height: var(--lh-ui);
 }
 .v2 .v2-table thead tr {
+  height: var(--control-lg);
   text-align: left;
   color: var(--secondary);
-  font-size: var(--fs-small);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
 }
 .v2 .v2-table th {
-  padding: 12px 8px 10px;
-  font-weight: 500;
+  padding: 0 var(--space-2);
+  font-weight: var(--weight-medium);
   vertical-align: middle;
   white-space: nowrap;
 }
 .v2 .v2-table tbody tr {
-  border-top: 1px solid var(--line-soft);
+  height: var(--row);
+  border-top: var(--hairline) solid var(--line-soft);
   background: var(--surface);
+  transition: background-color var(--dur-micro) var(--ease);
+}
+.v2 .v2-table--compact tbody tr {
+  height: var(--row-compact);
+}
+.v2 .v2-table tbody tr:hover {
+  background: var(--hover);
 }
 .v2 .v2-table tbody tr.is-selected {
   background: var(--row-selected);
 }
 .v2 .v2-table td {
-  padding: 12px 8px;
+  padding: var(--space-1) var(--space-2);
   vertical-align: middle;
-}
-.v2 .v2-table--pad10 td {
-  padding-top: 10px;
-  padding-bottom: 10px;
 }
 .v2 .v2-table .is-right {
   text-align: right;
@@ -42,34 +51,21 @@
   white-space: nowrap;
 }
 .v2 .v2-table__mono {
-  font-family: var(--font-mono);
-  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
   color: var(--text-2);
 }
 .v2 .v2-table__empty {
-  padding: 32px 24px;
+  padding: var(--space-8) var(--space-6);
   text-align: center;
   color: var(--secondary);
 }
 
-/* outer padding: first and last cells */
-.v2 .v2-table--edge16 :is(th, td):first-child {
-  padding-left: 16px;
+/* outer padding: the card padding at the first and last cells, or none */
+.v2 .v2-table :is(th, td):first-child {
+  padding-left: var(--card-pad);
 }
-.v2 .v2-table--edge16 :is(th, td):last-child {
-  padding-right: 16px;
-}
-.v2 .v2-table--edge20 :is(th, td):first-child {
-  padding-left: 20px;
-}
-.v2 .v2-table--edge20 :is(th, td):last-child {
-  padding-right: 20px;
-}
-.v2 .v2-table--edge24 :is(th, td):first-child {
-  padding-left: 24px;
-}
-.v2 .v2-table--edge24 :is(th, td):last-child {
-  padding-right: 24px;
+.v2 .v2-table :is(th, td):last-child {
+  padding-right: var(--card-pad);
 }
 .v2 .v2-table--edge0 :is(th, td):first-child {
   padding-left: 0;
@@ -78,24 +74,38 @@
   padding-right: 0;
 }
 
-/* sortable header: "Last seen ↓" 600 ink */
+/* sortable header: "Last seen ↓" in ink */
 .v2 .v2-table__sort {
   padding: 0;
   border: 0;
+  border-radius: var(--radius-chip);
   background: none;
   color: inherit;
   font: inherit;
   cursor: pointer;
 }
+.v2 .v2-table__sort:hover,
 .v2 .v2-table__sort.is-sorted {
   color: var(--ink);
-  font-weight: 600;
 }
 
 /* onRowClick: the whole row is a pointer target. */
 .v2 .v2-table--rowclick tbody tr {
   cursor: pointer;
 }
-.v2 .v2-table--rowclick tbody tr:not(.is-selected):hover {
-  background: var(--row-selected);
+
+/* Row actions: shown on row hover, focus inside the row, an open menu, or a selected row; always on touch screens. */
+.v2 .v2-rowactions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1);
+}
+@media (hover: hover) and (pointer: fine) {
+  .v2 tr:not(:hover, :focus-within, .is-selected) .v2-rowactions:not(:has([aria-expanded='true'])) {
+    opacity: 0;
+  }
+}
+.v2 .v2-rowactions {
+  transition: opacity var(--dur-micro) var(--ease);
 }

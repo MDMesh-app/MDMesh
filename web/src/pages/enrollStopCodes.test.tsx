@@ -2,6 +2,7 @@
 // code; Stop all codes asks first, stops them on the server and makes a new code. Through the real route, against a
 // stubbed API.
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { chooseOption } from '../test/select';
 import { describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../App';
 import { renderInConsole, stubApi } from '../test/console';
@@ -36,7 +37,7 @@ async function openEnroll(fetch: ReturnType<typeof stubApi>) {
 }
 
 async function chooseBatch(fetch: ReturnType<typeof stubApi>) {
-  fireEvent.change(main().getByRole('combobox', { name: 'Devices' }), { target: { value: '25' } });
+  chooseOption(main().getByRole('combobox', { name: 'Devices' }), { value: '25' });
   await waitFor(() => expect(posts(fetch, '/agent/v1/token')).toHaveLength(2), LOAD);
   await main().findByText('Up to 25 devices, then it stops working', undefined, LOAD);
 }
@@ -78,9 +79,9 @@ describe('Enroll: codes for a batch', () => {
     const fetch = stubApi(api());
     await openEnroll(fetch);
     await chooseBatch(fetch);
-    fireEvent.change(main().getByRole('combobox', { name: 'Devices' }), { target: { value: '100' } });
+    chooseOption(main().getByRole('combobox', { name: 'Devices' }), { value: '100' });
     await waitFor(() => expect(posts(fetch, '/agent/v1/token')).toHaveLength(3), LOAD);
-    fireEvent.change(main().getByRole('combobox', { name: 'Devices' }), { target: { value: '10' } });
+    chooseOption(main().getByRole('combobox', { name: 'Devices' }), { value: '10' });
     await waitFor(() => expect(posts(fetch, '/agent/v1/token')).toHaveLength(4), LOAD);
     expect(await main().findByText(/The 2 codes for a batch you replaced still work until/, undefined, LOAD)).toBeTruthy();
   }, SLOW);

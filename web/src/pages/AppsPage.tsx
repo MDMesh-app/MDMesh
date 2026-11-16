@@ -5,6 +5,7 @@ import { IconAndroid, IconLibrary, IconUpload, LinkTabs, PageHeader, useToast } 
 import { AppsCustom } from './AppsCustom';
 import { canDeploy, resolveApp, type DeployModes, type DeploySubject } from '../data/apps';
 import { DeployModal } from '../ui/DeployModal';
+import { useStickyValue } from '../ui/useStickyValue';
 import { CORE_ACTION_ACCESS } from '../ext/core/access';
 import { usePermission } from '../ext/permissions';
 import { paths } from '../routes';
@@ -41,7 +42,13 @@ export function AppsPage() {
   const canAdd = usePermission(CORE_ACTION_ACCESS.addApp);
   const sources: Sources = { custom: canAdd || mayDeploy, fdroid: canAdd || mayDeploy };
   const source = sourceFrom(params.get('source'), sources);
-  const [deploy, setDeploy] = useState<DeploySubject | null>(null);
+  // The open Deploy dialog's subject, numbered per opening: a new opening mounts a fresh dialog (its own picks), while a
+  // closing one stays mounted with its last subject to play its exit.
+  const [deployState, setDeployState] = useState<{ subject: DeploySubject; n: number } | null>(null);
+  const deployOpenings = useRef(0);
+  const deploy = deployState?.subject ?? null;
+  const setDeploy = (subject: DeploySubject | null) =>
+    setDeployState(subject ? { subject, n: ++deployOpenings.current } : null);
   const [deployingId, setDeployingId] = useState<number | null>(null);
   const { usedIn, invalidate: invalidateUsedIn } = useUsedIn(library.apps, source === 'library');
   // Bumped when the source tab changes, so a Deploy still resolving on the Library tab doesn't open its dialog
@@ -72,8 +79,9 @@ export function AppsPage() {
   // A role refresh (on tab focus) can leave no way to deploy the open subject: the dialog closes.
   const deployOpen = deploy != null && canDeploy(deployModes, deploy);
   useEffect(() => {
-    if (deploy && !deployOpen) setDeploy(null);
+    if (deploy && !deployOpen) setDeployState(null);
   }, [deploy, deployOpen]);
+  const shownDeploy = useStickyValue(deployState);
 
   // A subject outside the library can only be pushed to devices.
   function openDeploy(subject: DeploySubject) {
@@ -138,7 +146,16 @@ export function AppsPage() {
         />
       )}
 
-      {deploy && deployOpen ? <DeployModal subject={deploy} modes={deployModes} onClose={() => setDeploy(null)} onAssigned={assigned} /> : null}
+      {shownDeploy ? (
+        <DeployModal
+          key={shownDeploy.n}
+          open={deployOpen}
+          subject={shownDeploy.subject}
+          modes={deployModes}
+          onClose={() => setDeploy(null)}
+          onAssigned={assigned}
+        />
+      ) : null}
     </>
   );
 }

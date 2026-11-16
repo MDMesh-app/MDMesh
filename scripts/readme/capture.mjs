@@ -116,7 +116,7 @@ try {
     }
     {
       // Default's Security card after three real edits, and the sticky unsaved-changes bar they bring up.
-      const { ctx, page } = await open(browser, theme, '/configurations/1', 1100);
+      const { ctx, page } = await open(browser, theme, '/configurations/4', 1100);
       for (const [title, option] of [['Screenshots', 'Block'], ['Factory reset', 'Block'], ['Safe Mode', 'Block']]) {
         if (!(await pick(page, title, option))) throw new Error(`config editor: no ${option} for ${title}`);
         await page.waitForTimeout(120);

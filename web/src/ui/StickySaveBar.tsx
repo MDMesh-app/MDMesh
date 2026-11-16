@@ -21,8 +21,8 @@ export interface StickySaveBarProps {
 }
 
 /**
- * Unsaved-changes bar: sticky 16px above the viewport bottom inside the content column, white,
- * #D6DAE1 border, r14, float shadow. `role="region"` named "Unsaved changes". While mounted it sets
+ * Unsaved-changes bar: sticky 16px above the viewport bottom inside the content column, a floating bar (--elev-2,
+ * --radius-control). `role="region"` named "Unsaved changes". While mounted it sets
  * scroll-padding-bottom so a focused field never hides under it (WCAG 2.4.11).
  */
 export function StickySaveBar({
@@ -69,10 +69,10 @@ export function StickySaveBar({
       </span>
       {message ? <span className="v2-savebar__msg">{message}</span> : <span className="v2-savebar__msg" />}
       <div className="v2-savebar__actions">
-        <Button size="xl" onClick={onDiscard} disabled={busy}>
+        <Button size="lg" onClick={onDiscard} disabled={busy}>
           {discardLabel}
         </Button>
-        <Button size="xl" variant="primary" className="v2-savebar__save" onClick={onSave} disabled={busy || saveDisabled}>
+        <Button size="lg" variant="primary" className="v2-savebar__save" onClick={onSave} disabled={busy || saveDisabled}>
           {busy ? busyLabel : saveLabel}
         </Button>
       </div>

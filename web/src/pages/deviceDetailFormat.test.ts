@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { DEVICE_RESET_REVISION } from '../api/configSync';
 import { LOCATION_HISTORY_LIMIT } from '../api/deviceLocations';
-import { LOCATION_RANGES, fixesCount, locationSince, rangePhrase } from './deviceDetailFormat';
+import { LOCATION_RANGES, fixesCount, locationSince, rangePhrase, shortRevision } from './deviceDetailFormat';
 
 describe('the location history range', () => {
   const now = Date.UTC(2026, 10, 4, 12);
@@ -26,5 +27,14 @@ describe('the location history range', () => {
     expect(fixesCount(LOCATION_HISTORY_LIMIT - 1, 24)).toBe('499 fixes');
     expect(fixesCount(LOCATION_HISTORY_LIMIT, 24)).toBe('newest 500 in this range');
     expect(fixesCount(LOCATION_HISTORY_LIMIT, 0)).toBe('newest 500 fixes');
+  });
+});
+
+describe('a configuration revision for display', () => {
+  it('shows 7 characters, the agent’s reset marker in words, and a dash for none', () => {
+    expect(shortRevision('8b04d7aa91c3e5f0')).toBe('8b04d7a');
+    expect(shortRevision(DEVICE_RESET_REVISION)).toBe('Reset by device');
+    expect(shortRevision(null)).toBe('—');
+    expect(shortRevision('')).toBe('—');
   });
 });

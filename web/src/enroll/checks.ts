@@ -5,8 +5,11 @@
 import type { WifiConfig } from './provisioning';
 
 export interface AddressProblem {
-  /** alert: devices that scan this code can't enroll; warn: only some can, or later moves will hurt. */
-  tone: 'alert' | 'warn';
+  /**
+   * blocks: devices that scan this code can't enroll; caution: only some can, or later moves will hurt. Both are
+   * pre-flight problems (shown amber, not red: nothing has failed yet).
+   */
+  severity: 'blocks' | 'caution';
   text: string;
 }
 
@@ -52,25 +55,25 @@ export function addressProblem(origin: string, baseUrl: string | null): AddressP
 
   if (isLoopback(host)) {
     return {
-      tone: 'alert',
+      severity: 'blocks',
       text: `This console is open at ${here.origin}, which only this computer can reach, so a device that scans this code can't enroll.${openThere || ' Open the console at the server’s public https:// address and make the code there.'}`,
     };
   }
   if (here.protocol !== 'https:') {
     return {
-      tone: 'alert',
+      severity: 'blocks',
       text: `This console is open over http://. Android 9 and later enroll only over https://, so most devices that scan this code can't reach the server.${openThere || ' Open the console at its https:// address and make the code there.'}`,
     };
   }
   if (serverOrigin && serverOrigin !== here.origin) {
     return {
-      tone: 'warn',
+      severity: 'caution',
       text: `This console is open at ${here.origin}, but the server's address is ${serverOrigin}. The code gives devices ${here.origin}, and they keep it until a factory reset.${openThere}`,
     };
   }
   if (isPrivate(host)) {
     return {
-      tone: 'warn',
+      severity: 'caution',
       text: `Devices that scan this code use ${here.origin}, a local address: they enroll only on this network, and keep that address until a factory reset.`,
     };
   }

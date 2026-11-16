@@ -6,8 +6,8 @@ import { cx } from './cx';
 import './AuthLayout.css';
 
 /**
- * Sign-in / set-password frame: centred 400px card (32/32/28 padding, r20, faint shadow) with the
- * 18px wordmark, a 24/600 title and a 14px secondary subtitle, and a 13px footer line under the card.
+ * Sign-in / set-password frame: a centred 400px card (card radius, 32px padding, floating elevation) with the
+ * wordmark, the page-title-sized heading and an optional secondary subtitle, and a meta-sized footer line under it.
  */
 export function AuthLayout({
   title,
@@ -38,11 +38,12 @@ export function AuthLayout({
 
   const body = (
     <>
-      <Wordmark size={18} />
-      <div className="v2-auth__titles">
+      {/* One header group: the wordmark, the title right under it, then the subtitle. */}
+      <header className="v2-auth__head">
+        <Wordmark size={18} />
         <h1 className="v2-auth__title">{title}</h1>
         {subtitle ? <p className="v2-auth__sub">{subtitle}</p> : null}
-      </div>
+      </header>
       {children}
     </>
   );
@@ -96,7 +97,7 @@ export function AuthFooter({ showVersion, children }: { showVersion?: boolean; c
         <span className={cx('v2-auth-conn__dot', `is-${conn}`)} aria-hidden="true" />
         <span className="v2-mono">{window.location.host}</span> · {label}
       </span>
-      {showVersion && version ? <span className="v2-mono">MDMesh {version}</span> : null}
+      {showVersion && version ? <span>MDMesh {version}</span> : null}
       {children}
     </>
   );

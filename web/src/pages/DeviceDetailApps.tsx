@@ -14,7 +14,9 @@ import {
   IconWarning,
   RelativeTime,
   SearchInput,
+  SkeletonRows,
   Table,
+  Tooltip,
   type Column,
 } from '../ui';
 import { appsCsv, byLabel, filterApps, latestScan, scanProgress } from '../data/deviceApps';
@@ -138,8 +140,7 @@ export function AppsTab({
   const counted = showSystem ? all.length : all.filter((a) => !a.system).length;
 
   let empty: { title: string; text?: string } | null = null;
-  if (!loaded) empty = { title: 'Loading the last scan…' };
-  else if (!latest) {
+  if (!latest) {
     empty = {
       title: 'No recent scan',
       text: `The device’s recent commands hold no finished app scan.${scan ? ' Scan now asks it for its apps.' : ''}`,
@@ -169,17 +170,16 @@ export function AppsTab({
                 ) : null}
               </span>
             ) : null}
-            <Button
-              size="md"
-              icon={<IconDownload size={16} />}
-              disabled={all.length === 0}
-              title="All apps, system ones included"
-              onClick={() => downloadCsv(`apps-${number}.csv`, appsCsv(all))}
-            >
-              Export CSV
-            </Button>
+            {/* X7: nothing to export until a scan lists apps. */}
+            {all.length ? (
+              <Tooltip content="All apps, system ones included">
+                <Button size="sm" icon={<IconDownload size={16} />} onClick={() => downloadCsv(`apps-${number}.csv`, appsCsv(all))}>
+                  Export CSV
+                </Button>
+              </Tooltip>
+            ) : null}
             {scan ? (
-              <Button size="md" icon={<IconSync />} disabled={scan.scanning} onClick={scan.start}>
+              <Button size="sm" icon={<IconSync />} disabled={scan.scanning} onClick={scan.start}>
                 {scan.scanning ? 'Scanning…' : 'Scan now'}
               </Button>
             ) : null}
@@ -212,7 +212,9 @@ export function AppsTab({
           ) : null}
         </div>
       ) : null}
-      {empty ? (
+      {!loaded && !all.length ? (
+        <SkeletonRows compact count={5} label="Loading the last scan" />
+      ) : empty ? (
         <div className="v2-device-cmds__empty">
           <EmptyState bare icon={<IconApps />} title={empty.title}>
             {empty.text ?? null}
@@ -224,7 +226,6 @@ export function AppsTab({
           columns={COLUMNS}
           rows={shown}
           rowKey={(a) => a.pkg}
-          edge={24}
           minWidth={560}
           empty={`No apps match.${systemHidden ? ' System apps are hidden.' : ''}`}
         />

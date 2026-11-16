@@ -135,6 +135,10 @@ jobs:
         working-directory: web
         run: npm test
       - if: matrix.name == 'web' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).web)
+        name: CSS uses only design tokens (stylelint)
+        working-directory: web
+        run: npm run lint:css
+      - if: matrix.name == 'web' && (needs.paths.outputs.all == 'true' || fromJSON(needs.paths.outputs.matched).web)
         working-directory: web
         run: npm run build
 

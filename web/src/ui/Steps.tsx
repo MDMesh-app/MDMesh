@@ -1,10 +1,27 @@
 import type { Key, ReactNode } from 'react';
 import { StackedBar } from './Bars';
+import { IconCheckSmall } from './icons';
 import { cx } from './cx';
 import './Steps.css';
 
 /* ------------------------------------------------------------------------------------------------------------
-   Stepper ("✓ File · 2 Check details · 3 Add")
+   One step language for the console: a quiet numbered mark (a hairline circle with the number) before the
+   step's label. Current = ink ring and ink number, done = green tick, later = muted. Used by the inline progress
+   stepper (Custom APK, server update), the rollout cards, numbered instructions and numbered card headers (Enroll).
+   ------------------------------------------------------------------------------------------------------------ */
+
+type MarkState = 'todo' | 'current' | 'done' | 'plain';
+
+function StepMark({ n, state = 'plain' }: { n: number; state?: MarkState }) {
+  return (
+    <span className={cx('v2-stepmark', `is-${state}`)} aria-hidden="true">
+      {state === 'done' ? <IconCheckSmall /> : n}
+    </span>
+  );
+}
+
+/* ------------------------------------------------------------------------------------------------------------
+   Stepper ("✓ File — 2 Check details — 3 Add")
    ------------------------------------------------------------------------------------------------------------ */
 
 export interface StepperProps {
@@ -15,7 +32,7 @@ export interface StepperProps {
   className?: string;
 }
 
-/** Pill steps: done = ok-soft "✓ label", current = ink with `aria-current="step"`, later = surface-2 "N label". */
+/** Inline progress: a numbered mark and label per step, joined by a hairline; the current one has `aria-current="step"`. */
 export function Stepper({ steps, current, className, 'aria-label': ariaLabel = 'Progress' }: StepperProps) {
   return (
     <ol aria-label={ariaLabel} className={cx('v2-stepper', className)}>
@@ -23,9 +40,11 @@ export function Stepper({ steps, current, className, 'aria-label': ariaLabel = '
         const state = i < current ? 'done' : i === current ? 'current' : 'todo';
         return (
           <li key={i} aria-current={state === 'current' ? 'step' : undefined} className={cx('v2-stepper__step', `is-${state}`)}>
-            {state === 'done' ? <span className="v2-visually-hidden">Done: </span> : null}
-            {state === 'done' ? '✓ ' : `${i + 1} `}
-            {s}
+            <StepMark n={i + 1} state={state} />
+            <span className="v2-stepper__label">
+              {state === 'done' ? <span className="v2-visually-hidden">Done: </span> : null}
+              {s}
+            </span>
           </li>
         );
       })}
@@ -34,19 +53,19 @@ export function Stepper({ steps, current, className, 'aria-label': ariaLabel = '
 }
 
 /* ------------------------------------------------------------------------------------------------------------
-   Rollout step cards ("Step 1 Canary · In progress · 1 of 2 updated")
+   Rollout step cards ("1 Canary · In progress · 1 of 2 updated")
    ------------------------------------------------------------------------------------------------------------ */
 
 export interface RolloutStep {
   key: Key;
-  /** "Step 1". */
+  /** "Step 1": read by screen readers; the card shows the number as a step mark. */
   step: ReactNode;
   /** "Canary", "Everyone else". */
   name: ReactNode;
   /** "In progress", "Waiting", "Done". */
   state: ReactNode;
   stateTone?: 'warn' | 'ok' | 'muted';
-  /** The current step: white with an ink border; others sit on the sunken fill. */
+  /** The current step: on the card surface with a stronger edge and an ink mark; others sit on the sunken fill. */
   active?: boolean;
   /** Counts: done (green), busy (amber), waiting (track). */
   done: number;
@@ -58,23 +77,27 @@ export interface RolloutStep {
   note?: ReactNode;
 }
 
-/** Grid of rollout step cards (auto-fit ≥ 260px, 12px gaps). */
+/** Grid of rollout step cards (auto-fit ≥ 260px). */
 export function RolloutSteps({ steps, className }: { steps: ReadonlyArray<RolloutStep>; className?: string }) {
   return (
     <ol className={cx('v2-rollout', className)}>
-      {steps.map((s) => {
+      {steps.map((s, i) => {
         const busy = s.busy ?? 0;
         const wait = s.total === null ? 1 : Math.max(0, s.total - s.done - busy);
         const of = s.ofLabel ?? (s.total === null ? 'of the rest of the fleet' : `of ${s.total} updated`);
+        const mark: MarkState = s.stateTone === 'ok' ? 'done' : s.active ? 'current' : 'todo';
         return (
           <li key={s.key} className={cx('v2-rollout__step', s.active && 'is-active')}>
             <div className="v2-rollout__head">
-              <span className="v2-eyebrow">{s.step}</span>
-              <span className="v2-rollout__name">{s.name}</span>
+              <StepMark n={i + 1} state={mark} />
+              <span className="v2-rollout__name">
+                <span className="v2-visually-hidden">{s.step}: </span>
+                {s.name}
+              </span>
               <span className={cx('v2-rollout__state', `is-${s.stateTone ?? 'muted'}`)}>{s.state}</span>
             </div>
             <div className="v2-rollout__count">
-              <span className="v2-rollout__done">{s.done}</span>
+              <span className="v2-rollout__done v2-num">{s.done}</span>
               <span className="v2-rollout__of">{of}</span>
             </div>
             <StackedBar
@@ -97,27 +120,21 @@ export function RolloutSteps({ steps, className }: { steps: ReadonlyArray<Rollou
    Numbered instructions and step numbers
    ------------------------------------------------------------------------------------------------------------ */
 
-/** "1 Factory-reset the device…": 22px outlined circles, 12/600, 12px gap, 10px between steps. */
+/** "1 Factory-reset the device…": a step mark per line. */
 export function NumberedSteps({ steps, className }: { steps: ReadonlyArray<ReactNode>; className?: string }) {
   return (
     <ol className={cx('v2-numsteps', className)}>
       {steps.map((s, i) => (
         <li key={i}>
-          <span className="v2-numsteps__n" aria-hidden="true">
-            {i + 1}
-          </span>
-          <span>{s}</span>
+          <StepMark n={i + 1} />
+          <span className="v2-numsteps__text">{s}</span>
         </li>
       ))}
     </ol>
   );
 }
 
-/** The 26px ink square with a step number, used before a card title ("1 Choose what the device gets"). */
+/** The step mark before a numbered card title ("1 Choose what the device gets"). */
 export function StepNumber({ n }: { n: number }) {
-  return (
-    <span className="v2-stepnum" aria-hidden="true">
-      {n}
-    </span>
-  );
+  return <StepMark n={n} />;
 }

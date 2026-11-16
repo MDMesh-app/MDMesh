@@ -33,7 +33,10 @@ import {
   Callout,
   Card,
   DEVICE_KIND_LABEL,
-  DeviceGlyph,
+  DeviceTile,
+  Skeleton,
+  SkeletonFacts,
+  Tooltip,
   IconAlert,
   IconDownload,
   IconLock,
@@ -42,7 +45,9 @@ import {
   IconRing,
   IconScreenMessage,
   IconSync,
-  IconWarning,
+  ButtonLink,
+  EmptyState,
+  ErrorState,
   IconButton,
   Input,
   LinkButton,
@@ -50,10 +55,11 @@ import {
   StatusText,
   deriveDeviceKind,
   kindInputFromTelemetry,
+  useStickyValue,
   useToast,
   type KeyValueItem,
 } from '../ui';
-import { ActionDialog, CommandsCard, ConfigPanel, RemoteActions, TEMPLATE, type KioskReturnOffer } from './DeviceDetailControl';
+import { ActionDialog, ConfigPanel, RemoteActions, TEMPLATE, type KioskReturnOffer } from './DeviceDetailControl';
 import { DeviceKioskBackground } from './configurations/KioskBackground';
 import { ActivityTab, LocationTab, TelemetryTab } from './DeviceDetailTabs';
 import { AppsTab, useAppScan } from './DeviceDetailApps';
@@ -278,6 +284,12 @@ export function DeviceDetailPage() {
   const [dialog, setDialog] = useState<CommandTemplateExt | null>(null);
   const [kioskOpen, setKioskOpen] = useState(false);
   const [returnOpen, setReturnOpen] = useState(false);
+  // Each opening of a dialog gets a fresh one (its own inputs); a closed one stays mounted until the next, so it can
+  // animate out. The sticky values keep its content while it does.
+  const [dialogSeq, setDialogSeq] = useState(0);
+  // The custom kiosk dialog loads the library and the theme when it mounts: it mounts on its own openings only.
+  const [kioskSeq, setKioskSeq] = useState(0);
+  const shownDialog = useStickyValue(dialog);
   const [powerRequested, setPowerRequested] = useState<string | null>(null);
   const [locationRequested, setLocationRequested] = useState<string | null>(null);
 
@@ -603,10 +615,10 @@ export function DeviceDetailPage() {
     setBusy(true);
     try {
       const res = await syncConfigApps(number);
-      toast.push('ok', 'Config apps queued', `${res.queued} install command${res.queued === 1 ? '' : 's'} queued.`);
+      toast.push('ok', 'Install configuration apps queued', `${res.queued} install command${res.queued === 1 ? '' : 's'} queued.`);
       refresh();
     } catch (e) {
-      toast.push('err', 'Sync apps failed', e instanceof Error ? e.message : '');
+      toast.push('err', 'Install configuration apps failed', e instanceof Error ? e.message : '');
     } finally {
       setBusy(false);
     }
@@ -674,12 +686,18 @@ export function DeviceDetailPage() {
 
   const appScan = useAppScan(number, history, queue);
 
+  function openKiosk() {
+    setKioskSeq((n) => n + 1);
+    setKioskOpen(true);
+  }
+
   function runAction(t: CommandTemplateExt) {
     if (t.key === 'kiosk-enter') {
-      setKioskOpen(true);
+      openKiosk();
       return;
     }
     if ((t.params && t.params.length > 0) || t.confirm) {
+      setDialogSeq((n) => n + 1);
       setDialog(t);
       return;
     }
@@ -744,7 +762,11 @@ export function DeviceDetailPage() {
   });
   const cfgStart = configName ?? 'Its configuration';
   const cfgMid = configName ?? 'its configuration';
-  const openReturn = () => setReturnOpen(true);
+  const openReturn = () => {
+    setDialogSeq((n) => n + 1);
+    setReturnOpen(true);
+  };
+  const shownKiosk = useStickyValue(returnOpen ? kiosk : null);
   let kioskReturn: KioskReturnOffer;
   if (configurationId == null) {
     kioskReturn = { offered: false, onReturn: openReturn, hint: 'This device has no configuration, so there is no configured kiosk to return to.' };
@@ -766,7 +788,7 @@ export function DeviceDetailPage() {
       hint: (
         <>
           Couldn’t load the apps of {cfgMid}, so its kiosk can’t be built: {cfgAppsError}.{' '}
-          <LinkButton onClick={() => setCfgAppsAttempt((n) => n + 1)}>Try again</LinkButton>
+          <LinkButton onClick={() => setCfgAppsAttempt((n) => n + 1)}>Retry</LinkButton>
         </>
       ),
     };
@@ -806,11 +828,22 @@ export function DeviceDetailPage() {
     return (
       <>
         <Breadcrumb items={[{ label: 'Devices', to: paths.devices }, { label: id, mono: true }]} />
-        <Card>
-          <p className="v2-device-loading" role="status">
-            <span className="v2-device-spin" aria-hidden="true" /> Loading device…
-          </p>
-        </Card>
+        {/* The page's own shape at its own size, so nothing moves when the device arrives. */}
+        <div className="v2-device-cols" role="status" aria-busy="true">
+          <span className="v2-visually-hidden">Loading device…</span>
+          <Card className="v2-device-id">
+            <Skeleton width="60%" />
+            <Skeleton width="80%" height="var(--lh-page)" />
+            <Skeleton width="50%" />
+            <Skeleton height="control" />
+          </Card>
+          <Card className="v2-device-main">
+            <SkeletonFacts count={8} />
+          </Card>
+          <Card className="v2-device-rail">
+            <SkeletonFacts count={6} />
+          </Card>
+        </div>
       </>
     );
   }
@@ -820,16 +853,26 @@ export function DeviceDetailPage() {
       <>
         <Breadcrumb items={[{ label: 'Devices', to: paths.devices }, { label: id, mono: true }]} />
         <h1 className="v2-visually-hidden">Device {id}</h1>
-        <Callout tone="alert" role="alert" icon={<IconWarning size={16} />}>
-          {error ?? 'Device not found.'}
-        </Callout>
-        {error !== 'Device not found.' ? (
-          <div>
-            <Button size="lg" icon={<IconSync />} onClick={() => void load()}>
-              Try again
-            </Button>
-          </div>
-        ) : null}
+        {error && error !== 'Device not found.' ? (
+          <ErrorState
+            thing="this device"
+            detail={error === 'Failed to load device.' ? undefined : error}
+            onRetry={() => void load()}
+          />
+        ) : (
+          <Card role="alert">
+            <EmptyState
+              title="Device not found"
+              action={
+                <ButtonLink to={paths.devices} variant="primary">
+                  Go to Devices
+                </ButtonLink>
+              }
+            >
+              No device has the number or id <span className="v2-mono">{id}</span>. It may have been deleted.
+            </EmptyState>
+          </Card>
+        )}
       </>
     );
   }
@@ -888,14 +931,23 @@ export function DeviceDetailPage() {
       label: 'Android',
       value: teleStr(hw.osRelease) ?? (ds?.androidRelease || undefined) ?? device.androidVersion ?? DASH,
     },
-    { key: 'storage', label: 'Storage', value: fmtStorage(teleNum(hw.totalStorageBytes), teleNum(dyn.freeStorageBytes)) },
+    // The Telemetry tab owns the full hardware and network facts; the rail keeps the identity ones, and the rest
+    // only while there is no telemetry to show them.
+    ...(tele
+      ? []
+      : [{ key: 'storage', label: 'Storage', value: fmtStorage(teleNum(hw.totalStorageBytes), teleNum(dyn.freeStorageBytes)) }]),
     { key: 'serial', label: 'Serial', value: teleStr(idn.serial) ?? device.serial ?? DASH, mono: true },
     { key: 'imei', label: 'IMEI', value: teleStr(idn.imei) ?? device.imei ?? DASH, mono: true },
   ];
-  const networkItems: KeyValueItem[] = [
-    { key: 'local', label: 'Local IP', value: teleStr(dyn.ipAddress) ?? DASH, mono: true },
-    { key: 'public', label: 'Public IP', value: teleStr(topTele.publicIp) ?? device.publicIp ?? DASH, mono: true },
-  ];
+  // With telemetry, the Telemetry tab shows the IPs; a public IP only the server knows (none in the report) stays here.
+  const networkItems: KeyValueItem[] = tele
+    ? !teleStr(topTele.publicIp) && device.publicIp
+      ? [{ key: 'public', label: 'Public IP', value: device.publicIp, mono: true }]
+      : []
+    : [
+        { key: 'local', label: 'Local IP', value: teleStr(dyn.ipAddress) ?? DASH, mono: true },
+        { key: 'public', label: 'Public IP', value: teleStr(topTele.publicIp) ?? device.publicIp ?? DASH, mono: true },
+      ];
   const deviceOwner = typeof sec.isDeviceOwner === 'boolean' ? sec.isDeviceOwner : undefined;
   const ownerSource = deviceOwner ?? device.mdmMode;
   const managementItems: KeyValueItem[] = [
@@ -950,7 +1002,7 @@ export function DeviceDetailPage() {
               <RemoteActions
                 busy={busy || wiped}
                 onAction={runAction}
-                onEnterKiosk={() => setKioskOpen(true)}
+                onEnterKiosk={openKiosk}
                 kioskReturn={kioskReturn}
                 onInstallConfigApps={() => void installConfigApps()}
                 powerMode={powerShown}
@@ -962,14 +1014,12 @@ export function DeviceDetailPage() {
                 doNotTrack={doNotTrack}
               />
             ) : null}
-            <CommandsCard
-              title="Recent commands"
-              items={history}
-              limit={5}
-              now={now}
-              loaded={historyLoaded}
-              onAll={() => deviceTabs.select('activity')}
-            />
+            {/* Activity owns the command history (I12); a quiet way there. */}
+            <div className="v2-device-allact">
+              <LinkButton tone="quiet" onClick={() => deviceTabs.select('activity')}>
+                View all activity
+              </LinkButton>
+            </div>
           </>
         ),
         telemetry: <TelemetryTab telemetry={tele} loaded={teleLoaded} reportedAt={ds?.updatedAt} />,
@@ -1012,95 +1062,95 @@ export function DeviceDetailPage() {
         </Callout>
       ) : null}
 
+      {/* Left: the identity card (status, name, quick actions) over the facts rail; right: the tabs. In the document
+          (and on phones) the order is identity, tabs, facts. */}
       <div className="v2-device-cols">
-        <aside aria-label="Device" className="v2-card v2-card--pad-rail v2-device-rail">
-          <div className="v2-device-head">
-            <div className="v2-device-head__top">
-              <span className="v2-device-presence" title={reasonText}>
-                <StatusText variant="meta" status={presence} />
-                {reasonText ? <span className="v2-visually-hidden">: {reasonText}</span> : null}
-                <span aria-hidden="true">·</span>
+        <div className="v2-card v2-card--pad-default v2-device-id">
+          <div className="v2-device-id__top">
+            <span className="v2-device-presence">
+              <Tooltip content={reasonText}>
                 <span>
-                  checked in{' '}
-                  {lastSeen && lastAge && lastIso ? (
-                    <time dateTime={lastIso} title={fmtDateTime(lastSeen)}>
-                      {lastAge === 'just now' ? lastAge : `${lastAge} ago`}
-                    </time>
-                  ) : (
-                    'never'
-                  )}
+                  <StatusText variant="meta" status={presence} />
                 </span>
+              </Tooltip>
+              {reasonText ? <span className="v2-visually-hidden">: {reasonText}</span> : null}
+              <span aria-hidden="true">·</span>
+              <span>
+                checked in{' '}
+                {lastSeen && lastAge && lastIso ? (
+                  <time dateTime={lastIso} title={fmtDateTime(lastSeen)}>
+                    {lastAge === 'just now' ? lastAge : `${lastAge} ago`}
+                  </time>
+                ) : (
+                  'never'
+                )}
               </span>
-              <span className="v2-device-head__glyph">
-                <DeviceGlyph kind={kind} size={22} title={DEVICE_KIND_LABEL[kind]} />
-              </span>
-            </div>
-            <div className="v2-device-head__name">
-              <DeviceName
-                device={device}
-                canRename={canRename}
-                onSaved={(desc) => setDevice((d) => (d ? { ...d, description: desc } : d))}
-              />
-              <span className="v2-device-head__sub">
-                {/* The number is always in the header: the name above replaces it once the device has one. */}
-                {device.description ? (
-                  <>
-                    <span className="v2-device-head__num">{device.number}</span>
-                    {subline ? ' · ' : null}
-                  </>
-                ) : null}
-                {subline}
-              </span>
-            </div>
-            {canEdit ? (
-              <div role="toolbar" aria-label="Quick actions" className="v2-device-head__actions">
-                <Button
-                  variant="primary"
-                  size="xl"
-                  icon={<IconSync />}
-                  disabled={busy || wiped}
-                  className="v2-device-head__sync"
-                  onClick={() => void syncNow()}
-                >
-                  Sync now
-                </Button>
-                <Button
-                  size="xl"
-                  icon={<IconLock />}
-                  disabled={busy || wiped}
-                  title={TEMPLATE.lock.description}
-                  onClick={() => runAction(TEMPLATE.lock)}
-                >
+            </span>
+            <DeviceTile kind={kind} tile={40} title={DEVICE_KIND_LABEL[kind]} className="v2-device-id__tile" />
+          </div>
+          <div className="v2-device-id__name">
+            <DeviceName
+              device={device}
+              canRename={canRename}
+              onSaved={(desc) => setDevice((d) => (d ? { ...d, description: desc } : d))}
+            />
+            <span className="v2-device-id__sub">
+              {/* The number is always here: the name above replaces it once the device has one. */}
+              {device.description ? (
+                <>
+                  <span className="v2-device-id__num">{device.number}</span>
+                  {subline ? <span aria-hidden="true"> · </span> : null}
+                </>
+              ) : null}
+              {subline}
+            </span>
+          </div>
+          {canEdit ? (
+            <div role="toolbar" aria-label="Quick actions" className="v2-device-id__actions">
+              <Button
+                variant="primary"
+                icon={<IconSync />}
+                className="v2-device-id__sync"
+                disabled={busy || wiped}
+                onClick={() => void syncNow()}
+              >
+                Sync now
+              </Button>
+              <Tooltip content={TEMPLATE.lock.description}>
+                <Button icon={<IconLock />} disabled={busy || wiped} onClick={() => runAction(TEMPLATE.lock)}>
                   Lock
                 </Button>
-                <Menu
-                  trigger="button"
-                  buttonSize="xl"
-                  label="More actions"
-                  disabled={busy || wiped}
-                  items={[
-                    { key: 'ring', label: 'Ring', icon: <IconRing />, onSelect: () => runAction(TEMPLATE.ring) },
-                    { key: 'alert', label: 'Send alert…', icon: <IconAlert />, onSelect: () => runAction(TEMPLATE.alert) },
-                    {
-                      key: 'lsm',
-                      label: 'Lock-screen message…',
-                      icon: <IconScreenMessage />,
-                      onSelect: () => runAction(TEMPLATE['lockscreen-message']),
-                    },
-                    'separator',
-                    {
-                      key: 'apps',
-                      label: 'Install config apps',
-                      icon: <IconDownload size={16} />,
-                      onSelect: () => void installConfigApps(),
-                    },
-                    { key: 'reboot', label: 'Reboot…', icon: <IconPower />, onSelect: () => runAction(TEMPLATE.reboot) },
-                  ]}
-                />
-              </div>
-            ) : null}
-          </div>
-
+              </Tooltip>
+              <Menu
+                label="More actions"
+                iconSize="md"
+                disabled={busy || wiped}
+                items={[
+                  { key: 'ring', label: 'Ring', icon: <IconRing />, onSelect: () => runAction(TEMPLATE.ring) },
+                  { key: 'alert', label: 'Send alert', icon: <IconAlert />, onSelect: () => runAction(TEMPLATE.alert) },
+                  {
+                    key: 'lsm',
+                    label: 'Lock-screen message',
+                    icon: <IconScreenMessage />,
+                    onSelect: () => runAction(TEMPLATE['lockscreen-message']),
+                  },
+                  'separator',
+                  {
+                    key: 'apps',
+                    label: 'Install configuration apps',
+                    icon: <IconDownload size={16} />,
+                    onSelect: () => void installConfigApps(),
+                  },
+                  { key: 'reboot', label: 'Reboot', icon: <IconPower />, onSelect: () => runAction(TEMPLATE.reboot) },
+                ]}
+              />
+            </div>
+          ) : null}
+        </div>
+        <div className="v2-device-main">
+          <DeviceTabs {...deviceTabs} idBase={tabsId} />
+        </div>
+        <aside aria-label="Device" className="v2-card v2-card--pad-default v2-device-rail">
           <DeviceRailGroups />
           {loc ? (
             <a
@@ -1113,30 +1163,38 @@ export function DeviceDetailPage() {
             </a>
           ) : null}
         </aside>
-
-        <div className="v2-device-main">
-          <DeviceTabs {...deviceTabs} idBase={tabsId} />
-        </div>
       </div>
 
-      {dialog ? (
+      {shownDialog ? (
         <ActionDialog
-          key={dialog.key}
-          template={dialog}
+          key={`${shownDialog.key}-${dialogSeq}`}
+          open={dialog != null}
+          template={shownDialog}
           device={device}
           busy={busy}
           onCancel={() => setDialog(null)}
-          onSend={(values) => void send(dialog, values)}
+          onSend={(values) => {
+            if (dialog) void send(dialog, values);
+          }}
         />
       ) : null}
-      {kioskOpen ? (
-        <DeviceKioskDialog device={device} configName={configName} onClose={() => setKioskOpen(false)} onQueued={refresh} />
+      {kioskSeq > 0 ? (
+        <DeviceKioskDialog
+          key={kioskSeq}
+          open={kioskOpen}
+          device={device}
+          configName={configName}
+          onClose={() => setKioskOpen(false)}
+          onQueued={refresh}
+        />
       ) : null}
-      {returnOpen && kiosk ? (
+      {shownKiosk ? (
         <ConfiguredKioskDialog
+          key={`return-${dialogSeq}`}
+          open={returnOpen && kiosk != null}
           device={device}
           configName={cfgMid}
-          kiosk={kiosk}
+          kiosk={shownKiosk}
           history={history}
           agentVersion={ds?.agentVersion}
           agentReported={!dsLoaded || ds != null}

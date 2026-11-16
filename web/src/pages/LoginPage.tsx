@@ -20,7 +20,7 @@ interface LoginState {
  * Sign in, without the shell. Same request, errors and redirects as the classic `pages/LoginPage.tsx`:
  * the password goes through `useAuth().signIn` (api/auth.ts hashes it exactly as the classic page does), and `from`
  * is only ever a same-origin path. Two failures are told apart: "can't reach the server", and the server's sign-in
- * limit (LoginThrottle, v0.3.9), which says so. Every other failure reads "Wrong login or password." (the server
+ * limit (LoginThrottle, v0.3.9), which says so. Every other failure reads "Wrong username or password." (the server
  * answers unknown users and wrong passwords alike).
  */
 export function LoginPage() {
@@ -55,7 +55,7 @@ export function LoginPage() {
     try {
       u = await signIn(username, password);
     } catch (err) {
-      setError(isUnreachable(err) ? UNREACHABLE : isTooManyAttempts(err) ? TOO_MANY : 'Wrong login or password.');
+      setError(isUnreachable(err) ? UNREACHABLE : isTooManyAttempts(err) ? TOO_MANY : 'Wrong username or password.');
       return;
     } finally {
       setBusy(false);
@@ -89,14 +89,14 @@ export function LoginPage() {
           : null;
 
   return (
-    <AuthLayout title="Sign in" subtitle="Device fleet console." onSubmit={onSubmit} footer={<AuthFooter showVersion />}>
+    <AuthLayout title="Sign in" onSubmit={onSubmit} footer={<AuthFooter showVersion />}>
       {notice ? (
         <Callout tone={notice.tone} icon={notice.icon} role="status">
           {notice.text}
         </Callout>
       ) : null}
 
-      <Field label="Login" error={missing.user ? 'Enter your login.' : undefined}>
+      <Field label="Username" error={missing.user ? 'Enter your username.' : undefined}>
         <Input
           ref={userRef}
           size="lg"
@@ -135,7 +135,7 @@ export function LoginPage() {
         </Callout>
       ) : null}
 
-      <Button type="submit" variant="primary" size="auth" disabled={busy}>
+      <Button type="submit" variant="primary" size="lg" disabled={busy}>
         {busy ? 'Signing in…' : 'Sign in'}
       </Button>
     </AuthLayout>

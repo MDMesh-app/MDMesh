@@ -2,23 +2,24 @@
 .v2 .v2-deploy {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--space-3);
 }
 .v2 .v2-deploy__note {
-  margin: -6px 0 0;
-  font-size: var(--fs-sm);
+  margin: 0;
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
 }
 .v2 .v2-deploy__panel {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-3);
 }
 .v2 .v2-deploy__tools {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
+  gap: var(--space-2) var(--space-3);
 }
 .v2 .v2-deploy__search {
   flex: 1 1 220px;
@@ -29,25 +30,30 @@
   padding: 0;
   max-height: 300px;
   overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-control);
 }
 .v2 .v2-deploy__list > li + li {
-  border-top: 1px solid var(--line-soft);
+  border-top: var(--hairline) solid var(--line-soft);
 }
+/* One device: leading checkbox, status mark, number, description, last seen. */
 .v2 .v2-deploy__row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
+  gap: var(--space-3);
+  min-height: var(--row-compact);
+  box-sizing: border-box;
+  padding: 0 var(--space-3);
   cursor: pointer;
   min-width: 0;
+  transition: background-color var(--dur-micro) var(--ease);
 }
 .v2 .v2-deploy__row:hover {
-  background: var(--row-selected);
+  background: var(--hover);
 }
 .v2 .v2-deploy__num {
-  font-weight: 500;
+  font-family: var(--font-mono);
+  font-weight: var(--weight-medium);
   white-space: nowrap;
 }
 .v2 .v2-deploy__desc {
@@ -57,26 +63,32 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--secondary);
-  font-size: var(--fs-sm);
 }
 .v2 .v2-deploy__seen {
   flex: 0 0 auto;
-  font-size: var(--fs-meta);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
+  font-variant-numeric: tabular-nums;
 }
 .v2 .v2-deploy__empty {
-  padding: 20px;
+  padding: var(--space-6) var(--space-4);
   text-align: center;
   color: var(--secondary);
+}
+.v2 .v2-deploy__list .v2-skelrows__row:first-child {
+  border-top: 0;
 }
 .v2 .v2-deploy__foot {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px 12px;
+  gap: var(--space-2) var(--space-3);
 }
 .v2 .v2-deploy__count {
-  font-size: var(--fs-sm);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
   color: var(--secondary);
+  font-variant-numeric: tabular-nums;
 }

@@ -1,6 +1,7 @@
 // Dialogs that act on a set of devices (the Devices list's bulk bar and row menus; any page with a device selection):
 // run an action, move to a configuration, delete. Same operations, payloads and toasts as the v0.3 console's bulk
-// dialogs, on <Modal> (native <dialog>: Escape, focus trap, focus return). Not in the barrel (API code): import from
+// dialogs, on <Modal> (Escape, focus trap, focus return). Each takes `open`: keep it mounted while closed (its content
+// from useStickyValue, a fresh `key` per opening) so it animates out. Not in the barrel (API code): import from
 // '../ui/BulkModals'.
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { listApplications, type Application } from '../api/applications';
@@ -33,11 +34,14 @@ import { useToast } from './toast';
 import { Button } from './Button';
 import { Callout } from './Card';
 import { EmptyState } from './EmptyState';
+import { ErrorState } from './ErrorState';
 import { Eyebrow, Field } from './Field';
-import { Input, SearchInput, Select } from './Input';
+import { Checkbox, Input, SearchInput, Select } from './Input';
 import { Modal } from './Modal';
 import { PasswordInput } from './Password';
 import { Segmented } from './Segmented';
+import { SkeletonRows } from './Skeleton';
+import { Tooltip } from './Tooltip';
 import './BulkModals.css';
 
 const plural = (n: number, word = 'device') => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -150,11 +154,13 @@ function useLibrary(enabled: boolean) {
 }
 
 export function RunActionModal({
+  open = true,
   deviceIds,
   devices,
   onClose,
   onDone,
 }: {
+  open?: boolean;
   deviceIds: number[];
   devices: ReadonlyArray<{ id: number; configurationId?: number }>;
   onClose: () => void;
@@ -328,7 +334,7 @@ export function RunActionModal({
   );
 
   const back = (
-    <Button disabled={busy} onClick={() => setStep({ kind: 'catalog' })}>
+    <Button size="lg" disabled={busy} onClick={() => setStep({ kind: 'catalog' })}>
       Back
     </Button>
   );
@@ -345,58 +351,51 @@ export function RunActionModal({
           <ActionGroup key={g.id} title={g.title}>
             {ACTION_TEMPLATES.filter(bulkable)
               .filter((t) => (t.group ?? 'safe') === g.id)
-              .map((t) => (
-                <Button
-                  key={t.key}
-                  size="lg"
-                  variant={t.danger ? 'danger' : 'secondary'}
-                  disabled={busy}
-                  title={t.description}
-                  onClick={() => pick(t)}
-                >
-                  {t.label}
-                </Button>
-              ))}
+              .map((t) => {
+                return (
+                  <Tooltip key={t.key} content={t.description}>
+                    <Button variant={t.danger ? 'danger' : 'secondary'} disabled={busy} onClick={() => pick(t)}>
+                      {t.label}
+                    </Button>
+                  </Tooltip>
+                );
+              })}
           </ActionGroup>
         ))}
         <ActionGroup title="Apps">
-          <Button size="lg" disabled={busy} onClick={() => setStep({ kind: 'apps' })}>
-            Install app…
+          <Button disabled={busy} onClick={() => setStep({ kind: 'apps' })}>
+            Install app
           </Button>
         </ActionGroup>
         <ActionGroup title="Kiosk">
-          <Button
-            size="lg"
-            variant="primary"
-            disabled={busy}
-            title="Put each device back into the kiosk its configuration defines."
-            onClick={() => {
-              setSendErr(null);
-              setStep({ kind: 'configured' });
-            }}
-          >
-            Return to configured kiosk…
-          </Button>
-          <Button
-            size="lg"
-            disabled={busy}
-            title="Lock the devices to apps you pick now, as a one-time kiosk that their configurations don’t define."
-            onClick={() => setStep({ kind: 'kiosk' })}
-          >
-            Custom kiosk…
-          </Button>
+          <Tooltip content="Puts each device back into the kiosk its configuration defines.">
+            <Button
+              disabled={busy}
+              onClick={() => {
+                setSendErr(null);
+                setStep({ kind: 'configured' });
+              }}
+            >
+              Return to configured kiosk
+            </Button>
+          </Tooltip>
+          <Tooltip content="Locks the devices to apps you pick now, as a one-time kiosk their configurations don’t define.">
+            <Button disabled={busy} onClick={() => setStep({ kind: 'kiosk' })}>
+              Custom kiosk
+            </Button>
+          </Tooltip>
         </ActionGroup>
       </>
     );
     footer = (
-      <Button disabled={busy} onClick={onClose}>
+      <Button size="lg" disabled={busy} onClick={onClose}>
         Close
       </Button>
     );
   } else if (step.kind === 'params') {
     const t = step.t;
     const canSend = !t.params?.some((p) => p.required && !values[p.key]);
-    title = t.label;
+    title = t.title ?? t.label;
     description = t.description;
     body = (
       <>
@@ -430,13 +429,14 @@ export function RunActionModal({
       <>
         {back}
         <Button
-          variant={t.danger ? 'danger' : 'primary'}
+          size="lg"
+          variant={t.group === 'destructive' ? 'danger-primary' : 'primary'}
           disabled={busy || !canSend}
           onClick={() => {
             void run(t, values);
           }}
         >
-          {busy ? 'Queueing…' : `Run on ${n}`}
+          {busy ? 'Queueing…' : t.danger ? `${t.label} ${plural(n)}` : `Send to ${plural(n)}`}
         </Button>
       </>
     );
@@ -449,18 +449,17 @@ export function RunActionModal({
         {filteredApps.length > 0 ? (
           <div className="v2-bulkmodal__grid">
             {filteredApps.map((a) => (
-              <Button
-                key={a.id ?? a.pkg}
-                size="lg"
-                disabled={busy}
-                title={a.pkg}
-                onClick={() => {
-                  void runInstall(a);
-                }}
-              >
-                {a.name}
-                {a.version ? ` (${a.version})` : ''}
-              </Button>
+              <Tooltip key={a.id ?? a.pkg} content={a.pkg}>
+                <Button
+                  disabled={busy}
+                  onClick={() => {
+                    void runInstall(a);
+                  }}
+                >
+                  {a.name}
+                  {a.version ? ` (${a.version})` : ''}
+                </Button>
+              </Tooltip>
             ))}
           </div>
         ) : null}
@@ -470,22 +469,14 @@ export function RunActionModal({
   } else if (step.kind === 'configured') {
     const ready = groups?.filter((g) => g.kiosk) ?? [];
     const readyCount = ready.reduce((k, g) => k + g.ids.length, 0);
-    title = 'Return to configured kiosk';
-    description =
-      'Puts each device back into the kiosk its configuration defines: its main app, allowed apps, kiosk options, exit PIN and launcher look. Devices whose configuration has no kiosk are skipped.';
+    title = 'Return to configured kiosk?';
+    description = 'Each device goes back into the kiosk its configuration defines. Devices without one are skipped.';
     body = (
       <>
         {groupsErr ? (
-          <Callout tone="alert">
-            Couldn’t load the configurations’ kiosks: {groupsErr}.{' '}
-            <Button size="sm" onClick={() => setGroupsAttempt((k) => k + 1)}>
-              Try again
-            </Button>
-          </Callout>
+          <ErrorState thing="the configurations’ kiosks" detail={groupsErr} onRetry={() => setGroupsAttempt((k) => k + 1)} />
         ) : !groups ? (
-          <p className="v2-bulkmodal__text" role="status">
-            Loading the configurations’ kiosks…
-          </p>
+          <SkeletonRows compact count={2} label="Loading the configurations’ kiosks" />
         ) : (
           <ul className="v2-bulkmodal__kiosks" aria-label="By configuration">
             {groups.map((g) => (
@@ -503,13 +494,18 @@ export function RunActionModal({
             ))}
           </ul>
         )}
-        {sendErr ? <Callout tone="alert">{sendErr}</Callout> : null}
+        {sendErr ? (
+          <Callout tone="alert" role="alert">
+            {sendErr}
+          </Callout>
+        ) : null}
       </>
     );
     footer = (
       <>
         {back}
         <Button
+          size="lg"
           variant="primary"
           disabled={busy || readyCount === 0}
           onClick={() => {
@@ -538,21 +534,18 @@ export function RunActionModal({
         <SearchInput aria-label="Filter Library apps" placeholder="Filter Library apps" value={appQuery} onChange={setAppQuery} />
         <LibraryState apps={library.apps} err={library.err} empty={filteredApps.length === 0} />
         {filteredApps.length > 0 ? (
-          <div className="v2-bulkmodal__grid" role="group" aria-label={mode === 'single' ? 'App to pin' : 'Allowed apps'}>
+          // I8: one row per app, its checkbox first (as the device page's custom kiosk).
+          <div className="v2-bulkmodal__apps" role="group" aria-label={mode === 'single' ? 'App to pin' : 'Allowed apps'}>
             {filteredApps.map((a) => {
               const on = pkgs.has(a.pkg);
               return (
-                <Button
-                  key={a.id ?? a.pkg}
-                  size="lg"
-                  variant={on ? 'primary' : 'secondary'}
-                  aria-pressed={on}
-                  disabled={busy}
-                  title={a.pkg}
-                  onClick={() => togglePkg(a.pkg)}
-                >
-                  {a.name}
-                </Button>
+                <label key={a.id ?? a.pkg} className={`v2-bulkmodal__app${on ? ' is-on' : ''}`}>
+                  <Checkbox checked={on} disabled={busy} onChange={() => togglePkg(a.pkg)} />
+                  <span className="v2-bulkmodal__appmeta">
+                    <span className="v2-bulkmodal__appname">{a.name}</span>
+                    <span className="v2-bulkmodal__apppkg">{a.pkg}</span>
+                  </span>
+                </label>
               );
             })}
           </div>
@@ -565,13 +558,14 @@ export function RunActionModal({
           </Select>
         </Field>
         <Field label="Kiosk exit PIN">
-          <PasswordInput
-            value={password}
-            autoComplete="new-password"
-            placeholder={EXIT_PIN_PLACEHOLDER}
-            title={EXIT_PIN_HELP}
-            onChange={(e) => setPassword(e.target.value)}
-          />
+          <Tooltip content={EXIT_PIN_HELP}>
+            <PasswordInput
+              value={password}
+              autoComplete="new-password"
+              placeholder={EXIT_PIN_PLACEHOLDER}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </Tooltip>
         </Field>
       </>
     );
@@ -579,13 +573,14 @@ export function RunActionModal({
       <>
         {back}
         <Button
+          size="lg"
           variant="primary"
           disabled={busy || !canApply}
           onClick={() => {
             void enterKiosk();
           }}
         >
-          {busy ? 'Queueing…' : `Enter custom kiosk on ${n}`}
+          {busy ? 'Queueing…' : `Enter kiosk on ${plural(n)}`}
         </Button>
       </>
     );
@@ -593,7 +588,7 @@ export function RunActionModal({
 
   return (
     <Modal
-      open
+      open={open}
       onClose={busy ? () => undefined : onClose}
       title={title}
       description={description}
@@ -615,11 +610,11 @@ function ActionGroup({ title, children }: { title: string; children: ReactNode }
 }
 
 function LibraryState({ apps, err, empty }: { apps: Application[] | null; err: string | null; empty: boolean }) {
-  if (err) return <Callout tone="alert">{err}</Callout>;
-  if (!apps) return <p className="v2-bulkmodal__text">Loading library…</p>;
+  if (err) return <ErrorState thing="the library" detail={err} />;
+  if (!apps) return <SkeletonRows compact count={4} label="Loading the library" />;
   if (empty)
     return (
-      <EmptyState bare title={apps.length ? 'No apps match' : 'The Library is empty'}>
+      <EmptyState bare title={apps.length ? 'No apps match' : 'No apps in the library yet'}>
         {apps.length ? 'Try another name or package.' : 'Add apps under Apps first.'}
       </EmptyState>
     );
@@ -631,6 +626,7 @@ function LibraryState({ apps, err, empty }: { apps: Application[] | null; err: s
 // ---------------------------------------------------------------------------------------------------------------
 
 export function ChangeConfigurationModal({
+  open = true,
   ids,
   configurations,
   configurationsError,
@@ -638,6 +634,7 @@ export function ChangeConfigurationModal({
   onClose,
   onDone,
 }: {
+  open?: boolean;
   ids: number[];
   /** Every configuration, sorted by name. */
   configurations: ConfigurationSummary[];
@@ -659,7 +656,7 @@ export function ChangeConfigurationModal({
     try {
       await bulkSetConfiguration(ids, Number(target));
       const name = configurations.find((c) => c.id === Number(target))?.name ?? 'configuration';
-      toast.push('ok', 'Configuration changed', `${n} device(s) → ${name}.`);
+      toast.push('ok', 'Configuration changed', `${plural(n)} → ${name}.`);
       onClose();
       await onDone();
     } catch (e) {
@@ -671,17 +668,18 @@ export function ChangeConfigurationModal({
 
   return (
     <Modal
-      open
+      open={open}
       size="sm"
       onClose={busy ? () => undefined : onClose}
       title="Change configuration"
-      description={`Move ${label ?? plural(n)} to a configuration.`}
+      description={`${label ?? plural(n)} ${n === 1 ? 'takes' : 'take'} the new configuration at the next check-in.`}
       footer={
         <>
-          <Button disabled={busy} onClick={onClose}>
+          <Button size="lg" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
           <Button
+            size="lg"
             variant="primary"
             disabled={busy || !target}
             onClick={() => {
@@ -700,7 +698,7 @@ export function ChangeConfigurationModal({
       ) : null}
       <Field label="Configuration">
         <Select value={target} disabled={!!configurationsError} onChange={(e) => setTarget(e.target.value)}>
-          <option value="">Select a configuration…</option>
+          <option value="">Select a configuration</option>
           {configurations.map((c) => (
             <option key={c.id} value={String(c.id)}>
               {c.name}
@@ -717,11 +715,13 @@ export function ChangeConfigurationModal({
 // ---------------------------------------------------------------------------------------------------------------
 
 export function DeleteDevicesModal({
+  open = true,
   ids,
   label,
   onClose,
   onDone,
 }: {
+  open?: boolean;
   ids: number[];
   label?: string;
   onClose: () => void;
@@ -735,7 +735,7 @@ export function DeleteDevicesModal({
     setBusy(true);
     try {
       await deleteDevicesBulk(ids);
-      toast.push('ok', 'Devices deleted', `${n} device(s) removed.`);
+      toast.push('ok', n === 1 ? 'Device deleted' : 'Devices deleted', `${label && n === 1 ? label : plural(n)} removed.`);
       onClose();
       await onDone();
     } catch (e) {
@@ -747,32 +747,33 @@ export function DeleteDevicesModal({
 
   return (
     <Modal
-      open
+      open={open}
       size="sm"
       role="alertdialog"
       onClose={busy ? () => undefined : onClose}
-      title={n === 1 ? 'Delete device' : 'Delete devices'}
+      title={n === 1 ? 'Delete device?' : `Delete ${plural(n)}?`}
+      description={
+        n === 1
+          ? 'Removes it from MDMesh. It comes back if it checks in again.'
+          : 'Removes them from MDMesh. They come back if they check in again.'
+      }
       footer={
         <>
-          <Button disabled={busy} onClick={onClose}>
+          <Button size="lg" disabled={busy} onClick={onClose}>
             Cancel
           </Button>
           <Button
-            variant="danger"
+            size="lg"
+            variant="danger-primary"
             disabled={busy}
             onClick={() => {
               void apply();
             }}
           >
-            {busy ? 'Deleting…' : `Delete ${label && n === 1 ? label : n}`}
+            {busy ? 'Deleting…' : `Delete ${label && n === 1 ? label : plural(n)}`}
           </Button>
         </>
       }
-    >
-      <p className="v2-bulkmodal__text">
-        Permanently remove {label ?? plural(n)} from MDMesh? {n === 1 ? 'It' : 'They'} will re-appear if{' '}
-        {n === 1 ? 'it checks' : 'they check'} in again.
-      </p>
-    </Modal>
+    />
   );
 }

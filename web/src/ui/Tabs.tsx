@@ -1,7 +1,8 @@
-import { useId, useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { useId, useLayoutEffect, useRef, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { Link, NavLink } from 'react-router';
 import { Badge } from './Badge';
 import { cx } from './cx';
+import { useOverflowFade } from './useOverflowFade';
 import './Tabs.css';
 
 export interface TabItem<K extends string> {
@@ -14,9 +15,8 @@ export interface TabItem<K extends string> {
 }
 
 /**
- * - `tab` (default): 7×14 tabs, 14px, r9 in an r12 track (device sections, app sources)
- * - `lg`: 6×12, 13.5px, r9 in an r12 track (Table / Cards switch)
- * - `md`: 5×12, 13px, r8 in an r10 track (QR code / Token)
+ * - `tab` (default): 36px underline tabs, page-level navigation (device sections, app sources)
+ * - `md`: 32px, inside cards and dialogs (QR code / Token, Deploy). `lg` is deprecated and renders as `tab`.
  */
 export type TabsSize = 'tab' | 'lg' | 'md';
 
@@ -41,13 +41,55 @@ export function tabIds(idBase: string, key: string) {
 }
 
 /**
- * Raised-segment tabs (device sections, app sources): 7×14 tabs, r9, in an r12 track.
+ * Keeps the list's 2px ink indicator under its selected tab: the indicator is the list's ::after, moved and scaled
+ * with transforms only (--tab-x, --tab-w), so it slides between tabs. It appears in place on first paint and
+ * follows resizes; it hides while nothing is selected.
+ */
+function useIndicator(list: RefObject<HTMLElement | null>) {
+  // The placement, kept for the observer and run again after every render (the selected tab may have changed).
+  const place = useRef<() => void>(() => {});
+  useLayoutEffect(() => {
+    const el = list.current;
+    if (!el) return;
+    let frame = 0;
+    place.current = () => {
+      const on = el.querySelector<HTMLElement>('.v2-tabs__tab.is-selected');
+      if (!on) {
+        el.removeAttribute('data-indicator');
+        return;
+      }
+      el.style.setProperty('--tab-x', `${on.offsetLeft}px`);
+      el.style.setProperty('--tab-w', `${on.offsetWidth}`);
+      // The first placement doesn't animate; later ones slide.
+      if (!el.hasAttribute('data-indicator')) {
+        el.setAttribute('data-indicator', 'placed');
+        frame = requestAnimationFrame(() => el.setAttribute('data-indicator', 'ready'));
+      }
+    };
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => place.current());
+    ro?.observe(el);
+    return () => {
+      ro?.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, [list]);
+  useLayoutEffect(() => place.current());
+}
+
+const sizeClass = (size: TabsSize) => `v2-tabs--${size === 'lg' ? 'tab' : size}`;
+
+/**
+ * Underline tabs: navigation between the views of one thing (device sections, app sources). Selected = ink text
+ * and a 2px ink indicator that slides; filters and view modes use Segmented instead.
  * `role="tablist"` / `role="tab"` with `aria-selected` and `aria-controls`; arrow keys move and activate.
  */
 export function Tabs<K extends string>({ items, value, onChange, idBase, size = 'tab', className, ...aria }: TabsProps<K>) {
   const generated = useId();
   const base = idBase ?? generated;
   const refs = useRef<Array<HTMLButtonElement | null>>([]);
+  const list = useRef<HTMLDivElement>(null);
+  useIndicator(list);
+  useOverflowFade(list);
   const current = items.findIndex((t) => t.key === value);
   // With none selected (the device page while a tab waits), the first enabled tab keeps the strip in the Tab order.
   const focusable = current >= 0 ? current : items.findIndex((t) => !t.disabled);
@@ -74,7 +116,7 @@ export function Tabs<K extends string>({ items, value, onChange, idBase, size = 
   };
 
   return (
-    <div role="tablist" className={cx('v2-tabs', `v2-tabs--${size}`, className)} {...aria}>
+    <div ref={list} role="tablist" className={cx('v2-tabs', sizeClass(size), className)} {...aria}>
       {items.map((t, i) => {
         const on = i === current;
         const ids = tabIds(base, t.key);
@@ -114,7 +156,7 @@ export interface TabPanelProps {
   className?: string;
 }
 
-/** The panel for one tab; render only the active one. */
+/** The panel for one tab; render only the active one. Its content fades in when the tab changes. */
 export function TabPanel({ idBase, tabKey, children, className }: TabPanelProps) {
   const ids = tabIds(idBase, tabKey);
   return (
@@ -138,8 +180,8 @@ export interface LinkTabItem {
 }
 
 /**
- * Tabs that are links (app sources `<nav>` with `aria-current="page"`, the Devices Table / Cards switch).
- * Same look and sizes as `Tabs`; navigation is ordinary links, so Tab moves between them.
+ * Tabs that are links (app sources: a `<nav>` with `aria-current="page"`). Same look and sizes as `Tabs`;
+ * navigation is ordinary links, so Tab moves between them.
  */
 export function LinkTabs({
   items,
@@ -152,6 +194,9 @@ export function LinkTabs({
   'aria-label': string;
   className?: string;
 }) {
+  const list = useRef<HTMLElement>(null);
+  useIndicator(list);
+  useOverflowFade(list);
   const inner = (t: LinkTabItem) => (
     <>
       {t.icon ? <span className="v2-tabs__icon">{t.icon}</span> : null}
@@ -165,7 +210,7 @@ export function LinkTabs({
     </>
   );
   return (
-    <nav aria-label={ariaLabel} className={cx('v2-tabs', `v2-tabs--${size}`, className)}>
+    <nav ref={list} aria-label={ariaLabel} className={cx('v2-tabs', sizeClass(size), className)}>
       {items.map((t) =>
         t.disabled ? (
           <span key={t.key} aria-disabled="true" className="v2-tabs__tab is-disabled">

@@ -6,7 +6,7 @@ import {
   listKioskBackgroundImages,
   type KioskGalleryItem,
 } from '../../api/configurations';
-import { Button, Modal } from '../../ui';
+import { Button, Modal, SkeletonRows } from '../../ui';
 import { fmtDateTime } from '../../ui/format';
 import { fmtBytes } from '../deviceDetailFormat';
 import { hostedPath, shortSha } from './KioskBackground';
@@ -150,14 +150,14 @@ export function KioskGallery({
                   {current ? (
                     <span className="v2-kgal__current">In use here</span>
                   ) : (
-                    <Button size="sm" variant="primary" data-role="use" onClick={() => onChoose(item)} aria-label={`Use ${item.name}`}>
+                    <Button size="sm" data-role="use" onClick={() => onChoose(item)} aria-label={`Use ${item.name}`}>
                       Use
                     </Button>
                   )}
                   {canDelete && item.usedByCount === 0 && !current ? (
                     confirming === item.sha256 ? (
                       <span className="v2-kgal__confirm" role="group" aria-label={`Delete ${item.name}?`}>
-                        <Button size="sm" variant="danger" data-role="confirm" onClick={() => void remove(item)} aria-label={`Delete ${item.name} for good`}>
+                        <Button size="sm" variant="danger-primary" data-role="confirm" onClick={() => void remove(item)} aria-label={`Delete ${item.name} for good`}>
                           Delete for good
                         </Button>
                         <Button
@@ -193,10 +193,8 @@ export function KioskGallery({
           <Button size="sm" onClick={() => void loadUpTo(items.length + PAGE)} disabled={loading}>
             {loading ? 'Loading…' : `Show more (${total - items.length})`}
           </Button>
-        ) : loading ? (
-          <p className="v2-kgal__empty" role="status">
-            Loading…
-          </p>
+        ) : loading && items.length === 0 ? (
+          <SkeletonRows count={3} compact label="Loading images…" />
         ) : null}
       </div>
     </Modal>

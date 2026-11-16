@@ -726,7 +726,7 @@ export function DevicesPage() {
       total={filtered.length}
       onSelectAll={() => setSelected(new Set(filtered.map((d) => d.id)))}
       onClear={clearSel}
-      hint="Click devices to add them, Shift-click for a range"
+      hint="Shift-click for a range"
     >
       <BulkActions actions={bulkActions} rows={selectedRows} helpers={helpers} />
     </BulkSelectionBar>

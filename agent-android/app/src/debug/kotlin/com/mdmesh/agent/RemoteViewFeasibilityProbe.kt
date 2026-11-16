@@ -113,6 +113,14 @@ object RemoteViewFeasibilityProbe {
         )
     }
 
+    /** Debug-only evidence of what Android MediaProjection produced before WebRTC sees it. */
+    internal fun markCapturedFrame(frameCount: Int, brightness: Int) {
+        mutableState.value = RemoteViewFeasibilityState(
+            "Screen-share test captured $frameCount frame(s); sampled brightness $brightness/255.",
+            active = true,
+        )
+    }
+
     internal fun markStopped() {
         mutableState.value = RemoteViewFeasibilityState("Screen-share test ended.", active = false)
     }

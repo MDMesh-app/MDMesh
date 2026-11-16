@@ -31,6 +31,7 @@ class RemoteViewFeasibilityService : Service() {
     private var projection: MediaProjection? = null
     private var display: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
+    private var capturedFrameCount = 0
 
     private val stopRunnable = Runnable { stopProbe() }
     private val projectionCallback = object : MediaProjection.Callback() {
@@ -65,7 +66,18 @@ class RemoteViewFeasibilityService : Service() {
         val width = metrics.widthPixels.coerceAtLeast(1)
         val height = metrics.heightPixels.coerceAtLeast(1)
         val reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
-        reader.setOnImageAvailableListener({ source -> source.acquireLatestImage()?.close() }, mainHandler)
+        reader.setOnImageAvailableListener({ source ->
+            val image = source.acquireLatestImage() ?: return@setOnImageAvailableListener
+            try {
+                capturedFrameCount += 1
+                if (capturedFrameCount == 1 || capturedFrameCount % FRAME_DIAGNOSTIC_INTERVAL == 0) {
+                    val brightness = sampledBrightness(image)
+                    RemoteViewFeasibilityProbe.markCapturedFrame(capturedFrameCount, brightness)
+                }
+            } finally {
+                image.close()
+            }
+        }, mainHandler)
         imageReader = reader
         display = newProjection.createVirtualDisplay(
             "MDMesh remote-view feasibility probe",
@@ -126,6 +138,30 @@ class RemoteViewFeasibilityService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    /**
+     * Samples a small grid rather than retaining a frame. All RGBA channels are
+     * averaged, so the result is independent of the platform's channel order.
+     */
+    private fun sampledBrightness(image: android.media.Image): Int {
+        val plane = image.planes.firstOrNull() ?: return 0
+        val buffer = plane.buffer
+        var total = 0L
+        var samples = 0
+        for (vertical in SAMPLE_GRID.indices) {
+            val y = ((image.height - 1) * SAMPLE_GRID[vertical]).toInt().coerceAtLeast(0)
+            for (horizontal in SAMPLE_GRID.indices) {
+                val x = ((image.width - 1) * SAMPLE_GRID[horizontal]).toInt().coerceAtLeast(0)
+                val offset = y * plane.rowStride + x * plane.pixelStride
+                if (offset + 2 >= buffer.limit()) continue
+                total += (buffer.get(offset).toInt() and 0xff)
+                total += (buffer.get(offset + 1).toInt() and 0xff)
+                total += (buffer.get(offset + 2).toInt() and 0xff)
+                samples += 3
+            }
+        }
+        return if (samples == 0) 0 else (total / samples).toInt()
+    }
+
     @Suppress("DEPRECATION")
     private fun Intent.intentExtra(key: String): Intent? =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) getParcelableExtra(key, Intent::class.java)
@@ -137,5 +173,7 @@ class RemoteViewFeasibilityService : Service() {
         private const val CHANNEL_ID = "mdmesh_remote_view_probe"
         private const val NOTIFICATION_ID = 7_301
         private const val PROBE_DURATION_MS = 30_000L
+        private const val FRAME_DIAGNOSTIC_INTERVAL = 10
+        private val SAMPLE_GRID = floatArrayOf(0.15f, 0.5f, 0.85f)
     }
 }

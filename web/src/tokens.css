@@ -167,7 +167,7 @@
   --grid-gap: var(--space-4); /* between cards, both axes */
   --section-gap: var(--space-6); /* page header to content */
   --card-pad: var(--space-4);
-  --topbar-h: 44px;
+  --topbar-h: 56px;
   --z-sticky: 10;
   --z-drawer: 40;
   --z-overlay: 50;

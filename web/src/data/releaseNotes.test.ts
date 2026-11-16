@@ -85,4 +85,7 @@ describe('Security releases (the signed manifest’s securityReleases)', () => {
     expect(labelled.length).toBeGreaterThan(0);
     expect(derived).toEqual(labelled);
   });
+  it('can’t diverge over fenced code: the script skips it, the console’s parser doesn’t read it, CHANGELOG.md has none', () => {
+    expect(CHANGELOG).not.toMatch(/^\s{0,3}(```|~~~)/m);
+  });
 });

@@ -4,13 +4,15 @@
 A version is a security release if and only if its `## vX.Y.Z` section has a Security heading: a line of its own,
 "Security", optionally "Security (agent 0.5.0)" or "Security: …", the rule the console's release notes use
 (web/src/whatsnew/changelog.ts LABEL, web/src/data/releaseNotes.ts isSecurityGroup). RELEASING.md documents it.
+Lines inside fenced code (```) are never headings; CHANGELOG.md has none, and web/src/data/releaseNotes.test.ts keeps
+it that way, since the console's notes parser doesn't read fences.
 
   release/security-releases.py [--upto X.Y.Z] [CHANGELOG]
       print the list as JSON, oldest first (with --upto, only versions up to and including X.Y.Z)
   release/security-releases.py --check manifest.json [CHANGELOG]
       fail unless the manifest's securityReleases is exactly the list for its version
 
-build-manifest.sh imports releases() from this file, so the manifest is always derived from the changelog.
+build-manifest.sh runs this script (--upto VERSION) for the manifest's list, so it is always derived from the changelog.
 """
 import json
 import os
@@ -18,11 +20,12 @@ import re
 import sys
 
 SECTION = re.compile(r"^## v(\d+\.\d+\.\d+)(?:\s|$)")
-# A heading line as the console reads it: markdown heading marks are dropped (releaseNotes.ts MD_HEADING), and the
-# line must start at column 0 (an indented "Security" is list text, not a heading).
+# A heading line as the console reads it: markdown heading marks, with up to 3 spaces before them, are dropped
+# (releaseNotes.ts MD_HEADING), and what is left must start at column 0 (an indented "Security" is list text).
 HEADING_MARKS = re.compile(r"^\s{0,3}#{1,6}\s+")
 SECURITY = re.compile(r"^Security(?: \([^)]*\))?(?::\s*.*)?$")
 VERSION = re.compile(r"^\d+\.\d+\.\d+$")
+FENCE = re.compile(r"^\s{0,3}(```|~~~)")
 
 DEFAULT_CHANGELOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "CHANGELOG.md")
 
@@ -33,9 +36,14 @@ def key(v):
 
 def releases(text, upto=None):
     """Every `## vX.Y.Z` section with a Security heading, oldest first; with `upto`, only versions <= upto."""
-    found, current = set(), None
+    found, current, fenced = set(), None, False
     for raw in text.splitlines():
         line = raw.rstrip("\r").rstrip()
+        if FENCE.match(line):
+            fenced = not fenced
+            continue
+        if fenced:
+            continue
         m = SECTION.match(line)
         if m:
             current = m.group(1)

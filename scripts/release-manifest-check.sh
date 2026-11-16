@@ -48,7 +48,8 @@ python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); del m["securityRele
   "$T/manifest.json" "$T/sec.json"
 ! "$ROOT/release/security-releases.py" --check "$T/sec.json" 2> "$T/sec.out" || fail "security-releases.py --check accepted a manifest without the list"
 # The rule on a fixture changelog: a "Security" heading line (with "(…)" or ": …", or as a markdown heading) marks its
-# release; an indented or inline "Security", Unreleased, and the Older releases section don't; --upto stops at a version.
+# release; an indented or inline "Security", one in fenced code, Unreleased, and the Older releases section don't;
+# --upto stops at a version.
 cat > "$T/changelog.md" <<'MD'
 # Changelog
 
@@ -74,6 +75,10 @@ New
 Fixes
 - Something.
 
+```
+Security
+```
+
 Security: one fix
 - A fix.
 
@@ -81,6 +86,12 @@ Security: one fix
 
 Security
 - A fix.
+
+## v1.0.0 — 2029-12-01
+
+```
+Security
+```
 
 ## Older releases
 

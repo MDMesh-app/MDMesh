@@ -70,6 +70,21 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
       pc.addTransceiver('video', { direction: 'recvonly' });
       const pendingCandidates: RTCIceCandidateInit[] = [];
       let remoteDescriptionInstalled = false;
+      const videoRenderDiagnostic = () => {
+        const element = video.current;
+        if (!element || element.videoWidth === 0 || element.videoHeight === 0) return 'video metadata unavailable';
+        const canvas = document.createElement('canvas');
+        canvas.width = 3;
+        canvas.height = 3;
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        if (!context) return `${element.videoWidth}x${element.videoHeight}, playback ${element.currentTime.toFixed(1)}s`;
+        context.drawImage(element, 0, 0, canvas.width, canvas.height);
+        const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+        let brightness = 0;
+        for (let index = 0; index < pixels.length; index += 4) brightness += pixels[index] + pixels[index + 1] + pixels[index + 2];
+        const average = Math.round(brightness / (pixels.length / 4) / 3);
+        return `${element.videoWidth}x${element.videoHeight}, playback ${element.currentTime.toFixed(1)}s, sampled brightness ${average}/255`;
+      };
       const updateVideoStats = async () => {
         if (!live || pc.connectionState !== 'connected') return;
         const report = await pc.getStats();
@@ -82,7 +97,7 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
           return;
         }
         setTransportStatus(
-          `Viewer video: bytes ${inbound.bytesReceived}, decoded ${inbound.framesDecoded ?? 0}, dropped ${inbound.framesDropped ?? 0}`,
+          `Viewer video: bytes ${inbound.bytesReceived}, decoded ${inbound.framesDecoded ?? 0}, dropped ${inbound.framesDropped ?? 0}; ${videoRenderDiagnostic()}`,
         );
       };
       pc.ontrack = (event) => {
@@ -90,7 +105,9 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
         if (stream && video.current) {
           video.current.srcObject = stream;
           video.current.muted = true;
-          void video.current.play().catch(() => undefined);
+          void video.current.play().catch((error: unknown) => {
+            setTransportStatus(`Remote video play was blocked: ${error instanceof Error ? error.name : 'unknown error'}`);
+          });
           setStage('viewing');
           setTransportStatus('Remote video track received; checking decoded frames…');
           void updateVideoStats();

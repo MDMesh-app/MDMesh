@@ -22,6 +22,12 @@ export function remoteViewStateText(session: RemoteViewSession | null, stage: St
   return 'Requesting screen-share consent on the device…';
 }
 
+export function remoteViewTerminalTransportText(state: RemoteViewSession['state']): string {
+  return state === 'denied'
+    ? 'No viewer transport was opened because the device declined screen sharing.'
+    : 'Viewer transport is closed.';
+}
+
 /** LAN POC viewer: cookie-authenticated signaling, video-only WebRTC, and no input/data channel. */
 export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: string; onClose: () => void }) {
   const [session, setSession] = useState<RemoteViewSession | null>(null);
@@ -211,7 +217,11 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
         if (!live || stopped.current) return;
         setSession(current);
         if (current.state === 'signaling') { connect(current); return; }
-        if (current.endedAt || ['stopped', 'denied', 'failed', 'disconnected'].includes(current.state)) { finish('ended', current); return; }
+        if (current.endedAt || ['stopped', 'denied', 'failed', 'disconnected'].includes(current.state)) {
+          setTransportStatus(remoteViewTerminalTransportText(current.state));
+          finish('ended', current);
+          return;
+        }
         poll = setTimeout(() => void check(id), 1000);
       } catch (error) { finish(error instanceof ApiError && error.httpStatus === 403 ? 'ended' : 'error'); }
     };

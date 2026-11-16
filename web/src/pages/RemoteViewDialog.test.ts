@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { remoteViewStateText } from './RemoteViewDialog';
+import { remoteViewStateText, remoteViewTerminalTransportText } from './RemoteViewDialog';
 
 describe('remote-view status text', () => {
   it('makes a device denial clear even when the server has not supplied an end reason', () => {
@@ -12,5 +12,10 @@ describe('remote-view status text', () => {
     expect(remoteViewStateText({
       id: 'session', state: 'stopped', consentExpiresAt: 0, expiresAt: 0, endedAt: 1, endReason: 'Stopped by requester',
     }, 'ended')).toBe('Stopped by requester');
+  });
+
+  it('does not imply signaling is pending after a device denial', () => {
+    expect(remoteViewTerminalTransportText('denied'))
+      .toBe('No viewer transport was opened because the device declined screen sharing.');
   });
 });

@@ -7,6 +7,8 @@
 #   - supervisor/lib.js imagePins (what apply.sh is handed) reads the same three refs;
 #   - the fields older supervisors and the installers read (components.serverImage/webImage/apk) are unchanged;
 #   - quickstart.sh's copy of the release key and its file list match release/minisign.pub and build-manifest.sh;
+#   - securityReleases is CHANGELOG.md's list (release/security-releases.py: a version with a Security heading), the
+#     release workflow's check refuses a manifest whose list differs, and the rule itself holds on a fixture changelog;
 #   - the manifest records quickstart.sh's own SHA-256, and release.yml publishes quickstart.sh as a release asset;
 #   - DEPLOY.md carries the one install block and shortcut, with release/minisign.pub's key, and the manifest's
 #     version line is what that block checks; README.md runs the latest release's quickstart.sh asset, never main's.
@@ -16,7 +18,7 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 T=$(mktemp -d)
 cleanup() {
   rm -f -- "$T/manifest.json" "$T/manifest.json.minisig" "$T/k.pub" "$T/k.key" "$T/x.pub" "$T/x.key" \
-    "$T/agent.apk" "$T/tampered.json" "$T/qs.sh"
+    "$T/agent.apk" "$T/tampered.json" "$T/qs.sh" "$T/changelog.md" "$T/sec.json" "$T/sec.out"
   rmdir -- "$T" 2>/dev/null || true
 }
 trap cleanup EXIT
@@ -34,6 +36,73 @@ head -c 4096 /dev/urandom > "$T/agent.apk"
 ( cd "$T" && ! "$ROOT/release/build-manifest.sh" 9.8.7 stable "ghcr.io/$O/mdmesh-server:9.8.7" "ghcr.io/$O/mdmesh-web:9.8.7" \
     agent.apk 90807 CKSUM 1.5 "ghcr.io/$O/mdmesh-server:9.8.7" "ghcr.io/$O/mdmesh-web@$D2" "ghcr.io/$O/mdmesh-supervisor@$D3" ) 2>/dev/null \
   || fail "build-manifest.sh accepted a tag where a digest belongs"
+
+# securityReleases: derived from CHANGELOG.md by build-manifest.sh, and checked by release.yml.
+[ "$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1]))["securityReleases"]))' "$T/manifest.json")" \
+    = "$("$ROOT/release/security-releases.py" "$ROOT/CHANGELOG.md")" ] || fail "securityReleases is not CHANGELOG.md's list"
+"$ROOT/release/security-releases.py" --check "$T/manifest.json" > "$T/sec.out" || fail "security-releases.py --check refused a good manifest"
+python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); m["securityReleases"]=m["securityReleases"][:-1]; json.dump(m,open(sys.argv[2],"w"))' \
+  "$T/manifest.json" "$T/sec.json"
+! "$ROOT/release/security-releases.py" --check "$T/sec.json" 2> "$T/sec.out" || fail "security-releases.py --check accepted a short list"
+python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); del m["securityReleases"]; json.dump(m,open(sys.argv[2],"w"))' \
+  "$T/manifest.json" "$T/sec.json"
+! "$ROOT/release/security-releases.py" --check "$T/sec.json" 2> "$T/sec.out" || fail "security-releases.py --check accepted a manifest without the list"
+# The rule on a fixture changelog: a "Security" heading line (with "(…)" or ": …", or as a markdown heading) marks its
+# release; an indented or inline "Security", one in fenced code, Unreleased, and the Older releases section don't;
+# --upto stops at a version.
+cat > "$T/changelog.md" <<'MD'
+# Changelog
+
+## Unreleased
+
+Security
+- Not released yet.
+
+## v1.3.0 — 2030-01-03
+
+New
+- Security keys can be rotated.
+- Something
+  Security
+
+## v1.2.1 — 2030-01-02
+
+### Security (agent 1.2.1)
+- A fix.
+
+## v1.2.0 — 2030-01-01
+
+Fixes
+- Something.
+
+```
+Security
+```
+
+Security: one fix
+- A fix.
+
+## v1.10.0 — 2030-02-01
+
+Security
+- A fix.
+
+## v1.0.0 — 2029-12-01
+
+```
+Security
+```
+
+## Older releases
+
+Security
+MD
+[ "$("$ROOT/release/security-releases.py" "$T/changelog.md")" = '["1.2.0", "1.2.1", "1.10.0"]' ] \
+  || fail "security-releases.py: wrong list for the fixture changelog: $("$ROOT/release/security-releases.py" "$T/changelog.md")"
+[ "$("$ROOT/release/security-releases.py" --upto 1.3.0 "$T/changelog.md")" = '["1.2.0", "1.2.1"]' ] \
+  || fail "security-releases.py --upto: wrong list for the fixture changelog"
+[ "$("$ROOT/release/security-releases.py" --upto 1.2.0 "$T/changelog.md")" = '["1.2.0"]' ] \
+  || fail "security-releases.py --upto: a version is its own security release"
 
 minisign -G -W -p "$T/k.pub" -s "$T/k.key" >/dev/null
 minisign -S -s "$T/k.key" -m "$T/manifest.json" >/dev/null

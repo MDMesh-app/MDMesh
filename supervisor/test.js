@@ -1,6 +1,6 @@
 const t = require('node:test');
 const a = require('node:assert');
-const { semverGt, pickRelease, shapeStatus, imageTags, nextPhase, isTerminal, apkAsset, sha256Matches, recoveryPage, isPublishTemp,
+const { semverGt, pickRelease, shapeStatus, missedSecurity, imageTags, nextPhase, isTerminal, apkAsset, sha256Matches, recoveryPage, isPublishTemp,
   assetRequest, fetchAsset, envValue, applyLine, applyRefusal, imagePins, deploymentAdminVerdict,
   legacyDeploymentAdmin } = require('./lib');
 
@@ -35,6 +35,40 @@ t.test('shapeStatus', () => {
   a.equal(shapeStatus({ current: '1.0.0', manifest: { version: '1.1.0' }, verified: true }).updateAvailable, true);
   a.equal(shapeStatus({ current: '1.1.0', manifest: { version: '1.1.0' }, verified: true }).updateAvailable, false);
   a.equal(shapeStatus({ current: '1.0.0', manifest: { version: '1.1.0' }, verified: false }).updateAvailable, false);
+});
+
+t.test('missedSecurity — the security releases an update skips over', () => {
+  const m = (version, securityReleases) => ({ version, securityReleases });
+  // Boundaries: the running version and the offered one are both left out; only what lies strictly between counts.
+  a.deepEqual(missedSecurity(m('0.1.15', ['0.1.12', '0.1.13', '0.1.15']), true, '0.1.12'), ['0.1.13']);
+  a.deepEqual(missedSecurity(m('0.1.15', ['0.1.11']), true, '0.1.12'), []);           // older than current: has it
+  a.deepEqual(missedSecurity(m('0.1.15', ['0.1.16']), true, '0.1.12'), []);           // newer than the offer
+  // Several, oldest first, whatever the manifest's order; duplicates once.
+  a.deepEqual(missedSecurity(m('0.5.2', ['0.5.1', '0.4.2', '0.3.8', '0.4.2']), true, '0.4.0'), ['0.4.2', '0.5.1']);
+  a.deepEqual(missedSecurity(m('0.1.15', ['0.1.12', '0.1.13', '0.1.14']), true, '0.1.11'), ['0.1.12', '0.1.13', '0.1.14']);
+  // None missed: no security release in between, or already on the latest.
+  a.deepEqual(missedSecurity(m('0.1.15', ['0.1.10']), true, '0.1.14'), []);
+  a.deepEqual(missedSecurity(m('0.1.15', ['0.1.13']), true, '0.1.15'), []);
+  a.deepEqual(missedSecurity(m('0.1.15', []), true, '0.1.12'), []);
+  // The offered release is itself a security release: its notes say so; nothing missed.
+  a.deepEqual(missedSecurity(m('0.1.13', ['0.1.13']), true, '0.1.12'), []);
+  // A manifest from before the field (0.4.x release tooling), or with something else in it.
+  a.deepEqual(missedSecurity({ version: '0.5.2' }, true, '0.4.0'), []);
+  a.deepEqual(missedSecurity(m('0.5.2', '0.5.1'), true, '0.4.0'), []);
+  a.deepEqual(missedSecurity(m('0.5.2', [1, null, '0.5.1-beta.1', 'v0.5.1', '0.5.1']), true, '0.4.0'), ['0.5.1']);
+  // Only a verified manifest is trusted.
+  a.deepEqual(missedSecurity(m('0.1.15', ['0.1.13']), false, '0.1.12'), []);
+  a.deepEqual(missedSecurity(null, true, '0.1.12'), []);
+  // A running version that isn't X.Y.Z can't be compared.
+  a.deepEqual(missedSecurity(m('0.1.15', ['0.1.13']), true, 'dev'), []);
+});
+
+t.test('shapeStatus — missedSecurity', () => {
+  const manifest = { version: '0.1.15', securityReleases: ['0.1.13', '0.1.15'] };
+  a.deepEqual(shapeStatus({ current: '0.1.12', manifest, verified: true }).missedSecurity, ['0.1.13']);
+  a.deepEqual(shapeStatus({ current: '0.1.12', manifest, verified: false }).missedSecurity, []);
+  a.deepEqual(shapeStatus({ current: '0.1.12', manifest: { version: '0.1.15' }, verified: true }).missedSecurity, []);
+  a.deepEqual(shapeStatus({ current: '0.1.12', manifest: null, verified: false }).missedSecurity, []);
 });
 
 t.test('imageTags', () => {

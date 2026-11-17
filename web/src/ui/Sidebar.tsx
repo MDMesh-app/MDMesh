@@ -5,7 +5,7 @@ import { useMayManageDeployment } from '../auth/useMayManageDeployment';
 import { useTheme } from './theme';
 import { isApplyTerminal, type UpdateStatus } from '../api/updates';
 import { useSupervisor } from '../data/useSupervisor';
-import { applyPhaseLabel } from '../data/updateStatus';
+import { applyPhaseLabel, missedSecurity, missedSecurityShort } from '../data/updateStatus';
 import { ExtensionBoundary } from '../ext/ExtensionBoundary';
 import { useContributions } from '../ext/useContributions';
 import { paths, UPDATES_HREF } from '../routes';
@@ -30,8 +30,9 @@ export function Wordmark({ size = 17, className }: { size?: 17 | 18; className?:
 
 /**
  * The sidebar's server-update card, above the account row: a status dot and "Server update 0.1.15", one short line,
- * and the action. The Overview's Server card says the same in the same words; both lead to Settings → Updates.
- * Hidden when there is nothing to say.
+ * and the action. When the update brings security fixes from releases this server skipped, the dot is amber, the
+ * title "Update 0.1.15" and the line says which. The Overview's Server card says the same in the same words; both
+ * lead to Settings → Updates. Hidden when there is nothing to say.
  */
 function UpdateCard({ status, onNavigate }: { status: UpdateStatus | null; onNavigate?: () => void }) {
   // Only the admin who runs the install may update; anyone else is told so instead of how long it takes.
@@ -72,6 +73,24 @@ function UpdateCard({ status, onNavigate }: { status: UpdateStatus | null; onNav
       : canUpdate
         ? 'About 2 minutes to apply.'
         : 'An admin can apply it.';
+  // The update skips over security releases (verified manifest only): amber, and the card says which. Who can apply
+  // it, or how, still shows where it isn't this admin's one click.
+  const missed = missedSecurity(status);
+  if (missed.length > 0) {
+    return (
+      <Link to={UPDATES_HREF} className="v2-updcard" onClick={onNavigate}>
+        <span className="v2-updcard__title">
+          <span className="v2-updcard__dot is-warn" aria-hidden="true" />
+          Update {status.latest}
+        </span>
+        <span className="v2-updcard__text">
+          {missedSecurityShort(missed)}
+          {status.applySupported === false || !canUpdate ? ` ${how}` : null}
+        </span>
+        <span className="v2-updcard__action">Review update</span>
+      </Link>
+    );
+  }
   return (
     <Link to={UPDATES_HREF} className="v2-updcard" onClick={onNavigate}>
       <span className="v2-updcard__title">

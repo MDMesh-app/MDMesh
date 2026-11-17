@@ -154,7 +154,7 @@ and `openssl` when they are missing, to check the release). Two runtimes the dis
 
 Both downloads cover x86_64 and arm64. On other architectures, install both runtimes yourself first.
 
-PostgreSQL must be 15 or newer, as on the tested distros. With an older one already installed, the installer
+Use PostgreSQL 15 or newer, as on the tested distros. With an older one already installed, the installer
 warns: the install works, but [restoring a backup](docs/OPERATIONS.md#backups-and-restore) needs 15 or newer.
 
 The installer asks you to type `yes`, then asks for the base URL and the HTTP port. `-y` skips these

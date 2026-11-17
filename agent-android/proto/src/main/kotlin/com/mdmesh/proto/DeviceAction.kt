@@ -44,9 +44,17 @@ object DeviceAction {
     const val CONFIG_APPLY = "config.apply"
     const val CONFIG_APPLY_KEY = "configApply"
 
+    /**
+     * Clear the kiosk exit PIN's wrong-PIN count and lockout (protocol 1.11). No payload. Advertised as device key
+     * [KIOSK_CLEAR_PIN_LOCKOUT_KEY], so the server holds it for agents before 0.5.0, which have no handler for it.
+     */
+    const val KIOSK_CLEAR_PIN_LOCKOUT = "kiosk.clearPinLockout"
+    const val KIOSK_CLEAR_PIN_LOCKOUT_KEY = "kioskClearPinLockout"
+
     /** Keys (after the `device.` prefix) advertised in `capabilities.device`. */
     val ADVERTISED_KEYS: List<String> = listOf(
         "lock", "reboot", "lockscreenMessage", "alert", "ring", "ringStop",
         "passcodeReset", "wipe", "powerMode", "locationMode", "configApply", LOCATION_OFF_KEY,
+        KIOSK_CLEAR_PIN_LOCKOUT_KEY,
     )
 }

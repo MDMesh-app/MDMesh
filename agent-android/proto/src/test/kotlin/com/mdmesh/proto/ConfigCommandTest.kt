@@ -71,6 +71,6 @@ class ConfigCommandTest {
                 """{"revision":"r","appPermissions":[]}""",
             ).appPermissions,
         )
-        assertEquals("1.10", ProtocolJson.PROTOCOL_VERSION)
+        assertEquals("1.11", ProtocolJson.PROTOCOL_VERSION)
     }
 }

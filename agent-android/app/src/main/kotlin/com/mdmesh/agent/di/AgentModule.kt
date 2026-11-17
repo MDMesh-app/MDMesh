@@ -32,6 +32,7 @@ import com.mdmesh.core.command.handlers.DeviceWipeHandler
 import com.mdmesh.core.config.ConfigApplier
 import com.mdmesh.core.location.LocationModeStore
 import com.mdmesh.core.power.PowerModeStore
+import com.mdmesh.core.command.handlers.KioskClearPinLockoutHandler
 import com.mdmesh.core.command.handlers.KioskEnterHandler
 import com.mdmesh.core.command.handlers.KioskExitHandler
 import com.mdmesh.core.kiosk.AndroidKioskHomeSwitch
@@ -306,6 +307,9 @@ object AgentModule {
 
     @Provides @IntoSet
     fun provideKioskExitHandler(applier: KioskApplier): CommandHandler = KioskExitHandler(applier)
+
+    @Provides @IntoSet
+    fun provideKioskClearPinLockoutHandler(gate: ExitPinGate): CommandHandler = KioskClearPinLockoutHandler(gate)
 
     @Provides
     @IntoSet

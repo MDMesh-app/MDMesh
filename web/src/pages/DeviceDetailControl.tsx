@@ -2,6 +2,7 @@ import { useId, useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import {
   ACTION_TEMPLATES,
+  CLEAR_PIN_LOCKOUT_AGENT,
   type CommandHistoryItem,
   type CommandTemplateExt,
 } from '../api/commands';
@@ -50,6 +51,7 @@ import { classifyOutcome, outcomeSummary, unsupportedOutcomeReason, type Outcome
 import { commandDetail, commandName, commandTime } from '../data/deviceActivity';
 import { parseOutcomes } from '../api/configSync';
 import { fmtDateTime } from '../ui/format';
+import { versionAtLeast } from '../data/kiosk';
 
 export const TEMPLATE: Record<string, CommandTemplateExt> = Object.fromEntries(ACTION_TEMPLATES.map((t) => [t.key, t]));
 
@@ -446,6 +448,7 @@ export function RemoteActions({
   locationPending,
   locationUnknown,
   doNotTrack,
+  agentVersion,
 }: {
   busy: boolean;
   onAction: ActionRunner;
@@ -464,8 +467,20 @@ export function RemoteActions({
   /** The current location mode can't be told (a device-level change was sent before; the agent doesn't report it). */
   locationUnknown: boolean;
   doNotTrack: boolean | null;
+  /** The device's agent version, when reported: Clear PIN lockout needs CLEAR_PIN_LOCKOUT_AGENT. */
+  agentVersion?: string | null;
 }) {
   const titleId = useId();
+  // Unknown (not reported yet) stays available: the server holds the command from an agent that can't run it.
+  const lockoutTooOld = versionAtLeast(agentVersion, CLEAR_PIN_LOCKOUT_AGENT) === false;
+  const kioskHint =
+    kioskReturn.hint || lockoutTooOld ? (
+      <>
+        {kioskReturn.hint}
+        {kioskReturn.hint && lockoutTooOld ? ' ' : null}
+        {lockoutTooOld ? `Clear PIN lockout needs agent ${CLEAR_PIN_LOCKOUT_AGENT} or later on the device.` : null}
+      </>
+    ) : undefined;
   const tile = (key: string, label: string, icon: ReactNode): Tile => ({
     key,
     label,
@@ -493,7 +508,7 @@ export function RemoteActions({
         title="Kiosk & apps"
         sub="What runs on screen"
         busy={busy}
-        hint={kioskReturn.hint}
+        hint={kioskHint}
         tiles={[
           ...(kioskReturn.offered
             ? [
@@ -510,6 +525,7 @@ export function RemoteActions({
             : []),
           { key: 'kiosk-enter', label: 'Custom kiosk', icon: <IconEnterKiosk />, tip: TEMPLATE['kiosk-enter'].description, run: onEnterKiosk },
           tile('kiosk-exit', 'Exit kiosk', <IconExitKiosk />),
+          { ...tile('kiosk-clear-lockout', 'Clear PIN lockout', <IconKey />), disabled: lockoutTooOld },
           {
             key: 'config-apps',
             label: 'Install configuration apps',

@@ -20,6 +20,7 @@ import {
   type ConfigurationSummary,
 } from '../api/configurations';
 import { bulkSetConfiguration, deleteDevicesBulk } from '../api/devices';
+import { EXIT_PIN_RULE, exitPinValid } from '../data/configurationRules';
 import {
   buildKioskPayload,
   configuredKiosk,
@@ -180,6 +181,8 @@ export function RunActionModal({
   const [pkgs, setPkgs] = useState<Set<string>>(new Set());
   const [exitMode, setExitMode] = useState<KioskChoice['exitMode']>('gesture');
   const [password, setPassword] = useState('');
+  // The PIN's error shows once the field is left, not while the first digits are typed.
+  const [pinLeft, setPinLeft] = useState(false);
 
   // configured-kiosk step state
   const [groups, setGroups] = useState<KioskGroup[] | null>(null);
@@ -517,7 +520,9 @@ export function RunActionModal({
       </>
     );
   } else {
-    const canApply = pkgs.size > 0 && (mode === 'launcher' || pkgs.size === 1);
+    // A custom kiosk's PIN is new: it follows the configurations' rule.
+    const pinError = exitPinValid(password) ? undefined : EXIT_PIN_RULE;
+    const canApply = pkgs.size > 0 && (mode === 'launcher' || pkgs.size === 1) && pinError == null;
     title = `Custom kiosk on ${plural(n)}`;
     description = 'A one-time kiosk with apps you pick now. The devices’ configurations don’t define it.';
     body = (
@@ -557,13 +562,20 @@ export function RunActionModal({
             <option value="remote">Remote only</option>
           </Select>
         </Field>
-        <Field label="Kiosk exit PIN">
+        <Field
+          label="Kiosk exit PIN"
+          help={pinLeft && pinError ? undefined : '6 to 12 digits'}
+          error={pinLeft ? pinError : undefined}
+        >
           <Tooltip content={EXIT_PIN_HELP}>
             <PasswordInput
               value={password}
               autoComplete="new-password"
+              inputMode="numeric"
+              toggleLabel="Show PIN"
               placeholder={EXIT_PIN_PLACEHOLDER}
               onChange={(e) => setPassword(e.target.value)}
+              onBlur={() => setPinLeft(true)}
             />
           </Tooltip>
         </Field>

@@ -18,6 +18,7 @@ import {
   type ConfiguredKiosk,
   type KioskTheme,
 } from '../data/kiosk';
+import { EXIT_PIN_RULE, exitPinValid } from '../data/configurationRules';
 import { paths } from '../routes';
 import { fmtDateTime } from '../ui/format';
 import {
@@ -83,6 +84,8 @@ export function DeviceKioskDialog({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [exitMode, setExitMode] = useState<ExitMode>('gesture');
   const [password, setPassword] = useState('');
+  // The PIN's error shows once the field is left, not while the first digits are typed.
+  const [pinLeft, setPinLeft] = useState(false);
   const [busy, setBusy] = useState(false);
   const [theme, setTheme] = useState<KioskTheme | undefined>();
   const [themeLoading, setThemeLoading] = useState(device.configurationId != null);
@@ -246,7 +249,10 @@ export function DeviceKioskDialog({
     if (m === 'single' && selected.size > 1) setSelected(new Set());
   }
 
-  const canApply = !themeLoading && selected.size > 0 && (mode === 'launcher' || selected.size === 1);
+  // The configuration's PIN rule: a custom kiosk's PIN is new, so it must follow it.
+  const pinError = exitPinValid(password) ? undefined : EXIT_PIN_RULE;
+  const canApply =
+    !themeLoading && selected.size > 0 && (mode === 'launcher' || selected.size === 1) && pinError == null;
 
   async function apply() {
     const pkgs = [...selected];
@@ -438,13 +444,19 @@ export function DeviceKioskDialog({
               <option value="remote">Remote only</option>
             </Select>
           </Field>
-          <Field label="Kiosk exit PIN">
+          <Field
+            label="Kiosk exit PIN"
+            help={pinLeft && pinError ? undefined : '6 to 12 digits'}
+            error={pinLeft ? pinError : undefined}
+          >
             <Tooltip content={EXIT_PIN_HELP}>
               <Input
                 type="password"
                 autoComplete="new-password"
+                inputMode="numeric"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                onBlur={() => setPinLeft(true)}
                 placeholder={EXIT_PIN_PLACEHOLDER}
               />
             </Tooltip>

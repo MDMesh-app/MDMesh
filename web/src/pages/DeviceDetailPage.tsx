@@ -11,6 +11,7 @@ import { getTelemetry, type TelemetrySnapshot } from '../api/telemetry';
 import { getConfigStatus, summarizeStatus, type ConfigStatus } from '../api/configSync';
 import {
   forceSync,
+  retryConfigApply,
   getDeviceState,
   listCommandHistory,
   queueCommand,
@@ -610,6 +611,28 @@ export function DeviceDetailPage() {
     }
   }
 
+  /**
+   * Retry apply: the server queues the configuration now (an automatic retry after a failure waits an hour) and wakes
+   * the device. Says what happened when nothing was sent: already on its way, already applied, or no live connection.
+   */
+  async function retryApply() {
+    if (!number) return;
+    setBusy(true);
+    try {
+      const { result, connected } = await retryConfigApply(number);
+      refresh();
+      if (result === 'inSync') toast.push('ok', 'Already applied', 'The device has the current configuration.');
+      else if (result === 'unsupported' || result === 'noConfiguration')
+        toast.push('warn', 'Not sent', result === 'unsupported' ? 'The device’s agent is too old for configurations.' : 'The device has no configuration.');
+      else if (connected === false) toast.push('warn', ...notConnected(number, 'command'));
+      else toast.push('ok', 'Configuration sent again', result === 'alreadyQueued' ? 'It was already on its way; the device was woken.' : '');
+    } catch (e) {
+      toast.push('err', 'Retry failed', e instanceof Error ? e.message : '');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function installConfigApps() {
     if (!number) return;
     setBusy(true);
@@ -987,7 +1010,7 @@ export function DeviceDetailPage() {
                 isDeviceOwner={deviceOwner}
                 androidSdkInt={teleNum(hw.sdkInt)}
                 busy={busy}
-                onRetry={canEdit && !wiped ? () => void syncNow() : undefined}
+                onRetry={canEdit && !wiped ? () => void retryApply() : undefined}
                 now={now}
               />
             ) : null}
@@ -1012,6 +1035,7 @@ export function DeviceDetailPage() {
                 locationPending={!!locationRequested}
                 locationUnknown={!locationRequested && hasLocationCommand}
                 doNotTrack={doNotTrack}
+                agentVersion={ds?.agentVersion}
               />
             ) : null}
             {/* Activity owns the command history (I12); a quiet way there. */}

@@ -30,7 +30,9 @@ import {
 import {
   affectedDeviceCount,
   cloneForNew,
+  exitPinProblem,
   hasDefaultPin,
+  hasLegacyPin,
   hasNoPin,
   isLocked,
   locationServicesAction,
@@ -453,6 +455,9 @@ function Editor({
   // The server marks a well-known default PIN; once the PIN is edited here that flag is stale.
   const defaultPin = hasDefaultPin(draft) && (draft.password ?? '') === (baseline.password ?? '');
   const noPin = hasNoPin(draft);
+  // A new or changed PIN must follow the rule; one saved before it may stay as it is (a copy is new: it may not).
+  const pinProblem = readOnly ? null : exitPinProblem(draft.password, isNew ? null : baseline.password);
+  const legacyPin = !pinProblem && hasLegacyPin(draft);
 
   const deviceCount = isNew ? 0 : affectedDeviceCount(syncRow);
   const kioskKeys = isNew ? [] : kioskAffectingChanges(baseline, draft);
@@ -474,8 +479,18 @@ function Editor({
     identity: { meta: changedLabel(changedIn('identity')) },
     apps: { meta: appsChanged ? changedLabel(appsChanged) : String(allowed.length) },
     kiosk: {
-      meta: kioskChanged ? changedLabel(kioskChanged) : defaultPin ? 'Default PIN' : noPin ? 'No PIN' : '',
-      metaTone: !kioskChanged && (defaultPin || noPin) ? 'warn' : 'default',
+      meta: pinProblem
+        ? 'Check PIN'
+        : kioskChanged
+          ? changedLabel(kioskChanged)
+          : defaultPin
+            ? 'Default PIN'
+            : noPin
+              ? 'No PIN'
+              : legacyPin
+                ? 'Old PIN'
+                : '',
+      metaTone: pinProblem ? 'alert' : !kioskChanged && (defaultPin || noPin || legacyPin) ? 'warn' : 'default',
     },
     network: { meta: changedLabel(changedIn('network')) },
     security: { meta: changedLabel(changedIn('security')) },
@@ -550,6 +565,12 @@ function Editor({
       toast.push('err', 'Still loading', 'The assigned apps are still loading — try again in a moment.');
       return;
     }
+    if (pinProblem) {
+      toast.push('err', 'Check the exit PIN', pinProblem);
+      focusSection('kiosk');
+      document.querySelector<HTMLInputElement>(`[aria-labelledby="${ids}-password"]`)?.focus({ preventScroll: true });
+      return;
+    }
     const invalid = host.validate();
     if (invalid) {
       toast.push('err', `Fix ${plural(invalid.problems, 'problem')} before saving`, `${invalid.title}: ${invalid.message}`);
@@ -602,7 +623,9 @@ function Editor({
   }
 
   // ---- rows ----
-  const pinWarn = defaultPin
+  const pinWarn = pinProblem
+    ? `${pinProblem} Devices on this configuration keep the PIN they have until you save.`
+    : defaultPin
     ? readOnly
       ? 'This template uses a well-known default PIN. Duplicate it, set your own PIN, and move its devices to the copy.'
       : 'This is a well-known default PIN: anyone who knows it can leave kiosk. Choose one only your staff know.'
@@ -610,7 +633,9 @@ function Editor({
       ? readOnly
         ? 'This template has no exit PIN. Duplicate it, set a PIN, and move its devices to the copy.'
         : 'No exit PIN: agents before 0.3.6 let anyone leave kiosk; later ones have no exit on the device. Set one.'
-      : null;
+      : legacyPin
+        ? 'This PIN was saved before exit PINs had to be 6 to 12 digits. Devices keep using it, but it is easier to guess. Set a new one.'
+        : null;
 
   const row = (key: string, opts: { divider?: boolean } = {}) => {
     const def = FIELD[key];
@@ -618,7 +643,8 @@ function Editor({
     const off = def.kioskOnly === true && !kioskOn;
     const help = HELP[key] ?? def.help;
     // The PIN callout asks for a new PIN, which a disabled row (kiosk off) cannot take; the nav still flags it.
-    const showPinWarn = key === 'password' && pinWarn != null && (readOnly || !off);
+    // A PIN that can't be saved is said even then: the save stops on it.
+    const showPinWarn = key === 'password' && pinWarn != null && (readOnly || !off || pinProblem != null);
     return (
       <FieldRow
         key={key}
@@ -638,7 +664,7 @@ function Editor({
         className={def.type === 'textarea' ? 'v2-cfged-row--wide' : undefined}
         below={
           showPinWarn ? (
-            <Callout tone="warn" icon={<IconWarning size={16} />}>
+            <Callout tone={pinProblem ? 'alert' : 'warn'} icon={<IconWarning size={16} />}>
               {pinWarn}
             </Callout>
           ) : undefined
@@ -655,7 +681,7 @@ function Editor({
             helpId={helpId}
             apps={apps}
             assigned={allowed}
-            tone={showPinWarn ? 'warn' : undefined}
+            tone={showPinWarn ? (pinProblem ? 'invalid' : 'warn') : undefined}
           />
         )}
       </FieldRow>

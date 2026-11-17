@@ -44,6 +44,18 @@ describe('configurations list', () => {
     expect(card.getByRole('button', { name: 'More for Warehouse' })).toBeTruthy();
   });
 
+  it('tags a kiosk configuration whose exit PIN predates the 6-to-12-digit rule, and no other', async () => {
+    open([
+      { ...WAREHOUSE, kioskMode: true, password: '4931' },
+      { id: 8, name: 'Lobby', kioskMode: true, password: '482139' },
+      { id: 9, name: 'Office', kioskMode: false, password: '4931' },
+    ]);
+    const list = await screen.findByRole('list', { name: 'Configurations' });
+    expect(within(within(list).getByRole('article', { name: 'Warehouse' })).getByText('Old PIN')).toBeTruthy();
+    expect(within(within(list).getByRole('article', { name: 'Lobby' })).queryByText('Old PIN')).toBeNull();
+    expect(within(within(list).getByRole('article', { name: 'Office' })).queryByText('Old PIN')).toBeNull();
+  });
+
   it('has no kind filter with one kind only', async () => {
     open([WAREHOUSE]);
     await screen.findByRole('link', { name: 'Warehouse' });

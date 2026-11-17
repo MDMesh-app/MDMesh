@@ -200,7 +200,16 @@ export const ACTION_TEMPLATES: CommandTemplateExt[] = [
     description: 'Ends kiosk mode and restores the normal home screen.',
     request: { type: 'kiosk.exit' },
   },
+  {
+    // Gated on the agent's capability: an agent before 0.5.0 has no handler, so the server holds it from such a device.
+    key: 'kiosk-clear-lockout', label: 'Clear PIN lockout', group: 'safe',
+    description: 'Lets staff try the exit PIN again now, with a full set of tries. The device stays in kiosk.',
+    request: { type: 'kiosk.clearPinLockout', requiresCapability: 'device.kioskClearPinLockout' },
+  },
 ];
+
+/** The agent release that takes Clear PIN lockout (`kiosk.clearPinLockout`, protocol 1.11). */
+export const CLEAR_PIN_LOCKOUT_AGENT = '0.5.0';
 
 export interface DeviceState {
   battery: number; charging: boolean; locked: boolean; kioskActive: boolean;
@@ -240,6 +249,27 @@ export async function listCommandHistory(
 export async function forceSync(deviceId: number | string): Promise<{ connected?: boolean }> {
   const res = await apiClient.post<{ connected?: unknown } | null>(`/private/agent/v1/devices/${deviceId}/sync`, {});
   return typeof res?.connected === 'boolean' ? { connected: res.connected } : {};
+}
+
+/** What Retry apply did (AgentAdminResource.retryConfig). */
+export type RetryConfigResult = 'queued' | 'alreadyQueued' | 'inSync' | 'unsupported' | 'noConfiguration';
+
+/**
+ * Retry apply: the server queues the device's configuration now, without the hour it otherwise waits after a failed
+ * attempt, and wakes the device. `connected` false: no live connection, so it applies at its next check-in.
+ */
+export async function retryConfigApply(
+  deviceId: number | string,
+): Promise<{ result?: RetryConfigResult; connected?: boolean }> {
+  const res = await apiClient.post<{ result?: unknown; connected?: unknown } | null>(
+    `/private/agent/v1/devices/${deviceId}/retryConfig`,
+    {},
+  );
+  const known: RetryConfigResult[] = ['queued', 'alreadyQueued', 'inSync', 'unsupported', 'noConfiguration'];
+  return {
+    result: known.includes(res?.result as RetryConfigResult) ? (res?.result as RetryConfigResult) : undefined,
+    connected: typeof res?.connected === 'boolean' ? res.connected : undefined,
+  };
 }
 
 /** Queue app.install for the device's configuration apps marked action=install. */

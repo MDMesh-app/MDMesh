@@ -3,6 +3,11 @@
  */
 package com.hmdm.util;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import java.io.IOException;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
 /**
@@ -24,6 +29,8 @@ public final class KioskExitPin {
     public static final String FORMAT_MESSAGE =
             "The kiosk exit PIN must be " + MIN_LENGTH + " to " + MAX_LENGTH + " digits, or empty for no exit on the device.";
 
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
     private static final Pattern RULE = Pattern.compile("[0-9]{" + MIN_LENGTH + "," + MAX_LENGTH + "}");
 
     private KioskExitPin() {
@@ -37,6 +44,27 @@ public final class KioskExitPin {
     /** A PIN saved before the rule that doesn't follow it: devices still take it, the console asks for a new one. */
     public static boolean legacy(String pin) {
         return !valid(pin);
+    }
+
+    /**
+     * Why a {@code kiosk.enter} command may not be queued with the PIN in its payload ({@code password}), or null when
+     * it may: no PIN (no exit on the device), a PIN that follows the rule, or exactly the PIN one of the account's
+     * configurations stores ({@code configured}), so Return to configured kiosk keeps working on a configuration whose
+     * PIN predates the rule. Any other type, and a payload that isn't a JSON object (the agent reports it), pass.
+     */
+    public static String enterCommandProblem(String type, String payload, Predicate<String> configured) {
+        if (type == null || !"kiosk.enter".equalsIgnoreCase(type.trim()) || payload == null) return null;
+        JsonNode pin;
+        try {
+            JsonNode root = MAPPER.readTree(payload);
+            pin = root != null && root.isObject() ? root.get("password") : null;
+        } catch (IOException e) {
+            return null;
+        }
+        if (pin == null || pin.isNull()) return null;
+        if (!pin.isTextual()) return FORMAT_MESSAGE;
+        String text = pin.asText();
+        return valid(text) || configured.test(text) ? null : FORMAT_MESSAGE;
     }
 
     /**

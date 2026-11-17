@@ -313,10 +313,18 @@ public class AgentAdminResource {
 
     /**
      * The payload to queue: an {@code app.install} gets its APK's SHA-256 (see {@link InstallIntegrity}), and a
-     * {@code kiosk.enter} its managed background image's current URL (see {@link KioskCommandImages}). Single and bulk
-     * commands both come through here.
+     * {@code kiosk.enter} its managed background image's current URL (see {@link KioskCommandImages}), after its exit PIN
+     * is checked ({@link com.hmdm.util.KioskExitPin#enterCommandProblem}). Single and bulk commands both come through
+     * here.
      */
     private String payloadToQueue(String type, String payload, int customerId) throws CommandRejectedException {
+        // A custom kiosk's PIN follows the configurations' rule; a configuration's own (older) PIN is let through.
+        String pinProblem = com.hmdm.util.KioskExitPin.enterCommandProblem(type, payload,
+                pin -> unsecureDAO.isConfiguredKioskPin(customerId, pin));
+        if (pinProblem != null) {
+            logger.warn("Agent command {} rejected: exit PIN format", type);
+            throw new CommandRejectedException(Response.ERROR(pinProblem));
+        }
         if (kioskImages != null) payload = kioskImages.forCommand(type, payload, customerId);
         try {
             return InstallIntegrity.forCommand(type, payload, installHashes.forCustomer(customerId));

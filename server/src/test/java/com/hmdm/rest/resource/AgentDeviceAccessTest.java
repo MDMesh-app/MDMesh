@@ -122,6 +122,9 @@ public class AgentDeviceAccessTest {
                 return Collections.emptyList();
             }
             @Override public List<Application> getPlainConfigurationAppsOptimized(Integer id) { return new ArrayList<>(); }
+            @Override public boolean isConfiguredKioskPin(int customerId, String pin) {
+                return customerId == CUSTOMER && "4931".equals(pin);
+            }
         };
         AgentCommandDAO commandDAO = new AgentCommandDAO(null, null, null, null) {
             @Override public void insert(AgentCommand c) { sideEffects.add("insert " + c.getDeviceNumber()); }
@@ -328,6 +331,27 @@ public class AgentDeviceAccessTest {
             assertEquals(Collections.singletonMap("connected", open), r.getData());
         }
         assertEquals("the wake goes out either way", Arrays.asList("wake " + VISIBLE, "wake " + VISIBLE), sideEffects);
+    }
+
+    @Test
+    public void aKioskEnterWithAPinOutsideTheRuleIsRefusedBeforeAnythingIsQueued() {
+        AgentCommand cmd = new AgentCommand();
+        cmd.setType("kiosk.enter");
+        cmd.setPayload("{\"mode\":\"launcher\",\"password\":\"1234\"}");
+        Response one = resource.queueCommand(VISIBLE, cmd);
+        assertEquals(Response.ResponseStatus.ERROR, one.getStatus());
+        assertEquals(com.hmdm.util.KioskExitPin.FORMAT_MESSAGE, one.getMessage());
+        AgentBulkCommandRequest req = new AgentBulkCommandRequest();
+        req.setDeviceIds(Fakes.list(VISIBLE_ID));
+        req.setCommand(cmd);
+        assertEquals(com.hmdm.util.KioskExitPin.FORMAT_MESSAGE, resource.queueCommandBulk(req).getMessage());
+        assertEquals("nothing queued or woken", Collections.emptyList(), sideEffects);
+
+        // A configuration's own PIN from before the rule (Return to configured kiosk), a valid PIN, and none, go out.
+        for (String pin : new String[]{"\"4931\"", "\"482139\"", "\"\""}) {
+            cmd.setPayload("{\"mode\":\"launcher\",\"password\":" + pin + "}");
+            assertEquals(pin, Response.ResponseStatus.OK, resource.queueCommand(VISIBLE, cmd).getStatus());
+        }
     }
 
     @Test

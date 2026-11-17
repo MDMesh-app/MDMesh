@@ -261,6 +261,11 @@ public class UnsecureDAO {
         return this.configurationMapper.getManagedBackgroundImageConfigurations(customerId, sha256);
     }
 
+    /** Whether one of the customer's configurations has exactly this kiosk exit PIN (see KioskExitPin). */
+    public boolean isConfiguredKioskPin(int customerId, String pin) {
+        return this.configurationMapper.hasKioskPin(customerId, pin);
+    }
+
     public List<ManagedAppPermission> getManagedAppPermissions(Integer configurationId) {
         return this.configurationMapper.getManagedAppPermissions(configurationId);
     }

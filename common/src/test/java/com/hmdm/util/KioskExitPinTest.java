@@ -44,6 +44,26 @@ public class KioskExitPinTest {
         assertNull(KioskExitPin.problem("1234", "1234"));
     }
 
+    private static final java.util.function.Predicate<String> CONFIGURED = "4931"::equals;
+
+    @Test
+    public void aKioskEnterPinFollowsTheRuleOrIsAConfigurationsOwn() {
+        assertNull(KioskExitPin.enterCommandProblem("kiosk.enter", "{\"password\":\"482139\"}", CONFIGURED));
+        assertNull("no PIN: no exit on the device", KioskExitPin.enterCommandProblem("kiosk.enter", "{\"password\":\"\"}", CONFIGURED));
+        assertNull(KioskExitPin.enterCommandProblem("kiosk.enter", "{\"password\":null}", CONFIGURED));
+        assertNull(KioskExitPin.enterCommandProblem("kiosk.enter", "{\"mode\":\"launcher\"}", CONFIGURED));
+        assertNull("Return to configured kiosk on an old PIN",
+                KioskExitPin.enterCommandProblem("kiosk.enter", "{\"password\":\"4931\"}", CONFIGURED));
+        assertEquals(KioskExitPin.FORMAT_MESSAGE,
+                KioskExitPin.enterCommandProblem("kiosk.enter", "{\"password\":\"1234\"}", CONFIGURED));
+        assertEquals("any case and spacing of the type", KioskExitPin.FORMAT_MESSAGE,
+                KioskExitPin.enterCommandProblem(" Kiosk.Enter ", "{\"password\":\"letmeout\"}", CONFIGURED));
+        assertEquals("a number is not a PIN string", KioskExitPin.FORMAT_MESSAGE,
+                KioskExitPin.enterCommandProblem("kiosk.enter", "{\"password\":482139}", CONFIGURED));
+        assertNull("other commands pass", KioskExitPin.enterCommandProblem("device.passcodeReset", "{\"password\":\"1\"}", CONFIGURED));
+        assertNull("an unreadable payload is the agent's to report", KioskExitPin.enterCommandProblem("kiosk.enter", "not json", CONFIGURED));
+    }
+
     @Test
     public void aChangedPinMustFollowTheRuleEvenFromALegacyOne() {
         assertEquals(KioskExitPin.FORMAT_MESSAGE, KioskExitPin.problem("letmeout2", "letmeout"));

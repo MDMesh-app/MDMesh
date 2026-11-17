@@ -5,9 +5,9 @@ package com.hmdm.util;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
-import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
 /**
@@ -47,24 +47,63 @@ public final class KioskExitPin {
     }
 
     /**
-     * Why a {@code kiosk.enter} command may not be queued with the PIN in its payload ({@code password}), or null when
-     * it may: no PIN (no exit on the device), a PIN that follows the rule, or exactly the PIN one of the account's
-     * configurations stores ({@code configured}), so Return to configured kiosk keeps working on a configuration whose
-     * PIN predates the rule. Any other type, and a payload that isn't a JSON object (the agent reports it), pass.
+     * The {@code kiosk.enter} payload key that asks the server for the target device's own configuration PIN (Return to
+     * configured kiosk), so no client ever sends a stored PIN back. See {@link #withConfiguredPin}.
      */
-    public static String enterCommandProblem(String type, String payload, Predicate<String> configured) {
-        if (type == null || !"kiosk.enter".equalsIgnoreCase(type.trim()) || payload == null) return null;
-        JsonNode pin;
+    public static final String CONFIGURED_PIN = "configuredPin";
+
+    private static boolean isKioskEnter(String type) {
+        return type != null && "kiosk.enter".equalsIgnoreCase(type.trim());
+    }
+
+    private static ObjectNode object(String payload) {
+        if (payload == null) return null;
         try {
             JsonNode root = MAPPER.readTree(payload);
-            pin = root != null && root.isObject() ? root.get("password") : null;
+            return root instanceof ObjectNode ? (ObjectNode) root : null;
         } catch (IOException e) {
             return null;
         }
+    }
+
+    /** A {@code kiosk.enter} whose payload has {@code "configuredPin": true}: the server fills the PIN per device. */
+    public static boolean wantsConfiguredPin(String type, String payload) {
+        if (!isKioskEnter(type)) return false;
+        ObjectNode root = object(payload);
+        return root != null && root.path(CONFIGURED_PIN).asBoolean(false);
+    }
+
+    /**
+     * Why a {@code kiosk.enter} command may not be queued with the PIN in its payload ({@code password}), or null when
+     * it may: no PIN (no exit on the device) or one that follows the rule. A payload asking for the configured PIN
+     * ({@link #wantsConfiguredPin}) passes: whatever PIN it carries is replaced. Any other type, and a payload that
+     * isn't a JSON object (the agent reports it), pass. There is no exemption to look up, so the answer says nothing
+     * about any stored PIN.
+     */
+    public static String enterCommandProblem(String type, String payload) {
+        if (!isKioskEnter(type) || wantsConfiguredPin(type, payload)) return null;
+        ObjectNode root = object(payload);
+        JsonNode pin = root == null ? null : root.get("password");
         if (pin == null || pin.isNull()) return null;
-        if (!pin.isTextual()) return FORMAT_MESSAGE;
-        String text = pin.asText();
-        return valid(text) || configured.test(text) ? null : FORMAT_MESSAGE;
+        return pin.isTextual() && valid(pin.asText()) ? null : FORMAT_MESSAGE;
+    }
+
+    /**
+     * The payload for one device: {@link #CONFIGURED_PIN} removed, and {@code password} set to its configuration's
+     * PIN as stored (left out when it has none), exactly as config.apply's kiosk carries it, so the agent sees the
+     * same kiosk either way. Agents of any version get an ordinary {@code kiosk.enter}.
+     */
+    public static String withConfiguredPin(String payload, String configurationPin) {
+        ObjectNode root = object(payload);
+        if (root == null) return payload;
+        root.remove(CONFIGURED_PIN);
+        if (configurationPin == null) root.remove("password");
+        else root.put("password", configurationPin);
+        try {
+            return MAPPER.writeValueAsString(root);
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     /**

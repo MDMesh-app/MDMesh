@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Configuration, ConfigApp } from '../api/configurations';
-import { configuredKiosk, kioskTheme } from './kiosk';
+import { configuredKiosk, configuredKioskCommand, kioskTheme } from './kiosk';
 import type { CommandHistoryItem } from '../api/commands';
 import { configuredKioskState } from './kiosk';
 
@@ -135,5 +135,19 @@ describe('kioskTheme fit and focal point (protocol 1.10)', () => {
     const fit = kioskTheme({ ...base, backgroundImageFit: 'fit', backgroundImageFocalX: 0.2 })?.backgroundImage;
     expect(fit).toMatchObject({ fit: 'fit' });
     expect(fit?.focalX).toBeUndefined();
+  });
+});
+
+describe('configuredKioskCommand', () => {
+  it('never carries the stored PIN: it asks the server for each device’s own configuration PIN', () => {
+    const cfg = { id: 3, name: 'Lobby', kioskMode: true, password: '4931', mainAppId: 11 } as Configuration;
+    const apps = [{ id: 1, name: 'Player', pkg: 'com.acme.player', action: 1, usedVersionId: 11 }] as ConfigApp[];
+    const kiosk = configuredKiosk(cfg, apps)!;
+    expect(kiosk.payload.password).toBe('4931'); // still shown as "the configuration's PIN" in the dialog
+    const sent = JSON.parse(configuredKioskCommand(kiosk)) as Record<string, unknown>;
+    expect(sent.password).toBeUndefined();
+    expect(sent.configuredPin).toBe(true);
+    expect(sent.allowedPackages).toEqual(['com.acme.player']);
+    expect(JSON.stringify(sent)).not.toContain('4931');
   });
 });

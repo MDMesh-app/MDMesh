@@ -24,6 +24,7 @@ import { EXIT_PIN_RULE, exitPinValid } from '../data/configurationRules';
 import {
   buildKioskPayload,
   configuredKiosk,
+  configuredKioskCommand,
   configuredKioskSummary,
   EXIT_PIN_HELP,
   EXIT_PIN_PLACEHOLDER,
@@ -287,7 +288,7 @@ export function RunActionModal({
     try {
       for (const g of groups) {
         if (!g.kiosk) continue;
-        const res = await bulkQueueCommand(g.ids, { type: 'kiosk.enter', payload: JSON.stringify(g.kiosk.payload) });
+        const res = await bulkQueueCommand(g.ids, { type: 'kiosk.enter', payload: configuredKioskCommand(g.kiosk) });
         queued += res.queued ?? 0;
         skipped += res.skipped?.length ?? 0;
       }

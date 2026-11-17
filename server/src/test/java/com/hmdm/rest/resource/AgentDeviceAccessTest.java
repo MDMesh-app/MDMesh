@@ -116,18 +116,20 @@ public class AgentDeviceAccessTest {
                 Configuration c = new Configuration();
                 c.setId(id);
                 c.setCustomerId(CUSTOMER);
+                // Kiosk exit PINs saved before the 6-to-12-digit rule: the devices' own, and another configuration's.
+                c.setPassword(id == OWN_CONFIG ? "4931" : "7777");
                 return c;
             }
             @Override public List<com.hmdm.persistence.domain.ManagedAppPermission> getManagedAppPermissions(Integer id) {
                 return Collections.emptyList();
             }
             @Override public List<Application> getPlainConfigurationAppsOptimized(Integer id) { return new ArrayList<>(); }
-            @Override public boolean isConfiguredKioskPin(int customerId, String pin) {
-                return customerId == CUSTOMER && "4931".equals(pin);
-            }
         };
         AgentCommandDAO commandDAO = new AgentCommandDAO(null, null, null, null) {
-            @Override public void insert(AgentCommand c) { sideEffects.add("insert " + c.getDeviceNumber()); }
+            @Override public void insert(AgentCommand c) {
+                inserted.add(c);
+                sideEffects.add("insert " + c.getDeviceNumber());
+            }
             @Override public DeviceState getState(String n) { return new DeviceState(); }
             @Override public List listEvents(String n, long s, int l) { return new ArrayList<>(); }
             @Override public List<AgentCommand> listHistory(String n, long s, int l) { return new ArrayList<>(); }
@@ -333,25 +335,69 @@ public class AgentDeviceAccessTest {
         assertEquals("the wake goes out either way", Arrays.asList("wake " + VISIBLE, "wake " + VISIBLE), sideEffects);
     }
 
-    @Test
-    public void aKioskEnterWithAPinOutsideTheRuleIsRefusedBeforeAnythingIsQueued() {
+    private final List<AgentCommand> inserted = new ArrayList<>();
+
+    private static AgentCommand kioskEnter(String payload) {
         AgentCommand cmd = new AgentCommand();
         cmd.setType("kiosk.enter");
-        cmd.setPayload("{\"mode\":\"launcher\",\"password\":\"1234\"}");
-        Response one = resource.queueCommand(VISIBLE, cmd);
-        assertEquals(Response.ResponseStatus.ERROR, one.getStatus());
-        assertEquals(com.hmdm.util.KioskExitPin.FORMAT_MESSAGE, one.getMessage());
+        cmd.setPayload(payload);
+        return cmd;
+    }
+
+    private Response bulk(AgentCommand cmd, Integer... ids) {
         AgentBulkCommandRequest req = new AgentBulkCommandRequest();
-        req.setDeviceIds(Fakes.list(VISIBLE_ID));
+        req.setDeviceIds(Fakes.list(ids));
         req.setCommand(cmd);
-        assertEquals(com.hmdm.util.KioskExitPin.FORMAT_MESSAGE, resource.queueCommandBulk(req).getMessage());
+        return resource.queueCommandBulk(req);
+    }
+
+    @Test
+    public void aKioskEnterWithAPinOutsideTheRuleIsRefusedBeforeAnythingIsQueued() {
+        // Every short PIN is refused alike, a configuration's included: the answer says nothing about stored PINs.
+        for (String pin : new String[]{"1234", "4931", "7777", "letmeout"}) {
+            AgentCommand cmd = kioskEnter("{\"mode\":\"launcher\",\"password\":\"" + pin + "\"}");
+            Response one = resource.queueCommand(VISIBLE, cmd);
+            assertEquals(pin, Response.ResponseStatus.ERROR, one.getStatus());
+            assertEquals(com.hmdm.util.KioskExitPin.FORMAT_MESSAGE, one.getMessage());
+            assertEquals(com.hmdm.util.KioskExitPin.FORMAT_MESSAGE, bulk(cmd, VISIBLE_ID).getMessage());
+        }
         assertEquals("nothing queued or woken", Collections.emptyList(), sideEffects);
 
-        // A configuration's own PIN from before the rule (Return to configured kiosk), a valid PIN, and none, go out.
-        for (String pin : new String[]{"\"4931\"", "\"482139\"", "\"\""}) {
-            cmd.setPayload("{\"mode\":\"launcher\",\"password\":" + pin + "}");
+        for (String pin : new String[]{"\"482139\"", "\"\"", "null"}) {
+            AgentCommand cmd = kioskEnter("{\"mode\":\"launcher\",\"password\":" + pin + "}");
             assertEquals(pin, Response.ResponseStatus.OK, resource.queueCommand(VISIBLE, cmd).getStatus());
         }
+    }
+
+    @Test
+    public void returnToConfiguredKioskGetsEachDevicesOwnConfigurationPinFromTheServer() throws Exception {
+        com.fasterxml.jackson.databind.ObjectMapper json = new com.fasterxml.jackson.databind.ObjectMapper();
+        // The console sends no PIN; a PIN a client puts in anyway is replaced, never checked or passed on.
+        AgentCommand cmd = kioskEnter("{\"mode\":\"launcher\",\"configuredPin\":true,\"password\":\"7777\"}");
+        assertEquals(Response.ResponseStatus.OK, resource.queueCommand(VISIBLE, cmd).getStatus());
+        login(true);
+        assertEquals(Response.ResponseStatus.OK, bulk(cmd, VISIBLE_ID, HIDDEN_ID).getStatus());
+        assertEquals(3, inserted.size());
+        for (AgentCommand queued : inserted) {
+            com.fasterxml.jackson.databind.JsonNode p = json.readTree(queued.getPayload());
+            assertEquals("the legacy PIN of the device's own configuration", "4931", p.get("password").asText());
+            assertNull("the request key doesn't reach the agent", p.get("configuredPin"));
+            assertEquals("launcher", p.get("mode").asText());
+        }
+    }
+
+    @Test
+    public void returnToConfiguredKioskOnADeviceWithoutAConfigurationIsRefusedOrSkipped() {
+        devices.get(VISIBLE).setConfigurationId(null);
+        AgentCommand cmd = kioskEnter("{\"mode\":\"launcher\",\"configuredPin\":true}");
+        assertEquals("error.agent.command.noConfiguration", resource.queueCommand(VISIBLE, cmd).getMessage());
+        login(true);
+        Response r = bulk(cmd, VISIBLE_ID, HIDDEN_ID);
+        assertEquals(Response.ResponseStatus.OK, r.getStatus());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> result = (Map<String, Object>) r.getData();
+        assertEquals(1, result.get("queued"));
+        assertEquals(Fakes.list(VISIBLE_ID), result.get("skipped"));
     }
 
     @Test

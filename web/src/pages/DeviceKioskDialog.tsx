@@ -9,6 +9,7 @@ import {
   buildKioskPayload,
   cacheIcon,
   cachedIcon,
+  configuredKioskCommand,
   configuredKioskSummary,
   EXIT_PIN_HELP,
   EXIT_PIN_PLACEHOLDER,
@@ -543,7 +544,7 @@ export function ConfiguredKioskDialog({
     setBusy(true);
     setError(null);
     try {
-      const res = await queueCommand(device.number, { type: 'kiosk.enter', payload: JSON.stringify(p) });
+      const res = await queueCommand(device.number, { type: 'kiosk.enter', payload: configuredKioskCommand(kiosk) });
       toast.push('ok', 'Return to configured kiosk queued', res?.id != null ? `Command ${res.id}` : '');
       onQueued(res?.id);
       onClose();

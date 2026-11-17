@@ -280,8 +280,10 @@ none of these and ignores the attempt id: an enrollment there works as before, i
   (was a white shield on blue). It's the same app, so it updates in place and keeps Device Owner. Update staff
   instructions that name it or show its icon.
 - **Kiosk exit PINs are 6 to 12 digits:** the console and the API (`PUT /rest/private/configurations`) refuse a new or
-  changed PIN that isn't, with HTTP 400. A `kiosk.enter` command whose `password` isn't is refused too (an ERROR),
-  unless it is exactly one of the account's configuration PINs, so Return to configured kiosk keeps working. A PIN saved before keeps working on devices and keeps its configuration
+  changed PIN that isn't, with HTTP 400. A `kiosk.enter` command whose `password` isn't is refused too (an ERROR).
+  Return to configured kiosk sends no PIN: its payload has `"configuredPin": true`, and the server puts in each
+  device's own configuration PIN as stored (refused, or skipped in bulk, for a device without a configuration), so it
+  keeps working on configurations with an older PIN, and agents of any version get an ordinary `kiosk.enter`. A PIN saved before keeps working on devices and keeps its configuration
   saveable while it stays as it is; the console marks it **Old PIN** and `legacyKioskPin` is true in the API. Set new
   PINs before staff need them: a device on agent 0.5.0 shows a number pad for a PIN of digits.
 - **Wrong exit PINs (agent 0.5.0):** 5 wrong PINs lock the exit for 1 minute, then each further 3 for 5 minutes, then

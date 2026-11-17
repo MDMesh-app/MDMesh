@@ -143,6 +143,17 @@ export function configuredKiosk(cfg: Configuration, apps: ConfigApp[]): Configur
   };
 }
 
+/**
+ * The `kiosk.enter` payload to queue for a configured kiosk (Return to configured kiosk), as JSON. It carries no PIN:
+ * `configuredPin` asks the server to put in each target device's own configuration PIN, so a stored PIN never travels
+ * from the console and the server has nothing to check it against (AgentAdminResource, KioskExitPin).
+ */
+export function configuredKioskCommand(k: ConfiguredKiosk): string {
+  const payload: Record<string, unknown> = { ...k.payload, configuredPin: true };
+  delete payload.password;
+  return JSON.stringify(payload);
+}
+
 /** "Pinned to Signage Player" / "Launcher grid with 3 apps": what the configured kiosk shows. */
 export function configuredKioskSummary(k: ConfiguredKiosk): string {
   if (k.payload.mode === 'single') return `Pinned to ${k.apps[0]?.name ?? k.payload.pinPackage}`;

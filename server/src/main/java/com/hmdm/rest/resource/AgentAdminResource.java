@@ -284,10 +284,17 @@ public class AgentAdminResource {
             return e.response;
         }
 
+        final String devicePayload;
+        try {
+            devicePayload = forDevice(body.getType(), payload, device);
+        } catch (NoConfigurationException e) {
+            return Response.ERROR("error.agent.command.noConfiguration");
+        }
+
         AgentCommand command = new AgentCommand();
         command.setDeviceNumber(deviceId);
         command.setType(body.getType());
-        command.setPayload(payload);
+        command.setPayload(devicePayload);
         command.setRequiresCapability(body.getRequiresCapability());
         command.setStatus("pending");
         command.setCreatedAt(System.currentTimeMillis());
@@ -318,9 +325,9 @@ public class AgentAdminResource {
      * here.
      */
     private String payloadToQueue(String type, String payload, int customerId) throws CommandRejectedException {
-        // A custom kiosk's PIN follows the configurations' rule; a configuration's own (older) PIN is let through.
-        String pinProblem = com.hmdm.util.KioskExitPin.enterCommandProblem(type, payload,
-                pin -> unsecureDAO.isConfiguredKioskPin(customerId, pin));
+        // A kiosk PIN sent by the client follows the configurations' rule. The configured kiosk's PIN is never sent:
+        // the payload asks for it, and forDevice fills it in from each device's own configuration.
+        String pinProblem = com.hmdm.util.KioskExitPin.enterCommandProblem(type, payload);
         if (pinProblem != null) {
             logger.warn("Agent command {} rejected: exit PIN format", type);
             throw new CommandRejectedException(Response.ERROR(pinProblem));
@@ -336,6 +343,24 @@ public class AgentAdminResource {
             logger.warn("Agent command {} rejected: {}", type, e.getMessage());
             throw new CommandRejectedException(Response.ERROR("Cannot install: " + e.getMessage()));
         }
+    }
+
+    /**
+     * The payload as {@code device} gets it: a {@code kiosk.enter} that asks for the configured PIN gets its own
+     * configuration's PIN (Return to configured kiosk).
+     *
+     * @throws NoConfigurationException when it asks for one and the device has no configuration
+     */
+    private String forDevice(String type, String payload, Device device) throws NoConfigurationException {
+        if (!com.hmdm.util.KioskExitPin.wantsConfiguredPin(type, payload)) return payload;
+        com.hmdm.persistence.domain.Configuration cfg = device.getConfigurationId() == null ? null
+                : unsecureDAO.getConfigurationById(device.getConfigurationId());
+        if (cfg == null) throw new NoConfigurationException();
+        return com.hmdm.util.KioskExitPin.withConfiguredPin(payload, cfg.getPassword());
+    }
+
+    /** A command asks for the device's configuration, and it has none. */
+    private static final class NoConfigurationException extends Exception {
     }
 
     /**
@@ -399,10 +424,17 @@ public class AgentAdminResource {
                 skipped.add(id);
                 continue;
             }
+            final String devicePayload;
+            try {
+                devicePayload = forDevice(type, payload, device);
+            } catch (NoConfigurationException e) {
+                skipped.add(id); // asks for its configuration's kiosk PIN, and it has no configuration
+                continue;
+            }
             AgentCommand command = new AgentCommand();
             command.setDeviceNumber(device.getNumber());
             command.setType(type);
-            command.setPayload(payload);
+            command.setPayload(devicePayload);
             command.setRequiresCapability(req.getCommand().getRequiresCapability());
             command.setStatus("pending");
             command.setCreatedAt(System.currentTimeMillis());

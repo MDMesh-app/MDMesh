@@ -181,9 +181,6 @@ public interface ConfigurationMapper {
     List<Configuration> getManagedBackgroundImageConfigurations(@Param("customerId") int customerId,
                                                                 @Param("sha256") String sha256);
 
-    @Select({"SELECT EXISTS (SELECT 1 FROM configurations WHERE customerId=#{customerId} AND password=#{password})"})
-    boolean hasKioskPin(@Param("customerId") int customerId, @Param("password") String password);
-
     @Select({"SELECT * " +
             "FROM configurations " +
             "WHERE customerId=#{customerId} " +

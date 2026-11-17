@@ -192,6 +192,16 @@ public class UnsecureDAO {
     }
 
     /**
+     * Replaces a stored password hash with [newHash] only while the row still holds [oldHash], so a password set in
+     * the meantime is never overwritten. Sessions are untouched: the password itself doesn't change.
+     *
+     * @return whether the row was updated
+     */
+    public boolean upgradePasswordHashUnsecure(Integer id, String oldHash, String newHash) {
+        return userMapper.upgradePasswordHash(id, oldHash, newHash) == 1;
+    }
+
+    /**
      * Sets the user's password ({@code newPassword}, already hashed). It also gives the user a new authToken, so every
      * session and JWT issued before the change ends.
      */

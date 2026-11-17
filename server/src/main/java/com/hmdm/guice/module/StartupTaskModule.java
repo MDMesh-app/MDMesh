@@ -101,8 +101,9 @@ public class StartupTaskModule {
                 if (!PasswordUtil.isMd5Hex(user.getPassword())) {
                     continue;
                 }
-                user.setNewPassword(PasswordUtil.getHashFromMd5(user.getPassword()));
-                unsecureDAO.setUserNewPasswordUnsecure(user);
+                // Only while the row still holds that MD5: the installer may set the admin's password meanwhile.
+                unsecureDAO.upgradePasswordHashUnsecure(user.getId(), user.getPassword(),
+                        PasswordUtil.getHashFromMd5(user.getPassword()));
             }
         }
     }

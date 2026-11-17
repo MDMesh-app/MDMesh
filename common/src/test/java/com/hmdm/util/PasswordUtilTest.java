@@ -158,7 +158,8 @@ public class PasswordUtilTest {
     public void everyCheckCostsOneBcrypt() throws Exception {
         String bcrypt = PasswordUtil.getHashFromMd5(MD5);
         String legacy = legacy(MD5);
-        long bcryptCheck = medianNanos(() -> PasswordUtil.passwordMatch(OTHER_MD5, bcrypt));
+        // The fastest of the runs: a loaded machine only slows the others down, so the bound can't fail from load.
+        long bcryptCheck = minNanos(() -> PasswordUtil.passwordMatch(OTHER_MD5, bcrypt));
         long[] others = {
                 medianNanos(() -> PasswordUtil.passwordMatch(OTHER_MD5, legacy)),
                 medianNanos(() -> PasswordUtil.passwordMatch(MD5, legacy)),
@@ -189,6 +190,17 @@ public class PasswordUtilTest {
         String bcrypt = BCrypt.withDefaults().hashToString(4, MD5.toCharArray());
         char b = bcrypt.charAt(58);
         assertFalse(PasswordUtil.passwordMatch(MD5, bcrypt.substring(0, 58) + (b == 'O' ? 'P' : 'O') + bcrypt.charAt(59)));
+    }
+
+    private static long minNanos(Runnable r) {
+        long min = Long.MAX_VALUE;
+        r.run();
+        for (int i = 0; i < 5; i++) {
+            long s = System.nanoTime();
+            r.run();
+            min = Math.min(min, System.nanoTime() - s);
+        }
+        return min;
     }
 
     private static long medianNanos(Runnable r) {

@@ -42,7 +42,7 @@ public class PasswordUtil {
     private static final String PASS_SALT = "5YdSYHyg2U";
 
     /** bcrypt work factor of every hash written now. A stored hash with a lower cost is replaced at sign-in. */
-    public static final int BCRYPT_COST = 12;
+    public static final int BCRYPT_COST = 11;
 
     /** The modular crypt prefix of bcrypt ($2a$, $2b$, $2y$). */
     private static final String BCRYPT_PREFIX = "$2";

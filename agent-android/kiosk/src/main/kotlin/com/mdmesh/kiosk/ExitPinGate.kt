@@ -7,11 +7,13 @@ import java.text.Normalizer
  * The kiosk's on-device exit: whether there is one, and whether an entered PIN opens it.
  *
  * - **No PIN, no exit.** A kiosk without an exit PIN has no on-device exit at all; it ends only from the console.
- * - **Wrong PINs lock the exit, in rounds.** The first [FIRST_ROUND_TRIES] wrong PINs in a row are free (room for
- *   typos); the last of them locks the exit for the first of [LOCKOUTS_MS]. Each lockout then grants
- *   [ROUND_TRIES] more tries, the last of which locks it again for the next, longer step (the last step repeats).
- *   While it is locked no PIN is checked, right or wrong. A right PIN clears the count. At the last step that is
- *   [ROUND_TRIES] guesses an hour, so a 6-digit PIN (the console's rule) takes decades to guess.
+ * - **Wrong PINs lock the exit, in rounds, then one at a time.** The first [FIRST_ROUND_TRIES] wrong PINs in a row
+ *   are free (room for typos); the last of them locks the exit for the first of [LOCKOUTS_MS]. Each lockout then
+ *   grants [ROUND_TRIES] more tries, the last of which locks it again for the next, longer step. Once a lockout has
+ *   reached the last step (1 h), every further wrong PIN locks it again for that long: one guess an hour, as before
+ *   0.5.0. While it is locked no PIN is checked, right or wrong. A right PIN clears the count. At one guess an hour a
+ *   6-digit PIN (the console's rule) takes about 57 years on average to guess (10^6 / 2 guesses at 24 a day); a 4-digit
+ *   PIN from before the rule, about 7 months.
  * - **The count belongs to a PIN.** It is kept with a fingerprint of the PIN it was counted against ([keyOf]): when
  *   the kiosk's PIN changes (a new configuration, a custom kiosk) the count starts again. An administrator can also
  *   clear it from the console ([clear]).
@@ -145,26 +147,38 @@ class ExitPinGate(
         private const val MINUTE_MS = SECONDS_PER_MINUTE * SECOND_MS
         private const val HOUR_MS = SECONDS_PER_HOUR * SECOND_MS
 
-        /** Lockout per round: 1 min, 5 min, 15 min, then 1 h for every further round. */
+        /** Lockout per round: 1 min, 5 min, 15 min, then 1 h for every further wrong PIN. */
         val LOCKOUTS_MS: List<Long> = listOf(MINUTE_MS, 5 * MINUTE_MS, 15 * MINUTE_MS, HOUR_MS)
 
         /** SharedPreferences file name for the persisted attempt count. */
         const val PREFERENCE_NAME = "com.mdmesh.kiosk.pin"
 
-        /** Whether the [failures]th wrong PIN in a row ends a round, and so locks the exit. */
-        internal fun locksAt(failures: Int): Boolean =
-            failures >= FIRST_ROUND_TRIES && (failures - FIRST_ROUND_TRIES) % ROUND_TRIES == 0
+        /** The wrong PIN that first locks the exit for the last step; from then on every wrong PIN locks it. */
+        private val lastStepAt: Int get() = lockingCount(LOCKOUTS_MS.lastIndex)
 
-        /** Wrong PINs left in the round after [failures] in a row (a full round right after a lockout). */
-        internal fun triesBeforeLock(failures: Int): Int =
-            if (failures < FIRST_ROUND_TRIES) {
-                FIRST_ROUND_TRIES - failures
-            } else {
-                ROUND_TRIES - (failures - FIRST_ROUND_TRIES) % ROUND_TRIES
-            }
+        /**
+         * Whether the [failures]th wrong PIN in a row locks the exit: the end of each round, and every wrong PIN once
+         * the last step has been reached.
+         */
+        internal fun locksAt(failures: Int): Boolean = when {
+            failures < FIRST_ROUND_TRIES -> false
+            failures >= lastStepAt -> true
+            else -> (failures - FIRST_ROUND_TRIES) % ROUND_TRIES == 0
+        }
+
+        /** Wrong PINs left before the exit locks, after [failures] in a row (a full round right after a lockout). */
+        internal fun triesBeforeLock(failures: Int): Int = when {
+            failures < FIRST_ROUND_TRIES -> FIRST_ROUND_TRIES - failures
+            failures >= lastStepAt -> 1
+            else -> ROUND_TRIES - (failures - FIRST_ROUND_TRIES) % ROUND_TRIES
+        }
 
         internal fun lockMsFor(failures: Int): Long =
-            LOCKOUTS_MS[((failures - FIRST_ROUND_TRIES) / ROUND_TRIES).coerceIn(0, LOCKOUTS_MS.lastIndex)]
+            if (failures >= lastStepAt) {
+                LOCKOUTS_MS.last()
+            } else {
+                LOCKOUTS_MS[((failures - FIRST_ROUND_TRIES) / ROUND_TRIES).coerceIn(0, LOCKOUTS_MS.lastIndex)]
+            }
 
         /** The wrong-PIN count that ends lockout round [step] (0 = the first lockout). */
         private fun lockingCount(step: Int): Int = FIRST_ROUND_TRIES + step * ROUND_TRIES

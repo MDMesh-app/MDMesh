@@ -45,15 +45,33 @@ class ExitPinGateTest {
     }
 
     @Test
-    fun `each lockout grants a round of tries, and each round locks for longer, the last step repeating`() {
+    fun `each lockout grants a round of tries, and each round locks for longer`() {
         val steps = mutableListOf(lockOut().remainingMs)
-        repeat(LOCKOUTS_MS.size + 1) {
+        repeat(LOCKOUTS_MS.size - 1) {
             uptimeMs += steps.last()
             // A full round after every lockout: a fat-fingered PIN after waiting doesn't lock it again at once.
             for (left in ROUND_TRIES - 1 downTo 1) assertEquals(Outcome.Wrong(left), wrong())
             steps += (wrong() as Outcome.Locked).remainingMs
         }
-        assertEquals(LOCKOUTS_MS + LOCKOUTS_MS.last() + LOCKOUTS_MS.last(), steps)
+        assertEquals(LOCKOUTS_MS, steps)
+    }
+
+    @Test
+    fun `once the hour is reached, every further wrong PIN locks it for another hour`() {
+        repeat(LOCKOUTS_MS.size) {
+            val o = lockOut()
+            uptimeMs += o.remainingMs
+        }
+        assertEquals("one try, then locked", 1, gate.attemptsLeft(pin))
+        repeat(10) {
+            val o = wrong() as Outcome.Locked
+            assertTrue("each wrong PIN starts a lockout", o.started)
+            assertEquals(LOCKOUTS_MS.last(), o.remainingMs)
+            uptimeMs += LOCKOUTS_MS.last() - 1
+            assertTrue("not a second earlier", gate.attempt(pin, pin) is Outcome.Locked)
+            uptimeMs += 1
+        }
+        assertEquals(Outcome.Open, gate.attempt(pin, pin))
     }
 
     @Test
@@ -74,7 +92,7 @@ class ExitPinGateTest {
     }
 
     @Test
-    fun `brute force is held to a round per hour`() {
+    fun `brute force is held to one guess an hour`() {
         // A day of guessing as fast as the gate allows.
         val day = 24 * 60 * 60_000L
         val start = uptimeMs
@@ -89,8 +107,31 @@ class ExitPinGateTest {
                 else -> error("unexpected $o")
             }
         }
-        // ~3 an hour: a 6-digit PIN (10^6) takes on the order of decades.
-        assertTrue("guesses in a day: $guesses", guesses <= 24 * ROUND_TRIES + FIRST_ROUND_TRIES + ROUND_TRIES * 3)
+        // The rounds up to the hour (14 guesses in 21 min), then one an hour: a 6-digit PIN takes decades on average.
+        val toTheHour = FIRST_ROUND_TRIES + ROUND_TRIES * (LOCKOUTS_MS.size - 1)
+        assertTrue("guesses in a day: $guesses", guesses <= toTheHour + 24)
+    }
+
+    @Test
+    fun `a legacy 4-digit PIN is guessed no faster than one an hour after the rounds`() {
+        val legacy = "4931"
+        val start = uptimeMs
+        var guess = 0
+        var opened = false
+        while (!opened) {
+            when (val o = gate.attempt("%04d".format(guess), legacy)) {
+                Outcome.Open -> opened = true
+                is Outcome.Wrong -> guess++
+                is Outcome.Locked -> {
+                    if (o.started) guess++
+                    uptimeMs += o.remainingMs
+                }
+                else -> error("unexpected $o")
+            }
+        }
+        val hours = (uptimeMs - start) / (60 * 60_000L)
+        // 4,931 wrong guesses: 14 in the rounds, then one an hour.
+        assertEquals(4931 - (FIRST_ROUND_TRIES + ROUND_TRIES * (LOCKOUTS_MS.size - 1)) + 1L, hours)
     }
 
     @Test
@@ -325,6 +366,14 @@ class ExitPinGateTest {
             val left = checkNotNull(gate.remainingLockMs(pin)) { "old count ${3 + i} must stay locked" }
             assertTrue("old count ${3 + i}: $left < $oldLockMs", left >= oldLockMs)
         }
+    }
+
+    @Test
+    fun `an older agent at its hour step stays at one guess an hour after the update`() {
+        store.attempts = PinAttempts(failures = 9, lastFailureAt = uptimeMs, pinKey = null, schema = 1)
+        uptimeMs += LOCKOUTS_MS.last()
+        assertEquals(1, gate.attemptsLeft(pin))
+        assertEquals(LOCKOUTS_MS.last(), (wrong() as Outcome.Locked).remainingMs)
     }
 
     @Test

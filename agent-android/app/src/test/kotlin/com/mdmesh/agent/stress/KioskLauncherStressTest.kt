@@ -401,6 +401,36 @@ class KioskLauncherStressTest : KioskHarness() {
         assertNotNull("the round's last wrong PIN locks again", lockedDialog())
     }
 
+    /** Security review: once a lockout reaches the hour, the launcher takes one wrong PIN an hour, no more. */
+    @Test fun afterTheHourEveryWrongPinLocksForAnotherHour() {
+        launch(grid)
+        fun clock(d: java.time.Duration) = org.robolectric.shadows.ShadowSystemClock.advanceBy(d)
+        var minutes = 0L
+        for (round in ExitPinGate.LOCKOUTS_MS.indices) {
+            tapExitKiosk()
+            val tries = if (round == 0) ExitPinGate.FIRST_ROUND_TRIES else ExitPinGate.ROUND_TRIES
+            repeat(tries) { submitPin("0000") }
+            assertNotNull("round $round locks", lockedDialog())
+            lockedDialog()!!.dismiss(); settle()
+            val lock = ExitPinGate.LOCKOUTS_MS[round]
+            clock(java.time.Duration.ofMillis(lock + 1_000))
+            minutes += lock / 60_000
+        }
+        assertEquals(81L, minutes)
+        repeat(3) {
+            tapExitKiosk()
+            assertNotNull("the prompt opens once the hour is over", pinDialog())
+            submitPin("0000")
+            assertNotNull("a single wrong PIN locks again", lockedDialog())
+            lockedDialog()!!.dismiss(); settle()
+            clock(java.time.Duration.ofMinutes(59))
+            tapExitKiosk()
+            assertNotNull("still locked a minute before the hour", lockedDialog())
+            lockedDialog()!!.dismiss(); settle()
+            clock(java.time.Duration.ofMinutes(1).plusSeconds(1))
+        }
+    }
+
     @Test fun backKeyOnPinDialogCancelsWithoutATry() {
         launch(grid)
         tapExitKiosk()

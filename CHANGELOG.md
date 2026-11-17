@@ -504,6 +504,11 @@ Heads-up
 - Legacy device API (`LEGACY_DEVICE_API=1`): removing a Headwind content app from a configuration on the Apps page no
   longer turns kiosk mode off by itself. Turn kiosk off on the configuration page if you want it off.
 
+Security
+- Kiosk: too many wrong exit PINs lock the exit for a while, and administrators get an email (needs SMTP). Needs
+  agent 0.3.6.
+- Kiosk: Safe Mode is blocked on kiosk devices unless the configuration's Safe Mode setting says Allow.
+
 Fixes
 - Kiosk: a kiosk app that keeps stopping no longer ends kiosk. The device stays in kiosk on an "App closed" screen with
   an "Open again" button, until kiosk is ended with the exit PIN or from the console. Needs agent 0.3.6.
@@ -511,9 +516,6 @@ Fixes
   0.3.6.
 - Kiosk: Recents and Notifications stay off while Home is off, as Android requires. Before, kiosk didn't start with
   that combination.
-- Kiosk: too many wrong exit PINs lock the exit for a while, and administrators get an email (needs SMTP). Needs
-  agent 0.3.6.
-- Kiosk: Safe Mode is blocked on kiosk devices unless the configuration's Safe Mode setting says Allow.
 - Saving app assignments on the Apps page no longer changes other configurations' settings, and devices pick up the
   change right away.
 - A device whose agent stopped while applying its configuration (Android ended the app, the phone restarted, the
@@ -525,6 +527,11 @@ Upgrading
 - Update the server: Settings → Updates (quick-start installs), or re-run the installer on native installs. Then
   roll out the new agent from Settings → Agent rollout, to one device first. Devices enrolled by QR code on 0.3.4 or
   earlier apply their restrictions once they have the new agent (or after a restart).
+
+Security
+- Location popups in the device map render as plain text.
+- A device's recorded public address comes from the edge, not from headers the device sends. Native installs: set
+  your proxy's headers and limit Tomcat's port to the proxy, as docs/OPERATIONS.md "Device public address" describes.
 
 Fixes
 - Agent: restrictions that need Device Owner (camera, screenshots, factory reset, Bluetooth, USB storage, Safe Mode,
@@ -539,11 +546,8 @@ Fixes
 - Device pages always open the device you clicked, even when a device's number matches another device's internal id.
   Device action dialogs, Enter kiosk included, name the device.
 - Enroll: "New code" keeps the chosen configuration.
-- Location popups in the device map render as plain text.
 - The "Password updated" notice shows on the sign-in page.
 - The enrollment QR code is drawn at its real size, so it isn't blurred and scans reliably (thanks @vanek-Impacts).
-- A device's recorded public address comes from the edge, not from headers the device sends. Native installs: set
-  your proxy's headers and limit Tomcat's port to the proxy, as docs/OPERATIONS.md "Device public address" describes.
 
 Under the hood: dependency updates (React Router 8, Caddy 2.11.7, pgjdbc 42.7.14, Vite, Guava), and CI runs the
 agent's protocol tests on every change.

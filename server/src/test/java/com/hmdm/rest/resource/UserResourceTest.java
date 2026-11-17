@@ -41,6 +41,8 @@ public class UserResourceTest {
     private static final int OTHER_TENANT = 3;
 
     private static final String PASSWORD_MD5 = "5F4DCC3B5AA765D61D8327DEB882CF99";
+    /** Hashed once: bcrypt is slow on purpose. */
+    private static final String PASSWORD_HASH = PasswordUtil.getHashFromMd5(PASSWORD_MD5);
 
     private static final UserRole SUPER_ADMIN = role(1, true);
     private static final UserRole ORG_ADMIN = role(2, false);
@@ -401,6 +403,53 @@ public class UserResourceTest {
         assertEquals(Response.ResponseStatus.OK, response.getStatus());
         assertEquals(java.util.Collections.singletonList("updatePassword"), writes);
         assertEquals(tenantUser.getId(), written.get(0).getId());
+    }
+
+    @Test
+    public void aLegacyCurrentPasswordIsAcceptedAndStoredAsBcrypt() {
+        tenantUser.setPassword(com.hmdm.util.CryptoUtil.getSHA1String(PASSWORD_MD5 + "5YdSYHyg2U"));  // 0.4.x
+        signIn(tenantUser);
+        User request = new User();
+        request.setId(tenantUser.getId());
+        request.setOldPassword(PASSWORD_MD5);
+        request.setNewPassword("0123456789ABCDEF0123456789ABCDEF");
+
+        Response response = resource.updatePassword(request, null);
+
+        assertEquals(Response.ResponseStatus.OK, response.getStatus());
+        assertEquals(java.util.Arrays.asList("upgradePasswordHash", "updatePassword"), writes);
+        String stored = written.get(0).getPassword();
+        assertTrue(stored, PasswordUtil.isBcrypt(stored));
+        assertTrue(PasswordUtil.passwordMatch("0123456789ABCDEF0123456789ABCDEF", stored));
+    }
+
+    @Test
+    public void ownPasswordChangeRefusesANewPasswordThatIsNoMd5() {
+        signIn(tenantUser);
+        User request = new User();
+        request.setId(tenantUser.getId());
+        request.setOldPassword(PASSWORD_MD5);
+        request.setNewPassword("plain text");
+
+        Response response = resource.updatePassword(request, null);
+
+        assertEquals("error.password.empty", response.getMessage());
+        assertTrue(writes.isEmpty());
+    }
+
+    @Test
+    public void aSuperAdminPasswordSetRefusesANewPasswordThatIsNoMd5() {
+        signIn(superAdmin);
+        for (String bad : new String[]{null, "", "plain text", PASSWORD_MD5 + "0"}) {
+            User request = new User();
+            request.setId(tenantUser.getId());
+            request.setNewPassword(bad);
+
+            Response response = resource.updatePasswordBySuperAdmin(request);
+
+            assertEquals(bad, "error.password.empty", response.getMessage());
+        }
+        assertTrue(writes.isEmpty());
     }
 
     @Test
@@ -790,7 +839,7 @@ public class UserResourceTest {
         user.setEmail(login + "@example.com");
         user.setCustomerId(customerId);
         user.setUserRole(role);
-        user.setPassword(PasswordUtil.getHashFromMd5(PASSWORD_MD5));
+        user.setPassword(PASSWORD_HASH);
         user.setAuthToken("token-" + id);
         user.setPasswordResetToken("reset-" + id);
         user.setTwoFactorSecret("totp-" + id);
@@ -917,6 +966,15 @@ public class UserResourceTest {
                         case "setNewPassword":
                             persist(method.getName(), (User) args[0]);
                             return null;
+                        case "upgradePasswordHash": {
+                            writes.add("upgradePasswordHash");
+                            User u = users.get((Integer) args[0]);
+                            if (u == null || !u.getPassword().equals(args[1])) {
+                                return 0;
+                            }
+                            u.setPassword((String) args[2]);
+                            return 1;
+                        }
                         case "removeDeviceGroupsAccessByUserId":
                         case "removeConfigurationAccessByUserId":
                             return null;

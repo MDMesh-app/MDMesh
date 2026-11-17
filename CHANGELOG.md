@@ -27,6 +27,11 @@ Upgrading
   they stop: make a new code on the Enroll page. A 0.4.0 server started on the upgraded database, without restoring
   the backup, refuses every code made before then; a rollback that restores the pre-update backup keeps the codes
   working ([UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050)).
+- Passwords are now stored as bcrypt. Existing ones keep working and are converted at each user's next sign-in; the
+  server widens `users.password` to 100 characters for them. A rollback restores the pre-update backup, so passwords
+  work on 0.4.0 as they did before the update (a password changed since then is back to the old one). A 0.4.0 server
+  started on the 0.5.0 database without restoring the backup can't check a converted password: those users need a
+  password reset ([UPGRADING, v0.5.0](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v050)).
 - Quick start: before you apply 0.5.0 (**Update server and console** in Settings → Updates, or an automatic update),
   run `docker compose pull supervisor && docker compose up -d supervisor` in the install directory. The 0.5.0
   supervisor then applies this update, pinned by digest, and can roll it back. A supervisor from before 0.5.0 can't
@@ -78,6 +83,11 @@ Heads-up
   to come back (it was up to 1 minute), so Sync now may say the device isn't connected a little longer. The connection
   comes back right away when the device's network returns or its next check-in gets through, and devices retry at
   random times so they don't all reconnect at once after a server restart. Check-ins are not affected.
+
+Security
+- Passwords are stored as bcrypt, each with its own salt, instead of a fast hash with one salt shared by every
+  account. Sign-in is unchanged for the console and API clients. A new password sent through the API must be the
+  MD5 hex the console sends, as account creation already required.
 
 New
 - The console has a new look: calmer, with comfortable spacing, one type and spacing scale, one table, one set of

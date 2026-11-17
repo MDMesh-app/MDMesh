@@ -16,6 +16,7 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 repo="${REPO:-MDMesh-app/MDMesh}"
 changelog="${CHANGELOG:-$root/CHANGELOG.md}"
 upto="${1:-}"
+[ -r "$changelog" ] || { echo "check-advisories: can't read $changelog" >&2; exit 2; }
 if [ -z "$upto" ]; then
   upto=$(grep -m1 -oE '^## v[0-9]+\.[0-9]+\.[0-9]+' "$changelog" | cut -c5- || true)
   [ -n "$upto" ] || { echo "check-advisories: $changelog has no '## vX.Y.Z' heading; name the version: check-advisories.sh X.Y.Z" >&2; exit 2; }

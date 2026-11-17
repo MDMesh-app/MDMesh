@@ -640,11 +640,11 @@ function Editor({
   const row = (key: string, opts: { divider?: boolean } = {}) => {
     const def = FIELD[key];
     if (!def) return null;
-    const off = def.kioskOnly === true && !kioskOn;
+    // A PIN that stops the save stays editable with kiosk off, so it can be fixed or cleared without turning kiosk on.
+    const off = def.kioskOnly === true && !kioskOn && !(key === 'password' && pinProblem != null);
     const help = HELP[key] ?? def.help;
     // The PIN callout asks for a new PIN, which a disabled row (kiosk off) cannot take; the nav still flags it.
-    // A PIN that can't be saved is said even then: the save stops on it.
-    const showPinWarn = key === 'password' && pinWarn != null && (readOnly || !off || pinProblem != null);
+    const showPinWarn = key === 'password' && pinWarn != null && (readOnly || !off);
     return (
       <FieldRow
         key={key}

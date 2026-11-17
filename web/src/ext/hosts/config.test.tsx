@@ -806,6 +806,19 @@ describe('configuration editor: the exit PIN', () => {
     expect(puts[0].password).toBe('905172');
   });
 
+  it('keeps an old PIN editable on a copy with kiosk off, so the copy can be saved', async () => {
+    const { puts } = open({ config: { kioskMode: false, password: '4931' } }, { path: '/configurations/new?from=7' });
+    const field = await pinField();
+    const row = () => field.closest('fieldset')!;
+    expect(row().disabled).toBe(false);
+    expect(within(kioskCard()).getByText(/The exit PIN must be 6 to 12 digits/)).toBeTruthy();
+    fireEvent.change(field, { target: { value: '' } });
+    expect(row().disabled).toBe(true);
+    await save();
+    await waitFor(() => expect(puts).toHaveLength(1));
+    expect(puts[0].password ?? '').toBe('');
+  });
+
   it('lets an old PIN be cleared (no exit on the device)', async () => {
     const { puts } = open({ config: { kioskMode: true, password: 'let me out' } });
     const field = await pinField();

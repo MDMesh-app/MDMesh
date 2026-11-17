@@ -218,6 +218,23 @@ public class FilesResourceTest {
         Assert.assertEquals(4L * 1024 * 1024 * 1024, FilesResource.MAX_BUNDLE_UNPACKED_BYTES);
     }
 
+    @Test
+    public void testUnpackedSizeCheckDoesNotOverflow() throws IOException {
+        // A small APK, then a ZIP64 entry declaring a size near Long.MAX_VALUE: the sum would wrap negative.
+        ZipEntry small = new ZipEntry("base.apk");
+        small.setSize(1000);
+        ZipEntry huge = new ZipEntry("split.apk");
+        huge.setSize(Long.MAX_VALUE - 10);
+        try {
+            FilesResource.checkUnpackedSize(java.util.Arrays.asList(small, huge),
+                    FilesResource.MAX_BUNDLE_UNPACKED_BYTES);
+            Assert.fail("Expected a BundleTooLargeException for an entry declaring a size near Long.MAX_VALUE");
+        } catch (FilesResource.BundleTooLargeException expected) {
+            // Refused, not wrapped around.
+        }
+        FilesResource.checkUnpackedSize(java.util.Arrays.asList(small, small), 2000); // exactly the limit passes
+    }
+
     private Customer customer(int id) {
         Customer customer = new Customer();
         customer.setId(id);

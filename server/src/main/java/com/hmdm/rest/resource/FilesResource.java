@@ -893,13 +893,7 @@ public class FilesResource {
         File universal = null;
         boolean extracted = false;
         try (java.util.zip.ZipFile zipFile = opened) {
-            long total = 0;
-            for (java.util.zip.ZipEntry entry : java.util.Collections.list(zipFile.entries())) {
-                if (isApkEntry(entry)) total += Math.max(0, entry.getSize()); // unknown (-1) fails copyEntry anyway
-                if (total > maxTotal) {
-                    throw new BundleTooLargeException("APK entries unpack to more than " + maxTotal + " bytes");
-                }
-            }
+            checkUnpackedSize(java.util.Collections.list(zipFile.entries()), maxTotal);
             java.util.Enumeration<? extends java.util.zip.ZipEntry> entries = zipFile.entries();
             while (entries.hasMoreElements()) {
                 java.util.zip.ZipEntry entry = entries.nextElement();
@@ -929,6 +923,21 @@ public class FilesResource {
             return only;
         }
         return parts;
+    }
+
+    /** Throws when the APK entries declare more than [maxTotal] bytes in all. Compares before adding, so a ZIP64 entry
+     *  declaring a size near Long.MAX_VALUE can't wrap the total negative and slip past. */
+    static void checkUnpackedSize(Iterable<? extends java.util.zip.ZipEntry> entries, long maxTotal)
+            throws BundleTooLargeException {
+        long total = 0;
+        for (java.util.zip.ZipEntry entry : entries) {
+            if (!isApkEntry(entry)) continue;
+            long size = Math.max(0, entry.getSize()); // unknown (-1) fails copyEntry anyway
+            if (size > maxTotal - total) {
+                throw new BundleTooLargeException("APK entries unpack to more than " + maxTotal + " bytes");
+            }
+            total += size;
+        }
     }
 
     private static boolean isApkEntry(java.util.zip.ZipEntry entry) {

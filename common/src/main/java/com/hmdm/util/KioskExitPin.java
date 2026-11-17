@@ -13,8 +13,8 @@ import java.util.regex.Pattern;
 /**
  * <p>The kiosk exit PIN's format: {@value #MIN_LENGTH} to {@value #MAX_LENGTH} digits, or none (a kiosk without an
  * on-device exit). Digits, because the device's prompt is a number pad. At least {@value #MIN_LENGTH}, because the
- * device allows about three guesses an hour once its lockouts reach their longest step, so a 6-digit PIN takes
- * decades to guess where a 4-digit one could fall within weeks.</p>
+ * device allows one guess an hour once its lockouts reach their longest step, so a 6-digit PIN takes decades to
+ * guess where a 4-digit one could fall within months.</p>
  *
  * <p>A configuration saved before this rule may carry any text. It keeps working: devices take any PIN (with the full
  * keyboard for one that isn't digits), a save that keeps the stored PIN as it is goes through, and the console marks

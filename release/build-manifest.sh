@@ -8,6 +8,8 @@
 # (published as a release asset, so an operator can check it before running it: RELEASING.md), in files, and the commit
 # (commit: what `setup.sh --update` checks the tag against). They are read from the checkout this runs in, which must be
 # the tagged commit. Paths are relative to the repo root, wherever this runs from.
+# securityReleases: every release up to VERSION whose CHANGELOG.md section has a Security heading, oldest first
+# (release/security-releases.py, the one rule; RELEASING.md). The supervisor tells an admin who would skip one of them.
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 python3 - "$ROOT" "$@" <<'PY'
@@ -47,6 +49,14 @@ import subprocess
 commit = subprocess.run(["git", "-C", root, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
 if not re.fullmatch(r"[0-9a-f]{40}", commit):
     sys.exit("build-manifest.sh must run in a git checkout (of the tagged commit): no commit found")
+# Derived from the checkout's CHANGELOG.md, never typed in, so a release can't forget a security fix's version.
+if not re.fullmatch(r"\d+\.\d+\.\d+", ver):
+    sys.exit("VERSION must be X.Y.Z (got %r)" % ver)
+sec = subprocess.run([sys.executable, os.path.join(root, "release", "security-releases.py"), "--upto", ver,
+                      os.path.join(root, "CHANGELOG.md")], capture_output=True, text=True)
+if sec.returncode != 0:
+    sys.exit("release/security-releases.py failed: " + sec.stderr.strip())
+security_releases = json.loads(sec.stdout)
 
 m = {
   "version": ver, "channel": ch, "commit": commit,
@@ -58,6 +68,7 @@ m = {
   },
   "files": files,
   "compat": {"minAgentProtocol": "1.0", "maxAgentProtocol": proto},
+  "securityReleases": security_releases,
 }
 # indent=2, one key per line: quickstart.sh reads the fields it needs line by line (it has no JSON parser).
 open("manifest.json", "w").write(json.dumps(m, indent=2) + "\n")

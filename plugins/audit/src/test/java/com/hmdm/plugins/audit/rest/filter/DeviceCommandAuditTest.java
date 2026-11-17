@@ -62,6 +62,15 @@ public class DeviceCommandAuditTest {
     }
 
     @Test
+    public void auditsRetryApplyOnADevice() throws IOException, ServletException {
+        assertEquals(Optional.of(ResourceAuditInfo.RETRY_DEVICE_CONFIG),
+                ResourceAuditInfo.findAuditInfo("POST", "/rest/private/agent/v1/devices/h0001/retryConfig"));
+        assertFalse(ResourceAuditInfo.findAuditInfo("POST", "/rest/private/agent/v1/devices/a/b/retryConfig").isPresent());
+        AuditLogRecord record = audit("/rest/private/agent/v1/devices/h0001/retryConfig", "{}");
+        assertEquals("plugin.audit.action.device.retry.config", record.getAction());
+    }
+
+    @Test
     public void doesNotAuditOtherRoutes() {
         // Reading the command history is not an action.
         assertFalse(ResourceAuditInfo.findAuditInfo("GET", "/rest/private/agent/v1/devices/h0001/commands").isPresent());

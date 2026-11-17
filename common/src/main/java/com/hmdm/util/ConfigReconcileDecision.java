@@ -63,6 +63,20 @@ public final class ConfigReconcileDecision {
         return Action.ENQUEUE;
     }
 
+    /**
+     * The console's Retry apply: like {@link #decide}, but without the backoff after a failed, expired or unsupported
+     * attempt. Someone asked for this one attempt, having (presumably) fixed the cause; the automatic retries that
+     * follow a failure keep {@link #RETRY_BACKOFF_MS}. Still at most one open config.apply, and only on drift (or an
+     * agent change), so asking again while one is on its way or the device is in sync queues nothing.
+     */
+    public static Action decideRetry(Set<String> deviceTokens, String currentRevision, String appliedRevision,
+                                     boolean hasOpenCommand, boolean agentChanged) {
+        if (!AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.CAPABILITY, deviceTokens)) return Action.NONE;
+        if (currentRevision == null) return Action.NONE;
+        if (currentRevision.equals(appliedRevision) && !agentChanged) return Action.NONE;
+        return hasOpenCommand ? Action.NONE : Action.ENQUEUE;
+    }
+
     /** True when the server ended this command because the device checked in without its result. */
     public static boolean abandoned(AgentCommand cmd) {
         return cmd != null && "expired".equals(cmd.getStatus()) && ABANDONED_DETAIL.equals(cmd.getDetail());

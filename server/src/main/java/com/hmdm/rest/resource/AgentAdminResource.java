@@ -629,6 +629,54 @@ public class AgentAdminResource {
     }
 
     // =================================================================================================================
+    @ApiOperation(value = "Retry configuration apply", notes = "Queues the device's configuration (config.apply) now, "
+            + "without the hour the server otherwise waits after a failed attempt, and wakes the device. Answers "
+            + "{result, connected}: result is queued, alreadyQueued (one is on its way: the device is woken for it), "
+            + "inSync, unsupported (the agent can't apply configurations) or noConfiguration; connected is false when "
+            + "the device has no live connection, so it gets the configuration at its next check-in.")
+    @POST
+    @Path("/devices/{deviceId}/retryConfig")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response retryConfig(@PathParam("deviceId") String deviceId) {
+        if (!canEditDevices("retry configuration apply")) {
+            return Response.PERMISSION_DENIED();
+        }
+        Optional<Integer> customerId = SecurityContext.get().getCurrentCustomerId();
+        if (!customerId.isPresent()) {
+            return Response.PERMISSION_DENIED();
+        }
+        Device device = unsecureDAO.getDeviceByNumber(deviceId);
+        if (device == null) {
+            return Response.ERROR("error.agent.device.unknown");
+        }
+        if (!deviceDAO.isAccessibleToUser(device)) {
+            return Response.PERMISSION_DENIED();
+        }
+        ConfigReconciler.Retry result = configReconciler.retryNow(device, System.currentTimeMillis());
+        boolean connected = wakeHub.isOnline(deviceId);
+        if (result == ConfigReconciler.Retry.QUEUED || result == ConfigReconciler.Retry.ALREADY_QUEUED) {
+            wakeHub.wake(deviceId, "commands");
+        }
+        logger.info("Retry apply for device {} by user {}: {}", deviceId,
+                SecurityContext.get().getCurrentUser().map(u -> u.getLogin()).orElse("?"), result);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("result", retryResultName(result));
+        body.put("connected", connected);
+        return Response.OK(body);
+    }
+
+    /** The API's name for a retry result: queued, alreadyQueued, inSync, unsupported, noConfiguration. */
+    static String retryResultName(ConfigReconciler.Retry result) {
+        switch (result) {
+            case QUEUED: return "queued";
+            case ALREADY_QUEUED: return "alreadyQueued";
+            case IN_SYNC: return "inSync";
+            case UNSUPPORTED: return "unsupported";
+            default: return "noConfiguration";
+        }
+    }
+
+    // =================================================================================================================
     @ApiOperation(value = "Force sync", notes = "Wake the device now so it pulls pending commands + reports state. " +
             "Answers {connected}: false when the device has no live connection, so the wake can't reach it and it " +
             "syncs at its next check-in.")

@@ -69,6 +69,7 @@ public enum ResourceAuditInfo {
     DEVICE_COMMAND("POST", Pattern.compile("/rest/private/agent/v1/devices/[^/]+/commands/?"), "plugin.audit.action.device.command", true, true, true),
     BULK_DEVICE_COMMAND("POST", Pattern.compile("/rest/private/agent/v1/bulk/commands/?"), "plugin.audit.action.device.bulk.command", true, true, true),
     SYNC_DEVICE_APPS("POST", Pattern.compile("/rest/private/agent/v1/devices/[^/]+/syncApps/?"), "plugin.audit.action.device.sync.apps", true, false, true),
+    RETRY_DEVICE_CONFIG("POST", Pattern.compile("/rest/private/agent/v1/devices/[^/]+/retryConfig/?"), "plugin.audit.action.device.retry.config", true, false, true),
     // The request (configuration, devices, validity) is saved; the response, which holds the code, never is.
     MINT_ENROLL_TOKEN("POST", "/rest/private/agent/v1/token", true, "plugin.audit.action.enroll.token.mint", true, true),
     REVOKE_ENROLL_TOKENS("POST", "/rest/private/agent/v1/token/revoke-all", true, "plugin.audit.action.enroll.token.revoke.all", false, true);

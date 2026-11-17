@@ -315,6 +315,7 @@ public class AgentDeviceAccessTest {
         routes.put("commands", () -> resource.listCommands(number, null));
         routes.put("locations", () -> resource.listLocations(number, null));
         routes.put("forceSync", () -> resource.forceSync(number));
+        routes.put("retryConfig", () -> resource.retryConfig(number));
         return routes;
     }
 
@@ -327,6 +328,18 @@ public class AgentDeviceAccessTest {
             assertEquals(Collections.singletonMap("connected", open), r.getData());
         }
         assertEquals("the wake goes out either way", Arrays.asList("wake " + VISIBLE, "wake " + VISIBLE), sideEffects);
+    }
+
+    @Test
+    public void retryConfigOnAnAgentWithoutConfigurationsQueuesAndWakesNothing() {
+        socketOpen = true;
+        Response r = resource.retryConfig(VISIBLE);
+        assertEquals(Response.ResponseStatus.OK, r.getStatus());
+        Map<String, Object> expected = new java.util.LinkedHashMap<>();
+        expected.put("result", "unsupported");
+        expected.put("connected", true);
+        assertEquals(expected, r.getData());
+        assertEquals(Collections.emptyList(), sideEffects);
     }
 
     @Test

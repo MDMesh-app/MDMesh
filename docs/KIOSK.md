@@ -107,8 +107,9 @@ can end it. Older agents let anyone leave a kiosk that has no PIN.
 
 With agent 0.5.0 or later, 5 wrong PINs in a row lock the exit for 1 minute. While it is locked, no PIN is checked,
 not even the right one. After each lockout staff get 3 more tries; the third wrong one locks the exit again for longer:
-5 minutes, 15 minutes, then 1 hour each time. So it takes 14 wrong PINs, and 21 minutes of waiting, to reach the hour,
-and at most about 3 guesses an hour after that: a 6-digit PIN would take decades to guess. The right PIN resets the
+5 minutes, then 15 minutes, then 1 hour. So it takes 14 wrong PINs, and 21 minutes of waiting, to reach the hour. From
+then on every wrong PIN locks the exit for another hour: one guess an hour, so a 6-digit PIN would take decades to
+guess. The right PIN resets the
 count, and so does a new PIN (a configuration change or a custom kiosk). Restarting the device starts the current
 lockout over, and changing the device's clock doesn't shorten it. The device stays in kiosk throughout.
 
@@ -121,7 +122,8 @@ who can edit the device also get an email, at most one per device per hour
 
 To let staff try again now, select **Clear PIN lockout** on the device page (**Control → Remote actions → Kiosk &
 apps**; agent 0.5.0 or later). It ends the lockout and gives back the first 5 tries; the device stays in kiosk. It
-needs permission to edit devices, is in the audit log, and works once the device is online. To let someone out
+needs permission to edit devices and is in the audit log. Sent while the device is offline, it runs at the device's
+next check-in. To let someone out
 without the PIN, end kiosk from the console.
 
 ### From the console

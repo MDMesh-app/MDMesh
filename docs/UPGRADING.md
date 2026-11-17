@@ -280,11 +280,13 @@ none of these and ignores the attempt id: an enrollment there works as before, i
   (was a white shield on blue). It's the same app, so it updates in place and keeps Device Owner. Update staff
   instructions that name it or show its icon.
 - **Kiosk exit PINs are 6 to 12 digits:** the console and the API (`PUT /rest/private/configurations`) refuse a new or
-  changed PIN that isn't, with HTTP 400. A PIN saved before keeps working on devices and keeps its configuration
+  changed PIN that isn't, with HTTP 400. A `kiosk.enter` command whose `password` isn't is refused too (an ERROR),
+  unless it is exactly one of the account's configuration PINs, so Return to configured kiosk keeps working. A PIN saved before keeps working on devices and keeps its configuration
   saveable while it stays as it is; the console marks it **Old PIN** and `legacyKioskPin` is true in the API. Set new
   PINs before staff need them: a device on agent 0.5.0 shows a number pad for a PIN of digits.
-- **Wrong exit PINs (agent 0.5.0):** 5 wrong PINs lock the exit for 1 minute, then each further 3 for 5 minutes, 15
-  minutes, then 1 hour (agents 0.3.6 to 0.4.x: 3 wrong PINs, then every one, up to 1 hour). A new PIN, or **Clear PIN
+- **Wrong exit PINs (agent 0.5.0):** 5 wrong PINs lock the exit for 1 minute, then each further 3 for 5 minutes, then
+  15 minutes, then 1 hour; after that every wrong PIN locks it for another hour (agents 0.3.6 to 0.4.x: 3 wrong PINs,
+  then every one, up to 1 hour). A new PIN, or **Clear PIN
   lockout** on the device page, ends a lockout. A lockout under way when the agent updates is kept.
 - **Retry apply** sends the configuration again right away (`POST /rest/private/agent/v1/devices/{number}/retryConfig`,
   in the audit log), instead of making the device check in, which after a failed apply waited an hour.

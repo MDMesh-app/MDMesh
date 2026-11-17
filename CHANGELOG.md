@@ -83,12 +83,13 @@ Heads-up
   kiosk's PIN, must follow the rule. Devices on agent 0.5.0 ask for a PIN of digits on a number pad (an old PIN keeps
   the full keyboard).
 - Kiosk: wrong exit PINs lock the exit later, in rounds: 5 wrong PINs lock it for 1 minute, then each further 3 for 5
-  minutes, 15 minutes, then 1 hour (it was 3, then every wrong PIN, up to 1 hour). A new exit PIN starts the count
-  again. A lockout under way when the device updates is kept. Needs agent 0.5.0.
+  minutes, then 15 minutes, then 1 hour; after that every wrong PIN locks it for another hour (it was 3, then every
+  wrong PIN, up to 1 hour). A new exit PIN starts the count again. A lockout under way when the device updates is kept. Needs agent 0.5.0.
 
 New
 - Kiosk: **Clear PIN lockout** on the device page lets staff try the exit PIN again right away after too many wrong
-  PINs. It needs permission to edit devices and is in the audit log. Needs agent 0.5.0.
+  PINs. It needs permission to edit devices and is in the audit log; sent to an offline device, it runs at its next
+  check-in. Needs agent 0.5.0.
 - The console has a new look: calmer, with comfortable spacing, one type and spacing scale, one table, one set of
   controls, and menus, dialogs, tabs and pages that move instead of snapping. Lists show 48px rows with their actions
   on hover; Devices has one toolbar with a Filter menu; configurations show as cards; the Overview is laid out in two

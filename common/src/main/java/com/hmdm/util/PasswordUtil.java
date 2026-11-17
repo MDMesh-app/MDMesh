@@ -30,7 +30,7 @@ public class PasswordUtil {
      * Stored password formats (users.password). The clients send MD5(password) in hex at sign-in, never the password,
      * so what is stored is a hash of that MD5, and the sign-in protocol stays as it was.
      *
-     *   bcrypt   "$2a$12$" + salt and hash, 60 characters: bcrypt(UPPER(md5)), random salt, cost BCRYPT_COST. What
+     *   bcrypt   "$2a$" + cost + salt and hash, 60 characters: bcrypt(UPPER(md5)), random salt, cost BCRYPT_COST. What
      *            every password set or upgraded now is stored as.
      *   legacy   SHA-1(md5 + PASS_SALT) in hex, 40 characters, one salt for every account: what releases up to 0.4.x
      *            wrote (and the installers' seed still writes, install/lib/db.sh). Still accepted; replaced with
@@ -82,7 +82,7 @@ public class PasswordUtil {
 
     /**
      * The value stored for the MD5 (hex) a client sends: bcrypt of it upper-cased, cost {@link #BCRYPT_COST}, random
-     * salt, "$2a$12$..." (60 characters).
+     * salt, "$2a$11$..." (60 characters).
      *
      * @throws IllegalArgumentException if {@code md5} is not 32 hex characters ({@link #isMd5Hex}). Callers taking
      *                                  a new password from a request check that first and answer a validation error.

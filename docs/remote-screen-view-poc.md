@@ -146,6 +146,22 @@ Still excluded: TURN/STUN, public Internet traversal, remote input or
 Accessibility, audio, recording, screenshots, files, multi-viewer use,
 unattended access, automatic reconnect, and persistent screen-on behavior.
 
+## Maintainer direction
+
+The maintainer requested this work as a draft PR against `feat/remote-control`
+rather than `main`. The planned later expansion is WebRTC with a self-hosted
+TURN server for off-LAN viewing; this POC intentionally does not implement
+that layer. View-only capture may remain in the base agent. Any future input
+injection must be isolated in a separate module in line with ADR-0005, because
+bundling Accessibility capabilities into the base device-management APK risks
+Play Protect flags.
+
+The proposed per-device override model should be discussed in an issue before
+implementation. Separately, network-control research should start with Android
+`VpnService` and Device Owner always-on VPN support; HTTPS decryption is a
+separate, substantially harder problem, while DNS filtering (see issue #184)
+may satisfy many child-device use cases without interception.
+
 ## Source map
 
 | Area | Main code |

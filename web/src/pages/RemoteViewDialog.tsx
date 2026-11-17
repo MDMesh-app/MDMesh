@@ -36,11 +36,11 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
   const video = useRef<HTMLVideoElement>(null);
   const socket = useRef<WebSocket | null>(null);
   const peer = useRef<RTCPeerConnection | null>(null);
-  const stopped = useRef(false);
-  const sessionId = useRef<string | null>(null);
 
   useEffect(() => {
     let live = true;
+    let stopped = false;
+    let createdSessionId: string | null = null;
     let poll: ReturnType<typeof setTimeout> | undefined;
     let videoStatsInterval: number | undefined;
     const finish = (next: Stage, value?: RemoteViewSession | null) => {
@@ -54,20 +54,20 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
       peer.current?.close(); peer.current = null;
     };
     const stop = () => {
-      if (stopped.current) return;
-      stopped.current = true;
+      if (stopped) return;
+      stopped = true;
       closeTransport();
-      if (sessionId.current) void stopRemoteViewSession(sessionId.current).catch(() => undefined);
+      if (createdSessionId) void stopRemoteViewSession(createdSessionId).catch(() => undefined);
     };
     /** The agent/server ended the session: release browser media without re-stopping it remotely. */
     const endFromRemote = () => {
-      if (stopped.current) return;
-      stopped.current = true;
+      if (stopped) return;
+      stopped = true;
       closeTransport();
       finish('ended');
     };
     const connect = (current: RemoteViewSession) => {
-      if (!live || stopped.current) return;
+      if (!live || stopped) return;
       setStage('connecting');
       // The LAN POC deliberately has neither STUN nor TURN. A selected pair
       // must therefore be direct host ↔ host or the session is stopped.
@@ -214,7 +214,7 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
     const check = async (id: string) => {
       try {
         const current = await getRemoteViewSession(id);
-        if (!live || stopped.current) return;
+        if (!live || stopped) return;
         setSession(current);
         if (current.state === 'signaling') { connect(current); return; }
         if (current.endedAt || ['stopped', 'denied', 'failed', 'disconnected'].includes(current.state)) {
@@ -226,11 +226,15 @@ export function RemoteViewDialog({ deviceNumber, onClose }: { deviceNumber: stri
       } catch (error) { finish(error instanceof ApiError && error.httpStatus === 403 ? 'ended' : 'error'); }
     };
     void requestRemoteView(deviceNumber).then((created) => {
-      sessionId.current = created.id;
+      createdSessionId = created.id;
+      if (!live) {
+        void stopRemoteViewSession(created.id).catch(() => undefined);
+        return;
+      }
       setSession(created);
       if (created.state === 'signaling') connect(created);
       else void check(created.id);
-    }).catch(() => finish('error'));
+    }).catch(() => { if (live) finish('error'); });
     return () => { live = false; clearTimeout(poll); stop(); };
   // Start once for the opened dialog; deviceNumber is stable for its lifetime.
   // eslint-disable-next-line react-hooks/exhaustive-deps

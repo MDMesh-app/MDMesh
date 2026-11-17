@@ -111,6 +111,7 @@ class KioskLauncherActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingRemoteSessionId = savedInstanceState?.getString(STATE_REMOTE_SESSION_ID)
         // A kiosk device boots straight into HOME (this); keep the command channel alive even if
         // the user never opens the status screen.
         ContextCompat.startForegroundService(this, Intent(this, CheckInService::class.java))
@@ -144,6 +145,11 @@ class KioskLauncherActivity : ComponentActivity() {
                 RemoteViewFeasibilityProbe.state.collect(::showRemoteViewProbeState)
             }
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        pendingRemoteSessionId?.let { outState.putString(STATE_REMOTE_SESSION_ID, it) }
+        super.onSaveInstanceState(outState)
     }
 
     override fun onResume() {
@@ -635,6 +641,7 @@ class KioskLauncherActivity : ComponentActivity() {
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     private companion object {
+        const val STATE_REMOTE_SESSION_ID = "mdmesh.remote.session.id"
         const val BACKGROUND_RETRY_MS = 10_000L
         const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         const val GESTURE_TAPS = 7

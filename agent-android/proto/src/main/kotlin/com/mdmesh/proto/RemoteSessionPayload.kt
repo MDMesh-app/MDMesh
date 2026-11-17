@@ -10,6 +10,8 @@ data class RemoteStartSessionPayload(
     val mode: String = RemoteSessionMode.VIEW,
     /** ISO-8601 deadline after which the agent must refuse the request. */
     val expiresAt: String,
+    /** Optional earlier deadline for the one-time local capture-consent prompt. */
+    val consentExpiresAt: String? = null,
     /** Agent-only signaling join information. Never include it in telemetry/events. */
     val signaling: RemoteSignalingPayload,
 )

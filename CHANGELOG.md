@@ -85,6 +85,9 @@ New
   ([DEPLOY.md](https://github.com/MDMesh-app/MDMesh/blob/main/DEPLOY.md#option-a--quick-start-no-clone-published-images)).
 
 Fixes
+- Remote screen-view sessions now end safely when the console viewer disconnects or logs out, the server restarts,
+  capture consent expires, or a capture service ends. Devices receive the optional earlier consent deadline with the
+  existing additive remote-view command.
 - The installers create .env and other files holding secrets readable only by their owner from the start, and a
   setup.sh re-run makes an existing .env owner-only again.
 - setup.sh re-runs read `.env` without running it as a script, so `bash -x ./setup.sh` no longer prints its

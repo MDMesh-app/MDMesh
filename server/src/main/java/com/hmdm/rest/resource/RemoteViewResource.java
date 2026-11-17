@@ -57,11 +57,12 @@ public class RemoteViewResource {
             return Response.ERROR("The enrolled agent does not support remote viewing");
         }
         long now = System.currentTimeMillis();
+        RemoteViewSessionService.Created created = null;
         try {
-            RemoteViewSessionService.Created created = sessions.create(deviceId, user.get().getId(), now);
+            created = sessions.create(deviceId, user.get().getId(), now);
             AgentCommand command = new AgentCommand();
             command.setDeviceNumber(deviceId); command.setType("remote.startSession");
-            command.setPayload(agentPayload(created.session.getId(), created.session.getExpiresAt(),
+            command.setPayload(agentPayload(created.session.getId(), created.session.getExpiresAt(), created.session.getConsentExpiresAt(),
                     signalingEndpoint(created.session.getId()), created.agentJoinSecret));
             command.setRequiresCapability("remote.view"); command.setStatus("pending"); command.setCreatedAt(now);
             commands.insert(command); wakeHub.wake(deviceId, "interactive");
@@ -70,6 +71,7 @@ public class RemoteViewResource {
             result.put("consentExpiresAt", created.session.getConsentExpiresAt()); result.put("expiresAt", created.session.getExpiresAt());
             return Response.OK(result);
         } catch (Exception e) {
+            if (created != null) sessions.stop(created.session.getId(), now, "agent request could not be queued");
             // The partial unique index is the authoritative concurrency guard.
             return Response.ERROR("A remote-view session is already active for this device");
         }
@@ -82,11 +84,11 @@ public class RemoteViewResource {
         return origin + "/agent/remote/" + id;
     }
 
-    static String agentPayload(UUID id, long expiresAt, String endpoint, String credential) {
+    static String agentPayload(UUID id, long expiresAt, long consentExpiresAt, String endpoint, String credential) {
         // Values are server-minted UUID/hex credentials or the configured origin; quote the only
         // origin-derived field so a valid JSON command is still generated for a nonstandard URL.
         return "{\"sessionId\":\"" + id + "\",\"mode\":\"view\",\"expiresAt\":\""
-                + Instant.ofEpochMilli(expiresAt) + "\",\"signaling\":{\"endpoint\":\""
+                + Instant.ofEpochMilli(expiresAt) + "\",\"consentExpiresAt\":\"" + Instant.ofEpochMilli(consentExpiresAt) + "\",\"signaling\":{\"endpoint\":\""
                 + endpoint.replace("\\", "\\\\").replace("\"", "\\\"") + "\",\"credential\":\"" + credential + "\"}}";
     }
 

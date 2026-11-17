@@ -27,7 +27,7 @@ public class RemoteViewSessionService {
     }));
     @Inject public RemoteViewSessionService(RemoteViewSessionDAO dao) {
         this.dao = dao; INSTANCE = this;
-        dao.expire(System.currentTimeMillis(), "server restarted");
+        dao.endAllActive("stopped", System.currentTimeMillis(), "server restarted");
         cleanup.scheduleAtFixedRate(() -> expireStale(System.currentTimeMillis()), 30, 30, TimeUnit.SECONDS);
     }
     public Created create(String device, int user, long now) {
@@ -48,7 +48,7 @@ public class RemoteViewSessionService {
     }
     public boolean stopOwned(UUID id, int userId, long now) {
         RemoteViewSession session = dao.find(id);
-        return session != null && session.getRequesterUserId() == userId && stop(id, now, "stopped by requester");
+        return session != null && Integer.valueOf(userId).equals(session.getRequesterUserId()) && stop(id, now, "stopped by requester");
     }
     /** Atomically accepts the one-time agent join credential and enters the in-memory signaling phase. */
     public RemoteViewSession claimAgentJoin(UUID id, String deviceNumber, String secret, long now) {
@@ -66,13 +66,13 @@ public class RemoteViewSessionService {
     }
     public boolean browserMayJoin(UUID id, int userId, long now) {
         RemoteViewSession session = dao.find(id);
-        return session != null && session.getEndedAt() == null && session.getRequesterUserId() == userId
+        return session != null && session.getEndedAt() == null && Integer.valueOf(userId).equals(session.getRequesterUserId())
                 && "signaling".equals(session.getState()) && now <= session.getExpiresAt();
     }
     /** The requester may poll the durable, non-secret session state while waiting for consent. */
     public RemoteViewSession findOwned(UUID id, int userId) {
         RemoteViewSession session = dao.find(id);
-        return session != null && session.getRequesterUserId() == userId ? session : null;
+        return session != null && Integer.valueOf(userId).equals(session.getRequesterUserId()) ? session : null;
     }
     public boolean isSignalingLive(UUID id, long now) {
         RemoteViewSession session = dao.find(id);
@@ -83,6 +83,12 @@ public class RemoteViewSessionService {
         // Any in-memory peer tied to this device is closed immediately; the DB mutation is the durable authority.
         if (RemoteViewSignalingHub.INSTANCE != null) RemoteViewSignalingHub.INSTANCE.closeDevice(device, reason);
         return dao.endForDevice(device, "stopped", now, reason);
+    }
+    /** Logging out ends every live view requested by that console user. */
+    public int stopForUser(int userId, long now, String reason) {
+        int stopped = dao.endForUser(userId, "stopped", now, reason);
+        if (stopped > 0 && RemoteViewSignalingHub.INSTANCE != null) RemoteViewSignalingHub.INSTANCE.closeForUser(userId, reason);
+        return stopped;
     }
 
     /**

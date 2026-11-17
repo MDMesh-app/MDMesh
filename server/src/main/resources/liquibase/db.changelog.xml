@@ -3202,8 +3202,8 @@
         <sql>
             CREATE TABLE remoteViewSession (
                 id UUID PRIMARY KEY,
-                deviceNumber VARCHAR(64) NOT NULL REFERENCES devices(number) ON DELETE CASCADE,
-                requesterUserId INT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+                deviceNumber VARCHAR(64) NOT NULL REFERENCES devices(number) ON UPDATE CASCADE ON DELETE CASCADE,
+                requesterUserId INT REFERENCES users(id) ON DELETE SET NULL,
                 mode VARCHAR(16) NOT NULL CHECK (mode = 'view'),
                 state VARCHAR(32) NOT NULL,
                 agentJoinSecretHash VARCHAR(64) NOT NULL,

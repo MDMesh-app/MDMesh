@@ -36,6 +36,7 @@ import com.hmdm.persistence.domain.User;
 import com.hmdm.rest.json.view.user.UserView;
 import com.hmdm.service.EmailService;
 import com.hmdm.service.RsaKeyService;
+import com.hmdm.service.RemoteViewSessionService;
 import com.hmdm.util.BackgroundTaskRunnerService;
 import com.hmdm.util.PasswordResetTokens;
 import com.hmdm.util.PasswordUtil;
@@ -212,6 +213,10 @@ public class AuthResource {
     public void logout( @Context HttpServletRequest req ) {
         HttpSession session = req.getSession( false );
         if ( session != null ) {
+            Object credentials = session.getAttribute(AuthFilter.sessionCredentials);
+            if (credentials instanceof User && RemoteViewSessionService.INSTANCE != null) {
+                RemoteViewSessionService.INSTANCE.stopForUser(((User) credentials).getId(), System.currentTimeMillis(), "requester logged out");
+            }
             session.invalidate();
         }
     }

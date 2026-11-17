@@ -48,4 +48,21 @@ public class RemoteViewSessionDAO {
         }
         return ended;
     }
+    @Transactional public int endForUser(int userId, String state, long at, String reason) {
+        return endAll(mapper.findActiveByUser(userId), state, at, reason);
+    }
+    /** A server restart loses the in-memory WebSocket relay, so no active session can resume safely. */
+    @Transactional public int endAllActive(String state, long at, String reason) {
+        return endAll(mapper.findActive(), state, at, reason);
+    }
+    private int endAll(java.util.List<RemoteViewSession> sessions, String state, long at, String reason) {
+        int ended = 0;
+        for (RemoteViewSession session : sessions) {
+            if (mapper.end(session.getId(), state, at, reason) == 1) {
+                mapper.insertAudit(session.getId(), state, at, session.getRequesterUserId(), reason);
+                ended++;
+            }
+        }
+        return ended;
+    }
 }

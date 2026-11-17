@@ -65,8 +65,16 @@ public class RemoteViewSessionServiceTest {
         assertNull(service.findOwned(created.session.getId(), 8));
     }
 
+    @Test public void startupEndsAllPreviouslyActiveSessionsBecauseTheirRelayCannotResume() {
+        FakeDao dao = new FakeDao();
+        new RemoteViewSessionService(dao);
+        assertEquals(1, dao.endAllActiveCalls);
+        assertEquals("server restarted", dao.endAllActiveReason);
+    }
+
     private static final class FakeDao extends RemoteViewSessionDAO {
         final Map<UUID, RemoteViewSession> sessions = new HashMap<>();
+        int endAllActiveCalls; String endAllActiveReason;
         FakeDao() { super(null); }
         @Override public void insert(RemoteViewSession session, String detail) { sessions.put(session.getId(), session); }
         @Override public RemoteViewSession find(UUID id) { return sessions.get(id); }
@@ -79,5 +87,9 @@ public class RemoteViewSessionServiceTest {
         }
         @Override public int expire(long now, String reason) { return 0; }
         @Override public int endForDevice(String device, String state, long at, String reason) { return 0; }
+        @Override public int endAllActive(String state, long at, String reason) {
+            endAllActiveCalls++; endAllActiveReason = reason; return 0;
+        }
+        @Override public int endForUser(int userId, String state, long at, String reason) { return 0; }
     }
 }

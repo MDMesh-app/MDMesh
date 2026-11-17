@@ -34,6 +34,7 @@ class AndroidRemoteViewSession(
 
     @Volatile private var request: RemoteStartSessionPayload? = null
     @Volatile private var capture: RemoteViewCapture? = null
+    @Volatile private var consentDeadline: Runnable? = null
 
     override suspend fun start(request: RemoteStartSessionPayload): Result<Unit> = runCatching {
         require(!isActive()) { "a remote-view session is already active" }
@@ -41,6 +42,7 @@ class AndroidRemoteViewSession(
         this.request = request
         mutablePending.value = RemoteViewConsentRequest(request.sessionId)
         mutableStatus.value = RemoteViewStatus("Waiting for administrator screen-share approval…", active = false)
+        scheduleConsentDeadline(request)
         reportEvent("remoteViewConsentRequested", "session=${request.sessionId}")
     }
 
@@ -84,11 +86,12 @@ class AndroidRemoteViewSession(
             require(Instant.parse(active.expiresAt).isAfter(Instant.now())) { "remote-view session expired" }
             check(capture == null) { "remote-view capture is already active" }
             val device = requireNotNull(credentials()) { "device credentials are unavailable" }
+            val ownedCapture = arrayOfNulls<RemoteViewCapture>(1)
             val newCapture = RemoteViewCapture(
                 context,
                 active,
                 device,
-                ::ended,
+                { reason -> ended(sessionId, ownedCapture[0], reason) },
                 {
                     mutableStatus.value = RemoteViewStatus("Remote screen share is active.", active = true)
                     reportEvent("remoteViewSignaling", "session=$sessionId; signaling socket opened")
@@ -99,6 +102,9 @@ class AndroidRemoteViewSession(
                     mutableStatus.value = RemoteViewStatus(detail, active = true)
                 },
             )
+            // Bind the asynchronous end callback to this capture only. An old teardown must
+            // never clear a request accepted after it was stopped.
+            ownedCapture[0] = newCapture
             capture = newCapture
             startupStage = newCapture.currentStartupStage()
             newCapture.start(resultData)
@@ -113,23 +119,24 @@ class AndroidRemoteViewSession(
                 current.stop(detail)
             } else {
                 reportEvent("remoteViewEnded", "session=$sessionId; reason=$detail")
-                clear("capture startup failed")
+                clear("capture startup failed", sessionId)
             }
         }
         return result
     }
 
     override suspend fun stop(sessionId: String, reason: String): Result<Unit> = runCatching {
-        if (request?.sessionId == sessionId) clear(reason)
+        if (request?.sessionId == sessionId) clear(reason, sessionId)
     }
 
     override suspend fun stopForConfigurationChange(): Result<Unit> = runCatching { clear("configuration changed") }
     override fun isActive(): Boolean = request != null
 
-    private fun ended(reason: String) {
+    private fun ended(sessionId: String, finished: RemoteViewCapture?, reason: String) {
+        if (request?.sessionId != sessionId || capture !== finished) return
         mutableStatus.value = RemoteViewStatus("Remote view ended: $reason", active = false)
-        reportEvent("remoteViewEnded", "session=${request?.sessionId ?: "unknown"}; reason=$reason")
-        clear(reason)
+        reportEvent("remoteViewEnded", "session=$sessionId; reason=$reason")
+        clear(reason, sessionId)
     }
 
     /** Persist a short lifecycle fact, then ask the normal authenticated check-in path to flush it promptly. */
@@ -138,17 +145,38 @@ class AndroidRemoteViewSession(
         scheduleCheckIn()
     }
 
-    private fun clear(reason: String) {
+    private fun clear(reason: String, expectedSessionId: String? = null) {
+        if (expectedSessionId != null && request?.sessionId != expectedSessionId) return
         mutablePending.value = null
         val current = capture
+        val wasActive = request != null
         capture = null
         request = null
+        consentDeadline?.let(main::removeCallbacks)
+        consentDeadline = null
         current?.stop(reason)
-        main.removeCallbacksAndMessages(null)
+        if (wasActive) context.stopService(Intent(context, RemoteViewCaptureService::class.java))
         Log.i(TAG, "remote view stopped: $reason")
     }
 
+    private fun scheduleConsentDeadline(active: RemoteStartSessionPayload) {
+        consentDeadline?.let(main::removeCallbacks)
+        val deadline = active.consentExpiresAt?.let { value -> runCatching { Instant.parse(value) }.getOrNull() }
+            ?: runCatching { Instant.parse(active.expiresAt) }.getOrNull()
+            ?: return
+        val delay = (deadline.toEpochMilli() - System.currentTimeMillis()).coerceAtLeast(0L)
+        val task = Runnable {
+            if (request?.sessionId == active.sessionId && capture == null) {
+                mutableStatus.value = RemoteViewStatus("Remote screen-share consent timed out.", active = false)
+                reportEvent("remoteViewEnded", "session=${active.sessionId}; reason=consent timed out")
+                clear("consent timed out", active.sessionId)
+            }
+        }
+        consentDeadline = task
+        main.postDelayed(task, delay)
+    }
+
     override fun captureConsentIntent(): Intent = context.getSystemService(MediaProjectionManager::class.java).createScreenCaptureIntent()
-    fun serviceDestroyed() { if (request != null) clear("capture service stopped") }
+    fun serviceDestroyed() { if (request != null && capture != null) clear("capture service stopped") }
     private companion object { const val TAG = "RemoteViewSession" }
 }

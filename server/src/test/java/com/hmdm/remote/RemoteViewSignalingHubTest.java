@@ -35,6 +35,19 @@ public class RemoteViewSignalingHubTest {
         assertEquals("agent signaling closed", sessions.reason);
     }
 
+    @Test public void browserDisconnectEndsTheSessionAndDoesNotLeaveCaptureRunning() throws Exception {
+        RecordingSessions sessions = new RecordingSessions();
+        RemoteViewSignalingHub hub = new RemoteViewSignalingHub(sessions);
+        UUID id = UUID.randomUUID();
+        Session browser = socket();
+        putBrowserPeer(hub, id, browser);
+
+        hub.disconnect(id, browser);
+
+        assertEquals(id, sessions.stopped);
+        assertEquals("browser signaling closed", sessions.reason);
+    }
+
     @Test public void queuesEarlyMessagesUntilTheTargetPeerJoins() {
         RemoteViewSignalingHub.Peers peers = new RemoteViewSignalingHub.Peers();
 
@@ -62,10 +75,21 @@ public class RemoteViewSignalingHubTest {
         ((Map<UUID, Object>) peers.get(hub)).put(id, pair);
     }
 
+    @SuppressWarnings("unchecked")
+    private static void putBrowserPeer(RemoteViewSignalingHub hub, UUID id, Session browser) throws Exception {
+        Field peers = RemoteViewSignalingHub.class.getDeclaredField("peers"); peers.setAccessible(true);
+        Class<?> pairType = Class.forName("com.hmdm.remote.RemoteViewSignalingHub$Peers");
+        java.lang.reflect.Constructor<?> constructor = pairType.getDeclaredConstructor(); constructor.setAccessible(true);
+        Object pair = constructor.newInstance();
+        Field browserField = pairType.getDeclaredField("browser"); browserField.setAccessible(true); browserField.set(pair, browser);
+        ((Map<UUID, Object>) peers.get(hub)).put(id, pair);
+    }
+
     private static final class RecordingSessions extends RemoteViewSessionService {
         UUID stopped; String reason;
         RecordingSessions() { super(new RemoteViewSessionDAO(null) {
             @Override public int expire(long now, String reason) { return 0; }
+            @Override public int endAllActive(String state, long at, String reason) { return 0; }
         }); }
         @Override public boolean stop(UUID id, long now, String reason) { stopped = id; this.reason = reason; return true; }
     }

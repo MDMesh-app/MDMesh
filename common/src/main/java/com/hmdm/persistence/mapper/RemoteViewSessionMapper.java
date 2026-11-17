@@ -19,6 +19,10 @@ public interface RemoteViewSessionMapper {
     List<RemoteViewSession> findExpired(@Param("now") long now);
     @Select("SELECT * FROM remoteViewSession WHERE deviceNumber=#{deviceNumber} AND endedAt IS NULL")
     List<RemoteViewSession> findActiveByDevice(@Param("deviceNumber") String deviceNumber);
+    @Select("SELECT * FROM remoteViewSession WHERE requesterUserId=#{userId} AND endedAt IS NULL")
+    List<RemoteViewSession> findActiveByUser(@Param("userId") int userId);
+    @Select("SELECT * FROM remoteViewSession WHERE endedAt IS NULL")
+    List<RemoteViewSession> findActive();
     @Update("UPDATE remoteViewSession SET state=#{state}, endedAt=#{endedAt}, endReason=#{reason} WHERE id=#{id} AND endedAt IS NULL")
     int end(@Param("id") UUID id, @Param("state") String state, @Param("endedAt") long endedAt, @Param("reason") String reason);
     @Update("UPDATE remoteViewSession SET state=#{toState} WHERE id=#{id} AND state=#{fromState} AND endedAt IS NULL")

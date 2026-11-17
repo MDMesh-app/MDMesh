@@ -97,6 +97,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingRemoteSessionId = savedInstanceState?.getString(STATE_REMOTE_SESSION_ID)
         setContentView(buildUi())
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -144,6 +145,11 @@ class MainActivity : ComponentActivity() {
         // launcher activity keeps us in the foreground-start allowance on Android 12+.
         ContextCompat.startForegroundService(this, Intent(this, CheckInService::class.java))
         refresh()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        pendingRemoteSessionId?.let { outState.putString(STATE_REMOTE_SESSION_ID, it) }
+        super.onSaveInstanceState(outState)
     }
 
     override fun onResume() {
@@ -405,6 +411,7 @@ class MainActivity : ComponentActivity() {
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 
     private companion object {
+        const val STATE_REMOTE_SESSION_ID = "mdmesh.remote.session.id"
         const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         const val RETURN_BUTTON_GAP = 12
         const val WARNING_GAP = 6

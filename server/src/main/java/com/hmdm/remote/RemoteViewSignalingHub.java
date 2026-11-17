@@ -60,7 +60,7 @@ public final class RemoteViewSignalingHub {
         List<String> waiting;
         synchronized (pair) {
             if (pair.browser != null && pair.browser.isOpen()) return false;
-            pair.browser = socket; pair.browserUser = current.getId();
+            pair.browser = socket; pair.browserUser = current.getId(); pair.browserHttpSession = http;
             waiting = pair.drainForBrowser();
         }
         sendAll(socket, waiting);
@@ -84,6 +84,10 @@ public final class RemoteViewSignalingHub {
     }
 
     public void relay(UUID id, boolean fromBrowser, String text) {
+        if (fromBrowser && !browserSessionIsLive(id)) {
+            sessions.stop(id, System.currentTimeMillis(), "browser login ended");
+            return;
+        }
         if (!sessions.isSignalingLive(id, System.currentTimeMillis())) { close(id, "session ended or expired"); return; }
         if (text == null || text.length() > MAX_MESSAGE_CHARS || !validEnvelope(text, fromBrowser)) { close(id, "invalid signaling message"); return; }
         Peers pair = peers.get(id);
@@ -105,8 +109,10 @@ public final class RemoteViewSignalingHub {
 
     public void disconnect(UUID id, Session socket) {
         Peers pair = peers.get(id); if (pair == null) return;
-        synchronized (pair) { if (pair.browser == socket) pair.browser = null; if (pair.agent == socket) pair.agent = null;
+        boolean browserDisconnected;
+        synchronized (pair) { browserDisconnected = pair.browser == socket; if (browserDisconnected) pair.browser = null; if (pair.agent == socket) pair.agent = null;
             if (pair.browser == null && pair.agent == null) peers.remove(id, pair); }
+        if (browserDisconnected) sessions.stop(id, System.currentTimeMillis(), "browser signaling closed");
     }
 
     /** Ends the durable session when the only capture peer disconnects unexpectedly. */
@@ -126,6 +132,19 @@ public final class RemoteViewSignalingHub {
         for (Map.Entry<UUID, Peers> entry : peers.entrySet()) {
             if (deviceNumber.equals(entry.getValue().deviceNumber)) close(entry.getKey(), reason);
         }
+    }
+    public void closeForUser(int userId, String reason) {
+        for (Map.Entry<UUID, Peers> entry : peers.entrySet()) {
+            if (Integer.valueOf(userId).equals(entry.getValue().browserUser)) close(entry.getKey(), reason);
+        }
+    }
+    private boolean browserSessionIsLive(UUID id) {
+        Peers pair = peers.get(id);
+        if (pair == null || pair.browser == null) return true;
+        try {
+            Object stored = pair.browserHttpSession == null ? null : pair.browserHttpSession.getAttribute(AuthFilter.sessionCredentials);
+            return stored instanceof User && Integer.valueOf(pair.browserUser).equals(((User) stored).getId());
+        } catch (IllegalStateException expired) { return false; }
     }
     private void closeExpired() { for (UUID id : peers.keySet()) if (!sessions.isSignalingLive(id, System.currentTimeMillis())) close(id, "session ended or expired"); }
     private static boolean hasRemoteView(User user) {
@@ -152,7 +171,7 @@ public final class RemoteViewSignalingHub {
         } catch (IOException bad) { return false; }
     }
     private static void closeQuietly(Session socket, String reason) { if (socket != null && socket.isOpen()) try { socket.close(new CloseReason(CloseReason.CloseCodes.VIOLATED_POLICY, reason)); } catch (IOException ignored) {} }
-    static final class Peers { Session browser, agent; Integer browserUser; String deviceNumber; long window = System.currentTimeMillis(); int count;
+    static final class Peers { Session browser, agent; Integer browserUser; HttpSession browserHttpSession; String deviceNumber; long window = System.currentTimeMillis(); int count;
         private final Deque<String> waitingForBrowser = new ArrayDeque<>();
         private final Deque<String> waitingForAgent = new ArrayDeque<>();
         synchronized boolean permit() { long now = System.currentTimeMillis(); if (now - window >= 60_000L) { window = now; count = 0; } return ++count <= MAX_MESSAGES_PER_MINUTE; }

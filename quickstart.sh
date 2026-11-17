@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# MDMesh quick start — deploy from PUBLISHED images, no clone and no build. Needs only Docker.
+# MDMesh quick start — deploy from PUBLISHED images, no clone and no build. Needs Docker, curl and
+# OpenSSL 3.0+ (or older OpenSSL plus minisign) to check the release signature.
 # Run from anywhere (the `bash <(...)` form keeps the prompts interactive). The README runs the latest release's copy
 # (a release asset); DEPLOY.md, Option A, checks that copy against the signed manifest before running it, and its
 # unchecked shortcut runs the copy at the latest release's tag:

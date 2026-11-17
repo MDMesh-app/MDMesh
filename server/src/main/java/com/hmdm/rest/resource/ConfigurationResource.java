@@ -43,6 +43,7 @@ import com.hmdm.rest.resource.support.KioskBackgroundImageAssets;
 import com.hmdm.rest.resource.support.KioskBackgroundImageInfo;
 import com.hmdm.security.SecurityContext;
 import com.hmdm.util.DesiredConfigBuilder;
+import com.hmdm.util.KioskExitPin;
 import com.hmdm.util.FileUtil;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
@@ -233,7 +234,10 @@ public class ConfigurationResource {
                     "with an ERROR whose message says why. backgroundImageFit and backgroundImageFocalX/Y left out " +
                     "keep the stored ones, except that a replace without a focal point centres it. " +
                     "locationServicesAction is keep (the default), on, off, or notManaged; " +
-                    "ordinary saves preserve the stored Location-services policy."
+                    "ordinary saves preserve the stored Location-services policy. " +
+                    "password (the kiosk exit PIN) must be 6 to 12 digits, or empty for no exit on the device; a PIN " +
+                    "stored before that rule and sent back unchanged is kept (legacyKioskPin marks it). Another PIN " +
+                    "is refused with HTTP 400."
     )
     @PUT
     @Consumes(MediaType.APPLICATION_JSON)
@@ -272,6 +276,7 @@ public class ConfigurationResource {
                                 "by user " + SecurityContext.get().getCurrentUserName());
                         return Response.PERMISSION_DENIED();
                     }
+                    validateKioskPin(configuration, null);
                     imageApplied = canonicalizeBackgroundImage(configuration, null);
                     imageHeld = imageApplied;
                     applyLocationServicesUpdate(configuration, null);
@@ -297,6 +302,7 @@ public class ConfigurationResource {
                         return Response.PERMISSION_DENIED();
                     }
                     Configuration stored = configurationDAO.getConfigurationById(id);
+                    validateKioskPin(configuration, stored);
                     imageApplied = canonicalizeBackgroundImage(configuration, stored);
                     imageHeld = imageApplied;
                     applyLocationServicesUpdate(configuration, stored);
@@ -390,6 +396,15 @@ public class ConfigurationResource {
                     .entity(Response.ERROR(e.getMessage()))
                     .build());
         }
+    }
+
+    /**
+     * A new or changed kiosk exit PIN must be 6 to 12 digits, or empty ({@link KioskExitPin}). A PIN saved before that
+     * rule and sent back unchanged is kept, so a configuration that has one stays editable and its devices keep it.
+     */
+    static void validateKioskPin(Configuration c, Configuration stored) {
+        String problem = KioskExitPin.problem(c.getPassword(), stored == null ? null : stored.getPassword());
+        if (problem != null) throw badRequest(problem);
     }
 
     /** fit is fill, fit or null; a focal coordinate is null or a number from 0 to 1 (NaN and infinities refused). */

@@ -19,6 +19,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { configurationsFixtures } from './fixtures.mjs';
 import { DIST, fx, newContext, startServer } from './harness.mjs';
+import { updateScenarios } from './fixtures.mjs';
 
 const arg = (k) => {
   const i = process.argv.indexOf(k);
@@ -126,7 +127,8 @@ const click = async (page, role, name, opts = {}) => {
 };
 
 /**
- * The states: a route, who is signed in, optional REST overrides and a setup that drives the page into the state.
+ * The states: a route, who is signed in, optional REST overrides (and `updateStatus`, the supervisor's /update/status)
+ * and a setup that drives the page into the state.
  * `mobile: false` skips it in the phone layout (≤ 860 px), `desktop: false` above it; `gallery` needs a VITE_GALLERY=1 build.
  */
 const STATES = [
@@ -405,6 +407,12 @@ const STATES = [
       await p.waitForTimeout(400);
     },
   },
+  // The offered update skips a security release: the sidebar card, the section nav and the Updates notice.
+  {
+    name: 'settings-missed-security',
+    route: '/settings',
+    updateStatus: updateScenarios(fx).missedSecurity,
+  },
   // ---- shell ----
   {
     name: 'mobile-drawer',
@@ -431,6 +439,7 @@ async function openState(browser, base, state, theme, vp) {
     viewport: { width: vp.width, height: vp.height },
     deviceScaleFactor: 1,
     blockGoogleFonts: true,
+    ...(state.updateStatus ? { updateStatus: state.updateStatus } : {}),
   });
   for (const [pattern, body] of Object.entries(state.rest ?? {})) {
     await context.route(pattern, (route) => route.fulfill({ status: 200, contentType: 'application/json', body: body(route) }));

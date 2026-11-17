@@ -77,6 +77,10 @@
   border-radius: var(--radius-control);
   background: var(--surface-sunken);
 }
+/* The missing-security-fixes notice above the ready release: the release card's padding, so their insets match. */
+.v2 .v2-settings-secnotice.v2-notice .v2-notice__grid {
+  padding: var(--space-4);
+}
 .v2 .v2-settings-upd--ready {
   background: var(--ok-wash);
   border-color: var(--ok-line);
@@ -437,7 +441,8 @@
   .v2 .v2-settings-pref__select {
     flex-basis: 100%;
   }
-  .v2 .v2-settings-upd {
+  .v2 .v2-settings-upd,
+  .v2 .v2-settings-secnotice.v2-notice .v2-notice__grid {
     padding: var(--space-3);
   }
 }

@@ -235,6 +235,12 @@ jobs:
             "$SERVER_IMG" "$WEB_IMG" mdmesh-agent.apk "$CODE" "$CK" "$PROTO" \
             "$SERVER_REF" "$WEB_REF" "$SUPERVISOR_REF"
           release/sign-manifest.sh manifest.json
+      # The signed manifest's securityReleases (a supervisor reads them to warn an admin who would skip a security
+      # release) must be exactly CHANGELOG.md's: every version up to this one with a Security section (RELEASING.md).
+      - name: Signed manifest's securityReleases match CHANGELOG.md
+        run: |
+          release/security-releases.py --check manifest.json \
+            || { echo "::error::manifest.json's securityReleases differ from CHANGELOG.md (details above; RELEASING.md)"; exit 1; }
 
       # --- Publish ---
       # The notes are the tag annotation, checked once more against CHANGELOG.md right before publishing, with the

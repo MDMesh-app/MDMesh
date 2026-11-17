@@ -42,8 +42,8 @@ jobs:
             # VERSIONING.md's highest row, and a held bump must still be under Unreleased (so a release PR runs it).
             server: pom.xml, common/**, jwt/**, notification/**, plugins/**, server/**, CHANGELOG.md, proto/VERSIONING.md
             # CHANGELOG.md is built into the console (What's new) and its tests read every release's section, checked
-            # against release/changelog-section.sh.
-            web: web/**, CHANGELOG.md, release/changelog-section.sh
+            # against release/changelog-section.sh, and its Security labels against release/security-releases.py.
+            web: web/**, CHANGELOG.md, release/changelog-section.sh, release/security-releases.py
             # The console's browser accessibility sweep (scripts/shots/a11y.mjs) reads the built console and the
             # shots fixtures; CHANGELOG.md is built into the console.
             a11y: web/**, scripts/shots/**, CHANGELOG.md

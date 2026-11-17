@@ -11,6 +11,11 @@
 - **[CHANGELOG.md](CHANGELOG.md) is the release notes.** Each PR adds its line under Unreleased. A version's section
   is its tag annotation and its GitHub release notes, word for word; the workflow refuses a tag whose annotation
   differs.
+- **A release that fixes a security issue has a Security section in its notes**, however the fix arrived: a public PR,
+  a private advisory fork or a hardening follow-up. Its fix lines go under that heading, never under Fixes, and a
+  release without a security fix has no such section. The heading is the one record the tools read: it puts the
+  "Security fixes" label on the release in Settings, and it makes the release part of the signed manifest's
+  `securityReleases`, which warns an admin whose update skips it ([Security fixes](#security-fixes)).
 - **A new `setup.sh` flag goes in the notes as a run of its own, after `./setup.sh --update`.** The previous release's
   setup.sh is the one that runs `--update`, and it stops on a flag it doesn't know (exit 2) before it moves the clone.
   So `./setup.sh --update --newflag` fails on every older clone; write `./setup.sh --update`, then `./setup.sh
@@ -22,6 +27,19 @@
    Remove every `<!-- pending … -->` marker, and the whole line if its PR didn't merge; the script refuses a released
    section with any HTML comment left. Sum up the Dependabot bumps in Under the hood. Preview it with
    `release/changelog-section.sh X.Y.Z`.
+   Check the Security section against the repository's advisories, published and draft. Every advisory patched in
+   this version needs its line under Security:
+
+   ```bash
+   release/check-advisories.sh X.Y.Z     # fails on a patched version with no Security section; flags drafts with none set
+   # the same list by hand:
+   gh api --paginate 'repos/MDMesh-app/MDMesh/security-advisories?per_page=100' \
+     --jq '.[] | [.ghsa_id, .state, ([.vulnerabilities[]?.patched_versions // empty] | join(","))] | @tsv'
+   ```
+
+   It needs `gh` signed in as a maintainer who can read the repository's advisories. CI doesn't run it: the
+   workflow's token usually can't read them, drafts least of all.
+
    Clear any agent protocol hold: in `server/src/test/java/com/hmdm/rest/json/agent/AgentProtocolVersionTest.java`
    empty `AWAITING_BUMP` and `BUMP_HELD`, and set `AgentProtocol.VERSION` to the highest row of
    `proto/VERSIONING.md`. A release never ships with a protocol bump held: once Unreleased is moved, the server test
@@ -66,8 +84,11 @@ Patches are tagged from `main` for now, like every release (the `gate` job accep
 ### Security fixes
 
 A fix for a vulnerability that isn't public yet is developed in a GitHub private security advisory (Security →
-Advisories → New draft advisory → Start a temporary private fork), not in a public PR. Its changelog line says what
-operators see, without the details.
+Advisories → New draft advisory → Start a temporary private fork), not in a public PR. Its changelog line goes under
+the release's **Security** heading, never under Fixes. While the advisory is still private, that is one plain line
+saying what operators see or should do ("Kiosk: Safe Mode is blocked whenever a device is in kiosk."), with no
+description of the vulnerability; the details belong in the advisory once it is published. Set the advisory's
+patched version to this release, so `release/check-advisories.sh` checks it.
 
 The fix is public from the moment it merges, so keep that window short:
 
@@ -76,6 +97,20 @@ The fix is public from the moment it merges, so keep that window short:
 - An advisory merge may skip `main`'s required checks, and whether CI runs in the temporary private fork depends on
   GitHub (check GitHub's docs). Treat CI on the release PR as the only CI the fix gets.
 - Publish the advisory once the release is out. See [SECURITY.md](SECURITY.md) for reporting.
+
+**A release with a security fix must have a Security section** in its CHANGELOG.md section (a `Security` line of its
+own, as v0.3.8's), whether the fix came through an advisory or not, and a release without a security fix must not have
+one. That heading is the one record of which releases fixed security issues: the release notes in Settings label the
+release "Security fixes", and the signed manifest's `securityReleases` lists every such version, which the console
+uses to warn an admin whose update skips one (`release/security-releases.py` derives it; the release workflow fails if
+the manifest's list and CHANGELOG.md differ).
+
+Why it is checked against the advisories: 0.3.7 (GHSA-pm7x-f5vm-mqr6) and 0.4.0 (GHSA-32jc-rxqg-hgf5) shipped their
+security fixes under Fixes, because the line followed "say what operators see" and nothing asked for a Security
+heading. Their notes carried no "Security fixes" label, and the first manifest with `securityReleases` would have said
+they fixed nothing. 0.5.0's CHANGELOG.md corrects both sections (their tags keep the notes they shipped with). The
+release workflow can't catch this, since it can only check the manifest against the changelog it is given;
+`release/check-advisories.sh` checks the changelog against the advisories.
 
 ## What the release workflow does
 
@@ -102,6 +137,9 @@ supervisors before 0.5.0 read) and `components.apk`, and from 0.5.0 adds:
 - `files`: the SHA-256 of each file the quick start downloads from the tag, and of `quickstart.sh` itself (the
   release asset);
 - `commit`: the tagged commit.
+- `securityReleases`: every version up to this one whose CHANGELOG.md section has a Security heading, oldest first
+  (`release/security-releases.py`; [Security fixes](#security-fixes)). A 0.5.0+ supervisor reports the ones an update
+  skips over as `missedSecurity` in `/update/status`, from a verified manifest only.
 
 Who reads what:
 

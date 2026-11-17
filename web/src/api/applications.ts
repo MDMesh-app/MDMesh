@@ -166,6 +166,18 @@ export interface BundleUploadResult {
   parts: { url: string; sha256: string; name: string }[];
 }
 
+const bundleMessages: Record<string, string> = {
+  'error.bundle.noApks': 'The file has no APKs in it. An encrypted .apkm bundle can’t be unpacked.',
+  'error.bundle.unreadable': 'The server could not read the package name and version from the APKs.',
+  'error.bundle.tooLarge': 'The bundle’s APKs unpack to more than 4 GB.',
+  'error.bundle.unpack': 'The server could not unpack the bundle. It may be damaged.',
+};
+/** What a failed bundle upload says, by the server's error key. */
+export function bundleErrorText(e: unknown): string {
+  const message = e instanceof Error ? e.message : '';
+  return bundleMessages[message] ?? message;
+}
+
 /** Upload a split-APK bundle; the server unpacks it and returns the hosted parts. */
 export async function uploadBundle(file: File): Promise<BundleUploadResult> {
   const form = new FormData();

@@ -853,6 +853,9 @@ public class FilesResource {
             logger.info("Bundle {} unpacked: {} parts for {} ({})", fileName, parts.size(), meta.getPkg(),
                     meta.getVersionCode());
             return Response.OK(out);
+        } catch (BundleTooLargeException e) {
+            logger.warn("Bundle upload refused: {}", e.getMessage());
+            return Response.ERROR("error.bundle.tooLarge");
         } catch (Exception e) {
             logger.error("Unexpected error unpacking bundle", e);
             return Response.ERROR("error.bundle.unpack");
@@ -862,9 +865,23 @@ public class FilesResource {
         }
     }
 
+    /** The most a bundle's APK entries may unpack to in total: 4 GiB, Google Play's limit for an app's whole download.
+     *  Each entry is also held to its declared size (copyEntry), so a bundle can't write more than this. */
+    static final long MAX_BUNDLE_UNPACKED_BYTES = 4L * 1024 * 1024 * 1024;
+
+    /** A bundle whose APK entries declare more than the total unpacked limit. */
+    static final class BundleTooLargeException extends IOException {
+        BundleTooLargeException(String message) { super(message); }
+    }
+
     /** Extract every {@code *.apk} entry of a zip container to temp files. If a {@code universal.apk}
      *  is present (bundletool .apks), return ONLY it — it's a self-contained single install. */
     List<File> extractApkParts(File zip, Customer customer) throws IOException {
+        return extractApkParts(zip, customer, MAX_BUNDLE_UNPACKED_BYTES);
+    }
+
+    /** As above, refusing (before anything is written) a bundle whose APK entries declare more than [maxTotal] bytes. */
+    List<File> extractApkParts(File zip, Customer customer, long maxTotal) throws IOException {
         java.util.zip.ZipFile opened;
         try {
             opened = new java.util.zip.ZipFile(zip);
@@ -876,12 +893,18 @@ public class FilesResource {
         File universal = null;
         boolean extracted = false;
         try (java.util.zip.ZipFile zipFile = opened) {
+            long total = 0;
+            for (java.util.zip.ZipEntry entry : java.util.Collections.list(zipFile.entries())) {
+                if (isApkEntry(entry)) total += Math.max(0, entry.getSize()); // unknown (-1) fails copyEntry anyway
+                if (total > maxTotal) {
+                    throw new BundleTooLargeException("APK entries unpack to more than " + maxTotal + " bytes");
+                }
+            }
             java.util.Enumeration<? extends java.util.zip.ZipEntry> entries = zipFile.entries();
             while (entries.hasMoreElements()) {
                 java.util.zip.ZipEntry entry = entries.nextElement();
-                if (entry.isDirectory()) continue;
+                if (!isApkEntry(entry)) continue;
                 String base = new File(entry.getName()).getName().toLowerCase();
-                if (!base.endsWith(".apk")) continue;
                 // Output name is generated (not the entry name), so a malicious entry path can't escape.
                 File out = FileUtil.createUploadFile(customer, "bundlepart");
                 if (base.equals("universal.apk")) {
@@ -906,6 +929,10 @@ public class FilesResource {
             return only;
         }
         return parts;
+    }
+
+    private static boolean isApkEntry(java.util.zip.ZipEntry entry) {
+        return !entry.isDirectory() && new File(entry.getName()).getName().toLowerCase().endsWith(".apk");
     }
 
     /** Copy one zip entry to [out], checking its size and CRC: ZipFile, unlike ZipInputStream, checks neither.

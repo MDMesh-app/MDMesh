@@ -194,6 +194,8 @@ Fixes
   error.
 - Apps: an .xapk or other split-APK bundle whose APKs are stored uncompressed now uploads instead of failing to
   unpack, and a damaged APK inside a bundle is refused (thanks @detobel36).
+- Apps: a bundle whose APKs unpack to more than 4 GB in total is refused before anything is written, and a refused
+  bundle upload says why in plain words.
 - Enroll: the page warns before you hand out a QR code devices can't use: the console is open at localhost, over
   `http://`, at a local address, or at another address than the server's `BASE_URL` (devices keep the address in the
   code until a factory reset). Wi-Fi a device can't join from a QR code (a secured network entered without its

@@ -110,6 +110,18 @@
   font-size: var(--text-meta);
   line-height: var(--lh-meta);
 }
+/* A sentence that may wrap: its icon stays on the first line. */
+.v2 .v2-ov-srv__line--long {
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  text-wrap: pretty;
+}
+.v2 .v2-ov-srv__icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  height: var(--lh-meta);
+}
 .v2 .v2-ov-srv__line.is-ok {
   color: var(--ok-ink);
 }

@@ -165,6 +165,7 @@
   font-size: var(--text-meta);
   line-height: var(--lh-meta);
   color: var(--secondary);
+  text-wrap: pretty;
 }
 /* The card is the link; its action is drawn as a small secondary button. */
 .v2 .v2-updcard__action {

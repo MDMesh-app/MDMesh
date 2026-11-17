@@ -119,8 +119,9 @@ const WHATS_NEW_SEEN = [
 /**
  * Browser context with the theme (+ auth when given) seeded before any app script runs and the SPA's API calls
  * answered from fixtures. Options: theme 'light' | 'dark' (default dark), viewport, deviceScaleFactor,
- * blockGoogleFonts (the console self-hosts IBM Plex: a broken bundled file must not hide behind Google's copy), and
- * whatsNewSeen (the What's new versions marked seen, above).
+ * blockGoogleFonts (the console self-hosts IBM Plex: a broken bundled file must not hide behind Google's copy),
+ * whatsNewSeen (the What's new versions marked seen, above), and updateStatus (the supervisor's /update/status: one
+ * of fixtures.mjs updateScenarios, or the default).
  */
 export async function newContext(
   browser,
@@ -131,6 +132,7 @@ export async function newContext(
     deviceScaleFactor = 2,
     blockGoogleFonts = false,
     whatsNewSeen = WHATS_NEW_SEEN,
+    updateStatus = fx.updateStatus,
   } = {},
 ) {
   const context = await browser.newContext({ viewport, deviceScaleFactor });
@@ -154,8 +156,8 @@ export async function newContext(
   await context.route('**/update/**', (route) => {
     // /update/status and /update/check both answer with the supervisor status (check returns it fresh).
     const u = route.request().url();
-    const body = u.includes('/update/status') ? fx.updateStatus
-      : u.includes('/update/check') ? { ...fx.updateStatus, checkedAt: Date.now() } : { ok: true };
+    const body = u.includes('/update/status') ? updateStatus
+      : u.includes('/update/check') ? { ...updateStatus, checkedAt: Date.now() } : { ok: true };
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   });
   return context;

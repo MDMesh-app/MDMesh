@@ -95,6 +95,7 @@ export function buildFixtures(now = Date.now()) {
     current: '0.1.14', latest: '0.1.15', updateAvailable: true, verified: true,
     channel: 'stable', checkedAt: now - 18 * min, error: null, apply: null, auto: false,
     apk: { version: '0.1.15', versionCode: 16, sha256: 'b3a1…f29c', available: true },
+    missedSecurity: [],
   };
 
   const activeRollout = {
@@ -144,6 +145,18 @@ export function buildFixtures(now = Date.now()) {
 
   return { user, configurations, configList, devices, events, state, telemetry, locations, applications, updateStatus, activeRollout, authOptions };
 }
+
+// --- update status scenarios ---
+// The supervisor's /update/status in other situations than the default (0.1.14, 0.1.15 ready). `missedSecurity`: the
+// server runs 0.1.12 and the offered 0.1.15 skips the security release 0.1.13 (the signed manifest's securityReleases);
+// `missedSecurityMany`: from 0.1.11, it skips 0.1.12, 0.1.13 and 0.1.14.
+export function updateScenarios(base) {
+  return {
+    missedSecurity: { ...base.updateStatus, current: '0.1.12', missedSecurity: ['0.1.13'] },
+    missedSecurityMany: { ...base.updateStatus, current: '0.1.11', missedSecurity: ['0.1.12', '0.1.13', '0.1.14'] },
+  };
+}
+// --- end update status scenarios ---
 
 // --- v2 overview fixtures ---
 // Configuration sync for the Overview (and the classic Dashboard, which asks the same endpoints): per-configuration

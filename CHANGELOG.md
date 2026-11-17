@@ -2,9 +2,10 @@
 
 What changed in each MDMesh release, for the people running it, newest first. A version's section is its tag
 annotation and GitHub release notes, word for word ([RELEASING.md](RELEASING.md)). From v0.3.2 on, its sections come
-in this order, empty ones left out: Upgrading, Heads-up, New, Fixes, Under the hood. Feature releases (0.x.0) ship
-every three weeks; patch releases (0.x.y) only for a security fix or something broken in the field. Each PR adds its
-line under Unreleased.
+in this order, empty ones left out: Upgrading, Heads-up, Security, New, Fixes, Under the hood. A release that fixes a
+security issue has a Security section, and only such a release has one. Feature releases (0.x.0) ship every three
+weeks; patch releases (0.x.y) only for a security fix or something broken in the field. Each PR adds its line under
+Unreleased.
 
 ## Unreleased
 
@@ -85,6 +86,16 @@ Heads-up
   random times so they don't all reconnect at once after a server restart. Check-ins are not affected.
 
 Security
+- Updates applied by a 0.5.0 supervisor, and the quick start, run the server, web and supervisor images by the digest
+  the signed release names, so an image replaced in the registry is never run.
+- The quick start checks every file it downloads from the release against the signed manifest, and stops instead of
+  falling back to `main` or `:latest` when the release can't be found or doesn't verify. It needs OpenSSL 3.0+, or an
+  older OpenSSL and `minisign`.
+- The installers create .env and the other files that hold secrets as readable only by their owner from the start,
+  and a setup.sh re-run makes an existing .env owner-only again.
+- setup.sh re-runs read `.env` without running it as a script, so `bash -x ./setup.sh` no longer prints its
+  passwords and secrets. Values are read as before, quotes and escapes included; a line whose value the shell would
+  compute (a `$` or backquote) stops setup.sh, naming the line.
 - Passwords are stored as bcrypt, each with its own salt, instead of a fast hash with one salt shared by every
   account. Sign-in is unchanged for the console and API clients. A new password sent through the API must be the
   MD5 hex the console sends, as account creation already required.
@@ -101,6 +112,10 @@ New
   or clears them if that one is cleared.
 - Settings shows a ready update's release notes by version: a one-line summary, the items grouped, and a "Security
   fixes" label on a release that has a Security section.
+- When the update on offer skips a release that fixed security issues, the console says so in amber: the sidebar and
+  Overview cards say the update "includes security fixes from 0.5.1 that this server is missing", and Settings →
+  Updates names the releases, with a link to their notes. Each release's signed manifest lists the releases with a
+  Security section (`securityReleases`); the warning needs the 0.5.0 supervisor.
 - Destructive confirmations name what they do ("Factory reset", "Delete configuration"), and one action has one
   name everywhere ("Lock", "Ring", "Sync now", "Needs attention").
 - From source and native: `./setup.sh --update` moves the clone to the newest release, checked against its signed
@@ -177,9 +192,6 @@ New
 - Agent: the status screen, dialogs and kiosk launcher are easier to read and use: darker secondary and status text,
   no text under 13sp, a visible focus ring for keyboards and D-pads, full-size copy buttons, and TalkBack reads
   headings, each fact with its label, and a failed return or stuck enrolment as it appears. Needs agent 0.5.0.
-- Updates applied by a 0.5.0 supervisor, and the quick start, run exactly the images the signed release names, pinned
-  by digest; the quick start also checks each file it downloads, stops instead of falling back to `main`, and needs
-  OpenSSL 3.0+, or an older OpenSSL and `minisign`.
 - Each release now publishes `quickstart.sh`, with its SHA-256 in the signed manifest. The README's install command
   runs the latest release's copy instead of `main`'s; DEPLOY.md has one that checks it against the signed release
   first and installs exactly the release it checked
@@ -190,11 +202,6 @@ Fixes
   DROPs failed when the update had added a table that refers to an older one, so the rollback stopped (nothing
   changed). The by-hand restores in the docs, and the command the native installer prints next to each dump, do the
   same.
-- The installers create .env and the other files that hold secrets as readable only by their owner from the start,
-  and a setup.sh re-run makes an existing .env owner-only again.
-- setup.sh re-runs read `.env` without running it as a script, so `bash -x ./setup.sh` no longer prints its
-  passwords and secrets. Values are read as before, quotes and escapes included; a line whose value the shell would
-  compute (a `$` or backquote) stops setup.sh, naming the line.
 - Once staff tap Return to kiosk on the device, the console stops offering its own Return to kiosk for that device;
   a later kiosk exit, custom kiosk, or configuration apply offers it again.
 - Files: uploading a file again with the same name and the same content returns the file already there instead of an
@@ -349,6 +356,11 @@ Heads-up
   v0.3 file left in the tree. Each file's new place, its slot and what to check after the merge:
   [UPGRADING, v0.4.0 for forks](https://github.com/MDMesh-app/MDMesh/blob/main/docs/UPGRADING.md#v040-for-forks).
 
+Security
+- Sign-in starts a fresh session, and so does changing your own password.
+- Audit log: requests from API clients are recorded with their user, and a request is recorded however its path is
+  spelled.
+
 New
 - Connectivity per configuration (Configuration → Network): Always-on keeps the agent's live connection up, so
   commands reach a locked phone without waiting for its next check-in. "—" leaves each device's own mode. Needs agent
@@ -380,9 +392,6 @@ Fixes
 - Storage and Local IP show on the device page. The old console read keys the agent never sends, so both were "—".
 - Saving a configuration keeps its apps' Headwind launcher layout (screen order, key code, bottom row, long tap).
 - Enroll shows a configuration's EAP Wi-Fi security as EAP, not as WPA / WPA2.
-- Sign-in starts a fresh session, and so does changing your own password.
-- Audit log: requests from API clients are recorded with their user, and a request is recorded however its path is
-  spelled.
 
 Under the hood
 - The console has unit tests (vitest), and CI runs them on every console change.
@@ -478,10 +487,12 @@ Upgrading
 - Until devices have agent 0.3.7, set Safe Mode to Block on configurations whose devices you put into kiosk with Enter
   kiosk.
 
-Fixes
+Security
 - Kiosk: Safe Mode is blocked whenever a device is in kiosk, including kiosks started with Enter kiosk on the device
   page, unless the configuration's Safe Mode setting is Allow. The block is lifted once nothing asks for it: when such
   a kiosk ends, or when kiosk is turned off on the configuration, unless the setting is Block. Needs agent 0.3.7.
+
+Fixes
 - Kiosk: an exit PIN that can't be checked right now says so ("Exit unavailable right now") instead of closing.
 - The console's kiosk help says which behaviour needs agent 0.3.6 or later.
 
@@ -501,6 +512,11 @@ Heads-up
 - Legacy device API (`LEGACY_DEVICE_API=1`): removing a Headwind content app from a configuration on the Apps page no
   longer turns kiosk mode off by itself. Turn kiosk off on the configuration page if you want it off.
 
+Security
+- Kiosk: too many wrong exit PINs lock the exit for a while, and administrators get an email (needs SMTP). Needs
+  agent 0.3.6.
+- Kiosk: Safe Mode is blocked on kiosk devices unless the configuration's Safe Mode setting says Allow.
+
 Fixes
 - Kiosk: a kiosk app that keeps stopping no longer ends kiosk. The device stays in kiosk on an "App closed" screen with
   an "Open again" button, until kiosk is ended with the exit PIN or from the console. Needs agent 0.3.6.
@@ -508,9 +524,6 @@ Fixes
   0.3.6.
 - Kiosk: Recents and Notifications stay off while Home is off, as Android requires. Before, kiosk didn't start with
   that combination.
-- Kiosk: too many wrong exit PINs lock the exit for a while, and administrators get an email (needs SMTP). Needs
-  agent 0.3.6.
-- Kiosk: Safe Mode is blocked on kiosk devices unless the configuration's Safe Mode setting says Allow.
 - Saving app assignments on the Apps page no longer changes other configurations' settings, and devices pick up the
   change right away.
 - A device whose agent stopped while applying its configuration (Android ended the app, the phone restarted, the
@@ -522,6 +535,11 @@ Upgrading
 - Update the server: Settings → Updates (quick-start installs), or re-run the installer on native installs. Then
   roll out the new agent from Settings → Agent rollout, to one device first. Devices enrolled by QR code on 0.3.4 or
   earlier apply their restrictions once they have the new agent (or after a restart).
+
+Security
+- Location popups in the device map render as plain text.
+- A device's recorded public address comes from the edge, not from headers the device sends. Native installs: set
+  your proxy's headers and limit Tomcat's port to the proxy, as docs/OPERATIONS.md "Device public address" describes.
 
 Fixes
 - Agent: restrictions that need Device Owner (camera, screenshots, factory reset, Bluetooth, USB storage, Safe Mode,
@@ -536,11 +554,8 @@ Fixes
 - Device pages always open the device you clicked, even when a device's number matches another device's internal id.
   Device action dialogs, Enter kiosk included, name the device.
 - Enroll: "New code" keeps the chosen configuration.
-- Location popups in the device map render as plain text.
 - The "Password updated" notice shows on the sign-in page.
 - The enrollment QR code is drawn at its real size, so it isn't blurred and scans reliably (thanks @vanek-Impacts).
-- A device's recorded public address comes from the edge, not from headers the device sends. Native installs: set
-  your proxy's headers and limit Tomcat's port to the proxy, as docs/OPERATIONS.md "Device public address" describes.
 
 Under the hood: dependency updates (React Router 8, Caddy 2.11.7, pgjdbc 42.7.14, Vite, Guava), and CI runs the
 agent's protocol tests on every change.
@@ -561,13 +576,15 @@ Heads-up
 - "Do not track" now really collects no location. It is the default for the configurations the installer
   creates and for new ones, so those devices stop reporting location. To keep it, set Location reporting to
   "Last known (passive)" (was "Network") or "GPS". Location already stored is kept.
+- SECURE_ENROLLMENT=1 also blocks the agent's APK downloads; the server now warns about it at startup.
+  Leave it at 0 for MDMesh agents.
+
+Security
 - Kiosk exit PIN: new installs get a random PIN, shown (and editable) in the configuration editor. A
   configuration still on the old default 12345678 gets a warning in the console. Set your own PIN there.
 - The Headwind launcher's QR routes now answer 404 unless LEGACY_DEVICE_API=1 (the console draws the
   agent's QR itself). The installer-created configurations get new QR keys.
 - The read-only Observer role can no longer send push messages or edit device descriptions.
-- SECURE_ENROLLMENT=1 also blocks the agent's APK downloads; the server now warns about it at startup.
-  Leave it at 0 for MDMesh agents.
 
 New (agent 0.3.4)
 - Wi-Fi radio on/off per configuration.
@@ -603,7 +620,7 @@ Upgrading
   installs. Then roll out the new agent from Rollouts, to one device first. Older agents keep working
   until they update.
 
-Heads-up
+Security
 - App installs are now always checked against a SHA-256. Uploaded APKs and F-Droid apps are covered
   automatically. For an app added by an external link, add its SHA-256 in the Library (new "SHA-256…"
   button) or upload the APK; until then its installs stop with a message saying so.

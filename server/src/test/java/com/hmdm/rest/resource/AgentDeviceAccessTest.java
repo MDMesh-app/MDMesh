@@ -123,6 +123,12 @@ public class AgentDeviceAccessTest {
             @Override public List<com.hmdm.persistence.domain.ManagedAppPermission> getManagedAppPermissions(Integer id) {
                 return Collections.emptyList();
             }
+            @Override public List<com.hmdm.persistence.domain.ApplicationSetting> getConfigurationAppSettings(Integer id) {
+                return Collections.emptyList();
+            }
+            @Override public List<com.hmdm.persistence.domain.ApplicationSetting> getDeviceAppSettings(int id) {
+                return Collections.emptyList();
+            }
             @Override public List<Application> getPlainConfigurationAppsOptimized(Integer id) { return new ArrayList<>(); }
         };
         AgentCommandDAO commandDAO = new AgentCommandDAO(null, null, null, null) {

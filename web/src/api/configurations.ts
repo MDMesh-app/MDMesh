@@ -1,4 +1,5 @@
 import { ApiError, apiClient } from './client';
+import { withSettingValues } from '../data/managedAppSettings';
 
 // Configurations list — see com.hmdm.rest.resource.ConfigurationResource#getAllConfigurations
 //   GET /rest/private/configurations/search  ->  ConfigurationView[]
@@ -52,6 +53,27 @@ export interface ConfigApp {
   keyCode?: number | null;
   bottom?: boolean | null;
   longTap?: boolean | null;
+}
+
+/** An application setting's type: Text, Number (a 32-bit integer), On/off. */
+export type AppSettingType = 'STRING' | 'INTEGER' | 'BOOLEAN';
+
+/** A configuration's (`configurationApplicationSettings`) or a device's (`deviceApplicationSettings`) row. */
+export interface AppSetting {
+  id?: number;
+  applicationId: number;
+  name: string;
+  type: AppSettingType;
+  value: string;
+  comment?: string | null;
+  readonly: boolean;
+  variable: boolean;
+  lastUpdate: number;
+  /** The configuration's or the device's id. */
+  extRefId?: number;
+  applicationPkg?: string;
+  applicationName?: string;
+  [key: string]: unknown;
 }
 
 // Full configuration. Field access is by key (the editor is schema-driven), so we
@@ -147,9 +169,13 @@ export async function deleteKioskBackgroundImage(fileId: number): Promise<void> 
   await apiClient.post<void>(`/private/configurations/backgroundImages/${fileId}/delete`);
 }
 
-/** One full configuration: every column plus its files, app settings and usage parameters (not its apps). */
+/**
+ * One full configuration: every column plus its files, app settings and usage parameters (not its apps). An app
+ * setting stored with no value reads as `''` (withSettingValues).
+ */
 export async function getConfiguration(id: number): Promise<Configuration> {
-  return apiClient.get<Configuration>(`/private/configurations/${id}`);
+  const c = await apiClient.get<Configuration>(`/private/configurations/${id}`);
+  return c && Array.isArray(c.applicationSettings) ? { ...c, applicationSettings: withSettingValues(c.applicationSettings) } : c;
 }
 
 // The app↔configuration matrix for one config. The server (GET

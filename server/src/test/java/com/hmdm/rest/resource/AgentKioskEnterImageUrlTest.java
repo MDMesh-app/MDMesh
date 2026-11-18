@@ -120,6 +120,8 @@ public class AgentKioskEnterImageUrlTest {
                 return c;
             }
             @Override public List<ManagedAppPermission> getManagedAppPermissions(Integer id) { return null; }
+            @Override public List<com.hmdm.persistence.domain.ApplicationSetting> getConfigurationAppSettings(Integer id) { return null; }
+            @Override public List<com.hmdm.persistence.domain.ApplicationSetting> getDeviceAppSettings(int id) { return null; }
             @Override public List<Application> getPlainConfigurationAppsOptimized(Integer id) { return new ArrayList<>(); }
         };
         AgentCommandDAO commandDAO = new AgentCommandDAO(null, null, null, null) {

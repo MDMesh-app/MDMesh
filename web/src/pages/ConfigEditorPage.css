@@ -187,6 +187,9 @@
 .v2 .v2-cfged-permission-app {
   max-width: 440px;
 }
+.v2 .v2-cfged-settings-app {
+  max-width: 640px;
+}
 .v2 .v2-cfged-permission-app summary {
   width: fit-content;
   padding-bottom: var(--space-1);

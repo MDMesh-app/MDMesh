@@ -1,6 +1,8 @@
 package com.mdmesh.proto
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 
 /**
  * Payload of `config.apply` (proto/payloads/config-apply.schema.json): the server-computed desired state of the
@@ -24,6 +26,11 @@ data class ConfigApplyPayload(
     val connectivity: ConfigConnectivity? = null,
     /** Null = server does not manage app permissions; empty = deliberately release all earlier overrides. */
     val appPermissions: List<ConfigAppPermissions>? = null,
+    /**
+     * 1.8: managed configurations (Android app restrictions). Null = the server does not manage them (keep what was
+     * set); empty = clear every package set earlier.
+     */
+    val appRestrictions: List<ConfigAppRestrictions>? = null,
 )
 
 @Serializable
@@ -39,11 +46,40 @@ data class ConfigAppPermissions(
     val permissions: Map<String, String> = emptyMap(),
 )
 
+/** One package's whole managed configuration: the bundle is replaced by exactly these keys. */
+@Serializable
+data class ConfigAppRestrictions(
+    val packageName: String,
+    val values: Map<String, ConfigRestrictionValue> = emptyMap(),
+)
+
+/**
+ * A typed value: [type] is [BOOL], [STRING] or [INT] (32-bit signed), [value] the JSON boolean, string or number. A
+ * type this agent doesn't know (a newer server's) still decodes, so its package can be reported unsupported.
+ * Values can be secrets (device tokens): [toString] leaves the value out, so it never reaches a log line.
+ */
+@Serializable
+data class ConfigRestrictionValue(
+    val type: String = "",
+    val value: JsonElement = JsonNull,
+) {
+    override fun toString(): String = "ConfigRestrictionValue(type=$type)"
+
+    companion object {
+        const val BOOL = "bool"
+        const val STRING = "string"
+        const val INT = "int"
+    }
+}
+
 /** JSON-encoded into `CommandResult.detail` (proto/payloads/config-apply-result.schema.json). */
 @Serializable
 data class ConfigApplyResult(
     val revision: String,
-    /** keys: `policies.<key>`, `kiosk`, `location`, `connectivity` → [ConfigOutcome] strings. */
+    /**
+     * keys: `policies.<key>`, `kiosk`, `location`, `connectivity`, `appPermissions.<package>.<permission>`,
+     * `appRestrictions.<package>` → [ConfigOutcome] strings.
+     */
     val outcomes: Map<String, String>,
 )
 

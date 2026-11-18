@@ -192,6 +192,25 @@ enrollment there works as before, it just can't be resumed.
 
 ## Version notes
 
+### Unreleased
+
+- **Application settings (managed app configuration, protocol 1.8).** A configuration's installed app can get
+  Android managed configuration values (app restrictions), and a device can override one. They are stored in the
+  existing `configurationApplicationSettings` and `deviceApplicationSettings` tables. The database update is
+  automatic: on start, the server adds an index on `extRefId` to each of these two tables.
+  If your database came from Headwind and already holds application settings for installed apps, devices on the new
+  agent start getting them as managed configuration after the update. Devices on an older agent, or not Device Owner,
+  get the rest of the configuration and show as out of sync while one of their apps has a value.
+  API clients: `PUT /rest/private/configurations` checks `applicationSettings` now (types `STRING`, `INTEGER`,
+  `BOOLEAN`; unique names per app; at most 64 per app; values up to 4096 characters) and drops those of apps the save
+  doesn't install, without checking them. It stores each name trimmed. `GET` and
+  `POST /rest/private/devices/{id}/applicationSettings` need the `edit_device_app_settings` permission (seeded for
+  Admin and Super-admin); the `POST` is checked the same way, keeps only apps the device's configuration installs, and
+  wakes the device.
+  With `LEGACY_DEVICE_API=1`: the Headwind launcher's `POST /rest/public/sync/applicationSettings/{number}` now
+  refuses a device enrolled by the MDMesh agent, as if the device were unknown, and writes nothing. Launcher devices
+  keep working.
+
 ### v0.5.0
 
 - **Quick start: update the supervisor before you apply 0.5.0.** In the install directory, run

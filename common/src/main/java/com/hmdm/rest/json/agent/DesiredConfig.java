@@ -54,4 +54,9 @@ public class DesiredConfig {
     private DesiredConnectivity connectivity;
     /** Null for a legacy configuration row; empty means release all managed app permission overrides. */
     private List<DesiredAppPermissions> appPermissions;
+    /**
+     * Protocol 1.8, managed app configuration: null when the configuration's application settings were not loaded (the
+     * section is then not managed); empty means clear every app's managed configuration the agent set earlier.
+     */
+    private List<DesiredAppRestrictions> appRestrictions;
 }

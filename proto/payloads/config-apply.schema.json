@@ -39,6 +39,34 @@
           "permissions": { "type": "object", "additionalProperties": { "enum": ["grant", "deny"] } }
         }
       }
+    },
+    "appRestrictions": {
+      "type": "array",
+      "description": "1.8: managed app configuration (Android app restrictions), sent only to agents that advertise app.managedConfig. One entry per app the configuration installs that has at least one value: the configuration's values merged with the device's overrides (the device wins, and may add keys), sorted by packageName. The agent sets each listed package's bundle to exactly these values (setApplicationRestrictions replaces the whole bundle) and reads it back; a package it set earlier and that is no longer listed is cleared. Omitted means an older server does not manage this section (change nothing); an empty list clears every package the agent set.",
+      "items": {
+        "type": "object",
+        "required": ["packageName", "values"],
+        "properties": {
+          "packageName": { "type": "string" },
+          "values": {
+            "type": "object",
+            "description": "Key (the restriction name) to typed value, keys sorted. A value type the agent doesn't know (a newer server's, such as a later bundle) makes it report the package unsupported and leave it alone.",
+            "additionalProperties": {
+              "type": "object",
+              "required": ["type", "value"],
+              "properties": {
+                "type": { "type": "string", "description": "bool, string or int (32-bit signed); open for later types" },
+                "value": { "description": "The JSON boolean, string or integer of that type" }
+              },
+              "allOf": [
+                { "if": { "properties": { "type": { "const": "bool" } } }, "then": { "properties": { "value": { "type": "boolean" } } } },
+                { "if": { "properties": { "type": { "const": "string" } } }, "then": { "properties": { "value": { "type": "string" } } } },
+                { "if": { "properties": { "type": { "const": "int" } } }, "then": { "properties": { "value": { "type": "integer", "minimum": -2147483648, "maximum": 2147483647 } } } }
+              ]
+            }
+          }
+        }
+      }
     }
   }
 }

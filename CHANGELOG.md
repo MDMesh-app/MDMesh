@@ -9,6 +9,12 @@ Unreleased.
 
 ## Unreleased
 
+New
+- Application settings: give a configuration's installed app its managed configuration (Android app restrictions:
+  text, number and on/off values), and override a value on one device, such as a per-device token. Needs this
+  release's agent as Device Owner; values are kept out of logs and the audit log
+  ([design](docs/managed-app-configuration-design.md)).
+
 ## v0.5.0 — 2026-11-17
 
 Upgrading

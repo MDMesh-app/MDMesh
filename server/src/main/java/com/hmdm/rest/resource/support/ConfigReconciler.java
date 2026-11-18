@@ -4,9 +4,12 @@ import com.hmdm.persistence.AgentCommandDAO;
 import com.hmdm.persistence.UnsecureDAO;
 import com.hmdm.persistence.domain.AgentCommand;
 import com.hmdm.persistence.domain.Application;
+import com.hmdm.persistence.domain.ApplicationSetting;
 import com.hmdm.persistence.domain.Configuration;
 import com.hmdm.persistence.domain.Device;
+import com.hmdm.persistence.domain.DeviceSyncRow;
 import com.hmdm.rest.json.agent.DesiredAppPermissions;
+import com.hmdm.rest.json.agent.DesiredAppRestrictions;
 import com.hmdm.rest.json.agent.DesiredConfig;
 import com.hmdm.util.AgentCapabilityTokens;
 import com.hmdm.util.ConfigReconcileDecision;
@@ -18,7 +21,10 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 import java.sql.SQLException;
 import java.util.Collections;
+import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -67,7 +73,11 @@ public class ConfigReconciler {
         this(unsecureDAO, commandDAO, extensionPoints, null);
     }
 
-    /** The desired-state document for the device's configuration, or null when it has none. */
+    /**
+     * The desired-state document for the device's configuration, or null when it has none. It is the device's own:
+     * the device's application settings override the configuration's, and its fields fill their placeholders. A device
+     * without an id (a probe for a configuration) gets the configuration's settings alone.
+     */
     public DesiredConfig currentDocument(Device device) {
         if (device == null || device.getConfigurationId() == null) return null;
         Configuration cfg = unsecureDAO.getConfigurationById(device.getConfigurationId());
@@ -75,48 +85,95 @@ public class ConfigReconciler {
         // Null means a legacy server did not understand the section; an empty list deliberately means release every
         // explicit app-permission override the agent applied previously.
         cfg.setManagedAppPermissions(unsecureDAO.getManagedAppPermissions(cfg.getId()));
+        // Likewise for managed app configuration: an empty list clears every app's configuration the agent set.
+        cfg.setApplicationSettings(unsecureDAO.getConfigurationAppSettings(cfg.getId()));
+        List<ApplicationSetting> deviceSettings = device.getId() == null ? null
+                : unsecureDAO.getDeviceAppSettings(device.getId());
         // Built now, not when the image was picked: a later base.url change (HTTP -> HTTPS, a new domain) reaches the
         // devices as a new revision instead of a URL the agent refuses.
         if (backgroundImageUrls != null) cfg.setBackgroundImageUrl(backgroundImageUrls.current(cfg));
         List<Application> apps = unsecureDAO.getPlainConfigurationAppsOptimized(cfg.getId());
-        return DesiredConfigBuilder.build(cfg, apps, extensionPoints.contributors(cfg.getCustomerId()));
+        return DesiredConfigBuilder.build(cfg, apps, extensionPoints.contributors(cfg.getCustomerId()), device,
+                deviceSettings);
     }
 
     /**
-     * The document as this device receives it. An agent without {@code app.runtimePermissions} gets it without the
-     * appPermissions section, under the revision of what it gets: it can't apply the rules, and must not be sent the
+     * The document sections an agent gets only when it advertises the section's capability token. Without it, the
+     * agent can't apply the section: it gets the document without it, and the console compares it with that.
+     */
+    enum OptionalSection {
+        APP_PERMISSIONS(DesiredConfigBuilder.APP_PERMISSIONS_CAPABILITY) {
+            @Override List<?> get(DesiredConfig doc) { return doc.getAppPermissions(); }
+            @SuppressWarnings("unchecked")
+            @Override void set(DesiredConfig doc, List<?> section) {
+                doc.setAppPermissions((List<DesiredAppPermissions>) section);
+            }
+        },
+        APP_RESTRICTIONS(DesiredConfigBuilder.APP_RESTRICTIONS_CAPABILITY) {
+            @Override List<?> get(DesiredConfig doc) { return doc.getAppRestrictions(); }
+            @SuppressWarnings("unchecked")
+            @Override void set(DesiredConfig doc, List<?> section) {
+                doc.setAppRestrictions((List<DesiredAppRestrictions>) section);
+            }
+        };
+
+        private final String capability;
+
+        OptionalSection(String capability) {
+            this.capability = capability;
+        }
+
+        abstract List<?> get(DesiredConfig doc);
+
+        abstract void set(DesiredConfig doc, List<?> section);
+
+        boolean appliedBy(Set<String> deviceTokens) {
+            return AgentCapabilityTokens.isAllowed(capability, deviceTokens);
+        }
+    }
+
+    /**
+     * The document as this device receives it. An agent without a section's capability ({@link OptionalSection}) gets
+     * it without that section, under the revision of what it gets: it can't apply the section, and must not be sent the
      * same document again and again for reporting a revision it never had.
      */
     DesiredConfig currentDocument(Device device, Set<String> deviceTokens) {
         DesiredConfig doc = currentDocument(device);
-        if (doc != null && doc.getAppPermissions() != null && !managesAppPermissions(deviceTokens)) {
-            doc.setAppPermissions(null);
-            doc.setRevision(DesiredConfigBuilder.revision(doc));
+        if (doc == null) return null;
+        boolean removed = false;
+        for (OptionalSection section : OptionalSection.values()) {
+            if (section.get(doc) != null && !section.appliedBy(deviceTokens)) {
+                section.set(doc, null);
+                removed = true;
+            }
         }
+        if (removed) doc.setRevision(DesiredConfigBuilder.revision(doc));
         return doc;
-    }
-
-    private static boolean managesAppPermissions(Set<String> deviceTokens) {
-        return AgentCapabilityTokens.isAllowed(DesiredConfigBuilder.APP_PERMISSIONS_CAPABILITY, deviceTokens);
     }
 
     /**
      * The revision the console compares with the one the device applied, for its sync status. An agent that can apply
-     * app permission rules must have applied the whole document. One that can't is in sync with the document it gets
-     * when the configuration has no rules (nothing is missing), and never when it has some: its device doesn't enforce
-     * them, so it must not show as in sync.
+     * every optional section ({@link OptionalSection}) must have applied the whole document. One that can't apply a
+     * section is in sync with the document it gets when that section is empty (nothing is missing), and never when it
+     * has entries: its device doesn't enforce them, so it must not show as in sync.
      *
      * @param doc the configuration's document ({@link #statusDocument}), left as it was; null gives null
      */
     public static String statusRevision(DesiredConfig doc, Set<String> deviceTokens) {
         if (doc == null) return null;
-        List<DesiredAppPermissions> rules = doc.getAppPermissions();
-        if (rules == null || !rules.isEmpty() || managesAppPermissions(deviceTokens)) return doc.getRevision();
-        doc.setAppPermissions(null);
+        Map<OptionalSection, List<?>> removed = new EnumMap<OptionalSection, List<?>>(OptionalSection.class);
+        for (OptionalSection section : OptionalSection.values()) {
+            List<?> entries = section.get(doc);
+            if (entries == null || section.appliedBy(deviceTokens)) continue;
+            if (!entries.isEmpty()) return doc.getRevision();
+            removed.put(section, entries);
+        }
+        if (removed.isEmpty()) return doc.getRevision();
+        for (OptionalSection section : removed.keySet()) section.set(doc, null);
         try {
             return DesiredConfigBuilder.revision(doc);
         } finally {
-            doc.setAppPermissions(rules);
+            for (Map.Entry<OptionalSection, List<?>> e : removed.entrySet()) e.getKey().set(doc, e.getValue());
         }
     }
 
@@ -148,6 +205,54 @@ public class ConfigReconciler {
     /** {@link #statusRevision} of the device's configuration ({@link #statusDocument}). */
     public String currentRevision(Device device, Set<String> deviceTokens) {
         return statusRevision(statusDocument(device), deviceTokens);
+    }
+
+    /** The status documents of a customer's devices, for the console's sync summary ({@link StatusDocuments}). */
+    public StatusDocuments statusDocuments(int customerId) {
+        return new StatusDocuments(customerId);
+    }
+
+    /**
+     * The status documents ({@link #statusDocument}) of many devices of one customer. A configuration's document is
+     * built once and shared, except for a device with application settings of its own, or on a configuration with a
+     * setting that has device placeholders: that device's document is its own, built from the device.
+     */
+    public final class StatusDocuments {
+        private final int customerId;
+        private final Map<Integer, DesiredConfig> shared = new HashMap<Integer, DesiredConfig>();
+        private final Map<Integer, Boolean> variesByDevice = new HashMap<Integer, Boolean>();
+
+        private StatusDocuments(int customerId) {
+            this.customerId = customerId;
+        }
+
+        /** The device's status document; null as {@link #statusDocument} gives it, or when the device is gone. */
+        public DesiredConfig of(DeviceSyncRow row) {
+            Integer cfgId = row.getConfigurationId();
+            if (row.isOwnAppSettings() || variesByDevice(cfgId)) {
+                Device device = unsecureDAO.getDeviceByNumber(row.getDeviceNumber());
+                return device == null ? null : statusDocument(device);
+            }
+            // containsKey/put, not computeIfAbsent: a configuration whose plugin fails has a null document, which
+            // computeIfAbsent wouldn't keep, so the document would be rebuilt (and fail again) for every device on it.
+            if (!shared.containsKey(cfgId)) {
+                Device probe = new Device();
+                probe.setConfigurationId(cfgId);
+                probe.setCustomerId(customerId);
+                shared.put(cfgId, statusDocument(probe));
+            }
+            return shared.get(cfgId);
+        }
+
+        private boolean variesByDevice(Integer cfgId) {
+            Boolean varies = variesByDevice.get(cfgId);
+            if (varies == null) {
+                varies = cfgId != null
+                        && DesiredConfigBuilder.variesByDevice(unsecureDAO.getConfigurationAppSettings(cfgId));
+                variesByDevice.put(cfgId, varies);
+            }
+            return varies;
+        }
     }
 
     /**

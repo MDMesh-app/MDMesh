@@ -139,13 +139,13 @@ public class SyncApplicationSetting implements Serializable, SyncApplicationSett
         this.variable = variable;
     }
 
+    /** Leaves the value out: it can be a secret (a token), and a log line must never hold it. */
     @Override
     public String toString() {
         return "SyncApplicationSetting{" +
                 "packageId='" + packageId + '\'' +
                 ", name='" + name + '\'' +
                 ", type=" + type +
-                ", value='" + value + '\'' +
                 ", readonly=" + readonly +
                 ", lastUpdate=" + lastUpdate +
                 ", variable=" + variable +

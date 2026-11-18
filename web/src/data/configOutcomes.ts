@@ -45,6 +45,8 @@ export function outcomeKeyLabel(key: string): string {
     if (split > 0) return `${rest.slice(0, split)}: ${words(rest.slice(split + '.android.permission.'.length)).toLowerCase()}`;
     return `App permission: ${rest}`;
   }
+  // A package's managed configuration (appRestrictions.<package>), named by its package as a permission is.
+  if (key.startsWith('appRestrictions.')) return `${key.slice('appRestrictions.'.length)}: application settings`;
   const k = key.startsWith('policies.') ? key.slice('policies.'.length) : key;
   if (k === 'kiosk') return 'Kiosk mode';
   if (k === 'location') return 'Location reporting';

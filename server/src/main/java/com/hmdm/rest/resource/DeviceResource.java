@@ -29,6 +29,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
@@ -60,6 +61,9 @@ import org.slf4j.LoggerFactory;
 @Singleton
 @Path("/private/devices")
 public class DeviceResource {
+
+    /** Headwind's permission for a device's application settings: read and write, as a value can be a secret. */
+    static final String APP_SETTINGS_PERMISSION = "edit_device_app_settings";
 
     private static final Logger log = LoggerFactory.getLogger(DeviceResource.class);
 
@@ -399,12 +403,18 @@ public class DeviceResource {
     // =================================================================================================================
     @ApiOperation(
             value = "Get device application settings",
-            notes = "Get application settings set at device level"
+            notes = "The device's own application settings (its overrides of its configuration's). A value can be a " +
+                    "secret, so this needs edit_device_app_settings and access to the device."
     )
     @GET
     @Path("/{id}/applicationSettings")
     @Produces(MediaType.APPLICATION_JSON)
     public Response getDeviceApplicationSettings(@PathParam("id") @ApiParam("Device ID") Integer id) {
+        if (!SecurityContext.get().hasPermission(APP_SETTINGS_PERMISSION)) {
+            log.error("Unauthorized attempt to read the application settings of device #{} by user {}", id,
+                    SecurityContext.get().getCurrentUserName());
+            return Response.PERMISSION_DENIED();
+        }
         try {
             final List<ApplicationSetting> deviceApplicationSettings = this.deviceDAO.getDeviceApplicationSettings(id);
             return Response.OK(deviceApplicationSettings);
@@ -417,19 +427,58 @@ public class DeviceResource {
     // =================================================================================================================
     @ApiOperation(
             value = "Save device application settings",
-            notes = "Save application settings set at device level"
+            notes = "Replaces the device's application settings: its overrides of its configuration's (an app's " +
+                    "managed configuration), as ConfigurationResource takes them ({applicationId, name, type, value, " +
+                    "variable}). Needs edit_device_app_settings and access to the device. Only the settings of apps the device's " +
+                    "configuration installs are kept; a malformed, duplicated or excess setting is refused with HTTP " +
+                    "400 and an ERROR naming it. The device is woken to get its new configuration document. Answers " +
+                    "with the device's settings as stored."
     )
     @POST
     @Path("/{id}/applicationSettings")
+    @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response saveDeviceApplicationSettings(@PathParam("id") @ApiParam("Device ID") Integer id,
                                                   List<ApplicationSetting> applicationSettings) {
+        if (!SecurityContext.get().hasPermission(APP_SETTINGS_PERMISSION)) {
+            log.error("Unauthorized attempt to save the application settings of device #{} by user {}", id,
+                    SecurityContext.get().getCurrentUserName());
+            return Response.PERMISSION_DENIED();
+        }
+        Device device;
         try {
-            this.deviceDAO.saveDeviceApplicationSettings(id, applicationSettings);
-            return Response.OK();
+            device = this.deviceDAO.getDeviceById(id);
+        } catch (SecurityException e) {
+            device = null;
+        }
+        if (device == null || !this.deviceDAO.isAccessibleToUser(device)) {
+            log.error("Unauthorized attempt to save the application settings of device #{} by user {}", id,
+                    SecurityContext.get().getCurrentUserName());
+            return Response.PERMISSION_DENIED();
+        }
+        if (applicationSettings == null) {
+            throw ConfigurationResource.badRequest("applicationSettings must be a list");
+        }
+        Set<Integer> installed = device.getConfigurationId() == null ? Collections.<Integer>emptySet()
+                : ConfigurationResource.installedAppIds(
+                        this.unsecureDAO.getPlainConfigurationAppsOptimized(device.getConfigurationId()));
+        List<ApplicationSetting> kept = ConfigurationResource.checkedApplicationSettings(applicationSettings, installed);
+        try {
+            this.deviceDAO.saveDeviceApplicationSettings(id, kept);
         } catch (Exception e) {
             log.error("Failed to save the application settings for device #{}", id, e);
             return Response.INTERNAL_ERROR();
+        }
+        // Names and counts only: a value can be a secret.
+        log.info("Application settings of device {} saved by user {}: {} kept of {}", device.getNumber(),
+                SecurityContext.get().getCurrentUserName(), kept.size(), applicationSettings.size());
+        // The MDMesh agent gets its new document when it checks in: wake it so that happens now. Saved by now.
+        this.wakeHub.wake(device.getNumber(), "commands");
+        try {
+            return Response.OK(this.deviceDAO.getDeviceApplicationSettings(id));
+        } catch (Exception e) {
+            log.error("Failed to read back the application settings for device #{}", id, e);
+            return Response.OK();
         }
     }
 

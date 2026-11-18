@@ -100,6 +100,12 @@ public class ForkPluginExtensionPointsTest {
         @Override public Configuration getConfigurationById(Integer id) { return configuration; }
         @Override public List<Application> getPlainConfigurationAppsOptimized(Integer id) { return new ArrayList<>(); }
         @Override public List<ManagedAppPermission> getManagedAppPermissions(Integer id) { return Collections.emptyList(); }
+        @Override public List<com.hmdm.persistence.domain.ApplicationSetting> getConfigurationAppSettings(Integer id) {
+            return Collections.emptyList();
+        }
+        @Override public List<com.hmdm.persistence.domain.ApplicationSetting> getDeviceAppSettings(int id) {
+            return Collections.emptyList();
+        }
     }
 
     private static Configuration configuration(int customerId, String extensions) throws Exception {

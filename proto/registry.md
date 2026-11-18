@@ -52,6 +52,7 @@ with a protocol bump, a capability token and a per-section outcome, in the relea
 | `splitApk` | split/.xapk install | Planned key: not advertised; `app.install` already takes split `parts`. |
 | `fdroidCatalog` | can pull from an F-Droid repo | Planned: not advertised yet. |
 | `runtimePermissions` | per-app runtime permission grant, denial, and release | 1.7. Device Owner and API 23+. The optional `config.apply.appPermissions` section is sent only to agents advertising `app.runtimePermissions`; omission is legacy/no management and an empty array releases MDMesh overrides. |
+| `managedConfig` | per-app managed configuration (Android app restrictions): set, read back, clear | 1.8. Advertised while the agent is Device Owner. The optional `config.apply.appRestrictions` section is sent only to agents advertising both `device.configApply` and `app.managedConfig` (others get the document without it, under that document's own revision); omission changes nothing, an empty array clears every package the agent set. Outcome key `appRestrictions.<package>`: `applied`, `failed: app not installed` (retried after `app.install` installs the package), `failed: <reason>` (retried), `unsupported` (not Device Owner, or a value type the agent doesn't know; final, the package is left alone). |
 
 ### remoteControl
 Advertised as an object (`tier`, `screenCapture`, `inputInjection`, `transport`). See README. The agent
@@ -87,7 +88,7 @@ string, except `configApply` and `kioskClearPinLockout`.
 | type | requiresCapability | payload (sketch) |
 |------|--------------------|------------------|
 | `config.sync` | — | none (triggers a full reconcile); no console or server sender yet |
-| `config.apply` | `device.configApply` | desired-state document, see `payloads/config-apply.schema.json`; result detail is `payloads/config-apply-result.schema.json`; the `connectivity` section (1.5) sets the same modes as `device.powerMode` for a whole configuration |
+| `config.apply` | `device.configApply` | desired-state document, see `payloads/config-apply.schema.json`; result detail is `payloads/config-apply-result.schema.json`; the `connectivity` section (1.5) sets the same modes as `device.powerMode` for a whole configuration; the `appPermissions` (1.7) and `appRestrictions` (1.8) sections go only to agents advertising `app.runtimePermissions` and `app.managedConfig` |
 | `policy.apply` | `policy.<key>` (e.g. `policy.wifi`) | `{ policy: "wifi", value: false }` |
 | `app.install` | `app.silentInstall` | `{ url, packageName, versionCode, sha256, runAfterInstall }`, or `parts: [{ url, sha256 }]` instead of `url`/`sha256` for a split APK; `sha256` (hex) is required while the check-in says `installIntegrity: "required"` (1.3) |
 | `app.uninstall` | — | `{ packageName }`; no console or server sender yet |

@@ -76,6 +76,25 @@ public class AgentV1ContractTest {
         assertTrue(json, json.contains("\"installIntegrity\":\"required\""));
     }
 
+    /** config.apply appRestrictions (1.8): the field names and value types the agent decodes. */
+    @Test
+    public void config_apply_app_restrictions_keep_their_shape() throws Exception {
+        DesiredAppRestrictions entry = new DesiredAppRestrictions();
+        entry.setPackageName("hr.example.tablet");
+        java.util.Map<String, DesiredAppRestrictionValue> values = new java.util.TreeMap<>();
+        values.put("kioskMode", new DesiredAppRestrictionValue("bool", true));
+        values.put("pollSeconds", new DesiredAppRestrictionValue("int", 30));
+        values.put("serverUrl", new DesiredAppRestrictionValue("string", "https://x"));
+        entry.setValues(values);
+        DesiredConfig doc = new DesiredConfig();
+        doc.setAppRestrictions(Collections.singletonList(entry));
+        String json = mapper.writeValueAsString(doc);
+        assertTrue(json, json.contains("\"appRestrictions\":[{\"packageName\":\"hr.example.tablet\",\"values\":{"
+                + "\"kioskMode\":{\"type\":\"bool\",\"value\":true},"
+                + "\"pollSeconds\":{\"type\":\"int\",\"value\":30},"
+                + "\"serverUrl\":{\"type\":\"string\",\"value\":\"https://x\"}}}]"));
+    }
+
     @Test
     public void enroll_response_keeps_secret_fields() throws Exception {
         String json = mapper.writeValueAsString(new AgentEnrollResponse("dev-1", "Default", "s3cr3t"));

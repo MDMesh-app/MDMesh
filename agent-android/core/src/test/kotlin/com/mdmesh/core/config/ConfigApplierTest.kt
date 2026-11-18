@@ -13,6 +13,10 @@ import com.mdmesh.kiosk.KioskResult
 import com.mdmesh.policy.PolicyOutcome
 import com.mdmesh.policy.AppRuntimePermissions
 import com.mdmesh.policy.AppPermissionOutcome
+import com.mdmesh.policy.AppRestrictionOutcome
+import com.mdmesh.policy.AppRestrictions
+import com.mdmesh.policy.RestrictionValue
+import com.mdmesh.policy.UnsupportedAppRestrictions
 import com.mdmesh.policy.ReleasablePolicy
 import com.mdmesh.policy.ResolvedToggles
 import com.mdmesh.policy.TogglePolicy
@@ -23,9 +27,12 @@ import com.mdmesh.proto.ConfigApplyPayload
 import com.mdmesh.proto.ConfigConnectivity
 import com.mdmesh.proto.ConfigLocation
 import com.mdmesh.proto.ConfigAppPermissions
+import com.mdmesh.proto.ConfigAppRestrictions
+import com.mdmesh.proto.ConfigRestrictionValue
 import com.mdmesh.proto.ConfigOutcome
 import com.mdmesh.proto.KioskApplyPayload
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -58,6 +65,7 @@ class ConfigApplierTest {
         KioskApplier(c, store, NoHome, ComponentName("a", "b")) { false }
 
     /** No connectivity wiring: only the connectivity tests pass their own setPowerMode. */
+    @Suppress("LongParameterList")
     private fun applier(
         toggles: () -> ResolvedToggles,
         kiosk: KioskApplier,
@@ -66,7 +74,181 @@ class ConfigApplierTest {
         appPermissions: AppRuntimePermissions = object : AppRuntimePermissions {
             override fun set(packageName: String, permission: String, state: String) = AppPermissionOutcome.Unsupported
         },
-    ) = ConfigApplier(toggles, kiosk, setLocationMode, store, setPowerMode = {}, appPermissions = appPermissions)
+        appRestrictions: AppRestrictions = UnsupportedAppRestrictions,
+    ) = ConfigApplier(
+        toggles, kiosk, setLocationMode, store, setPowerMode = {}, appPermissions = appPermissions,
+        appRestrictions = appRestrictions,
+    )
+
+    /** Answers NotInstalled for a package not in [installed]; keeps the bundles it set; records every call. */
+    private class FakeAppRestrictions(vararg installed: String) : AppRestrictions {
+        val installed = installed.toMutableSet()
+        var setAnswer: AppRestrictionOutcome = AppRestrictionOutcome.Applied
+        var clearAnswer: AppRestrictionOutcome = AppRestrictionOutcome.Applied
+        val bundles = mutableMapOf<String, Map<String, RestrictionValue>>()
+        val calls = mutableListOf<String>()
+        override fun set(packageName: String, values: Map<String, RestrictionValue>): AppRestrictionOutcome {
+            calls += "set $packageName"
+            if (packageName !in installed) return AppRestrictionOutcome.NotInstalled
+            return setAnswer.also { if (it == AppRestrictionOutcome.Applied) bundles[packageName] = values }
+        }
+        override fun clear(packageName: String): AppRestrictionOutcome {
+            calls += "clear $packageName"
+            return clearAnswer.also { if (it == AppRestrictionOutcome.Applied) bundles.remove(packageName) }
+        }
+    }
+
+    private fun restrictionsDoc(revision: String, vararg entries: ConfigAppRestrictions) =
+        ConfigApplyPayload(revision = revision, appRestrictions = entries.toList())
+
+    private fun str(v: String) = ConfigRestrictionValue(ConfigRestrictionValue.STRING, JsonPrimitive(v))
+
+    private val tablet = ConfigAppRestrictions("hr.example.tablet", mapOf(
+        "deviceToken" to str("secret-token"),
+        "kioskMode" to ConfigRestrictionValue(ConfigRestrictionValue.BOOL, JsonPrimitive(true)),
+        "pollSeconds" to ConfigRestrictionValue(ConfigRestrictionValue.INT, JsonPrimitive(30)),
+    ))
+    private val other = ConfigAppRestrictions("org.example", mapOf("serverUrl" to str("https://example.org")))
+
+    @Test fun `app restrictions set a listed package's whole typed bundle and report no value`() = runTest {
+        val restrictions = FakeAppRestrictions("hr.example.tablet")
+        val store = InMemoryConfigStateStore()
+        val r = applier(fixedToggles(), kiosk(FakeController()), {}, store, appRestrictions = restrictions)
+            .apply(restrictionsDoc("m1", tablet))
+        assertEquals(mapOf("appRestrictions.hr.example.tablet" to ConfigOutcome.APPLIED), r.outcomes)
+        assertEquals(mapOf(
+            "deviceToken" to RestrictionValue.Str("secret-token"),
+            "kioskMode" to RestrictionValue.Bool(true),
+            "pollSeconds" to RestrictionValue.Int32(30),
+        ), restrictions.bundles["hr.example.tablet"])
+        assertEquals("m1", store.revision())
+        assertEquals(setOf("hr.example.tablet"), store.activeAppRestrictions)
+    }
+
+    @Test fun `a read-back mismatch fails the package and keeps the document retryable`() = runTest {
+        val restrictions = FakeAppRestrictions("hr.example.tablet").apply {
+            setAnswer = AppRestrictionOutcome.Failed("restrictions read back differ")
+        }
+        val store = InMemoryConfigStateStore()
+        val r = applier(fixedToggles(), kiosk(FakeController()), {}, store, appRestrictions = restrictions)
+            .apply(restrictionsDoc("m1", tablet))
+        assertEquals(
+            ConfigOutcome.failed("restrictions read back differ"),
+            r.outcomes["appRestrictions.hr.example.tablet"],
+        )
+        assertNull(store.revision())
+        assertFalse("a listed package is not a release", "appRestrictions.hr.example.tablet" in store.unreleased)
+    }
+
+    @Test fun `an unknown or mismatched value type is unsupported and leaves the package's bundle alone`() = runTest {
+        val restrictions = FakeAppRestrictions("hr.example.tablet")
+        val store = InMemoryConfigStateStore()
+        val a = applier(fixedToggles(), kiosk(FakeController()), {}, store, appRestrictions = restrictions)
+        a.apply(restrictionsDoc("m1", tablet))
+        val set = restrictions.bundles["hr.example.tablet"]
+        for (bad in listOf(
+            ConfigRestrictionValue("bundle", JsonPrimitive("x")),
+            ConfigRestrictionValue(ConfigRestrictionValue.INT, JsonPrimitive("30")),
+            ConfigRestrictionValue(ConfigRestrictionValue.INT, JsonPrimitive(3_000_000_000L)),
+            ConfigRestrictionValue(ConfigRestrictionValue.BOOL, JsonPrimitive("true")),
+            ConfigRestrictionValue(ConfigRestrictionValue.STRING, JsonPrimitive(5)),
+        )) {
+            val doc = restrictionsDoc("m2", tablet.copy(values = tablet.values + ("extra" to bad)))
+            val r = a.apply(doc)
+            assertEquals(bad.type, ConfigOutcome.UNSUPPORTED, r.outcomes["appRestrictions.hr.example.tablet"])
+            assertEquals("m2", store.revision())
+        }
+        assertEquals(listOf("set hr.example.tablet"), restrictions.calls)
+        assertEquals(set, restrictions.bundles["hr.example.tablet"])
+    }
+
+    @Test fun `a package a later document omits is cleared`() = runTest {
+        val restrictions = FakeAppRestrictions("hr.example.tablet", "org.example")
+        val store = InMemoryConfigStateStore()
+        val a = applier(fixedToggles(), kiosk(FakeController()), {}, store, appRestrictions = restrictions)
+        a.apply(restrictionsDoc("m1", tablet, other))
+        val r = a.apply(restrictionsDoc("m2", other))
+        assertEquals(mapOf("appRestrictions.org.example" to ConfigOutcome.APPLIED), r.outcomes)
+        assertEquals(setOf("org.example"), restrictions.bundles.keys)
+        assertEquals(setOf("org.example"), store.activeAppRestrictions)
+    }
+
+    @Test fun `an absent section changes nothing and a later explicit empty one clears every package`() = runTest {
+        val restrictions = FakeAppRestrictions("hr.example.tablet", "org.example")
+        val store = InMemoryConfigStateStore()
+        val a = applier(fixedToggles(), kiosk(FakeController()), {}, store, appRestrictions = restrictions)
+        a.apply(restrictionsDoc("m1", tablet, other))
+        val absent = a.apply(ConfigApplyPayload(revision = "m2"))
+        assertTrue(absent.outcomes.isEmpty())
+        assertEquals(setOf("hr.example.tablet", "org.example"), restrictions.bundles.keys)
+        assertEquals(setOf("hr.example.tablet", "org.example"), store.activeAppRestrictions)
+
+        val cleared = a.apply(restrictionsDoc("m3"))
+        assertTrue(cleared.outcomes.isEmpty())
+        assertTrue(restrictions.bundles.isEmpty())
+        assertEquals(emptySet<String>(), store.activeAppRestrictions)
+        assertEquals("m3", store.revision())
+    }
+
+    @Test fun `a package that is not installed fails retryably and is set right after its install`() = runTest {
+        val restrictions = FakeAppRestrictions()
+        val store = InMemoryConfigStateStore()
+        val a = applier(fixedToggles(), kiosk(FakeController()), {}, store, appRestrictions = restrictions)
+        val r = a.apply(restrictionsDoc("m1", tablet))
+        assertEquals(ConfigOutcome.failed("app not installed"), r.outcomes["appRestrictions.hr.example.tablet"])
+        assertNull(store.revision())
+
+        assertNull("no entry names it", a.applyAfterInstall("org.unrelated"))
+        restrictions.installed += "hr.example.tablet"
+        val after = a.applyAfterInstall("hr.example.tablet")!!
+        assertEquals(mapOf("appRestrictions.hr.example.tablet" to ConfigOutcome.APPLIED), after.outcomes)
+        assertEquals("m1", store.revision())
+    }
+
+    @Test fun `an update of an applied app sets its bundle again and a failure has the server re-send`() = runTest {
+        val restrictions = FakeAppRestrictions("hr.example.tablet", "org.example")
+        val permissions = FakeAppPermissions().apply { installed += "org.example" }
+        val store = InMemoryConfigStateStore()
+        val a = applier(fixedToggles(), kiosk(FakeController()), {}, store, permissions, restrictions)
+        val doc = restrictionsDoc("m1", tablet, other).copy(appPermissions = denyCamera.appPermissions)
+        a.apply(doc)
+        assertEquals("m1", store.revision())
+        restrictions.calls.clear()
+
+        val both = a.applyAfterInstall("org.example")!!
+        assertEquals(setOf(
+            "appPermissions.org.example.android.permission.CAMERA", "appRestrictions.org.example",
+        ), both.outcomes.keys)
+        assertEquals(listOf("set org.example"), restrictions.calls)
+        assertEquals("m1", store.revision())
+
+        restrictions.setAnswer = AppRestrictionOutcome.Failed("boom")
+        a.applyAfterInstall("hr.example.tablet")
+        assertEquals(ConfigStateStore.STALE_REVISION, store.revision())
+    }
+
+    @Test fun `a failed clear is reported and retried with the next document`() = runTest {
+        val restrictions = FakeAppRestrictions("hr.example.tablet", "org.example")
+        val store = InMemoryConfigStateStore()
+        val a = applier(fixedToggles(), kiosk(FakeController()), {}, store, appRestrictions = restrictions)
+        a.apply(restrictionsDoc("m1", tablet, other))
+        restrictions.clearAnswer = AppRestrictionOutcome.Failed("boom")
+        val failed = a.apply(restrictionsDoc("m2", other))
+        assertEquals(ConfigOutcome.failed("boom"), failed.outcomes["appRestrictions.hr.example.tablet"])
+        assertTrue("appRestrictions.hr.example.tablet" in store.unreleased)
+        assertTrue("hr.example.tablet" in store.activeAppRestrictions)
+
+        // An older server's document in between drops nothing: the durable record still names the package.
+        a.apply(ConfigApplyPayload(revision = "m3"))
+        restrictions.clearAnswer = AppRestrictionOutcome.Applied
+        restrictions.calls.clear()
+        val retried = a.apply(restrictionsDoc("m4", other))
+        assertTrue("clear hr.example.tablet" in restrictions.calls)
+        assertTrue(ConfigApplier.succeeded(retried))
+        assertEquals(setOf("org.example"), restrictions.bundles.keys)
+        assertEquals(setOf("org.example"), store.activeAppRestrictions)
+        assertFalse("appRestrictions.hr.example.tablet" in store.unreleased)
+    }
 
     @Test fun `app permissions apply explicit rules and release rules removed by an explicit section`() = runTest {
         val calls = mutableListOf<Triple<String, String, String>>()

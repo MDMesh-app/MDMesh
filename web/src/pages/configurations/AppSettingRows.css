@@ -1,0 +1,41 @@
+/* One app's application settings (AppSettingRows): key, type, value and remove on one line, the problem under it.
+   Console tokens only. */
+
+.v2 .v2-appsettings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.v2 .v2-appsettings__row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(96px, 1fr) minmax(0, 3fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.v2 .v2-appsettings__error,
+.v2 .v2-appsettings__note {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+}
+.v2 .v2-appsettings__error {
+  color: var(--alert-ink);
+}
+.v2 .v2-appsettings__note,
+.v2 .v2-appsettings__full {
+  color: var(--secondary);
+  font-size: var(--text-meta);
+  line-height: var(--lh-meta);
+}
+
+@media (max-width: 640px) {
+  .v2 .v2-appsettings__row {
+    grid-template-columns: minmax(0, 1fr) minmax(96px, auto) auto;
+  }
+  .v2 .v2-appsettings__value {
+    grid-column: 1 / 3;
+  }
+}

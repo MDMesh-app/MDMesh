@@ -304,6 +304,11 @@ public class UnsecureDAO {
         return this.configurationMapper.getManagedAppPermissions(configurationId);
     }
 
+    /** The configuration's application settings (managed app configuration), without an access check. */
+    public List<ApplicationSetting> getConfigurationAppSettings(Integer configurationId) {
+        return this.applicationSettingDAO.getApplicationSettingsByConfigurationId(configurationId);
+    }
+
     @Transactional
     public Configuration getConfigurationByIdWithAppSettings(Integer id) {
         final Configuration dbConfiguration = this.configurationMapper.getConfigurationById(id);
